@@ -14,9 +14,17 @@
  *
  * The amber band names its tone as a notice does and declares itself a tone surface, so on a
  * custom background its tint thins over the image the way a notice's does (wallpaper.css).
+ *
+ * A call that waits for a reason the person did not choose — a rule of the Project's command
+ * policy asks for confirmation whatever the approval mode — says so in one muted line above the
+ * buttons, a shield glyph leading it and the longer explanation on hover: a person who set the
+ * Session to allow everything would otherwise wonder why this one call stopped.
  */
 import { useState } from "react";
+import { ICON_GAP, ICON_SIZE } from "../../../icon-scale";
 import { Button } from "../../actions/button/button";
+import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
+import { ICONS } from "../../icons/icons";
 
 export type ApprovalChoice = "allow" | "deny";
 
@@ -63,6 +71,8 @@ export interface ApprovalRequest {
   preview: string;
   /** A file tool's decoded payload (the rewrite it will make), shown in full; null for others. */
   payload?: string | null;
+  /** Why the call asks when the person's approval mode would not have: the line, and its hover explanation. */
+  reason?: { text: string; hint?: string };
   onDecide: (decision: ApprovalChoice) => Promise<void>;
   labels: ApprovalLabels;
 }
@@ -79,6 +89,7 @@ export function ApprovalBlock({
   nameTooltip,
   preview,
   payload,
+  reason,
   onDecide,
   labels,
 }: ApprovalBlockProps) {
@@ -103,6 +114,15 @@ export function ApprovalBlock({
         <pre className="mb-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-md bg-surface/70 px-2 py-1.5 text-xs leading-5 text-fg">
           {payload}
         </pre>
+      )}
+      {reason !== undefined && (
+        <p
+          data-tooltip={reason.hint}
+          className={`mb-2 flex items-center ${ICON_GAP.row} text-xs text-fg-muted`}
+        >
+          <GlyphIcon d={ICONS.shieldAlert} size={ICON_SIZE.inlineGlyph} />
+          <span className="min-w-0">{reason.text}</span>
+        </p>
       )}
       <ApprovalButtons onDecide={onDecide} labels={labels} />
     </div>

@@ -9,8 +9,8 @@
  * Delete: the folder is renamed into `agents/.deleting/` (one rename, so it leaves every list
  * and route at once) and its contents are removed in the background, the removal reporting how
  * far it got; a server that stops mid-removal resumes it at its next start.
- * Create: generate agent-<8hex>, initialize Agent State via core's `createAgent`,
- * then write name/description into system_config.yaml (parseDocument preserves the
+ * Create: initialize Agent State via core's `createAgent` under the creator's id, then
+ * write name/description/author into system_config.yaml (parseDocument preserves the
  * template's comments).
  */
 import fs from "node:fs/promises";
@@ -18,16 +18,21 @@ import type { Dirent } from "node:fs";
 import path from "node:path";
 import { HttpError } from "../http/errors.js";
 import { countEntries, FsLimiter, purgeTree } from "./tree-purge.js";
+import { removeBelow } from "../workbenches/data-dirs.js";
 import {
   agentDir,
+  agentRunDir,
   agentsDir,
   agentsMdPath,
   BUILTIN_AGENT_IDS,
   createAgent as coreCreateAgent,
+  provisionSystemAgent,
+  SYSTEM_AGENT_ID,
   installPlugin,
   installSkill,
   McpServerNameTakenError,
   listInstalledHooks,
+  listProjectDirs,
   isValidId,
   loadAgentVault,
   memoryDir,
@@ -35,24 +40,28 @@ import {
   skillsDir,
   systemConfigPath,
   comparePluginVersions,
-  libraryPlugin,
-  loadLibraryPlugins,
+  groupPlugins,
   parseSkillFrontmatter,
   pluginContentVersion,
   listInstalledWorkbenches,
 } from "@prismshadow/penguin-core";
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
-import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
+import { isNewSemanticId, NEW_ID_RULE, SEMANTIC_ID_RULE } from "./ids.js";
+import { migrateWorkbenches } from "../workbenches/migrate.js";
+import { agentAvatarRev } from "@prismshadow/penguin-library-agent/agent-avatar";
 import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
-import { isTopicFileName } from "./memory-service.js";
-import type { AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
-import { resolveLibraryPlugins } from "./plugin-library.js";
+import { isTopicFileName } from "@prismshadow/penguin-library-agent/memory-service";
+import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
+import { resolveLibraryPlugins, seedPluginNames } from "./plugin-library.js";
+import type { PluginLibrary } from "../plugin/library-module.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
+import { refuseReservedAgentId } from "./system-agent.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
-import type { AgentIndex } from "../mechanisms/projects.js";
+import type { AgentConfig, AgentLifecycle, AgentPackage, Snapshots } from "../mechanisms/agents.js";
+import type { ModuleActor, PluginModules } from "../mechanisms/plugins.js";
+import type { AgentIndex } from "@prismshadow/penguin-library-project";
 
 /**
  * How much of a SKILL.md is read to answer "which version is installed" (see `installedSkills`).
@@ -110,9 +119,17 @@ const MOVE_RETRIES = 4;
 const MOVE_RETRY_STEP_MS = 100;
 const MOVE_BUSY = new Set(["EBUSY", "EPERM", "EACCES"]);
 
-/** Refuses deleting a built-in Agent: they are provisioned with the Project. */
-export function refuseBuiltinDeletion(agentId: string): void {
-  if (BUILTIN_AGENT_IDS.includes(agentId)) {
+/**
+ * Refuses deleting a built-in Agent: they are provisioned with the Project. An Agent the user
+ * named `system_agent` before the system Agent existed is theirs to delete (core
+ * state/system-agent.ts).
+ */
+export async function refuseBuiltinDeletion(
+  agentConfig: Pick<AgentConfig, "isBuiltinAgent">,
+  projectId: string,
+  agentId: string,
+): Promise<void> {
+  if (await agentConfig.isBuiltinAgent(projectId, agentId)) {
     throw new HttpError(
       409,
       "cannot_delete_builtin_agent",
@@ -121,10 +138,32 @@ export function refuseBuiltinDeletion(agentId: string): void {
   }
 }
 
+/** Index the shared library once per listing. The Agent Plugins tab gives a Skill to
+ * the first library plugin that contributes it in category order. */
+function indexAgentPlugins(library: readonly LibraryPlugin[]) {
+  const skillOwners = new Map<string, string>();
+  for (const group of groupPlugins([...library])) {
+    for (const plugin of group.plugins) {
+      for (const skill of plugin.skills) {
+        if (!skillOwners.has(skill.name)) skillOwners.set(skill.name, plugin.name);
+      }
+    }
+  }
+  return {
+    skillOwners,
+    byPlugin: new Map(library.map((p) => [p.name, p] as const)),
+    bySkill: new Map(
+      library.flatMap((p) => p.skills.map((s) => [s.name, { plugin: p, skill: s }] as const)),
+    ),
+  };
+}
+
 export interface AgentListItem {
   agentId: string;
   name?: string;
   description?: string;
+  /** Who made the Agent (system_config.yaml `author`; missing or unknown = `user`). */
+  author: AgentAuthor;
   createdAt?: string;
   /** Last config modification time: the later of system_config.yaml / AGENTS.md mtime. */
   updatedAt?: string;
@@ -140,6 +179,8 @@ export interface AgentListItem {
   scheduleCount: number;
   /** Workbench folders with a manifest, including ones with a load error. */
   workbenchCount: number;
+  /** Distinct packages with at least one installed Agent part. */
+  pluginCount?: number;
   /** Number of installed Skills (count of skills/<name>/ directories that contain a SKILL.md). */
   skillCount: number;
   /** Number of installed hook packages (hooks/<name>/ directories with a hooks.json). */
@@ -148,6 +189,39 @@ export interface AgentListItem {
   pluginUpdates: PluginUpdateRef[];
   /** Number of memory topic files across every scope directory under memory/ (independent of the memory switch, like skillCount). */
   memoryCount: number;
+  /** The content revision of the Agent's own picture (the agent domain library's agent-avatar); absent when it has none. */
+  avatarRev?: string;
+  /** Present on the system Agent only (core state/system-agent.ts). */
+  system?: true;
+}
+
+/** What a new Agent starts with, besides its id. Every field is optional. */
+export interface AgentCreation {
+  /** Display name; the id when omitted (an imported package keeps its own instead). */
+  name?: string;
+  description?: string;
+  /** Who is creating it; `user` when omitted. An imported package keeps its own. */
+  author?: AgentAuthor;
+  /** Library plugin names to install into it. */
+  plugins?: readonly string[];
+  /**
+   * Whether the library's default-install plugins (cards with `defaultInstall`) join `plugins`;
+   * omitted = true. An Agent made from a package (`archive`) never gets them: an import moves an
+   * existing Agent, with the plugins it already has.
+   */
+  defaultPlugins?: boolean;
+  /** Skills to import from a directory the creator picked. */
+  directory?: { path: string; names: readonly string[] };
+  /** An Agent package (the import route's) to start from instead of the default template. */
+  archive?: AgentPackage;
+  /**
+   * Who creates it, for the `plugins`' server modules (PRFC-0031): once the Agent exists, they
+   * are brought along as this actor would bring them, and that is the last thing creation does —
+   * it may re-assemble the App. `null` is the system (built-in modules only, never a request).
+   * Absent, creation leaves the modules to its caller: company mode brings them along at the end
+   * of its own flow, which goes on with this generation's services after the Agent exists.
+   */
+  actor?: ModuleActor | null;
 }
 
 @Component()
@@ -159,6 +233,8 @@ export class AgentService implements AgentLifecycle {
   @Use() private readonly agents!: AgentIndex;
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly snapshots!: Snapshots;
+  @Use() private readonly library!: PluginLibrary;
+  @Use() private readonly pluginModules!: PluginModules;
 
   /** Deletions this process knows, by `${projectId}/${deletionId}`. */
   private readonly deletions = new Map<string, AgentDeletionInfo>();
@@ -168,6 +244,8 @@ export class AgentService implements AgentLifecycle {
   private readonly limiter = new FsLimiter(PURGE_SLOTS);
   /** Ends this generation's removals when it is disposed; the next one resumes them from disk. */
   private readonly stopping = new AbortController();
+  /** A system Agent being provisioned, by Project, so two lists at once write it once. */
+  private readonly provisioning = new Map<string, Promise<void>>();
 
   setup(ctx: ClassCtx) {
     ctx.effect(() => this.stopping.abort());
@@ -175,9 +253,11 @@ export class AgentService implements AgentLifecycle {
 
   /**
    * Union of DB index ∪ directory scan; unmanaged directory Agents are backfilled into the DB.
-   * Only what `AgentConfig.exists` accepts is listed — the rule every route checks.
+   * Only what `AgentConfig.exists` accepts is listed — the rule every route checks. A Project
+   * made before the system Agent existed is given it first (see `ensureSystemAgent`).
    */
   async listAgents(projectId: string): Promise<AgentListItem[]> {
+    await this.ensureSystemAgent(projectId);
     const known = new Map(this.agents.list(projectId).map((r) => [r.agentId, r]));
 
     let entries: string[] = [];
@@ -205,7 +285,7 @@ export class AgentService implements AgentLifecycle {
     // The plugin library is read once for the whole list (every Agent is checked against the
     // same files). Meta reads and mtime stats for each Agent run in parallel (Promise.all
     // preserves the sorted order).
-    const library = loadLibraryPlugins();
+    const library = indexAgentPlugins(this.library.list());
     // An index row is listed only while its folder is an Agent by the routes' own rule: a row
     // whose folder has lost its system_config.yaml would be a card that neither opens nor deletes.
     const present = await Promise.all(
@@ -224,7 +304,10 @@ export class AgentService implements AgentLifecycle {
       );
     return Promise.all(
       sorted.map(async (row) => {
-        const [meta, updatedAt, vaultKeyCount, scheduleCount, installed, memoryCount] =
+        // A migration that fails (an unreadable folder) is reported where the Agent's
+        // workbenches are opened; one Agent's must not fail the list of all of them.
+        await this.migrateWorkbenches(projectId, row.agentId).catch(() => undefined);
+        const [meta, updatedAt, vaultKeyCount, scheduleCount, installed, memoryCount, avatarRev] =
           await Promise.all([
             this.agentConfig.readCardMeta(projectId, row.agentId),
             this.configUpdatedAt(projectId, row.agentId),
@@ -232,10 +315,15 @@ export class AgentService implements AgentLifecycle {
             this.scheduleCount(projectId, row.agentId),
             this.installedPlugins(projectId, row.agentId, library),
             this.memoryCount(projectId, row.agentId),
+            agentAvatarRev(this.root, projectId, row.agentId).catch(() => undefined),
           ]);
+        const { mcpPluginNames, ...cardMeta } = meta;
         return {
           agentId: row.agentId,
-          ...meta,
+          ...cardMeta,
+          ...(mcpPluginNames
+            ? { pluginCount: new Set([...installed.pluginNames, ...mcpPluginNames]).size }
+            : {}),
           createdAt: row.createdAt,
           ...(updatedAt !== undefined ? { updatedAt } : {}),
           vaultKeyCount,
@@ -245,9 +333,51 @@ export class AgentService implements AgentLifecycle {
           hookCount: installed.hookCount,
           pluginUpdates: installed.updates,
           memoryCount,
+          ...(avatarRev !== undefined ? { avatarRev } : {}),
         };
       }),
     );
+  }
+
+  /**
+   * Gives a Project made before the system Agent existed its system Agent, the first time its
+   * Agents are listed after the upgrade (PRFC-0033): core writes it from the preset Project
+   * creation uses and never touches an Agent already holding the id (compat C1). Its index row
+   * sorts right after the other built-in Agents, as a new Project's does. A Project that has the
+   * Agent costs one `stat`. A write that fails (an unwritable folder) leaves the list as it is
+   * and is tried again at the next listing: the system Agent must not be what fails every card.
+   */
+  private ensureSystemAgent(projectId: string): Promise<void> {
+    const running = this.provisioning.get(projectId);
+    if (running) return running;
+    const run = (async () => {
+      if (await this.agentConfig.exists(projectId, SYSTEM_AGENT_ID)) return;
+      if (!(await provisionSystemAgent({ root: this.root, projectId }))) return;
+      const builtins = this.agents
+        .list(projectId)
+        .filter((row) => BUILTIN_AGENT_IDS.includes(row.agentId))
+        .map((row) => Date.parse(row.createdAt))
+        .filter((time) => Number.isFinite(time));
+      const after = builtins.length > 0 ? Math.max(...builtins) + 1 : Date.now();
+      this.agents.insertOrIgnore({
+        projectId,
+        agentId: SYSTEM_AGENT_ID,
+        createdAt: new Date(after).toISOString(),
+      });
+    })()
+      .catch(() => undefined)
+      .finally(() => this.provisioning.delete(projectId));
+    this.provisioning.set(projectId, run);
+    return run;
+  }
+
+  /**
+   * Workbenches in the layout before Agent State move first (../workbenches/migrate.ts), so what
+   * is counted, listed or installed here is what the Agent has, and an install cannot take an id
+   * ahead of the move: the old folder would then be left where it is.
+   */
+  private migrateWorkbenches(projectId: string, agentId: string): Promise<void> {
+    return migrateWorkbenches(agentDir(this.root, projectId, agentId));
   }
 
   /** Count installed folders without compiling or walking their UI/runtime assets. */
@@ -329,8 +459,13 @@ export class AgentService implements AgentLifecycle {
   private async installedPlugins(
     projectId: string,
     agentId: string,
-    library: readonly LibraryPlugin[],
-  ): Promise<{ skillCount: number; hookCount: number; updates: PluginUpdateRef[] }> {
+    library: ReturnType<typeof indexAgentPlugins>,
+  ): Promise<{
+    skillCount: number;
+    hookCount: number;
+    pluginNames: Set<string>;
+    updates: PluginUpdateRef[];
+  }> {
     const base = skillsDir(this.root, projectId, agentId);
     let dirents: Dirent[] = [];
     try {
@@ -352,16 +487,16 @@ export class AgentService implements AgentLifecycle {
         }),
     );
     const hooks = await listInstalledHooks(this.root, projectId, agentId);
-    const byPlugin = new Map(library.map((p) => [p.name, p] as const));
-    const bySkill = new Map(
-      library.flatMap((p) => p.skills.map((s) => [s.name, { plugin: p, skill: s }] as const)),
-    );
+    const { byPlugin, bySkill, skillOwners } = library;
+    const pluginNames = new Set<string>();
     // Part by part: an installed skill against the library's same skill, an installed hook
     // package against the library plugin's hook package. The plugin's own (npm) version says
     // nothing about what an Agent carries.
     const updates = new Map<string, string>();
     for (const skill of skills) {
       if (skill === null) continue;
+      const owner = skillOwners.get(skill.name);
+      if (owner !== undefined) pluginNames.add(owner);
       const shipped = bySkill.get(skill.name);
       if (shipped && comparePluginVersions(shipped.skill.version, skill.version) > 0) {
         updates.set(shipped.plugin.name, pluginContentVersion(shipped.plugin));
@@ -369,17 +504,20 @@ export class AgentService implements AgentLifecycle {
     }
     for (const hook of hooks) {
       const plugin = byPlugin.get(hook.name);
+      if (plugin) pluginNames.add(hook.name);
       if (plugin?.hooks && comparePluginVersions(plugin.hooks.manifest.version, hook.version) > 0) {
         updates.set(plugin.name, pluginContentVersion(plugin));
       }
     }
     for (const installed of await listInstalledWorkbenches(this.root, projectId, agentId)) {
+      pluginNames.add(installed.plugin);
       const plugin = byPlugin.get(installed.plugin);
       const workbench = plugin?.workbenches?.find((w) => w.name === installed.name);
       if (plugin && workbench && comparePluginVersions(workbench.version, installed.version) > 0)
         updates.set(plugin.name, pluginContentVersion(plugin));
     }
     return {
+      pluginNames,
       skillCount: skills.filter((s) => s !== null).length,
       hookCount: hooks.length,
       updates: [...updates].map(([name, version]) => ({ name, version })),
@@ -407,8 +545,9 @@ export class AgentService implements AgentLifecycle {
     agentId: string,
     pluginName: string,
   ): Promise<{ installed: string | null; library: string | null }> {
-    const plugin = libraryPlugin(pluginName);
+    const plugin = this.library.get(pluginName);
     if (!plugin) return { installed: null, library: null };
+    await this.migrateWorkbenches(projectId, agentId);
     const base = skillsDir(this.root, projectId, agentId);
     const parts: { installed: string; library: string }[] = [];
     for (const skill of plugin.skills) {
@@ -452,10 +591,14 @@ export class AgentService implements AgentLifecycle {
    * skill the plugin ships and its hook package with library content. Throws 404
    * `unknown_plugin` when the library does not carry the name. Callers that may hold a cached
    * runtime for the Agent invalidate it afterwards — hook packages are bound when a core
-   * Session is built, unlike skills, which are read from disk on demand.
+   * Session is built, unlike skills, which are read from disk on demand. The plugin's server
+   * modules are the caller's to bring along, after everything else it does with this generation
+   * (PluginModules.ensure re-assembles the App; company mode's reconcile calls it last).
    */
   async updatePlugin(projectId: string, agentId: string, pluginName: string): Promise<void> {
-    for (const plugin of resolveLibraryPlugins([pluginName])) {
+    const plugins = resolveLibraryPlugins(this.library, [pluginName]);
+    await this.migrateWorkbenches(projectId, agentId);
+    for (const plugin of plugins) {
       await installPlugin(this.root, projectId, agentId, plugin);
     }
   }
@@ -516,9 +659,12 @@ export class AgentService implements AgentLifecycle {
    * stats are unaffected); the caller drops the Agent's other index rows.
    */
   async deleteAgent(projectId: string, agentId: string): Promise<AgentDeletionInfo> {
-    refuseBuiltinDeletion(agentId);
+    await refuseBuiltinDeletion(this.agentConfig, projectId, agentId);
     const deletionId = await this.moveAside(projectId, agentId);
     this.agents.delete(projectId, agentId);
+    // Its workbenches' runtime files (sockets, locks) sit apart, at a short path (core's runDir).
+    // A link where a level belongs is left alone rather than followed; the deletion stands.
+    await removeBelow(this.root, agentRunDir(this.root, projectId, agentId)).catch(() => undefined);
     if (deletionId === null) {
       // The folder was already gone: there is nothing to remove.
       return { deletionId: `${agentId}-0`, agentId, phase: "done", total: 0, removed: 0 };
@@ -537,28 +683,27 @@ export class AgentService implements AgentLifecycle {
    * another. Folders a deletion of this process is already removing are left to it.
    */
   async resumeDeletions(): Promise<void> {
-    let projects: Dirent[] = [];
+    let projects: string[];
     try {
-      projects = await fs.readdir(this.root, { withFileTypes: true });
+      projects = (await listProjectDirs(this.root)).map((project) => project.id);
     } catch {
       return;
     }
-    for (const project of projects) {
-      if (!project.isDirectory() || !isValidId(project.name)) continue;
+    for (const projectId of projects) {
       let entries: string[] = [];
       try {
-        entries = await fs.readdir(deletingDir(this.root, project.name));
+        entries = await fs.readdir(deletingDir(this.root, projectId));
       } catch {
         continue;
       }
       for (const name of entries) {
         if (this.stopping.signal.aborted) return;
         if (!isValidId(name)) continue;
-        const known = this.deletions.get(`${project.name}/${name}`);
+        const known = this.deletions.get(`${projectId}/${name}`);
         if (known && (known.phase === "counting" || known.phase === "removing")) continue;
         const agentId = DELETION_NAME.exec(name)?.[1] ?? name;
-        this.startPurge(project.name, name, agentId);
-        await this.running.get(`${project.name}/${name}`);
+        this.startPurge(projectId, name, agentId);
+        await this.running.get(`${projectId}/${name}`);
       }
     }
   }
@@ -652,41 +797,39 @@ export class AgentService implements AgentLifecycle {
   /**
    * Create an Agent: the id is chosen by the creator (a semantic id, checked for
    * duplicates against both the DB and the directory within the Project — a 409
-   * if taken, which naturally also blocks built-in Agent ids) → initialize State →
+   * if taken, which naturally also blocks built-in Agent ids, and 409 `agent_id_reserved` for
+   * the system Agent's id where the Project does not have it yet) → initialize State →
    * write name/description (name defaults to the id) → install the seed plugins.
    *
    * `pluginNames` are library plugin names picked at creation; they go through the same
    * `installPlugin` writer the plugin routes use, inside the same cleanup window as the rest
    * of initialization, so an Agent never survives with only part of its picked set. They are
-   * resolved before anything is created, so an unknown name creates no directory at all.
+   * resolved before anything is created, so an unknown name creates no directory at all. The
+   * library's default-install plugins join them (seedPluginNames) unless `defaultPlugins` is
+   * false: every new Agent has goal mode and Plan mode, whose hooks do nothing until the mode
+   * is picked. The system Agent is provisioned by core's presets, never through here.
    *
-   * `archive` is an exported Agent State snapshot package: the fresh Agent is seeded from
-   * it instead of the default template (explicit name/description override the package's
-   * values, absent ones keep them — no id fallback). Mutually exclusive with seeding: the
-   * package carries its own skills and hooks. An invalid package fails the whole creation
-   * inside the same cleanup window, leaving no empty Agent behind.
+   * `archive` is an Agent package (the import route's): the fresh Agent takes its State, name,
+   * description and version instead of the template's, and its Traces land once the State is
+   * in. An invalid package fails the whole creation inside the same cleanup window, leaving no
+   * empty Agent behind.
+   *
+   * `author` says how this Agent came to be, `user` when the creator names none, and is written
+   * into a template-made Agent. An imported Agent keeps the package's own `author` (none reads
+   * as `user`): an import moves an existing Agent, it does not make a new one.
    */
   async createAgent(
     projectId: string,
     agentId: string,
-    name?: string,
-    description?: string,
-    pluginNames?: readonly string[],
-    directory?: { path: string; names: readonly string[] },
-    archive?: Buffer,
+    creation: AgentCreation = {},
   ): Promise<AgentListItem> {
-    if (!SEMANTIC_ID_PATTERN.test(agentId)) {
+    const { name, description, plugins: pluginNames, directory, archive } = creation;
+    const author = creation.author ?? "user";
+    if (!isNewSemanticId(agentId)) {
       throw new HttpError(
         400,
         "invalid_agent_id",
-        `Agent id must be 2–64 characters: ${SEMANTIC_ID_RULE}.`,
-      );
-    }
-    if (archive !== undefined && (pluginNames?.length || directory)) {
-      throw new HttpError(
-        400,
-        "snapshot_with_plugins",
-        "Snapshot initialization and seeding are mutually exclusive: the package carries its own skills and hooks.",
+        `Agent id must be 2–64 characters: ${SEMANTIC_ID_RULE}; ${NEW_ID_RULE}.`,
       );
     }
     const taken =
@@ -698,39 +841,37 @@ export class AgentService implements AgentLifecycle {
     if (taken) {
       throw new HttpError(409, "agent_exists", `Agent id is already taken: ${agentId}.`);
     }
+    refuseReservedAgentId(agentId);
     const displayName = name ?? agentId;
     // Both sources are resolved before a single file is written, so a name that has since left the
     // library or the directory fails while the Agent still does not exist. Directory Skills are
     // installed after the library plugins and so win a name collision: the user picked that
     // directory for this Agent specifically, which is a narrower intent than "install the
     // built-in one".
-    const librarySeed = resolveLibraryPlugins(pluginNames ?? []);
+    const librarySeed = resolveLibraryPlugins(
+      this.library,
+      seedPluginNames(
+        pluginNames ?? [],
+        archive === undefined && creation.defaultPlugins !== false
+          ? this.library.defaultInstalled()
+          : [],
+      ),
+    );
     const directorySeed = directory
       ? await resolveDirectorySkills(directory.path, directory.names)
       : [];
     await coreCreateAgent({ root: this.root, projectId, agentId });
     try {
       if (archive !== undefined) {
-        // Seed the fresh state from the snapshot package. No pre-import snapshot and no
-        // version confirmation: both guards protect existing State, and this Agent has
-        // none yet — its template state is not worth preserving.
-        await this.snapshots.importArchive(projectId, agentId, archive, {
-          confirm: true,
-          preSnapshot: false,
-        });
-        // Explicit name/description override the package's values; absent ones keep them.
-        // No id fallback here: the package is the identity being copied in.
-        if (name !== undefined || description !== undefined) {
-          await this.agentConfig.updateConfig(projectId, agentId, {
-            config: {
-              ...(name !== undefined ? { name } : {}),
-              ...(description !== undefined ? { description } : {}),
-            },
-          });
-        }
+        // No pre-import snapshot: it protects existing State, and this Agent has none yet.
+        await this.snapshots.importArchive(projectId, agentId, archive, { preSnapshot: false });
       } else {
         await this.agentConfig.updateConfig(projectId, agentId, {
-          config: { name: displayName, ...(description !== undefined ? { description } : {}) },
+          config: {
+            name: displayName,
+            ...(description !== undefined ? { description } : {}),
+            author,
+          },
         });
       }
       for (const plugin of librarySeed) {
@@ -760,11 +901,17 @@ export class AgentService implements AgentLifecycle {
     const meta = await this.agentConfig.readCardMeta(projectId, agentId);
     const cardName = archive !== undefined ? (meta.name ?? agentId) : displayName;
     const cardDescription = archive !== undefined ? meta.description : description;
-    const installed = await this.installedPlugins(projectId, agentId, loadLibraryPlugins());
-    return {
+    const installed = await this.installedPlugins(
+      projectId,
+      agentId,
+      indexAgentPlugins(this.library.list()),
+    );
+    const avatarRev = await agentAvatarRev(this.root, projectId, agentId).catch(() => undefined);
+    const item: AgentListItem = {
       agentId,
       name: cardName,
       ...(cardDescription !== undefined ? { description: cardDescription } : {}),
+      author: meta.author,
       createdAt,
       updatedAt: createdAt,
       toolCount: meta.toolCount,
@@ -775,10 +922,29 @@ export class AgentService implements AgentLifecycle {
       vaultKeyCount: 0,
       scheduleCount: await this.scheduleCount(projectId, agentId),
       workbenchCount: await this.workbenchCount(projectId, agentId),
+      ...(meta.mcpPluginNames
+        ? { pluginCount: new Set([...installed.pluginNames, ...meta.mcpPluginNames]).size }
+        : {}),
       skillCount: installed.skillCount,
       hookCount: installed.hookCount,
       pluginUpdates: installed.updates,
       memoryCount: await this.memoryCount(projectId, agentId),
+      // A package may carry the Agent's picture, like any other file of its State.
+      ...(avatarRev !== undefined ? { avatarRev } : {}),
     };
+    // LAST: bringing the plugins' server modules along may re-assemble the App. The Agent exists
+    // and its answer is built; a module that does not come up never undoes the Agent.
+    if (creation.actor !== undefined && librarySeed.length > 0) {
+      await this.pluginModules
+        .ensure(
+          projectId,
+          librarySeed.map((plugin) => plugin.name),
+          creation.actor,
+          "install",
+          agentId,
+        )
+        .catch(() => []);
+    }
+    return item;
   }
 }

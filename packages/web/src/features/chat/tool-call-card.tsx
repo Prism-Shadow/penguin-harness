@@ -10,19 +10,28 @@
  * understate this step's cost. While waiting on approval, the already-settled generation
  * segment is shown; the wait itself is marked by the hourglass icon alone, since the approval
  * block below the row is always on screen and names the tool and its arguments.
+ *
+ * A call from a history window may carry its output, a long argument or a child's inline image
+ * folded: the card shows the preview (head, an ellipsis line, tail — inside the argument's own
+ * string when an argument was folded) and fetches the whole when it is opened (elided-body.tsx),
+ * then shows that instead. An approval never shows a folded value: its block reads the call the
+ * pending approval carries, which the server always sends whole.
  */
 import { useMemo } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
 import { ToolCallCard, useElapsedPast } from "@prismshadow/penguin-ui";
-import type { RunState, ToolCallDuration } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
+import { elidedArgumentsPreview, elidedPreview } from "../../lib/history/elided-preview";
 import { routedUrl } from "../../lib/session-machines";
-import { approvalKey } from "../../lib/amsp/stream-model";
-import type { ToolCallItem } from "../../lib/amsp/stream-model";
+import { approvalKey, type ToolCallItem } from "../../lib/amsp/stream-model";
+
 import { useTheme } from "../../state/theme";
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
+import { ElidedBodyNote, hasElidedNote } from "./elided-body";
+import { toolActivity } from "./tool-activity";
 import { SessionSubagentChip } from "./subagent-chip";
 import type { StreamRenderContext } from "./message-stream";
 
@@ -65,9 +74,9 @@ function pathArgument(name: string): string | null {
  * CLI's tool-render). The full path stays in the expanded arguments block.
  */
 export function shortenPath(p: string): string {
-  const segments = p.split("/").filter((s) => s.length > 0);
-  if (segments.length <= 2) return p;
-  return `…/${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
+  const separator = p.includes("/") ? "/" : "\\";
+  const segments = p.split(separator).filter(Boolean);
+  return segments.length <= 2 ? p : ["…", ...segments.slice(-2)].join(separator);
 }
 
 /**
@@ -95,56 +104,35 @@ export function previewArguments(name: string, argsJson: string): string {
 }
 
 /**
- * Collapsed-header subtitle: the human-readable line next to the tool name — the
- * model-written `description` argument when the call carries one (declared in the tool's
- * config schema; per-tool `call_description: false` removes it, in which case the model
- * never sends it), or the shortened file path for the file tools. Null when there is
- * nothing beyond the raw arguments.
+ * Read a call's header from the arguments as they stream: the model-written `description`
+ * argument and, for the file tools, the file path. Wait for each field's closing quote before
+ * showing it (#137), unless the call ended before closing the string. The compact header shows
+ * both; a regular row has one subtitle and prefers the description.
  *
- * The subtitle appears once, fully formed, never mid-stream (#137): a growing description
- * re-solves the header's flex line every frame, and `shortenPath` on a still-growing path
- * rewrites non-monotonically (`/ho` → `…/cc/dev` → `…/dev/x`) — so a field renders only
- * after its closing quote. `settled` (arguments finished streaming) lifts that gate: the
- * text cannot change anymore, which also covers a call that never closed the string
- * (aborted / malformed). Same rule as the CLI's tool-render. The wait is short by
- * construction — `description` is required first in schema order, and `file_path` is the
- * first file-tool argument — while `write_file`'s `content` may stream long after.
+ * Only the built-in tools that declare `description` (and the file tools, whose schema may enable
+ * it) are read for one: any other tool's `description` is payload — an issue's body, an event's
+ * notes — not a line about the call.
  */
-export function headerSubtitle(name: string, argsJson: string, settled = true): string | null {
-  // The description wins whenever the call carries one: schemas are user-editable, so a
-  // file tool may have `description` enabled even though the default schema leaves it out
-  // (the CLI derives the same rule from the session's schemas).
-  if (DESCRIBED_TOOLS.has(name) || FILE_TOOLS.has(name)) {
-    const desc = extractStringField(argsJson, "description");
-    if (desc !== null) {
-      if (!desc.complete && !settled) return null;
-      const line = desc.value.replace(/\s+/g, " ").trim();
-      if (line) return line;
-    }
-    if (DESCRIBED_TOOLS.has(name)) return null;
-  }
-  const pathArg = pathArgument(name);
-  if (pathArg !== null) {
-    const filePath = extractStringField(argsJson, pathArg);
-    if (filePath !== null) {
-      if (!filePath.complete && !settled) return null;
-      const line = filePath.value.replace(/\s+/g, " ").trim();
-      if (line) return shortenPath(line);
-    }
-  }
-  return null;
-}
-
-/**
- * The whole path behind a subtitle `headerSubtitle` shortened (`…/parent/file`), for its hover
- * hint; null when the subtitle is a description, or a path short enough to show whole.
- */
-export function headerSubtitlePath(name: string, argsJson: string, settled = true): string | null {
-  const shown = headerSubtitle(name, argsJson, settled);
-  const pathArg = pathArgument(name);
-  if (shown === null || pathArg === null) return null;
-  const full = extractStringField(argsJson, pathArg)?.value.replace(/\s+/g, " ").trim() ?? "";
-  return full !== "" && full !== shown && shortenPath(full) === shown ? full : null;
+export function toolHeaderDetails(name: string, argsJson: string, settled = true) {
+  const desc =
+    DESCRIBED_TOOLS.has(name) || FILE_TOOLS.has(name)
+      ? extractStringField(argsJson, "description")
+      : null;
+  const rawDescription = desc && (desc.complete || settled) ? desc.value.trim() : "";
+  const key = pathArgument(name);
+  const file = key && extractStringField(argsJson, key);
+  const full = file && (file.complete || settled) ? file.value.trim() : "";
+  const path = full ? { short: shortenPath(full), full } : undefined;
+  const description =
+    rawDescription && rawDescription !== full && rawDescription !== path?.short
+      ? rawDescription.replace(/\s+/g, " ")
+      : undefined;
+  return {
+    description,
+    path,
+    subtitle: description ?? path?.short ?? null,
+    subtitleFull: !description && path && path.short !== full ? full : null,
+  };
 }
 
 /**
@@ -304,11 +292,24 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
   // the app (the tools config table, permission rules, the Trace viewer) keeps reading
   // `item.name`, so an alias can never change what a call means.
   const displayName = toolDisplayName(item.name, toolAliases);
+  const { subtitle, subtitleFull } = toolHeaderDetails(
+    item.name,
+    item.argumentsText,
+    !item.callStreaming,
+  );
+  // What is approved is what the approval itself carries: the whole call, never a history
+  // window's folded copy of it.
+  const approvalArguments = pending?.toolCall.payload.arguments ?? item.argumentsText;
   // Escape sequences are stripped at render time only (the stored stream/trace data keeps its
   // raw bytes): hardened child envs should no longer produce any, but historical traces and
   // force-color programs still can (#102). Memoized — the aggregated output can be large and
   // grows on every streamed delta.
-  const output = useMemo(() => stripAnsi(item.output), [item.output]);
+  const output = useMemo(
+    () => stripAnsi(elidedPreview(item.output, item.elidedOutput, "payload.output", "\n…\n")),
+    [item.output, item.elidedOutput],
+  );
+  // A child's inline image that came folded has no picture to draw until it is fetched.
+  const images = item.images?.filter((src) => src !== "") ?? [];
   // Executing = the call has finished streaming, output hasn't arrived yet, and it's not waiting on approval (approval wait time doesn't count toward execution).
   const executing = item.callComplete && !item.outputComplete && !pending;
   // Whether the execution segment has run long enough for the "move to background" action (one
@@ -322,64 +323,7 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
     executing ? (item.localApprovalAtMs ?? item.approvalAtMs ?? item.callStartedAtMs) : undefined,
     BACKGROUND_ACTION_DELAY_MS,
   );
-  // Argument-generation segment (settled): the live execution timer accumulates on top of this as a baseline, so the displayed duration doesn't shrink back once output arrives.
-  const genMs =
-    item.argStartedAtMs !== undefined && item.callStartedAtMs !== undefined
-      ? Math.max(0, item.callStartedAtMs - item.argStartedAtMs)
-      : 0;
-  const failed = item.outputStatus !== undefined && item.outputStatus !== "completed";
-  const state: RunState = pending
-    ? "waiting"
-    : executing || item.callStreaming
-      ? "running"
-      : failed
-        ? "failed"
-        : "done";
-  // Decision wording ("Approved · manual", "Denied · manual", …): carried ONLY by the status
-  // icon's title/aria-label — per review the row shows no visible decision text at any
-  // breakpoint; the icon is the single source of truth for how the call was decided.
-  const decisionText = item.decision
-    ? `${item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny} · ${
-        item.decision === "forbidden"
-          ? S.chat.decisionPolicy
-          : item.decisionSource === "manual"
-            ? S.chat.decisionManual
-            : S.chat.decisionAuto
-      }`
-    : null;
-  // A denial reports status "aborted" on the output it feeds back — a person's "deny" and the
-  // command policy's "forbidden" alike; that abort IS the decision, so the icon reads
-  // "Denied · …" (the label's second half names the decider) rather than falling through to
-  // the raw status. A call interrupted while running (or cut short while streaming) carries no
-  // deny decision, so the label falls through to its status below.
-  const denied =
-    (item.decision === "deny" || item.decision === "forbidden") && item.outputStatus === "aborted";
-  const stateLabel = pending
-    ? S.chat.approvalWaiting
-    : state === "running"
-      ? S.chat.workRunning
-      : state === "done"
-        ? (decisionText ?? S.chat.workDone)
-        : denied
-          ? (decisionText ?? undefined)
-          : item.outputStatus;
-  // Total duration = argument generation + execution, excluding the approval wait: settled once
-  // known; while executing, a live segment from the approval grant (or from call completion when
-  // no approval was needed) on top of the generation baseline; while waiting on approval, frozen
-  // at the settled generation segment; while the arguments stream, a live clock from their start
-  // (an ellipsis when no start time is known).
-  const duration: ToolCallDuration | undefined =
-    item.durationMs !== undefined
-      ? { live: false, ms: item.durationMs }
-      : executing
-        ? { live: true, sinceMs: item.approvalAtMs ?? item.callStartedAtMs, offsetMs: genMs }
-        : pending
-          ? genMs > 0
-            ? { live: false, ms: genMs }
-            : undefined
-          : item.callStreaming
-            ? { live: true, sinceMs: item.argStartedAtMs }
-            : undefined;
+  const { state, stateLabel, duration } = toolActivity(item, !!pending);
   const sendToBackground = ctx.onSendToBackground;
 
   return (
@@ -392,9 +336,9 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
       nameTooltip={displayName === item.name ? undefined : item.name}
       // Settled once argument streaming stopped (or the complete call arrived): the subtitle's
       // completeness gate is lifted — whatever is there is final.
-      subtitle={headerSubtitle(item.name, item.argumentsText, !item.callStreaming)}
+      subtitle={subtitle}
       // A file path the subtitle shortened keeps its whole form one hover away.
-      subtitleFull={headerSubtitlePath(item.name, item.argumentsText, !item.callStreaming)}
+      subtitleFull={subtitleFull}
       duration={duration}
       // A call made with run_in_background, or moved there: the row says where its work went.
       marker={
@@ -425,23 +369,32 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
       pending={
         pending
           ? {
-              preview: previewArguments(item.name, item.argumentsText),
-              payload: pendingFilePayload(item.name, item.argumentsText),
+              preview: previewArguments(item.name, approvalArguments),
+              payload: pendingFilePayload(item.name, approvalArguments),
+              // A command-policy rule asked, not the approval mode: the block says which one,
+              // or a person who allowed everything would not know why this call stopped.
+              ...(pending.reason?.kind === "policy"
+                ? {
+                    reason: {
+                      text: S.chat.approvalPolicyReason(pending.reason.rule),
+                      hint: S.chat.approvalPolicyReasonHint,
+                    },
+                  }
+                : {}),
               onDecide: (decision) => ctx.onApprove(item.toolCallId, decision, ctx.origin),
               labels: { allow: S.chat.approve, deny: S.chat.deny },
             }
           : undefined
       }
-      argumentsText={item.argumentsText}
+      argumentsText={elidedArgumentsPreview(item.argumentsText, item.elidedCall, "\n…\n")}
       output={output}
       outputStreaming={item.outputStreaming}
       images={
         // Inline bytes live, or a windowed history page's Trace references, which the browser
         // must fetch from the machine the Session lives on.
-        item.images && item.images.length > 0
-          ? { srcs: item.images.map(routedUrl), alt: S.chat.toolImageAlt }
-          : undefined
+        images.length > 0 ? { srcs: images.map(routedUrl), alt: S.chat.toolImageAlt } : undefined
       }
+      bodyNote={hasElidedNote(item) ? <ElidedBodyNote item={item} /> : undefined}
       // A bound subagent: a shortcut row into the subagents panel, shown whatever the card's
       // collapsed state (the nested conversation itself no longer renders inline).
       footer={

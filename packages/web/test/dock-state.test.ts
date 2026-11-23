@@ -315,6 +315,22 @@ describe("the panel toggle (Ctrl+`)", () => {
 });
 
 describe("persistence", () => {
+  it("keeps temporary application tabs in the window and preserves the saved panel selection", async () => {
+    const owner = dock.currentDockScope();
+    dock.openPanel("memory", "right");
+    dock.openPanel("agents", "right");
+    dock.activateTab("memory");
+    dock.openPanel(":app:penguin_support/support", "right");
+    expect(dock.dockActiveKey("right")).toBe(":app:penguin_support/support");
+    dock.setDockScope("temporary-app-other");
+    dock.setDockScope(owner);
+    expect(dock.dockActiveKey("right")).toBe(":app:penguin_support/support");
+    vi.resetModules();
+    dock = await import("../src/features/dock/dock-state");
+    dock.setDockScope(owner);
+    expect(dock.dockActiveKey("right")).toBe("memory");
+    expect(dock.dockTabs("right").map(dock.tabKey)).toEqual(["memory", "agents"]);
+  });
   it("round-trips each scope's arrangement — tabs, active, open flags — across a reload", async () => {
     const a = `scope-persist-a-${scopeSeq}`;
     const b = `scope-persist-b-${scopeSeq}`;
@@ -631,3 +647,79 @@ describe("fullscreen", () => {
     expect(responsive.fullscreenDock()).toBeNull();
   });
 });
+
+it("offers only explicit registered panel opens to the Session workbench adapter", () => {
+  const take = vi.fn((id: string) => id === "workspace");
+  dock.setSessionPanelOpener(take);
+  try {
+    dock.openPanel("workspace");
+    expect(dock.panelDock("workspace")).toBeNull();
+    dock.openNativePanel("workspace", "bottom");
+    expect(dock.panelDock("workspace")).toBe("bottom");
+    dock.openPanel("memory");
+    dock.openPanel(":app:custom");
+    dock.activateTab("memory");
+    expect(take.mock.calls).toEqual([["workspace"], ["memory"]]);
+    expect(dock.isTabShown("memory")).toBe(true);
+  } finally {
+    dock.setSessionPanelOpener(null);
+  }
+});
+
+it("removing app tabs restores the user's last active ordinary panel", () => {
+  dock.openPanel("memory");
+  dock.openPanel("agents");
+  dock.activateTab("memory");
+  dock.openPanel(":app:first");
+  dock.openPanel(":app:second");
+  dock.detachDockPage(":app:second");
+  expect(dock.dockActiveKey("right")).toBe(":app:first");
+  dock.clearDockPages();
+  expect(dock.dockActiveKey("right")).toBe("memory");
+});
+
+it("separates same-ID machine workbench docks without writing new saved layouts", () => {
+  const session = "session-shared-id";
+  dock.setDockScope(session);
+  dock.openPanel("agents");
+  dock.setDockScope(session, "office-window");
+  expect(dock.currentDockScope()).toBe(session);
+  expect(dock.panelDock("agents")).toBeNull();
+  dock.openPanel("memory");
+  dock.openPanel(":app:office-files");
+  dock.setDockScope(session, "studio-window");
+  expect(dock.panelDock(":app:office-files")).toBeNull();
+  expect(dock.panelDock("memory")).toBeNull();
+  dock.openPanel(":app:studio-files");
+  dock.setDockScope(session, "office-window");
+  expect(dock.isTabShown(":app:office-files")).toBe(true);
+  expect(dock.panelDock(":app:studio-files")).toBeNull();
+  dock.setDockScope(session);
+  expect(dock.isTabShown("agents")).toBe(true);
+  const saved = JSON.parse(localStorage.getItem("penguin.dock.layout")!).scopes;
+  expect(saved[session]).toBeDefined();
+  expect(saved["office-window"]).toBeUndefined();
+  expect(saved["studio-window"]).toBeUndefined();
+});
+
+it.each(["right", "bottom"] as const)(
+  "temporarily presents a saved %s panel in the right dock and restores its arrangement",
+  (edge) => {
+    dock.openPanel("memory", edge);
+    dock.toggleDock(edge);
+    const scope = dock.currentDockScope()!;
+    const saved = () => JSON.parse(localStorage.getItem("penguin.dock.layout")!).scopes[scope];
+    const original = saved();
+    const key = ":app:session-tool/memory";
+    dock.openDockPage(key, "memory");
+    expect(dock.dockViews().map(({ position, tabs }) => [position, tabs.map(dock.tabKey)])).toEqual(
+      [["right", [key]]],
+    );
+    expect(dock.borrowedDockPanel(key)).toBe("memory");
+    expect(saved()).toEqual(original);
+    dock.detachDockPage(key);
+    expect(dock.dockViews()).toEqual([]);
+    expect(dock.closedDockView(edge)?.tabs.map(dock.tabKey)).toEqual(["memory"]);
+    expect(saved()).toEqual(original);
+  },
+);

@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { AgentSummary, MachinesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
 import { cachedMachineAgents, rememberMachineAgents } from "./machine-cache";
+import { isSystemAgent } from "./builtin-agents";
 import { machineLink, remoteAgentsEmpty } from "./machine-link";
 import type { MachineLink } from "./machine-link";
 import { createReadStore, readKey, useRead, useReads } from "./read-store";
@@ -36,12 +37,21 @@ function agentListKey(projectId: string, machineId: string): string {
   return key;
 }
 
+/**
+ * A machine's Agents as this server shows them: without the machine's own system Agent, whose
+ * system apps this server already reaches the machine through (the plugin market's machine
+ * picker, Machines). A machine on an older server has none to drop.
+ */
+function shownMachineAgents(agents: readonly AgentSummary[]): AgentSummary[] {
+  return agents.filter((agent) => !isSystemAgent(agent));
+}
+
 /** The lists' storage: what each machine was last seen running (lib/machine-cache.ts). */
 const listStorage: ReadStorage<AgentSummary[]> = {
   load: (key) => {
     const owner = keyOwners.get(key);
     if (owner === undefined) return null;
-    const remembered = cachedMachineAgents(owner.projectId, owner.machineId);
+    const remembered = shownMachineAgents(cachedMachineAgents(owner.projectId, owner.machineId));
     // An empty list is never written down (it clears the entry): nothing remembered.
     return remembered.length === 0 ? null : remembered;
   },
@@ -60,7 +70,7 @@ export const agentLists: ReadStore<AgentSummary[]> = createReadStore({ storage: 
 
 /** Asks the machine for its Agents. */
 const fetchMachineAgents = (projectId: string, machineId: string) =>
-  api.listAgents(projectId, machineId).then((res) => res.agents);
+  api.listAgents(projectId, machineId).then((res) => shownMachineAgents(res.agents));
 
 const changeListeners = new Set<(machineId: string) => void>();
 
@@ -315,6 +325,44 @@ export function useMachineAgents(projectId: string | null): {
   );
 
   return { lists, reload };
+}
+
+/**
+ * Every installed machine's Agents as they are held right now — what a page last read there, or
+ * what storage remembers — without asking any machine. For a reader that only looks an Agent up
+ * (its picture, lib/agent-avatar.ts) on surfaces that never list a machine's Agents themselves:
+ * it must not add a request per mount, and it follows the lists as the pages that read them
+ * update the store.
+ */
+export function useHeldMachineAgents(
+  projectId: string | null,
+): ReadonlyMap<string, readonly AgentSummary[]> {
+  const machines = useMachines();
+  const ids =
+    projectId === null
+      ? []
+      : agentMachines(machines.state, machines.settled).map((m) => m.machineId);
+  const states = useReads(
+    agentLists,
+    projectId === null
+      ? []
+      : ids.map((machineId) => ({
+          key: agentListKey(projectId, machineId),
+          run: () => fetchMachineAgents(projectId, machineId),
+          enabled: false,
+        })),
+  );
+  const idsKey = ids.join(",");
+  return useMemo(
+    () =>
+      new Map(
+        (idsKey === "" ? [] : idsKey.split(",")).map((id, i) => [
+          id,
+          states[i]?.value ?? NO_AGENTS,
+        ]),
+      ),
+    [idsKey, states],
+  );
 }
 
 /**

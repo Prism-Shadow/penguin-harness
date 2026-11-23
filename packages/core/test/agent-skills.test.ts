@@ -7,7 +7,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { librarySkill } from "../src/index.js";
 import {
   AGENTS_MD_PLACEHOLDER,
   DEFAULT_AGENT_ID,
@@ -21,6 +20,7 @@ import {
   skillMetadataSection,
   skillsDir,
 } from "../src/state/index.js";
+import type { IconImage } from "../src/index.js";
 
 let tmpRoot: string;
 
@@ -32,7 +32,14 @@ afterEach(async () => {
   await fs.rm(tmpRoot, { recursive: true, force: true });
 });
 
-const install = (name: string, content: string, icon?: string) =>
+/** An SVG icon as an install is handed one. */
+const svgIcon = (text: string): IconImage => ({
+  format: "svg",
+  bytes: new TextEncoder().encode(text),
+  tint: false,
+});
+
+const install = (name: string, content: string, icon?: IconImage) =>
   installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
     name,
     content,
@@ -44,9 +51,15 @@ const skillFile = (name: string, file: string) =>
 const skillMd = (name: string) => skillFile(name, "SKILL.md");
 const skillIcon = (name: string) => skillFile(name, "icon.svg");
 
+/** A library Skill as the loader stamps it: full frontmatter, then the body. */
+const stampedSkill = (name: string) => ({
+  name,
+  content: `---\nname: ${name}\ndescription: Configure ${name}.\nshort_description: ${name}\nversion: 2026.09.01.1\n---\n\n# ${name}\n\n## Before you start\n\nAsk first.\n`,
+});
+
 describe("installSkill / removeSkill", () => {
   it("writes skills/<name>/SKILL.md verbatim with a trailing newline", async () => {
-    const skill = librarySkill("penguin-config")!.skill;
+    const skill = stampedSkill("penguin-config");
     await install(skill.name, skill.content);
     expect(await fs.readFile(skillMd("penguin-config"), "utf8")).toBe(skill.content);
 
@@ -65,7 +78,7 @@ describe("installSkill / removeSkill", () => {
     // Library skills carry no icon (the plugin owns it), but installSkill still accepts one —
     // for user-authored skills and zip imports. An install with an icon writes it to disk.
     const icon = "<svg><rect /></svg>";
-    await install("penguin-sdk", librarySkill("penguin-sdk")!.skill.content, icon);
+    await install("penguin-sdk", stampedSkill("penguin-sdk").content, svgIcon(icon));
     expect(await fs.readFile(skillIcon("penguin-sdk"), "utf8")).toBe(icon);
 
     // Overwrite semantics: this install has no icon -> the old icon.svg is removed, and the
@@ -119,14 +132,14 @@ describe("installSkill / removeSkill", () => {
   });
 
   it("stages the install and leaves no staging directory behind", async () => {
-    const skill = librarySkill("penguin-sdk")!.skill;
+    const skill = stampedSkill("penguin-sdk");
     await install(skill.name, skill.content);
     const entries = await fs.readdir(skillsDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
     expect(entries).toEqual(["penguin-sdk"]);
   });
 
   it("removeSkill deletes the whole skill directory and is idempotent", async () => {
-    const skill = librarySkill("penguin-sdk")!.skill;
+    const skill = stampedSkill("penguin-sdk");
     await install(skill.name, skill.content);
     await removeSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, "penguin-sdk");
     await expect(fs.access(skillMd("penguin-sdk"))).rejects.toThrow();
@@ -156,8 +169,8 @@ describe("listInstalledSkills", () => {
     ]);
   });
 
-  it("returns icon.svg content and passes short description fields through", async () => {
-    const icon = '<svg viewBox="0 0 24 24"><path d="M4 4h16" /></svg>\n';
+  it("returns the icon in the directory and passes short description fields through", async () => {
+    const icon = svgIcon('<svg viewBox="0 0 24 24"><path d="M4 4h16" /></svg>\n');
     await install(
       "with-extras",
       "---\nname: with-extras\ndescription: Long description here.\nshort_description: Short one.\nshort_description_zh: 短描述。\nversion: 2026.07.17.1\n---\n\nBody\n",

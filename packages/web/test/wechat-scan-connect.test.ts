@@ -16,8 +16,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { WeChatBindingInfo, WeChatScanPollResponse } from "@prismshadow/penguin-server/api";
 import { ApiError } from "../src/api/client";
-import { WeChatScanConnect, wechatScanStep } from "../src/features/messaging/wechat-scan-connect";
-import type { WeChatScanTally } from "../src/features/messaging/wechat-scan-connect";
+import {
+  WeChatScanConnect,
+  wechatScanStep,
+  type WeChatScanTally,
+} from "../src/features/messaging/wechat-scan-connect";
+
 import { S } from "../src/lib/strings";
 
 describe("WeChatScanConnect", () => {
@@ -117,11 +121,13 @@ describe("wechatScanStep", () => {
     expect(wechatScanStep(failed(error), { failures: 1, refreshes: 0 })).toEqual({ kind: "wait" });
     // Failing over and over is not transient any more. Giving up releases the task: nothing
     // resolved it, so the server would otherwise hold its handle until the sweep.
+    // The error stays beside its words, so the toast offers its report.
     expect(wechatScanStep(failed(error), { failures: 2, refreshes: 0 })).toEqual({
       kind: "stop",
       notice: S.wechat.scanFailed("bad gateway"),
       tone: "error",
       releaseTask: true,
+      error,
     });
     // One answer that came back resets the run — the loop passes failures: 0 again.
     expect(wechatScanStep(ok({ status: "pending" }), { failures: 2, refreshes: 0 })).toEqual({

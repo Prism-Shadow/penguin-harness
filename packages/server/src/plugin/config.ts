@@ -43,8 +43,11 @@ import type {
   PluginConfigTableRow,
   PluginConfiguration,
 } from "../api/types.js";
-import { Settings } from "../mechanisms/settings.js";
+import { Settings } from "@prismshadow/penguin-library-setting";
 import { maskApiKey } from "../services/project-config-service.js";
+import { pluginHostFrom, pluginPackageDisplayOf, pluginPackageOf, pluginTitleOf } from "./host.js";
+import type { PluginPackageDisplay } from "./host.js";
+import { iconRef } from "../http/icon-response.js";
 
 export type { PluginConfigField, PluginConfigNotice, PluginConfiguration } from "../api/types.js";
 
@@ -533,6 +536,18 @@ export function parsePluginConfiguration(
       }
       field.maxItems = f.maxItems;
     }
+    if (field.type === "list" && f.items !== undefined) {
+      const items = (f.items ?? {}) as Record<string, unknown>;
+      if (typeof items !== "object" || Array.isArray(items)) {
+        throw new Error(`${where}: configuration.properties.${name}.items must be an object`);
+      }
+      if (items.options !== undefined) {
+        // The same check an enum's options get: the page draws a picker from them.
+        field.items = {
+          options: parseOptions(items.options, `${where}: configuration.properties.${name}.items`),
+        };
+      }
+    }
     if (field.type === "number") {
       for (const key of ["minimum", "maximum"] as const) {
         const v = f[key];
@@ -575,6 +590,12 @@ export function parsePluginConfiguration(
         throw new Error(`${where}: configuration.properties.${name}.advanced must be a boolean`);
       }
       if (f.advanced) field.advanced = true;
+    }
+    if (f.security !== undefined) {
+      if (typeof f.security !== "boolean") {
+        throw new Error(`${where}: configuration.properties.${name}.security must be a boolean`);
+      }
+      if (f.security) field.security = true;
     }
     if (f.default !== undefined) {
       if (!valueFits(field, f.default) || valueViolation(name, field, f.default) !== undefined) {
@@ -759,8 +780,11 @@ export function applyUpdate(
       }
       const violation = valueViolation(name, field, items);
       if (violation !== undefined) throw new PluginConfigError(name, violation);
-      if (items.length === 0) delete next[name];
-      else next[name] = items;
+      if (items.length === 0 && (!Array.isArray(field.default) || field.default.length === 0)) {
+        delete next[name];
+      } else {
+        next[name] = items;
+      }
       continue;
     }
     next[name] = typeof value === "string" ? value.trim() : value;
@@ -802,6 +826,8 @@ export interface SettingsGroup {
   name: string;
   configuration: PluginConfiguration;
   parent?: string;
+  /** The module that declared it: what names the plugin package it belongs to. */
+  from?: string;
 }
 
 /** What a module reads: the group it declared, and a watch on it. */
@@ -832,7 +858,17 @@ export abstract class PluginConfigEntries {
 export interface PluginConfigStoreDeps {
   settings: Pick<Settings, "get" | "set">;
   groups: () => readonly SettingsGroup[];
+  /** The npm package of the plugin a module belongs to; undefined for the host's own modules. */
+  packageOf?: (module: string) => string | undefined;
+  /** A loaded plugin's display name, from its card; undefined when it carries none. */
+  titleOf?: (pkg: string) => { title: string; titleZh?: string } | undefined;
+  /** A loaded plugin's version and icon, from its package on this machine. */
+  displayOf?: (pkg: string) => PluginPackageDisplay;
 }
+
+/** Where this server serves a loaded plugin's icon (http/routes/admin-plugin-config.ts). */
+export const pluginIconRoute = (specifier: string): string =>
+  `/api/admin/plugin-config/icon?plugin=${encodeURIComponent(specifier)}`;
 
 export class PluginConfigStore {
   private readonly watchers = new Map<string, Set<(values: Record<string, unknown>) => void>>();
@@ -901,11 +937,21 @@ export class PluginConfigStore {
 
   private entry(group: SettingsGroup): PluginConfigEntry {
     const { name, configuration } = group;
+    const plugin = group.from === undefined ? undefined : this.deps.packageOf?.(group.from);
+    const title = plugin === undefined ? undefined : this.deps.titleOf?.(plugin);
+    const display = plugin === undefined ? undefined : this.deps.displayOf?.(plugin);
     return {
       name,
       configuration,
       values: maskValues(configuration, { ...defaultsOf(configuration), ...this.stored(name) }),
       ...(group.parent !== undefined ? { parent: group.parent } : {}),
+      ...(plugin !== undefined ? { plugin } : {}),
+      ...(title !== undefined ? { pluginTitle: title.title } : {}),
+      ...(title?.titleZh !== undefined ? { pluginTitleZh: title.titleZh } : {}),
+      ...(display?.version !== undefined ? { pluginVersion: display.version } : {}),
+      ...(display?.icon !== undefined && plugin !== undefined
+        ? { pluginIcon: iconRef(pluginIconRoute(plugin), display.icon) }
+        : {}),
     };
   }
 }
@@ -916,7 +962,7 @@ export class PluginConfigProvider {
   @Use() private readonly settings!: Settings;
   @Provide() pluginConfig!: PluginConfig;
   @Provide() pluginConfigEntries!: PluginConfigEntries;
-  setup({ contributions }: ClassCtx) {
+  setup({ contributions, resources }: ClassCtx) {
     const declared: Array<SettingsGroup & { order: number; index: number }> = [];
     for (const [index, c] of (contributions.groups ?? []).entries()) {
       const { parent, order, ...configuration } = c.data as unknown as SettingsGroupDecl;
@@ -926,6 +972,7 @@ export class PluginConfigProvider {
           name: c.id,
           configuration: parsed,
           ...(typeof parent === "string" ? { parent } : {}),
+          from: c.from,
           order: typeof order === "number" ? order : 100,
           index,
         });
@@ -935,12 +982,20 @@ export class PluginConfigProvider {
       }
     }
     declared.sort((a, b) => a.order - b.order || a.index - b.index);
-    const groups: SettingsGroup[] = declared.map(({ name, configuration, parent }) => ({
+    const groups: SettingsGroup[] = declared.map(({ name, configuration, parent, from }) => ({
       name,
       configuration,
       ...(parent !== undefined ? { parent } : {}),
+      ...(from !== undefined ? { from } : {}),
     }));
-    const store = new PluginConfigStore({ settings: this.settings, groups: () => groups });
+    const store = new PluginConfigStore({
+      settings: this.settings,
+      groups: () => groups,
+      // The host is claimed per read: the plugins of this generation are recorded after this setup.
+      packageOf: (module) => pluginPackageOf(pluginHostFrom(resources), module),
+      titleOf: (pkg) => pluginTitleOf(pluginHostFrom(resources), pkg),
+      displayOf: (pkg) => pluginPackageDisplayOf(pluginHostFrom(resources), pkg),
+    });
     this.pluginConfig = store;
     this.pluginConfigEntries = store;
   }

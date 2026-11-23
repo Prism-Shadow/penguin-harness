@@ -22,19 +22,24 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
 
 ## 数据目录
 
-数据根目录由环境变量 `PENGUIN_HOME` 指定，默认为 `~/.penguin/data`。目录布局统一定义在 `packages/core/src/state/paths.ts` 中：
+数据根目录由环境变量 `PENGUIN_HOME` 指定，默认为 `~/.penguin/data`。顶层只放服务端自己的文件与目录（`web.db`、`server.lock`、`bin/`、`logs/`、`plugins/`、`machines/`、`app/`、`run/` 等），每个 Project 都是 `projects/` 下的一个目录。目录布局统一定义在 `packages/core/src/state/paths.ts` 中：
 
 ```text
-<root>/<project>/
+<root>/projects/<project>/
 ├── .project_config.toml          # Project-level models & credentials (hidden file, 0600)
-├── benchmarks/                   # capability Benchmark cases and scores, one directory per
-│                                 # Benchmark — a peer of the Agents, evaluating any of them
 └── agents/
+    ├── system_agent/             # the system Agent; its app/data/benchmark/ holds the
+    │                             # Benchmark cases and scores, one directory per Benchmark —
+    │                             # a peer of the Agents, evaluating any of them
     └── <agent>/
         ├── agent_state/              # system_config.yaml, AGENTS.md, .vault.toml,
         │                             # tools/, skills/, hooks/, schedule/
-        │   └── memory/               # Memory: user/ plus one directory per Workspace,
-        │                             # each with its own MEMORY.md index
+        │   ├── memory/               # Memory: user/ plus one directory per Workspace,
+        │   │                         # each with its own MEMORY.md index
+        │   └── workbenches/          # one folder per workbench: source, ui/, state.json
+        ├── agent_state.git/          # bare git repository the server writes: workbench versions
+        ├── app/                      # workbench folders beside the Agent State: data/<workbench>/
+        │                             # (exported with the workbench's data) and cache/<workbench>/
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
         ├── scratchpad/               # temp files, one subdirectory per Session id (e.g. pasted images)
@@ -46,6 +51,10 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
         ├── workspaces/               # temporary Workspaces (tmp-<8hex>)
         └── snapshots/                # Agent State version snapshots
 ```
+
+工作台的运行时文件（Unix socket、管道、锁）另放在 `<root>/run/<project>/<agent>/<workbench>/`，每一级是其 id 的 10 位哈希，使 socket 路径不超过 Unix socket 路径的 103 字节上限。它们从不导出，随所属的工作台、Agent 或 Project 一并删除。 从插件安装的工作台还可以存放由该应用所有副本共用的文件：本服务器上位于 `<root>/app/{data,cache}/<plugin>/<workbench>/`（状态在 `<root>/run/server/` 下），这台电脑上本 OS 用户的位于 `~/.penguin/machine/`（或 `PENGUIN_MACHINE_HOME`）。两者都不导出，也不随工作台删除。
+
+2026 年 11 月之前的数据根把 Project 直接放在顶层（`<root>/<project>/`），Benchmark 放在 `<project>/benchmarks/`。新版本第一次启动时、开始服务之前把它们移到新位置，并在每个旧位置留一个链接，移动前记录下的路径（Trace 里的、仍开着的对话里的）照样指向同一批文件。链接保留到 1.0。名为 `projects` 的 Project 会让迁移停下：服务端不启动，提示里写明如何用上一个版本处理这个 Project。
 
 各配置文件的字段见[配置参考](/configuration)。
 
@@ -67,7 +76,7 @@ Trace 是只追加的 JSON Lines 文件，每行是一条 AMSP 记录，详见 [
 - 主 Session 的 `session_meta` 在写入时也推入输出流，只推一次，此后不再发送。写入发生在三个时刻：
   - 新 Session 的第一条消息把它写在第一个文件开头，先于该 Task 的 `task_begin`；
   - 压缩开启的新上下文在新文件开出时写入它，即压缩之后第一条要写入的记录之前。压缩结束了上一个 Task 时，Task 记录不开新文件，所以它落在下一个 Task 的 `task_begin` 之后、该 Task 的输入之前；
-  - 模型切换在切换完成时写入它，这发生在两次运行之间，所以它在 Session 的流上，不在下一次运行的流里。
+  - 模型切换开启的上下文同样如此：它的文件随下一条消息开出时写入，位于下一个 Task 的 `task_begin` 之后、其输入之前。切换本身以一条点名目标模型的 `session_update` 作为最后一条记录上流（见[会话内切换模型](#会话内切换模型)）。
 
   之后需要它的读端读取 Session，或读取完整历史，其中带有每个文件开头的 `session_meta`。见 [AMSP](/amsp)。
 - 追加在写入器内部串行执行。并发生产者（模型流、并行的工具执行）写出的记录严格一条接一条落盘，每条都是一整行、中间不断开。数 MB 的记录（比如 base64 图片的 Data URL）绝不会因并发追加而撕裂；文件轮转也绝不会把一条记录切成两半。
@@ -110,7 +119,7 @@ Trace 是恢复的唯一事实来源，不存在需要保持同步的独立 Sess
 
 1. 找到这个 Session 索引最大的 Trace 文件。
 2. 从文件里的 `session_meta` 读取运行时配置：
-   - Workspace（在 Session 的整个生命周期内不可变），以及这个上下文所用的模型（切换模型会开新文件，所以最新文件总是记录当前模型）；
+   - Workspace（在 Session 的整个生命周期内不可变），以及这个上下文所用的模型（文件末尾有模型切换的 `session_update`、其后没有请求时，取该记录所记的模型：切换已完成，新文件尚未开出）；
    - 该上下文开启时使用的系统提示词。
 3. 把已提交的历史重放进一个全新的 LLM 上下文。
 4. 重建补发内容（未送达的工具输出、中断标记），以及轮次和 Token 计数器。
@@ -150,13 +159,15 @@ summarize 模式下，恢复后会重建 `[context_summary]`，并把它加在�
 活跃对话工具栏里的模型选择器在同一个 Session 内切换模型。切换是一次上下文轮换：
 
 1. 先用当前模型压缩上下文，并且总是 summarize 模式，即使 Agent 的 `compaction.mode` 是 `discard`：摘要是带到新模型上的唯一记录。这个请求就是一次普通的压缩请求——当前模型、系统提示词、工具集和参数都不变，只追加一条用户消息——因此延续服务商已缓存的前缀，目标模型的任何信息都不会进入这个请求。
-2. 下一个上下文在目标模型上开启，写进新的 Trace 文件，文件里的 `session_meta` 记录这个上下文的模型。文件在切换完成时立即开启，开头是 `session_meta`，然后是摘要；这条 `session_meta` 也会推入输出流。
+2. 下一个上下文在目标模型上开启。切换向当前 Trace 文件追加一条点名目标模型的 `session_update`，并把它作为最后一条记录推入输出流，不开新文件。下一个上下文的文件与任何压缩之后一样随下一条消息开出：下一个 Task 的 `task_begin` 写在旧文件里，随后新文件开出，开头依次是目标模型的 `session_meta`、连接事件对（如有）与 `tool_list_ready`、摘要，然后才是输入；这条 `session_meta` 在写入时上流，位于 `task_begin` 之后。连续切换、或切换后没有后续消息，都不会留下多余的文件。
 
-这次压缩是普通的 `manual` 压缩：`compaction_begin` / `compaction_end` 事件对上没有任何字段记录模型。没有完成任何一轮的上下文没有内容可总结，切换既不发请求，也不记录事件对。刚压缩过的上下文把手中的摘要直接写在新文件开头。首个请求失败或被停止的上下文保持原样：它开启时所带的摘要（如有）会再写一次到新文件开头，其余待发的输入只带文本，且只在内存中带过去。切换不会把图片带进新上下文。
+这次压缩是普通的 `manual` 压缩：`compaction_begin` / `compaction_end` 事件对上没有任何字段记录模型。没有完成任何一轮的上下文没有内容可总结，切换既不发请求，也不记录事件对。刚压缩过的上下文把手中的摘要交给下一个上下文。首个请求失败或被停止的上下文除切换的 `session_update` 外不再追加任何记录：它开启时所带的摘要（如有）在新文件开出时再写一次到其开头，其余待发的输入只带文本，且只在内存中带过去。切换不会把图片带进新上下文。
 
-压缩失败或被中断时，Session 保持原模型。目标必须在 Project 配置中且能构造出来（凭据齐全），否则切换在发出任何请求之前就被拒绝。从未运行过的 Session 没有上下文可压缩：直接切换，不写入任何内容。
+拿不到摘要时，切换改为参照 `/model`，交接 Trace 路径：压缩以完成或被中断之外的方式结束（服务商不可用、超时或网络错误、重试后仍被限流、凭据被拒、上下文长到无法总结），或者当前模型已不可用（已从 Project 配置中移除，或缺少凭据），都属于这种情况；不可用的模型不会收到任何请求。下一个上下文随后在目标模型上开启，以一条整条为 `[model_switch_from]` 块的用户消息代替摘要：它写明本 Session、被离开的上下文的 Trace 文件绝对路径（运行该 Session 的机器上的路径）、Workspace 和原来的模型组合，并告诉模型需要历史时去读这个文件，以及该对话更早的文件。这条消息的写法与带法都和摘要相同：它紧跟 `session_update` 上流，在新文件开出时写在开头。它指向的文件保持原样。其余待发的输入只带文本。
 
-恢复从最新文件读取模型，所以切换后立刻重启的 Session 仍运行在新模型上，摘要待发。这条摘要仍被认作该文件开头的摘要：在完成第一轮之前再次切换，无论其间是否重启，它都会写到下一个文件的开头。切换在新文件建立之前中断时，丢失的只是这次切换，摘要不丢：Session 恢复在原模型上，摘要待发。
+只有你中断压缩时，Session 才保持原模型。目标必须在 Project 配置中且能构造出来（凭据齐全），否则切换在发出任何请求之前就被拒绝。从未运行过的 Session 没有上下文可压缩：直接切换，不写入任何内容。服务器停机期间模型变得不可用的 Session 仍然可以切换：服务器只为这次切换恢复它。
+
+切换之后、下一条消息之前重启的 Session 从被离开的文件恢复：其后没有 `request_begin` 的 `session_update` 使该文件的上下文视为已关闭，下一个上下文开在该记录所记的模型上（连续切换时取最后一条）。开头是摘要；当前模型不可用时，是重新生成的 `[model_switch_from]` 块；切换自身的压缩拿不到摘要时，是由该文件重建的就地交接说明（见[取不到摘要时](/agent-loop#取不到摘要时)），这是与实时切换唯一的差别，实时切换以 `[model_switch_from]` 块开头；从未得到回应的上下文，则是它开启时所带的文本，加上未得到回应的文本。切换在 `session_update` 写下之前中断时，丢失的只是这次切换，摘要不丢：Session 恢复在原模型上，摘要待发。新文件开出之后（包括旧版本在切换时提前开出的文件），其中的摘要仍被认作该上下文开启时所带的摘要：在完成第一轮之前再次切换，无论其间是否重启，它都会写到下一个文件的开头。
 
 选择器的用法见[切换模型](/chat#切换模型)。
 

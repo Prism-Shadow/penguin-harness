@@ -1,0 +1,42 @@
+{
+  "name": "@penguinharness/first-workbench-guide",
+  "version": "0.2.18",
+  "description": "Choose a model, discuss a real task and turn the conversation into an installed checklist workbench.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/first-workbench-guide"
+  },
+  "files": [
+    "icon.svg",
+    "workbenches",
+    "ifaces.json",
+    "LICENSE",
+    "README.md",
+    "README.zh.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node src/build.mjs && node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "esbuild": "^0.28.1",
+    "fflate": "^0.8.3",
+    "jsdom": "^30.1.2",
+    "vitest": "^4.1.12"
+  },
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "workbench"
+  ]
+}

@@ -195,6 +195,7 @@ export const DUOTONE: Readonly<Partial<Record<GlyphKey, string>>> = {
   /** The bubble, tail and all. */
   messagePlus: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
   paperPlane: "M22 2l-7 20-4-9-9-4z",
+  airplane: ICONS.airplane,
   play: ICONS.play,
   /** The lens, not the handle. */
   search: "M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z",
@@ -218,6 +219,10 @@ export const DUOTONE: Readonly<Partial<Record<GlyphKey, string>>> = {
   /** All four tiles, as drawn (and so for `dashboard`). */
   tiles: ICONS.tiles,
   dashboard: ICONS.dashboard,
+  layoutGrid: ICONS.layoutGrid,
+  /** The two squares, not the lines. */
+  layoutList:
+    "M4 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM4 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z",
   /** The three boxes, not the bus. */
   network: "M9 3h6v5H9zM2 16h6v5H2zM16 16h6v5h-6z",
   /** The three nodes. */
@@ -316,6 +321,7 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   messagePlus: "teal",
   bubbleLines: "teal",
   paperPlane: "teal",
+  airplane: "teal",
   externalLink: "teal",
   chainLink: "teal",
   pulse: "teal",
@@ -333,6 +339,8 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   shieldCheck: "green",
   shieldOff: "green",
   check: "green",
+  microphone: "pink",
+  speaker: "teal",
   play: "green",
   kanban: "green",
   checkCircle: "green",
@@ -436,8 +444,12 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   panelLeftText: "slate",
   rectangle: "slate",
   rectangleCheck: "slate",
+  square: "slate",
+  squareStack: "slate",
   boxArrowOut: "slate",
   tiles: "slate",
+  layoutGrid: "slate",
+  layoutList: "slate",
   cornersOut: "slate",
   cornersIn: "slate",
   gitBranch: "slate",

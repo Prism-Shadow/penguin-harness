@@ -21,6 +21,8 @@ const settings = (companyMode: boolean): ServerSettings => ({
   proxyUrl: null,
   attachmentMaxMb: 100,
   attachmentTotalMb: 500,
+  terminalMaxOpen: 12,
+  browserMaxOpen: 20,
   companyMode,
   browserExtensionsEnabled: true,
   agentApiEnabled: true,

@@ -37,10 +37,10 @@ const TICK_MS = 1000;
 const NARROWEST_LANE_CH = 70;
 
 const LEVEL =
-  "flex h-7 items-center justify-end text-[13px] font-medium text-gray-600 dark:text-gray-300";
+  "flex h-7 items-center justify-end text-sm font-medium text-gray-600 dark:text-gray-300";
 const LANE = "relative h-7";
 const BAR =
-  "absolute inset-y-0 flex items-center justify-between gap-2 overflow-hidden px-2 font-mono text-[12px] whitespace-nowrap";
+  "absolute inset-y-0 flex items-center justify-between gap-2 overflow-hidden px-2 font-mono text-xs whitespace-nowrap";
 /**
  * Light tints of `event_msg`, a step deeper for the Request than for the Task it sits in; the
  * amber spans keep a hairline edge so they hold on any page ground.
@@ -130,7 +130,7 @@ function StructureChart({ spans }: { spans: RunSpans }) {
           span={spans.task}
           total={total}
           className={TONE.task}
-          title={`task_begin … task_end · ${duration(spans.task)}`}
+          title={`task_begin … task_end: ${duration(spans.task)}`}
         >
           <span className="hidden sm:inline">task_begin</span>
           <span className="hidden sm:inline">task_end</span>
@@ -145,7 +145,7 @@ function StructureChart({ spans }: { spans: RunSpans }) {
             span={span}
             total={total}
             className={TONE.request}
-            title={`request_begin … request_end · ${duration(span)}`}
+            title={`request_begin … request_end: ${duration(span)}`}
           >
             <span className="hidden lg:inline">request_begin</span>
             <span className="hidden lg:inline">request_end</span>
@@ -161,7 +161,7 @@ function StructureChart({ spans }: { spans: RunSpans }) {
             span={span}
             total={total}
             className={`${KIND_TONE[span.kind].bar} ${RECORD_CAP}`}
-            title={`${span.kind} · ${duration(span)}`}
+            title={`${span.kind}: ${duration(span)}`}
           >
             {fits(span, total) && <span className="hidden sm:inline">{span.kind}</span>}
           </Bar>
@@ -175,7 +175,7 @@ function StructureChart({ spans }: { spans: RunSpans }) {
           return (
             <span
               key={span.begin}
-              className={`absolute top-0 flex h-5 items-end font-mono text-[12px] leading-4 whitespace-nowrap text-gray-600 dark:text-gray-300 ${
+              className={`absolute top-0 flex h-5 items-end font-mono text-xs leading-4 whitespace-nowrap text-gray-600 dark:text-gray-300 ${
                 toEnd
                   ? "-translate-x-full border-r border-gray-300 pr-1 dark:border-gray-600"
                   : "border-l border-gray-300 pl-1 dark:border-gray-600"
@@ -193,7 +193,7 @@ function StructureChart({ spans }: { spans: RunSpans }) {
         {ticks.map((ms) => (
           <span
             key={ms}
-            className="absolute top-0 flex -translate-x-1/2 flex-col items-center text-[11px] leading-4 text-gray-500 tabular-nums dark:text-gray-400"
+            className="absolute top-0 flex -translate-x-1/2 flex-col items-center text-xs leading-4 text-gray-500 tabular-nums dark:text-gray-400"
             style={{ left: at(ms, total) }}
           >
             <span className="h-1 w-px bg-gray-300 dark:bg-gray-700" />

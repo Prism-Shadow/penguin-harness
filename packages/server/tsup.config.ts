@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "tsup";
 import { FAR_SIDE_SCRIPTS } from "../../scripts/far-side-scripts.mjs";
+import { copyMarketCovers } from "../../scripts/market-covers.mjs";
 
 const jsOnly = process.env.PENGUIN_BUILD_JS_ONLY === "1";
 
@@ -12,7 +13,9 @@ export default defineConfig({
   // reset-admin-password are side-effect-free for CLI pre-checks and the offline
   // admin-password rescue); "./secret-file" is the shared symlink-safe writer;
   // "./hmr/manifest" is the host-less harness.json reader the CLI's thin loader
-  // resolves the current cli bundle through, and "./version-report" is the shared
+  // resolves the current cli bundle through, "./cli-shim" is the shim module that also
+  // answers "which entry runs this command" — the answer that loader and shim both act
+  // on — and "./version-report" is the shared
   // assembler `penguin version` and GET /api/version both render (core plus that
   // same reader — no server). There is deliberately no
   // "./platform" subpath: src/hmr/entry.ts (this package's platform artifact
@@ -37,11 +40,19 @@ export default defineConfig({
     "auth-token": "src/auth-token.ts",
     "secret-file": "src/secret-file.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
+    "pushed-build": "src/hmr/pushed-build.ts",
+    "harness-meta": "src/harness-meta.ts",
+    "cli-shim": "src/services/cli-shim.ts",
     "version-report": "src/version-report.ts",
     // "./plugin": the surface plugin PACKAGES compile against. Plugins live outside
     // this bundle entirely — they are configuration resolved from the installation,
     // not platform capability.
     "plugin/index": "src/plugin/index.ts",
+    // "./cli": the five resource commands (agent/project/schedule/cost/config) and the
+    // server-backed command code they share (connection client, sign-in session, table
+    // renderer, approval parsing). The CLI's build collects their @Component contributions
+    // and its commands import them back through this subpath.
+    "cli/index": "src/cli/index.ts",
   },
   format: ["esm"],
   target: "node24",
@@ -54,8 +65,38 @@ export default defineConfig({
   clean: jsOnly ? ["!**/*.d.ts"] : true,
   sourcemap: true,
   // The hot-update mechanism is a package for the boundary, not for npm (it is `private`):
-  // inlined here so this package's published dist stays self-contained.
-  noExternal: ["@prismshadow/penguin-hmr"],
+  // inlined here so this package's published dist stays self-contained. So is the theme-pack
+  // validator, a private source package; its own dependencies (css-tree, fflate) stay imports and
+  // are this package's dependencies. And so is the UI package's clean-baseline rule table, the
+  // one subpath of it the server imports (`@prismshadow/penguin-ui/pack-rules`, which reaches
+  // nothing but two small modules): the published UI package does not export it.
+  noExternal: [
+    // The domain libraries are server code by another address: a hot push ships the
+    // server bundle alone, so its migrations and connection module ride in it.
+    "@prismshadow/penguin-library-db",
+    "@prismshadow/penguin-library-setting",
+    "@prismshadow/penguin-library-auth",
+    "@prismshadow/penguin-library-benchmark",
+    "@prismshadow/penguin-library-observability",
+    "@prismshadow/penguin-library-trace",
+    "@prismshadow/penguin-library-project",
+    "@prismshadow/penguin-library-session",
+    "@prismshadow/penguin-library-messaging",
+    "@prismshadow/penguin-library-organization",
+    "@prismshadow/penguin-library-agent",
+    "@prismshadow/penguin-library-agent-api",
+    "@prismshadow/penguin-library-http",
+    "@prismshadow/penguin-library-machine",
+    "@prismshadow/penguin-library-model",
+    "@prismshadow/penguin-library-workbench",
+    // The CLI face: the `cli` subpath re-exports it, and the `lock` entry its lock reader.
+    "@prismshadow/penguin-library-cli",
+    "@prismshadow/penguin-library-workspace",
+
+    "@prismshadow/penguin-hmr",
+    "@prismshadow/penguin-theme-pack",
+    "@prismshadow/penguin-ui",
+  ],
   // Scripts that run somewhere else, as REAL files beside the bundles: the release installers
   // a remote install feeds to the far side (the one thing that has to arrive before the CLI
   // does; everything after is a `penguin` subcommand the machine already has). Each is
@@ -73,5 +114,8 @@ export default defineConfig({
     for (const { name, from } of FAR_SIDE_SCRIPTS) {
       fs.copyFileSync(path.join(repo, from), path.join(here, "dist", name));
     }
+    // The built-in plugins' market covers, read beside the bundle the same way
+    // (scripts/market-covers.mjs); an empty or missing folder fails the build.
+    copyMarketCovers(repo, path.join(here, "dist"));
   },
 });

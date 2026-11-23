@@ -14,10 +14,10 @@
  * this process, and the minted key goes straight into the Project's model config without
  * passing through the browser. A caller only ever holds an opaque flow id and a status.
  */
+import type { ModelOAuthMode, ModelOAuth } from "@prismshadow/penguin-library-model";
 import { Hono } from "hono";
 import type {
   ModelOAuthCodeResponse,
-  ModelOAuthMode,
   ModelOAuthStartResponse,
   ModelOAuthStatusResponse,
 } from "../../api/types.js";
@@ -33,11 +33,11 @@ export interface ModelOauthRouteDeps extends ModelsRouteDeps {
   access: Access;
 }
 import { HttpError } from "../errors.js";
-import { publicOriginOf } from "../public-origin.js";
+import { publicOriginOf } from "@prismshadow/penguin-library-http/public-origin";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { modelConfigChanged } from "./models.js";
 import type { ModelsRouteDeps } from "./models.js";
-import type { Access, ModelOAuth } from "../../mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-project";
 
 /** Flow ids are base64url (`randomBytes(32)`); reject anything else before it reaches the store. */
 const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
@@ -237,7 +237,11 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
       return c.json({ ok: false, error: result.error } satisfies ModelOAuthCodeResponse);
     }
     credentialsChanged(deps, projectId);
-    return c.json({ ok: true, applied: result.applied } satisfies ModelOAuthCodeResponse);
+    return c.json({
+      ok: true,
+      applied: result.applied,
+      ...(result.defaultOffer !== undefined ? { defaultOffer: result.defaultOffer } : {}),
+    } satisfies ModelOAuthCodeResponse);
   });
 
   // Poll target while the user is authorizing in the other tab, and where a redirect flow's
@@ -262,6 +266,7 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
       status: state.status,
       provider: state.provider,
       ...(state.applied !== undefined ? { applied: state.applied } : {}),
+      ...(state.defaultOffer !== undefined ? { defaultOffer: state.defaultOffer } : {}),
       ...(state.error !== undefined ? { error: state.error } : {}),
     } satisfies ModelOAuthStatusResponse);
   });

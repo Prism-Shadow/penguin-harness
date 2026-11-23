@@ -1,6 +1,8 @@
 /**
- * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`), answered from the
- * demo store. Reads answer the fixtures; writes mutate them where the app shows the result
+ * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`, the wrappers its
+ * features keep beside them, and those a plugin web half exports, such as the agent browser's
+ * `plugins/browser-automation/src/web/api.ts`), answered from the demo store. Reads answer the
+ * fixtures; writes mutate them where the app shows the result
  * (a renamed Session, a saved model table, a new schedule) and answer `demo_read_only` where
  * the operation would need a machine, a registry or a provider behind it. Each handler's
  * return is annotated with the contract type it stands for, so a DTO change fails here
@@ -24,11 +26,16 @@ import type {
   AgentMcpServersResponse,
   AgentKernelUpdateResponse,
   AgentPluginsInstallResponse,
+  PluginUninstallResponse,
   AgentSchedulesConfigDto,
   AgentSkillsConfigDto,
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  AppCenterLayout,
+  AppCenterLayoutResponse,
+  AppCenterResponse,
+  AppCenterShortcut,
   ApprovalMode,
   ArchivedSessionGroup,
   ArchivedSessionGroupsResponse,
@@ -47,10 +54,12 @@ import type {
   BenchmarksResponse,
   CaseMaterial,
   ChatDefaultsDto,
+  ContributionsResponse,
   CommandPolicyDto,
   DefaultModelResponse,
   DesktopTrayStatusResponse,
   DesktopUpdateStatusResponse,
+  HostCommandsResponse,
   DirectorySkillsResponse,
   DirListResponse,
   EndpointModelListResponse,
@@ -58,6 +67,9 @@ import type {
   GoalResponse,
   InstallResponse,
   InstalledPluginsResponse,
+  PluginModuleAskResponse,
+  PluginModuleRequestsResponse,
+  PluginHoldersResponse,
   MachinesResponse,
   MachinesUseResponse,
   McpServerTestResponse,
@@ -67,7 +79,6 @@ import type {
   MemoryFilesResponse,
   MemoryImportResponse,
   MemoryOverviewResponse,
-  MemoryScopeExport,
   MeResponse,
   LanguageIndexResponse,
   MessagesResponse,
@@ -87,6 +98,7 @@ import type {
   PluginFilesResponse,
   PluginIndexResponse,
   PluginLibraryResponse,
+  PluginMarketResponse,
   PluginReadmeResponse,
   PrefsResponse,
   BackgroundImagePutResponse,
@@ -112,6 +124,7 @@ import type {
   SessionInfo,
   SessionProcessesResponse,
   SessionResponse,
+  SessionsArchiveResponse,
   SessionsBatchResponse,
   SessionsResponse,
   SessionTracesResponse,
@@ -119,6 +132,8 @@ import type {
   SshHostsResponse,
   SubagentMessageResponse,
   TaskCreateResponse,
+  ThemePackDto,
+  ThemePacksResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
   TraceImportResponse,
@@ -135,12 +150,16 @@ import type {
   VaultResponse,
   VersionHistoryResponse,
   VersionResponse,
-  WorkbenchInfo,
+  WorkbenchesResponse,
+  WorkbenchSidebarResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
+import { isThemeId } from "@prismshadow/penguin-ui";
 // The catalog decides which groups publish a balance, as it does on the server.
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
+import { agentPluginGroups } from "../../../../web/src/features/plugins/agent-plugin-groups";
+import { declaredServerModules } from "../../../../web/src/lib/module-gate";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
@@ -150,10 +169,33 @@ import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
 import type { RequestContext } from "./router";
 import type { DemoStore } from "./store";
+import {
+  cleanupReview,
+  forgetStorageSession,
+  refreshStorage,
+  runCleanup,
+  storageSessions,
+  storageUsage,
+} from "./storage-demo";
+import type {
+  ToolBindingUpdate,
+  ToolBindingsResponse,
+  VoicePolishSettings,
+  VoicePolishUpdate,
+} from "../../../../web/src/api/tool-types";
 import { payloadOf } from "./types";
+import type {
+  StorageCleanupResult,
+  StorageCleanupReview,
+  StorageSessionsResponse,
+  StorageUsage,
+} from "@penguinharness/storage/types";
 import type { AmspRecord } from "./types";
 
 type Ctx = RequestContext;
+
+/** Where the demo Project keeps its Benchmarks: the Evaluation Center's data folder, as a server names it. */
+const GALLERY_BENCHMARKS_DIR = `/home/demo/.penguin/data/projects/${IDS.project}/agents/system_agent/app/data/benchmark`;
 
 const record = (body: unknown): Record<string, unknown> =>
   typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
@@ -175,7 +217,9 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
   const rate =
     day.provider === "anthropic"
       ? { cacheRead: 0.2, cacheWrite: 2.5, output: 10 }
-      : { cacheRead: 0.0057, cacheWrite: 0.2857, output: 1.1429 };
+      : day.provider === "openai"
+        ? { cacheRead: 1.25, cacheWrite: 5, output: 30 }
+        : { cacheRead: 0.0057, cacheWrite: 0.2857, output: 1.1429 };
   return (
     (day.cacheRead * rate.cacheRead + day.cacheWrite * rate.cacheWrite + day.output * rate.output) /
     1_000_000
@@ -183,6 +227,19 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 }
 
 export const router = new Router();
+
+// The demo boots its own page table and has no server-side plugin contributions: no pages,
+// no file renderers and nothing removed. It stands in for every plugin's server half, so it
+// answers as running every server module a booted web module declared: a plugin's web half is
+// drawn in the gallery as it is on a server that runs its module.
+router.get("/api/contributions", (): ContributionsResponse => ({
+  pages: [],
+  fileRenderers: [],
+  pageRemovals: [],
+  agentTabs: [],
+  sessionTabs: [],
+  modules: declaredServerModules(),
+}));
 
 // ---------------------------------------------------------------------------------------------
 // Auth & user
@@ -256,6 +313,53 @@ router
   .put("/api/admin/settings", ({ store, body }): ServerSettingsResponse => {
     store.f.serverSettings = { ...store.f.serverSettings, ...record(body) };
     return { settings: store.f.serverSettings };
+  })
+  .get("/api/admin/plugin-modules", ({ store }): PluginModuleRequestsResponse =>
+    moduleLedger(store),
+  )
+  // Who would lose a plugin uninstalled from the server: the demo's Agents that carry its Skills.
+  .get("/api/admin/plugins/holders", ({ store, query }): PluginHoldersResponse => {
+    const pkg = query.get("package") ?? "";
+    const plugin = libraryPlugins(store).find((p) => p.package === pkg) ?? null;
+    const skills = new Set((plugin?.skills ?? []).map((s) => s.name));
+    const agents = store.f.agents
+      .filter((a) => (store.f.installed[a.agentId]?.skills ?? []).some((s) => skills.has(s.name)))
+      .map((a) => ({
+        projectId: IDS.project,
+        projectName: store.f.project.name ?? IDS.project,
+        agentId: a.agentId,
+        agentName: a.name ?? a.agentId,
+      }));
+    return {
+      package: pkg,
+      plugin: plugin?.name ?? null,
+      onServer: plugin?.source === "installed",
+      shipped: plugin !== null && plugin.source !== "installed",
+      shared: [],
+      agents,
+    };
+  })
+  .delete("/api/admin/plugins", () => readOnly("uninstall a plugin from the server"))
+  // A decision as the server takes it: enabling lists the module (it runs), declining stops it; a
+  // waiting request whose Project is gone can only be declined.
+  .post("/api/admin/plugin-modules/decide", ({ store, body }): PluginModuleRequestsResponse => {
+    const pkg = str(record(body).package);
+    const decision = str(record(body).decision);
+    if (decision !== "enable" && decision !== "decline") {
+      fail(400, "invalid_request", "decision must be enable or decline.");
+    }
+    const row = store.f.pluginModuleRequests.find((r) => r.package === pkg);
+    if (row === undefined) fail(404, "unknown_request", `No request for ${pkg}.`);
+    if (decision === "enable" && row.projectId === null) {
+      fail(409, "project_gone", "The Project that asked for it is gone.");
+    }
+    const enable = decision === "enable";
+    row.decision = enable ? "enabled" : "declined";
+    row.decidedBy = store.f.user.userId;
+    row.decidedAt = new Date(store.f.now).toISOString();
+    if (enable) row.via = row.requestedBy !== store.f.user.userId ? "approval" : "admin";
+    row.state = enable ? "running" : "off";
+    return moduleLedger(store);
   })
   .get("/api/admin/plugin-config", ({ store }): PluginConfigResponse => ({
     plugins: store.f.pluginConfig,
@@ -385,6 +489,52 @@ function refreshEffective(store: DemoStore): void {
     effective: effectiveOf(m, providers),
   }));
 }
+
+/**
+ * The model tools, as the Web App reads them: the platform's tool-model bindings and the
+ * multimodal tools plugin's routes. The gallery's server loads no plugin, so no binding is
+ * declared — the settings page lists image understanding alone and the chat shows no voice
+ * controls — and binding a model, running a tool or reading a reply aloud is refused. Transcript
+ * editing's settings are kept in the store, as the plugin keeps them per Project.
+ */
+router
+  .get("/api/projects/:projectId/models/tool-bindings", (): ToolBindingsResponse => ({
+    bindings: [],
+  }))
+  .patch("/api/projects/:projectId/models/tool-bindings", ({ body }) => {
+    const { key } = record(body) as Partial<ToolBindingUpdate>;
+    return fail(
+      404,
+      "unknown_binding",
+      `No enabled plugin declares the tool-model binding '${String(key)}'.`,
+    );
+  })
+  .post("/api/projects/:projectId/multimodal-tools/:operation/run", () =>
+    readOnly("run a multimodal tool"),
+  )
+  .get(
+    "/api/projects/:projectId/multimodal-tools/voice-polish/settings",
+    ({ store }): VoicePolishSettings => store.voicePolish,
+  )
+  .patch(
+    "/api/projects/:projectId/multimodal-tools/voice-polish/settings",
+    ({ store, body }): VoicePolishSettings => {
+      const { enabled, prompt } = record(body) as VoicePolishUpdate;
+      if (enabled === true) return readOnly("turn transcript editing on without a text model");
+      store.voicePolish = {
+        ...store.voicePolish,
+        ...(enabled !== undefined ? { enabled } : {}),
+        ...(prompt !== undefined ? { prompt: prompt ?? store.voicePolish.defaultPrompt } : {}),
+      };
+      return store.voicePolish;
+    },
+  )
+  .post("/api/projects/:projectId/multimodal-tools/voice-polish", () =>
+    readOnly("polish a transcript"),
+  )
+  .post("/api/projects/:projectId/multimodal-tools/read-aloud", () =>
+    readOnly("read a reply aloud"),
+  );
 
 router
   .get("/api/projects/:projectId/models", ({ store }): ModelsResponse => store.f.models)
@@ -663,6 +813,7 @@ router
       files: memoryOf(ctx)
         .files.filter((f) => f.scopeKey === ctx.params.scopeKey)
         .map((f) => f.file),
+      orphanFiles: [],
     }),
   )
   .get(
@@ -675,35 +826,57 @@ router
       return found;
     },
   )
+  // Two segments or more: a file a topic keeps, by its `<folder>/<path>`, read through the same
+  // route as a topic and answered in the same shape.
+  .get(
+    "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/*",
+    (ctx): MemoryFileResponse => {
+      const found = memoryOf(ctx).folderFiles.find(
+        (f) => f.scopeKey === ctx.params.scopeKey && f.file.path === ctx.params["*"],
+      );
+      if (!found) notFound("Memory file");
+      const { path, size, modifiedAt } = found.file;
+      return {
+        scopeKey: found.scopeKey,
+        file: { name: path, title: path, description: "", size, modifiedAt, files: [] },
+        content: found.content,
+      };
+    },
+  )
   .delete("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/:name", (ctx) => {
     const memory = memoryOf(ctx);
+    const folder = `${ctx.params.name!.replace(/\.md$/i, "")}/`;
     memory.files = memory.files.filter(
       (f) => !(f.scopeKey === ctx.params.scopeKey && f.file.name === ctx.params.name),
+    );
+    // The topic's folder goes with it.
+    memory.folderFiles = memory.folderFiles.filter(
+      (f) => !(f.scopeKey === ctx.params.scopeKey && f.file.path.startsWith(folder)),
     );
     const scope = memory.overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
     if (scope) scope.fileCount = memory.files.filter((f) => f.scopeKey === scope.scopeKey).length;
     return empty();
   })
-  .get(
-    "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/export",
-    (ctx): MemoryScopeExport => {
-      const memory = memoryOf(ctx);
-      const scope = memory.overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
-      if (!scope) notFound("Memory scope");
-      return {
-        format: "penguin-memory-scope",
-        version: 1,
-        scopeKey: scope.scopeKey,
-        kind: scope.kind,
-        ...(scope.workspacePath ? { workspacePath: scope.workspacePath } : {}),
-        exportedAt: new Date().toISOString(),
-        index: scope.hasIndex ? "# Memory\n" : null,
-        files: memory.files
-          .filter((f) => f.scopeKey === scope.scopeKey)
-          .map((f) => ({ name: f.file.name, content: f.content })),
-      };
-    },
-  )
+  .delete("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/*", (ctx) => {
+    const memory = memoryOf(ctx);
+    const filePath = ctx.params["*"]!;
+    memory.folderFiles = memory.folderFiles.filter(
+      (f) => !(f.scopeKey === ctx.params.scopeKey && f.file.path === filePath),
+    );
+    for (const topic of memory.files) {
+      if (topic.scopeKey !== ctx.params.scopeKey) continue;
+      topic.file = { ...topic.file, files: topic.file.files.filter((k) => k.path !== filePath) };
+    }
+    return empty();
+  })
+  .get("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/export", (ctx) => {
+    const scope = memoryOf(ctx).overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
+    if (!scope) notFound("Memory scope");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${ctx.params.agentId}-${scope.scopeKey}-memory.zip"`,
+    });
+  })
   .post(
     "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/import",
     (ctx): MemoryImportResponse => ({
@@ -724,8 +897,25 @@ router
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get("/api/projects/:projectId/agents", ({ store }): AgentsResponse => ({
-    agents: store.f.agents,
+  .get("/api/projects/:projectId/agents", (ctx): AgentsResponse => ({
+    agents: ctx.store.f.agents.map((agent) => {
+      const installed = ctx.store.f.installed[agent.agentId];
+      const groups = agentPluginGroups(
+        ctx.store.f.library.groups,
+        {
+          skills: installed?.skills ?? [],
+          hooks: installed?.hooks ?? [],
+          mcpServers: ctx.store.f.agentConfigs[agent.agentId]
+            ? mcpServerItems({ ...ctx, params: { ...ctx.params, agentId: agent.agentId } })
+            : [],
+          workbenches: installed?.pluginWorkbenches ?? [],
+          modules: [],
+        },
+        installed?.workbenches ?? [],
+        [],
+      );
+      return { ...agent, pluginCount: groups.groups.length };
+    }),
   }))
   .post("/api/projects/:projectId/agents", ({ store, body }): unknown => {
     const { agentId, name, description } = record(body);
@@ -746,6 +936,7 @@ router
       vaultKeyCount: 0,
       scheduleCount: 0,
       workbenchCount: 0,
+      pluginCount: 0,
       skillCount: 0,
       hookCount: 0,
       pluginUpdates: [],
@@ -765,6 +956,7 @@ router
     store.f.memory[id] = {
       overview: { ...store.f.memory[IDS.agents.notes]!.overview, scopes: [] },
       files: [],
+      folderFiles: [],
     };
     return json({ agent } satisfies AgentCreateResponse, 201);
   })
@@ -1103,6 +1295,21 @@ router
     });
     return { results };
   })
+  // The sidebar's "delete workspace": every active, own row of one Workspace group is archived.
+  .post("/api/projects/:projectId/sessions/archive", ({ store, body }): SessionsArchiveResponse => {
+    const group = record(body).workspaceGroup;
+    if (typeof group !== "string" || group.trim() === "") {
+      fail(400, "bad_request", "workspaceGroup must be a non-empty string.");
+    }
+    let done = 0;
+    for (const row of store.f.sessions) {
+      if (categoryOf(row) !== "active" || isOrgRow(row)) continue;
+      if (group === "temp" ? !isTemp(row.workspace) : row.workspace !== group) continue;
+      store.patchSession(row.sessionId, { archived: true });
+      done += 1;
+    }
+    return { done };
+  })
   .get("/api/projects/:projectId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";
     const listing = store.f.dirs[path] ?? { path, parent: "/home/demo", entries: [] };
@@ -1266,9 +1473,38 @@ router
   })
   .post("/api/me/archived-sessions/delete", ({ store, body }): ArchivedSessionsBatchResponse => {
     let done = 0;
-    for (const id of batchIds(store, body)) if (store.deleteSession(id)) done += 1;
+    for (const id of batchIds(store, body)) {
+      // The Storage page lists conversations of Projects the demo store does not hold.
+      if (store.deleteSession(id) || forgetStorageSession(store, id)) done += 1;
+    }
     return { done, missing: [] };
   });
+
+// ---------------------------------------------------------------------------------------------
+// Storage (Settings › Storage): the demo's data root, its cleanup and its conversations by size
+// ---------------------------------------------------------------------------------------------
+
+router
+  .get("/api/me/storage", ({ store }): StorageUsage => storageUsage(store))
+  .post("/api/me/storage/refresh", ({ store }): StorageUsage => refreshStorage(store))
+  .get("/api/me/storage/cleanup", ({ store, query }): StorageCleanupReview => {
+    const days = Number(query.get("olderThanDays") ?? 7);
+    return cleanupReview(store, Number.isInteger(days) && days >= 1 && days <= 3650 ? days : 7);
+  })
+  .post("/api/me/storage/cleanup", ({ store, body }): StorageCleanupResult => {
+    const items = record(body).items;
+    return runCleanup(
+      store,
+      Array.isArray(items) ? items.filter((id) => typeof id === "string") : [],
+    );
+  })
+  .get("/api/me/storage/sessions", ({ store, query }): StorageSessionsResponse =>
+    storageSessions(store, query),
+  )
+  // The demo is not the desktop shell: there is no file manager to show a folder in.
+  .post("/api/me/storage/reveal", () =>
+    fail(404, "not_desktop", "Only the desktop shell can show a folder."),
+  );
 
 // ---------------------------------------------------------------------------------------------
 // Messaging bindings: nothing bound in the demo; every write needs a platform behind it
@@ -1330,6 +1566,13 @@ router
         ? {
             page: {
               earlierTurns: 0,
+              // The mock's transcripts are plain prompt-and-answer Tasks: one per user prompt.
+              units: messages.filter(
+                (m) =>
+                  m.type === "model_msg" &&
+                  (m.payload as { type?: string; role?: string }).type === "text" &&
+                  (m.payload as { role?: string }).role === "user",
+              ).length,
               prior: {
                 subagentTokens: 0,
                 elapsedMs: 0,
@@ -1358,6 +1601,8 @@ router
           .filter((t) => t !== "")
           .join("\n")
       : "";
+    // Interrupt, then send: the demo run stops the way Stop stops it, and the task starts.
+    if (row.status !== "idle" && record(body).interrupt === true) store.abort(sessionId);
     if (row.status !== "idle") {
       if (record(body).queueIfBusy === true) {
         row.pendingFollowUpCount += 1;
@@ -1429,6 +1674,47 @@ router
     if (!row || row.status === "idle") fail(409, "not_running", "No Task is running.");
     return empty(202);
   })
+  .get("/api/sessions/:sessionId/subagents", (ctx) => {
+    const history = transcriptOf(ctx).history;
+    const children = new Map<
+      string,
+      {
+        sessionId: string;
+        agentId: string | null;
+        spawnedAt: string;
+        title: string | null;
+        turnKey: string;
+        position: string;
+      }
+    >();
+    let turn: string | undefined;
+    history.forEach((entry, i) => {
+      if (!entry.origin?.length && payloadOf(entry)?.type === "task_begin") turn = String(i);
+      if (entry.type !== "session_meta" || entry.origin?.length !== 1) return;
+      const id = entry.origin[0]!;
+      if (children.has(id)) return;
+      const row = ctx.store.session(id);
+      turn ??= String(i);
+      children.set(id, {
+        sessionId: id,
+        agentId: row?.agentId ?? null,
+        title: row?.title ?? null,
+        spawnedAt: entry.timestamp,
+        turnKey: turn,
+        position: String(i),
+      });
+    });
+    const ordered = [...children.values()].reverse();
+    const before = ctx.query.get("before");
+    const start = before === null ? 0 : ordered.findIndex((child) => child.position === before) + 1;
+    if (before !== null && start === 0) fail(400, "bad_request", "Unknown cursor");
+    const limit = Math.max(1, Number(ctx.query.get("limit")) || 32);
+    const page = ordered.slice(start, start + limit);
+    return {
+      items: page.map(({ position: _, ...item }) => item),
+      nextCursor: start + page.length < ordered.length ? page.at(-1)!.position : null,
+    };
+  })
   .post(
     "/api/sessions/:sessionId/subagents/:childSessionId/message",
     (): SubagentMessageResponse => ({
@@ -1441,6 +1727,10 @@ router
   )
   .delete("/api/sessions/:sessionId/follow-ups/:followUpId", () =>
     fail(409, "follow_up_started", "Already started."),
+  )
+  // The demo never holds a queued message, so there is nothing to interrupt with.
+  .post("/api/sessions/:sessionId/interrupt", () =>
+    fail(409, "not_pending", "This steering message was already delivered to the model."),
   )
   .post("/api/sessions/:sessionId/compact", ({ store, params }): unknown => {
     const sessionId = params.sessionId!;
@@ -1720,12 +2010,39 @@ function filterUsage(store: DemoStore, query: URLSearchParams, withModel: boolea
   );
 }
 
-const bucket = (day: UsageDay[]): UsageResponse["summary"]["today"] => ({
-  total: day.reduce((s, d) => s + d.cacheRead + d.cacheWrite + d.output, 0),
-  requests: day.reduce((s, d) => s + d.requests, 0),
-  cost: day.reduce((s, d) => s + costOf(d), 0),
-  hasUncosted: false,
-});
+/** A day's Tokens as the Token figures count them: a tool request's are not (see UsageDay.purpose). */
+const chatTokens = (d: UsageDay): number =>
+  d.purpose === undefined ? d.cacheRead + d.cacheWrite + d.output : 0;
+
+const bucket = (day: UsageDay[]): UsageResponse["summary"]["today"] => {
+  const tools = day.filter((d) => d.purpose !== undefined);
+  return {
+    total: day.reduce((s, d) => s + chatTokens(d), 0),
+    requests: day.reduce((s, d) => s + d.requests, 0),
+    cost: day.reduce((s, d) => s + costOf(d), 0),
+    hasUncosted: false,
+    toolRequests: tools.reduce((s, d) => s + d.requests, 0),
+    toolCost: tools.length > 0 ? tools.reduce((s, d) => s + costOf(d), 0) : null,
+  };
+};
+
+/** The tool requests by purpose, costliest first. */
+function toolRows(days: UsageDay[]): UsageResponse["tools"] {
+  const rows = new Map<string, UsageResponse["tools"][number]>();
+  for (const d of days) {
+    if (d.purpose === undefined) continue;
+    const row = rows.get(d.purpose) ?? {
+      purpose: d.purpose,
+      requests: 0,
+      cost: 0,
+      hasUncosted: false,
+    };
+    row.requests += d.requests;
+    row.cost = (row.cost ?? 0) + costOf(d);
+    rows.set(d.purpose, row);
+  }
+  return [...rows.values()].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
+}
 
 /** The series bucket a day falls in at a granularity: the day, its ISO week's Monday, or its month. */
 function bucketKey(date: string, granularity: UsageGranularity): string {
@@ -1833,10 +2150,12 @@ router
     for (const d of days) {
       const key = bucketKey(d.date, granularity);
       const point = buckets.get(key)!;
-      point.cacheRead += d.cacheRead;
-      point.cacheWrite += d.cacheWrite;
-      point.output += d.output;
-      point.total += d.cacheRead + d.cacheWrite + d.output;
+      if (d.purpose === undefined) {
+        point.cacheRead += d.cacheRead;
+        point.cacheWrite += d.cacheWrite;
+        point.output += d.output;
+        point.total += d.cacheRead + d.cacheWrite + d.output;
+      }
       point.cost = (point.cost ?? 0) + costOf(d);
       point.requests += d.requests;
       point.completed += d.completed;
@@ -1878,6 +2197,7 @@ router
       series: keys.map((key) => buckets.get(key)!),
       byAgentSeries: [...perAgent.values()],
       byModelSeries: [...perModel.values()],
+      tools: toolRows(days),
       errors: {
         total: store.f.usageErrors.reduce((n, e) => n + e.count, 0),
         rows: store.f.usageErrors.length,
@@ -2162,9 +2482,16 @@ const installedOf = (ctx: Ctx) => {
 
 const libraryPlugins = (store: DemoStore) => store.f.library.groups.flatMap((g) => g.plugins);
 
+/** The administrator's ledger of module requests, with how many wait. */
+const moduleLedger = (store: DemoStore): PluginModuleRequestsResponse => ({
+  requests: store.f.pluginModuleRequests,
+  pending: store.f.pluginModuleRequests.filter((r) => r.decision === null).length,
+});
+
 router
   .get("/api/plugins", ({ store }): PluginLibraryResponse => store.f.library)
   .get("/api/plugins/registry", ({ store }): PluginIndexResponse => store.f.pluginIndex)
+  .get("/api/plugins/market", ({ store }): PluginMarketResponse => store.f.market)
   // The demo installs no languages plugin: every fence is one the bundle carries or plain.
   .get("/api/languages", (): LanguageIndexResponse => ({ languages: [] }))
   .get("/api/plugins/registry/readme", ({ store, query }): PluginReadmeResponse => {
@@ -2207,8 +2534,52 @@ router
     skills: installedOf(ctx).skills,
     hooks: installedOf(ctx).hooks,
     mcpServers: mcpServerItems(ctx),
-    workbenches: [],
+    workbenches: installedOf(ctx).pluginWorkbenches ?? [],
+    modules: ctx.store.f.pluginModules,
   }))
+  // A plugin's server module asked for by hand: the demo's server runs what is asked of it.
+  .post("/api/projects/:projectId/plugins/modules", ({ store, body }): PluginModuleAskResponse => {
+    // A member's ask for a package not on the server yet: a waiting request for the admin.
+    const asked = record(body).package;
+    if (typeof asked === "string" && record(body).plugin === undefined) {
+      const plugin = asked.replace(/^@[^/]+\//, "");
+      if (!store.f.pluginModuleRequests.some((r) => r.package === asked)) {
+        store.f.pluginModuleRequests.push({
+          package: asked,
+          plugin,
+          projectId: IDS.project,
+          projectName: null,
+          agentId: typeof record(body).agentId === "string" ? str(record(body).agentId) : null,
+          requestedBy: store.f.user.userId,
+          requestedByName: null,
+          requestedAt: new Date(store.f.now).toISOString(),
+          decision: null,
+          decidedBy: null,
+          decidedAt: null,
+          via: null,
+          builtin: false,
+          state: "off",
+          onServer: false,
+        });
+      }
+      return { modules: store.f.pluginModules, moduleActions: [{ plugin, action: "requested" }] };
+    }
+    const name = str(record(body).plugin);
+    const plugin = libraryPlugins(store).find((p) => p.name === name);
+    if (plugin === undefined) fail(404, "unknown_plugin", `Plugin is not in the library: ${name}`);
+    if (plugin.modules !== true) {
+      fail(400, "no_server_module", `Plugin ${name} ships no server module.`);
+    }
+    for (const mod of store.f.pluginModules) {
+      if (mod.plugin !== name) continue;
+      mod.state = "running";
+      mod.listed = true;
+    }
+    return {
+      modules: store.f.pluginModules,
+      moduleActions: [{ plugin: name, action: "enabled" }],
+    };
+  })
   .post("/api/projects/:projectId/agents/:agentId/plugins", (ctx): unknown => {
     const installed = installedOf(ctx);
     const agent = agentOf(ctx);
@@ -2242,6 +2613,8 @@ router
         skills: installed.skills,
         hooks: installed.hooks,
         mcpServers: mcpServerItems(ctx),
+        modules: ctx.store.f.pluginModules,
+        moduleActions: [],
       } satisfies AgentPluginsInstallResponse,
       201,
     );
@@ -2288,6 +2661,35 @@ router
       "content-disposition": `attachment; filename="${params.name}.zip"`,
     }),
   )
+  // A whole plugin at once, as the server does it: the Skills its library entry contributes, its
+  // hook package and the MCP entries it installed (the demo has no workbenches).
+  .delete(
+    "/api/projects/:projectId/agents/:agentId/plugins/:name",
+    (ctx): PluginUninstallResponse => {
+      const installed = installedOf(ctx);
+      const agent = agentOf(ctx);
+      const config = configOf(ctx).config;
+      const name = ctx.params.name ?? "";
+      const plugin = libraryPlugins(ctx.store).find((p) => p.name === name);
+      const skillNames = new Set((plugin?.skills ?? []).map((s) => s.name));
+      const removed = {
+        skills: installed.skills.filter((s) => skillNames.has(s.name)).map((s) => s.name),
+        hooks: installed.hooks.filter((h) => h.name === name).map((h) => h.name),
+        mcpServers: config.mcpServers.filter((e) => e.plugin === name).map((e) => e.name),
+        workbenches: [],
+      };
+      if (removed.skills.length + removed.hooks.length + removed.mcpServers.length === 0) {
+        fail(404, "plugin_not_installed", `Nothing of ${name} is installed on this agent.`);
+      }
+      installed.skills = installed.skills.filter((s) => !skillNames.has(s.name));
+      installed.hooks = installed.hooks.filter((h) => h.name !== name);
+      config.mcpServers = config.mcpServers.filter((e) => e.plugin !== name);
+      agent.skillCount = installed.skills.length;
+      agent.hookCount = installed.hooks.length;
+      agent.pluginUpdates = agent.pluginUpdates.filter((u) => u.name !== name);
+      return { removed };
+    },
+  )
   .delete("/api/projects/:projectId/agents/:agentId/skills/:name", (ctx) => {
     const installed = installedOf(ctx);
     const before = installed.skills.length;
@@ -2295,6 +2697,76 @@ router
     if (installed.skills.length === before) notFound("Skill");
     agentOf(ctx).skillCount = installed.skills.length;
     return empty();
+  });
+
+// ---------------------------------------------------------------------------------------------
+// Theme packs
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The one pack an admin imported on the demo's server: warm paper over Frost, tokens and one
+ * accent preset, served as the stylesheet the server would assemble for it.
+ */
+const THEME_PACK: ThemePackDto = {
+  id: "paper",
+  names: { zh: "纸页", en: "Paper" },
+  version: "1.0.0",
+  api: 1,
+  base: "modern",
+  modes: ["light", "dark"],
+  swatches: {
+    light: { canvas: "#f6f1e7", ink: "#2b2521", accent: "#2b2521" },
+    dark: { canvas: "#1c1a17", ink: "#ece4d6", accent: "#ece4d6" },
+  },
+  accent: {
+    own: { light: "#2b2521", dark: "#ece4d6" },
+    presets: [{ id: "ink-blue", swatch: "#2c4f9e" }],
+  },
+  fonts: {
+    sans: "MiSans",
+    ui: "MiSans",
+    mono: "JetBrains Mono Variable",
+    cjk: "MiSans",
+    display: "MiSans",
+  },
+  href: "/api/themes/paper/files/index.css?v=5e1f0c2a",
+  v: "5e1f0c2a",
+};
+
+const THEME_PACK_CSS =
+  '@layer ui-theme{:root[data-theme="paper"]{--ui-canvas:#f6f1e7;--ui-fg:#2b2521;--ui-accent:#2b2521}' +
+  ':root[data-theme="paper"].dark{--ui-canvas:#1c1a17;--ui-fg:#ece4d6;--ui-accent:#ece4d6}}' +
+  '@layer ui-accent{:root[data-theme="paper"][data-accent="ink-blue"]{--ui-accent:#2c4f9e}}';
+
+/** The server's refusal of a write a member may not make. */
+function adminOnly(store: DemoStore): void {
+  if (!store.f.user.isAdmin) {
+    fail(403, "admin_required", "Only an admin can perform this operation.");
+  }
+}
+
+router
+  .get("/api/themes", (): ThemePacksResponse => ({ themes: [THEME_PACK] }))
+  .get("/api/themes/:id/files/*", ({ params }) => {
+    if (params.id !== THEME_PACK.id || params["*"] !== "index.css") notFound("Theme file");
+    return raw(THEME_PACK_CSS, { "content-type": "text/css; charset=utf-8" });
+  })
+  .post("/api/themes", ({ store }): unknown => {
+    adminOnly(store);
+    return readOnly("import a theme pack");
+  })
+  .delete("/api/themes/:id", ({ store }): unknown => {
+    adminOnly(store);
+    return readOnly("remove a theme pack");
+  })
+  // A built-in pack or the demo's own, as a zip: the demo's bytes stand in for the archive.
+  .get("/api/themes/:id/export", ({ params }) => {
+    const id = params.id!;
+    if (id !== THEME_PACK.id && !isThemeId(id)) notFound("Theme pack");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${id}-1.0.0.zip"`,
+    });
   });
 
 // ---------------------------------------------------------------------------------------------
@@ -2346,7 +2818,8 @@ const caseFileContent = (ctx: Ctx, material: CaseMaterial) => {
 
 router
   .get("/api/projects/:projectId/benchmarks", ({ store }): BenchmarksResponse => ({
-    benchmarks: store.f.benchmarks,
+    benchmarks: store.f.benchmarks.map((b) => ({ ...b, dir: `${GALLERY_BENCHMARKS_DIR}/${b.id}` })),
+    dir: GALLERY_BENCHMARKS_DIR,
   }))
   .get("/api/projects/:projectId/benchmarks/:benchmarkId/cases", (ctx): BenchmarkCasesResponse => ({
     cases: ctx.store.f.benchmarkCases[benchmarkOf(ctx).id] ?? [],
@@ -2413,17 +2886,24 @@ router
   );
 
 // ---------------------------------------------------------------------------------------------
-// Agent State export / import
+// Agent zip export / import
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get("/api/projects/:projectId/agents/:agentId/export", ({ params }) =>
-    raw("\u001f\u008b demo snapshot", {
-      "content-type": "application/gzip",
-      "content-disposition": `attachment; filename="${params.agentId}.tar.gz"`,
+  .get("/api/projects/:projectId/agents/:agentId/archive", ({ params }) =>
+    raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.agentId}.zip"`,
     }),
   )
-  .post("/api/projects/:projectId/agents/:agentId/import", () => readOnly("import a snapshot"));
+  .post("/api/projects/:projectId/agents/import", () => readOnly("import an Agent"));
+
+// An Agent's own picture: the demo's Agents have none (no `avatarRev`), so each draws its default.
+router
+  .get("/api/projects/:projectId/agents/:agentId/avatar", () => notFound("The agent's avatar"))
+  .put("/api/projects/:projectId/agents/:agentId/avatar", () =>
+    readOnly("change an agent's avatar"),
+  );
 
 // ---------------------------------------------------------------------------------------------
 // Machines (admin)
@@ -2540,7 +3020,11 @@ router
   .post("/api/desktop/update/install", () => notFound("Desktop updater"))
   .get("/api/desktop/tray", (): DesktopTrayStatusResponse => ({ status: null }))
   .put("/api/desktop/tray", () => empty())
-  .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"));
+  .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"))
+  // Host commands: a plain server's host offers none, so there is nothing to run.
+  .get("/api/command", (): HostCommandsResponse => ({ commands: [], offers: [] }))
+  .post("/api/command/:command", () => notFound("Host command"))
+  .post("/api/desktop/window", () => notFound("Desktop mode"));
 
 // ---------------------------------------------------------------------------------------------
 // The agent browser: the demo answers as a server with no desktop shell does, where the only
@@ -2667,11 +3151,75 @@ router
 // Workbenches and the Project's plugin list
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * The rows of an Agent's sidebar list (`?view=sidebar`): its installed workbenches that run and
+ * have a tab, none hidden from the sidebar, in the App Center tile's shape.
+ */
+const sidebarApps = (ctx: Ctx): AppCenterShortcut[] => {
+  const agent = agentOf(ctx);
+  const installed = installedOf(ctx);
+  if (installed.workbenchesOff === true) return [];
+  return (installed.workbenches ?? []).flatMap((w): AppCenterShortcut[] => {
+    const first = w.tabs[0];
+    if (first === undefined || w.enabled === false || w.showInSidebar === false) return [];
+    const titleZh = w.appCenter?.titleZh ?? first.titleZh;
+    return [
+      {
+        agentId: agent.agentId,
+        agentName: agent.name ?? agent.agentId,
+        workbenchId: w.id,
+        title: w.appCenter?.title ?? first.title,
+        ...(titleZh !== undefined ? { titleZh } : {}),
+        ...(w.icon !== undefined ? { icon: w.icon } : {}),
+        path: `/app/${ctx.params.projectId!}/${agent.agentId}/${w.id}`,
+        tab: first.key,
+        build: w.error === null ? "ready" : "failed",
+        showInSidebar: true,
+      },
+    ];
+  });
+};
+
+const appCenterListing = ({ store }: Ctx, hidden: boolean): AppCenterResponse => ({
+  layout: store.f.appCenter.layout,
+  shortcuts: store.f.appCenter.shortcuts.filter((app) => {
+    const source = store.f.installed[app.agentId]?.workbenches?.find(
+      (w) => w.id === app.workbenchId,
+    );
+    return (source?.appCenter?.show === false) === hidden;
+  }),
+});
+
 router
   .get(
     "/api/projects/:projectId/agents/:agentId/workbenches",
-    (): { workbenches: WorkbenchInfo[] } => ({
-      workbenches: [],
+    (ctx): WorkbenchesResponse | WorkbenchSidebarResponse => {
+      if (ctx.query.get("view") === "sidebar") return { apps: sidebarApps(ctx) };
+      const installed = installedOf(ctx);
+      return {
+        workbenches: installed.workbenches ?? [],
+        enabled: installed.workbenchesOff !== true,
+      };
+    },
+  )
+  .put(
+    "/api/projects/:projectId/agents/:agentId/workbenches/enabled",
+    (ctx): WorkbenchesResponse => {
+      const installed = installedOf(ctx);
+      installed.workbenchesOff = record(ctx.body).enabled === false;
+      return { workbenches: installed.workbenches ?? [], enabled: !installed.workbenchesOff };
+    },
+  )
+  .put("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/enabled", () =>
+    notFound("Workbench"),
+  )
+  .post("/api/projects/:projectId/agents/:agentId/workbenches/archive", () =>
+    readOnly("import a workbench archive"),
+  )
+  .get("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/archive", ({ params }) =>
+    raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.workbenchId}.zip"`,
     }),
   )
   .post("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/reload", () =>
@@ -2686,10 +3234,54 @@ router
   .delete("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId", () =>
     notFound("Workbench"),
   )
-  .get(
-    "/api/projects/:projectId/plugins/installed",
-    ({ store }): InstalledPluginsResponse => store.f.installedPlugins,
-  )
+  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/sidebar", (ctx) => {
+    const installed = installedOf(ctx);
+    const show = record(ctx.body).show;
+    if (typeof show !== "boolean") fail(400, "bad_request", "show must be true or false");
+    const all = installed.workbenches ?? [];
+    const current = all.find((w) => w.id === ctx.params.workbenchId);
+    if (!current) notFound("Workbench");
+    const workbench = { ...current, showInSidebar: show };
+    installed.workbenches = all.map((w) => (w.id === workbench.id ? workbench : w));
+    ctx.store.userChannel.event({
+      type: "workbench_updated",
+      projectId: ctx.params.projectId!,
+      agentId: ctx.params.agentId!,
+      workbench,
+    });
+    return { workbench };
+  })
+  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", (ctx) => {
+    const show = record(ctx.body).show;
+    if (typeof show !== "boolean") fail(400, "bad_request", "show must be true or false");
+    const installed = installedOf(ctx);
+    const current = installed.workbenches?.find((item) => item.id === ctx.params.workbenchId);
+    if (!current) notFound("Workbench");
+    const workbench = { ...current, appCenter: { ...current.appCenter, show } };
+    installed.workbenches = installed.workbenches!.map((item) =>
+      item.id === current.id ? workbench : item,
+    );
+    ctx.store.userChannel.event({
+      type: "workbench_updated",
+      projectId: ctx.params.projectId!,
+      agentId: ctx.params.agentId!,
+      workbench,
+    });
+    return { workbench };
+  })
+  // The App Center lists shortcuts in every build state under a stored arrangement; the demo's
+  // Agents keep no workbench files, so a tile opened in a window finds no page to show.
+  .get("/api/projects/:projectId/app-center", (ctx) => appCenterListing(ctx, false))
+  .get("/api/projects/:projectId/app-center/hidden", (ctx) => appCenterListing(ctx, true))
+  .put("/api/projects/:projectId/app-center/layout", ({ store, body }): AppCenterLayoutResponse => {
+    const layout = (record(body).layout ?? null) as AppCenterLayout | null;
+    store.f.appCenter = { ...store.f.appCenter, layout };
+    return { layout };
+  })
+  .get("/api/projects/:projectId/plugins/installed", ({ store }): InstalledPluginsResponse => ({
+    ...store.f.installedPlugins,
+    modules: store.f.pluginModules,
+  }))
   .put(
     "/api/projects/:projectId/plugins/installed",
     ({ store, body }): InstalledPluginsResponse => {

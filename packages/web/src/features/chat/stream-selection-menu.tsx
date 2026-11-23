@@ -1,8 +1,9 @@
 /**
  * The conversation's own context menu: a secondary click — or Shift+F10, or the keyboard's
- * Menu key — inside the message stream. On a web link it offers Open in built-in browser (the
- * desktop app, with the browser available), Open in system browser (Open in new tab from a
- * browser) and Copy link address; on a selection, Copy and Add to conversation; on a link
+ * Menu key — inside the message stream. On a web link it offers the rows other modules contribute
+ * for it (`ChatModule.linkActions`: the agent browser's Open in built-in browser), then Open in
+ * system browser (Open in new tab from a browser) and Copy link address; on a selection, Copy and
+ * Add to conversation; on a link
  * while text is selected, both, the selection's rows after a divider. The rules (which gestures
  * it takes, which rows it shows, where a keyboard-opened menu hangs, what an excerpt becomes)
  * are pure and live in lib/selection-menu.ts; this half reads the DOM and runs the rows.
@@ -24,13 +25,15 @@
  * Copy writes what ⌘C writes from the same selection: its text as plain text, and nothing else
  * (lib/selection-copy.ts holds that rule for both).
  */
-import { useRef, useState, useSyncExternalStore } from "react";
-import type {
-  KeyboardEvent as ReactKeyboardEvent,
-  MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent,
-  ReactNode,
+import {
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
+
 import {
   Dropdown,
   ICONS,
@@ -41,17 +44,19 @@ import {
   isContextMenuKey,
   toastSuccess,
   useRowContextMenu,
+  type AnchorRect,
+  type ContextMenuEventLike,
 } from "@prismshadow/penguin-ui";
-import type { AnchorRect, ContextMenuEventLike } from "@prismshadow/penguin-ui";
-import type { BrowserBackend } from "@prismshadow/penguin-server/api";
+
+import type { LinkRow } from "@prismshadow/penguin-web-plugin";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { isDesktopShellWindow } from "../../lib/account-menu";
 import {
+  LINK_MENU_ITEMS,
   SELECTION_MENU_ITEMS,
   excerptReference,
   linkAnchor,
-  linkMenuItems,
   menuLinkHref,
   selectionEndAnchor,
   streamMenuContent,
@@ -61,8 +66,7 @@ import { useAuth } from "../../state/auth";
 import { writeClipboard } from "../../lib/clipboard";
 import { inEditable, writeSelectionCopy } from "../../lib/selection-copy";
 import { restoreSelection } from "../../components/ui/text-selection";
-import { openLinkInBrowser } from "../builtin-browser/browser-actions";
-import { browserLinkTarget, subscribeBrowser } from "../builtin-browser/browser-store";
+import { useLinkActionRows } from "./link-actions";
 
 /** The selection a gesture opened the menu on, captured before anything could collapse it. */
 export interface CapturedSelection {
@@ -90,7 +94,7 @@ export function SelectionMenuRows({
 }: {
   selection: CapturedSelection;
   /** Stages the excerpt in this conversation's composer. */
-  onAddExcerpt: (reference: ComposerReference) => void;
+  onAddExcerpt: ((reference: ComposerReference) => void) | undefined;
   /** Runs after either row has acted: closes the panel and puts the highlight back. */
   onDone: (selection: CapturedSelection) => void;
 }) {
@@ -109,7 +113,7 @@ export function SelectionMenuRows({
               onDone(selection);
             }}
           />
-        ) : (
+        ) : onAddExcerpt ? (
           <MenuItem
             key={item}
             glyph={ICONS.messagePlus}
@@ -119,34 +123,28 @@ export function SelectionMenuRows({
               onDone(selection);
             }}
           />
-        ),
+        ) : null,
       )}
     </>
   );
 }
 
 /**
- * A web link's rows, in linkMenuItems order. Open in built-in browser opens a tab through the
- * browser's own new-tab request and brings the Browser panel up in this conversation's dock;
- * while the agents drive the user's own Chrome it reads "Open in agent's Chrome tab" and the
- * same request opens the tab there.
- * The external row opens the address as a new window: the desktop app's window hands every
- * other site's to the system browser, and a browser opens a tab. Copy link address confirms
- * with a toast, as Copy does.
+ * A web link's rows: the contributed ones first (`rows`, each running its own action), then the
+ * app's own in LINK_MENU_ITEMS order. The external row opens the address as a new window: the
+ * desktop app's window hands every other site's to the system browser, and a browser opens a
+ * tab. Copy link address confirms with a toast, as Copy does.
  */
 export function LinkMenuRows({
   href,
-  browser,
+  rows,
   desktopShell,
   onDone,
 }: {
   /** The link's web address (menuLinkHref). */
   href: string;
-  /**
-   * The agent browser that can open it (browser-state.ts `linkTarget`): the built-in one in the
-   * desktop app's window while it is available, the user's Chrome while it is connected, or none.
-   */
-  browser: BrowserBackend | null;
+  /** The rows other modules offer for this link now (link-actions.ts), in order. */
+  rows: readonly LinkRow[];
   /** This page is the desktop app's own window, so "outside the app" is the system browser. */
   desktopShell: boolean;
   /** Runs after a row has acted: closes the panel and puts back any highlight. */
@@ -158,60 +156,57 @@ export function LinkMenuRows({
   };
   return (
     <>
-      {linkMenuItems(browser !== null).map((item) => {
-        switch (item) {
-          case "openInBuiltinBrowser":
-            return (
-              <MenuItem
-                key={item}
-                glyph={ICONS.globe}
-                label={
-                  browser === "chrome"
-                    ? S.chat.linkMenu.openInChromeTab
-                    : S.chat.linkMenu.openInBuiltinBrowser
-                }
-                onSelect={run(() => openLinkInBrowser(href))}
-              />
-            );
-          case "openExternal":
-            return (
-              <MenuItem
-                key={item}
-                glyph={ICONS.externalLink}
-                label={desktopShell ? S.chat.linkMenu.openExternal : S.chat.linkMenu.openInNewTab}
-                onSelect={run(() => window.open(href, "_blank", "noopener,noreferrer"))}
-              />
-            );
-          case "copyLink":
-            return (
-              <MenuItem
-                key={item}
-                glyph={ICONS.chainLink}
-                label={S.chat.linkMenu.copyLink}
-                onSelect={run(() => {
-                  void writeClipboard(href).then((ok) => ok && toastSuccess(S.common.copied));
-                })}
-              />
-            );
-        }
-      })}
+      {[
+        ...rows.map((row) => (
+          <MenuItem
+            key={row.label}
+            glyph={row.glyph}
+            label={row.label}
+            onSelect={run(row.onSelect)}
+          />
+        )),
+        ...LINK_MENU_ITEMS.map((item) => {
+          switch (item) {
+            case "openExternal":
+              return (
+                <MenuItem
+                  key={item}
+                  glyph={ICONS.externalLink}
+                  label={desktopShell ? S.chat.linkMenu.openExternal : S.chat.linkMenu.openInNewTab}
+                  onSelect={run(() => window.open(href, "_blank", "noopener,noreferrer"))}
+                />
+              );
+            case "copyLink":
+              return (
+                <MenuItem
+                  key={item}
+                  glyph={ICONS.chainLink}
+                  label={S.chat.linkMenu.copyLink}
+                  onSelect={run(() => {
+                    void writeClipboard(href).then((ok) => ok && toastSuccess(S.common.copied));
+                  })}
+                />
+              );
+          }
+        }),
+      ]}
     </>
   );
 }
 
 /**
- * LinkMenuRows as the stream shows them: the agent browser that can open the link, read live
- * from the store the browser layer keeps, and whether this is the desktop app's window from the
- * session. Mounted only while the menu is open, so the stream itself neither re-renders on the
- * browser's events nor needs the session to render.
+ * LinkMenuRows as the stream shows them: the contributed rows for the link, followed live, and
+ * whether this is the desktop app's window from the session. Mounted only while the menu is open,
+ * so the stream itself neither re-renders on a contributor's changes nor needs the session to
+ * render.
  */
 function StreamLinkRows({ href, onDone }: { href: string; onDone: () => void }) {
-  const browser = useSyncExternalStore(subscribeBrowser, browserLinkTarget);
+  const rows = useLinkActionRows(href);
   const { desktopMode, sessionVia } = useAuth();
   return (
     <LinkMenuRows
       href={href}
-      browser={browser}
+      rows={rows}
       desktopShell={isDesktopShellWindow({ desktopMode, sessionVia })}
       onDone={onDone}
     />
@@ -255,7 +250,7 @@ export interface StreamSelectionMenu {
 }
 
 export function useStreamSelectionMenu(
-  onAddExcerpt: (reference: ComposerReference) => void,
+  onAddExcerpt?: (reference: ComposerReference) => void,
 ): StreamSelectionMenu {
   // The row hook's anchor state and dismissal, with the stream as its "row": its owner is what a
   // scroll must move for the panel to close, and that is the stream's own scroll.

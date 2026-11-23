@@ -46,7 +46,6 @@
  * all only when the output stream supports color (see `supportsColor`): piped output, e.g. a
  * nested `penguin run` driven through `exec_command`, must stay plain (#102).
  */
-import { isEventMessage, isModelMessage, parseUserSteeringText } from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
   ApprovalDecision,
@@ -63,18 +62,27 @@ import type {
   PartialToolCallOutputPayload,
   PartialToolCallPayload,
   RequestEndPayload,
+  SessionMetaPayload,
   TextPayload,
   TokenUsagePayload,
   ToolCallPayload,
   ToolDefinition,
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
-import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
+import {
+  isEventMessage,
+  isHarnessInput,
+  isModelMessage,
+  parseInPlaceModelSwitch,
+  parseUserSteeringText,
+} from "@prismshadow/penguin-core";
+
+import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import { A2uiStreamFilter } from "./a2ui-stream.js";
 import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
 import { ToolOutputCollapser, collapseLines } from "./output-collapse.js";
-import { defaultMessages } from "./i18n.js";
-import type { Messages } from "./i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
+import { defaultMessages, humanizeTokens } from "@prismshadow/penguin-server/cli";
 
 /** The ANSI codes the renderer uses; the plain palette maps every code to "" so all writes degrade to uncolored text with no further branching. */
 export interface Palette {
@@ -158,22 +166,6 @@ function callTag(toolCallId: string, origin?: readonly MessageOrigin[]): string 
   return origin && origin.length > 0 ? `agent-${shortId(origin[origin.length - 1]!)}-${tid}` : tid;
 }
 
-/** Converts a token count to a human-readable abbreviation: 1234->1.2k, 1500000->1.5M, 2e9->2B, <1000 unchanged. */
-export function humanizeTokens(n: number): string {
-  const abs = Math.abs(n);
-  if (abs < 1000) return `${n}`;
-  if (abs < 1_000_000) {
-    const v = n / 1000;
-    return `${trimZero(v)}k`;
-  }
-  if (abs < 1_000_000_000) {
-    const v = n / 1_000_000;
-    return `${trimZero(v)}M`;
-  }
-  const v = n / 1_000_000_000;
-  return `${trimZero(v)}B`;
-}
-
 /** Keeps one decimal place but drops a trailing `.0`. */
 function trimZero(v: number): string {
   const s = v.toFixed(1);
@@ -216,6 +208,15 @@ export interface RenderOptions {
    * REPL turns it on unless `--verbose`.
    */
   collapseToolOutput?: boolean;
+  /**
+   * Print the input a run opens with (`> text`), as history shows it. The chat REPL follows
+   * runs it did not start — another surface's, or one under way when it resumed — whose input
+   * nobody typed on this screen; its own message is on the screen already (see expectInput).
+   * Off for `penguin run`, whose input is its argument.
+   */
+  echoInput?: boolean;
+  /** Vacate an editable line before an approval or task completion takes the screen. */
+  hideInput?: () => (() => void) | undefined;
 }
 
 /**
@@ -353,6 +354,11 @@ export class StreamRenderer {
   private readonly c: Palette;
   /** Collapse long tool outputs to head/tail + a dim elision marker (see RenderOptions); toggled live by the chat REPL's `/verbose`. */
   private collapseToolOutput: boolean;
+  /** Print a run's input (see RenderOptions.echoInput). */
+  private readonly echoInput: boolean;
+  private readonly hideInput?: () => (() => void) | undefined;
+  /** The message this screen just sent, whose echoed input is not printed again (expectInput). */
+  private expectedInput: string | null = null;
   /** Per-stream collapse state (keyed by tool_call_id), created lazily on the first output delta; settled and dropped at the stream's stop (endTask settles leftovers of aborted streams). */
   private readonly toolOutCollapsers = new Map<string, ToolOutputCollapser>();
 
@@ -383,6 +389,7 @@ export class StreamRenderer {
   }> = [];
   /** Reentrancy guard for drain. */
   private draining = false;
+  private notices: string[] = [];
   /**
    * Keys (origin chain + tool_call_id) of call lines already **rendered in place** from
    * a complete message: rendered ahead of the streaming copy at approval time, so any
@@ -446,6 +453,7 @@ export class StreamRenderer {
    */
   private subagentTotal = 0;
   /** Current context (= input+output = total of the most recent request), the context at the end of the previous task, and cumulative Session elapsed time (ms). */
+  private contextWindow: number | undefined;
   private contextNow = 0;
   private contextAtTaskStart = 0;
   private sessionElapsedMs = 0;
@@ -486,6 +494,8 @@ export class StreamRenderer {
   private pendingRetryCode: string | undefined;
   /** The pending failure's attempt ordinal (request_end.attempt — the core's authoritative count, printed on the retry line). */
   private pendingRetryAttempt: number | undefined;
+  /** The Session the stream is of — as its last main-session session_meta named it, or as the follower named it (see `followSession`): what tells a model switch's Trace handoff (it names this Session) from any other origin block. */
+  private sessionId: string | undefined;
 
   constructor(
     out: NodeJS.WritableStream = process.stdout,
@@ -496,6 +506,16 @@ export class StreamRenderer {
     this.t = t;
     this.c = paletteFor(out);
     this.collapseToolOutput = opts.collapseToolOutput === true;
+    this.echoInput = opts.echoInput === true;
+    this.hideInput = opts.hideInput;
+  }
+
+  /**
+   * The text this screen just sent as a message: its input record, when the run echoes it, is
+   * not printed again under the line typed. Null forgets it (the message did not start a run).
+   */
+  expectInput(text: string | null): void {
+    this.expectedInput = text;
   }
 
   /**
@@ -513,6 +533,22 @@ export class StreamRenderer {
   }
 
   /**
+   * Names the Session the stream is of, ahead of any session_meta: a switch streams its
+   * `session_update` and then its handoff, and the new context's session_meta comes only with
+   * the next message — a chat that resumed a Session and has sent nothing yet has seen none.
+   */
+  followSession(sessionId: string): void {
+    if (this.sessionId !== sessionId) this.contextWindow = undefined;
+    this.sessionId = sessionId;
+  }
+
+  /** Adopt the effective window of the parent context, including a move to an unknown model. */
+  setContextWindow(raw: number | string): void {
+    const window = typeof raw === "number" ? raw : Number(raw);
+    this.contextWindow = Number.isFinite(window) && window > 0 ? window : undefined;
+  }
+
+  /**
    * Enters user interaction (approval prompt): first ensures the call line awaiting
    * approval is **immediately adjacent to the current position** (if unrendered or
    * separated by other output, render it in place from the complete message directly),
@@ -521,6 +557,7 @@ export class StreamRenderer {
    * for both the main Agent and subagents.
    */
   beginUserPrompt(toolCall?: AmspRecord<ToolCallPayload>): void {
+    this.hideInput?.();
     if (toolCall) this.ensureAdjacentCallLine(toolCall);
     this.finishLine();
     // File-tool approvals: the one-line preview shows only the (shortened) path, but the
@@ -566,10 +603,12 @@ export class StreamRenderer {
     }
     if (this.renderedDecisions.has(key)) return;
     this.renderedDecisions.add(key);
+    const redraw = this.hideInput?.();
     this.ensureAdjacentCallLine(toolCall);
     this.finishLine();
     this.out.write(`${dim(this.t.approvalDecision(decision), this.c)}\n`);
     this.lastLineKey = null;
+    redraw?.();
   }
 
   /** Call-line dedup key: origin chain + tool_call_id (parent/child session ids may collide, so the chain is needed to disambiguate). */
@@ -622,7 +661,8 @@ export class StreamRenderer {
   setInputHold(active: boolean): void {
     if (this.inputHold === active) return;
     this.inputHold = active;
-    if (!active) this.drain();
+    if (active) this.finishLine();
+    else this.drain();
   }
 
   /**
@@ -635,6 +675,20 @@ export class StreamRenderer {
     this.finishLine();
     this.out.write(`${text}\n`);
     this.lastLineKey = null;
+  }
+
+  /** An asynchronous submission result waits for the current draft or approval to finish. */
+  printSubmissionResult(text: string): void {
+    this.notices.push(text);
+    this.drain();
+  }
+
+  /** A goal round can finish while the same draft is still being edited. */
+  printGoalRound(text: string, previousRoundElapsed?: number): void {
+    const redraw = this.hideInput?.();
+    if (previousRoundElapsed !== undefined) this.endTask(previousRoundElapsed);
+    this.printLine(text);
+    redraw?.();
   }
 
   /** User interaction ends: unlocks the screen, first renders approval results deferred during the lock, then drains the queue. */
@@ -682,6 +736,9 @@ export class StreamRenderer {
     if (this.draining) return;
     this.draining = true;
     try {
+      if (!this.promptActive && !this.inputHold) {
+        for (const notice of this.notices.splice(0)) this.printLine(notice);
+      }
       while (!this.promptActive && !this.inputHold && this.pending.length > 0) {
         if (this.holder === null) {
           const msg = this.pending.shift()!;
@@ -724,6 +781,11 @@ export class StreamRenderer {
       this.handleNested(msg);
       return;
     }
+    // A session_update (a Session setting changed: today the model the next context opens on)
+    // prints nothing — the switch's "model: A → B" line is read from the Session it returns —
+    // and is no part of a Task: it lands at a Task boundary, possibly long before the next Task,
+    // so it must not start that Task's clock either.
+    if (isEventMessage(msg) && msg.payload.type === "session_update") return;
     // The timestamp of this task's first (non-session_meta) message = the start point for
     // the stats-line elapsed time. session_meta can predate this turn by a long time (a
     // session may sit idle for a day before the first question), so it is excluded,
@@ -731,6 +793,11 @@ export class StreamRenderer {
     if (this.taskFirstTsMs === null && msg.type !== "session_meta") {
       const ms = Date.parse(msg.timestamp);
       if (Number.isFinite(ms)) this.taskFirstTsMs = ms;
+    }
+    if (msg.type === "session_meta") {
+      const meta = msg.payload as SessionMetaPayload;
+      this.sessionId = meta.session_id;
+      this.setContextWindow(meta.model_context_window);
     }
     if (isModelMessage(msg)) {
       const payload = msg.payload;
@@ -767,9 +834,33 @@ export class StreamRenderer {
               writeSteeringLines(this.out, steering, this.t, this.c);
               this.lastLineKey = null;
             }
+            // And a model switch's Trace handoff (it streams right after the switch's
+            // session_update): one line naming the file the new model reads the history from.
+            const handover = parseInPlaceModelSwitch(p.text, this.sessionId);
+            if (handover !== null) {
+              this.finishLine();
+              this.out.write(`${dim(this.t.switchModelHandedOver(handover.tracePath), this.c)}\n`);
+              this.lastLineKey = null;
+            }
+            if (steering === null && handover === null && this.echoInput && !isHarnessInput(msg)) {
+              if (this.expectedInput === p.text) {
+                this.expectedInput = null;
+              } else {
+                this.finishLine();
+                this.out.write(`\n> ${p.text}\n`);
+                this.lastLineKey = null;
+              }
+            }
           }
           return;
         }
+        case "image_url":
+          if (this.echoInput && (payload as { role?: string }).role === "user") {
+            this.finishLine();
+            this.out.write(`\n> ${dim("[image]", this.c)}\n`);
+            this.lastLineKey = null;
+          }
+          return;
         default:
           return;
       }
@@ -777,6 +868,21 @@ export class StreamRenderer {
 
     if (isEventMessage(msg)) {
       const payload = msg.payload;
+      // A compaction's own requests and tool-round decisions print nothing (no retry, error or
+      // decision line); a decision an approval prompt already printed is forgotten as below.
+      if (
+        this.compactionActive &&
+        (payload.type === "request_begin" ||
+          payload.type === "request_end" ||
+          payload.type === "approval_decision")
+      ) {
+        if (payload.type === "approval_decision") {
+          this.renderedDecisions.delete(
+            this.callLineKey((payload as ApprovalDecisionPayload).tool_call_id),
+          );
+        }
+        return;
+      }
       if (payload.type === "token_usage") {
         // Accumulate this task's usage, printed together when the task ends (endTask),
         // not shown after every tool call/round.
@@ -899,6 +1005,18 @@ export class StreamRenderer {
         const p = payload as CompactionEndPayload;
         this.finishLine();
         this.compactionActive = false;
+        // Completed with the error pair: no full summary. A refusal or a summary cut off at the
+        // output limit means too little room was left for it.
+        const degraded =
+          p.status === "completed" && (p.error_code !== undefined || p.error_message !== undefined)
+            ? { room: p.error_code === "rejected" || p.error_code === "output_truncated" }
+            : undefined;
+        // A refused request's announced resend that its hand-off then prevented never goes out.
+        if (p.status === "fatal") {
+          this.pendingRetry = null;
+          this.pendingRetryAttempt = undefined;
+          this.pendingRetryCode = undefined;
+        }
         // Same accounting as the stats line: total = Session cumulative (parent + child), delta = usage of this compaction.
         const tokens =
           this.compactionTokens > 0
@@ -909,7 +1027,7 @@ export class StreamRenderer {
             : undefined;
         this.compactionTokens = 0;
         this.out.write(
-          `${dim(this.t.compactionStop(p.mode, p.status, tokens, p.error_message), this.c)}\n`,
+          `${dim(this.t.compactionStop(p.mode, p.status, tokens, p.error_message, degraded), this.c)}\n`,
         );
         this.lastLineKey = null;
       } else if (payload.type === "mcp_connect_begin") {
@@ -1081,6 +1199,9 @@ export class StreamRenderer {
   }
 
   private handlePartialToolCall(p: PartialToolCallPayload): void {
+    // A compaction's tool round prints nothing (an approval prompt still renders the call it
+    // asks about, through beginUserPrompt).
+    if (this.compactionActive) return;
     // The call line was already rendered in place from the complete message at approval time: skip the whole late-arriving streaming copy (clean up the buffer on stop).
     if (this.ensuredCallLines.has(this.callLineKey(p.tool_call_id))) {
       if (p.event_type === "stop") this.partialToolCalls.delete(p.tool_call_id);
@@ -1136,6 +1257,7 @@ export class StreamRenderer {
   }
 
   private handlePartialToolOutput(p: PartialToolCallOutputPayload): void {
+    if (this.compactionActive) return; // a compaction tool round's output: see above
     const label = this.outputLabel(p.tool_call_id);
     const name = this.toolNames.get(p.tool_call_id);
     const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
@@ -1266,6 +1388,7 @@ export class StreamRenderer {
    * reset.
    */
   endTask(elapsedMs = 0): void {
+    this.hideInput?.();
     this.promptActive = false;
     this.promptKey = null;
     this.inputHold = false;
@@ -1296,6 +1419,10 @@ export class StreamRenderer {
           this.t.taskStats({
             context: humanizeTokens(this.contextNow),
             contextDelta: signedDelta(humanizeTokens(contextDelta)),
+            contextPercent:
+              this.contextWindow === undefined
+                ? undefined
+                : Math.round((this.contextNow / this.contextWindow) * 100),
             tokens: humanizeTokens(this.sessionTotal + this.subagentTotal),
             tokensDelta: signedDelta(humanizeTokens(this.taskTokens)),
             elapsed: humanizeDuration(this.sessionElapsedMs),

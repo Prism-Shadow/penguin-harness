@@ -6,15 +6,19 @@
  *                [--thinking <level>] [--resume [sessionId]] [--verbose] [--server <url>]
  *
  * The REPL machinery (persistent readline, bracketed paste, the Ctrl-C state machine)
- * is unchanged; the transport is the server: each turn POSTs a task and consumes the
- * Session's SSE stream (subscribe first, POST second) through the shared watcher.
+ * is unchanged; the transport is the server. Once the chat has a Session it holds one
+ * subscription to it (session-view.ts), and every run is shown through it, whoever started
+ * it: the prompt makes way while one runs and comes back when it ends. A message is one
+ * POST /tasks with `steerIfBusy` — a new Task when idle, steering when a run is under way,
+ * the server deciding.
  * `/goal[:<budget>] <objective>` runs goal mode; `/compact` POSTs a compaction and
  * renders its progress; `/clear` starts over, the next message creating a fresh Session;
  * `/thinking` shows or re-pins the Session's thinking level; `/switch-model <provider>
  * <model_id>` switches the Session's model in place (compacting on the current model
  * first) and bare `/switch-model` shows the current one; `/verbose` toggles tool-output
- * collapsing (display only); `/exit` or `/quit` exits. Typing while a turn runs POSTs
- * a steering message (delivered between turns); Ctrl-C during a run POSTs /abort.
+ * collapsing (display only); `/exit` or `/quit` exits, during a run too, which then goes on
+ * on the server. Typing while a run is followed steers it (delivered between turns); Ctrl-C
+ * during a run POSTs /abort.
  *
  * A new chat creates its Session at the first message, never before: opening the chat and
  * leaving it writes nothing on the server (no Session row, no Trace, no sidebar entry). The
@@ -27,21 +31,39 @@
  *
  * `--resume` reuses an existing Session (full id or unique fragment; omitted = the
  * agent's most recent Session) and first renders its history from GET /messages; it
- * takes no model flags — `/switch-model` changes the model inside the chat.
+ * takes no model flags — `/switch-model` changes the model inside the chat. A Session still
+ * running then (the terminal that started its Task closed, or another surface started one)
+ * needs nothing of its own: the view joins the run under way and the chat follows it before
+ * its first prompt, as it follows any run.
  * Ctrl-C behavior (state-dependent): buffer has content -> clear it; awaiting approval
  * -> deny; running -> abort the current turn; empty buffer -> y/N exit confirmation.
  * Docs: /docs/cli § "penguin chat".
  */
-import { createInterface, type Interface } from "node:readline";
+import { clearLine, createInterface, cursorTo, type Interface, type Key } from "node:readline";
 import type { Command } from "commander";
-import { buildInfo } from "@prismshadow/penguin-core";
 import type {
   ApprovalDecision,
   AmspRecord,
   ThinkingLevelName,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import { buildInfo } from "@prismshadow/penguin-core";
+
+import type { SessionInfo, Messages } from "@prismshadow/penguin-server/cli";
+import {
+  parseApprovalAnswer,
+  resolveApprovalMode,
+  ApiError,
+  connectionLabel,
+  resolveAgentId,
+  resolveConnection,
+  resolveProjectId,
+  resolveSessionRef,
+  ServerClient,
+  listAgentSessions,
+  terminalInput,
+} from "@prismshadow/penguin-server/cli";
+import type { TaskCreateResponse } from "@prismshadow/penguin-server/api";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
 import { parseGoalCommand } from "../goal-command.js";
 import { parseThinkingCommand, resolveThinkingLevel } from "../thinking-command.js";
@@ -51,31 +73,27 @@ import {
   switchModelRefusal,
   type ModelTarget,
 } from "../switch-model-command.js";
-import { parseApprovalAnswer, resolveApprovalMode } from "../approval.js";
+
 import { LineComposer, PasteFilter } from "../input.js";
-import {
-  ApiError,
-  connectionLabel,
-  resolveAgentId,
-  resolveConnection,
-  resolveProjectId,
-  resolveSessionRef,
-  ServerClient,
-} from "../client.js";
+
 import {
   callerSessionContext,
   createServerSession,
   getSessionInfo,
-  getSessionMessages,
-  listAgentSessions,
   pinThinkingLevel,
   projectDefaultModel,
   resolveWorkspace,
 } from "../server-session.js";
-import { SessionStream, watchTask } from "../server-task.js";
-import type { Messages } from "../i18n.js";
+import { SessionView, type SessionViewOptions } from "../session-view.js";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export type ChatState = "idle" | "running" | "approving" | "confirming-exit";
+
+/** What the prompt answers when a run starts while it waits: the main loop follows it. */
+const BUSY = Symbol("busy");
 
 /**
  * What a new chat's Session is created with at the first message: the flags, the calling
@@ -122,10 +140,8 @@ function promptMark(kind: "A" | "B" | "C" | "D", exitCode?: number): string {
   return `\x1b]133;${kind}${exitCode === undefined ? "" : `;${exitCode}`}\x07`;
 }
 
-export function registerChatCommand(program: Command, t: Messages): void {
-  program
-    .command("chat")
-    .description(t.chat.desc)
+export function registerChatCommand(chat: Command, t: Messages): void {
+  chat
     .option("--project-id <id>", t.common.projectId)
     .option("--agent-id <id>", t.common.agentId)
     .option("--workspace <path>", t.common.workspace)
@@ -174,7 +190,6 @@ export function registerChatCommand(program: Command, t: Messages): void {
        * that pin failed, for the next message to retry.
        */
       let pinAfterCreate: ThinkingLevelName | null = null;
-      let resumedMessages: AmspRecord[] | null = null;
       if (opts.resume !== undefined) {
         let sessionId: string | undefined;
         if (typeof opts.resume === "string") {
@@ -189,7 +204,6 @@ export function registerChatCommand(program: Command, t: Messages): void {
           return;
         }
         let resumed = await getSessionInfo(client, sessionId);
-        resumedMessages = await getSessionMessages(client, sessionId);
         if (opts.approve !== undefined) {
           await client.request("PATCH", `/api/sessions/${resumed.sessionId}`, {
             approvalMode: mode,
@@ -236,7 +250,10 @@ export function registerChatCommand(program: Command, t: Messages): void {
       const projectDefault =
         pending !== null && pending.modelId === undefined
           ? await projectDefaultModel(client, projectId)
-          : null;
+          : undefined;
+      /** What stands for the Project's default when it is not a model: none, or unread. */
+      const noModelLabel = (): string =>
+        projectDefault === null ? t.chatNoDefaultModel() : t.chatProjectDefaultModel();
       /** The model the conversation is on, or will be created on, as /switch-model labels it. */
       const modelLabel = (): string => {
         if (session !== null) return formatModelLabel(session.provider, session.modelId);
@@ -245,13 +262,36 @@ export function registerChatCommand(program: Command, t: Messages): void {
         }
         return projectDefault
           ? formatModelLabel(projectDefault.provider, projectDefault.modelId)
-          : t.chatProjectDefaultModel();
+          : noModelLabel();
       };
       const sessionThinkingLevel = (): string =>
         (session !== null ? session.thinkingLevel : pending?.thinkingLevel) ??
         t.chatThinkingConfigured();
 
-      let renderer = new StreamRenderer(out, t, { collapseToolOutput: !verbose });
+      // The chat follows runs it did not start, whose input nobody typed here: echo it.
+      const newRenderer = (): StreamRenderer =>
+        new StreamRenderer(out, t, {
+          collapseToolOutput: !verbose,
+          echoInput: true,
+          hideInput: () => hideSteeringPrompt(),
+        });
+      let renderer = newRenderer();
+
+      /**
+       * The view of the Session the chat is on (session-view.ts): one subscription through which
+       * every run is shown, whoever started it. Joined when there is a Session — at once on
+       * --resume, at the first message otherwise — and replaced when the chat moves to another.
+       */
+      let view: SessionView | null = null;
+      const viewOptions = (sessionId: string): SessionViewOptions => ({
+        client,
+        sessionId,
+        t,
+        renderer: () => renderer,
+        approvalPrompt: (tc) => interactivePrompt(tc),
+        out,
+        onBusy: () => onBusy(),
+      });
 
       out.write(
         `${t.header(
@@ -259,31 +299,41 @@ export function registerChatCommand(program: Command, t: Messages): void {
           buildInfo().describe,
           session?.agentId ?? agentId,
           session?.workspace ?? pending?.workspace ?? "",
-          session?.modelId ??
-            pending?.modelId ??
-            projectDefault?.modelId ??
-            t.chatProjectDefaultModel(),
+          session?.modelId ?? pending?.modelId ?? projectDefault?.modelId ?? noModelLabel(),
           connectionLabel(client.conn),
         )}\n` +
           (session === null ? `${dim(t.chatNewConversation())}\n` : "") +
           `${t.chatHints()}\n`,
       );
       // On resume, first render the history messages of the current context (full
-      // messages, same endpoint the Web history uses), then proceed to regular input.
-      if (resumedMessages !== null && session !== null) {
-        out.write(`${t.resumedBanner(session.sessionId, resumedMessages.length)}\n`);
-        renderHistory(resumedMessages, out, t, { collapseToolOutput: !verbose });
+      // messages, same endpoint the Web history uses), then proceed to regular input. A run
+      // still under way comes after them (the view draws it once started, below) and is
+      // followed before the first prompt.
+      if (opts.resume !== undefined && session !== null) {
+        const { view: joinedView, joined } = await SessionView.join(viewOptions(session.sessionId));
+        view = joinedView;
+        out.write(`${t.resumedBanner(session.sessionId, joined.count)}\n`);
+        renderHistory(joined.messages, out, t, { collapseToolOutput: !verbose });
+        if (joined.running) {
+          if (joined.legacy) out.write(`${dim(t.chatServerTooOld())}\n`);
+          out.write(`${dim(t.chatFollowingResumed())}\n`);
+          if (joined.omitted > 0) out.write(`${dim(t.chatRunOmitted(joined.omitted))}\n`);
+        }
       }
 
       // TTY: raw mode + bracketed paste + PasteFilter; non-TTY (pipe/test): read stdin directly.
-      const isTTY = Boolean(process.stdin.isTTY);
+      // The keys come from stdin, or from the console itself where the runtime was given no
+      // stdin (the desktop app's launchers on Windows, the server CLI's console-input.ts).
+      const input = terminalInput();
+      const stdin = input.stream;
+      const isTTY = Boolean(stdin.isTTY);
       let pasteFilter: PasteFilter | null = null;
-      let inputStream: NodeJS.ReadableStream = process.stdin;
+      let inputStream: NodeJS.ReadableStream = stdin;
       if (isTTY) {
-        process.stdin.setRawMode(true);
+        stdin.setRawMode(true);
         out.write("\x1b[?2004h");
         pasteFilter = new PasteFilter();
-        process.stdin.pipe(pasteFilter);
+        stdin.pipe(pasteFilter);
         inputStream = pasteFilter;
       }
 
@@ -303,11 +353,56 @@ export function registerChatCommand(program: Command, t: Messages): void {
           state === "running" && (rli.line.length > 0 || composer.hasPending()),
         );
       };
+      let state: ChatState = "idle";
+      let steeringVisible = false;
+      const showSteeringPrompt = (): void => {
+        if (
+          steeringVisible ||
+          state !== "running" ||
+          !view?.acceptsSteering ||
+          !isTTY ||
+          !out.isTTY
+        )
+          return;
+        renderer.setInputHold(true);
+        steeringVisible = true;
+        rl.setPrompt(t.steerPrompt());
+        rl.prompt(true);
+      };
+      // Let readline erase its own wrapped rows. The draft and its cursor survive a
+      // run ending or an approval temporarily taking the terminal.
+      const hideSteeringPrompt = (): (() => void) | undefined => {
+        if (!steeringVisible) return;
+        steeringVisible = false;
+        const { line, cursor } = rli;
+        rli.line = "";
+        rli.cursor = 0;
+        rl.setPrompt("");
+        rl.prompt(true);
+        rli.line = line;
+        rli.cursor = cursor;
+        return showSteeringPrompt;
+      };
       if (isTTY) {
-        inputStream.on("data", () => setImmediate(syncInputHold));
+        // Readline echoes a printable key immediately, including keys followed by Enter
+        // in the same stdin chunk. Establish the prompt before its keypress listener.
+        inputStream.prependListener("keypress", (text: string | undefined, key: Key) => {
+          if (
+            (text && !key.ctrl && !key.meta && text >= " ") ||
+            key.name === "up" ||
+            key.name === "down" ||
+            key.name === "tab" ||
+            (key.ctrl && (key.name === "p" || key.name === "n" || key.name === "y"))
+          ) {
+            showSteeringPrompt();
+          }
+        });
+        inputStream.on("keypress", () => {
+          if (rli.line.length === 0 && !composer.hasPending()) hideSteeringPrompt();
+          syncInputHold();
+        });
       }
 
-      let state: ChatState = "idle";
       let closed = false;
       // The marks are output: a TTY stdin is not enough when stdout is redirected to a file or
       // a pipe, or the terminal is a dumb one.
@@ -315,12 +410,15 @@ export function registerChatCommand(program: Command, t: Messages): void {
       const mark = (kind: "A" | "B" | "C" | "D", exitCode?: number): void => {
         if (marksOn) out.write(promptMark(kind, exitCode));
       };
-      /** Set while a turn runs; SIGINT posts /abort through it exactly once per turn. */
+      /** Set while a run is followed; SIGINT posts /abort through it exactly once per run. */
       let abortTurn: (() => void) | null = null;
-      let pendingLine: ((line: string | null) => void) | null = null;
+      let pendingLine: ((line: string | null | typeof BUSY) => void) | null = null;
       let pendingApproval: ((decision: ApprovalDecision) => void) | null = null;
-      /** A line typed in the running->idle race window (steer refused): becomes the next prompt instead of being dropped. */
-      let queuedPrompt: string | null = null;
+      /** Settles when readline closes: `/exit` typed while a run is followed leaves it running. */
+      let markClosed: () => void = () => {};
+      const closing = new Promise<void>((resolve) => {
+        markClosed = resolve;
+      });
       /**
        * A message that was not sent because its Session could not be created: offered again at
        * the next prompt — back in the input line on a terminal (a multi-line one waiting in the
@@ -342,17 +440,23 @@ export function registerChatCommand(program: Command, t: Messages): void {
           /* ignore */
         }
         try {
-          process.stdin.setRawMode(false);
+          stdin.setRawMode(false);
         } catch {
           /* ignore */
         }
         try {
-          if (pasteFilter) process.stdin.unpipe(pasteFilter);
+          if (pasteFilter) stdin.unpipe(pasteFilter);
         } catch {
           /* ignore */
         }
         try {
-          process.stdin.pause();
+          stdin.pause();
+        } catch {
+          /* ignore */
+        }
+        // A console input opened for the chat would keep the process alive: closed here.
+        try {
+          input.release();
         } catch {
           /* ignore */
         }
@@ -370,7 +474,9 @@ export function registerChatCommand(program: Command, t: Messages): void {
           if (state === "running") {
             // Through the renderer, which finishes an open streamed line first; the hold then
             // keeps further output off the pasted text until it is sent.
-            renderer.printLine(normalized);
+            showSteeringPrompt();
+            if (steeringVisible) out.write(`${normalized}\n`);
+            else renderer.printLine(normalized);
             syncInputHold();
           } else {
             out.write(`${normalized}\n`);
@@ -380,24 +486,76 @@ export function registerChatCommand(program: Command, t: Messages): void {
         });
       }
 
-      // Mid-run steering over the API: POST /steer; a 409 (the task just finished — the
-      // running->idle race) must not drop the line, so it becomes the next prompt — fed
-      // straight to a waiting askLine, else stashed for the next one.
+      /**
+       * A message, sent as one request whatever the Session is doing (`steerIfBusy`): idle, it
+       * starts a Task; running, the server hands it to the run as steering; compacting, it waits
+       * in the queue for the compaction to end. The run it starts or waits behind is followed by
+       * the view, so nothing here waits for it.
+       */
+      const postMessage = async (text: string): Promise<TaskCreateResponse> => {
+        // Its echo, should it start a run, is on the screen already: the typed line.
+        renderer.expectInput(text);
+        try {
+          const response = await client.request<TaskCreateResponse>(
+            "POST",
+            `/api/sessions/${live().sessionId}/tasks`,
+            { input: [{ type: "text", text }], steerIfBusy: true },
+          );
+          if (response.steered === true) {
+            renderer.expectInput(null);
+            renderer.printSubmissionResult(dim(t.steerQueued(text)));
+          } else if (response.queued === true) {
+            renderer.printSubmissionResult(dim(t.messageQueued(text)));
+          }
+          return response;
+        } catch (err) {
+          renderer.expectInput(null);
+          throw err;
+        }
+      };
+
+      /**
+       * The lines for a request that failed. A message refused as `task_in_progress` met a
+       * server that ignores `steerIfBusy`: an older one, which is worth upgrading.
+       */
+      const errorLines = (err: unknown): string[] => [
+        t.error(err instanceof Error ? err.message : String(err)),
+        ...(err instanceof ApiError && err.code === "task_in_progress"
+          ? [dim(t.chatServerTooOld())]
+          : []),
+      ];
+      const writeError = (err: unknown): void => {
+        out.write(`\n${errorLines(err).join("\n")}\n`);
+      };
+
+      // Typed while a run is followed: sent the same way, never awaited by the prompt.
       const steer = (text: string): void => {
-        void client
-          .request("POST", `/api/sessions/${live().sessionId}/steer`, { text })
-          .then(() => {
-            renderer.printLine(dim(t.steerQueued(text)));
-          })
-          .catch(() => {
-            if (pendingLine) {
-              const resolve = pendingLine;
-              pendingLine = null;
-              resolve(text);
-            } else {
-              queuedPrompt = text;
-            }
-          });
+        postMessage(text).catch((err: unknown) => {
+          for (const line of errorLines(err)) renderer.printSubmissionResult(line);
+        });
+      };
+
+      /**
+       * A run started while the chat waits at its prompt — another surface's, or a message that
+       * waited behind a compaction: the prompt makes way (a half-typed line stays, holding the
+       * output until it is sent) and the waiting askLine hands the run to the main loop.
+       */
+      const onBusy = (): void => {
+        if (state !== "idle" || pendingLine === null) return;
+        state = "running";
+        if (rli.line.length === 0 && !composer.hasPending()) {
+          if (isTTY) {
+            cursorTo(out, 0);
+            clearLine(out, 0);
+          } else {
+            out.write("\n");
+          }
+        }
+        if (rli.line.length > 0 || composer.hasPending()) showSteeringPrompt();
+        syncInputHold();
+        const resolve = pendingLine;
+        pendingLine = null;
+        resolve(BUSY);
       };
 
       rl.on("line", (line) => {
@@ -436,14 +594,24 @@ export function registerChatCommand(program: Command, t: Messages): void {
         // running: a non-empty message becomes a steering message for the running Task, a
         // paste waiting in the composer included (this Enter sends it whole).
         if (state === "running") {
+          // Readline has committed this line and moved the cursor to the next row.
+          steeringVisible = false;
           const { message } = composer.pushTypedLine(line);
           if (message === undefined) {
-            rl.setPrompt(CONT_PROMPT);
-            rl.prompt();
+            if (isTTY && out.isTTY && view?.acceptsSteering) showSteeringPrompt();
+            else {
+              rl.setPrompt(CONT_PROMPT);
+              rl.prompt();
+            }
             return;
           }
           const text = message.trim();
           if (text.length === 0) return;
+          // Leaving: the subscription ends, the run goes on on the server.
+          if (text === "/exit" || text === "/quit") {
+            rl.close();
+            return;
+          }
           steer(text);
         }
       });
@@ -483,6 +651,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
 
       rl.on("close", () => {
         closed = true;
+        markClosed();
         if (pendingLine) {
           const resolve = pendingLine;
           pendingLine = null;
@@ -490,19 +659,15 @@ export function registerChatCommand(program: Command, t: Messages): void {
         }
       });
 
-      const askLine = (): Promise<string | null> =>
+      /** The next line typed at the prompt; null once closed; BUSY when a run starts meanwhile. */
+      const askLine = (): Promise<string | null | typeof BUSY> =>
         new Promise((resolve) => {
           if (closed) {
             resolve(null);
             return;
           }
-          // A line typed in the running->idle race window (steer refused): submit it as this
-          // prompt immediately — the text is already echoed on screen, no re-prompt needed.
-          if (queuedPrompt !== null) {
-            const line = queuedPrompt;
-            queuedPrompt = null;
-            state = "idle";
-            resolve(line);
+          if (view?.busy === true) {
+            resolve(BUSY);
             return;
           }
           state = "idle";
@@ -524,12 +689,10 @@ export function registerChatCommand(program: Command, t: Messages): void {
             return;
           }
           composer.reset();
-          rli.line = "";
-          rli.cursor = 0;
           out.write("\n");
           mark("A");
           rl.setPrompt(MAIN_PROMPT);
-          rl.prompt();
+          rl.prompt(true);
           mark("B");
           if (kept !== null && isTTY) {
             const message = kept;
@@ -542,54 +705,87 @@ export function registerChatCommand(program: Command, t: Messages): void {
       // already rendered above via streaming, so it is not re-rendered here.
       const interactivePrompt = (_tc: AmspRecord<ToolCallPayload>): Promise<ApprovalDecision> =>
         new Promise((resolve) => {
+          const { line, cursor } = rli;
+          rli.line = "";
+          rli.cursor = 0;
           state = "approving";
           pendingApproval = (decision) => {
             state = "running";
+            rli.line = line;
+            rli.cursor = cursor;
             // A paste still waiting for Enter holds output again before the screen unlocks
             // and drains what queued during the question.
             syncInputHold();
             resolve(decision);
+            if (line.length > 0 || composer.hasPending()) queueMicrotask(showSteeringPrompt);
           };
           rl.setPrompt(t.approvePrompt());
           rl.prompt();
         });
 
+      /** The view of `current`, joined now when the chat has none on it (a Session just created or switched to). */
+      const viewOn = async (current: SessionInfo): Promise<SessionView> => {
+        if (view !== null && view.sessionId === current.sessionId) return view;
+        view?.close();
+        view = null;
+        const { view: joined } = await SessionView.join(viewOptions(current.sessionId));
+        joined.start();
+        view = joined;
+        return joined;
+      };
+
+      /** Runs `body` as this chat's turn on `current`: Ctrl-C POSTs /abort, exactly once. */
+      const asTurn = async <T>(current: SessionView, body: () => Promise<T>): Promise<T> => {
+        let aborted = false;
+        abortTurn = () => {
+          if (aborted) return;
+          aborted = true;
+          void client
+            .request("POST", `/api/sessions/${current.sessionId}/abort`)
+            .catch(() => undefined);
+        };
+        try {
+          return await body();
+        } finally {
+          abortTurn = null;
+        }
+      };
+
       /**
-       * One server-driven turn: subscribe, POST via `post`, watch to idle. Returns once
-       * the turn (or compaction/goal) has fully settled. Wires this turn's Ctrl-C to
-       * POST /abort exactly once. `inline` recognizes a response that already settled
-       * the request inside the POST (nothing streams for it, so there is nothing to watch);
-       * the result says whether the stream was watched.
+       * Until a run ends after `after` runs had (SessionView.untilIdle) — or the chat closes:
+       * `/exit` stops following and leaves the run going.
+       */
+      const runEnds = (current: SessionView, after: number): Promise<void> =>
+        Promise.race([current.untilIdle(after), closing]);
+
+      /**
+       * One request that may start a run — a message, /goal, /compact, /switch-model — then the
+       * run it started, steered or queued behind, followed to its end. `inline` recognizes a
+       * response that settled the request inside the POST (nothing runs for it); the result
+       * says whether a run was followed.
        */
       const runTurn = async (
         post: () => Promise<unknown>,
         watch: { goal?: boolean; inline?: (response: unknown) => boolean } = {},
       ): Promise<boolean> => {
-        const sessionId = live().sessionId;
-        const stream = new SessionStream(client, sessionId, t);
-        let aborted = false;
-        abortTurn = () => {
-          if (aborted) return;
-          aborted = true;
-          void client.request("POST", `/api/sessions/${sessionId}/abort`).catch(() => undefined);
-        };
-        try {
-          await stream.waitReady();
-          const response = await post();
-          if (watch.inline?.(response)) return false;
-          await watchTask(stream, {
-            client,
-            sessionId,
-            t,
-            renderer,
-            approvalPrompt: interactivePrompt,
-            ...(watch.goal ? { goal: { out } } : {}),
-          });
+        const current = await viewOn(live());
+        return asTurn(current, async () => {
+          const after = current.runsEnded;
+          current.expectGoal(watch.goal === true);
+          let response: unknown;
+          try {
+            response = await post();
+          } catch (err) {
+            current.expectGoal(false);
+            throw err;
+          }
+          if (watch.inline?.(response)) {
+            current.expectGoal(false);
+            return false;
+          }
+          await runEnds(current, after);
           return true;
-        } finally {
-          abortTurn = null;
-          stream.close();
-        }
+        });
       };
 
       // Whether this Session already has (or gained) history worth a resume hint.
@@ -636,6 +832,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
         if (streamed) resumable = true;
         const now = switched ?? (await getSessionInfo(client, previous.sessionId));
         session = now;
+        // Rebuilt under a new id: the chat follows that Session from here.
+        if (now.sessionId !== previous.sessionId) await viewOn(now);
         if (now.provider !== previous.provider || now.modelId !== previous.modelId) {
           out.write(
             `${t.switchModelDone(
@@ -704,9 +902,30 @@ export function registerChatCommand(program: Command, t: Messages): void {
         (opts.agentId ? ` --agent-id ${opts.agentId}` : "");
 
       try {
+        // The resumed Session's view draws the run under way, if any, and follows from here.
+        view?.start();
         for (;;) {
           const line = await askLine();
           if (line === null) break;
+          if (line === BUSY) {
+            // A run this chat did not start (still under way when it resumed, or another
+            // surface's): followed like one of its own.
+            const current = view;
+            if (current === null) continue;
+            state = "running";
+            mark("C");
+            let failed = false;
+            try {
+              await asTurn(current, () => runEnds(current, current.runsEnded));
+            } catch (err) {
+              failed = true;
+              writeError(err);
+            } finally {
+              state = "idle";
+              mark("D", failed ? 1 : 0);
+            }
+            continue;
+          }
           let text = line.trim();
           // A message that was not sent goes again on an empty line where it could not be put
           // back into the input line (a pipe); a non-empty line replaces it.
@@ -791,7 +1010,9 @@ export function registerChatCommand(program: Command, t: Messages): void {
             };
             session = null;
             pinAfterCreate = null;
-            renderer = new StreamRenderer(out, t, { collapseToolOutput: !verbose });
+            view?.close();
+            view = null;
+            renderer = newRenderer();
             resumable = false;
             out.write(`${t.clearDone()}\n`);
             continue;
@@ -840,6 +1061,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
                   failed = true;
                 } else {
                   resumable = true;
+                  // The goal's echo is its objective, which the typed /goal line holds.
+                  renderer.expectInput(parsed.objective);
                   await runTurn(
                     () =>
                       client.request("POST", `/api/sessions/${current.sessionId}/tasks`, {
@@ -856,16 +1079,12 @@ export function registerChatCommand(program: Command, t: Messages): void {
                 failed = true;
               } else {
                 resumable = true;
-                await runTurn(() =>
-                  client.request("POST", `/api/sessions/${current.sessionId}/tasks`, {
-                    input: [{ type: "text", text }],
-                  }),
-                );
+                await runTurn(() => postMessage(text));
               }
             }
           } catch (err) {
             failed = true;
-            out.write(`\n${t.error(err instanceof Error ? err.message : String(err))}\n`);
+            writeError(err);
             // The server refused the first message of the Session this message just created (no
             // goal plugin, no model credential): that Session never ran and never will, and left
             // on the server it is an empty conversation in every Web sidebar. It goes, and the
@@ -879,6 +1098,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
               err.status < 500
             ) {
               const refused = session.sessionId;
+              view?.close();
+              view = null;
               await client.request("DELETE", `/api/sessions/${refused}`).catch(() => undefined);
               session = null;
               ({ pending, pinAfterCreate } = unstarted);
@@ -892,6 +1113,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
           }
         }
       } finally {
+        // Only the subscription ends: a run under way goes on on the server.
+        view?.close();
         rl.close();
         cleanup();
         process.removeListener("exit", cleanup);
@@ -899,7 +1122,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
         // no history yet (nothing to resume), and when there is no Session at all. The
         // Session itself lives on the server.
         if (resumable && session !== null) {
-          out.write(`${dim(t.resumeHint(resumeCommand(session.sessionId)))}\n`);
+          // Through the renderer, which ends a line a run left open (`/exit` mid-reply).
+          renderer.printLine(dim(t.resumeHint(resumeCommand(session.sessionId))));
         }
       }
     });
@@ -914,5 +1138,31 @@ function clearCurrentLine(rl: Interface, rli: RlInternals, out: NodeJS.WritableS
   } else {
     out.write("\r\x1b[K");
     rl.prompt(true);
+  }
+}
+
+/** `penguin chat`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.chat",
+        key: "chat",
+        summary: {
+          en: "Open the interactive REPL",
+          zh: "打开交互式 REPL",
+        },
+      },
+    ],
+  },
+})
+export class ChatCommand {
+  @Bind("cli.chat") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerChatCommand(node(command), ctx.messages);
+      },
+    };
   }
 }

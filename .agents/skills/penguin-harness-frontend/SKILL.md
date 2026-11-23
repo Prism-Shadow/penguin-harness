@@ -32,6 +32,25 @@ abstraction at the concrete behavior being shared; a one-off business rule stays
 During review, check for duplicated markup, page-local overrides and call sites that bypass the
 shared component. Verify the shared change in the gallery and in a representative host surface.
 
+### Rounded surfaces and state fills
+
+Put a control’s background, hover, selected and border on the same element when possible. Its
+border radius then paints every state, including a theme’s asymmetric or square corners.
+
+- For a flush card of rows, use `Card padding="none"`. For another closed frame with an
+  edge-to-edge header, image, progress fill or moving knob, put `data-clip-surface=""` on the
+  element that actually draws the rounded edge. Its `overflow: hidden` establishes a scroll
+  container. If a descendant sticks to an outer scrollport, contain the paint on a separate
+  layer alongside the sticky content. Keep the existing scrolling element in charge of overflow.
+- When a region has an overhanging handle, focus indicator or menu, leave that region open.
+  A full-size decorative layer directly inside it can use `rounded-[inherit]` for its own
+  background or inset ring. Give that layer `data-clip-surface=""` if its own children also paint.
+  The same rule applies to a full-size pseudo-element (`border-radius: inherit`). An inset
+  decoration with a different size can have its own shape inside the clipped fill.
+- Check the first and last row on hover/selection, the corners during motion, and keyboard
+  focus outside the edge. The gallery’s rounded-surface browser test uses contrasting paint and
+  a visible-overflow host so a second clipping ancestor cannot hide a regression.
+
 ### Landing, docs and gallery chrome
 
 Use `@prismshadow/penguin-ui/site` for the shared `SiteHeader`, `SiteNavLinks`,
@@ -110,8 +129,8 @@ Rules:
   or border. Reach for `Badge` itself only for what is not a row label: a count, an outline or
   solid weight a design asks for, a superscript mark.
 - **Contrast is measured, not assumed.** The ratios in `tone.ts` are WCAG 2.x against the four
-  surfaces marks actually sit on — white and gray-50 in light, and the values the default theme
-  *overrides* for dark (`packages/ui/src/themes/github.css`: gray-950 is `#000000`, gray-900 is
+  surfaces marks actually sit on — white and gray-50 in light, and the values Primer
+  *overrides* for dark (`packages/ui/src/themes/github/tokens.css`: gray-950 is `#000000`, gray-900 is
   `#0d0d0d`, not Tailwind's stock values). Recompute if you change a tone; a graphical mark needs 3:1, and `muted` is the one tone
   allowed below it because its meaning is always already in text.
 - **What is out of scope**, and must not be folded in: categorical palettes where colour is an
@@ -536,6 +555,28 @@ a module-level constant.
 Chinese belongs only in the zh dictionary, `titleZh` fields, `*.zh.md` documents, and fixtures that
 exercise CJK behaviour. Comments, test names and every other string are English.
 
+## Failures offer the report
+
+Every failure the app shows offers 「[报告问题]」; a refusal does not. A refusal is a 4xx the server
+named (invalid input, a wrong password, no permission, not found, a name taken, a limit) or a check
+the page made before any request. The one rule is `isReportable` in `packages/ui`'s report kit, and
+the helpers in `src/lib/failure.tsx` and `src/lib/toast-api-error.ts` apply it, so a call site never
+decides:
+
+- A caught error goes through `toastApiError(err, ctx)` for a toast, or `failureNode(err, ctx)` for
+  inline text (the state that held `apiErrorText(err)` holds the node instead). Pass the surface's
+  own words in `ctx.text`, never `toastError(apiErrorText(err))`.
+- A result or a record that says something failed (a test that failed, a plugin that did not load, a
+  job's failed step) goes through `toldFailure` / `toldNode`, with what happened in English.
+- `toastError(text)` is for a check before any request only.
+- A report carries as much as it can, masked: every report's text goes through `maskPrivate`
+  (secrets, e-mail and IP addresses, home paths). Words that name the person's machines (ssh's
+  output, a job's log, an MCP server's error) go in `detail` with `mask: { hosts: true }`, plus the
+  values the page knows are private (a machine's alias) in `mask.values`. A surface over a
+  directory passes it as `privatePaths`.
+- The Agent's own work (a tool's failed output, a workbench's build error), a state, and an echo of
+  a failure said in full elsewhere (a tooltip, a badge) carry no action.
+
 ## Popups: portal, do not absolutely position
 
 Anything that overlays — a menu, a picker, an info popover — uses `usePortalPanel`
@@ -550,8 +591,10 @@ Three behaviours there are load-bearing:
   registers earlier, so without stopping propagation one Esc would close the panel *and* the dialog.
 - **Scroll uses capture**, because scroll does not bubble; the panel closes the moment its position
   would go stale rather than floating out of place. Its own internal scroll is exempted.
-- **`z-[60]`**, above the modal overlay's `z-50`: a portaled node sits in the root stacking context
-  and may be opened from inside a dialog.
+- **`z-popover`**, above a dialog's `z-modal`: a portaled node sits in the root stacking context
+  and may be opened from inside a dialog. A dialog opened from inside a popover therefore lands
+  under it: close the popover first (the chat toolbar's details card does, before its stop
+  confirmation).
 
 Modals, drawers, sheets, the lightbox and `Dropdown` additionally register in the Esc-layer stack
 (the UI package's `esc-layers.ts`: `useEscLayer`, or `pushEscLayer` / `isTopEscLayer`), so Escape
@@ -564,6 +607,47 @@ density `md` for account and project menus, `sm` for a row's overflow and contex
 `MenuRadioItem`, `MenuSeparator` and `MenuLabel`. The panel around them stays a `Dropdown`. A row
 outside a `Menu` is a plain button, for a panel that mixes rows with a search box or a listbox.
 
+## Layers: name one, never a number
+
+Every z-index is a layer of one scale, `packages/ui/src/layers.css`, the only file where a z-index
+is a number. A class names it (`z-sticky`, `z-modal`), a stylesheet reads it
+(`z-index: var(--layer-dock)`), and an inline style or a frame loop writes `layer("dock")`
+(`layers.ts`). In paint order:
+
+| layer | for |
+| --- | --- |
+| `behind` | a decoration under its own box's content: a wallpaper copy, a connector line |
+| `sticky` | a row pinned to its scroller: a tool row, a timeline label, a code gutter |
+| `sticky-head` | a head pinned over the sticky rows it passes: an activity group's head, the Trace toolbar |
+| `raised` | a mark or control floating over a list or scroller: a drop line, jump-to-newest, a chart readout |
+| `handle` | a resize handle straddling the edge it resizes |
+| `window-overlay` | what floats over a window and belongs to it: the dock launcher, a drop veil, a site header |
+| `dock` | a dock surface lifted to fullscreen |
+| `dock-handle` | the handle on a lifted surface's leading edge |
+| `menu` | an in-place menu, and a floating panel a dialog must cover (the find bar) |
+| `modal` | dialogs, drawers, sheets, the lightbox, the command palette, with their scrim |
+| `popover` | a portaled menu, select, picker or popover |
+| `toast` | toasts and progress cards |
+| `tooltip` | the hover hint |
+| `drag-preview` | what follows the pointer through a drag |
+
+**Windows are stacking contexts.** The Chat window and a Workbench window share the area under the
+chat page's tab strip (`WindowStack`, `AppWindow`), and the full-page workbench is a window too:
+each is `isolation: isolate`, so `behind` through `menu` order things only inside their window, and
+nothing inside one rises over the other window, the navigation column or an overlay. A hidden
+window stays mounted, `invisible` and `inert`; what it holds reads `useWindowShown()` for whatever
+a hidden ancestor does not stop by itself. `modal` and up live in the one portal root,
+`document.body`, where they order against each other above every window.
+
+So: a popup that may cross its window's edge or sit over a dock portals (`popover`); something laid
+over a window from outside it by coordinates (the built-in browser's page) paints over the whole
+window and must be told when its slot is hidden or covered. Pick the layer by what the element is
+for, not by what it should beat: if two things on one layer collide, one of them is on the wrong
+layer. `test/layer-scale.test.ts` in the UI package fails on a raw `z-<n>`, `z-[…]`, `zIndex` or
+`z-index` in `packages/ui/src`, `packages/web/src` and `packages/ui-gallery/src`, and on a layer
+name the scale does not declare. A new layer is a line in `layers.css` and `layers.ts` with a
+sentence saying what it is for.
+
 ## The rest of the house style
 
 - **Local first, remote lazy** (owner principle, 2026-10-26): a page and the sidebar's local
@@ -573,8 +657,7 @@ outside a `Menu` is a plain button, for a panel that mixes rows with a search bo
   own state and timeout. Never put a local read and a remote one in one `Promise.all` or behind
   one skeleton, and never make a route await a machine or the network before it answers with
   local data.
-- **Stacking contexts**: chrome creates none; dropdown/user menus `z-40`; modal and drawer overlays
-  `z-50`; portaled panels `z-[60]`. `styles.css`'s header states this.
+- **Stacking**: see "Layers" below; chrome creates no stacking context.
 - **Every scroll container is a containing block** (`styles.css`, `@layer base`). Do not undo it: an
   absolutely positioned descendant of a `static` scroller escapes to the initial containing block
   and gives the whole shell a second scrollbar. That bug shipped three times.

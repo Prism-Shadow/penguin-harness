@@ -25,9 +25,11 @@
  */
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -38,6 +40,10 @@ import { arrivalText } from "../prose/stream-arrivals";
 import type { RevealArrival } from "../prose/stream-arrivals";
 import type { CodeHighlighter } from "./highlight-options";
 import { runtimeLanguageGeneration, subscribeToRuntimeLanguages } from "./code-languages";
+import { CHUNK_LINES, alignRows, chunkRows, splitHighlighted } from "./code-lines";
+import type { CodeRow, HighlightedLines } from "./code-lines";
+import { useGutterClip } from "./gutter-clip";
+import { cells, useWrapRows } from "./wrap-rows";
 import "../prose/prose.css";
 
 export type { CodeHighlighter, CodeMark, HighlightOptions } from "./highlight-options";
@@ -83,7 +89,11 @@ export function resolveHighlighter(
  * With `lineNumbers`, the lines become blocks (see highlighter-core.ts's BLOCK_LINES) so a CSS
  * counter can draw a gutter that survives wrapping, and the unhighlighted fallback is split
  * into the same line elements — one gutter, whichever path rendered the code, and one shape for
- * a caller that needs to lay something else over it.
+ * a caller that needs to lay something else over it. Each line is an element of its own that
+ * outlives an edit, and keeps its colours while its text is what was highlighted (code-lines.ts):
+ * typing redraws the lines it touches, not the file and its gutter. The lines stand in chunks
+ * that the browser lays out only near the screen (prose.css's `.line-chunk`), so a large file
+ * costs what is on screen, not its length.
  */
 export function CodeSurface({
   language,
@@ -111,8 +121,10 @@ export function CodeSurface({
    * Wait this long after the last change before highlighting. 0 (the default) highlights every
    * change, which is right for code that is rendered once; an editor passes a delay so that
    * typing costs nothing but a re-render. While a highlight is pending the surface shows the
-   * CURRENT text unhighlighted rather than the previous text's colours — a code layer that
-   * lags the keystrokes it sits under is worse than a colourless one.
+   * CURRENT text, never the previous text's colours over it — a code layer that lags the
+   * keystrokes it sits under is worse than a colourless one. A numbered surface keeps the colours
+   * of the lines the change left alone and draws only the lines it touched plain; an unnumbered
+   * one draws the whole block plain.
    */
   settleMs?: number;
   className?: string;
@@ -126,7 +138,12 @@ export function CodeSurface({
   children?: ReactNode;
 }) {
   const highlighter = resolveHighlighter(highlight, useCodeHighlighter());
-  const [highlighted, setHighlighted] = useState<{ code: string; html: string }>();
+  const [highlighted, setHighlighted] = useState<{
+    code: string;
+    html: string;
+    /** The same markup cut into lines, for a numbered surface; null when it could not be. */
+    lines: HighlightedLines | null;
+  }>();
   // A plugin's languages arrive after the first paint, so a block rendered before them
   // resolved to "no grammar" and would stay unhighlighted for the life of the page. The
   // generation is part of the effect's deps, so a registration re-runs the highlight once.
@@ -148,7 +165,13 @@ export function CodeSurface({
       void Promise.resolve()
         .then(() => highlighter(code, language, { blockLines: lineNumbers }))
         .then((out) => {
-          if (alive && out !== undefined) setHighlighted({ code, html: out });
+          if (alive && out !== undefined) {
+            setHighlighted({
+              code,
+              html: out,
+              lines: lineNumbers ? splitHighlighted(out, code) : null,
+            });
+          }
         })
         .catch(() => {
           // Unknown language / failed to load: keep the unhighlighted fallback.
@@ -181,35 +204,133 @@ export function CodeSurface({
    */
   const htmlProp = useMemo(() => (html === undefined ? undefined : { __html: html }), [html]);
 
+  /**
+   * A numbered surface draws line by line, from the newest highlight it has — the current text's
+   * or an earlier one, whose lines still colour the lines that did not change. Only markup that
+   * could not be cut into lines falls back to the whole block.
+   */
+  const split = highlighted?.lines ?? null;
+  const byLine = lines !== null && (split !== null || html === undefined);
+  const drawn = useRef<CodeRow[]>([]);
+  const nextKey = useRef(0);
+  const rows = useMemo(
+    () =>
+      byLine && lines !== null
+        ? alignRows(drawn.current, lines, split, () => (nextKey.current += 1))
+        : null,
+    [byLine, lines, split],
+  );
+  useEffect(() => {
+    if (rows !== null) drawn.current = rows;
+  }, [rows]);
+  const chunks = useMemo(() => (rows === null ? null : chunkRows(rows)), [rows]);
+
+  /**
+   * Unwrapped, the numbers are a column of their own, sticky at the scroll box's left edge, and
+   * the code layer is clipped under it as it scrolls sideways (gutter-clip.ts). Wrapped, nothing
+   * scrolls sideways, and each line draws its own number in front of its first row (prose.css),
+   * which is what keeps a number beside its line however many rows the line wraps to.
+   */
+  const column = lines !== null && !wrap;
+  const lineCount = lines?.length ?? 0;
+  const numbers = useMemo(
+    () => (column ? Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n") : ""),
+    [column, lineCount],
+  );
+  /** Unwrapped, every chunk is as wide as the longest line, drawn or not (prose.css). */
+  const longest = useMemo(() => {
+    let max = 0;
+    if (column && lines !== null) for (const line of lines) max = Math.max(max, cells(line));
+    return max;
+  }, [column, lines]);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const layerRef = useRef<HTMLElement | null>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
+  useGutterClip({ surface: surfaceRef, layer: layerRef, gutter: gutterRef }, column);
+  const setLayer = useCallback((el: HTMLElement | null) => {
+    layerRef.current = el;
+  }, []);
+  /**
+   * An editor's textarea over the code lays its own text out whole, so every line under it is
+   * laid out too (prose.css's `.code-overlaid`) and needs no estimate.
+   */
+  const overlaid = children !== undefined && children !== null && children !== false;
+  useWrapRows(
+    { surface: surfaceRef, layer: layerRef },
+    wrap && !overlaid ? lines : null,
+    CHUNK_LINES,
+    String(lineCount).length + 2,
+  );
+
   return (
     <div
+      ref={surfaceRef}
       className={`code-surface ${wrap ? "code-wrap" : "code-nowrap"} ${
         lines === null ? "" : "code-lines"
-      } ${className}`}
+      } ${overlaid ? "code-overlaid" : ""} ${className}`}
       style={
         lines === null
           ? undefined
           : // `ch` and not `rem`: an overlaid textarea has to indent by exactly this much, and
             // only a character-relative unit is the same length in both layers. +2 is the
             // clearance between the number and the code.
-            ({ "--code-gutter": `${String(lines.length).length + 2}ch` } as CSSProperties)
+            ({
+              "--code-gutter": `${String(lines.length).length + 2}ch`,
+              "--code-longest": longest,
+            } as CSSProperties)
       }
     >
-      {htmlProp !== undefined ? (
-        <div dangerouslySetInnerHTML={htmlProp} />
-      ) : (
-        <pre>
+      {column && (
+        <div ref={gutterRef} className="code-gutter" aria-hidden="true">
+          {numbers}
+        </div>
+      )}
+      {chunks !== null ? (
+        <pre
+          // A drawn chunk keeps its last size (prose.css), which after a wrap toggle is the other
+          // mode's: the layer starts over.
+          key={wrap ? "wrap" : "nowrap"}
+          ref={setLayer}
+          className={split?.pre.className}
+          style={split?.pre.style}
+          tabIndex={split?.pre.tabIndex}
+        >
           <code>
-            {lines === null
-              ? arrivalText(code, arrivals)
-              : // No newline between the spans: they are blocks, and the text a selection
-                // serialises out of a run of blocks already carries the breaks.
-                lines.map((line, i) => (
-                  <span key={i} className="line">
-                    {line}
+            {/* No newline between the spans: they are blocks, and the text a selection
+                serialises out of a run of blocks already carries the breaks. The code sits in
+                an inner span keyed by its kind, so a line turning plain or coloured keeps its
+                line element, and with it the number drawn in front of it. */}
+            {chunks.map((chunk) => (
+              <span
+                key={chunk.start}
+                className="line-chunk"
+                style={
+                  {
+                    "--chunk-start": chunk.start,
+                    "--chunk-lines": chunk.rows.length,
+                  } as CSSProperties
+                }
+              >
+                {chunk.rows.map((row) => (
+                  <span key={row.key} className="line">
+                    {row.html !== null ? (
+                      <span key="h" className="line-code" dangerouslySetInnerHTML={row.html} />
+                    ) : (
+                      <span key="t" className="line-code">
+                        {row.text}
+                      </span>
+                    )}
                   </span>
                 ))}
+              </span>
+            ))}
           </code>
+        </pre>
+      ) : htmlProp !== undefined ? (
+        <div ref={setLayer} dangerouslySetInnerHTML={htmlProp} />
+      ) : (
+        <pre>
+          <code>{arrivalText(code, arrivals)}</code>
         </pre>
       )}
       {children}

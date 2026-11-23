@@ -31,10 +31,10 @@
  * unconfined run.
  */
 import { execFile, spawnSync } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/plugin";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/plugin";
 import type {
   ConfinedArgv,
   Plugin,
@@ -49,37 +49,24 @@ const PROBE_TIMEOUT_MS = 5_000;
 /** The write sinks a confined process needs even under read-only. */
 const REQUIRED_WRITE_SINKS = ["/dev/null", "/dev/stdout", "/dev/stderr", "/dev/dtracehelper"];
 
-/** This backend's own settings, as it reads them from its group. */
-export interface SeatbeltSettings {
-  /** The sandbox-exec program: a path or a command on PATH. */
-  runner: string;
-}
+import {
+  SEATBELT_GROUP,
+  SeatbeltConfigReader,
+  defaultRunner,
+  seatbeltSettingsOf,
+} from "./settings.js";
+import type { SeatbeltSettings } from "./settings.js";
+import { SandboxSeatbeltStatus } from "./status.js";
 
-/**
- * Where macOS keeps the program this backend runs.
- *
- * Unlike the Linux backend, which ships its own bubblewrap, there is nothing to vendor here:
- * `sandbox-exec` is part of macOS, lives at a fixed path on every install, and is Apple's to
- * distribute, not ours. What the shipped binary bought there — never depending on the host's
- * setup — this buys by naming the absolute path instead of a bare command: a PATH that lacks
- * `/usr/bin`, or that puts something else called `sandbox-exec` earlier, no longer decides what
- * confines a command. A host missing it is caught by the probe at load, with the reason.
- */
-export const SYSTEM_RUNNER = "/usr/bin/sandbox-exec";
-
-/** The program to run when the settings name none: the OS's own, else a PATH lookup. */
-export function defaultRunner(exists: (p: string) => boolean = existsSync): string {
-  return exists(SYSTEM_RUNNER) ? SYSTEM_RUNNER : "sandbox-exec";
-}
-
-/** Its group's stored document as settings; an empty runner falls back to the OS's own. */
-export function seatbeltSettingsOf(
-  doc: Record<string, unknown>,
-  fallback: string = defaultRunner(),
-): SeatbeltSettings {
-  const runner = typeof doc.runner === "string" ? doc.runner.trim() : "";
-  return { runner: runner !== "" ? runner : fallback };
-}
+export {
+  SEATBELT_GROUP,
+  SYSTEM_RUNNER,
+  SeatbeltConfigReader,
+  defaultRunner,
+  seatbeltSettingsOf,
+} from "./settings.js";
+export type { SeatbeltSettings } from "./settings.js";
+export { SandboxSeatbeltStatus, seatbeltReport } from "./status.js";
 
 /** Test seams: inject the probe verdict, and the settings the provider reads at each confine. */
 export interface SeatbeltInternals {
@@ -87,18 +74,6 @@ export interface SeatbeltInternals {
   runner?: string;
   settings?: () => SeatbeltSettings;
 }
-
-/**
- * What this backend requires of plugin configuration: to read the group it declares. The
- * interface is the consumer's own, so the package depends on no harness type.
- */
-@Interface()
-export abstract class SeatbeltConfigReader {
-  abstract get(name: string): Record<string, unknown>;
-}
-
-/** The settings group this backend declares (its contribution id), drawn inside the Sandbox card. */
-export const SEATBELT_GROUP = "sandbox-seatbelt";
 
 /** Canonical path (symlinks resolved), falling back to a lexical resolve for paths that do not exist yet. */
 export function canonicalPath(target: string): string {
@@ -198,7 +173,7 @@ function defaultProbe(timeoutMs: number, runner: string): boolean {
  * Loads the backend, checking first that it can serve on this host — and rejecting, with the
  * reason, when it cannot: it runs on macOS only, and needs a sandbox-exec that accepts its
  * profile. The sandbox service records the rejection and the settings page shows it, so the
- * backend is never silently absent, and loads it again after the next save of the sandbox card;
+ * backend is never silently absent, and loads it again after the next save of its page;
  * the confine-time probe stays, for a runner changed while mounted.
  */
 export async function loadSeatbeltProvider(
@@ -262,17 +237,32 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
  */
 @Component({
   contributes: {
+    // How the Plugins page shows this backend (read from ifaces.json, never by booting it).
+    "PluginLibraryModule.cards": [
+      {
+        id: "sandbox-seatbelt.card",
+        title: "macOS Sandbox",
+        titleZh: "macOS 沙箱",
+        descriptionZh:
+          "PenguinHarness 的 macOS Seatbelt 沙箱后端：限制文件写入，并提供网络隔离与路径屏蔽。",
+        shortDescription: "macOS: confine file writes, cut the network, mask paths.",
+        shortDescriptionZh: "macOS：限制文件写入、断开网络、屏蔽路径。",
+        category: "sandbox",
+        icon: "icon.svg",
+        preinstall: false,
+      },
+    ],
     "SandboxModule.providers": [
       {
         id: "sandbox-seatbelt.provider",
         name: "penguin-seatbelt",
         dimensions: ["fs-write", "network", "network-local", "mask-paths", "closed-temp"],
+        defaultFor: ["darwin"],
       },
     ],
     "PluginConfigProvider.groups": [
       {
         id: "sandbox-seatbelt",
-        parent: "sandbox",
         title: "Seatbelt",
         properties: {
           runner: {
@@ -296,7 +286,7 @@ export class SandboxSeatbelt {
 
   setup() {
     const config = this.config;
-    // A loader: after a save of the sandbox card a failed check runs again (see penguin-bwrap).
+    // A loader: after a save of this backend's page a failed check runs again (see penguin-bwrap).
     this.provider = () =>
       loadSeatbeltProvider({
         settings: () => seatbeltSettingsOf(config.get(SEATBELT_GROUP)),
@@ -304,5 +294,5 @@ export class SandboxSeatbelt {
   }
 }
 
-const plugin: Plugin = { modules: [SandboxSeatbelt] };
+const plugin: Plugin = { modules: [SandboxSeatbelt, SandboxSeatbeltStatus] };
 export default plugin;

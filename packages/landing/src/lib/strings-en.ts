@@ -8,6 +8,7 @@ import type { Strings } from "./strings";
 
 export const en: Strings = {
   siteName: "PenguinHarness",
+  backToTop: "Back to top",
 
   announcement: {
     label: "Announcements",
@@ -22,9 +23,14 @@ export const en: Strings = {
     home: "Home",
     blog: "Blog",
     download: "Download",
+    plugins: "Plugins",
+    benchmarks: "Benchmarks",
+    leaderboards: "Leaderboards",
+    rfcs: "RFCs",
     amsp: "AMSP",
     docs: "Docs",
-    gallery: "Gallery",
+    gallery: "Theme Packs",
+    more: "More",
     github: "GitHub",
     openMenu: "Open menu",
     closeMenu: "Close menu",
@@ -45,12 +51,20 @@ export const en: Strings = {
   },
 
   hero: {
-    positioning: "Software that keeps growing. Evolution within reach.",
-    subtitle: "Free and Stable RSI Framework",
+    positioning: {
+      growthLead: "Software that ",
+      growth: "keeps growing",
+      growthEnd: ".",
+      separator: " ",
+      reachLead: "Evolution ",
+      reach: "within reach",
+      reachEnd: ".",
+    },
+    subtitle: "Out-of-the-Box RSI Framework",
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",
     stats: [
-      { value: "Cross-platform", label: "Linux · Windows · macOS" },
+      { value: "Cross-platform", label: "Linux, Windows, macOS" },
       { value: "100% open source", label: "Apache 2.0 licensed" },
       {
         value: "First self-improving harness",
@@ -62,14 +76,15 @@ export const en: Strings = {
     supportedModelsMore: "and more",
     algorithmsLabel: "RSI Algorithms",
     benchmarksLabel: "Benchmarks",
-    benchmarkKinds: [
-      "Data analysis",
-      "Software engineering",
-      "Business automation",
-      "Scientific research",
-      "Terminal tasks",
-      "Agent self-evolution",
-    ],
+    benchmarkKinds: {
+      dataAnalysis: "Data analysis",
+      softwareEngineering: "Software engineering",
+      businessAutomation: "Business automation",
+      scientificResearch: "Scientific research",
+      terminalTasks: "Terminal tasks",
+      biomedicine: "Biomedicine",
+      agentSelfEvolution: "Agent self-evolution",
+    },
     externalLink: {
       title: "You're about to open an external link",
       body: "This link goes to a site outside PenguinHarness and opens in a new tab:",
@@ -98,7 +113,6 @@ export const en: Strings = {
   },
 
   download: {
-    eyebrow: "Download",
     title: "Download the desktop app",
     recommended: "Your system",
     platforms: {
@@ -160,31 +174,11 @@ export const en: Strings = {
   },
 
   live: {
-    open: "Open in the gallery",
+    open: "Open in Theme Packs",
     loading: "Loading the live demo…",
-  },
-
-  showcase: {
-    start: "Start page (live demo)",
-    evolve: {
-      title: "Start agent self-evolution with one sentence",
-      text: "Name the agent, the Benchmark and the target score. PenguinHarness edits the agent, evaluates it again, and keeps the version that scores higher.",
-      link: "How self-evolution works",
-      frame: "A self-evolution round in a conversation (live demo)",
-    },
-    evaluate: {
-      title: "Observable self-evolution",
-      text: "Benchmarks covering six kinds of capability score every version of an agent, with cost and duration recorded beside the score; each agent and model gets its own line, making the better version plain to see.",
-      link: "About the Evaluation Center",
-      frame: "A Benchmark in the Evaluation Center (live demo)",
-    },
-    toolkits: {
-      title: "State-of-the-art self-evolution algorithms for higher accuracy, lower cost",
-      text: (names: string) =>
-        `Besides the default loop, ${names} each come as a toolkit that runs the algorithm the way its paper describes.`,
-      link: "Browse the plugin library",
-      frame: "The plugin market (live demo)",
-    },
+    playDemo: "Play demo",
+    stopDemo: "Stop demo",
+    evolutionFrame: "A self-evolution round in a conversation (live demo)",
   },
 
   selfImprove: {
@@ -205,7 +199,6 @@ export const en: Strings = {
       { label: "Cost", hint: "per run" },
       { label: "Duration", hint: "per run" },
     ],
-    trendsNote: "The scoreboard records each version's score, cost and duration.",
     demo: {
       caption:
         "Demo: a decision agent is evaluated, revises its working method once and is retested on the same model. Its score goes from 84 to 100.",
@@ -359,12 +352,12 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     dataDesc:
       "Best accuracy of the three (66.67%, against 53.33% for both rivals), at 1/35 of OpenAI Codex's cost and 1/70 of Claude Code's.",
     dataFootnote:
-      "15 complex data-analysis tasks · single run · Tokens and cost are suite totals · estimated at official pricing.",
+      "15 complex data-analysis tasks, one run each. Tokens and cost are suite totals, estimated at official pricing.",
     codeTitle: "Coding tasks",
     codeDesc:
       "Ties OpenAI Codex on accuracy (71.25%) and trails Claude Code (86.25%) — at 1/58 and 1/39 of their cost.",
     codeFootnote:
-      "40 coding tasks × 2 runs (accuracy over all 80 outcomes) · Tokens and cost are suite totals · estimated at official pricing.",
+      "40 coding tasks, two runs each, with accuracy over all 80 outcomes. Tokens and cost are suite totals, estimated at official pricing.",
     colFramework: "Framework",
     colModel: "Model",
     colAccuracy: "Accuracy (%)",
@@ -398,7 +391,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   footer: {
-    tagline: "Free and Stable RSI Framework.",
+    tagline: "Out-of-the-Box RSI Framework.",
     product: "Product",
     resources: "Resources",
     quickstart: "Quick start",
@@ -408,7 +401,241 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     docs: "Documentation",
     releases: "Releases",
     license: "Apache-2.0 License",
-    copyright: "© 2026 Prism Shadow · Open source under Apache-2.0",
+    copyright: "© 2026 Prism Shadow. Open source under Apache-2.0.",
+  },
+
+  hub: {
+    source: "Source",
+    searchPlaceholder: "Search by name, summary or author",
+    clearSearch: "Clear search",
+    all: "All",
+    sortLabel: "Sort",
+    sortLatest: "Recently updated",
+    sortName: "Name",
+    empty: "Nothing matches. Clear the search or the filters to see more.",
+    clearFilters: "Clear filters",
+    count: (n: number) => `${n}`,
+    listSeparator: ", ",
+    viewSource: "View on GitHub",
+    details: "Details",
+    pageTitle: (name: string) => `${name} | PenguinHarness`,
+    notFound: "Nothing here. It may have been renamed or removed.",
+    backToList: "Back to the list",
+    /** The detail page's back control, for assistive technology: its visible text is the list's name. */
+    backTo: (list: string) => `Back to ${list}`,
+    meta: {
+      author: "Author",
+      version: "Version",
+      license: "License",
+      category: "Category",
+      package: "npm package",
+      preinstall: "Preinstalled on new agents",
+      yes: "Yes",
+      no: "No",
+      status: "Status",
+      updated: "Updated",
+      tasks: "Tasks",
+    },
+    status: { published: "Published", draft: "Draft" } as Record<string, string>,
+    references: "References",
+    plugins: {
+      title: "Plugins",
+      description:
+        "The PenguinHarness plugin library: self-evolution toolkits, Skills, Hooks and workbenches.",
+      directoryUnavailable: "The plugin directory could not be loaded.",
+      retryDirectory: "Retry",
+      facetCategory: "Category",
+      facetContents: "Contents",
+      facetAuthor: "Author",
+      categories: {
+        rsi: "Agent Self-Evolution",
+        "office-productivity": "Office Productivity",
+        "software-development": "Software Development",
+        "ai-app-development": "AI App Development",
+        "learning-life": "Learning & Life",
+        utilities: "Utilities",
+        entertainment: "Entertainment",
+        sandbox: "Agent Sandbox",
+        other: "Other",
+      } as Record<string, string>,
+      contents: { skills: "Skills", hooks: "Hooks", workbenches: "Workbenches" },
+      about: "About",
+      quickStart: "Quick start",
+      quickStartSkills: "Skills it selects",
+      skills: "Skills",
+      hooks: "Hooks",
+      workbenches: "Workbenches",
+      extensions: "Hooks and workbenches",
+      skillCount: (n: number) => (n === 1 ? "1 Skill" : `${n} Skills`),
+      preinstalled: "Preinstalled",
+      /** The market's curation: the carousel's eyebrow and a card's tag. */
+      selected: "Selected",
+      /** The selected carousel's accessible name. */
+      selectedPlugins: "Selected plugins",
+      viewDetails: "View details",
+      layoutLabel: "Plugin layout",
+      cardsLayout: "Card view",
+      listLayout: "List view",
+      sortSelected: "Selected first",
+      screenshots: "Screenshots",
+      whatItInstalls: "What it installs",
+      downloadPlugin: "Download plugin",
+      getPenguin: "Get PenguinHarness",
+      source: "Source",
+      carousel: {
+        previous: "Previous",
+        next: "Next",
+        pause: "Pause rotation",
+        play: "Resume rotation",
+        position: (index: number, count: number) => `${index} of ${count}`,
+      },
+      /** The leaderboards whose entries ran a plugin (an RSI toolkit's algorithm). */
+      measuredBy: "Leaderboards that measured it",
+      /** A part's kind on a plugin's page, under "What it installs". */
+      partKinds: { skill: "Skill", hook: "Hook", workbench: "Workbench" },
+    },
+    benchmarks: {
+      title: "Benchmarks",
+      description: "PenguinHarness benchmarks: the tasks and rubrics agents are measured on.",
+      facetTimeout: "Time limit per task",
+      timeout: {
+        short: "Up to 15 minutes",
+        hour: "Up to 1 hour",
+        long: "Over 1 hour",
+        none: "No limit",
+      } as Record<string, string>,
+      facetLeaderboard: "Leaderboards",
+      onLeaderboard: "On a leaderboard",
+      facetStatus: "Status",
+      facetAuthor: "Author",
+      taskCount: (n: number) => (n === 1 ? "1 task" : `${n} tasks`),
+      about: "About",
+      tasks: "Tasks",
+      budget: { timeout: "Time", cpus: "CPU", ram: "Memory", disk: "Disk", gpus: "GPU" },
+      minutes: (n: number) => `${n} min`,
+      hours: (n: number) => (n === 1 ? "1 hour" : `${n} hours`),
+      cores: (n: number) => (n === 1 ? "1 core" : `${n} cores`),
+      gigabytes: (n: number) => `${n} GB`,
+      cards: (n: number) => (n === 1 ? "1 card" : `${n} cards`),
+      unlimited: "No limit",
+      leaderboards: "Leaderboards that use it",
+      taskParts: "Task contents",
+      statement: "Statement",
+      rubric: "Rubric",
+      data: "Data",
+      instruction: "Instruction given to the agent",
+      files: (n: number) => (n === 1 ? "Files (1)" : `Files (${n})`),
+      allFiles: (n: number) =>
+        n === 1 ? "View the file on GitHub" : `View all ${n} files on GitHub`,
+      dataFolder: "View the data folder on GitHub",
+      showAll: "Show all",
+      showLess: "Show less",
+      fileCount: (n: number) => (n === 1 ? "1 file" : `${n} files`),
+      upTo: (time: string) => `Up to ${time} a task`,
+      withData: "Includes data",
+    },
+    leaderboards: {
+      title: "Leaderboards",
+      description:
+        "PenguinHarness leaderboards: agents compared by score and cost on the benchmarks.",
+      facetAuthor: "Author",
+      entryCount: (n: number) => (n === 1 ? "1 entry" : `${n} entries`),
+      benchmarkCount: (n: number) => (n === 1 ? "1 benchmark" : `${n} benchmarks`),
+      charts: { table: "Table", pareto: "Pareto", waffle: "Waffle" },
+      chartsLabel: "Views",
+      results: "Results",
+      entries: "Entries",
+      baseline: "Baseline",
+      rank: "Rank",
+      model: "Model",
+      score: "Score",
+      modelThinking: (model: string, level: string) => `${model} (${level})`,
+      columnNames: {
+        harness: "Harness",
+        algorithm: "Algorithm",
+        released: "Released",
+        cost: "Cost",
+      } as Record<"harness" | "algorithm" | "released" | "cost", string>,
+      columns: "Columns",
+      /** The columns button's hint in the views that have no table. */
+      columnsTableOnly: "Columns apply to the table",
+      /** Under the table: what the ± and the score bar's whiskers are. */
+      tableNote: "± and the whiskers are one standard deviation.",
+      /** A thinking level after the model's name, in the muted ink. */
+      thinkingNote: (level: string) => ` (${level})`,
+      filter: "Filter",
+      sortBy: (name: string) => `Sort by ${name.toLowerCase()}`,
+      filters: {
+        model: "Model",
+        harness: "Harness",
+        algorithm: "Algorithm",
+        thinking: "Thinking level",
+      } as Record<"model" | "harness" | "algorithm" | "thinking", string>,
+      filterLabel: (name: string) => `Filter by ${name.toLowerCase()}`,
+      noMatch: "No entry matches these filters.",
+      rawData: "Show the raw data",
+      raw: {
+        harness: "Harness",
+        provider: "Model provider",
+        thinking: "Thinking level",
+        phase: "Phase",
+        std: "Standard deviation",
+        stdAttempts: (n: number) => `Across ${n} attempts`,
+        stdExperiments: "From each experiment's score_std",
+        experiments: "Experiments",
+        benchmark: "Benchmark and experiment",
+        value: "Score",
+        attempts: "Attempts",
+        tokens: "Tokens in / cache / out",
+        finished: "Finished",
+        harnessSetting: "Harness setting",
+        notRecorded: "Not recorded",
+      },
+      cost: "Cost",
+      duration: "Time",
+      tokens: "Tokens",
+      axisLabel: "Horizontal axis",
+      frontier: "Pareto frontier",
+      hoursShort: (value: string) => `${value} h`,
+      minutesShort: (value: string) => `${value} min`,
+      scale: "Score",
+      noScore: "Not scored",
+      task: "Task",
+      attemptsPerCell: (n: number) =>
+        n === 1 ? "One square per task" : `${n} squares per cell, one per attempt`,
+      cellScores: (scores: string[]) => `Attempts: ${scores.join(", ")}`,
+      methodOnModel: (method: string, model: string) => `${method} (${model})`,
+      paretoPoint: (method: string, score: string, axis: string, value: string) =>
+        `${method}: score ${score}, ${axis.toLowerCase()} ${value}`,
+      paretoSummary: (axis: string, points: string[], frontier: string[]) =>
+        `Horizontal axis: ${axis}. ${points.join("; ")}. Pareto frontier: ${frontier.join(", ")}.`,
+      benchmarks: "Benchmarks",
+      method: {
+        title: "Method and sources",
+        matrixLead: (metric: string, phase: string) =>
+          `Each cell is one experiment's \`${metric}\` from its \`${phase}\` summary; the rows under the line are what each column comes to.`,
+        listLead:
+          "Each entry's expression, argument by argument: the experiment it reads, the phase and metric, and the value there.",
+        stdAttempts: (n: number | null) =>
+          `± is the sample standard deviation across ${n === null ? "the" : `the ${n}`} attempts, each attempt's task scores combined the same way as the score.`,
+        stdExperiments:
+          "± is composed from each experiment's own `score_std`, taken as independent.",
+        stdExperimentsSome:
+          "± is taken across attempts; where an entry's experiments ran different numbers of attempts, it is composed from each experiment's `score_std` instead.",
+        benchmark: "Benchmark",
+        experiment: "Experiment",
+        phase: "Phase",
+        metric: "Metric",
+        value: "Value",
+        opName: (op: string | null) => (op === null ? "the value" : op),
+        opRow: (op: string | null) => (op === null ? "Score" : `Score (${op})`),
+        stdRow: "± std",
+        costRow: "Cost (one run, summed)",
+        timeRow: "Time (one run, summed)",
+        config: "Configuration",
+        experiments: "Experiments",
+      },
+    },
   },
 
   blog: {
@@ -430,6 +657,69 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     references: "References",
     backToRef: (n: number, k: number) =>
       k > 1 ? `Back to reference ${n}, citation ${k}` : `Back to reference ${n}`,
+  },
+
+  /** The RFC pages (pages/rfcs.tsx, pages/rfc-doc.tsx): the repository's design RFCs as a docs-style section. */
+  rfcs: {
+    /** The tab title and description while the index page is open. */
+    title: "RFC index",
+    sidebarTitle: "RFCs",
+    description:
+      "Every design decision PenguinHarness makes is recorded as an RFC: the index, and the conventions for this surface.",
+    indexLabel: "RFC index",
+    notFound: "That RFC does not exist.",
+    backToIndex: "Back to the RFC index",
+    editOnGithub: "Edit this page on GitHub",
+    copyMarkdown: "Copy Markdown",
+    copied: "Copied",
+    toc: "On this page",
+    prev: "Previous",
+    next: "Next",
+    sectionAll: "The RFCs",
+    colRfc: "RFC",
+    colTitle: "Title",
+    colStatus: "Pull Request",
+    statusMerged: "Merged",
+    statusOpen: "Open",
+    statusDraft: "Draft",
+    statusClosed: "Closed",
+    /** The row's link to the open design PR carrying a revision newer than the merged version. */
+    openRevision: "unmerged revision",
+    expandAll: "Expand all",
+    collapseAll: "Collapse all",
+    expandNode: (name: string) => `Expand ${name}`,
+    collapseNode: (name: string) => `Collapse ${name}`,
+    notes: [
+      "**Pull Request**: Each entry shows the `request-for-comments` PR carrying it (`[icon] #PR-number` with GitHub's `Merged`, `Open`, or `Draft` status icon); merged RFCs in `rfcs/` link to their in-site page.",
+      "**Single index**: The tree above is generated from `rfcs/` and `request-for-comments` PR statuses at build time.",
+    ],
+    colFile: "File",
+    colContent: "Holds",
+    files: [
+      {
+        file: "rfcs/",
+        path: "tree/main/rfcs",
+        content: "One decision per file (`PRFC-NNNN-<slug>.md`) and its `.zh.md` twin",
+      },
+      {
+        file: "TEMPLATE.md",
+        path: "blob/main/rfcs/TEMPLATE.md",
+        content: "Starting template for new RFCs (English only)",
+      },
+    ],
+    bilingualNote:
+      "**Bilingual mirror**: Every file except `TEMPLATE.md` has a `<name>.zh.md` twin aligned section for section, rendered at `/rfcs/`.",
+    search: {
+      open: "Search",
+      label: "Search RFCs",
+      placeholder: "Search RFC titles, sections, and content",
+      start: "Enter a keyword to search all RFCs in the current language",
+      noResults: "No matching RFCs",
+      noResultsHint: "Try a shorter or different search term",
+      results: "Search results",
+      close: "Close search",
+      keyboardHint: "Use the arrow keys to select, then press Enter to open",
+    },
   },
 
   amsp: {
@@ -561,6 +851,15 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
             workspace: "The Workspace's absolute path.",
             source:
               "What opened the Session: user, api, schedule, subagent, cli, company or workbench.",
+          },
+        },
+        session_update: {
+          summary:
+            "A Session setting changed, with its new value. Today the one setting is the model the next context opens on, written when an in-session model switch completes, at the end of the Trace file it leaves.",
+          fields: {
+            provider:
+              "The provider group of the model the next context opens on; comes with model_id.",
+            model_id: "The model id the next context sends to the provider; comes with provider.",
           },
         },
         text: {

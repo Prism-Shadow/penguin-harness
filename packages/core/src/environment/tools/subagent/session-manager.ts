@@ -9,9 +9,14 @@
  * evicted; if there's still no room, the tool rejects spawning a new one.
  * Docs: /docs/tools § "Background session caps".
  */
-import type { ApproveFn, BackgroundSubagentInfo } from "../../../interfaces/index.js";
+import type {
+  ApproveFn,
+  BackgroundSubagentInfo,
+  SubagentResolver,
+  SubagentRunner,
+} from "../../../interfaces/index.js";
 import { BackgroundRegistry } from "../background/index.js";
-import type { ManagedSubagentSession } from "./session.js";
+import { ManagedSubagentSession } from "./session.js";
 
 /**
  * Cap on concurrently managed background subagent sessions. This is a **spawn admission cap**,
@@ -71,7 +76,7 @@ export class SubagentSessionManager {
     this.approvalFallback = approve;
     for (const session of [...this.live]) {
       if (session.disposed) {
-        this.live.delete(session);
+        this.dropDisposed(session);
         continue;
       }
       session.setFallbackApprovalSink(approve);
@@ -88,7 +93,7 @@ export class SubagentSessionManager {
     let found: ManagedSubagentSession | undefined;
     for (const session of [...this.live]) {
       if (session.disposed) {
-        this.live.delete(session);
+        this.dropDisposed(session);
         continue;
       }
       if (session.sessionId === sessionId) found = session;
@@ -103,7 +108,7 @@ export class SubagentSessionManager {
     const out: BackgroundSubagentInfo[] = [];
     for (const session of [...this.live]) {
       if (session.disposed) {
-        this.live.delete(session);
+        this.dropDisposed(session);
         continue;
       }
       out.push({
@@ -136,13 +141,22 @@ export class SubagentSessionManager {
    * collision), whose suffix aligns with the message origin/frontend nesting label
    * (`agent-<last 3 chars>`) for correlation.
    */
-  register(session: ManagedSubagentSession): string {
+  register(session: ManagedSubagentSession, alias?: string): string {
     // A full yield window has elapsed since the pre-spawn makeRoom check, so the registry may
     // have been filled by parallel calls in the meantime: free up room once more (only evicting
     // completed, idle ones); if still no room, register anyway, tolerating a brief overshoot
     // (see MAX_SESSIONS).
     this.registry.makeRoom(false);
-    const id = this.registry.register(session, session.sessionId.slice(-8));
+    const previous =
+      alias ?? [...this.registered].find(([, prior]) => prior.sessionId === session.sessionId)?.[0];
+    const id = this.registry.register(
+      session,
+      previous?.slice("subagent-".length) ?? session.sessionId.slice(-8),
+      (candidate) => {
+        const prior = this.registered.get(candidate);
+        return prior !== undefined && prior.sessionId !== session.sessionId;
+      },
+    );
     // Tombstone for the revival path: a subagent session is never destroyed the way a process
     // is — releasing it (idle eviction) only frees the slot, and this record lets a later
     // input_subagent on the same id resume the child instead of erroring. Parent-session
@@ -162,13 +176,60 @@ export class SubagentSessionManager {
     return this.registered.get(subagentId);
   }
 
+  resolveHistorical?: SubagentResolver;
+  private readonly resuming = new Map<string, Promise<ManagedSubagentSession | null>>();
+
+  /** One runtime per child, even when the panel and two tool calls reach a released Session together. */
+  async restore(
+    clue: { sessionId: string; agentId?: string },
+    runner: SubagentRunner,
+    alias?: string,
+  ): Promise<ManagedSubagentSession | null> {
+    const existing = this.bySessionId(clue.sessionId);
+    if (existing) return existing;
+    const pending = this.resuming.get(clue.sessionId);
+    if (pending) return pending;
+    if (this.isDisposed || !runner.resume || !this.makeRoom()) return null;
+    const job = runner.resume(clue).then(async (handle) => {
+      if (this.isDisposed || handle.sessionId !== clue.sessionId) {
+        await handle.dispose();
+        return null;
+      }
+      const child = new ManagedSubagentSession(
+        handle,
+        clue.agentId !== undefined ? { resumeAgentId: clue.agentId } : {},
+      );
+      this.track(child);
+      this.register(child, alias);
+      return child;
+    });
+    this.resuming.set(clue.sessionId, job);
+    try {
+      return await job;
+    } finally {
+      this.resuming.delete(clue.sessionId);
+    }
+  }
+
   /** Looks up a session by subagent_id and refreshes its access time; returns undefined if not found. */
   get(subagentId: string): ManagedSubagentSession | undefined {
     return this.registry.get(subagentId);
   }
 
-  /** Disposes: removes the fallback registration and finalizes all sessions (the process 'exit' fallback is hooked by the registry itself). Idempotent. */
-  dispose(): void {
+  /** A killed session leaves the index once its round has wound down: until then dispose still waits for it. */
+  private dropDisposed(session: ManagedSubagentSession): void {
+    if (!session.running) this.live.delete(session);
+  }
+
+  /**
+   * Disposes: removes the fallback registration and kills every session — registered, still in
+   * a foreground window, or killed and still winding down — and resolves once each has finished
+   * writing (the process 'exit' fallback is hooked by the registry itself). Idempotent.
+   */
+  dispose(): Promise<void> {
+    const children = new Set([...this.live, ...this.registry.list().map(({ task }) => task)]);
     this.registry.dispose();
+    for (const child of children) child.kill();
+    return Promise.allSettled([...children].map((child) => child.whenSettled())).then(() => {});
   }
 }

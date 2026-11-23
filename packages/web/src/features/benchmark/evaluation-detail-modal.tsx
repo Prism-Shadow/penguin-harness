@@ -23,18 +23,17 @@ import {
   ICON_GAP,
   ICON_SIZE,
   Modal,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { SettingsDialog } from "../settings/settings-dialog";
+import { SettingsDialog } from "../settings";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import type { Currency } from "../../state/theme";
 import { AskAiModal } from "./ask-ai-modal";
 import { evaluationLabel } from "./benchmark-metrics";
 import { askEvaluationExamples, askEvaluationTail } from "./benchmark-prompts";
 import type { AskEvaluationParams } from "./benchmark-prompts";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** How agent-evaluation records a Harbor trial in a run's `session_id`: it is no Session. */
 const TRIAL_PREFIX = "harbor:";
@@ -171,12 +170,14 @@ function Metric({ label, value, strong }: { label: string; value: string; strong
  */
 function askParams(
   benchmarkId: string,
+  benchmarkDir: string,
   evaluation: BenchmarkEvaluation,
   labelText: string,
   currency: Currency,
 ): AskEvaluationParams {
   return {
     benchmarkId,
+    benchmarkDir,
     time: formatDateTime(evaluation.time),
     label: labelText,
     version: evaluation.version,
@@ -200,13 +201,19 @@ function askParams(
 
 export function EvaluationDetailModal({
   benchmarkId,
+  benchmarkDir,
   evaluation,
+  avatarSrc,
   caseTitles,
   currency,
   onClose,
 }: {
   benchmarkId: string;
+  /** The Benchmark's folder the question names (benchmark-prompts.ts's benchmarkFolder). */
+  benchmarkDir: string;
   evaluation: BenchmarkEvaluation;
+  /** The tested Agent's own picture, when it has one (lib/agent-avatar.ts). */
+  avatarSrc: string | undefined;
   caseTitles: ReadonlyMap<string, string>;
   currency: Currency;
   onClose: () => void;
@@ -232,7 +239,7 @@ export function EvaluationDetailModal({
       onClose();
       navigate(`/chat/${encodeURIComponent(sessionId)}`);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
   const label = evaluationLabel(evaluation);
@@ -267,6 +274,7 @@ export function EvaluationDetailModal({
                   id={evaluation.agentId}
                   size={ICON_SIZE.rowLead}
                   className="shrink-0 rounded"
+                  src={avatarSrc}
                 />
               )}
               <span className="min-w-0 truncate font-mono text-xs text-gray-600 dark:text-gray-300">
@@ -378,9 +386,11 @@ export function EvaluationDetailModal({
           onClose={() => setAsking(false)}
           title={S.benchmark.askEvaluationTitle}
           description={S.benchmark.askEvaluationDescription}
-          question={S.benchmark.askEvaluationDefault}
+          question={S.benchmark.askEvaluationExamples.explain.prompt}
           examples={askEvaluationExamples()}
-          tail={askEvaluationTail(askParams(benchmarkId, evaluation, labelText, currency))}
+          tail={askEvaluationTail(
+            askParams(benchmarkId, benchmarkDir, evaluation, labelText, currency),
+          )}
         />
       )}
     </>

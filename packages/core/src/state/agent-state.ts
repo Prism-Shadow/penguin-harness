@@ -15,15 +15,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { isMap, isSeq, parseDocument, parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { YAMLSeq } from "yaml";
-import {
-  libraryPluginPackage,
-  loadPreinstalledPlugins,
-  parseSkillFrontmatter,
-  type HookCommand,
-  type HookManifest,
-  type LibraryPlugin,
-  type SkillMetadata,
-} from "../plugins/index.js";
+import { libraryPluginPackage, loadPreinstalledPlugins } from "../plugin/library-reader.js";
+import type { HookManifest, LibraryPlugin } from "../plugin/library-reader.js";
+import type { HookCommand } from "../plugin/library.js";
+import { readInstalledIcon } from "../plugin/icon.js";
+import type { IconImage } from "../plugin/icon.js";
+import { iconFileName, isIconFileName } from "../plugin/icon-format.js";
+import { parseSkillFrontmatter } from "../plugin/skill-frontmatter.js";
+import type { SkillMetadata } from "../plugin/skill-frontmatter.js";
 import type { MCPServerConfig, ToolConfig, ToolDefinitionConfig } from "../interfaces/index.js";
 import {
   PLUGIN_ROOT_REF,
@@ -38,6 +37,8 @@ import {
   installPluginWorkbenches,
 } from "./plugin-workbenches.js";
 import { loadAgentVault } from "./agent-vault.js";
+import { assertValidId, isValidId } from "./ids.js";
+import { isWindowsReservedName, WINDOWS_RESERVED_RULE } from "./reserved-names.js";
 import {
   AGENT_ID_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
@@ -78,7 +79,13 @@ import {
   SHELL_PLACEHOLDER,
   type SystemConfig,
 } from "./default-config.js";
-import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
+import {
+  builtinProjectAgentPresets,
+  SYSTEM_AGENT_ID,
+  systemAgentPreset,
+  type AgentPreset,
+} from "./builtin-agents.js";
+import { isSystemAgentConfig } from "./system-agent.js";
 import { ensureUserMemoryDir, type SessionMemory } from "./memory.js";
 import {
   agentDir,
@@ -96,21 +103,9 @@ import {
   toolsDir,
 } from "./paths.js";
 
-/** project_id / agent_id / skill_name only allow letters, digits, underscore `_`, and hyphen `-` (prevents path traversal). */
-const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
-export type IdKind = "project_id" | "agent_id" | "skill_name";
-
-export function isValidId(id: string): boolean {
-  return ID_PATTERN.test(id);
-}
-
-export function assertValidId(kind: IdKind, id: string): void {
-  if (!ID_PATTERN.test(id)) {
-    throw new Error(
-      `Invalid ${kind} ${JSON.stringify(id)}: only letters, digits, "_" and "-" are allowed.`,
-    );
-  }
-}
+// The id rule lives in its own module, which a code plugin bundles through core's plugin subpath.
+export { assertValidId, isValidId };
+export type { IdKind } from "./ids.js";
 
 /** A loaded Agent State handle. */
 export interface AgentState {
@@ -228,6 +223,7 @@ export async function loadAgentState(opts?: {
     ...defaultSystemConfig(),
     ...(preset?.name !== undefined ? { name: preset.name } : {}),
     ...(preset?.description !== undefined ? { description: preset.description } : {}),
+    ...(preset?.system === true ? { system: true } : {}),
   };
   const agentsMd = preset?.agentsMd ?? defaultAgentsMd();
   // Only installs the plugins specified by preset (a plain newly created Agent gets none
@@ -273,7 +269,7 @@ export async function loadAgentState(opts?: {
  * Calls the init-enabled `loadAgentState` for each one: an Agent whose directory already
  * exists (including a default_agent created earlier by the CLI) is only loaded, never
  * overwritten (preset only takes effect on initialization). Returns the list of built-in
- * Agent ids.
+ * Agent ids, without `system_agent` where an Agent of the user's holds that id.
  */
 export async function provisionProjectAgents(opts?: {
   root?: string;
@@ -283,15 +279,36 @@ export async function provisionProjectAgents(opts?: {
   for (const { agentId, preset } of builtinProjectAgentPresets(
     opts?.projectId ?? DEFAULT_PROJECT_ID,
   )) {
-    await loadAgentState({
+    const state = await loadAgentState({
       ...(opts?.root !== undefined ? { root: opts.root } : {}),
       ...(opts?.projectId !== undefined ? { projectId: opts.projectId } : {}),
       agentId,
       init: { preset },
     });
+    // An Agent of the user's that already held the system Agent's id is not built in.
+    if (preset.system === true && !isSystemAgentConfig(agentId, state.systemConfig)) continue;
     agentIds.push(agentId);
   }
   return agentIds;
+}
+
+/**
+ * Gives a Project made before the system Agent existed its system Agent, the way Project
+ * creation provisions it: initialized from its preset where the Project has no `system_agent`,
+ * while one that exists is only loaded, never changed (an Agent the user already named so stays
+ * theirs, system-agent.ts). Answers whether the Project's `system_agent` is the system Agent.
+ */
+export async function provisionSystemAgent(opts?: {
+  root?: string;
+  projectId?: string;
+}): Promise<boolean> {
+  const state = await loadAgentState({
+    ...(opts?.root !== undefined ? { root: opts.root } : {}),
+    ...(opts?.projectId !== undefined ? { projectId: opts.projectId } : {}),
+    agentId: SYSTEM_AGENT_ID,
+    init: { preset: systemAgentPreset() },
+  });
+  return isSystemAgentConfig(SYSTEM_AGENT_ID, state.systemConfig);
 }
 
 /**
@@ -300,8 +317,8 @@ export async function provisionProjectAgents(opts?: {
  * the current library version.
  *
  * Exact semantics: only the identity fields of the existing file are preserved — `name`,
- * `description` and the Agent State `version` (an invalid or missing version normalizes
- * to 1); **everything else is replaced by the defaults**: `system_prompt`, `max_turns`,
+ * `description`, `author`, the system Agent's `system` key and the Agent State `version` (an
+ * invalid or missing version normalizes to 1); **everything else is replaced by the defaults**: `system_prompt`, `max_turns`,
  * `model.*`, `compaction.*` (including its prompt) and `tools` (the builtin list and
  * `mcpServers` — a plugin's servers too: installing the plugin again puts them back). Keys
  * outside the default schema are dropped, and YAML comments are not
@@ -330,6 +347,10 @@ export async function resetSystemConfigToDefaults(
   const next: SystemConfig = {
     ...(typeof prev.name === "string" ? { name: prev.name } : {}),
     ...(typeof prev.description === "string" ? { description: prev.description } : {}),
+    // Kept as written, an unknown value included: who made the Agent is not a default.
+    ...(prev.author !== undefined ? { author: prev.author } : {}),
+    // What the Agent is, not a default: the system Agent stays the system Agent.
+    ...(prev.system === true ? { system: true } : {}),
     ...defaultSystemConfig(),
     version: agentStateVersion(prev),
   };
@@ -500,14 +521,20 @@ function assertSafeSkillFile(rel: string): void {
   }
 }
 
+/** The icon file an install writes, `icon.<ext>` for its format; none without an icon. */
+function iconEntries(icon: IconImage | undefined): Array<[string, Uint8Array]> {
+  return icon === undefined ? [] : [[iconFileName(icon.format), icon.bytes]];
+}
+
 /**
  * Installs a Skill into the target Agent: writes `skills/<name>/SKILL.md` verbatim (the full
- * SKILL.md content including frontmatter, ensuring a trailing newline). An optional icon.svg
- * (a library skill's is its plugin's icon, stamped by the loader; a user-authored or zip-imported
- * skill's is its own) and any auxiliary `files` the SKILL.md references (e.g. `reference/API.md`,
- * subdirectories preserved) are written alongside it. The directory is replaced wholesale, so reinstalling
- * updates to the latest content and drops files the new version no longer ships — the directory
- * content always matches the Skill being installed. Each file path is checked to stay within the
+ * SKILL.md content including frontmatter, ensuring a trailing newline). An optional icon (a
+ * library skill's is its plugin's icon, stamped by the loader; a user-authored skill's is its
+ * own), written as `icon.<ext>` for its format, and any auxiliary `files` the SKILL.md references
+ * (e.g. `reference/API.md`, subdirectories preserved) are written alongside it; an auxiliary file
+ * named like an icon is not, so the directory holds one icon at most. The directory is replaced
+ * wholesale, so reinstalling updates to the latest content and drops files the new version no
+ * longer ships — an icon of another format included. Each file path is checked to stay within the
  * skill directory before anything is written.
  * Docs: /docs/skills § "Installation and storage".
  */
@@ -515,7 +542,7 @@ export async function installSkill(
   root: string,
   projectId: string,
   agentId: string,
-  skill: { name: string; content: string; icon?: string; files?: Record<string, string> },
+  skill: { name: string; content: string; icon?: IconImage; files?: Record<string, string> },
 ): Promise<void> {
   assertValidId("project_id", projectId);
   assertValidId("agent_id", agentId);
@@ -524,10 +551,10 @@ export async function installSkill(
   for (const [rel] of auxiliary) assertSafeSkillFile(rel);
   const dir = path.join(skillsDir(root, projectId, agentId), skill.name);
   const content = skill.content.endsWith("\n") ? skill.content : `${skill.content}\n`;
-  const files: Array<[string, string]> = [
+  const files: Array<[string, string | Uint8Array]> = [
     ["SKILL.md", content],
-    ...(skill.icon !== undefined ? ([["icon.svg", skill.icon]] as Array<[string, string]>) : []),
-    ...auxiliary,
+    ...iconEntries(skill.icon),
+    ...auxiliary.filter(([rel]) => !isIconFileName(rel)),
   ];
   // Clean replace: no stale file survives a reinstall (same semantics as the archive route).
   await replaceSkillDirectory(dir, files);
@@ -548,6 +575,11 @@ export async function replaceSkillDirectory(
   dir: string,
   files: Iterable<[string, string | Uint8Array]>,
 ): Promise<void> {
+  // A new directory takes no name Windows refuses; one already on disk is replaced as it is.
+  const name = path.basename(dir);
+  if (isWindowsReservedName(name) && (await fs.lstat(dir).catch(() => null)) === null) {
+    throw new Error(`Invalid name ${JSON.stringify(name)}: ${WINDOWS_RESERVED_RULE}.`);
+  }
   const staging = `${path.join(path.dirname(dir), `.${path.basename(dir)}`)}.incoming`;
   await fs.rm(staging, { recursive: true, force: true });
   await fs.mkdir(staging, { recursive: true });
@@ -586,16 +618,16 @@ export async function removeSkill(
   });
 }
 
-/** An installed Skill entry: frontmatter metadata (including an optional short description) + the optional icon.svg content in the directory. */
+/** An installed Skill entry: frontmatter metadata (including an optional short description) + the icon in its directory, if any. */
 export interface InstalledSkill extends SkillMetadata {
-  /** The raw content of `skills/<name>/icon.svg` — the plugin's icon for a library install, a custom one for a user-authored skill — copied alongside SKILL.md at install time; the field is omitted when missing (the frontend then draws the book glyph). */
-  icon?: string;
+  /** `skills/<name>/icon.<ext>` (readInstalledIcon) — the plugin's icon for a library install, a custom one for a user-authored skill; omitted when there is none that reads clean (the frontend then draws the book glyph). */
+  icon?: IconImage;
 }
 
 /**
  * Lists the metadata of Skills installed on the target Agent: scans `skills/<name>/SKILL.md` and
  * parses its frontmatter (optional fields like short_description(_zh) pass through as parsed),
- * also reading the optional icon.svg content in the directory. Tolerant: a directory whose
+ * also reading the icon in the directory (readInstalledIcon). Tolerant: a directory whose
  * frontmatter fails to parse or is missing `name` falls back to
  * `{ name: <directory name>, description: "", version: 1, updated: "" }`; a directory with no
  * SKILL.md doesn't count as a Skill; returns [] if skills/ doesn't exist. Results are sorted by
@@ -628,12 +660,7 @@ export async function listInstalledSkills(
     } catch {
       continue;
     }
-    let icon: string | undefined;
-    try {
-      icon = await fs.readFile(path.join(dir, entry.name, "icon.svg"), "utf8");
-    } catch {
-      // icon.svg is optional: missing means no custom icon.
-    }
+    const icon = await readInstalledIcon(path.join(dir, entry.name));
     // The directory name is the Skill's identity (install / uninstall / Prompt read guidance all
     // address by directory name): frontmatter only supplies display fields like description; when
     // its `name` doesn't match the directory name (a hand-written or network-sourced Skill), the
@@ -854,6 +881,35 @@ export async function uninstallMcpServer(
   return true;
 }
 
+/**
+ * Removes every `tools.mcpServers` entry whose `plugin` is `plugin`, in one write, and answers
+ * their names in file order; nothing is written when there are none. An entry without that
+ * provenance stays, whatever its name: the user added it. The rest of the file, comments
+ * included, is kept.
+ */
+export async function uninstallPluginMcpServers(
+  root: string,
+  projectId: string,
+  agentId: string,
+  plugin: string,
+): Promise<string[]> {
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  const file = systemConfigPath(root, projectId, agentId);
+  const doc = parseDocument(await fs.readFile(file, "utf8"));
+  const list = doc.getIn(["tools", "mcpServers"]);
+  if (!isSeq(list)) return [];
+  const kept = list.items.filter((item) => !isMap(item) || item.get("plugin") !== plugin);
+  if (kept.length === list.items.length) return [];
+  const removed = list.items
+    .filter((item) => !kept.includes(item))
+    .map((item) => (isMap(item) ? item.get("name") : undefined))
+    .filter((name): name is string => typeof name === "string");
+  list.items = kept;
+  await atomicWriteFile(file, doc.toString(), { followSymlinks: true });
+  return removed;
+}
+
 /** One `tools.mcpServers` entry of an Agent, with what stands between it and a connection. */
 export interface InstalledMcpServer {
   entry: MCPServerConfig;
@@ -958,11 +1014,12 @@ function hookManifestText(manifest: HookManifest): string {
 }
 
 /**
- * Installs a hook package as `hooks/<name>/`: the manifest as `hooks.json`, the plugin's
- * `icon.svg` when it has one (the installed package shows its plugin's icon, the way an
+ * Installs a hook package as `hooks/<name>/`: the manifest as `hooks.json`, the plugin's icon
+ * as `icon.<ext>` when it has one (the installed package shows its plugin's icon, the way an
  * installed skill does), plus the package's files (relative path → content, subdirectories
- * preserved), replacing the whole directory like a skill install does. Each file path is
- * checked to stay within the directory.
+ * preserved; one named like an icon is left out, so the directory holds one icon at most),
+ * replacing the whole directory like a skill install does. Each file path is checked to stay
+ * within the directory.
  * Docs: /docs/skills § "Hook packages".
  */
 export async function installHook(
@@ -971,7 +1028,7 @@ export async function installHook(
   agentId: string,
   manifest: HookManifest,
   files: Record<string, string>,
-  icon?: string,
+  icon?: IconImage,
 ): Promise<void> {
   assertValidId("project_id", projectId);
   assertValidId("agent_id", agentId);
@@ -980,8 +1037,8 @@ export async function installHook(
   const dir = path.join(hooksDir(root, projectId, agentId), manifest.name);
   await replaceSkillDirectory(dir, [
     ["hooks.json", hookManifestText(manifest)],
-    ...(icon !== undefined ? ([["icon.svg", icon]] as Array<[string, string]>) : []),
-    ...Object.entries(files),
+    ...iconEntries(icon),
+    ...Object.entries(files).filter(([rel]) => !isIconFileName(rel)),
   ]);
 }
 
@@ -1004,13 +1061,13 @@ export async function removeHook(
 /** An installed hook package: its manifest plus the directory its commands resolve against. */
 export interface InstalledHook extends HookManifest {
   dir: string;
-  /** The raw content of `hooks/<name>/icon.svg` (the plugin's icon, written beside the manifest at install time); omitted when the plugin ships none. */
-  icon?: string;
+  /** `hooks/<name>/icon.<ext>` (the plugin's icon, written beside the manifest at install time; readInstalledIcon); omitted when there is none that reads clean. */
+  icon?: IconImage;
 }
 
 /**
  * Lists the hook packages installed on the target Agent: scans `hooks/<name>/hooks.json` and
- * reads the optional icon.svg beside it. A package is whatever directory carries a manifest —
+ * reads the icon beside it (readInstalledIcon). A package is whatever directory carries a manifest —
  * an installer's output or one written by hand — so the manifest is read tolerantly (see
  * readHookManifest); a directory without a readable hooks.json is not a hook package, and
  * the directory name is the identity (a manifest naming something else is corrected).
@@ -1036,12 +1093,7 @@ export async function listInstalledHooks(
     const dir = path.join(base, entry.name);
     const manifest = await readHookManifest(dir);
     if (manifest === null) continue;
-    let icon: string | undefined;
-    try {
-      icon = await fs.readFile(path.join(dir, "icon.svg"), "utf8");
-    } catch {
-      // No icon.svg: the plugin shipped none.
-    }
+    const icon = await readInstalledIcon(dir);
     hooks.push({ ...manifest, name: entry.name, dir, ...(icon !== undefined ? { icon } : {}) });
   }
   return hooks.sort((a, b) => a.name.localeCompare(b.name));

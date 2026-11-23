@@ -83,6 +83,9 @@ interface RunOptions {
 
 interface RunCutoff {       // how a run was cut off early
   kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
+                            // compaction_failure: mid-Task, no next context could be opened
+                            // (the old context is kept, the pending input is carry-over),
+                            // a refused request's hand-off included
   errorCode?: ErrorCode;    // mirrors the terminal record's error_code (none for max_turns)
   errorMessage?: string;    // mirrors the terminal record's error_message
 }
@@ -90,7 +93,7 @@ interface RunCutoff {       // how a run was cut off early
 
 CLI 把终端 I/O 接到这条边界上，Server 把 HTTP 请求和 SSE 通道接上去。任何以编程方式接入的调用方都成为新的 Human 实现，无需注册任何东西。
 
-返回值说明这次运行是否真正跑完。失败不会发出 abort 事件，只会留下终态的 `request_end` 或 `compaction_end` 记录。所以，不能把被切断的运行当作已完成的代码，应当读取 `RunCutoff`，而不是从流里推断。
+返回值说明这次运行是否真正跑完。失败不会发出 abort 事件，只会留下终态的 `request_end` 或 `compaction_end` 记录。所以，不能把被切断的运行当作已完成的代码，应当读取 `RunCutoff`，而不是从流里推断。压缩完成但没有完整摘要不算切断：它的 `compaction_end` 是带错误字段的 `completed`，运行在新上下文中继续。请求被拒后以交接应对的情况也不算：它的 `request_end` 是 `retryable`，这一轮在新上下文中重发（见[请求被拒时的交接](/agent-loop#请求被拒时的交接)）。
 
 ## LLMInterface
 
@@ -128,7 +131,7 @@ interface LLMOutcome {
 | --- | --- | --- |
 | `completed` | 正常完成（`token_usage` 已经发出） | 继续执行 |
 | `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、格式错误的响应，以及一切无法归类的错误。完整送达却停在输出上限的响应也属此类，错误码为 `output_truncated`：实现把这一轮移出有状态的历史，`token_usage` 照常产出（已计费） | 在本次运行内按退避阶梯重连 |
-| `fatal` | 重试救不回来的失败：供应商 4xx 拒绝（408 和 429 除外）、凭证被拒，或发起任何网络 I/O 之前就能确定的客户端拒绝（例如给没有快速档位的模型开启快速模式） | 停止运行并呈现 `errorMessage` |
+| `fatal` | 重试救不回来的失败：供应商确定性的 4xx，拒绝按原样发出的请求时为 `rejected`（400、413、415、422），其余为 `denied`（402、403、404 等；408 和 429 照常重试）；凭证被拒（`auth`，包括 401）；或发起任何网络 I/O 之前就能确定的客户端拒绝（例如给没有快速档位的模型开启快速模式） | 停止运行并呈现 `errorMessage` |
 | `aborted` | 用户中断 | 停止，把控制权交还用户 |
 
 status 只回答一个问题：这个请求要不要重试？errorCode 则说明失败属于哪一类。无法归类的错误有意归为 `retryable`：fatal 的判定采用白名单，网关即使用自己的措辞描述瞬时故障，也照样保留重试。
@@ -190,7 +193,14 @@ interface GenerativeModelConfig {
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
+type ApproveFn = (
+  toolCall: AmspRecord<ToolCallPayload>,
+  context?: ApprovalContext, // why the call needs a person, when the command policy says so
+) => Promise<ApprovalDecision>;
+interface ApprovalContext {
+  reason?: ApprovalReason;
+}
+type ApprovalReason = { kind: "policy"; rule: string }; // a command-policy `ask` rule matched
 ```
 
 | 规则 | 行为 |
@@ -200,7 +210,9 @@ type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDeci
 | 未注入回调 | 引擎拒绝一切（保守默认） |
 | 子 Agent | 子 Agent 继承父级的审批回调，调用时会带上 `origin` 标记，审批策略因此覆盖整棵委托树 |
 
-`"forbidden"` 永远不是宿主给出的答案。`Session.run` 会用 [Project 命令策略](/configuration#命令策略)包装注入的回调，命中策略的命令不会问到宿主，直接得到 `"forbidden"`。
+`"forbidden"` 永远不是宿主给出的答案。`Session.run` 会用 [Project 命令策略](/configuration#命令策略)包装注入的回调，命中 `deny` 规则的命令不会问到宿主，直接得到 `"forbidden"`。命中 `ask` 规则的命令会带着 `{ reason: { kind: "policy", rule } }` 交给回调：宿主不能只按审批模式作答，而要交给人决定（服务端在 `deny-all` 以外的所有模式下都这样做）。其余调用照旧不带第二个参数。引擎本身始终只传调用本身，从不读取这个原因。
+
+第二个参数是可选的，按单参数签名写的回调照样能通过编译，只是会像对待其他调用一样决定 `ask` 命中。子 Session 无需额外转发：它继承的回调就是父 Session 的策略包装，子 Session 给出的原因随调用一起经过它。
 
 两种拒绝都只产生一行固定的 `aborted` 输出：`"deny"` 对应「Tool call denied by user.」，`"forbidden"` 对应「Tool call denied by policy.」。决定值本身随 `approval_decision` 事件传递，Trace 不用额外字段就能记录决策者。已有回调如果只返回 `"allow"` 或 `"deny"`，无需任何改动。
 
@@ -213,7 +225,7 @@ interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
   executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord>;
   toolPermission(name: string): "r" | "rw" | undefined;   // for frontend approval-mode decisions
-  dispose?(): void;                                        // release runtime resources; idempotent
+  dispose?(): void | Promise<void>;                        // release runtime resources; resolves once subagent children have finished writing; idempotent
 }
 ```
 
@@ -318,7 +330,7 @@ interface MCPServerConfig {
 const environment = new Environment({
   workspaceDir,
   toolConfig,
-  sessionScratchpadDir, // e.g. <dataRoot>/<project>/agents/<agent>/scratchpad/<sessionId>
+  sessionScratchpadDir, // e.g. <dataRoot>/projects/<project>/agents/<agent>/scratchpad/<sessionId>
 });
 ```
 
@@ -381,7 +393,7 @@ interface SubagentHandle {
   }): AsyncGenerator<AmspRecord, RunCutoff | null>; // returns null when the round completed
   steer?(messages: AmspRecord[]): boolean; // queue a steering message for a running round; false when none is running
   setThinkingLevel?(level: ThinkingLevelName): void; // pin the child's thinking level from its next request
-  dispose(): void;        // release the child Session's runtime resources; idempotent
+  dispose(): void | Promise<void>; // release the child Session's runtime resources; idempotent
 }
 ```
 

@@ -1,0 +1,45 @@
+/*
+ * The user's accent presets (`pack.json`, `accent.presets`), six: the forest green the
+ * theme shipped with (first, as Console lists its orange) and five warm, muted hues, each deep
+ * enough in light for the theme's white label and lifted in dark for its dark ink, the way the
+ * theme's own accent flips. A preset sets `--ui-accent` and nothing else — hover, active, wash,
+ * tint and line derive from it in tokens.css, and the label ink is the theme's for the mode — so
+ * each preset is one value per mode. The selectors match only Frost's own id, not the base, so a
+ * pack built on Frost lists its own presets, and a preset another theme lists paints nothing here.
+ */
+:root[data-theme="modern"][data-accent="forest"] {
+  --ui-accent: #006838;
+}
+:root[data-theme="modern"][data-accent="forest"].dark {
+  --ui-accent: #4aa45c;
+}
+:root[data-theme="modern"][data-accent="ocean"] {
+  --ui-accent: #3b6ea8;
+}
+:root[data-theme="modern"][data-accent="ocean"].dark {
+  --ui-accent: #7fa9df;
+}
+:root[data-theme="modern"][data-accent="clay"] {
+  --ui-accent: #b8552f;
+}
+:root[data-theme="modern"][data-accent="clay"].dark {
+  --ui-accent: #e08a66;
+}
+:root[data-theme="modern"][data-accent="plum"] {
+  --ui-accent: #7a4d8f;
+}
+:root[data-theme="modern"][data-accent="plum"].dark {
+  --ui-accent: #b78fd0;
+}
+:root[data-theme="modern"][data-accent="honey"] {
+  --ui-accent: #96660f;
+}
+:root[data-theme="modern"][data-accent="honey"].dark {
+  --ui-accent: #d9ab4a;
+}
+:root[data-theme="modern"][data-accent="slate"] {
+  --ui-accent: #5c6470;
+}
+:root[data-theme="modern"][data-accent="slate"].dark {
+  --ui-accent: #9ea6b3;
+}

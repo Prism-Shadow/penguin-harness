@@ -8,9 +8,13 @@ export const en: Strings = {
     home: "Home",
     blog: "Blog",
     download: "Download",
+    plugins: "Plugins",
+    benchmarks: "Benchmarks",
+    leaderboards: "Leaderboards",
     amsp: "AMSP",
     docs: "Docs",
-    gallery: "Gallery",
+    gallery: "Theme Packs",
+    more: "More",
     github: "GitHub",
     openMenu: "Open menu",
     closeMenu: "Close menu",
@@ -36,7 +40,7 @@ export const en: Strings = {
     advanced: "Advanced",
     design: "How It Works",
     reference: "Reference",
-  } as Record<string, string>,
+  },
 
   doc: {
     toc: "On this page",
@@ -64,6 +68,6 @@ export const en: Strings = {
     repo: "GitHub repository",
     license: "Apache-2.0 License",
     site: "Website",
-    copyright: "© 2026 Prism Shadow · Open source under Apache-2.0",
+    copyright: "© 2026 Prism Shadow. Open source under Apache-2.0.",
   },
 };

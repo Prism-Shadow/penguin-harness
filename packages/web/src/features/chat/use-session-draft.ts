@@ -21,8 +21,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ModelRefDto } from "@prismshadow/penguin-server/api";
 import { useAuth } from "../../state/auth";
-import { clearDraft, loadDraft, saveDraft, sessionDraftKey } from "./draft-cache";
-import type { DraftCache } from "./draft-cache";
+import { clearDraft, loadDraft, saveDraft, sessionDraftKey, type DraftCache } from "./draft-cache";
 
 const SAVE_DEBOUNCE_MS = 300;
 
@@ -43,6 +42,7 @@ export function useSessionDraft(sessionId: string | null): {
   const key = userId && sessionId ? sessionDraftKey(userId, sessionId) : null;
   const initial = useMemo<DraftCache>(() => (key ? loadDraft(key) : {}), [key]);
 
+  const seededKey = useRef(key);
   const textRef = useRef(initial.text ?? "");
   const handoffRef = useRef<string | null>(initial.handoffAgentId ?? null);
   const switchModelRef = useRef<ModelRefDto | null>(initial.switchModelRef ?? null);
@@ -78,10 +78,13 @@ export function useSessionDraft(sessionId: string | null): {
   // (persistNow's closure still holds the old key), then setup resets the refs to the new
   // session's initial values.
   useEffect(() => {
-    textRef.current = initial.text ?? "";
-    handoffRef.current = initial.handoffAgentId ?? null;
-    switchModelRef.current = initial.switchModelRef ?? null;
-    skillsRef.current = initial.skills ?? [];
+    if (seededKey.current !== key) {
+      seededKey.current = key;
+      textRef.current = initial.text ?? "";
+      handoffRef.current = initial.handoffAgentId ?? null;
+      switchModelRef.current = initial.switchModelRef ?? null;
+      skillsRef.current = initial.skills ?? [];
+    }
     return () => {
       if (timer.current !== null) {
         window.clearTimeout(timer.current);
@@ -89,7 +92,7 @@ export function useSessionDraft(sessionId: string | null): {
         persistNow();
       }
     };
-  }, [initial, persistNow]);
+  }, [key, initial, persistNow]);
 
   const onTextChange = useCallback(
     (text: string) => {

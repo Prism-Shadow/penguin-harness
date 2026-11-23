@@ -16,10 +16,16 @@
  * Drafts are rows rather than prefs keys: there are many of them, each is written on its own as
  * someone types, and each must go when the Session or Project it belongs to is deleted.
  */
+import type {
+  Auth,
+  Users,
+  BackgroundImageStore,
+  UserDraftsStore,
+} from "@prismshadow/penguin-library-auth";
 import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
 import { createHash } from "node:crypto";
-import { BACKGROUND_IMAGE_MAX_CHARS } from "../../api/types.js";
+import { AVATAR_MAX_CHARS, BACKGROUND_IMAGE_MAX_CHARS } from "../../api/types.js";
 import type {
   BackgroundImagePutResponse,
   BackgroundImageResponse,
@@ -49,10 +55,28 @@ export interface MeRouteDeps {
   serverSettingsRepo: Settings;
   /** The `users` table itself, for the one route that writes a column no service owns (PUT /api/me/profile). */
   usersRepo: Users;
+  /** The ui_prefs keys other modules own (`MeRoutes.ownedPrefs`): PUT /prefs refuses them. */
+  ownedPrefs?: readonly OwnedPref[];
+}
+
+/**
+ * A ui_prefs key a module owns: it is written only through that module's own route — which
+ * checks what the user may choose, or tells other windows — so a plain prefs write naming it is
+ * refused 400 `bad_request` with `message`, and nothing of that write is stored.
+ */
+export interface OwnedPref {
+  key: string;
+  /** The refusal's message: name the route that does write the key. */
+  message: string;
+}
+
+export interface MeRoutesSlots {
+  /** A ui_prefs key the contributing module owns. */
+  ownedPrefs: OwnedPref;
 }
 import { resolvePreviewTarget } from "../../services/preview-token.js";
 import { validateDraftShortcuts } from "../../services/draft-shortcuts.js";
-import { validateKeybindings } from "../../services/keybindings.js";
+import { validateKeybindings } from "@prismshadow/penguin-library-setting/keybindings";
 import { validateAccountSettings } from "../../services/account-settings.js";
 import {
   DRAFTS_MAX_COUNT,
@@ -64,24 +88,15 @@ import {
   MAX_ATTACHMENT_COUNT,
   MAX_ATTACHMENT_MB,
   MIN_ATTACHMENT_MB,
-} from "../../services/attachment-limits.js";
+} from "@prismshadow/penguin-library-setting/attachment-limits";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Config, Desktop } from "../../hmr/capabilities.js";
-import type { Auth, Users } from "../../mechanisms/identity.js";
-import type { Settings, UiPrefsStore } from "../../mechanisms/settings.js";
-import type { BackgroundImageStore, UserDraftsStore } from "../../mechanisms/account-data.js";
+import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
 const DISPLAY_NAME_MIN = 1;
 const DISPLAY_NAME_MAX = 32;
-
-/**
- * Avatar cap, in characters of the data URL as it arrives — the same number the browser
- * measures its re-encode against, so the client and this check can never disagree about what
- * "too large" means. 131072 characters of base64 hold roughly 96 KiB of image.
- */
-const AVATAR_MAX_CHARS = 131072;
 
 /** The three formats the picker offers, all of which every target browser can re-encode. */
 const AVATAR_DATA_URL = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
@@ -286,18 +301,21 @@ export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
     if (body.keybindings !== undefined) {
       body.keybindings = validateKeybindings(body.keybindings);
     }
-    // Which browser the user's agents drive has its own route, which checks what the user may
-    // choose, waits out an agent's action in flight, and tells their windows; a plain prefs
-    // write would skip all three.
-    if (body.browserBackend !== undefined) {
-      throw badRequest(
-        "browserBackend is chosen through PUT /api/builtin-browser/backend, not the prefs.",
-      );
+    // A key another module owns has its own route, which a plain prefs write would skip.
+    for (const owned of deps.ownedPrefs ?? []) {
+      if (Object.hasOwn(body, owned.key)) throw badRequest(owned.message);
     }
     // Names the image the background route stored; written anywhere else it would name an
     // image the account does not hold, and every browser would keep asking for it.
     if (body.backgroundImageId !== undefined) {
       throw badRequest("backgroundImageId is set by PUT /api/me/background-image, not the prefs.");
+    }
+    // Checked, and pruned of Projects that are gone, by its own route; written here it would be
+    // neither.
+    if (body.appCenterLayouts !== undefined) {
+      throw badRequest(
+        "appCenterLayouts is set by PUT /api/projects/:projectId/app-center/layout, not the prefs.",
+      );
     }
     validateAccountSettings(body);
     const merged = { ...readPrefs(deps.prefsRepo, c.var.user.userId), ...(body as UiPrefs) };
@@ -383,7 +401,11 @@ export class MeRoutes {
   @Use() private readonly settings!: Settings;
   @Use() private readonly users!: Users;
   @Bind("MeRoutes.routes") routes!: Hono<AppEnv>;
-  setup() {
+  setup({ contributions }: ClassCtx) {
+    const ownedPrefs = (contributions.ownedPrefs ?? []).map((c) => ({
+      key: c.data.key as string,
+      message: c.data.message as string,
+    }));
     this.routes = meRoutes({
       authService: this.auth,
       config: this.config,
@@ -393,6 +415,7 @@ export class MeRoutes {
       backgroundImages: this.backgroundImages,
       serverSettingsRepo: this.settings,
       usersRepo: this.users,
+      ownedPrefs,
     });
   }
 }

@@ -1,7 +1,7 @@
 ---
 name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.
-version: 2026.10.12.1
+version: 2026.11.20.1
 ---
 
 # Agent Optimization
@@ -14,7 +14,7 @@ If the request does not identify the Test Agent, frozen Benchmark, desired targe
 
 ## Goal and contract
 
-Require an explicit Test Agent, a frozen Benchmark with a complete valid Formal Baseline, a desired target score, a positive `runs` value, and a positive round limit. The Benchmark's `benchmark_config.toml` must say `status = "published"`; a `draft` Benchmark is still being built and is not frozen, and a `failed` one never finished calibrating, so stop and explain in either case. `runs` is the number of Runs per Case for every Candidate in this optimization Session. Freeze it for the Session; do not infer it from `benchmark_config.toml` or the Formal Baseline. Read the evaluation `(provider, model_id, thinking_level)` from the complete Evaluation that matches the current Agent State; do not require the user to repeat it. An Evaluation without any part of this runtime is incomplete and cannot be used as a Reference. The top-level Session must provide `run_subagent`, and the current Agent must have the `agent-evaluation` Skill. If a prerequisite is missing, stop and explain what is needed. Do not create the missing Agent, Benchmark, or Baseline, and do not evaluate the Test Agent directly.
+Require an explicit Test Agent, a frozen Benchmark with a complete valid Formal Baseline, a desired target score, a positive `runs` value, and a positive round limit. The Benchmark's `benchmark_config.toml` must say `status = "published"`; a `draft` Benchmark is still being built and is not frozen, and a `failed` one never finished calibrating, so stop and explain in either case. `runs` is the number of Runs per Case for every Candidate in this optimization Session. Freeze it for the Session; do not infer it from `benchmark_config.toml` or the Formal Baseline. Read the evaluation `(provider, model_id, thinking_level)` from the complete Evaluation that matches the current Agent State; do not require the user to repeat it. When the request names `provider` and `model_id`, that pair is the model under test: use the complete Evaluation of the current Agent State recorded on that pair, and when there is none, stop and say a Formal Baseline on that model is needed. The model this Session runs on is not the model under test. An Evaluation without any part of this runtime is incomplete and cannot be used as a Reference. The top-level Session must provide `run_subagent`, and the current Agent must have the `agent-evaluation` Skill. If a prerequisite is missing, stop and explain what is needed. Do not create the missing Agent, Benchmark, or Baseline, and do not evaluate the Test Agent directly.
 
 A **Reference** is the Agent State currently kept as best, together with its complete Evaluation on the frozen Benchmark.
 
@@ -22,21 +22,20 @@ Each round starts from the Reference and tests a bounded, general **Candidate**.
 
 ## Access and changes
 
-Resolve paths from the Environment's App Data Dir without recursively discovering the Project:
+Resolve paths from the Environment's App Data Dir, and the Benchmark's folder from the request, without recursively discovering the Project:
 
 ```text
 PROJECT_DIR = <app_data_dir>
 PROJECT_ID = <basename_of_project_dir>
-PENGUIN_HOME = <parent_of_project_dir>
 TARGET = <app_data_dir>/agents/<test_agent_id>
 STATE = <target>/agent_state
 TRACES = <target>/traces
-BENCHMARK = <app_data_dir>/benchmarks/<benchmark_id>
+BENCHMARK = <the BENCHMARK_DIR the request names>   # when it names none: <app_data_dir>/agents/system_agent/app/data/benchmark/<benchmark_id>
 SCOREBOARD = <benchmark>/scoreboard.yaml
 SNAPSHOTS = <target>/snapshots
 ```
 
-The Benchmark is Project-level rather than owned by the Test Agent: it sits beside `agents/` and may evaluate several Agents. `test_agent_id` names the one this Session optimizes, and every Evaluation records it. Use only the Evaluations whose `agent_id` is that Agent as a Reference or for diagnosis.
+The Benchmark is Project-level rather than owned by the Test Agent: it lives in the Evaluation Center's data folder and may evaluate several Agents. `test_agent_id` names the one this Session optimizes, and every Evaluation records it. Use only the Evaluations whose `agent_id` is that Agent as a Reference or for diagnosis.
 
 Inspect only the requested Test Agent and Benchmark: the Agent State, public Statements, Scoreboard, and score-linked Test Traces or artifacts from the Baseline and this optimization, including rejected Candidates.
 
@@ -85,6 +84,7 @@ run: <1_based_run_index>
 expected_version: <test_agent_state_version>
 test_agent_id: <test_agent_id>
 benchmark_id: <benchmark_id>
+benchmark_dir: <benchmark>
 provider: <provider>
 model_id: <model_id>
 ```

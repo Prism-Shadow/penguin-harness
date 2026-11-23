@@ -14,7 +14,9 @@
  *   harness.json  which table wrote them, and when
  *
  * and then leaves them alone. (`README.md` beside them is not part of that record: it is this
- * harness describing its own contract, rewritten whenever it differs — see {@link README}.) They are the record of what the workbench was written against:
+ * harness describing its own contract, rewritten whenever it differs — see {@link README}. Nor
+ * is `ui/`, the page runtime's declarations, which follow the server: ./ui-runtime.ts.) They
+ * are the record of what the workbench was written against:
  * a later generation of the platform, or another harness on the same machine, is compared
  * WITH them rather than overwriting them, which is what lets a removed host method be named
  * before the first call instead of failing at it. Deleting the directory is how a workbench
@@ -98,11 +100,28 @@ headers, declare its return type (\`Promise<WorkbenchResponse>\`) so they are no
       "renderer": { "iframe": { "src": "ui/index.html" } } }
   ]
 }
+// icon (optional): { "kind": "svg", "data": "<svg ..." } or { "kind": "png", "data": "<base64>" } —
+// the FIRST tab that names one is this workbench's app icon (what installing carries); the
+// tab strip itself draws no icon.
+// shortName (optional): the launcher label when the tab installs as its own app
+// (/app/…/<key>, its own manifest); absent or blank it means the title.
 \`\`\`
 
 One entry per tab, beside the chat of this Agent; \`key\` is unique in the workbench; \`src\` is a
 file under \`ui/\`. \`"contributes": {}\` is a server-only workbench with no UI — also how a UI is
 taken away again.
+
+## Pages in TSX
+
+A page may be TSX: \`ui/app.tsx\`, loaded by the HTML as \`<script type="module" src="app.js">\`.
+When \`ui/\` holds a \`.tsx\`, every load type-checks each \`.ts\`/\`.tsx\` under it and serves the
+\`.js\` it compiled to. A page imports \`react\`, \`react-dom\`, \`react-dom/client\`,
+\`@prismshadow/penguin-ui\` (the app's own components) and files under \`ui/\` (\`./x.js\`), nothing
+else; this server provides them, nothing to install. Their types are in \`.harness/ui/\`: the
+props of every component are in \`.harness/ui/node_modules/@prismshadow/penguin-ui/index.d.ts\`.
+Style your own markup with CSS that reads the \`--ui-*\` variables, linked from the HTML, never
+imported from code. Keep no \`ui/x.js\` beside a \`ui/x.tsx\`. The page SDK stays outside the
+check: \`const sdk = "../sdk/workbench.js"; await import(sdk)\`.
 
 ## Background work
 
@@ -110,7 +129,64 @@ taken away again.
 snapshot: \`running\`, \`completed\` with the final \`text\`, or \`failed\` with an \`error\`.
 Persist the Session id with \`host.setState\`, then poll from GET requests until terminal. Do not
 mark a running snapshot failed because its text is empty. Store small reports in host state;
-keep uploaded files outside this watched source directory. Never edit state.json by hand.
+keep uploaded files in \`dataDir\` (below), never among the source. Never edit state.json by hand.
+
+## Choosing a model
+
+\`host.createSession({ model: { provider, modelId } })\` opens the Session on that model of the
+Project's catalog instead of its default. To let the user choose it, a page calls the page SDK's
+\`chooseChatModel(current?)\`: the app shows its own model picker and the call resolves
+\`{ provider, modelId, label }\`, or null when the user closes it. \`getChatModel(current?)\` names
+a model, the Project default when none is given. Both reject with \`WorkbenchHostUnavailable\` when
+the page is not shown in the app. From a visible workbench on the local server,
+\`openModelSettings()\` opens the host's Models page for the workbench's Project. Users enter keys there.
+
+## Your folders
+
+\`host.dataPaths(level?)\` returns \`{ dataDir, cacheDir, stateDir }\`: three folders outside this
+source folder, made by the time it returns. Read and write them with Node's own modules —
+\`import { readFile, writeFile, rename } from "node:fs/promises"\`, \`import path from "node:path"\`,
+\`import net from "node:net"\` are typed here, nothing to install — and serve what the page needs
+from your own routes. A write there reloads nothing and enters no version.
+
+- \`dataDir\`: files kept for good. \`cacheDir\`: files that can be made again, never exported.
+  \`stateDir\`: runtime-only files — Unix sockets, pipes, locks — never exported and kept across
+  restarts: unlink a stale socket before listening.
+- A Unix socket path holds at most 103 bytes, so listen on \`host.socketPath("dev.sock", level?)\`,
+  which throws naming the limit when the path would be longer, and on Windows answers a named pipe
+  (\`\\\\.\\pipe\\…\`), which is no file on disk.
+
+The level says who shares them:
+
+- \`"agent"\` (the default): this Agent's copy of the app. The Agent edits these files with its own
+  file tools, even in a sandbox: name a file's path (\`path.join(dataDir, …)\`) in the run's text.
+  The Agent export carries \`dataDir\` with the workbench's data; removing the workbench removes all
+  three. Documents the user edits and asks the Agent to change go here, and nothing private ever
+  goes anywhere else.
+- \`"server"\`: every copy of this app on this server, across its Projects and Agents — a model's
+  weights, a tool's binaries. \`"machine"\`: every PenguinHarness on this computer for this OS user —
+  a small local server one computer runs once. Never exported, never removed with a workbench.
+  Only an app installed from a plugin has them (a workbench made in place throws), and only your
+  handler writes them: the Agent's sandboxed commands may read but not write, so download and
+  start what lives there from the handler (\`fetch\`, or a child process it spawns). Put nothing
+  there that one Project must not see from another.
+
+The Agent may write the agent-level folders too, so never follow a link out of them: \`lstat\` a
+path the Agent could have written before reading or writing through it. Write a file whole (a
+temporary name beside it, then \`rename\`). Never put code in them. To notice the Agent's writes,
+\`stat\` the file on a timer while a page is connected and compare \`mtimeMs\` and \`size\`. A
+\`plugin.d.ts\` here without \`socketPath\` predates these members; delete \`.harness/\` to take them.
+
+## A Session that only talks
+
+\`host.createSession()\` opens a Session in which every tool call runs (\`allow-all\`): right for a
+workbench that asks its Agent to do work. A workbench whose Session only talks — a character, a
+game host, anything that hands the model the person's words or a text the person imported —
+opens it with \`host.createSession({ approvalMode: "deny-all" })\`: every tool call in that
+Session is denied, the model reads the usual denial line and answers in text, and nobody is
+asked. Say in the prompt as well that the Session has no tools, so the model does not try. No
+other mode is accepted. A \`plugin.d.ts\` here without \`approvalMode\` predates it; delete
+\`.harness/\` to take it.
 
 ## Following a Session live
 

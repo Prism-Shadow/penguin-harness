@@ -13,7 +13,7 @@
  * {{VAULT}}-placeholder alert (with legacy-template migration) and the editable
  * vault.prompt section, mirroring the Memory tab — owner-only, like the table edits.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { VaultEntryInfo, VaultUpdateRequest } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -21,20 +21,20 @@ import {
   HelpFold,
   NoticeStrip,
   SettingsEmpty,
-  SkeletonList,
-  toastError,
+  Waiting,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
+import { failureOf, failureNode } from "../../lib/failure";
+import { toastFailure } from "../../lib/toast-api-error";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
 import { VaultAddDialog } from "./vault-add-dialog";
+import type { Failure } from "@prismshadow/penguin-ui";
 
 export function VaultTab({
   agentId,
@@ -61,7 +61,7 @@ export function VaultTab({
 
   const [entries, setEntries] = useState<VaultEntryInfo[] | null>(null);
   // Tab-level error is only the initial load failure; saves/deletes report via toast.
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   // Add dialog: its form, its errors and its overwrite question travel with it (vault-add-dialog.tsx).
   const [adding, setAdding] = useState(false);
@@ -83,7 +83,7 @@ export function VaultTab({
       setEntries(res.entries);
       applyConfig(configView.config);
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an Agent's vault could not be loaded" }));
     }
   }, [projectId, agentId, machineId, applyConfig]);
 
@@ -92,8 +92,8 @@ export function VaultTab({
   }, [load]);
 
   /** Persist a change immediately (add / delete): returns null on success, an error message on failure — the caller decides whether it lands inside the modal or at the tab level. */
-  const persist = async (body: VaultUpdateRequest): Promise<string | null> => {
-    if (!projectId || !agentId) return S.common.unknownError;
+  const persist = async (body: VaultUpdateRequest): Promise<Failure | null> => {
+    if (!projectId || !agentId) return { text: S.common.unknownError, report: null };
     setBusy(true);
     try {
       const res = await api.putVault(projectId, agentId, body, machineId);
@@ -103,7 +103,7 @@ export function VaultTab({
       if (machineId === null) void reloadAgents();
       return null;
     } catch (e) {
-      return apiErrorText(e);
+      return failureOf(e);
     } finally {
       setBusy(false);
     }
@@ -125,8 +125,8 @@ export function VaultTab({
   /** Confirm modal's "Confirm": closes the modal after deletion; a failure pops a toast. */
   const confirmRemove = async () => {
     if (deleting === null) return;
-    const err = await persist({ entries: keepEntries(deleting) });
-    if (err !== null) toastError(err);
+    const failure = await persist({ entries: keepEntries(deleting) });
+    if (failure !== null) toastFailure(failure);
     setDeleting(null);
   };
 
@@ -145,8 +145,10 @@ export function VaultTab({
       {toggleCard}
       {alertStrip}
 
+      {/* The switch, the table and the prompt arrive in one answer; until then the tab's one
+          wait stands under the description, and nothing does once the read has failed. */}
       {entries === null ? (
-        <SkeletonList rows={4} />
+        error === null && <Waiting rows={4} />
       ) : entries.length === 0 ? (
         <SettingsEmpty>{S.vault.empty}</SettingsEmpty>
       ) : (

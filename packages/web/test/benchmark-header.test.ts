@@ -34,7 +34,7 @@ describe("the facts under a Benchmark page's title", () => {
       origin: { kind: "manual" },
     });
 
-    expect(html).toContain("benchmarks/report-writing-v1");
+    expect(html).toContain("agents/system_agent/app/data/benchmark/report-writing-v1");
     expect(html).toContain("v2026.10.09.2");
   });
 
@@ -70,7 +70,7 @@ describe("the facts under a Benchmark page's title", () => {
   it("names the directory alone when there is no version to show", () => {
     const html = render({ id: "report-writing-v1" });
 
-    expect(html).toContain("benchmarks/report-writing-v1");
+    expect(html).toContain("agents/system_agent/app/data/benchmark/report-writing-v1");
     expect(html).not.toMatch(/v\d{4}\./);
     expect(links(html)).toEqual([]);
   });

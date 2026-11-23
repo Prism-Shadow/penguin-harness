@@ -9,7 +9,7 @@
  * what it contributes is visible to all of them.
  *
  * The closure is read from the FILES, without the database: this runs at boot, before the
- * platform exists, and a Project is a directory holding a `.project_config.toml`.
+ * platform exists, and a Project is a folder of `<root>/projects/` holding a `.project_config.toml`.
  *
  * Resolution is anchored at `process.argv[1]`, for the same reason the packaged
  * bundle's own resolver is: a bundle running from `hmr/store` has no node_modules of
@@ -21,13 +21,17 @@
  * default export, whose manifests the package's generated `ifaces.json` carries.
  */
 import fs from "node:fs/promises";
-import type { Dirent } from "node:fs";
 import { parse as parseToml } from "smol-toml";
 import {
   effectivePluginTable,
+  IFACES_FILE,
+  listProjectDirs,
+  packageEntry,
   parsePluginTables,
   projectConfigPath,
+  readPluginTable,
 } from "@prismshadow/penguin-core";
+import type { PluginDeclaration } from "@prismshadow/penguin-core";
 import { findPackageJSON } from "node:module";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -39,15 +43,17 @@ import type {
   ModuleDef,
   Resources,
 } from "@prismshadow/penguin-core/kernel";
-import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
+import { moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import { pluginsPrefix } from "./install.js";
+import { workspacePrefixManifest } from "./workspace-prefix.js";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
+
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
 import { PluginHost, pluginHostFrom } from "./host.js";
 import platformTable from "../ifaces.json" with { type: "json" };
-import { checkIfaces, ifaceQuestions } from "./iface-check.js";
+import { checkIfaces, ifaceQuestions, packageOf } from "./iface-check.js";
 import { loadTypeScript, TypeScriptUnavailable, type TypeScript } from "./typescript.js";
 
 /**
@@ -65,26 +71,12 @@ export interface PluginLoadResult {
   /** specifier → why it was skipped. */
   failed: Map<string, string>;
 }
-/** The Project ids of a data root: every directory holding a `.project_config.toml`. */
+/**
+ * The Project ids of a data root: every folder of `projects/` holding a `.project_config.toml`,
+ * links skipped (core's listProjectDirs).
+ */
 export async function listProjectIds(root: string): Promise<string[]> {
-  let entries: Dirent[];
-  try {
-    entries = await fs.readdir(root, { withFileTypes: true });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
-  const ids: string[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-    try {
-      await fs.access(projectConfigPath(root, entry.name));
-      ids.push(entry.name);
-    } catch {
-      // Not a Project directory: `hmr`, `store`, whatever else lives beside them.
-    }
-  }
-  return ids.sort();
+  return (await listProjectDirs(root)).map((project) => project.id);
 }
 
 /**
@@ -106,7 +98,7 @@ export async function readProjectPluginList(
     // configuration fault, but not this one's to fail the boot over: its models are just as
     // unreadable, and the deployment must still come up for every other Project. The list
     // view reports the fault on that Project (routes/plugins-installed.ts).
-    console.warn(
+    console.error(
       `[plugins] ${projectId}: .project_config.toml could not be read, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
     return [];
@@ -116,7 +108,7 @@ export async function readProjectPluginList(
     parsed = parseToml(text);
   } catch (err) {
     // The same for one that does not parse.
-    console.warn(
+    console.error(
       `[plugins] ${projectId}: .project_config.toml is not valid TOML, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
     return [];
@@ -153,7 +145,8 @@ export async function readPluginClosure(
  *   2. `<assets>/plugins` — the BUILTIN plugins the committed hot push carried
  *      (scripts/build-plugins.mjs), i.e. the plugins of the revision that is running.
  *   3. `<installation>/plugins` — the builtin plugins the build shipped (the desktop app
- *      stages them beside `skills/`), for a deployment nothing was ever pushed to.
+ *      stages them beside `skills/`), for a deployment nothing was ever pushed to; in a
+ *      workspace checkout, then its one staged prefix (plugin/workspace-prefix.ts).
  *   4. the installation entry — a plugin installed globally beside the program.
  *
  * A prefix marked `builtin` is one the harness ships, not one the operator installed.
@@ -193,10 +186,13 @@ export function pluginBases(root: string | undefined, assetsDir: string | null):
   }
   const entry = process.argv[1];
   if (typeof entry === "string" && entry.length > 0) {
-    bases.push({
-      file: path.join(path.dirname(entry), "..", "plugins", "package.json"),
-      builtin: true,
-    });
+    const installation = path.join(path.dirname(entry), "..", "plugins", "package.json");
+    bases.push({ file: installation, builtin: true });
+    // A checkout's entries share one staged prefix (plugin/workspace-prefix.ts).
+    const workspace = workspacePrefixManifest(entry);
+    if (workspace !== null && path.resolve(workspace) !== path.resolve(installation)) {
+      bases.push({ file: workspace, builtin: true });
+    }
     bases.push({ file: entry, builtin: false, program: true });
   }
   return bases;
@@ -241,40 +237,6 @@ export function resolvePluginPackage(
   return null;
 }
 
-/**
- * The file an `import "<name>"` of the package would load: `exports["."]` — a string, or its
- * `import` / `node` / `default` condition — else `main` (with `.js` supplied when it is
- * written without one), else `index.js`. The packages are ESM and name one entry, which is
- * all this reads; anything richer is the package's own business once Node imports it.
- */
-function packageEntry(dir: string, manifest: string): string | null {
-  let pkg: { exports?: unknown; main?: unknown };
-  try {
-    pkg = JSON.parse(readFileSync(manifest, "utf8")) as typeof pkg;
-  } catch {
-    return null;
-  }
-  const condition = (value: unknown): string | null => {
-    if (typeof value === "string") return value;
-    if (value === null || typeof value !== "object") return null;
-    const v = value as Record<string, unknown>;
-    return condition(v.import) ?? condition(v.node) ?? condition(v.default) ?? null;
-  };
-  let rel: string | null = null;
-  const exp = pkg.exports;
-  if (typeof exp === "string") rel = exp;
-  else if (exp !== null && typeof exp === "object") {
-    const table = exp as Record<string, unknown>;
-    rel = condition("." in table ? table["."] : table);
-  }
-  rel ??= typeof pkg.main === "string" ? pkg.main : "./index.js";
-  const file = path.resolve(dir, rel);
-  if (!existsSync(file) && path.extname(file) === "" && existsSync(`${file}.js`)) {
-    return `${file}.js`;
-  }
-  return file;
-}
-
 /** Where a specifier resolves from — the entry file and the base that found it — or null. */
 function resolvePlugin(
   specifier: string,
@@ -292,7 +254,8 @@ function resolvePlugin(
   if (!PACKAGE_NAME.test(specifier)) return null;
   const found = resolvePluginPackage(specifier, bases);
   if (found === null) return null;
-  const file = packageEntry(found.dir, found.manifest);
+  // core's rule: `exports["."]`, else `main`, else `index.js` (a package of content alone has none).
+  const file = packageEntry(found.dir);
   return file === null ? null : { file, base: found.base };
 }
 
@@ -356,25 +319,30 @@ async function importPlugin(
   return { module: await import(specifier), file: null, stamp: null };
 }
 
-/** The generated table a plugin package ships beside its package.json. */
-export const IFACES_FILE = "ifaces.json";
+/** The generated table a plugin package ships beside its package.json (core plugin/table.ts reads it). */
+export { IFACES_FILE };
+export type { PluginDeclaration };
 
-/** The `plugin` entry of a package's table: the names its default export lists, read statically by the generator. */
-export interface PluginDeclaration {
-  modules: readonly string[];
-  replaces: readonly string[];
-}
-
-/**
 /**
  * What a listed specifier DECLARES, read from its generated table alone — the package is never
  * imported. Lets a surface say which plugin a loaded module came from, and why a listed one is
  * not there, without the runtime having to publish its load report.
  */
+/** What a listed specifier declares, plus how it came to be in the prefix. */
+export interface PluginDeclarationRead {
+  modules: string[];
+  replaces: string[];
+  builtin: boolean;
+  /** The prefix resolves this name through a link the `penguin plugin link` command parked. */
+  linked?: true;
+  /** The author directory the link points at (when `linked`). */
+  linkPath?: string;
+}
+
 export async function readPluginDeclaration(
   specifier: string,
   bases: readonly PluginBase[],
-): Promise<{ modules: string[]; replaces: string[]; builtin: boolean } | { error: string }> {
+): Promise<PluginDeclarationRead | { error: string }> {
   const fault = specifierFault(specifier);
   if (fault !== null) return { error: fault };
   const resolved = resolvePlugin(specifier, bases);
@@ -402,10 +370,10 @@ export async function readPluginDeclaration(
 
 /**
  * The package's generated table (`ifaces.json` beside its `package.json`, the nearest one
- * above the resolved entry file): the manifest of every decorated class, the signature of
- * every interface they name. A package is a plugin by being listed; the table is its
- * MODULE payload, and a package without one ships no modules (`manifests` empty). Null
- * only when no `package.json` is above the file at all.
+ * above the resolved entry file), read by core's reader (plugin/table.ts): the manifest of every
+ * decorated class, the signature of every interface they name. A package is a plugin by being
+ * listed; the table is its MODULE payload, and a package without one ships no modules
+ * (`manifests` empty). Null only when no `package.json` is above the file at all.
  */
 async function readPackageTable(file: string | null): Promise<{
   where: string;
@@ -415,56 +383,18 @@ async function readPackageTable(file: string | null): Promise<{
   plugin: PluginDeclaration;
 } | null> {
   if (file === null) return null;
-  let dir = path.dirname(file);
-  for (;;) {
+  for (let dir = path.dirname(file); ;) {
     const where = path.join(dir, "package.json");
-    try {
-      await fs.access(where);
-      const tableFile = path.join(dir, IFACES_FILE);
-      let text: string;
-      try {
-        text = await fs.readFile(tableFile, "utf8");
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-        return {
-          where,
-          ifaces: { ifaces: {}, types: {} },
-          manifests: {},
-          plugin: { modules: [], replaces: [] },
-        };
-      }
-      const table = JSON.parse(text) as {
-        ifaces?: unknown;
-        types?: unknown;
-        modules?: unknown;
-        plugin?: unknown;
-      };
-      const isRecord = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
-      if (!isRecord(table.ifaces) || !isRecord(table.types) || !isRecord(table.modules)) {
-        throw new Error(`${tableFile}: expected { ifaces, types, modules } (gen-ifaces output)`);
-      }
-      const names = (v: unknown) => Array.isArray(v) && v.every((n) => typeof n === "string");
-      const plugin = (table.plugin ?? {}) as { modules?: unknown; replaces?: unknown };
-      if (!isRecord(plugin) || !names(plugin.modules ?? []) || !names(plugin.replaces ?? [])) {
-        throw new Error(
-          `${tableFile}#plugin: expected { modules: [<name>, …], replaces: [<name>, …] }`,
-        );
-      }
-      const manifests: Record<string, ModuleDef["manifest"]> = {};
-      for (const [name, doc] of Object.entries(table.modules as Record<string, unknown>)) {
-        manifests[name] = parseManifest(doc, `${tableFile}#modules.${name}`);
-      }
-      return {
-        where,
-        ifaces: { ifaces: table.ifaces, types: table.types } as IfaceTable,
-        manifests,
-        plugin: {
-          modules: (plugin.modules ?? []) as string[],
-          replaces: (plugin.replaces ?? []) as string[],
-        },
-      };
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    if (existsSync(where)) {
+      const table = readPluginTable(dir);
+      return table === null
+        ? {
+            where,
+            ifaces: { ifaces: {}, types: {} },
+            manifests: {},
+            plugin: { modules: [], replaces: [] },
+          }
+        : { where, ifaces: table.ifaces, manifests: table.manifests, plugin: table.plugin };
     }
     const parent = path.dirname(dir);
     if (parent === dir) return null;
@@ -480,10 +410,12 @@ async function readPackageTable(file: string | null): Promise<{
  *
  * Two things can leave an interface uncompared, and neither fails the load — a pushed
  * platform must not take plugins away from a machine for something the plugin did not do:
- * a table that carries no copy of a host interface (the generator only writes the
- * interfaces a package DECLARES, so today that is every host interface a plugin requires),
- * and an installation whose program predates the compiler being a dependency. Both are
- * logged; an interface the table does carry, and that no longer fits, fails the load.
+ * a table that carries no copy of a host interface (the generator copies them only for a
+ * package built against the host's sources, with `--sources`; one built against the published
+ * declarations carries none), and an installation whose program predates the compiler being a
+ * dependency. Both are logged; an interface the table does carry, and that no longer fits,
+ * fails the load. An interface the package declares itself is not a host interface and is not
+ * asked about.
  */
 let compilerMissingLogged = false;
 async function interfaceMisfits(
@@ -491,25 +423,39 @@ async function interfaceMisfits(
   own: IfaceTable,
   defs: readonly ModuleDef[],
   assets: string | null,
+  /** The package's own name: an interface it declares itself is no host interface to compare. */
+  ownPackage: string | null,
 ): Promise<string[]> {
-  const questions = ifaceQuestions(defs.map((d) => d.manifest));
+  const questions = ifaceQuestions(defs.map((d) => d.manifest)).filter(
+    (q) => ownPackage === null || packageOf(q.key) !== ownPackage,
+  );
   if (questions.length === 0) return [];
   let ts: TypeScript;
   try {
     ts = await loadTypeScript(assets);
   } catch (err) {
     if (!(err instanceof TypeScriptUnavailable)) throw err;
-    if (!compilerMissingLogged) console.warn(`[plugins] interfaces not compared: ${err.message}`);
+    if (!compilerMissingLogged) console.log(`[plugins] interfaces not compared: ${err.message}`);
     compilerMissingLogged = true;
     return [];
   }
   const fit = checkIfaces(ts, platformTable as unknown as IfaceTable, own, questions);
   if (fit.uncompared.length > 0) {
-    console.warn(
+    console.log(
       `[plugins] ${specifier}: ${fit.uncompared.length} interface(s) not compared — its table carries no copy of them`,
     );
   }
   return fit.problems;
+}
+
+/** The `name` in a package.json, or null when it has none or cannot be read. */
+function packageNameOf(manifest: string): string | null {
+  try {
+    const name = (JSON.parse(readFileSync(manifest, "utf8")) as { name?: unknown }).name;
+    return typeof name === "string" ? name : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The package's default export as a Plugin, or null when it is not one. */
@@ -629,6 +575,7 @@ export async function loadPlugins(
         read.ifaces,
         [...modules, ...replaces],
         pushedAssets,
+        packageNameOf(read.where),
       );
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
       loaded.push({ specifier, file, stamp, modules, replaces, ifaces: read.ifaces });
@@ -680,7 +627,7 @@ export async function loadPluginHost(
   // would not help.
   for (const [specifier, reason] of result.failed) {
     host.skip(specifier, reason);
-    console.warn(`[plugins] skipped ${specifier}: ${reason}`);
+    console.error(`[plugins] skipped ${specifier}: ${reason}`);
   }
   return host;
 }

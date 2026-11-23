@@ -23,12 +23,12 @@ import type {
   BenchmarkCreateResponse,
   CaseMaterial,
 } from "../../api/types.js";
-import type { BenchmarkCaseInput } from "../../services/benchmark-service.js";
-import { benchmarkTooLarge } from "../../services/benchmark-archive.js";
+import type { BenchmarkCaseInput } from "@prismshadow/penguin-library-benchmark/types";
+import { benchmarkTooLarge } from "@prismshadow/penguin-library-benchmark/benchmark-archive";
 import { isHttpUrl } from "../../services/protocol-detect.js";
-import { MAX_ARCHIVE_BYTES } from "../../services/skill-import-limits.js";
+import { MAX_ARCHIVE_BYTES } from "@prismshadow/penguin-library-http/skill-import-limits";
 import type { Benchmarks } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-project";
 import {
   badRequest,
   optionalNumber,

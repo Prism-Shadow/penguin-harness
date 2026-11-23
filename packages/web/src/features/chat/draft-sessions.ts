@@ -20,12 +20,21 @@
  * draft, the list follows the account (lib/account-sync): writes go through the synced storage,
  * and the in-memory copy is dropped whenever the account's drafts are written into the cache.
  */
+import { DRAFT_SESSION_ID } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import { randomHex } from "../../lib/random-id";
+import { forgetDraftUploads, parkDraftUploads } from "../../lib/draft-uploads";
 import { subscribeAccountApplied, syncedStorage } from "../../lib/account-sync/cache";
-import { clearDraft, draftFromUnknown, draftKey, loadDraft, saveDraft } from "./draft-cache";
-import type { DraftCache, DraftStorage } from "./draft-cache";
+import {
+  clearDraft,
+  draftFromUnknown,
+  draftKey,
+  loadDraft,
+  saveDraft,
+  type DraftCache,
+  type DraftStorage,
+} from "./draft-cache";
 
 export interface DraftSessionEntry {
   /** Route id (`draft-<8 hex>`). */
@@ -38,6 +47,18 @@ export interface DraftSessionEntry {
 /** Storage key for one user × Project's parked drafts (a JSON array of entries). */
 export const draftSessionsKey = (userId: string, projectId: string): string =>
   `penguin.chatDrafts.${userId}.${projectId}`;
+
+/**
+ * Route id for a draft chat (`/chat/new`), declared in the server's API contract so the desktop
+ * tray opens the same route: the Session is only created once **the first message is sent**
+ * (once created, the model is locked into its meta). Parked draft conversations' route ids start
+ * with `draft-`.
+ */
+export { DRAFT_SESSION_ID };
+
+/** Parked-draft route id (`/chat/draft-…` — a draft conversation row in the sidebar list), or null. */
+export const parkedDraftIdOf = (routeSessionId: string | null): string | null =>
+  routeSessionId !== null && routeSessionId.startsWith("draft-") ? routeSessionId : null;
 
 /** Newest-first cap: localStorage is shared budget, and fifty abandoned drafts is already hoarding. */
 const MAX_DRAFTS = 50;
@@ -167,7 +188,11 @@ export function parkActiveDraft(
     savedAt: new Date().toISOString(),
     draft,
   };
-  writeEntries(key, [entry, ...readEntries(key, storage)].slice(0, MAX_DRAFTS), storage);
+  const entries = [entry, ...readEntries(key, storage)];
+  parkDraftUploads(userId, projectId, entry.id);
+  for (const dropped of entries.slice(MAX_DRAFTS))
+    forgetDraftUploads(userId, projectId, dropped.id);
+  writeEntries(key, entries.slice(0, MAX_DRAFTS), storage);
   if (draft.modelRef) saveDraft(activeKey, { modelRef: draft.modelRef }, storage);
   else clearDraft(activeKey, storage);
   return entry.id;
@@ -208,6 +233,7 @@ export function removeDraftSession(
   id: string,
   storage?: DraftStorage,
 ): void {
+  forgetDraftUploads(userId, projectId, id);
   const key = draftSessionsKey(userId, projectId);
   const entries = readEntries(key, storage);
   if (!entries.some((e) => e.id === id)) return;

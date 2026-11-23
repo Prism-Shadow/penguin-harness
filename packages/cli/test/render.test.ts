@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Writable } from "node:stream";
+import type { MessageOrigin } from "@prismshadow/penguin-core";
 import {
   approvalDecision,
   abortEvent,
@@ -13,6 +14,7 @@ import {
   toolCallOutput,
   tokenUsage,
   sessionMeta,
+  sessionUpdate,
   taskBegin,
   taskEnd,
   userText,
@@ -22,15 +24,9 @@ import {
   partialToolCallOutput,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { MessageOrigin } from "@prismshadow/penguin-core";
-import {
-  StreamRenderer,
-  formatAbort,
-  humanizeTokens,
-  renderHistory,
-  supportsColor,
-} from "../src/render.js";
-import { getMessages } from "../src/i18n.js";
+
+import { StreamRenderer, formatAbort, renderHistory, supportsColor } from "../src/render.js";
+import { humanizeTokens, getMessages } from "@prismshadow/penguin-server/cli";
 
 const t = getMessages("en");
 
@@ -78,9 +74,16 @@ describe("humanizeTokens", () => {
     expect(humanizeTokens(32000)).toBe("32k");
     expect(humanizeTokens(1_500_000)).toBe("1.5M");
     // A lifetime total reaches this tier; the web formatter it is meant to match already had it.
-    expect(humanizeTokens(999_999_999)).toBe("1000M");
     expect(humanizeTokens(2_000_000_000)).toBe("2B");
     expect(humanizeTokens(2_500_000_000)).toBe("2.5B");
+  });
+
+  it("a value that rounds up to 1000 carries into the next unit", () => {
+    // Picking the unit from the raw value would print 1000k / 1000M.
+    expect(humanizeTokens(999_950)).toBe("1M");
+    expect(humanizeTokens(999_999_999)).toBe("1B");
+    // Just below the carry the unit is unchanged.
+    expect(humanizeTokens(999_949)).toBe("999.9k");
   });
 });
 
@@ -483,6 +486,57 @@ describe("StreamRenderer", () => {
     expect(stripAnsi(text())).toBe("hello\n");
   });
 
+  it("prints nothing for a switch's session_update, and the next Task's clock starts at that Task, not at the switch", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    // A switch made elsewhere (another client watching the Session), an hour before the next Task.
+    r.handle(
+      at("2026-11-19T08:00:00.000Z", sessionUpdate({ provider: "openai", model_id: "b-2" })),
+    );
+    expect(stripAnsi(text())).toBe("");
+    r.handle(at("2026-11-19T09:00:00.000Z", taskBegin()));
+    r.handle(at("2026-11-19T09:00:01.000Z", requestBegin()));
+    r.handle(at("2026-11-19T09:00:02.000Z", usage(4000, 4000)));
+    r.handle(at("2026-11-19T09:00:03.000Z", requestEnd("completed")));
+    r.endTask(999);
+    expect(stripAnsi(text())).toBe("[stats] context 4k (+4k) · tokens 4k (+4k) · 3s (+3s)\n");
+  });
+
+  it.each(["en", "zh"] as const)(
+    "uses the current parent window and the complete context for %s",
+    (lang) => {
+      const { stream, text } = collector();
+      const renderer = new StreamRenderer(stream, getMessages(lang));
+      const head = (window: number | string) =>
+        sessionMeta({
+          session_id: "parent",
+          provider: "custom",
+          model_id: "selected-model",
+          model_context_window: window,
+          system_prompt: "",
+          agent_state: "/agent",
+          workspace: "/work",
+          source: "user",
+        });
+      renderer.handle(head(64000));
+      renderer.handle(usage(8500, 8500));
+      renderer.endTask(1300);
+      renderer.handle(usage(0, 8500));
+      renderer.endTask(1000);
+      renderer.handle(head(32000));
+      renderer.handle(usage(8000, 16500));
+      renderer.endTask(1000);
+      renderer.handle(head("unknown"));
+      renderer.handle(usage(7000, 23500));
+      renderer.endTask(1000);
+      const stats = stripAnsi(text()).trimEnd().split("\n");
+      expect(stats[0]).toContain("8.5k (+8.5k, 13%)");
+      expect(stats[1]).toContain("0 (-8.5k, 0%)");
+      expect(stats[2]).toContain("8k (+8k, 25%)");
+      expect(stats[3]).toContain("7k (-1k)");
+    },
+  );
+
   it("does not print token_usage per turn; endTask prints [stats] line with per-task deltas", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
@@ -491,7 +545,7 @@ describe("StreamRenderer", () => {
         session_id: "s",
         provider: "custom",
         model_id: "m",
-        model_context_window: 1,
+        model_context_window: 32000,
         system_prompt: "sp",
         agent_state: "/a",
         workspace: "/w",
@@ -518,7 +572,7 @@ describe("StreamRenderer", () => {
     // per-task delta 5.5k (1500 + 4000), elapsed 2.3s (first task: session equals the delta);
     // this also implies session_meta is not rendered (no /w or similar field appears in the output).
     expect(stripAnsi(text())).toBe(
-      "[stats] context 4k (+4k) · tokens 12k (+5.5k) · 2.3s (+2.3s)\n",
+      "[stats] context 4k (+4k, 13%) · tokens 12k (+5.5k) · 2.3s (+2.3s)\n",
     );
   });
 
@@ -608,6 +662,104 @@ describe("StreamRenderer", () => {
     );
   });
 
+  it("a completion without a full summary says so on its completion line, and what to correct when the provider refused it; nothing from inside the span prints", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    // An empty reply with no round left to ask again in: no full summary, for a reason of its own.
+    r.handle(compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 3 }));
+    r.handle(requestBegin());
+    r.handle(requestEnd("completed"));
+    r.handle(
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 1,
+        errorCode: "malformed",
+        errorMessage: "the response contained no usable summary",
+      }),
+    );
+    // Refused outright after a short draft: too little room was left under the model's window.
+    r.handle(compactionBegin({ reason: "manual", mode: "summarize", context: 150, turns: 3 }));
+    r.handle(requestBegin());
+    r.handle(assistantText("[summary]\n## Request\nFix the li"));
+    r.handle(requestEnd("retryable", { errorCode: "network", attempt: 1, retryInMs: 2000 }));
+    r.handle(requestBegin());
+    r.handle(requestEnd("fatal", { errorCode: "rejected", errorMessage: "400 Bad Request" }));
+    r.handle(
+      compactionEnd({
+        reason: "manual",
+        mode: "summarize",
+        status: "completed",
+        attempt: 2,
+        errorCode: "rejected",
+        errorMessage: "400 Bad Request",
+      }),
+    );
+    expect(stripAnsi(text())).toBe(
+      [
+        "[compaction] summarizing context (context)…",
+        "[compaction] done; continuing with the summarized context (no full summary: a Trace hand-off note — the response contained no usable summary)",
+        "[compaction] summarizing context (manual)…",
+        "[compaction] done; continuing with the summarized context (no full summary: a Trace hand-off note — 400 Bad Request; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length)",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  /** An ordinary request the provider refuses as sent, answered by a hand-off: no compaction request is made. */
+  const refusedHandOff = (status: "completed" | "fatal") => [
+    requestBegin(),
+    requestEnd("retryable", {
+      errorCode: "rejected",
+      errorMessage: "400 prompt is too long",
+      attempt: 1,
+      retryInMs: 0,
+    }),
+    compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 3 }),
+    compactionEnd({
+      reason: "context",
+      mode: "summarize",
+      status,
+      ...(status === "completed"
+        ? { errorCode: "rejected" as const, errorMessage: "400 prompt is too long" }
+        : { errorMessage: "no model client could be built" }),
+    }),
+  ];
+
+  it("a request the provider refused hands the context off: no error line, the completion line says what to correct, and the resend's retry line prints as it goes out", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    for (const msg of refusedHandOff("completed")) r.handle(msg);
+    r.handle(requestBegin());
+    r.handle(partialText("start"));
+    r.handle(partialText("delta", "back to the task"));
+    r.handle(partialText("stop"));
+    r.handle(requestEnd("completed"));
+    const out = stripAnsi(text());
+    expect(out).not.toContain("[error]");
+    expect(out.split("\n").slice(0, 3)).toEqual([
+      "[compaction] summarizing context (context)…",
+      "[compaction] done; continuing with the summarized context (no full summary: a Trace hand-off note — 400 prompt is too long; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length)",
+      "[retry] the model provider rejected the request; sending retry #1…",
+    ]);
+    expect(out).toContain("back to the task");
+  });
+
+  it("a refusal whose hand-off could not open the next context announces no resend on the next run", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    for (const msg of refusedHandOff("fatal")) r.handle(msg);
+    r.handle(requestBegin());
+    expect(stripAnsi(text())).toBe(
+      [
+        "[compaction] summarizing context (context)…",
+        "[compaction] failed (no model client could be built); the next context could not be opened; keeping the current context",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("the thinking and summary streamed inside a compaction span stay off the terminal (issue #290)", () => {
     // Between the paired events the stream carries the compaction request's thinking and the
     // summary being written as ordinary partial_thinking / partial_text; the CLI keeps its
@@ -635,6 +787,51 @@ describe("StreamRenderer", () => {
     expect(out).not.toContain("the plan");
     expect(out).toContain("thinking again");
     expect(out).toContain("back to the task");
+  });
+
+  it("a compaction's tool round and its requests stay off the terminal too: no call, output, decision or retry line", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(compactionBegin({ reason: "manual", mode: "summarize", context: 150, turns: 3 }));
+    r.handle(requestBegin());
+    r.handle(partialToolCall({ eventType: "start", name: "write_file", toolCallId: "toolu_h1" }));
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"file_path":"/s/handoff/plan.md","content":"the plan"}',
+        toolCallId: "toolu_h1",
+      }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "toolu_h1" }));
+    r.handle(
+      toolCall({
+        name: "write_file",
+        arguments: '{"file_path":"/s/handoff/plan.md","content":"the plan"}',
+        toolCallId: "toolu_h1",
+      }),
+    );
+    r.handle(requestEnd("retryable", { retryInMs: 2000 }));
+    r.handle(requestBegin());
+    r.handle(requestEnd("completed"));
+    r.handle(approvalDecision("allow", "toolu_h1"));
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "toolu_h1" }));
+    r.handle(
+      partialToolCallOutput({
+        eventType: "delta",
+        output: "Wrote plan.md",
+        toolCallId: "toolu_h1",
+      }),
+    );
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "toolu_h1" }));
+    r.handle(compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+    expect(stripAnsi(text())).toBe(
+      [
+        "[compaction] summarizing context (manual)…",
+        "[compaction] done; continuing with the summarized context",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("compaction after the turn ends: the completion line shows its own cost, excluded from the turn stats delta; context not updated", () => {

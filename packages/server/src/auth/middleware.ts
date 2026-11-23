@@ -14,29 +14,28 @@
  * CSRF: SameSite=Lax plus a Content-Type an HTML form cannot forge (see jsonOnlyWrites).
  * That guard stays for Bearer requests too — the CLI always sends application/json.
  */
+import type { SessionVia, Auth } from "@prismshadow/penguin-library-auth";
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { parse } from "hono/utils/cookie";
 import { AMSP_PREFIX } from "../amsp/cors.js";
 import { HttpError } from "../http/errors.js";
-import { mediaType } from "../http/media-type.js";
+import { mediaType } from "@prismshadow/penguin-library-http/media-type";
 import {
   NO_PROXY_RULE,
   acceptsOrigin,
   forwardedHeaders,
   publicOriginOf,
   sameOriginSite,
-} from "../http/public-origin.js";
-import type { OriginRule } from "../http/public-origin.js";
-import type { UserRow } from "../db/repos/users.js";
-import type { SessionVia } from "./service.js";
-import type { Auth } from "../mechanisms/identity.js";
+} from "@prismshadow/penguin-library-http/public-origin";
+import type { OriginRule } from "@prismshadow/penguin-library-http/public-origin";
+import type { OwnOrigin } from "../http/own-origin.js";
+import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
+import { SESSION_COOKIE } from "../api/types.js";
+import type { AppEnv } from "@prismshadow/penguin-library-http/app-env";
 
-/**
- * The session cookie's name as every non-browser client spells it: the CLI, and a server
- * speaking to a machine it holds, each with a cookie jar of its own.
- */
-export const SESSION_COOKIE = "penguin_session";
+/** The session cookie's name as every non-browser client spells it (declared in the API contract). */
+export { SESSION_COOKIE };
 
 /** Browsers share cookies across ports; non-browser jars retain the legacy plain name. */
 export function sessionCookieName(requestUrl: string | URL, browser: boolean): string {
@@ -62,9 +61,9 @@ export function parseCookieHeader(header: string | null | undefined): Record<str
   return parse(header ?? "");
 }
 
-// The origin comparison lives with the public-origin rule (http/public-origin.ts); re-exported
+// The origin comparison lives with the public-origin rule (@prismshadow/penguin-library-http/public-origin); re-exported
 // for the callers that reach it here.
-export { isOwnOrigin } from "../http/public-origin.js";
+export { isOwnOrigin } from "@prismshadow/penguin-library-http/public-origin";
 
 /**
  * Session cookie attributes, shared by every path that sets one. `maxAge` comes from the
@@ -90,14 +89,13 @@ export function cookieOptions(
   };
 }
 
-/** Hono env: variables injected by the auth middleware. */
-export type AppEnv = {
-  Variables: {
-    user: UserRow;
-    /** How the current session was established — see {@link SessionVia}. */
-    sessionVia: SessionVia;
-  };
-};
+/**
+ * Hono env: variables injected by the auth middleware. The shape moved to the http
+ * vocabulary package (services+http+cli restack T0) — routes and middlewares on both
+ * sides speak it, so it lives beside the pieces they share; the middleware that fills
+ * these variables stays here.
+ */
+export type { AppEnv } from "@prismshadow/penguin-library-http/app-env";
 
 /** Gets the current user (available after authMiddleware). */
 export function currentUser(c: { var: { user: UserRow } }): UserRow {
@@ -166,47 +164,11 @@ export function bearerToken(header: string | undefined): string | null {
   return m === null ? null : m[1]!.trim();
 }
 
-/**
- * Refuses the local API token, presented as a Bearer header, on a write that only a person may
- * make: 403 `human_required`. Every cookie session passes as the person's sign-in — from the Web
- * App, `penguin auth login` or `penguin auth token`, and the Penguin Remote session exchanged
- * from the token itself. Every tool subprocess of a server-driven Session holds that token as
- * `PENGUIN_API_TOKEN`, so these are the writes an Agent must not make from its own shell:
- *
- * - who can reach an Agent from outside — its API switch, keyless access and approval mode, its
- *   keys, the API tab's Try it, and the admin's `agentApiEnabled` (http/routes/agent-api.ts,
- *   amsp/try-route.ts, http/routes/admin-settings.ts);
- * - the person's own browser — choosing the agent browser's backend, minting a pairing code
- *   (builtin-browser/routes.ts).
- *
- * This narrows the credential the harness hands an Agent; it is not a boundary. A process that
- * runs as the data root's OS user outside the sandbox can mint a sign-in of its own
- * (`penguin auth token`), or reset a password with the token and sign in; and an Agent holding
- * the token can exchange it for a Remote session (POST /api/remote/session) that passes here.
- * The sandbox is the boundary. A per-Session credential (design PR #235) is the structural fix:
- * when it lands, this check becomes "a Session's credential is refused, a person's login is
- * not", and the routes calling it do not change.
- */
-export function requireHuman(c: { var: { sessionVia: SessionVia } }): void {
-  if (c.var.sessionVia === "token") {
-    throw new HttpError(
-      403,
-      "human_required",
-      "This takes a person's sign-in; the local API token cannot do it.",
-    );
-  }
-}
+// The refusal of the local API token on a person's own writes lives in its own module (code
+// plugins reach it through the plugin face); re-exported for the routes that import it here.
+export { requireHuman } from "./require-human.js";
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-
-/**
- * Writes that are cross-origin by design and judge their caller's origin themselves, so the
- * same-origin rule below is not theirs. POST /api/builtin-browser/extension/pair is the
- * PenguinHarness Browser extension calling from its `chrome-extension://` origin: it reads no
- * cookie (the pairing code is the credential) and admits only the extension's own origin,
- * refusing a web page's 403 (builtin-browser/routes.ts, extensionPairRoutes).
- */
-const OWN_ORIGIN_RULE_PATHS = new Set(["/api/builtin-browser/extension/pair"]);
 
 /**
  * The Agent API's writes are cross-origin by contract, and its own group is what judges them.
@@ -234,13 +196,18 @@ function isAmspKeyedWrite(c: Context): boolean {
  * host. A browser that sends `Sec-Fetch-Site` must also say `same-origin` there. The browser
  * computes it, scheme included, so this refuses such a page even where the desktop's transition
  * (OriginRule.acceptOwnOrigin) lets its `Origin` through.
+ *
+ * `ownOrigin` names writes this copy of the check lets through to a later, exact one: the
+ * runtime's copy in front of the seam (app.ts) passes the writes a route group declaring
+ * `origin: "own"` may answer (http/own-origin.ts), and the platform — which mounts those groups
+ * ahead of its own copy (http/app.ts) — decides them.
  */
 export const sameOriginWrites =
-  (rule: OriginRule = NO_PROXY_RULE): MiddlewareHandler =>
+  (rule: OriginRule = NO_PROXY_RULE, ownOrigin: OwnOrigin = () => false): MiddlewareHandler =>
   async (c, next) => {
     if (
       WRITE_METHODS.has(c.req.method) &&
-      !OWN_ORIGIN_RULE_PATHS.has(c.req.path.replace(/\/+$/, "")) &&
+      !ownOrigin(c.req.path) &&
       !isAmspKeyedWrite(c) &&
       !(
         sameOriginSite(c.req.header("sec-fetch-site")) &&

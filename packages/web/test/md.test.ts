@@ -1,9 +1,9 @@
 /**
  * Md (the shared UI package's Markdown) as the app wires it, via react-dom/server static markup
  * (node env, no DOM):
- * - outside a conversation every link — explicit [text](url), bare autolinked URL (remark-gfm),
+ * - outside a conversation every link — explicit [text](url), bare autolinked URL (chat dialect),
  *   relative or #anchor — opens in a new tab: target="_blank" + rel="noreferrer";
- * - inside one (WorkspaceLinksProvider, features/chat/workspace-links.tsx, as MessageStream
+ * - inside one (WorkspaceLinksProvider, features/workspace/workspace-links.tsx, as MessageStream
  *   renders it) only an external link does:
  *   a link to a Workspace file, an #anchor and a relative href with nowhere to go render without
  *   a target, because a relative href resolves against the SPA's own route. What their clicks do
@@ -12,11 +12,11 @@
  *   renders; Shiki only loads in an effect, which static markup never runs).
  */
 import { describe, expect, it, vi } from "vitest";
-import { createElement } from "react";
-import type { MouseEvent } from "react";
+import { createElement, type MouseEvent } from "react";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { Md } from "@prismshadow/penguin-ui";
-import { WorkspaceLinksProvider } from "../src/features/chat/workspace-links";
+import { WorkspaceLinksProvider } from "../src/features/workspace/workspace-links";
 import { replyLinkBehavior, resolveReplyLink } from "../src/lib/reply-link";
 
 const render = (text: string, streaming = false) =>

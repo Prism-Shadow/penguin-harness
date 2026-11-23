@@ -1,13 +1,16 @@
 /**
- * Router: home, blog list, blog post, download and the AMSP page inside a shared Nav/Footer
- * layout. basename comes from Vite's BASE_URL so the site works under the GitHub Pages
+ * Router: home, blog list, blog post, download, the hub's Plugins, Benchmarks and Leaderboards
+ * (each a list and a detail page) and the AMSP page inside a shared Nav/Footer layout. basename comes from Vite's BASE_URL so the site works under the GitHub Pages
  * project subpath; a route change scrolls to the top or to its hash target
- * (useRouteScroll — e.g. /#quickstart after leaving the blog, or a blog TOC entry).
+ * (useRouteScroll — e.g. /#quickstart after leaving the blog, or a blog TOC entry), except that
+ * Back to a hub list returns to where the list was left (useListReturn, lib/hub/back.ts).
  *
- * Two routes load on demand: the post page carries the Markdown renderer, and the AMSP page its
- * player, scripted runs and code samples, none of which the other pages use.
+ * Routes that load on demand: the post page carries the Markdown renderer, the AMSP page its
+ * player, scripted runs and code samples, and the hub pages the build's plugin, benchmark and
+ * leaderboard records, none of which the other pages use.
  */
 import { lazy, Suspense, useEffect } from "react";
+import type { ComponentType } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -15,23 +18,36 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigationType,
   useParams,
 } from "react-router";
 import { useRouteScroll, useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { DOCS_URL, GALLERY_URL } from "./lib/links";
-import { getPost, loadPostBody } from "./lib/blog";
+import { useListReturn } from "./lib/hub/back";
 import { AnnouncementBar } from "./components/announcement-bar";
 import { Nav } from "./components/nav";
 import { Footer } from "./components/footer";
 import { NeonBackground } from "./components/neon-bg";
 import { PostPending } from "./components/post-pending";
-import { HomePage } from "./pages/home";
-import { BlogListPage } from "./pages/blog-list";
-import { DownloadPage } from "./pages/download";
 
 const AmspPage = lazy(() =>
   import("./pages/amsp").then((module) => ({ default: module.AmspPage })),
 );
+
+/** The hub pages: each list page and each detail page is a chunk of its own. */
+const routePage = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) =>
+  lazy(() => load().then((module) => ({ default: module[name] })));
+const HomePage = routePage(() => import("./pages/home"), "HomePage");
+const BlogListPage = routePage(() => import("./pages/blog-list"), "BlogListPage");
+const DownloadPage = routePage(() => import("./pages/download"), "DownloadPage");
+const PluginsPage = routePage(() => import("./pages/hub/plugins"), "PluginsPage");
+const PluginPage = routePage(() => import("./pages/hub/plugin"), "PluginPage");
+const BenchmarksPage = routePage(() => import("./pages/hub/benchmarks"), "BenchmarksPage");
+const BenchmarkPage = routePage(() => import("./pages/hub/benchmark"), "BenchmarkPage");
+const LeaderboardsPage = routePage(() => import("./pages/hub/leaderboards"), "LeaderboardsPage");
+const LeaderboardPage = routePage(() => import("./pages/hub/leaderboard"), "LeaderboardPage");
+const RfcsPage = routePage(() => import("./pages/rfcs"), "RfcsPage");
+const RfcDocPage = routePage(() => import("./pages/rfc-doc"), "RfcDocPage");
 
 const BlogPostPage = lazy(() =>
   import("./pages/blog-post").then((page) => ({ default: page.BlogPostPage })),
@@ -45,11 +61,15 @@ const BlogPostPage = lazy(() =>
 function BlogPostRoute() {
   const { slug = "" } = useParams();
   const { locale } = useSiteLocale();
-  const post = getPost(slug, locale);
   useEffect(() => {
     // A chunk that fails to load reloads the page (main.tsx): nothing to handle here.
-    if (post) void loadPostBody(post).catch(() => undefined);
-  }, [post]);
+    void import("./lib/blog")
+      .then(({ getPost, loadPostBody }) => {
+        const post = getPost(slug, locale);
+        if (post) return loadPostBody(post);
+      })
+      .catch(() => undefined);
+  }, [slug, locale]);
   return (
     <Suspense fallback={<PostPending />}>
       <BlogPostPage />
@@ -73,11 +93,15 @@ function SiblingRedirect({ url }: { url: string }) {
 }
 
 function Layout() {
-  useRouteScroll(useLocation());
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  useRouteScroll(location);
+  // After the route scroll: Back to a hub list puts it where the visitor left it.
+  useListReturn(location, navigationType);
 
   return (
     <div className="relative flex min-h-full flex-col">
-      <NeonBackground />
+      {location.pathname !== "/" && !location.pathname.startsWith("/rfcs") && <NeonBackground />}
       <AnnouncementBar />
       <Nav />
       <main className="flex-1">
@@ -94,10 +118,39 @@ export function AppRouter() {
     <BrowserRouter basename={basename}>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<HomePage />} />
-          <Route path="/blog" element={<BlogListPage />} />
+          <Route
+            index
+            element={
+              <Suspense fallback={<PostPending />}>
+                <HomePage />
+              </Suspense>
+            }
+          />
           <Route path="/blog/:slug" element={<BlogPostRoute />} />
-          <Route path="/download" element={<DownloadPage />} />
+          {(
+            [
+              ["/blog", BlogListPage],
+              ["/download", DownloadPage],
+              ["/plugins", PluginsPage],
+              ["/plugins/:id", PluginPage],
+              ["/benchmarks", BenchmarksPage],
+              ["/benchmarks/:id", BenchmarkPage],
+              ["/leaderboards", LeaderboardsPage],
+              ["/leaderboards/:id", LeaderboardPage],
+              ["/rfcs", RfcsPage],
+              ["/rfcs/:id", RfcDocPage],
+            ] as const
+          ).map(([path, Page]) => (
+            <Route
+              key={path}
+              path={path}
+              element={
+                <Suspense fallback={<PostPending />}>
+                  <Page />
+                </Suspense>
+              }
+            />
+          ))}
           <Route
             path="/amsp"
             element={

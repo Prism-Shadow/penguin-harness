@@ -5,9 +5,10 @@
  * - A stored draft is validated field by field: bad JSON or a non-object reads as an empty
  *   draft, wrongly typed, unknown or half fields are dropped and the rest kept (the permission
  *   picks, the paired model references, the AI-prefill mark only as true, the approval mode's
- *   four values, the skills list); a legacy string model id is always dropped, and so is the
- *   evaluation mark (`source: "benchmark"`) an earlier release saved with an Evaluation Center
- *   draft, so the conversation such a draft creates is an ordinary one.
+ *   four values, the skills list, the switch names); a legacy string model id is always
+ *   dropped, and so is the evaluation mark (`source: "benchmark"`) an earlier release saved
+ *   with an Evaluation Center draft, so the conversation such a draft creates is an ordinary
+ *   one.
  * - Saved drafts read back equal; Project and Session drafts, and two users' drafts of the
  *   same Project, never read or overwrite each other (#68); a cleared draft reads as empty.
  * - Dropping the model pin keeps everything else; dropping the `[default_chat]`-seeded
@@ -158,6 +159,14 @@ describe("parseDraft (field-by-field validation)", () => {
     expect(parseDraft(JSON.stringify({ skills: [] }))).toEqual({});
     expect(parseDraft(JSON.stringify({ skills: [7, null] }))).toEqual({});
   });
+
+  it("keeps the names of the switches a draft has on, and nothing that is not a name", () => {
+    expect(parseDraft(JSON.stringify({ promptHooks: ["plan", 3, null] }))).toEqual({
+      promptHooks: ["plan"],
+    });
+    expect(parseDraft(JSON.stringify({ promptHooks: "plan" }))).toEqual({});
+    expect(parseDraft(JSON.stringify({ promptHooks: [] }))).toEqual({});
+  });
 });
 
 describe("load / save / clear (key isolation, errors silenced)", () => {
@@ -260,6 +269,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
         text: "typed but unsent",
         agentId: "old_default_agent",
         workspace: "/srv/old-default",
+        machineId: "M7kQ2vT9cRb2LmN0",
         approvalMode: "read-only",
         modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
         handoffAgentId: "agent_helper",
@@ -278,7 +288,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
     });
   });
 
-  it('clearDraftChatDefaults strips any subset of the three fields (a cached "" workspace counts) and is otherwise a no-op', () => {
+  it('clearDraftChatDefaults strips any subset of the seeded fields (a cached "" workspace counts) and is otherwise a no-op', () => {
     const s = memoryStorage();
     // A single seeded field is enough to rewrite; "" workspace is an explicit "auto temp"
     // pin and must be stripped like any other value (undefined-check, not truthiness).
@@ -289,6 +299,11 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
     clearDraftChatDefaults("user-a1", "project-a", s);
     clearDraftChatDefaults("user-b2", "project-a", s);
     expect(s.map.has(draftKey("user-b2", "project-a"))).toBe(false);
+    // A machine is the other half of the Workspace: it goes with the path, and on its own (a
+    // draft an earlier version stripped of its path alone) it is stripped too.
+    saveDraft(draftKey("user-a1", "project-a"), { text: "t", machineId: "M7kQ2vT9cRb2LmN0" }, s);
+    clearDraftChatDefaults("user-a1", "project-a", s);
+    expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({ text: "t" });
     // Scoped by user × Project: another user's pins survive.
     saveDraft(draftKey("user-b2", "project-a"), { agentId: "default_agent" }, s);
     clearDraftChatDefaults("user-a1", "project-a", s);

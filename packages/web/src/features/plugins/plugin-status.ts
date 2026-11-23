@@ -17,12 +17,20 @@
  *   runs on other machines only (or the machine in view has not reported it yet), `available`
  *   when the Project does not list it. A plugin that is both follows the module — where it runs —
  *   and still counts the Agents that use its Skills.
+ * - A plugin that is both, whose module does not run on the server in view, is `awaiting` while a
+ *   member's request waits for the administrator and `stopped` once the administrator declined or
+ *   stopped it (`moduleRequestStatus`). "pending" is not a word for either: in a module's state it
+ *   already means "waiting for a restart".
+ *
+ * On an Agent's own plugin list, such a plugin's module gets a mark of its own while it does not
+ * run there, with the action the viewer can take (`agentModuleMark`).
  */
 import type {
   AgentMcpServerItem,
   AgentSummary,
   PluginItem,
   PluginMcpServerItem,
+  PluginModuleStatus,
 } from "@prismshadow/penguin-server/api";
 
 /**
@@ -47,13 +55,15 @@ export type PluginParts = Pick<
   "name" | "skills" | "hooks" | "mcpServers" | "workbenches"
 >;
 
-/** The six statuses, in the order a status grouping lists them: what wants a look first. */
+/** The statuses, in the order a status grouping lists them: what wants a look first. */
 export const PLUGIN_STATUSES = [
   "update",
   "installed",
+  "awaiting",
   "restart",
   "failed",
   "incompatible",
+  "stopped",
   "not-here",
   "available",
 ] as const;
@@ -91,16 +101,25 @@ export function pluginPresent(plugin: PluginParts, installs: AgentInstalls | und
   );
 }
 
+/**
+ * Whether a library plugin can go on an Agent at all: it ships a Skill, a hook package, an MCP
+ * server or a workbench. A package of server modules alone ships nothing an Agent carries.
+ */
+export function agentInstallable(plugin: PluginParts): boolean {
+  return (
+    (plugin.workbenches?.length ?? 0) +
+      plugin.skills.length +
+      (plugin.hooks.length > 0 ? 1 : 0) +
+      plugin.mcpServers.length >
+    0
+  );
+}
+
 /** Whether an Agent carries every Skill, hook package, MCP server and workbench in the plugin. A plugin that ships nothing is on no Agent. */
 export function pluginComplete(plugin: PluginParts, installs: AgentInstalls | undefined): boolean {
   if (installs === undefined) return false;
-  const parts =
-    (plugin.workbenches?.length ?? 0) +
-    plugin.skills.length +
-    (plugin.hooks.length > 0 ? 1 : 0) +
-    plugin.mcpServers.length;
   return (
-    parts > 0 &&
+    agentInstallable(plugin) &&
     (plugin.workbenches ?? []).every(
       (w) => installs.workbenches?.get(w.name)?.plugin === plugin.name,
     ) &&
@@ -177,14 +196,15 @@ export function libraryUsage(
   agents: ReadonlyArray<UsageAgent>,
   installed: InstalledMap,
 ): LibraryUsage {
-  const behind = agents
+  const targets = [...new Map(agents.map((agent) => [agent.agentId, agent])).values()];
+  const behind = targets
     .filter(
       (agent) =>
         agent.pluginUpdates.some((update) => update.name === plugin.name) &&
         pluginPresent(plugin, installed.get(agent.agentId)),
     )
     .map((agent) => agent.agentId);
-  const using = agents.filter(
+  const using = targets.filter(
     (agent) =>
       behind.includes(agent.agentId) || pluginComplete(plugin, installed.get(agent.agentId)),
   );
@@ -213,11 +233,29 @@ export function moduleStatus(state: ModuleState): PluginStatus {
   }
 }
 
-/** A plugin's status: the module's where it is one, its Agents' otherwise. */
+/**
+ * What stands of an ask to run a plugin's server module, as a status: `awaiting` while a request
+ * waits for the administrator, `stopped` once the administrator declined or stopped it — only while
+ * the module does not run, since a running module is what its status says. Null otherwise.
+ */
+export function moduleRequestStatus(
+  mod: Pick<PluginModuleStatus, "state" | "request"> | undefined,
+): "awaiting" | "stopped" | null {
+  if (mod?.state !== "off" || mod.request === undefined) return null;
+  return mod.request.status === "pending" ? "awaiting" : "stopped";
+}
+
+/**
+ * A plugin's status: what stands of an ask for its server module where there is one
+ * (`moduleRequestStatus`), else the module's where it is one, its Agents' otherwise.
+ */
 export function pluginStatus(
   row: { module?: { state: ModuleState } },
   usage: LibraryUsage | null,
+  mod?: Pick<PluginModuleStatus, "state" | "request">,
 ): PluginStatus {
+  const asked = moduleRequestStatus(mod);
+  if (asked !== null) return asked;
   if (row.module !== undefined) return moduleStatus(row.module.state);
   if (usage === null) return "available";
   if (usage.behind.length > 0) return "update";
@@ -272,4 +310,64 @@ export interface ChangedPart {
   name: string;
   installed: string;
   library: string;
+}
+
+/**
+ * The mark an Agent's plugin row carries while the plugin's server module does not run on the
+ * Agent's server: off, awaiting the administrator, stopped by the administrator, failed to load (or
+ * runs without part of itself), or listed and waiting for a restart.
+ */
+export type AgentModuleMarkKind = "off" | "awaiting" | "stopped" | "failed" | "restart";
+
+/**
+ * What the viewer can do about it: enable the module, ask the administrator to, or nothing.
+ */
+export type AgentModuleAction = "enable" | "request" | null;
+
+export interface AgentModuleMark {
+  kind: AgentModuleMarkKind;
+  action: AgentModuleAction;
+  /** Why, for `failed`. */
+  reason?: string;
+}
+
+/** Who looks at the mark, and where the Agent lives. */
+export interface ModuleViewer {
+  /** The server's administrator. */
+  isAdmin: boolean;
+  /** The Agent lives on a machine, whose plugin list this server keeps. */
+  onMachine: boolean;
+}
+
+/**
+ * The mark of a plugin's server module on an Agent's row, and its action; null while the module
+ * runs there (or the server says nothing about it).
+ *
+ * - On this server, a module that is off can be enabled at once when it is built in or the viewer
+ *   is the administrator, and asked for otherwise. One awaiting the administrator, or stopped by
+ *   them, offers a member nothing more — the standing ask, or the standing "no", is the
+ *   administrator's to answer — and offers the administrator to enable it right there.
+ * - On a machine — reached only by the administrator — this server can list a module for it only
+ *   when the machine's build ships it; any other module is installed for that machine on the
+ *   Plugins page, so its row offers nothing.
+ * - A module that failed, or waits for a restart, is listed already: there is nothing to ask for.
+ */
+export function agentModuleMark(
+  mod: PluginModuleStatus | undefined,
+  viewer: ModuleViewer,
+): AgentModuleMark | null {
+  if (mod === undefined || mod.state === "running") return null;
+  if (mod.state === "failed" || mod.state === "unsatisfied") {
+    return { kind: "failed", action: null, reason: mod.reason ?? "" };
+  }
+  if (mod.state === "restart") return { kind: "restart", action: null };
+  const kind: AgentModuleMarkKind =
+    mod.request?.status === "pending"
+      ? "awaiting"
+      : mod.request?.status === "declined"
+        ? "stopped"
+        : "off";
+  if (viewer.onMachine) return { kind, action: mod.builtin ? "enable" : null };
+  if (kind !== "off") return { kind, action: viewer.isAdmin ? "enable" : null };
+  return { kind, action: mod.builtin || viewer.isAdmin ? "enable" : "request" };
 }

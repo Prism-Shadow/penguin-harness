@@ -27,7 +27,7 @@ import { apiError, json, stubFetch, type FetchRequest } from "./helpers/fetch";
 
 let dock: typeof import("../src/features/dock/dock-state");
 let terminal: typeof import("../src/features/dock/dock-terminal");
-let list: typeof import("../src/features/terminal/terminal-list");
+let list: typeof import("../src/features/terminal");
 let machines: typeof import("../src/lib/terminal-machines");
 let commands: typeof import("../src/lib/shortcuts/dispatcher");
 
@@ -40,7 +40,7 @@ beforeAll(async () => {
   });
   dock = await import("../src/features/dock/dock-state");
   terminal = await import("../src/features/dock/dock-terminal");
-  list = await import("../src/features/terminal/terminal-list");
+  list = await import("../src/features/terminal");
   machines = await import("../src/lib/terminal-machines");
   commands = await import("../src/lib/shortcuts/dispatcher");
 });

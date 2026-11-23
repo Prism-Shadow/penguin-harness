@@ -6,8 +6,9 @@
  */
 import { defineConfig } from "vitest/config";
 import { blogFrontmatter } from "./scripts/frontmatter-plugin";
+import { rfcPrStatus } from "./scripts/rfc-plugin";
 
 export default defineConfig({
-  plugins: [blogFrontmatter()],
-  test: { environment: "node" },
+  plugins: [blogFrontmatter(), rfcPrStatus({ offline: true })],
+  test: { environment: "node", include: ["test/**/*.test.ts"] },
 });

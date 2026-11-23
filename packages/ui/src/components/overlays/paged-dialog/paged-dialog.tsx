@@ -1,16 +1,18 @@
 /**
  * PagedDialog: a large modal whose left rail switches sub-pages — the shared shell for multi-page
- * settings surfaces (Settings today; Project settings converges on the same shell). Purely
+ * settings surfaces (Settings and Project settings). The rail and the pane heading stay put and
+ * only the pane scrolls, so a long page never carries the rail away with it. Purely
  * presentational: the caller owns which pages exist, which one is active, and what the pane
  * renders; the shell draws the rail (a `NavList` of `NavRow`s, grouped, icon + label, solid-fill
- * active row — the sidebar's convention), the pane heading, and the close control.
+ * active row — the sidebar's convention — and a page's count of what waits on it at the row's
+ * end), the pane heading, and the close control.
  *
  * Built on Modal, so it inherits the portal, the Escape layer stack (nested dialogs and menus
  * close in visual order) and the bottom-sheet posture on narrow screens — where the rail folds
  * into a horizontal scroller above the pane and group headings are dropped along with the second
  * dimension (Tabs' convention).
  */
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { CloseButton } from "../../actions/close-button/close-button";
 import { ICON_GAP } from "../../../icon-scale";
 import { NavList, NavRow } from "../../navigation/nav-list/nav-list";
@@ -32,6 +34,16 @@ export interface PagedDialogItem<K extends string> {
    * on every visit.
    */
   info?: ReactNode;
+  /**
+   * The pane heading's content when it says more than the label — a plugin page's icon before
+   * its name and its version after it. `label` stays the rail's text and what the dialog names
+   * the page by.
+   */
+  heading?: ReactNode;
+  /** The rail row's trailing mark: a count of what waits on the page. */
+  badge?: ReactNode;
+  /** The rail row's accessible name when the badge adds to the label ("Module requests, 2 waiting"). */
+  ariaLabel?: string;
 }
 
 export interface PagedDialogGroup<K extends string> {
@@ -66,12 +78,39 @@ export function PagedDialog<K extends string>({
   const showGroupHeadings = groups.length > 1;
   const activeItem = groups.flatMap((g) => g.items).find((item) => item.key === active);
   const activeLabel = activeItem?.label ?? title;
+  const railRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const rail = railRef.current;
+    const selected = rail?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!rail || !selected) return;
+    // A direct link can open any page. Give its tab the dialog's initial focus without
+    // scrolling the document or stealing focus from an editor that already claimed it.
+    if (!rail.closest('[role="dialog"]')?.contains(document.activeElement)) {
+      selected.focus({ preventScroll: true });
+    }
+    const reveal = () => {
+      if (rail.scrollWidth <= rail.clientWidth) return;
+      const strip = rail.getBoundingClientRect();
+      const tab = selected.getBoundingClientRect();
+      if (tab.left < strip.left || tab.right > strip.right) {
+        rail.scrollLeft += (tab.left + tab.right - strip.left - strip.right) / 2;
+      }
+    };
+    reveal();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(reveal);
+    observer.observe(rail);
+    observer.observe(selected);
+    return () => observer.disconnect();
+  }, [open, active]);
 
   return (
     <Modal open={open} onClose={onClose} title={title} headerless bare widthClass="sm:max-w-4xl">
       <div className="flex h-[min(40rem,85vh)] flex-col sm:flex-row">
         {/* Rail: vertical on desktop, a horizontal scroller above the pane on narrow screens. */}
         <NavList
+          ref={railRef}
           label={title}
           orientation="responsive"
           className="shrink-0 border-b border-line-muted p-2 sm:w-44 sm:overflow-y-auto sm:border-b-0 sm:border-r sm:p-3"
@@ -89,7 +128,10 @@ export function PagedDialog<K extends string>({
                 <NavRow
                   key={item.key}
                   label={item.label}
+                  tooltip={item.label}
                   glyph={item.icon}
+                  {...(item.badge !== undefined ? { badge: item.badge } : {})}
+                  {...(item.ariaLabel !== undefined ? { ariaLabel: item.ariaLabel } : {})}
                   active={item.key === active}
                   onClick={() => onSelect(item.key)}
                 />
@@ -98,21 +140,53 @@ export function PagedDialog<K extends string>({
           ))}
         </NavList>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/* min-h-0: stacked under the rail on narrow screens, a flex item's automatic minimum
+            height is its content's, so without it the pane outgrows the sheet and the body's
+            own scroller never scrolls — the bottom of a long page is cut off out of reach. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 sm:px-6 sm:pt-5">
             <h2 className={`flex min-w-0 items-center ${ICON_GAP.row} text-lg font-semibold`}>
-              {activeLabel}
+              {activeItem?.heading ?? activeLabel}
               {activeItem?.info !== undefined && (
                 <InfoPopover label={activeLabel}>{activeItem.info}</InfoPopover>
               )}
             </h2>
             <CloseButton onClose={onClose} label={closeLabel} />
           </div>
+          {/* The pane is the dialog's one scroller for the page: the rail and the heading stay
+              put while a long page scrolls under them. Its bottom padding is the distance
+              PagedDialogFoot reaches back over; the two change together. */}
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3 sm:px-6 sm:pb-6">
             {children}
           </div>
         </div>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * A row held to the bottom edge of a PagedDialog's pane while the page scrolls beneath it: what
+ * must stay in reach however long the page grows (a table's pager and its Save). It rests at the
+ * end of the page once the page is scrolled there.
+ *
+ * A sticky box stops short of its scroller's padding, so the row reaches past the pane's bottom
+ * padding (`pb-4`, `sm:pb-6`) and pads that back inside, so nothing scrolls through below it; the
+ * negative margin gives the same space back where it rests. Its fill is the dialog's own, ruled
+ * off from the page above it. The caller lays out what it holds.
+ */
+export function PagedDialogFoot({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`sticky -bottom-4 z-sticky-head -mb-4 border-t border-line-muted bg-overlay pt-2 pb-6 sm:-bottom-6 sm:-mb-6 sm:pb-8 ${className}`}
+    >
+      {children}
+    </div>
   );
 }

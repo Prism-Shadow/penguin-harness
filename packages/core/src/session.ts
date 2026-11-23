@@ -21,12 +21,14 @@ import {
   abortEvent,
   mcpConnectEnd,
   sessionMeta,
+  sessionUpdate,
   taskBegin,
   taskEnd,
   userText,
 } from "@prismshadow/amsp/records";
 import {
   buildBackgroundTaskDoneMessage,
+  buildModelSwitchMessage,
   stripLeadingMarkerBlocks,
 } from "@prismshadow/amsp/markers";
 import type {
@@ -63,10 +65,13 @@ import { vetoForToolCall, withCommandPolicy } from "./internal/command-policy.js
 import type { CommandPolicySource } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
+import { readTraceTolerant } from "./trace/resume.js";
+import { buildCompactionHandoff } from "./engine/compaction-carry.js";
 import { compactAvailability, ContextEngine } from "./engine/context-engine.js";
 import type {
   CompactAvailability,
   CompactionSettings,
+  CompactionToolGate,
   EngineInitialState,
   OpenContextOptions,
   OpenedContext,
@@ -146,6 +151,8 @@ export interface SessionConfig {
   compaction?: CompactionSettings;
   /** Live compaction settings, re-read at every compaction checkpoint (see ContextEngineDeps.readCompaction): what lets a threshold, mode or prompt edited on disk reach the conversation that is running. Session-lifetime, so a rotation does not replace it. */
   readCompaction?: () => CompactionSettings | Promise<CompactionSettings>;
+  /** Which tool calls a compaction's tool rounds may run (see ContextEngineDeps.compactionToolGate); absent, a compaction takes no round. */
+  compactionToolGate?: CompactionToolGate;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
   /** Session resume: the engine's initial state derived from Trace replay (carry-over / accumulated stats, etc.). */
@@ -192,13 +199,22 @@ export interface SessionConfig {
 /** `Session.run` options: the engine's per-call options. */
 export type SessionRunOptions = RunOptions;
 
-/** Why a model switch was refused before its first event (see {@link ModelSwitchRefusedError}). */
+/**
+ * Why a model switch was refused before its first event (see {@link ModelSwitchRefusedError}).
+ * The refusals `switchModel` produces are about the target: a model the Session is on that
+ * cannot be reached is no reason to refuse — the switch hands the history over by its Trace
+ * path instead.
+ */
 export type ModelSwitchRefusal =
   /** The target pair names no entry in the Project config on disk. */
   | "model_not_configured"
-  /** The target is configured but its client cannot be constructed (a missing credential foremost), or this Session has no switch support. */
+  /** The target is configured but its client cannot be constructed (a missing credential foremost), or this Session cannot switch at all (no switch support, or no opener for a next context). */
   | "model_unavailable"
-  /** The Session has a context to close but no compaction configured to close it with. */
+  /**
+   * No longer produced: a Session without compaction hands its history over by Trace path
+   * instead of refusing. Kept so SDK callers that branch on it still compile; remove it at the
+   * next breaking release (0.3.0), together with any host mapping of it.
+   */
   | "compaction_not_configured";
 
 /**
@@ -226,7 +242,9 @@ export interface ModelSwitchSupport {
    * Validates a switch target before anything is sent or recorded: resolves it against the
    * Project config as it is on disk and constructs its client, so a pair that is not
    * configured, or has no credential, is refused here (a {@link ModelSwitchRefusedError})
-   * exactly where Session creation would have failed.
+   * exactly where Session creation would have failed. The Session asks the same of the model
+   * it is on: a refusal there means that model is sent nothing, and the switch hands the
+   * history over by Trace path.
    */
   validate(ref: ModelRef): Promise<void>;
   /**
@@ -243,6 +261,8 @@ export interface ModelSwitchOptions {
   provider: string;
   modelId: string;
   signal?: AbortSignal;
+  /** Approves the compaction's tool-round calls (see `compactionApprove`); absent denies them all. */
+  approve?: ApproveFn;
 }
 
 /**
@@ -464,6 +484,8 @@ export class Session {
         : {}),
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.readCompaction ? { readCompaction: config.readCompaction } : {}),
+      ...(config.compactionToolGate ? { compactionToolGate: config.compactionToolGate } : {}),
+      buildHandoff: (template) => this.compactionHandoff(template),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
       // The engine assembles one input of its own — a steering message with images — and folds
       // it through the same converter `runTask` uses, failures included: a scratchpad that
@@ -568,8 +590,8 @@ export class Session {
    * approval callback `approve` (the engine calls it once per tool_call within a turn).
    * On the first run, `session_meta` is written to the Trace first, and yielded first: the main
    * Session's every `session_meta` is on the stream exactly once, when it is written — this one,
-   * a compaction's new context's (behind the Task's `task_begin`, when its first write opens the
-   * file) and a model switch's (see `switchModel`).
+   * and the one of a context a compaction or a model switch opened (behind the Task's
+   * `task_begin`, when its first write opens the file).
    *
    * Every Task is bracketed by a `task_begin` / `task_end` pair (see TaskBeginPayload), written
    * to the Trace and yielded: `task_begin` comes before anything the Task writes — its input
@@ -607,11 +629,13 @@ export class Session {
     opts?: SessionRunOptions,
   ): AsyncGenerator<AmspRecord, RunCutoff | null> {
     // The sandbox command policy is applied here, at the Human boundary itself: the
-    // injected callback is wrapped so a vetoed command is refused before the host is ever
-    // asked, which is what makes the policy outrank every approval mode — no host, and no
-    // approval mode, gets a say. Wrapped once for every Task of this call; a child Session
-    // wraps its own forwarded callback again, harmlessly. With no callback at all the
-    // engine denies everything anyway, so there is nothing to guard.
+    // injected callback is wrapped so a `deny` hit is refused before the host is ever asked
+    // and an `ask` hit reaches the host with a policy reason, which the host puts to a person
+    // whatever its approval mode — which is what makes the policy outrank every approval
+    // mode. Wrapped once for every Task of this call. A child Session wraps its own forwarded
+    // callback again: that callback is this wrapper, so the child's `ask` hit arrives here
+    // with its reason and is matched once more (see internal/command-policy.ts). With no
+    // callback at all the engine denies everything anyway, so there is nothing to guard.
     if (opts?.approve) {
       opts = { ...opts, approve: withCommandPolicy(opts.approve, this.commandPolicy) };
     }
@@ -619,8 +643,9 @@ export class Session {
     // engine records their events in stream order and applies the first decision before
     // the approval callback. One rule is enforced here, where the command policy lives:
     // a hook `allow` never overrides the policy — hook packages sit in agent-writable
-    // state, the policy is Project-owned security config — so a policy-vetoed allow is
-    // downgraded to no decision and the approval chain (policy outermost) answers.
+    // state, the policy is Project-owned security config — so an allow on a call either kind
+    // of rule matches (`deny` or `ask`) is downgraded to no decision and the approval chain
+    // (policy outermost) answers: refused, or put to a person.
     // The hooks are read at each consult rather than captured here: a compaction inside
     // this call opens a context with hooks of its own, and the calls after it are theirs.
     {
@@ -668,7 +693,7 @@ export class Session {
       // the summary is only in the old file until the next context's first message opens the
       // new one (see TaskBeginPayload).
       if (await this.ensureMetaWritten()) yield this.meta;
-      yield* this.taskRecord(taskBegin());
+      yield* this.sessionRecord(taskBegin());
       if (continued) {
         // The continued Task's input is the first thing it writes: a context a compaction left
         // pending opens on it, so the new file's session_meta streams ahead of it, as on disk.
@@ -710,7 +735,7 @@ export class Session {
       // Reached only when the Task returned, however it ended: a throw from the Task or its
       // hooks propagates past this point and leaves the pair open, which is the record that
       // the Task never reached its end.
-      yield* this.taskRecord(taskEnd());
+      yield* this.sessionRecord(taskEnd());
       // A user's interruption outranks every hook: after a cutoff, or with the signal
       // already aborted between Tasks, a `continue` is recorded but never run — an aborted
       // engine would only hold the injected input as carry-over and leak it into the
@@ -722,10 +747,13 @@ export class Session {
   }
 
   /**
-   * Writes one Task record (`task_begin` / `task_end`) to the Trace, then yields it. Best-effort
-   * like every Session write: the stream carries the record even when the write failed.
+   * Writes one record of the Session's own — a Task record (`task_begin` / `task_end`) or a
+   * completed switch's `session_update` — to the Trace through the Session's sink, then yields
+   * it. The Session's sink never rotates, so the record lands in the current file and never
+   * opens the one a closed context left pending. Best-effort like every Session write: the
+   * stream carries the record even when the write failed.
    */
-  private async *taskRecord(msg: AmspRecord): AsyncGenerator<AmspRecord, void> {
+  private async *sessionRecord(msg: AmspRecord): AsyncGenerator<AmspRecord, void> {
     await this.writeTrace(msg, (msg.payload as { type: string }).type);
     yield msg;
   }
@@ -898,6 +926,7 @@ export class Session {
               await baseTrace.write(msg);
             },
             ...(baseTrace.rotate ? { rotate: () => baseTrace.rotate!() } : {}),
+            ...(baseTrace.currentPath ? { currentPath: () => baseTrace.currentPath!() } : {}),
           }
         : baseTrace;
     this.engine = new ContextEngine({
@@ -979,40 +1008,62 @@ export class Session {
     if (hooks) this.adoptHooks(hooks);
   }
 
-  /**
-   * Switches the model this Session runs on, in place: the running context is closed on the
-   * model it ran on, and the next one opens on the target. A context with completed turns is
-   * closed by a compaction — always **summarize**, whatever the Agent's `compaction.mode`
-   * says, because the summary is what the new model continues from. That compaction is an
-   * ordinary `manual` one: an ordinary request on the old model, extending the prefix the
-   * provider has cached. The model is recorded by the new context's `session_meta` alone; its
-   * Trace file opens at once, headed by that record — what a resume reads the model from —
-   * and the record is yielded last, so the stream names the model too. Only callable at a Task
-   * boundary, like `compact()`. Not the `/model` handoff, which opens a NEW Session.
-   *
-   * Before any event: the model the Session is already on is a no-op, and a target that
-   * cannot be switched to is refused with a {@link ModelSwitchRefusedError} naming why
-   * (anything else thrown is a failure). A Session that never ran has no context to close:
-   * its first context is re-assembled on the target, silently, and the first run opens it.
-   * One resumed after a restart builds its engine first, as `compact()` does. How the context
-   * is then closed and the next one opened is `ContextEngine.switchContext`; on which model,
-   * the opener is told here.
-   *
-   * Returns the terminal status: `completed` — the Session is on the target, and children
-   * spawned from here inherit it; anything else — the switch was stopped or its compaction
-   * failed (the events say how) and the Session stays on the model it was on.
-   */
-  async *switchModel(opts: ModelSwitchOptions): AsyncGenerator<AmspRecord, StopReason> {
-    const target: ModelRef = { provider: opts.provider, model_id: opts.modelId };
-    if (sameModelRef(target, { provider: this.provider, model_id: this.modelId })) {
-      return "completed";
-    }
+  /** Validates the configured target without creating a context or sending a request. */
+  async validateSwitchTarget(ref: { provider: string; modelId: string }): Promise<void> {
     if (!this.modelSwitch) {
       throw new ModelSwitchRefusedError(
         "model_unavailable",
         "Switching the model is not available for this Session.",
       );
     }
+    await this.modelSwitch.validate({ provider: ref.provider, model_id: ref.modelId });
+  }
+
+  /**
+   * Switches the model this Session runs on, in place: the running context is closed on the
+   * model it ran on, and the next one opens on the target. A context with completed turns is
+   * closed by a compaction — always **summarize**, whatever the Agent's `compaction.mode`
+   * says, because the summary is what the new model continues from. That compaction is an
+   * ordinary `manual` one: an ordinary request on the old model, extending the prefix the
+   * provider has cached. A completed switch is recorded by a `session_update` naming the
+   * target, written through the Session's own sink to the end of the file being left — what a
+   * resume reads the model from — and yielded as the switch's last record (the handoff follows
+   * it when that is what the next context opens with). The next context's file opens lazily,
+   * with its first message, like any rotation's: its `session_meta` is written and streamed
+   * then. Only callable at a Task boundary, like `compact()`. Not the `/model` handoff, which
+   * opens a NEW Session.
+   *
+   * When the summary cannot be had — the model the Session is on can no longer be reached
+   * (no longer configured, or its client cannot be built: it is then sent nothing), or the
+   * compaction gets no summary — the switch hands the history over by Trace path instead: the
+   * next context opens on the target with the `/model` block naming this Session (see
+   * `switchHandoff`) where the summary would be.
+   *
+   * Before any event: the model the Session is already on is a no-op, and a target that
+   * cannot be switched to is refused with a {@link ModelSwitchRefusedError} naming why
+   * (anything else thrown is a failure). A Session that never ran has no context to close:
+   * its first context is re-assembled on the target, silently, and the first run opens it.
+   * One resumed after a restart builds its engine first, as `compact()` does. How the context
+   * is then closed and the next one opened is `ContextEngine.switchContext` (with a summary) or
+   * `handOverContext` (without); on which model, the opener is told here.
+   *
+   * Returns the terminal status: `completed` — the Session is on the target, and children
+   * spawned from here inherit it; `aborted` — the switch was stopped, and the Session stays on
+   * the model it was on; `fatal` — the target's context could not be opened after the
+   * compaction (its `compaction_end` says why), and the Session stays on the model it was on.
+   * Only `completed` writes the `session_update`; a Session that never ran writes none either:
+   * it has no file, and its first run's `session_meta` records the model.
+   */
+  async *switchModel(opts: ModelSwitchOptions): AsyncGenerator<AmspRecord, StopReason> {
+    const target: ModelRef = { provider: opts.provider, model_id: opts.modelId };
+    const from: ModelRef = { provider: this.provider, model_id: this.modelId };
+    if (sameModelRef(target, from)) return "completed";
+    const unavailable = (): ModelSwitchRefusedError =>
+      new ModelSwitchRefusedError(
+        "model_unavailable",
+        "Switching the model is not available for this Session.",
+      );
+    if (!this.modelSwitch) throw unavailable();
     await this.modelSwitch.validate(target);
     if (!this.engine && !this.metaWritten) {
       // Never ran: no context to close and nothing recorded — the first context is simply
@@ -1024,22 +1075,42 @@ export class Session {
       if (first.maxTurns !== undefined) this.engineDeps.maxTurns = first.maxTurns;
       return "completed";
     }
-    if (this.compactability() === "unsupported") {
-      throw new ModelSwitchRefusedError(
-        "compaction_not_configured",
-        "Context compaction is not configured for this Session, so its model cannot be switched.",
-      );
-    }
+    // A context to close needs a next one to open.
+    if (!this.engineDeps.openNextContext) throw unavailable();
+    // The model the Session is on, asked the target's question: one that is no longer
+    // configured, or whose client cannot be built, is sent nothing.
+    const reachable = await this.modelSwitch.validate(from).then(
+      () => true,
+      (err: unknown) => {
+        if (err instanceof ModelSwitchRefusedError) return false;
+        throw err;
+      },
+    );
+    // Written now, while the Trace still points at the file of the context being left.
+    const handoff = this.switchHandoff(from);
     if (!(yield* this.ensureEngine(opts.signal))) return "aborted";
     this.switchTarget = target;
     try {
-      const status = yield* this.engine!.switchContext(opts.signal);
-      // Input an aborted bootstrap left with the Session rides on like the engine's pending
-      // input: its text alone, in memory (the original stays where the abort wrote it).
+      // Summary first, the handoff as the compaction's last rung; an unreachable model, at once.
+      const status = reachable
+        ? yield* this.engine!.switchContext(
+            opts.signal,
+            handoff,
+            this.compactionApprove(opts.approve),
+          )
+        : yield* this.engine!.handOverContext(handoff);
       if (status === "completed") {
+        // Input an aborted bootstrap left with the Session rides on like the engine's pending
+        // input: its text alone, in memory (the original stays where the abort wrote it).
         this.carryOverInput = this.carryOverInput.filter(
           (m) => (m.payload as { type?: string }).type === "text",
         );
+        // The switch's record: the next context is open in memory, its file not yet.
+        yield* this.sessionRecord(
+          sessionUpdate({ provider: target.provider, model_id: target.model_id }),
+        );
+        // Streamed with the context it opens; written at that context's file head.
+        if (this.engine!.opensWith(handoff)) yield handoff;
       }
       return status;
     } finally {
@@ -1048,20 +1119,69 @@ export class Session {
   }
 
   /**
+   * The handoff a model switch opens the next context with when it cannot summarize: the
+   * `/model` origin block, word for word, naming this Session, the Trace file of the context
+   * being left (the running file, on the machine the Session runs on), the Workspace and the
+   * model left behind. A Session without a Trace sink has no file to name.
+   */
+  private switchHandoff(from: ModelRef): AmspRecord {
+    const tracePath = this.trace?.currentPath?.();
+    return userText(
+      buildModelSwitchMessage({
+        sessionId: this.sessionId,
+        ...(tracePath !== undefined ? { tracePath } : {}),
+        workspace: this.workspaceDir,
+        prevProvider: from.provider,
+        prevModelId: from.model_id,
+      }),
+    );
+  }
+
+  /**
+   * The hand-off note (see ContextEngineDeps.buildHandoff), built from the running Trace file —
+   * the one being closed, since the rotation comes after it; an unreadable file gives the note
+   * without its digest.
+   */
+  private async compactionHandoff(template?: string): Promise<AmspRecord> {
+    const tracePath = this.trace?.currentPath?.();
+    const records =
+      tracePath !== undefined ? await readTraceTolerant(tracePath).catch(() => []) : [];
+    return userText(
+      buildCompactionHandoff(records, {
+        ...(tracePath !== undefined ? { tracePath } : {}),
+        ...(template !== undefined ? { template } : {}),
+      }),
+    );
+  }
+
+  /**
+   * The host's approval for a compaction's tool rounds, wrapped by the command policy as `run`
+   * wraps its own: the policy never fires there (no round runs a command tool), but every
+   * approval the Session forwards follows one rule.
+   */
+  private compactionApprove(approve: ApproveFn | undefined): ApproveFn | undefined {
+    return approve ? withCommandPolicy(approve, this.commandPolicy) : undefined;
+  }
+
+  /**
    * User-initiated request to compact context (e.g. a CLI command): reuses the automatic
    * compaction flow but skips the threshold check (reason=manual). Only callable at Task
    * boundaries (between runs); streams out paired `compaction` events. The summarize digest
    * becomes the prefix of the next `run`'s input (merged with the next user Prompt). A no-op
    * if compaction isn't configured.
+   * `approve` answers its tool-round calls (see `compactionApprove`); absent, each is denied.
    * Docs: /docs/agent-loop § "Compaction".
    */
-  async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<AmspRecord> {
+  async *compact(opts?: { signal?: AbortSignal; approve?: ApproveFn }): AsyncGenerator<AmspRecord> {
     // Nothing compactable and no engine: stay a strict no-op, without bootstrapping — a
     // session that never ran must not leave trace records (meta / tool_list_ready) behind,
     // or an untouched session would look resumable.
     if (!this.engine && this.compactability() !== "ok") return;
     if (!(yield* this.ensureEngine(opts?.signal))) return;
-    yield* this.engine!.compact(opts);
+    yield* this.engine!.compact({
+      ...(opts?.signal ? { signal: opts.signal } : {}),
+      approve: this.compactionApprove(opts?.approve),
+    });
   }
 
   /**
@@ -1255,6 +1375,10 @@ export class Session {
     return this.environment.hasRunningBackgroundSubagents?.() ?? false;
   }
 
+  setSubagentResolver(resolve: import("./interfaces/index.js").SubagentResolver): void {
+    this.environment.setSubagentResolver?.(resolve);
+  }
+
   /** All live subagent child sessions of this Session's Environment, for a host UI's subagents panel (see EnvironmentInterface.listBackgroundSubagents). */
   listBackgroundSubagents(): BackgroundSubagentInfo[] {
     return this.environment.listBackgroundSubagents?.() ?? [];
@@ -1286,9 +1410,15 @@ export class Session {
     return this.environment.setBackgroundSubagentThinkingLevel?.(childSessionId, level) ?? false;
   }
 
-  /** Attaches the host's session-lifetime fallback approval sink for child sessions (see EnvironmentInterface.setSubagentApprovalFallback). */
+  /**
+   * Attaches the host's session-lifetime fallback approval sink for child sessions (see
+   * EnvironmentInterface.setSubagentApprovalFallback), wrapped with this Session's command
+   * policy as `run` wraps its callback: a child's call can reach this sink with no parent run
+   * whose wrapper would match it, and the host's callback alone would let allow-all wave an
+   * `ask` hit through: wrapped, that hit reaches the host's callback with its policy reason.
+   */
   setSubagentApprovalFallback(approve: ApproveFn): void {
-    this.environment.setSubagentApprovalFallback?.(approve);
+    this.environment.setSubagentApprovalFallback?.(withCommandPolicy(approve, this.commandPolicy));
   }
 
   /** Attaches the single listener for subagent run-state changes; the host re-reads `listBackgroundSubagents` on each ping (see EnvironmentInterface.setSubagentStateListener). */
@@ -1348,9 +1478,10 @@ export class Session {
    * Releases runtime resources held by the Session: kills long-running command sessions
    * managed by the Environment. The host calls this when the Session ends (CLI exit, Web
    * session close) to avoid leaking background processes into the host process's lifetime.
-   * Optional, idempotent.
+   * Idempotent. Await the result before deleting the Session's files: background children
+   * may still be writing their cancellation records after receiving the abort signal.
    */
-  dispose(): void {
-    this.environment.dispose?.();
+  dispose(): void | Promise<void> {
+    return this.environment.dispose?.();
   }
 }

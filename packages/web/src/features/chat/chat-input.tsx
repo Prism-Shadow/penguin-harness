@@ -81,8 +81,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
 } from "react";
-import type { ChangeEvent, ClipboardEvent, KeyboardEvent, ReactNode, RefObject } from "react";
+
 import type {
   AgentSummary,
   ApprovalMode,
@@ -121,31 +126,45 @@ import {
   noAutofill,
   toastError,
   toastInfo,
+  type MenuSelectOption,
+  type TagInputChip,
 } from "@prismshadow/penguin-ui";
-import type { MenuSelectOption, TagInputChip } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { formatBytes, humanizeTokens } from "../../lib/format";
+import { useDictation } from "./voice/dictation";
+import { useDraftHeight } from "./use-draft-height";
 import { fitTextarea } from "../../lib/textarea-fit";
 import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
 import { PermissionSelect } from "./permission-select";
 import type { PermissionPick } from "../../lib/permission-level";
-import { SkillIcon } from "../skills/skill-icon-view";
-import { SkillPickList } from "../skills/skill-pick-list";
-import { toggleSkillName } from "../skills/skill-selection";
-import { sameModelRef } from "../models/model-grouping";
+import { SkillIcon, SkillPickList, toggleSkillName } from "../skills";
+import { sameModelRef } from "../models";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
-import { employeesLast, isEmployee } from "../agents/agent-employment";
-import { ModelCatalogSelect, modelLabel } from "./model-select";
-import { ModelPickerModal } from "./model-picker-modal";
+import { employeesLast, isEmployee } from "../agents";
+import {
+  ModelCatalogSelect,
+  ModelPickerModal,
+  SELECTABLE_THINKING_LEVELS,
+  ThinkingLevelSelect,
+  modelLabel,
+  thinkingLevelLabel,
+} from "../model-picker";
 import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
-import { ThinkingLevelSelect } from "./thinking-level-select";
-import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
+import {
+  BOOK_ICON,
+  buildSkillsMessage,
+  localizedShortText,
+  skillSlashItems,
+} from "../../lib/skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { useGoalPluginGate } from "./goal-plugin-gate";
 import type { GoalPluginGate } from "./goal-plugin-gate";
+import { toggled, type ComposerSwitches } from "./prompt-modes";
 import { mergeRecalledDraft } from "./recall-draft";
 import { buildExampleFill } from "./example-fill";
 import {
@@ -153,15 +172,18 @@ import {
   caretOnLastLine,
   historyStepBack,
   historyStepForward,
+  type HistoryStep,
 } from "./input-history";
-import type { HistoryStep } from "./input-history";
+
 import { isStopAction, midRunAction } from "./composer-send";
+import { composerNotice } from "./composer-notice";
+import { RefusedHandoffNotice } from "./refused-handoff-notice";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
-import { modelWindowBelowCompactionLimit } from "../../lib/context";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { isLongPaste, longPasteFileName } from "../../lib/long-paste";
 import { splitBySize } from "../../lib/upload-limits";
+import type { DraftUploads } from "../../lib/draft-uploads";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { ReferenceChip } from "./reference-chip";
 import { readSteerMode, writeSteerMode } from "./steer-mode";
@@ -180,8 +202,11 @@ function AgentMenuList({
   agents,
   currentAgentId,
   onPick,
+  avatarSrc,
 }: {
   agents: AgentSummary[];
+  /** Each Agent's own picture (lib/agent-avatar.ts), on the machine the list lives on. */
+  avatarSrc: (agentId: string) => string | undefined;
   /** The Agent this conversation already belongs to (marked ✓); undefined while it is unknown. */
   currentAgentId?: string;
   onPick: (agent: AgentSummary) => void;
@@ -203,9 +228,9 @@ function AgentMenuList({
         <>
           <AgentAvatar
             id={a.agentId}
-            name={agentDisplayName(a)}
             size={16}
             className="shrink-0 rounded"
+            src={avatarSrc(a.agentId)}
           />
           <span className="shrink-0 font-mono text-gray-800 dark:text-gray-200">{a.agentId}</span>
           {a.name && a.name !== a.agentId && (
@@ -221,8 +246,8 @@ function AgentMenuList({
 
 /**
  * The mid-run send mode row, rendered as the "+" menu's settings footer: Steer (default) /
- * Queue as a follow-up, the full explanation hover-only via each pill's title (the toolbar's
- * "full meaning on hover" convention). Laid out like the menu's items — leading icon, label,
+ * Queue as a follow-up / Interrupt, the full explanation hover-only via each pill's title (the
+ * toolbar's "full meaning on hover" convention). Laid out like the menu's items — leading icon, label,
  * the control where an item's description sits — so the menu reads as one list. Clicking a
  * pill keeps the menu open — it's a setting, not an action — and the row is never disabled:
  * the preference is settable before and during a run.
@@ -266,6 +291,7 @@ function SteerModeRow({
       >
         {modeButton("steer", S.chat.steerModeSteer, S.chat.steerModeSteerHint)}
         {modeButton("followup", S.chat.steerModeFollowUp, S.chat.steerModeFollowUpHint)}
+        {modeButton("interrupt", S.chat.steerModeInterrupt, S.chat.steerModeInterruptHint)}
       </div>
     </div>
   );
@@ -321,13 +347,18 @@ function SkillSelect({
 /** One entry of the composer's "+" extension menu. */
 interface PlusMenuItem {
   key: string;
-  icon: string;
+  /** A 24×24 line path, or a mark of its own (a plugin's icon). */
+  icon: string | ReactNode;
   label: string;
   desc: string;
   /** Whether the entry is currently engaged (rendered with a check mark; clicking toggles). */
   active: boolean;
   /** Grayed out and inert (e.g. goal mode while a run is in progress); the menu still opens. */
   disabled?: boolean;
+  /** Drawn greyed but still picked: an offer whose pick does what `trailing` names (an install). */
+  offer?: boolean;
+  /** Words at the row's end: what picking an offer does. */
+  trailing?: ReactNode;
   onSelect: () => void;
 }
 
@@ -357,9 +388,10 @@ function PlusMenu({
       options={items.map((item) => ({
         value: item.key,
         glyph: item.icon,
-        label: item.label,
+        label: item.offer ? <span className="text-fg-subtle">{item.label}</span> : item.label,
         detail: item.desc,
         disabled: item.disabled ?? false,
+        ...(item.trailing !== undefined ? { trailing: item.trailing } : {}),
       }))}
       value={items.filter((item) => item.active).map((item) => item.key)}
       multiple
@@ -435,19 +467,37 @@ function steeringSummary(p: { text: string; images: number; files: number }): st
  * `shrink-0` next to the truncating label so it survives narrow widths. It carries the icon
  * set's gray (a step darker than the hint text it sits beside), not the label's: gray-400 on
  * white is under the 3:1 an interactive control owes, and this one is interactive.
+ *
+ * Before the recall button, when the line can be sent now, an "Interrupt" text link: it stops
+ * the run and sends the message right after the turn it cut. Text rather than an icon, because
+ * what it does is a sentence of its own and the line already carries one icon control; the
+ * link wears the hint text's size and the recall icon's gray, so it reads as part of the line.
  */
 function QueuedMessageLine({
   label,
   onRecall,
+  onInterrupt,
   disabled,
 }: {
   label: string;
   onRecall?: () => void;
+  onInterrupt?: () => void;
   disabled: boolean;
 }) {
   return (
     <div className="flex min-w-0 items-center gap-1">
       <p className="min-w-0 truncate text-xs text-gray-400 dark:text-gray-500">{label}</p>
+      {onInterrupt && (
+        <button
+          type="button"
+          data-tooltip={S.chat.interruptQueuedTitle}
+          disabled={disabled}
+          onClick={onInterrupt}
+          className="shrink-0 whitespace-nowrap px-0.5 text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-800 hover:underline disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-200"
+        >
+          {S.chat.interruptQueued}
+        </button>
+      )}
       {onRecall && (
         <button
           type="button"
@@ -519,15 +569,13 @@ export interface ComposerControl {
 }
 
 /**
- * Small-window notices already put down, keyed Session + model, for the rest of the tab session.
+ * Attention notices already put down, for the rest of the tab session (keys: `composerNotice`).
  *
  * Module state rather than storage: the notice reports a live mismatch between two settings, so
  * a dismissal should not outlive the tab that saw it — reopening the app after changing either
- * side deserves a fresh answer. Keyed by model as well as Session because switching the
- * conversation onto another model is exactly the case where the mismatch may no longer hold, or
- * may hold with different numbers.
+ * side deserves a fresh answer.
  */
-const dismissedWindowNotices = new Set<string>();
+const dismissedNotices = new Set<string>();
 
 export function ChatInput({
   status,
@@ -541,6 +589,9 @@ export function ChatInput({
   queuedFollowUps = 0,
   pendingFollowUps = [],
   onRecallFollowUp,
+  onInterruptSend,
+  onInterruptFollowUp,
+  onInterruptSteering,
   onStop,
   onCompact,
   modelRef,
@@ -557,6 +608,8 @@ export function ChatInput({
   compactionLimit,
   onChangeCompactionLimit,
   onOpenAgentSettings,
+  refusalHandoff,
+  onShowRefusal,
   contextNow,
   contextStale = false,
   sessionId,
@@ -568,11 +621,14 @@ export function ChatInput({
   modeSaving,
   autoFocus,
   agents,
+  agentsMachineId = null,
   currentAgentId,
   skills,
   initialSkills,
   initialGoal,
   goalPlugin = null,
+  switches,
+  banner,
   onSkillsChange,
   onHandoff,
   initialText,
@@ -583,8 +639,11 @@ export function ChatInput({
   initialPendingModelRef,
   onPendingModelChange,
   controlRef,
+  draftUploads,
+  resizableDraft = false,
   variant = "session",
 }: {
+  draftUploads?: DraftUploads;
   status: SessionStatus;
   /**
    * Returns whether it succeeded: on failure the input draft is kept (not cleared).
@@ -649,6 +708,17 @@ export function ChatInput({
   pendingFollowUps?: PendingFollowUpInfo[];
   /** Recall a queued follow-up (#287): same contract as onRecallSteering, for the follow-up queue. */
   onRecallFollowUp?: (followUpId: string) => Promise<RecalledMessageResponse | null>;
+  /**
+   * Interrupt, then send (session state only): posts the full input with `interrupt` — a busy
+   * session stops its run and sends this right after the turn it cut; undelivered steering
+   * comes back to the draft as it does on Stop. Offered as the "interrupt" choice of the
+   * mid-run mode switch.
+   */
+  onInterruptSend?: (input: TaskInputPart[]) => Promise<boolean>;
+  /** Turns one queued follow-up into an interrupt (the Interrupt link on its line); false when it failed. */
+  onInterruptFollowUp?: (followUpId: string) => Promise<boolean>;
+  /** Turns one undelivered steering message into an interrupt (the Interrupt link on its line). */
+  onInterruptSteering?: (steerId: string) => Promise<boolean>;
   /**
    * Used instead of onSend when an `/agent` target chip is staged: opens a new chat for the
    * target agent (the current Session receives no message). Returns whether it succeeded
@@ -723,8 +793,15 @@ export function ChatInput({
   compactionLimit?: number;
   /** Writes a new compaction threshold to the Session's Agent and re-reads `compactionLimit` from it: what the context panel's threshold cutter commits through. Absent wherever no Agent config is at hand, leaving the cutter a readout. */
   onChangeCompactionLimit?: (maxContextLength: number) => Promise<void>;
-  /** Opens the Session Agent's settings, where the compaction threshold is edited: the small-window notice's action. */
+  /** Opens the Session Agent's settings, where the compaction threshold is edited: the attention notice's action. */
   onOpenAgentSettings?: () => void;
+  /**
+   * The Session's refusal hand-off (`refusalHandoff`): its occurrence, and the provider's words
+   * when it sent any, raising its notice; absent off session state.
+   */
+  refusalHandoff?: { occurrence: string; message?: string } | null;
+  /** Opens the refused request's failure details from the notice's 「[详情]」; absent where the host cannot show them. */
+  onShowRefusal?: () => void;
   /** Current context usage (total of the most recent main-session Request). */
   contextNow: number;
   /** After a successful compaction, before the next regular Request reports usage: usage is **unknown** (not 0); the ring is drawn empty and the value shown as `—`. */
@@ -754,6 +831,8 @@ export function ChatInput({
   autoFocus?: boolean;
   /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */
   agents: AgentSummary[];
+  /** The machine `agents` lives on, for their pictures; null (the default) for this server. */
+  agentsMachineId?: string | null;
   /** The Agent this composer already belongs to (the Session's, or the draft's selection): marked as the current entry in the `/agent` picker. */
   currentAgentId?: string;
   /**
@@ -779,6 +858,14 @@ export function ChatInput({
    * it and Send is held. Absent or null, nothing is checked and the server refuses instead.
    */
   goalPlugin?: GoalPluginGate | null;
+  /**
+   * The composer's switches (prompt-modes.ts): each one the Agent offers is a "+" menu entry, and
+   * each one on is a chip. The caller owns which are on and sends them with every Task but a goal,
+   * so a goal engaged here grays the entries out and hides the chips.
+   */
+  switches?: ComposerSwitches;
+  /** A notice drawn as the composer card's top band (`ComposerBanner`): what Send waits for. */
+  banner?: ReactNode;
   /** Callback when selected skills change (check/prune; the clear after a successful send does not call back, same as onTextChange). */
   onSkillsChange?: (names: string[]) => void;
   /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
@@ -819,6 +906,8 @@ export function ChatInput({
    * model or agent.
    */
   variant?: "session" | "subagent";
+  /** The start page can give a long draft more writing space. */
+  resizableDraft?: boolean;
   /**
    * Handle for the one thing a parent reaches in and does: the draft screen's example cards
    * fill this composer (see ComposerControl). A ref rather than a `fill` prop because it is a
@@ -830,6 +919,7 @@ export function ChatInput({
   controlRef?: RefObject<ComposerControl | null>;
 }) {
   const { locale } = useLocale();
+  const avatarSrc = useAgentAvatarSrc();
   // Admin-settable, delivered on /api/me: the pre-flight checks below and the numbers in their
   // messages both come from here, so what the composer refuses is exactly what the server would.
   const { uploadLimits } = useAuth();
@@ -837,11 +927,17 @@ export function ChatInput({
   /** Live text mirror for slash-command run() closures (the commands memo deliberately doesn't depend on text). */
   const textRef = useRef(text);
   textRef.current = text;
-  const [images, setImages] = useState<string[]>([]);
+  const [images, setImages] = useState<string[]>(() => draftUploads?.images ?? []);
   // File attachments picked from the "+" menu (any type): held as base64 data URLs, exactly
   // like images — a draft has no Session yet, so there is nothing to upload them to ahead of
   // time; they travel with the task request and the server files them into the scratchpad.
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>(() => draftUploads?.files ?? []);
+  useLayoutEffect(() => {
+    if (draftUploads) {
+      draftUploads.images = images;
+      draftUploads.files = attachments;
+    }
+  }, [images, attachments, draftUploads]);
   /**
    * Quotations staged from the Files panel. Held here rather than in the draft cache, exactly
    * like attachments: what they quote is a file on disk that may have moved on by the time a
@@ -910,6 +1006,27 @@ export function ChatInput({
       ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
       : S.chat.goalBudgetUnlimited;
   const goalGate = useGoalPluginGate(goalPlugin, goalOn);
+  /** The switches on, as their chips show them; none while a goal is engaged, which takes none. */
+  const switchesOn =
+    switches === undefined || goalOn
+      ? []
+      : switches.modes.filter((mode) => switches.on.includes(mode.name));
+  const flipSwitch = (name: string) => {
+    if (switches) switches.onChange(toggled(switches.on, name));
+  };
+  /** The switches as of the latest render, for an install that answers after it. */
+  const latestSwitches = useRef(switches);
+  latestSwitches.current = switches;
+  /**
+   * A mode the Agent lacks, picked from its offer: installed on the Agent, then switched on, as
+   * picking an installed one would. A refused install says why in a toast and turns nothing on.
+   */
+  const installSwitch = (name: string) => {
+    void switches?.install?.(name).then((installed) => {
+      const now = latestSwitches.current;
+      if (installed && now && !now.on.includes(name)) now.onChange([...now.on, name]);
+    });
+  };
   /**
    * Where a send with a staged chip would go — and, for a `/model` fork, whether it may go at
    * all right now (see stagedSendRoute): a fork branches a NEW session off this session's
@@ -937,6 +1054,7 @@ export function ChatInput({
     !running &&
     !compacting &&
     !busy &&
+    (!onChangeModel || models?.some((m) => sameModelRef(m, modelRef))) &&
     (goalOn
       ? text.trim().length > 0 &&
         attachments.length === 0 &&
@@ -1033,6 +1151,7 @@ export function ChatInput({
     writeSteerMode(mode);
   };
   const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
+  const interruptMode = steerMode === "interrupt" && onInterruptSend !== undefined;
   // Which of the two channels this draft can use, or Stop when neither will take it — the whole
   // decision lives in midRunAction so it can be reasoned about and tested on its own, and so
   // that Stop stays the fallthrough rather than a case somebody has to remember to widen. Only
@@ -1043,7 +1162,9 @@ export function ChatInput({
     goalOn,
     canSteerChannel: onSteer !== undefined,
     canQueueChannel: onQueueFollowUp !== undefined,
+    canInterruptChannel: onInterruptSend !== undefined,
     followUpMode,
+    interruptMode,
     stagedRoute,
     hasHandoffTarget: target !== null,
     hasPendingModel: pendingModel !== null,
@@ -1054,8 +1175,14 @@ export function ChatInput({
   });
   const steerAction = running && midRun === "steer";
   const queueAction = running && midRun === "queue";
-  const canMidRunSend = steerAction || queueAction;
-  const midRunSendLabel = midRun === "queue" ? S.chat.followUpSend : S.chat.steerSend;
+  const interruptAction = running && midRun === "interrupt";
+  const canMidRunSend = steerAction || queueAction || interruptAction;
+  const midRunSendLabel =
+    midRun === "queue"
+      ? S.chat.followUpSend
+      : midRun === "interrupt"
+        ? S.chat.interruptSend
+        : S.chat.steerSend;
   const stopAction = isStopAction(status, midRun);
   // Display-only model badge text (see the badge below): the catalog's display name when the
   // model is known, the raw id otherwise.
@@ -1063,26 +1190,17 @@ export function ChatInput({
     const m = models?.find((x) => sameModelRef(x, modelRef));
     return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
   })();
-  // The model cannot hold what the Agent is configured to compact at. Raised only in session
-  // state, where a Session id gives the dismissal a key and `/compact` is available to act on
-  // the advice; the draft composer has neither.
-  const windowNoticeKey =
-    sessionId !== undefined && modelRef
-      ? `${sessionId}\u0000${modelRef.provider}\u0000${modelRef.modelId}`
-      : null;
-  const [windowNoticeDismissed, setWindowNoticeDismissed] = useState(false);
-  // Re-read on every key change (a `/model` fork, a new Session) so a dismissal that belongs to
-  // another pairing never suppresses this one, and one that belongs to this pairing survives a
-  // trip away and back.
-  useEffect(() => {
-    setWindowNoticeDismissed(
-      windowNoticeKey !== null && dismissedWindowNotices.has(windowNoticeKey),
-    );
-  }, [windowNoticeKey]);
-  const windowNoticeOpen =
-    windowNoticeKey !== null &&
-    !windowNoticeDismissed &&
-    modelWindowBelowCompactionLimit(contextWindow, compactionLimit);
+  // Read from the module set at every render, so a dismissal survives a trip away and back and
+  // never suppresses another Session's or model's notice; a dismissal bumps the counter to render.
+  const [, setDismissals] = useState(0);
+  const attention = composerNotice({
+    sessionId,
+    model: modelRef,
+    refusalHandoff,
+    contextWindow,
+    compactionLimit,
+    dismissed: dismissedNotices,
+  });
   // The Agent the threshold confirmation is about to name. Its display name where it has one,
   // else the id, which is the same fallback the `/agent` picker draws rows with.
   const currentAgent = agents.find((a) => a.agentId === currentAgentId);
@@ -1166,6 +1284,23 @@ export function ChatInput({
         setSteerPending(false);
         applyRecalled(r);
       }
+    } finally {
+      setRecallingId(null);
+    }
+  };
+
+  /**
+   * The Interrupt link on a queued line: the server stops the run and sends that message as
+   * soon as the run settles. Shares the recall's one-at-a-time flag, since both act on the
+   * same queue.
+   */
+  const interruptQueued = async (id: string, interrupt: (id: string) => Promise<boolean>) => {
+    if (recallingId !== null || busy) return;
+    setRecallingId(id);
+    try {
+      // A steering message it took leaves the mirror without a delivery; drop the post-202
+      // bridge flag too, or the bare "steering queued" hint would come back.
+      if (await interrupt(id)) setSteerPending(false);
     } finally {
       setRecallingId(null);
     }
@@ -1503,7 +1638,7 @@ export function ChatInput({
    */
   const autoGrow = () => {
     const el = textareaRef.current;
-    if (!el) return;
+    if (!el || resizableDraft) return;
     fitTextarea(el, (box) => Math.min(box.scrollHeight, 176));
   };
 
@@ -1519,7 +1654,7 @@ export function ChatInput({
    * nothing left to measure again, the composer stayed expanded after every send. A layout
    * effect runs after the commit by construction, and before paint, so the box never flashes.
    */
-  useLayoutEffect(autoGrow, [text]);
+  useLayoutEffect(autoGrow, [text, resizableDraft]);
 
   // History navigation ends the moment the composer text no longer matches the recalled
   // entry — one rule covering user edits, slash-command rewrites and the post-send clear
@@ -1600,7 +1735,9 @@ export function ChatInput({
     }
     pendingModelRestored.current = true;
     if (staged || !onSwitchModel) return;
-    const restored = models.find((m) => sameModelRef(m, initialPendingModelRef));
+    const restored = models.find(
+      (m) => m.chatEligible !== false && sameModelRef(m, initialPendingModelRef),
+    );
     if (restored && !sameModelRef(restored, modelRef)) setPendingModel(restored);
   }, [models, initialPendingModelRef, modelRef, onSwitchModel, staged]);
 
@@ -1704,6 +1841,12 @@ export function ChatInput({
 
   const send = async () => {
     if (running) {
+      // Interrupt branch: the whole draft goes out through the normal composition path, posted
+      // with `interrupt` — the server stops this run and sends it right after the turn it cut.
+      if (interruptAction) {
+        await sendNormal(onInterruptSend!);
+        return;
+      }
       // Queue branch: the whole draft goes out through the normal composition path, posted
       // with queueIfBusy — the server holds it and auto-sends once this run finishes (a staged
       // switch still opens its new chat directly: neither the handoff target nor the model fork
@@ -1770,7 +1913,44 @@ export function ChatInput({
     });
   };
 
+  const dictation = useDictation({
+    disabled: busy,
+    insert: (spoken) => {
+      const el = textareaRef.current;
+      const current = el?.value ?? text;
+      const at = el?.selectionStart ?? current.length;
+      const end = el?.selectionEnd ?? at;
+      const separator =
+        at > 0 &&
+        /[\p{Script=Latin}\d]/u.test(current[at - 1]!) &&
+        /^[\p{Script=Latin}\d]/u.test(spoken)
+          ? " "
+          : "";
+      const after =
+        end < current.length &&
+        /[\p{Script=Latin}\d]$/u.test(spoken) &&
+        /^[\p{Script=Latin}\d]/u.test(current.slice(end))
+          ? " "
+          : "";
+      const next = current.slice(0, at) + separator + spoken + after + current.slice(end);
+      const pos = at + separator.length + spoken.length + after.length;
+      setText(next);
+      onTextChange?.(next);
+      setCaret(pos);
+      requestAnimationFrame(() => {
+        el?.focus();
+        el?.setSelectionRange(pos, pos);
+      });
+    },
+  });
+
+  const resizeFromKeyboard = useDraftHeight(textareaRef, text, resizableDraft);
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (resizeFromKeyboard(e)) return;
+    if (dictation.active && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      return;
+    }
     if (slashOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -1966,9 +2146,9 @@ export function ChatInput({
             glyph: (
               <AgentAvatar
                 id={target.agentId}
-                name={agentDisplayName(target)}
                 size={13}
                 className="shrink-0 rounded-sm"
+                src={avatarSrc(target.agentId, agentsMachineId)}
               />
             ),
             tooltip: S.chat.handoffTargetTitle(agentDisplayName(target)),
@@ -2144,17 +2324,17 @@ export function ChatInput({
             agents={agents}
             {...(currentAgentId !== undefined ? { currentAgentId } : {})}
             onPick={pickHandoffTarget}
+            avatarSrc={(agentId) => avatarSrc(agentId, agentsMachineId)}
           />
         </SlashPicker>
       )}
 
-      {/* The Agent's compaction threshold is above what this model can hold, so compaction fires
-          at the window's edge instead of at the number the user set. Amber rather than muted
+      {/* A setting needs changing (`composerNotice` says which). Amber rather than muted
           body text like the notices below it: the other two describe what the composer is about
           to do, this one asks for a settings change, and `attention` is the tone for a thing
           waiting on the user. Dismissible, because keeping the threshold high on purpose is a
           legitimate answer and a notice with no way down stops being read. */}
-      {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
+      {attention !== null && (
         // The shared notice: its buttons keep their labels whole, so where the sentence would
         // be left a few characters a line beside them (a phone at a large text size), they
         // drop to a row of their own instead.
@@ -2164,8 +2344,8 @@ export function ChatInput({
           dismiss={{
             label: S.chat.contextWindowUnderThresholdDismiss,
             onClick: () => {
-              if (windowNoticeKey !== null) dismissedWindowNotices.add(windowNoticeKey);
-              setWindowNoticeDismissed(true);
+              dismissedNotices.add(attention.key);
+              setDismissals((n) => n + 1);
             },
           }}
           {...(onOpenAgentSettings
@@ -2177,9 +2357,13 @@ export function ChatInput({
               }
             : {})}
         >
-          {S.chat.contextWindowUnderThreshold(
-            humanizeTokens(contextWindow),
-            humanizeTokens(compactionLimit),
+          {attention.kind === "refused" ? (
+            <RefusedHandoffNotice message={attention.message} onDetails={onShowRefusal} />
+          ) : (
+            S.chat.contextWindowUnderThreshold(
+              humanizeTokens(attention.window),
+              humanizeTokens(attention.threshold),
+            )
           )}
         </Notice>
       )}
@@ -2226,8 +2410,9 @@ export function ChatInput({
       {/* Mid-run steering queued: the server's undelivered-steering mirror, one line per
           queued message with its content — task_state-fed, so it survives reloads (#136,
           #140) — plus a recall button that takes the message back into this input for
-          editing and resending (#287). The local steerPending flag only bridges the gap
-          between the 202 and the first task_state that carries the mirror. */}
+          editing and resending (#287), and an Interrupt link that sends it now. The local
+          steerPending flag only bridges the gap between the 202 and the first task_state
+          that carries the mirror. */}
       {pendingSteering.length > 0 ? (
         <div className="anim-fade mb-1">
           {pendingSteering.map((p, i) => (
@@ -2237,6 +2422,9 @@ export function ChatInput({
               disabled={recallingId !== null || busy}
               {...(onRecallSteering && p.id
                 ? { onRecall: () => void recallQueued(p.id, onRecallSteering) }
+                : {})}
+              {...(onInterruptSteering && p.id
+                ? { onInterrupt: () => void interruptQueued(p.id, onInterruptSteering) }
                 : {})}
             />
           ))}
@@ -2250,18 +2438,26 @@ export function ChatInput({
       )}
 
       {/* Queued follow-ups (server-side, auto-sent once this run finishes): one line per
-          queued message with its content and a recall button (#287) — task_state-fed, so it
-          survives reloads; the bare count stays as the fallback for a server that predates
-          the per-entry list. */}
+          queued message with its content, an Interrupt link and a recall button (#287) —
+          task_state-fed, so it survives reloads; the bare count stays as the fallback for a
+          server that predates the per-entry list. An interrupt waiting for the run it stopped
+          to settle says so and has no link: it is already going out first. */}
       {pendingFollowUps.length > 0 ? (
         <div className="anim-fade mb-1">
           {pendingFollowUps.map((p) => (
             <QueuedMessageLine
               key={p.id}
-              label={S.chat.followUpQueuedItem(steeringSummary(p))}
+              label={
+                p.interrupt
+                  ? S.chat.interruptQueuedItem(steeringSummary(p))
+                  : S.chat.followUpQueuedItem(steeringSummary(p))
+              }
               disabled={recallingId !== null || busy}
               {...(onRecallFollowUp
                 ? { onRecall: () => void recallQueued(p.id, onRecallFollowUp) }
+                : {})}
+              {...(onInterruptFollowUp && !p.interrupt
+                ? { onInterrupt: () => void interruptQueued(p.id, onInterruptFollowUp) }
                 : {})}
             />
           ))}
@@ -2300,6 +2496,7 @@ export function ChatInput({
           container breakpoints) — the card's width changes with the viewport and with the Files
           panel squeezing it, so viewport breakpoints wouldn't judge it accurately. */}
       <ComposerCard
+        banner={banner}
         attachments={
           // The staged images, then the staged files, as one row of tiles at the top of the
           // card: the same tiles the message shows once sent. A file's name is the picked
@@ -2336,7 +2533,8 @@ export function ChatInput({
           pendingModel !== null ||
           selectedSkills.length > 0 ||
           references.length > 0 ||
-          goalOn ? (
+          goalOn ||
+          switchesOn.length > 0 ? (
             <ChipRow
               leading={
                 // Goal-mode chip: the budget stays compact as a value button; its editor is a
@@ -2351,7 +2549,27 @@ export function ChatInput({
                     onRemove={() => toggleGoal(false)}
                     control={goalBudgetPicker}
                   />
-                ) : undefined
+                ) : (
+                  // A switch's chip stays after a send: it holds until it is removed.
+                  switchesOn.map((mode) => (
+                    <Chip
+                      key={mode.name}
+                      label={mode.title}
+                      glyph={
+                        <SkillIcon
+                          icon={mode.icon}
+                          fallback={ICONS.fishHook}
+                          size={13}
+                          className="text-fg-muted"
+                        />
+                      }
+                      tooltip={mode.description}
+                      tooltipExtra
+                      removeLabel={S.chat.switchOff(mode.title)}
+                      onRemove={() => flipSwitch(mode.name)}
+                    />
+                  ))
+                )
               }
               chips={switchChips}
               onRemove={removeChip}
@@ -2374,6 +2592,13 @@ export function ChatInput({
           ) : undefined
         }
         textarea={{
+          ...(resizableDraft
+            ? {
+                style: { maxHeight: "none" },
+                "aria-keyshortcuts": "Alt+Shift+ArrowUp Alt+Shift+ArrowDown",
+                "aria-description": S.chat.resizeDraft,
+              }
+            : {}),
           ref: textareaRef,
           value: text,
           autoFocus,
@@ -2398,17 +2623,21 @@ export function ChatInput({
           onKeyDown,
           onPaste,
           placeholder:
-            running && followUpMode
+            running && interruptMode
               ? narrow
-                ? S.chat.followUpPlaceholderShort
-                : S.chat.followUpPlaceholder
-              : running && onSteer
+                ? S.chat.interruptPlaceholderShort
+                : S.chat.interruptPlaceholder
+              : running && followUpMode
                 ? narrow
-                  ? S.chat.steerPlaceholderShort
-                  : S.chat.steerPlaceholder
-                : narrow
-                  ? S.chat.inputPlaceholderShort
-                  : S.chat.inputPlaceholder,
+                  ? S.chat.followUpPlaceholderShort
+                  : S.chat.followUpPlaceholder
+                : running && onSteer
+                  ? narrow
+                    ? S.chat.steerPlaceholderShort
+                    : S.chat.steerPlaceholder
+                  : narrow
+                    ? S.chat.inputPlaceholderShort
+                    : S.chat.inputPlaceholder,
         }}
         tools={
           // The three icon buttons — +, permission, skills — sit as one tight cluster: the row's
@@ -2459,6 +2688,50 @@ export function ChatInput({
                     disabled: running || compacting || busy,
                     onSelect: () => toggleGoal(!goalOn),
                   },
+                  // A switch holds for the messages that follow, so it stays reachable mid-run.
+                  ...(switches?.modes ?? []).map((mode) => ({
+                    key: `switch:${mode.name}`,
+                    // Drawn like the entries above, whose path glyphs the menu sets in the
+                    // muted subtle ink at the inline size: a plugin's mark takes the same.
+                    icon: (
+                      <SkillIcon
+                        icon={mode.icon}
+                        fallback={ICONS.fishHook}
+                        size={ICON_SIZE.inlineGlyph}
+                        className="text-fg-subtle"
+                      />
+                    ),
+                    label: mode.title,
+                    desc: mode.description,
+                    active: switches?.on.includes(mode.name) === true,
+                    disabled: goalOn,
+                    onSelect: () => flipSwitch(mode.name),
+                  })),
+                  // The composer modes the Agent lacks, greyed, each picked to install it.
+                  ...(switches?.install !== undefined ? (switches.offers ?? []) : []).map(
+                    (mode) => ({
+                      key: `offer:${mode.name}`,
+                      icon: (
+                        <SkillIcon
+                          icon={mode.icon}
+                          fallback={ICONS.fishHook}
+                          size={ICON_SIZE.inlineGlyph}
+                          className="text-fg-subtle"
+                        />
+                      ),
+                      label: mode.title,
+                      desc: mode.description,
+                      active: false,
+                      offer: true,
+                      trailing: mode.installing ? (
+                        S.chat.switchInstalling
+                      ) : (
+                        <span className="text-link">{S.chat.switchInstall}</span>
+                      ),
+                      disabled: goalOn || mode.installing,
+                      onSelect: () => installSwitch(mode.name),
+                    }),
+                  ),
                 ]}
                 footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
                 direction={models && onChangeModel ? "down" : "up"}
@@ -2485,8 +2758,10 @@ export function ChatInput({
         // Help text: shown only when the card is wide enough; it never competes for space on
         // phones, where the group scrolls instead.
         hint={S.chat.slashHint}
+        // While a dictation runs, its strip (cancel, time, level) stands in for the tools and the
+        // hint; the right group keeps every control, so Send stays where it was.
+        strip={dictation.strip}
         actions={
-          // Right group: status + model + the single action button; never shrinks.
           <>
             {/* Draft state (model still changeable = no session created yet) has no context usage to speak of: the ring isn't shown, it displays as usual once the session is created. */}
             {!onChangeModel && (
@@ -2533,6 +2808,8 @@ export function ChatInput({
                 {...(defaultModel !== undefined ? { defaultModel } : {})}
                 onChange={onChangeModel}
                 disabled={busy}
+                // A draft in a Project with no default model starts with none chosen.
+                emptyLabel={S.chat.chooseModel}
               />
             ) : models && onPickSessionModel && variant === "session" ? (
               <ModelCatalogSelect
@@ -2566,10 +2843,13 @@ export function ChatInput({
               channel is open then, so the alternative was a permanently disabled Send sitting
               where the only available action belonged. Idle keeps the ordinary send button.
               Merging the pair keeps the running-state row within a 320px viewport. */}
+            {/* The record button keeps this slot for the whole dictation, and Send holds still
+                  beside it, disabled until the text is in the draft. */}
+            {dictation.trigger}
             <SendButton
               action={stopAction ? "stop" : "send"}
               label={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
-              disabled={running ? !canMidRunSend : !canSend}
+              disabled={(!stopAction && dictation.active) || (running ? !canMidRunSend : !canSend)}
               onClick={() => (stopAction ? void onStop() : void send())}
             />
           </>

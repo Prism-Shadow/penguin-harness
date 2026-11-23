@@ -35,7 +35,12 @@
  * Task records (`task_begin` / `task_end`) are skipped outright, before anything else looks at
  * a message: Tasks are still derived from user prompts here, and skipping keeps every cut,
  * count and timing exactly what it is on a Trace written before the records existed — the
- * cached prefix records stay valid, so CACHE_VERSION is unchanged by them.
+ * cached prefix records stay valid, so CACHE_VERSION is unchanged by them. So is it by the
+ * in-session switch's Trace handoff, which counts like a summary: no shard written before it
+ * existed holds a `[model_switch_from]` block naming its own Session (a `/model` block names
+ * the Session it came from), so no cached record changes. A `session_update` is metadata like
+ * `session_meta`: no item, no Task, no timing. Version 5 has it so: a harness that predates the
+ * record cached a shard holding one (after a downgrade) as an event that advances the open Task.
  *
  * Scan state is carried across shards (a Task can span a rotation). Cached per-shard
  * prefix records (trace_files.page_stats) persist the carry so old shards are read at
@@ -45,38 +50,14 @@ import { isTaskRecord, parseUserSteeringText } from "@prismshadow/penguin-core";
 import {
   parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
+  parseInPlaceModelSwitch,
   parseModelSwitchMessage,
 } from "@prismshadow/amsp/markers";
 import type { AmspRecord } from "@prismshadow/penguin-core";
+import type { MessageCursor, WindowPriorStats } from "@prismshadow/penguin-library-trace";
 
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
-export const CACHE_VERSION = 4;
-
-/** Cumulative totals at a point in the trace (all values are "before this point"). */
-export interface WindowPriorStats {
-  /** Outline entries opened before this point (the Web outline's global numbering offset). */
-  turns: number;
-  /** Sum of subagent token_usage request totals (all descendant sessions) before this point. */
-  subagentTokens: number;
-  /** Sum of finished Tasks' elapsed time before this point (the Web's sessionElapsedMs basis). */
-  elapsedMs: number;
-  /**
-   * Sum of finished Tasks' model-API time before this point (the Web's sessionLlmMs basis):
-   * paired request spans with the human approval wait deducted, compaction requests excluded —
-   * the same scope `elapsedMs` uses, so the component and its total cover the same turns.
-   */
-  apiMs: number;
-  /**
-   * Sum of finished Tasks' tool wall time before this point (the Web's sessionToolMs basis):
-   * per Task the union of its tool execution intervals, so parallel tools count once. Overlaps
-   * `apiMs` when a tool runs on while the model decodes; the two never partition `elapsedMs`.
-   */
-  toolMs: number;
-  /** The last main-session token_usage `session.total` seen before this point (0 = none). */
-  sessionTokens: number;
-  /** The last main-session NON-compaction token_usage `request.total` before this point (context occupancy basis). */
-  contextTokens: number;
-}
+export const CACHE_VERSION = 5;
 
 /** Open-Task bookkeeping carried across messages (mirrors StreamModel.task* fields). */
 interface TaskCarry {
@@ -308,6 +289,11 @@ export async function scanMessages(
   fromOrdinal = 0,
   toOrdinal = messages.length,
 ): Promise<void> {
+  // The Session the shard belongs to, as its head names it (an in-session switch's handoff
+  // names the Session itself).
+  const sessionId = (
+    messages.find((m) => m.type === "session_meta")?.payload as { session_id?: string } | undefined
+  )?.session_id;
   for (let i = fromOrdinal; i < toOrdinal; i++) {
     const msg = messages[i]!;
     // Shards never contain origin-carrying messages (core's Writer filters them);
@@ -321,6 +307,9 @@ export async function scanMessages(
     // closes the steering-images window (session_meta and events included).
     const isUserImage = msg.type === "model_msg" && p.type === "image_url";
     if (!isUserImage) state.steeringOpen = false;
+    // A completed switch's session_update counts like session_meta: no item (the Web draws its
+    // marker, as it does for a meta naming another model), no Task, no timing.
+    if (msg.type === "event_msg" && p.type === "session_update") continue;
 
     if (msg.type === "model_msg") {
       // Compaction-internal model messages: never rendered, never counted (stream-model
@@ -331,8 +320,14 @@ export async function scanMessages(
       }
       if (p.type === "text" && p.role === "user" && typeof p.text === "string") {
         const text = p.text;
-        // Compaction-summary injection: no item, no Task, no run change.
-        if (text.startsWith("[context_summary]") || text.startsWith("<context_summary>")) {
+        // Compaction-summary injection, or the Trace handoff an in-session model switch opens
+        // the next context with in its place: no item, no Task, no run change (the Web folds the
+        // handoff into the switch's marker).
+        if (
+          text.startsWith("[context_summary]") ||
+          text.startsWith("<context_summary>") ||
+          parseInPlaceModelSwitch(text, sessionId) !== null
+        ) {
           touchTask(state, ms);
           continue;
         }
@@ -539,10 +534,6 @@ export function finalizeScan(state: ScanState): void {
 // ---------------------------------------------------------------------------
 
 /** A window cursor: shard file index + message ordinal within that shard's parsed array. */
-export interface MessageCursor {
-  fileIndex: number;
-  ordinal: number;
-}
 
 /**
  * `<fileIndex>:<ordinal>` — stable across requests and compaction: rotation always

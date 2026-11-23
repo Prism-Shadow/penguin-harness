@@ -1,44 +1,104 @@
 /**
  * 公开站点: what the landing page and the docs share from `@prismshadow/penguin-ui/site` — the
- * footer in both shapes, the code card and the copy button's looks, the category pills, an
+ * navigation bar's More menu and the bar's pages as the phone menu lists them, the footer in both
+ * shapes, the code card and the copy button's looks, the category pills, the data pages' controls
+ * (back link, view switch, toolbar menu buttons, data table), the plugin market's cover card
+ * with its cards / list switch, selected carousel and product hero (the showcase family, as
+ * `/plugins` renders it), an
  * article in the shared prose with its contents beside it, the docs sidebar, the search dialog
  * and the external-link confirmation. The site's own palette (site.css), not the theme under
  * test: a public page looks the same whatever the gallery previews.
  */
 import { useCallback, useMemo, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import {
+  Cover,
+  CoverCard,
+  ProductHero,
+  ShowcaseCarousel,
+  ShowcaseGrid,
+  ShowcaseLayoutToggle,
   extractToc,
   highlightSiteCode,
+  ImageIcon,
   SITE_DOC_REMARK_PLUGINS,
   SiteCodeCard,
   SiteCopyButton,
   SiteExternalLink,
   SiteExternalLinkScope,
+  SiteBackLink,
   SiteFooter,
+  isSiteLinkGroup,
+  SiteGlyph,
   SiteMarkdown,
+  SiteMenuButton,
+  SiteMenuCheck,
+  SITE_PAGES,
+  SiteNavLinks,
+  siteNavLinks,
+  SiteNavMenu,
   SitePill,
+  SiteSegmented,
   SiteSearchButton,
   SiteSearchDialog,
   SiteSidebarNav,
   SiteToc,
   currentSearchShortcutLabel,
   useActiveTocEntry,
+  useShowcaseLayout,
 } from "@prismshadow/penguin-ui/site";
 import type {
+  SiteLinkOverride,
   SiteLinkProps,
+  SitePage,
   SitePillTone,
   SiteSearchRange,
   SiteSearchResult,
 } from "@prismshadow/penguin-ui/site";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
+import { ICONS_BY_PLUGIN, LOGO, plugIcon, sampleSlides } from "./showcase-samples";
 
 const PILL_TONES: readonly SitePillTone[] = ["brand", "brand-outline", "teal", "neutral"];
+const VIEWS = ["table", "pareto", "waffle"] as const;
 
 /** Board links go nowhere: the board shows the link, the sites route it. */
 function inertLink(props: SiteLinkProps) {
   return <a {...props} onClick={(event) => event.preventDefault()} />;
 }
+
+const stay = (event: MouseEvent<HTMLElement>) => event.preventDefault();
+
+/** A site's primary action, on its palette: the caller's link, as `/plugins` draws it. */
+function SiteAction({ children }: { children: string }) {
+  return (
+    <a
+      href="#"
+      onClick={stay}
+      className="inline-flex h-9 items-center rounded-lg px-4 text-sm font-medium"
+      style={{ background: "var(--site-ink)", color: "var(--site-canvas)" }}
+    >
+      {children}
+    </a>
+  );
+}
+
+/** A plugin's mark beside its name on the sites: its icon on a small tile, in the muted ink. */
+function SiteLeadTile({ svg }: { svg: string }) {
+  return (
+    <span
+      className="grid size-10 shrink-0 place-items-center rounded-lg border"
+      style={{ borderColor: "var(--site-line)", color: "var(--site-muted)" }}
+    >
+      <ImageIcon icon={plugIcon(svg)} size={22} fallback={null} />
+    </span>
+  );
+}
+
+/** Every page of the bar, inert. */
+const INERT_PAGES = Object.fromEntries(
+  SITE_PAGES.map((id) => [id, { href: "#", render: inertLink }]),
+) as Partial<Record<SitePage, SiteLinkOverride>>;
 
 /** Every case-insensitive occurrence of the query, for the sample results' marks. */
 function matches(text: string, query: string): SiteSearchRange[] {
@@ -55,9 +115,20 @@ function matches(text: string, query: string): SiteSearchRange[] {
 }
 
 export function SiteBoard() {
-  const { S } = useGallery();
+  const { state, S } = useGallery();
   const t = S.library.site;
+  const sc = S.library.showcase;
   const [searchOpen, setSearchOpen] = useState(false);
+  const [view, setView] = useState<(typeof VIEWS)[number]>("table");
+  const [layout, setLayout] = useShowcaseLayout("penguin.gallery.siteShowcaseLayout");
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set([t.dataRows[0]![0]]));
+  const togglePicked = (name: string) =>
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const toc = useMemo(() => extractToc(t.articleBody), [t.articleBody]);
   const { activeId, pinTo } = useActiveTocEntry(toc);
@@ -76,6 +147,13 @@ export function SiteBoard() {
         : [],
     [results],
   );
+  // AMSP is the page being read, so the More entry that holds it reads as current.
+  const navLinks = siteNavLinks({
+    siteRoot: "#",
+    labels: S.sitebar.nav,
+    current: "amsp",
+    overrides: INERT_PAGES,
+  });
   const openSearch = (trigger: HTMLElement) => {
     returnFocusRef.current = trigger;
     setSearchOpen(true);
@@ -83,6 +161,19 @@ export function SiteBoard() {
 
   return (
     <div className="gf-board">
+      <BoardGroup title={t.nav} aside={t.navHint}>
+        {/* The More menu on its own: the bar's row only shows from 1024 px, wider than this
+            board's frame usually is. The phone menu's list shows below that width. */}
+        <div className="site-ui lib-stack lib-stack-wide">
+          <div className="lib-row">
+            {navLinks.filter(isSiteLinkGroup).map((group) => (
+              <SiteNavMenu key={group.id} group={group} />
+            ))}
+          </div>
+          <SiteNavLinks links={navLinks} mobile />
+        </div>
+      </BoardGroup>
+
       <BoardGroup title={t.footer} aside={t.footerHint}>
         <div className="lib-stack lib-stack-wide">
           <SiteFooter
@@ -142,6 +233,141 @@ export function SiteBoard() {
               {t.pillTones[tone]}
             </SitePill>
           ))}
+        </div>
+      </BoardGroup>
+
+      <BoardGroup title={t.dataPage} aside={t.dataPageHint}>
+        <div className="lib-stack">
+          <SiteBackLink href="#" label={t.dataBackLabel} render={inertLink}>
+            {t.dataBack}
+          </SiteBackLink>
+          <div className="flex flex-wrap items-center gap-2">
+            <SiteSegmented
+              role="tablist"
+              label={t.dataViews}
+              options={VIEWS.map((id) => ({ id, label: t.dataViewOptions[id] }))}
+              value={view}
+              onChange={setView}
+            />
+            <SiteMenuButton
+              label={t.dataFilter}
+              icon={<SiteGlyph name="slidersHorizontal" />}
+              count={picked.size}
+            >
+              {t.dataRows.map(([name]) => (
+                <SiteMenuCheck
+                  key={name}
+                  checked={picked.has(name)}
+                  onChange={() => togglePicked(name)}
+                >
+                  {name}
+                </SiteMenuCheck>
+              ))}
+            </SiteMenuButton>
+            <SiteMenuButton
+              label={t.dataColumns}
+              icon={<SiteGlyph name="tiles" />}
+              disabled={view !== "table"}
+              hint={t.dataColumnsHint}
+            >
+              {Object.values(t.dataHead).map((name) => (
+                <SiteMenuCheck key={name} checked onChange={() => undefined}>
+                  {name}
+                </SiteMenuCheck>
+              ))}
+            </SiteMenuButton>
+          </div>
+          <table className="site-table max-w-md">
+            <thead>
+              <tr>
+                <th scope="col">{t.dataHead.rank}</th>
+                <th scope="col">{t.dataHead.name}</th>
+                <th scope="col" data-num>
+                  {t.dataHead.score}
+                </th>
+                <th scope="col" data-num>
+                  {t.dataHead.cost}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {t.dataRows.map(([name, score, cost], index) => (
+                <tr key={name}>
+                  <td data-num>{index + 1}</td>
+                  <td>{name}</td>
+                  <td data-num>{score}</td>
+                  <td data-num>{cost}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </BoardGroup>
+
+      <BoardGroup title={t.showcase} aside={t.showcaseHint}>
+        <div className="site-ui lib-stack lib-stack-wide">
+          <ShowcaseCarousel
+            slides={sampleSlides(
+              sc,
+              state.lang,
+              () => <SiteAction>{sc.viewDetails}</SiteAction>,
+              (svg) => <SiteLeadTile svg={svg} />,
+            ).map((slide) => ({ ...slide, href: "#", onOpen: stay }))}
+            label={sc.carouselLabel}
+            eyebrow={sc.eyebrow}
+            labels={sc.carouselLabels}
+          />
+          {/* The site mounts no tooltip layer: the switch's words show as native titles. */}
+          <ShowcaseLayoutToggle
+            className="justify-self-end"
+            nativeTooltips
+            value={layout}
+            onChange={setLayout}
+            labels={{ group: sc.layoutLabel, cards: sc.cardView, list: sc.listView }}
+          />
+          <ShowcaseGrid layout={layout} data-testid="site-market-grid">
+            <CoverCard
+              href="#"
+              onOpen={stay}
+              cover={
+                <Cover
+                  seed="penguin-support"
+                  hue="teal"
+                  icon={plugIcon(ICONS_BY_PLUGIN.support)}
+                  logo={LOGO}
+                />
+              }
+              title={sc.fullTitle}
+              description={sc.fullDescription}
+              tags={[
+                <SitePill key="selected" tone="brand">
+                  {sc.tagSelected}
+                </SitePill>,
+                <SitePill key="category" tone="neutral">
+                  {sc.tagCategory}
+                </SitePill>,
+              ]}
+              meta="v0.2.18"
+            />
+          </ShowcaseGrid>
+          <ProductHero
+            level={2}
+            cover={
+              <Cover
+                rendition="full"
+                seed="penguin-support"
+                hue="teal"
+                icon={plugIcon(ICONS_BY_PLUGIN.support)}
+                logo={LOGO}
+              />
+            }
+            lead={<SiteLeadTile svg={ICONS_BY_PLUGIN.support} />}
+            eyebrow={sc.eyebrow}
+            title={sc.fullTitle}
+            subtitleCode="@penguinharness/penguin-support"
+            tagline={sc.fullDescription}
+            actions={<SiteAction>{sc.quickStart}</SiteAction>}
+          />
         </div>
       </BoardGroup>
 

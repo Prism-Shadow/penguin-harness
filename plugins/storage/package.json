@@ -1,0 +1,73 @@
+{
+  "name": "@penguinharness/storage",
+  "version": "0.2.19",
+  "type": "module",
+  "description": "See what the data root holds — by category, per Project and Agent — and clean what can be regenerated: orphan scratchpads, temporary Workspaces and tool environments, each after a review. Settings › Storage in the app, penguin storage in the shell, and a Skill that lets an agent tell the user what takes space.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills",
+    "storage"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/storage"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    },
+    "./types": "./src/types.ts",
+    "./web": "./src/web/index.ts",
+    "./cli": "./src/cli/index.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/index.js",
+    "skills",
+    "icon.svg",
+    "ifaces.json",
+    "cli-ifaces.json",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.server.json --sources src --out ifaces.json && node ../../scripts/gen-ifaces.mjs --project tsconfig.cli.json --sources src/cli --out cli-ifaces.json && tsup"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-cli": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-library-project": "workspace:*",
+    "@prismshadow/penguin-library-session": "workspace:*",
+    "@prismshadow/penguin-library-trace": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web-plugin": "workspace:*",
+    "@prismshadow/skills": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "commander": "^13.0.0",
+    "hono": "^4.13.11",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.12",
+    "zustand": "^5.0.15"
+  }
+}

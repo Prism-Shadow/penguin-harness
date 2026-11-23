@@ -31,8 +31,8 @@
  *   chrome used to stop fitting below ~412px;
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
  * - the collapsed rail shows, in product-specified order, last conversation / new chat /
- *   Agents / Models / Plugins / Cost Center / Evaluation Center (the user is a member, so no
- *   Machines), each labeled by a localized (en + zh) styled tooltip on hover and by no native
+ *   Agents / App Center (the system apps open from the App Center, which stays lit on their
+ *   pages), each labeled by a localized (en + zh) styled tooltip on hover and by no native
  *   `title` (two tooltips would stack); "last conversation" targets the most recently active
  *   non-archived session and is disabled while none exists; expanding from the rail restores
  *   the pinned sidebar;
@@ -495,40 +495,31 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  // --- No sessions yet: the rail renders all 7 entries, "last conversation" disabled ---
+  // --- No sessions yet: the rail renders all 4 entries, "last conversation" disabled ---
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`${BASE}/chat`);
   await page.getByRole("button", { name: "Collapse sidebar" }).click();
   const rail = page.locator("aside nav");
   const entries = rail.locator("a, button");
-  await expect(entries).toHaveCount(7);
+  await expect(entries).toHaveCount(4);
   await expect(rail.getByRole("button", { name: "Last conversation" })).toBeDisabled();
 
   // --- Order and tooltips (en): aria-label defines the order, and the styled tooltip shows the
   // same copy on hover. Traces has no rail entry — the Trace panel lives in the chat toolbar's
   // panel switcher. ---
-  const EN = [
-    "Last conversation",
-    "New chat",
-    "Agents",
-    "Models",
-    "Plugins",
-    "Cost Center",
-    "Evaluation Center",
-  ];
+  const EN = ["Last conversation", "New chat", "Agents", "App Center"];
   const attrs = (name) =>
     entries.evaluateAll((els, n) => els.map((el) => el.getAttribute(n)), name);
-  // An entry on a badge trail appends what is waiting (" · …") to its name, and Models does
-  // here: replacing the Project's model table above leaves presets to sync. The order is
-  // about the names.
+  // An entry on a badge trail appends what is waiting (" · …") to its name. The order is about
+  // the names.
   const names = async () => (await attrs("aria-label")).map((label) => label.split(" · ")[0]);
   expect(await names(), "rail order (en)").toEqual(EN);
   // No native title anywhere on the rail: it would open a second, slower tooltip under the
   // styled one, which is the whole reason the styled one exists.
   expect(await attrs("title"), "rail carries no native tooltips (en)").toEqual(EN.map(() => null));
   const tooltip = page.getByTestId("tooltip");
-  await rail.getByRole("link", { name: "Models" }).hover();
-  await expect(tooltip, "rail tooltip (en)").toHaveText(/^Models/);
+  await rail.getByRole("link", { name: "App Center" }).hover();
+  await expect(tooltip, "rail tooltip (en)").toHaveText(/^App Center/);
   await rail.getByRole("button", { name: "Last conversation" }).hover();
   await expect(tooltip, "rail tooltip follows the pointer (en)").toHaveText("Last conversation");
 
@@ -578,20 +569,24 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
     ACTIVE_FILL,
   );
 
-  // --- Page entries navigate and highlight like the pinned nav ---
-  await rail.getByRole("link", { name: "Plugins" }).click();
+  // --- Page entries navigate and highlight like the pinned nav; the App Center stays lit on a
+  // system app it opened ---
+  await rail.getByRole("link", { name: "App Center" }).click();
+  await expect(page).toHaveURL(`${BASE}/apps`);
+  await expect(rail.getByRole("link", { name: "App Center" })).toHaveClass(ACTIVE_FILL);
+  await page.locator('li[data-app="system_agent/plugins"] > button').click();
   await expect(page).toHaveURL(`${BASE}/plugins`);
-  await expect(rail.getByRole("link", { name: "Plugins" })).toHaveClass(ACTIVE_FILL);
+  await expect(rail.getByRole("link", { name: "App Center" })).toHaveClass(ACTIVE_FILL);
 
   // --- zh: tooltips follow the product-specified wording ---
   await setAccountPrefs(page.request, { lang: "zh" });
   await page.reload();
-  await expect(entries).toHaveCount(7);
-  const ZH = ["最近一次对话", "新建对话", "智能体", "模型库", "插件市场", "成本中心", "评估中心"];
+  await expect(entries).toHaveCount(4);
+  const ZH = ["最近一次对话", "新建对话", "智能体", "应用中心"];
   expect(await names(), "rail order (zh)").toEqual(ZH);
   expect(await attrs("title"), "rail carries no native tooltips (zh)").toEqual(ZH.map(() => null));
-  await rail.getByRole("link", { name: "模型库" }).hover();
-  await expect(page.getByTestId("tooltip"), "rail tooltip (zh)").toHaveText(/^模型库/);
+  await rail.getByRole("link", { name: "应用中心" }).hover();
+  await expect(page.getByTestId("tooltip"), "rail tooltip (zh)").toHaveText(/^应用中心/);
 
   // --- Expand: the rail's top button (localized) restores the pinned sidebar ---
   await page.getByRole("button", { name: "展开侧栏" }).click();
@@ -630,7 +625,7 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  const panel = page.locator("div.anim-pop.z-40");
+  const panel = page.locator("div.anim-pop.z-menu");
   /** Assert the one open menu panel and the page itself stay inside the viewport. */
   const checkPanel = async (name) => {
     await expect(panel, `${name}: menu open`).toHaveCount(1);

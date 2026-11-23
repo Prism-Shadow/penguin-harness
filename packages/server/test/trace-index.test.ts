@@ -36,7 +36,7 @@ async function backdate(...paths: string[]): Promise<void> {
 }
 
 function tracesRoot(root: string): string {
-  return path.join(root, P, "agents", A, "traces");
+  return path.join(root, "projects", P, "agents", A, "traces");
 }
 
 function meta(sessionId: string, over: Partial<SessionMetaPayload> = {}): SessionMetaPayload {
@@ -235,7 +235,7 @@ describe("trace-index", () => {
     await h.traceIndex.reconcileAgent(P, A);
     expect(h.traceIndex.repo.listFilesBySession(P, A, S1)).toHaveLength(2);
 
-    const dir = path.join(root, P, "agents", A, "traces", "2026-07-05");
+    const dir = path.join(root, "projects", P, "agents", A, "traces", "2026-07-05");
     await fs.rm(path.join(dir, `${S1}_002.jsonl`));
     await h.traceIndex.reconcileAgent(P, A); // the dir's mtime moved: rescanned
     expect(h.traceIndex.repo.listFilesBySession(P, A, S1).map((r) => r.fileIndex)).toEqual([1]);

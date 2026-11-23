@@ -20,29 +20,38 @@
  *
  * Task records (`task_begin` / `task_end`) are events and take no part in this attribution.
  *
- * Determination order: first check file-level compaction closure; then evaluate turn by turn
- * (completed turns go to history, others are dropped wholesale while keeping outputs paired with
- * already-committed tool_calls — a turn whose provider rejected an image gives its input back
- * with every image replaced by the note the engine resent it with); finally, the remaining
- * input is the carry-over, with pairing backfill applied.
+ * Determination order: first check whether the file's context is closed — by a completed
+ * compaction, or by a model switch whose `session_update` is still pending (see
+ * context-state.ts in @prismshadow/amsp/records); then evaluate turn by turn (completed turns go
+ * to history, others are dropped wholesale while keeping outputs paired with already-committed
+ * tool_calls — a turn whose provider rejected an image gives its input back with every image
+ * replaced by the note the engine resent it with); finally, the remaining input is the
+ * carry-over, with pairing backfill applied. A file closed by a pending switch alone is replayed
+ * turn by turn first, and its result is then turned into a closed one.
  * Docs: /docs/sessions-and-traces § "Session recovery".
  */
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  closingCompaction,
   emptyTokenCounts,
   isCompleteModelMessage,
   isEventMessage,
   isSessionMeta,
-  lastNonTaskRecord,
+  pendingModel,
   toolCallOutput,
+  updatedModel,
   userText,
 } from "@prismshadow/amsp/records";
+import {
+  buildCompactionHandoff,
+  closingSpan,
+  lastCompletedReply,
+} from "../engine/compaction-carry.js";
 import { replaceInputImages } from "../engine/rejected-images.js";
 import type {
   CompactionBeginPayload,
-  CompactionEndPayload,
   CompactionMode,
   CompactionReason,
   CompleteModelMessage,
@@ -56,8 +65,10 @@ import type {
 } from "@prismshadow/amsp/records";
 import {
   buildContextSummaryText,
+  buildModelSwitchMessage,
   extractSummary,
   MARKER_TAGS,
+  parseInPlaceModelSwitch,
   startsWithMarker,
 } from "@prismshadow/amsp/markers";
 
@@ -71,14 +82,25 @@ export interface ResumeResult {
    * (synthesized carry-over is never written to Trace) and are resynthesized on each resume.
    */
   carryOver: AmspRecord[];
-  /** Compaction closure (file-level): this file's context is fully closed; resume starts a new, empty context. */
-  contextClosed: boolean;
-  /** Compaction closure in summarize mode: the reconstructed `[context_summary]` summary, prepended to the next run's input. */
-  pendingSummary?: AmspRecord;
   /**
-   * The `[context_summary]` this file's context opened with, while no turn has completed on
-   * it: its first pending input (so it is in `carryOver` too). A model switch away from such
-   * a context writes it at the head of the next file (see ContextEngine's `openingSummary`).
+   * This file's context is closed (file-level) — by a completed compaction, or by a model switch
+   * whose `session_update` is still pending: resume starts a new, empty context.
+   */
+  contextClosed: boolean;
+  /**
+   * The text the next context opens with when this file's context is closed, prepended to the
+   * next run's input: the `[context_summary]` (or the hand-off note) rebuilt from the closing
+   * compaction; for a pending switch with no compaction, the `[model_switch_from]` handoff
+   * regenerated from this file, or the text this context itself opened with.
+   */
+  pendingSummary?: AmspRecord;
+  /** The model the next context opens on, when a completed switch's session_update is still pending in this file. */
+  pendingModel?: { provider: string; model_id: string };
+  /**
+   * The `[context_summary]` this file's context opened with — or the `[model_switch_from]`
+   * handoff a model switch opened it with instead — while no turn has completed on it: its
+   * first pending input (so it is in `carryOver` too). A model switch away from such a context
+   * writes it at the head of the next file (see ContextEngine's `openingSummary`).
    */
   openingSummary?: AmspRecord;
   /** Session-level cumulative Token carry-over (the session value from the last token_usage). */
@@ -271,21 +293,31 @@ function isRequestEnd(msg: AmspRecord): msg is AmspRecord<RequestEndPayload> {
   return isEventMessage(msg) && (msg.payload as { type?: string }).type === "request_end";
 }
 
-function isCompactionEnd(msg: AmspRecord): msg is AmspRecord<CompactionEndPayload> {
-  return isEventMessage(msg) && (msg.payload as { type?: string }).type === "compaction_end";
+/** A user-side complete model message: what a run sends as input. */
+function isUserInput(msg: AmspRecord): boolean {
+  return isCompleteModelMessage(msg) && (msg.payload as { role?: string }).role === "user";
+}
+
+/** Text alone: what a model switch carries to the next context (see ContextEngine's switchCarry). */
+function isText(msg: AmspRecord): boolean {
+  return (msg.payload as { type?: string }).type === "text";
 }
 
 /**
- * Whether the message is a `[context_summary]` user text: the first input of a context a
- * summarize compaction opened. Read off the text because no field marks the record (see the
- * markers module's consumption boundary for why that is safe here).
+ * Whether the message is the text a context opened with: a `[context_summary]` user text (the
+ * first input of a context a summarize compaction opened), or a user text that is one whole
+ * `[model_switch_from]` block naming `sessionId`, the file's own Session (the handoff a model
+ * switch opened it with when it could not summarize — a `/model` conversation's first message
+ * names the Session it came from, and is the user's Prompt). Read off the text because no field
+ * marks the record (see the markers module's consumption boundary for why that is safe here).
  */
-function isContextSummary(msg: AmspRecord): boolean {
+function isOpeningText(msg: AmspRecord, sessionId: string | undefined): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: string };
+  if (p.type !== "text" || p.role !== "user") return false;
+  const text = p.text ?? "";
   return (
-    p.type === "text" &&
-    p.role === "user" &&
-    startsWithMarker(p.text ?? "", MARKER_TAGS.contextSummary)
+    startsWithMarker(text, MARKER_TAGS.contextSummary) ||
+    parseInPlaceModelSwitch(text, sessionId) !== null
   );
 }
 
@@ -294,50 +326,83 @@ function toolCallOutputId(msg: AmspRecord): string | null {
   return p.type === "tool_call_output" ? (p.tool_call_id ?? null) : null;
 }
 
+export interface ResumeTraceOptions {
+  /** Absolute path of the file `messages` were read from, which the rebuilt opening names. */
+  tracePath?: string;
+  /** The hand-off note's template in force at resume (see CompactionSettings.handoffNote). */
+  handoffNote?: string;
+}
+
 /**
  * Replay a Trace file (the current context), reconstructing history and carry-over input.
  * Input is the message sequence parsed by `readTraceTolerant`.
  */
-export function resumeTrace(messages: AmspRecord[]): ResumeResult {
+export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {}): ResumeResult {
   const meta = (messages.find(isSessionMeta) as SessionMetaMessage | undefined) ?? null;
   const sessionTokens = lastSessionTokens(messages);
   const lastRequestTotal = lastRequestTotalOf(messages);
 
-  // —— First check the file-level case: compaction closure (the file ends with a completed
-  // compaction stop and no new file was opened, i.e. it's still the latest index at resume time)
-  // — this file's context is fully closed, so the whole file is not replayed. Task records
-  // after the compaction_end do not count: they never open the next file, so a Task that ended
-  // on the compaction (and the next one's task_begin) leaves them in this one, and a restart
-  // there must still find the summary (see task-records.ts in @prismshadow/amsp/records).
-  const last = lastNonTaskRecord(messages);
-  if (last && isCompactionEnd(last)) {
-    const p = last.payload;
-    if (p.status === "completed") {
-      const result: ResumeResult = {
-        history: [],
-        carryOver: [],
-        contextClosed: true,
-        sessionTokens,
-        lastRequestTotal: 0, // new context has no usage yet
-        sessionTurns: 0, // turn count resets after compaction completes
-        renderMessages: [],
-        meta,
-      };
-      if (p.mode !== "summarize") return result;
-      // Reconstruct the summary from the compaction request's output (the assistant text of
-      // the last completed Request). Always rebuilt in the current [context_summary] form —
-      // extractSummary itself still accepts the old <summary> tags an old Trace may contain.
-      const summaryText = extractSummary(lastCompletedRequestText(messages));
+  // —— First check the file-level case: the context is closed (spec replay rule 1) — by a
+  // completed compaction (its last compaction_end is `completed` and no request_begin follows),
+  // by a model switch whose session_update is still pending (no request_begin after it), or
+  // both. Either way the next file was never opened and the whole file is not replayed. What
+  // the Session alone writes behind the closing point never opens the next file and does not
+  // reopen it: Task records, a stop hook's record, the session_update, and the input of a
+  // first run stopped during its MCP connect (see context-state.ts in @prismshadow/amsp/records).
+  // The compaction decides the opening; the pending switch decides the model.
+  const switched = pendingModel(messages);
+  const switchAt = switched === undefined ? -1 : lastModelUpdate(messages);
+  /** User-side input behind index `from`: text alone before the pending switch, as is after it. */
+  const inputBehind = (from: number): AmspRecord[] =>
+    messages
+      .slice(from + 1)
+      .map((msg, i) => ({ msg, at: from + 1 + i }))
+      .filter(({ msg }) => isUserInput(msg))
+      .filter(({ msg, at }) => (at < switchAt ? isText(msg) : toolCallOutputId(msg) === null))
+      .map(({ msg }) => msg);
+  const closed = (carryOver: AmspRecord[], opening: AmspRecord | undefined): ResumeResult => ({
+    history: [],
+    carryOver,
+    contextClosed: true,
+    ...(opening !== undefined ? { pendingSummary: opening } : {}),
+    ...(switched !== undefined ? { pendingModel: switched } : {}),
+    sessionTokens,
+    lastRequestTotal: 0, // new context has no usage yet
+    sessionTurns: 0, // turn count resets when a context closes
+    renderMessages: [],
+    meta,
+  });
+  const closing = closingCompaction(messages);
+  if (closing) {
+    const p = closing.payload;
+    // Input written behind the compaction_end is the next context's own (rule 3 leaves no
+    // tool output: the calls it answered stay with the closed context).
+    const behind = inputBehind(messages.lastIndexOf(closing));
+    if (p.mode !== "summarize") return closed(behind, undefined);
+    // The opening the live engine wrote, rebuilt by the functions it used (compaction-carry).
+    const { tracePath, handoffNote } = opts;
+    if (p.error_code === undefined && p.error_message === undefined) {
+      // A full summary: the text of the span's last completed Request, even an empty one (an
+      // earlier one is a tool round's reply, never the summary). Always rebuilt in the current
+      // [context_summary] form — extractSummary itself still accepts the old <summary> tags an
+      // old Trace may contain.
+      const summaryText = extractSummary(lastCompletedReply(closingSpan(messages)));
       if (summaryText !== "") {
-        result.pendingSummary = userText(buildContextSummaryText(summaryText));
-        return result;
+        return closed(behind, userText(buildContextSummaryText(summaryText, tracePath)));
       }
       // The compaction output extracts to an **empty** summary: only a pre-#83 engine could
-      // have written such a "completed" closure (compaction now fails instead of committing an
-      // empty summary, which would erase the task state). Mirror the current contract: void
-      // the closure and fall through to turn-by-turn replay — the original context this file
-      // still holds is restored, and the committed compaction turn stays in history like any
-      // committed turn.
+      // have written such a "completed" closure (a compaction never adopts an empty
+      // summary, which would erase the task state). Void the closure and fall through to
+      // turn-by-turn replay — the original context this file still holds is restored, and
+      // the committed compaction turn stays in history like any committed turn.
+    } else {
+      // The error pair: the hand-off note, from the template in force at resume (see
+      // CompactionEndPayload). A refused ordinary request's own input is not resent: the note
+      // quotes it.
+      return closed(
+        behind,
+        userText(buildCompactionHandoff(messages, { tracePath, template: handoffNote })),
+      );
     }
   }
 
@@ -429,8 +494,8 @@ export function resumeTrace(messages: AmspRecord[]): ResumeResult {
         }
         // A committed request inside a compaction span enters history as usual (MMSP
         // committed it — e.g. an invalid-summary attempt of a compaction that then failed),
-        // but does not count as a Session turn: in-process only runTurn increments the
-        // counter, never runCompactionRequest.
+        // but does not count as a Session turn: in-process runTurn counts a turn only for a
+        // request outside a compaction span (`span` unset).
         if (!inCompaction) sessionTurns += 1;
         snapshot = [];
         outputs = [];
@@ -511,12 +576,39 @@ export function resumeTrace(messages: AmspRecord[]): ResumeResult {
   }
 
   const opening = sessionTurns === 0 ? pending[0] : undefined;
+  const opensWith = opening !== undefined && isOpeningText(opening, meta?.payload.session_id);
+
+  // —— A pending switch with no compaction closed this context: it is closed all the same (rule
+  // 1), on the model the record names. Its opening is the one the live switch gave the next
+  // context — the `[model_switch_from]` handoff when the context had completed turns (the
+  // model left behind could not be asked for a summary), else the text this context opened
+  // with — and its unanswered input rides on as text alone; what the Session wrote behind the
+  // record stays as it is.
+  if (switched !== undefined) {
+    const behind = new Set(messages.slice(switchAt + 1));
+    const before = pending.filter((m) => !behind.has(m));
+    const after = pending.filter((m) => behind.has(m));
+    let handoff: AmspRecord | undefined;
+    if (sessionTurns > 0 && meta) {
+      handoff = userText(
+        buildModelSwitchMessage({
+          sessionId: meta.payload.session_id,
+          ...(opts.tracePath !== undefined ? { tracePath: opts.tracePath } : {}),
+          workspace: meta.payload.workspace,
+          prevProvider: meta.payload.provider,
+          prevModelId: meta.payload.model_id,
+        }),
+      );
+    } else if (opensWith) handoff = opening;
+    const carried = before.filter((m) => m !== handoff && isText(m));
+    return closed([...carried, ...after], handoff);
+  }
 
   return {
     history,
     carryOver: [...pending, ...pairingBackfill],
     contextClosed: false,
-    ...(opening !== undefined && isContextSummary(opening) ? { openingSummary: opening } : {}),
+    ...(opensWith ? { openingSummary: opening } : {}),
     sessionTokens,
     lastRequestTotal,
     sessionTurns,
@@ -531,6 +623,14 @@ export function resumeTrace(messages: AmspRecord[]): ResumeResult {
         }
       : {}),
   };
+}
+
+/** Index of the file's last session_update that names a model, or -1. */
+function lastModelUpdate(messages: AmspRecord[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (updatedModel(messages[i]!) !== undefined) return i;
+  }
+  return -1;
 }
 
 /** The session cumulative total from the last token_usage (zero if none). */
@@ -553,34 +653,4 @@ function lastRequestTotalOf(messages: AmspRecord[]): number {
     if (p.type === "token_usage" && p.request) return p.request.total;
   }
   return 0;
-}
-
-/** Concatenated assistant text of the last completed Request (on compaction closure, this is the compaction request's output). */
-function lastCompletedRequestText(messages: AmspRecord[]): string {
-  let text = "";
-  let current = "";
-  let inRequest = false;
-  for (const msg of messages) {
-    if (isRequestBegin(msg)) {
-      inRequest = true;
-      current = "";
-      continue;
-    }
-    if (isRequestEnd(msg)) {
-      {
-        // A completed request with empty text still overwrites (we take the text of “the last
-        // completed request”, even if empty) — otherwise a textless compaction output would fall
-        // back to an earlier turn's normal reply and get mistakenly injected as the summary. The
-        // caller treats the resulting empty extract as a void closure (a pre-#83 trace shape)
-        // and replays the original context instead.
-        if (msg.payload.status === "completed") text = current;
-        inRequest = false;
-      }
-      continue;
-    }
-    if (!inRequest || !isCompleteModelMessage(msg)) continue;
-    const p = msg.payload as { type?: string; role?: string; text?: string };
-    if (p.type === "text" && p.role === "assistant" && p.text) current += p.text;
-  }
-  return text;
 }

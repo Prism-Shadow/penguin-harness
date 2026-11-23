@@ -21,6 +21,8 @@ export interface SubagentChipProps {
   name: string;
   /** What the avatar's colour hashes: the agent id, or the session id when none is known. */
   avatarId: string;
+  /** The agent's own picture, when it has one (`AgentAvatar`'s `src`). */
+  avatarSrc?: string | undefined;
   /** A short id after the name (the child session's), telling two runs of one agent apart. */
   tag?: string;
   /** The child is running: the spinner shows. */
@@ -34,6 +36,7 @@ export function SubagentChip({
   label,
   name,
   avatarId,
+  avatarSrc,
   tag,
   running,
   pending,
@@ -47,7 +50,7 @@ export function SubagentChip({
       onClick={onOpen}
       className="flex w-full items-center gap-2 rounded-md border border-line bg-surface-muted px-3 py-2 text-left transition-colors duration-150 hover:bg-line-muted"
     >
-      <AgentAvatar id={avatarId} name={label} size={16} />
+      <AgentAvatar id={avatarId} size={16} src={avatarSrc} />
       <span className="min-w-0 truncate text-xs font-medium text-fg">{label}</span>
       {tag !== undefined && tag !== "" && (
         <span className="shrink-0 font-mono text-xs text-fg-subtle">{tag}</span>

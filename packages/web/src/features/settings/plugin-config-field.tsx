@@ -7,18 +7,12 @@
  * motion.
  */
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
-import {
-  Checkbox,
-  Input,
-  PasswordInput,
-  Select,
-  Textarea,
-  ToggleRow,
-} from "@prismshadow/penguin-ui";
+import { Checkbox, Input, PasswordInput, Select, ToggleRow } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { Locale } from "../../state/locale";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import { ConfigTable } from "./plugin-config-table";
+import { ConfigListEditor } from "./plugin-config-list-editor";
 import type { TableDraft } from "./plugin-config-draft";
 
 export function ConfigField({
@@ -115,17 +109,14 @@ export function ConfigField({
       );
     case "list":
       return (
-        <Textarea
+        <ConfigListEditor
           key={name}
-          label={label}
-          rows={3}
-          {...(hint !== undefined ? { hint } : {})}
-          {...disclosed}
-          {...(error !== undefined ? { error } : {})}
-          value={typeof value === "string" ? (value as string) : ""}
-          placeholder={field.placeholder ?? ""}
+          field={field}
+          value={value}
+          error={error}
           disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
+          locale={locale}
+          onChange={onChange}
         />
       );
     case "boolean": {

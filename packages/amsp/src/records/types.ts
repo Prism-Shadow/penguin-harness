@@ -18,10 +18,12 @@
  * lives in `session_meta`; a context's boundaries in the compaction pair and the file split)
  * and that readers cannot derive it. The PR description says why the existing records could
  * not carry it. The rule itself is stated in the architecture spec's message-format section.
- * Two stated exceptions, both asked for by the owner: `request_begin.thinking_level` (each
+ * Three stated exceptions, all asked for by the owner: `request_begin.thinking_level` (each
  * request's effective level — `session_meta` deliberately omits the level and it can change
- * mid-context, so no existing record carries it), and the `task_begin` / `task_end` pair
- * (where a Task starts and whether it reached its end — see TaskBeginPayload).
+ * mid-context, so no existing record carries it), the `task_begin` / `task_end` pair
+ * (where a Task starts and whether it reached its end — see TaskBeginPayload), and
+ * `session_update` (the model a completed switch left for the next context, which no record
+ * names until that context's file opens — see SessionUpdatePayload).
  *
  * These types are the Trace's vocabulary and AMSP's alike: every Trace line is an AMSP
  * record as it stands. They live in this package, which has no dependency and runs in browsers,
@@ -360,8 +362,10 @@ export type ErrorCode =
   | "malformed" // response failed parsing/validation, or the stream was truncated
   | "output_truncated" // the response stopped at its output cap; retried, never committed
   | "auth" // the provider rejected the credentials
-  | "rejected" // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
-  | "image_rejected" // a provider 4xx on an input holding images, retried with them replaced
+  | "rejected" // the provider refused this request as sent: HTTP 400, 413, 415 or 422
+  | "denied" // the provider will not serve this account or model: any other definitive 4xx
+  // (402 payment, 403 permission, 404 no such model, …; 401 is `auth`; 408/429 are retried)
+  | "image_rejected" // a `rejected` request whose input held images, retried with them replaced
   | "unsupported" // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input" // the input failed to assemble into a request
   // MCP connect failures: a server that could not connect, and a server that was not
@@ -432,12 +436,41 @@ export interface TaskEndPayload {
 }
 
 /**
+ * A Session-level run setting changed: the record lists the new value of each setting that
+ * changed, under the name the setting already has elsewhere. One setting today, the model
+ * reference: `provider` + `model_id` (as in session_meta) name the model the Session's NEXT
+ * context opens on. Written by the Session when an in-session model switch has completed —
+ * after the next context opened, behind the `compaction_end` when there is one — and streamed
+ * once, when written. Never written for a switch that was refused, stopped, or could not open
+ * its context, nor by a Session that has no Trace file yet.
+ *
+ * Like the Task records it is appended to the current file and never opens a new one: it lands
+ * at the end of the file of the context being left. Until a `request_begin` follows it, that
+ * file's context is closed and the next one opens on the model it names (see
+ * context-state.ts); several in a row, the last wins. Readers draw the model marker from it
+ * and leave it out of Task timing. A patch, so a later setting would be one more optional
+ * field; a record carries at least one setting, and the two model fields come together.
+ *
+ * The third stated exception to the closed-vocabulary rule above (owner decision 2026-11-17):
+ * between a completed switch and the next file's `session_meta`, no record names the target,
+ * and the only alternative was to open that file at once. Traces written before it carry
+ * none; readers derive a switch from consecutive `session_meta` records for them.
+ */
+export interface SessionUpdatePayload {
+  type: "session_update";
+  /** The next context's model: the provider group. Present together with `model_id`. */
+  provider?: string;
+  /** The next context's model: the upstream model id. Present together with `provider`. */
+  model_id?: string;
+}
+
+/**
  * Request boundary event: the boundary of one LLM Request, produced **in pairs** by
  * `context_engine` and written to Trace. `request_end`
  * with `status` of `completed` means the turn has been committed by MMSP — this is the
  * mechanical criterion Trace replay (Session resumption) uses to determine whether a turn was
  * committed, and it also gives performance analysis a basis for Request latency and turn counts.
- * A compaction request produces this same event pair too (written to Trace only, not streamed).
+ * A compaction request produces this same event pair too, streamed between the compaction events.
  */
 export interface RequestBeginPayload {
   type: "request_begin";
@@ -464,6 +497,7 @@ export interface RetryDetail extends ErrorInfo {
   // because a failed request never produces an abort event. Not plain `message`: in this
   // protocol "message" means a record. (Traces written before the rename carry the
   // text as `message`; nothing reads that field semantically after the fact.)
+  // The one exception to "only": a `completed` compaction_end (see CompactionEndPayload).
   /**
    * 1-based ordinal of this Request within its retry run — the authoritative retry count
    * the CLI/Web display verbatim. Stamped on every non-completed request_end and on a
@@ -476,7 +510,8 @@ export interface RetryDetail extends ErrorInfo {
    * within the same run (status `retryable` with attempts remaining under the
    * applicable cap). Computed by the same formula as the actual backoff sleep
    * (`reconnectDelayMs`), so the announced wait and the real one cannot drift — except
-   * `image_rejected`, retried at once with the images replaced, which announces 0; the Web App
+   * `image_rejected`, retried at once with the images replaced, which announces 0 (and so does
+   * `rejected`, answered at once by a hand-off to a new context); the Web App
    * renders it as a live countdown to the next attempt. Absent on completed requests and on
    * final failures — a non-completed request_end without `retry_in_ms` is the run's
    * terminal record (no abort event follows: abort marks a user interruption or the turn cap).
@@ -498,15 +533,12 @@ export type CompactionMode = "summarize" | "discard";
 
 /**
  * Compaction boundary event, produced **in pairs** by `context_engine`. Between the pair
- * the stream carries only each attempt's `token_usage` and the summary being written as
- * ordinary `partial_text` fragments (or the complete text when nothing streamed) — the
- * compaction request's other raw messages stay Trace-only. Both `reason` and
- * `mode` are carried on both events, for stateless frontend rendering; `status` uses the
- * shared StopReason vocabulary: `retryable` means "abandoned this time on exhausted
- * retries — the standing trigger makes it up at the next opportunity", while `fatal`
- * means the compaction request died on a failure no retry can fix (credentials, a
- * provider rejection) and needs a config change first. Legacy Traces spell the abandoned
- * case `failed`.
+ * the stream carries each compaction request's `request_begin` / `request_end` and
+ * `token_usage`, its thinking and text (as `partial_*` fragments, or the complete records when
+ * nothing streamed), and each tool call of the span with its approval and output; the
+ * compaction Prompt and the reminders sent after tool rounds stay Trace-only. Both `reason`
+ * and `mode` are carried on both events, for stateless frontend rendering; for `status` see
+ * CompactionEndPayload.
  */
 export interface CompactionBeginPayload {
   type: "compaction_begin";
@@ -520,16 +552,25 @@ export interface CompactionBeginPayload {
 
 /**
  * Inherits the shared RetryDetail block: `attempt` is the final attempt's 1-based ordinal
- * (failed attempts and retries included — stamped by summarize mode), `error_message` is
- * the last failure's detail (present on `retryable` / `fatal` ends), and `retry_in_ms` is
+ * (the span's requests that were not tool rounds, failed attempts and retries included —
+ * stamped by summarize mode; absent when the span made no request, as when a refused ordinary
+ * request is answered by a hand-off), the error pair is the reason the compaction did not get
+ * a full summary or could not finish (`rejected`: the provider refused a request on the
+ * context, the compaction's own or the ordinary one before the span), and `retry_in_ms` is
  * never stamped here (compaction retries are announced on the compaction request's own
- * request_end, which is Trace-only).
+ * request_end).
  */
 export interface CompactionEndPayload extends RetryDetail {
   type: "compaction_end";
   reason: CompactionReason;
   mode: CompactionMode;
-  /** Compaction result; non-`completed` means compaction was abandoned and the original context was kept. */
+  /**
+   * Compaction result. `completed`: the next context is open — with the error pair, it opened
+   * with the harness's Trace hand-off note instead of a full summary. `aborted`: the user
+   * stopped it; `fatal`: the next context could not be opened; both keep the original context.
+   * `retryable` is written only by Session resume, closing a span the process died in. Older
+   * Traces' `retryable`, `fatal` and legacy `failed` all read "abandoned, original context kept".
+   */
   status: StopReason;
 }
 
@@ -661,6 +702,7 @@ export type EventPayload =
   | AbortPayload
   | TaskBeginPayload
   | TaskEndPayload
+  | SessionUpdatePayload
   | RequestBeginPayload
   | RequestEndPayload
   | TokenUsagePayload

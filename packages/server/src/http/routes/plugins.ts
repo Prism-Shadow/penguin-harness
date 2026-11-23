@@ -5,37 +5,49 @@
  *   GET    /api/plugins/:plugin/files                     # the files a library plugin ships, for the detail view's browser
  *   GET    /api/plugins/:plugin/readme                    # a library plugin's README.md, from its package root (404 without one)
  *   GET    /api/plugins/:plugin/archive                   # a library plugin's package as a zip, for another server to import
+ *   GET    /api/plugins/:plugin/icon                      # a library plugin's icon, as an image (http/icon-response.ts)
  *   GET    /api/plugins/registry                          # the merged plugin index: the builtin entries, the published ones, and the server modules an admin installed from a link or a zip
+ *   GET    /api/plugins/registry/icon?name=…              # one listed entry's icon, as an image
  *   GET    /api/plugins/registry/readme?name=…            # one listed entry's long-form readme
  *   GET    /api/plugins/registry/archive?name=…           # one listed package on this server, as a zip
- *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
+ *   GET    /api/projects/:p/agents/:a/plugins             # the Agent's installed parts, and how the library's server modules stand here (any member)
+ *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library, their server modules with them (any member)
+ *   DELETE /api/projects/:p/agents/:a/plugins/:name       # uninstall all of one plugin (owner only)
  *   GET    /api/projects/:p/agents/:a/mcp-servers         # the Agent's MCP servers: target, provenance, what keeps each from connecting (any member)
  *   DELETE /api/projects/:p/agents/:a/mcp-servers/:name   # remove one MCP server entry, whoever added it (any member)
+ * A plugin that also ships server modules brings them along (PRFC-0031, services/plugin-modules.ts):
+ * after the Agent part is written, its modules are listed in this server's own table, or asked of
+ * the administrator — unless `skipModules`, which the Web App sends to a machine whose plugin list
+ * the hub owns. That step can re-assemble the App, so it is the install's last; what answers after
+ * it only reads files and the module statuses, which survive the swap.
+ *
  * Installing a plugin writes each of its skills to agent_state/skills/<name>/, its hook
  * package to agent_state/hooks/<plugin>/ (hooks.json + scripts) and its MCP servers into the
  * Agent's `tools.mcpServers` (each entry carrying the plugin's name); reinstalling overwrites
  * with library content (i.e. an update). A server name the Agent already has from someone else
  * refuses the whole request before anything is written (409 `mcp_server_name_taken`).
  * Installed skills and hook packages keep their own routes (skills.ts, hooks.ts); MCP servers
- * are listed and removed here, one by one — a plugin's uninstall from the Plugins page removes
- * its servers like its skills, and anyone who can edit the Agent's config could already rewrite
- * the whole list.
+ * are listed and removed here, one by one — anyone who can edit the Agent's config could
+ * already rewrite the whole list. Uninstalling a whole plugin is one request that removes
+ * every part on the server (services/plugin-uninstall.ts), so a failure half-way is reported
+ * rather than leaving a page to guess which of its own requests landed.
  *
  * Library and registry are two views of one kind of thing — a package of skills and/or
  * hooks. The library is what this build carries; the registry is what the deployment can
  * fetch. Both are deployment-global (no Project check); only installing touches an Agent.
  *
- * The registry merges two sources: the index embedded in this package (the sandbox backends
- * the workspace ships) and the one published by the index repository. The published document
+ * The registry merges two sources: the index embedded in this package (the workspace's
+ * server-module plugins: the sandbox backends and the market-only ones) and the one published by
+ * the index repository. The published document
  * is cached, a failure to reach it is reported alongside the entries rather than emptying the
  * page, and a listing waits for it only briefly before answering without it — see
  * plugin/registry.ts for the three rules.
  */
 import { Hono } from "hono";
-import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
-import path from "node:path";
 import {
+  agentDir,
+  iconImage,
   McpServerNameTakenError,
   WorkbenchNameTakenError,
   assertPluginWorkbenchesInstallable,
@@ -45,17 +57,15 @@ import {
   listInstalledHooks,
   listInstalledMcpServers,
   listInstalledSkills,
-  libraryPlugin,
-  libraryPluginPackage,
-  libraryPluginReadme,
-  loadPluginGroups,
-  parsePluginPackage,
+  libraryParts,
+  readPackageJson,
   uninstallMcpServer,
 } from "@prismshadow/penguin-core";
-import type { PluginPackageManifest } from "@prismshadow/penguin-core";
+import type { IconImage, NpmPackage } from "@prismshadow/penguin-core";
 import type {
   AgentMcpServersResponse,
   AgentPluginsInstallResponse,
+  PluginUninstallResponse,
   PluginFilesResponse,
   PluginIndexEntry,
   PluginIndexResponse,
@@ -66,7 +76,9 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 import type { Config, Hmr } from "../../hmr/capabilities.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { ModuleActor, PluginModules } from "../../mechanisms/plugins.js";
+import type { Access } from "@prismshadow/penguin-library-project";
+import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
@@ -76,12 +88,20 @@ import {
   builtinPluginRegistry,
   cachedRegistry,
   httpPluginRegistry,
+  pluginProxyMirrors,
   localPluginDisplay,
   mergeIndexes,
   withoutIcon,
-  NIGHTLY_INDEX_URL,
 } from "../../plugin/registry.js";
-import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
+import { indexMirrorRules } from "../../plugin/mirror-settings.js";
+import { offlineArchives, type OfflineArchive } from "../../plugin/offline-archives.js";
+import type {
+  CachedRegistry,
+  IndexDocumentEntry,
+  IndexSnapshot,
+  PluginRegistry,
+} from "../../plugin/registry.js";
+import { IndexSources } from "../../plugin/index-config.js";
 import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
 import type { PluginBase } from "../../plugin/loader.js";
 import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../../plugin/install.js";
@@ -90,6 +110,10 @@ import {
   unscopedName,
   zipPluginPackage,
 } from "../../services/plugin-archive.js";
+import { migrateWorkbenches } from "../../workbenches/migrate.js";
+import type { PluginLibrary } from "../../plugin/library-module.js";
+import { uninstallAgentPlugin } from "../../services/plugin-uninstall.js";
+import { refuseSystemAgentInstall } from "../../services/system-agent.js";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -97,10 +121,18 @@ export interface PluginsRouteDeps {
   access: Access;
   agentConfigService: AgentConfig;
   manager: ManagerIface;
+  library: PluginLibrary;
+  /** An uninstall removes the plugin's workbenches the way a single removal does. */
+  workbenches: Pick<Workbenches, "remove">;
+  /** A plugin's server modules, brought along by an install (PRFC-0031); absent in tests that build these routes alone. */
+  modules?: PluginModules;
 }
-import { HttpError } from "../errors.js";
+import { errorBody, HttpError } from "../errors.js";
+import { iconRef, iconResponse } from "../icon-response.js";
 import { badRequest, optionalStringArray, readJson, requireValidId } from "../validate.js";
 import {
+  agentHookIconRoute,
+  agentSkillIconRoute,
   pluginFiles,
   resolveLibraryPlugins,
   toAgentMcpServerItem,
@@ -124,9 +156,9 @@ async function refusingTakenNames<T>(install: () => Promise<T>): Promise<T> {
 }
 
 /** Library listing: the files are the source of truth — read fresh on every request (small files, infrequent requests, no caching). */
-function libraryResponse(): PluginLibraryResponse {
+function libraryResponse(library: PluginLibrary): PluginLibraryResponse {
   return {
-    groups: loadPluginGroups().map((group) => ({
+    groups: library.groups().map((group) => ({
       id: group.id,
       title: group.title,
       ...(group.titleZh !== undefined ? { titleZh: group.titleZh } : {}),
@@ -136,14 +168,14 @@ function libraryResponse(): PluginLibraryResponse {
 }
 
 /** GET /api/plugins (any logged-in user; no Project check). */
-export function pluginLibraryRoutes(): Hono<AppEnv> {
+export function pluginLibraryRoutes(library: PluginLibrary): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  app.get("/", (c) => c.json(libraryResponse()));
+  app.get("/", (c) => c.json(libraryResponse(library)));
   // Everything one plugin ships, as text keyed by path, for the library detail view's file
   // browser (the listing never carries bodies or scripts).
   app.get("/:plugin/files", (c) => {
     const pluginName = c.req.param("plugin");
-    const plugin = libraryPlugin(pluginName);
+    const plugin = library.get(pluginName);
     if (!plugin) {
       throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${pluginName}`);
     }
@@ -154,7 +186,7 @@ export function pluginLibraryRoutes(): Hono<AppEnv> {
   // install writes into an Agent; a readme is about the package, and none of it is installed.
   app.get("/:plugin/readme", (c) => {
     const pluginName = c.req.param("plugin");
-    const readme = libraryPluginReadme(pluginName);
+    const readme = library.readme(pluginName);
     if (readme === undefined) {
       throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${pluginName}`);
     }
@@ -167,12 +199,22 @@ export function pluginLibraryRoutes(): Hono<AppEnv> {
   // server's admin imports as it is. Any member: it is what the library already shows.
   app.get("/:plugin/archive", async (c) => {
     const pluginName = c.req.param("plugin");
-    const pkg = libraryPluginPackage(pluginName);
+    const pkg = library.packageOf(pluginName);
     if (pkg === undefined) {
       throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${pluginName}`);
     }
     const zip = await zipPluginPackage(pkg.dir, unscopedName(pkg.packageName));
     return pluginArchiveResponse(zip, pkg.packageName, pkg.version);
+  });
+  // The plugin's icon, as the listing names it (`?rev=` is only its cache key). Any member: it is
+  // what the listing already shows.
+  app.get("/:plugin/icon", (c) => {
+    const pluginName = c.req.param("plugin");
+    const plugin = library.get(pluginName);
+    if (!plugin) {
+      throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${pluginName}`);
+    }
+    return iconResponse(plugin.icon);
   });
   return app;
 }
@@ -180,12 +222,21 @@ export function pluginLibraryRoutes(): Hono<AppEnv> {
 /** /api/projects/:p/agents/:a/plugins: install is a Project-member operation. */
 export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+  const actorOf = (c: { var: AppEnv["Variables"] }): ModuleActor => ({
+    userId: c.var.user.userId,
+    isAdmin: c.var.user.isAdmin,
+  });
+  /** How the library's server modules stand here for the Project, when this server knows them. */
+  const modulesOf = async (projectId: string, viewer: ModuleActor) =>
+    deps.modules !== undefined ? { modules: await deps.modules.status(projectId, viewer) } : {};
   app.get("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const root = deps.config.root;
+    // Workbenches in the layout before Agent State are listed from where they move to.
+    await migrateWorkbenches(agentDir(root, projectId, agentId));
     const [skills, hooks, servers, workbenches] = await Promise.all([
       listInstalledSkills(root, projectId, agentId),
       listInstalledHooks(root, projectId, agentId),
@@ -193,10 +244,11 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
       listInstalledWorkbenches(root, projectId, agentId),
     ]);
     return c.json({
-      skills: skills.map(toSkillItem),
-      hooks: hooks.map(toHookItem),
+      skills: skills.map((s) => toSkillItem(s, agentSkillIconRoute(projectId, agentId, s.name))),
+      hooks: hooks.map((h) => toHookItem(h, agentHookIconRoute(projectId, agentId, h.name))),
       mcpServers: servers.map(toAgentMcpServerItem),
       workbenches,
+      ...(await modulesOf(projectId, actorOf(c))),
     } satisfies AgentPluginsInstallResponse);
   });
 
@@ -205,13 +257,19 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
-    const names = optionalStringArray(await readJson(c), "names") ?? [];
+    await refuseSystemAgentInstall(deps.agentConfigService, projectId, agentId);
+    const body = await readJson(c);
+    const names = optionalStringArray(body, "names") ?? [];
     if (names.length === 0) throw badRequest("names must be a non-empty array.");
+    const skipModules = body.skipModules === true;
     // Verify every name up front before writing anything: an unknown name, or an MCP server
     // name the Agent already has from someone else, rejects the whole request rather than
     // leaving a half-installed state.
-    const plugins = resolveLibraryPlugins(names);
+    const plugins = resolveLibraryPlugins(deps.library, names);
     const root = deps.config.root;
+    // Before the install: one that wrote a workbench into Agent State ahead of the move would
+    // take its id, and the Agent's existing folder, data included, would stay in the old place.
+    await migrateWorkbenches(agentDir(root, projectId, agentId));
     await refusingTakenNames(async () => {
       await assertPluginMcpServersInstallable(root, projectId, agentId, plugins);
       await assertPluginWorkbenchesInstallable(root, projectId, agentId, plugins);
@@ -222,6 +280,13 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     // re-reads them on its next idle access, so the plugin works from the next Task. MCP
     // servers, like the rest of system_config.yaml, join at the next model context.
     deps.manager.invalidateAgentRuntimes(projectId, agentId);
+    // LAST of what needs this generation: the server modules may re-assemble the App. What
+    // follows reads files and module statuses only, which survive the swap.
+    const actor = actorOf(c);
+    const moduleActions =
+      deps.modules !== undefined && !skipModules
+        ? await deps.modules.ensure(projectId, names, actor, "install", agentId)
+        : [];
     const [skills, hooks, servers, workbenches] = await Promise.all([
       listInstalledSkills(root, projectId, agentId),
       listInstalledHooks(root, projectId, agentId),
@@ -231,12 +296,44 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     return c.json(
       {
         workbenches,
-        skills: skills.map(toSkillItem),
-        hooks: hooks.map(toHookItem),
+        skills: skills.map((s) => toSkillItem(s, agentSkillIconRoute(projectId, agentId, s.name))),
+        hooks: hooks.map((h) => toHookItem(h, agentHookIconRoute(projectId, agentId, h.name))),
         mcpServers: servers.map(toAgentMcpServerItem),
+        ...(await modulesOf(projectId, actor)),
+        ...(deps.modules !== undefined ? { moduleActions } : {}),
       } satisfies AgentPluginsInstallResponse,
       201,
     );
+  });
+
+  // Owner only, unlike an install: it takes the plugin's workbenches with their data and
+  // history, which is the owner's call like deleting the Agent.
+  app.delete("/:name", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    const name = requireValidId(c, "name");
+    await deps.agentConfigService.requireExists(projectId, agentId);
+    const root = deps.config.root;
+    // Workbenches in the layout before Agent State are found where they move to.
+    await migrateWorkbenches(agentDir(root, projectId, agentId));
+    const result = await uninstallAgentPlugin(
+      { root, library: deps.library, workbenches: deps.workbenches },
+      projectId,
+      agentId,
+      name,
+    );
+    if (result === null) {
+      throw new HttpError(
+        404,
+        "plugin_not_installed",
+        `The agent has no part of plugin ${name} to uninstall.`,
+      );
+    }
+    // Once, for every part: a conversation that is running is rebuilt on its next idle access
+    // without the plugin's hooks, servers and Skills.
+    deps.manager.invalidateAgentRuntimes(projectId, agentId);
+    return c.json(result satisfies PluginUninstallResponse);
   });
 
   return app;
@@ -303,6 +400,9 @@ export class PluginRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly manager!: ManagerIface;
+  @Use() private readonly library!: PluginLibrary;
+  @Use() private readonly workbenches!: Workbenches;
+  @Use() private readonly pluginModules!: PluginModules;
   @Bind("PluginRoutes.library") libraryRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-plugins") pluginRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-hooks") hookRoutes!: Hono<AppEnv>;
@@ -313,8 +413,11 @@ export class PluginRoutes {
       access: this.access,
       agentConfigService: this.agentConfig,
       manager: this.manager,
+      library: this.library,
+      workbenches: this.workbenches,
+      modules: this.pluginModules,
     };
-    this.libraryRoutes = pluginLibraryRoutes();
+    this.libraryRoutes = pluginLibraryRoutes(this.library);
     this.pluginRoutes = agentPluginsRoutes(deps);
     this.hookRoutes = agentHooksRoutes(deps);
     this.mcpServerRoutes = agentMcpServersRoutes(deps);
@@ -323,10 +426,11 @@ export class PluginRoutes {
 
 export interface PluginRoutesOptions {
   /**
-   * The published index to read, or null for builtin entries only (see ServerConfig).
-   * Undefined = unset, which reads the index repository's published document.
+   * The published index sources to read, or null for builtin entries only (see IndexSources).
+   * Read per listing: the sources are the plugin-index settings group, whose document a save
+   * changes without a restart.
    */
-  indexUrl?: string | null;
+  indexUrl?: () => readonly string[];
   /** Where packages are on this machine (plugin/loader.ts's pluginBases): for the builtin readmes, and for every listed package's own display fields (localPluginDisplay). */
   bases?: () => readonly PluginBase[];
   /** Overrides the resolved source list entirely; tests pass registries directly. */
@@ -334,33 +438,34 @@ export interface PluginRoutesOptions {
   fetchImpl?: typeof fetch;
   /** The published index as the previous App last fetched it (see PluginRegistryRoutes.park). */
   seed?: IndexSnapshot | null;
-  /** Receives the published index's cache, so its document can be parked. */
-  onCache?: (cache: CachedRegistry) => void;
+  /** Receives the published index's cache and the URL it reads, so its document can be parked with its source. */
+  onCache?: (cache: CachedRegistry, url: string) => void;
   /** This server's plugin prefix (`<root>/plugins`), whose server modules from a link or a zip the listing adds; none without it. */
   prefix?: () => string | null;
+  /** The offline archives the build carries (plugin/offline-archives.ts): a listed entry with one says so. */
+  offline?: () => readonly OfflineArchive[];
 }
 
 /**
- * The server modules an admin installed from a link or a zip: packages of the prefix carrying
- * an `ifaces.json` that no index lists. Their row is their own package.json's npm fields, read
- * by core's manifest reader; the listing then lets the package describe itself further (its
- * `penguin` block and its icon), as it does every package on this machine. A package.json that
- * will not read lists no row.
+ * The server modules an admin installed from a link or a zip: packages of the prefix that no
+ * index lists and that core's kinds rule reads as server modules (a code entry, and modules its
+ * table lists). Their row is their own package.json's npm fields, read by core's reader; the
+ * listing then lets the package describe itself further (its card and its icon), as it does every
+ * package on this machine. A package.json that will not read lists no row.
  */
 async function prefixEntries(
   prefix: string | null,
   listed: ReadonlySet<string>,
-): Promise<PluginIndexEntry[]> {
+): Promise<IndexDocumentEntry[]> {
   if (prefix === null) return [];
-  const entries: PluginIndexEntry[] = [];
+  const entries: IndexDocumentEntry[] = [];
   for (const name of Object.keys(await prefixDependencies(prefix)).sort()) {
     if (listed.has(name) || !PACKAGE_NAME.test(name)) continue;
     const dir = installedPackageDir(prefix, name);
-    if (!existsSync(path.join(dir, "ifaces.json"))) continue;
-    const file = path.join(dir, "package.json");
-    let manifest: PluginPackageManifest;
+    if (!libraryParts(dir).modules) continue;
+    let manifest: NpmPackage;
     try {
-      manifest = parsePluginPackage(JSON.parse(await fs.readFile(file, "utf8")), file).manifest;
+      manifest = readPackageJson(dir).manifest;
     } catch {
       continue;
     }
@@ -380,8 +485,18 @@ async function prefixEntries(
 
 export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  // Built once per App, so the cache outlives a request rather than being rebuilt per page load.
-  const registries = options.registries ?? resolveRegistries(options);
+  // The sources are read per listing, from the plugin-index settings group; the registries
+  // for the list as last read are kept until the list changes, so the caches (and the park)
+  // outlive a listing that changes nothing and a save rebuilds them without a restart.
+  let current: { urls: string; registries: readonly PluginRegistry[] } | null = null;
+  const registries = (): readonly PluginRegistry[] => {
+    if (options.registries !== undefined) return options.registries;
+    const urls = (options.indexUrl?.() ?? []).join(" ");
+    if (current === null || current.urls !== urls) {
+      current = { urls, registries: resolveRegistries(options) };
+    }
+    return current.registries;
+  };
   const bases = options.bases ?? (() => []);
   const prefix = options.prefix ?? (() => null);
 
@@ -392,24 +507,68 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
    * own join on a later read, once the cache has them.
    */
   const listing = async () => {
-    const { entries, failures, pending } = await mergeIndexes(registries, {
+    const { entries, failures, pending } = await mergeIndexes(registries(), {
       waitForNetwork: false,
     });
     const own = await prefixEntries(prefix(), new Set(entries.map((e) => e.name)));
     return { entries: [...entries, ...own], failures, pending };
   };
 
+  /**
+   * One listed entry as the page reads it. A package on this machine describes itself: its own
+   * card and icon win over what an index row says, so an installed package's card shows its icon
+   * and both languages even where its index row carries neither. The icon is named by the route
+   * below; an index row's own (raw SVG, kept only from the embedded index) is read the way a
+   * package's icon file is, so one that will not do is not named at all.
+   */
+  const described = async (
+    entry: IndexDocumentEntry,
+    here: readonly PluginBase[],
+  ): Promise<{ entry: PluginIndexEntry; icon?: IconImage }> => {
+    const { icon: rowIcon, ...row } = entry;
+    const { icon: ownIcon, ...display } = await localPluginDisplay(entry.name, here, entry);
+    const icon = ownIcon ?? (rowIcon !== undefined ? indexRowIcon(rowIcon) : undefined);
+    const route = `/api/plugins/registry/icon?name=${encodeURIComponent(entry.name)}`;
+    return {
+      entry: { ...row, ...display, ...(icon !== undefined ? { icon: iconRef(route, icon) } : {}) },
+      ...(icon !== undefined ? { icon } : {}),
+    };
+  };
+
   app.get("/", async (c) => {
     const { entries, failures, pending } = await listing();
-    // A package on this machine describes itself: its own package.json `penguin` block and icon
-    // win over what an index row says, so an installed package's card shows its icon and both
-    // languages even where its index row carries neither.
     const here = bases();
-    const plugins = await Promise.all(
-      entries.map(async (entry) => ({ ...entry, ...(await localPluginDisplay(entry.name, here)) })),
-    );
+    // An entry the build carries an offline archive of installs without a registry, and says
+    // what it carries before it is on this server (05 「安装从不卡住」).
+    const archives = options.offline?.() ?? [];
+    const plugins = (await Promise.all(entries.map((entry) => described(entry, here)))).map((d) => {
+      const archive = archives.find((a) => a.name === d.entry.name);
+      return archive === undefined
+        ? d.entry
+        : {
+            ...d.entry,
+            offline: {
+              version: archive.version,
+              library: archive.library,
+              modules: archive.modules,
+            },
+          };
+    });
     const body: PluginIndexResponse = { plugins, failures, pending };
     return c.json(body);
+  });
+  // A listed entry's icon, by the listing's rule: only entries this deployment lists, by a
+  // package name, as for the readme below.
+  app.get("/icon", async (c) => {
+    const name = c.req.query("name");
+    if (name === undefined || name === "") {
+      return c.json(errorBody("bad_request", "name is required"), 400);
+    }
+    const { entries } = await listing();
+    const entry = PACKAGE_NAME.test(name) ? entries.find((e) => e.name === name) : undefined;
+    const icon = entry === undefined ? undefined : (await described(entry, bases())).icon;
+    if (icon === undefined) return c.json(errorBody("not_found", "no such plugin icon"), 404);
+    return iconResponse(icon);
   });
   app.get("/readme", async (c) => {
     const name = c.req.query("name");
@@ -425,7 +584,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     }
     // First source that has one. Only the builtin registry carries readmes today: the shared
     // index format has no readme location, so a remote source has none to offer.
-    for (const registry of registries) {
+    for (const registry of registries()) {
       const readme = await registry.readme(name).catch(() => null);
       if (readme !== null) {
         const body: PluginReadmeResponse = { name, readme };
@@ -467,20 +626,44 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   return app;
 }
 
+/** An index row's raw SVG icon, read like an `icon.svg` file: none when it will not do. */
+function indexRowIcon(svg: string): IconImage | undefined {
+  const checked = iconImage(new TextEncoder().encode(svg), "icon.svg");
+  return "icon" in checked ? checked.icon : undefined;
+}
+
 function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
   const builtin = builtinPluginRegistry(options.bases);
-  // Undefined and null part ways here: a runtime that predates the setting publishes nothing
-  // and gets the default index, while `off` resolves to null and means builtin entries only.
-  const url = options.indexUrl === undefined ? NIGHTLY_INDEX_URL : options.indexUrl;
-  if (url === null) return [builtin];
+  // The sources are read per listing, from the plugin-index settings group: a save changes
+  // the list without a restart. Empty = builtin entries only (the switch off); a single URL
+  // is the one-element list. Each address is its own registry, so the listing reports a down
+  // source by its URL and the merge lets the earlier source win a name. The park carries one
+  // snapshot — the first configured source's, the primary published index — so the seed and
+  // the parking hook ride that one; a further source starts its own cache cold.
+  const urls = options.indexUrl?.() ?? [];
+  if (urls.length === 0) return [builtin];
   // The parked document goes through the remote rule too: it was fetched by a previous App,
-  // which may not have dropped the icons.
+  // which may not have dropped the icons. The park carries one snapshot — the first
+  // configured source's, the primary published index — named by the URL it was fetched
+  // from, and it seeds only that URL's registry: a saved change of the sources must not
+  // hand the old source's entries to the new one. A further source starts its own cache
+  // cold and answers its first fetch like any first page load.
   const seed = options.seed ?? null;
-  const cache = cachedRegistry(httpPluginRegistry(url, { fetchImpl: options.fetchImpl ?? fetch }), {
-    seed: seed === null ? null : { at: seed.at, entries: seed.entries.map(withoutIcon) },
-  });
-  options.onCache?.(cache);
-  return [builtin, cache];
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const mirrors = indexMirrorRules();
+  const remote = urls.map((url, i) =>
+    cachedRegistry(httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], { fetchImpl }), {
+      // Only a snapshot the same URL fetched seeds this registry: a parked document without
+      // its URL (a v1 park, before snapshots named their source) seeds nothing, since which
+      // source it came from is unknown.
+      seed:
+        i === 0 && seed !== null && seed.url === url
+          ? { at: seed.at, entries: seed.entries.map(withoutIcon) }
+          : null,
+    }),
+  );
+  if (remote.length > 0) options.onCache?.(remote[0]!, urls[0]!);
+  return [builtin, ...remote];
 }
 
 /**
@@ -501,31 +684,42 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
     ],
   },
   context: {
-    version: 1,
-    schema: { "index?": { at: "number", entries: "unknown[]" } },
+    version: 2,
+    schema: { "index?": { at: "number", entries: "unknown[]", "url?": "string" } },
   },
 })
 export class PluginRegistryRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly hmr!: Hmr;
+  @Use() private readonly sources!: IndexSources;
   @Bind("PluginRegistryRoutes.routes") routes!: Hono<AppEnv>;
   private cache: CachedRegistry | null = null;
+  private cacheUrl: string | null = null;
+  /** v1 parked without the snapshot's source URL; v2 names it. A v1 snapshot seeds nothing —
+   * which source it came from is unknown, so handing it to a configured source is unsafe. */
+  migrations = { 1: () => null };
   setup(_ctx: ClassCtx, context: Json) {
     const parked = (context as { index?: IndexSnapshot } | null)?.index;
     this.routes = pluginRegistryRoutes({
-      indexUrl: this.config.pluginIndexUrl,
+      indexUrl: () => this.sources.urls(),
       // Read per request: a push moves the shipped prefix to a new assets directory.
       bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
       prefix: () => pluginsPrefix(this.config.root),
+      offline: () => offlineArchives(pluginBases(this.config.root, this.hmr.assetsDir())),
       seed: parked ?? null,
-      onCache: (cache) => {
+      onCache: (cache, url) => {
         this.cache = cache;
+        this.cacheUrl = url;
       },
     });
   }
 
   park(): Json {
     const index = this.cache?.snapshot() ?? null;
-    return index === null ? null : ({ index } as unknown as Json);
+    if (index === null) return null;
+    // The snapshot names the source it was fetched from (cachedRegistry stamps it), so a
+    // successor seeds only the same URL's registry — a saved change of the sources starts
+    // the new one cold.
+    return { index } as unknown as Json;
   }
 }

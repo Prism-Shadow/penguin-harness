@@ -18,7 +18,7 @@
  * Memory tab — owner-only, like the table edits. The prompt teaches the model to manage
  * task files itself; the toggle never stops the server from firing configured tasks.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type {
   ScheduleItem,
   SchedulesResponse,
@@ -30,30 +30,28 @@ import {
   ConfirmModal,
   HelpFold,
   SettingsEmpty,
-  SkeletonList,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeaderCell,
   TableRow,
-  toastError,
+  Waiting,
   toastSuccess,
+  type BadgeStyle,
 } from "@prismshadow/penguin-ui";
-import type { BadgeStyle } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useAgentsOn } from "../../lib/machine-agent-lists";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-import { ScheduleFormModal } from "../schedules/schedule-form-modal";
-import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
-import { toggleBody } from "../schedules/schedule-upsert";
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
+import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "../schedules";
 import { usePromptInjection } from "./prompt-injection-controls";
+import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
 const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {
@@ -90,7 +88,7 @@ export function SchedulesTab({
 
   const [data, setData] = useState<SchedulesResponse | null>(null);
   // Tab-level error is only the initial list load failure; row/edit actions report via toast.
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   // Form dialog: non-null means open (editing that row, or null for a new task).
   const [form, setForm] = useState<{ editing: ScheduleItem | null } | null>(null);
@@ -99,9 +97,10 @@ export function SchedulesTab({
   // Name of the task pending deletion confirmation (non-null shows the confirm modal).
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // A read after a change refreshes in place: the table on screen stays until the answer
+  // replaces it, so a toggle or a delete never drops the tab back to its wait.
   const load = useCallback(async () => {
     if (!projectId || !agentId) return;
-    setData(null);
     setError(null);
     try {
       // The injection controls' state loads in parallel with the tab's own table.
@@ -112,7 +111,7 @@ export function SchedulesTab({
       setData(schedules);
       applyConfig(configView.config);
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an Agent's schedules could not be loaded" }));
     }
   }, [projectId, agentId, machineId, applyConfig]);
 
@@ -141,7 +140,7 @@ export function SchedulesTab({
       toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
       await load();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -156,7 +155,7 @@ export function SchedulesTab({
       if (form?.editing?.name === deleting) setForm(null);
       changed();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
       setDeleting(null);
@@ -182,17 +181,20 @@ export function SchedulesTab({
 
       {/* Create entry point at the head of the table, right-aligned (the skills tab's slot): the
           two buttons offer the AI path and the form side by side; a member, who cannot write
-          files here, gets the AI button alone — asking the agent is a message, not a write. */}
-      <div className="flex justify-end">
-        <AiCreateButtons
-          size="sm"
-          onAi={() => openAi("")}
-          {...(isOwner ? { onManual: () => setForm({ editing: null }) } : {})}
-        />
-      </div>
+          files here, gets the AI button alone — asking the agent is a message, not a write. It
+          arrives with the switch above it, so neither moves the other. */}
+      {data !== null && (
+        <div className="flex justify-end">
+          <AiCreateButtons
+            size="sm"
+            onAi={() => openAi("")}
+            {...(isOwner ? { onManual: () => setForm({ editing: null }) } : {})}
+          />
+        </div>
+      )}
 
       {data === null ? (
-        <SkeletonList rows={4} />
+        error === null && <Waiting rows={4} />
       ) : schedules.length === 0 ? (
         <div className="space-y-4">
           <SettingsEmpty>{S.schedule.empty}</SettingsEmpty>

@@ -18,13 +18,17 @@
 import { useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
+import { ICON_GAP } from "../../../icon-scale";
 import { CloseButton } from "../../actions/close-button/close-button";
 import { useDialogLayer } from "../esc-layers/esc-layers";
+import { InfoPopover } from "../info-popover/info-popover";
 
 export interface ModalProps {
   open: boolean;
   /** Dialog name: rendered as the header bar and used to name the dialog, or (headerless) exposed as the panel's aria-label only. */
   title: string;
+  /** What the dialog is for, behind a "?" beside the title (not with `headerless`). */
+  titleInfo?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
@@ -48,6 +52,7 @@ export interface ModalProps {
 export function Modal({
   open,
   title,
+  titleInfo,
   onClose,
   children,
   footer,
@@ -66,7 +71,7 @@ export function Modal({
     <div
       // ui-scrim: the dimmed layer between the page and the dialog; a theme may blur the page
       // through it. The overlay is the scrim itself, with the dialog inside it.
-      className="ui-scrim anim-fade fixed inset-0 z-50 flex items-end justify-center bg-[var(--ui-overlay-backdrop)] p-0 pt-[env(titlebar-area-height,0px)] sm:items-center sm:p-4 sm:pt-[calc(env(titlebar-area-height,0px)+1rem)]"
+      className="ui-scrim anim-fade fixed inset-0 z-modal flex items-end justify-center bg-[var(--ui-overlay-backdrop)] p-0 pt-[var(--window-band-height,0px)] sm:items-center sm:p-4 sm:pt-[calc(var(--window-band-height,0px)+1rem)]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -82,7 +87,7 @@ export function Modal({
         onKeyDown={onPanelKeyDown}
         className={`ui-glass anim-pop w-full ${widthClass ?? "sm:max-w-md"} ${
           fullScreenOnPhone
-            ? "flex h-[calc(100dvh-env(titlebar-area-height,0px))] flex-col pt-[env(safe-area-inset-top)] sm:pt-0"
+            ? "flex h-[calc(100dvh-var(--window-band-height,0px))] flex-col pt-[env(safe-area-inset-top)] sm:pt-0"
             : "rounded-t-lg"
         } border border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-lg sm:pb-0`}
       >
@@ -95,8 +100,12 @@ export function Modal({
             data-slot="head"
             className="flex items-center justify-between border-b border-line px-4 py-3"
           >
-            <h2 id={titleId} className="text-base font-semibold">
+            <h2
+              id={titleId}
+              className={`flex min-w-0 items-center ${ICON_GAP.row} text-base font-semibold`}
+            >
               {title}
+              {titleInfo !== undefined && <InfoPopover label={title}>{titleInfo}</InfoPopover>}
             </h2>
             <CloseButton onClose={onClose} label={closeLabel} />
           </div>

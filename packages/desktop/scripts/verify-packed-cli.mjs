@@ -20,7 +20,9 @@
  * and the install image (the harness a machine runs, in the hot push's format) beside it,
  * and the app's own package.json naming this build's version — the release a machine
  * downloads. None of them is imported by anything, so an app without them builds, starts
- * and runs its CLI, and only an install on a machine fails.
+ * and runs its CLI, and only an install on a machine fails. So is the main window's preload, a
+ * bundle nothing imports either: an app without it starts, and its Windows and Linux windows
+ * have no button to minimize, maximize or close them.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -30,6 +32,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const { FAR_SIDE_SCRIPTS } = await import(
   pathToFileURL(path.resolve(pkgDir, "..", "..", "scripts", "far-side-scripts.mjs")).href
+);
+// The market covers ride beside the server bundle too, and nothing imports them either: an app
+// without them starts, and its plugin market draws generated covers until a fetch succeeds.
+const { MARKET_COVERS_NAME, marketCoverFiles } = await import(
+  pathToFileURL(path.resolve(pkgDir, "..", "..", "scripts", "market-covers.mjs")).href
+);
+const coverFiles = marketCoverFiles(path.resolve(pkgDir, "..", "..")).map(
+  (rel) => `dist/${MARKET_COVERS_NAME}/${rel}`,
 );
 const outDir = path.join(pkgDir, "out");
 const ownPkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
@@ -110,12 +120,14 @@ for (const app of dirs) {
   // The plugin library travels as electron-builder's collected dependencies, at the app root's
   // node_modules: the packed server resolves each package by name from there, and a plugin
   // that did not make it in is simply absent from every Agent's library, with nothing else
-  // failing. Each one is its manifest (package.json) beside the skills or hooks it ships.
+  // failing. Each one is its manifest (package.json) beside the skills, hooks or workbenches it ships.
   const pluginFiles = pluginNames.map((name) => `node_modules/${name}/package.json`);
   for (const name of pluginNames) {
-    const content = ["skills", "hooks"].map((sub) => path.join(app, "node_modules", name, sub));
+    const content = ["skills", "hooks", "workbenches"].map((sub) =>
+      path.join(app, "node_modules", name, sub),
+    );
     if (!content.some((dir) => fs.existsSync(dir))) {
-      problems.push(`${app}: node_modules/${name} carries neither skills/ nor hooks/.`);
+      problems.push(`${app}: node_modules/${name} carries no skills/, hooks/ or workbenches/.`);
     }
   }
   for (const rel of [
@@ -123,7 +135,11 @@ for (const app of dirs) {
     "bin/penguin.cmd",
     "dist/penguin.js",
     "dist/server.js",
+    // The main window's preload, a bundle of its own (tsup.config.ts): without it Windows and
+    // Linux windows have no minimize, maximize or close button at all.
+    "dist/preload.cjs",
     ...FAR_SIDE_SCRIPTS.map(({ name }) => `dist/${name}`),
+    ...coverFiles,
     "dist/install-image.gz",
     "web-dist/index.html",
     ...pluginFiles,

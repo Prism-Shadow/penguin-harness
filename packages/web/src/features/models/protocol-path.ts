@@ -31,9 +31,8 @@
  *   an openai-chat subclass that differs only in the thinking switch it sends) —
  *   POST {base}/chat/completions.
  *
- * Of the protocols the in-field menu offers, the first three — `openai-responses`,
- * `ant-messages`, `openai-chat` — are also what the custom-model protocol detection stores;
- * `google-genai` and `mmsp` are picked by hand.
+ * Custom-model detection can select OpenAI Responses, Anthropic Messages, OpenAI Chat
+ * Completions or Google GenAI. The suffix menu also offers MMSP.
  */
 import {
   CLIENT_PROTOCOLS,

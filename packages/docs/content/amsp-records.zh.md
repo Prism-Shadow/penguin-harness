@@ -49,7 +49,7 @@ interface SessionMetaPayload {
 }
 ```
 
-Workspace 在整个 Session 生命周期内不变，模型与系统提示词则按上下文固定：会话内切换模型时，新上下文开在另一个模型上，所用模型只记在这条记录里。
+Workspace 在整个 Session 生命周期内不变，模型与系统提示词则按上下文固定：会话内切换模型时，新上下文开在另一个模型上。每个上下文所用的模型写在它的这条记录里；在下一个上下文的 `session_meta` 写下之前，由切换的 `session_update` 写明（见 [event_msg](#eventmsg)）。
 
 `source` 表示这个 Session 是哪一类会话，同样在整个生命周期内不变：
 
@@ -195,7 +195,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
 
 ## event_msg
 
-十四种事件 payload 记录模型上下文之外的运行时事件：
+十五种事件 payload 记录模型上下文之外的运行时事件：
 
 | 事件 `type` | 记录的内容 |
 | --- | --- |
@@ -204,6 +204,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
 | `mcp_connect_end` | 总体连接状态与逐个 Server 的结果 |
 | `task_begin` | 一个 Task 的开始 |
 | `task_end` | 最近一个 `task_begin` 所开启的 Task 的结束 |
+| `session_update` | 发生变更的 Session 级设置的新取值：目前为 Session 下一个上下文所用的模型 |
 | `request_begin` | 一次模型请求的开始，带上该请求发出时的思考等级 |
 | `request_end` | 请求的终态，以及重试详情块（`error_code`、`error_message`、`attempt`、`retry_in_ms`） |
 | `approval_decision` | 一次审批决策，与对应的 `tool_call_id` 配对 |
@@ -214,9 +215,11 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
 | `subagent` | 父 Trace 中指向直接子 Session 的指针 |
 | `hook` | 一次钩子回答：钩子点、名称、决策，以及钩子自己的记录 |
 
-这套词汇是封闭的：只有当既有记录都不承载某个事实、读端也推导不出来时，才新增记录或字段。`task_begin` / `task_end` 是两处明示例外之一（另一处是 `request_begin.thinking_level`）：此前没有任何记录说明一个 Task 从哪里开始、是否走到终点，各读端只能从用户的 Prompt 推导。
+这套词汇是封闭的：只有当既有记录都不承载某个事实、读端也推导不出来时，才新增记录或字段。`task_begin` / `task_end` 是三处明示例外之一（另两处是 `request_begin.thinking_level` 与 `session_update`）：此前没有任何记录说明一个 Task 从哪里开始、是否走到终点，各读端只能从用户的 Prompt 推导。
 
 Session 在每个 Task 两侧各写一条：一次 Prompt 的执行，加上随后 stop 钩子留下的 `hook` 记录。stop 钩子以 `continue` 续出的 Task（例如 goal 的一轮）各成一对。手动压缩与模型切换不是 Task，不写这对记录。载荷只有类型：Task 如何结束，由这对记录之间的记录读出（`abort`、终局的 `request_end` 或 `compaction_end`）；由谁发起，由输入本身读出。抛出异常的 Task 不写 `task_end`，因此未闭合的 `task_begin` 表示该 Task 没有走到终点。这对记录在 Trace 中的位置见 [Trace 设计](/sessions-and-traces#trace-设计)。
+
+`session_update` 记录 Session 级运行设置的一次变更，载荷只列出变更后的取值，字段沿用该设置在别处的名字。目前只有一项设置，即模型：`provider` 与 `model_id` 同 `session_meta` 中的这对字段，指 Session **下一个**上下文所用的模型。会话内切换模型完成时，Session 经自己的 Trace 出口写下它，与写 Task 记录相同，从不触发开档：它写在被离开的上下文的文件末尾，有压缩时位于 `compaction_end` 之后，并在写入时推入输出流，恰好一次。在其后出现 `request_begin` 之前，该文件的上下文视为已关闭，下一个上下文开在它所记的模型上；多条时取最后一条。它不是消息，不开启 Task，也不参与 Task 用时的计算。它之所以是明示例外，是因为从切换完成到下一个文件的 `session_meta` 之间，没有别的记录记下目标模型。此前写下的 Trace 不带这条记录，读端由前后两条 `session_meta` 推导切换。
 
 凡是报告失败的 payload 都带同一对错误字段：`error_code` 是稳定、机器可读的原因码，渲染层据此做本地化；`error_message` 是失败的原始文本，原样展示。完整定义如下：
 
@@ -233,8 +236,10 @@ type ErrorCode =
   | "malformed"               // response failed parsing/validation, or the stream was truncated
   | "output_truncated"        // the response stopped at its output cap; retried, never committed
   | "auth"                    // the provider rejected the credentials
-  | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
-  | "image_rejected"          // a provider 4xx on an input holding images, retried with them replaced
+  | "rejected"                // the provider refused this request as sent: HTTP 400, 413, 415 or 422
+  | "denied"                  // the provider will not serve this account or model: any other
+                              // definitive 4xx (402, 403, 404, …; 401 is auth; 408/429 retried)
+  | "image_rejected"          // a rejected request whose input held images, retried with them replaced
   | "unsupported"             // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input"           // the input failed to assemble into a request
   // MCP connect failures (per-server results of mcp_connect_end)
@@ -299,6 +304,14 @@ interface TaskEndPayload {
                               // the pair say how); absent when the Task threw
 }
 
+interface SessionUpdatePayload {
+  type: "session_update";     // a Session-level setting changed: its new value; written
+                              // and streamed by the Session, at the end of the file of the
+                              // context being left
+  provider?: string;          // the model the Session's next context opens on, as in
+  model_id?: string;          // session_meta; the two come together
+}
+
 interface RequestBeginPayload {
   type: "request_begin";
   thinking_level?: ThinkingLevelName; // the level sent: the Session's pin, else the context's
@@ -322,7 +335,9 @@ interface RequestEndPayload {
                               // completion that needed retries; absent on a clean first try
   retry_in_ms?: number;       // planned reconnect wait (ms), present only when the engine
                               // will retry in-run — the Web App renders it as a countdown;
-                              // a failed request_end without it is the run's terminal record
+                              // 0 for a resend at once (image_rejected, and a rejected
+                              // request answered by a hand-off); a failed request_end
+                              // without it is the run's terminal record
 }
 
 interface ApprovalDecisionPayload {
@@ -360,13 +375,18 @@ interface CompactionEndPayload {
   type: "compaction_end";
   reason: CompactionReason;
   mode: CompactionMode;
-  status: StopReason;         // completed / retryable (abandoned after the retries ran out;
-                              // the standing trigger makes it up) / fatal (a failure no
-                              // retry can fix) / aborted (user interrupted); any status
-                              // but completed keeps the original context
-  attempt?: number;           // the final attempt's ordinal, failed attempts included
-  error_code?: ErrorCode;     // the last failure's cause and detail
-  error_message?: string;
+  status: StopReason;         // completed: the next context is open (with the error pair it
+                              // opened with a Trace hand-off note, not a full summary) /
+                              // aborted (user interrupted) / fatal (the next context could
+                              // not be opened); both keep the original context / retryable:
+                              // written only by resume, closing a span the process died in.
+                              // Old Traces' retryable, fatal and failed all read "abandoned,
+                              // original context kept"
+  attempt?: number;           // the final attempt's ordinal, failed attempts included;
+                              // absent when the span made no request (a refused
+                              // request's hand-off)
+  error_code?: ErrorCode;     // the last failure's cause and detail; on a completed end,
+  error_message?: string;     // why there was no full summary
 }
 
 interface AbortPayload {
@@ -402,7 +422,7 @@ interface HookPayload {
 
 因条目引用了 Agent 的 Vault 中没有的键、或需要 OAuth 登录而被跳过、没有连接的 MCP Server，在 `results` 中记为 `fatal`，错误码为 `mcp_needs_setup` 或 `mcp_sign_in_required`；其 `error_message` 列出缺少的键名，从不包含值。见 [Vault 引用](/tools#vault-引用)。
 
-`compaction_end` 从不携带 `retry_in_ms`：压缩的重试由压缩请求自己的 `request_end` 宣告，而这条记录只写入 Trace。旧 Trace 可能仍把 MCP 连接失败或被放弃的压缩记为 `failed`，逐个 Server 的结果里也可能是 `error` 字段，而不是这对错误字段。
+`compaction_end` 从不携带 `retry_in_ms`：压缩的重试由压缩请求自己的 `request_end` 宣告，而这条记录只写入 Trace。`completed` 的结束事件可以带错误字段：表示压缩完成但没有完整的摘要，错误字段说明原因。重放只读这一个事实，按恢复时的 `compaction.handoff_note` 模板重建那段开头（交接说明），因此不带错误字段的 `completed` 与此前的重放完全一致（见[上下文压缩](/agent-loop#取不到摘要时)）。区间内也可以没有任何请求：供应商在已有完成轮次的上下文上拒绝普通请求时，该请求的 `request_end` 为 `retryable`，带 `error_code: "rejected"` 与 `retry_in_ms: 0`；随后的 `compaction_begin` / `compaction_end` 事件对以 `completed` 结束，带这对错误字段、不带 `attempt`，两者之间没有任何记录；重放据此重建交接说明（见[请求被拒时的交接](/agent-loop#请求被拒时的交接)）。只有非 `completed` 的 `compaction_end` 才可能结束一次运行。旧 Trace 可能仍把 MCP 连接失败或被放弃的压缩记为 `failed`，逐个 Server 的结果里也可能是 `error` 字段，而不是这对错误字段。
 
 ## 结束原因
 
@@ -422,7 +442,7 @@ type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call
 | `completed` | 正常完成，该轮已提交 | 继续 |
 | `aborted` | 用户中断或取消 | 停止，产出 `abort` 事件，交还用户 |
 | `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、解析失败的响应、完整送达却停在输出上限的响应（`error_code` 为 `output_truncated`），以及一切无法归类的错误 | 同一次运行内按退避阶梯自动重连；停在输出上限的尝试不提交。重试用尽时，最后一条不带 `retry_in_ms` 的 `request_end` 即终局记录 |
-| `fatal` | 重试也无法修复的失败：供应商确定性的 4xx 拒绝（参数、配额）、凭据被拒，或确定性的客户端拒绝 | 停止本次运行，交还用户；不产出 `abort` 事件，`request_end` 即终局记录 |
+| `fatal` | 重试也无法修复的失败：供应商拒绝按原样发出的请求（`rejected`：400、413、415、422）或不为该账号或模型提供服务（`denied`：其余确定性的 4xx）、凭据被拒，或确定性的客户端拒绝 | 停止本次运行，交还用户；不产出 `abort` 事件，`request_end` 即终局记录。上下文已有完成轮次时，`rejected` 的请求改记为 `retryable`，并以交接应对 |
 
 工具结果的 `status` 说明结果是什么：
 
@@ -490,8 +510,9 @@ type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call
 
 `@prismshadow/amsp` 导出全部记录类型，此外还有以下内容，`@prismshadow/penguin-core` 全部再导出：
 
-- `records/builders.ts` 里每种消息的构造函数：`userText`、`assistantText`、`toolCall`、`toolCallOutput`、`partialText`、`tokenUsage`、`withOrigin`、`emptyTokenCounts`、`addTokenCounts` 等；
-- 运行时判别函数：`isCompleteModelMessage`、`isPartialPayload`、`isModelMessage`、`isEventMessage`、`isSessionMeta`、`isTaskRecord`，以及 `lastNonTaskRecord`——它找出判定一个 Trace 文件是否被压缩收尾时要看的那条记录。
+- `records/builders.ts` 里每种消息的构造函数：`userText`、`assistantText`、`toolCall`、`toolCallOutput`、`partialText`、`tokenUsage`、`sessionUpdate`、`withOrigin`、`emptyTokenCounts`、`addTokenCounts` 等；
+- 运行时判别函数：`isCompleteModelMessage`、`isPartialPayload`、`isModelMessage`、`isEventMessage`、`isSessionMeta`、`isTaskRecord`；
+- 判定一个 Trace 文件的上下文是否已关闭的读取函数，位于 `records/context-state.ts`：`closingCompaction`（使其收尾的那条完成的 `compaction_end`）、`pendingModel`（一次已完成的切换留给下一个上下文的模型）与 `updatedModel`（一条 `session_update` 所记的模型）。
 
 ```ts
 import { userText, isCompleteModelMessage } from "@prismshadow/amsp";

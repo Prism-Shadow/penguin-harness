@@ -34,19 +34,49 @@
  * `SessionLoader`: production uses the core SDK (createCoreSessionLoader), tests inject
  * a fake Session (issuing no real LLM requests).
  */
+import type {
+  PendingFollowUpInfo,
+  PendingSteeringInfo,
+  SessionStatus,
+  AgentState,
+  SessionIndex,
+  SessionOrigins,
+  PendingSteeringEntry,
+  QueuedFollowUp,
+  RecallStore,
+  RecallableFile,
+  RunOpts,
+  RuntimeEntry,
+  RuntimeSession,
+  SessionBackgroundTasks,
+  SwitchModelOpts,
+} from "@prismshadow/penguin-library-session";
+import type {
+  ServerEvent,
+  ProjectConfigStore,
+  ProjectEvents,
+} from "@prismshadow/penguin-library-project";
+import type {
+  UsageContext,
+  Errors,
+  UsageRecording,
+} from "@prismshadow/penguin-library-observability";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
+  getModel,
   isHookContinue,
   isHookInput,
   isSessionMeta,
   ModelSwitchRefusedError,
   normalizeSessionSource,
+  parseInPlaceModelSwitch,
   parseUserSteeringText,
   tracesDir,
+  updatedModel,
   userText,
 } from "@prismshadow/penguin-core";
 import type {
@@ -68,35 +98,29 @@ import type {
   ThinkingLevelName,
   ToolDetachResult,
 } from "@prismshadow/penguin-core";
-import type {
-  ModelRefDto,
-  PendingFollowUpInfo,
-  PendingSteeringInfo,
-  ServerEvent,
-  SessionBackgroundTasks,
-  SessionStatus,
-} from "../api/types.js";
-import type { RecallableFile } from "../services/task-attachments.js";
+import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import { cliShimDir } from "../services/cli-shim.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
 import { InputEcho } from "./input-echo.js";
+import type { SessionActivity } from "./session-activity.js";
 import { goalPluginNotInstalled, hasGoalHookPackage } from "./goal-plugin.js";
+import { withPromptHooks } from "./prompt-hooks.js";
 import type { Approvals, PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import { AgentStateStore } from "./agent-state.js";
-import type { LiveTail } from "./live-tail.js";
+import type { LiveRun, LiveTail } from "./live-tail.js";
 import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
-import type { UsageContext } from "./usage-recorder.js";
 import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
 import type { ClassCtx, Json, Opaque } from "@prismshadow/penguin-core/kernel";
 import { Sandbox, SandboxModule } from "../sandbox/service.js";
+import { agentWritableRoots } from "../workbenches/data-dirs.js";
 import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
 import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "../sandbox/settings-policy.js";
 import { PluginConfig } from "../plugin/config.js";
@@ -107,13 +131,10 @@ import { loopbackHostRoles } from "../services/preview-token.js";
 import { agentNoProxy } from "../net/proxy.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
-import type { ProjectConfigStore, ProjectEvents } from "../mechanisms/projects.js";
-import type { AgentState, SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
-import type { Errors, UsageRecording } from "../mechanisms/observability.js";
-import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
-import type { Settings } from "../mechanisms/settings.js";
-import type { MessagingBindings } from "../mechanisms/messaging.js";
-import type { OrgCache } from "../mechanisms/organization.js";
+import type { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library-trace";
+import type { Settings } from "@prismshadow/penguin-library-setting";
+import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
 import { MODELSCOPE_PROVIDER_ID } from "../model-catalog/catalog.js";
 
@@ -172,6 +193,20 @@ async function* resumeFrom<T>(head: T, rest: AsyncGenerator<T, unknown>): AsyncG
   yield* rest;
 }
 
+// The runtime-state shapes moved to @prismshadow/penguin-library-session (the AgentState
+// closed shape reaches them); re-exported here for the existing import paths.
+export type {
+  PendingSteeringEntry,
+  QueuedFollowUp,
+  RecallStore,
+  RecallableFile,
+  RunOpts,
+  RuntimeEntry,
+  RuntimeSession,
+  SessionBackgroundTasks,
+  SwitchModelOpts,
+};
+
 /** The model a runtime Session reports itself on, or null for one that reports none (test fakes). */
 function runtimeModelOf(session: RuntimeSession): ModelRefDto | null {
   const { provider, modelId } = session;
@@ -179,146 +214,29 @@ function runtimeModelOf(session: RuntimeSession): ModelRefDto | null {
   return { provider, modelId };
 }
 
-/** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
-/** What one run is started with: the approval callback and the interrupt signal. */
-export type RunOpts = {
-  approve: ApproveFn;
-  signal: AbortSignal;
-};
-
-export interface RuntimeSession {
-  readonly sessionId: string;
-  run(newMessages: AmspRecord[], opts: RunOpts): AsyncGenerator<AmspRecord>;
-  compact(opts: { signal: AbortSignal }): AsyncGenerator<AmspRecord>;
-  /**
-   * The running context's model (core `Session.provider` / `Session.modelId`, getters over
-   * the context's session_meta): the row's pair at creation, moved by each in-session switch
-   * — and, after a restart, whatever the Trace resumed on. Optional: test fakes may omit them,
-   * in which case the entry keeps the row's pair.
-   */
-  readonly provider?: string;
-  readonly modelId?: string;
-  /**
-   * Switches the Session's model in place (core `Session.switchModel`): closes the running
-   * context on the model it ran on, then opens the next one on the target. A completed switch
-   * streams the new context's main-session `session_meta` last, and the getters above answer
-   * the target by then; a refusal is thrown before the first event; a Session that never ran
-   * switches without streaming anything. Optional: test fakes may omit it, reading as
-   * "switching is not available".
-   */
-  switchModel?(opts: {
-    provider: string;
-    modelId: string;
-    signal: AbortSignal;
-  }): AsyncGenerator<AmspRecord, StopReason>;
-  /**
-   * The Session's thinking level (core `Session.thinkingLevel`, plain state): soft-limited —
-   * an assignment applies from the Session's very next LLM request. Optional: test fakes may
-   * omit it.
-   */
-  thinkingLevel?: ThinkingLevelName;
-  /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
-  compactability(): CompactAvailability;
-  /** Queues a mid-run steering input (core `Session.steer`); false when no Task is running. */
-  steer(input: AmspRecord[]): boolean;
-  /**
-   * Withdraws a steering input queued via `steer` before core delivers it (core
-   * `Session.unsteer`, matched by input-list identity); false when it is no longer queued —
-   * already delivered, or the run exited. Optional: test fakes may omit it, in which case
-   * every recall reports "already delivered".
-   */
-  unsteer?(input: AmspRecord[]): boolean;
-  /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
-  skipReconnectWait(): boolean;
-  /**
-   * Whether a run with empty input would send anything (core `Session.hasPendingInput`): the
-   * input of a turn that failed or was stopped, held as carry-over — in process, or rebuilt
-   * from the Trace after a restart — or a compaction summary waiting for the next run.
-   * Optional: test fakes may omit it, reading as nothing held.
-   */
-  hasPendingInput?(): boolean;
-  /**
-   * Whether the next Task opens a new Trace file (core `Session.contextOpenPending`): a
-   * compaction left the next context's file to its first write, so that Task streams the new
-   * `session_meta` behind its `task_begin`, and the input echo waits for it (see InputEcho).
-   * Optional: test fakes may omit it, reading as no.
-   */
-  contextOpenPending?(): boolean;
-  /**
-   * Runs the named package's `user_prompt` hook (core `Session.runUserPromptHook` — hooks
-   * run in core and nowhere else); null = the package is not installed or names no such
-   * command. Optional: test fakes may omit it, reading as not installed.
-   */
-  runUserPromptHook?(
-    name: string,
-    prompt: string,
-    extras?: Record<string, string | number | boolean>,
-  ): Promise<{ context?: string } | null>;
-  /** A tool's permission level from the running context's toolset (core `Session.toolPermission`; strict-tier — rebuilt at rotation). */
-  toolPermission(name: string): "r" | "rw" | undefined;
-  /**
-   * Out-of-band one-shot request for title generation (core `Session.generateTitle`,
-   * writes no history/Trace). Material defaults to what the Session collects itself
-   * (the first Task's text gathered during run); `material` overrides this for
-   * subagents.
-   */
-  generateTitle(args?: {
-    material?: { userText: string; assistantText: string };
-    signal?: AbortSignal;
-  }): Promise<SessionTitleResult>;
-  /**
-   * Subscribes the idle-arrival signal for background-task completion notices (core
-   * `Session.onBackgroundNotice`): fired when a `run_in_background` launch settles while no
-   * Task is running — the manager then takes the queue and submits it as an ordinary task.
-   * Optional: test fakes may omit it.
-   */
-  onBackgroundNotice?(listener: () => void): void;
-  /** Takes the queued background completion notices as task input (core `Session.takeBackgroundNotices`). Optional, like onBackgroundNotice. */
-  takeBackgroundNotices?(): AmspRecord[];
-  /** Whether completion notices are still queued (core `Session.hasPendingBackgroundNotices`); pins the entry against idle eviction. Optional, like onBackgroundNotice. */
-  hasPendingBackgroundNotices?(): boolean;
-  /** Refreshes the listen-port probes behind the process list's `serviceUrl` (core `Session.probeBackgroundCommandServices`). Optional: test fakes may omit it. */
-  probeBackgroundCommandServices?(): Promise<void>;
-  /** Subscribes live-forwarded background-subagent messages (core `Session.onBackgroundMessage`); the manager publishes them to the session channel. Optional: test fakes may omit it. */
-  onBackgroundMessage?(listener: (msg: AmspRecord) => void): void;
-  /** Background command processes owned by the Session's environment (core `Session.listBackgroundCommands`). Optional: test fakes may omit it. */
-  listBackgroundCommands?(): BackgroundCommandInfo[];
-  /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
-  killBackgroundCommand?(processId: string): boolean;
-  /** Hands one EXECUTING tool call back as a background task (core `Session.detachToolCall`). Optional: test fakes may omit it, reading as "not_running". */
-  detachToolCall?(toolCallId: string): ToolDetachResult;
-  /** Whether a background subagent is mid-round (core `Session.hasRunningBackgroundSubagents`); pins the entry against idle eviction. Optional, like listBackgroundCommands. */
-  hasRunningBackgroundSubagents?(): boolean;
-  /** All live subagent child sessions of the Session's environment (core `Session.listBackgroundSubagents`). Optional, like listBackgroundCommands. */
-  listBackgroundSubagents?(): BackgroundSubagentInfo[];
-  /** Host message to one child session — steering mid-run, a follow-up run when idle, a revival when released (core `Session.sendToBackgroundSubagent`). Optional. */
-  sendToBackgroundSubagent?(
-    childSessionId: string,
-    messages: AmspRecord[],
-    opts?: SubagentMessageOptions,
-  ): Promise<SubagentMessageOutcome>;
-  /** Subscribes the host's session-lifetime fallback approval sink for child sessions (core `Session.setSubagentApprovalFallback`). Optional. */
-  setSubagentApprovalFallback?(approve: ApproveFn): void;
-  /** Aborts one child session's current run, keeping the session (core `Session.abortBackgroundSubagentRun`); false when unknown or idle. Optional. */
-  abortBackgroundSubagentRun?(childSessionId: string): boolean;
-  /** Pins one live child session's thinking level (core `Session.setBackgroundSubagentThinkingLevel`); false when the child is not live. Optional. */
-  setBackgroundSubagentThinkingLevel?(childSessionId: string, level: ThinkingLevelName): boolean;
-  /** Subscribes subagent run-state changes (core `Session.onSubagentState`): the manager republishes `task_state` with the fresh live listing. Optional. */
-  onSubagentState?(listener: () => void): void;
-  /** Subscribes background-task state changes (core `Session.onBackgroundState`): the manager re-counts the live registries and publishes `session_background` when the counts moved. Optional. */
-  onBackgroundState?(listener: () => void): void;
-  /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
-  dispose?(): void;
+/**
+ * Refuses work on a runtime loaded for a model switch alone while it is still on the model it
+ * cannot reach (see `RuntimeEntry.stranded`), with the ordinary load's own refusal.
+ */
+function assertNotStranded(entry: RuntimeEntry): void {
+  if (!entry.stranded) return;
+  const { status, code, message } = entry.stranded;
+  throw new HttpError(status, code, message);
 }
-
 /** The underlying loader behind get-or-resume-or-heal. */
 export interface SessionLoader {
   /**
    * Load a runtime Session from an index row: recover (with a Trace) or self-heal
    * rebuild (no Trace, under the row's session_id). Throws HttpError(409) for unrecoverable
    * cases such as a missing Workspace.
+   *
+   * `switchTo`: the ordinary load refused this Session, and this one is for a model switch to
+   * that model alone (see `SessionManager.startSwitch`). A Session whose model can no longer be
+   * reached recovers anyway — the switch sends that model nothing and hands the history over
+   * by Trace path — and one that left no Trace is rebuilt on the target directly, which is all
+   * a never-run Session's switch is; the target's own refusals are then the switch's 409s.
    */
-  load(row: SessionRow): Promise<RuntimeSession>;
+  load(row: SessionRow, opts?: { switchTo?: ModelRefDto }): Promise<RuntimeSession>;
 }
 
 /**
@@ -346,7 +264,8 @@ export function createCoreSessionLoader(
   } = {},
 ): SessionLoader {
   return {
-    async load(row: SessionRow): Promise<RuntimeSession> {
+    async load(row: SessionRow, loadOpts = {}): Promise<RuntimeSession> {
+      const { switchTo } = loadOpts;
       const agent = await createAgent({
         root,
         projectId: row.projectId,
@@ -368,7 +287,10 @@ export function createCoreSessionLoader(
         // config / Trace missing session_meta, etc.) are converged to 409, preserving
         // the original message rather than bubbling up as 500.
         try {
-          const session = await agent.resumeSession({ sessionId: row.sessionId });
+          const session = await agent.resumeSession({
+            sessionId: row.sessionId,
+            ...(switchTo ? { allowUnreachableModel: true } : {}),
+          });
           // The row's stored level — the knob position the user last chose — restored onto
           // the runtime as a plain assignment: it rides the resumed Session's requests.
           if (row.thinkingLevel) session.thinkingLevel = row.thinkingLevel;
@@ -398,19 +320,40 @@ export function createCoreSessionLoader(
       // organization runtime's are `company`, the Agent API's `api` (unrunSource), the list's
       // reading of the same row.
       const knownSource = sources?.get(row.sessionId) ?? unrunSource(row.client);
+      // A switch rebuilds it on the target: the model the row names could not be loaded, and a
+      // Session that never ran has no context on it to close.
+      const model = switchTo ?? { provider: row.provider, modelId: row.modelId };
+      if (
+        switchTo &&
+        !getModel(agent.projectConfig, { provider: switchTo.provider, model_id: switchTo.modelId })
+      ) {
+        throw switchRefusal(
+          new ModelSwitchRefusedError(
+            "model_not_configured",
+            `Model is not in the Project config: ${switchTo.provider}/${switchTo.modelId}.`,
+          ),
+          switchTo,
+        );
+      }
       try {
         return await agent.createSession({
           sessionId: row.sessionId,
           workspaceDir: row.workspace,
-          modelId: row.modelId,
-          provider: row.provider,
+          modelId: model.modelId,
+          provider: model.provider,
           // The rebuilt Session records that source in its fresh session_meta (an unknown one
           // is core's default, `user`), and starts its first context at the row's pinned level.
           ...(knownSource !== undefined ? { source: knownSource } : {}),
           ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
         });
       } catch (err) {
-        if (isMissingCredential(err)) throw modelCredentialMissing(row.modelId);
+        if (switchTo && isMissingCredential(err)) {
+          throw switchRefusal(
+            new ModelSwitchRefusedError("model_unavailable", String(err)),
+            switchTo,
+          );
+        }
+        if (isMissingCredential(err)) throw modelCredentialMissing(model.modelId);
         throw toUnrecoverableError(err);
       }
     },
@@ -432,8 +375,9 @@ export interface UsageRecorderLike {
 }
 
 export interface SessionManagerDeps {
+  traces?: Pick<Traces, "ownedSubagents">;
   /** The in-memory state this manager works on (see agent-state.ts). Optional: a manager built without one — unit tests — gets an empty state of its own. */
-  state?: AgentState;
+  state?: AgentStateStore;
   sessions: SessionIndex;
   channels: ChannelHub;
   loader: SessionLoader;
@@ -452,6 +396,8 @@ export interface SessionManagerDeps {
   errors?: ErrorSink;
   /** Provider auth refresh (optional for tests that do not exercise external model credentials). */
   modelScopeAuth?: ModelScopeAuth;
+  /** The Project config's mtime-gated reads, for noticing edits made outside this server (optional like `modelScopeAuth`). */
+  projectConfig?: Pick<ProjectConfigStore, "readRaw">;
   log?: (line: string) => void;
   /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
   /**
@@ -491,123 +437,6 @@ export function isHumanInput(input: readonly AmspRecord[]): boolean {
   });
 }
 
-/**
- * A queued message's original content, held while it waits in a queue so a recall (DELETE
- * /steer/:id, DELETE /follow-ups/:id) can hand it back to the composer for editing (#287).
- * `text` and `images` are the same strings the queued input already references (no extra
- * copy); files stay on disk in the Session scratchpad and are read back only at recall.
- */
-export interface RecallStore {
-  text: string;
-  images: string[];
-  files: RecallableFile[];
-}
-
-/** One queued follow-up task (`queueIfBusy`): the task input, held until the session is idle. */
-interface QueuedFollowUp {
-  /** Recall handle (PendingFollowUpInfo.id), assigned at queue time. */
-  id: string;
-  input: AmspRecord[];
-  /**
-   * Original content for recall, and the content `task_state` shows on the queued line.
-   * Always present: a caller that knows more than the input carries (the HTTP route, which
-   * also knows where the file attachments landed on disk) supplies it, and every other
-   * queueing path gets it derived from the input — what can be recalled must not depend on
-   * which door the message came through.
-   */
-  recall: RecallStore;
-}
-
-/** One undelivered steering entry: the display info broadcast on task_state, plus what a recall needs — the exact input list core queued (its unsteer handle) and the original content. */
-interface PendingSteeringEntry {
-  info: PendingSteeringInfo;
-  input: AmspRecord[];
-  recall: RecallStore;
-}
-
-/** Active-table entry: a loaded runtime Session plus its running state. */
-export interface RuntimeEntry {
-  sessionId: string;
-  projectId: string;
-  agentId: string;
-  /**
-   * The Session's current model (provider group paired with modelId): what the next drive
-   * attributes usage to. The row's pair, kept in step with the runtime's own answer (see
-   * `syncEntryModel`) — at load, and whenever a model switch moves it.
-   */
-  provider: string;
-  modelId: string;
-  session: RuntimeSession;
-  status: SessionStatus;
-  approvals: Approvals;
-  abort: AbortController | null;
-  /** The in-flight drive Promise (awaited during graceful shutdown). */
-  running: Promise<void> | null;
-  /**
-   * Agent config generation this runtime was built under (see
-   * invalidateAgentRuntimes): once it falls behind the Agent's current generation,
-   * the entry is discarded on its next idle access and re-resumed via the loader.
-   */
-  generation: number;
-  /**
-   * Queued follow-up tasks (`queueIfBusy`): task inputs accepted while a Task/compaction was
-   * in progress, auto-started one at a time (in order) once the session returns to idle —
-   * ordinary tasks with normal semantics, unlike the mid-run steering queue.
-   * Deliberately NOT discarded on abort: they are future tasks the user explicitly queued.
-   */
-  followUps: QueuedFollowUp[];
-  /**
-   * The running Task's input messages, held from launch until the run ends. The engine
-   * writes these exact envelopes to the Trace only after the session bootstrap (MCP
-   * connect + discovery on the first run), so a history read during that window would
-   * miss the user's own message — and the draft flow subscribes to the stream only after
-   * the input publish, so the live channel cannot backfill it either. GET /messages
-   * appends the ones the Trace has not caught up to yet (exact-envelope dedup).
-   */
-  pendingInputs: AmspRecord[];
-  /**
-   * The running Task's streamed bootstrap records (mcp_connect begin/end,
-   * tool_list_ready), held until the run ends. Their Trace writes are deferred by the
-   * engine until after the input lands (turn attribution), and the draft flow subscribes
-   * only after they were published — so a history rebuild during the MCP connect would
-   * otherwise show nothing at all (a silent blank while a slow server times out).
-   * GET /messages appends whichever of them the Trace has not caught up to.
-   */
-  pendingBootstrap: AmspRecord[];
-  /**
-   * Steering messages queued on core but not yet delivered to the model — a display mirror
-   * of core's steering queue (same FIFO order), so the composer's "steering queued" hint and
-   * its content survive reloads: pushed on `steer`, shifted as each `[user_steering]`
-   * message appears on the drive stream, dropped wholesale when the run exits (core
-   * discards undelivered steering on abort/completion). The `info` halves are broadcast on
-   * every `task_state`; the rest is the recall handle (see recallSteering).
-   */
-  pendingSteering: PendingSteeringEntry[];
-  /**
-   * Steering the run ended without ever delivering — handed back to the user instead of
-   * discarded (#287 follow-up). An interrupt mid-tool-call is the ordinary way to get here:
-   * core drops its queue when the run exits, so the message would otherwise vanish with the
-   * text the user had already typed.
-   *
-   * Entries move here from `pendingSteering` when the run exits and stay recallable by the
-   * same handle, so the composer pulls them back into its draft (auto-recall on observing
-   * them, a reload included). They are deliberately NOT cleared when the next run starts:
-   * the message was never delivered whatever happens later, and dropping it there would
-   * reintroduce exactly the loss this list exists to prevent. Only a recall — or the entry's
-   * idle eviction — removes one.
-   */
-  returnedSteering: PendingSteeringEntry[];
-  /** Timestamp of last activity (refreshed on load / status flip / drive completion / background-task change), used for idle-eviction checks. */
-  lastActivityMs: number;
-  /**
-   * Background-task counts as last read from the runtime — at entry creation, then on every
-   * background-state ping. The baseline `session_background` is published against: a ping
-   * that leaves the counts where they were (a foreground-window child settling, an exited
-   * process being removed from the list) publishes nothing.
-   */
-  backgroundTasks: SessionBackgroundTasks;
-}
-
 /** Active-table idle eviction: same convention as the SSE channel (an idle entry with no activity for 30 minutes releases its memory). */
 const ENTRY_IDLE_MS = 30 * 60 * 1000;
 const ENTRY_SWEEP_INTERVAL_MS = 60 * 1000;
@@ -643,6 +472,17 @@ function backgroundTaskCounts(session: RuntimeSession): SessionBackgroundTasks {
   return { processes, subagents };
 }
 
+/** A loaded Session doing something: a Task, a compaction, queued input, or background work. */
+function entryInUse(entry: RuntimeEntry): boolean {
+  if (entry.status !== "idle" || entry.queuedModel || entry.followUps.length > 0) return true;
+  const background = backgroundTaskCounts(entry.session);
+  return background.processes > 0 || background.subagents > 0;
+}
+
+function matchesModel(a: ModelRefDto, b: ModelRefDto): boolean {
+  return a.provider === b.provider && a.modelId === b.modelId;
+}
+
 /** The `task_state` display info of one queued follow-up (see PendingFollowUpInfo). */
 function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
   return {
@@ -650,6 +490,7 @@ function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
     text: f.recall.text,
     images: f.recall.images.length,
     files: f.recall.files.length,
+    ...(f.interrupt ? { interrupt: true as const } : {}),
   };
 }
 
@@ -689,6 +530,13 @@ function isDeliveredSteering(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: string };
   if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user") return false;
   return typeof p.text === "string" && parseUserSteeringText(p.text) !== null;
+}
+
+/** Whether this main-stream message is an in-session switch's Trace handoff: a whole `[model_switch_from]` block naming `sessionId` itself. */
+function isInPlaceHandoff(msg: AmspRecord, sessionId: string): boolean {
+  const p = msg.payload as { type?: string; role?: string; text?: string };
+  if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user") return false;
+  return typeof p.text === "string" && parseInPlaceModelSwitch(p.text, sessionId) !== null;
 }
 
 function runSubagentCall(msg: AmspRecord): { toolCallId: string; prompt: string } | null {
@@ -748,7 +596,7 @@ function isPlainText(role: "user" | "assistant") {
 export class SessionManager {
   // The state fields below are the AgentState component's (see agent-state.ts): this
   // class keeps its logic and its names, the component keeps the memory.
-  private readonly state: AgentState;
+  private readonly state: AgentStateStore;
   private readonly entries: Map<string, RuntimeEntry>;
   /**
    * Each registered subagent Session's ROOT Session: a subagent runs under its root's
@@ -774,20 +622,22 @@ export class SessionManager {
   private readonly keptLoaded = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes when a Project's credentials change. */
   private readonly agentGenerations: Map<string, number>;
-  /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
+  /** Each Project's model config as last seen (see noticeModelConfigEdit). */
+  private readonly modelConfigSeen = new Map<string, { table: unknown; models: string }>();
+  /** Open streaming fragments and the current run's records (fed by drive, served to GET /messages; see live-tail.ts). */
   private readonly liveTail: LiveTail;
   private readonly sweepTimer: NodeJS.Timeout;
   /** Clock for persisted timestamps (see SessionManagerDeps.now); wall clock unless injected. */
   private readonly now: () => Date;
 
   constructor(private readonly deps: SessionManagerDeps) {
-    const state = deps.state ?? new AgentStateStore();
+    const state: AgentStateStore = deps.state ?? new AgentStateStore();
     this.state = state;
     // This generation works on the state from here on: whatever a run that is still going
     // under an earlier generation starts when it ends, it starts through this one.
     state.current = {
-      startQueuedFollowUp: (sessionId) => this.startQueuedFollowUp(sessionId),
-      startBackgroundNoticeTask: (sessionId) => this.startBackgroundNoticeTask(sessionId),
+      startQueuedFollowUp: (sessionId: string) => this.startQueuedFollowUp(sessionId),
+      startBackgroundNoticeTask: (sessionId: string) => this.startBackgroundNoticeTask(sessionId),
     };
     this.entries = state.entries;
     this.childRoots = state.childRoots;
@@ -814,6 +664,11 @@ export class SessionManager {
 
   pendingApprovals(sessionId: string): PendingApproval[] {
     return this.entries.get(sessionId)?.approvals.list() ?? [];
+  }
+
+  pendingModel(sessionId: string): ModelRefDto | undefined {
+    const entry = this.entries.get(sessionId);
+    return entry?.queuedModel?.target ?? entry?.switchingModel;
   }
 
   /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start. */
@@ -867,13 +722,21 @@ export class SessionManager {
     childSessionId: string,
     messages: AmspRecord[],
   ): Promise<SubagentMessageOutcome> {
-    const entry = await this.ensureEntry(sessionId);
+    // Loaded under the lock every other load takes: two concurrent loads would leave two
+    // runtimes, and the one dropped from the table would escape the Session's deletion.
+    const entry = await this.withLock(sessionId, () => this.ensureEntry(sessionId));
     entry.lastActivityMs = Date.now();
-    const childRow = this.deps.sessions.findById(childSessionId);
-    const resume =
-      childRow && childRow.projectId === entry.projectId
-        ? { agentId: childRow.agentId }
-        : undefined;
+    const parent = this.deps.sessions.findById(sessionId);
+    let resume: { agentId: string; subagentId?: string } | undefined;
+    if (
+      parent &&
+      !entry.session.listBackgroundSubagents?.().some((child) => child.sessionId === childSessionId)
+    ) {
+      const owned = await this.deps.traces?.ownedSubagents(parent);
+      const child = owned?.find((row) => row.sessionId === childSessionId);
+      if (child?.agentId)
+        resume = { agentId: child.agentId, ...(child.alias ? { subagentId: child.alias } : {}) };
+    }
     return (
       (await entry.session.sendToBackgroundSubagent?.(childSessionId, messages, {
         ...(resume ? { resume } : {}),
@@ -925,6 +788,16 @@ export class SessionManager {
   }
 
   /**
+   * The current run's records (one drive: a Task, a goal loop, a compaction or a model switch)
+   * in publish order, each streamed fragment's deltas folded into its start, with the records
+   * the run starts at; null when no run is under way (see live-tail.ts). The run form of
+   * GET /messages attaches the records and cuts its history read before the run.
+   */
+  liveRun(sessionId: string): LiveRun | null {
+    return this.liveTail.run(sessionId);
+  }
+
+  /**
    * The running Task's input messages as published at launch; empty when idle. The engine
    * writes these exact envelopes to the Trace only after the first run's bootstrap (MCP
    * connect + discovery), so GET /messages appends whichever of them the Trace read has
@@ -947,6 +820,45 @@ export class SessionManager {
       if (e.projectId === projectId && e.agentId === agentId && e.status !== "idle") n++;
     }
     return n;
+  }
+
+  /**
+   * Whether anything may be touching a Session's files right now: a Task or a compaction under
+   * way, input queued behind one, a background process or subagent still running, or the Session
+   * being deleted. A subagent child runs inside its root's runtime, so it is in use while its
+   * root is. A Session that is not loaded is not in use, and nothing loads it without a Task
+   * starting through the lock — so a caller that asks this and acts in the same synchronous
+   * step (a removal's check-then-rename, SessionActivity) cannot be overtaken by a Task.
+   */
+  sessionInUse(sessionId: string): boolean {
+    if (this.deletingSessions.has(sessionId)) return true;
+    const entry = this.entries.get(sessionId);
+    if (entry !== undefined && entryInUse(entry)) return true;
+    const root = this.childRoots.get(sessionId);
+    if (root === undefined || root === sessionId) return false;
+    if (this.deletingSessions.has(root)) return true;
+    const rootEntry = this.entries.get(root);
+    return rootEntry !== undefined && entryInUse(rootEntry);
+  }
+
+  /**
+   * Whether any Session of the Agent is in use ({@link sessionInUse}) — one of its own, or a
+   * subagent child of another Agent's Session that runs as this Agent — or the Agent is being
+   * deleted. What the Agent's shared folders (its tool environments) wait on.
+   */
+  agentInUse(projectId: string, agentId: string): boolean {
+    if (this.deletingAgents.has(agentKey(projectId, agentId))) return true;
+    for (const entry of this.entries.values()) {
+      if (entry.projectId === projectId && entry.agentId === agentId && entryInUse(entry)) {
+        return true;
+      }
+    }
+    for (const [child, root] of this.childRoots) {
+      if (child === root || !this.sessionInUse(child)) continue;
+      const row = this.deps.sessions.findById(child);
+      if (row !== null && row.projectId === projectId && row.agentId === agentId) return true;
+    }
+    return false;
   }
 
   /** Add a newly created Session to the active table (status idle), avoiding a redundant load on the next Task. */
@@ -993,6 +905,17 @@ export class SessionManager {
    *   channel so every Session list shows which rows still own background work.
    */
   private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
+    session.setSubagentResolver?.(async (handle) => {
+      const parent = this.deps.sessions.findById(sessionId);
+      if (!parent) return null;
+      const children = await this.deps.traces?.ownedSubagents(parent);
+      const owned = children?.find(
+        (child) => child.alias === handle || (child.sessionId === handle && child.alias !== null),
+      );
+      return owned?.alias
+        ? { sessionId: owned.sessionId, agentId: owned.agentId, alias: owned.alias }
+        : null;
+    });
     session.onBackgroundNotice?.(
       () => void this.state.current?.startBackgroundNoticeTask(sessionId),
     );
@@ -1005,7 +928,8 @@ export class SessionManager {
     // The entry-lifetime approve doubles as the children's fallback approval sink: a child
     // approval with no window and no background-launch standing sink escalates to the user
     // (SSE approval_request) instead of parking until the model's next poll — the parent
-    // session idle included.
+    // session idle included. Core wraps the sink with the command policy, so a child's `ask`
+    // hit routed there arrives with its policy reason and still reaches a person.
     const entry = this.entries.get(sessionId);
     if (entry) session.setSubagentApprovalFallback?.(this.entryApprove(entry));
   }
@@ -1021,7 +945,8 @@ export class SessionManager {
    * is denied here instead of waiting for an answer that is never coming (see `unattended`
    * in approvals.ts). The marker is the row's durable `client = "org"` stamp — desk, ticket
    * and the sub-sessions that inherit it — read per decision, so a row the reconcile pass
-   * stamps later is covered from its next decision on.
+   * stamps later is covered from its next decision on. The same holds for an `ask` hit, so
+   * an organization's Session never gets a `gh pr merge` through: nobody can say yes.
    */
   private entryApprove(entry: RuntimeEntry): ApproveFn {
     return makeApprove({
@@ -1035,6 +960,7 @@ export class SessionManager {
           type: "approval_request",
           toolCall: pending.toolCall,
           ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+          ...(pending.reason !== undefined ? { reason: pending.reason } : {}),
         }),
     });
   }
@@ -1090,6 +1016,29 @@ export class SessionManager {
     for (const agentId of agentIds) this.invalidateAgentRuntimes(projectId, agentId);
   }
 
+  /**
+   * The same invalidation for a model change written to the Project config file by anyone
+   * else — the CLI, a hand edit, another process on this data root. Called before a runtime
+   * is built or reused; one stat while the file is unchanged. Only the model keys are
+   * compared, by content: a rename or a chat-defaults edit must not rebuild runtimes, and a
+   * fresh mtime re-reads the file without meaning it changed. A Project's first look only
+   * records — there is nothing to compare it with.
+   */
+  async noticeModelConfigEdit(projectId: string): Promise<void> {
+    // An unreadable file is the load's to report.
+    const table = await this.deps.projectConfig?.readRaw(projectId).catch(() => undefined);
+    const seen = this.modelConfigSeen.get(projectId);
+    if (table === undefined || table === seen?.table) return;
+    const models = JSON.stringify([
+      table.models,
+      table.providers,
+      table.default_model,
+      table.vision_model,
+    ]);
+    this.modelConfigSeen.set(projectId, { table, models });
+    if (seen !== undefined && seen.models !== models) this.invalidateProjectRuntimes(projectId);
+  }
+
   // —— Task / compaction drive ——
 
   /**
@@ -1102,12 +1051,17 @@ export class SessionManager {
    * message's file attachments to disk) can find out about the ordinary "a Task is already
    * running" rejection before doing it, instead of undoing it afterwards.
    */
-  assertCanAcceptTask(sessionId: string, opts?: { queueIfBusy?: boolean }): void {
+  assertCanAcceptTask(
+    sessionId: string,
+    opts?: { queueIfBusy?: boolean; interrupt?: boolean; steerIfBusy?: boolean },
+  ): void {
     this.assertOpen();
     this.assertAgentNotDeleting(sessionId);
     this.assertSessionNotDeleting(sessionId);
     const entry = this.entries.get(sessionId);
-    if (entry && !opts?.queueIfBusy) this.assertIdle(entry);
+    if (entry && !opts?.queueIfBusy && !opts?.interrupt && !opts?.steerIfBusy) {
+      this.assertIdle(entry);
+    }
   }
 
   /**
@@ -1139,36 +1093,82 @@ export class SessionManager {
    * not carry (the pre-attachment text and where each file landed on disk); every other
    * caller's store is read off the input, so a queued follow-up is recallable and shows
    * its content whichever path queued it.
+   *
+   * With `interrupt`, a busy session aborts its run and the input waits at the head of the
+   * queue instead (see enqueueInterrupt). So does an idle one whose queue has not drained yet,
+   * so that the interrupt cannot overtake an earlier one still waiting to start.
+   *
+   * With `steerIfBusy`, a running Task takes the input as steering, exactly as `steer` gives it
+   * (`steered: true`; `recall` is then the steering message's content). A compaction has no
+   * Task to steer, and a run already settling no longer takes steering (core refuses it): both
+   * queue the input as `queueIfBusy` does. Decided here, under the lock, so one request does
+   * whatever the Session's state calls for.
+   *
+   * `promptHooks` names the composer's switches (prompt-hooks.ts): their contexts join the input
+   * behind the user's message once it is known to start, queue or interrupt — a steered input
+   * takes none, as steering consults no `user_prompt` hook. `recall` stays the user's own.
    */
   async startTask(
     sessionId: string,
     input: AmspRecord[],
-    opts?: { queueIfBusy?: boolean; recall?: RecallStore },
-  ): Promise<{ sessionId: string; queued: boolean }> {
+    opts?: {
+      queueIfBusy?: boolean;
+      interrupt?: boolean;
+      steerIfBusy?: boolean;
+      recall?: RecallStore;
+      promptHooks?: readonly string[];
+      /**
+       * The signed-in person sending it: the driver of the run it starts — now, or when it leaves
+       * the queue (RuntimeEntry.runDriver). Absent for everything nobody signed in sent: the local
+       * API token, schedules without a creator, the Agent API, company mode, the bridge.
+       */
+      driver?: string;
+    },
+  ): Promise<{ sessionId: string; queued: boolean; steered?: boolean }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      // Neither started nor queued on a runtime stranded on a model it cannot reach.
+      assertNotStranded(entry);
+      if (
+        opts?.steerIfBusy &&
+        entry.status === "running" &&
+        this.steerRunning(entry, input, opts.recall ?? recallStoreOf(input), opts.driver)
+      ) {
+        return { sessionId: entry.sessionId, queued: false, steered: true };
+      }
       // A person's message opens a fresh chain for company mode's hop accounting, whether the
       // Task starts now or waits in the queue (see SessionManagerDeps.onHumanInput).
       if (isHumanInput(input)) this.deps.onHumanInput?.(sessionId);
-      if (entry.status !== "idle" && opts?.queueIfBusy) {
-        // The cap refuses the overflow rather than enqueuing it: see FOLLOW_UP_QUEUE_LIMIT.
-        if (entry.followUps.length >= FOLLOW_UP_QUEUE_LIMIT) {
-          throw new HttpError(
-            429,
-            "queue_full",
-            `Session ${entry.sessionId} already has ${entry.followUps.length} queued follow-ups (cap ${FOLLOW_UP_QUEUE_LIMIT}); wait for the session to drain.`,
-          );
-        }
+      // Each branch below adds the switches' contexts once it is known to take the input;
+      // without a switch nothing is awaited, so a plain Task starts exactly as it always did.
+      const hooks = opts?.promptHooks ?? [];
+      if (opts?.interrupt && (entry.status !== "idle" || entry.followUps.length > 0)) {
+        this.assertQueueRoom(entry);
+        this.enqueueInterrupt(entry, {
+          id: randomUUID(),
+          input: hooks.length > 0 ? await withPromptHooks(entry.session, input, hooks) : input,
+          recall: opts.recall ?? recallStoreOf(input),
+          ...(opts.driver !== undefined ? { driver: opts.driver } : {}),
+        });
+        return { sessionId: entry.sessionId, queued: true };
+      }
+      if (
+        (entry.status !== "idle" || entry.queuedModel) &&
+        (opts?.queueIfBusy || opts?.steerIfBusy)
+      ) {
+        this.assertQueueRoom(entry);
         entry.followUps.push({
           id: randomUUID(),
-          input,
+          input: hooks.length > 0 ? await withPromptHooks(entry.session, input, hooks) : input,
           // The original content rides the queue so a recall can hand it back, and so the
           // queued line shows what is waiting (see recallFollowUp). Callers that know more
           // than the input carries pass their own; the rest get it read off the input.
           recall: opts.recall ?? recallStoreOf(input),
+          // Who queued it drives the run it becomes, not the run in progress now.
+          ...(opts.driver !== undefined ? { driver: opts.driver } : {}),
         });
         entry.lastActivityMs = Date.now();
         // Re-publish the current state so subscribers pick up the new queued count (the
@@ -1177,7 +1177,11 @@ export class SessionManager {
         return { sessionId: entry.sessionId, queued: true };
       }
       this.assertIdle(entry);
-      this.launchTask(entry, input);
+      this.launchTask(
+        entry,
+        hooks.length > 0 ? await withPromptHooks(entry.session, input, hooks) : input,
+        opts?.driver ?? null,
+      );
       return { sessionId: entry.sessionId, queued: false };
     });
   }
@@ -1194,7 +1198,7 @@ export class SessionManager {
    * input for company mode's hop accounting: the turn it resends was counted, or not, when
    * it was first sent.
    */
-  async retryTask(sessionId: string): Promise<{ sessionId: string }> {
+  async retryTask(sessionId: string, driver?: string): Promise<{ sessionId: string }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
@@ -1208,7 +1212,7 @@ export class SessionManager {
           "There is nothing to retry: the unfinished turn's input has already been sent.",
         );
       }
-      this.launchTask(entry, []);
+      this.launchTask(entry, [], driver ?? null);
       return { sessionId: entry.sessionId };
     });
   }
@@ -1243,11 +1247,22 @@ export class SessionManager {
       this.assertSessionNotDeleting(sessionId);
       await this.assertGoalPluginInstalled(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      assertNotStranded(entry);
       this.assertIdle(entry);
       const objective = args.objective;
-      const started = await entry.session.runUserPromptHook?.("goal", objective, {
-        budget: args.budget,
-      });
+      // A start hook that fails (its script errs or times out, or the sandbox refuses to run
+      // it) is a refusal naming its reason, with no Task submitted — not an internal error.
+      const started = await entry.session
+        .runUserPromptHook?.("goal", objective, { budget: args.budget })
+        .catch((err: unknown) => {
+          if (err instanceof HttpError) throw err;
+          const reason = err instanceof Error ? err.message : String(err);
+          throw new HttpError(
+            409,
+            "goal_start_failed",
+            `Goal mode could not start: the goal plugin's start hook failed (${reason}).`,
+          );
+        });
       if (!started) throw goalPluginNotInstalled();
       if (!started.context) {
         throw new HttpError(
@@ -1261,6 +1276,8 @@ export class SessionManager {
       // objective). Later rounds are the stop hook's continues, which core stamps the same way.
       const input = [...args.messages, userText(started.context, "harness")];
       const ac = new AbortController();
+      // A goal drives itself round after round: it runs for nobody (RuntimeEntry.runDriver).
+      entry.runDriver = null;
       entry.status = "running";
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
@@ -1390,9 +1407,15 @@ export class SessionManager {
    * and drives the run, which echoes the input. Caller holds the session lock and has verified
    * idle. A retry's input is empty: nothing is echoed or held, and drive gets no title
    * material — the turn it resends already offered its text when it was first sent.
+   *
+   * `driver` is the signed-in person who started this run, null for a run nobody started; it
+   * holds until the run ends (drive's finally) or someone else steers it (steerRunning).
    */
-  private launchTask(entry: RuntimeEntry, input: AmspRecord[]): void {
+  private launchTask(entry: RuntimeEntry, input: AmspRecord[], driver: string | null = null): void {
+    // Every Task starts here — a retry, a queued follow-up, a background notice's delivery.
+    assertNotStranded(entry);
     const ac = new AbortController();
+    entry.runDriver = driver;
     entry.status = "running";
     entry.abort = ac;
     entry.lastActivityMs = Date.now();
@@ -1415,9 +1438,11 @@ export class SessionManager {
     });
     // This call's input user text is the whole title source: drive persists its first
     // words as the immediate fallback and hands it to the LLM as the generation material
-    // (user input only — generation never waits for model output).
+    // (user input only — generation never waits for model output; a switch's context from
+    // prompt-hooks.ts is the harness's text, not the user's).
     const userExcerpt = input
       .filter(isPlainText("user"))
+      .filter((m) => m.payload.sender !== "harness")
       .map((m) => m.payload.text)
       .join("\n");
     entry.running = this.drive(entry, gen, { userExcerpt, echo: input });
@@ -1438,9 +1463,34 @@ export class SessionManager {
         const row = this.deps.sessions.findById(sessionId);
         if (row && this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
         const entry = this.entries.get(sessionId);
-        if (!entry || entry.status !== "idle" || entry.followUps.length === 0) return;
-        const next = entry.followUps.shift()!;
-        this.launchTask(entry, next.input);
+        if (!entry || entry.status !== "idle") return;
+        const waiting = entry.queuedModel;
+        const first = entry.followUps[0];
+        if (waiting && !first?.interrupt && (!first || !waiting.after.has(first.id))) {
+          delete entry.queuedModel;
+          try {
+            const result = await this.switchUnderLock(entry, waiting.target);
+            if (!result.switched) return; // The handoff will resume this same drain.
+          } catch (err) {
+            this.deps.errors?.record({
+              source: "session",
+              code: "session_switch_failed",
+              err,
+              ctx: {
+                projectId: entry.projectId,
+                agentId: entry.agentId,
+                sessionId,
+              },
+            });
+            this.log(
+              `[session] Deferred model switch failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+          this.publishState(entry, "idle");
+        }
+        const next = entry.followUps.shift();
+        if (next) this.launchTask(entry, next.input, next.driver ?? null);
+        else void this.state.current?.startBackgroundNoticeTask(sessionId);
       });
     } catch (err) {
       this.log(`[followup] auto-start failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -1454,6 +1504,7 @@ export class SessionManager {
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      assertNotStranded(entry);
       this.assertIdle(entry);
       // When there's nothing to compact, core's compact() yields no messages at all: we
       // can't just return 202 and walk away, or the frontend would wait forever for a
@@ -1470,7 +1521,9 @@ export class SessionManager {
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
       this.publishState(entry, "compacting");
-      const gen = entry.session.compact({ signal: ac.signal });
+      // The compaction's tool rounds are approved like a Task's calls: under always-ask a
+      // hand-off file write waits for the user's click, as any write would.
+      const gen = entry.session.compact({ approve: this.entryApprove(entry), signal: ac.signal });
       entry.running = this.drive(entry, gen);
       return { sessionId: entry.sessionId };
     });
@@ -1500,58 +1553,128 @@ export class SessionManager {
    * leaves them where they were. Usage: a drive bills to the model it started on, so the
    * switch's compaction request goes to the model that served it and the next run to the new
    * one.
+   *
+   * A Session not in memory is loaded the ordinary way first, so a refusal of the target is
+   * core's, as for any loaded Session. Only one the ordinary load refuses — its model can no
+   * longer be reached — is loaded for this switch alone (`SessionLoader.load`'s `switchTo`):
+   * with a Trace it is resumed anyway, since core then hands its history over by Trace path
+   * rather than ask that model for a summary; without one it is rebuilt on the target, and the
+   * load is the whole switch (200, or the target's 409). Such a runtime runs nothing on the
+   * model it cannot reach (`RuntimeEntry.stranded`), and one the switch did not move is not
+   * kept: the next access loads it the ordinary way and meets the ordinary refusal.
    */
   async startSwitch(
     sessionId: string,
     ref: ModelRefDto,
+    whenIdle = false,
   ): Promise<{ sessionId: string; switched: boolean }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
-      const entry = await this.ensureEntry(sessionId);
-      this.assertIdle(entry);
-      if (entry.provider === ref.provider && entry.modelId === ref.modelId) {
+      const active = this.entries.get(sessionId);
+      if (whenIdle && active && (active.status !== "idle" || active.queuedModel)) {
+        const nextModel = active.switchingModel ?? active;
+        if (matchesModel(nextModel, ref)) {
+          // An issued handoff runs to completion. Cancel only the choice waiting behind it.
+          delete active.queuedModel;
+        } else {
+          if (!active.session.switchModel) {
+            throw new HttpError(
+              409,
+              "model_unavailable",
+              "Switching the model is not available for this Session.",
+            );
+          }
+          try {
+            await active.session.validateSwitchTarget?.(ref);
+          } catch (err) {
+            throw switchRefusal(err, ref);
+          }
+          active.queuedModel = {
+            target: ref,
+            after: active.queuedModel?.after ?? new Set(active.followUps.map((item) => item.id)),
+          };
+        }
+        this.publishState(active, active.status);
+        // The active run can finish while the target's credentials are being checked.
+        if (active.status === "idle" && active.queuedModel) {
+          void this.state.current?.startQueuedFollowUp(sessionId);
+        }
+        return { sessionId, switched: !this.pendingModel(sessionId) };
+      }
+      const held = active ?? this.deps.sessions.findById(sessionId);
+      if (held && matchesModel(held, ref)) {
+        if (whenIdle) return { sessionId, switched: true };
         throw new HttpError(
           409,
           "same_model",
           `This Session already runs on ${ref.provider} / ${ref.modelId}.`,
         );
       }
-      if (!entry.session.switchModel) {
-        throw new HttpError(
-          409,
-          "model_unavailable",
-          "Switching the model is not available for this Session.",
-        );
-      }
-      const ac = new AbortController();
-      const gen = entry.session.switchModel({ ...ref, signal: ac.signal });
-      const head = gen.next();
-      const settled = (): void => {
-        entry.abort = null;
-        entry.running = null;
-      };
-      // One promise for the whole switch — the pull, then the drive behind it — so whoever
-      // waits for this entry's run to end waits for both.
-      entry.abort = ac;
-      entry.running = head.then((first) => {
-        if (first.done) return settled();
-        entry.status = "compacting";
-        this.publishState(entry, "compacting");
-        return this.drive(entry, resumeFrom(first.value, gen));
-      }, settled);
-      let first: IteratorResult<AmspRecord, StopReason>;
-      try {
-        first = await head;
-      } catch (err) {
-        throw switchRefusal(err, ref);
-      }
-      entry.lastActivityMs = Date.now();
-      if (!first.done) return { sessionId: entry.sessionId, switched: false };
-      this.syncEntryModel(entry);
-      return { sessionId: entry.sessionId, switched: true };
+      const entry = await this.ensureEntry(sessionId, { switchTo: ref });
+      this.assertIdle(entry);
+      return this.switchUnderLock(entry, ref);
     });
+  }
+
+  private async switchUnderLock(
+    entry: RuntimeEntry,
+    ref: ModelRefDto,
+  ): Promise<{ sessionId: string; switched: boolean }> {
+    const from = { provider: entry.provider, modelId: entry.modelId };
+    if (from.provider === ref.provider && from.modelId === ref.modelId) {
+      // The load rebuilt a Session that left no Trace on the target: switched already.
+      return { sessionId: entry.sessionId, switched: true };
+    }
+    if (!entry.session.switchModel) {
+      throw new HttpError(
+        409,
+        "model_unavailable",
+        "Switching the model is not available for this Session.",
+      );
+    }
+    // A runtime loaded for this switch alone that the switch did not move is dropped once
+    // nothing holds it: the next access loads it the ordinary way.
+    const dropUnmoved = (): void => {
+      if (!entry.stranded || this.entries.get(entry.sessionId) !== entry) return;
+      if (entry.status !== "idle" || entry.running !== null || entry.followUps.length > 0) return;
+      this.entries.delete(entry.sessionId);
+    };
+    const ac = new AbortController();
+    const gen = entry.session.switchModel({
+      ...ref,
+      approve: this.entryApprove(entry),
+      signal: ac.signal,
+    });
+    const head = gen.next();
+    const settled = (): void => {
+      delete entry.switchingModel;
+      entry.abort = null;
+      entry.running = null;
+    };
+    // One promise for the whole switch — the pull, then the drive behind it — so whoever
+    // waits for this entry's run to end waits for both.
+    entry.abort = ac;
+    entry.switchingModel = ref;
+    entry.running = head.then((first) => {
+      if (first.done) return settled();
+      entry.status = "compacting";
+      this.publishState(entry, "compacting");
+      return this.drive(entry, resumeFrom(first.value, gen)).then(dropUnmoved);
+    }, settled);
+    let first: IteratorResult<AmspRecord, StopReason>;
+    try {
+      first = await head;
+    } catch (err) {
+      settled();
+      dropUnmoved();
+      throw switchRefusal(err, ref);
+    }
+    entry.lastActivityMs = Date.now();
+    if (!first.done) return { sessionId: entry.sessionId, switched: false };
+    this.syncEntryModel(entry);
+    return { sessionId: entry.sessionId, switched: true };
   }
 
   /** Who is told when a Session's model moves (see `onModelChanged`). */
@@ -1582,6 +1705,8 @@ export class SessionManager {
     if (entry.provider === model.provider && entry.modelId === model.modelId) return;
     entry.provider = model.provider;
     entry.modelId = model.modelId;
+    // Off the model it could not reach, a runtime loaded for a switch alone is an ordinary one.
+    delete entry.stranded;
     const ctx = { projectId: entry.projectId, agentId: entry.agentId, sessionId: entry.sessionId };
     try {
       this.deps.sessions.updateModel(entry.sessionId, model.provider, model.modelId);
@@ -1631,15 +1756,33 @@ export class SessionManager {
    * keeps the composer's "steering queued" hint, content included, alive across reloads —
    * and the content itself is what a recall (recallSteering) hands back to the composer.
    */
-  steer(sessionId: string, input: AmspRecord[], recall: RecallStore): void {
+  steer(sessionId: string, input: AmspRecord[], recall: RecallStore, driver?: string): void {
     const entry = this.entries.get(sessionId);
-    if (!entry || entry.status !== "running" || !entry.session.steer(input)) {
+    if (!entry || !this.steerRunning(entry, input, recall, driver)) {
       throw new HttpError(
         409,
         "not_running",
         "This Session has no Task in progress; send the message as a new task instead.",
       );
     }
+  }
+
+  /**
+   * Hands `input` to the entry's running Task as steering and mirrors it (see `steer`); false,
+   * with nothing changed, when there is no Task to take it — the Session is not running one, or
+   * core refuses (no engine yet, or the run is settling).
+   *
+   * Steering never makes anyone the run's driver; a message from anyone but its driver (`driver`
+   * is the signed-in sender, absent for the local token) leaves the run with no driver at all.
+   */
+  private steerRunning(
+    entry: RuntimeEntry,
+    input: AmspRecord[],
+    recall: RecallStore,
+    driver?: string,
+  ): boolean {
+    if (entry.status !== "running" || !entry.session.steer(input)) return false;
+    if ((driver ?? null) !== (entry.runDriver ?? null)) entry.runDriver = null;
     entry.pendingSteering.push({
       info: {
         id: randomUUID(),
@@ -1652,6 +1795,7 @@ export class SessionManager {
     });
     entry.lastActivityMs = Date.now();
     this.publishState(entry, entry.status);
+    return true;
   }
 
   /**
@@ -1720,6 +1864,83 @@ export class SessionManager {
     entry.lastActivityMs = Date.now();
     this.publishState(entry, entry.status);
     return { recall: queued.recall };
+  }
+
+  /**
+   * Send one waiting message now (POST /interrupt): the queued follow-up `followUpId` names,
+   * or the undelivered steering message `steerId` names, becomes an interrupt (see
+   * enqueueInterrupt). A follow-up keeps its id, so it stays recallable by it; one that is an
+   * interrupt already is left where it is. 409 `follow_up_started` when the follow-up is no
+   * longer queued, 409 `not_pending` when the steering message already reached the model.
+   */
+  interruptQueued(sessionId: string, target: { followUpId: string } | { steerId: string }): void {
+    const entry = this.entries.get(sessionId);
+    if ("followUpId" in target) {
+      const i = entry?.followUps.findIndex((f) => f.id === target.followUpId) ?? -1;
+      if (!entry || i < 0) {
+        throw new HttpError(
+          409,
+          "follow_up_started",
+          "This follow-up message already started; there is nothing left to interrupt with.",
+        );
+      }
+      if (entry.followUps[i]!.interrupt) return;
+      const [queued] = entry.followUps.splice(i, 1);
+      this.enqueueInterrupt(entry, queued!);
+      return;
+    }
+    const i = entry?.pendingSteering.findIndex((p) => p.info.id === target.steerId) ?? -1;
+    const pending = i >= 0 ? entry!.pendingSteering[i]! : undefined;
+    if (entry && pending) this.assertQueueRoom(entry); // before core lets go of the message
+    // Core decides, as for a recall: the mirror can lag a delivery the stream has not shown.
+    if (!entry || !pending || !(entry.session.unsteer?.(pending.input) ?? false)) {
+      throw new HttpError(
+        409,
+        "not_pending",
+        "This steering message was already delivered to the model.",
+      );
+    }
+    entry.pendingSteering.splice(i, 1);
+    this.enqueueInterrupt(entry, {
+      id: pending.info.id,
+      input: pending.input,
+      recall: pending.recall,
+    });
+  }
+
+  /**
+   * The shared half of every interrupt: puts `item` at the head of the follow-up queue, behind
+   * earlier interrupts and ahead of every ordinary follow-up, then aborts the run the way
+   * POST /abort does. The drive's finally starts the head of the queue, and core sends the
+   * abort's carry-over ahead of it, so the message lands right after the turn it cut. Steering
+   * still undelivered meets the abort as it would meet a Stop: it goes back to the composer.
+   */
+  private enqueueInterrupt(entry: RuntimeEntry, item: QueuedFollowUp): void {
+    const head = entry.followUps.findIndex((f) => !f.interrupt);
+    entry.followUps.splice(head < 0 ? entry.followUps.length : head, 0, {
+      ...item,
+      interrupt: true,
+    });
+    entry.lastActivityMs = Date.now();
+    this.publishState(entry, entry.status);
+    if (entry.abort) {
+      entry.approvals.denyMain();
+      entry.abort.abort();
+    }
+  }
+
+  /**
+   * One cap for everything waiting in the queue, interrupts included (429 queue_full): see
+   * FOLLOW_UP_QUEUE_LIMIT.
+   */
+  private assertQueueRoom(entry: RuntimeEntry): void {
+    if (entry.followUps.length >= FOLLOW_UP_QUEUE_LIMIT) {
+      throw new HttpError(
+        429,
+        "queue_full",
+        `Session ${entry.sessionId} already has ${entry.followUps.length} queued follow-ups (cap ${FOLLOW_UP_QUEUE_LIMIT}); wait for the session to drain.`,
+      );
+    }
   }
 
   /**
@@ -1828,17 +2049,21 @@ export class SessionManager {
    * settles, so interrupt cleanup never races a dying environment. Deleting a Session /
    * Agent / Project is the one intent that must also end the background processes the
    * conversation started (a dev server surviving its deleted conversation is
-   * unreachable from every UI, running forever).
+   * unreachable from every UI, running forever). Subagent children are not the drive's:
+   * their rounds stop at once, or they go on sending requests while it settles. Resolves
+   * once the drive and the children's cancellation writes are done.
    */
-  private disposeRemoved(entry: RuntimeEntry): void {
-    const dispose = (): void => entry.session.dispose?.();
-    if (entry.running) void entry.running.then(dispose, dispose);
-    else dispose();
+  private disposeRemoved(entry: RuntimeEntry): Promise<void> {
+    for (const child of entry.session.listBackgroundSubagents?.() ?? []) {
+      entry.session.abortBackgroundSubagentRun?.(child.sessionId);
+    }
+    const dispose = (): void | Promise<void> => entry.session.dispose?.();
+    return entry.running ? entry.running.then(dispose, dispose) : Promise.resolve(dispose());
   }
 
   /**
    * Before deleting a Project, converge all its active runs and clear them out of the
-   * active table. Returns the in-flight drive Promises of the affected entries: the
+   * active table. Returns the drive and background-cleanup Promises of the affected entries: the
    * caller (deleteProject) should await them before removing the directory, so that
    * interrupt-cleanup Trace writes don't recreate the directory after deletion.
    */
@@ -1848,9 +2073,8 @@ export class SessionManager {
       if (entry.projectId !== projectId) continue;
       entry.approvals.denyAll();
       entry.abort?.abort();
-      if (entry.running) runnings.push(entry.running);
       this.entries.delete(key);
-      this.disposeRemoved(entry);
+      runnings.push(this.disposeRemoved(entry));
     }
     return runnings;
   }
@@ -1871,9 +2095,8 @@ export class SessionManager {
       if (entry.projectId !== projectId || entry.agentId !== agentId) continue;
       entry.approvals.denyAll();
       entry.abort?.abort();
-      if (entry.running) runnings.push(entry.running);
       this.entries.delete(key);
-      this.disposeRemoved(entry);
+      runnings.push(this.disposeRemoved(entry));
     }
     return runnings;
   }
@@ -1890,7 +2113,7 @@ export class SessionManager {
    * a new task recreates the entry and Trace file, reviving an already-deleted Session
    * between the abort snapshot and the file removal. The caller must call
    * endSessionDeletion once deletion finishes (success or failure). Returns the
-   * in-flight drive Promise: the caller should await it before deleting the Trace file,
+   * drive and background-cleanup Promise: the caller should await it before deleting the Trace file,
    * so cleanup writes don't recreate the file.
    */
   beginSessionDeletion(sessionId: string): Promise<void>[] {
@@ -1900,8 +2123,7 @@ export class SessionManager {
     entry.approvals.denyAll();
     entry.abort?.abort();
     this.entries.delete(sessionId);
-    this.disposeRemoved(entry);
-    return entry.running ? [entry.running] : [];
+    return [this.disposeRemoved(entry)];
   }
 
   endSessionDeletion(sessionId: string): void {
@@ -1931,16 +2153,13 @@ export class SessionManager {
     for (const entry of this.entries.values()) {
       entry.approvals.denyAll();
       entry.abort?.abort();
-      if (entry.running) pending.push(entry.running);
       // Suspend means the environment too: dispose kills the Session's remaining
       // background processes (a dev server the conversation started, etc.). Without
       // this, a hot swap orphans them — the OS process keeps running while the next
       // App's freshly resumed Session starts with an empty process list, so the stop
       // control has gone blind. Sequenced after the in-flight drive settles, the same
       // ordering disposeRemoved uses.
-      const dispose = (): void => entry.session.dispose?.();
-      if (entry.running) void entry.running.then(dispose, dispose);
-      else dispose();
+      pending.push(this.disposeRemoved(entry));
     }
     this.entries.clear();
     if (pending.length === 0) return;
@@ -1962,7 +2181,7 @@ export class SessionManager {
   sweepIdle(now: number = Date.now(), idleMs: number = ENTRY_IDLE_MS): void {
     for (const [key, entry] of this.entries) {
       if (entry.status !== "idle" || entry.approvals.size !== 0 || entry.running !== null) continue;
-      if (entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
+      if (entry.queuedModel || entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
       // A live background process (e.g. a dev server the conversation started) pins the
       // entry: eviction would strand the process — a resumed entry starts with a fresh
       // environment, so the process list and its stop control would go blind while the
@@ -2072,7 +2291,7 @@ export class SessionManager {
     if (entry.status === "running") {
       throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
     }
-    if (entry.status === "compacting") {
+    if (entry.status === "compacting" || entry.queuedModel) {
       throw new HttpError(
         409,
         "compacting",
@@ -2095,6 +2314,8 @@ export class SessionManager {
       provider: row.provider,
     });
     if (refreshed?.changed) this.invalidateProjectRuntimes(row.projectId);
+    // After the refresh: what it wrote to the file is then already this look's.
+    await this.noticeModelConfigEdit(row.projectId);
   }
 
   /** get-or-resume-or-heal: use directly on an active-table hit; otherwise load via the loader, updating the index's primary key when it answers another id. */
@@ -2109,7 +2330,10 @@ export class SessionManager {
     }
   }
 
-  private async ensureEntry(sessionId: string): Promise<RuntimeEntry> {
+  private async ensureEntry(
+    sessionId: string,
+    loadOpts?: { switchTo?: ModelRefDto },
+  ): Promise<RuntimeEntry> {
     const existing = this.entries.get(sessionId);
     /** Background-task counts the discarded runtime last reported (see the publish below). */
     let discardedBackgroundTasks: SessionBackgroundTasks | undefined;
@@ -2125,33 +2349,44 @@ export class SessionManager {
       if (
         existing.status !== "idle" ||
         existing.running !== null ||
-        existing.approvals.size !== 0
+        existing.approvals.size !== 0 ||
+        existing.queuedModel
       ) {
         return existing;
       }
       this.entries.delete(sessionId);
       discardedBackgroundTasks = existing.backgroundTasks;
     }
+    const notFound = (): HttpError =>
+      new HttpError(404, "session_not_found", "Session does not exist or you do not have access.");
     const row = this.deps.sessions.findById(sessionId);
-    if (!row) {
-      throw new HttpError(
-        404,
-        "session_not_found",
-        "Session does not exist or you do not have access.",
-      );
-    }
+    if (!row) throw notFound();
     await this.refreshProviderCredentialIfNeeded(row);
     // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
     const generation = this.generationOf(row.projectId, row.agentId);
-    const session = await this.deps.loader.load(row);
+    // A switch first loads the Session the ordinary way; only a Session the ordinary load
+    // refuses is loaded for the switch alone, and stays stranded on its model until it moves.
+    const switchTo = loadOpts?.switchTo;
+    let session: RuntimeSession;
+    let refusal: HttpError | undefined;
+    try {
+      session = await this.deps.loader.load(row);
+    } catch (err) {
+      if (switchTo === undefined || !(err instanceof HttpError)) throw err;
+      session = await this.deps.loader.load(row, { switchTo });
+      refusal = err;
+    }
     // The Session/Agent was marked for deletion while loading: discard the load result,
     // don't rebuild the entry (avoids reviving an orphaned Trace).
     this.assertSessionNotDeleting(row.sessionId);
     this.assertAgentNotDeleting(row.sessionId);
+    // A deletion can also begin and end within one load: the row is the last word.
+    const current = this.deps.sessions.findById(row.sessionId);
+    if (current === null) throw notFound();
     // A thinking-level PATCH that landed during the (awaited) load updated the row but found
     // no entry to assign, and the loader applied the snapshot's level: re-read the pin.
-    const pin = this.deps.sessions.findById(row.sessionId)?.thinkingLevel;
+    const pin = current.thinkingLevel;
     if (pin && pin !== row.thinkingLevel) session.thinkingLevel = pin;
     let currentId = row.sessionId;
     if (session.sessionId !== row.sessionId) {
@@ -2190,6 +2425,11 @@ export class SessionManager {
     // crashed between the Trace write and the row update resumes (from the Trace) on the new
     // model, and the row is brought back in step here.
     this.syncEntryModel(entry);
+    // Loaded for the switch alone and not on the target by now: stranded until it moves off.
+    const onTarget = entry.provider === switchTo?.provider && entry.modelId === switchTo?.modelId;
+    if (refusal && !onTarget) {
+      entry.stranded = { status: refusal.status, code: refusal.code, message: refusal.message };
+    }
     this.entries.set(currentId, entry);
     this.registerNoticeListener(currentId, session);
     if (discardedBackgroundTasks !== undefined) this.publishBackgroundTasks(currentId);
@@ -2220,7 +2460,7 @@ export class SessionManager {
         }
         // Busy or queued-behind: not a loss — the running/next run's engine drains the
         // same notice queue at its own input-assembly boundaries.
-        if (entry.status !== "idle" || entry.followUps.length > 0) return;
+        if (entry.status !== "idle" || entry.queuedModel || entry.followUps.length > 0) return;
         const input = entry.session.takeBackgroundNotices?.() ?? [];
         if (input.length === 0) return;
         this.launchTask(entry, input);
@@ -2244,6 +2484,10 @@ export class SessionManager {
     gen: AsyncGenerator<AmspRecord>,
     titleSource?: { userExcerpt: string; echo?: readonly AmspRecord[] },
   ): Promise<void> {
+    // The run's log opens before anything of it is published: the input echo included, which
+    // is the run's as much as what the generator yields. Every caller flips the status in the
+    // same synchronous tick, so a history capture that reads the Session busy finds this log.
+    this.liveTail.begin(entry.sessionId);
     const ctx: UsageContext = {
       projectId: entry.projectId,
       agentId: entry.agentId,
@@ -2304,14 +2548,23 @@ export class SessionManager {
     // exist) — the latter is cleaned up when the parent-level tool_call_output settles;
     // if the call is still in the queue at that point, it never produced a session_meta.
     const subagentPrompts = new Map<string, string>();
-    // Re-fetches the channel per publish, like the loop below (see the comment there).
-    // Read before the run's first step: the generator has not started, so this is the state
-    // the run opens on.
+    // Re-fetches the channel per publish, like the loop below (see the comment there), and
+    // logs the echo in the run's records in the same tick. Read before the run's first step:
+    // the generator has not started, so this is the state the run opens on.
     const echo = new InputEcho(
       titleSource?.echo ?? [],
-      (m) => this.deps.channels.get(entry.sessionId).publish(m),
+      (m) => {
+        const published = this.deps.channels.get(entry.sessionId).publish(m);
+        this.liveTail.observe(entry.sessionId, m, published);
+      },
       entry.session.contextOpenPending?.() === true,
     );
+    // Inside a main-session compaction span: its requests are not the run's first request (the
+    // engine writes no run input ahead of them).
+    let compacting = false;
+    // A main-session session_update passed: the switch's Trace handoff that follows it is
+    // streamed now but written only when the next context's file opens (see pendingBootstrap).
+    let switched = false;
     try {
       for await (const msg of gen) {
         echo.before(msg);
@@ -2332,16 +2585,23 @@ export class SessionManager {
             this.publishState(entry, entry.status);
           }
           // The main session's own session_meta is streamed whenever it is written: a Session's
-          // first message, a compaction's new context (when its file opens), a model switch.
-          // The runtime is on that context's model by then: the entry and the row follow it
-          // here, ahead of the publish below, so a client that re-reads the Session on this
-          // record already finds the new model (the first meta and a compaction's name the
-          // model the entry is on, and nothing moves). The context's file is open too, its
+          // first message, and the new context of a compaction or a model switch (when its file
+          // opens, with the next message). The runtime is on that context's model by then: the
+          // entry and the row follow it here, ahead of the publish below, so a client that
+          // re-reads the Session on this record already finds the new model (a switch's moved
+          // them already, at its session_update, and nothing moves again). The context's file is open too, its
           // records on it — so what the bootstrap held for GET /messages is in the Trace — and
           // what the context it replaced still held pending went with it.
           if (isSessionMeta(msg)) {
             this.syncEntryModel(entry);
             entry.pendingBootstrap = [];
+          }
+          // A completed model switch's record: the runtime is on the target by then, so the
+          // entry and the row follow it here, at switch time — the next context's session_meta
+          // comes only with the next message, written when its file opens.
+          if (updatedModel(msg) !== undefined) {
+            this.syncEntryModel(entry);
+            switched = true;
           }
         } else if (isSessionMeta(msg)) {
           // Subagent registration is only a "side effect" — it must never interrupt the
@@ -2395,25 +2655,33 @@ export class SessionManager {
           if (bt === "mcp_connect_begin" || bt === "mcp_connect_end" || bt === "tool_list_ready") {
             entry.pendingBootstrap.push(msg);
           }
+          // The handoff a switch opens the next context with lands in the Trace at that
+          // file's head, with its first message: held until then like the opener's records, so
+          // a reload before that message still folds it into the switch's marker.
+          if (switched && bt === "text" && isInPlaceHandoff(msg, entry.sessionId)) {
+            entry.pendingBootstrap.push(msg);
+          }
+          if (bt === "compaction_begin") compacting = true;
+          else if (bt === "compaction_end") compacting = false;
           // First request of the run: the engine writes input → bootstrap records → tool
           // list to the Trace BEFORE issuing the request, so both holds are persisted by
           // now — end them here rather than at idle. Holding for the whole run would
           // outlive the messages endpoint's tail-window dedup: once the Task appends
           // more records than the window, the input would be judged "not yet in the
           // Trace" and served a second time at the end of history.
-          if (bt === "request_begin") {
+          if (bt === "request_begin" && !compacting) {
             entry.pendingInputs = [];
             entry.pendingBootstrap = [];
           }
         }
-        // Live-tail bookkeeping in the same synchronous tick as the publish below: the
-        // messages endpoint captures "channel cursor + open fragments" between two
-        // publishes, so the pair is always a consistent snapshot (see live-tail.ts).
-        this.liveTail.observe(entry.sessionId, msg);
         // Re-fetch the channel before every publish (matches publishEvent): the channel
         // may have been recycled and recreated during a long wait on approval, and
         // holding a stale reference would send output to an orphaned, detached channel.
-        this.deps.channels.get(entry.sessionId).publish(msg);
+        const published = this.deps.channels.get(entry.sessionId).publish(msg);
+        // Live-tail bookkeeping in the same synchronous tick as the publish: the messages
+        // endpoint captures "channel cursor + open fragments + the run's records" between
+        // two publishes, so the capture is always a consistent snapshot (see live-tail.ts).
+        this.liveTail.observe(entry.sessionId, msg, published);
         echo.after(msg);
         watcher?.observe(msg);
         try {
@@ -2435,8 +2703,9 @@ export class SessionManager {
       echo.flush();
       // Wrap-up: persist any still-pending LLM failure and clear the tool-name cache (the watcher's state doesn't carry across runs).
       watcher?.close();
-      // The run is over: no fragment will ever continue, so drop the live tail before the
-      // idle flip (GET /messages stops attaching `live` the moment status reads idle).
+      // The run is over: no fragment will ever continue, so drop the live tail — the run's
+      // log with it — before the idle flip (GET /messages stops attaching the open fragments,
+      // and the run form's records read empty, the moment status reads idle).
       this.liveTail.clear(entry.sessionId);
       // The pending holds are NOT cleared here: a run aborted mid-bootstrap wrote nothing
       // to the Trace, so its held input (and the aborted connect pair) are the only copy
@@ -2448,6 +2717,8 @@ export class SessionManager {
       entry.status = "idle";
       entry.abort = null;
       entry.running = null;
+      entry.runDriver = null;
+      delete entry.switchingModel;
       // The run is over, so core has discarded any undelivered steering (see ContextEngine's
       // steeringQueue). What is still in the mirror was therefore never delivered — entries
       // are shifted out as their `[user_steering]` message appears on the stream, and this
@@ -2470,7 +2741,8 @@ export class SessionManager {
       // Queued follow-ups: whenever a run finishes (Task or compaction, abort included),
       // the next queued input auto-starts as an ordinary task. Fire-and-forget — it
       // revalidates under the session lock.
-      if (entry.followUps.length > 0) void this.state.current?.startQueuedFollowUp(entry.sessionId);
+      if (entry.queuedModel || entry.followUps.length > 0)
+        void this.state.current?.startQueuedFollowUp(entry.sessionId);
       // Background completion notices that raced this run's exit (arrived after its last
       // input-assembly boundary): start their delivery task now. No-op when a follow-up
       // just launched — that run's engine drains the same queue.
@@ -2580,8 +2852,10 @@ export class SessionManager {
     // mirror, and the live subagent children, so subscribers can render all three hints
     // without a dedicated event type.
     const subagents = entry.session.listBackgroundSubagents?.() ?? [];
+    const meta = entry.session.metaMessage;
     this.publishEvent(entry, {
       type: "task_state",
+      ...(meta && isSessionMeta(meta) ? { contextWindow: meta.payload.model_context_window } : {}),
       state,
       queued: entry.followUps.length,
       ...(entry.pendingSteering.length > 0
@@ -2718,6 +2992,7 @@ export abstract class Sessions extends Interface<
     | "abortSubagentRun"
     | "pendingFollowUpsOf"
     | "liveFragments"
+    | "liveRun"
     | "pendingInputs"
     | "pendingBootstrap"
     | "activeCountForAgent"
@@ -2734,6 +3009,7 @@ export abstract class Sessions extends Interface<
     | "steer"
     | "recallSteering"
     | "recallFollowUp"
+    | "interruptQueued"
     | "retryNow"
     | "abortTask"
     | "listProcesses"
@@ -2763,6 +3039,7 @@ export abstract class SessionServiceIface extends Interface<
     | "listingOf"
     | "listSessions"
     | "archivedRows"
+    | "activeRows"
     | "sessionStats"
     | "createSession"
     | "defaultSandbox"
@@ -2808,6 +3085,7 @@ export class SessionsModule {
   @Use() private readonly modelScopeAuth!: ModelScopeAuth;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly traceIndex!: TraceIndex;
+  @Use() private readonly traces!: Traces;
   @Use() private readonly traceStore!: TraceIndexStore;
   @Use(SandboxModule) private readonly sandbox!: Sandbox;
   /** The Sandbox card's presets live in the sandbox's settings group. */
@@ -2819,6 +3097,7 @@ export class SessionsModule {
   @Provide() manager!: Sessions;
   @Provide() sessionService!: SessionServiceIface;
   @Provide() env!: SessionEnv;
+  @Provide() activity!: SessionActivity;
   setup() {
     const { config, settings, authState } = this;
     const log = (line: string) => this.log.line(line);
@@ -2891,15 +3170,21 @@ export class SessionsModule {
       // Each Session confines under its OWN policy — the snapshot on its row, its root's for a
       // subagent — so a settings change reaches only Sessions created after it. A row from
       // before snapshots takes the settings at its first command and keeps them from then on.
+      // Under workspace-write the agent level of the Agent's workbench folders is writable too,
+      // once something has created it: `<agentDir>/app` (data and cache) and its runtime folder
+      // under `<root>/run` (sockets, pipes, locks). The server and machine levels are not.
       confineSpawn: (ctx: ControlEnvContext) =>
-        sandbox.confinerFor(() => {
-          const root = manager.rootSessionOf(ctx.sessionId);
-          const row = sessionsRepo.findById(root);
-          if (row?.sandbox) return row.sandbox;
-          const snapshot = sandbox.currentSettings();
-          if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
-          return snapshot;
-        }),
+        sandbox.confinerFor(
+          () => {
+            const root = manager.rootSessionOf(ctx.sessionId);
+            const row = sessionsRepo.findById(root);
+            if (row?.sandbox) return row.sandbox;
+            const snapshot = sandbox.currentSettings();
+            if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
+            return snapshot;
+          },
+          agentWritableRoots(config.root, ctx.projectId, ctx.agentId),
+        ),
     };
 
     const notifyProjectUsers = (projectId: string, event: ServerEvent): void =>
@@ -2913,8 +3198,9 @@ export class SessionsModule {
       notifyProjectUsers,
     });
     const manager = new SessionManager({
-      state: this.state,
+      state: this.state as AgentStateStore,
       sessions: sessionsRepo,
+      traces: this.traces,
       channels,
       root: config.root,
       loader: this.sessionLoaders.create(config.root, sources, {
@@ -2928,6 +3214,7 @@ export class SessionsModule {
       recorder,
       errors,
       modelScopeAuth: this.modelScopeAuth,
+      projectConfig,
       titles,
       log,
       notifyProjectUsers,
@@ -2976,6 +3263,10 @@ export class SessionsModule {
     this.manager = manager;
     this.sessionService = sessionService;
     this.env = env;
+    this.activity = {
+      sessionInUse: (sessionId) => manager.sessionInUse(sessionId),
+      agentInUse: (projectId, agentId) => manager.agentInUse(projectId, agentId),
+    };
   }
 
   /**

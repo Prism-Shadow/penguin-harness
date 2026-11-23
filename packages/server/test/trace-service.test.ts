@@ -33,6 +33,7 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  sessionUpdate,
   taskBegin,
   taskEnd,
   thinkingMessage,
@@ -53,11 +54,11 @@ import type {
 // must keep reading them, so these fixtures write them through a cast.
 const legacyEnd = (status: string) => requestEnd(status as StopReason);
 import type { TraceService } from "../src/services/trace-service.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
-import { openDatabase } from "../src/db/database.js";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import { openDatabase } from "@prismshadow/penguin-library-db";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import { ErrorsRepo } from "../src/db/repos/errors.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
+import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
+import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import { UsageService } from "../src/services/usage-service.js";
 import type { PricingLookup } from "../src/services/usage-service.js";
@@ -494,6 +495,28 @@ describe("trace-service", () => {
     // of the next Task stays with the compaction round, whose rows end the file.
     expect(paired.tasks[1]!.messageFrom).toBe(8);
     expect(paired.tasks[2]!.messageTo).toBe(21);
+  });
+
+  it("a switch made hours after a round leaves that round's end where it was", async () => {
+    const ts = (hhmm: string, s: string) => `2026-07-05T${hhmm}:${s}Z`;
+    // The model the round ran on became unreachable; the switch, two hours later, handed the
+    // history over without a compaction, so its record lands right behind the round.
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload()),
+      at(ts("10:00", "00.000"), taskBegin()),
+      at(ts("10:00", "00.000"), userText("first")),
+      at(ts("10:00", "01.000"), requestBegin()),
+      at(ts("10:00", "02.000"), assistantText("one")),
+      at(ts("10:00", "03.000"), requestEnd("completed")),
+      at(ts("10:00", "03.100"), tokenUsage(counts(100), counts(100))),
+      at(ts("10:00", "03.200"), taskEnd()),
+      at(ts("12:00", "00.000"), sessionUpdate({ provider: "other", model_id: "m2" })),
+    ]);
+
+    const a = await service.analyze(P, A, S, 1);
+    expect(a.tasks).toHaveLength(1);
+    expect(a.tasks[0]!.endTs).toBe(ts("10:00", "03.100"));
+    expect(a.elapsedMs).toBe(2_100);
   });
 
   it("human approval waits don't count toward LLM generation time (the TPS denominator)", async () => {

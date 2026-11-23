@@ -18,7 +18,7 @@
  * read sensibly against the fixed `asOf` times in the widgets.
  *
  * Output: packages/landing/.blog-assets/ (gitignored). The PNGs are quantized afterwards and
- * hosted in the community repo's blog-assets/.
+ * hosted in the community repo's assets/blog-assets/.
  *
  * Prereqs: a built tree (`pnpm -r build`) and Playwright's chromium. Run from the repo:
  *   node packages/landing/scripts/capture-0214-a2ui.mjs [--dump <dir>]

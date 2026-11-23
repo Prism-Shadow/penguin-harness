@@ -1,0 +1,498 @@
+{
+  "schema": 1,
+  "updated": "2026-11-17",
+  "hero": [
+    "@penguinharness/use-bento-slides",
+    "@penguinharness/a2ui",
+    "@penguinharness/browser-automation",
+    "@penguinharness/default-rsi-toolkit"
+  ],
+  "selected": [
+    "@penguinharness/use-bento-slides",
+    "@penguinharness/a2ui",
+    "@penguinharness/browser-automation",
+    "@penguinharness/default-rsi-toolkit",
+    "@penguinharness/penguin-support",
+    "@penguinharness/goal",
+    "@penguinharness/agent-company"
+  ],
+  "popularity": {
+    "source": "placeholder",
+    "generatedAt": "2026-11-17",
+    "items": {
+      "@penguinharness/a2ui": {
+        "installs": 9099,
+        "weekly": 722
+      },
+      "@penguinharness/ace-rsi-toolkit": {
+        "installs": 1807,
+        "weekly": 141
+      },
+      "@penguinharness/agent-company": {
+        "installs": 8138,
+        "weekly": 366
+      },
+      "@penguinharness/agent-development": {
+        "installs": 3121,
+        "weekly": 199
+      },
+      "@penguinharness/agent-evaluation": {
+        "installs": 509,
+        "weekly": 10
+      },
+      "@penguinharness/ape-rsi-toolkit": {
+        "installs": 378,
+        "weekly": 28
+      },
+      "@penguinharness/awm-rsi-toolkit": {
+        "installs": 2141,
+        "weekly": 80
+      },
+      "@penguinharness/browser-automation": {
+        "installs": 694,
+        "weekly": 26
+      },
+      "@penguinharness/continual-learning": {
+        "installs": 4019,
+        "weekly": 207
+      },
+      "@penguinharness/data-analysis": {
+        "installs": 342,
+        "weekly": 24
+      },
+      "@penguinharness/default-rsi-toolkit": {
+        "installs": 1781,
+        "weekly": 131
+      },
+      "@penguinharness/goal": {
+        "installs": 1703,
+        "weekly": 46
+      },
+      "@penguinharness/humanizer": {
+        "installs": 583,
+        "weekly": 40
+      },
+      "@penguinharness/model-development": {
+        "installs": 203,
+        "weekly": 11
+      },
+      "@penguinharness/openskill-rsi-toolkit": {
+        "installs": 8871,
+        "weekly": 636
+      },
+      "@penguinharness/opro-rsi-toolkit": {
+        "installs": 414,
+        "weekly": 25
+      },
+      "@penguinharness/penguin-support": {
+        "installs": 256,
+        "weekly": 16
+      },
+      "@penguinharness/rrsi-rsi-toolkit": {
+        "installs": 372,
+        "weekly": 12
+      },
+      "@penguinharness/sandbox-bwrap": {
+        "installs": 1747,
+        "weekly": 28
+      },
+      "@penguinharness/sandbox-dsh": {
+        "installs": 333,
+        "weekly": 9
+      },
+      "@penguinharness/sandbox-seatbelt": {
+        "installs": 183,
+        "weekly": 12
+      },
+      "@penguinharness/sandbox-wsl": {
+        "installs": 3829,
+        "weekly": 283
+      },
+      "@penguinharness/skill-porting": {
+        "installs": 2728,
+        "weekly": 103
+      },
+      "@penguinharness/skilladam-rsi-toolkit": {
+        "installs": 3711,
+        "weekly": 263
+      },
+      "@penguinharness/skillopt-rsi-toolkit": {
+        "installs": 598,
+        "weekly": 30
+      },
+      "@penguinharness/software-development": {
+        "installs": 2673,
+        "weekly": 205
+      },
+      "@penguinharness/trace-lookup": {
+        "installs": 2597,
+        "weekly": 93
+      },
+      "@penguinharness/trace-rsi-toolkit": {
+        "installs": 1800,
+        "weekly": 48
+      },
+      "@penguinharness/use-bento-slides": {
+        "installs": 4078,
+        "weekly": 322
+      },
+      "@penguinharness/use-claude-code": {
+        "installs": 940,
+        "weekly": 74
+      },
+      "@penguinharness/use-firecrawl": {
+        "installs": 161,
+        "weekly": 2
+      }
+    }
+  },
+  "plugins": {
+    "@penguinharness/a2ui": {
+      "cover": {
+        "src": "a2ui/cover.webp",
+        "thumb": "a2ui/cover-640.webp",
+        "tone": "#745fac"
+      },
+      "screenshots": [
+        {
+          "src": "a2ui/shot-1.webp",
+          "thumb": "a2ui/shot-1-640.webp",
+          "caption": "A live weather card drawn inside the reply, with hourly and daily forecasts.",
+          "captionZh": "回复里直接画出天气卡片，附逐小时与未来几天的预报。"
+        },
+        {
+          "src": "a2ui/shot-2.webp",
+          "thumb": "a2ui/shot-2-640.webp",
+          "caption": "A chart of last week's CI build times, drawn from the data the agent read.",
+          "captionZh": "依据 Agent 读到的数据，画出上周 CI 构建耗时的图表。"
+        },
+        {
+          "src": "a2ui/shot-3.webp",
+          "thumb": "a2ui/shot-3-640.webp",
+          "caption": "A form the agent asks you to fill in, built from the basic controls.",
+          "captionZh": "Agent 请你填写的表单，由各类基础控件组成。"
+        },
+        {
+          "src": "a2ui/shot-4.webp",
+          "thumb": "a2ui/shot-4-640.webp",
+          "caption": "A rollout plan as a flow diagram, numbered steps and callouts.",
+          "captionZh": "上线方案以流程图、编号步骤与提示块呈现。"
+        }
+      ]
+    },
+    "@penguinharness/agent-company": {
+      "cover": {
+        "src": "agent-company/cover.webp",
+        "thumb": "agent-company/cover-640.webp",
+        "tone": "#dda734"
+      },
+      "screenshots": [
+        {
+          "src": "agent-company/shot-1.webp",
+          "thumb": "agent-company/shot-1-640.webp",
+          "caption": "The organization chart of a company of agents, each with its budget.",
+          "captionZh": "由 Agent 组成的公司的组织图，每位员工都有预算。"
+        },
+        {
+          "src": "agent-company/shot-2.webp",
+          "thumb": "agent-company/shot-2-640.webp",
+          "caption": "The company overview: inbox, today's schedule and budget alerts.",
+          "captionZh": "公司概览：收件箱、今日日程与预算告警。"
+        },
+        {
+          "src": "agent-company/shot-3.webp",
+          "thumb": "agent-company/shot-3-640.webp",
+          "caption": "The ticket board, where the employees' work moves from proposed to done.",
+          "captionZh": "工单板：员工的工作从提议一路推进到完成。"
+        }
+      ]
+    },
+    "@penguinharness/agent-evaluation": {
+      "cover": {
+        "src": "agent-evaluation/cover.webp",
+        "thumb": "agent-evaluation/cover-640.webp",
+        "tone": "#00847e"
+      },
+      "screenshots": [
+        {
+          "src": "agent-evaluation/shot-1.webp",
+          "thumb": "agent-evaluation/shot-1-640.webp",
+          "caption": "Describe the capability to test; AI writes and calibrates the Benchmark.",
+          "captionZh": "描述要考察的能力，AI 出题并校准 Benchmark。"
+        },
+        {
+          "src": "agent-evaluation/shot-2.webp",
+          "thumb": "agent-evaluation/shot-2-640.webp",
+          "caption": "Evaluate an agent on a Benchmark from the Evaluate tab.",
+          "captionZh": "在「评估」标签页用 Benchmark 评估一个 Agent。"
+        },
+        {
+          "src": "agent-evaluation/shot-3.webp",
+          "thumb": "agent-evaluation/shot-3-640.webp",
+          "caption": "Scores over time, one line per agent, with every run listed below.",
+          "captionZh": "分数走势：每个 Agent 一条线，下方列出每次运行。"
+        }
+      ]
+    },
+    "@penguinharness/browser-automation": {
+      "cover": {
+        "src": "browser-automation/cover.webp",
+        "thumb": "browser-automation/cover-640.webp",
+        "tone": "#3a70b3"
+      },
+      "screenshots": [
+        {
+          "src": "browser-automation/shot-1.webp",
+          "thumb": "browser-automation/shot-1-640.webp",
+          "caption": "The agent opens a page in the built-in browser and reads it beside the chat.",
+          "captionZh": "Agent 在内置浏览器中打开网页，并在对话旁读取内容。"
+        },
+        {
+          "src": "browser-automation/shot-2.webp",
+          "thumb": "browser-automation/shot-2-640.webp",
+          "caption": "In Chrome mode the agent works in a tab of your own Chrome.",
+          "captionZh": "Chrome 模式下，Agent 在你自己的 Chrome 标签页中操作。"
+        }
+      ]
+    },
+    "@penguinharness/default-rsi-toolkit": {
+      "cover": {
+        "src": "default-rsi-toolkit/cover.webp",
+        "thumb": "default-rsi-toolkit/cover-640.webp",
+        "tone": "#a14e78"
+      },
+      "screenshots": [
+        {
+          "src": "default-rsi-toolkit/shot-1.webp",
+          "thumb": "default-rsi-toolkit/shot-1-640.webp",
+          "caption": "One round: one change, every case evaluated, the scores before and after.",
+          "captionZh": "一轮优化：一处改动、全部用例的评估与前后分数。"
+        },
+        {
+          "src": "default-rsi-toolkit/shot-2.webp",
+          "thumb": "default-rsi-toolkit/shot-2-640.webp",
+          "caption": "The Optimize tab of the Evaluation Center, with the baseline and the target.",
+          "captionZh": "评估中心的「优化」标签页，显示基线分与目标分数。"
+        }
+      ]
+    },
+    "@penguinharness/goal": {
+      "cover": {
+        "src": "goal/cover.webp",
+        "thumb": "goal/cover-640.webp",
+        "tone": "#2f8247"
+      },
+      "screenshots": [
+        {
+          "src": "goal/shot-1.webp",
+          "thumb": "goal/shot-1-640.webp",
+          "caption": "Goal mode keeps working round after round until the objective holds.",
+          "captionZh": "目标模式逐轮推进，直到目标达成。"
+        }
+      ]
+    },
+    "@penguinharness/penguin-support": {
+      "cover": {
+        "src": "penguin-support/cover.webp",
+        "thumb": "penguin-support/cover-640.webp",
+        "tone": "#00847e"
+      },
+      "screenshots": [
+        {
+          "src": "penguin-support/shot-1.webp",
+          "thumb": "penguin-support/shot-1-640.webp",
+          "caption": "The support workbench: ask a question beside the chat.",
+          "captionZh": "客服工作台：在对话旁直接提问。"
+        }
+      ]
+    },
+    "@penguinharness/ace-rsi-toolkit": {
+      "cover": {
+        "src": "ace-rsi-toolkit/cover.webp",
+        "thumb": "ace-rsi-toolkit/cover-640.webp",
+        "tone": "#3a70b3"
+      }
+    },
+    "@penguinharness/agent-development": {
+      "cover": {
+        "src": "agent-development/cover.webp",
+        "thumb": "agent-development/cover-640.webp",
+        "tone": "#3a70b3"
+      }
+    },
+    "@penguinharness/ape-rsi-toolkit": {
+      "cover": {
+        "src": "ape-rsi-toolkit/cover.webp",
+        "thumb": "ape-rsi-toolkit/cover-640.webp",
+        "tone": "#d97230"
+      }
+    },
+    "@penguinharness/awm-rsi-toolkit": {
+      "cover": {
+        "src": "awm-rsi-toolkit/cover.webp",
+        "thumb": "awm-rsi-toolkit/cover-640.webp",
+        "tone": "#00847e"
+      }
+    },
+    "@penguinharness/continual-learning": {
+      "cover": {
+        "src": "continual-learning/cover.webp",
+        "thumb": "continual-learning/cover-640.webp",
+        "tone": "#745fac"
+      }
+    },
+    "@penguinharness/data-analysis": {
+      "cover": {
+        "src": "data-analysis/cover.webp",
+        "thumb": "data-analysis/cover-640.webp",
+        "tone": "#2f8247"
+      }
+    },
+    "@penguinharness/humanizer": {
+      "cover": {
+        "src": "humanizer/cover.webp",
+        "thumb": "humanizer/cover-640.webp",
+        "tone": "#a14e78"
+      }
+    },
+    "@penguinharness/model-development": {
+      "cover": {
+        "src": "model-development/cover.webp",
+        "thumb": "model-development/cover-640.webp",
+        "tone": "#d97230"
+      }
+    },
+    "@penguinharness/openskill-rsi-toolkit": {
+      "cover": {
+        "src": "openskill-rsi-toolkit/cover.webp",
+        "thumb": "openskill-rsi-toolkit/cover-640.webp",
+        "tone": "#2f8247"
+      }
+    },
+    "@penguinharness/opro-rsi-toolkit": {
+      "cover": {
+        "src": "opro-rsi-toolkit/cover.webp",
+        "thumb": "opro-rsi-toolkit/cover-640.webp",
+        "tone": "#c34f4b"
+      }
+    },
+    "@penguinharness/rrsi-rsi-toolkit": {
+      "cover": {
+        "src": "rrsi-rsi-toolkit/cover.webp",
+        "thumb": "rrsi-rsi-toolkit/cover-640.webp",
+        "tone": "#745fac"
+      }
+    },
+    "@penguinharness/sandbox-bwrap": {
+      "cover": {
+        "src": "sandbox-bwrap/cover.webp",
+        "thumb": "sandbox-bwrap/cover-640.webp",
+        "tone": "#5c6b7a"
+      }
+    },
+    "@penguinharness/sandbox-dsh": {
+      "cover": {
+        "src": "sandbox-dsh/cover.webp",
+        "thumb": "sandbox-dsh/cover-640.webp",
+        "tone": "#5c6b7a"
+      }
+    },
+    "@penguinharness/sandbox-seatbelt": {
+      "cover": {
+        "src": "sandbox-seatbelt/cover.webp",
+        "thumb": "sandbox-seatbelt/cover-640.webp",
+        "tone": "#5c6b7a"
+      }
+    },
+    "@penguinharness/sandbox-wsl": {
+      "cover": {
+        "src": "sandbox-wsl/cover.webp",
+        "thumb": "sandbox-wsl/cover-640.webp",
+        "tone": "#5c6b7a"
+      }
+    },
+    "@penguinharness/skill-porting": {
+      "cover": {
+        "src": "skill-porting/cover.webp",
+        "thumb": "skill-porting/cover-640.webp",
+        "tone": "#3a70b3"
+      }
+    },
+    "@penguinharness/skilladam-rsi-toolkit": {
+      "cover": {
+        "src": "skilladam-rsi-toolkit/cover.webp",
+        "thumb": "skilladam-rsi-toolkit/cover-640.webp",
+        "tone": "#dda734"
+      }
+    },
+    "@penguinharness/skillopt-rsi-toolkit": {
+      "cover": {
+        "src": "skillopt-rsi-toolkit/cover.webp",
+        "thumb": "skillopt-rsi-toolkit/cover-640.webp",
+        "tone": "#a14e78"
+      }
+    },
+    "@penguinharness/software-development": {
+      "cover": {
+        "src": "software-development/cover.webp",
+        "thumb": "software-development/cover-640.webp",
+        "tone": "#745fac"
+      }
+    },
+    "@penguinharness/trace-lookup": {
+      "cover": {
+        "src": "trace-lookup/cover.webp",
+        "thumb": "trace-lookup/cover-640.webp",
+        "tone": "#dda734"
+      }
+    },
+    "@penguinharness/trace-rsi-toolkit": {
+      "cover": {
+        "src": "trace-rsi-toolkit/cover.webp",
+        "thumb": "trace-rsi-toolkit/cover-640.webp",
+        "tone": "#c34f4b"
+      }
+    },
+    "@penguinharness/use-bento-slides": {
+      "cover": {
+        "src": "use-bento-slides/cover.webp",
+        "thumb": "use-bento-slides/cover-640.webp",
+        "tone": "#d97230"
+      },
+      "screenshots": [
+        {
+          "src": "use-bento-slides/shot-1.webp",
+          "thumb": "use-bento-slides/shot-1-640.webp",
+          "caption": "The deck editor: slides on the left, the AI panel on the right.",
+          "captionZh": "文稿编辑器：左侧是幻灯片，右侧是 AI 面板。"
+        },
+        {
+          "src": "use-bento-slides/shot-2.webp",
+          "thumb": "use-bento-slides/shot-2-640.webp",
+          "caption": "Ask in one sentence; the agent edits the deck and the slide updates.",
+          "captionZh": "一句话提出修改，Agent 改写文稿，幻灯片随即更新。"
+        },
+        {
+          "src": "use-bento-slides/shot-3.webp",
+          "thumb": "use-bento-slides/shot-3-640.webp",
+          "caption": "A second request adds a closing slide in the deck's own style.",
+          "captionZh": "再提一句，Agent 补上一页风格一致的结尾页。"
+        }
+      ]
+    },
+    "@penguinharness/use-claude-code": {
+      "cover": {
+        "src": "use-claude-code/cover.webp",
+        "thumb": "use-claude-code/cover-640.webp",
+        "tone": "#00847e"
+      }
+    },
+    "@penguinharness/use-firecrawl": {
+      "cover": {
+        "src": "use-firecrawl/cover.webp",
+        "thumb": "use-firecrawl/cover-640.webp",
+        "tone": "#c34f4b"
+      }
+    }
+  }
+}

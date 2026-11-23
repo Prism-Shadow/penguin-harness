@@ -7,9 +7,14 @@
  *   not written its file; approving it executes the command and completes the reply.
  * - Given a completed conversation, when it reloads and receives a follow-up, history appears
  *   once and the new turn completes instead of becoming stranded (the #89 regression).
+ * - Given earlier work in Compact, the step number stays separate from the latest-step shortcut.
+ *   That shortcut follows Next in visual and keyboard order, including at phone widths.
+ * - Given a Compact run waiting on an approval, its line opens by itself with Allow and Deny.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin, provisionUser } from "./auth.mjs";
+
+import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -19,8 +24,9 @@ const REPLY = "Command finished; the result looks as expected.";
 test.setTimeout(45_000);
 test.use({ actionTimeout: 10_000 });
 
-async function createSession(page, userId, approvalMode = "always-ask") {
+async function createSession(page, userId, approvalMode = "always-ask", themeId = null) {
   await provisionAndLogin(page.request, userId, PASSWORD);
+  await setAccountPrefs(page.request, { themeId });
   const projects = await page.request.get(`${BASE}/api/projects`);
   expect(projects.ok(), await projects.text()).toBeTruthy();
   const projectId = (await projects.json()).projects[0].projectId;
@@ -107,4 +113,172 @@ test("completed history reloads once and a follow-up completes", async ({ page }
   await expect(page.getByText(firstMessage, { exact: true })).toHaveCount(1);
   await expect(page.getByText(followUp, { exact: true })).toHaveCount(1);
   await expect(page.getByText(REPLY, { exact: true })).toHaveCount(2);
+});
+
+async function changeActivityDisplay(page, userId, label) {
+  await page
+    .getByRole("complementary")
+    .getByRole("button", { name: new RegExp(userId), expanded: false })
+    .click();
+  await page.getByRole("menuitem", { name: "设置", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "外观", exact: true }).click();
+  const option = dialog.getByRole("button", { name: label, exact: true });
+  await option.click();
+  await expect(option).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+}
+
+const activityRoot = (page) => page.locator(".ui-frame[data-step-view]").first();
+const activityRows = (group) => group.locator(".ui-tree > [data-depth]");
+async function openSteps(group) {
+  const toggle = group.locator("[data-group-header]");
+  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+}
+const expectFoldedBodies = async (group) => {
+  await expect(group).not.toContainText(/I will check|I will compare|printf|entry [12]/, {
+    useInnerText: true,
+  });
+};
+
+test("the account's display setting changes saved history and survives a different theme and a reload", async ({
+  page,
+}) => {
+  const userId = "smokeactivityhistory";
+  await createSession(page, userId, "allow-all", "doodle");
+  await send(page, "activity pages test");
+  await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
+  await page.reload();
+
+  const group = activityRoot(page),
+    rows = activityRows(group);
+  // A new account starts in Standard on every theme, including Doodle.
+  await openSteps(group);
+  await expect(rows).toHaveCount(4);
+  await expectFoldedBodies(group);
+  await expect(group.locator("[data-step-count]")).toHaveCount(0);
+  await changeActivityDisplay(page, userId, "展开");
+  await openSteps(group);
+  await expect(rows).toHaveCount(4);
+  await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
+  await expect(group.getByText("entry 2", { exact: true })).toBeVisible();
+  await changeActivityDisplay(page, userId, "紧凑");
+
+  const count = group.locator("[data-step-count]");
+  await expect(count).toHaveText("4 步");
+  await expect(group.locator("[data-step-terminal]")).toBeVisible();
+  await expect(rows).toHaveCount(0);
+  await expectFoldedBodies(group);
+  await openSteps(group);
+  await expect(rows).toHaveCount(4);
+  await expectFoldedBodies(group);
+  await rows.last().locator("button[aria-expanded]").first().click();
+  await expect(rows.getByText("entry 2", { exact: true })).toBeVisible();
+
+  await setAccountPrefs(page.request, { themeId: "github" });
+  await page.reload();
+  await expect(count).toHaveText("4 步");
+  await expect(rows).toHaveCount(0);
+  await expect(page.getByText("Both tools finished.", { exact: true })).toHaveCount(1);
+});
+
+test("compact activity follows two approvals while preserving the first reader's open details", async ({
+  page,
+  context,
+}) => {
+  const userId = "smokeactivity";
+  const sessionId = await createSession(page, userId, "always-ask", "modern");
+  await changeActivityDisplay(page, userId, "紧凑");
+  await send(page, "activity pages test");
+  const group = activityRoot(page),
+    count = group.locator("[data-step-count]"),
+    rows = activityRows(group);
+  await expect(count).toHaveText("2 步");
+  // The run waits on an approval: the line opens by itself, so Allow and Deny show at once.
+  await expect(rows).toHaveCount(2);
+  await expect(group.getByRole("button", { name: "允许", exact: true })).toBeVisible();
+  await expect(group.getByRole("button", { name: "拒绝", exact: true })).toBeVisible();
+  await expect(rows.first()).not.toContainText("I will check");
+
+  const total = group.locator("[data-step-elapsed] .font-mono");
+  const runningTime = await total.innerText();
+  await expect(total).not.toHaveText(runningTime);
+  const reviewer = await context.newPage();
+  await reviewer.goto(`/chat/${sessionId}`);
+  const reviewing = activityRoot(reviewer);
+  await rows.locator("button[aria-expanded]").first().click();
+  await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
+
+  // The second reader approves the same Session while the first keeps the original thinking open.
+  await openSteps(reviewing);
+  const allow = reviewing.getByRole("button", { name: "允许", exact: true });
+  if (!(await allow.isVisible()))
+    await activityRows(reviewing).locator("button[aria-expanded]").first().click();
+  await allow.click();
+  await expect(count).toHaveText("4 步");
+  await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
+  await group.locator("[data-group-header]").click();
+  await expect(rows).toHaveCount(0);
+  await openSteps(reviewing);
+  if (!(await allow.isVisible()))
+    await activityRows(reviewing).locator("button[aria-expanded]").first().click();
+  await allow.click();
+  await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
+  await expect(count).toHaveText("4 步");
+  await expect(rows).toHaveCount(0);
+  await expect(reviewing.locator("[data-step-terminal]")).toBeVisible();
+  await reviewer.close();
+});
+
+test("reopened ten-step history keeps its compact header together on desktop and narrow screens", async ({
+  page,
+}) => {
+  await createSession(page, "smokeworkhistory", "allow-all", "doodle");
+  await setAccountPrefs(page.request, { activityDisplayMode: "compact", toolAliases: false });
+  await page.reload();
+  await send(page, "ten-step work history");
+  await expect(page.getByText("The review notes are ready.", { exact: true })).toBeVisible();
+  const group = activityRoot(page),
+    head = group.locator("[data-group-header]"),
+    count = head.locator("[data-step-count]"),
+    elapsed = head.locator("[data-step-elapsed]"),
+    arrow = head.locator('[data-slot="toggle"]'),
+    rows = activityRows(group);
+  for (const [lang, n] of [
+    ["zh", "10 步"],
+    ["en", "10 steps"],
+  ]) {
+    await setAccountPrefs(page.request, { lang });
+    await page.reload();
+    await expect(head).toHaveAttribute("data-step-terminal", "true");
+    await expect(head).toContainText("read_file");
+    await expect(head).toContainText("核对本周评审记录");
+    await expect(head).toContainText("…/每周 总结/评审 记录.md");
+    await expect(count).toHaveText(n);
+    await expect(rows).toHaveCount(0);
+    const time = await elapsed.locator(".font-mono").innerText();
+    for (const width of [1280, 390, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      const [box, title, tally, clock, toggle] = await Promise.all(
+        [head, head.locator('[data-slot="label"]'), count, elapsed, arrow].map((el) =>
+          el.boundingBox(),
+        ),
+      );
+      for (const part of [tally, clock, toggle]) {
+        expect(part.x).toBeGreaterThanOrEqual(box.x);
+        expect(part.x + part.width).toBeLessThanOrEqual(Math.min(width, box.x + box.width) + 1);
+        expect(Math.abs(part.y + part.height / 2 - (title.y + title.height / 2))).toBeLessThan(5);
+      }
+      expect(clock.x - tally.x - tally.width).toBeLessThan(18);
+      expect(toggle.x - clock.x - clock.width).toBeLessThan(18);
+      await expect(head.locator("button,input")).toHaveCount(0);
+    }
+    await head.focus();
+    await page.keyboard.press("Enter");
+    await expect(rows).toHaveCount(10);
+    await rows.first().locator("button[aria-expanded]").first().click();
+    await expect(rows.first()).toContainText("Reviewing item 1.");
+    await expect(elapsed.locator(".font-mono")).toHaveText(time);
+  }
 });

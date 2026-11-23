@@ -96,6 +96,8 @@ penguin chat [options]
 
 使用 `--resume` 时，原 Session 已固定 Workspace 和模型，`--workspace`、`--model-id` 和 `--provider` 无法覆盖它们；要换模型，在恢复后的对话里使用 `/switch-model`。`--thinking` 仍然有效：它重新固定现有 Session，从下一次 LLM 请求起生效。在上下文中途更改等级会使供应商的上下文缓存失效，所以请先压缩。退出时，如果 Session 已有历史，REPL 会打印一条可直接复制运行的 `penguin chat --resume <sessionId>` 命令。
 
+对话会显示其 Session 的每一次运行，不论由谁发起。恢复的 Session 可能仍在运行，例如启动其 Task 的终端已经关闭：对话先显示历史，再显示这次运行已有的内容，并跟随到运行结束，然后才给出提示符。对话停在提示符时，别处（Web App 或另一个终端）发起的运行也照此显示，连同它的输入。显示运行期间，输入即插话，Ctrl-C 中断，运行等待的审批在对话里询问，`/exit` 离开对话而运行继续。Session 压缩期间发出的消息排在压缩之后运行。接续正在进行的运行需要同一版本的服务端；服务端较旧时，对话以暗色一行提示，此后只显示历史和此后的实时输出。
+
 在终端里，REPL 会用 OSC 133 语义提示符序列标记它的提示符，也就是 shell 为终端集成输出的那组序列：`> ` 提示符前后分别是 `A` 和 `B`，提交的 Prompt 开始一轮时是 `C`，该轮结束时是 `D;0`（出错结束时是 `D;1`）。支持这些序列的终端可以在提示符之间跳转、选中某一轮的输出；在自己的终端里运行对话的程序也能据此判断对话已回到提示符。其他终端会忽略它们；只有 stdin 与 stdout 都是终端且 `TERM` 不是 `dumb` 时才会输出。这些标记仅供参考：模型输出未经过滤就写到终端，同样可能含有这些序列。
 
 ### REPL 内命令
@@ -109,7 +111,7 @@ penguin chat [options]
 | `/thinking` | 显示这个 Session 的思考等级：`--thinking` 或 `/thinking` 固定的等级，否则是 Agent 配置的等级。 |
 | `/thinking <level>` | 固定 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）；在第一条消息之前输入时，Session 创建时即固定为该等级。等级不会写回 Agent 配置。 |
 | `/switch-model` | 显示这个 Session 当前的模型。 |
-| `/switch-model <provider> <model_id>` | 在这个 Session 内切换模型。先用当前模型总结压缩上下文（Agent 的压缩方式为 `discard` 时也不例外），然后用新模型继续对话；压缩失败或被中断则保持当前模型。还没运行过的 Session 不压缩，直接切换；第一条消息之前切换，则 Session 直接以目标模型创建。目标必须已在 Project 的模型配置中（`penguin config model list`）；两个参数以空白分隔，model_id 可以包含 `/`。 |
+| `/switch-model <provider> <model_id>` | 在这个 Session 内切换模型。先用当前模型总结压缩上下文（Agent 的压缩方式为 `discard` 时也不例外），然后用新模型继续对话。当前模型不可用或压缩失败时，新模型拿到的是对话 Trace 文件的路径而不是摘要，并打印一行写明这个文件；你中断压缩则保持当前模型。还没运行过的 Session 不压缩，直接切换；第一条消息之前切换，则 Session 直接以目标模型创建。目标必须已在 Project 的模型配置中（`penguin config model list`）；两个参数以空白分隔，model_id 可以包含 `/`。 |
 | `/verbose` | 在折叠和完整工具输出之间切换。 |
 | `/exit`、`/quit` | 退出。 |
 
@@ -246,7 +248,7 @@ penguin session rename 402a2e24 -t "Q3 发布准备" --json
 
 ## penguin agent
 
-`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。`agent api` 管理 Agent 的 API，见 [penguin agent api](#penguin-agent-api)。
+`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。`agent export` 与 `agent import` 以 Agent 目录的 zip 搬运 Agent，见 [penguin agent export 与 import](#penguin-agent-export-与-import)。`agent api` 管理 Agent 的 API，见 [penguin agent api](#penguin-agent-api)。
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
@@ -259,12 +261,31 @@ penguin agent create --agent-id <id> [options]
 | --- | --- | --- |
 | `--agent-id <id>` | Agent id，同时也是它的目录名。必填。 | — |
 | `--name <name>` / `--description <text>` | 显示名称和描述。 | — |
+| `--author <author>` | 由谁创建这个 Agent：`user`、`agent` 或 `company`。 | 在对话中运行时为 `agent`，否则为 `user` |
 | `--plugins <names>` | 要预装的插件库插件名，逗号分隔，每个插件连同各自的 Skill 和钩子包一起安装。名称未知时直接拒绝，此时还没有创建任何东西。 | — |
+| `--no-default-plugins` | 不安装每个新 Agent 默认安装的插件：`goal`（[目标模式](/goal-mode)）与 `plan`（计划模式）。 | 二者都安装 |
 | `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
 
 ```bash
 penguin agent ls
-penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+penguin agent create --agent-id helper --name "Helper" --plugins software-development
+```
+
+### penguin agent export 与 import
+
+```bash
+penguin agent export <agent-id> [--out <file>] [--no-skills] [--no-hooks] [--no-memory] [--no-workbenches] [--no-workbench-data] [--schedules] [--traces none|last:<N>|<from>..<to>] [--project-id <id>] [--json] [--server <url>]
+penguin agent import <file.zip|file.tar.gz|directory> [--agent-id <id>] [--overwrite] [--project-id <id>] [--json] [--server <url>]
+```
+
+`export` 把 Agent 保存为 `<agent-id>-<yyyymmdd>.zip`（或 `--out` 指定的文件），缺省与 Web App 的导出弹窗相同：除定时任务外的全部部件，不含 Trace。`--traces last:<N>` 取最近活跃的 N 个 Session（1~500），各自连同它启动的 Subagent 会话；`--traces 2026-10-01..2026-10-31` 取这些日期目录中的 Session。密钥保险柜从不进包。见[导出和导入 Agent](/agents#导出和导入-agent)。
+
+`import` 原样上传 zip，或在 1.0 之前也接受 `.tar.gz` 快照包。目录即 Agent 目录，含 `agent_state/` 以及（如有）`traces/`，以目录名为顶层打成 zip，不含 `node_modules` 与 `.git`。id 取 `--agent-id`，没有则取 zip 的顶层目录名或目录名。id 已被占用时拒绝并提示如何覆盖：`--overwrite` 先写一份备份快照，再替换该 Agent 的 State，仅 Project owner 可用。命令打印新建还是覆盖、版本，以及因本服务器已有而跳过的 Session。
+
+```bash
+penguin agent export helper --traces last:20
+penguin agent import helper-20261109.zip --agent-id helper_copy
+penguin agent import ./ported/my_agent
 ```
 
 ### penguin agent api
@@ -325,7 +346,8 @@ penguin project ls
 在服务端安装和移除插件，这是管理员的操作：CLI 用服务端的本地 API token 发起调用，这个 token 代表管理员，因此 Agent 可以在对话中审阅插件后自行安装。每个命令都支持 `--project-id`（缺省依次取 `PENGUIN_PROJECT_ID`、`default_project`）、`--json` 和 `--server`。
 
 - `penguin plugin install <specifier>` 把插件安装到服务端：npm 包名，可带版本、范围或标签（`@scope/name`、`name@1.2.0`），或指向 git 仓库或 tarball 的 https 链接（`https://github.com/o/r`、`github:o/r#v1`）。其他来源，例如不是插件包目录的路径、`http:` 链接或指向仓库中某个文件夹的链接，服务端会拒绝。只含 Skill、钩子或 MCP Server 的插件进入插件库，再在**插件**页把它安装到 Agent 上；带服务端模块的插件还会为该 Project 启用并立即载入，服务端上正在进行的 Agent 运行会被中止。
-- `penguin plugin install <directory>` 从本地目录安装插件包，目录里须有 `package.json`（与 npm 包名同名时以目录为准）。CLI 先用插件库自己的读取器读取它，插件库会拒绝时就停下，不发送任何内容；随后把目录打成 zip（不含 `node_modules`、`.git` 和 `.npmrc`），按**上传 zip 包**的方式上传。服务端已装有该包的其他版本时，命令会说明，加上 `--overwrite` 即可替换。包可以只带 MCP Server（在 `penguin.mcp_servers` 中声明）；上传之后，命令为包携带的每个 Server 打印一行：名称、传输方式和目标，目标是 URL，或 stdio Server 在服务器上运行的命令。Agent 正是这样安装它转换好的插件，见[导入与导出插件](/skills#导入与导出插件)。
+- `penguin plugin install <directory>` 从本地目录安装插件包，目录里须有 `package.json`（与 npm 包名同名时以目录为准）。包须已构建：服务端读取的是它的 `ifaces.json`，所以先运行包的构建（`npm install`，然后 `npm run build`，即运行 `penguin-gen-ifaces`）；没有 `ifaces.json` 的目录在发送任何内容之前即被拒绝。CLI 随后用插件库自己的读取器读取它，插件库会拒绝时就停下，不发送任何内容；随后把目录打成 zip（不含 `node_modules`、`.git` 和 `.npmrc`），按**上传 zip 包**的方式上传。服务端已装有该包的其他版本时，命令会说明，加上 `--overwrite` 即可替换。包可以只带 MCP Server（在 `src/index.ts` 中以 `mcpServers` 贡献声明）；上传之后，命令为包携带的每个 Server 打印一行：名称、传输方式和目标，目标是 URL，或 stdio Server 在服务器上运行的命令。Agent 正是这样安装它转换好的插件，见[导入与导出插件](/skills#导入与导出插件)。
+- `penguin plugin link <directory>` 把本机的插件包目录链接进服务端的插件前缀：目录留在原地，服务端就地装载它，改动目录后下一次装载即生效，不必每次都打包上传。CLI 先用插件库自己的读取器读目录，插件库会拒绝时就停下，不发送任何内容；服务端随后把目录记为前缀的 `file:` 依赖，npm 会把它落成指向目录的符号链接。该名字已在前缀安装时，命令会说明，加上 `--overwrite` 才替换成链接。插件页把链接的插件与安装的插件并排显示，带 **链接** 标记（指向即见目录路径），版本与描述直接读目录：改动后刷新即见新值，目录被删则如实显示该行的故障。`penguin plugin remove` 摘除链接，作者目录原样不动。
 - `penguin plugin remove <name>` 从 Project 中移除插件；没有其他 Project 使用时，一并从服务端删除。
 - `penguin plugin list`（或 `ls`）列出 Project 启用的服务端模块及其在本服务端上的状态，以及服务端安装的 Skill / 钩子 / MCP Server 插件。
 
@@ -333,6 +355,7 @@ penguin project ls
 penguin plugin install @acme/penguin-notes@1.2.0
 penguin plugin install https://github.com/acme/penguin-notes --project-id my-project
 penguin plugin install ./penguin-notes --overwrite
+penguin plugin link ~/src/penguin-notes
 penguin plugin list --json
 penguin plugin remove @acme/penguin-notes
 ```
@@ -645,11 +668,11 @@ note: No visible change on the page.
 `import` 和 `history` 属于内置浏览器；对用户自己的 Chrome 调用时，返回 `not_supported`。
 
 - `--list` 列出本机的浏览器个人资料：来源 id、浏览器、个人资料名称，以及其中是否有 Cookie 和历史记录。
-- `--from` 接受列表中的来源 id，或浏览器名（`chrome`、`edge`、`brave`、`arc`、`vivaldi`、`opera`、`chromium` 或 `firefox`），后者表示该浏览器的 `Default` 个人资料，或它唯一的个人资料。
+- `--from` 接受列表中的来源 id，或浏览器名（`chrome`、`edge`、`brave`、`arc`、`vivaldi`、`opera`、`chromium` 或 `firefox`），后者表示该浏览器的 `Default` 个人资料，或它唯一的个人资料。用户的 Chrome 连着时列表中另有 `chrome-extension`，经它导入 Cookie，须用户在 Chrome 中允许。
 - `--cookies` 和 `--history` 选择导入什么；两者都不给时全部导入。
 - `--domain` 只保留某个网站及其子域名的 Cookie。可以重复给出，也可以用逗号分隔多个网站。
 
-结果先给出来源，再打印 `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`、`history: <n> imported (<n> found)`，每条警告各占一行 `warning:`。各平台的细节（如 macOS 的钥匙串提示、Windows 上 Chrome 的应用绑定 Cookie）见[从你的浏览器导入](/builtin-browser#从你的浏览器导入)。
+结果先给出来源，再打印 `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`、逐个原因给出跳过数量的一行 `skipped:`、`history: <n> imported (<n> found)`，其余需要知道的情况各占一行 `warning:`。各平台的细节（如 macOS 的钥匙串提示、Windows 上 Chrome 的应用绑定 Cookie）见[从你的浏览器导入](/builtin-browser#从你的浏览器导入)。
 
 ### history
 
@@ -665,9 +688,24 @@ note: No visible change on the page.
 - `keyboard_focus_failed`：内置浏览器无法让该标签页在应用窗口里取得键盘焦点，因此一个字也没有输入。`type` 以失败结果报告并附上这条信息，原始 `cdp` 键盘命令则直接返回该错误码。可重试一次。
 - `cdp_refused`：原始命令超出了该后端允许的范围（见 [screenshot 和 cdp](#screenshot-和-cdp)）。
 - `not_supported`：对用户自己的 Chrome 调用了导入或历史记录；错误信息会提示改为请用户在 Chrome 的 Penguin 标签页中登录。
+- `import_declined`：用户没有在 Chrome 中允许经扩展导入；`extension_outdated`：用户的扩展版本过旧。
 - `script_error`、`timeout`、`invalid_url`、`source_not_found` 和 `import_failed`。
 
 CLI 自己还有三种：命令写错时的 `invalid_argument`、文件读写失败时的 `io_error`，以及连不上服务器时的 `request_failed`。
+
+## penguin storage
+
+数据根占用了多少空间，以及清理：shell 里的[设置 › 存储空间](/settings#存储空间)，是服务器 `/api/me/storage` 路由之上的瘦客户端。调用者看到的与页面给他看的相同：成员看到自己可进入的 Project，管理员看到整个数据根。这条命令与页面一起由预装的 `storage` 插件提供。
+
+```bash
+penguin storage [--refresh]                                  # 已用空间，按分类、Project、Agent，管理员另有服务端条目
+penguin storage clean [--older-than <天数>] [--all] [--yes]  # 审阅现在可以删除的内容；--yes 删除
+```
+
+- 服务器在后台测量。命令会等正在进行的测量结束，所以不会打印一块空磁盘。`--refresh` 先重新测量。
+- 不加 `--yes` 时 `clean` 只列出不删除。它打印页面显示的审阅结果，用 `x` 标出删除会带走的项：页面缺省勾选的项（已删除对话的草稿区、孤立的临时工作区、服务端缓存），加 `--all` 则是全部，含闲置对话的草稿区与 Agent 的工具环境。`--older-than` 是闲置天数，1–3650，缺省 7。
+- 加 `--yes` 时，每一项在删除时都重新判定，与页面相同；最后一行写明删除了几项、释放了多少空间、几项因正在使用或已不在而跳过。删除需要本人登录：Agent 的 shell 持有的本地 API 令牌会被拒绝（`human_required`），所以先用 [`penguin auth login`](#penguin-auth-login) 登录，或在页面上清理。
+- `--json` 把应答打印成一行 JSON（`clean` 只列出时是审阅结果加上 `chosen`，即 `--yes` 会删除的 id），`--server` 与其他命令相同。服务器上没有任何 Project 运行该插件的模块时，两者都以 `storage_unavailable` 失败。
 
 ## 审批模式（--approve）
 
@@ -713,7 +751,7 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 - CLI 绝不会从模型 id 推断 `--provider`。网关会按上游模型 id 转售厂商模型，靠猜测分组可能把凭证写到另一家厂商的端点上。内置分组之外的端点一律用 `custom`。
 - 新建条目只在显式传入时才存 `--client-type`、`--base-url` 与 `--api-key`。不传的项跟随分组，分组也没有即交给客户端缺省；不读内置模型目录。新建 Project 的文件已在各分组上存好网关的端点与协议、Penguin Go 的中转地址，以及 `vllm` 的 `openai-chat-vllm-adapter` 与本地 base URL `http://127.0.0.1:8000/v1`。分组没有设置协议时，`custom` 或用户自定义分组的条目取 `openai-chat`。更新已有条目时，只有显式传入这些选项才会改动；`--clear-*` 选项清除条目自己的值，此后它跟随分组。
 - 用这种方式重新加回删掉的预置模型，只会存下你传入的值；模型库页面的**同步新增模型**会把它连同目录的协议与端点一起补回。
-- 只有 `custom`、`vllm`、`openrouter`、`tokendance`、`siliconflow`、`atlascloud` 和用户自定义分组可以手动添加模型。其余内置分组里，新条目必须是该分组在模型目录里的条目，否则以「无法添加」拒绝，与模型库页面及其 API 的规则一致。分组里已有的条目照常更新。
+- 只有 `custom`、`vllm`、`openrouter`、`tokendance`、`siliconflow`、`atlascloud`、`runcrate` 和用户自定义分组可以手动添加模型。其余内置分组里，新条目必须是该分组在模型目录里的条目，否则以「无法添加」拒绝，与模型库页面及其 API 的规则一致。分组里已有的条目照常更新。
 - `penguin-go` 的协议固定为 `mmsp`，与模型库页面及其 API 一致：传入其他 `--client-type` 会被拒绝，除非它就是该条目或分组已存的值；对分组使用 `--clear-client-type` 同样被拒绝。
 - 如果模型的 MMSP 客户端不接受这个参数，开启 `--fast-mode` 仍会写入条目，但会在 stderr 上打印警告。
 - 两种形式下，没有指定的项都保持不变；每一对设置 / 清除选项互斥；取值为空会被拒绝，清除请用对应的 `--clear-*` 选项。
@@ -765,6 +803,28 @@ penguin config lang en
 ```
 
 设置 CLI 的界面语言（`en` 或 `zh`），方式是把 `PENGUIN_LANG` 写入你的 shell 启动文件。在交互式终端里，命令随后会提议打开一个新 shell 让设置生效；否则会打印让设置生效的方法。Windows 上命令会拒绝执行，因为没有 POSIX shell 启动文件可写。
+
+## penguin exec
+
+在 server 上运行插件的一条命令。插件与其他贡献一样地贡献命令：一个类，其 `contributes["PluginCliCommandsProvider.commands"]` 条目是命令的数据半——一个 `key`（命令路径，`a.b.c` 等价于 `penguin a b c ARGS`）与每种语言一行 summary——其 `@Bind(entry.id)` 字段是代码半。命令住在 server 的模块树里，因此 CLI 从 server 列出它们（`GET /api/cli/commands`）、请 server 运行一条（`POST /api/cli/commands/run`）；除成员命令（见下文）外，运行插件的代码是管理员操作，CLI 以本地 API token 调用，与 `penguin plugin install` 同一权限。
+
+```bash
+penguin exec <id> [args...]
+penguin exec <包>:<id> [args...]
+```
+
+不属于 CLI 自有命令的首个词，在 CLI 报未知命令之前先到插件里查证：server 的插件命令列表与之比对，恰有一个包命中即运行，运行打印的内容与退出码就是调用者的。server 未在运行时保持不动——查询只问已在运行的 server，无人应答时命令行交回 CLI 自己的解析。
+
+两个及以上插件命中同样的词即歧义：报告逐候选列出一行可直接复制执行的 `penguin exec <包>:<id> …`（原 argv 按 shell 转义）并以退出码 2 结束，什么都不运行。
+
+`penguin exec <id>` 按点分 id 直接点名命令——`sandbox.wsl.restart`，至少两段——对列表精确解析：无前缀、后缀或短名匹配。id 之后的每个选项（`--help` 在内）都属于插件命令。两个插件贡献同一个 id 时，用 npm 全名点名：`penguin exec <包>:<id>`，scope 不可省。`penguin exec ls [包]` 列出插件贡献的 id 与 summary。server 未在运行时会被启动，与任何需要 server 的命令一样。
+
+```bash
+penguin exec sandbox.wsl.restart --prod
+penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # id 撞名时
+```
+
+插件标为 `access: "member"` 的命令，Project 的任何成员都能运行，不限管理员。一次运行带上调用方的 Project 与 Session：在 Agent 的 shell 里取其 `PENGUIN_PROJECT_ID` 与 `PENGUIN_SESSION_ID`；在 Agent 之外，这类命令缺省为 `default_project`。命令还可以声明指名本地文件的选项：每个 `read` 选项所指的文件由 CLI 相对当前目录读取、随运行发送，读不到即在发送任何内容之前停止。命令交回的文件保存到 `write` 选项所指的目录，缺省为当前目录，从不覆盖已有文件（改存为 `name-1.ext`），每个保存的路径都打印到 stderr。命令还可以只在 Project 启用了其插件时运行，也可以要求 Agent 的调用为该 Agent 所在 Session 此刻正在处理其消息的人运行，而不是为本机 API token 所代表的管理员运行；这类命令拒绝以 token 发出、却没有指明 Session 的调用（`session_required`），以及 Session 中没有已登录的人发起的运行正在进行的调用（`driver_unknown`）。
 
 ## penguin server / penguin web
 
@@ -904,7 +964,7 @@ penguin auth token                      # no password: minted from this data roo
 
 ### penguin auth token
 
-`token` 完全不需要密码。它直接往数据根目录的 `web.db` 里写一条会话记录，授权依据是：你能读写这个数据根目录，而它本来就保存着 token 能触达的全部凭证。因此 `token` 是**数据根目录所有者**的工具：多用户部署时，数据根目录属于运行服务器的操作系统账号，其他人一律用 `auth login` 登录。数据根目录上从未运行过服务器时命令会失败，因为还没有 `web.db` 可写。在拿不出密码的场合使用它：
+`token` 完全不需要密码。它直接往数据根目录的 `web.db` 里写一条会话记录，授权依据是：你能读写这个数据根目录，而它本来就保存着 token 能触达的全部凭证。因此 `token` 是**数据根目录所有者**的工具：多用户部署时，数据根目录属于运行服务器的操作系统账号，其他人一律用 `auth login` 登录。数据根目录上从未运行过服务器时命令会失败，因为还没有 `web.db` 可写；服务器正在启动、端口已能连上而账号尚未创建时，命令会等它创建完成，最多等 20 秒。在拿不出密码的场合使用它：
 
 - 管理员密码由人手动设置过的机器。
 - 不能保存密码的脚本。

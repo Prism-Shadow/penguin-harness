@@ -59,6 +59,17 @@ Delete these on sight, and do not write new ones:
   one guard file per rule (`deslop.test.ts`, `no-native-title.test.ts`, `shortcut-guard.test.ts`,
   the plugin-version check). A new one needs the same justification.
 - **Type-level facts** the compiler already enforces.
+- **Sync checks between a hand-kept list and its source.** "Every `rsi` plugin has an entry in the
+  landing's list", "the list names exactly the Benchmarks the catalogue ships", an id list or a
+  count pinned to a directory, a catalogue or another package's table. They fail on somebody
+  else's legitimate change, never on a bug. Where the source is another repository's live branch
+  (the Benchmark catalogue a build clones from `main`), a merge there turns every open pull request
+  red at once. If a list must follow its source, derive it from the source at build or run time.
+  Otherwise keep it by hand and let review catch it. If a label must exist for every entry, key
+  the dictionary by the entry so the compiler checks it.
+- **Tests that read what this repository does not pin.** Another repository's live branch or
+  release, the real network (a vendor's API, GitHub's), today's date. The answer changes without a
+  commit here. Fake the boundary (§3) or feed a fixture.
 - **Duplicates.** The same scenario tested at two layers: keep the one closest to the user, unless
   the lower one covers branches the upper cannot reach cheaply.
 
@@ -124,7 +135,8 @@ file a test creates, and runs a file several times slower than a dev box.
 ## Checklist for a test PR
 
 - [ ] The scenario list is in the file header, and each `it` name is a behaviour.
-- [ ] Every assertion is observable by the caller; nothing restates a constant or the source.
+- [ ] Every assertion is observable by the caller; nothing restates a constant, a string or the source.
+- [ ] Nothing pins a hand-kept list to its source, or reads another repository, the network or the date.
 - [ ] Fakes come from the package's helpers; nothing of the package's own is `vi.mock`ed.
 - [ ] The branches the change adds are exercised; pruning did not lower branch coverage.
 - [ ] No real sleeps, no network, no per-test servers where one per `describe` would do.

@@ -52,6 +52,10 @@ files:
   # that must ship, named for the same reason dist/node_modules is above.
   - plugins/**/*
   - package.json
+  # A `from:` entry is a file set of its own, and electron-builder adds its default exclusions
+  # (`!**/node_modules/**`, every `*.d.ts`) only to the set rooted at the app directory. That is
+  # what ships workbench-runtime/types/ — the declarations TSX workbench pages are checked
+  # against, laid out under a node_modules root — so keep this an entry, never a pattern.
   - from: ../web/dist
     to: web-dist
 # The compiler's default library files (scripts/build-assets.mjs stages them beside its entry,
@@ -97,6 +101,7 @@ mac:
   # every agent and nothing ever explains why. The server and the agents' shells run as
   # descendants of this app, so the one prompt the user answers covers all of them.
   extendInfo:
+    NSMicrophoneUsageDescription: PenguinHarness uses your microphone when you choose to dictate a chat message.
     NSDesktopFolderUsageDescription: PenguinHarness needs access to your Desktop when an agent's workspace is a folder on it.
     NSDocumentsFolderUsageDescription: PenguinHarness needs access to your Documents when an agent's workspace is a folder in it.
     NSDownloadsFolderUsageDescription: PenguinHarness needs access to your Downloads when an agent's workspace is a folder in it.

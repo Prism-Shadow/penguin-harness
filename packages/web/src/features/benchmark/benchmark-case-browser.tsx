@@ -10,17 +10,21 @@
  * back off before asking for a path inside it. The statement's own README opens by itself once
  * its listing arrives, so the dialog lands on what the case is about.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+
 import type {
   BenchmarkCaseSummary,
   CaseMaterial,
   WorkspaceFileEntry,
 } from "@prismshadow/penguin-server/api";
-import { FileBrowser, Pill } from "@prismshadow/penguin-ui";
-import type { FileBrowserPreview, FileTreeRow, TreeToggle } from "@prismshadow/penguin-ui";
+import {
+  FileBrowser,
+  Pill,
+  type FileBrowserPreview,
+  type FileTreeRow,
+  type TreeToggle,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { joinWorkspacePath } from "../../lib/file-path";
 import { formatBytes } from "../../lib/format";
 import { useReaderFind } from "../../lib/reader-find";
@@ -32,9 +36,11 @@ import {
   expandTo,
   parentDir,
   previewKindOf,
+  resolveRelative,
   withExpanded,
+  type Listings,
 } from "../../lib/workspace-tree";
-import type { Listings } from "../../lib/workspace-tree";
+import { failureNode } from "../../lib/failure";
 
 /** One row of the case tree: a shared tree row, which material it came from, and a file's size. */
 export interface CaseTreeRow extends FileTreeRow {
@@ -120,17 +126,6 @@ function splitTreePath(treePath: string): { material: CaseMaterial; path: string
   };
 }
 
-/** A reference written inside a file, resolved against the directory that file sits in. */
-function resolveRelative(baseDir: string, ref: string): string {
-  const out = ref.startsWith("/") || baseDir === "" ? [] : baseDir.split("/");
-  for (const segment of ref.split("/")) {
-    if (segment === "" || segment === ".") continue;
-    if (segment === "..") out.pop();
-    else out.push(segment);
-  }
-  return out.join("/");
-}
-
 interface Props {
   projectId: string;
   benchmarkId: string;
@@ -151,7 +146,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
   /** Both materials start open, so the case's files are in view without a click. */
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(MATERIAL_PATHS));
   const [loadingDirs, setLoadingDirs] = useState<ReadonlySet<string>>(() => new Set());
-  const [listError, setListError] = useState<string | null>(null);
+  const [listError, setListError] = useState<ReactNode>(null);
   /** The directory whose subtree the tree should animate — the one just clicked. */
   const [toggled, setToggled] = useState<TreeToggle | null>(null);
   const [preview, setPreview] = useState<FileBrowserPreview | null>(null);
@@ -200,7 +195,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
         return res.entries;
       } catch (error) {
         if (!current()) return null;
-        setListError(apiErrorText(error));
+        setListError(failureNode(error));
         return null;
       } finally {
         if (current()) {
@@ -248,7 +243,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
         });
       } catch (error) {
         if (request !== previewRequest.current) return;
-        setPreview({ ...base, error: apiErrorText(error) });
+        setPreview({ ...base, error: failureNode(error) });
       }
     },
     [fileUrl],

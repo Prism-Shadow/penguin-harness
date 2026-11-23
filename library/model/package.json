@@ -1,0 +1,101 @@
+{
+  "name": "@prismshadow/penguin-library-model",
+  "version": "0.2.18",
+  "description": "The models domain: the model/credential plumbing vocabulary (the DTOs the models routes return and take), the ModelOAuth mechanism and its flow vocabulary, and the model promotions / provider auth token repos. A library package - the server imports it; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/model"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./model": {
+      "types": "./dist/model.d.ts",
+      "import": "./dist/model.js"
+    },
+    "./origins": {
+      "types": "./dist/origins.d.ts",
+      "import": "./dist/origins.js"
+    },
+    "./platform-auth-flow": {
+      "types": "./dist/platform-auth-flow.d.ts",
+      "import": "./dist/platform-auth-flow.js"
+    },
+    "./model-oauth-service": {
+      "types": "./dist/model-oauth-service.d.ts",
+      "import": "./dist/model-oauth-service.js"
+    },
+    "./modelscope-auth-service": {
+      "types": "./dist/modelscope-auth-service.d.ts",
+      "import": "./dist/modelscope-auth-service.js"
+    },
+    "./platform-auth-service": {
+      "types": "./dist/platform-auth-service.d.ts",
+      "import": "./dist/platform-auth-service.js"
+    },
+    "./model-catalog": {
+      "types": "./dist/model-catalog/index.d.ts",
+      "import": "./dist/model-catalog/index.js"
+    },
+    "./model-catalog/catalog": {
+      "types": "./dist/model-catalog/catalog.d.ts",
+      "import": "./dist/model-catalog/catalog.js"
+    },
+    "./model-catalog/client-protocols": {
+      "types": "./dist/model-catalog/client-protocols.d.ts",
+      "import": "./dist/model-catalog/client-protocols.js"
+    },
+    "./model-catalog/env-keys": {
+      "types": "./dist/model-catalog/env-keys.d.ts",
+      "import": "./dist/model-catalog/env-keys.js"
+    },
+    "./model-catalog/seed": {
+      "types": "./dist/model-catalog/seed.d.ts",
+      "import": "./dist/model-catalog/seed.js"
+    },
+    "./repos/model-promotions": {
+      "types": "./dist/repos/model-promotions.d.ts",
+      "import": "./dist/repos/model-promotions.js"
+    },
+    "./repos/model-provider-auth-tokens": {
+      "types": "./dist/repos/model-provider-auth-tokens.d.ts",
+      "import": "./dist/repos/model-provider-auth-tokens.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-agent-api": "workspace:*",
+    "@prismshadow/penguin-library-db": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/mmsp": "^0.5.12"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true
+}

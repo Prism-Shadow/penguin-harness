@@ -22,9 +22,13 @@
  *     session_meta and always becomes index 001 of a new Session — a session id the
  *     Agent already has is rejected with 409 trace_session_exists.
  */
+import type {
+  SessionCategory,
+  TraceImportResponse,
+  Traces,
+} from "@prismshadow/penguin-library-trace";
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionCategory, TraceImportResponse } from "../../api/types.js";
 import {
   badRequest,
   optionalPagingQuery,
@@ -35,8 +39,7 @@ import {
   requireValidId,
 } from "../validate.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Traces } from "../../mechanisms/traces.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-project";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentTracesRouteDeps {
@@ -100,7 +103,7 @@ export function agentTracesRoutes(deps: AgentTracesRouteDeps): Hono<AppEnv> {
     return c.json(await deps.traceService.analyze(projectId, agentId, sessionId, index));
   });
 
-  // Raw-file download (any member, like the snapshot export): the file is served verbatim
+  // Raw-file download (any member, like the Agent export): the file is served verbatim
   // as an attachment, so what's downloaded can be re-imported byte-compatibly.
   app.get("/:sessionId/:index/download", async (c) => {
     const projectId = requireValidId(c, "projectId");

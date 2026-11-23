@@ -41,6 +41,7 @@ import {
   isUnusableResponseError,
   isFatalProviderRejection,
   isRateLimitError,
+  providerRejectionCode,
   FAST_MODE_UNSUPPORTED_GUIDANCE,
   mapThinkingLevel,
   mergeRecordsToUniMessage,
@@ -118,7 +119,7 @@ function thinking(chunks: string[], fidelity?: Fidelity): UniEvent[] {
 
 /**
  * A tool call as it streams: the name and id on the first fragment only, the arguments JSON
- * in fragments, then the done item holding the parsed arguments.
+ * in fragments, then the done item holding the original JSON.
  */
 function call(name: string, id: string, fragments: string[], fidelity?: Fidelity): UniEvent[] {
   return [
@@ -133,7 +134,7 @@ function call(name: string, id: string, fragments: string[], fidelity?: Fidelity
     delta({
       type: "tool_call.done",
       name,
-      arguments: JSON.parse(fragments.join("") || "{}") as Record<string, unknown>,
+      arguments: fragments.join("") || "{}",
       tool_call_id: id,
       ...(fidelity ? { fidelity } : {}),
     }),
@@ -193,7 +194,7 @@ describe("mergeRecordsToUniMessage", () => {
     }
   });
 
-  it("maps assistant tool_call AmspRecord (args JSON string → object)", () => {
+  it("maps assistant tool_call arguments without rewriting the JSON", () => {
     const uni = mergeRecordsToUniMessage([
       toolCall({
         name: "exec_command",
@@ -206,7 +207,7 @@ describe("mergeRecordsToUniMessage", () => {
     expect(item).toEqual({
       type: "tool_call.done",
       name: "exec_command",
-      arguments: { cmd: "ls -la" },
+      arguments: '{"cmd":"ls -la"}',
       tool_call_id: "call_1",
     });
   });
@@ -408,12 +409,20 @@ describe("translateEvents", () => {
     expect(partials[3]!.event_type).toBe("stop");
     expect(partials.every((p) => p.tool_call_id === "c1")).toBe(true);
 
-    // complete tool_call: the done item's parsed arguments, re-serialized.
+    // The complete tool call carries the original argument text.
     const tc = messages.find((m) => typeOf(m) === "tool_call")!.payload as ToolCallPayload;
     expect(tc.name).toBe("exec_command");
     expect(tc.tool_call_id).toBe("c1");
     expect(tc.arguments).toBe('{"cmd":"ls -la"}');
     expect(tc).not.toHaveProperty("stop_reason");
+  });
+
+  it("preserves JSON whitespace and integers beyond JS precision in both directions", () => {
+    const raw = '{ "id": 9007199254740993, "fraction": 0.012345678901234567891 }';
+    const { messages } = translateEvents([...call("lookup", "t1", [raw]), stop("tool_call")]);
+    const record = messages.find((m) => typeOf(m) === "tool_call")!;
+    expect((record.payload as ToolCallPayload).arguments).toBe(raw);
+    expect(mergeRecordsToUniMessage([record]).content_items[0]).toMatchObject({ arguments: raw });
   });
 
   it("reads the complete call off the done item alone: the fragments are never reconciled against it", () => {
@@ -429,7 +438,7 @@ describe("translateEvents", () => {
       delta({
         type: "tool_call.done",
         name: "exec_command",
-        arguments: { cmd: "ls" },
+        arguments: '{"cmd":"ls"}',
         tool_call_id: "c1",
       }),
       stop("tool_call"),
@@ -469,7 +478,7 @@ describe("translateEvents", () => {
       delta({
         type: "tool_call.done",
         name: "exec_command",
-        arguments: { cmd: "ls" },
+        arguments: '{"cmd":"ls"}',
         tool_call_id: "real1",
       }),
       stop("tool_call"),
@@ -928,6 +937,29 @@ describe("isFatalProviderRejection (the fatal allowlist; everything it misses st
     expect(isFatalProviderRejection({ statusCode: 503 })).toBe(false);
   });
 
+  it("names the class by the status alone: the request as sent, or the account or the model", () => {
+    for (const status of [400, 413, 415, 422]) {
+      expect(providerRejectionCode({ status })).toBe("rejected");
+    }
+    for (const status of [402, 403, 404, 410]) {
+      expect(providerRejectionCode({ status })).toBe("denied");
+    }
+    // The wording is never read: a 403 that says "too long" is still the account's.
+    expect(providerRejectionCode({ status: 403, message: "prompt is too long" })).toBe("denied");
+    expect(providerRejectionCode({ statusCode: 413 })).toBe("rejected");
+    expect(providerRejectionCode({ status: 429 })).toBeNull();
+    expect(providerRejectionCode({ status: 503 })).toBeNull();
+    expect(providerRejectionCode(new Error("socket hang up"))).toBeNull();
+    // Wrapped: the first level that carries a definitive 4xx decides.
+    expect(
+      providerRejectionCode(
+        new Error("request failed", {
+          cause: Object.assign(new Error("model not found"), { status: 404 }),
+        }),
+      ),
+    ).toBe("denied");
+  });
+
   it("finds the status down the cause chain (SDKs wrap the response error)", () => {
     expect(
       isFatalProviderRejection(
@@ -972,8 +1004,8 @@ describe("isFatalProviderRejection (the fatal allowlist; everything it misses st
       error: { code: "invalid_api_key" },
     });
     expect(isAuthenticationError(err)).toBe(true);
-    // A bare 403 carries no credential signal: NOT auth (it is fatal through the generic
-    // 4xx rejection instead; see the classification tests).
+    // A bare 403 carries no credential signal: NOT auth (it is fatal / `denied` through the
+    // generic 4xx rejection instead; see the classification tests).
     expect(isAuthenticationError({ status: 403, message: "forbidden" })).toBe(false);
   });
 });
@@ -1872,10 +1904,11 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
-  it("labels a bare 403 as fatal — a definitive provider rejection, no message heuristics involved", async () => {
-    // A 4xx (minus 408/429) is a definitive rejection: fatal, whatever the message says.
-    // A quota-coded provider rejection classifies exactly the same way, and its real
-    // message still rides on the outcome for observability.
+  it("labels a bare 403 as fatal / denied — a definitive provider refusal, no message heuristics involved", async () => {
+    // A 4xx (minus 408/429) is definitive: fatal, whatever the message says. A 403 is not
+    // about the request as sent, so it is `denied`. A quota-coded provider refusal
+    // classifies exactly the same way, and its real message still rides on the outcome for
+    // observability.
     async function* bare403(): AsyncGenerator<UniEvent> {
       throw Object.assign(new Error("forbidden"), { status: 403 });
     }
@@ -1884,6 +1917,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome.status).toBe("fatal");
+    expect(outcome.errorCode).toBe("denied");
     expect(outcome.errorMessage).toContain("forbidden");
     expect(messages.map(typeOf)).not.toContain("token_usage");
 
@@ -1898,7 +1932,38 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       model2.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome2.status).toBe("fatal");
+    expect(outcome2.errorCode).toBe("denied");
     expect(outcome2.errorMessage).toContain("insufficient_user_quota");
+  });
+
+  // The HTTP status class alone decides: a 400, 413, 415 or 422 refuses the request as sent
+  // (`rejected`); any other definitive 4xx is the provider declining the account or the model
+  // (`denied`); 401 is credentials, and 408 and 429 keep their retries.
+  it.each([
+    { status: 400, outcomeStatus: "fatal", code: "rejected" },
+    { status: 413, outcomeStatus: "fatal", code: "rejected" },
+    { status: 415, outcomeStatus: "fatal", code: "rejected" },
+    { status: 422, outcomeStatus: "fatal", code: "rejected" },
+    { status: 402, outcomeStatus: "fatal", code: "denied" },
+    { status: 403, outcomeStatus: "fatal", code: "denied" },
+    { status: 404, outcomeStatus: "fatal", code: "denied" },
+    { status: 410, outcomeStatus: "fatal", code: "denied" },
+    { status: 401, outcomeStatus: "fatal", code: "auth" },
+    { status: 408, outcomeStatus: "retryable", code: "network" },
+    { status: 429, outcomeStatus: "retryable", code: "rate_limited" },
+  ])("ends an HTTP $status as $outcomeStatus / $code", async ({ status, outcomeStatus, code }) => {
+    async function* refusal(): AsyncGenerator<UniEvent> {
+      throw new Error("request failed", {
+        cause: Object.assign(new Error(`provider said ${status}`), { status }),
+      });
+    }
+    const model = new SeamModel(() => refusal());
+    const { messages, outcome } = await drain(
+      model.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome).toMatchObject({ status: outcomeStatus, errorCode: code });
+    expect(outcome.errorMessage).toContain(`provider said ${status}`);
+    expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
   // Nothing is read out of the provider's wording: a 400 is `rejected` whatever it says, an
@@ -1995,7 +2060,7 @@ describe("provider fidelity payloads (opaque)", () => {
       {
         type: "tool_call.done",
         name: "t",
-        arguments: {},
+        arguments: "{}",
         tool_call_id: "tc1",
         fidelity: { signature: "sig-3" },
       },

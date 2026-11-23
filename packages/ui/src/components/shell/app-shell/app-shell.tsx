@@ -7,27 +7,29 @@
  *
  * The navigation column is hidden below `md` — a phone reaches the same content in a drawer,
  * opened from the `MobileTopBar` at the top of the main column — and folds to the rail's width
- * when `navCollapsed`. The fold animates the column's width through the theme's layout motion
- * (`data-layout-motion`), the one property this box may animate at all: the column is in flow, so
- * the main column reflows beside it rather than being slid over, and a transform, a `will-change`
- * or an opacity below 1 would each make it a stacking context and trap the menus the column opens.
- * Its content is laid out at the width it will keep and clipped by the column, so it never
- * reflows mid-fold: the rail sits at its final width from the first frame while the column closes
- * around it, and the pinned sidebar is uncovered left to right.
+ * when `navCollapsed`. With `navResize` the reader sizes the open column by dragging its end
+ * edge. How it folds and how it is sized is `NavColumn`'s (nav-column.tsx).
  *
  * Nothing in the window is fixed or transformed: chrome that makes a stacking context would trap
  * the overlays the columns open.
  *
- * In the desktop app the window's own controls sit in a band across its top, as tall as the
- * Window Controls Overlay's `titlebar-area-height` (a browser defines none, and the band is
- * zero). The window reserves the band above its columns, so what shows there is the window's own
- * fill — the theme's field, or the page canvas where the theme paints none — and the band reads as
- * the app's top edge rather than a bar of the system's. Every column starts below it: a column
- * rule never runs between the traffic lights, whatever width the navigation column is folded to.
+ * In the desktop app the system's title bar gives way to a band across the window's top,
+ * `--window-band-height` tall (window-band.css; zero in a browser). The window reserves it above
+ * its columns, so every column starts below it and a column rule never runs between the traffic
+ * lights, whatever width the navigation column has. With no `band` the reserved strip
+ * shows the window's own fill. With one, the strip is a `band` slot holding the caller's controls
+ * after whatever the system draws at its start (the macOS traffic lights, `titlebar-area-x`), in
+ * the navigation column's colour, so the band and the column read as one surface; the main column
+ * keeps the theme's own framing, as in a browser, ruled off from the band by the line that rules
+ * it off from the column. The band drags the window; its controls do not.
  */
 import type { ReactNode } from "react";
-import { NavigationBackdrop, WallpaperContext, WallpaperLayer } from "./wallpaper";
+import { NavColumn } from "./nav-column";
+import type { NavResize } from "./nav-column";
+import { WallpaperContext, WallpaperLayer } from "./wallpaper";
 import type { WallpaperStyle } from "./wallpaper";
+
+export type { NavResize } from "./nav-column";
 
 export interface AppShellProps {
   /** Optional wallpaper; omitting it preserves every theme's normal shell surfaces. */
@@ -36,38 +38,54 @@ export interface AppShellProps {
   nav: ReactNode;
   /** Fold the navigation column to the rail's width. */
   navCollapsed?: boolean;
+  /** Let a full-screen page use the column while keeping its navigation mounted. */
+  navHidden?: boolean;
+  /** Let the reader size the open navigation column by dragging its end edge. */
+  navResize?: NavResize;
   /** The main column: the mobile top bar, any window-wide notice, the page. */
   children: ReactNode;
   /** A column docked on the right, when the caller has one. */
   dock?: ReactNode;
   /** Layers mounted beside the columns rather than in one: dialogs, the phone's drawer. */
   overlays?: ReactNode;
+  /**
+   * The desktop window's title band: its controls (the sidebar toggle, back and forward). Given
+   * only where the page draws the band itself.
+   */
+  band?: ReactNode;
 }
 
 export function AppShell({
   background,
   nav,
   navCollapsed = false,
+  navHidden = false,
+  navResize,
   children,
   dock,
   overlays,
+  band,
 }: AppShellProps) {
-  const width = navCollapsed ? "w-12" : "w-64 lg:w-72";
   return (
     <WallpaperContext.Provider value={background}>
       <div
         data-wallpaper={background === undefined ? undefined : ""}
-        className="ui-shell flex h-full pt-[env(titlebar-area-height,0px)]"
+        data-window-band={band === undefined ? undefined : ""}
+        className={`ui-shell flex h-full ${navHidden ? "[&>[data-slot=nav]]:hidden" : ""} pt-[var(--window-band-height,0px)]${band === undefined ? "" : " relative"}`}
       >
         <WallpaperLayer />
-        <aside
-          data-slot="nav"
-          data-layout-motion
-          className={`hidden shrink-0 overflow-hidden border-r border-line bg-surface-muted md:block ${width}`}
-        >
-          <NavigationBackdrop />
-          <div className={`h-full ${width}`}>{nav}</div>
-        </aside>
+        {band !== undefined && (
+          <div
+            data-slot="band"
+            data-window-drag
+            className="absolute inset-x-0 top-0 flex h-[var(--window-band-height,0px)] items-center gap-1 ps-[calc(env(titlebar-area-x,0px)+8px)]"
+          >
+            {band}
+          </div>
+        )}
+        <NavColumn collapsed={navCollapsed} resize={navResize}>
+          {nav}
+        </NavColumn>
         <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
           {children}
         </div>

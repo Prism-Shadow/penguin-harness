@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { Hono } from "hono";
-import type { AmspRecord } from "@prismshadow/penguin-core";
+import type { AmspRecord, BuiltinBenchmark } from "@prismshadow/penguin-core";
 import { bootAppDeps, createApp } from "../src/app.js";
 import type { ServerBoot } from "../src/app.js";
 import type { ModuleTree, ModuleClass } from "@prismshadow/penguin-core/kernel";
@@ -28,26 +28,26 @@ import type { AgentConfigService } from "../src/services/agent-config-service.js
 import type { MemoryService } from "../src/services/memory-service.js";
 import type { SessionService } from "../src/services/session-service.js";
 import type { PricingLookup, UsageService } from "../src/services/usage-service.js";
-import type { WorkspaceFilesService } from "../src/services/workspace-files-service.js";
+import type { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import type { PreviewTokenSigner } from "../src/services/preview-token.js";
-import type { BenchmarkService } from "../src/services/benchmark-service.js";
+import type { BenchmarkService } from "@prismshadow/penguin-library-benchmark/benchmark-service";
 import type { SnapshotService } from "../src/services/snapshot-service.js";
-import type { SessionsRepo } from "../src/db/repos/sessions.js";
-import type { UiPrefsRepo } from "../src/db/repos/ui-prefs.js";
-import type { ServerSettingsRepo } from "../src/db/repos/server-settings.js";
-import type { SchedulesRepo } from "../src/db/repos/schedules.js";
-import type { ErrorsRepo } from "../src/db/repos/errors.js";
-import type { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
+import type { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs";
+import type { ServerSettingsRepo } from "@prismshadow/penguin-library-setting/repos/server-settings";
+import type { SchedulesRepo } from "@prismshadow/penguin-library-session/repos/schedules";
+import type { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
+import type { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import type { MessagingBridge } from "../src/runtime/messaging/bridge.js";
 import type { QQScanService, QQScanTransport } from "../src/runtime/messaging/qq-scan.js";
 import type { Scheduler } from "../src/runtime/scheduler.js";
 import type { OrganizationService } from "../src/runtime/organization/service.js";
-import type { OrgCacheRepo } from "../src/db/repos/organizations.js";
+import type { OrgCacheRepo } from "@prismshadow/penguin-library-organization/organizations";
 import type { SessionManager, SessionLoader } from "../src/runtime/session-manager.js";
 import type { ErrorRecorder } from "../src/runtime/error-recorder.js";
 import type { MachinesService } from "../src/machines/service.js";
-import { openDatabase } from "../src/db/database.js";
-import { TraceIndexRepo } from "../src/db/repos/trace-index.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { TraceIndexRepo } from "@prismshadow/penguin-library-trace/repos/trace-index";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import { TraceIndexService } from "../src/services/trace-index.js";
 import { TraceService } from "../src/services/trace-service.js";
@@ -55,17 +55,17 @@ import type { TraceSessionIndex } from "../src/services/trace-service.js";
 import type { AppEnv } from "../src/auth/middleware.js";
 import { ADMIN_USER_ID } from "../src/auth/service.js";
 import type { ServerConfig } from "../src/config.js";
-import type { UserInfo } from "../src/api/types.js";
+import type { UserInfo } from "@prismshadow/penguin-library-auth";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { PluginHost } from "../src/plugin/host.js";
-import type { Replacements } from "../src/hmr/capabilities.js";
+import type { Replacements, ShellFrames } from "../src/hmr/capabilities.js";
 import { ConsoleLog, SystemClock } from "../src/hmr/capabilities.js";
 import { hashPassword, ScryptHasher } from "../src/auth/password.js";
 import { CoreSessionLoaders, DefaultTitleGenerators } from "../src/runtime/session-manager.js";
 import type { TitleNotifier } from "../src/runtime/title-generator.js";
 import { UpdateCheckService } from "../src/services/update-check-service.js";
 import { RevealService } from "../src/services/reveal-path.js";
-import { NpmPluginPackages } from "../src/plugin/install.js";
+import { NpmPluginPackages } from "../src/plugin/packages.js";
 import type { PluginPackages } from "../src/mechanisms/plugins.js";
 import { DefaultMessagingTuning } from "../src/runtime/messaging/bridge.js";
 import { FeishuSdkProvider } from "../src/runtime/messaging/feishu-connector.js";
@@ -85,9 +85,10 @@ import { machinesRoutes } from "../src/http/routes/machines.js";
 import { MachineEventHub } from "../src/machines/event-hub.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
 import { machineSessionForward } from "../src/machines/session-forward.js";
-import type { Access } from "../src/mechanisms/projects.js";
-import { ProcessShellPort } from "../src/builtin-browser/module.js";
-import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
+import { machineHistory } from "../src/machines/history-routes.js";
+import type { HistorySync } from "../src/machines/history-sync.js";
+import { TraceCache } from "../src/machines/trace-cache.js";
+import type { Access } from "@prismshadow/penguin-library-project";
 
 /** The roots {@link makeTempRoot} handed out that nothing has removed yet. */
 const tempRoots = new Set<string>();
@@ -183,11 +184,11 @@ export function testConfig(root: string): ServerConfig {
     desktopToken: null,
     portFile: null,
     trustProxy: false,
+    // The embedded market document alone: no test may reach the network for the market.
+    pluginMarketUrl: null,
     // No CLI to offer: nothing is written into the temp root, and no directory is put on
     // the PATH of whatever a test's Agent runs.
     cliEntry: null,
-    // Off by default: no test may reach the network to list plugins.
-    pluginIndexUrl: null,
   };
 }
 
@@ -202,6 +203,8 @@ export interface TestDeps {
   hmr: ServerHmrHost;
   channels: ChannelHub;
   desktop: DesktopService | null;
+  /** The host's message port as state — where a test puts the frame a shell would send. */
+  shellFrames: ShellFrames;
   tree: ModuleTree;
   sessionsRepo: SessionsRepo;
   prefsRepo: UiPrefsRepo;
@@ -250,6 +253,7 @@ export function flattenForTests(boot: ServerBoot): TestDeps {
     hmr: boot.hmr,
     channels: boot.channels,
     desktop: boot.desktop,
+    shellFrames: boot.shellFrames,
     tree,
     sessionsRepo: api("SessionRuntimeModule", "SessionIndex"),
     prefsRepo: api("SettingsModule", "UiPrefsStore"),
@@ -307,7 +311,10 @@ export interface TestAppOptions {
   loader?: SessionLoader;
   /** Test double: Session title generator (avoids real LLM requests). */
   titles?: TitleNotifier;
-  /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
+  /**
+   * Test double: update-check service with a stubbed fetch/clock. Absent, the app's lookup
+   * fails as unreachable without leaving the process: no test reaches GitHub's API.
+   */
   updateCheck?: UpdateCheckService;
   /** Test double: the Feishu connector's SDK (avoids real Lark network / long connections). */
   feishuSdk?: FeishuSdk;
@@ -339,20 +346,31 @@ export interface TestAppOptions {
   reveal?: (filePath: string) => Promise<void>;
   /** Test double: how plugin packages reach the data root's prefix, so a test never runs npm. */
   pluginPackages?: PluginPackages;
-  /** Test double: the desktop shell's port as the built-in browser reaches it (a fake shell). */
-  browserShellPort?: BrowserShellPort;
+  /**
+   * Test doubles for any other node of the platform's tree, by its class: what a feature's own
+   * test helper stands in for, so this file names no feature's nodes. (A plugin module's own
+   * nodes are stood in for where its definition is built: test/builtin-browser/plugin.ts.)
+   */
+  nodes?: ReadonlyArray<readonly [ModuleClass, object]>;
   /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
   passwordHashCost?: number;
   /**
    * Write the shipped built-in Benchmarks into every Project the app creates, as production
    * does. Off by default: they are several hundred files and directories per Project — most
    * of what a boot or a provisioned user writes — and only the scenarios about them read them.
+   * A list stands in for the shipped catalog: the packages a scenario wrote itself.
    */
-  builtinBenchmarks?: boolean;
+  builtinBenchmarks?: boolean | readonly BuiltinBenchmark[];
   log?: (line: string) => void;
   now?: () => Date;
   /** The plugins this app boots with (their modules and replacements), as the runtime would have loaded them. */
   plugins?: PluginHost;
+  /**
+   * What a hot push carried, as the runtime reports it (`hmr.assetsDir()`): its `plugins/` prefix
+   * is what makes a package built in. Set before the admin is seeded, so the adoption of
+   * `default_project` already sees the build's shipped packages.
+   */
+  assetsDir?: string;
   /** Runs before seeding the admin (for scenarios pre-populating a default_project config as the CLI would). */
   beforeSeed?: (root: string) => Promise<void>;
   /** Overrides merged onto the default test ServerConfig (e.g. `previewOrigin`). */
@@ -364,6 +382,18 @@ export interface TestAppOptions {
   durableDatabase?: boolean;
 }
 
+/** The update check a test app gets unless the test supplies one: every lookup is unreachable. */
+function offlineUpdateCheck(): UpdateCheckService {
+  return wire(UpdateCheckService, {
+    http: { fetch: () => Promise.reject(new TypeError("fetch failed: test apps have no network")) },
+    env: {},
+    clock: { now: () => new Date() },
+  });
+}
+
+/** The history sync of each replaced machines node, by data root, closed with its App. */
+const replacedHistorySyncs = new Map<string, HistorySync>();
+
 /** The node each option stands in for. */
 /** A stand-in Project gate for a replaced machines node: every test that supplies one is an admin's. */
 function accessDouble(): Access {
@@ -373,11 +403,17 @@ function accessDouble(): Access {
   } as unknown as Access;
 }
 
-export function replacementsFor(o: TestAppOptions): Replacements {
+export function replacementsFor(
+  o: TestAppOptions,
+  /** The data root, where a replaced machines node keeps its copy of the machines' history. */
+  root?: string,
+): Replacements {
   const out: Array<readonly [ModuleClass, object]> = [];
   if (o.log) out.push([ConsoleLog, { line: o.log }]);
   if (o.now) out.push([SystemClock, { now: o.now }]);
-  if (!o.builtinBenchmarks) out.push([ShippedBuiltinBenchmarkSeeds, { benchmarks: [] }]);
+  if (o.builtinBenchmarks !== true) {
+    out.push([ShippedBuiltinBenchmarkSeeds, { benchmarks: o.builtinBenchmarks || [] }]);
+  }
   if (o.passwordHashCost !== undefined) {
     const cost = o.passwordHashCost;
     out.push([ScryptHasher, { hash: (password: string) => hashPassword(password, cost) }]);
@@ -390,13 +426,10 @@ export function replacementsFor(o: TestAppOptions): Replacements {
     const titles = o.titles;
     out.push([DefaultTitleGenerators, { create: () => titles }]);
   }
-  if (o.updateCheck) out.push([UpdateCheckService, o.updateCheck]);
+  out.push([UpdateCheckService, o.updateCheck ?? offlineUpdateCheck()]);
   if (o.reveal) out.push([RevealService, { reveal: o.reveal }]);
   if (o.pluginPackages) out.push([NpmPluginPackages, o.pluginPackages]);
-  if (o.browserShellPort) {
-    const port = o.browserShellPort;
-    out.push([ProcessShellPort, { current: () => port }]);
-  }
+  for (const node of o.nodes ?? []) out.push(node);
   if (o.feishuSdk) out.push([FeishuSdkProvider, { feishuSdk: { sdk: o.feishuSdk } }]);
   if (o.telegramTransport)
     out.push([
@@ -438,13 +471,26 @@ export function replacementsFor(o: TestAppOptions): Replacements {
     // (machines/service.ts): the proxy's streams and the aggregate event stream share both.
     const sockets = new MachineSockets(() => undefined);
     const events = new MachineEventHub(sockets, () => undefined);
+    // The history answers over the same sockets, as the module's own setup builds them.
+    const wired =
+      root === undefined
+        ? null
+        : machineHistory({
+            cache: new TraceCache(path.join(root, "machines", "traces")),
+            sockets,
+            target: (machineId) => machines.proxyTarget(machineId),
+            log: () => undefined,
+          });
+    const history = wired?.history;
+    // Closed with the App, as the module's own generation closes it (test cleanup).
+    if (wired !== null && root !== undefined) replacedHistorySyncs.set(root, wired.sync);
     out.push([
       MachinesModule,
       {
         machines,
         routes: machinesRoutes({ machines, access: accessDouble(), events }),
-        serverProxyRoutes: machinesServerProxyRoutes(machines, { sockets, events }),
-        sessionForward: machineSessionForward(machines, { sockets, events }),
+        serverProxyRoutes: machinesServerProxyRoutes(machines, { sockets, events, history }),
+        sessionForward: machineSessionForward(machines, { sockets, events, history }),
       },
     ]);
   }
@@ -499,22 +545,28 @@ async function bootTestApp(
   root: string,
   options: Omit<TestAppOptions, "beforeSeed" | "config" | "durableDatabase">,
 ): Promise<TestApp> {
-  const { plugins, ...overrides } = options;
+  const { plugins, assetsDir, ...overrides } = options;
   let boot: ServerBoot | undefined;
   try {
     boot = await bootAppDeps(
       config,
-      replacementsFor({
-        log: () => {},
-        passwordHashCost: TEST_PASSWORD_HASH_COST,
-        // The bridge's per-line pace is a real wait in production; every test but the one
-        // about the pacing itself collapses it to nothing.
-        messagingLineDelayMs: 0,
-        ...overrides,
-      }),
+      replacementsFor(
+        {
+          log: () => {},
+          passwordHashCost: TEST_PASSWORD_HASH_COST,
+          // The bridge's per-line pace is a real wait in production; every test but the one
+          // about the pacing itself collapses it to nothing.
+          messagingLineDelayMs: 0,
+          ...overrides,
+        },
+        config.root,
+      ),
       undefined,
       plugins,
     );
+    if (assetsDir !== undefined) {
+      (flattenForTests(boot).hmr as { assetsDir(): string | null }).assetsDir = () => assetsDir;
+    }
     // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
     await flattenForTests(boot).authService.seedAdmin();
   } catch (error) {
@@ -522,6 +574,12 @@ async function bootTestApp(
     throw error;
   }
   const deps = flattenForTests(boot);
+  // Emptied by default: no test may reach the network to list plugins. The stored document
+  // empties the plugin-index group's address list — the release's published index sits on the
+  // declared default, so only an explicit empty list keeps the routes offline; the routes
+  // read it per request, so a test that exercises the index saves the values it wants and
+  // they apply at once.
+  deps.serverSettingsRepo.set("plugin-config:plugin-index", JSON.stringify({ sources: [] }));
   // The seed hashes and discards; tests know the password only because the config injects it.
   // With a null override there is nothing to know, and such tests never password-login.
   const adminPassword = config.seedAdminPassword ?? TEST_ADMIN_PASSWORD;
@@ -533,6 +591,8 @@ async function bootTestApp(
     root,
     adminPassword,
     cleanup: async () => {
+      replacedHistorySyncs.get(config.root)?.close();
+      replacedHistorySyncs.delete(config.root);
       // Terminals are real child processes owned by the platform: disposing the hot host
       // sweeps its resource registry, which is where every live pty is registered.
       deps.hmr.dispose();
@@ -647,6 +707,13 @@ function clientWith(app: Hono<AppEnv>, credential: Record<string, string>) {
     put: call("PUT"),
     patch: call("PATCH"),
     delete: call("DELETE"),
+    /** POSTs `bytes` as the raw body, as a file upload is sent. */
+    upload: (apiPath: string, bytes: Uint8Array) =>
+      app.request(apiPath, {
+        method: "POST",
+        headers: { ...credential, "content-type": "application/octet-stream" },
+        body: bytes,
+      }),
   };
 }
 
@@ -697,7 +764,7 @@ export async function writeTraceFile(
   index: number,
   messages: AmspRecord[],
 ): Promise<string> {
-  const dir = path.join(root, projectId, "agents", agentId, "traces", dateDir);
+  const dir = path.join(root, "projects", projectId, "agents", agentId, "traces", dateDir);
   await fs.mkdir(dir, { recursive: true });
   const file = path.join(dir, `${sessionId}_${String(index).padStart(3, "0")}.jsonl`);
   await fs.writeFile(file, messages.map((m) => JSON.stringify(m)).join("\n") + "\n", "utf8");

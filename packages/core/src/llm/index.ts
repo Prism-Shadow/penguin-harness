@@ -14,6 +14,7 @@ export {
   usageToTokenCounts,
   isUnusableResponseError,
   isFatalProviderRejection,
+  providerRejectionCode,
   isRateLimitError,
   isAuthenticationError,
   isFastModeUnsupportedError,
@@ -25,6 +26,18 @@ export {
 export { APP_URL, attributionHeaders } from "./app-attribution.js";
 export { listEndpointModels } from "./list-models.js";
 export { ModelCredentialError } from "./model-client.js";
+export {
+  ModelIdleTimeoutError,
+  PROJECT_MODEL_IDLE_TIMEOUT_MS,
+  projectModelClient,
+  streamProjectModel,
+} from "./project-model-request.js";
+export type {
+  ProjectModelClientOptions,
+  ProjectModelRequest,
+  ProjectModelRequestEnd,
+  ProjectModelRequestOptions,
+} from "./project-model-request.js";
 export type { ListEndpointModelsOptions } from "./list-models.js";
 export { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
 export {
@@ -32,7 +45,9 @@ export {
   DEFAULT_MAX_CONTEXT_LENGTH,
   OUTPUT_SAFETY_MARGIN,
   MIN_OUTPUT_TOKENS,
-  COMPACTION_HEADROOM,
+  COMPACTION_RESERVE_MIN,
+  COMPACTION_RESERVE_MAX,
+  compactionReserve,
   resolveContextWindow,
   approximateTokens,
   approximateMessagesTokens,

@@ -12,10 +12,12 @@ import {
   assistantText,
   compactionBegin,
   compactionEnd,
+  hookEvent,
   imageUrlMessage,
   requestBegin,
   requestEnd,
   sessionMeta,
+  sessionUpdate,
   taskBegin,
   taskEnd,
   thinkingMessage,
@@ -289,6 +291,44 @@ describe("buildContextBreakdown", () => {
     ]);
     expect(b.contextClosed).toBe(true);
   });
+
+  it("keeps the context closed when a stop hook's record follows the compaction", () => {
+    const b = buildContextBreakdown([
+      userText("hi"),
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 4 }),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+      hookEvent({ hook: "stop", name: "goal", output: { round: 2 } }),
+      taskEnd(),
+    ]);
+    expect(b.contextClosed).toBe(true);
+  });
+
+  it("reports contextClosed for a shard a completed switch left with its session_update pending", () => {
+    // No compaction: the switch left a context whose model could not be reached.
+    const b = buildContextBreakdown([
+      userText("hi"),
+      requestBegin(),
+      assistantText("hello"),
+      requestEnd("completed"),
+      taskEnd(),
+      sessionUpdate({ provider: "openai", model_id: "gpt-5.2" }),
+    ]);
+    expect(b.contextClosed).toBe(true);
+  });
+
+  it("reopens once a request_begin follows the closing point", () => {
+    const b = buildContextBreakdown([
+      userText("hi"),
+      compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 4 }),
+      compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+      sessionUpdate({ provider: "openai", model_id: "gpt-5.2" }),
+      userText("next"),
+      requestBegin(),
+      assistantText("sure"),
+      requestEnd("completed"),
+    ]);
+    expect(b.contextClosed).toBe(false);
+  });
 });
 
 describe("TraceService.contextBreakdown", () => {
@@ -342,8 +382,9 @@ describe("TraceService.contextBreakdown", () => {
 
 describe("compactionThresholdFor", () => {
   it("caps the configured threshold at what the window leaves room for", () => {
-    // 2048 tokens of headroom: the compaction request's own prompt and summary have to fit.
-    expect(compactionThresholdFor(256_000, 200_000)).toBe(197_952);
+    // An eighth of a 200k window stays free under it: the turn's pending outputs, the compaction
+    // request's own prompt and the summary have to fit.
+    expect(compactionThresholdFor(256_000, 200_000)).toBe(175_000);
     // Configured below the cap: taken as configured.
     expect(compactionThresholdFor(100_000, 1_000_000)).toBe(100_000);
   });
@@ -353,7 +394,7 @@ describe("compactionThresholdFor", () => {
   });
 
   it("derives from the assumed window when the model configures none", () => {
-    expect(compactionThresholdFor(256_000, undefined)).toBe(125_952);
+    expect(compactionThresholdFor(256_000, undefined)).toBe(112_000);
   });
 
   it("has nothing to mark when compaction is off or the threshold is not inside the window", () => {

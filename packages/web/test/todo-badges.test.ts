@@ -15,8 +15,9 @@ import {
   presetUpdateTodo,
   raisedTodo,
   unexpectedErrorTodo,
+  type Todo,
 } from "../src/lib/todo-badges";
-import type { Todo } from "../src/lib/todo-badges";
+
 import { parseTodoDismissMap, withDismissal } from "../src/lib/todo-dismissals";
 
 /** Just the field the plugins gate reads (the gate takes a Pick, so the fixture can be one too). */
@@ -128,6 +129,15 @@ describe("kernelUpdateTodo", () => {
 
   it("is null for an empty or not-yet-loaded Agent list", () => {
     expect(kernelUpdateTodo([])).toBeNull();
+  });
+
+  it("leaves out the system Agent, whose kernel nothing runs on", () => {
+    expect(
+      kernelUpdateTodo([
+        { agentId: "system_agent", kernelOutdated: true, system: true },
+        { agentId: "alpha", kernelOutdated: true },
+      ])?.items,
+    ).toEqual(["alpha"]);
   });
 
   it("names the outdated Agents and counts them, ignoring the current ones", () => {

@@ -15,7 +15,7 @@
  * values are a typed form: Save is live once one is filled in, closing with one filled in asks
  * first, and nothing closes the dialog while the write is in flight.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   PluginItem,
   PluginMcpServerItem,
@@ -24,6 +24,8 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  FactList,
+  FactRow,
   GlyphIcon,
   ICONS,
   ICON_GAP,
@@ -38,11 +40,11 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { toneInk, type Tone } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import { stdioServers } from "./plugin-status";
+import { failureNode } from "../../lib/failure";
 
 /** One mark: a glyph in its tone, the sentence on hover and as its accessible name. */
 function Mark({ glyph, tone, sentence }: { glyph: string; tone: Tone; sentence: string }) {
@@ -121,7 +123,7 @@ export function pluginSetupKeys(plugin: Pick<PluginItem, "mcpServers">): PluginS
 }
 
 /**
- * The detail dialog's section of a plugin's MCP servers, one row each: the plug glyph, the
+ * The detail dialog's section of a plugin's MCP servers, one fact row each: the plug glyph, the
  * server's name, its transport and its target (in full on hover), then its marks — what it
  * needs before it can connect, whether it needs a sign-in, the command a stdio server runs.
  */
@@ -129,31 +131,33 @@ export function PluginMcpSection({ servers }: { servers: readonly PluginMcpServe
   const { locale } = useLocale();
   return (
     <RuledSection title={S.plugins.detailMcpServers} level={3} className="mt-6">
-      <ul className="space-y-1.5">
+      <FactList>
         {servers.map((server) => (
-          <li key={server.name} className={`flex min-w-0 items-center ${ICON_GAP.menu} text-xs`}>
-            <GlyphIcon
-              d={ICONS.plug}
-              size={ICON_SIZE.rowLead}
-              className="shrink-0 text-fg-subtle"
-            />
-            <span className="shrink-0 font-mono text-fg">{server.name}</span>
-            <span className="shrink-0 font-mono text-fg-muted">{server.transport}</span>
-            <span
-              className="min-w-0 flex-1 truncate font-mono text-fg-muted"
-              data-tooltip={server.target}
-              data-tooltip-content="code"
-            >
+          <FactRow
+            key={server.name}
+            glyph={ICONS.plug}
+            name={server.name}
+            mono
+            // A server that waits for nothing has no marks, and so no end of the row to hold.
+            {...(server.setup.length > 0 || server.signIn || server.transport === "stdio"
+              ? {
+                  trailing: (
+                    <McpServerMarks
+                      keys={server.setup.map((item) => setupKeyLabel(item, locale))}
+                      signIn={server.signIn}
+                      {...(server.transport === "stdio" ? { command: server.target } : {})}
+                    />
+                  ),
+                }
+              : {})}
+          >
+            <span className="font-mono">{server.transport}</span>
+            <span className="font-mono" data-tooltip={server.target} data-tooltip-content="code">
               {server.target}
             </span>
-            <McpServerMarks
-              keys={server.setup.map((item) => setupKeyLabel(item, locale))}
-              signIn={server.signIn}
-              {...(server.transport === "stdio" ? { command: server.target } : {})}
-            />
-          </li>
+          </FactRow>
         ))}
-      </ul>
+      </FactList>
     </RuledSection>
   );
 }
@@ -281,14 +285,15 @@ export function McpSetUpModal({
   const form = useFormDraft<Record<string, string>>({}, { normalize: givenValues });
   const values = form.draft;
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
   useEffect(() => {
     let cancelled = false;
     api.getVault(projectId, agentId, machineId).then(
       (res) => !cancelled && setPresent(new Set(res.entries.map((entry) => entry.key))),
-      (e: unknown) => !cancelled && setError(apiErrorText(e)),
+      (e: unknown) =>
+        !cancelled && setError(failureNode(e, { what: "an Agent's vault could not be read" })),
     );
     return () => {
       cancelled = true;
@@ -317,7 +322,7 @@ export function McpSetUpModal({
       onSaved();
       onClose();
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a plugin's set-up could not be saved" }));
     } finally {
       setBusy(false);
     }

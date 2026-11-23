@@ -54,7 +54,7 @@ export const UBUNTU_IMAGES = "https://cdimage.ubuntu.com/ubuntu-base/releases";
 export const UBUNTU_ARCHIVE = "http://archive.ubuntu.com/ubuntu";
 export const UBUNTU_SECURITY = "http://security.ubuntu.com/ubuntu";
 export const ALPINE_MIRROR = "https://dl-cdn.alpinelinux.org/alpine";
-/** `nodejs` is what runs the harness's hook scripts and its file-tool helper inside the distro (see core's fs-worker.ts); the rest is what a shell session expects to find. */
+/** `nodejs` is what runs the harness's file-tool helper inside the distro (see core's fs-worker.ts); the rest is what a shell session expects to find. */
 export const DEFAULT_PACKAGES = ["git", "curl", "nodejs"];
 /** The account commands run as inside the distro: not root, so bwrap is the only way up. */
 export const SANDBOX_USER = "penguin";
@@ -75,13 +75,24 @@ export function wslSettingsOf(doc: Record<string, unknown>): WslSettings {
   };
 }
 
-/** The launcher job for one command under one policy — what the provider and the check share. */
+/**
+ * The launcher job for one command under one policy — what the provider and the check share.
+ * The host's own runtime running a script file (a hook script, an MCP Server started that way)
+ * is refused: the script and the host paths it is handed do not exist in the distro.
+ */
 export function launchJob(
   argv: readonly string[],
   policy: SandboxPolicy,
   settings: WslSettings,
   state: WslState,
+  hostRuntime: string = process.execPath,
 ): LaunchJob {
+  const script = argv[0] === hostRuntime ? argv[1] : undefined;
+  if (script !== undefined && !script.startsWith("-")) {
+    throw new Error(
+      `penguin-wsl cannot run ${script} inside the sandbox distro: it is a script on the Windows host, and neither its path nor the host paths it is given exist there. Hook scripts and MCP Servers started with the harness's own runtime need a full-access Session on this backend.`,
+    );
+  }
   const host = {
     distro: state.distro,
     exposeWindowsDrives: settings.exposeWindowsDrives,
@@ -94,7 +105,7 @@ export function launchJob(
     user: state.user,
     bwrap: bwrapArgs(policy, host),
     chdirRoots: chdirRoots(policy, host),
-    command: [linuxProgram(argv[0] ?? "bash"), ...argv.slice(1)],
+    command: [linuxProgram(argv[0] ?? "bash", hostRuntime), ...argv.slice(1)],
   };
 }
 

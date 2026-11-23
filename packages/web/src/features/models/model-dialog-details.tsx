@@ -13,14 +13,17 @@
  * disabled while a field is wrong, so a wrong field inside the closed fold opens it: Save is never
  * held back by an error the reader cannot see.
  */
-import { useId } from "react";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
+
 import { Chevron, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 
 /** A block of a model dialog below its identity fields. */
 export type ModelDialogSlot =
-  /** The row of model actions: the connectivity test (and, on a saved model, default / vision / remove). */
+  /**
+   * The row of model actions: the connectivity test (and, on a saved model, default, default for
+   * the multimodal operations it can serve, and remove).
+   */
   | "actions"
   | "apiKey"
   | "baseUrl"

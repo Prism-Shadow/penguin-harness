@@ -33,7 +33,9 @@
  * Without arrivals the stage is exactly the shared one.
  *
  * Links open in a new tab unless a `ProseLinksProvider` above decides otherwise — the Web App's
- * conversation sends a link to a Workspace file to its Files panel that way.
+ * conversation sends a link to a Workspace file to its Files panel that way. A
+ * `ProseBlockTrailerProvider` above may add something below a paragraph or a list item from the
+ * links inside it, once the text has settled (block-trailer.tsx).
  *
  * Two optional props open the renderer to a surface with its own nodes — the channel message body,
  * which keeps `@mentions` as chips — without a second copy of the pipeline drifting from this one.
@@ -47,6 +49,7 @@ import type { Components, ExtraProps, Options } from "react-markdown";
 import { A2uiBlock } from "../a2ui/a2ui-block";
 import { MermaidBlock } from "../a2ui/mermaid-block";
 import { CodeBlock } from "../code-block/code-block";
+import { MdListItem, MdParagraph } from "./block-trailer";
 import { REHYPE_PLUGINS, REMARK_PLUGINS, STREAMING_REHYPE_PLUGINS } from "./markdown-plugins";
 import { decodeArrivals, rehypeStreamArrivals } from "./stream-arrivals";
 import type { RevealArrival } from "./stream-arrivals";
@@ -167,6 +170,31 @@ function MdLink({
 }
 
 /**
+ * What a surface adds to every `Md` below it: remark passes appended after the shared stage (and
+ * before an `Md`'s own `extraPlugins`), and element overrides merged under its own `components`.
+ * It is how a surface whose Markdown is drawn deep inside a package component (a conversation's
+ * replies, through `AssistantText` and `StreamText`) reaches that Markdown without a prop
+ * threaded through every layer. Pass one value that keeps its identity, as with the link resolver.
+ */
+export interface MdExtensions {
+  plugins: NonNullable<Options["remarkPlugins"]>;
+  components: Components;
+}
+
+const MdExtensionsContext = createContext<MdExtensions | null>(null);
+
+/** Hands every `Md` below `extensions`; `null` restores the shared pipeline alone. */
+export function MdExtensionsProvider({
+  extensions,
+  children,
+}: {
+  extensions: MdExtensions | null;
+  children?: ReactNode;
+}): ReactElement {
+  return <MdExtensionsContext.Provider value={extensions}>{children}</MdExtensionsContext.Provider>;
+}
+
+/**
  * The two `components` maps, built once at module scope instead of inline per render.
  * react-markdown uses `components.pre` as the element **type**, so a fresh arrow each render is
  * a new type on every commit: React unmounts and remounts every code block, dropping the user's
@@ -175,7 +203,8 @@ function MdLink({
  * closes over, so one frozen map per value is enough; the single flip between them happens on
  * the settle render, which re-parses the message anyway — the same render the rehype stage
  * flips on. The `a` adapter closes over nothing — its resolver comes from context, not from a
- * closure — so both maps share the one `MdLink` reference.
+ * closure — so both maps share the one `MdLink` reference. The block adapters, which add a
+ * block trailer, are in the settled map alone: a trailer is never asked about a half-written link.
  */
 const STREAMING_COMPONENTS: Components = {
   pre: (props) => <MdPre streaming>{props.children}</MdPre>,
@@ -184,6 +213,8 @@ const STREAMING_COMPONENTS: Components = {
 const SETTLED_COMPONENTS: Components = {
   pre: (props) => <MdPre streaming={false}>{props.children}</MdPre>,
   a: MdLink,
+  p: MdParagraph,
+  li: MdListItem,
 };
 
 /**
@@ -237,14 +268,18 @@ export const Md = memo(function Md({
   components,
   arrivals,
 }: MdProps) {
+  const extensions = useContext(MdExtensionsContext);
   const base = streaming ? STREAMING_COMPONENTS : SETTLED_COMPONENTS;
+  const plugins = [...(extensions?.plugins ?? []), ...(extraPlugins ?? [])];
   return (
     <ReactMarkdown
-      remarkPlugins={
-        extraPlugins === undefined ? REMARK_PLUGINS : [...REMARK_PLUGINS, ...extraPlugins]
-      }
+      remarkPlugins={plugins.length === 0 ? REMARK_PLUGINS : [...REMARK_PLUGINS, ...plugins]}
       rehypePlugins={withArrivals(streaming ? STREAMING_REHYPE_PLUGINS : REHYPE_PLUGINS, arrivals)}
-      components={components === undefined ? base : { ...base, ...components }}
+      components={
+        extensions === null && components === undefined
+          ? base
+          : { ...base, ...extensions?.components, ...components }
+      }
     >
       {text}
     </ReactMarkdown>

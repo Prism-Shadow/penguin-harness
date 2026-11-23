@@ -26,7 +26,7 @@
  * being read can be linked to and survives a reload. No other page writes it — the dialog is
  * shell state, not a route.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearchParams } from "react-router";
 import type {
@@ -39,6 +39,7 @@ import type {
 import {
   Button,
   Count,
+  DateField,
   FieldLabel,
   GlyphIcon,
   ICONS,
@@ -53,7 +54,6 @@ import {
   Switch,
   Textarea,
   discardUnsaved,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -64,7 +64,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { OrgPage, useOrg } from "./org-layout";
 import {
   BlockedBadge,
@@ -92,6 +92,8 @@ import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { agentPrincipal, splitPrincipalList } from "./principals";
 import { dayKey } from "./calendar-geom";
 import { TICKET_COLUMN_ATTR, useTicketBoardDrag } from "./ticket-drag";
+import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
@@ -120,7 +122,7 @@ export function TicketsPage() {
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.tickets}` : S.nav.org.tickets);
   const [board, setBoard] = useState<OrgTicketsResponse | null>(null);
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [blockedOnly, setBlockedOnly] = useState(params.get("blocked") === "1");
   const [query, setQuery] = useState("");
   const [move, setMove] = useState<{ ticket: OrgTicketItem; to: OrgTicketStatus } | null>(null);
@@ -146,7 +148,12 @@ export function TicketsPage() {
       setChart(c);
       setError(null);
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(
+        failureNode(e, {
+          text: S.company.tickets.loadFailed(apiErrorText(e)),
+          what: "an organization's tickets could not be loaded",
+        }),
+      );
     }
   }, [projectId, orgId]);
   const { tickets: ticketsVersion, runs } = company.versions;
@@ -231,7 +238,7 @@ export function TicketsPage() {
       // organization summaries all refetch off it.
       company.ticketsChanged();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -376,7 +383,7 @@ export function TicketsPage() {
           className="mb-3"
           retry={{ label: S.common.retry, onClick: () => void load() }}
         >
-          {S.company.tickets.loadFailed(error)}
+          {error}
         </Notice>
       )}
 
@@ -501,7 +508,7 @@ export function TicketsPage() {
             ref={drag.ghostRef}
             aria-hidden
             style={{ width: lifted.width, transform: drag.ghostTransform() }}
-            className="pointer-events-none fixed left-0 top-0 z-[60]"
+            className="pointer-events-none fixed left-0 top-0 z-drag-preview"
           >
             <div className={`${cardFrame(lifted.ticket)} rotate-1 shadow-lg ring-1 ring-accent`}>
               {cardBody(lifted.ticket)}
@@ -641,7 +648,7 @@ function CreateTicketForm({
       discardUnsaved(form.scope);
       onCreated(detail.ticketId);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -739,13 +746,11 @@ function CreateTicketForm({
               cols={3}
             />
           </div>
-          <Input
+          <DateField
             size="sm"
             label={S.company.tickets.due}
-            type="date"
             value={due}
-            className="font-mono"
-            onChange={(e) => form.patch({ due: e.target.value })}
+            onChange={(next) => form.patch({ due: next })}
           />
         </div>
         <Input

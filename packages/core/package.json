@@ -25,6 +25,18 @@
       "types": "./dist/plugin/index.d.ts",
       "import": "./dist/plugin/index.js"
     },
+    "./plugin-index": {
+      "types": "./dist/plugin/index-document.d.ts",
+      "import": "./dist/plugin/index-document.js"
+    },
+    "./cli": {
+      "types": "./dist/cli/index.d.ts",
+      "import": "./dist/cli/index.js"
+    },
+    "./plugin-categories": {
+      "types": "./dist/plugin/category-manifest.d.ts",
+      "import": "./dist/plugin/category-manifest.js"
+    },
     "./context-limits": {
       "types": "./dist/llm/context-limits.d.ts",
       "import": "./dist/llm/context-limits.js"
@@ -32,10 +44,6 @@
     "./model-connection": {
       "types": "./dist/state/model-connection.d.ts",
       "import": "./dist/state/model-connection.js"
-    },
-    "./a2ui": {
-      "types": "./dist/a2ui/index.d.ts",
-      "import": "./dist/a2ui/index.js"
     },
     "./kernel": {
       "types": "./dist/kernel/index.d.ts",
@@ -45,6 +53,9 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "penguin-gen-ifaces": "./bin/gen-ifaces.mjs"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node ../../scripts/build-benchmarks.mjs && vitest run --passWithNoTests",
@@ -53,29 +64,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.3.1",
-    "@penguinharness/a2ui": "workspace:*",
-    "@penguinharness/ace-rsi-toolkit": "workspace:*",
-    "@penguinharness/agent-company": "workspace:*",
-    "@penguinharness/agent-development": "workspace:*",
-    "@penguinharness/agent-evaluation": "workspace:*",
-    "@penguinharness/ape-rsi-toolkit": "workspace:*",
-    "@penguinharness/awm-rsi-toolkit": "workspace:*",
-    "@penguinharness/browser-automation": "workspace:*",
-    "@penguinharness/continual-learning": "workspace:*",
-    "@penguinharness/data-analysis": "workspace:*",
-    "@penguinharness/default-rsi-toolkit": "workspace:*",
-    "@penguinharness/goal": "workspace:*",
-    "@penguinharness/humanizer": "workspace:*",
-    "@penguinharness/model-development": "workspace:*",
-    "@penguinharness/opro-rsi-toolkit": "workspace:*",
-    "@penguinharness/penguin-support": "workspace:*",
-    "@penguinharness/skill-porting": "workspace:*",
-    "@penguinharness/software-development": "workspace:*",
-    "@penguinharness/use-bento-slides": "workspace:*",
-    "@penguinharness/use-firecrawl": "workspace:*",
-    "@penguinharness/use-claude-code": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
-    "@prismshadow/mmsp": "^0.5.6",
+    "@prismshadow/mmsp": "^0.5.12",
     "arktype": "^2.2.3",
     "smol-toml": "^1.9.1",
     "yaml": "^2.5.0"
@@ -94,6 +84,7 @@
   },
   "files": [
     "dist",
+    "bin",
     "LICENSE"
   ],
   "publishConfig": {

@@ -58,6 +58,8 @@ export interface DraftCache {
   skills?: string[];
   /** Start in goal mode (written by a plugin's quick start whose demo is a goal); cleared with the draft on send. */
   goal?: true;
+  /** The composer's switches on in this draft (prompt-modes.ts); on send they move to the Session it creates. */
+  promptHooks?: string[];
   /**
    * This text was composed by a "Create with AI" surface (features/ai-create/ai-bridge.ts), not
    * typed by anyone: it seeds exactly one draft and dies with it. The mark rides in the cache
@@ -128,6 +130,10 @@ export function draftFromUnknown(parsed: unknown): DraftCache {
   }
   if (o.aiPrefill === true) out.aiPrefill = true;
   if (o.goal === true) out.goal = true;
+  if (Array.isArray(o.promptHooks)) {
+    const names = o.promptHooks.filter((n): n is string => typeof n === "string");
+    if (names.length > 0) out.promptHooks = names;
+  }
   if (
     typeof o.approvalMode === "string" &&
     APPROVAL_MODES.includes(o.approvalMode as ApprovalMode)
@@ -207,8 +213,10 @@ export function clearDraftModelRef(
  * full seeded set: typed text and staged skills are user content; modelRef is the
  * "switch-becomes-default" carry-over released only by clearDraftModelRef when the
  * default MODEL itself changes (the model is not part of the `[default_chat]` block);
- * the handoff/switch chips are explicit user staging, never default-derived. A draft
- * with none of the three fields is a no-op, never an errant write.
+ * the handoff/switch chips are explicit user staging, never default-derived. The Workspace's
+ * machine goes with its path: the default Workspace is a path on this server, and a machine
+ * left behind would create the next Session over there. A draft with none of these fields is a
+ * no-op, never an errant write.
  */
 export function clearDraftChatDefaults(
   userId: string,
@@ -220,11 +228,18 @@ export function clearDraftChatDefaults(
   if (
     draft.agentId !== undefined ||
     draft.workspace !== undefined ||
+    draft.machineId !== undefined ||
     draft.approvalMode !== undefined
   ) {
     saveDraft(
       key,
-      { ...draft, agentId: undefined, workspace: undefined, approvalMode: undefined },
+      {
+        ...draft,
+        agentId: undefined,
+        workspace: undefined,
+        machineId: undefined,
+        approvalMode: undefined,
+      },
       storage,
     );
   }

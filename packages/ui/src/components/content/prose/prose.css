@@ -131,14 +131,19 @@
    register while every value that decides where a glyph lands — family, size, line height,
    letter spacing, tab size, padding, wrap mode — is the same in both. Size and line height are
    inherited so one wrapper sets them for both layers. */
+.code-surface {
+  /* The code's inset from the surface's edge: the message code block's own padding, kept to the
+     pixel. The Files panel's two layers, the textarea's indent past the gutter and the gutter's
+     clip all read it, so they cannot disagree. */
+  --code-pad-x: 0.75rem;
+  --code-pad-y: 0.625rem;
+}
 .code-surface :is(pre, textarea) {
   margin: 0;
   border: 0;
   border-radius: 0;
   background: transparent !important;
-  /* The message code block's own padding, kept to the pixel; the Files panel's two layers only
-     need to agree. */
-  padding: 0.625rem 0.75rem;
+  padding: var(--code-pad-y) var(--code-pad-x);
   font-size: inherit;
   line-height: inherit;
   letter-spacing: normal;
@@ -179,8 +184,9 @@
 
    The number is generated content and `user-select: none`, so dragging across the code selects
    the code alone; the copy affordances are unaffected either way, since they copy the string the
-   component was given and never the DOM. Its fill is the canvas the surface sits on, so code
-   scrolled under the sticky number is hidden. */
+   component was given and never the DOM. It has no fill of its own: the gutter shows whatever the
+   surface sits on — the canvas, a translucent theme's panel, a wallpaper — exactly as the code
+   beside it does. Unwrapped, the numbers move to a column of their own (below). */
 .code-lines pre {
   counter-reset: code-line;
 }
@@ -191,12 +197,47 @@
   text-indent: calc(-1 * var(--code-gutter, 4ch));
 }
 .code-lines textarea {
-  padding-left: calc(0.75rem + var(--code-gutter, 4ch));
+  padding-left: calc(var(--code-pad-x) + var(--code-gutter, 4ch));
+}
+/* The lines stand in chunks (code-lines.ts's CHUNK_LINES), and `content-visibility: auto` lays
+   out and paints a chunk only near the scroll box, so opening and scrolling a file cost what is
+   on screen. Every line stays in the document: the browser's find, a selection across the file
+   and the line elements a caller measures work as before.
+
+   An undrawn chunk stands at its expected size, a drawn one at the size it was last drawn at
+   (`auto`). Unwrapped that is exact: a row a line, as wide as the longest line, so the sideways
+   scroll does not depend on what is drawn. Wrapped it is an estimate (wrap-rows.ts), so a place
+   in a file is carried as a line, not a pixel offset (code-place.ts).
+
+   The containment gives each chunk a counter scope of its own, so its first line resets the
+   count to the lines before it. */
+.code-lines .line-chunk {
+  display: block;
+  content-visibility: auto;
+}
+.code-nowrap .line-chunk {
+  width: max-content;
+  min-width: calc(var(--code-longest, 0) * 1ch + var(--code-gutter, 4ch));
+  contain-intrinsic-block-size: auto calc(var(--chunk-lines) * 1lh);
+}
+.code-wrap .line-chunk {
+  contain-intrinsic-block-size: auto calc(var(--chunk-rows, var(--chunk-lines)) * 1lh);
+}
+.code-lines .line-chunk > .line:first-child {
+  counter-reset: code-line var(--chunk-start);
+}
+/* An editor's textarea lies on these lines and lays its own text out whole: every line has to be
+   where that text is, so none stands at an expected size. Without the containment the lines
+   share the block's one count: a first line's reset would hold for that line alone, its siblings
+   keeping the count they inherit, so no line resets it. */
+.code-overlaid .line-chunk {
+  content-visibility: visible;
+}
+.code-overlaid .line-chunk > .line:first-child {
+  counter-reset: none;
 }
 .code-lines .line::before {
   content: counter(code-line);
-  position: sticky;
-  left: 0;
   display: inline-block;
   width: var(--code-gutter, 4ch);
   padding-right: 1.25ch;
@@ -204,7 +245,45 @@
   text-indent: 0;
   user-select: none;
   -webkit-user-select: none;
-  background-color: var(--ui-canvas);
+  color: var(--ui-code-gutter);
+}
+/* Unwrapped, a line is one row, so the numbers are one column of their own (CodeSurface's
+   `.code-gutter`) in the surface's cell, sticky at the scroll box's left edge, and the code layer
+   is clipped under it as it scrolls sideways — one element's style per scroll step
+   (gutter-clip.ts), where a mark on every line would restyle every line. A line keeps an empty
+   mark so a blank line still has its row, and its code starts past the column as before. */
+.code-surface.code-nowrap.code-lines {
+  display: grid;
+  /* The gutter's layer orders it over the code layer only: a pinned row the block scrolls under
+     stays on top of the whole block. */
+  isolation: isolate;
+}
+.code-surface.code-nowrap.code-lines > * {
+  grid-area: 1 / 1;
+}
+.code-nowrap.code-lines .line {
+  text-indent: 0;
+}
+.code-nowrap.code-lines .line::before {
+  content: "";
+  width: 0;
+  padding: 0;
+}
+.code-gutter {
+  position: sticky;
+  left: 0;
+  z-index: var(--layer-sticky);
+  justify-self: start;
+  align-self: start;
+  box-sizing: content-box;
+  width: calc(var(--code-gutter, 4ch) - 1.25ch);
+  padding: var(--code-pad-y) 1.25ch var(--code-pad-y) var(--code-pad-x);
+  font-family: var(--ui-font-mono);
+  white-space: pre;
+  text-align: right;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
   color: var(--ui-code-gutter);
 }
 
@@ -242,8 +321,13 @@
 .code-editor-host[data-composing="true"] textarea {
   color: var(--ui-fg);
 }
-.code-editor-host[data-composing="true"] .code-editor > :not(textarea) {
+.code-editor-host[data-composing="true"] .code-editor > :not(textarea, .code-gutter) {
   visibility: hidden;
+}
+/* The numbers stay while the code steps aside: they do not change with what is being composed,
+   and hiding them for each composition would blink the gutter at every word typed through an IME. */
+.code-editor-host[data-composing="true"] .code-editor .line::before {
+  visibility: visible;
 }
 
 /* Shiki's dark palette. The highlighted markup carries both themes: the light colours inline, the
@@ -375,6 +459,21 @@ html.dark .shiki span {
   max-width: 100%;
   overflow-x: auto;
   vertical-align: middle;
+}
+
+/* An inline formula and the punctuation mark it touches (math-punctuation.ts): one group no line
+   breaks inside, so a line never starts with the `，` after a formula or ends on the `（` before
+   one. The guard above still holds the formula, less room for its two marks, so the group fits the
+   column. While a reply streams the formula is its TeX source, which may still wrap inside itself;
+   only its edges stay with the marks. */
+.md-body .math-nobreak {
+  white-space: nowrap;
+}
+.md-body .math-nobreak > .katex {
+  max-width: calc(100% - 2em);
+}
+.md-body .math-nobreak > .math-inline {
+  white-space: normal;
 }
 
 /* ---------- The diff viewer (diff-viewer.tsx) ---------- */

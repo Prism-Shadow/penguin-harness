@@ -17,8 +17,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { encode } from "uqr";
 import type { QQBindingInfo, QQScanPollResponse } from "@prismshadow/penguin-server/api";
 import { ApiError } from "../src/api/client";
-import { QQScanConnect, QrCode, qqScanStep } from "../src/features/messaging/qq-scan-connect";
-import type { QQScanTally } from "../src/features/messaging/qq-scan-connect";
+import {
+  QQScanConnect,
+  QrCode,
+  qqScanStep,
+  type QQScanTally,
+} from "../src/features/messaging/qq-scan-connect";
+
 import { S } from "../src/lib/strings";
 
 const QR_URL = "https://q.qq.com/qqbot/openclaw/connect.html?task_id=t-1&source=&_wv=2";
@@ -109,10 +114,12 @@ describe("qqScanStep", () => {
     // Giving up releases the task: nothing resolved it, so the server would otherwise hold
     // its key until the sweep — the "key at rest" outcome this flow is shaped to avoid.
     const step = qqScanStep(failed(error), { failures: 2, refreshes: 0 });
+    // The error stays beside its words, so the toast offers its report.
     expect(step).toEqual({
       kind: "stop",
       notice: S.qq.scanFailed("bad gateway"),
       releaseTask: true,
+      error,
     });
     // One answer that came back resets the run — the loop passes failures: 0 again.
     expect(qqScanStep(ok({ status: "pending" }), { failures: 2, refreshes: 0 })).toEqual({

@@ -9,7 +9,7 @@
  * "New channel" is the header's own trailing action rather than a pinned row above the list;
  * the organization's desks follow the list as their own group (org-session-groups.tsx).
  *
- * The list itself is the store's (state/company.tsx): one listing per organization, refreshed
+ * The list itself is the store's (features/company/company-state.tsx): one listing per organization, refreshed
  * when a message event says a counter moved, so the sidebar, the rail and the channel view
  * never disagree about what is unread.
  */
@@ -28,23 +28,22 @@ import {
   PlusIcon,
   RailDivider,
   RailItem,
-  SkeletonList,
+  Waiting,
   Text,
   railItemClass,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { toneInk, toneSurface } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { Icon } from "../../components/ui/group-list";
 import { Truncated } from "../../components/ui/truncated";
-import { orgChannelPath } from "./company-nav";
+import { orgChannelPath } from "../../lib/company-nav";
 import { JoinChannelConfirm, NewChannelDialog } from "./channel-dialogs";
 import { channelLabel, groupChannels, isAllHands } from "./channel-list";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** A channel (the hash sign): the mark every channel but the all-hands one wears. */
 export const CHANNEL_ICON = ICONS.hash;
@@ -216,7 +215,7 @@ export function ChannelSidebar({
       // this one reload replaces the Join prompt there too (channel-stream.joinedElsewhere).
       await company.reloadChannels();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setJoining(null);
     }
@@ -251,13 +250,13 @@ export function ChannelSidebar({
       {channels === null ? (
         company.channelsError !== null ? (
           <div className="flex items-center justify-between gap-2 px-2.5 py-1">
-            <span className={`text-xs ${toneInk.danger}`}>{S.company.channels.loadFailed}</span>
+            <span className={`text-xs ${toneInk.danger}`}>{company.channelsError}</span>
             <Button size="sm" onClick={() => void company.reloadChannels()}>
               {S.common.retry}
             </Button>
           </div>
         ) : (
-          <SkeletonList rows={3} />
+          <Waiting rows={3} />
         )
       ) : (
         <>

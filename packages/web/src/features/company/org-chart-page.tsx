@@ -28,8 +28,16 @@
  * view themselves; from then on it is theirs, and only the percent button gives it back.
  * The arithmetic is in canvas-view.ts.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+
 import { useNavigate } from "react-router";
 import type { OrgChartResponse, OrgEmployeeItem } from "@prismshadow/penguin-server/api";
 import {
@@ -42,21 +50,22 @@ import {
   Menu,
   MenuItem,
   MenuSeparator,
+  FailureText,
   Notice,
-  toastError,
   toastSuccess,
   usePointerDrag,
+  type Failure,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneInk } from "../../lib/tone";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
+import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
-import { orgKey } from "./company-nav";
+import { orgKey } from "../../lib/company-nav";
 import { liveEmployeeStates } from "./org-sessions";
 import { DESK_ICON } from "./channel-header";
 import { CHART_DETACHED_LABEL_H, layoutOrgTree } from "./org-chart-tree";
@@ -70,16 +79,20 @@ import {
   viewTransform,
   wheelZoomFactor,
   zoomAt,
+  type CanvasSize,
+  type CanvasView,
 } from "./canvas-view";
-import type { CanvasSize, CanvasView } from "./canvas-view";
+
 import { ChartCard, ChartLegend } from "./chart-card";
 import {
   DeskRenewDialog,
   EmployeeEditDialog,
   EmployeeProfileDialog,
   HireDialog,
+  type EmployeeEdit,
 } from "./employee-dialogs";
-import type { EmployeeEdit } from "./employee-dialogs";
+import { toastApiError } from "../../lib/toast-api-error";
+import { failureOf } from "../../lib/failure";
 
 /** Node-menu glyphs: the open door of a desk session, a plus person for hiring, a coin for budget, the composer's spark for the thinking level, an arrow for the line, a turning arrow for a fresh desk, a door out for leaving. */
 const MENU_ICONS = {
@@ -130,10 +143,12 @@ export function OrgChartPage() {
   const { projectId, orgId, org } = useOrg();
   const navigate = useNavigate();
   const company = useCompany();
+  const { reloadAgents } = useProject();
   const { currency } = useTheme();
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.chart}` : S.nav.org.chart);
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /** The last read's failure: its words, and its report when it offers one. */
+  const [error, setError] = useState<Failure | null>(null);
   const [hireFor, setHireFor] = useState<OrgEmployeeItem | null>(null);
   const [profileFor, setProfileFor] = useState<OrgEmployeeItem | null>(null);
   const [editFor, setEditFor] = useState<{ employee: OrgEmployeeItem; edit: EmployeeEdit } | null>(
@@ -160,7 +175,7 @@ export function OrgChartPage() {
       setChart(await api.getOrgChart(projectId, orgId));
       setError(null);
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureOf(e, { what: "an organization's chart could not be read" }));
     }
   }, [projectId, orgId]);
   // A run starting moves a state dot, a ticket change can attach a session to an employee, and
@@ -327,7 +342,7 @@ export function OrgChartPage() {
       }
       navigate(`/chat/${desk.sessionId}`);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -344,8 +359,11 @@ export function OrgChartPage() {
       // refreshes for a departure: without this the employee's row stays until one does.
       void company.reloadOrgChart();
       void company.reloadOrgSessions();
+      // The Agent stays, no longer this organization's employee: the Agent list carries every
+      // employment mark the shell shows, so it is read again.
+      void reloadAgents().catch(() => undefined);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -355,7 +373,7 @@ export function OrgChartPage() {
     return (
       <OrgPage title={S.nav.org.chart} info={S.company.chart.info}>
         <EmptyState
-          title={error}
+          title={<FailureText failure={error} />}
           action={<Button onClick={() => void load()}>{S.common.retry}</Button>}
         />
       </OrgPage>
@@ -490,7 +508,7 @@ export function OrgChartPage() {
           className="mb-3"
           retry={{ label: S.common.retry, onClick: () => void load() }}
         >
-          {S.company.chart.refreshFailed(error)}
+          <FailureText failure={{ ...error, text: S.company.chart.refreshFailed(error.text) }} />
         </Notice>
       )}
       {ceoMissing && (

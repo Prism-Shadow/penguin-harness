@@ -34,7 +34,15 @@
  * names and the invite picker, so a hiccup there degrades names to ids rather than blocking
  * the page.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useNavigate, useParams } from "react-router";
 import type { OrgChannelDetail, OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import {
@@ -48,24 +56,24 @@ import {
   ICON_SIZE,
   NoticeStrip,
   Skeleton,
-  toastError,
   toastSuccess,
+  type ChannelSender,
+  WallpaperSurface,
 } from "@prismshadow/penguin-ui";
-import type { ChannelSender } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { useCompany, useCompanyEvents } from "../../state/company";
+import { useCompany, useCompanyEvents } from "./company-state";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
+import { createStreamFollow, stickToBottom } from "../chat";
 import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
-import { orgKey } from "./company-nav";
+import { orgKey } from "../../lib/company-nav";
 import { ChannelComposer } from "./channel-composer";
 import { useChannelDraft } from "./channel-draft";
 import { ChannelHeader } from "./channel-header";
@@ -95,9 +103,13 @@ import {
   joinedElsewhere,
   lastMessageId,
   messageCount,
+  type ChannelDay,
+  type StreamItem,
 } from "./channel-stream";
-import type { ChannelDay, StreamItem } from "./channel-stream";
+
 import { parsePrincipal } from "./principals";
+import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** What the first response fixes for this channel: today, the day list, and the read cursor the divider is drawn at. */
 interface StreamMeta {
@@ -115,10 +127,10 @@ export function ChannelView() {
   const company = useCompany();
   const { user } = useAuth();
   const [detail, setDetail] = useState<OrgChannelDetail | null>(null);
-  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<ReactNode>(null);
   const [days, setDays] = useState<ChannelDay[] | null>(null);
   const [meta, setMeta] = useState<StreamMeta | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [employees, setEmployees] = useState<
     ReadonlyArray<{ agentId: string; name: string; title: string }>
   >([]);
@@ -173,7 +185,7 @@ export function ChannelView() {
       setDetail(res);
       setDetailError(null);
     } catch (e) {
-      setDetailError(apiErrorText(e));
+      setDetailError(failureNode(e, { what: "a channel's details could not be read" }));
     }
   }, [projectId, orgId, channelId]);
 
@@ -225,7 +237,7 @@ export function ChannelView() {
       setError(null);
     } catch (e) {
       if (!current()) return;
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a channel's messages could not be loaded" }));
     }
   }, [projectId, orgId, channelId, loadDetail]);
   useEffect(() => {
@@ -257,7 +269,7 @@ export function ChannelView() {
           : [{ date: target, messages: res.messages }, ...prev],
       );
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setLoadingEarlier(false);
     }
@@ -368,7 +380,7 @@ export function ChannelView() {
       );
       return true;
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     }
   };
@@ -383,7 +395,7 @@ export function ChannelView() {
       await loadDetail();
       void company.reloadChannels();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setJoining(false);
     }
@@ -570,12 +582,7 @@ export function ChannelView() {
         }
         avatar={
           p.kind === "agent" ? (
-            <EmployeeAvatar
-              id={p.id}
-              name={sender.name}
-              size={FACE_PX.message}
-              className="shrink-0 rounded-lg"
-            />
+            <EmployeeAvatar id={p.id} size={FACE_PX.message} className="shrink-0 rounded-lg" />
           ) : undefined
         }
       >
@@ -593,7 +600,7 @@ export function ChannelView() {
               timeLabel={S.company.channels.sentAt(at)}
               footer={renderRefs(m)}
             >
-              <ChannelMessageBody text={m.text} />
+              <ChannelMessageBody text={m.text} projectId={projectId} />
             </ChannelBubble>
           );
         })}
@@ -605,7 +612,7 @@ export function ChannelView() {
 
   return (
     <ChannelReaderProvider reader={reader}>
-      <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
+      <WallpaperSurface className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
         <ChannelHeader
           projectId={projectId}
           orgId={orgId}
@@ -686,7 +693,7 @@ export function ChannelView() {
                 type="button"
                 aria-label={S.chat.jumpToLatest}
                 onClick={jumpToLatest}
-                className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-[var(--ui-radius-pill)] border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
+                className={`anim-pop absolute bottom-3 left-1/2 z-raised inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-[var(--ui-radius-pill)] border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
               >
                 {pendingNew > 0 ? S.company.channels.newMessages(pendingNew) : S.chat.jumpToLatest}
                 <GlyphIcon d={ICONS.arrowDown} size={ICON_SIZE.inlineGlyph} />
@@ -737,7 +744,7 @@ export function ChannelView() {
           onClose={() => setConfirmJoin(false)}
           onConfirm={() => void join()}
         />
-      </div>
+      </WallpaperSurface>
     </ChannelReaderProvider>
   );
 }

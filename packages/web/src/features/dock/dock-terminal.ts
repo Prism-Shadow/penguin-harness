@@ -12,11 +12,11 @@
  * terminal at all until its first send.
  */
 import { useSyncExternalStore } from "react";
-import { toastError } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
-import { HttpStatusError, fetchJson, type TerminalInfo } from "../terminal/terminal-view";
 import {
+  HttpStatusError,
+  fetchJson,
   liveTerminals,
   noteTerminalCreated,
   noteTerminalReowned,
@@ -24,7 +24,8 @@ import {
   terminalApiSupported,
   terminalsOf,
   watchTerminals,
-} from "../terminal/terminal-list";
+  type TerminalInfo,
+} from "../terminal";
 import { rememberTerminalMachine } from "../../lib/terminal-machines";
 import {
   currentDockScope,
@@ -38,6 +39,7 @@ import {
   togglePanelShown,
   type DockPosition,
 } from "./dock-state";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The terminal panel's id in the registry and the dock store (and its stored tab key). */
 export const TERMINAL_PANEL = "terminal";
@@ -218,7 +220,11 @@ export async function createShell(position?: DockPosition): Promise<boolean> {
         ? `${message} — ${S.terminal.noTerminalApi}`
         : message;
     console.error("[terminal] create failed:", detail);
-    toastError(`${S.terminal.createFailed}: ${detail}`);
+    toastApiError(err, {
+      text: `${S.terminal.createFailed}: ${detail}`,
+      what: "a terminal could not be started",
+      privatePaths: [workspace ?? HOME_CWD],
+    });
     return false;
   } finally {
     void refreshTerminals();
@@ -305,7 +311,9 @@ export function toggleTerminal(): boolean {
 // in between. The store is page-global anyway; where no Session is on screen (a draft, the
 // login page, /terminal) the toggle declines unless it has tabs to flip. The chord itself is
 // the keymap's: the window dispatcher matches it and calls this handler.
-onCommand("terminal.toggle", toggleTerminal);
+onCommand("terminal.toggle", () => {
+  if (!toggleTerminal()) return false;
+});
 // The other dock commands live here for the same reason: the store (dock-state.ts) stays
 // free of the dispatcher, and this module is evaluated wherever the docks can appear. Each
 // declines on a page without docks (the browser's own key then runs): a toggle there would

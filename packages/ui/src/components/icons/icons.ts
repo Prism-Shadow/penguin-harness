@@ -316,6 +316,8 @@ export const ICONS = {
   bubbleLines: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4-7.5",
   /** A paper plane. */
   paperPlane: "M22 2 11 13M22 2l-7 20-4-9-9-4z",
+  /** An airplane in side profile, with a horizontal fuselage and its nose pointing right. */
+  airplane: "M0 12h3L1 6h3l4 5h10c2 0 5 2 5 3H14l-4 4H7l2-4H2Z",
   /** A pane with an arrow leaving it: this opens outside the app, in a tab of its own. */
   externalLink: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3",
   /** An arrow entering a doorway (lucide log-in). */
@@ -350,6 +352,8 @@ export const ICONS = {
    */
   cross: "M18 6 6 18M6 6l12 12",
   /** A play triangle; drawn with `GlyphIcon`'s `filled` mode where it should read solid. */
+  microphone: "M9 11V6a3 3 0 016 0v5a3 3 0 01-6 0zM5 10v1a7 7 0 0014 0v-1M12 18v3m-3 0h6",
+  speaker: "M3 9h4l5-4v14l-5-4H3zM16 9a4 4 0 010 6m2-9a8 8 0 010 12",
   play: "M7 4l13 8-13 8z",
   /** Two upright bars: paused. */
   pause: "M8 4v16M16 4v16",
@@ -437,6 +441,16 @@ export const ICONS = {
   rectangle: "M4 5h16v14H4z",
   /** The same frame with a check inside it. */
   rectangleCheck: "M4 5h16v14H4zM8 12l3 3 5-6",
+  /**
+   * A square as wide as `cross` and as high: a window filling the screen, the maximize button
+   * among the window controls.
+   */
+  square: "M6 6h12v12H6z",
+  /**
+   * A smaller square in front of a second one, offset up and to the right, whose hidden edges
+   * are not drawn: a window to be brought back to its own size, the restore button.
+   */
+  squareStack: "M6 9h9v9H6zM9 9V6h9v9h-3",
   /** An anvil: the Agent Workbench. */
   anvil: "M3 7h5V4h13v5l-4 3v3l3 4v1H6v-1l3-4v-3H8c-3 0-5-2-5-5Z M8 7h13 M9 15h8",
   /** A browser window: the rounded frame, its chrome bar and two dots on the bar. */
@@ -452,6 +466,15 @@ export const ICONS = {
   /** Four rounded tiles of two heights (lucide layout-dashboard). */
   dashboard:
     "M4 3h5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM15 3h5a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM15 12h5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM4 16h5a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1z",
+  /** Four equal rounded squares, two by two (lucide layout-grid): things laid out as cards. */
+  layoutGrid:
+    "M4 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM15 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM4 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1zM15 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z",
+  /**
+   * The grid's left column of squares, each with two lines of text beside it (lucide
+   * layout-list): the same things laid out as rows.
+   */
+  layoutList:
+    "M4 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM4 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1zM14 4h7M14 9h7M14 15h7M14 20h7",
   /**
    * Four corner brackets opening outward. Brackets rather than an arrow, because what they
    * announce may open in several directions at once, and a mark with a direction in it would

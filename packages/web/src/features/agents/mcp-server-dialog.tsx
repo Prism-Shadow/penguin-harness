@@ -17,10 +17,11 @@
  * server lands at the dialog's foot, and the dialog stays open with what was typed. The form is
  * mounted only while the dialog is open.
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import {
   Button,
+  FailureText,
   GlyphIcon,
   ICONS,
   ICON_GAP,
@@ -30,12 +31,13 @@ import {
   OptionMenu,
   Segmented,
   Textarea,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
+  type Failure,
+  type OptionMenuChoice,
 } from "@prismshadow/penguin-ui";
-import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -52,6 +54,8 @@ import {
   type McpServerFormState,
   type McpTransportKind,
 } from "./mcp-servers-form";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toldFailure } from "../../lib/failure";
 
 /** Maps a validation error code to its localized message. */
 function errorText(err: McpFormError | undefined): string | undefined {
@@ -109,8 +113,8 @@ export interface McpServerDialogProps {
   agentId: string;
   /** A plugin's title in the UI language, by its name: who installed an entry that says so. */
   pluginTitle: (name: string) => string;
-  /** Writes the entry; resolves with null when stored, else with why it was refused. */
-  onSubmit: (server: MCPServerConfig) => Promise<string | null>;
+  /** Writes the entry; resolves with null when stored, else with why not (its report, for a failure). */
+  onSubmit: (server: MCPServerConfig) => Promise<Failure | null>;
   onClose: () => void;
 }
 
@@ -126,7 +130,7 @@ export function McpServerDialog({
   const [initial] = useState(() => (entry === null ? emptyMcpForm() : serverToForm(entry)));
   const form = useFormDraft(initial, { normalize: normalizeMcp });
   // Server-side rejection (transport validation 400) rendered at the dialog's foot.
-  const [refused, setRefused] = useState<string | null>(null);
+  const [refused, setRefused] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   // Connectivity probe: runs the current form through POST /config/mcp-test (server-side
@@ -213,9 +217,18 @@ export function McpServerDialog({
       const res = await api.testAgentMcpServer(projectId, agentId, tested.server, machineId);
       if (res.ok) toastSuccess(S.agent.mcpTestOk(res.tools?.length ?? 0, res.latencyMs));
       else if (res.saveFirst === true) setSaveFirst(true);
-      else toastError(S.agent.mcpTestFail(res.error ?? S.common.unknownError));
+      // The report carries the server's words masked: a stdio child can print its command
+      // line, a URL or an environment value.
+      else
+        toastFailure(
+          toldFailure(S.agent.mcpTestFail(res.error ?? S.common.unknownError), {
+            what: "an MCP server could not be connected",
+            detail: res.error ?? null,
+            mask: { hosts: true },
+          }),
+        );
     } catch (e) {
-      toastError(S.agent.mcpTestFail(apiErrorText(e)));
+      toastApiError(e, { text: S.agent.mcpTestFail(apiErrorText(e)) });
     } finally {
       setTesting(false);
     }
@@ -227,7 +240,7 @@ export function McpServerDialog({
     try {
       const refusal = await onSubmit(built.server);
       if (refusal === null) onClose();
-      else setRefused(refusal);
+      else setRefused(<FailureText failure={refusal} />);
     } finally {
       setBusy(false);
     }

@@ -12,8 +12,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BenchmarkCaseSummary, BenchmarkSummary } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { mergeBenchmarkCases, mergeBenchmarks } from "../../lib/benchmark-merge";
-import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
+import {
+  mergeBenchmarkCases,
+  mergeBenchmarks,
+  type MergedBenchmark,
+  type MergedCase,
+} from "../../lib/benchmark-merge";
 
 /** The Project's Benchmarks as far as the sources have answered. */
 export interface BenchmarksView {
@@ -26,6 +30,11 @@ export interface BenchmarksView {
   error: unknown;
   /** Machines asked whose answer has not landed yet. */
   pending: string[];
+  /**
+   * The absolute folder this server keeps the Project's Benchmarks in, as it answered: what a
+   * prompt for a new one names. Undefined until it answers.
+   */
+  dir?: string;
 }
 
 const NOTHING_YET: BenchmarksView = { benchmarks: null, error: null, pending: [] };
@@ -45,6 +54,7 @@ export class BenchmarkSources {
   readonly #asks = new Map<string | null, number>();
   readonly #out = new Set<string | null>();
   #hereFailure: unknown = null;
+  #hereDir: string | undefined = undefined;
   #seq = 0;
   #disposed = false;
 
@@ -81,7 +91,11 @@ export class BenchmarkSources {
   #ask(source: string | null, ask: number): Promise<void> {
     if (this.#disposed) return Promise.resolve();
     return api.listBenchmarks(this.#projectId, source).then(
-      (res) => this.#land(source, ask, () => this.#answers.set(source, res.benchmarks)),
+      (res) =>
+        this.#land(source, ask, () => {
+          this.#answers.set(source, res.benchmarks);
+          if (source === null) this.#hereDir = res.dir;
+        }),
       (err: unknown) =>
         this.#land(source, ask, () => {
           if (source === null) this.#hereFailure = err;
@@ -106,6 +120,7 @@ export class BenchmarkSources {
   }
 
   view(): BenchmarksView {
+    const at = this.#hereDir !== undefined ? { dir: this.#hereDir } : {};
     const sources = [null, ...this.#machineIds];
     const answered = sources.flatMap((machineId) => {
       const benchmarks = this.#answers.get(machineId);
@@ -115,10 +130,12 @@ export class BenchmarkSources {
     const hereAnswered = this.#answers.has(null);
     const hereOut = this.#out.has(null);
     if (!hereAnswered && (hereOut || (answered.length === 0 && pending.length > 0))) {
-      return { benchmarks: null, error: null, pending };
+      return { benchmarks: null, error: null, pending, ...at };
     }
-    if (answered.length === 0) return { benchmarks: null, error: this.#hereFailure, pending };
-    return { benchmarks: mergeBenchmarks(answered), error: null, pending };
+    if (answered.length === 0) {
+      return { benchmarks: null, error: this.#hereFailure, pending, ...at };
+    }
+    return { benchmarks: mergeBenchmarks(answered), error: null, pending, ...at };
   }
 
   #land(source: string | null, ask: number, apply: () => void): void {

@@ -3,14 +3,18 @@
  * give it a treatment tokens cannot express (a backdrop blur, a ruled frame, a stepped animation,
  * a colour field behind the app window, connector rules between nested rows).
  *
- * A hook names a job, never a look. The component carries the class, and each theme file decides
- * in `@layer ui-theme` what the hook does, which may be nothing: Primer's `.ui-glass` and
- * `.ui-shell` are no-ops. The layer sits after Tailwind's `utilities`, so a recipe beats the
- * utilities its host also carries.
+ * A hook names a job, never a look. The component carries the class, and each theme pack decides
+ * what the hook does, which may be nothing. The base, Frost, writes its recipes in `@layer
+ * ui-base` keyed on `data-theme-base="modern"`, so they are the rendering of every pack built on
+ * it; a pack writes its own in `@layer ui-theme` for a hook it changes and leaves the rest to the
+ * base; Primer and Console, on the foundation alone, draw only their own (their `.ui-glass` and
+ * Primer's `.ui-shell` are no-ops). Both layers sit after Tailwind's `utilities`, so a recipe
+ * beats the utilities its host also carries.
  *
  * Only the names below exist. A `ui-*` class outside this list is a decoration without a job, and
- * the package's de-slop guard fails it. Adding a hook is a design change: add it here, give it a
- * recipe (or a documented no-op) in every theme file, and list its allowed hosts.
+ * the package's de-slop guard fails it. Adding a hook is a design change: add it here, list its
+ * allowed hosts and its anatomy, and say what the foundation shows until a pack says otherwise; a
+ * pack writes a recipe only for a hook it uses.
  *
  * | hook               | the job                                                  | anatomy the recipes rely on                           |
  * | ------------------ | -------------------------------------------------------- | ----------------------------------------------------- |
@@ -27,14 +31,14 @@
  * |                    | sites' `SiteToc` and `SiteSidebarNav` section labels     |                                                       |
  * | `ui-display`      | the one display title of a page or hero                  | only on an `h1` or `[aria-level="1"]`                 |
  * |                    | hosts: `Heading level={1} display`, `PageHeader`'s title |                                                       |
- * | `ui-live`          | motion for something that is running right now           | `data-live="dot" \| "caret" \| "spinner" \| "bar"`   |
+ * | `ui-live`          | motion for something that is running right now           | `data-live="dot" \| "caret" \| "spinner" \| "bar"`; the spinner draws twice, direct children `data-set="arc" \| "scribble"` |
  * |                    | hosts: the Spinner, a pulsing Dot, the streaming caret   |                                                       |
  * | `ui-frame`         | a ruled box with a head, a body, a foot and panes        | children carry `data-slot="head" \| "body" \| "foot" \| "pane"` |
  * |                    | hosts: the transcript's cards and harness notes, the     |                                                       |
  * |                    | code block, `Card`, a framed `Table`                     |                                                       |
  * | `ui-underline-nav` | the selected-tab marker of a tab bar (a page's tabs, a   | items `[role="tab"]`, selected by `aria-selected="true"` |
  * |                    | dock's tab strip)                                        |                                                       |
- * | `ui-shell`         | the app window: a navigation column beside a main column | children carry `data-slot="nav" \| "main"` (a right column may carry `"dock"`); the selected nav row is `[aria-current="page"]` |
+ * | `ui-shell`         | the app window: a navigation column beside a main column | children carry `data-slot="nav" \| "main"` (a right column may carry `"dock"`); the selected nav row is `[aria-current="page"]`; in a desktop window the shell carries `data-window-band` and an absolutely placed `data-slot="band"` child holds the title band, in the nav colour (window-band.css) |
  * |                    | host: `AppShell`                                         |                                                       |
  * | `ui-icon-decor`    | an icon that says nothing its label does not already say | on the icon itself (or the element holding only it); optional `data-role="nav" \| "group" \| "menu" \| "empty"` |
  * |                    | hosts: the icon renderers' call sites, `NavRow`'s glyph  |                                                       |
@@ -46,16 +50,45 @@
  * |                    | event of the harness's (an `event` `ActivityGroup`,      |                                                       |
  * |                    | `TranscriptNote`)                                        |                                                       |
  * | `ui-notice`        | a notice: a toast, an inline notice strip                | `data-tone="info" \| "success" \| "warning" \| "danger" \| "neutral"`; children may carry `data-slot="icon" \| "title" \| "body" \| "actions"` |
- * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a series may carry `data-series="<n>"` |
+ * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a mark of a series carries `data-series="<n>"` (a palette slot) or `data-series="ref" \| "cache-read" \| "cache-write" \| "output"` (a named colour); a filled mark (bar, area, point, and a timeline bar's HTML twin) carries its paint as `--_paint`; a legend's or a bubble's swatch, outside the root, is `data-part="swatch"` with `data-shape="square" \| "block" \| "chip" \| "dash" \| "tick"`, its series and its `--_paint` |
  * | `ui-scrim`         | the dimmed layer behind a dialog, drawer or sheet        | —                                                     |
  * | `ui-stream`        | text that may still be streaming in: an assistant        | `data-state="streaming" \| "done"` (and `data-settling` for the moments a settled host eases its veil away); while streaming, the markdown blocks (or a `<pre>` host's text node) are followed by the stream's edge, a direct child `data-slot="caret"`, and then by anything the host appends; under a `fade` reveal, runs of text that just arrived (or elements that arrived whole) carry `data-arrive` until they have faded in |
  * |                    | reply, a thinking row, a compaction summary, a tool's    |                                                       |
  * |                    | output; host: `StreamText`                               |                                                       |
  * | `ui-glyph`         | an icon drawn in every theme's style; the theme's CSS    | direct children `data-set="line" \| "octicons" \| "pixel"`, one drawing each; the line set may hold a `data-part="duo"` body under its stroke; a decorative glyph may carry `data-tint="<hue>"` |
  * |                    | shows its own; hosts: `GlyphIcon`, `GlyphMark`           |                                                       |
+ * | `ui-avatar`        | an Agent's default avatar drawn in every theme's style;  | direct children `data-variant="flat" \| "soft" \| "pixel"`, one drawing each (agent-avatar-variants.tsx); an Agent's own picture is an `<img>` host with none |
+ * |                    | the theme's CSS shows its own; host: `AgentAvatar`       |                                                       |
+ * | `ui-showcase`      | a cover-led showcase: a cover card, the selected         | a host's root names itself in `data-part="card" \| "cover" \| "carousel" \| "product-hero"`; a generated cover's drawing is a `data-part="art"` holding its `"tile"`; a cover carries its hue in `data-hue` and `data-state="generated" \| "loading" \| "loaded"`; the product page's other parts stand beside the hero, outside every host, and name themselves `"gallery" \| "section" \| "parts" \| "prompt" \| "columns" \| "facts"` |
+ * |                    | carousel, a product hero; hosts: `Cover`, `CoverCard`,   |                                                       |
+ * |                    | `ShowcaseCarousel`, `ProductHero`                        |                                                       |
+ * | `ui-segmented`     | a segmented control: one choice among a few options laid | its options are direct children `<button>`, each saying whether it is on in `aria-pressed="true" \| "false"` |
+ * |                    | side by side; host: `Segmented`                          |                                                       |
+ * | `ui-action`        | the primary action that heads a navigation list (New     | on the row itself, a `<button>` or an `<a>`; while its page is the one open it is `[aria-current="page"]` |
+ * |                    | chat); hosts: `NavRow`, `RailItem`                       |                                                       |
  * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics" \| "chart" \| "resources"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
  * |                    | weather, clock, countdown, metrics, chart or resources   |                                                       |
  * |                    | tile in a reply; host: `WidgetSurface`                   |                                                       |
+ * | `ui-edge`          | the edge of a box a person presses, types into or wrote: | a text field that failed validation carries `aria-invalid="true"` on itself or on its direct child `<input>` / `<textarea>`; a switch is `role="switch"`; a drawn checkbox or radio (not the native one) is an `aria-hidden` `<span>`; a host drawn round carries `rounded-full`, a capsule `rounded-[var(--ui-radius-pill)]`; a `Button` names its variant, `data-variant="primary" \| "secondary" \| "danger"` |
+ * |                    | a button with a fill or a line, a text field or a select |                                                       |
+ * |                    | trigger, a checkbox's box, a radio's disc, a switch's    |                                                       |
+ * |                    | track, the start page's pickers and the person's own     |                                                       |
+ * |                    | message bubble; hosts: `Button`, `Input`, `Textarea`,    |                                                       |
+ * |                    | `Select`, `OptionMenu`, `SearchInput`, `PickerTrigger`,  |                                                       |
+ * |                    | `FormPickerTrigger`, `Checkbox`, `CheckboxBox`, `Radio`, |                                                       |
+ * |                    | `RadioDisc`, `Switch`, `MessageBubble`, `AgentSelect`,   |                                                       |
+ * |                    | `WorkspaceSelect`                                        |                                                       |
+ * | `ui-start`         | the start page (/chat/new) as a whole; host:             | descendants carry `data-slot="brand" \| "title" \| "version" \| "composer" \| "examples" \| "suggestion" \| "saved-prompt"`; a chosen prompt uses `aria-current="true"` |
+ * |                    | `StartDashboard`                                         |                                                       |
+ * | `ui-library`       | the model library's groups and their model cards; host:  | descendants carry `data-slot="group" \| "head" \| "cards" \| "card" \| "name" \| "count" \| "tags" \| "meta" \| "price" \| "state"` (a group's head holds its `name` and `count`, a card its `name`), the bar folding the rest of the groups away `"fold"` and Add group `"add"`; a pinned group `data-pinned="true"` |
+ * |                    | `ModelsPage`                                             |                                                       |
+ * | `ui-ledger`        | a reading of numbers set apart as a ledger; hosts:       | its readings are `data-slot="row"` (a label beside its figure) or `data-slot="tile"` (the two stacked), each holding a `data-slot="label"` and a `data-slot="figure"`; a score label marks its change with `data-tone="muted" \| "success" \| "danger"` |
+ * |                    | `SummaryCard`, `StatTile`, `BenchmarkCard`               |                                                       |
+ * | `ui-empty`         | an empty state; host: `EmptyState`                       | `data-form="page" \| "slot"`; descendants carry `data-slot="art" \| "title" \| "description" \| "action"`; the page form's `art` holds one drawing per style, direct children `data-set="line" \| "doodle"` |
+ * | `ui-run`           | the conversation's run indicator in the chat toolbar;    | `data-state="running"`; descendants carry `data-slot="mark" \| "label"` |
+ * |                    | host: `RunStatus`                                        |                                                       |
+ * | `ui-waiting`       | a waiting state: a page, a tab or a list whose data is   | `data-state="pending" \| "shown"` (laid out but hidden while pending); `data-form="rows" \| "page" \| "custom"`; its placeholder blocks are `[data-skeleton]` descendants |
+ * |                    | on the way; host: `Waiting`                              |                                                       |
  *
  * `ui-shell` is the one place a theme may paint a field of colour, and the field is one flat
  * colour, never a gradient: Frost lays a flat grey field behind the window and sets the
@@ -228,6 +261,81 @@
  * face (a reading is data) and the illustration's lines square-capped on crisp edges; Primer keeps
  * the host's card. The illustration's loops run on `--ui-live-timing`, so they step in Console and
  * glide elsewhere.
+ *
+ * `ui-edge` (2026-11-04) is a box's own edge where a person puts their hand: a button with a fill
+ * or a line (a ghost or a link button has no box and never takes it), the text fields and select
+ * triggers on the shared control look (`controlBase`), a checkbox's box and a radio's disc in
+ * their native form and as the drawing a pressable option holds (`CheckboxBox`, `RadioDisc`, so a
+ * pack that draws one draws every form of it), a switch's track, the start page's Agent and
+ * Workspace pickers, and the person's own message bubble (and a steer, the person's words sent
+ * while a turn runs). The host writes the class and nothing else; a field that failed validation
+ * already says so in `aria-invalid`. A tag or a count is not a host: a pill on a row is the row's
+ * chrome. The base, Primer and Console leave it alone; Doodle draws each such edge as a pen line.
+ * A `Button` also names its variant (`data-variant`, 2026-11-17), which tells a filled button from
+ * a neutral and a destructive one for a pack that draws Material 3's filled, tonal and outlined
+ * buttons apart; no other built-in pack reads it.
+ *
+ * The five section hooks (2026-11-05) — `ui-start`, `ui-library`, `ui-ledger`, `ui-empty` and
+ * `ui-run` — let a pack dress a whole section where tokens and the hooks above reach only its
+ * parts: the start page, the model library, a ledger of figures, an empty state and the run
+ * indicator. They are theme-neutral anatomy: the host writes the class and names its parts in
+ * `data-slot`s, as `ui-shell` does for the window, and keeps every string, link, handler and
+ * accessible name; a pack arranges and fills what is there, decorates only an empty state's art
+ * slot and the start page's brand block, and never adds content, marks or boxes. A slot is
+ * written wherever its part is drawn, which is not always in the host's own module: the start
+ * page's composer card writes its own `data-slot`. No built-in pack writes a section recipe but Doodle's empty-state art. The run
+ * indicator is drawn only while a turn runs — a compaction is the stream's banner, and a settled
+ * conversation shows nothing — so `running` is the one state it writes.
+ *
+ * A small drawing that carries no data is drawn in every style at once, and the pack's CSS shows
+ * its own, as `ui-glyph` draws an icon: the spinner is an arc on a track (`data-set="arc"`) and a
+ * pencil spiral (`data-set="scribble"`), which theme.css hides until a pack shows it; an empty
+ * state's art is a line drawing (`data-set="line"`) beside a doodle (`data-set="doodle"`), and
+ * theme.css hides the whole art slot, so no pack shows art until it says so. A filled chart mark
+ * takes its fill from `--_paint`, its own colour as the primitive resolved it, in theme.css's base
+ * rules, so a recipe or a utility that fills the mark otherwise still has the mark's colour to
+ * outline it in.
+ *
+ * `ui-avatar` (2026-11-04) is an Agent's default avatar, a small kawaii penguin, drawn once per
+ * theme's language like a glyph: the foundation shows the `flat` drawing and hides the rest, the
+ * base (Frost, and Doodle on it) swaps in `soft` and Console `pixel`, and Primer — and any pack
+ * with no drawing of its own — keeps `flat`. Every drawing paints the Agent's palette slot and
+ * wears the Agent's accessory, both from its id, on the same face, so only the drawing changes
+ * with the theme. An Agent with a picture of its own (2026-11-07) is that picture, an `<img>` host
+ * with no drawings, in the flat tile's rounded square: a pack that treats the avatar's box treats
+ * both alike.
+ *
+ * `ui-showcase` (2026-11-17) is the plugin market's showcase family, the same modules in the Web
+ * App and on the public sites: a cover, a cover card, the selected carousel and a product page's
+ * hero. Its look is a component sheet (showcase.css) that names no token; the two host sheets
+ * serve it in a layer — theme.css in `ui-base`, site.css in `components` — so a pack's recipe in
+ * `ui-theme` overrides it as it overrides the foundation. The host writes the class and names its
+ * parts in `data-part`, and nothing else: the foundation draws nothing for the hook, and no
+ * built-in pack writes a recipe yet. A pack that draws its own boxes (Doodle's pen line) may draw
+ * a card's, the carousel's, the hero's and a cover's edge; it never changes what a cover shows,
+ * and never adds words or marks.
+ *
+ * `ui-segmented` and `ui-action` (2026-11-17) name two controls a pack could not reach: they are
+ * hooks of their own, and not two more hosts of `ui-edge`, so a pack written before them — a copy
+ * of Doodle's first edition among them — draws both exactly as it did. `ui-segmented` is the
+ * segmented control: the host writes the class on the control and nothing else, since each option
+ * already says whether it is on (`aria-pressed`); a pack may draw the track and the chosen option
+ * its own way, and keeps every option one size, on or off, so a choice moves no label. `ui-action`
+ * is the primary action that heads a navigation list — New chat, on the pinned sidebar (`NavRow`)
+ * and on the folded rail (`RailItem`): a row like its neighbours in the base, Primer and Console,
+ * and the one hero button where a pack says so. Doodle draws Material 3's connected button group
+ * and its extended FAB.
+ *
+ * `ui-waiting` (2026-11-19) is the one waiting state, where a page, a tab, a settings page or a
+ * list stands while its data is on the way. The host holds its shape from the first frame and
+ * shows nothing for the first moments of a wait (`pending`), so a quick load never flashes a
+ * placeholder; then it is `shown`. The foundation hides it while pending, brings it in on the
+ * theme's entrance and lets its blocks breathe on the live timing, which is the wait Primer and
+ * Frost show. A pack may draw the blocks and that entrance its own way — a mask, a pseudo-element
+ * and motion on the blocks are its to use — and keeps each block's box, so nothing moves when the
+ * content lands, and its drawing at rest is the finished one, which is what reduced motion shows.
+ * Console types each line out behind a block cursor, in steps; Doodle scribbles each as a pencil
+ * wave that draws itself (2026-11-20).
  */
 export const HOOKS = [
   "ui-glass",
@@ -247,6 +355,17 @@ export const HOOKS = [
   "ui-stream",
   "ui-glyph",
   "ui-widget",
+  "ui-edge",
+  "ui-start",
+  "ui-library",
+  "ui-ledger",
+  "ui-empty",
+  "ui-run",
+  "ui-avatar",
+  "ui-showcase",
+  "ui-segmented",
+  "ui-action",
+  "ui-waiting",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

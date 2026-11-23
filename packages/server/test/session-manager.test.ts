@@ -40,6 +40,7 @@
  *   alone (never from a compaction); a subagent's fires at registration from its spawning
  *   prompt.
  */
+import type { ErrorRecordArgs, UsageContext } from "@prismshadow/penguin-library-observability";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -74,18 +75,17 @@ import type {
   TextPayload,
 } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "../src/api/types.js";
-import { openDatabase } from "../src/db/database.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
 import { HttpError } from "../src/http/errors.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
-import type { ErrorRecordArgs, ErrorSink } from "../src/runtime/error-recorder.js";
+import type { ErrorSink } from "../src/runtime/error-recorder.js";
 import { SessionManager, FOLLOW_UP_QUEUE_LIMIT } from "../src/runtime/session-manager.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
-import type { UsageContext } from "../src/runtime/usage-recorder.js";
 import { fakeSession } from "./fixtures/session.js";
 import { waitFor } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
@@ -1227,6 +1227,50 @@ describe("session-manager", () => {
     expect(manager.statusOf("session-1")).toBe("idle");
   });
 
+  it("a message to a subagent child and a Task arriving together load the Session once", async () => {
+    // Two loads would leave two runtimes, and the one the table dropped would run on where the
+    // Session's deletion cannot reach it.
+    let loads = 0;
+    let finishLoad!: () => void;
+    const loaded = new Promise<void>((resolve) => (finishLoad = resolve));
+    const fake = fakeSession("session-1", { sendToBackgroundSubagent: async () => "steered" });
+    const manager = makeManager({
+      load: async () => {
+        loads += 1;
+        await loaded;
+        return fake;
+      },
+    });
+    const message = manager.sendToSubagent("session-1", "session-child", [userText("hi")]);
+    const task = manager.startTask("session-1", [userText("go")]);
+    finishLoad();
+    expect(await message).toBe("steered");
+    await task;
+    expect(loads).toBe(1);
+  });
+
+  it("a Session deleted while it loads is not loaded back", async () => {
+    // The deletion had no runtime to stop and finished before the load did: a runtime built now
+    // would write the deleted Session's Trace again.
+    let started = false;
+    let finishLoad!: () => void;
+    const loaded = new Promise<void>((resolve) => (finishLoad = resolve));
+    const manager = makeManager({
+      load: async () => {
+        started = true;
+        await loaded;
+        return fakeSession("session-1");
+      },
+    });
+    const task = manager.startTask("session-1", [userText("go")]).catch((err: unknown) => err);
+    await waitFor(() => started);
+    manager.beginSessionDeletion("session-1");
+    sessions.deleteById("session-1");
+    manager.endSessionDeletion("session-1");
+    finishLoad();
+    expect(await task).toMatchObject({ status: 404, code: "session_not_found" });
+  });
+
   it("loader throwing HttpError (e.g. workspace_missing 409) → passed through as-is, not re-wrapped", async () => {
     const loader: SessionLoader = {
       load: async () => {
@@ -1253,6 +1297,65 @@ describe("session-manager", () => {
     await manager.shutdown();
     expect(disposed).toBe(1);
   });
+
+  // A Session's subagent children are not part of its drive: removal stops their rounds at
+  // once, or they would go on sending requests while the drive's interrupt cleanup settles. The
+  // wait it hands back lasts until the runtime's disposal, the children's cancellation writes
+  // included, is over.
+  it.each(["session", "agent", "project", "shutdown"] as const)(
+    "%s removal stops subagent children at once and waits for the runtime's disposal",
+    async (scope) => {
+      const order: string[] = [];
+      let settleDrive!: () => void;
+      const driveSettled = new Promise<void>((resolve) => (settleDrive = resolve));
+      let finishCleanup!: () => void;
+      const cleanup = new Promise<void>((resolve) => (finishCleanup = resolve));
+      const fake = fakeSession("session-1", {
+        async *run(_input: AmspRecord[], opts: { signal: AbortSignal }) {
+          yield assistantText("working");
+          await new Promise((resolve) => opts.signal.addEventListener("abort", resolve));
+          await driveSettled;
+          yield abortEvent();
+        },
+        listBackgroundSubagents: () => [
+          { sessionId: "session-child", subagentId: "subagent-1", running: true },
+        ],
+        abortBackgroundSubagentRun: (childSessionId) => {
+          order.push(`stopped ${childSessionId}`);
+          return true;
+        },
+        async dispose() {
+          order.push("disposing");
+          await cleanup;
+          order.push("disposed");
+        },
+      });
+      const manager = makeManager(loaderOf(fake));
+      await manager.startTask("session-1", [userText("go")]);
+      await waitFor(() => recorded.length > 0);
+      let done = false;
+      const waiting = (
+        scope === "shutdown"
+          ? manager.shutdown()
+          : Promise.all(
+              scope === "session"
+                ? manager.beginSessionDeletion("session-1")
+                : scope === "agent"
+                  ? manager.beginAgentDeletion("p1", ROW.agentId)
+                  : manager.abortProject("p1"),
+            )
+      ).then(() => (done = true));
+      expect(order).toEqual(["stopped session-child"]);
+      settleDrive();
+      await waitFor(() => order.includes("disposing"));
+      expect(done).toBe(false);
+      finishCleanup();
+      await waiting;
+      expect(order).toEqual(["stopped session-child", "disposing", "disposed"]);
+      manager.endSessionDeletion("session-1");
+      manager.endAgentDeletion("p1", ROW.agentId);
+    },
+  );
 
   it("shutdown denies a call parked on a person, lets the run wind down, and disposes after it", async () => {
     // What a hot swap or an exit meets mid-conversation: a run waiting on an approval nobody

@@ -1,0 +1,111 @@
+/**
+ * What the app shows when the shell's tree cannot be drawn: a render error caught at its root
+ * (app.tsx), or a module tree that failed to boot (main.tsx mounts `bootFailedRoot`). It leans
+ * on nothing the broken tree provides — no router, no auth or Project context, no slot — only
+ * the dictionary, the keymap and the UI package's plain controls, so it draws whatever broke.
+ *
+ * Its ways out: a reload; a reload in safe mode, which skips every server contribution (the
+ * usual suspect once a plugin has added a page); and the harness history, to roll the harness
+ * back when the build itself is what broke. The command palette mounts beside the tree and
+ * stays reachable over this panel too.
+ *
+ * And 「[报告问题]」 after the error: the report holds the error and its stack, redacted like every
+ * report. The panel shows that report in a dialog of its own rather than through the app's
+ * report host, which may be part of the tree that broke.
+ */
+import { useState } from "react";
+import type { ComponentType } from "react";
+import {
+  Button,
+  ErrorReportDialog,
+  NoticeStrip,
+  TextAction,
+  exceptionReport,
+  type ErrorReport,
+} from "@prismshadow/penguin-ui";
+import { useShortcutLabel } from "../lib/shortcuts/use-keymap";
+import { S } from "../lib/strings";
+import { HarnessHistoryOverlay } from "./harness-history-overlay";
+import { isSafeMode, SAFE_PARAM, setSafeMode } from "./safe-mode";
+
+function messageOf(error: unknown): string {
+  if (error instanceof Error) return error.message || error.name;
+  return String(error);
+}
+
+export function RescuePanel({
+  error,
+  what = "the page crashed while rendering",
+}: {
+  error: unknown;
+  /** What happened, for the report. */
+  what?: string;
+}) {
+  const t = S.rescue;
+  // Whether the error happened in safe mode, fixed when the panel appears: entering safe mode
+  // afterwards from the palette does not make the error the app's own.
+  const [safe] = useState(isSafeMode);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [report, setReport] = useState<ErrorReport | null>(null);
+  const palette = useShortcutLabel("palette.toggle");
+  return (
+    <div className="flex h-dvh w-full items-center justify-center overflow-y-auto bg-white px-4 py-8 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+      <section role="alert" aria-labelledby="rescue-title" className="w-full max-w-xl">
+        <h1 id="rescue-title" className="text-lg font-semibold">
+          {t.title}
+        </h1>
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{t.desc}</p>
+        <NoticeStrip
+          tone="danger"
+          className="mt-4 rounded-md border px-3 py-2 font-mono text-xs break-words whitespace-pre-wrap"
+        >
+          {messageOf(error)}{" "}
+          <TextAction
+            data-report-issue=""
+            onClick={() => setReport(exceptionReport(error, { what }))}
+          >
+            {S.report.action}
+          </TextAction>
+        </NoticeStrip>
+        {safe ? (
+          <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">{t.safeNote}</p>
+        ) : null}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button variant="primary" size="sm" onClick={() => location.reload()}>
+            {t.reload}
+          </Button>
+          {safe ? null : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setSafeMode(true);
+                // setSafeMode falls back to module memory when storage is blocked, and a
+                // reload throws that away — the flag has to ride the address so startup
+                // adopts it (safe-mode.ts) even where no storage write can stick.
+                const url = new URL(window.location.href);
+                url.searchParams.set(SAFE_PARAM, "");
+                window.location.href = url.toString();
+              }}
+            >
+              {t.reloadSafe}
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" onClick={() => setHistoryOpen(true)}>
+            {S.commandPalette.harnessHistory}
+          </Button>
+        </div>
+        <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">{t.paletteHint(palette)}</p>
+      </section>
+      <HarnessHistoryOverlay open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <ErrorReportDialog report={report} onClose={() => setReport(null)} />
+    </div>
+  );
+}
+
+/** The root the app mounts when the module tree failed to boot: the panel, with the boot error. */
+export function bootFailedRoot(error: unknown): ComponentType {
+  return function BootFailed() {
+    return <RescuePanel error={error} what="the app's modules failed to load" />;
+  };
+}

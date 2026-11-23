@@ -19,10 +19,13 @@
  * between the reply and the block to pass copy down as props, so their few words come from here
  * like the rest. `reader` holds the Markdown reader's controls (its outline and its find), which
  * the file browser and the preview pane draw for their callers, who pass no copy for them.
+ * `dates` holds the date and time pickers' own words (the placeholders, Today, the month steps,
+ * the wheels' names) and the locale they write dates in, which an A2UI form's fields need as much
+ * as a settings dialog's.
  */
 import { createContext, createElement, useContext } from "react";
 import type { ReactElement, ReactNode } from "react";
-import type { A2uiChartKind, A2uiWeatherCondition } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiChartKind, A2uiWeatherCondition } from "@prismshadow/a2ui";
 
 /** The words around the A2UI blocks a reply may hold (components/content/a2ui). */
 export interface A2uiStrings {
@@ -135,6 +138,74 @@ export interface ReaderStrings {
   noResults: string;
 }
 
+/** The problem report's words (components/report): its action, its dialog, the crash notice. */
+export interface ReportStrings {
+  /** The text action that opens a report. */
+  action: string;
+  /** The report dialog's title. */
+  title: string;
+  /** The dialog's lead: what an error like this usually is, and what reporting it does. */
+  lead: string;
+  /** The line under it: what was taken out, and to check before sending. */
+  check: string;
+  /** The report block's accessible name. */
+  label: string;
+  /** The press that copies the report, and what it says once it did or could not. */
+  copy: string;
+  copied: string;
+  copyFailed: string;
+  /** The link to the project's bug form. */
+  fileIssue: string;
+  /** The crash notice's line, in the transcript marker's shape ("[Error]: …"). */
+  crashed: string;
+  /** The crash notice's press that reloads the page. */
+  reload: string;
+}
+
+/** The date and time pickers' words (components/forms/date-time). */
+export interface DateStrings {
+  /**
+   * The BCP 47 locale the pickers write dates and times in, and whose week and clock they follow:
+   * `zh-CN`, or the reader's own English (`en-US`, `en-GB`).
+   */
+  locale: string;
+  /** A field's placeholder while nothing is picked: the next step. */
+  pickDate: string;
+  pickTime: string;
+  pickDateTime: string;
+  pickRange: string;
+  /** A field's accessible name: its title with what it shows ("Start at: Nov 12, 2026"). */
+  fieldName: (label: string, shown: string) => string;
+  /** The calendar's shortcut to today. */
+  today: string;
+  /** The press that empties an optional field. */
+  clear: string;
+  /** The calendar head's steps to the month before and after. */
+  previousMonth: string;
+  nextMonth: string;
+  /** The calendar head's two menus, and a date-and-time picker's wheels. */
+  month: string;
+  year: string;
+  hour: string;
+  minute: string;
+  /** The 12-hour clock's wheel of day periods. */
+  dayPeriod: string;
+  /** The row under a date-and-time calendar, whose pill opens the time wheels. */
+  time: string;
+  /** A range calendar's line once its first end is picked. */
+  pickEnd: string;
+  /** A range headline's two ends while they are not picked. */
+  startDate: string;
+  endDate: string;
+  /** A range picker's two actions: nothing is written until the second. */
+  cancel: string;
+  confirm: string;
+  /** What joins a span's two dates: "-" in Chinese, an en dash with spaces in English. */
+  rangeSeparator: string;
+  /** The press that closes a picker whose panel stays open while it is used (a time, a date and time). */
+  done: string;
+}
+
 export interface UiStrings {
   /** The close cross's accessible name (`CloseButton`). */
   close: string;
@@ -176,6 +247,10 @@ export interface UiStrings {
   a2ui: A2uiStrings;
   /** The Markdown reader's words. */
   reader: ReaderStrings;
+  /** The problem report's words. */
+  report: ReportStrings;
+  /** The date and time pickers' words. */
+  dates: DateStrings;
 }
 
 /** The English fallbacks, used wherever no provider is mounted (a test, a stand-alone page). */
@@ -283,6 +358,45 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     nextMatch: "Next match",
     closeFind: "Close find",
     noResults: "No results",
+  },
+  report: {
+    action: "Report",
+    title: "Report a problem",
+    lead: "This may be a defect in PenguinHarness, or it may come from the network, a model provider or a connected machine. If you think PenguinHarness is at fault, filing an issue on GitHub helps improve this open-source project.",
+    check:
+      "Keys, tokens and personal paths are taken out of the report; still check it for anything private before you send it.",
+    label: "Report",
+    copy: "Copy",
+    copied: "Report copied",
+    copyFailed: "Could not copy; select the report and copy it by hand",
+    fileIssue: "File an issue on GitHub",
+    crashed: "[Error]: this part of the page could not be shown",
+    reload: "Reload",
+  },
+  dates: {
+    locale: "en-US",
+    pickDate: "Pick a date",
+    pickTime: "Pick a time",
+    pickDateTime: "Pick a date and time",
+    pickRange: "Pick a date range",
+    fieldName: (label, shown) => `${label}: ${shown}`,
+    today: "Today",
+    clear: "Clear",
+    previousMonth: "Previous month",
+    nextMonth: "Next month",
+    month: "Month",
+    year: "Year",
+    hour: "Hour",
+    minute: "Minute",
+    dayPeriod: "AM/PM",
+    time: "Time",
+    pickEnd: "Pick the end date",
+    startDate: "Start date",
+    endDate: "End date",
+    cancel: "Cancel",
+    confirm: "OK",
+    rangeSeparator: " – ",
+    done: "Done",
   },
 };
 

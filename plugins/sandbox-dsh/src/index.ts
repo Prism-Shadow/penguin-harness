@@ -31,6 +31,9 @@ import type {
   SandboxProvider,
   SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
+import { SandboxDshStatus } from "./status.js";
+
+export { DshSandboxView, SandboxDshStatus, dshNotices, dshReport } from "./status.js";
 
 /**
  * Programs the Windows ACL restricted-token runner cannot start — and they include the harness's
@@ -251,8 +254,35 @@ export async function loadDshAdaptor(host: DshLoadHost = {}): Promise<SandboxPro
  */
 @Component({
   contributes: {
+    // How the Plugins page shows this backend (read from ifaces.json, never by booting it).
+    "PluginLibraryModule.cards": [
+      {
+        id: "sandbox-dsh.card",
+        title: "DSH Sandbox",
+        titleZh: "DSH 沙箱",
+        descriptionZh:
+          "PenguinHarness 的 DeepSeek Harness 沙箱适配器：把 DSH 的本地后端链接入本框架自己的沙箱接口。",
+        shortDescription: "Linux, macOS and Windows: confine file writes only.",
+        shortDescriptionZh: "Linux、macOS 与 Windows：只限制文件写入。",
+        category: "sandbox",
+        icon: "icon.svg",
+        preinstall: false,
+      },
+    ],
     "SandboxModule.providers": [
-      { id: "sandbox-dsh.provider", name: "dsh-local", dimensions: ["fs-write"] },
+      {
+        id: "sandbox-dsh.provider",
+        name: "dsh-local",
+        dimensions: ["fs-write"],
+        // A default backend on Linux beside bubblewrap, which needs unprivileged user
+        // namespaces that Ubuntu 23.10 and later grant only to AppArmor-profiled programs.
+        // Landlock needs neither a namespace nor root, so a default Ubuntu is still confined.
+        defaultFor: ["linux"],
+      },
+    ],
+    // No options: the group gives this backend its page in Settings, where its status shows.
+    "PluginConfigProvider.groups": [
+      { id: "sandbox-dsh", title: "DSH Sandbox", titleZh: "DSH 沙箱", properties: {} },
     ],
   },
 })
@@ -264,5 +294,5 @@ export class SandboxDsh {
   }
 }
 
-const plugin: Plugin = { modules: [SandboxDsh] };
+const plugin: Plugin = { modules: [SandboxDsh, SandboxDshStatus] };
 export default plugin;

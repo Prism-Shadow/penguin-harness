@@ -2,8 +2,8 @@
  * Terminal control plane: `/api/terminals`, one route group of the platform's Hono app.
  *
  * Mounted by http/app.ts's HttpModule beside the business route groups, so all
- * platform routes register into ONE app and swap as one unit. This group owns exactly
- * the seven routes below and nothing else under its prefix: unknown paths and methods fall
+ * platform routes register into ONE app and swap as one unit. This group owns
+ * the terminal and Session management routes and nothing else under its prefix: unknown paths and methods fall
  * to the parent app's notFound, which declines to the runtime. The identity gate is
  * attached per-route, not as a prefix middleware, so a request nothing here serves
  * declines BEFORE authentication, same as a request outside the prefix.
@@ -32,12 +32,17 @@
  *
  * Every terminal carries the conversation it was opened for (`sessionId`, null for none),
  * set on create and changed only by PATCH, when that conversation's id self-heals. It is a
- * label within one user's shells, not a permission — the user gate above is the boundary —
- * so it is recorded as given, without asking whether such a Session exists.
+ * grouping within the user’s shells. A non-null binding requires access to that Session.
  */
+import {
+  closeSessionResources,
+  countSessionResources,
+  type SessionResourceAccess,
+} from "../http/session-resources.js";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { HttpError } from "../http/errors.js";
+import { readableSession } from "../http/session-access.js";
 import { badRequest } from "../http/validate.js";
 import type { TerminalManager } from "./manager.js";
 import type { IdentifiedUser, Identity } from "./identity.js";
@@ -117,7 +122,11 @@ type TerminalEnv = { Variables: { user: IdentifiedUser } };
  * here rather than falling through, because falling through would hand an
  * unauthenticated caller whatever older handler sits behind the seam.
  */
-export function terminalRoutes(manager: TerminalManager, identity: Identity): Hono<TerminalEnv> {
+export function terminalRoutes(
+  manager: TerminalManager,
+  identity: Identity,
+  resourceAccess?: SessionResourceAccess,
+): Hono<TerminalEnv> {
   const app = new Hono<TerminalEnv>();
 
   const gate: MiddlewareHandler<TerminalEnv> = async (c, next) => {
@@ -129,10 +138,48 @@ export function terminalRoutes(manager: TerminalManager, identity: Identity): Ho
     await next();
   };
 
+  const checkedSession = (value: unknown, userId: string): string | null => {
+    const sessionId = sessionIdOf(value);
+    if (sessionId === null) return null;
+    if (!resourceAccess) throw new HttpError(503, "unavailable", "Session access is unavailable.");
+    return readableSession(
+      resourceAccess.sessions.findById(sessionId),
+      { userId },
+      resourceAccess.access,
+    ).sessionId;
+  };
+
+  if (resourceAccess) {
+    const path = "/api/terminals/projects/:projectId/session-resources";
+    app.get(path, gate, (c) => {
+      const userId = c.var.user.userId;
+      return json(
+        countSessionResources(resourceAccess, userId, c.req.param("projectId"), () =>
+          manager.listInfo(userId).filter((pty) => pty.alive),
+        ),
+      );
+    });
+    app.post(path + "/close", gate, async (c) => {
+      const userId = c.var.user.userId;
+      const body = await readBody(c.req.raw);
+      return json(
+        await closeSessionResources(
+          resourceAccess,
+          userId,
+          c.req.param("projectId")!,
+          body.sessionIds,
+          () => manager.listInfo(userId).filter((pty) => pty.alive),
+          (id, sessionId) => manager.closeInSession(id, userId, sessionId),
+        ),
+      );
+    });
+  }
   app.get("/api/terminals", gate, (c) => json({ terminals: manager.listInfo(c.var.user.userId) }));
-  app.post("/api/terminals", gate, async (c) =>
-    json(await create(c.req.raw, manager, c.var.user.userId), 201),
-  );
+  app.post("/api/terminals", gate, async (c) => {
+    const body = await readBody(c.req.raw);
+    const userId = c.var.user.userId;
+    return json(await create(body, manager, userId, checkedSession(body.sessionId, userId)), 201);
+  });
   app.get("/api/terminals/:id", gate, (c) =>
     json(manager.require(c.req.param("id"), c.var.user.userId).info()),
   );
@@ -140,7 +187,8 @@ export function terminalRoutes(manager: TerminalManager, identity: Identity): Ho
     const body = await readBody(c.req.raw);
     // Required, so an empty or mistyped body cannot silently file a shell under no one.
     if (body.sessionId === undefined) throw badRequest("sessionId is required (null for none).");
-    const sessionId = sessionIdOf(body.sessionId);
+    manager.require(c.req.param("id"), c.var.user.userId);
+    const sessionId = checkedSession(body.sessionId, c.var.user.userId);
     return json(manager.reown(c.req.param("id"), c.var.user.userId, sessionId).info());
   });
   app.delete("/api/terminals/:id", gate, (c) => {
@@ -172,8 +220,12 @@ export function terminalRoutes(manager: TerminalManager, identity: Identity): Ho
   return app;
 }
 
-async function create(request: Request, manager: TerminalManager, ownerUserId: string) {
-  const body = await readBody(request);
+async function create(
+  body: Record<string, unknown>,
+  manager: TerminalManager,
+  ownerUserId: string,
+  sessionId: string | null,
+) {
   const cwd = typeof body.cwd === "string" && body.cwd.trim() ? body.cwd.trim() : "~";
   const name = typeof body.name === "string" ? body.name : undefined;
   // Optional shell override (default: the user's login shell). Not an escalation — the
@@ -182,7 +234,7 @@ async function create(request: Request, manager: TerminalManager, ownerUserId: s
   const session = await manager.create({
     cwd,
     ownerUserId,
-    sessionId: sessionIdOf(body.sessionId),
+    sessionId,
     ...(name !== undefined ? { name } : {}),
     ...(shell !== undefined ? { shell } : {}),
     ...(optionalInt(body.cols, "cols") !== undefined ? { cols: body.cols as number } : {}),

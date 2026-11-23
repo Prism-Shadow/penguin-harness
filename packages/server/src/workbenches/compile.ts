@@ -8,7 +8,10 @@
  * `tsconfig.json` in the folder is not consulted, so a workbench cannot switch strictness
  * off for itself. `@prismshadow/penguin-server/plugin` resolves to the types the harness
  * wrote into the folder (./harness-types.ts), never to a package: what the workbench was
- * written against. Whether that still fits this platform is ../plugin/iface-check.ts.
+ * written against. Whether that still fits this platform is ../plugin/iface-check.ts. Node's
+ * own modules (`node:fs`, `node:path`, `node:net`, …) are typed from the `@types/node` this
+ * server carries (../plugin/typescript.ts `nodeTypesRoot`), and no other `@types` package is:
+ * the handler runs in this process, so it reads and writes its folders with Node's `fs`.
  *
  * A second, virtual root file assigns the default export to `WorkbenchPackage`, so the
  * shape is checked even when the author left `satisfies WorkbenchPackage` out (in which
@@ -17,12 +20,14 @@
  * Any diagnostic fails the load. A clean program is emitted into
  * `<workbench>/.build/<revision>/` — inside the folder, so the emitted code resolves the
  * workbench's own dependencies the way its source does; a dot-directory, so it is no part
- * of the revision, the recorded versions or what the watcher reacts to.
+ * of the revision, the recorded versions or what the watcher reacts to. Pages written in TSX
+ * are a second program of the same load, emitted beside it into `ui/` (./compile-ui.ts).
  */
 import fs from "node:fs";
 import path from "node:path";
 import type { TypeScript } from "../plugin/typescript.js";
 import { harnessTypesFile } from "./harness-types.js";
+import { UI_DIR } from "./store.js";
 
 export const ENTRY = "index.ts";
 export const BUILD_DIR = ".build";
@@ -39,8 +44,17 @@ const MAX_DIAGNOSTICS = 12;
 
 export class WorkbenchCompileError extends Error {}
 
-/** Type-checks the workbench in `dir` and emits it; resolves to the emitted entry file. */
-export function compileWorkbench(ts: TypeScript, dir: string, revision: string): string {
+/**
+ * Type-checks the workbench in `dir` and emits it; resolves to the emitted entry file.
+ * `nodeTypes` is the `@types` folder holding `@types/node`, or null when this installation
+ * carries none (a `node:` import then fails the load).
+ */
+export function compileWorkbench(
+  ts: TypeScript,
+  dir: string,
+  revision: string,
+  nodeTypes: string | null,
+): string {
   const entry = path.join(dir, ENTRY);
   if (!fs.existsSync(entry)) {
     const js = ["index.mjs", "index.js"].find((f) => fs.existsSync(path.join(dir, f)));
@@ -60,6 +74,8 @@ export function compileWorkbench(ts: TypeScript, dir: string, revision: string):
     esModuleInterop: true,
     forceConsistentCasingInFileNames: true,
     skipLibCheck: true,
+    // Node's declarations and nothing else from any `@types`, wherever the server was started.
+    ...(nodeTypes !== null ? { typeRoots: [nodeTypes], types: ["node"] } : { types: [] }),
     rootDir: dir,
     outDir,
   };
@@ -101,7 +117,17 @@ export function compileWorkbench(ts: TypeScript, dir: string, revision: string):
   const diagnostics = authored.length > 0 ? authored : all;
   if (diagnostics.length > 0) throw new WorkbenchCompileError(describe(ts, dir, diagnostics));
 
-  fs.rmSync(outDir, { recursive: true, force: true });
+  // Everything but the pages' emit (./compile-ui.ts), which replaces itself only once a load
+  // succeeds: a failed reload of this same revision leaves the serving pages in place.
+  let previous: string[] = [];
+  try {
+    previous = fs.readdirSync(outDir);
+  } catch {
+    // Nothing emitted for this revision yet.
+  }
+  for (const name of previous) {
+    if (name !== UI_DIR) fs.rmSync(path.join(outDir, name), { recursive: true, force: true });
+  }
   for (const source of program.getSourceFiles()) {
     if (source.isDeclarationFile || same(source.fileName)) continue;
     if (program.isSourceFileFromExternalLibrary(source)) continue;
@@ -145,6 +171,34 @@ export function writeLoadStatus(
   }
 }
 
+/** What `.build/status.json` records of the last load of a folder. */
+export interface LoadStatus {
+  /** The revision that load read; null when the file does not say. */
+  revision: string | null;
+  failed: boolean;
+  /** The load error, when the file records one. */
+  error: string | null;
+}
+
+/** The last load's status as {@link writeLoadStatus} left it; null when there is none to read. */
+export async function readLoadStatus(dir: string): Promise<LoadStatus | null> {
+  const file = path.join(dir, BUILD_DIR, STATUS_FILE);
+  let status: unknown;
+  try {
+    status = JSON.parse(await fs.promises.readFile(file, "utf8"));
+  } catch {
+    // Never loaded here, or the file was cut short: it says nothing.
+    return null;
+  }
+  // Whatever else the file holds, a field it lacks reads as unsaid.
+  const { revision, ok, error } = (status ?? {}) as Record<string, unknown>;
+  return {
+    revision: typeof revision === "string" ? revision : null,
+    failed: ok === false,
+    error: typeof error === "string" ? error : null,
+  };
+}
+
 /** Drops the emitted code of every revision but `keep` (the one now serving). */
 export function pruneBuilds(dir: string, keep: string): void {
   const base = path.join(dir, BUILD_DIR);
@@ -171,7 +225,8 @@ function briefly(chain: string): string {
   return kept.join("\n    ");
 }
 
-function describe(
+/** The compiler's diagnostics as a load error: `<file>:<line>:<col> TS<code> <message>`, capped. */
+export function describe(
   ts: TypeScript,
   dir: string,
   diagnostics: readonly import("typescript").Diagnostic[],

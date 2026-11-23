@@ -11,18 +11,22 @@ export default defineConfig({
     // The plugin contract: types only, so a plugin package compiles against the SDK
     // without depending on whatever embeds it.
     "src/plugin/index.ts",
+    // Display metadata shared by the server library and the browser marketplace.
+    "src/plugin/category-manifest.ts",
+    // The published plugin index's readers: pure functions with no Node dependency, so the
+    // website's build reads the index by the server's rules without loading the SDK.
+    "src/plugin/index-document.ts",
     // A row's effective connection and credential rule: no Node dependency and no catalog
     // data, so the Web App bundles the same answers the server and the CLI compute.
     "src/state/model-connection.ts",
+    // The CLI command contract: the data and code halves of one `penguin` command,
+    // shared by the CLI's own table and the server's plugin slot.
+    "src/cli/index.ts",
     // Window/threshold arithmetic plus its two defaults: pure numbers, no Node dependency, so
     // the web app can bundle the compaction-threshold derivation its context ring fills against.
     "src/llm/context-limits.ts",
     // Hot-update kernel: zero-dependency subpath so web can bundle it directly.
     "src/kernel/index.ts",
-    // A2UI block grammar: pure TypeScript, no Node dependency, so the web renderer bundles the
-    // same parser and fallback the checker script uses (cli.ts is bundled separately by
-    // scripts/build-a2ui-check.mjs and is deliberately not an entry here).
-    "src/a2ui/index.ts",
   ],
   format: ["esm"],
   target: "node24",

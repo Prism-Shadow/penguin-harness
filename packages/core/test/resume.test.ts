@@ -5,13 +5,24 @@
  *   (Workspace / Model cannot be swapped).
  * - Pairing-fallback placeholders, once constructed, are written into the original trace file;
  *   session_meta is never written twice.
- * - Errors when the session doesn't exist / the workspace is missing / the model is no longer in the project config.
+ * - Errors when the session doesn't exist / the workspace is missing / the model is no longer in the project config
+ *   — unless the caller resumes only to switch away from that model (`allowUnreachableModel`), in
+ *   which case the switch sends it nothing and hands the history over by Trace path.
+ * - A file whose completed switch's session_update is still pending resumes on its target, the
+ *   next context assembled fresh with the summary pending; a target gone from the config is
+ *   refused like any missing model.
  * - `groupHistoryToUniMessages` groups by adjacent same role; `GenerativeModel.setHistory` injects into MMSP.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import {
+  buildContextSummaryText,
+  transcribeRequestError,
+  transcribeUserInput,
+} from "@prismshadow/amsp/markers";
 import { createAgent } from "../src/index.js";
 import {
   abortEvent,
@@ -21,6 +32,7 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  sessionUpdate,
   taskBegin,
   taskEnd,
   tokenUsage,
@@ -31,7 +43,7 @@ import {
 import type { AmspRecord, TokenCounts } from "@prismshadow/amsp/records";
 import { GenerativeModel, groupHistoryToUniMessages } from "../src/llm/index.js";
 import { findLatestTraceFile, readTrace } from "../src/trace/index.js";
-import { agentsMdPath, tracesDir } from "../src/state/paths.js";
+import { agentsMdPath, systemConfigPath, tracesDir } from "../src/state/paths.js";
 import { stubProviderKeys } from "./provider-keys.js";
 import { seedProject } from "./seeded-project.js";
 
@@ -262,6 +274,94 @@ describe("agent.resumeSession", () => {
     );
   });
 
+  it.each([
+    {
+      why: "gone from the config",
+      gone: { provider: "custom", model_id: "vanished-model" },
+      refusal: /is not in the Project config/,
+    },
+    {
+      // The seeded gateway names its endpoint and holds no key: its client cannot be built.
+      why: "left without a key",
+      gone: { provider: "tokendance", model_id: "glm-5.3" },
+      refusal: /./,
+    },
+  ])(
+    "a model $why resumes only when allowed, and then only to switch: the switch sends it nothing and hands the history over by Trace path",
+    async ({ gone, refusal }) => {
+      const agent = await createAgent({});
+      const oldFile = await writeTraceFile(tmpRoot, SID, [
+        metaFor(SID, workspace, gone),
+        userText("q1"),
+        requestBegin(),
+        assistantText("a1"),
+        requestEnd("completed"),
+        tokenUsage(usage(42), usage(42)),
+      ]);
+      const before = await fs.readFile(oldFile, "utf8");
+      await expect(agent.resumeSession({ sessionId: SID })).rejects.toThrow(refusal);
+
+      const session = await agent.resumeSession({ sessionId: SID, allowUnreachableModel: true });
+      // Nothing is asked of that model before the switch either: a title gets no answer.
+      expect(
+        await session.generateTitle({ material: { userText: "q1", assistantText: "a1" } }),
+      ).toMatchObject({ title: null });
+      const streamed: AmspRecord[] = [];
+      const switching = session.switchModel({ provider: MODEL.provider, modelId: MODEL.model_id });
+      let status: string | undefined;
+      for (;;) {
+        const res = await switching.next();
+        if (res.done) {
+          status = res.value;
+          break;
+        }
+        streamed.push(res.value);
+      }
+
+      expect(status).toBe("completed");
+      expect(session.sessionId).toBe(SID);
+      expect(session.modelId).toBe(MODEL.model_id);
+      // No compaction pair: nothing was asked of the vanished model. The stream ends with the
+      // record naming the target, then the handoff naming the file the history is in.
+      const kinds = streamed.map((m) =>
+        m.type === "session_meta" ? "session_meta" : (m.payload as { type?: string }).type,
+      );
+      expect(kinds).not.toContain("compaction_begin");
+      expect(kinds.slice(-2)).toEqual(["session_update", "text"]);
+      expect(streamed.at(-2)!.payload).toMatchObject({
+        provider: MODEL.provider,
+        model_id: MODEL.model_id,
+      });
+      const handoff = (streamed.at(-1)!.payload as { text: string }).text;
+      expect(handoff).toMatch(/^\[model_switch_from\]/);
+      expect(handoff).toContain(`session: ${SID}`);
+      expect(handoff).toContain(`trace: ${oldFile}`);
+      expect(handoff).toContain(`workspace: ${workspace}`);
+      expect(handoff).toContain(`previous_model: ${gone.model_id}`);
+      // The left file gains the record alone, and stays the latest: no file opens before a
+      // message does.
+      const after = await fs.readFile(oldFile, "utf8");
+      expect(after.startsWith(before)).toBe(true);
+      expect((await readTrace(oldFile)).at(-1)!.payload).toMatchObject({
+        type: "session_update",
+        provider: MODEL.provider,
+        model_id: MODEL.model_id,
+      });
+      const latest = await findLatestTraceFile(
+        tracesDir(tmpRoot, "default_project", "default_agent"),
+        SID,
+      );
+      expect(latest!.path).toBe(oldFile);
+      session.dispose();
+
+      // A restart lands on the target, the handoff regenerated from the left file pending.
+      const again = await agent.resumeSession({ sessionId: SID });
+      expect(again.modelId).toBe(MODEL.model_id);
+      expect(again.hasPendingInput()).toBe(true);
+      again.dispose();
+    },
+  );
+
   it("errors clearly when session_meta lacks provider (old-format trace, no migration)", async () => {
     // An old-format trace's session_meta only has model_id (from the composite-id era): no backward compat, just a clear error.
     const agent = await createAgent({});
@@ -382,6 +482,95 @@ describe("agent.resumeSession", () => {
       // The summary is what the next run sends, and nothing of the closed context is replayed.
       expect(session.hasPendingInput()).toBe(true);
       expect(session.resumedHistory).toEqual([]);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a file closed by a compaction that completed without a summary stays closed: the restart has the hand-off note pending", async () => {
+    // The compaction's request was refused, so it completed with the error pair and the next
+    // context opens with the note built from this file, not with the closed context replayed.
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      taskBegin(),
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      requestEnd("completed"),
+      tokenUsage(usage(150), usage(150)),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "rejected", errorMessage: "prompt is too long" }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 1,
+        errorCode: "rejected",
+        errorMessage: "prompt is too long",
+      }),
+      taskEnd(),
+    ]);
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(session.compactability()).toBe("just_compacted");
+      expect(session.hasPendingInput()).toBe(true);
+      expect(session.resumedHistory).toEqual([]);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("the hand-off note a restart rebuilds is the template in the Agent's config at resume, filled from the closed file", async () => {
+    // The closed file's context opens for the first time at the restart, so a template edited
+    // on disk after the compaction ended is the one its note is filled from.
+    const agent = await createAgent({});
+    const closed = await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      requestEnd("completed"),
+      tokenUsage(usage(150), usage(150)),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "rejected", errorMessage: "prompt is too long" }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 1,
+        errorCode: "rejected",
+        errorMessage: "prompt is too long",
+      }),
+    ]);
+    const configFile = systemConfigPath(tmpRoot, "default_project", "default_agent");
+    const config = parseYaml(await fs.readFile(configFile, "utf8")) as {
+      compaction: Record<string, unknown>;
+    };
+    config.compaction.handoff_note =
+      "Edited note.\n{{ERROR}}\n{{USER_MESSAGES}}\nSee {{TRACE_PATH}}";
+    await fs.writeFile(configFile, stringifyYaml(config), "utf8");
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      const pending = (
+        session as unknown as { engineDeps: { initialState?: { pendingSummary?: AmspRecord } } }
+      ).engineDeps.initialState?.pendingSummary;
+      expect((pending?.payload as { text?: string }).text).toBe(
+        buildContextSummaryText(
+          [
+            "Edited note.",
+            transcribeRequestError("rejected", "prompt is too long"),
+            transcribeUserInput("q1"),
+            `See ${closed}`,
+          ].join("\n"),
+        ),
+      );
     } finally {
       session.dispose();
     }
@@ -575,10 +764,11 @@ describe("agent.resumeSession after an in-session model switch", () => {
     compactionEnd({ reason, mode: "summarize", status: "completed" }),
   ];
 
-  it("resumes on the model of the eagerly opened file: history empty, the summary is the carry-over, on the switched-to model", async () => {
+  it("a file an older harness opened at once for a switch still resumes on its model: history empty, the summary is the carry-over", async () => {
     const agent = await createAgent({});
-    // The switch closed the original model's context with a plain manual pair, and opened the
-    // target's file at once: its session_meta, its toolset, the summary as its first input.
+    // An older harness closed the original model's context with a plain manual pair, and
+    // opened the target's file at once: its session_meta, its toolset, the summary as its first
+    // input.
     await writeTraceFile(tmpRoot, SID, closedFile(ORIGINAL, "manual"));
     await writeTraceFile(
       tmpRoot,
@@ -608,7 +798,7 @@ describe("agent.resumeSession after an in-session model switch", () => {
     }
   });
 
-  it("a switch made right after the restart carries the summary on: the next file opens with it", async () => {
+  it("a switch made right after the restart records its target in the file an older harness opened for a switch, and a restart then lands on it with the summary", async () => {
     const agent = await createAgent({});
     await writeTraceFile(tmpRoot, SID, closedFile(ORIGINAL, "manual"));
     const leaving = await writeTraceFile(
@@ -632,26 +822,85 @@ describe("agent.resumeSession after an in-session model switch", () => {
       }
       // The engine is built first, so the bootstrap of the context being left streams. That
       // context holds the summary and no completed turn: nothing to summarize and no pair —
-      // the target's own records and its meta follow.
-      expect(streamed.map(kind)).toEqual(["tool_list_ready", "tool_list_ready", "session_meta"]);
+      // the target's own records and the record follow.
+      expect(streamed.map(kind)).toEqual(["tool_list_ready", "tool_list_ready", "session_update"]);
       expect(session.provider).toBe(ORIGINAL.provider);
       expect(session.modelId).toBe(ORIGINAL.model_id);
 
+      // No file opens: the file being left gains the record and stays the latest.
       const located = await findLatestTraceFile(
         tracesDir(tmpRoot, "default_project", "default_agent"),
         SID,
       );
-      expect(located!.index).toBe(3);
-      const opened = await readTrace(located!.path);
-      expect(opened.map(kind)).toEqual(["session_meta", "tool_list_ready", "text"]);
-      expect((opened[0]!.payload as { model_id: string }).model_id).toBe(ORIGINAL.model_id);
-      expect((opened[2]!.payload as { text: string }).text).toBe(SUMMARY);
-      // Nothing was added to the file being left.
+      expect(located!.path).toBe(leaving);
       expect((await readTrace(leaving)).map(kind)).toEqual([
         "session_meta",
         "tool_list_ready",
         "text",
+        "session_update",
       ]);
+    } finally {
+      session.dispose();
+    }
+
+    // A restart lands on the target, the summary that context opened with pending.
+    const again = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(again.modelId).toBe(ORIGINAL.model_id);
+      const state = engineStateOf(again);
+      expect(state?.pendingTraceRotation).toBe(true);
+      expect((state?.pendingSummary?.payload as { text: string }).text).toBe(SUMMARY);
+    } finally {
+      again.dispose();
+    }
+  });
+
+  it("a closed file whose switch is still pending resumes on its target: the next context is assembled fresh, the summary pending", async () => {
+    const agent = await createAgent({});
+    // The switch closed the original model's context with a manual pair and recorded its
+    // target behind it; no message came, so the next file was never opened.
+    const file = await writeTraceFile(tmpRoot, SID, [
+      ...closedFile(ORIGINAL, "manual"),
+      sessionUpdate(MODEL),
+    ]);
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(session.provider).toBe(MODEL.provider);
+      expect(session.modelId).toBe(MODEL.model_id);
+      const meta = session.metaMessage.payload as { model_id: string; system_prompt: string };
+      expect(meta.model_id).toBe(MODEL.model_id);
+      // Opened here for the first time: the prompt is assembled now, not the left file's.
+      expect(meta.system_prompt).not.toBe("ORIGINAL SYSTEM PROMPT");
+      const state = engineStateOf(session);
+      expect(state?.pendingTraceRotation).toBe(true);
+      expect((state?.pendingSummary?.payload as { text: string }).text).toContain(
+        "the story so far",
+      );
+      expect(session.resumedHistory).toEqual([]);
+      expect(session.compactability()).toBe("just_compacted");
+      // Resuming writes nothing: the next file opens with the first message.
+      const located = await findLatestTraceFile(
+        tracesDir(tmpRoot, "default_project", "default_agent"),
+        SID,
+      );
+      expect(located!.path).toBe(file);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a pending switch to a model gone from the config is refused like any missing model, and resumes only to switch again", async () => {
+    const agent = await createAgent({});
+    const gone = { provider: "custom", model_id: "vanished-model" };
+    await writeTraceFile(tmpRoot, SID, [...closedFile(ORIGINAL, "manual"), sessionUpdate(gone)]);
+
+    await expect(agent.resumeSession({ sessionId: SID })).rejects.toThrow(
+      /is not in the Project config/,
+    );
+    const session = await agent.resumeSession({ sessionId: SID, allowUnreachableModel: true });
+    try {
+      expect(session.modelId).toBe(gone.model_id);
     } finally {
       session.dispose();
     }

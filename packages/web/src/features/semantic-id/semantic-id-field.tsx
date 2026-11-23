@@ -24,8 +24,8 @@
  * is drawn as `lockedPrefix` in front of the box, and a proposal (which the server returns whole)
  * fills in the part after it.
  */
-import { useId, useState } from "react";
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+
 import type { SemanticIdKind } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -37,14 +37,13 @@ import {
   ICON_SIZE,
   InfoPopover,
   Input,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { idSuggestNotice, proposalValue } from "./id-suggest-notice";
 import type { IdSuggestNotice } from "./id-suggest-notice";
+import { toastApiError } from "../../lib/toast-api-error";
 
 export function SemanticIdField({
   projectId,
@@ -76,8 +75,11 @@ export function SemanticIdField({
   source: string;
   /** Ids already taken in the target scope, so a proposal never collides. Omitted where the caller knows of none. */
   taken?: readonly string[];
-  /** The caller's own validation message; it outranks anything the generation has to say. */
-  error?: string | undefined;
+  /**
+   * The caller's own validation message, or a failure's words with 「[报告问题]」 after them; it
+   * outranks anything the generation has to say.
+   */
+  error?: ReactNode;
   /** A fixed start of the id drawn in front of the box and not typed (`value` is what follows it). */
   lockedPrefix?: string;
   /** The generation clause appended to `hint`, when "the display name" is not what the dialog calls it. */
@@ -117,7 +119,7 @@ export function SemanticIdField({
     } catch (e) {
       // The request itself failed (offline, no permission, the mode switched off): the id is
       // unchanged and there is nothing to say under the field.
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }

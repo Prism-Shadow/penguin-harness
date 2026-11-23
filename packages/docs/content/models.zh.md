@@ -42,7 +42,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 - 分组的余额：TokenDance、Penguin Go 和 DeepSeek 分组有 key 之后显示；点击金额打开菜单，可以置顶或更新余额，见[账户余额](#账户余额)；
 - 连接状态：TokenDance、Penguin Go 和 ModelScope 未连接时为**未连接**，点击即开始连接；已连接时为一个**已连接**菜单，内含**同步模型**（仅 Penguin Go）、**重新连接**和**断开连接**，见[连接账户](#连接账户)；
-- **添加模型**（加号图标）：只在 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow**、**Atlas Cloud** 和你创建的分组，见[添加模型](#添加模型)；
+- **添加模型**（加号图标）：只在 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow**、**Atlas Cloud**、**Runcrate** 和你创建的分组，见[添加模型](#添加模型)；
 - 测速与**设置**（齿轮）：每个分组（包括 **Custom**）都以这两个按钮收尾，因而在每个分组都对齐在同一条右缘上，见[测速](#测速)。齿轮打开一个菜单：先是该分组的排序，然后是**分组设置…**，见[分组设置](#分组设置)。
 
 TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推荐连接 TokenDance 钱包，这样分组里的模型不用手动配置密钥。横幅上的**连接**与分组标题栏上的是同一个流程。点击 × 可以在当前浏览器里隐藏横幅。
@@ -72,17 +72,21 @@ TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推�
 
 ### 从端点导入模型
 
-**导入模型**会把一个 OpenAI 兼容或 Anthropic 兼容端点列出的所有模型填进新分组。
+**导入模型**会从一个 OpenAI 兼容或 Anthropic 兼容端点列出的模型里，把你勾选的那些填进新分组。
 
 1. 点击**导入模型**。
 2. 在 **API key** 里输入该端点的密钥。端点不是厂商自己的地址时，服务端的 `OPENAI_*` / `ANTHROPIC_*` 变量不会被使用（见[设置 API key](#设置-api-key)），不填 key 的导入会被拒绝。
 3. 在**自定义 base URL** 里输入端点的 base URL。
 4. 点击字段右上角的**检测协议**，或者在字段最右侧的菜单里选择协议。见[检测自定义模型的协议](#检测自定义模型的协议)。
-5. 点击**批量导入模型**。PenguinHarness 会向端点请求模型列表，然后按端点返回的顺序把所有模型保存到新分组。
+5. 点击**获取模型列表**。PenguinHarness 会向端点请求模型列表，并在字段下方按端点返回的顺序列出来，每个模型 id 一行，默认全部勾选。
+6. 取消勾选不想要的模型。**全选**和**全不选**只作用于筛选匹配的行；模型多于 10 个时还有一个筛选框，筛选不会改动被隐藏行的勾选。
+7. 点击**导入 {n} 个模型**。只有勾选的模型会保存到新分组。一个模型都没勾选时，这个按钮不可用。
+
+列表只对应获取它时填写的 API key、base URL 和协议：其中任意一项与获取时不同，列表就会隐藏；三项都改回原值时，列表连同勾选一起恢复。获取列表或保存模型期间，这三项不可编辑。
 
 你填写的 base URL、协议和密钥作为分组设置只保存一次；导入的模型都不带这些信息，全部跟随分组。端点只提供模型 id：价格、上下文窗口和显示名都留空，视觉保持关闭，直到你检测或手动开启。这和手动添加的模型起点相同。
 
-有些 id 不会导入，结果里会说明跳过的数量：「已导入 {added} 个模型，跳过 {skipped} 个条目」。跳过的情形包括：id 为空、超过 200 个字符、包含控制字符，或者已被占用。
+有些 id 不会出现在列表里，结果里会说明跳过的数量：「已导入 {added} 个模型，跳过 {skipped} 个条目」。跳过的情形包括：id 为空、超过 200 个字符、包含控制字符，或者与列表中已有的 id 重复。你取消勾选的模型不计入跳过数。
 
 如果协议无法列出模型（「该协议不支持列出模型，请手动添加」），或者列表为空，什么都不会保存，弹窗保持打开。检测失败只会把协议后缀变成琥珀色；你仍然可以手动选择协议，或者改回**仅新增分组**。
 
@@ -97,14 +101,14 @@ TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推�
 
 ## 添加模型
 
-**添加模型**只在 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow**、**Atlas Cloud** 和你创建的分组的标题栏上。其余内置分组（厂商分组与其余网关分组）只承载内置模型，见[只承载内置模型](#只承载内置模型)。
+**添加模型**只在 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow**、**Atlas Cloud**、**Runcrate** 和你创建的分组的标题栏上。其余内置分组（厂商分组与其余网关分组）只承载内置模型，见[只承载内置模型](#只承载内置模型)。
 
 1. 在分组标题上，点击**添加模型**（加号图标）。
 2. 在**模型 ID** 里输入模型 id，必须与供应商 API 要求的完全一致，例如 `qwen3-32b`。**获取模型 id** 会打开供应商的模型列表。
 3. 可选：在**模型名称**里输入显示名。显示名为空时直接显示模型 id。
 4. 确认**分组**：默认是你点击的那个分组标题栏所在的分组。
 5. 可选：展开默认折叠的**详细配置**，填写其余各项。新模型继承分组的连接信息，其中的连接字段都是覆盖值：
-   - **API key** 与**自定义 base URL**：分组设置了该字段时，占位文字为「留空继承分组设置」；留空即跟随分组，填写的值即成为该模型自己的值。只要模型或分组带的 base URL 不是客户端的缺省端点，模型就必须有 key，自己的或分组密钥都可以：环境里的 key 只发往那个端点。在 **OpenRouter**、**TokenDance**、**SiliconFlow** 和 **Atlas Cloud** 留空 base URL 即使用分组上的网关端点；其余分组必填，除非分组设置里已经给出。
+   - **API key** 与**自定义 base URL**：分组设置了该字段时，占位文字为「留空继承分组设置」；留空即跟随分组，填写的值即成为该模型自己的值。只要模型或分组带的 base URL 不是客户端的缺省端点，模型就必须有 key，自己的或分组密钥都可以：环境里的 key 只发往那个端点。在 **OpenRouter**、**TokenDance**、**SiliconFlow**、**Atlas Cloud** 和 **Runcrate** 留空 base URL 即使用分组上的网关端点；其余分组必填，除非分组设置里已经给出。
    - 协议：在 base URL 字段的后缀里选择，或用**检测协议**探测，见[检测自定义模型的协议](#检测自定义模型的协议)。
    - **上下文窗口**：模型的上下文窗口大小，单位是 Token。模型不在内置模型目录里时，留空会保存为 1000000。
    - **最大输出长度**：每次请求最多输出的 Token 数。留空则使用 Agent 的设置；上下文较小的模型建议调低这个值。
@@ -116,12 +120,12 @@ TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推�
 
 新模型使用哪种协议，取决于所在的分组：
 
-- **vLLM** 使用 `openai-chat-vllm-adapter`，**OpenRouter** 使用 `openai-responses`，**TokenDance**、**SiliconFlow** 和 **Atlas Cloud** 使用 `openai-chat`，即新建 Project 时写进分组设置的协议。模型本身不存协议，跟随分组。
+- **vLLM** 使用 `openai-chat-vllm-adapter`，**OpenRouter** 使用 `openai-responses`，**TokenDance**、**SiliconFlow**、**Atlas Cloud** 和 **Runcrate** 使用 `openai-chat`，即新建 Project 时写进分组设置的协议。模型本身不存协议，跟随分组。
 - **Custom** 和你创建的分组：分组设置了协议时用分组的；否则在 base URL 字段里选择协议，或者检测协议。见[检测自定义模型的协议](#检测自定义模型的协议)。
 
 ### 只承载内置模型
 
-除 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow** 和 **Atlas Cloud** 以外，每个内置分组只承载 PenguinHarness 内置模型目录里的模型。这些分组的 key 按分组统一管理，组里有哪些模型由目录决定。
+除 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow**、**Atlas Cloud** 和 **Runcrate** 以外，每个内置分组只承载 PenguinHarness 内置模型目录里的模型。这些分组的 key 按分组统一管理，组里有哪些模型由目录决定。
 
 - 这些分组没有**添加模型**，**模型配置**的分组下拉里也不提供把模型移进这些分组。
 - 服务端会拒绝往这些分组新增不属于该分组内置模型的条目：保存时提示「该分组只承载内置模型」。`penguin config model add` 同样拒绝。删掉的内置模型可以重新加回来，**同步新增模型**做的就是这件事。
@@ -131,7 +135,7 @@ TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推�
 
 ### 编辑或删除模型
 
-点击模型卡片，打开**模型配置**。修改字段，点击**确认**，再确认保存。在同一个弹窗里，你还可以**测试连通性**、**设为默认模型**、**设为视觉代理模型**或**删除模型**。
+点击模型卡片，打开**模型配置**。修改字段，点击**确认**，再确认保存。在同一个弹窗里，你还可以**测试连通性**、**设为默认模型**（对话模型）或**使用模型**（其他模型），以及**删除模型**。
 
 API key、base URL 与协议始终可见；上下文窗口、**最大输出长度**、价格、**支持视觉**和**快速模式**收在**详细配置**里，每次打开弹窗都默认折叠。模型交给分组的 API key 或 base URL，占位文字为「留空继承分组设置」，不附带分组的具体值。API key 无从兜底时，即模型自己没有 key、分组密钥借不到、服务端也没有设置对应的环境变量，占位文字为「请填写 API key」；客户端不带 key 也能调用的模型（vLLM、自建的 MMSP 服务器）则为「留空则不使用 API key」。
 
@@ -163,11 +167,14 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 
 **Custom** 分组和你自己创建的分组里的模型，使用的都是 MMSP 的某一种通用协议，弹窗可以检测出一个 base URL 到底支持哪一种。新建的自定义模型一开始没有选择协议：base URL 输入框右端的后缀显示为**选择协议**。
 
-要检测协议，点击 base URL 输入框右上角的**检测协议**。这个按钮始终可用，也不需要 API key。服务端会按下面的顺序向 URL 发出三个轻量请求，并采用端点支持的第一个协议：
+要检测协议，点击 base URL 输入框右上角的**检测协议**。服务端会按下面的顺序探测，并采用检测到的第一个协议。
 
 1. `openai-responses`：`POST {base}/responses`（OpenAI Responses API）
 2. `ant-messages`：`POST {base}/v1/messages`（Anthropic Messages API）
 3. `openai-chat`：`POST {base}/chat/completions`
+4. `google-genai`：`GET {base}/v1beta/models?pageSize=1`
+
+检测 Google GenAI 需要成功读取模型列表。如果端点要求鉴权，请填入 API key。使用 Google 服务账号时，请手动选择 Google GenAI。
 
 检测到协议时会出现一条消息，例如「检测到 {name} 协议，已应用」。检测结果只体现在后缀里，后缀显示的就是协议路径。
 
@@ -175,22 +182,22 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 
 - 多写了一个 `/v1`（`https://host/v1/v1`）；
 - 少写了一个 `/v1`（API 实际在 `https://host/v1` 下，却只填了 `https://host`）；
-- 直接粘贴了供应商文档里的完整端点 URL（`/chat/completions`、`/responses`、`/messages`）。
+- 直接粘贴了供应商文档里的完整端点 URL（`/chat/completions`、`/responses`、`/messages`、`/v1beta/models`）。
 
-检测会先探测清理后的 base，再探测它的相邻形式：URL 末尾有 `/v1` 就去掉，没有就加上。每种形式依次尝试三种协议，最多发出六个短探测。base URL 输入框随后会改写为应答的那个形式，并提示「已检测为 {protocol}，base URL 已整理为 {url}」。
+检测会先探测清理后的 base，再探测它的相邻形式：URL 末尾有 `/v1` 就去掉，没有就加上。每种形式依次尝试四种协议。base URL 输入框随后会改写为应答的那个形式，并提示「已检测为 {protocol}，base URL 已整理为 {url}」。
 
-要手动设置协议，点击这个后缀。菜单里列出 **OpenAI Responses**（`/responses`）、**Anthropic Messages**（`/v1/messages`）、**OpenAI Chat Completions**（`/chat/completions`）、**Google GenAI (generateContent)**（`/v1beta/models`）和 **MMSP**（`/stream`，即 MMSP 服务器），每一项都标注了客户端会追加到你 URL 末尾的路径。检测不会选出后两种，需要在这里手动选择。手动选择的协议优先于检测，已经知道端点协议时，根本不必探测。
+要手动设置协议，点击这个后缀。菜单里列出 **OpenAI Responses**（`/responses`）、**Anthropic Messages**（`/v1/messages`）、**OpenAI Chat Completions**（`/chat/completions`）、**Google GenAI (generateContent)**（`/v1beta/models`）和 **MMSP**（`/stream`，即 MMSP 服务器），每一项都标注了客户端会追加到你 URL 末尾的路径。MMSP 需要手动选择。手动选择的协议优先于检测，已经知道端点协议时，可以直接选择。
 
-如果检测不出结果，后缀会变成琥珀色，并提示「无法检测接口协议，请检查 API Key 与 base URL。」原因可能是端点不可访问、请求超时、返回的内容不是 API，或者三个路径都不支持。端点仍会报告每次探测的结果，方便调试。
+如果检测不出结果，后缀会变成琥珀色，并提示「无法检测接口协议，请检查 API Key 与 base URL。」端点会报告每次探测的结果，方便调试。
 
 检测从不阻塞保存。模型和分组都没有设置协议时点击**确认**，会先执行检测，按钮显示**检测中…**。检测到协议就直接保存，不再提示。检测不到时模型照样保存，协议定为 OpenAI Chat Completions，并提示「未检测到协议，已按 OpenAI Chat Completions 保存」。
 
 ### 探测原理
 
-- 探测请求是请求体为 `{}` 的最小无效请求，不消耗 Token，也不需要有效的模型 id：返回的错误若符合协议自身的格式，就证明路由存在；返回 `404` 或 `405`，说明路径没有提供服务；HTML 或网关杂讯一律不算数。
-- 探测用的 URL 和认证头，与保存后 MMSP 客户端实际使用的完全一致：OpenAI 系协议用 `Authorization: Bearer`，`ant-messages` 用 `x-api-key` 加 `Authorization: Bearer` 和 `anthropic-version`。所以检测出的协议一定真实可用。
-- 服务端按四步选取探测凭据：优先用弹窗里填写的 API key，其次用这个条目已保存的 key，再次用分组密钥，最后对每次探测，仅当 URL 是该协议客户端自己的缺省端点时，使用它读取的环境变量（`https://api.openai.com/v1` 用 `OPENAI_API_KEY`，`https://api.anthropic.com` 用 `ANTHROPIC_API_KEY`）。这些值不会传到浏览器，也不会出现在响应里。
-- 除此之外匿名探测。完全没有凭据也能检测，因为协议格式的 `401` 同样能识别路由；你的厂商 key 不会发往你输入的其他 URL。
+- 探测 OpenAI Responses、Anthropic Messages 和 OpenAI Chat Completions 时，服务端发送请求体为 `{}` 的 `POST` 请求。符合协议格式的校验或鉴权错误可以用来识别路由，无需模型 ID。`404`、`405`、HTML 页面和通用网关鉴权错误都不能作为识别依据。
+- Google GenAI 发送 `GET /v1beta/models?pageSize=1`，成功读取符合 Google 格式的模型列表后才确认协议。有 API key 时，通过 `x-goog-api-key` 请求头发送。使用 Vertex 服务账号时，请手动选择 Google GenAI。检测期间，服务账号 JSON 保留在本地。
+- OpenAI 探测用 `Authorization: Bearer` 发送 API key。Anthropic 探测通过 `x-api-key` 和 `Authorization: Bearer` 发送 key，同时附带 `anthropic-version`。
+- 服务端依次使用弹窗中填写的 key、模型已保存的 key 和分组已保存的 key。探测客户端默认地址时，还可以使用对应的环境变量。`https://api.openai.com/v1` 对应 `OPENAI_API_KEY`，`https://api.anthropic.com` 对应 `ANTHROPIC_API_KEY`，`https://generativelanguage.googleapis.com` 对应 `GEMINI_API_KEY`。没有可用的 key 时，服务端会匿名探测。
 - 在这些分组里，不会从模型 id 推断任何东西。在自定义分组里输入 `claude-sonnet-5`，不会因此选用 Anthropic 客户端或它的 `ANTHROPIC_*` key：自定义分组一律回退到 `openai-chat`，API key 提示也照此显示。供应商分组和网关分组不受影响：它们的模型按 id 或按分组上存的协议路由。
 - 在检测功能出现之前创建的条目，保留 `client_type = "openai"`，它至今仍是 `openai-chat` 的别名。只有手动选择协议、或某次检测生效时，才会改写这个值。旧的非标准协议值以只读方式显示：「协议：{t}（沿用原配置，不可修改）」。
 - 检测也可以通过 `POST /api/projects/:id/models/detect` 调用（仅 owner 可用），参见 [Server API](/server-api)。
@@ -215,7 +222,7 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 - **整个分组。** 在[分组设置](#分组设置)（分组标题栏上的齿轮）里填写，或由[连接账户](#连接账户)写入。两种方式写的都是分组密钥；单个模型上设置的 key 不受影响。
 - **单个模型。** 在**模型配置**里，把 key 填入 **API key**。保存后 key 会打码显示；输入框留空即保留原 key，点击**清除已存 API key** 可删除它，此后该模型重新使用分组密钥。使用分组密钥的模型同样打码显示这把 key。
 - **其他端点。** key 属于签发它的端点：分组密钥只借给没有自己 base URL 的模型，或自己的 base URL 与分组 base URL 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 模型位于分组主机的另一条路径上，照样使用分组密钥。指向别的主机的模型取不到分组密钥，需要自己的 key，例如经代理访问的某个 OpenRouter 模型，或 **Custom** 里自带端点的预置模型 Atria Dawn——**Custom** 的 key 因此不会发往它的主机。这样的模型卡片显示**未配置 key**，**模型配置**的 key 输入框会说明分组密钥不适用。
-- **不配 key。** 模型自己没有 key、也没有能借到的分组密钥时，**只有模型与分组都不带 base URL，或带的就是其客户端自己的缺省端点**时才使用服务端的环境变量（见[供应商凭证变量](/configuration#供应商凭证变量)）：它路由到的 MMSP 客户端自行读取 `*_API_KEY`，不带 base URL 时连 `*_BASE_URL` 一起读取，key 与端点都来自服务端环境。新建 Project 不给七个一方厂商分组写 base URL：DeepSeek、Google、OpenAI、Anthropic、Z.AI、Moonshot 与 MiniMax。要用环境 key 访问厂商的第二个主机（bigmodel.cn、moonshot.ai）、代理或 Bedrock，就让 base URL 留空，在 key 旁一并设置厂商的 `*_BASE_URL`；一旦在分组或模型设置里填了其他 base URL，组内模型就必须在文件里有 key。**Custom** 或你创建的分组里任何一层都不带 base URL 的模型，读取其协议客户端的那对变量（OpenAI 兼容协议为 `OPENAI_*`），请求发往该客户端的缺省端点（`https://api.openai.com/v1`），设置了 `OPENAI_BASE_URL` 时发往它；弹窗会在 key 字段旁写明这个端点。**vLLM** 模型读取 vLLM 自己的那对变量 `VLLM_API_KEY` 与 `VLLM_BASE_URL`，从不读取 `OPENAI_*`（见[连接本地或自托管端点](#连接本地或自托管端点)）。其余带 base URL 的模型都必须有自己的 key 或分组密钥：网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、Atlas Cloud、OpenCode Go、两个 Qwen 网关）、Penguin Go、ModelScope，以及任何被你指向某个端点的模型或分组。在这些情况下对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。协议为 `mmsp` 或 `openai-chat-vllm-adapter`、有 base URL 而没有 key 的模型不带 key 发出请求，未设置 key 启动的服务器就是这样调用的；vLLM 客户端发送 vLLM 的占位 key `EMPTY`。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
+- **不配 key。** 模型自己没有 key、也没有能借到的分组密钥时，**只有模型与分组都不带 base URL，或带的就是其客户端自己的缺省端点**时才使用服务端的环境变量（见[供应商凭证变量](/configuration#供应商凭证变量)）：它路由到的 MMSP 客户端自行读取 `*_API_KEY`，不带 base URL 时连 `*_BASE_URL` 一起读取，key 与端点都来自服务端环境。新建 Project 不给七个一方厂商分组写 base URL：DeepSeek、Google、OpenAI、Anthropic、Z.AI、Moonshot 与 MiniMax。要用环境 key 访问厂商的第二个主机（bigmodel.cn、moonshot.ai）、代理或 Bedrock，就让 base URL 留空，在 key 旁一并设置厂商的 `*_BASE_URL`；一旦在分组或模型设置里填了其他 base URL，组内模型就必须在文件里有 key。**Custom** 或你创建的分组里任何一层都不带 base URL 的模型，读取其协议客户端的那对变量（OpenAI 兼容协议为 `OPENAI_*`），请求发往该客户端的缺省端点（`https://api.openai.com/v1`），设置了 `OPENAI_BASE_URL` 时发往它；弹窗会在 key 字段旁写明这个端点。**vLLM** 模型读取 vLLM 自己的那对变量 `VLLM_API_KEY` 与 `VLLM_BASE_URL`，从不读取 `OPENAI_*`（见[连接本地或自托管端点](#连接本地或自托管端点)）。其余带 base URL 的模型都必须有自己的 key 或分组密钥：网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、Atlas Cloud、Runcrate、OpenCode Go、两个 Qwen 网关）、Penguin Go、ModelScope，以及任何被你指向某个端点的模型或分组。在这些情况下对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。协议为 `mmsp` 或 `openai-chat-vllm-adapter`、有 base URL 而没有 key 的模型不带 key 发出请求，未设置 key 启动的服务器就是这样调用的；vLLM 客户端发送 vLLM 的占位 key `EMPTY`。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
 
 你填写的 key 存在 Project 的隐藏配置文件里，文件权限为 0600。Web App 里它始终打码显示。
 
@@ -291,19 +298,22 @@ Penguin Go 在授权所用的 `PENGUIN_GO_ORIGIN` 上调用 `/api/me/by-key`，�
 
 ## 设置默认模型
 
-新对话使用 Project 的默认模型，除非你选了别的。新建 Project 的默认模型是 `deepseek-flash`（DeepSeek V4.1 Flash），它自己就能读图。
+新对话使用 Project 的默认模型，除非你选了别的。新建 Project 没有默认模型，要由你选定。打开这样的 Project 时，如果已经有对话模型配了 key（包括服务端环境变量里的 key），**默认模型设置**弹窗会自动打开；否则先出现引导，请你连接 TokenDance 或 Penguin Go，或者填写 key，设好之后**默认模型设置**弹窗随即打开。没有默认模型时，新对话的输入框顶部写着「还没有默认模型」，要等你为它选好模型。
 
-1. 点击模型的卡片，打开**模型配置**。
-2. 点击**设为默认模型**并确认。
+- 点击页头的**默认模型设置**，选择**默认对话模型**。每项选好即保存，弹窗标题旁的 **?** 里也写着这一点。
+- 也可以点击模型的卡片打开**模型配置**，点击**设为默认模型**并确认。设置默认模型的同时，也会保存弹窗里未保存的修改。
 
-模型表还没有默认模型时，第一个添加进来的模型会自动成为默认模型。设置默认模型的同时，也会保存弹窗里未保存的修改。
+模型表还没有默认模型时，第一个添加进来的模型会自动成为默认模型。
+
+**默认模型设置**弹窗里还有多模态各项使用的模型（文本生成、图像生成、图片理解、视频生成、语音识别、语音合成），以及字色较淡的工具一组（网页搜索、读取网页）。每个选择器只列出能做这件事的模型。项目设置的**多模态模型**页列出同样的各项。不能对话的模型（比如语音、搜索或图像模型）在模型配置里点击**使用模型**并确认，就用于它能做的全部各项，并列出用于哪些；全部用上之后，按钮变为**取消使用模型**。
+
+卡片上的**默认**标签标出默认对话模型；**使用中**标签标出被选用于某项多模态或工具的模型，悬停可以看到用于哪些。对话模型可以同时带这两个标签。视觉代理模型有它自己的标签。
 
 ### 设置视觉代理模型
 
 没有视觉的模型看不到图片。它用 `read_file` 读图时，由视觉代理模型替它描述图片。默认没有视觉代理模型。
 
-1. 找一个开启**支持视觉**的模型，打开它的**模型配置**。
-2. 点击**设为视觉代理模型**并确认。
+在**默认模型设置**弹窗或项目设置的**多模态模型**页为**图片理解**选择模型，这里只列出开启了**支持视觉**的模型。
 
 删除这个模型或关闭它的视觉后，视觉代理角色随之取消。对于 `vision = false` 的模型，比如 DeepSeek 分组里纯文本的 `deepseek-v4-pro`，对话中的图片会存到 Session 暂存区，并在文本里以文件路径的形式交给模型。`read_file` 读到图片时，会把图片交给视觉代理模型描述，而不是直接返回。参见[工具与审批](/tools)。
 
@@ -320,8 +330,11 @@ Penguin Go 在授权所用的 `PENGUIN_GO_ORIGIN` 上调用 `/api/me/by-key`，�
 
 PenguinHarness 依次向每个模型发送一个真实请求，这会消耗少量 API 配额，然后在每张卡片上显示：
 
-- 首个 Token 的延迟，单位毫秒：低于 1000 显示绿色，1000 到 3000 显示黄色，3000 以上显示红色；
-- 输出速率，单位 Token/秒：40 及以上显示绿色，15 及以上显示黄色，15 以下显示红色。
+- 对话模型显示首个 Token 的延迟，单位毫秒：低于 1000 显示绿色，1000 到 3000 显示黄色，3000 以上显示红色；
+- 对话模型还显示输出速率，单位 Token/秒：40 及以上显示绿色，15 及以上显示黄色，15 以下显示红色；
+- 不能对话的模型显示这次请求用了多久：语音识别转写一句简短的话，语音合成朗读一个词，搜索模型搜一次，网页读取模型读一个网页，图像模型画一张小图。
+
+视频模型不参与测速，卡片上写着**不测速**：生成视频要等几分钟，费用也高。本项目没有用到的、不能对话的模型同样不测速。
 
 测速进行中，同一个图标用来停止（**停止测速**）：正在测的那个模型测完后停止，不再发起后续请求，已有的结果保留。结果只留在当前页面，刷新后就消失。
 
@@ -350,10 +363,10 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 - 不属于预置的模型一律删除：你在任何分组里添加的模型，以及旧版本添加、后来被目录撤下的模型，退役条目也在内。你新建的分组连同其设置和 key 一并删除。
 - 内置分组的设置回到目录的 base URL 与协议：**Custom** 的 base URL 被清空，**vLLM** 的回到 `http://127.0.0.1:8000/v1`。
 - 促销折扣回到目录值。
-- 与新建 Project 一样，默认模型改为目录默认，不设视觉代理模型。
+- 与新建 Project 一样，不设默认模型，也不设视觉代理模型。
 - 内置分组和预置模型上的 API key 原样保留。内置分组没有分组密钥、组内带 key 的模型（包括要删除的）都用同一把 key，且这把 key 放到分组上仍能借给它们全部时，它移到分组上，模型上的副本随之删除。被删除模型上的其他 key 随模型一起删除。
 - Penguin Go 分组同样恢复，平台在预置之外添加的模型和平台的促销也会删除。用分组**已连接**菜单里的**同步模型**即可取回，见 [Penguin Go 分组](#penguin-go-分组)。
-- 被删除的模型如果现在或曾经是新建 Project 的默认模型（如 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`），它此前的用量照旧计价，目录为此保留了它的牌价。其他被删除模型的用量，成本中心报为未计价，与你手动删除模型后相同。
+- 被删除的模型如果曾是新建 Project 的默认模型（如 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`），它此前的用量照旧计价，目录为此保留了它的牌价。其他被删除模型的用量，成本中心报为未计价，与你手动删除模型后相同。
 
 两个操作都在服务端执行，即 `POST /api/projects/:id/models/sync-presets`，`mode` 为 `add` 或 `restore`（仅 owner 可用）。
 
@@ -366,6 +379,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 - `max` 是最深的档位。各客户端会把它映射到供应商支持的最深推理档位，没有这个档位时静默回退，所以选它不会失败。在 Gemini 和 MiniMax M3 上，它的档位和 `xhigh` 相同。
 - 对 MiniMax M3，`none` 直接映射为 `reasoning.effort = "none"`。
 - 在 Google 官方客户端上，Gemini 4 Argon 的 `none` 映射为 `low`，`xhigh` 和 `max` 映射为 `high`。`low`、`medium` 和 `high` 保持原值；省略档位时保留 Google 默认的 `medium`。
+- 在 Google 官方客户端上，Gemini 4 Neon 的 `none` 映射为 `low`，`max` 映射为 `xhigh`。`low`、`medium`、`high` 和 `xhigh` 保持原值。
 - DeepSeek V4 接受 `low`、`high` 和 `max`，`medium` 和 `xhigh` 会在它那边归并为 `high`。要 DeepSeek 最深的推理，请选 `max`。
 
 ### 在新对话中
@@ -482,8 +496,8 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | --- | --- | --- |
 | tokendance | — | 推荐分组。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为裸名称，不带供应商前缀（如 `glm-5.3`、`kimi-k3`）；价格采用网关自己的人民币费率，目前有几项在打折 |
 | penguin-go | — | 预置的 MMSP 中转分组，base URL `https://go.penguin.ooo/api/v1`；分组标题栏可以为你连接取得 key，也可以在分组设置里填写。见 [Penguin Go 分组](#penguin-go-分组) |
-| opencode-go | — | OpenCode Go 订阅网关。每个模型各自固定协议：Chat Completions 或 Responses 走 `https://opencode.ai/zen/go/v1`，Anthropic Messages 走 `https://opencode.ai/zen/go`，Gemini generateContent 走 `https://opencode.ai/inference/go/google`。见 [OpenCode Go 分组](#opencode-go-分组) |
-| deepseek | `DEEPSEEK_API_KEY` | 默认模型所在的分组 |
+| opencode-go | — | OpenCode Go 订阅网关。每个模型各自固定协议：Chat Completions 或 Responses 走 `https://opencode.ai/inference/go/openai/v1`，Anthropic Messages 走 `https://opencode.ai/inference/go/anthropic`，Google Interactions 走 `https://opencode.ai/inference/go/google`。见 [OpenCode Go 分组](#opencode-go-分组) |
+| deepseek | `DEEPSEEK_API_KEY` | DeepSeek 官方 |
 | openrouter | — | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
 | fireworks | — | Fireworks AI（OpenAI 兼容），预置 base URL `https://api.fireworks.ai/inference/v1`；API 模型 id 形如 `accounts/fireworks/models/<slug>` |
 | google | `GEMINI_API_KEY` | |
@@ -491,6 +505,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | anthropic | `ANTHROPIC_API_KEY` | |
 | siliconflow | — | OpenAI 兼容网关，预置 base URL `https://api.siliconflow.cn/v1` |
 | atlascloud | — | Atlas Cloud（OpenAI 兼容网关），预置 base URL `https://api.atlascloud.ai/v1`；模型 id 带厂商前缀（如 `deepseek-ai/deepseek-v4.1-flash`） |
+| runcrate | — | Runcrate（开源权重模型的 OpenAI 兼容网关），预置 base URL `https://api.runcrate.ai/v1`；id 就是上游仓库名（如 `deepseek-ai/DeepSeek-V4.1-Flash`） |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
 | minimax | `MINIMAX_API_KEY` | `MiniMax-M3.1-Flash` 与 `MiniMax-M3`，上下文窗口均为 1,000,000 Token，支持视觉，按 id 路由到 MiniMax 官方的 Responses 客户端（`minimax-official`）；无预置 base URL，请求发往 `https://api.minimax.io/v1`，除非 `MINIMAX_BASE_URL` 另有指定；接受 Token Plan 订阅密钥或按量付费 API key |
@@ -500,9 +515,9 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | vllm | — | 自托管 vLLM 服务器：协议固定为 `openai-chat-vllm-adapter`，新建 Project 的 base URL 为 `http://127.0.0.1:8000/v1`，八个预置模型价格均为 0（见[连接本地或自托管端点](#连接本地或自托管端点)） |
 | custom | — | 任意 OpenAI 协议端点；自带一个预置模型 Atria Dawn（Anthropic Messages API，地址 `api.atria-asi.ai`，需要自己的 key，上下文窗口 256K，供应商公布价格之前定价 $0） |
 
-OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom 和自建分组里自身或分组带 base URL 的条目同样如此，除非那正是其协议客户端自己的缺省端点；任何一层都不带时，读取其协议客户端的那对变量（见[设置 API key](#设置-api-key)）。vLLM 条目带 base URL 而没有 key 时则不带 key 发出请求，因为 vLLM 服务器只有用 key 启动时才校验 key。ModelScope 的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
+OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / runcrate / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom 和自建分组里自身或分组带 base URL 的条目同样如此，除非那正是其协议客户端自己的缺省端点；任何一层都不带时，读取其协议客户端的那对变量（见[设置 API key](#设置-api-key)）。vLLM 条目带 base URL 而没有 key 时则不带 key 发出请求，因为 vLLM 服务器只有用 key 启动时才校验 key。ModelScope 的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
 
-- OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
+- OpenRouter 分组的对话预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。图像预置 `google/gemini-nano-banana-2.1` 是例外：它在同一个 base URL 上固定使用 Images 客户端（`client_type = "openai-image"`）。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
 - ModelScope 像 Penguin Go 一样是聚合网关，但三条预置都使用 MMSP 通用 Responses 客户端（`client_type = "openai-responses"`）。
 - 无论哪种方式，网关都带 base URL，所以凭据规则完全一致。
@@ -528,9 +543,9 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 
 ### OpenCode Go 分组
 
-`opencode-go` 按型号预置 OpenCode Go 支持的最新一代，包括 GPT-6 Luna、Claude Haiku 5.5、Gemini 4 Argon Contributor、Grok 4.7、MiMo-V2.6 Flash/Pro、LongCat 2.5 Preview Free、Step 5 Preview Free、Cat Jam Free 和 Space Bunny。DeepSeek V4 Pro 与 V4.1 Flash 分别保留，GLM-5.3 与 GLM-5.3 Flash、Kimi K3 与 K2.7 Code、Qwen 的 Max、Flash、Plus 也各自保留最新型号。它们共用一把 key：按 [OpenCode 认证说明](https://opencode.ai/v2/docs/console/api/inference/#authentication)创建后，在分组设置里填写一次即可。
+`opencode-go` 按档位预置新一代模型，包括 Kimi Code 与 Pro、Qwen Max 与 Flash，以及 Gemini 4 Argon。[Go 模型列表](https://opencode.ai/inference/go/v1/models)列出当前模型 ID 和推荐 API。
 
-- **协议。** OpenCode 为每个模型指定四种协议之一。新建 Project 时，分组 base URL 写为 `https://opencode.ai/zen/go/v1`，供 Chat Completions（`openai-chat`）和 Responses（`openai-responses`）模型使用，每个模型各自存着 `client_type`；Anthropic Messages（`ant-messages`）模型另在条目上存 `https://opencode.ai/zen/go`，因为客户端会自行加上 `/v1/messages`。Gemini 4 Argon Contributor 使用 `google-genai`，base URL 为 `https://opencode.ai/inference/go/google`，SDK 会加上 `/v1beta/models/<id>:streamGenerateContent`。这些端点都在同一主机上，因此共用分组密钥。与所有网关的条目一样，它们都不会回退到厂商的环境变量密钥：key 要设在分组上。
+- **协议。** 新建 Project 的分组地址是 `https://opencode.ai/inference/go/openai/v1`，供 Chat Completions 和 Responses 使用，每个模型各自保存原生协议。Messages 条目的地址为 `https://opencode.ai/inference/go/anthropic`；Gemini 4 Argon 使用 `https://opencode.ai/inference/go/google/v1beta/interactions` 上的 Google Interactions。这些端点共用分组密钥。
 - **价格。** Go 按月订阅，用量上限是按模型计的美元额度：每月一份额度，每 5 小时最多用掉其中 20%，每周最多 50%。条目记录的是每次请求从额度中扣除的每 Token 价格，因此对这个分组而言，成本中心显示的是你用掉了多少额度，而不是一张账单。`gpt-6-luna`、`claude-haiku-5-5`、`grok-4.7` 和 `qwen3.7-plus` 记录基础档，分别覆盖 272K、100K、200K 和 256K 输入 Token 以内。DeepSeek 模型遵循 DeepSeek 的空闲时段，见[价格与促销](#价格与促销)。
 - **开通与地区。** Contributor 模型需要同意使用提示词和回复训练模型；DeepSeek 可能需要同意由中国境内托管的服务提供。账户权限和地区可用性由 OpenCode 决定。
 - **已有 Project。** 点击**同步新增模型**会添加新预设，保留已保存的旧模型和默认模型；**恢复默认**会将列表恢复为当前预设。
@@ -551,7 +566,8 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 
 - `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3.1-Flash` / `MiniMax-M3`
-- `gemini-4-argon` / `gemini-3.8-flash`
+- `gemini-4-neon` / `gemini-4-argon` / `gemini-3.8-flash`
+- `gemini-nano-banana-2.1` (Google) / `google/gemini-nano-banana-2.1` (OpenRouter)
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` / `gpt-5.6` / `gpt-5.5`
@@ -559,6 +575,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 - `kimi-k3.1-pro` / `kimi-k3.1-pro-highspeed` / `kimi-k3`（高速版仅 Moonshot 提供）
 - `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
+- Hy4 支持文本和图像输入，TokenDance 的模型 ID 为 `hy4`，OpenRouter 的为 `tencent/hy4`
 - `mimo-v2.6-pro` / `mimo-v2.6-flash` / `step-5-preview` / `ling-3.1-flash`（TokenDance）
 - `dots-3-note-preview`（TokenDance 上免费，512K 上下文）
 - `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`、`Qwen/Qwen3.8-Flash-Next`（ModelScope 的 api-inference，没有价格的预置条目）
@@ -566,6 +583,8 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 列表并未穷尽所有模型。
 
 Google、Penguin Go 和 OpenRouter 分组均预置了 Gemini 4 Argon，支持图像输入，输入与输出共享 1,048,576 Token 的上下文窗口。Google 和 Penguin Go 使用 `gemini-4-argon`，OpenRouter 使用 `google/gemini-4-argon`。MMSP 的同步流最多支持 65,536 个输出 Token，包含思考；Google 的更长后台生成不在此接口范围内。
+
+Google 分组以 `gemini-4-neon`、OpenRouter 分组以 `google/gemini-4-neon` 预置了 Gemini 4 Neon，支持图像输入，上下文窗口为 1,048,576 Token。两者记录的牌价均为每百万 Token 输入 3 美元、输出 15 美元、缓存命中 0.15 美元，没有促销。
 
 - **DeepSeek 图像能力。** `deepseek-flash` 就是 V4.1 Flash，支持读图；`deepseek-v4-pro` 是 V4 Pro 0813 版本，仅支持文本。要发送图像，请使用 `deepseek-flash`。
 - **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，直到**恢复默认**把它连同其他非预置模型一起删除。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。
@@ -609,7 +628,7 @@ Google、Penguin Go 和 OpenRouter 分组均预置了 Gemini 4 Argon，支持图
 | `model_id` | 上游请求 id |
 | `context_window` | 上下文窗口（Token）。不只是展示，而是实际参与运算：每个请求的有效输出上限和压缩阈值都由它推导，因此请求要求的输出永远不会超过窗口的剩余空间。未设置（或数值小得不合理，低于 4096）时，输出限制关闭，压缩按假定的 128000 计算；窗口较小的模型请填写真实值。在 Web 弹窗中，模型不在模型目录里且这个字段留空时，会写入 1,000,000（手动添加的条目按已知模型处理，而不是当作窗口未知）；如果端点实际支持的窗口更小，就把它调小。`penguin config model add` 省略 `--context-window` 时不写任何默认值 |
 | `max_tokens` | 可选的单模型输出上限（每次请求最多输出的 Token 数）。设置后会覆盖 Agent 的 `model.max_tokens`；未设置就继承这个值。这个上限只是封顶值，不是实际发出的数值：每个请求实际发送 `min(max_tokens, context_window − estimated input − safety margin)`，所以小窗口模型不用手动调整也能正常工作。在 Web 端整表保存时省略这个字段会把它清空 |
-| `client_type` | MMSP 客户端类型：通用协议客户端（`openai-chat` 对应 Chat Completions，`openai-responses` 对应 Responses API，`ant-messages` 对应 Anthropic Messages 等），或厂商的官方客户端（`deepseek-official`、`anthropic-official` 等）。省略时，模型跟随分组的协议；两者都没有时，MMSP 按模型 id 开头的厂商系列（`gpt-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）路由。自定义端点使用 Web 弹窗提供的通用协议客户端之一：上述三种、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）；弹窗可以检测一个 base URL 对应前三种中的哪一种。`openai` 是 0.4.2 之前的旧写法，已弃用，读取配置时会归一化为 `openai-chat` |
+| `client_type` | MMSP 客户端类型：通用协议客户端（`openai-chat` 对应 Chat Completions，`openai-responses` 对应 Responses API，`ant-messages` 对应 Anthropic Messages 等），或厂商的官方客户端（`deepseek-official`、`anthropic-official` 等）。省略时，模型跟随分组的协议；两者都没有时，MMSP 按模型 id 开头的厂商系列（`gpt-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）路由。自定义端点使用 Web 弹窗提供的通用协议客户端之一：上述三种、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）。弹窗可以检测两种 OpenAI 协议、Anthropic Messages 和 Google GenAI。`openai` 是 0.4.2 之前的旧写法，已弃用，读取配置时会归一化为 `openai-chat` |
 | `display_name` | 展示名称 |
 | `vision` | 是否支持图像输入，默认 true |
 | `fast_mode` | 可选的快速模式（默认关闭）：开启后，这个模型的 Session 请求会改走供应商更快的服务层级，价格更高。持久化保存的值只有 `true`；在 Web 端整表保存时省略这个字段会把它清空。没有快速层级的模型会拒绝携带这个设置的请求（参见[快速模式](#快速模式)） |
@@ -673,7 +692,7 @@ core 按**端点主机**决定这些请求头（`packages/core/src/llm/app-attri
 
 ### 模型与 Agent
 
-Agent 从不绑定模型。模型在创建 Session 时确定，所以同一个 Agent 可以用不同模型运行不同的 Session；Session 之后还能换模型：对话工具栏的模型选择器先用当前模型压缩上下文，再在新模型上继续本对话（见 [Session 与 Trace](/sessions-and-traces#会话内切换模型)）。
+Agent 从不绑定模型。模型在创建 Session 时确定，所以同一个 Agent 可以用不同模型运行不同的 Session；Session 之后还能换模型：对话工具栏的模型选择器先用当前模型压缩上下文，再在新模型上继续本对话；当前模型不可用或压缩失败时，改为把本对话的 Trace 文件路径交给新模型（见 [Session 与 Trace](/sessions-and-traces#会话内切换模型)）。
 
 `/model` 命令则是通过交接在另一个模型上开新会话：
 

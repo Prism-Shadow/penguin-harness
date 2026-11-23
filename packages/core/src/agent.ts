@@ -23,7 +23,12 @@ import {
   assembleSystemPrompt,
   buildToolConfig,
   selectBuiltinToolsForModel,
+  COMPACTION_SCRATCHPAD_PLACEHOLDER,
+  DEFAULT_COMPACTION_HANDOFF_NOTE,
+  DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_COMPACTION_PROMPT,
+  DEFAULT_COMPACTION_REMINDER,
+  ensureDataRootLayout,
   formatModelRef,
   getModel,
   listInstalledSkills,
@@ -37,6 +42,7 @@ import {
   providerConnectionShape,
   resolveEntryCredential,
   resolveModelRef,
+  resolveRoot,
   sameModelRef,
   sessionScratchpadDir,
   systemConfigPath,
@@ -55,6 +61,7 @@ import {
   ToolCallIdAllocator,
   effectiveMaxContextLength,
 } from "./llm/index.js";
+import { unreachableModel } from "./llm/unreachable-model.js";
 import { Environment } from "./environment/index.js";
 import {
   Writer,
@@ -67,7 +74,7 @@ import { ModelSwitchRefusedError, Session } from "./session.js";
 import { scriptPreToolUseHook, scriptStopHook, scriptUserPromptHook } from "./hooks/script-hook.js";
 import type { ScriptHookOptions } from "./hooks/script-hook.js";
 import type { HookSubagentRequest, SessionHooks } from "./hooks/stop-hook.js";
-import { predatesEveryPromptHooks, userPromptTrigger } from "./plugins/index.js";
+import { predatesEveryPromptHooks, userPromptTrigger } from "./plugin/versions.js";
 import type {
   ModelSwitchSupport,
   SessionConfig,
@@ -81,6 +88,8 @@ import {
   mcpConnectOutcome,
   sessionEnvironment,
 } from "./internal/session-support.js";
+import { compactionToolGate } from "./internal/compaction-tool-gate.js";
+import { modelVisiblePath } from "./internal/model-visible-path.js";
 import {
   compactionEnd,
   isSessionMeta,
@@ -97,7 +106,6 @@ import type {
   AmspRecord,
   SessionMetaPayload,
   SessionSource,
-  ToolCallPayload,
 } from "@prismshadow/amsp/records";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
@@ -276,6 +284,15 @@ export interface ResumeSessionOptions {
   /** Explicit credentials; if unspecified, falls back to the Project config, then to the vendor's environment variable on the same terms as CreateSessionOptions.apiKey. */
   apiKey?: string;
   baseUrl?: string;
+  /**
+   * Resume even when the model the Trace names can no longer be reached — removed from the
+   * Project config, or with a client that cannot be built (a deleted key) — where resume
+   * otherwise throws. For a host that resumes the Session only to switch it to another model:
+   * the switch sends that model nothing and hands the history over by Trace path (see
+   * Session.switchModel). The context it leaves is never opened (no MCP connect, no history),
+   * and a Session that is run on it instead ends every request `fatal` with that reason.
+   */
+  allowUnreachableModel?: boolean;
 }
 
 /**
@@ -391,7 +408,14 @@ interface AssembledContext {
 function resolveCompaction(
   config: CompactionConfig | undefined,
   contextWindow: number | undefined,
+  scratchpadDir: string,
 ): CompactionSettings {
+  // The texts' placeholder is substituted here, where the settings are read: each is user text
+  // outside any cached prefix, so what it says costs none. An absent key reads as the default;
+  // a blank one stays blank (no harness line).
+  const scratchpad = modelVisiblePath(scratchpadDir);
+  const text = (value: string | undefined, fallback: string): string =>
+    (value ?? fallback).replaceAll(COMPACTION_SCRATCHPAD_PLACEHOLDER, scratchpad);
   return {
     maxContextLength: effectiveMaxContextLength(
       config?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
@@ -399,7 +423,10 @@ function resolveCompaction(
     ),
     maxSessionTurns: config?.max_session_turns ?? -1,
     mode: config?.mode === "discard" ? "discard" : "summarize",
-    prompt: config?.prompt ?? DEFAULT_COMPACTION_PROMPT,
+    prompt: text(config?.prompt, DEFAULT_COMPACTION_PROMPT),
+    maxRounds: config?.max_rounds ?? DEFAULT_COMPACTION_MAX_ROUNDS,
+    reminder: text(config?.reminder, DEFAULT_COMPACTION_REMINDER),
+    handoffNote: text(config?.handoff_note, DEFAULT_COMPACTION_HANDOFF_NOTE),
   };
 }
 
@@ -463,8 +490,13 @@ function withPromptSections(prompt: string, sections: readonly PromptSection[]):
   return [prompt, ...sections.map((s) => `# ${s.title}\n${s.text}`)].join("\n\n");
 }
 
-/** Create or load an Agent (the one init-enabled use of `loadAgentState`). */
+/**
+ * Create or load an Agent (the one init-enabled use of `loadAgentState`). A data root still in
+ * the layout before `projects/` is migrated first when no server holds it, and refused while one
+ * does (state/layout-migration/, until 1.0).
+ */
 export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent> {
+  await ensureDataRootLayout(opts.root ?? resolveRoot());
   const state = await loadAgentState({
     ...(opts.agentId !== undefined ? { agentId: opts.agentId } : {}),
     ...(opts.projectId !== undefined ? { projectId: opts.projectId } : {}),
@@ -648,7 +680,11 @@ export class Agent {
     // Compaction config: this context's baseline. It is no longer the last word — the engine
     // re-reads the section at every compaction checkpoint through `compactionReader` — but a
     // context still opens on the configuration that was on disk when it opened.
-    const compaction = resolveCompaction(state.systemConfig.compaction, modelEntry.context_window);
+    const compaction = resolveCompaction(
+      state.systemConfig.compaction,
+      modelEntry.context_window,
+      sessionScratchpadDir(root, projectId, agentId, spec.sessionId),
+    );
 
     // session_meta: this context's runtime configuration — the assembled prompt goes both to
     // the LLM and in here, so the Trace can audit the actual effective value and a resume
@@ -813,11 +849,12 @@ export class Agent {
    *
    * The resume source is the Session's **latest-index** Trace file: the Session-fixed facts
    * are read from its `session_meta` (the Workspace carries over from the original Session and
-   * cannot be changed), the model is the one that file's `session_meta` records — a model switch
-   * opens its new context's file at once, so the latest file always names the model the Session
-   * runs on — and the context is assembled from the current Agent State, keeping the recorded
-   * system prompt when the file's context is still open (see below). A resume never changes the
-   * model on its own; switching goes through `Session.switchModel`. The replayed,
+   * cannot be changed), the model is the one that file's `session_meta` records — or, when the
+   * file ends with a completed switch's `session_update` that no request followed, the model it
+   * names, which the next context opens on — and the context is assembled from the current Agent
+   * State, keeping the recorded system prompt when the file's context is still open (see
+   * below). A resume never changes the model on its own; switching goes through
+   * `Session.switchModel`. The replayed,
    * already-committed history is injected once via MMSP's
    * setHistory (used only on resume); any leftover input is rebuilt as carry-over (paired
    * fallback placeholders are synthesized in memory only, never written to the Trace).
@@ -835,7 +872,16 @@ export class Agent {
         `Session does not exist: ${sessionId} (no matching Trace file found under ${dir}).`,
       );
     }
-    const resumed = resumeTrace(await readTraceTolerant(located.path));
+    // A file a compaction closed opens its next context here, so a hand-off note it ended with
+    // is built from the template on disk now.
+    const { handoffNote } = await this.compactionReader(
+      () => undefined,
+      sessionScratchpadDir(this.state.root, this.state.projectId, this.state.agentId, sessionId),
+    )();
+    const resumed = resumeTrace(await readTraceTolerant(located.path), {
+      tracePath: located.path,
+      ...(handoffNote !== undefined ? { handoffNote } : {}),
+    });
     if (!resumed.meta) {
       throw new Error(`Trace is missing session_meta and cannot be resumed: ${located.path}`);
     }
@@ -863,18 +909,38 @@ export class Agent {
       );
     }
 
-    // The Model carries over from the Trace (the latest file's paired reference) and must still
-    // be present in the Project config.
-    const ref: ModelRef = { provider: meta.provider, model_id: meta.model_id };
-    const modelEntry = getModel(this.projectConfig, ref);
-    if (!modelEntry) {
-      throw new Error(
-        `The original Session's Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model add\` to configure it again before resuming.`,
-      );
+    // The Model carries over from the Trace (the latest file's paired reference, or the target
+    // of a completed switch whose session_update is still pending there — the next context
+    // opens on it) and must still be present in the Project config, with a client that can be
+    // built — unless the caller resumes only to switch away from it (see
+    // ResumeSessionOptions.allowUnreachableModel).
+    const ref: ModelRef = resumed.pendingModel ?? {
+      provider: meta.provider,
+      model_id: meta.model_id,
+    };
+    const configured = getModel(this.projectConfig, ref);
+    let unreachable: string | undefined;
+    try {
+      if (!configured) {
+        throw new Error(
+          `The original Session's Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model add\` to configure it again before resuming.`,
+        );
+      }
+      // Same check as createSession (see checkEntryClient): a key deleted since the Session was
+      // created surfaces here, at resume.
+      checkEntryClient(configured, this.projectConfig, opts);
+    } catch (err) {
+      if (!opts.allowUnreachableModel) throw err;
+      unreachable = err instanceof Error ? err.message : String(err);
     }
-    // Same check as createSession (see checkEntryClient): a key deleted since the Session was
-    // created surfaces here, at resume.
-    checkEntryClient(modelEntry, this.projectConfig, opts);
+    // An unconfigured model's context is assembled on what its own Trace recorded of it (a
+    // pending switch's target has no record of its window).
+    const modelEntry: ModelEntry = configured ?? {
+      ...ref,
+      ...(typeof meta.model_context_window === "number" && resumed.pendingModel === undefined
+        ? { context_window: meta.model_context_window }
+        : {}),
+    };
 
     // No level at resume: the host re-applies its stored value (Session.thinkingLevel) when it holds one,
     // and contexts opened without a pin read the Agent config's chain (the same chain
@@ -891,8 +957,8 @@ export class Agent {
       subagentDepth: 0,
       source: normalizeSessionSource(meta.source),
     };
-    // The context follows the Trace. A context a completed compaction closed is opened here
-    // for the first time — nothing was produced under any configuration yet — so it is
+    // The context follows the Trace. A closed context (a completed compaction, or a switch
+    // whose session_update is pending) is opened here for the first time — nothing was produced under any configuration yet — so it is
     // assembled from the current Agent State exactly as the compaction would have opened it,
     // and the rotation deferred to the first write records its meta at the new file's head.
     // An open context keeps the system prompt its file recorded — the history replayed into
@@ -906,7 +972,7 @@ export class Agent {
       modelEntry,
       resumed.contextClosed ? {} : { systemPrompt: meta.system_prompt },
     );
-    const rt = this.buildRuntime(spec, context);
+    const rt = this.buildRuntime(spec, context, { validateClient: unreachable === undefined });
 
     // History is injected once into the freshly built context object as part of the lazy
     // bootstrap (setHistory is only used on resume); Session cumulative Token counts carry
@@ -958,8 +1024,22 @@ export class Agent {
       }
     }
 
-    return this.newSession(spec, context, rt, trace, {
+    // A model that cannot be reached is sent nothing: its context opens on the stand-in (no MCP
+    // connect, no history), and so does a bare request (a title) until the Session moves off it.
+    const reason = unreachable;
+    const standIn: Partial<SessionConfig> =
+      reason === undefined
+        ? {}
+        : {
+            bootstrap: async () => ({ llm: unreachableModel(reason) }),
+            createBareLLM: () =>
+              sameModelRef({ provider: session.provider, model_id: session.modelId }, ref)
+                ? unreachableModel(reason)
+                : rt.createBareLLM(),
+          };
+    const session = this.newSession(spec, context, rt, trace, {
       bootstrap,
+      ...standIn,
       // session_meta is already in the original Trace file, so it isn't rewritten; on the first write after a compaction-triggered rotation, the file is split first.
       metaAlreadyWritten: true,
       initialEngineState: {
@@ -970,16 +1050,18 @@ export class Agent {
         sessionTokens: resumed.sessionTokens,
         lastRequestTotal: resumed.lastRequestTotal,
         pendingTraceRotation: resumed.contextClosed,
-        // A closed context is one a completed compaction opened: the same fact drives the
-        // deferred Trace rotation above and the "just compacted" compaction reason, but they
+        // A closed context is one a completed compaction (or switch) opened: the same fact drives
+        // the deferred Trace rotation above and the "just compacted" compaction reason, but they
         // are separate meanings and stay separate fields. A file past the first was opened by
-        // a compaction too, so one with no completed turn yet — a model switch's eagerly opened
-        // file, or any new context the process died in before its first answer — is just as
-        // freshly compacted (read structurally, from the index, never from its records).
+        // a compaction too, so one with no completed turn yet — a file an older harness opened
+        // eagerly for a switch, or any new context the process died in before its first
+        // answer — is just as freshly compacted (read structurally, from the index, never from
+        // its records).
         fromCompaction: resumed.contextClosed || (located.index > 1 && resumed.sessionTurns === 0),
       },
       resumedHistory: resumed.renderMessages,
     });
+    return session;
   }
 
   /**
@@ -1008,6 +1090,7 @@ export class Agent {
    */
   private compactionReader(
     contextWindow: () => number | undefined,
+    scratchpadDir: string,
   ): () => Promise<CompactionSettings> {
     const { root, projectId, agentId } = this.state;
     const configPath = systemConfigPath(root, projectId, agentId);
@@ -1022,7 +1105,7 @@ export class Agent {
       if (parsed === null || typeof parsed !== "object") {
         throw new Error(`Invalid Agent State config: ${configPath} is empty or corrupted.`);
       }
-      cached = resolveCompaction((parsed as SystemConfig).compaction, window);
+      cached = resolveCompaction((parsed as SystemConfig).compaction, window, scratchpadDir);
       cachedKey = key;
       return cached;
     };
@@ -1042,6 +1125,7 @@ export class Agent {
     extras: Partial<SessionConfig> = {},
   ): Session {
     const { root, projectId, agentId } = this.state;
+    const scratchpad = sessionScratchpadDir(root, projectId, agentId, spec.sessionId);
     return new Session({
       meta: context.meta,
       bootstrap: rt.bootstrap,
@@ -1056,9 +1140,10 @@ export class Agent {
       compaction: context.compaction,
       // Live tier: the baseline above is what this context opened on, and this is how every
       // checkpoint after it asks the disk again.
-      readCompaction: this.compactionReader(rt.contextWindow),
+      readCompaction: this.compactionReader(rt.contextWindow, scratchpad),
+      compactionToolGate: compactionToolGate(scratchpad),
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
-      imagesDir: sessionScratchpadDir(root, projectId, agentId, spec.sessionId),
+      imagesDir: scratchpad,
       modelHasVision: context.modelEntry.vision !== false,
       modelSwitch: rt.modelSwitch,
       ...(context.maxTurns !== undefined ? { maxTurns: context.maxTurns } : {}),
@@ -1083,7 +1168,11 @@ export class Agent {
    * Assembles a Session's runtime components (shared by createSession and resumeSession)
    * around the context it starts in — see {@link SessionRuntime} for what each part does.
    */
-  private buildRuntime(spec: SessionSpec, initial: AssembledContext): SessionRuntime {
+  private buildRuntime(
+    spec: SessionSpec,
+    initial: AssembledContext,
+    opts: { validateClient?: boolean } = {},
+  ): SessionRuntime {
     const { sessionId, workspaceDir, subagentDepth } = spec;
     // The context the Session is running: the initial one, then whatever `openNextContext` last
     // opened (or a never-run Session's model switch re-assembled, see `modelSwitch` below). Its
@@ -1253,9 +1342,13 @@ export class Agent {
           // Pass through the parent's approval callback: the child Session inherits
           // the parent Agent's approval mode (with no callback, the child engine
           // defaults to deny). The tool_call received for approval also carries the
-          // origin, so the approval UI can identify which tool a subagent is calling.
-          const childApprove = approve
-            ? (tc: AmspRecord<ToolCallPayload>) => approve(withOrigin(tc, hop))
+          // origin, so the approval UI can identify which tool a subagent is calling, and
+          // the child's policy reason rides along untouched.
+          const childApprove: ApproveFn | undefined = approve
+            ? (tc, context) =>
+                context === undefined
+                  ? approve(withOrigin(tc, hop))
+                  : approve(withOrigin(tc, hop), context)
             : undefined;
           // The engine writes a run's input to the CHILD's own Trace but never replays
           // it to its consumer (a session's normal caller typed that input itself) —
@@ -1305,7 +1398,7 @@ export class Agent {
           childSession.thinkingLevel = level;
         },
         dispose() {
-          childSession.dispose();
+          return childSession.dispose();
         },
       };
     }
@@ -1492,17 +1585,28 @@ export class Agent {
     // on the model the closing context ran on, or on the one a model switch names
     // (`modelRef`, resolved against the Project config on disk). The Environment is
     // re-equipped with the new toolset and vault, then the context is opened by the same
-    // procedure as the first one — the engine yields the published records live and writes
-    // them at the head of the rotated Trace file. An Agent State that cannot be assembled (a
-    // config that no longer parses) throws: the run fails with that error and the engine
-    // keeps the old context. So does this layer when the open itself fails: `current` moves
-    // only once the context is open, and the Environment goes back to the running one.
+    // procedure as the first one. An Agent State that cannot be assembled (a config that no
+    // longer parses) does not end a same-model rotation: the configuration in force reopens on
+    // a fresh LLM object and the next rotation tries the state again — the rule the live
+    // compaction re-read follows. A model switch rethrows, keeping its model; so does this
+    // layer when the open itself fails: `current` moves only once the context is open, and the
+    // Environment goes back to the running one.
     const openNextContext = async ({
       emit,
       modelRef,
     }: SessionOpenContextOptions): Promise<SessionOpenedContext> => {
       const entry = modelRef ? await switchTargetEntry(modelRef) : current.modelEntry;
-      const next = await this.assembleContext(spec, entry);
+      let next: AssembledContext;
+      try {
+        next = await this.assembleContext(spec, entry);
+      } catch (err) {
+        if (modelRef) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        next = current;
+        process.stderr.write(
+          `[penguin] the next context could not be assembled from the Agent State: ${message}; reopening the configuration in force.\n`,
+        );
+      }
       equip(next);
       let llm: GenerativeModel;
       try {
@@ -1538,14 +1642,17 @@ export class Agent {
     // is missing (e.g. OpenAI-protocol models without apiKey/OPENAI_API_KEY), and hosts
     // map that into their clean "credential missing" error before any Session or Trace
     // exists. Constructing the bare LLM (same credentials, no tools, no network) keeps
-    // that throw here; the instance is discarded.
-    createBareLLM();
+    // that throw here; the instance is discarded. A resume that was allowed an unreachable
+    // model (see ResumeSessionOptions.allowUnreachableModel) is the one runtime built on a
+    // context whose client cannot be built: it never builds one.
+    if (opts.validateClient !== false) createBareLLM();
 
     // The composition layer's half of an in-session model switch (see Session.switchModel):
     // the target is validated exactly as a creation model is — configured on disk, credential
-    // present at client construction — before anything is sent or recorded; a Session that
-    // never ran has its first context assembled again on the target, which the bootstrap then
-    // opens like any first context.
+    // present at client construction — before anything is sent or recorded, and the model the
+    // Session is on is asked the same question before it is sent the summary request; a
+    // Session that never ran has its first context assembled again on the target, which the
+    // bootstrap then opens like any first context.
     const modelSwitch: ModelSwitchSupport = {
       validate: async (ref) => {
         const entry = await this.modelEntryOnDisk(ref);

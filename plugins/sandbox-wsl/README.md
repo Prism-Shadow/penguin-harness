@@ -41,4 +41,5 @@ The **Package mirror** setting points apt or apk at a mirror; the rootfs itself 
 - Commands run in Linux, not Git Bash. Windows toolchains cannot run confined; add Linux ones through **Packages** (for example `nodejs`, `npm`, `python3`).
 - A Windows path in a command means nothing inside the distro. The Workspace is at `/mnt/<drive>/…`.
 - A Workspace on a network share has no path inside the distro and cannot be confined.
+- Hook scripts, Goal mode's included, do not run under this backend: a hook script lives on the Windows host, and neither its path nor the host paths it is given exist inside the distro. The backend refuses them, and the hook fails rather than running unconfined; a Session that needs hooks needs full access. The same holds for an MCP Server started with the harness's own runtime.
 - The Workspace is bound at its own path, so the empty directory chain above it (`/mnt/c/Users/…`) is visible even though every other drive is hidden.

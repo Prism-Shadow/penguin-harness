@@ -66,8 +66,8 @@
  * streaming reply leaves it open. It opens upward on its own: the composer sits at the bottom of
  * the page, so there is never room below.
  */
-import { useEffect, useId, useRef, useState } from "react";
-import type { RefObject } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+
 import { createPortal } from "react-dom";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
 import {
@@ -91,8 +91,8 @@ import {
 } from "../../lib/context";
 import { formatPercent, humanizeTokens } from "../../lib/format";
 import { S } from "../../lib/strings";
-import { contextComposition } from "./context-parts";
-import type { ContextPartKey } from "./context-parts";
+import { failureNode } from "../../lib/failure";
+import { contextComposition, type ContextPartKey } from "./context-parts";
 
 /**
  * Panel geometry. The width is applied inline rather than as a `w-*` class because the same
@@ -124,7 +124,9 @@ const CUTTER_HIT_PX = 14;
 const ARROW_MULTIPLIER = 10;
 
 type PanelState =
-  { status: "loading" } | { status: "failed" } | { status: "ready"; data: SessionContextResponse };
+  | { status: "loading" }
+  | { status: "failed"; failure: ReactNode }
+  | { status: "ready"; data: SessionContextResponse };
 
 /** Which Top 5 the panel's ranking lists. */
 type RankingView = "tools" | "files";
@@ -259,7 +261,7 @@ export function ContextGauge({
               maxWidth: PANEL_MAX_WIDTH,
               maxHeight: PANEL_MAX_HEIGHT,
             }}
-            className="anim-pop z-[60] overflow-y-auto rounded-md border border-gray-200 bg-white p-3 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className="anim-pop z-popover overflow-y-auto rounded-md border border-gray-200 bg-white p-3 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
           >
             <ContextPanel
               sessionId={sessionId}
@@ -351,8 +353,16 @@ function ContextPanel({
       (data) => {
         if (!cancelled) setState({ status: "ready", data });
       },
-      () => {
-        if (!cancelled) setState({ status: "failed" });
+      (err: unknown) => {
+        if (!cancelled) {
+          setState({
+            status: "failed",
+            failure: failureNode(err, {
+              text: S.chat.contextBreakdownFailed,
+              what: "the context composition could not be read",
+            }),
+          });
+        }
       },
     );
     return () => {
@@ -411,7 +421,7 @@ function ContextPanel({
       ) : state.status === "loading" ? (
         <p className="mt-2 text-gray-400 dark:text-gray-500">{S.common.loading}</p>
       ) : state.status === "failed" ? (
-        <p className="mt-2 text-gray-400 dark:text-gray-500">{S.chat.contextBreakdownFailed}</p>
+        <p className="mt-2 text-gray-400 dark:text-gray-500">{state.failure}</p>
       ) : composition === null ? (
         <p className="mt-2 text-gray-400 dark:text-gray-500">{S.chat.contextBreakdownEmpty}</p>
       ) : (

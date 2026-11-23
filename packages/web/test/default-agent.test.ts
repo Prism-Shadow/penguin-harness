@@ -1,10 +1,10 @@
 /**
  * Which agent a "Create with AI" surface sends to when none is named
- * (src/features/ai-create/default-agent.ts).
+ * (src/lib/default-agent.ts).
  */
 import { describe, expect, it } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
-import { pickDefaultAgent } from "../src/features/ai-create/default-agent";
+import { pickDefaultAgent } from "../src/lib/default-agent";
 
 const agent = (agentId: string) => ({ agentId }) as AgentSummary;
 
@@ -18,5 +18,11 @@ describe("pickDefaultAgent", () => {
   it("falls back to the first agent, and to null for an empty list", () => {
     expect(pickDefaultAgent([agent("b"), agent("a")])?.agentId).toBe("b");
     expect(pickDefaultAgent([])).toBeNull();
+  });
+
+  it("never hands the prompt to the system Agent, even listed first", () => {
+    const system = { ...agent("system_agent"), system: true } as AgentSummary;
+    expect(pickDefaultAgent([system, agent("b")])?.agentId).toBe("b");
+    expect(pickDefaultAgent([system])).toBeNull();
   });
 });

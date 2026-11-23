@@ -1,5 +1,7 @@
 /** Public-site controls without the application renderer, router or theme imports. */
+export * from "./components/site/site-link";
 export * from "./components/site/site-header";
+export * from "./components/site/site-nav-menu";
 export * from "./components/site/site-nav";
 export * from "./components/site/site-controls";
 export * from "./components/site/site-icons";
@@ -9,8 +11,14 @@ export * from "./components/site/site-locale";
 export * from "./components/site/site-route-scroll";
 export * from "./components/site/site-footer";
 export * from "./components/site/site-pill";
+export * from "./components/site/site-back-link";
+export * from "./components/site/site-segmented";
+export * from "./components/site/site-menu-button";
+export * from "./components/site/site-playback";
+export * from "./components/site/site-scroll-top";
 export * from "./components/site/site-copy";
 export * from "./components/site/site-code";
+export * from "./components/site/site-code-card";
 export * from "./components/site/site-highlight";
 export * from "./components/site/site-toc";
 export * from "./components/site/site-sidebar";
@@ -20,5 +28,15 @@ export * from "./components/site/site-markdown";
 export * from "./components/site/markdown-text";
 export * from "./components/site/remark-tabs";
 export * from "./components/site/remark-callout";
-export { SITE_REMARK_PLUGINS } from "./components/content/prose/markdown-plugins";
+export { SITE_REMARK_PLUGINS } from "./components/content/prose/site-markdown-plugins";
 export { Fold } from "./components/layout/fold/fold";
+export { ImageIcon } from "./components/icons/image-icon/image-icon";
+export type { ImageIconSource } from "./components/icons/image-icon/image-icon";
+// The showcase family: the plugin market's covers, cards, carousel and product page, the
+// same modules as the Web App's; site.css carries their sheet and maps it onto the sites' palette.
+export * from "./components/showcase/cover";
+export * from "./components/showcase/cover-card";
+export * from "./components/showcase/showcase-layout-toggle";
+export * from "./components/showcase/carousel-rotation";
+export * from "./components/showcase/showcase-carousel";
+export * from "./components/showcase/product-page";

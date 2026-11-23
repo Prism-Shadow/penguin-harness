@@ -17,7 +17,7 @@
 import { useEffect, useRef } from "react";
 import { createStore, useStore } from "zustand";
 import type { UpdateJobStatus } from "@prismshadow/penguin-server/api";
-import { toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
+import { toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { S } from "./strings";
 import { apiErrorText } from "./api-error";
@@ -46,6 +46,8 @@ import {
   useDesktopUpdate,
 } from "./use-desktop-update";
 import { useAuth } from "../state/auth";
+import { toldFailure } from "./failure";
+import { toastApiError, toastFailure } from "./toast-api-error";
 
 /** How often the running self-update job is asked where it is. */
 const JOB_POLL_MS = 1_000;
@@ -124,17 +126,39 @@ export async function checkForUpdates(): Promise<void> {
   }
   store.setState({ checking: true });
   try {
-    const outcome = updateCheckOutcome(await forceUpdateCheck());
+    const res = await forceUpdateCheck();
+    const outcome = updateCheckOutcome(res);
     if (quiet()) return;
     if (outcome.kind === "disabled") toastInfo(S.update.checkDisabled);
-    else if (outcome.kind === "failed") toastError(S.update.checkFailed);
+    else if (outcome.kind === "failed")
+      updateFailed(S.update.checkFailed, "check", null, res.error);
     else if (outcome.kind === "found") toastSuccess(S.update.foundNew(outcome.latestVersion));
     else toastSuccess(S.update.upToDate);
   } catch (e) {
-    if (!quiet()) toastError(apiErrorText(e));
+    if (!quiet()) toastApiError(e);
   } finally {
     store.setState({ checking: false });
   }
+}
+
+/**
+ * An update step that failed, in a toast with its report: the step, its code when it has one,
+ * and the updater's own words or its output's tail when it has them.
+ */
+function updateFailed(
+  text: string,
+  step: string,
+  detail: string | null | undefined,
+  code?: string,
+): void {
+  toastFailure(
+    toldFailure(text, {
+      what: "an update failed",
+      ...(code !== undefined ? { code } : {}),
+      facts: [["Step", step]],
+      detail: detail ?? null,
+    }),
+  );
 }
 
 /** The user's confirmation: fetch (and, on a server, install) the offered release. */
@@ -156,7 +180,7 @@ export async function downloadUpdate(): Promise<void> {
     const job = await api.startUpdateJob();
     store.setState({ job, downloadRequested: false });
   } catch (e) {
-    toastError(S.update.requestFailed(apiErrorText(e)));
+    toastApiError(e, { text: S.update.requestFailed(apiErrorText(e)), what: "an update failed" });
     store.setState({ downloadRequested: false });
   }
 }
@@ -174,7 +198,7 @@ export async function installUpdate(): Promise<void> {
     } catch (e) {
       if (store.getState().clientInstallRequest !== request) return;
       store.setState({ restart: "none", clientInstallRequest: null });
-      toastError(S.update.requestFailed(apiErrorText(e)));
+      toastApiError(e, { text: S.update.requestFailed(apiErrorText(e)), what: "an update failed" });
     }
     return;
   }
@@ -182,7 +206,7 @@ export async function installUpdate(): Promise<void> {
     const res = await api.restartServer();
     store.setState({ restart: res.restarting ? "requested" : "manual" });
   } catch (e) {
-    toastError(S.update.requestFailed(apiErrorText(e)));
+    toastApiError(e, { text: S.update.requestFailed(apiErrorText(e)), what: "an update failed" });
   }
 }
 
@@ -265,8 +289,10 @@ export function useUpdateFlowOwner(): void {
     if (store.getState().clientInstallRequest !== request) return;
     store.setState({ restart: "none", clientInstallRequest: null });
     if (!quiet()) {
-      toastError(
+      updateFailed(
         status.message ? S.update.clientUpdateFailed(status.message) : S.update.checkFailed,
+        "install on this computer",
+        status.message,
       );
     }
   }, [mode, state.clientInstallRequest, status]);
@@ -295,10 +321,12 @@ export function useUpdateFlowOwner(): void {
           );
           break;
         default:
-          toastError(
+          updateFailed(
             settle.message !== null
               ? S.update.clientUpdateFailed(settle.message)
               : S.update.checkFailed,
+            "check on this computer",
+            settle.message,
           );
       }
     });
@@ -350,7 +378,8 @@ export function useUpdateFlowOwner(): void {
           store.setState({ job, downloadRequested: false });
           if (!wasRunning || job.state !== "done" || job.result === undefined || quiet()) return;
           if (job.result.status === "updated") toastSuccess(S.update.readyToast(job.targetVersion));
-          else if (job.result.status === "failed") toastError(S.update.failedToast);
+          else if (job.result.status === "failed")
+            updateFailed(S.update.failedToast, "server update", job.result.output);
           else toastInfo(S.update.unsupportedToast);
         })
         .catch(() => {
@@ -371,7 +400,7 @@ export function useUpdateFlowOwner(): void {
     let sawDown = false;
     const giveUp = (): void => {
       store.setState({ restart: "manual" });
-      toastError(S.update.restartTimedOut);
+      updateFailed(S.update.restartTimedOut, "restart", null);
     };
     const timer = setInterval(() => {
       // The deadline is checked on every tick, not only on a failed one. A poll that keeps
@@ -404,7 +433,7 @@ export function useUpdateFlowOwner(): void {
     if (!clientRestarting) return;
     const timer = setTimeout(() => {
       store.setState({ restart: "manual", clientInstallRequest: null });
-      toastError(S.update.restartTimedOutClient);
+      updateFailed(S.update.restartTimedOutClient, "restart on this computer", null);
     }, RESTART_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [clientRestarting]);

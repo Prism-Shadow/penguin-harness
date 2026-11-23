@@ -25,8 +25,8 @@
  * neither can hold the page: the employees' live states come from the org chart, the ticket
  * owners from the board.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+
 import { useSearchParams } from "react-router";
 import type {
   OrgBudgetAlert,
@@ -62,18 +62,17 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatPercent } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneDot, toneInk } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
-import { useCompany } from "../../state/company";
-import { useTheme } from "../../state/theme";
-import type { Currency } from "../../state/theme";
+import { toneDot, toneInk, type Tone } from "../../lib/tone";
+
+import { useCompany } from "./company-state";
+import { useTheme, type Currency } from "../../state/theme";
+
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { EmployeeAvatar } from "./employee-avatar";
-import { TrendChart } from "../usage/trend-chart";
+import { TrendChart } from "../usage";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
   ErrorLine,
@@ -100,9 +99,12 @@ import {
   ticketRowTooltip,
   ticketTreeRows,
   visibleLedgerRows,
+  type SpendStateKey,
 } from "./finance-tree";
-import type { SpendStateKey } from "./finance-tree";
+
 import { agentPrincipal } from "./principals";
+import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 const iconButtonClass =
   "inline-flex items-center justify-center rounded p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200";
@@ -300,7 +302,7 @@ export function FinancePage() {
   const [params, setParams] = useSearchParams();
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.finance}` : S.nav.org.finance);
   const [data, setData] = useState<OrgFinanceResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   /** Ticket owners, joined from the board (best effort: the finance rows carry none). */
   const [owners, setOwners] = useState<ReadonlyMap<string, string>>(new Map());
   /** Live employee states, joined from the org chart (best effort, for the state column). */
@@ -345,7 +347,7 @@ export function FinancePage() {
       setError(null);
     } catch (e) {
       if (my !== seq.current) return;
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an organization's finances could not be loaded" }));
     }
   }, [projectId, orgId, requested]);
   const { budget: budgetVersion, runs } = company.versions;
@@ -380,7 +382,7 @@ export function FinancePage() {
       void load();
       void company.reloadOrganizations();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -521,6 +523,7 @@ export function FinancePage() {
               </p>
             ) : (
               <TrendChart
+                label={S.company.finance.trend}
                 series={series}
                 granularity="day"
                 currency={currency}
@@ -573,7 +576,6 @@ export function FinancePage() {
                           {depth > 0 && <TreeElbow />}
                           <EmployeeAvatar
                             id={employee.agentId}
-                            name={employee.name}
                             size={ICON_SIZE.navRow}
                             className="shrink-0 rounded"
                           />

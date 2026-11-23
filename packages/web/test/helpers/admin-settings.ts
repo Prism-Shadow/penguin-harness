@@ -6,8 +6,7 @@
  * {@link AdminSettingsServer.hold}.
  */
 import type { MeResponse, ServerSettings } from "@prismshadow/penguin-server/api";
-import { apiError, json, stubFetch } from "./fetch";
-import type { FakeFetch, FetchRequest } from "./fetch";
+import { apiError, json, stubFetch, type FakeFetch, type FetchRequest } from "./fetch";
 
 export const ADMIN_ME: MeResponse = {
   user: {
@@ -36,6 +35,8 @@ export const STORED_SETTINGS: ServerSettings = {
   proxyUrl: "http://proxy.local:8080",
   attachmentMaxMb: 100,
   attachmentTotalMb: 120,
+  terminalMaxOpen: 12,
+  browserMaxOpen: 20,
   companyMode: true,
   browserExtensionsEnabled: true,
   agentApiEnabled: true,

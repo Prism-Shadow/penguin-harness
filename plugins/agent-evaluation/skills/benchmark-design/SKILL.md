@@ -1,7 +1,7 @@
 ---
 name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline, or import a published Benchmark package.
-version: 2026.10.27.1
+version: 2026.11.21.1
 ---
 
 # Benchmark Design
@@ -12,7 +12,7 @@ This Skill changes the Benchmark, never the Test Agent. It does not run or score
 
 A Benchmark whose Cases are run through Harbor (their statements say so; the built-in PenguinHarness Benchmarks) is a frozen upstream task set that ships with PenguinHarness: never create, refine, recalibrate or re-baseline one.
 
-To import an existing Benchmark, follow **Importing a package** in `reference/package.md`: fetch the selected package, read its files, and copy the manifest and cases directly into the Project's `benchmarks/<id>/` with an empty scoreboard. Preserve its version, record the source, and ask before replacing an existing directory. Importing does not run the design, calibration or evaluation workflow below.
+To import an existing Benchmark, follow **Importing a package** in `reference/package.md`: fetch the selected package, read its files, and copy the manifest and cases directly into the Benchmark's folder (`BENCHMARK_DIR`, below) with an empty scoreboard. Preserve its version, record the source, and ask before replacing an existing directory. Importing does not run the design, calibration or evaluation workflow below.
 
 ## Before you start
 
@@ -40,15 +40,15 @@ Require a Test Agent id, target capability, desired baseline score on the fixed 
 
 The current Session must provide `run_subagent`, and the current Agent must have `agent-evaluation` installed. If either is missing, stop and explain what is needed.
 
-Use the Environment's `App Data Dir` and the explicit Test Agent id:
+Use the Environment's `App Data Dir`, the explicit Test Agent id, and the Benchmark's folder as the request names it:
 
 ```text
 TEST_AGENT_DIR = <app_data_dir>/agents/<test_agent_id>
-BENCHMARK_DIR = <app_data_dir>/benchmarks/<benchmark_id>
-SCOREBOARD = <benchmark_dir>/scoreboard.yaml
+BENCHMARK_DIR  = <the BENCHMARK_DIR the request names>   # when it names none: <app_data_dir>/agents/system_agent/app/data/benchmark/<benchmark_id>
+SCOREBOARD     = <benchmark_dir>/scoreboard.yaml
 ```
 
-A Benchmark lives beside `agents/`, not inside one: it belongs to the Project and may evaluate several Agents. `test_agent_id` names the one this request evaluates, and every Evaluation records it.
+A Benchmark lives in the Evaluation Center's data folder, not inside the Agent it evaluates: it belongs to the Project and may evaluate several Agents. Pass `BENCHMARK_DIR` on to every evaluation request as `benchmark_dir`. `test_agent_id` names the one this request evaluates, and every Evaluation records it.
 
 Access only the specified Test Agent and Benchmark: the Agent State, complete Benchmark, and Test Traces or artifacts from valid evaluations. Do not access other Agents, Project secrets, or Evaluator State, Workspace, or Trace.
 
@@ -134,7 +134,7 @@ For `evaluation_failed`, keep the same Benchmark revision and cell. Diagnose the
 
 Treat the first draft as a hypothesis. The first valid result from every planned Case together forms Pilot iteration 1. A later iteration starts after a difficulty refinement and completes when every affected Case has a valid new result. Request corrections, validity repairs, and evaluation reruns stay in the current iteration and do not consume the requested iteration budget. Use the recorded Agent State version and fixed evaluation runtime.
 
-Keep unselected Pilot results out of the Scoreboard. During calibration, retain only one temporary restorable copy: the lowest-scoring complete valid revision seen so far, including its one-Run-per-Case result. Store it outside the Project's `benchmarks/`, replace it only when a lower valid revision completes, and never retain invalid revisions.
+Keep unselected Pilot results out of the Scoreboard. During calibration, retain only one temporary restorable copy: the lowest-scoring complete valid revision seen so far, including its one-Run-per-Case result. Store it outside the folder that holds the Project's Benchmarks (the parent of `BENCHMARK_DIR`), replace it only when a lower valid revision completes, and never retain invalid revisions.
 
 Use the Pilot to find the current Test Agent's capability boundary.
 

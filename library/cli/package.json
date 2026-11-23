@@ -1,0 +1,77 @@
+{
+  "name": "@prismshadow/penguin-library-cli",
+  "version": "0.2.18",
+  "description": "The CLI host's face for command code: the server connection, the API client and its error, terminal input, the text helpers and the host message groups their words come from. A library package - the server and a shipped plugin's CLI module import it; nothing here imports the server, the CLI or a plugin.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/cli"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js"
+    },
+    "./connection": {
+      "types": "./dist/connection.d.ts",
+      "import": "./dist/connection.js"
+    },
+    "./console-input": {
+      "types": "./dist/console-input.d.ts",
+      "import": "./dist/console-input.js"
+    },
+    "./cut-text": {
+      "types": "./dist/cut-text.d.ts",
+      "import": "./dist/cut-text.js"
+    },
+    "./messages": {
+      "types": "./dist/messages.d.ts",
+      "import": "./dist/messages.js"
+    },
+    "./server-lock": {
+      "types": "./dist/server-lock.d.ts",
+      "import": "./dist/server-lock.js"
+    },
+    "./stored-sign-in": {
+      "types": "./dist/stored-sign-in.d.ts",
+      "import": "./dist/stored-sign-in.js"
+    },
+    "./table": {
+      "types": "./dist/table.d.ts",
+      "import": "./dist/table.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true
+}

@@ -16,6 +16,9 @@
  * - No row names a thinking level, not even where the round switched it.
  * - As the panel scrolls, the button follows the first round fully under the toolbar; scrolled
  *   to the end, it names the last round drawn.
+ *
+ * The view makes its file whole on this server first (the history stream's `fill` read), which a
+ * Session on this server answers at once: the suite's socket answers it so.
  */
 import { act, createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,8 +27,15 @@ import type { TraceAnalysisResponse, TraceTaskStats } from "@prismshadow/penguin
 import { TraceFileView } from "../src/features/traces/trace-file-view";
 import { S } from "../src/lib/strings";
 import { ThemeProvider } from "../src/state/theme";
-import { click, field, mount, pressEscape, type, unmountAll, waitFor } from "./helpers/dom";
+import { click, field, mount, pressEscape, run, type, unmountAll, waitFor } from "./helpers/dom";
 import { json, stubFetch } from "./helpers/fetch";
+import { socketWorld } from "./helpers/api-socket-world";
+
+vi.mock("../test/socket-stand-in", async (importActual) => {
+  const actual = await importActual<typeof import("../src/api/socket")>();
+  const { socketWorld } = await import("./helpers/api-socket-world");
+  return { ...actual, apiSocket: socketWorld.apiSocket };
+});
 
 const ROUNDS = 60;
 /** Events per round: the prompt and the reply. */
@@ -163,9 +173,13 @@ describe("the round navigator", () => {
         ),
       ),
     );
+    await run(() => socketWorld.emit("/history?fill=only&file=1&agent=a", "filled", {}));
     await waitFor(() => document.querySelector('[data-slot="nav-button"]') !== null);
   });
-  afterEach(() => unmountAll());
+  afterEach(async () => {
+    await unmountAll();
+    socketWorld.reset();
+  });
 
   it("names the round in view, and opens on every round with that one current and focused", async () => {
     expect(navButton().textContent).toContain(S.traces.task(60));
@@ -243,19 +257,26 @@ describe("the round navigator", () => {
 
   /**
    * Lays the drawn rounds out as collapsed 30px rows under a toolbar ending at 40 — round 19
-   * mostly behind it, round 20 the first wholly under it — in an 800px box scrolled to `scrollTop`.
+   * mostly behind it, round 20 the first wholly under it — in an 800px box.
    */
-  async function scrollTo(scrollTop: number): Promise<void> {
+  function layoutPanel(): HTMLElement {
     place(document.querySelector('[data-slot="toolbar"]')!, 0, 40);
-    for (let k = 10; k < ROUNDS; k++) {
-      const top = 44 + (k - 20) * 30;
-      place(roundRow(k)!, top, 30);
-      place(roundRow(k)!.querySelector('[data-slot="head"]')!, top, 30);
+    const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-round]"));
+    const roundIds = rows.map((row) => Number(row.dataset.round));
+    expect(roundIds).toEqual(Array.from({ length: ROUNDS - 10 }, (_, i) => 10 + i));
+    for (const row of rows) {
+      const top = 44 + (Number(row.dataset.round) - 20) * 30;
+      place(row, top, 30);
+      place(row.querySelector('[data-slot="head"]')!, top, 30);
     }
     const box = document.querySelector<HTMLElement>("[data-scroll-box]")!;
     place(box, 0, 800);
     Object.defineProperty(box, "scrollHeight", { configurable: true, value: 3000 });
     Object.defineProperty(box, "clientHeight", { configurable: true, value: 800 });
+    return box;
+  }
+
+  async function scrollTo(box: HTMLElement, scrollTop: number): Promise<void> {
     Object.defineProperty(box, "scrollTop", { configurable: true, value: scrollTop });
     await act(async () => {
       box.dispatchEvent(new Event("scroll"));
@@ -264,14 +285,15 @@ describe("the round navigator", () => {
   }
 
   it("as the panel scrolls, the button follows the first round fully under the toolbar", async () => {
-    await scrollTo(1000);
+    await scrollTo(layoutPanel(), 1000);
     expect(navButton().textContent).toContain(S.traces.task(21));
   });
 
   it("scrolled to the end, the button names the last round drawn", async () => {
-    await scrollTo(1000);
+    const box = layoutPanel();
+    await scrollTo(box, 1000);
     // The same heads, the box now at its end: the last rounds can climb no further.
-    await scrollTo(2200);
+    await scrollTo(box, 2200);
     expect(navButton().textContent).toContain(S.traces.task(60));
   });
 });

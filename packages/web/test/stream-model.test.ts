@@ -11,9 +11,20 @@
  * - Approval decisions annotate their card (manual when registered here, even across a resync
  *   rebuild; remote otherwise), including decisions that arrive before the card; fatal errors
  *   and aborts render their own items.
- * - A compaction renders one banner: its summary and thinking stream onto it, each body
+ * - A compaction renders one banner: its summary and thinking stream onto it, its tool calls
+ *   become work cards on it (an approval finds them), the summary draft starts over at each of
+ *   its requests, each body
  *   section is timed over the window it shows itself running (retries included), history
  *   replay rebuilds the same banner, and a quit or aborted compaction settles as failed.
+ * - A completed end carrying the error pair keeps no result, whatever a request was cut off
+ *   writing, but keeps its thinking, its work and the error, live and rebuilt alike, and clears
+ *   the context figure as any completion does; a fatal end keeps the context and settles a
+ *   retry line still waiting.
+ * - A request the provider refused, answered by a hand-off, is a retry line that resolves at the
+ *   next context's first request and a degraded compaction row with no request inside it: no
+ *   error item, the Task stays open, and the row is the Session's refusal hand-off until a later
+ *   compaction ends otherwise — live and rebuilt alike. An old Trace's abandoned compaction
+ *   (`retryable`, `failed`) is no such row.
  * - The MCP connect row sums tools, keeps per-server outcomes and its wall time, and names a
  *   server skipped for a vault key or a sign-in as waiting rather than failed.
  * - Retries render one ladder line per streak, with their countdown inputs, settling as
@@ -44,6 +55,15 @@
  *   request included.
  * - A Session's first message streams its session_meta ahead of task_begin: it renders nothing
  *   and marks no model change.
+ * - A model switch that hands over by Trace path folds its `[model_switch_from]` handoff (naming
+ *   this Session) into the model-change marker; a `/model` block naming another Session stays a
+ *   Prompt.
+ * - A switch's `session_update` draws the model-change marker under the Session held (one per
+ *   record, several in a row included), and the context's same-model session_meta that follows
+ *   draws none; a Trace without the record still draws it from two metas. A nested child's
+ *   record, one naming no model, and one before any model is held change nothing. The hand-off
+ *   that follows it folds into its marker, live and from history; the Task after it is priced on
+ *   the target; it adds nothing to a Task's span.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -63,6 +83,7 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  sessionUpdate,
   taskBegin,
   taskEnd,
   thinkingMessage,
@@ -72,7 +93,7 @@ import {
   userText,
   withOrigin,
 } from "@prismshadow/amsp";
-import { buildBackgroundTaskDoneMessage } from "@prismshadow/amsp/markers";
+import { buildBackgroundTaskDoneMessage, buildModelSwitchMessage } from "@prismshadow/amsp/markers";
 import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/amsp";
 import {
   approvalKey,
@@ -86,22 +107,22 @@ import {
   pushMessage,
   pushMessages,
   registerLocalDecision,
+  type AssistantTextItem,
+  type BackgroundNoticeItem,
+  type CompactionItem,
+  type McpConnectItem,
+  type ModelChangeItem,
+  type ReconnectItem,
+  type StreamModel,
+  type SubagentItem,
+  type TaskStatsItem,
+  type ThinkingItem,
+  type ToolCallItem,
+  type UserSteeringItem,
+  type UserTextItem,
 } from "../src/lib/amsp/stream-model";
+import { refusalHandoff } from "../src/lib/amsp/compaction-summary";
 import { liveSessionElapsedMs } from "../src/lib/amsp/task-stats";
-import type {
-  AssistantTextItem,
-  BackgroundNoticeItem,
-  CompactionItem,
-  McpConnectItem,
-  ReconnectItem,
-  StreamModel,
-  SubagentItem,
-  TaskStatsItem,
-  ThinkingItem,
-  ToolCallItem,
-  UserSteeringItem,
-  UserTextItem,
-} from "../src/lib/amsp/stream-model";
 
 /** A completion notice as core delivers it: steered (engine drain) or unstamped (idle take). */
 function noticeText(delivery?: "steering"): string {
@@ -147,6 +168,72 @@ function meta(sessionId: string): AmspRecord<SessionMetaPayload> {
 function items(model: StreamModel) {
   return model.items;
 }
+
+describe("the final work step of a Task", () => {
+  const first = "2026-11-19T10:00:00.000Z";
+  const last = "2026-11-19T10:00:04.000Z";
+  const steps = (model: StreamModel) => model.items.filter((item) => item.kind === "thinking");
+  it("waits through the answer, then settles only the last group, identically on replay", () => {
+    const records = [
+      at(userText("question"), first),
+      at(requestBegin(), first),
+      at(thinkingMessage("inspect"), first),
+      at(assistantText("First result"), first),
+      at(thinkingMessage("verify"), first),
+      at(requestEnd("completed"), last),
+    ];
+    const live = createStreamModel();
+    pushMessages(live, records);
+    expect(steps(live).map((item) => item.workOutcome)).toEqual([undefined, undefined]);
+    const clock = steps(live)[0]!.workTiming;
+    expect(clock).toBeDefined();
+    expect(steps(live)[1]!.workTiming).toBe(clock);
+    expect(clock?.durationMs).toBeUndefined();
+    notifyTaskIdle(live);
+    const replay = createStreamModel();
+    pushMessages(replay, records);
+    finalizeHistory(replay);
+    for (const model of [live, replay]) {
+      expect(steps(model).map((item) => item.workTiming?.durationMs)).toEqual([4000, 4000]);
+      expect(steps(model).map((item) => item.workOutcome)).toEqual([
+        undefined,
+        { state: "done", durationMs: 4000 },
+      ]);
+    }
+  });
+  it.each([
+    [requestEnd("fatal"), "failed"],
+    [requestEnd("retryable", { attempt: 3 }), "failed"],
+    [abortEvent("user_abort"), "stopped"],
+  ] as const)(
+    "records an interrupted or failed turn and never overwrites it with a subsequent turn",
+    (end, state) => {
+      const model = createStreamModel();
+      pushMessages(model, [
+        at(userText("question"), first),
+        at(thinkingMessage("observe"), first),
+        at(end, last),
+      ]);
+      pushMessages(model, [
+        at(userText("next question"), last),
+        at(requestBegin(), last),
+        at(thinkingMessage("new turn"), last),
+        at(requestEnd("completed"), last),
+      ]);
+      finalizeHistory(model);
+      const [prior, next] = steps(model);
+      expect(prior?.workOutcome).toEqual({ state, durationMs: 4000 });
+      expect(prior?.workTiming?.durationMs).toBe(4000);
+      expect(next?.workTiming?.durationMs).toBe(0);
+    },
+  );
+  it("leaves an unfinished request without a fabricated completion", () => {
+    const model = createStreamModel();
+    pushMessages(model, [userText("question"), thinkingMessage("inspecting")]);
+    finalizeHistory(model);
+    expect(steps(model)[0]?.workOutcome).toBeUndefined();
+  });
+});
 
 describe("partial aggregation and full-message convergence", () => {
   it("partial_text start/delta/stop accumulates into one streaming item; the full message replaces its content", () => {
@@ -548,6 +635,38 @@ describe("approvals and events", () => {
     expect(m.contextModel).toEqual({ sessionId: "s1", provider: "openai", modelId: "b-2" });
   });
 
+  it("a switch that hands over by Trace path folds its handoff into the marker: no bubble, no Task; a /model block naming another Session is still the user's message", () => {
+    const onModel = (modelId: string) => sessionMeta({ ...meta("s1").payload, model_id: modelId });
+    const handoff = (sessionId: string) =>
+      userText(
+        buildModelSwitchMessage({
+          sessionId,
+          tracePath: "/data/traces/s1_001.jsonl",
+          prevModelId: "a-1",
+        }),
+      );
+    const m = createStreamModel();
+    pushMessage(m, onModel("a-1"));
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "fatal" }));
+    pushMessage(m, toolListReady([]));
+    pushMessage(m, onModel("b-2"));
+    pushMessage(m, handoff("s1"));
+
+    expect(items(m).map((i) => i.kind)).toEqual(["compaction", "model_change"]);
+    expect(items(m)[1]).toMatchObject({ handover: { tracePath: "/data/traces/s1_001.jsonl" } });
+    expect(m.taskOpen).toBe(false);
+
+    // A conversation /model opened names the Session it came from: that block is a Prompt.
+    const opened = createStreamModel();
+    pushMessage(opened, meta("s2"));
+    pushMessage(opened, handoff("s1"));
+    expect(items(opened).map((i) => i.kind)).toEqual(["user_text"]);
+  });
+
   it("a round settled behind a switch's compaction row and marker places its stats row above both", () => {
     const m = createStreamModel();
     pushMessage(
@@ -601,6 +720,169 @@ describe("approvals and events", () => {
     round(m, 3);
     finalizeHistory(m);
     expect(models(m)).toEqual([undefined, "a-1", "b-2"]);
+  });
+
+  describe("a switch's session_update", () => {
+    const A = { provider: "anthropic", modelId: "a-1" };
+    const B = { provider: "openai", modelId: "b-2" };
+    const metaOn = (to: typeof A, sessionId = "s1") =>
+      sessionMeta({ ...meta(sessionId).payload, provider: to.provider, model_id: to.modelId });
+    const update = (to: typeof A) => sessionUpdate({ provider: to.provider, model_id: to.modelId });
+    const markers = (model: StreamModel) =>
+      model.items.filter((i): i is ModelChangeItem => i.kind === "model_change");
+    /** A completed Task on the held model: its input, one request, its reply and usage. */
+    const round = (m: StreamModel, text: string, t: (s: number) => string): void => {
+      pushMessage(m, at(userText(text), t(1)));
+      pushMessage(m, at(requestBegin(), t(2)));
+      pushMessage(m, at(assistantText(`re: ${text}`), t(3)));
+      pushMessage(m, at(tokenUsage(counts(100), counts(100)), t(4)));
+      pushMessage(m, at(requestEnd("completed"), t(5)));
+    };
+    const first = (s: number) => `2026-11-19T08:00:0${s}.000Z`;
+    const second = (s: number) => `2026-11-19T09:00:0${s}.000Z`;
+    /** A Session on A that answered once, then switched to B through a compaction. */
+    const switched = (): StreamModel => {
+      const m = createStreamModel();
+      pushMessage(m, at(metaOn(A), first(0)));
+      round(m, "task 1", first);
+      pushMessage(
+        m,
+        compactionBegin({ reason: "manual", mode: "summarize", context: 100, turns: 1 }),
+      );
+      pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+      pushMessage(m, at(update(B), "2026-11-19T08:30:00.000Z"));
+      return m;
+    };
+
+    it("draws the marker from the record, under the Session held, and the context's same-model session_meta that follows adds no second one", () => {
+      const m = switched();
+      expect(items(m).map((i) => i.kind)).toEqual([
+        "user_text",
+        "assistant_text",
+        "task_stats",
+        "compaction",
+        "model_change",
+      ]);
+      expect(markers(m)[0]).toEqual({
+        kind: "model_change",
+        id: expect.any(Number),
+        from: A,
+        to: B,
+        tsMs: Date.parse("2026-11-19T08:30:00.000Z"),
+      });
+      expect(m.contextModel).toEqual({ sessionId: "s1", ...B });
+
+      // The first message opens the next file: its task_begin, then the context's meta on B.
+      pushMessage(m, taskBegin());
+      pushMessage(m, metaOn(B));
+      round(m, "task 2", second);
+      expect(markers(m)).toHaveLength(1);
+    });
+
+    it("a Trace with several switches and no message between draws one marker for each", () => {
+      const m = switched();
+      const C = { provider: "zhipu", modelId: "glm-5" };
+      pushMessage(m, update(C));
+      expect(markers(m).map((i) => [i.from, i.to])).toEqual([
+        [A, B],
+        [B, C],
+      ]);
+      expect(m.contextModel).toEqual({ sessionId: "s1", ...C });
+    });
+
+    it("changes nothing from a nested child, nor when it names no model, nor before any model is held", () => {
+      const m = switched();
+      pushMessage(m, withOrigin(metaOn({ provider: "zhipu", modelId: "glm-5" }, "c1"), "c1"));
+      pushMessage(m, withOrigin(update({ provider: "deepseek", modelId: "ds-1" }), "c1"));
+      // A later setting the record may carry: no model, so no marker and no move.
+      pushMessage(m, sessionUpdate({}));
+      const child = items(m).find((i) => i.kind === "subagent") as SubagentItem;
+      expect(child.model.meta).toMatchObject({ provider: "zhipu", modelId: "glm-5" });
+      expect(markers(child.model)).toEqual([]);
+      expect(markers(m)).toHaveLength(1);
+      expect(m.contextModel).toEqual({ sessionId: "s1", ...B });
+
+      // A window holding no model yet has no Session to name: the context's meta says it.
+      const bare = createStreamModel();
+      pushMessage(bare, update(B));
+      expect(bare.contextModel).toBeNull();
+      pushMessage(bare, metaOn(B));
+      expect(items(bare)).toEqual([]);
+      expect(bare.contextModel).toEqual({ sessionId: "s1", ...B });
+    });
+
+    it("folds the [model_switch_from] hand-off that follows it into its marker, streamed at once or read back from the next file's head", () => {
+      const handoff = userText(
+        buildModelSwitchMessage({
+          sessionId: "s1",
+          tracePath: "/data/traces/s1_001.jsonl",
+          prevModelId: A.modelId,
+        }),
+      );
+      // Live: the switch streams the record, then the block.
+      const live = createStreamModel();
+      pushMessage(live, metaOn(A));
+      round(live, "task 1", first);
+      pushMessage(live, update(B));
+      pushMessage(live, handoff);
+      // History: the block sits at the next file's head, behind the context's meta.
+      const history = createStreamModel();
+      pushMessage(history, metaOn(A));
+      round(history, "task 1", first);
+      pushMessage(history, update(B));
+      pushMessage(history, taskBegin());
+      pushMessage(history, metaOn(B));
+      pushMessage(history, toolListReady([]));
+      pushMessage(history, handoff);
+
+      for (const m of [live, history]) {
+        finalizeHistory(m);
+        // No bubble and no Task of its own: one Task, settled above the marker.
+        expect(items(m).map((i) => i.kind)).toEqual([
+          "user_text",
+          "assistant_text",
+          "task_stats",
+          "model_change",
+        ]);
+        expect(markers(m)[0]).toMatchObject({
+          from: A,
+          to: B,
+          handover: { tracePath: "/data/traces/s1_001.jsonl" },
+        });
+      }
+    });
+
+    it("prices the Task after the switch on the target and the Task before it on the model it ran on", () => {
+      const m = switched();
+      pushMessage(m, taskBegin());
+      pushMessage(m, metaOn(B));
+      round(m, "task 2", second);
+      finalizeHistory(m);
+      const priced = items(m).flatMap((i) => (i.kind === "task_stats" ? [i.model] : []));
+      expect(priced).toEqual([A, B]);
+    });
+
+    it("adds no Task timing: a stopped Task it follows an hour later keeps its own span", () => {
+      const m = createStreamModel();
+      pushMessage(m, at(metaOn(A), first(0)));
+      // Stopped mid-reply: no request_end, so the Task's span runs to its last record.
+      pushMessage(m, at(userText("task 1"), first(1)));
+      pushMessage(m, at(requestBegin(), first(2)));
+      pushMessage(m, at(assistantText("half a reply"), first(3)));
+      pushMessage(m, at(tokenUsage(counts(100), counts(100)), first(3)));
+      pushMessage(m, at(abortEvent(), first(4)));
+      // The switch away from a context that never answered: no compaction, the record alone.
+      pushMessage(m, at(update(B), second(0)));
+      expect(items(m).map((i) => i.kind)).toEqual([
+        "user_text",
+        "assistant_text",
+        "abort",
+        "model_change",
+      ]);
+      finalizeHistory(m);
+      const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
+      expect(stats.stats!.elapsedDeltaMs).toBe(3_000);
+    });
   });
 
   it("compaction wall time is derived from the begin/end message timestamps", () => {
@@ -746,7 +1028,7 @@ describe("approvals and events", () => {
     });
   });
 
-  it("a retried compaction times the whole span its concatenated draft covers", () => {
+  it("a retried compaction concatenates its thinking over the whole span, and its result starts over with the request that wrote the summary", () => {
     const m = createStreamModel();
     const t = (sec: number) => `2026-01-01T00:00:${String(sec).padStart(2, "0")}.000Z`;
     pushMessage(
@@ -755,29 +1037,445 @@ describe("approvals and events", () => {
     );
     const banner = items(m)[0] as CompactionItem;
     // Attempt 1: thinks, starts writing, then the request dies and the engine resends.
+    pushMessage(m, at(requestBegin(), t(0)));
     pushMessage(m, at(partialThinking("start"), t(1)));
     pushMessage(m, at(partialThinking("delta", "first pass"), t(2)));
     pushMessage(m, at(partialThinking("stop"), t(3)));
     pushMessage(m, at(partialText("delta", "[summary]half"), t(4)));
-    // Attempt 2 continues the same span, so both drafts concatenate.
+    pushMessage(m, at(requestEnd("retryable", { retryInMs: 1 }), t(4)));
+    // Attempt 2 is a request of its own: the half-written draft was no summary.
+    pushMessage(m, at(requestBegin(), t(5)));
     pushMessage(m, at(partialThinking("start"), t(5)));
     pushMessage(m, at(partialThinking("delta", " second pass"), t(6)));
     pushMessage(m, at(partialThinking("stop"), t(9)));
-    pushMessage(m, at(partialText("delta", " the plan[/summary]"), t(10)));
+    pushMessage(m, at(partialText("delta", "[summary]the plan[/summary]"), t(10)));
+    pushMessage(m, at(requestEnd("completed"), t(11)));
     pushMessage(
       m,
       at(compactionEnd({ reason: "context", mode: "summarize", status: "completed" }), t(12)),
     );
-    // Each start is recorded once and each later stop only extends it: the wall time covers
-    // the span that produced the prose on screen, the failed attempt included. Timing the
-    // last attempt alone would print 3s against text that took nine.
+    // The thinking start is recorded once and each later stop only extends it: the wall time
+    // covers the span that produced the prose on screen, the failed attempt included. The
+    // result is the last request's text, timed from its first summary token: an end without
+    // the error pair is a summary, whatever an earlier attempt left.
     expect(banner).toMatchObject({
       thinkingText: "first pass second pass",
       thinkingStartedAtMs: Date.parse(t(2)),
       thinkingDurationMs: 7000,
-      summaryStartedAtMs: Date.parse(t(4)),
-      summaryDurationMs: 8000,
+      summaryText: "[summary]the plan[/summary]",
+      summaryStartedAtMs: Date.parse(t(10)),
+      summaryDurationMs: 2000,
     });
+  });
+
+  /**
+   * A compaction that took a tool round, as the stream and the Trace carry it: the round's
+   * request (text, a write_file call), its decision and output, then the summary's request.
+   */
+  const roundLive = (): AmspRecord[] => [
+    compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    requestBegin(),
+    partialText("start"),
+    partialText("delta", "Writing the plan first."),
+    partialText("stop"),
+    partialToolCall({ eventType: "start", name: "write_file", toolCallId: "h1" }),
+    partialToolCall({
+      eventType: "delta",
+      name: "",
+      arguments: '{"file_path":"/s/handoff/plan.md","content":"1. ship"}',
+      toolCallId: "h1",
+    }),
+    partialToolCall({ eventType: "stop", name: "", toolCallId: "h1" }),
+    toolCall({
+      name: "write_file",
+      arguments: '{"file_path":"/s/handoff/plan.md","content":"1. ship"}',
+      toolCallId: "h1",
+    }),
+    tokenUsage(counts(900), counts(900)),
+    requestEnd("completed"),
+    approvalDecision("allow", "h1"),
+    toolCallOutput({ output: "Wrote /s/handoff/plan.md", toolCallId: "h1", status: "completed" }),
+    requestBegin(),
+    partialText("start"),
+    partialText("delta", "[summary]see plan.md[/summary]"),
+    partialText("stop"),
+    tokenUsage(counts(950), counts(1850)),
+    requestEnd("completed"),
+    compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+  ];
+  const roundHistory = (): AmspRecord[] => [
+    compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    userText("COMPACT NOW"),
+    requestBegin(),
+    assistantText("Writing the plan first."),
+    toolCall({
+      name: "write_file",
+      arguments: '{"file_path":"/s/handoff/plan.md","content":"1. ship"}',
+      toolCallId: "h1",
+    }),
+    tokenUsage(counts(900), counts(900)),
+    requestEnd("completed"),
+    approvalDecision("allow", "h1"),
+    toolCallOutput({ output: "Wrote /s/handoff/plan.md", toolCallId: "h1", status: "completed" }),
+    requestBegin(),
+    assistantText("[summary]see plan.md[/summary]"),
+    tokenUsage(counts(950), counts(1850)),
+    requestEnd("completed"),
+    compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+  ];
+  const workOf = (banner: CompactionItem) =>
+    (banner.work ?? []).map((c) => ({
+      name: c.name,
+      argumentsText: c.argumentsText,
+      output: c.output,
+      outputStatus: c.outputStatus,
+      decision: c.decision,
+      callComplete: c.callComplete,
+      outputComplete: c.outputComplete,
+    }));
+
+  it("a compaction's tool round is a work card on its banner, the same live and from history, and never a transcript item", () => {
+    const live = createStreamModel();
+    for (const msg of roundLive()) pushMessage(live, msg);
+    const rebuilt = createStreamModel();
+    for (const msg of roundHistory()) pushMessage(rebuilt, msg);
+
+    for (const m of [live, rebuilt]) {
+      expect(items(m).map((i) => i.kind)).toEqual(["compaction"]);
+      const banner = items(m)[0] as CompactionItem;
+      expect(workOf(banner)).toEqual([
+        {
+          name: "write_file",
+          argumentsText: '{"file_path":"/s/handoff/plan.md","content":"1. ship"}',
+          output: "Wrote /s/handoff/plan.md",
+          outputStatus: "completed",
+          decision: "allow",
+          callComplete: true,
+          outputComplete: true,
+        },
+      ]);
+      // The result is the last request's text: the round's own words are no summary.
+      expect(banner.summaryText).toBe("[summary]see plan.md[/summary]");
+      // Housekeeping, not the Task's tool work.
+      expect(m.stats.taskToolIntervals).toEqual([]);
+    }
+  });
+
+  it("an approval request for a round's call finds its work card, so the banner can show the buttons", () => {
+    const m = createStreamModel();
+    for (const msg of roundLive().slice(0, 11)) pushMessage(m, msg);
+    const banner = items(m)[0] as CompactionItem;
+    expect(findToolCard(m, [], "h1")).toBe(banner.work![0]);
+    expect(banner.work![0]!.outputComplete).toBe(false);
+  });
+
+  /** A summary cut off at the output limit, inside its open tag. */
+  const cutSummary = (lead: string, repeat: number) =>
+    `[summary]\n## Request\n${`${lead} Fix the three broken links in the release-notes draft. `.repeat(repeat)}`;
+  /** What the banner settles to, for comparing a live model with one rebuilt from history. */
+  const rowOf = (m: StreamModel) => {
+    const banner = items(m).find((i) => i.kind === "compaction") as CompactionItem;
+    return {
+      running: banner.running,
+      status: banner.status,
+      errorCode: banner.errorCode,
+      errorMessage: banner.errorMessage,
+      summaryText: banner.summaryText,
+      thinkingText: banner.thinkingText,
+      work: workOf(banner),
+    };
+  };
+  const degradedEnd = (
+    errorCode: "malformed" | "rejected" | "output_truncated",
+    errorMessage: string,
+    attempt?: number,
+  ) =>
+    compactionEnd({
+      reason: "context",
+      mode: "summarize",
+      status: "completed",
+      ...(attempt !== undefined ? { attempt } : {}),
+      errorCode,
+      errorMessage,
+    });
+
+  it("a completed end with the error pair keeps no result after a summary cut off at the output limit, and keeps the thinking and the error, live and from history alike", () => {
+    const cut = cutSummary("Cut.", 9);
+    const end = () => degradedEnd("output_truncated", "stopped at the output limit", 1);
+    const live = createStreamModel();
+    for (const msg of [
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      requestBegin(),
+      partialThinking("start"),
+      partialThinking("delta", "what the next context needs"),
+      partialThinking("stop"),
+      partialText("start"),
+      partialText("delta", cut),
+      partialText("stop"),
+      requestEnd("retryable", { errorCode: "output_truncated", attempt: 1 }),
+      end(),
+    ]) {
+      pushMessage(live, msg);
+    }
+    const rebuilt = createStreamModel();
+    for (const msg of [
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      thinkingMessage("what the next context needs"),
+      assistantText(cut),
+      requestEnd("retryable", { errorCode: "output_truncated", attempt: 1 }),
+      end(),
+    ]) {
+      pushMessage(rebuilt, msg);
+    }
+    // One presentation for every completion without a full summary: the cut-off text the row
+    // streamed is no result.
+    expect(rowOf(live)).toEqual({
+      running: false,
+      status: "completed",
+      errorCode: "output_truncated",
+      errorMessage: "stopped at the output limit",
+      summaryText: undefined,
+      thinkingText: "what the next context needs",
+      work: [],
+    });
+    expect(rowOf(rebuilt)).toEqual(rowOf(live));
+    const banner = items(live)[0] as CompactionItem;
+    expect(banner.summaryStartedAtMs).toBeUndefined();
+    expect(banner.summaryDurationMs).toBeUndefined();
+  });
+
+  it("a degraded end keeps the work its tool rounds did", () => {
+    const m = createStreamModel();
+    for (const msg of roundLive().slice(0, -1)) pushMessage(m, msg);
+    pushMessage(m, degradedEnd("rejected", "400 prompt is too long", 2));
+    expect(rowOf(m)).toMatchObject({ errorCode: "rejected", summaryText: undefined });
+    expect(rowOf(m).work.map((c) => c.output)).toEqual(["Wrote /s/handoff/plan.md"]);
+  });
+
+  it("a degraded end clears the context figure like any completion; a fatal end keeps the failed row and the context", () => {
+    const degraded = createStreamModel();
+    pushMessage(degraded, tokenUsage(counts(1000), counts(1000)));
+    pushMessage(
+      degraded,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    pushMessage(degraded, degradedEnd("rejected", "400 Bad Request", 1));
+    expect(degraded.stats.contextStale).toBe(true);
+
+    const fatal = createStreamModel();
+    pushMessage(fatal, tokenUsage(counts(1000), counts(1000)));
+    pushMessage(
+      fatal,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    pushMessage(fatal, partialText("delta", "[summary]the plan[/summary]"));
+    pushMessage(
+      fatal,
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "fatal",
+        attempt: 1,
+        errorMessage: "no model client could be built",
+      }),
+    );
+    expect(fatal.stats.contextStale).toBe(false);
+    expect(rowOf(fatal)).toMatchObject({
+      status: "fatal",
+      errorCode: undefined,
+      errorMessage: "no model client could be built",
+      summaryText: undefined,
+    });
+  });
+
+  const REFUSAL = "400 prompt is too long: 140000 tokens > 131072 maximum";
+  /** The refused request and its request-less hand-off span, as the stream and the Trace both carry them. */
+  const refusedRequest = (end: "completed" | "fatal"): AmspRecord[] => [
+    requestBegin(),
+    requestEnd("retryable", {
+      errorCode: "rejected",
+      errorMessage: REFUSAL,
+      attempt: 2,
+      retryInMs: 0,
+    }),
+    compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
+    end === "completed"
+      ? degradedEnd("rejected", REFUSAL)
+      : compactionEnd({
+          reason: "context",
+          mode: "summarize",
+          status: "fatal",
+          errorMessage: "no model client could be built",
+        }),
+  ];
+  /** A Task whose second request the provider refuses: the hand-off opens the next context, where the turn is sent again. */
+  const refusedTask = (history: boolean): AmspRecord[] => [
+    meta("s1"),
+    taskBegin(),
+    userText("fix the links"),
+    requestBegin(),
+    toolCall({ name: "read_file", arguments: '{"path":"/w/notes.md"}', toolCallId: "t1" }),
+    tokenUsage(counts(1000), counts(1000)),
+    requestEnd("completed"),
+    toolCallOutput({ output: "a very long file", toolCallId: "t1", status: "completed" }),
+    ...refusedRequest("completed"),
+    meta("s1"),
+    // The hand-off note opens the next context in the Trace; the stream never carries it.
+    ...(history
+      ? [userText("[context_summary]\nthe harness's hand-off note\n[/context_summary]")]
+      : []),
+    requestBegin(),
+    ...(history
+      ? [assistantText("Read it in parts; the links are fixed.")]
+      : [
+          partialText("start"),
+          partialText("delta", "Read it in parts; the links are fixed."),
+          partialText("stop"),
+          assistantText("Read it in parts; the links are fixed."),
+        ]),
+    tokenUsage(counts(1200), counts(400)),
+    requestEnd("completed"),
+  ];
+  /** What a refusal's hand-off leaves on screen, for comparing live with rebuilt. */
+  const handOffView = (m: StreamModel) => ({
+    kinds: items(m).map((i) => i.kind),
+    retry: items(m)
+      .filter((i): i is ReconnectItem => i.kind === "reconnect")
+      .map((r) => ({
+        errorCode: r.errorCode,
+        attempt: r.attempt,
+        retrying: r.retrying,
+        gaveUp: r.gaveUp,
+      })),
+    row: rowOf(m),
+    refusal: refusalHandoff(m.items) !== null,
+    taskOpen: m.taskOpen,
+    runEnded: m.runEnded,
+  });
+
+  it("a request the provider refused, answered by a hand-off, shows no error and keeps the Task open; the retry line resolves at the next context's first request — live and from history alike", () => {
+    const live = createStreamModel();
+    for (const msg of refusedTask(false)) pushMessage(live, msg);
+    const rebuilt = createStreamModel();
+    pushMessages(rebuilt, refusedTask(true));
+    expect(handOffView(live)).toEqual({
+      kinds: ["user_text", "tool_call", "reconnect", "compaction", "assistant_text"],
+      retry: [{ errorCode: "rejected", attempt: 2, retrying: true, gaveUp: undefined }],
+      row: {
+        running: false,
+        status: "completed",
+        errorCode: "rejected",
+        errorMessage: REFUSAL,
+        summaryText: undefined,
+        thinkingText: undefined,
+        work: [],
+      },
+      refusal: true,
+      taskOpen: true,
+      runEnded: false,
+    });
+    expect(handOffView(rebuilt)).toEqual(handOffView(live));
+  });
+
+  it("the Session's refusal hand-off is its latest compaction row until a later compaction ends otherwise", () => {
+    const m = createStreamModel();
+    for (const msg of refusedTask(false)) pushMessage(m, msg);
+    const first = refusalHandoff(m.items)?.occurrence;
+    expect(first).toBeDefined();
+    // A later refusal is an occurrence of its own, so a dismissed notice is raised again for it.
+    for (const msg of refusedRequest("completed")) {
+      pushMessage(m, at(msg, "2026-01-01T00:05:00.000Z"));
+    }
+    const second = refusalHandoff(m.items)?.occurrence;
+    expect(second).toBeDefined();
+    expect(second).not.toBe(first);
+    // A later compaction that completes normally takes it down; so does one that fails.
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
+    );
+    expect(refusalHandoff(m.items)).toBeNull();
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+    expect(refusalHandoff(m.items)).toBeNull();
+    for (const msg of refusedRequest("completed")) pushMessage(m, msg);
+    expect(refusalHandoff(m.items)).not.toBeNull();
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
+    );
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "aborted" }));
+    expect(refusalHandoff(m.items)).toBeNull();
+    // A compaction request the provider refused presents the same way as a refused turn.
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 3 }),
+    );
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("fatal", { errorCode: "rejected", errorMessage: REFUSAL }));
+    pushMessage(m, degradedEnd("rejected", REFUSAL, 1));
+    expect(refusalHandoff(m.items)).not.toBeNull();
+    // Any other degraded end is no refusal.
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 4 }),
+    );
+    pushMessage(m, degradedEnd("malformed", "the response contained no usable summary", 3));
+    expect(refusalHandoff(m.items)).toBeNull();
+  });
+
+  it("a refusal whose hand-off could not open the next context settles the retry line it announced", () => {
+    const m = createStreamModel();
+    for (const msg of refusedRequest("fatal")) pushMessage(m, msg);
+    const retry = items(m).find((i) => i.kind === "reconnect") as ReconnectItem;
+    expect(retry.gaveUp).toBe(true);
+    expect(rowOf(m)).toMatchObject({ status: "fatal", summaryText: undefined });
+    expect(refusalHandoff(m.items)).toBeNull();
+    // The next run's first request is no retry of it.
+    pushMessage(m, requestBegin());
+    expect(retry.retrying).toBe(false);
+  });
+
+  it("an old Trace's abandoned compaction is no refusal hand-off, whatever its code", () => {
+    for (const status of ["retryable", "failed"]) {
+      const m = createStreamModel();
+      pushMessage(
+        m,
+        compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      );
+      pushMessage(m, requestBegin());
+      pushMessage(m, assistantText("[summary]half-writ"));
+      pushMessage(
+        m,
+        compactionEnd({
+          reason: "context",
+          mode: "summarize",
+          // `failed` is an old Trace's spelling, outside today's StopReason.
+          status: status as "retryable",
+          errorCode: "rejected",
+          errorMessage: "400 Bad Request",
+        }),
+      );
+      expect(rowOf(m)).toMatchObject({
+        status,
+        errorMessage: "400 Bad Request",
+        summaryText: undefined,
+        thinkingText: undefined,
+      });
+      expect(refusalHandoff(m.items)).toBeNull();
+    }
+  });
+
+  it("a compaction that does not complete drops its work with its drafts, and a call it cut short settles", () => {
+    const m = createStreamModel();
+    for (const msg of roundLive().slice(0, 10)) pushMessage(m, msg);
+    const banner = items(m)[0] as CompactionItem;
+    const card = banner.work![0]!;
+    pushMessage(m, requestEnd("aborted"));
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "aborted" }));
+    expect(banner.work).toBeUndefined();
+    expect(card).toMatchObject({ outputComplete: true, outputStatus: "aborted" });
   });
 
   it("history replay rebuilds the same section timings from the span's complete messages", () => {

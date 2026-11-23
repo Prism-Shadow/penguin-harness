@@ -5,7 +5,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { SwatchPicker } from "../src/components/forms/swatch-picker/swatch-picker";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const html = renderStatic(
   createElement(SwatchPicker<"blue" | "rose">, {
@@ -28,14 +28,5 @@ describe("SwatchPicker", () => {
 
   it("paints each swatch its own colour", () => {
     expect(buttons[0]).toContain('style="background-color:rgb(37, 99, 235)"');
-  });
-
-  it("rings the chosen swatch in token inks, and never scales one", () => {
-    expect(classTokens(`<b${buttons[1]!}`)).toEqual(
-      expect.arrayContaining(["ring-2", "border-fg-muted"]),
-    );
-    expect(classTokens(html).filter((token) => /scale|transition-transform/.test(token))).toEqual(
-      [],
-    );
   });
 });

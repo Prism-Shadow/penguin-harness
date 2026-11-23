@@ -23,8 +23,10 @@ import { bootAppDeps, createApp } from "./app.js";
 import { HmrHost, hmrMain } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { Instance } from "@prismshadow/penguin-core/kernel";
+import { nodeFloorRefusal } from "@prismshadow/penguin-core";
 import { packagedPlatform } from "./hmr/platform.js";
 import { startingResponse } from "./hmr/starting.js";
+import { carriedBody, syncCarriedImage } from "./carried-image.js";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
 import type { ServerBoot } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
@@ -34,15 +36,19 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
-import { originRule } from "./http/public-origin.js";
-import { attachExtensionWebSocket } from "./builtin-browser/extension-ws.js";
-import type { ExtensionGate } from "./builtin-browser/extension-ws.js";
+import { originRule } from "@prismshadow/penguin-library-http/public-origin";
+import { attachUpgradeSeam, platformUpgradeDeps } from "./hmr/upgrade-seam.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
-import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
-import type { Settings } from "./mechanisms/settings.js";
-import type { Errors } from "./mechanisms/observability.js";
-import type { Auth } from "./mechanisms/identity.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { migrateDataRoot as migrateRootLayout } from "./layout/migrate-data-root.js";
+import {
+  shellPortOf,
+  wireShellUpdatePort,
+} from "@prismshadow/penguin-library-setting/desktop-update-port";
+import type { Settings } from "@prismshadow/penguin-library-setting";
+import type { Errors } from "@prismshadow/penguin-library-observability";
+import type { Auth } from "@prismshadow/penguin-library-auth";
 
 /**
  * The startup lifecycle: one line per step, in the order they have to happen.
@@ -52,11 +58,19 @@ import type { Auth } from "./mechanisms/identity.js";
  */
 async function main(): Promise<void> {
   const server = new PenguinServer();
+  server.requireNodeFloor();
   server.loadEnv();
   server.installProxy();
   server.readConfig();
   await server.ensureSoleInstance();
   server.listen();
+  // The data root's layout, before anything reads a Project of it: the lock is held from here.
+  await server.migrateDataRoot();
+  // Reconcile only after this process owns the root (the lock was acquired in listen):
+  // a start that lost the ownership race exits at ensureSoleInstance before touching the
+  // root, so a reconciling copy can never interleave with a live server's push — the
+  // record a push just committed is never overwritten by a losing start's store.
+  await server.syncCarriedImage();
   // The HMR layer's entry (packages/hmr's main.ts) owns the frozen operations: which
   // generation a request goes to, how a push lands, what happens when one fails. The
   // product hands it the host, what to refresh once a generation is current, and its own
@@ -133,6 +147,19 @@ class PenguinServer {
   }
 
   /** `.env` may itself define HTTP_PROXY, so it is loaded before the dispatcher reads one. */
+  /**
+   * Refuses a Node below the floor before anything else runs: `engines` is advice, and a
+   * source checkout's `pnpm dev` (or an npm-installed CLI starting this server) runs on
+   * whatever Node the machine has, where the program fails later and less clearly (see core's
+   * node-floor.ts). The desktop app's server runs on Electron's own Node, above the floor.
+   */
+  requireNodeFloor(): void {
+    const refusal = nodeFloorRefusal();
+    if (refusal === null) return;
+    console.error(refusal);
+    process.exit(EXIT_NODE_BELOW_FLOOR);
+  }
+
   loadEnv(): void {
     loadDotenv({ quiet: true });
   }
@@ -154,6 +181,34 @@ class PenguinServer {
   }
 
   /**
+   * The root's record, reconciled against the harness image this program carries — before
+   * anything reads the root (the lock file lives beside the record, the HMR restore reads
+   * it, the CLI shim names it). A start that cannot copy says so on the console and
+   * continues: the root keeps whatever record it had, which is what the reconciliation
+   * promises (a pushed record is never touched; an unreadable one is left to be reported).
+   *
+   * Called only after listen() has acquired this root's lock (see main): the process that
+   * reconciles is the one that owns the root, so the copy cannot interleave with a live
+   * server's push — the losing start never reaches this line.
+   */
+  async syncCarriedImage(): Promise<void> {
+    const outcome = await syncCarriedImage(this.config.root, carriedBody());
+    switch (outcome.kind) {
+      case "copied":
+        console.log(
+          `[server] harness image copied into ${this.config.root}` +
+            (outcome.source.revision ? ` (${outcome.source.revision})` : ""),
+        );
+        break;
+      case "failed":
+        console.warn(`[server] could not copy the harness image: ${outcome.detail}`);
+        break;
+      default:
+        break; // current / kept / absent are the ordinary no-news answers
+    }
+  }
+
+  /**
    * Single instance per data root: web.db is single-writer and the scheduler must not run
    * twice, so refuse to start when a live server already owns this root — BEFORE opening
    * the database. The CLI and the desktop shell pre-check the same lock for a friendlier
@@ -167,6 +222,37 @@ class PenguinServer {
     );
     console.error(`Existing instance: http://localhost:${existing.port}/`);
     process.exit(EXIT_ALREADY_RUNNING);
+  }
+
+  /**
+   * The data root's one-time layout migration (core's state/layout-migration/, PRFC-0034):
+   * Project folders into `projects/`, Benchmarks into the Evaluation Center's data folder. Run
+   * once the listener is up — the lock is this process's then (onListening) — and before the
+   * platform, so before every route, runtime, file watcher and the plugin loader; meanwhile the
+   * port answers the starting response. web.db is opened for it alone, to rewrite the paths it
+   * stores, and closed again. The platform runs the same migration before it builds anything,
+   * which finds nothing left to do here (layout/migrate-data-root.ts).
+   *
+   * A migration that stops ends the start: its sentence (a Project called `projects`, a folder
+   * that cannot be moved) is printed as an `Error:` line, which the desktop app's start dialog
+   * and a machine's start failure show, and the process exits without serving.
+   */
+  async migrateDataRoot(): Promise<void> {
+    await this.bound;
+    let failure: unknown = null;
+    const db = openDatabase(this.config.dbPath);
+    try {
+      await migrateRootLayout(this.config.root, db, (line) => console.log(line));
+    } catch (err) {
+      failure = err;
+    } finally {
+      db.close();
+    }
+    if (failure === null) return;
+    const name = failure instanceof Error ? failure.name : "Error";
+    console.error(`${name}: ${failure instanceof Error ? failure.message : String(failure)}`);
+    this.cleanupInstanceFiles();
+    process.exit(EXIT_LAYOUT_MIGRATION);
   }
 
   /**
@@ -194,7 +280,7 @@ class PenguinServer {
       }
     }
     for (const [specifier, reason] of result.failed) {
-      console.warn(`[plugins] skipped ${specifier}: ${reason}`);
+      console.error(`[plugins] skipped ${specifier}: ${reason}`);
     }
   }
 
@@ -245,25 +331,20 @@ class PenguinServer {
 
   /**
    * Assembles the layer's middleware and routes; from here the listening port answers
-   * with them. The terminal stream is a WebSocket upgrade, which never reaches the fetch
-   * handler — it is bound on each Node listener here, once the platform it asks exists.
+   * with them. The terminal stream and the contributed WebSocket endpoints are upgrades, which
+   * never reach the fetch handler — they are bound on each Node listener here, once the
+   * platform they ask exists.
    */
   buildApp(): void {
     this.app = createApp(this.deps);
     attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
-    attachExtensionWebSocket(
-      this.httpServer as unknown as HttpServer,
-      this.extensionWebSocketDeps(),
-    );
+    attachUpgradeSeam(this.httpServer as unknown as HttpServer, this.upgradeSeamDeps());
     if (this.ipv6Loopback !== null) {
       attachTerminalWebSocket(
         this.ipv6Loopback as unknown as HttpServer,
         this.terminalWebSocketDeps(),
       );
-      attachExtensionWebSocket(
-        this.ipv6Loopback as unknown as HttpServer,
-        this.extensionWebSocketDeps(),
-      );
+      attachUpgradeSeam(this.ipv6Loopback as unknown as HttpServer, this.upgradeSeamDeps());
     }
   }
 
@@ -351,7 +432,9 @@ class PenguinServer {
     // `penguin server|web` run, or tests) wires nothing.
     if (this.deps.desktop !== null) {
       const shellPort = shellPortOf(process);
-      if (shellPort !== null) wireShellUpdatePort(this.deps.desktop, shellPort);
+      if (shellPort !== null) {
+        wireShellUpdatePort(this.deps.desktop, shellPort, this.deps.shellFrames);
+      }
     }
 
     // Process-level error fallback: once a background fire-and-forget promise (title
@@ -420,11 +503,13 @@ class PenguinServer {
    * left showing rather than something scrolled past. Minting here rather than at seed
    * time is what keeps "exists" and "was printed" the same thing for a setup session: the
    * modes that decline to print never ask for one. The URL needs the port the OS actually
-   * handed out, which PORT=0 only settles once the listener is up.
+   * handed out, which PORT=0 only settles once the listener is up — unless `pnpm dev` named
+   * the port the App is served on (`devAppPort`).
    */
   async printFirstLoginNotice(): Promise<void> {
     if (!this.pendingFirstLoginNotice) return;
-    const port = await this.bound;
+    const bound = await this.bound;
+    const port = this.config.devAppPort ?? bound;
     const link = this.auth().mintFirstLogin();
     if (link === null) return;
     const token = encodeURIComponent(link);
@@ -476,30 +561,17 @@ class PenguinServer {
     // loopback opened after buildApp() (never in practice) gets it here.
     if (this.app !== undefined) {
       attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
-      attachExtensionWebSocket(loopback as unknown as HttpServer, this.extensionWebSocketDeps());
+      attachUpgradeSeam(loopback as unknown as HttpServer, this.upgradeSeamDeps());
     }
   }
 
   /**
-   * The Chrome extension's WebSocket wiring, beside the terminal's on every listener: the
-   * upgrade is checked here, and the socket handed to the current generation's browser module.
+   * The contributed WebSocket endpoints' wiring, beside the terminal's on every listener: each
+   * upgrade goes to the current generation's HTTP surface (`HttpModule.upgrades`), and to the
+   * extension's legacy gate when that generation predates the slot (hmr/upgrade-seam.ts).
    */
-  private extensionWebSocketDeps() {
-    const hmr = this.deps.hmr;
-    return {
-      gate: async (): Promise<ExtensionGate | null> => {
-        const platform = await hmr.ensure();
-        const tree = typeof platform.api.business === "function" ? platform.api.business() : null;
-        if (tree === null || !tree.has("BuiltinBrowserModule")) return null;
-        try {
-          return tree.api<ExtensionGate>("BuiltinBrowserModule", "BrowserExtensionGate");
-        } catch {
-          // A pushed platform from before the extension: no gate, so the upgrade is a 503.
-          return null;
-        }
-      },
-      log: (line: string) => console.log(line),
-    };
+  private upgradeSeamDeps() {
+    return platformUpgradeDeps(this.deps.hmr, (line: string) => console.log(line));
   }
 
   /** Terminal WebSocket wiring, shared by every listener this process opens. */
@@ -573,6 +645,12 @@ class PenguinServer {
 
 /** Exit code for "another server already owns this data root" (see lock.ts). */
 const EXIT_ALREADY_RUNNING = 3;
+
+/** Exit code for a Node below the floor (core's node-floor.ts): a plain failure. */
+const EXIT_NODE_BELOW_FLOOR = 1;
+
+/** Exit code for a data root whose layout migration stopped (layout/migrate-data-root.ts). */
+const EXIT_LAYOUT_MIGRATION = 4;
 
 /** Port announcement (PENGUIN_PORT_FILE): tmp + rename, so a polling reader never sees a partial write. */
 function writePortFile(file: string, port: number): void {

@@ -48,6 +48,13 @@ import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
 import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
+import { IndexSources, PluginIndexSettings, StoredIndexSources } from "./plugin/index-config.js";
+import { PluginCliCommandsProvider } from "./plugin/cli-commands.js";
+import { ToolModelBindings, ToolModelBindingsProvider } from "./services/tool-model-bindings.js";
+import {
+  ProjectModelRequests,
+  ProjectModelRequestsService,
+} from "./services/project-model-requests.js";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -64,25 +71,25 @@ import {
 } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
 import { HarnessHistoryStore } from "./services/harness-history.js";
-import { UsersRepo } from "./db/repos/users.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
-import { ServerSettingsRepo } from "./db/repos/server-settings.js";
-import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
-import { UserDraftsRepo } from "./db/repos/user-drafts.js";
-import { BackgroundImagesRepo } from "./db/repos/background-images.js";
-import { SessionsRepo } from "./db/repos/sessions.js";
-import { ProjectsRepo } from "./db/repos/projects.js";
-import { ModelPromotionsRepo } from "./db/repos/model-promotions.js";
-import { ModelProviderAuthTokensRepo } from "./db/repos/model-provider-auth-tokens.js";
-import { MembersRepo } from "./db/repos/members.js";
-import { AgentsRepo } from "./db/repos/agents.js";
-import { UsageRepo } from "./db/repos/usage.js";
-import { SchedulesRepo } from "./db/repos/schedules.js";
-import { TraceIndexRepo } from "./db/repos/trace-index.js";
-import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
-import { MessagingConversationsRepo } from "./db/repos/messaging-conversations.js";
-import { OrgCacheRepo } from "./db/repos/organizations.js";
-import { ErrorsRepo } from "./db/repos/errors.js";
+import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
+import { AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
+import { ServerSettingsRepo } from "@prismshadow/penguin-library-setting/repos/server-settings";
+import { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs";
+import { UserDraftsRepo } from "@prismshadow/penguin-library-auth/repos/user-drafts";
+import { BackgroundImagesRepo } from "@prismshadow/penguin-library-auth/repos/background-images";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import { ProjectsRepo } from "@prismshadow/penguin-library-project/repos/projects";
+import { ModelPromotionsRepo } from "@prismshadow/penguin-library-model/repos/model-promotions";
+import { ModelProviderAuthTokensRepo } from "@prismshadow/penguin-library-model/repos/model-provider-auth-tokens";
+import { MembersRepo } from "@prismshadow/penguin-library-project/repos/members";
+import { AgentsRepo } from "@prismshadow/penguin-library-project/repos/agents";
+import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
+import { SchedulesRepo } from "@prismshadow/penguin-library-session/repos/schedules";
+import { TraceIndexRepo } from "@prismshadow/penguin-library-trace/repos/trace-index";
+import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import { MessagingConversationsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-conversations";
+import { OrgCacheRepo } from "@prismshadow/penguin-library-organization/organizations";
+import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
 import { AgentStateStore } from "./runtime/agent-state.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { SessionDriverRegistry } from "./runtime/session-drivers.js";
@@ -90,12 +97,12 @@ import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageService } from "./services/usage-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
-import { ModelOAuthService } from "./services/model-oauth-service.js";
+import { ModelOAuthProvider } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
-import { WorkspaceFilesService } from "./services/workspace-files-service.js";
+import { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
 import { ProjectNotifier } from "./services/project-events.js";
@@ -107,12 +114,17 @@ import {
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
-import { AgentConfigService } from "./services/agent-config-service.js";
+import { AgentConfigServiceProvider } from "./services/agent-config-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
 import { AgentService } from "./services/agent-service.js";
-import { MemoryService } from "./services/memory-service.js";
-import { BenchmarkService } from "./services/benchmark-service.js";
+import { DeletingFoldersService } from "./services/deleting-folders.js";
+import { RootDataLayout } from "./services/data-layout.js";
+import { DataLayout } from "./mechanisms/data-layout.js";
+import { DeletingFolders } from "./mechanisms/deleting-folders.js";
+import { SessionActivity } from "./runtime/session-activity.js";
+import { MemoryServiceProvider } from "./services/memory-service.js";
+import { BenchmarkServiceProvider } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { SandboxSettings } from "./sandbox/settings-store.js";
@@ -124,6 +136,8 @@ import { OrgRoutes } from "./http/routes/organizations.js";
 import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
 import { TerminalRelay } from "./machines/terminal-relay.js";
 import { SessionForwardRoutes } from "./machines/session-forward.js";
+import { HistoryLinesRoutes } from "./http/routes/history-lines.js";
+import { HistoryRoutes } from "./http/routes/history.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -134,31 +148,48 @@ import {
   DesktopRoutes,
   DesktopTrayRoutes,
   DesktopUpdateRoutes,
+  DesktopWindowRoutes,
 } from "./http/routes/desktop.js";
+import { CommandRoutes } from "./http/routes/command.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { HandshakeRoutes } from "./http/routes/handshake.js";
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
-import { NpmPluginPackages } from "./plugin/install.js";
+import { AdminPluginRoutes } from "./http/routes/admin-plugins.js";
+import { NpmPluginPackages } from "./plugin/packages.js";
+import { PluginSourceSettings } from "./plugin/source-settings.js";
+import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
+import { PluginLibraryModule } from "./plugin/library-module.js";
+import { SystemAppModule } from "./plugin/system-app-modules.js";
+import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
+import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls";
+import { PluginModules } from "./mechanisms/plugins.js";
+import { PluginModulesService } from "./services/plugin-modules.js";
+import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
+import { PluginMarketRoutes } from "./http/routes/plugin-market.js";
+import { SemanticIdModule } from "./services/semantic-id-kinds.js";
+import { StartPageModule } from "./http/routes/start-page.js";
+import { AppData, SystemAgentAppData } from "./services/app-data.js";
+import { AppSeeds, HostAppSeeds } from "./services/app-seeds.js";
+import { AgentTasks, HostAgentTasks } from "./services/agent-tasks.js";
+import { AgentSkills, InstalledAgentSkills } from "./services/agent-skills.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
-import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
 import {
   Access,
   AgentIndex,
   Members,
-  ModelOAuth,
-  ModelProviderAuthTokens,
   ProjectConfigStore,
   ProjectEvents,
   ProjectLifecycle,
   Projects,
-} from "./mechanisms/projects.js";
+} from "@prismshadow/penguin-library-project";
+import { ModelOAuth, ModelProviderAuthTokens } from "@prismshadow/penguin-library-model";
 import {
   AgentState,
   Schedules,
@@ -166,28 +197,36 @@ import {
   SessionDrivers,
   SessionIndex,
   SessionOrigins,
-} from "./mechanisms/sessions.js";
+} from "@prismshadow/penguin-library-session";
 import { Workbenches } from "./mechanisms/workbenches.js";
 import { WorkbenchService } from "./workbenches/service.js";
+import { AgentStateHistoryModule } from "./workbenches/engines.js";
 import { WorkbenchRoutes } from "./workbenches/routes.js";
+import { ThemeRoutes } from "./http/routes/themes.js";
 import {
   ErrorLog,
   Errors,
   UsageQueries,
   UsageRecording,
   UsageStore,
-} from "./mechanisms/observability.js";
-import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
+} from "@prismshadow/penguin-library-observability";
+import { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library-trace";
 import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
-import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
-import { BackgroundImageStore, UserDraftsStore } from "./mechanisms/account-data.js";
-import { MessagingBindings } from "./mechanisms/messaging.js";
-import { OrgCache } from "./mechanisms/organization.js";
+import { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
+import {
+  Admin,
+  Auth,
+  AuthSessions,
+  Users,
+  BackgroundImageStore,
+  UserDraftsStore,
+} from "@prismshadow/penguin-library-auth";
+import { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+import { OrgCache } from "@prismshadow/penguin-library-organization";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
-import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 import { AgentApiModule } from "./amsp/module.js";
 
 /**
@@ -280,6 +319,7 @@ export class Startup {
     ConsoleLog,
     SystemClock,
     ConfigPaths,
+    RootDataLayout,
   ],
   exports: [
     Config,
@@ -295,6 +335,7 @@ export class Startup {
     Log,
     Clock,
     Paths,
+    DataLayout,
   ],
 })
 export class RuntimeModule {}
@@ -326,9 +367,11 @@ export class IdentityModule {}
     ProjectAccess,
     ProjectNotifier,
     ShippedBuiltinBenchmarkSeeds,
+    SystemAgentAppData,
+    HostAppSeeds,
     ProjectService,
     ProjectConfigService,
-    ModelOAuthService,
+    ModelOAuthProvider,
     PlatformAuthProvider,
     ModelScopeAuthProvider,
     ProjectsRoutes,
@@ -347,6 +390,8 @@ export class IdentityModule {}
     ModelScopeAuth,
     InitialProjectProvisioner,
     ProjectEvents,
+    AppData,
+    AppSeeds,
   ],
 })
 export class ProjectsModule {}
@@ -365,6 +410,7 @@ export class ProjectsModule {}
     SessionApiRoutes,
     SchedulerRoutes,
     EventsRoutes,
+    HostAgentTasks,
   ],
   exports: [
     SessionIndex,
@@ -376,12 +422,14 @@ export class ProjectsModule {}
     Sessions,
     SessionServiceIface,
     SessionEnv,
+    SessionActivity,
     ScheduleTaskRunner,
     ScheduleSessionCreator,
     MessagingTaskRunner,
     OrgRuns,
     OrgSessions,
     ProjectRuns,
+    AgentTasks,
   ],
 })
 export class SessionRuntimeModule {}
@@ -415,6 +463,28 @@ export class AccountDataModule {}
 export class PluginConfigModule {}
 
 /**
+ * Plugin sources as a group of their own: the settings node declares the group and applies
+ * it to the installer, and needs plugin configuration (and through it the database), so it
+ * sits above it — the same shape the sandbox settings' module has.
+ */
+@Module({
+  children: [PluginSourceSettings, PluginMirrorSettings],
+  exports: [],
+})
+export class PluginSourceSettingsModule {}
+
+/**
+ * The plugin index's sources as a settings group, and the reader the listing and the install
+ * face ask per request: above the config store (it reads the document) and beside the routes
+ * that consume it.
+ */
+@Module({
+  children: [PluginIndexSettings, StoredIndexSources],
+  exports: [IndexSources],
+})
+export class PluginIndexModule {}
+
+/**
  * Sandbox settings as a group of their own: the sandbox service boots on the capability-free
  * floor, while its settings group and the node applying it need plugin configuration (and
  * through it the database), so they sit above it.
@@ -439,14 +509,24 @@ export class TracesModule {}
 
 @Module({
   children: [
-    AgentConfigService,
+    AgentConfigServiceProvider,
     SnapshotService,
     AgentService,
-    MemoryService,
-    BenchmarkService,
+    DeletingFoldersService,
+    MemoryServiceProvider,
+    BenchmarkServiceProvider,
+    InstalledAgentSkills,
     AgentRoutes,
   ],
-  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks],
+  exports: [
+    AgentConfig,
+    Snapshots,
+    AgentLifecycle,
+    Memory,
+    Benchmarks,
+    DeletingFolders,
+    AgentSkills,
+  ],
 })
 export class AgentsModule {}
 
@@ -492,19 +572,26 @@ export class CompanyModule {}
     UpdateJobService,
     HarnessHistoryStore,
     HttpModule,
+    StartPageModule,
     WebModule,
     InstallRoutes,
     HandshakeRoutes,
     VersionRoutes,
     HmrRoutes,
     DesktopRoutes,
+    CommandRoutes,
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
     DesktopPrivacySettingsRoutes,
+    DesktopWindowRoutes,
     PluginRoutes,
     PluginRegistryRoutes,
     NpmPluginPackages,
     InstalledPluginRoutes,
+    AdminPluginRoutes,
+    PluginCliCommandsProvider,
+    PluginMarketRoutes,
+    SemanticIdModule,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,
@@ -513,11 +600,55 @@ export class CompanyModule {}
 })
 export class ApiModule {}
 
+/**
+ * Workbenches, and the Agent State history behind their versions: `AgentStateHistoryModule`
+ * owns the `engines` slot a plugin contributes a faster engine to (./workbenches/engines.ts).
+ */
 @Module({
-  children: [WorkbenchService, WorkbenchRoutes],
+  children: [AgentStateHistoryModule, WorkbenchService, WorkbenchRoutes],
   exports: [Workbenches],
 })
 export class WorkbenchesModule {}
+
+/**
+ * What a plugin's model tools stand on: the bindings plugins declare, and requests to a Project
+ * model outside a chat turn. A group of its own, above the Projects, Sessions and usage it reads
+ * and the machines its bindings travel to; no operation is named here — those are the plugins'.
+ */
+@Module({
+  children: [ToolModelBindingsProvider, ProjectModelRequestsService],
+  exports: [ToolModelBindings, ProjectModelRequests],
+})
+export class ModelToolsModule {}
+
+/**
+ * The server's theme packs: the store under the data root and the routes over it. Its own group:
+ * nothing else reads the store, and a pack is a per-server web resource, not a plugin.
+ */
+@Module({
+  children: [ThemeRoutes],
+  exports: [],
+})
+export class ThemesModule {}
+
+/**
+ * A library plugin's server modules, brought along by an install on an Agent (PRFC-0031): the
+ * ledger of requests and decisions, the record of preinstalled modules handled per Project
+ * (PRFC-0030), the service that applies the rule, the member's and the administrator's
+ * routes, and the slot a module declares the system app it provides in (`SystemAppModule.apps`). Its own group: the Agent service and the installed-plugins routes
+ * reach it as `PluginModules`, and nothing else reads the ledger.
+ */
+@Module({
+  children: [
+    PluginModuleRequestsRepo,
+    PluginModulePreinstallsRepo,
+    PluginModulesService,
+    PluginModuleRoutes,
+    SystemAppModule,
+  ],
+  exports: [PluginModules],
+})
+export class PluginModulesModule {}
 
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
@@ -526,6 +657,8 @@ export class WorkbenchesModule {}
     SettingsModule,
     AccountDataModule,
     PluginConfigModule,
+    PluginSourceSettingsModule,
+    PluginIndexModule,
     IdentityModule,
     ProjectsModule,
     SessionRuntimeModule,
@@ -536,14 +669,19 @@ export class WorkbenchesModule {}
     MessagingHubModule,
     CompanyModule,
     ApiModule,
+    PluginLibraryModule,
+    PluginModulesModule,
     SandboxModule,
     SandboxSettingsModule,
     TerminalModule,
     MachinesModule,
     TerminalRelay,
     SessionForwardRoutes,
+    HistoryRoutes,
+    HistoryLinesRoutes,
     WorkbenchesModule,
-    BuiltinBrowserModule,
+    ModelToolsModule,
+    ThemesModule,
     AgentApiModule,
     Startup,
   ],

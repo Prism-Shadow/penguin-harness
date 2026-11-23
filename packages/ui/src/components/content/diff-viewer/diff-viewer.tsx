@@ -17,15 +17,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { resolveHighlighter, useCodeHighlighter } from "../code-block/code-block";
+import { splitHighlightedLines } from "../code-block/code-lines";
 import type { CodeHighlighter } from "../code-block/highlight-options";
-import {
-  DIFF_WORD_CLASS,
-  diffTexts,
-  parsePatch,
-  splitHighlightedLines,
-  splitRows,
-  wordMarks,
-} from "./diff";
+import { DIFF_WORD_CLASS, diffTexts, parsePatch, splitRows, wordMarks } from "./diff";
 import type { DiffLine, DiffModel, WordRange } from "./diff";
 import "../prose/prose.css";
 

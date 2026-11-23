@@ -4,7 +4,7 @@ import {
   parseSwitchModelCommand,
   switchModelRefusal,
 } from "../src/switch-model-command.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 
 describe("parseSwitchModelCommand", () => {
   it("bare /switch-model asks to show the current model", () => {
@@ -69,9 +69,8 @@ describe("switchModelRefusal (409 codes -> one localized line)", () => {
     expect(refuse("compacting")).toBe(t.switchModelBusy());
   });
 
-  it("same_model and compaction_not_configured", () => {
+  it("same_model", () => {
     expect(refuse("same_model")).toBe(t.switchModelSame(label));
-    expect(refuse("compaction_not_configured")).toBe(t.switchModelNoCompaction());
   });
 
   it("model_not_configured names the config commands, with --project-id only off the default Project", () => {

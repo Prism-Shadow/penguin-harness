@@ -11,8 +11,7 @@
  */
 import { AgentAvatar, DurationSlot, StatusIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { layoutTopology, NODE_H, NODE_W } from "./agent-topology";
-import type { TopologyNode } from "./agent-topology";
+import { layoutTopology, NODE_H, NODE_W, type TopologyNode } from "./agent-topology";
 
 /** A layout length (CSS pixels at the default 16px root) as the rem the canvas renders it in. */
 const rem = (px: number): string => `${px / 16}rem`;
@@ -21,6 +20,7 @@ export function AgentTopologyView({
   nodes,
   selectedId,
   labelFor,
+  avatarFor,
   onSelect,
 }: {
   nodes: TopologyNode[];
@@ -28,6 +28,8 @@ export function AgentTopologyView({
   selectedId: string | null;
   /** Resolved display label for a node (the view owns name resolution; the graph only renders it). */
   labelFor: (node: TopologyNode) => string;
+  /** A node's Agent's own picture, when it has one (resolved by the view, like the label). */
+  avatarFor: (node: TopologyNode) => string | undefined;
   onSelect: (node: TopologyNode) => void;
 }) {
   const layout = layoutTopology(nodes);
@@ -66,9 +68,13 @@ export function AgentTopologyView({
             <button
               key={node.sessionId}
               type="button"
-              aria-label={`${label} · ${stateLabel}`}
+              aria-label={
+                node.depth === 0
+                  ? `${label} · ${stateLabel}`
+                  : `${label} · ${stateLabel} · ${node.sessionId}`
+              }
               aria-pressed={selected}
-              data-tooltip={tooltip}
+              data-tooltip={node.depth === 0 ? tooltip : `${tooltip}\n${node.sessionId}`}
               onClick={() => onSelect(node)}
               style={{ left: rem(x), top: rem(y), width: rem(NODE_W), height: rem(NODE_H) }}
               className={`absolute flex flex-col justify-center gap-px rounded-md border bg-white px-2 text-left transition-colors duration-150 dark:bg-gray-900 ${
@@ -78,7 +84,7 @@ export function AgentTopologyView({
               }`}
             >
               <span className="flex w-full min-w-0 items-center gap-1.5">
-                <AgentAvatar id={node.agentId ?? node.sessionId} name={label} size={18} />
+                <AgentAvatar id={node.agentId ?? node.sessionId} size={18} src={avatarFor(node)} />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-700 dark:text-gray-300">
                   {label}
                 </span>
