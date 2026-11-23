@@ -84,7 +84,12 @@ import { DockPanelTitle } from "../../lib/dock-panel-empty";
 import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
 
 import { usePageWorkspace } from "../../lib/page-workspace";
-import { dockPageId, sessionAppPair, SessionAppDockBody } from "../../lib/session-app-dock";
+import {
+  dockPageId,
+  sessionAppPair,
+  SessionAppDockBody,
+  ScopedPanelSession,
+} from "../../lib/session-app-dock";
 import {
   DockPanelArea,
   NativePanelSlot,
@@ -176,9 +181,9 @@ function measureColumn(): { host: number; area: number } {
  */
 function PanelBody({ id, position, merged, active, fullscreen, loanKey }: PanelBodyProps) {
   const workspace = usePageWorkspace();
-  const appId = dockPageId(id);
-  const page = appId && workspace?.layout.pages.find((p) => p.id === appId);
-  const ownerId = loanKey ? dockPageId(loanKey) : page ? page.id : null;
+  const ownerId = dockPageId(loanKey ?? id);
+  const owner = workspace?.layout.pages.find((item) => item.id === ownerId);
+  const page = loanKey ? undefined : owner;
   const handle = useMemo<DockPanelHandle>(
     () => ({
       id,
@@ -204,24 +209,26 @@ function PanelBody({ id, position, merged, active, fullscreen, loanKey }: PanelB
   const Body = dockPanelDefinition(id)?.Body;
   return (
     <DockPanelProvider handle={handle}>
-      {page && session ? (
-        <CrashBoundary resetKey={id}>
-          <SessionAppDockBody page={page} sessionId={pageSessionId(session)} active={active} />
-        </CrashBoundary>
-      ) : Body !== undefined ? (
-        // A panel that crashes (a plugin's, or one of ours) takes down its own tab, not the
-        // conversation beside it.
-        <CrashBoundary resetKey={id}>
-          {/* The panel's name, which a contributed body's draft placeholder wears as its title. */}
-          <DockPanelTitle.Provider value={panelLabel(id)}>
-            <Body active={active} />
-          </DockPanelTitle.Provider>
-        </CrashBoundary>
-      ) : (
-        <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
-          <EmptyState title={S.dock.panelUnavailable} />
-        </div>
-      )}
+      <ScopedPanelSession path={owner?.path}>
+        {page && session ? (
+          <CrashBoundary resetKey={id}>
+            <SessionAppDockBody page={page} sessionId={pageSessionId(session)} active={active} />
+          </CrashBoundary>
+        ) : Body !== undefined ? (
+          // A panel that crashes (a plugin's, or one of ours) takes down its own tab, not the
+          // conversation beside it.
+          <CrashBoundary resetKey={id}>
+            {/* The panel's name, which a contributed body's draft placeholder wears as its title. */}
+            <DockPanelTitle.Provider value={panelLabel(id)}>
+              <Body active={active} />
+            </DockPanelTitle.Provider>
+          </CrashBoundary>
+        ) : (
+          <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
+            <EmptyState title={S.dock.panelUnavailable} />
+          </div>
+        )}
+      </ScopedPanelSession>
     </DockPanelProvider>
   );
 }

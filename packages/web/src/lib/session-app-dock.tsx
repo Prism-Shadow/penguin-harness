@@ -1,4 +1,14 @@
-import { useLayoutEffect, useRef, useSyncExternalStore, type ComponentType } from "react";
+import {
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+  type ComponentType,
+  type ReactNode,
+} from "react";
+import { ChatSessionContext } from "./chat-session";
+import { PageIdentity } from "./page-focus";
 import type { OpenPage, PageLayout } from "./page-layout";
 
 /** Undefined is an ordinary page. A Session workbench with no target opens its Session directory. */
@@ -44,6 +54,29 @@ export function existingDockPanel(page: OpenPage) {
 }
 export function contextualDockPage(path: string) {
   return contextual?.resolve(path) ?? null;
+}
+
+/** An archived Chat stays a stub. Only its explicitly addressed workbench receives the Session. */
+export function ScopedPanelSession({ path, children }: { path?: string; children: ReactNode }) {
+  const chat = useContext(ChatSessionContext);
+  const host = useContext(PageIdentity)?.sessionHost;
+  const value = useMemo(() => {
+    if (
+      !chat ||
+      chat.selected ||
+      !host?.session.archived ||
+      !path ||
+      sessionToolTarget(path) !== host.session.sessionId ||
+      chat.projectId !== host.session.projectId
+    )
+      return chat;
+    const query = new URL(path, "http://localhost").searchParams;
+    return query.get("project") === host.session.projectId &&
+      (query.get("machine") || null) === host.machineId
+      ? { ...chat, selected: host.session }
+      : chat;
+  }, [chat, host, path]);
+  return <ChatSessionContext.Provider value={value}>{children}</ChatSessionContext.Provider>;
 }
 
 interface DockBounds {
