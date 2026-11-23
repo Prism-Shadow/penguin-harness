@@ -136,14 +136,18 @@ async function checkout(
       path.join(root, host, "package.json"),
       JSON.stringify({
         name: host,
-        dependencies: { "@penguinharness/goal": "workspace:*", ...pinned },
+        dependencies: { "@penguinharness/goal": "workspace:*", ...(asset ? {} : pinned) },
+        ...(asset ? { devDependencies: pinned } : {}),
       }),
     );
     importers[host] = {
       dependencies: {
         "@penguinharness/goal": { specifier: "workspace:*", version: "link:../../plugins/goal" },
-        ...(range === undefined ? {} : { [NAME]: { specifier: range, version: locked } }),
+        ...(range === undefined || asset ? {} : { [NAME]: { specifier: range, version: locked } }),
       },
+      ...(asset && range
+        ? { devDependencies: { [NAME]: { specifier: range, version: locked } } }
+        : {}),
     };
   }
   await writeFile(
