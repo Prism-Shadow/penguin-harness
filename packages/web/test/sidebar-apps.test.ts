@@ -6,7 +6,6 @@ import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../src/api/endpoints";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
-import { MainSidebarApps } from "../src/features/session-list/main-sidebar-apps";
 import { useRestoreApp } from "../src/lib/running-apps";
 import { shortcutOfWorkbench } from "../src/lib/workbench-shortcut";
 import { locatedAppKey } from "../src/lib/app-center-path";
@@ -129,7 +128,7 @@ async function open(
     ],
     // Beside every page, as the shell mounts them: the windows' layer and the sidebar.
     layers: [
-      h(ThemeProvider, null, h(WorkspaceWindows, null, h(MainSidebarApps))),
+      h(ThemeProvider, null, h(WorkspaceWindows)),
       h(SwitchAgent),
       h(Launchers, { items: workbenches }),
     ],
@@ -295,6 +294,9 @@ it("keeps the open app when changing Agents and leaves the next Agent's unopened
   await openMenu(key("board"));
   expect(menuLabels()).toEqual([
     en.pageWorkspace.restore,
+    en.pageWorkspace.left,
+    en.pageWorkspace.right,
+    en.pageWorkspace.separate,
     en.appCenter.windowFullScreen,
     en.common.close,
     en.sidebarApps.viewInSettings,
@@ -314,7 +316,7 @@ it("keeps remote and local pages with the same Agent and workbench ID distinct",
   expect(frameOf("Board")!.getAttribute("src")).toContain("/server/m1/");
   expect(row(remote)?.textContent).toContain("Board [SSH: box]");
   expect(row(remote)?.getAttribute("aria-label")).toContain("Board [SSH: box]");
-  await pageAction("Board", en.appCenter.windowMinimize);
+  await pageAction("Board [SSH: box]", en.appCenter.windowMinimize);
   await launch(key("board"));
   await until(() => row(key("board")) !== null);
   await click(button("Switch"));

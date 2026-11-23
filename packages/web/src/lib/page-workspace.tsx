@@ -29,11 +29,13 @@ import {
 
 import { openFullPage } from "./host-history";
 
-interface Workspace {
+export interface Workspace {
   scope: number;
   accountScope: number;
   layout: PageLayout;
   current: OpenPage | null;
+  pageForDrag(id: string): OpenPage | undefined;
+  resumeDraft(): boolean;
   focus(page: OpenPage): void;
   place(page: OpenPage, side: 0 | 1, before?: string): void;
   close(id: string): void;
@@ -167,7 +169,25 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
     pending.current = { to, token, layout: next, ...(closed ? { closed } : {}) };
     void navigate(to, { replace, state: { workspaceRequest: token } });
   }
+  function pageForDrag(id: string): OpenPage | undefined {
+    const open = ref.current.pages.find((page) => page.id === id);
+    if (open) return open;
+    const session = sessions.find((row) => "chat:" + row.sessionId === id);
+    if (session)
+      return {
+        id,
+        kind: "session",
+        title: session.title ?? S.chat.defaultSessionTitle,
+        path: "/chat/" + encodeURIComponent(session.sessionId),
+      };
+  }
   const focus = (page: OpenPage) => go(visitPage(ref.current, page));
+  const resumeDraft = () => {
+    const draft = ref.current.pages.find((page) => page.id === "chat:new");
+    if (!draft || currentId === draft.id) return false;
+    focus(draft);
+    return true;
+  };
   const place = (page: OpenPage, side: 0 | 1, before?: string) => {
     const layout = placePage(ref.current, page, side);
     go(before ? reorderPage(layout, page.id, before) : layout);
@@ -225,7 +245,13 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
         : (selectedPath ?? shortcut.path);
     openFullPage(navigate, target, page.path, { fromWindow: currentId === page.id });
   }
-  const close = (id: string) => dismiss(id, false);
+  // A conversation row still owns its draft, including files staged only in its composer.
+  // Closing its view takes it out of the pane while the row can reopen that same composer.
+  const close = (id: string) =>
+    dismiss(
+      id,
+      ref.current.pages.some((page) => page.id === id && page.kind === "session"),
+    );
   const minimize = (id: string) => dismiss(id, true);
   const whole = (page: OpenPage) =>
     go({ ...visitPage(ref.current, page), visible: [page.id], right: [] });
@@ -267,6 +293,8 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
         scope: lifetime.scope,
         accountScope: lifetime.accountScope,
         current,
+        pageForDrag,
+        resumeDraft,
         focus,
         place,
         whole,

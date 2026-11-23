@@ -21,6 +21,8 @@ import {
 } from "@prismshadow/penguin-ui";
 import { agentSettingsPath } from "../../lib/agent-location";
 import { usePageWorkspace } from "../../lib/page-workspace";
+import { layoutActions } from "../../lib/page-layout-actions";
+import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
 import { S } from "../../lib/strings";
 import { TileIcon } from "../app-center";
 import { useSidebarApps, type SidebarAppRow } from "./use-sidebar-apps";
@@ -109,14 +111,17 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
             glyph: ICONS.appWindow,
             onSelect: () => open(row),
           },
-      {
-        id: "fullscreen",
-        label: page.kind === "system" ? S.pageWorkspace.whole : S.appCenter.windowFullScreen,
-        glyph: ICONS.square,
-        onSelect: act(() =>
-          page.kind === "system" ? workspace.whole(page) : workspace.fullScreen(page),
-        ),
-      },
+      ...layoutActions(workspace, page, onNavigate),
+      ...(page.kind === "window"
+        ? [
+            {
+              id: "fullscreen",
+              label: S.appCenter.windowFullScreen,
+              glyph: ICONS.square,
+              onSelect: act(() => workspace.fullScreen(page)),
+            },
+          ]
+        : []),
       {
         id: "close",
         label: S.common.close,
@@ -124,6 +129,25 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
         onSelect: act(() => workspace.close(page.id)),
       },
     ];
+    if (sort === "default") {
+      const index = visible.findIndex((item) => item.key === row.key);
+      const previous = visible[index - 1];
+      const next = visible[index + 1];
+      if (previous)
+        actions.push({
+          id: "up",
+          label: S.sidebarApps.moveUp,
+          glyph: ICONS.chevronUp,
+          onSelect: () => workspace.reorder(page.id, previous.page.id),
+        });
+      if (next)
+        actions.push({
+          id: "down",
+          label: S.sidebarApps.moveDown,
+          glyph: ICONS.chevronDown,
+          onSelect: () => workspace.reorder(next.page.id, page.id),
+        });
+    }
     if (!row.system)
       actions.push({
         id: "settings",
@@ -219,6 +243,24 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
               <AppRow
                 key={row.key}
                 appKey={row.key}
+                drag={{
+                  draggable: true,
+                  onDragStart(event) {
+                    event.dataTransfer.setData(PAGE_DRAG_TYPE, row.page.id);
+                    event.dataTransfer.effectAllowed = "move";
+                  },
+                  onDragOver(event) {
+                    if (sort === "default" && event.dataTransfer.types.includes(PAGE_DRAG_TYPE))
+                      event.preventDefault();
+                  },
+                  onDrop(event) {
+                    const id = event.dataTransfer.getData(PAGE_DRAG_TYPE);
+                    if (sort === "default" && rows.some((item) => item.page.id === id)) {
+                      event.preventDefault();
+                      workspace.reorder(id, row.page.id);
+                    }
+                  },
+                }}
                 icon={
                   <TileIcon
                     shortcut={{

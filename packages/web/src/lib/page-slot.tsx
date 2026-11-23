@@ -74,9 +74,7 @@ export function PageSlot({
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropSide(null);
       }}
       onDrop={(event) => {
-        const dragged = layout.pages.find(
-          (item) => item.id === event.dataTransfer.getData(PAGE_DRAG_TYPE),
-        );
+        const dragged = workspace.pageForDrag(event.dataTransfer.getData(PAGE_DRAG_TYPE));
         if (dragged && dropSide !== null) {
           event.preventDefault();
           workspace.place(dragged, dropSide);

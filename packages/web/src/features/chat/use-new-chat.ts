@@ -5,6 +5,7 @@
  * (prepareNewChatDraft, which says why every entry point must), then open the draft page, which
  * starts on the Project's new-chat defaults.
  */
+import { usePageWorkspace } from "../../lib/page-workspace";
 import { useCallback } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../../state/auth";
@@ -16,10 +17,12 @@ export function useNewChat(): () => void {
   const { user } = useAuth();
   const { currentProject } = useProject();
   const navigate = useNavigate();
+  const workspace = usePageWorkspace();
   const userId = user?.userId ?? null;
   const projectId = currentProject?.projectId ?? null;
   return useCallback(() => {
+    if (workspace?.resumeDraft()) return;
     if (userId !== null && projectId !== null) prepareNewChatDraft(userId, projectId);
     navigate(`/chat/${DRAFT_SESSION_ID}`);
-  }, [userId, projectId, navigate]);
+  }, [userId, projectId, navigate, workspace]);
 }

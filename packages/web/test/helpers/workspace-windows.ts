@@ -1,16 +1,20 @@
 import { createElement as h, type ReactNode } from "react";
 import { PageWorkspace } from "../../src/lib/page-workspace";
-import { OpenPages } from "../../src/features/page-workspace";
+import { MainSidebarApps } from "../../src/features/session-list/main-sidebar-apps";
 import { AppCenterWindows } from "../../src/features/app-center/app-center-windows";
-import { S } from "../../src/lib/strings";
-import { button, click } from "./dom";
+import { click } from "./dom";
 
 export function WorkspaceWindows({ children }: { children?: ReactNode }) {
-  return h(PageWorkspace, null, h(OpenPages), h(AppCenterWindows), children);
+  return h(PageWorkspace, null, h(MainSidebarApps), h(AppCenterWindows), children);
 }
 
 export async function pageAction(title: string, action: string) {
-  await click(button(S.pageWorkspace.actions + " · " + title));
+  const row = [...document.querySelectorAll<HTMLElement>("button[data-app-row]")]
+    .find((element) => element.querySelector(".truncate")?.textContent === title)
+    ?.closest("li");
+  const trigger = row?.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
+  if (!trigger) throw new Error("No running app named " + title);
+  await click(trigger);
   const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
     (el) => el.textContent?.trim() === action,
   );
