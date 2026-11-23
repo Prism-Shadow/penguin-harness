@@ -18,6 +18,7 @@
     "@penguinharness/storage": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-setting": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
     "@prismshadow/penguin-web-plugin": "workspace:*",
     "@xterm/addon-clipboard": "^0.1.0",

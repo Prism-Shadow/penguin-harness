@@ -64,6 +64,7 @@ type PageSdk = typeof Amsp & {
   abortSession(sessionId: string): Promise<boolean>;
   chooseChatModel(current?: unknown): Promise<unknown>;
   getChatModel(current?: unknown): Promise<unknown>;
+  getChatThinkingOptions(): Promise<unknown>;
   openModelSettings(): Promise<void>;
 };
 
@@ -218,6 +219,12 @@ describe("the workbench page SDK", () => {
       hear(app, { type: "penguin:chat-model-reply", id: "another", model: null });
       reply({ model: review });
       await expect(chosen).resolves.toEqual(review);
+
+      const levels = sdk.getChatThinkingOptions();
+      expect(posted.at(-1)).toMatchObject({ type: "penguin:chat-model", op: "thinking" });
+      const thinking = { defaultLevel: "high", options: [{ value: "max", label: "Max" }] };
+      reply({ thinking });
+      await expect(levels).resolves.toEqual(thinking);
 
       const settings = sdk.openModelSettings();
       expect(posted.at(-1)).toMatchObject({ type: "penguin:open-model-settings" });

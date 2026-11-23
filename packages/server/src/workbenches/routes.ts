@@ -42,6 +42,7 @@
  *   GET    /                       every shown workbench of the Project's Agents on this server
  *                                  (manifests and load status only: nothing is compiled), and the
  *                                  viewer's own arrangement of them
+ *   GET    /hidden                 workbenches explicitly hidden from this grid
  *   PUT    /layout {layout}        replace the viewer's arrangement; null restores the server's
  *                                  order (see app-center-layout.ts)
  */
@@ -777,15 +778,17 @@ export interface AppCenterRouteDeps extends Pick<WorkbenchRouteDeps, "access" | 
  */
 export function appCenterRoutes(deps: AppCenterRouteDeps) {
   const app = new Hono<AppEnv>();
-  app.get("/", async (c) => {
+  const list = (hidden: boolean) => async (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
     const { userId } = c.var.user;
     deps.access.requireProjectAccess(userId, projectId);
     return c.json({
-      shortcuts: await deps.workbenches.appCenter(projectId),
+      shortcuts: await deps.workbenches.appCenter(projectId, hidden),
       layout: readAppCenterLayout(deps.prefs, userId, projectId),
     } satisfies AppCenterResponse);
-  });
+  };
+  app.get("/", list(false));
+  app.get("/hidden", list(true));
   app.put("/layout", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const { userId } = c.var.user;

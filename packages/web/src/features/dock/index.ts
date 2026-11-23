@@ -1,6 +1,12 @@
 export { docksOnScreen } from "./dock-state";
 
-export { openPanel } from "./dock-state";
+export {
+  clearDockPages,
+  detachDockPage,
+  dockActiveKey,
+  openPanel,
+  setSessionPanelOpener,
+} from "./dock-state";
 
 export { dockWorkspace } from "./dock-terminal";
 
@@ -20,7 +26,7 @@ export type { DockPanelDefinition } from "./panel-registry";
 
 export type { PanelId } from "./panel-registry";
 
-export { DockPanel } from "./dock-panel";
+export { ChatDockArea, DockPanel } from "./dock-panel";
 
 export { DockLauncher } from "./dock-launcher";
 

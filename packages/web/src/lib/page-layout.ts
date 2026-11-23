@@ -1,3 +1,4 @@
+import type { SessionInfo } from "@prismshadow/penguin-server/api";
 export const PAGE_DRAG_TYPE = "application/x-penguin-open-page";
 
 /** Page identity stays stable when the page changes its inner address or title. */
@@ -6,7 +7,20 @@ export interface OpenPage {
   kind: "session" | "window" | "system" | "catalog" | "workbenches";
   title: string;
   path: string;
+  /** Launched from the App Center inside a conversation, including its Session directories. */
+  catalogDock?: boolean;
+  /** An explicitly selected resource group can belong to another conversation. */
+  resourceHost?: OpenPage["sessionHost"];
+  /** Metadata already authorized by the exact machine's Session endpoint. Window-local only. */
+  sessionHost?: { session: SessionInfo; machineId: string | null; isolatedDraft: boolean };
 }
+
+export const pageSessionId = (page: OpenPage) =>
+  page.sessionHost?.session.sessionId ??
+  decodeURIComponent(new URL(page.path, "http://localhost").pathname.slice("/chat/".length));
+
+export const scopedChatId = (projectId: string, machineId: string | null, sessionId: string) =>
+  "scoped-chat:" + JSON.stringify([projectId, machineId, sessionId]);
 
 export interface PageLayout {
   pages: OpenPage[];
@@ -39,7 +53,14 @@ function raised(layout: PageLayout, id: string) {
 function withPage(layout: PageLayout, page: OpenPage): OpenPage[] {
   const before = layout.pages.find((item) => item.id === page.id);
   if (!before) return [...layout.pages, page];
-  if (before.title === page.title && before.path === page.path) return layout.pages;
+  if (
+    before.title === page.title &&
+    before.path === page.path &&
+    before.catalogDock === page.catalogDock &&
+    before.resourceHost === page.resourceHost &&
+    before.sessionHost === page.sessionHost
+  )
+    return layout.pages;
   return layout.pages.map((item) => (item.id === page.id ? page : item));
 }
 

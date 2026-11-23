@@ -61,6 +61,7 @@ import { ShortcutsSection } from "./shortcuts-section";
 import { ArchivedSessionsSection } from "./archived-sessions-section";
 import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
+import { ResourceLimitsSection } from "./resource-limits-section";
 import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
 import { AgentApiSection } from "./agent-api-section";
@@ -90,6 +91,7 @@ const SECTION_ICONS: Record<HostSettingsSectionKey, string> = {
   proxy: ICONS.globe,
   /** Up arrow over a base: uploads. */
   uploads: ICONS.arrowUpFromLine,
+  resourceLimits: ICONS.terminalPrompt,
   /** The building the mode switch wears: company mode. */
   company: ICONS.building,
   /** Angle brackets: programs calling the Agents. The plug that marks the API elsewhere is taken here, by the Chrome extension's page. */
@@ -177,6 +179,7 @@ export function SettingsDialog({
     account: S.settings.accountTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
+    resourceLimits: S.settings.resourceLimits.title,
     company: S.settings.companyModeTitle,
     agentApi: S.settings.agentApiTitle,
     plugins: S.settings.pluginsTitle,
@@ -195,6 +198,7 @@ export function SettingsDialog({
     shortcuts: S.settings.shortcutsInfo,
     archived: S.settings.archivedInfo,
     proxy: S.settings.proxyInfo,
+    resourceLimits: S.settings.resourceLimits.info,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
     agentApi: S.settings.agentApiHint,
@@ -279,6 +283,7 @@ export function SettingsDialog({
         {current === "account" && <AccountSection />}
         {current === "proxy" && <ProxySection />}
         {current === "uploads" && <UploadsSection />}
+        {current === "resourceLimits" && <ResourceLimitsSection />}
         {current === "company" && <CompanySection />}
         {current === "agentApi" && <AgentApiSection />}
         {current === "plugins" && (

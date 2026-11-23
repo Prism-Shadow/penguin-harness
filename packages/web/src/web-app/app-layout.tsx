@@ -14,7 +14,8 @@ import { backgroundStyle, useBackground } from "../state/background";
 import { useEffect, useState } from "react";
 import type { Location } from "react-router";
 import type { ReactNode } from "react";
-import { PageWorkspace } from "../lib/page-workspace";
+import { PageWorkspace, usePageWorkspace } from "../lib/page-workspace";
+import * as dock from "../features/dock";
 import { PageArea } from "../features/page-workspace";
 import { AppShell, Drawer, MobileTopBar, Notice, UpdateDot } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
@@ -49,12 +50,13 @@ interface LayoutProps {
 }
 export function AppLayout(props: LayoutProps) {
   return (
-    <PageWorkspace>
+    <PageWorkspace dock={dock}>
       <ShellLayout {...props} />
     </PageWorkspace>
   );
 }
 function ShellLayout({ renderRoute }: LayoutProps) {
+  const fullScreen = !!usePageWorkspace()?.exitFullScreen;
   const background = useBackground();
   const { user, desktopMode, sessionVia } = useAuth();
   const { sidebar, drafts } = webAppDeps.useDeps();
@@ -164,6 +166,7 @@ function ShellLayout({ renderRoute }: LayoutProps) {
       band={
         band ? <TitleBand sidebarCollapsed={collapsed} onToggleSidebar={foldSidebar} /> : undefined
       }
+      navHidden={fullScreen}
       nav={
         collapsed ? (
           <sidebar.Rail {...(band ? {} : { onExpand: foldSidebar })} />
@@ -204,14 +207,16 @@ function ShellLayout({ renderRoute }: LayoutProps) {
           the combined one — naming one of two updates would point at the wrong trail. Both
           trails continue inside the drawer's sidebar (the Agents entry, the user row's App info
           entry). */}
-      <MobileTopBar
-        title={S.appName}
-        menuLabel={column.menuNote !== null ? `${drawerName} · ${column.menuNote}` : drawerName}
-        {...(column.menuNote !== null
-          ? { menuHint: column.menuNote, menuBadge: <UpdateDot /> }
-          : {})}
-        onMenu={() => setDrawerOpen(true)}
-      />
+      {!fullScreen && (
+        <MobileTopBar
+          title={S.appName}
+          menuLabel={column.menuNote !== null ? `${drawerName} · ${column.menuNote}` : drawerName}
+          {...(column.menuNote !== null
+            ? { menuHint: column.menuNote, menuBadge: <UpdateDot /> }
+            : {})}
+          onMenu={() => setDrawerOpen(true)}
+        />
+      )}
 
       {/* Initial-password notice banner (seed/admin-set password): disappears once passwordIsInitial clears after a successful change.
           Hidden in desktop mode — the seed password there is random and never shown, so "change it" is meaningless nagging.

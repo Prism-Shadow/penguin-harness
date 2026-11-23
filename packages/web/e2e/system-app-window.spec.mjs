@@ -254,13 +254,16 @@ test("the Apps directory restores a contributed system frame and removes its row
   await expect(row).toHaveCount(1);
   await row.click();
   await expect(frameOf(page).locator("#clicks")).toHaveText("1");
-  await row.hover();
-  await apps
-    .getByRole("listitem")
-    .filter({ has: page.locator('[data-app-row="system_agent/reports"]') })
-    .getByRole("button", { name: "More actions", exact: true })
-    .click();
-  await page.getByRole("menuitem", { name: "Close", exact: true }).click();
+  const item = row.locator("xpath=ancestor::li[1]");
+  await row.focus();
+  for (const name of ["More actions", "Open full screen", "Close"]) {
+    await page.keyboard.press("Tab");
+    await expect(item.getByRole("button", { name, exact: true })).toBeFocused();
+  }
+  await item.getByRole("button", { name: "Open full screen", exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/[^/]+\/system_agent\/reports/);
+  await page.getByRole("button", { name: "Exit full screen" }).click();
+  await item.getByRole("button", { name: "Close", exact: true }).click();
   await expect(row).toHaveCount(0);
   await expect(tileOf(page)).toBeVisible();
 });

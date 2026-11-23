@@ -2052,7 +2052,7 @@ export const en: GalleryStrings = {
       windowPageNames: ["Today", "This week", "Archive"],
       apps: "Sidebar app list",
       appsHint:
-        "An agent's apps in the sidebar: the app's icon and name, with the App Center tile's marks — a short bar under the icon while it runs, a turning ring while it builds (it does not open then), a warning mark when its load failed (it still opens). The row is selected while its window is in front; the caller gives its menu.",
+        "An agent's apps in the sidebar: the app's icon and name, with the App Center tile's marks — a turning ring while it builds (it does not open then), a warning mark when its load failed (it still opens). The row is selected while its window is in front; the caller gives its menu.",
       appsGroup: "Apps",
       appsManage: "Manage apps",
       appsMore: "More actions",

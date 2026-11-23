@@ -24,6 +24,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./resource-limits": {
+      "types": "./dist/resource-limits.d.ts",
+      "import": "./dist/resource-limits.js"
+    },
     "./attachment-limits": {
       "types": "./dist/attachment-limits.d.ts",
       "import": "./dist/attachment-limits.js"

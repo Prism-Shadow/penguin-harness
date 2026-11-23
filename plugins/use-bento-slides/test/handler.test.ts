@@ -329,6 +329,19 @@ describe("asking the Agent", () => {
     expect(picked.size).toBe(2);
   });
 
+  it("opens a default conversation for a thinking pin and submits to the same queue during handoff", async () => {
+    const { host, runs, status } = await fakeHost();
+    const { call } = mount(host);
+    await call("POST", "/decks", { id: "document", text: deckText("Document") });
+    const opened = await call("POST", "/ask/session", { deck: "document" });
+    expect(opened.status).toBe(200);
+    expect(runs).toHaveLength(0);
+    status.set(opened.body.sessionId, "compacting");
+    const queued = await call("POST", "/ask", { deck: "document", text: "Review the cover" });
+    expect(queued.body.sessionId).toBe(opened.body.sessionId);
+    expect(runs.map((run) => run.sessionId)).toEqual([opened.body.sessionId]);
+  });
+
   it("opens one Session per deck and names the deck's file, the slide and the selection", async () => {
     const { host, runs, status, dataDir } = await fakeHost();
     const { call } = mount(host);

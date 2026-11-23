@@ -1375,6 +1375,10 @@ export class Session {
     return this.environment.hasRunningBackgroundSubagents?.() ?? false;
   }
 
+  setSubagentResolver(resolve: import("./interfaces/index.js").SubagentResolver): void {
+    this.environment.setSubagentResolver?.(resolve);
+  }
+
   /** All live subagent child sessions of this Session's Environment, for a host UI's subagents panel (see EnvironmentInterface.listBackgroundSubagents). */
   listBackgroundSubagents(): BackgroundSubagentInfo[] {
     return this.environment.listBackgroundSubagents?.() ?? [];

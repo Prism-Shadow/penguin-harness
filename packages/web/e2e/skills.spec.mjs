@@ -9,7 +9,7 @@
  *   the market, in the address, its tile carrying the plugin's custom icon (its icon.svg, served
  *   by URL and drawn as a mask in the text colour, never inlined; not the book fallback);
  * - the install flow's Agents step ("Install on Agent"): an Agent row + Install / Installed
- *   (hover flips to Uninstall) button, with optimistic updates on install/uninstall; its first row,
+ *   and explicit owner-only Uninstall action, with optimistic updates on install/uninstall; its first row,
  *   「新建空白 Agent」, opens Create Agent over it prefilled with the plugin, and the Agent it
  *   creates joins the list installed while the list stays open;
  * - Quick invoke is gated on the currently selected agent having the skill installed (here the
@@ -179,22 +179,20 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   await allTab.click();
   await expect(card("default-rsi-toolkit")).toBeVisible();
 
-  // —— Install on Agent Modal: an Agent row + Install/Installed (clicking Installed uninstalls) ——
+  // The shared flow shows each Agent and its available action.
   await page.getByRole("button", { name: "安装到 Agent data-analysis" }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "安装到 Agent" });
-  // default_agent (display name General Agent) has everything preinstalled -> "已安装"
-  // ("Installed", whose accessible name is the uninstall action); agent_helper has nothing
-  // installed -> "安装" ("Install").
+  // The default Agent already carries the plugin. The helper can install it.
   const uninstallDefault = page.getByRole("button", { name: "卸载 default_agent" });
   const installHelper = page.getByRole("button", { name: "安装 agent_helper" });
   await expect(uninstallDefault).toBeVisible();
-  await expect(uninstallDefault).toContainText("已安装");
+  await expect(uninstallDefault).toContainText("卸载");
   await expect(installHelper).toBeVisible();
-  // Install onto helper: optimistic update, the button flips to "已安装" ("Installed", the uninstall action).
+  // Install on the helper, then read the result from the server.
   await installHelper.click();
   const uninstallHelper = page.getByRole("button", { name: "卸载 agent_helper" });
   await expect(uninstallHelper).toBeVisible();
-  await expect(uninstallHelper).toContainText("已安装");
+  await expect(uninstallHelper).toContainText("卸载");
   // Server-side truth converges: the plugin's skill really does appear in helper's installed skills.
   await expect
     .poll(async () => {
@@ -204,8 +202,12 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
       return res.skills.map((s) => s.name);
     })
     .toContain("data-analysis");
-  // Clicking "已安装" ("Installed") uninstalls: flips back to "安装" ("Install").
+  // An explicit confirmation removes only the chosen Agent’s installation.
   await uninstallHelper.click();
+  await page
+    .getByRole("dialog", { name: "卸载 data-analysis" })
+    .getByRole("button", { name: "卸载", exact: true })
+    .click();
   await expect(page.getByRole("button", { name: "安装 agent_helper" })).toBeVisible();
   // The first row, 「新建空白 Agent」: Create Agent opens over the list with the plugin ticked;
   // once created, it closes and the new Agent is in the still-open list, installed.
@@ -215,7 +217,7 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   await createDialog.getByRole("textbox", { name: "Agent id", exact: true }).fill("blank_analyst");
   await createDialog.getByRole("button", { name: "创建", exact: true }).click();
   await expect(createDialog).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "卸载 blank_analyst" })).toContainText("已安装");
+  await expect(page.getByRole("button", { name: "卸载 blank_analyst" })).toContainText("卸载");
   await expect
     .poll(async () => {
       const res = await (

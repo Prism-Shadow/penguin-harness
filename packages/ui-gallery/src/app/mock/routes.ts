@@ -1655,6 +1655,47 @@ router
     if (!row || row.status === "idle") fail(409, "not_running", "No Task is running.");
     return empty(202);
   })
+  .get("/api/sessions/:sessionId/subagents", (ctx) => {
+    const history = transcriptOf(ctx).history;
+    const children = new Map<
+      string,
+      {
+        sessionId: string;
+        agentId: string | null;
+        spawnedAt: string;
+        title: string | null;
+        turnKey: string;
+        position: string;
+      }
+    >();
+    let turn: string | undefined;
+    history.forEach((entry, i) => {
+      if (!entry.origin?.length && payloadOf(entry)?.type === "task_begin") turn = String(i);
+      if (entry.type !== "session_meta" || entry.origin?.length !== 1) return;
+      const id = entry.origin[0]!;
+      if (children.has(id)) return;
+      const row = ctx.store.session(id);
+      turn ??= String(i);
+      children.set(id, {
+        sessionId: id,
+        agentId: row?.agentId ?? null,
+        title: row?.title ?? null,
+        spawnedAt: entry.timestamp,
+        turnKey: turn,
+        position: String(i),
+      });
+    });
+    const ordered = [...children.values()].reverse();
+    const before = ctx.query.get("before");
+    const start = before === null ? 0 : ordered.findIndex((child) => child.position === before) + 1;
+    if (before !== null && start === 0) fail(400, "bad_request", "Unknown cursor");
+    const limit = Math.max(1, Number(ctx.query.get("limit")) || 32);
+    const page = ordered.slice(start, start + limit);
+    return {
+      items: page.map(({ position: _, ...item }) => item),
+      nextCursor: start + page.length < ordered.length ? page.at(-1)!.position : null,
+    };
+  })
   .post(
     "/api/sessions/:sessionId/subagents/:childSessionId/message",
     (): SubagentMessageResponse => ({
@@ -3120,6 +3161,16 @@ const sidebarApps = (ctx: Ctx): AppCenterShortcut[] => {
   });
 };
 
+const appCenterListing = ({ store }: Ctx, hidden: boolean): AppCenterResponse => ({
+  layout: store.f.appCenter.layout,
+  shortcuts: store.f.appCenter.shortcuts.filter((app) => {
+    const source = store.f.installed[app.agentId]?.workbenches?.find(
+      (w) => w.id === app.workbenchId,
+    );
+    return (source?.appCenter?.show === false) === hidden;
+  }),
+});
+
 router
   .get(
     "/api/projects/:projectId/agents/:agentId/workbenches",
@@ -3181,12 +3232,28 @@ router
     });
     return { workbench };
   })
-  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", () =>
-    notFound("Workbench"),
-  )
+  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", (ctx) => {
+    const show = record(ctx.body).show;
+    if (typeof show !== "boolean") fail(400, "bad_request", "show must be true or false");
+    const installed = installedOf(ctx);
+    const current = installed.workbenches?.find((item) => item.id === ctx.params.workbenchId);
+    if (!current) notFound("Workbench");
+    const workbench = { ...current, appCenter: { ...current.appCenter, show } };
+    installed.workbenches = installed.workbenches!.map((item) =>
+      item.id === current.id ? workbench : item,
+    );
+    ctx.store.userChannel.event({
+      type: "workbench_updated",
+      projectId: ctx.params.projectId!,
+      agentId: ctx.params.agentId!,
+      workbench,
+    });
+    return { workbench };
+  })
   // The App Center lists shortcuts in every build state under a stored arrangement; the demo's
   // Agents keep no workbench files, so a tile opened in a window finds no page to show.
-  .get("/api/projects/:projectId/app-center", ({ store }): AppCenterResponse => store.f.appCenter)
+  .get("/api/projects/:projectId/app-center", (ctx) => appCenterListing(ctx, false))
+  .get("/api/projects/:projectId/app-center/hidden", (ctx) => appCenterListing(ctx, true))
   .put("/api/projects/:projectId/app-center/layout", ({ store, body }): AppCenterLayoutResponse => {
     const layout = (record(body).layout ?? null) as AppCenterLayout | null;
     store.f.appCenter = { ...store.f.appCenter, layout };

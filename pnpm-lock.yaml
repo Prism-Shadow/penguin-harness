@@ -1789,6 +1789,9 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-setting':
+        specifier: workspace:*
+        version: link:../../library/setting
       '@prismshadow/penguin-ui':
         specifier: workspace:*
         version: link:../ui

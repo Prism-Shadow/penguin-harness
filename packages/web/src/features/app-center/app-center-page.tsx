@@ -16,7 +16,7 @@
  * - A click (or Enter) opens the app windowed, over the grid (`?app=<agentId>/<workbenchId>`,
  *   `<machineId>:` first for a machine's); the tile's menu also opens it full screen, the full
  *   page whose exit comes back here. The window's minimize (and Back) returns to the grid with
- *   the app still running, and its tile marked so; a click on that tile brings back the same
+ *   the app still running in the sidebar; a click on its tile brings back the same
  *   live window. Several apps can run at once, and they keep running while the viewer is on
  *   another page, because their windows live in a layer over the page area rather than here
  *   (app-center-windows.tsx, over the running set in lib/running-apps.ts, which other surfaces
@@ -63,7 +63,8 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { agentSettingsPath } from "../../lib/agent-location";
-import { APP_CENTER_PATH } from "../../lib/app-center-path";
+import { usePageWorkspace } from "../../lib/page-workspace";
+import { APP_CENTER_PATH, appWindowPath } from "../../lib/app-center-path";
 import { windowEntryState, WINDOW_PARAM } from "../../lib/app-window-address";
 import { openFullPage, returnToHostEntry } from "../../lib/host-history";
 import { launchApp, takeListedShortcuts, useRunningApps } from "../../lib/running-apps";
@@ -102,6 +103,7 @@ import { FolderNameDialog } from "./folder-name-dialog";
 import { FolderPanel } from "./folder-panel";
 import { NewFolderDialog } from "./new-folder-dialog";
 import { systemShortcutsOf } from "./system-tiles";
+import { HiddenWorkbenchesDialog } from "./hidden-workbenches-dialog";
 import { AppMenu, FolderMenu, GridMenu, type GridActions } from "./tile-menus";
 import { useTileDrag, type Drop, type Dragged } from "./tile-drag";
 import { useAppCenter } from "./use-app-center";
@@ -146,6 +148,7 @@ export function AppCenterPage() {
   const projectId = currentProject?.projectId ?? null;
   const { locale } = useLocale();
   const navigate = useNavigate();
+  const workspace = usePageWorkspace();
   const [params, setParams] = useSearchParams();
   /** The Agent list as a value: a new array with the same Agents does not read again. */
   const agentIds = agents.map((agent) => agent.agentId).join("\n");
@@ -173,17 +176,23 @@ export function AppCenterPage() {
   /** Opening a folder from the grid adds an entry and another replaces it; closing leaves it. */
   const setOpenFolderId = (id: string | null) => {
     const next = new URLSearchParams(params);
-    if (id === null) {
-      next.delete(FOLDER_PARAM);
-      returnToHostEntry(navigate, appCenterPath(next));
-    } else {
-      next.set(FOLDER_PARAM, id);
-      setParams(next, { replace: openFolderId !== null });
-    }
+    if (id === null) next.delete(FOLDER_PARAM);
+    else next.set(FOLDER_PARAM, id);
+    const path = appCenterPath(next);
+    if (
+      workspace?.openFromAppCenter(
+        { id: "catalog", kind: "catalog", title: S.appCenter.title, path },
+        openFolderId !== null,
+      )
+    )
+      return;
+    if (id === null) returnToHostEntry(navigate, path);
+    else setParams(next, { replace: openFolderId !== null });
   };
   const [renaming, setRenaming] = useState<GridFolder | null>(null);
   const [errorOf, setErrorOf] = useState<GridApp | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   /** The new-folder dialog's starting pick, while it is open. */
   const [newFolderPicked, setNewFolderPicked] = useState<string[] | null>(null);
 
@@ -302,7 +311,19 @@ export function AppCenterPage() {
   };
   /** Opens an app in its window, or a system app that has none as its page. */
   const launch = (app: GridApp) => {
-    if (opensInWindow(app)) openWindow(app);
+    const isWindow = opensInWindow(app);
+    if (
+      workspace?.openFromAppCenter({
+        id: "app:" + app.id,
+        kind: isWindow ? "window" : "system",
+        title: titleOf(app.shortcut),
+        path: isWindow ? appWindowPath(app.id) : app.shortcut.path,
+      })
+    ) {
+      if (isWindow && projectId) launchApp({ key: app.id, projectId, shortcut: app.shortcut });
+      return;
+    }
+    if (isWindow) openWindow(app);
     else void navigate(app.shortcut.path);
   };
 
@@ -376,6 +397,9 @@ export function AppCenterPage() {
         <GlyphIcon d={ICONS.folderPlus} />
         {S.appCenter.newFolderAction}
       </Button>
+      <Button size="sm" onClick={() => setShowHidden(true)}>
+        {S.appCenter.hiddenWorkbenches}
+      </Button>
       {hasWorkbench && create}
     </>
   );
@@ -387,7 +411,7 @@ export function AppCenterPage() {
           <div className="mx-auto flex min-h-full max-w-5xl flex-col">
             <PageHeader
               title={S.appCenter.title}
-              {...(grid !== null && grid.length > 0 ? { actions: headerActions } : {})}
+              {...(grid !== null ? { actions: headerActions } : {})}
             />
             {error !== null && (
               <NoticeStrip tone="danger">
@@ -500,6 +524,16 @@ export function AppCenterPage() {
           </div>
         </div>
       </AppWindow>
+      {showHidden && projectId && (
+        <HiddenWorkbenchesDialog
+          key={projectId}
+          projectId={projectId}
+          agentIds={agentIds}
+          titleOf={titleOf}
+          onRestored={refreshMachine}
+          onClose={() => setShowHidden(false)}
+        />
+      )}
       <FolderNameDialog
         name={renaming?.name ?? null}
         onClose={() => setRenaming(null)}

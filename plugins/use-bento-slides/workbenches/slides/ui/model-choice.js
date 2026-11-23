@@ -1,19 +1,10 @@
-// The chat model of each presentation: the model controls on the rail and on the start page, and
-// the choice that opens a deck's Session on a model or switches the Session it already has.
-//
-// A deck's model is its Session's model, read back from the Session: nothing here stores one.
-// The labels come from the app the page is framed in (the page SDK's getChatModel), which also
-// shows its own model picker (chooseChatModel).
+// Session settings come from the host. A choice on the start page belongs to the next deck only.
 import { S } from "./strings.js";
 
-const modelKey = (m) => JSON.stringify([m.provider, m.modelId]);
-const sessionPath = (sessionId) => "/sessions/" + encodeURIComponent(sessionId);
+const key = (model) => model && JSON.stringify([model.provider, model.modelId]);
+const sessionPath = (id) => "/sessions/" + encodeURIComponent(id);
+const label = (model) => model?.label || model?.modelId;
 
-/**
- * `currentDeck()` is the open deck (its `model`, `choosingModel` and `pendingModel` are kept on
- * it), `currentTalk()` the rail's view of its Session; `send` posts to the workbench's handler,
- * `loadSdk` imports the page SDK, and `refreshTalk` reads the deck's Session again.
- */
 export function setupModelChoice({
   $,
   notice,
@@ -23,36 +14,108 @@ export function setupModelChoice({
   currentTalk,
   refreshTalk,
 }) {
-  let defaultModel = null;
-  /** Whether the app has answered for the Project's default model (and so whether null means none). */
-  let defaultKnown = false;
-  let startModel = null;
-  let startPicking = false;
-  let railControl;
-  let startControl;
   const labels = new Map();
+  let defaultModel;
+  let thinking = null;
+  let startModel = null;
+  let startEffort = null;
+  let startPicking = false;
+  let railModel, newModel, railEffort, newEffort;
 
   function draw() {
-    const open = currentDeck();
-    const talk = currentTalk();
-    const busy = open?.choosingModel || open?.pendingModel || talk.status === "compacting";
-    // With no default model there is nothing for "Project default" to mean: ask for a choice.
-    const fallback = defaultKnown && defaultModel === null ? S.pickModel : S.defaultModel;
-    railControl?.(
-      open?.model ?? defaultModel,
+    const deck = currentDeck();
+    const status = currentTalk().status;
+    const fallback = defaultModel === null ? S.pickModel : S.defaultModel;
+    railModel?.(
+      deck?.model ?? defaultModel,
       fallback,
       S.chooseModel,
-      !open || Boolean(busy) || (talk.status !== null && talk.status !== "idle"),
-      !!open?.choosingModel,
+      !deck || !!deck.choosingModel,
+      !!deck?.choosingModel,
     );
-    startControl?.(startModel ?? defaultModel, fallback, S.chooseModel, startPicking, startPicking);
-    $("send").disabled = Boolean(busy);
-    $("rail-reset").disabled = Boolean(busy);
+    newModel?.(startModel ?? defaultModel, fallback, S.chooseModel, startPicking, startPicking);
+    railEffort?.(thinking, deck?.draftEffort ?? deck?.effort, !deck || !!deck.choosingModel);
+    newEffort?.(thinking, startEffort, startPicking);
+    const pending = deck?.pendingModel;
+    const detail = [
+      pending && deck.model ? S.pendingModel(label(deck.model), label(pending)) : "",
+      status && status !== "idle" ? S.effortNext : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const line = $("choice-status");
+    line.hidden = !detail;
+    if (line.textContent !== detail) line.textContent = detail;
+    $("send").disabled = !!deck?.savingChoice;
+    $("rail-reset").disabled = !!deck?.savingChoice;
   }
 
-  async function choose(start) {
+  function confirm(title, description) {
+    const dialog = $("choice-confirm");
+    $("choice-title").textContent = title;
+    $("choice-description").textContent = description;
+    dialog.returnValue = "";
+    return new Promise((resolve) => {
+      dialog.addEventListener("close", () => resolve(dialog.returnValue === "switch"), {
+        once: true,
+      });
+      dialog.showModal();
+    });
+  }
+
+  async function ensureSession(deck, model) {
+    const response = await send("/ask/session", "POST", {
+      deck: deck.id,
+      ...(model ? { model } : {}),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error?.message || body.error || String(response.status));
+    return body.sessionId;
+  }
+
+  async function setEffort(api, sessionId, thinkingLevel) {
+    const response = await fetch(api.apiBase + sessionPath(sessionId), {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thinkingLevel }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error?.message ?? String(response.status));
+    }
+  }
+
+  // The session and its label lookup are distinct reads. A slower lookup must not repaint
+  // an earlier selection over a later reply, or a conversation that was reset.
+  async function readSessionModel(deck, id) {
+    const revision = (deck.choiceRead = (deck.choiceRead || 0) + 1);
+    const api = await loadSdk();
+    if (!api) return;
+    const {
+      body: { session },
+    } = await api.transport.get(sessionPath(id));
+    async function named(ref) {
+      if (!ref) return null;
+      const k = key(ref);
+      if (!labels.has(k)) {
+        const row = await api.getChatModel?.(ref).catch(() => null);
+        labels.set(k, row?.label || ref.modelId);
+      }
+      return { provider: ref.provider, modelId: ref.modelId, label: labels.get(k) };
+    }
+    const [model, pending] = await Promise.all([named(session), named(session.pendingModel)]);
+    if (currentDeck() !== deck || currentTalk().sessionId !== id || deck.choiceRead !== revision)
+      return;
+    deck.model = model;
+    deck.pendingModel = pending;
+    deck.effort = session.thinkingLevel ?? null;
+    draw();
+  }
+
+  async function choose(start, level = null) {
     const deck = currentDeck();
-    if (start ? startPicking : !deck || deck.choosingModel || deck.pendingModel) return;
+    if (start ? startPicking : !deck || deck.choosingModel) return;
     if (start) startPicking = true;
     else deck.choosingModel = true;
     draw();
@@ -62,29 +125,48 @@ export function setupModelChoice({
         notice(S.modelUnsupported);
         return;
       }
-      const choice = await api.chooseChatModel(start ? startModel : deck.model);
-      if (!choice || (!start && currentDeck() !== deck)) return;
-      labels.set(modelKey(choice), choice.label);
+      let choice = null;
+      if (level === null) {
+        choice = await api.chooseChatModel(
+          start ? (startModel ?? defaultModel) : (deck.pendingModel ?? deck.model ?? defaultModel),
+        );
+        if (!choice) return;
+        labels.set(key(choice), label(choice));
+      }
       if (start) {
-        startModel = choice;
+        if (choice) startModel = choice;
+        else startEffort = level;
         return;
       }
-      // The first choice opens this deck's own Session. Existing Sessions keep their history.
-      const response = await send("/ask/session", "POST", { deck: deck.id, model: choice });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || String(response.status));
       if (currentDeck() !== deck) return;
-      const path = sessionPath(body.sessionId);
-      const {
-        body: { session },
-      } = await api.transport.get(path);
+      const talk = currentTalk();
+      if (choice && key(choice) === key(deck.pendingModel ?? deck.model)) return;
+      if (level !== null && !talk.sessionId && defaultModel === null && !deck.model) {
+        deck.draftEffort = level;
+        return;
+      }
+      if (talk.messages.some((message) => message.role === "user")) {
+        const copy = choice
+          ? key(choice) !== key(deck.model) && S.modelCost(label(choice))
+          : (deck.effort ?? thinking?.defaultLevel) !== level && S.effortCost;
+        if (copy && !(await confirm(choice ? S.chooseModel : thinking.title, copy))) return;
+      }
+      if (currentDeck() !== deck || currentTalk().sessionId !== talk.sessionId) return;
+      deck.savingChoice = true;
+      draw();
+      const id = talk.sessionId ?? (await ensureSession(deck, choice));
       if (currentDeck() !== deck) return;
-      if (modelKey(session) !== modelKey(choice)) {
-        await api.transport.post(path + "/switch-model", {
+      if (level !== null) await setEffort(api, id, level);
+      else if (talk.sessionId) {
+        await api.transport.post(sessionPath(id) + "/switch-model", {
           provider: choice.provider,
           modelId: choice.modelId,
+          whenIdle: true,
         });
-        deck.pendingModel = choice;
+      }
+      if (deck.draftEffort) {
+        await setEffort(api, id, deck.draftEffort);
+        deck.draftEffort = null;
       }
       await refreshTalk();
     } catch (error) {
@@ -92,84 +174,71 @@ export function setupModelChoice({
         notice(
           error.name === "WorkbenchHostUnavailable"
             ? S.modelUnsupported
-            : S.modelFailed(String(error.message || error)),
+            : S.choiceFailed(String(error.message || error)),
         );
     } finally {
       if (start) startPicking = false;
-      else deck.choosingModel = false;
+      else {
+        deck.choosingModel = false;
+        deck.savingChoice = false;
+      }
       draw();
-      requestAnimationFrame(() => {
-        if (start || currentDeck() === deck)
-          (start ? $("start-model") : $("chat-model")).querySelector("button")?.focus();
-      });
+      if (level === null)
+        requestAnimationFrame(() => {
+          if (start || currentDeck() === deck)
+            $(start ? "start-model" : "chat-model")
+              .querySelector("button")
+              ?.focus();
+        });
     }
   }
 
-  /** Reads the model of the deck's Session into `deck.model`; ends a switch once the Session is idle. */
-  async function readSessionModel(deck, sessionId) {
+  async function prepareStart(deck) {
+    if (startEffort === null) return;
+    const id = await ensureSession(deck, startModel);
     const api = await loadSdk();
-    if (!api || currentDeck() !== deck) return;
-    const {
-      body: { session },
-    } = await api.transport.get(sessionPath(sessionId));
-    if (currentDeck() !== deck || currentTalk().sessionId !== sessionId) return;
-    const key = modelKey(session);
-    if (!labels.has(key)) {
-      const ref = { provider: session.provider, modelId: session.modelId };
-      const named = await api.getChatModel?.(ref).catch(() => null);
-      if (currentDeck() !== deck || currentTalk().sessionId !== sessionId) return;
-      labels.set(key, named?.label || session.modelId);
-    }
-    deck.model = { provider: session.provider, modelId: session.modelId, label: labels.get(key) };
-    if (deck.pendingModel && session.status === "idle") {
-      if (modelKey(deck.pendingModel) !== modelKey(session)) notice(S.modelUnchanged);
-      deck.pendingModel = null;
-    }
-    draw();
-  }
-
-  /**
-   * Whether a request would find no model: the app says the Project has no default model, and
-   * neither the deck's Session (`deck`, or null on the start page) nor the start page names one.
-   */
-  const needsModel = (deck) =>
-    defaultKnown && defaultModel === null && !(deck ? deck.model : startModel);
-
-  /** The model chosen on the start page for the next new presentation: null for the Project default. */
-  const startChoice = () => startModel;
-  /** Once a presentation has opened on it, the start page goes back to the Project default. */
-  function clearStartChoice() {
-    startModel = null;
-    draw();
+    await setEffort(api, id, startEffort);
   }
 
   void import("./model-control.js")
-    .then(({ mountModelControl }) => {
-      railControl = mountModelControl($("chat-model"), () => void choose(false));
-      startControl = mountModelControl($("start-model"), () => void choose(true));
+    .then(({ mountModelControl, mountEffortControl }) => {
+      railModel = mountModelControl($("chat-model"), () => void choose(false));
+      newModel = mountModelControl($("start-model"), () => void choose(true));
+      railEffort = mountEffortControl($("chat-effort"), (level) => void choose(false, level));
+      newEffort = mountEffortControl($("start-effort"), (level) => void choose(true, level));
       draw();
-      void loadSdk()
-        .then((api) => api?.getChatModel?.())
-        .then((model) => {
-          if (model === undefined) return;
-          defaultModel = model;
-          defaultKnown = true;
-          draw();
-        })
-        .catch(() => {
-          /* The picker can retry when the user opens it. */
-        });
+      void loadSdk().then((api) => {
+        void api
+          ?.getChatModel?.()
+          .then((model) => {
+            defaultModel = model;
+            draw();
+          })
+          .catch(() => {});
+        void api
+          ?.getChatThinkingOptions?.()
+          .then((levels) => {
+            thinking = levels;
+            draw();
+          })
+          .catch((error) => notice(S.choiceFailed(error.message)));
+      });
     })
     .catch(() => {
-      /* Plain static previews do not have the workbench UI runtime. */
+      /* Static previews have no host UI runtime. */
     });
 
   return {
     draw,
     readSessionModel,
-    startChoice,
-    clearStartChoice,
-    needsModel,
+    prepareStart,
+    startChoice: () => startModel,
+    clearStartChoice() {
+      startModel = null;
+      startEffort = null;
+      draw();
+    },
+    needsModel: (deck) => defaultModel === null && !(deck ? deck.model : startModel),
     pick: (start) => void choose(start),
   };
 }

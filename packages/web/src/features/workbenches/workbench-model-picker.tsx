@@ -11,11 +11,27 @@ import {
 import { sameModelRef } from "../../lib/model-grouping";
 import { rememberProject } from "../../state/project";
 import { S } from "../../lib/strings";
-import { ModelPickerModal, modelLabel } from "../model-picker";
+import {
+  effectiveThinkingLevel,
+  ModelPickerModal,
+  modelLabel,
+  SELECTABLE_THINKING_LEVELS,
+} from "../model-picker";
 
 type Choice = ModelRefDto & { label: string };
 type Request = { id: string; op: "choose" | "get"; current: ModelRefDto | null };
-type Answer = { opened: true } | { accepted: true } | { model: Choice | null } | { error: string };
+type ThinkingOptions = {
+  defaultLevel: string;
+  title: string;
+  names: Readonly<Record<string, string>>;
+  options: Array<{ value: string; label: string }>;
+};
+type Answer =
+  | { thinking: ThinkingOptions }
+  | { opened: true }
+  | { accepted: true }
+  | { model: Choice | null }
+  | { error: string };
 
 const choiceOf = (row: ModelRefDto & Parameters<typeof modelLabel>[0]): Choice => ({
   provider: row.provider,
@@ -39,10 +55,12 @@ function modelRefOf(value: unknown): ModelRefDto | null {
  */
 export function WorkbenchModelPicker({
   frame,
+  agentId,
   projectId,
   machineId,
 }: {
   frame: RefObject<HTMLIFrameElement | null>;
+  agentId: string;
   projectId: string;
   machineId: string | null;
 }) {
@@ -97,6 +115,34 @@ export function WorkbenchModelPicker({
         return;
       }
       if (data.type !== CHAT_MODEL_MESSAGE) return;
+      if (data.op === "thinking") {
+        const id = data.id;
+        answer(id, { accepted: true });
+        void Promise.all([
+          api.getAgentConfig(projectId, agentId, machineId),
+          api.getChatDefaults(projectId, machineId),
+        ]).then(
+          ([agent, defaults]) => {
+            const names = S.chat.thinkingLevelNames;
+            answer(id, {
+              thinking: {
+                defaultLevel: effectiveThinkingLevel(
+                  agent.config.model?.thinkingLevel ?? "",
+                  defaults.thinkingLevel,
+                ),
+                title: S.chat.thinkingLevel,
+                names,
+                options: SELECTABLE_THINKING_LEVELS.map((value) => ({
+                  value,
+                  label: S.chat.thinkingLevelMenuName(names[value] ?? value, value),
+                })),
+              },
+            });
+          },
+          (error: Error) => answer(id, { error: error.message }),
+        );
+        return;
+      }
       const request: Request = {
         id: data.id,
         op: data.op === "choose" ? "choose" : "get",
@@ -132,7 +178,7 @@ export function WorkbenchModelPicker({
       iframe.removeEventListener("load", dismiss);
       dismiss();
     };
-  }, [frame, projectId, machineId, answer, navigate, shown]);
+  }, [frame, agentId, projectId, machineId, answer, navigate, shown]);
   if (!picker) return null;
   const { catalog, request } = picker;
   const finish = (choice: Choice | null) => {

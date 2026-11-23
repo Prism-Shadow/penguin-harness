@@ -353,6 +353,8 @@ export interface AdminPasswordResetRequest {
  * no restart.
  */
 export interface ServerSettings {
+  terminalMaxOpen: number;
+  browserMaxOpen: number;
   /**
    * "Application uses the proxy" (default on): the server's own outbound traffic (LLM
    * requests, the update check, image fetches). On with `proxyUrl` set = that address
@@ -414,6 +416,8 @@ export interface ServerSettingsResponse {
 
 /** PUT body: every field optional, omitted fields keep their current value (mirrors prefs). */
 export interface ServerSettingsUpdateRequest {
+  terminalMaxOpen?: number;
+  browserMaxOpen?: number;
   proxyForApp?: boolean;
   proxyForAgent?: boolean;
   /** Company mode master switch; see `ServerSettings.companyMode`. */

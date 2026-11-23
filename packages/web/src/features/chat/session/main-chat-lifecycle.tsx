@@ -96,7 +96,12 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
    * the composer shows and edits, the settings page it links to — are that Agent's, read and
    * written over there. The same id on this server is another Agent.
    */
-  const selectedAgentMachine = selected === null ? null : machineForSession(selected.sessionId);
+  const selectedAgentMachine =
+    selected === null
+      ? null
+      : scope.scopedHost
+        ? scope.scopedHost.machineId
+        : machineForSession(selected.sessionId);
   // Goal mode's plugin check, against the Session's Agent on the server that holds it
   // (goal-plugin-gate.ts).
   const goalPlugin = useMemo(

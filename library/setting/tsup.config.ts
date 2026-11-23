@@ -3,6 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: [
     "src/attachment-limits.ts",
+    "src/resource-limits.ts",
     "src/desktop-service.ts",
     "src/desktop-update-port.ts",
     "src/index.ts",

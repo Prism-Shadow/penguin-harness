@@ -1,6 +1,8 @@
 /**
  * - Opening many conversations leaves one Workspace row each; a native app opened twice
  *   has one Apps row, can share a pane with a conversation and is reachable on a phone.
+ * - A native app can fill the screen while retaining its split and the other pane’s draft.
+ * - The touch drawer offers More, Full screen and Close on each running app.
  * - Minimizing a workbench keeps its document; closing it destroys that document and
  *   keeps the conversation and its unfinished message available.
  */
@@ -97,14 +99,28 @@ test("many visited conversations and repeated launches use only their own sideba
   await expect(apps(page).getByRole("listitem")).toHaveCount(1);
   const workspace = (id) => page.locator(`button[data-session-id="${id}"]:visible`);
   await expect(side.locator("button[data-session-id]")).toHaveCount(sessions.length);
-  await fromRow(page, workspace(first.id), "Open on the right");
-  await expect(slot(page, first.key)).toHaveAttribute("data-pane", "right");
-  await expect(slot(page, "app:system_agent/models")).toHaveAttribute("data-pane", "left");
+  await fromRow(page, workspace(first.id), "Open on the left");
+  await expect(slot(page, first.key)).toHaveAttribute("data-pane", "left");
+  await expect(slot(page, "app:system_agent/models")).toHaveAttribute("data-pane", "right");
+  await expect(slot(page, first.key).locator(composer)).toHaveValue("A draft from the first page");
+  const nativeRow = models.locator("xpath=ancestor::li[1]");
+  await nativeRow.getByRole("button", { name: "Open full screen", exact: true }).click();
+  await expect(slot(page, "app:system_agent/models")).toHaveAttribute("data-pane", "full");
+  await expect(side).not.toBeVisible();
+  await expect(slot(page, first.key)).not.toBeVisible();
+  await page.getByRole("button", { name: "Exit full screen", exact: true }).click();
+  await expect(side).toBeVisible();
+  await expect(slot(page, "app:system_agent/models")).toHaveAttribute("data-pane", "right");
+  await expect(slot(page, first.key)).toHaveAttribute("data-pane", "left");
+  await slot(page, first.key).locator(composer).click();
   await expect(slot(page, first.key).locator(composer)).toHaveValue("A draft from the first page");
   await page.setViewportSize({ width: 390, height: 844 });
   const drawer = page.getByRole("banner").getByRole("button", { name: /^Sessions/ });
   await expect(slot(page, first.key)).toBeVisible();
-  await expect(slot(page, "app:system_agent/models")).not.toBeVisible();
+  await expect(
+    slot(page, first.key).locator('[data-testid="dock"][data-position="bottom"]'),
+  ).toBeVisible();
+  await expect(slot(page, "app:system_agent/models")).toBeVisible();
   await drawer.click();
   await models.click();
   await expect(slot(page, "app:system_agent/models")).toBeVisible();
@@ -122,10 +138,12 @@ test("sidebar minimize restores the same workbench and close ends its frame", as
   await page.goto("/chat/" + notes.id);
   const chat = slot(page, notes.key);
   await chat.locator(composer).fill("Keep this triage note");
-  await chat.getByRole("button", { name: "Browse workbenches" }).click();
+  await chat.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await chat.getByRole("button", { name: "Open App Center", exact: true }).click();
   await page
-    .getByRole("region", { name: "Workbenches" })
-    .getByText("Support", { exact: true })
+    .getByRole("list", { name: "App Center", exact: true })
+    .locator('li[data-app="penguin_support/support"] > button')
+    .first()
     .click();
   const appKey = "app:penguin_support/support";
   const app = slot(page, appKey);
@@ -151,10 +169,12 @@ test("sidebar minimize restores the same workbench and close ends its frame", as
   expect(original.isDetached()).toBe(true);
   await expect(page.locator(`button[data-session-id="${notes.id}"]`)).toHaveCount(1);
   await expect(chat.locator(composer)).toHaveValue("Keep this triage note");
-  await chat.getByRole("button", { name: "Browse workbenches" }).click();
+  await chat.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await chat.getByRole("button", { name: "Open App Center", exact: true }).click();
   await page
-    .getByRole("region", { name: "Workbenches" })
-    .getByText("Support", { exact: true })
+    .getByRole("list", { name: "App Center", exact: true })
+    .locator('li[data-app="penguin_support/support"] > button')
+    .first()
     .click();
   await fromRow(page, target, "Open full screen");
   const fullPath = /\/app\/default_project\/penguin_support\/support(?:\/support)?$/;
@@ -166,4 +186,46 @@ test("sidebar minimize restores the same workbench and close ends its frame", as
   await page.getByRole("button", { name: "Exit full screen" }).click();
   await expect(page).toHaveURL(/\/apps\?app=penguin_support%2Fsupport$/);
   await expect(page.getByRole("region", { name: "Support" }).locator("iframe")).toBeVisible();
+});
+
+test.describe("touch app controls", () => {
+  test.use({ hasTouch: true, viewport: { width: 360, height: 780 } });
+  test("uses each window button in the phone drawer without opening the underlying row", async ({
+    page,
+  }) => {
+    await setup(page, "touchappcontrols");
+    await page.goto("/apps");
+    const models = "system_agent/models";
+    await page.locator(`[data-app="${models}"] > button`).first().tap();
+    const drawer = page.getByRole("banner").getByRole("button", { name: /^Sessions/ });
+    await drawer.tap();
+    const row = apps(page)
+      .getByRole("listitem")
+      .filter({ has: page.locator(`[data-app-row="${models}"]`) });
+    const more = row.getByRole("button", { name: "More actions", exact: true });
+    const full = row.getByRole("button", { name: "Open full screen", exact: true });
+    const close = row.getByRole("button", { name: "Close", exact: true });
+    await more.tap({ trial: true });
+    let right = 0;
+    for (const control of [more, full, close]) {
+      const box = await control.boundingBox();
+      expect(box.width).toBeGreaterThanOrEqual(40);
+      expect(box.height).toBeGreaterThanOrEqual(40);
+      expect(box.x).toBeGreaterThanOrEqual(right);
+      right = box.x + box.width;
+    }
+    await more.tap();
+    await page.getByRole("menuitem", { name: "Minimize", exact: true }).tap();
+    await drawer.tap();
+    await full.tap();
+    await expect(slot(page, "app:" + models)).toHaveAttribute("data-pane", "full");
+    await page.getByRole("button", { name: "Exit full screen", exact: true }).tap();
+    await drawer.tap();
+    await close.tap();
+    await drawer.tap();
+    await expect(row).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      360,
+    );
+  });
 });

@@ -49,7 +49,7 @@ function writeFolded(folded: boolean): void {
 
 export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
   const workspace = usePageWorkspace();
-  const { agent, rows } = useSidebarApps(workspace?.layout.pages);
+  const { rows } = useSidebarApps(workspace?.layout.pages);
   const navigate = useNavigate();
   const [folded, setFolded] = useState(readFolded);
   const [searching, setSearching] = useState(false);
@@ -112,16 +112,12 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
             onSelect: () => open(row),
           },
       ...layoutActions(workspace, page, onNavigate),
-      ...(page.kind === "window"
-        ? [
-            {
-              id: "fullscreen",
-              label: S.appCenter.windowFullScreen,
-              glyph: ICONS.square,
-              onSelect: act(() => workspace.fullScreen(page)),
-            },
-          ]
-        : []),
+      {
+        id: "fullscreen",
+        label: S.appCenter.windowFullScreen,
+        glyph: ICONS.square,
+        onSelect: act(() => workspace.fullScreen(page)),
+      },
       {
         id: "close",
         label: S.common.close,
@@ -219,13 +215,11 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
             ))}
           </Menu>
         </Dropdown>
-        {agent && (
-          <SidebarControl
-            glyph={ICONS.gear}
-            label={S.sidebarApps.manage}
-            onClick={() => go(agentSettingsPath(agent.agentId, agent.machineId, "workbenches"))}
-          />
-        )}
+        <SidebarControl
+          glyph={ICONS.gear}
+          label={S.sidebarApps.manage}
+          onClick={() => go("/plugins")}
+        />
       </SidebarListHeader>
       <Fold open={!folded || searching}>
         {visible.length === 0 && (
@@ -237,6 +231,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
           className="max-h-[min(8rem,18dvh)] space-y-px overflow-y-auto md:max-h-[min(12rem,25dvh)]"
         >
           {visible.map((row) => {
+            const actions = menuOf(row);
             const state = S.appCenter.running;
             const name = S.sidebarApps.rowName(row.title, row.agentName, state);
             return (
@@ -277,7 +272,10 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
                 active={workspace.current?.id === row.page.id}
                 running
                 build={row.build}
-                menuActions={menuOf(row)}
+                menuActions={actions}
+                windowActions={actions.filter(
+                  (item) => item.id === "fullscreen" || item.id === "close",
+                )}
                 moreLabel={S.chat.moreActions}
                 onOpen={() => open(row)}
               />

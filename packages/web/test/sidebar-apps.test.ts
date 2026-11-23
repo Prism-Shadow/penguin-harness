@@ -53,7 +53,7 @@ const workbench = (id: string, over: Partial<WorkbenchInfo> = {}): WorkbenchInfo
 
 const key = (id: string, agentId = AGENT_ID) => `${agentId}/${id}`;
 
-/** Open a fixture workbench through the same action used by Agent settings and Browse workbenches. */
+/** Open a fixture workbench through the same action used by Agent settings. */
 function Launchers({ items }: { items: WorkbenchInfo[] }) {
   const restore = useRestoreApp();
   return items.flatMap((item) =>
@@ -294,7 +294,6 @@ it("keeps the open app when changing Agents and leaves the next Agent's unopened
   await openMenu(key("board"));
   expect(menuLabels()).toEqual([
     en.pageWorkspace.restore,
-    en.pageWorkspace.left,
     en.pageWorkspace.right,
     en.pageWorkspace.separate,
     en.appCenter.windowFullScreen,

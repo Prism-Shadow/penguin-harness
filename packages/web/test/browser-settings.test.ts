@@ -171,6 +171,8 @@ describe("turning Chrome connections off server-wide", () => {
     proxyUrl: null,
     attachmentMaxMb: 100,
     attachmentTotalMb: 120,
+    terminalMaxOpen: 12,
+    browserMaxOpen: 20,
     companyMode: false,
     browserExtensionsEnabled,
     agentApiEnabled: true,

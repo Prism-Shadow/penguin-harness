@@ -141,3 +141,6 @@ export {
   assertDistinctPaths,
   specialEntries,
 } from "@prismshadow/penguin-library-http/zip-entries";
+
+export { closeSessionResources, countSessionResources } from "../http/session-resources.js";
+export type { SessionResourceAccess } from "../http/session-resources.js";

@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { pageSessionId } from "../../lib/page-layout";
+import { useEffect, useState, type ReactNode } from "react";
 import { EmptyState, MenuItem, Spinner } from "@prismshadow/penguin-ui";
 import { getWorkbenches } from "../../api/endpoints";
-import { locatedAppKey } from "../../lib/app-center-path";
+import { locatedAppKey, appWindowPath } from "../../lib/app-center-path";
+import { sessionAppPair } from "../../lib/session-app-dock";
+import { usePageWorkspace } from "../../lib/page-workspace";
 import { localizedText } from "../../lib/skill-use";
 import { S } from "../../lib/strings";
-import { useRestoreApp, type RunningShortcut } from "../../lib/running-apps";
+import { launchApp, useRestoreApp, type RunningShortcut } from "../../lib/running-apps";
 import { shortcutOfWorkbench } from "../../lib/workbench-shortcut";
 import { runningWorkbenches, WORKBENCH_UPDATED_EVENT } from "../../lib/workbench-tabs";
 import { failureNode } from "../../lib/failure";
@@ -12,7 +15,6 @@ import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { TileIcon } from "../app-center";
 import { useSafeMode } from "../../rescue/safe-mode";
-import type { ReactNode } from "react";
 
 export function WorkbenchDirectory({ path }: { path: string }) {
   const { currentProject } = useProject();
@@ -24,6 +26,7 @@ export function WorkbenchDirectory({ path }: { path: string }) {
   const [failure, setFailure] = useState<ReactNode>(null);
   const safe = useSafeMode();
   const restore = useRestoreApp();
+  const workspace = usePageWorkspace();
   const { locale } = useLocale();
   useEffect(() => {
     if (!projectId || safe) return;
@@ -75,7 +78,20 @@ export function WorkbenchDirectory({ path }: { path: string }) {
                 key={key}
                 label={title}
                 glyph={<TileIcon shortcut={shortcut} title={title} size={20} />}
-                onSelect={() => restore(key, shortcut)}
+                onSelect={() => {
+                  const pair = workspace && sessionAppPair(workspace.layout);
+                  if (!workspace || !pair || !projectId) {
+                    restore(key, shortcut);
+                    return;
+                  }
+                  launchApp({ key, projectId, shortcut });
+                  workspace.openBesideSession(pageSessionId(pair.session), {
+                    id: "app:" + key,
+                    kind: "window",
+                    title,
+                    path: appWindowPath(key),
+                  });
+                }}
               />
             );
           })
