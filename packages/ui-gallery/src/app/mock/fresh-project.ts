@@ -108,8 +108,6 @@ export function seedFreshProject(f: DemoFixtures, playing: boolean): void {
   }
   f.project.name = "default_project";
   f.user.displayName = f.user.userId;
-  f.user.passwordIsInitial = true;
-  f.prefs.initialPasswordBannerDismissed = false;
   f.version = { ...f.version, version, describe: `v${version}`, buildDate: null, commit: null };
   f.update = {
     ...f.update,

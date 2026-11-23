@@ -1,6 +1,6 @@
 /**
- * The homepage starts on the fresh project's new chat. Playing shows a single evolution round,
- * stopping restores the start, and reduced motion waits for the same explicit choice.
+ * The homepage plays a single evolution round when its frame comes into view. Stopping restores
+ * a new chat, and reduced motion waits for Play. Setup prompts stay out of the walkthrough.
  * The AMSP player has independent pause and resume controls.
  */
 import { test, expect } from "@playwright/test";
@@ -43,15 +43,12 @@ for (const [lang, play, stop] of [
     const guide = frame.getByRole("dialog", {
       name: lang === "en" ? "Connect a model provider first" : "先连接一个模型供应商",
     });
-    await expect(guide).toBeVisible();
-    await page.clock.fastForward(30_000);
-    await expect(frame.locator(composer)).toHaveValue("");
-    await page.getByRole("button", { name: play, exact: true }).click();
+    const passwordNotice = frame.getByText(
+      lang === "en" ? /this account is using its initial password/i : /当前账号正在使用初始密码/,
+    );
     await expect(frame.locator(composer)).not.toHaveValue("");
-    await page.getByRole("button", { name: stop, exact: true }).click();
-    await expect(guide).toBeVisible();
-    await expect(frame.locator(composer)).toHaveValue("");
-    await page.getByRole("button", { name: play, exact: true }).click();
+    await expect(guide).toHaveCount(0);
+    await expect(passwordNotice).toHaveCount(0);
     const chart = frame.locator("main svg.ui-chart").first();
     for (let step = 0; step < 40 && !(await chart.isVisible()); step++) {
       await page.clock.runFor(1500);
@@ -61,6 +58,10 @@ for (const [lang, play, stop] of [
     await expect(chart).toBeVisible();
     await page.getByRole("button", { name: stop, exact: true }).click();
     await expect(frame.locator(composer)).toHaveValue("");
+    await expect(guide).toHaveCount(0);
+    await expect(passwordNotice).toHaveCount(0);
+    await page.getByRole("button", { name: play, exact: true }).click();
+    await expect(frame.locator(composer)).not.toHaveValue("");
   });
 }
 
@@ -75,24 +76,16 @@ for (const [lang, name, instruction, download] of [
 ]) {
   test(`opens the installed guide's download instructions (${lang})`, async ({ page }) => {
     const { frame } = await openHero(page, lang);
-    const dialog = frame.getByRole("dialog");
-    await expect(dialog).toBeVisible();
-    const entry = dialog.getByRole("button", { name, exact: true });
+    await page
+      .getByRole("button", { name: lang === "en" ? "Stop demo" : "停止演示", exact: true })
+      .click();
+    await expect(frame.getByRole("dialog")).toHaveCount(0);
     const row = frame.locator('[data-app-row="default_agent/first-workbench-guide"]:visible');
     if (!("@penguinharness/first-workbench-guide" in serverPackage.dependencies)) {
-      await expect(entry).toHaveCount(0);
       await expect(row).toHaveCount(0);
       return;
     }
-    // The guide package and the host dialog can ship independently. Both entries open its window.
-    await expect(row).toBeVisible();
-    if (await entry.isVisible()) await entry.click();
-    else {
-      await dialog
-        .getByRole("button", { name: lang === "en" ? "Later" : "稍后", exact: true })
-        .click();
-      await row.click();
-    }
+    await row.click();
     const guide = frame.getByRole("region", { name, exact: true });
     await expect(guide.getByText(instruction)).toBeVisible();
     const link = guide.getByRole("link", { name: download });
@@ -113,6 +106,11 @@ test.describe("starting the demo on a touchscreen", () => {
       await page.goto("/");
       const play = page.getByRole("button", { name: "Play demo", exact: true });
       const stop = page.getByRole("button", { name: "Stop demo", exact: true });
+      const iframe = page.locator('iframe[src*="fresh=1"]');
+      if (reducedMotion === "no-preference") {
+        await stop.tap();
+        await expect(iframe.contentFrame().locator(composer)).toHaveValue("");
+      }
       // A reader can reach Play at the bottom edge before any of the app has come into view.
       await play.evaluate((el) =>
         window.scrollTo({
@@ -120,7 +118,6 @@ test.describe("starting the demo on a touchscreen", () => {
           behavior: "instant",
         }),
       );
-      const iframe = page.locator('iframe[src*="fresh=1"]');
       const visibleFraction = () =>
         iframe.evaluate((el) => {
           const rect = el.getBoundingClientRect();
@@ -133,7 +130,8 @@ test.describe("starting the demo on a touchscreen", () => {
       await expect(stop).toBeInViewport({ ratio: 1 });
       await expect(iframe.contentFrame().locator(composer)).not.toHaveValue("");
       await stop.tap();
-      await expect(iframe.contentFrame().getByRole("dialog")).toBeVisible();
+      await expect(iframe.contentFrame().locator(composer)).toHaveValue("");
+      await expect(iframe.contentFrame().getByRole("dialog")).toHaveCount(0);
     });
   }
 });

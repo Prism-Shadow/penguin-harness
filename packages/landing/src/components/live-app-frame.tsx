@@ -83,7 +83,8 @@ export function LiveAppFrame({
   const phone = useMedia("(max-width: 639.98px)");
   const fine = useMedia("(hover: hover) and (pointer: fine)");
   const reducedMotion = usePrefersReducedMotion();
-  const [playing, setPlaying] = useState(false);
+  const [playbackChoice, setPlaybackChoice] = useState<boolean | null>(null);
+  const playing = playbackChoice ?? (!!autoplay && !reducedMotion);
   const size = frameSize(phone);
   const src = liveFrameSrc(surface, locale, dark, playing ? autoplay : undefined, !!autoplay);
   const box = useRef<HTMLDivElement | null>(null);
@@ -158,7 +159,7 @@ export function LiveAppFrame({
         button.scrollIntoView({ block: "start", behavior: reducedMotion ? "instant" : "smooth" });
       }
     }
-    setPlaying(!playing);
+    setPlaybackChoice(!playing);
   };
 
   const ready = readySrc === src;

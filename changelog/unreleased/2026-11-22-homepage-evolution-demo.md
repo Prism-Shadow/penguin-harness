@@ -7,7 +7,7 @@
 
 [中文](2026-11-22-homepage-evolution-demo.zh.md)
 
-The homepage opens the Web App on a fresh Project. **Play demo** runs one self-evolution example through its evaluation chart. **Stop demo** closes the run and returns to the initial screen.
+The homepage automatically plays one self-evolution example through its evaluation chart. **Stop demo** returns to a fresh chat and **Play demo** starts another round. The demo keeps the setup dialog and initial-password notice out of the conversation. Visitors who prefer reduced motion can start playback with **Play demo**.
 
 When most of the demo is offscreen, starting playback scrolls the window into view.
 
