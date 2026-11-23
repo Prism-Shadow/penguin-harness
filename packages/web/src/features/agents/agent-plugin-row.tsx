@@ -305,7 +305,7 @@ export function AgentPluginRow({
   locale: "zh" | "en";
   installs: AgentInstalls | undefined;
   isOwner: boolean;
-  actions: AgentPluginActions;
+  actions: AgentPluginActions | undefined;
   /** The plugin's server module on the Agent's server, for a plugin the Agent carries that ships one. */
   module?: AgentModule | undefined;
   /** A part's puzzle just pointed here. */
@@ -332,7 +332,7 @@ export function AgentPluginRow({
       }
       description={row === undefined ? undefined : rowShortDescription(row, locale)}
       meta={version === undefined ? undefined : `v${version}`}
-      trailing={rowActions(entry, title, isOwner, actions, module)}
+      trailing={actions && rowActions(entry, title, isOwner, actions, module)}
       onClick={onOpen}
       onBodyClick={cardBodyClick(onOpen)}
       marked={marked}

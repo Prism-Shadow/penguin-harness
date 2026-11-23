@@ -2850,8 +2850,10 @@ export class SessionManager {
     // mirror, and the live subagent children, so subscribers can render all three hints
     // without a dedicated event type.
     const subagents = entry.session.listBackgroundSubagents?.() ?? [];
+    const meta = entry.session.metaMessage;
     this.publishEvent(entry, {
       type: "task_state",
+      ...(meta && isSessionMeta(meta) ? { contextWindow: meta.payload.model_context_window } : {}),
       state,
       queued: entry.followUps.length,
       ...(entry.pendingSteering.length > 0
