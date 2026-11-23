@@ -43,6 +43,15 @@ try {
   $exe=Join-Path $program 'PenguinHarness.exe'
   $app=Start-Process -FilePath $exe -PassThru
   Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+  Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class FreshFixture {
+ [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr w, IntPtr l);
+ [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr window, int id);
+ [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr window);
+}
+'@
   $tree=[Windows.Automation.TreeScope]
   $everything=[Windows.Automation.Condition]::TrueCondition
   $deadline=[DateTime]::UtcNow.AddSeconds(40)
@@ -54,20 +63,34 @@ try {
       $message=$contents | Where-Object {$_.Current.Name -match '(?i)reconnect the drive|unavailable at'} | Select-Object -First 1
       if ($message) {
         Write-Output ('Desktop: '+$message.Current.Name)
-        $ok=$contents | Where-Object {$_.Current.ControlType -eq [Windows.Automation.ControlType]::Button} | Select-Object -First 1
-        if ($ok) {$ok.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()}
+        $handle=[IntPtr]$window.Current.NativeWindowHandle
+        $ok=[FreshFixture]::GetDlgItem($handle,1)
+        Write-Output ("Error dialog: " + $window.Current.ClassName + ", handle=" + $handle + ", default OK=" + $ok)
+        if ($ok -ne [IntPtr]::Zero) { [void][FreshFixture]::PostMessage($ok,0x00F5,[IntPtr]::Zero,[IntPtr]::Zero) }
+        else { [void][FreshFixture]::PostMessage($handle,0x0111,[IntPtr]1,[IntPtr]::Zero) }
         break
       }
     }
     if (!$message) {Start-Sleep -Milliseconds 250}
   }
-  if (!$message -or !$app.WaitForExit(20000)) {throw 'Missing-volume desktop error was not presented and dismissed.'}
+  if (!$message) {throw 'Desktop did not display the missing data location.'}
+  Start-Sleep -Milliseconds 750
+  if ([FreshFixture]::IsWindow($handle)) {
+    [void][FreshFixture]::PostMessage($handle,0x0010,[IntPtr]::Zero,[IntPtr]::Zero)
+  }
+  if (!$app.WaitForExit(12000)) {
+    $remaining=@([Windows.Automation.AutomationElement]::RootElement.FindAll($tree::Children,$everything) | Where-Object { $_.Current.ProcessId -eq $app.Id } | ForEach-Object { $_.Current.ClassName + ":" + $_.Current.Name })
+    Write-Output ("Process remained after native dialog dismissal; original dialog exists=" + [FreshFixture]::IsWindow($handle) + "; remaining windows=" + ($remaining -join ","))
+    if ([FreshFixture]::IsWindow($handle)) {throw 'The native error could not be dismissed.'}
+    $orphan=$true
+  } else {$orphan=$false}
   Default-Unused
   if ((Get-FileHash $pointer).Hash -cne $digest) {throw 'The saved location changed while the disk was offline.'}
   subst $volName $underlying
   if ($LASTEXITCODE) {throw 'Failed to reconnect the original volume.'}
   Start-Profile 'reconnected'
   Default-Unused
+  if ($orphan) {throw 'Data and login recovered, but the disconnected desktop process survived dismissal of its error.'}
   Write-Output 'Fresh installation, original Session, attachment, Chromium login, live CLI machine, offline error and restored disk verified.'
 } finally {
   subst $volName /D | Out-Null
