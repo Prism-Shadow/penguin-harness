@@ -156,6 +156,13 @@ describe("a deck as a file", () => {
     expect(lines.some((line) => line.startsWith('"hero":'))).toBe(true);
   });
 
+  it("opens UTF-8 decks marked by a Windows editor, preserving marks inside slide text", () => {
+    const doc = deck([{ id: "cover", elements: [text("title", "First\uFEFFslide")] }]);
+    const file = "\uFEFF" + formatDeck(doc).replaceAll("\n", "\r\n");
+    expect(parseDeck(file)).toEqual(doc);
+    expect(() => parseDeck("\uFEFF{")).toThrow(/not valid JSON/);
+  });
+
   it("never holds the keys of a live sharing room", () => {
     const doc = deck(base().slides, { collab: { room: "r", key: "k" } });
     expect(formatDeck(doc)).not.toContain("collab");

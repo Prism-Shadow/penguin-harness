@@ -222,7 +222,8 @@ export function formatDeck(doc) {
 export function parseDeck(text) {
   let doc;
   try {
-    doc = JSON.parse(text);
+    // The API returns the original UTF-8 text, including any leading byte order mark.
+    doc = JSON.parse(text.replace(/^\uFEFF/, ""));
   } catch (err) {
     throw new Error(`not valid JSON (${err instanceof Error ? err.message : String(err)})`);
   }

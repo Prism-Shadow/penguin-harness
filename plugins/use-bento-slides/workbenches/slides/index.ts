@@ -173,7 +173,10 @@ export default {
           let title = file.id;
           let slides = 0;
           try {
-            const doc = JSON.parse((await readDeck(file.id)) ?? "null") as {
+            const bytes = await readPlain(await decksDir(), file.name);
+            if (!bytes) return { stamp, title, slides };
+            // A UTF-8 BOM belongs to the encoding, not the title or the JSON grammar.
+            const doc = JSON.parse(new TextDecoder().decode(bytes)) as {
               title?: unknown;
               slides?: unknown;
             } | null;
