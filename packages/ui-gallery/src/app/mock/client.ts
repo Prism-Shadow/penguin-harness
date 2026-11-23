@@ -7,6 +7,8 @@
  * the way they do against a server, and so nothing that relies on "the answer comes later"
  * runs in the wrong order.
  */
+import { apiUrl } from "../../../../web/src/lib/server-context";
+import { machineForPath } from "../../../../web/src/lib/session-machines";
 import { ApiError } from "./errors";
 import { answerAsResponse } from "./fetch-shim";
 import { router } from "./routes";
@@ -50,7 +52,8 @@ export async function apiFetchWithMeta<T>(
   path: string,
   options: ApiFetchOptions = {},
 ): Promise<{ data: T } & ApiFetchMeta> {
-  let url = path;
+  const target = "server" in options ? (options.server ?? null) : machineForPath(path);
+  let url = apiUrl(path, target);
   if (options.query) {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(options.query)) {
@@ -85,6 +88,7 @@ export interface ApiFetchStreamOptions {
   method?: "GET" | "POST";
   body?: unknown;
   signal?: AbortSignal;
+  server?: string | null;
 }
 
 /**
@@ -97,7 +101,12 @@ export async function apiFetchStream(
 ): Promise<Response> {
   await beat();
   if (options.signal?.aborted) throw options.signal.reason;
-  const response = await answerAsResponse(options.method ?? "GET", path, options.body);
+  const target = "server" in options ? (options.server ?? null) : machineForPath(path);
+  const response = await answerAsResponse(
+    options.method ?? "GET",
+    apiUrl(path, target),
+    options.body,
+  );
   if (response.ok) return response;
   const { error } = (await response.json()) as { error: { code: string; message: string } };
   if (response.status === 401 && !isAuthEndpoint(path)) onUnauthorized?.();
