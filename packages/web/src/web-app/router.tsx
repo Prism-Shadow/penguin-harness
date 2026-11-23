@@ -59,7 +59,7 @@ function RequireAuth() {
   // The contributed providers nest outermost first, inside the session list they may read.
   const layout = sessionProviders.reduceRight<React.ReactNode>(
     (inner, { id, Component }) => <Component key={id}>{inner}</Component>,
-    <AppLayout />,
+    <AppLayout renderRoute={(location) => <ShellRoutes location={location} />} />,
   );
   return (
     <ProjectProvider>
@@ -116,11 +116,13 @@ function RootFrame() {
  * below the one data router and its leave guard; keep the router/history identity stable, so a
  * pending URL does not redirect before its page arrives. A page that opens in the App Center's
  * window answers every address under its path too (page-table.ts `routePathOf`). */
-export function ShellRoutes() {
+export function ShellRoutes({
+  location,
+}: { location?: string | import("react-router").Location } = {}) {
   const pages = useWebAppPages();
   const pending = useWebAppPagesPending();
   return (
-    <Routes>
+    <Routes {...(location === undefined ? {} : { location })}>
       {pages
         .filter((page) => page.frame === "shell")
         .map((page) => (

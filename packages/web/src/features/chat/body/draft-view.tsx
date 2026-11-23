@@ -90,6 +90,7 @@ import {
 } from "../prompt-modes";
 import { discardUnstartedSession } from "../unstarted-session";
 import { APPROVAL_MODES } from "../approval-mode";
+import { usePaneFocus } from "../../../lib/page-focus";
 import { adoptDockScope, currentDockScope, setDockConversation } from "../../dock";
 import { StartDashboard } from "../start-dashboard";
 import { clearDraft, draftKey, loadDraft, saveDraft, type DraftCache } from "../draft-cache";
@@ -171,6 +172,7 @@ export function DraftView({
   /** The resolved draft owner, including the machine whose Agent list was used. */
   onAgentChange?: (agentId: string | null, machineId: string | null) => void;
 }) {
+  const paneFocused = usePaneFocus();
   const navigate = useNavigate();
   const location = useLocation();
   const { agents: localAgents, setCurrentAgentId, currentProject } = useProject();
@@ -243,13 +245,14 @@ export function DraftView({
   // chosen here is still theirs (the Files panel, the sidebar's "browse files"). "" is the
   // temporary Workspace, whose directory the server only creates with the Session.
   useEffect(() => {
+    if (!paneFocused) return;
     setDockConversation({
       sessionId: null,
       workspace: workspace || null,
       machineId: workspaceMachine,
     });
     onWorkspaceChange?.(workspace, workspaceMachine);
-  }, [workspace, workspaceMachine, onWorkspaceChange]);
+  }, [paneFocused, workspace, workspaceMachine, onWorkspaceChange]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
     cached.approvalMode ?? "allow-all",
   );
