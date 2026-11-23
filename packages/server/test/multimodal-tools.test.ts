@@ -16,10 +16,10 @@
  *   model still gets the chat probe.
  * - Once the Session is deleted, the next boot removes its files.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { projectDir, readPluginTable } from "@prismshadow/penguin-core";
 import { moduleDefOf, type ModuleClass } from "@prismshadow/penguin-core/kernel";
 import type { ToolModelBindingsResponse } from "@prismshadow/penguin-library-model";
@@ -241,6 +241,78 @@ describe("the shipped multimodal tools plugin", () => {
     const chat = await test(CHAT.modelId);
     expect(chat.messages.at(-1)?.content_items.map((item) => item.type)).toEqual(["text.done"]);
     expect(chat.config).toHaveProperty("max_tokens");
+  });
+
+  it("saves only the verified Gemini route and sends the recording through its Interactions client", async () => {
+    const projectId = "dictation_project";
+    const base = `/api/projects/${projectId}`;
+    expect((await admin.post("/api/projects", { projectId })).status).toBe(201);
+    const modelId = "gemini-4-argon";
+    const direct = { provider: "studio", modelId };
+    const proxy = { provider: "relay", modelId };
+    const origin = "https://generativelanguage.googleapis.com";
+    const configured = await admin.put(`${base}/models`, {
+      providers: {
+        studio: { clientType: "google-official", baseUrl: origin, apiKey: "test-key" },
+        relay: { clientType: "google-official", baseUrl: "https://unlisted.invalid" },
+      },
+      models: [direct, proxy],
+      defaultModel: direct,
+    });
+    expect(configured.status, await configured.clone().text()).toBe(200);
+    const bindings = `${base}/models/tool-bindings`;
+    const offered = (await (await admin.get(bindings)).json()) as ToolModelBindingsResponse;
+    expect(offered.bindings.find(({ key }) => key === "s2t")?.candidates).toEqual([direct]);
+    const refused = await admin.patch(bindings, { key: "s2t", model: proxy });
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toMatchObject({ error: { code: "model_not_accepted" } });
+    expect((await admin.patch(bindings, { key: "s2t", model: direct })).status).toBe(200);
+    expect((await t.deps.projectConfigService.getToolModels(projectId)).s2t).toEqual(direct);
+
+    const audio = readFileSync(path.join(PLUGIN_DIR, "assets", "test-speech.wav")).toString(
+      "base64",
+    );
+    const transcript = "Houston, Tranquility Base here.";
+    // Intercept only the transport. The real plugin and MMSP client encode the recording.
+    const upstream = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
+      const request = new Request(url, options);
+      expect(new URL(request.url).origin).toBe(origin);
+      expect(new URL(request.url).pathname).toMatch(/\/interactions$/);
+      expect(await request.json()).toMatchObject({
+        model: modelId,
+        input: [
+          {
+            type: "user_input",
+            content: [
+              { type: "audio", data: audio },
+              { type: "text", text: expect.stringContaining("original language") },
+            ],
+          },
+        ],
+      });
+      const events = [
+        { event_type: "step.delta", index: 0, delta: { type: "text", text: transcript } },
+        { event_type: "interaction.completed", interaction: { status: "completed" } },
+      ];
+      return new Response(
+        events
+          .map((event) => `event: ${event.event_type}\ndata: ${JSON.stringify(event)}\n\n`)
+          .join(""),
+        {
+          headers: { "content-type": "text/event-stream" },
+        },
+      );
+    });
+    try {
+      const result = await admin.post(`${base}/multimodal-tools/s2t/run`, {
+        audio: { data: audio, mimeType: "audio/wav" },
+      });
+      expect(result.status, await result.clone().text()).toBe(200);
+      expect(await result.json()).toMatchObject({ status: "completed", text: transcript });
+      expect(upstream).toHaveBeenCalledTimes(1);
+    } finally {
+      upstream.mockRestore();
+    }
   });
 
   it("removes a deleted Session's files at the next boot", async () => {

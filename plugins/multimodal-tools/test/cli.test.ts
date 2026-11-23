@@ -129,6 +129,24 @@ describe("penguin tools", () => {
     expect(run.files[0]!.name.endsWith(".wav")).toBe(true);
   });
 
+  it("sends the original recording with a transcription instruction on a Google content route", async () => {
+    const question = "When does the next train leave?";
+    const { model, tools } = await setup(() => answer([{ type: "text.done", text: question }]), {
+      s2t: VISION,
+    });
+    const result = await (
+      await tools.start(PROJECT, SESSION, "s2t", {
+        audio: { mimeType: "audio/x-wav", data: WAV },
+      })
+    ).done;
+    expect(result.record.text).toBe(question);
+    expect(model.received).toHaveLength(1);
+    expect(model.received[0]!.request.messages[0]!.content_items).toEqual([
+      { type: "inline_data.done", mime_type: "audio/wav", data: WAV },
+      { type: "text.done", text: expect.stringContaining("or answer questions") },
+    ]);
+  });
+
   it.each(["", "  \n "])(
     "completes speech recognition when the provider heard no words",
     async (transcript) => {

@@ -69,6 +69,8 @@ export interface ToolModelCandidate {
   input?: string[];
   /** What MMSP's registry says the model returns on that client (`Text`, `Image`, `Web` …); absent when unlisted. */
   output?: string[];
+  /** Whether this Google model and endpoint declare speech input and text-only output. */
+  audioTranscription?: boolean;
 }
 
 /** A connection test request: the messages and config sent, and how long the test waits between events. */
@@ -81,7 +83,7 @@ export type ToolModelTestRequest = Pick<
 export type ToolModelTestSubject = Pick<
   ToolModelCandidate,
   "provider" | "modelId" | "clientType" | "vision"
->;
+> & { baseUrl?: string };
 
 /** The code half one binding binds. */
 export interface ToolModelBindingCode {
@@ -91,7 +93,7 @@ export interface ToolModelBindingCode {
    * The cheapest request a model this binding accepts takes, which the connection test sends it.
    * Absent: such a model is tested with the chat probe (a short text prompt).
    */
-  testRequest?(): ToolModelTestRequest;
+  testRequest?(model: ToolModelCandidate): ToolModelTestRequest;
 }
 
 export interface ToolModelBindingsSlots {
@@ -181,9 +183,12 @@ function accepts(binding: DeclaredBinding, model: ToolModelCandidate): boolean {
 }
 
 /** A binding's test request; a code half that throws declares none for this call. */
-function testRequestOf(binding: DeclaredBinding): ToolModelTestRequest | undefined {
+function testRequestOf(
+  binding: DeclaredBinding,
+  model: ToolModelCandidate,
+): ToolModelTestRequest | undefined {
   try {
-    return binding.code.testRequest?.();
+    return binding.code.testRequest?.(model);
   } catch (err) {
     console.warn(
       `[tool-model-bindings] '${binding.package}' binding '${binding.key}' failed to build its test request: ${err instanceof Error ? err.message : String(err)}`,
@@ -203,7 +208,7 @@ export function toolModelBindingsOver(
       modelId: info.modelId,
       ...(info.effective.clientType !== undefined ? { clientType: info.effective.clientType } : {}),
       ...(info.vision !== undefined ? { vision: info.vision } : {}),
-      ...modelModalities(info.modelId, info.effective.clientType),
+      ...modelModalities(info.modelId, info.effective.clientType, info.effective.baseUrl),
     }));
   const list = async (projectId: string): Promise<ToolModelBindingView[]> => {
     const bindings = declared();
@@ -253,14 +258,14 @@ export function toolModelBindingsOver(
       await projectConfig.setToolModel(projectId, key, model);
       return list(projectId);
     },
-    testRequest: (model) => {
+    testRequest: ({ baseUrl, ...model }) => {
       const candidate: ToolModelCandidate = {
         ...model,
-        ...modelModalities(model.modelId, model.clientType),
+        ...modelModalities(model.modelId, model.clientType, baseUrl),
       };
       for (const binding of declared()) {
         if (binding.code.testRequest === undefined || !accepts(binding, candidate)) continue;
-        const request = testRequestOf(binding);
+        const request = testRequestOf(binding, candidate);
         if (request !== undefined) return request;
       }
       return undefined;

@@ -9,6 +9,7 @@
  */
 import { readFileSync } from "node:fs";
 import type { UniConfig, UniMessage } from "@prismshadow/mmsp";
+import type { Candidate } from "./accepts.js";
 import { operationRequest, type Operation } from "./operations.js";
 
 /** One test request: the request's messages and config, and how long the host waits on it. */
@@ -35,8 +36,13 @@ export function testSpeech(): Uint8Array {
   return readFileSync(new URL("../assets/test-speech.wav", import.meta.url));
 }
 
-const BUILDERS: Partial<Record<Operation, () => TestRequest>> = {
-  s2t: () => operationRequest("s2t", { audio: { data: testSpeech(), mimeType: "audio/wav" } }),
+const BUILDERS: Partial<Record<Operation, (model?: Candidate) => TestRequest>> = {
+  s2t: (model) =>
+    operationRequest(
+      "s2t",
+      { audio: { data: testSpeech(), mimeType: "audio/wav" } },
+      model?.client,
+    ),
   search: () => operationRequest("search", { text: "PenguinHarness", count: 1 }),
   fetch: () => operationRequest("fetch", { url: TEST_PAGE }),
   t2s: () => operationRequest("t2s", { text: "OK." }),
@@ -57,6 +63,6 @@ const BUILDERS: Partial<Record<Operation, () => TestRequest>> = {
 };
 
 /** The test request of the binding `key`, or undefined when the chat probe is its test. */
-export function testRequestOf(key: string): (() => TestRequest) | undefined {
+export function testRequestOf(key: string): ((model?: Candidate) => TestRequest) | undefined {
   return BUILDERS[key as Operation];
 }

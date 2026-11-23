@@ -5,7 +5,8 @@
  * comes out of it without carrying a copy of MMSP's registry.
  */
 import { listSupportedModels } from "@prismshadow/mmsp";
-import { routedClientType } from "@prismshadow/mmsp/credentials";
+import { sameEndpoint } from "@prismshadow/penguin-core/model-connection";
+import { CLIENT_CREDENTIALS, routedClientType } from "@prismshadow/mmsp/credentials";
 
 /** A model as MMSP sees it; every field absent when MMSP knows nothing of it. */
 export interface ModelModalities {
@@ -14,25 +15,35 @@ export interface ModelModalities {
   /** What the registry says the model takes and returns on that client (`Text`, `Image` …). */
   input?: string[];
   output?: string[];
+  /** A Google audio-to-text conversation on the actual registered endpoint and protocol. */
+  audioTranscription?: boolean;
 }
 
 const registry = listSupportedModels();
 
-/**
- * The routed client for an id and its effective client type, and the registry's modalities for
- * the model on that client. A remote MMSP server (`mmsp`) serves any registered model, so any of
- * the model's rows answers for it there.
- */
-export function modelModalities(modelId: string, clientType?: string): ModelModalities {
+/** A proxy may have a narrower modality set than another route for the same model ID. */
+export function modelModalities(
+  modelId: string,
+  clientType?: string,
+  baseUrl?: string,
+): ModelModalities {
   const client = routedClientType(modelId, clientType) ?? undefined;
   if (client === undefined) return {};
-  const listed = registry.find(
-    (m) => m.model === modelId && (m.client === client || client === "mmsp"),
-  );
+  const credentials = CLIENT_CREDENTIALS[client]!;
+  const endpoint = baseUrl || process.env[credentials.baseUrlEnv] || credentials.defaultBaseUrl;
+  const rows = registry.filter((row) => row.model === modelId);
+  const exact = rows.find((row) => row.client === client && sameEndpoint(row.base_url, endpoint));
+  // Other bindings already support custom servers forwarding their registered model natively.
+  const listed =
+    exact ?? rows.find((row) => row.client === client) ?? (client === "mmsp" ? rows[0] : undefined);
   return {
     client,
-    ...(listed !== undefined
-      ? { input: [...listed.input_modalities], output: [...listed.output_modalities] }
-      : {}),
+    ...(listed && { input: [...listed.input_modalities], output: [...listed.output_modalities] }),
+    ...((client === "google-official" || client === "google-genai") && {
+      audioTranscription:
+        exact?.input_modalities.includes("Audio") === true &&
+        exact.output_modalities.length === 1 &&
+        exact.output_modalities[0] === "Text",
+    }),
   };
 }
