@@ -1211,7 +1211,7 @@ export const en: Strings = {
       `The workbench was imported, but it failed to load: ${error}`,
     importOverwriteAction: "Overwrite",
     /** The row's More menu: downloads the workbench's source as a zip. */
-    exportWorkbench: "Export",
+    exportWorkbench: "Download ZIP",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
     /** The row's "⋯" button, which holds its other actions. */
