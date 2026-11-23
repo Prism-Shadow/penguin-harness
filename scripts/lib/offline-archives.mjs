@@ -1,8 +1,7 @@
 /**
- * Offline archives for the builtin prefix (05 「插件库」 「安装从不卡住」): every package under
- * `plugins/` that the market lists in the server's own index (`builtin-index.json`) but that the
- * build does NOT ship — not preinstalled, not in the builtin prefix (Computer Use) — is packed the
- * way `npm publish` would send it and staged under `<prefix>/offline/`:
+ * Offline archives for the builtin prefix (05 「插件库」 「安装从不卡住」). The market carries
+ * archives for listed packages missing from the prefix and for independently versioned packages.
+ * Both use the original publishable tarball under `<prefix>/offline/`:
  *
  *   offline/<tarball>.tgz            the package, exactly what `pnpm pack` writes
  *   offline/<unscoped name>/         its own package.json and ifaces.json, so the server reads what
@@ -17,12 +16,13 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { OWN_VERSION } from "./own-version-plugins.mjs";
 
 export const OFFLINE_DIR = "offline";
 
 /**
  * The packages to carry as offline archives: listed in `indexFile`, found under `pluginsSrc`, and
- * not among `shipped` (the names the builtin prefix carries). Sorted by directory name. A tree
+ * not already installed in the prefix, plus the archives published at their own version. A tree
  * without the index (a checkout staged with plugins alone) lists nothing, so carries nothing.
  */
 export async function offlineCandidates({ pluginsSrc, indexFile, shipped }) {
@@ -37,7 +37,7 @@ export async function offlineCandidates({ pluginsSrc, indexFile, shipped }) {
     const manifestFile = path.join(dir, "package.json");
     if (!fs.existsSync(manifestFile)) continue;
     const pkg = JSON.parse(await fsp.readFile(manifestFile, "utf8"));
-    if (typeof pkg.name !== "string" || !listed.has(pkg.name) || shipped.has(pkg.name)) continue;
+    if (!listed.has(pkg.name) || (shipped.has(pkg.name) && !OWN_VERSION.has(pkg.name))) continue;
     out.push({ name: pkg.name, version: pkg.version, dir });
   }
   return out;

@@ -66,7 +66,7 @@ import { offlineCandidates, stageOfflineArchives } from "./lib/offline-archives.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 15;
+const PACK_FORMAT = 16;
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
 /**
@@ -242,7 +242,7 @@ export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = p
       throw new Error(`${name} is both a plugins/ package and an external pin of packages/server`);
     }
   }
-  // Listed in the market but not shipped: carried as offline archives (scripts/lib/offline-archives.mjs).
+  // The registry also serves independently versioned packages from the installed offline archives.
   const offline = await offlineCandidates({
     pluginsSrc: path.join(root, "plugins"),
     indexFile: path.join(root, "packages", "server", "src", "plugin", "builtin-index.json"),
@@ -303,6 +303,7 @@ export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = p
         staged.push({ pin, dir });
         log(`plugin ${pin.name}@${pin.version}: ${source}, sha512 verified`);
       }
+      const packedByDirectory = new Map();
       const tarballs = [];
       for (const plugin of plugins) {
         // The package's own build, then the package as npm would publish it (`files` honored,
@@ -313,7 +314,9 @@ export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = p
           (f) => f.endsWith(".tgz") && !tarballs.some((t) => path.basename(t) === f),
         );
         if (tarball === undefined) throw new Error(`pnpm pack left no tarball for ${plugin.name}`);
-        tarballs.push(path.join(packed, tarball));
+        const file = path.join(packed, tarball);
+        tarballs.push(file);
+        packedByDirectory.set(plugin.dir, file);
         log(`plugin ${plugin.name}@${plugin.version}: packed`);
       }
       // The manifest names what is shipped — how the loader tells the plugins from what npm
@@ -408,8 +411,17 @@ export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = p
       await stageOfflineArchives({
         out,
         candidates: offline,
-        build: (plugin) => run("pnpm", ["--filter", plugin.name, "run", "build"], root, env),
+        build: (plugin) =>
+          packedByDirectory.has(plugin.dir)
+            ? undefined
+            : run("pnpm", ["--filter", plugin.name, "run", "build"], root, env),
         pack: async (dir, into) => {
+          const existing = packedByDirectory.get(dir);
+          if (existing) {
+            const target = path.join(into, path.basename(existing));
+            await fsp.copyFile(existing, target);
+            return target;
+          }
           const before = new Set(await fsp.readdir(into));
           await run("pnpm", ["pack", "--pack-destination", into], dir, env);
           const made = (await fsp.readdir(into)).find((f) => f.endsWith(".tgz") && !before.has(f));
