@@ -1407,9 +1407,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   // session survives for steering and follow-ups — a subagent session is never destroyed.
   // 202 aborted; 204 when the child is already idle or unknown (both
   // are "nothing left to stop", and the panel treats them alike).
-  app.post("/:sessionId/subagents/:childSessionId/abort", (c) => {
+  app.post("/:sessionId/subagents/:childSessionId/abort", async (c) => {
     const row = resolveSession(c);
-    const aborted = deps.manager.abortSubagentRun(row.sessionId, pathParam(c, "childSessionId"));
+    const aborted = await deps.manager.abortSubagentRun(
+      row.sessionId,
+      pathParam(c, "childSessionId"),
+    );
     return c.body(null, aborted ? 202 : 204);
   });
 

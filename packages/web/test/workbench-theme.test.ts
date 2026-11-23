@@ -149,27 +149,30 @@ describe("workbench theme", () => {
     expect(doc.attributes).toEqual({ "data-theme": "geek", [WORKBENCH_FRAME_ATTR]: "" });
   });
 
-  it("gives a page carrying the components' stylesheet no base stylesheet, and still themes it", () => {
-    const doc = fakeDocument();
-    const components = new FakeElement("link", () => undefined);
-    components.setAttribute(PENGUIN_UI_ATTR, "");
-    doc.head.push(components);
-    const theme: WorkbenchTheme = {
-      dark: false,
-      fontSize: "15px",
-      attrs: { "data-theme": "geek" },
-      vars: { "--ui-accent": "#e32a01" },
-      fontFaces: '@font-face { font-family: "MiSans"; }',
-    };
-    applyWorkbenchTheme(doc.document, theme);
-    expect(doc.head.map((el) => el.tag)).toEqual(["style", "link"]);
-    expect(doc.head[1]).toBe(components);
-    expect(doc.head[0]!.textContent).toBe(theme.fontFaces);
-    expect(doc.classes).toEqual({ dark: false, light: true });
-    expect(doc.attributes).toEqual({ ...theme.attrs, [WORKBENCH_FRAME_ATTR]: "" });
-    expect(doc.properties).toEqual(theme.vars);
-    expect(doc.root.style.fontSize).toBe("15px");
-  });
+  it.each([PENGUIN_UI_ATTR, "data-workbench-base"])(
+    "themes a page that already carries a marked stylesheet (%s)",
+    (marker) => {
+      const doc = fakeDocument();
+      const components = new FakeElement("link", () => undefined);
+      components.setAttribute(marker, "");
+      doc.head.push(components);
+      const theme: WorkbenchTheme = {
+        dark: false,
+        fontSize: "15px",
+        attrs: { "data-theme": "geek" },
+        vars: { "--ui-accent": "#e32a01" },
+        fontFaces: '@font-face { font-family: "MiSans"; }',
+      };
+      applyWorkbenchTheme(doc.document, theme);
+      expect(doc.head.map((el) => el.tag)).toEqual(["style", "link"]);
+      expect(doc.head[1]).toBe(components);
+      expect(doc.head[0]!.textContent).toBe(theme.fontFaces);
+      expect(doc.classes).toEqual({ dark: false, light: true });
+      expect(doc.attributes).toEqual({ ...theme.attrs, [WORKBENCH_FRAME_ATTR]: "" });
+      expect(doc.properties).toEqual(theme.vars);
+      expect(doc.root.style.fontSize).toBe("15px");
+    },
+  );
 
   it("marks the page see-through and gives it the app's color scheme, both ways", () => {
     // A browser paints an opaque canvas under a frame whose document's color scheme differs

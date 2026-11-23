@@ -162,6 +162,7 @@ export function SessionComposer({
       {...(sessionDraft.skills && sessionDraft.skills.length > 0
         ? { initialSkills: sessionDraft.skills }
         : {})}
+      initialSteeringSkills={sessionDraft.steeringSkills}
       onSkillsChange={onDraftSkillsChange}
       onHandoff={onHandoff}
       initialText={sessionDraft.text ?? ""}

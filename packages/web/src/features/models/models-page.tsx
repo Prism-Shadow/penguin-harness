@@ -971,13 +971,7 @@ export function ModelsPage() {
   /** Target group (provider id) for adding a model: taken from the group header entry point, falling back to custom when empty. */
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  /**
-   * Expanded vendor groups — hydrated from this Project's persisted set (DeepSeek-only
-   * on a first visit; every other group, including user-defined ones arriving with the
-   * async row load, starts collapsed), written back on every toggle so the user's
-   * choices survive a refresh. Searching force-opens the rendered groups without
-   * touching this set (see model-group-expansion.ts).
-   */
+  // Only group-header toggles are persisted. Searching temporarily reveals matching groups.
   const [expanded, setExpanded] = useState<Set<string>>(() => loadExpandedProviders(projectId));
   // Project resolved on first load / switched: swap in that Project's persisted expansion set.
   useEffect(() => {
@@ -1347,8 +1341,7 @@ export function ModelsPage() {
   /**
    * Import-mode landing from the add-group dialog: one table PUT carrying the group's connection
    * (base URL, protocol, key — written once, in `[providers.<name>]`) and the appended rows,
-   * which store nothing of it and follow the group; then the new group is opened so the result is
-   * visible immediately. Returns persist's verdict so the dialog stays up (fields intact) when
+   * which inherit it. Returns persist's verdict so the dialog stays up (fields intact) when
    * saving failed; the table then stays as it stood, so the dialog's own name check does not
    * report the name as taken on the retry.
    */
@@ -1368,12 +1361,6 @@ export function ModelsPage() {
       { [name]: connection },
     );
     if (!ok) return false;
-    if (!expanded.has(name)) {
-      const next = new Set(expanded);
-      next.add(name);
-      setExpanded(next);
-      saveExpandedProviders(projectId, next);
-    }
     setAddGroupOpen(false);
     return true;
   };

@@ -3348,4 +3348,7 @@ router
 // The terminal list (a direct fetch in the app): nothing to attach to without a machine
 // ---------------------------------------------------------------------------------------------
 
-router.get("/api/terminals", () => ({ terminals: [] }));
+router
+  .get("/api/terminals", () => ({ terminals: [] }))
+  .get("/api/terminals/projects/:projectId/session-resources", () => ({ counts: {} }))
+  .get("/api/builtin-browser/projects/:projectId/session-resources", () => ({ counts: {} }));

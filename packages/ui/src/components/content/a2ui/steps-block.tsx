@@ -11,6 +11,7 @@
  * in Safari), and the disc's number is hidden from assistive tech: the list already says which
  * item of how many a step is.
  */
+import { Card } from "../../layout/card/card";
 import type { A2uiStep, A2uiSteps } from "@prismshadow/a2ui";
 import { useUiStrings } from "../../../strings";
 import type { A2uiStrings } from "../../../strings";
@@ -101,7 +102,7 @@ export function StepsBlock({ spec }: { spec: A2uiSteps }) {
   const strings = useUiStrings().a2ui;
   const { steps } = spec;
   return (
-    <div className="a2ui-block my-3" data-a2ui="steps">
+    <Card className="a2ui-block my-3" data-a2ui="steps">
       {spec.title !== undefined && (
         <div className={A2UI_TITLE}>
           <InlineText text={spec.title} />
@@ -118,6 +119,6 @@ export function StepsBlock({ spec }: { spec: A2uiSteps }) {
           />
         ))}
       </ol>
-    </div>
+    </Card>
   );
 }

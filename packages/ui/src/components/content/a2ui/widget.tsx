@@ -68,7 +68,7 @@ export function WidgetSurface({
         aria-label={label}
         data-widget={kind}
         data-offscreen={inView ? undefined : ""}
-        className={`ui-widget rounded-md border border-line bg-surface p-3 text-fg ${fit ? "w-fit min-w-64 max-w-full" : ""}`}
+        className={`ui-widget rounded-md border border-line bg-surface p-3 text-fg ${fit ? "w-fit min-w-[min(16rem,100%)] max-w-full" : ""}`}
       >
         {(title !== undefined || stamp !== undefined) && (
           <div

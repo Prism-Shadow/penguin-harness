@@ -34,6 +34,7 @@ import { STATIC_BOOT_SCRIPT } from "../ui/src/boot";
 import { penguinUi } from "../ui/src/vite-plugin";
 import { dropNonWoff2FontSources } from "../web/vite.config";
 import { storageSeedScript } from "./src/app/frame";
+import { workbenchAssets } from "./src/app/mock/workbench-assets";
 import { mockWebNetwork } from "./src/app/mock/vite-plugin";
 import { deepPagePaths } from "./src/lib/page-paths";
 
@@ -126,6 +127,7 @@ export default defineConfig({
   base: process.env.BASE_PATH ?? "/",
   plugins: [
     mockWebNetwork(),
+    workbenchAssets(),
     react(),
     tailwindcss(),
     penguinUi(),
