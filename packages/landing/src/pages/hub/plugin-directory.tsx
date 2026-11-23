@@ -13,7 +13,6 @@ import { HubList } from "../../components/hub/hub-list";
 import type { HubFacet } from "../../components/hub/hub-list";
 import { PluginCover, useEntryLink } from "../../components/hub/market";
 import { recallScroll } from "../../lib/hub/back";
-import { market, plugins } from "../../lib/hub/data";
 import { pick, plainText, titleOf } from "../../lib/hub/text";
 import type { PluginSummary } from "../../lib/hub/types";
 import { S } from "../../lib/strings";
@@ -38,13 +37,17 @@ const rank = (category: string) => {
   return index === -1 ? CATEGORY_ORDER.length - 1 : index;
 };
 
-/** Position in the curation's selected list; an unselected plugin after every selected one. */
-const curated = (plugin: PluginSummary) => {
-  const index = market.selected.indexOf(plugin.id);
-  return index === -1 ? market.selected.length : index;
-};
-
-export default function PluginDirectory() {
+export function PluginDirectory({
+  plugins,
+  selected,
+}: {
+  plugins: PluginSummary[];
+  selected: PluginSummary[];
+}) {
+  const curated = (plugin: PluginSummary) => {
+    const index = selected.findIndex((item) => item.id === plugin.id);
+    return index === -1 ? selected.length : index;
+  };
   const { locale } = useSiteLocale();
   const [layout, chooseLayout] = useShowcaseLayout("penguin.pluginsLayout");
   const t = S.hub.plugins;

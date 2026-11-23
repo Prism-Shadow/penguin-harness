@@ -440,6 +440,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       title: "Plugins",
       description:
         "The PenguinHarness plugin library: self-evolution toolkits, Skills, Hooks and workbenches.",
+      directoryUnavailable: "The plugin directory could not be loaded.",
+      retryDirectory: "Retry",
       facetCategory: "Category",
       facetContents: "Contents",
       facetAuthor: "Author",

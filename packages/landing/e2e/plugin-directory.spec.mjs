@@ -14,7 +14,7 @@ test("opens and changes the featured plugin while its directory and artwork are 
   const pendingPictures = new Promise((resolve) => {
     releasePictures = resolve;
   });
-  await page.route(/plugin-directory[^/]*\.(?:tsx|js)(?:\?|$)/, async (route) => {
+  await page.route(/plugin-directory[^/]*\.json(?:\?|$)/, async (route) => {
     await pendingDirectory;
     await route.continue();
   });
@@ -106,3 +106,32 @@ test("Back restores a card reached after several groups", async ({ page }) => {
   await expect(chosen).toBeInViewport();
   await expect.poll(() => page.evaluate(() => scrollY)).toBeCloseTo(scroll, -1);
 });
+
+for (const recovery of ["retry", "revisit"]) {
+  test(`recovers the full directory after a failed request by ${recovery}`, async ({ page }) => {
+    let fail = true;
+    await page.addInitScript(() => localStorage.setItem("penguin-site.lang", "en"));
+    await page.route(/plugin-directory[^/]*\.json(?:\?|$)/, (route) =>
+      fail ? route.fulfill({ status: 503, body: "Temporarily unavailable" }) : route.continue(),
+    );
+    await page.goto("/plugins/");
+    await expect(page.getByText("The plugin directory could not be loaded.")).toBeVisible();
+    await expect(page.locator(carousel).getByRole("heading")).toBeVisible();
+    fail = false;
+    if (recovery === "retry") {
+      await page.getByRole("button", { name: "Retry" }).click();
+    } else {
+      await page.locator(carousel).getByRole("link").last().click();
+      await expect(page).toHaveURL(/\/plugins\/[^/]+$/);
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+      await page.goBack();
+    }
+    await page.getByRole("searchbox").fill("sandbox-wsl");
+    await expect(page.locator(cards)).toHaveCount(1);
+    await expect(page.locator(cards).getByRole("link")).toHaveAttribute(
+      "href",
+      "/plugins/sandbox-wsl",
+    );
+  });
+}

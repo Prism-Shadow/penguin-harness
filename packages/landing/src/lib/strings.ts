@@ -437,6 +437,8 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     plugins: {
       title: "插件",
       description: "PenguinHarness 的插件库：自进化工具包、Skills、Hooks 与工作台。",
+      directoryUnavailable: "插件目录未能载入。",
+      retryDirectory: "重试",
       facetCategory: "分类",
       facetContents: "内容",
       facetAuthor: "作者",

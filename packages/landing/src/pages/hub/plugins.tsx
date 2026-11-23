@@ -8,7 +8,7 @@ import {
   useSiteLocale,
 } from "@prismshadow/penguin-ui/site";
 import type { ShowcaseSlide } from "@prismshadow/penguin-ui/site";
-import { featured, leads } from "virtual:penguin-plugin-featured";
+import { directoryUrl, featured, leads } from "virtual:penguin-plugin-featured";
 import { HubTile } from "../../components/hub/hub-icon";
 import { PluginCover, pluginIcon, PRIMARY_ACTION, useEntryLink } from "../../components/hub/market";
 import { useDocumentMeta } from "../../lib/document-meta";
@@ -18,8 +18,9 @@ import type { PluginSummary } from "../../lib/hub/types";
 import { pluginTone } from "../../lib/hub/plugin-hue";
 import { S } from "../../lib/strings";
 
-const directory = import("./plugin-directory");
-type Directory = Awaited<typeof directory>["default"];
+import { PluginDirectory } from "./plugin-directory";
+
+let savedDirectory: PluginSummary[] | undefined;
 const selected = featured as PluginSummary[];
 
 export function PluginsPage() {
@@ -27,16 +28,32 @@ export function PluginsPage() {
   const location = useLocation();
   const entryLink = useEntryLink();
   useDocumentMeta(S.hub.pageTitle(S.hub.plugins.title), S.hub.plugins.description);
-  const [Directory, setDirectory] = useState<Directory | null>(null);
+  const [plugins, setPlugins] = useState(savedDirectory);
+  const [failed, setFailed] = useState(false);
+  const [attempt, retry] = useState(0);
   useEffect(() => {
-    let mounted = true;
-    void directory.then(({ default: Component }) => {
-      if (mounted) setDirectory(() => Component);
-    });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    if (savedDirectory) return;
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const response = await fetch(directoryUrl, {
+          signal: controller.signal,
+          cache: "no-cache",
+        });
+        if (!response.ok) throw new Error(`Plugin directory HTTP ${response.status}`);
+        const records: PluginSummary[] = await response.json();
+        if (!Array.isArray(records)) throw new Error("Invalid plugin directory");
+        if (!controller.signal.aborted) {
+          savedDirectory = records;
+          setPlugins(records);
+        }
+      } catch {
+        if (!controller.signal.aborted) setFailed(true);
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, [attempt]);
   const t = S.hub.plugins;
   const slides: ShowcaseSlide[] = selected.map((plugin) => {
     const to = `/plugins/${plugin.id}`;
@@ -74,7 +91,25 @@ export function PluginsPage() {
           />
         )}
       </div>
-      {Directory ? <Directory /> : <div className="min-h-screen" aria-busy="true" />}
+      {plugins ? (
+        <PluginDirectory plugins={plugins} selected={selected} />
+      ) : failed ? (
+        <div className="mx-auto max-w-6xl px-4 pb-12 sm:px-6" role="status">
+          <p>{t.directoryUnavailable}</p>
+          <button
+            type="button"
+            className="mt-2 text-brand-700 underline dark:text-brand-300"
+            onClick={() => {
+              setFailed(false);
+              retry((n) => n + 1);
+            }}
+          >
+            {t.retryDirectory}
+          </button>
+        </div>
+      ) : (
+        <div className="min-h-screen" aria-busy="true" />
+      )}
     </>
   );
 }

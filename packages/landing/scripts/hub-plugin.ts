@@ -43,11 +43,13 @@ function indexModule(hub: Hub): string {
 export function hubData(): Plugin {
   let hub: Hub | undefined;
   let refresh = false;
+  let base = "/";
   const read = () => (hub ??= loadHub({ refresh }));
   return {
     name: "penguin:hub",
     configResolved(config) {
       refresh = config.command === "build";
+      base = config.base;
     },
     async buildStart() {
       await fetchPublished({ refresh });
@@ -64,7 +66,10 @@ export function hubData(): Plugin {
         const leads = market.hero
           .map((id: string) => featured.findIndex((plugin) => plugin.id === id))
           .filter((index: number) => index >= 0);
-        return `export const featured = ${json(featured)}; export const leads = ${json(leads)};`;
+        const url = refresh
+          ? `import.meta.ROLLUP_FILE_URL_${this.emitFile({ type: "asset", name: "plugin-directory.json", source: json(plugins) })}`
+          : json(`${base}plugin-directory.json`);
+        return `export const directoryUrl = ${url}; export const featured = ${json(featured)}; export const leads = ${json(leads)};`;
       }
       if (!id.startsWith(`\0${INDEX}`)) return null;
       const data = read();
@@ -78,6 +83,11 @@ export function hubData(): Plugin {
       return `export default ${json(detail)};`;
     },
     configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        if (request.url?.split("?")[0] !== `${base}plugin-directory.json`) return next();
+        response.setHeader("Content-Type", "application/json");
+        response.end(json(read().index.plugins));
+      });
       server.watcher.add(PLUGINS_DIR);
       server.watcher.on("change", (file) => {
         if (!file.startsWith(PLUGINS_DIR)) return;

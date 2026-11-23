@@ -13,6 +13,7 @@ declare module "virtual:penguin-hub" {
 }
 
 declare module "virtual:penguin-plugin-featured" {
+  export const directoryUrl: string;
   export const featured: unknown;
   export const leads: number[];
 }
