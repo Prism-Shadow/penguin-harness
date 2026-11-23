@@ -31,6 +31,7 @@ import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   hooksDir,
+  installPlugin,
   libraryPlugin,
   librarySkill,
   loadPreinstalledPlugins,
@@ -129,6 +130,58 @@ describe("skills api", () => {
     const res = await owner.post(`/api/projects/${projectId}/agents`, { agentId });
     expect(res.status).toBe(201);
   }
+
+  it("reports distinct installed packages for each visible Agent without returning their identities", async () => {
+    projectId = await newProject();
+    const route = `/api/projects/${projectId}/agents`;
+    const created = await owner.post(route, { agentId: "counted", defaultPlugins: false });
+    expect(created.status).toBe(201);
+    expect(((await created.json()) as AgentCreateResponse).agent.pluginCount).toBe(0);
+    const carried = await owner.post(route, {
+      agentId: "other_count",
+      defaultPlugins: false,
+      plugins: ["data-analysis"],
+    });
+    expect(carried.status).toBe(201);
+    expect(((await carried.json()) as AgentCreateResponse).agent.pluginCount).toBe(1);
+    const list = async () => ((await (await member.get(route)).json()) as AgentsResponse).agents;
+    const summary = async (id: string) => (await list()).find((agent) => agent.agentId === id)!;
+    expect(await summary("counted")).toMatchObject({ pluginCount: 0, skillCount: 0 });
+    const system = await summary("system_agent");
+    expect(system.system).toBe(true);
+    expect(typeof system.pluginCount).toBe("number");
+    expect(await member.get(plugins("system_agent"))).toHaveProperty("status", 200);
+    expect((await outsider.get(route)).status).toBe(404);
+
+    expect((await member.post(plugins("counted"), { names: ["agent-development"] })).status).toBe(
+      201,
+    );
+    const multiSkill = libraryPlugin("agent-development")!;
+    expect(multiSkill.skills.length).toBeGreaterThan(1);
+    expect(await summary("counted")).toMatchObject({
+      pluginCount: 1,
+      skillCount: multiSkill.skills.length,
+    });
+    expect((await member.post(plugins("counted"), { names: ["data-analysis"] })).status).toBe(201);
+    const multiple = await summary("counted");
+    expect(multiple).toMatchObject({
+      pluginCount: 2,
+      skillCount: skillNamesOf("agent-development", "data-analysis").length,
+    });
+    expect(multiple).not.toHaveProperty("mcpPluginNames");
+    expect(multiple).not.toHaveProperty("pluginNames");
+    expect(await summary("other_count")).toMatchObject({ pluginCount: 1 });
+
+    // The platform may provision Agent parts on System; project members still cannot mutate it.
+    expect(
+      (await member.post(plugins("system_agent"), { names: ["agent-development"] })).status,
+    ).toBe(409);
+    await installPlugin(t.root, projectId, "system_agent", multiSkill);
+    expect(await summary("system_agent")).toMatchObject({
+      system: true,
+      pluginCount: system.pluginCount! + 1,
+    });
+  });
 
   it("GET /api/plugins: categories with plugin metadata, skills and hook points, without sending bodies", async () => {
     const res = await member.get("/api/plugins");
