@@ -91,7 +91,7 @@ import {
 import { discardUnstartedSession } from "../unstarted-session";
 import { APPROVAL_MODES } from "../approval-mode";
 import { adoptDockScope, currentDockScope, setDockConversation } from "../../dock";
-import { StartDashboard, StartVersionLine } from "../start-dashboard";
+import { StartDashboard } from "../start-dashboard";
 import { clearDraft, draftKey, loadDraft, saveDraft, type DraftCache } from "../draft-cache";
 
 import {
@@ -1042,17 +1042,12 @@ export function DraftView({
   );
 
   return (
-    <div className="ui-start anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3 md:px-4">
-      <div className="mx-auto my-auto w-full min-w-0 max-w-3xl shrink-0 py-4">
-        <StartDashboard
-          composer={composer}
-          skillsLoaded={skillsLoaded}
-          fill={fillComposer}
-          exampleText={exampleText}
-          readComposerText={readComposerText}
-        />
-      </div>
-      <StartVersionLine />
-    </div>
+    <StartDashboard
+      composer={composer}
+      skillsLoaded={skillsLoaded}
+      fill={fillComposer}
+      exampleText={exampleText}
+      readComposerText={readComposerText}
+    />
   );
 }

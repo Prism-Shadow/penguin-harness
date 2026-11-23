@@ -108,12 +108,13 @@ export function seedFreshProject(f: DemoFixtures, playing: boolean): void {
   }
   f.project.name = "default_project";
   f.user.displayName = f.user.userId;
-  f.version = { ...f.version, version, describe: `v${version}`, buildDate: null, commit: null };
+  const buildDate: string | null = import.meta.env.GALLERY_RELEASE_DATE;
+  f.version = { ...f.version, version, describe: `v${version}`, buildDate, commit: null };
   f.update = {
     ...f.update,
     currentVersion: version,
     latestVersion: version,
-    buildDate: null,
+    buildDate,
     publishedAt: null,
   };
   f.chatDefaults = {

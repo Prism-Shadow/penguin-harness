@@ -83,7 +83,9 @@ test("the live homepage preview uses the new chat header and shortcut strip", as
   await expect(frame.getByText("Create your first Agent OS", { exact: true })).toBeVisible();
   await expect(frame.locator('[data-slot="counts"]')).toHaveCount(0);
   await expect(frame.locator('[data-slot="examples"]')).toBeVisible();
-  await expect(frame.locator('[data-slot="version"]')).toBeVisible();
+  await expect(frame.locator('[data-slot="version"]')).toContainText(
+    /v[\d.]+ · Last updated \w+ \d+/,
+  );
   expect(await frame.locator(composer).evaluate((el) => getComputedStyle(el).resize)).toBe("none");
 });
 

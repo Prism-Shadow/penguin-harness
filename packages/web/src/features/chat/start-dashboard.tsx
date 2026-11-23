@@ -42,25 +42,28 @@ export function StartDashboard({
   readComposerText,
 }: StartDashboardProps) {
   return (
-    <div>
-      <div data-slot="brand" className="mb-5 flex flex-col items-center gap-1 text-center">
-        <div className="flex items-center justify-center gap-3">
-          <div data-slot="brand-mark" className="size-12 shrink-0">
-            <PenguinLogo src={PENGUIN_LOGO_URL} className="h-full w-full rounded-[24%]" />
+    <div className="ui-start anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3 md:px-4">
+      <div className="mx-auto my-auto w-full min-w-0 max-w-3xl shrink-0 py-4">
+        <div data-slot="brand" className="mb-5 flex flex-col items-center gap-1 text-center">
+          <div className="flex items-center justify-center gap-3">
+            <div data-slot="brand-mark" className="size-12 shrink-0">
+              <PenguinLogo src={PENGUIN_LOGO_URL} className="h-full w-full rounded-[24%]" />
+            </div>
+            <Heading level={1} display data-slot="title" className="min-w-0">
+              <AppName />
+            </Heading>
           </div>
-          <Heading level={1} display data-slot="title" className="min-w-0">
-            <AppName />
-          </Heading>
+          <p className="text-sm text-fg-muted">{S.chat.start.tagline}</p>
         </div>
-        <p className="text-sm text-fg-muted">{S.chat.start.tagline}</p>
+        {composer}
+        <ExamplesSection
+          ready={skillsLoaded}
+          fill={fill}
+          exampleText={exampleText}
+          readComposerText={readComposerText}
+        />
       </div>
-      {composer}
-      <ExamplesSection
-        ready={skillsLoaded}
-        fill={fill}
-        exampleText={exampleText}
-        readComposerText={readComposerText}
-      />
+      <StartVersionLine />
     </div>
   );
 }
@@ -91,7 +94,7 @@ const versionBadgeClass =
   "inline-block whitespace-nowrap align-super text-xs leading-4 text-fg-subtle hover:underline";
 
 /** The release footer uses the same build date and update action as the account menu. */
-export function StartVersionLine() {
+function StartVersionLine() {
   const { locale } = useLocale();
   const { version } = useVersionInfo(true);
   return (
