@@ -28,7 +28,7 @@ import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/session
 import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
 import { OrgStore } from "../src/organization/store.js";
 import { parseChannelConfig, serializeCalendarEvent } from "../src/organization/files.js";
-import { DEFAULT_CHANNEL_ID, ticketPath } from "../src/organization/paths.js";
+import { DEFAULT_CHANNEL_ID, ticketMonth, ticketPath } from "../src/organization/paths.js";
 import { zonedDate } from "../src/organization/zoned.js";
 import type { ErrorRecordArgs } from "@prismshadow/penguin-library-observability";
 import { DEFAULT_EMPLOYEE_PLUGINS } from "../src/runtime/organization/deps.js";
@@ -1607,7 +1607,7 @@ describe("organization runtime", () => {
         { title: "Launch the site", goal: "Ship it", owner: `agent:${HR}`, priority: "P1" },
         { userId: "alice" },
       );
-      expect(t.ticketId).toMatch(/^2026-09-01-launch-the-site$/);
+      expect(t.ticketId).toMatch(/^ticket-2026-09-01-launch-the-site$/);
       expect(t.status).toBe("proposed");
       // Filed by alice for HR: the owner is the employee, and the history says who filed it.
       expect(t.owner).toBe(`agent:${HR}`);
@@ -2012,7 +2012,7 @@ describe("organization runtime", () => {
     it("names a ticket whose title carries no English through the Project's model", async () => {
       completion.answers = [answered("launch-the-site")];
       const t = await service.createTicket(P, ORG, { title: "上线站点" }, { userId: "alice" });
-      expect(t.ticketId).toBe("2026-09-01-launch-the-site");
+      expect(t.ticketId).toBe("ticket-2026-09-01-launch-the-site");
       // `slug` always wins, and is held to the same letters-only rule.
       const explicit = await service.createTicket(
         P,
@@ -2020,7 +2020,7 @@ describe("organization runtime", () => {
         { title: "上线站点", slug: "second-site" },
         { userId: "alice" },
       );
-      expect(explicit.ticketId).toBe("2026-09-01-second-site");
+      expect(explicit.ticketId).toBe("ticket-2026-09-01-second-site");
       await expect(
         service.createTicket(P, ORG, { title: "x", slug: "site-2" }, { userId: "alice" }),
       ).rejects.toMatchObject({ status: 400 });
@@ -2032,7 +2032,7 @@ describe("organization runtime", () => {
       // A taken id takes a letter, never a digit.
       completion.answers = [answered("launch-the-site")];
       const again = await service.createTicket(P, ORG, { title: "上线站点" }, { userId: "alice" });
-      expect(again.ticketId).toBe("2026-09-01-launch-the-site-b");
+      expect(again.ticketId).toBe("ticket-2026-09-01-launch-the-site-b");
     });
 
     it("blocking notices the blocker and the owner's manager; closing the blocker tells the owner", async () => {
@@ -2160,14 +2160,15 @@ describe("organization runtime", () => {
       await expect(
         service.progressTicket(P, ORG, headedId, "half done", { userId: "alice" }),
       ).rejects.toMatchObject({ status: 409, code: "ticket_invalid" });
-      // A new ticket that would take its id takes the next free one instead.
+      // A new ticket gets the new prefixed id format, which never collides
+      // with the legacy file even when the date and slug match.
       const next = await service.createTicket(
         P,
         ORG,
         { title: "Legacy launch", slug: "legacy-launch" },
         { userId: "alice" },
       );
-      expect(next.ticketId).toBe(`${headedId}-b`);
+      expect(next.ticketId).toBe("ticket-2026-09-01-legacy-launch");
       expect(await fs.readFile(headedPath, "utf8")).toBe(headed);
     });
   });
@@ -3233,7 +3234,7 @@ describe("organization runtime", () => {
 
   describe("crash-window robustness in the org store", () => {
     const ticketFile = (ticketId: string, column: string): string =>
-      path.join(orgDir(), "tickets", ticketId.slice(0, 7), column, `${ticketId}.md`);
+      path.join(orgDir(), "tickets", ticketMonth(ticketId), column, `${ticketId}.md`);
 
     it("keeps a ticket on the board when a crash left it in two columns", async () => {
       await createOrg();
@@ -3294,7 +3295,7 @@ describe("organization runtime", () => {
         { userId: "alice" },
       );
       await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, { userId: "alice" });
-      const monthDir = path.join(orgDir(), "tickets", t.ticketId.slice(0, 7));
+      const monthDir = path.join(orgDir(), "tickets", ticketMonth(t.ticketId));
       const names = (await fs.readdir(monthDir, { recursive: true })).map(String);
       expect(names.filter((n) => n.includes(t.ticketId)).map((n) => path.basename(n))).toEqual([
         `${t.ticketId}.md`,

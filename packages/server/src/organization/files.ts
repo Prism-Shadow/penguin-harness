@@ -541,8 +541,14 @@ export function serializeCalendarEvent(fields: {
 // tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md
 // ---------------------------------------------------------------------------
 
-/** `<yyyy-mm-dd>-<slug>`; the slug is hyphen-joined lowercase English words, never a digit. */
-export const TICKET_ID_PATTERN = /^\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*$/;
+/**
+ * `ticket-<yyyy-mm-dd>-<slug>`; the slug is hyphen-joined lowercase English words, never a
+ * digit. New ids carry the `ticket-` prefix — a bare date-slug reads as ordinary prose, so
+ * only the prefixed form is recognizable in text, the same trick `session-` ids use. Ids
+ * filed before the prefix keep matching: they exist on disk, and parent and blockedBy lines
+ * name them.
+ */
+export const TICKET_ID_PATTERN = /^(?:ticket-)?\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*$/;
 
 /** At most this many words in a derived slug, and at most this many characters in each. */
 const SLUG_MAX_WORDS = 6;

@@ -1655,9 +1655,9 @@ export class OrganizationService {
       // filed meanwhile.
       const slug = await this.ticketSlug(projectId, title, req.slug);
       const date = zonedDate(org.config.timezone, this.now());
-      let id = `${date}-${slug}`;
+      let id = `ticket-${date}-${slug}`;
       for (let n = 2; (await this.deps.store.findTicket(org.dir, id)) !== null; n++) {
-        id = `${date}-${slug}-${slugSuffix(n)}`;
+        id = `ticket-${date}-${slug}-${slugSuffix(n)}`;
       }
       if (
         req.parent !== undefined &&

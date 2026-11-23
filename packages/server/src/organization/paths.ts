@@ -94,9 +94,12 @@ export function ticketPath(dir: string, ticketId: string, column: OrgTicketStatu
   return path.join(ticketsDir(dir), ticketMonth(ticketId), column, `${ticketId}.md`);
 }
 
-/** The `yyyy-mm` a ticket id belongs to (its first seven characters). */
+/**
+ * The `yyyy-mm` a ticket id belongs to: the seven characters after the `ticket-` prefix when
+ * it carries one, else the id's first seven characters (a legacy id).
+ */
 export function ticketMonth(ticketId: string): string {
-  return ticketId.slice(0, 7);
+  return ticketId.startsWith("ticket-") ? ticketId.slice(7, 14) : ticketId.slice(0, 7);
 }
 
 /**
