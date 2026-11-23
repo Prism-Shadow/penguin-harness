@@ -4812,6 +4812,14 @@ Benchmark：
     statParenClose: "）",
     noSessions: "还没有 Session",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    offlineHistory: {
+      disconnected: (alias: string) => `${alias} 未连接。`,
+      cached: "正在显示上次同步的对话记录。",
+      miss: "本地没有这段对话的缓存。连接恢复后会自动打开。",
+      empty: "上次同步时还没有消息。",
+      refreshing: (alias: string) => `${alias} 已连接，正在更新对话记录。`,
+      failed: "暂时无法读取本地对话记录。",
+    },
     sessionOnOfflineMachine: (machine: string) => `这个对话在 ${machine} 上，当前没有连接。`,
     /** The routed conversation's machine is connected and did not answer in time. */
     sessionOnQuietMachine: (machine: string) =>

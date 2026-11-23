@@ -1143,17 +1143,24 @@ export class MachinesService {
     return out;
   }
 
+  /** Whether this Project still has a local membership for the machine, without dialing it. */
+  usesMachine(projectId: string, machineId: string): boolean {
+    return this.#members(projectId).some(
+      (address) => this.repo.get(address)?.machineId === machineId,
+    );
+  }
+
+  /** Whether this server still has a record of the machine with that id. */
+  knows(machineId: string): boolean {
+    return this.#rowFor(machineId) !== null;
+  }
+
   /**
    * What the proxy needs to forward a request to a machine addressed by its OWN id: a dial
    * through the connection, the port its server is on over there, a session there, and when
    * this server adopted it (sent along, so that machine reads the Sessions it held before then
    * as CLI tasks). Null when the machine is not connected.
    */
-  /** Whether this server still has a record of the machine with that id. */
-  knows(machineId: string): boolean {
-    return this.#rowFor(machineId) !== null;
-  }
-
   async proxyTarget(machineId: string): Promise<ProxyTarget | null> {
     const row = this.#rowFor(machineId);
     if (row === null) return null;
@@ -3733,6 +3740,9 @@ export class MachinesModule {
       sockets,
       target: (machineId) => machines.proxyTarget(machineId),
       known: (machineId) => machines.knows(machineId),
+      accessible: (userId, projectId, machineId) =>
+        this.access.accessibleProjectIds(userId).includes(projectId) &&
+        machines.usesMachine(projectId, machineId),
       heardAt: (machineId) => machines.links.heardAt(machineId),
       ...(this.traces !== undefined
         ? {

@@ -20,6 +20,7 @@
  * client reads a 401 on a path without a machine prefix as its own sign-out (web
  * api/client.ts), and a machine's refusal must never sign anyone out of this server.
  */
+import { offlineHistory } from "./offline-history.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
@@ -151,6 +152,23 @@ export class SessionForward {
     const { index, machines, relay, answers } = this.deps;
     let fleet: Promise<MachineCandidate[]> | null = null;
     const fleetOf = () => (fleet ??= this.#fleet(projectIds));
+    const url = new URL(request.url);
+    if (
+      request.method === "GET" &&
+      url.pathname.endsWith("/history") &&
+      url.searchParams.get("cached") === "1"
+    ) {
+      const place = index.lookup(sessionId);
+      if (place !== null && projectIds.includes(place.projectId)) {
+        const saved = await this.deps.history?.answer(
+          request,
+          { machineId: place.machineId, remotePath: url.pathname },
+          { userId: caller?.userId ?? "", ...caller, projectId: place.projectId },
+        );
+        if (saved) return saved;
+      }
+      return offlineHistory(request, async () => null, caller?.revocation?.());
+    }
     const { place, silent, refused } = await index.resolve(sessionId, fleetOf);
     if (place === null) {
       // A machine that holds it and will not show it: the refusal, as it said it.

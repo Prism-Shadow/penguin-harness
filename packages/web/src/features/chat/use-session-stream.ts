@@ -67,6 +67,8 @@ export interface SessionStreamState {
    * previous Session's, and nothing may act on it as the new one's.
    */
   sessionId: string | null;
+  /** Owner confirmed by a history transfer, including a deep link ahead of the sidebar. */
+  historyMachineId: string | null;
   /** View model (updated in place; version bump triggers re-render): the LIVE tail window. */
   model: StreamModel;
   /**
@@ -113,6 +115,8 @@ export interface SessionStreamState {
   errorCause: unknown;
   /** Re-fetch history (only meaningful after a load failure). */
   retry: () => void;
+  /** Start fresh subscriptions when a remote machine returns. */
+  reconnect: () => void;
   /**
    * How far the reads behind the transcript have come: the window it waits on, an older window,
    * and the fill behind the first paint. All null for a Session on this server.
@@ -146,9 +150,11 @@ export function useSessionStream(
   sessionId: string | null,
   initialStatus: SessionStatus,
   /** Notification of a server auto-generated title (for updating the list in place); held in a ref, doesn't trigger a reconnect. */
-  onSessionTitle?: (sessionId: string, title: string) => void,
+  onSessionTitle: (sessionId: string, title: string) => void,
+  source: string,
 ): SessionStreamState {
   const [version, setVersion] = useState(0);
+  const [connectionGeneration, setConnectionGeneration] = useState(0);
   const [loading, setLoading] = useState(true);
   const [taskState, setTaskState] = useState<SessionStatus>(initialStatus);
   const [queuedFollowUps, setQueuedFollowUps] = useState(0);
@@ -164,8 +170,13 @@ export function useSessionStream(
   }, []);
   const [pendingTick, setPendingTick] = useState(0);
   const [goal, setGoal] = useState<GoalBannerState | null>(null);
-  const [describes, setDescribes] = useState<string | null>(sessionId);
+  const [describes, setDescribes] = useState({ sessionId, source });
   const [transfer, setTransfer] = useState<HistoryTransfer>(NO_TRANSFER);
+  const [historyOwner, setHistoryOwner] = useState<{
+    sessionId: string;
+    source: string;
+    machineId: string;
+  } | null>(null);
 
   /**
    * A history still loading after this is said out loud, with where the call went and what the
@@ -245,7 +256,7 @@ export function useSessionStream(
       // so "A is still running" would block sending in the new draft B after switching.
       controllerRef.current?.dispose();
       controllerRef.current = null;
-      setDescribes(null);
+      setDescribes({ sessionId: null, source });
       setTaskState("idle");
       setQueuedFollowUps(0);
       setPendingSteering([]);
@@ -261,7 +272,7 @@ export function useSessionStream(
       return;
     }
     setVersion((v) => v + 1);
-    setDescribes(sessionId);
+    setDescribes({ sessionId, source });
     setLoading(true);
     setError(null);
     setTransfer(NO_TRANSFER);
@@ -300,7 +311,19 @@ export function useSessionStream(
       // envelope) drives tail-first loading (see stream-controller).
       openHistory: (query, handlers) => openHistoryStream(sessionId, query, handlers),
       openBody: (ref, handlers) => openTraceBodyStream(sessionId, ref, handlers),
-      onTransfer: setTransfer,
+      onTransfer: (reading) => {
+        const machineId =
+          reading.window?.machineId ?? reading.fill?.machineId ?? reading.older?.machineId;
+        if (machineId)
+          setHistoryOwner((previous) =>
+            previous?.sessionId === sessionId &&
+            previous.source === source &&
+            previous.machineId === machineId
+              ? previous
+              : { sessionId, source, machineId },
+          );
+        setTransfer(reading);
+      },
       onTaskState: setTaskState,
       onQueuedFollowUps: setQueuedFollowUps,
       onPendingSteering: setPendingSteering,
@@ -360,7 +383,13 @@ export function useSessionStream(
     // initialStatus only serves as the first-frame placeholder; it doesn't rebuild the connection
     // on parent re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, source, connectionGeneration]);
+
+  const reconnect = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    setConnectionGeneration((current) => current + 1);
+  }, []);
 
   const markLocalDecision = useCallback((toolCallId: string) => {
     controllerRef.current?.markLocalDecision(toolCallId);
@@ -390,7 +419,11 @@ export function useSessionStream(
   void pendingTick;
 
   return {
-    sessionId: describes,
+    sessionId: describes.source === source ? describes.sessionId : null,
+    historyMachineId:
+      historyOwner && historyOwner.sessionId === sessionId && historyOwner.source === source
+        ? historyOwner.machineId
+        : null,
     model: controllerRef.current?.model ?? placeholderRef.current,
     prefixItems: controllerRef.current?.prefixItems ?? EMPTY_PREFIX,
     prefixSubagents: controllerRef.current?.prefixSubagents ?? EMPTY_SUBAGENTS,
@@ -398,7 +431,9 @@ export function useSessionStream(
     older: controllerRef.current?.older ?? IDLE_OLDER,
     loadOlder,
     version,
-    loading,
+    loading:
+      loading ||
+      (!!sessionId && (describes.source !== source || describes.sessionId !== sessionId)),
     taskState,
     queuedFollowUps,
     pendingSteering,
@@ -411,6 +446,7 @@ export function useSessionStream(
     error,
     errorCause,
     retry,
+    reconnect,
     transfer,
     retryNow,
     bodies: bodiesRef.current,

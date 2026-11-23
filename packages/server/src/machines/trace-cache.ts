@@ -59,6 +59,8 @@ import {
   parseHistoryFileKey,
   sameHistoryFile,
 } from "../services/history-wire.js";
+import type { HistoryWindow } from "../services/history-stream.js";
+import type { OfflineReader } from "./offline-history.js";
 import { LineCommitter, frameBytes } from "../socket/line-frames.js";
 
 /** The on-disk format; a directory written by another one is wiped when the cache opens. */
@@ -73,6 +75,9 @@ const READ_WRITE_EVERY_MS = 60 * 60 * 1000;
 const EVICT_TO = 0.8;
 /** How long a removal keeps trying past a file another handle still holds (Windows). */
 const RM_DEADLINE_MS = 5_000;
+/** A display window may exceed a normal page budget by one indivisible Task. */
+const OFFLINE_WINDOW_MAX_BYTES = 8 * 1024 * 1024;
+const OFFLINE_WINDOW_NAME = /^window-[0-9a-f]{32}\.json$/;
 const NEWLINE = 0x0a;
 /** How much of a run one read of the record index takes at a time. */
 const SCAN_CHUNK = 1024 * 1024;
@@ -293,7 +298,8 @@ export class TraceCache {
       if (machineDir === "VERSION") continue;
       for (const sessionDir of await this.#list(path.join(this.#root, machineDir))) {
         const dir = path.join(this.#root, machineDir, sessionDir);
-        for (const name of await this.#list(dir)) {
+        const names = await this.#list(dir);
+        for (const name of names) {
           if (!name.endsWith(".jsonl.json")) continue;
           const sidecar = await this.#readSidecar(path.join(dir, name));
           const file = sidecar === null ? null : parseHistoryFileKey(sidecar.k);
@@ -304,6 +310,28 @@ export class TraceCache {
           usage.bytes += extentOf(sidecar.runs);
           usage.lastReadAt = Math.max(usage.lastReadAt, readAt);
           usage.writtenAt = Math.max(usage.writtenAt, readAt);
+        }
+        if (names.some((name) => OFFLINE_WINDOW_NAME.test(name))) {
+          // The group identifies this directory even when the opened transcript was empty.
+          const group = await fs
+            .readFile(path.join(dir, "group.json"), "utf8")
+            .then(JSON.parse)
+            .catch(() => null);
+          if (
+            typeof group?.machineId !== "string" ||
+            typeof group?.sessionId !== "string" ||
+            dirNameOf(group.machineId) !== machineDir ||
+            dirNameOf(group.sessionId) !== sessionDir
+          )
+            continue;
+          for (const name of names.filter((file) => OFFLINE_WINDOW_NAME.test(file))) {
+            const stat = await fs.stat(path.join(dir, name)).catch(() => null);
+            if (stat !== null) {
+              const usage = this.#usage(group.machineId, group.sessionId, stat.mtimeMs);
+              usage.bytes += stat.size;
+              usage.lastReadAt = Math.max(usage.lastReadAt, stat.mtimeMs);
+            }
+          }
         }
       }
     }
@@ -401,7 +429,10 @@ export class TraceCache {
 
   /** Runs `work` after every earlier one on the same file. */
   #serial<T>(state: FileState, work: () => Promise<T>): Promise<T> {
-    const id = `${state.machineId}\0${state.sidecar.k}`;
+    return this.#onChain(`${state.machineId}\0${state.sidecar.k}`, work);
+  }
+
+  #onChain<T>(id: string, work: () => Promise<T>): Promise<T> {
     const run = (this.#chains.get(id) ?? Promise.resolve()).catch(() => undefined).then(work);
     this.#chains.set(id, run);
     void run.then(
@@ -456,9 +487,11 @@ export class TraceCache {
     { whole = true }: { whole?: boolean } = {},
   ): Promise<void> {
     await this.#ready;
+    const changed = new Set<string>();
     const listed = new Set(facts.map((fact) => fact.k));
     for (const state of whole ? await this.#groupFiles(machineId, sessionId) : []) {
       if (listed.has(state.sidecar.k)) continue;
+      changed.add(state.sessionId);
       await this.#serial(state, async () => {
         await this.#clear(state);
         state.dead = true;
@@ -482,7 +515,10 @@ export class TraceCache {
             { ino: sidecar.ino, birthtimeMs: sidecar.birthtimeMs },
             { ino: String(fact.ino), birthtimeMs: fact.birthtimeMs },
           );
-        if (fact.reset === true || moved || fact.size < sidecar.size) await this.#clear(state);
+        if (fact.reset === true || moved || fact.size < sidecar.size) {
+          if (sidecar.ino !== null) changed.add(state.sessionId);
+          await this.#clear(state);
+        }
         sidecar.ino = String(fact.ino);
         if (fact.dev !== undefined) sidecar.dev = fact.dev;
         else delete sidecar.dev;
@@ -497,6 +533,7 @@ export class TraceCache {
         usage.writtenAt = Math.max(usage.writtenAt, sidecar.lastReadAt);
       });
     }
+    if (changed.size > 0) await this.#discardAffected(machineId, changed);
     if (!whole) return;
     sessions.delete(sessionId);
     const groupPath = path.join(this.#sessionDir(machineId, sessionId), "group.json");
@@ -1123,6 +1160,117 @@ export class TraceCache {
     }
   }
 
+  /** Each reader's displayed window shares its Session's size limit, retention and directory removal. */
+  saveWindow(
+    machineId: string,
+    sessionId: string,
+    owner: OfflineReader,
+    window: HistoryWindow,
+  ): Promise<void> {
+    const dir = this.#sessionDir(machineId, sessionId);
+    const file = path.join(dir, `window-${dirNameOf(owner.userId)}.json`);
+    return this.#onChain(dir, async () => {
+      await this.#ready;
+      const usage = this.#dirs.get(`${machineId}\0${sessionId}`);
+      if (usage === undefined) return;
+      const prior = (await fs.stat(file).catch(() => null))?.size ?? 0;
+      const data =
+        window.page.bytes <= OFFLINE_WINDOW_MAX_BYTES
+          ? JSON.stringify({
+              machineId,
+              sessionId,
+              userId: owner.userId,
+              projectId: owner.projectId ?? null,
+              window,
+            })
+          : "";
+      const bytes = Buffer.byteLength(data);
+      if (bytes === 0 || bytes > Math.min(OFFLINE_WINDOW_MAX_BYTES, this.#capBytes)) {
+        await fs.rm(file, { force: true });
+        usage.bytes -= prior;
+        return;
+      }
+      // The sync created this directory. Never recreate one that deletion or eviction took.
+      const tmp = file + ".tmp";
+      await fs.writeFile(tmp, data);
+      const written = new Date(this.#now());
+      await fs.utimes(tmp, written, written);
+      await fs.rename(tmp, file);
+      usage.bytes += bytes - prior;
+    });
+  }
+
+  readWindow(
+    machineId: string,
+    sessionId: string,
+    owner: OfflineReader,
+    accessible: (projectId: string) => boolean = () => true,
+  ): Promise<HistoryWindow | null> {
+    const dir = this.#sessionDir(machineId, sessionId);
+    return this.#onChain(dir, async () => {
+      if (this.#opened === null && !(await this.#exists())) return null;
+      await this.#ready;
+      const usage = this.#dirs.get(`${machineId}\0${sessionId}`);
+      if (usage === undefined || this.#now() - usage.lastReadAt >= this.#retainMs) return null;
+      const file = path.join(dir, `window-${dirNameOf(owner.userId)}.json`);
+      const stat = await fs.stat(file).catch(() => null);
+      if (!stat || stat.size > OFFLINE_WINDOW_MAX_BYTES) return null;
+      try {
+        const saved = JSON.parse(await fs.readFile(file, "utf8"));
+        if (
+          saved.machineId !== machineId ||
+          saved.sessionId !== sessionId ||
+          saved.userId !== owner.userId ||
+          typeof saved.projectId !== "string" ||
+          !accessible(saved.projectId) ||
+          (owner.projectId !== undefined && saved.projectId !== owner.projectId)
+        )
+          return null;
+        const window = saved.window as HistoryWindow;
+        if (
+          typeof window.windowId !== "string" ||
+          typeof window.text !== "string" ||
+          window.page.windowId !== window.windowId ||
+          window.page.bytes !== Buffer.byteLength(window.text) ||
+          window.page.live !== undefined
+        )
+          return null;
+        await this.touch(machineId, await this.groupSessions(machineId, sessionId)).catch(
+          () => undefined,
+        );
+        return window;
+      } catch {
+        return null;
+      }
+    });
+  }
+
+  /** A refusal or a reset revokes every reader's display copy, independently of the raw Trace. */
+  discardWindows(machineId: string, sessionId: string): Promise<void> {
+    const dir = this.#sessionDir(machineId, sessionId);
+    return this.#onChain(dir, async () => {
+      if (this.#opened === null && !(await this.#exists())) return;
+      await this.#ready;
+      const usage = this.#dirs.get(`${machineId}\0${sessionId}`);
+      for (const name of await this.#list(dir)) {
+        if (!OFFLINE_WINDOW_NAME.test(name)) continue;
+        const file = path.join(dir, name);
+        const size = (await fs.stat(file)).size;
+        await fs.rm(file, { force: true });
+        if (usage) usage.bytes -= size;
+      }
+    });
+  }
+
+  /** A parent window may contain a descendant's records, including through a shared fork. */
+  async #discardAffected(machineId: string, changed: Set<string>): Promise<void> {
+    const affected = new Set(changed);
+    for (const group of await this.#groups(machineId)) {
+      if (group.sessions.some((member) => changed.has(member))) affected.add(group.sessionId);
+    }
+    await Promise.all([...affected].map((sid) => this.discardWindows(machineId, sid)));
+  }
+
   /** Drops everything held of one machine: it left this hub's list, or its data was removed. */
   async dropMachine(machineId: string): Promise<void> {
     if (machineId === "" || !(this.#opened !== null || (await this.#exists()))) return;
@@ -1140,6 +1288,7 @@ export class TraceCache {
    * kept or served from here, while a fork that shares its subagents keeps their copies.
    */
   async dropSession(machineId: string, sessionId: string): Promise<void> {
+    await this.discardWindows(machineId, sessionId);
     if (!(this.#opened !== null || (await this.#exists()))) return;
     await this.#ready;
     // The Session's own copy goes; a descendant's goes with it unless a Session that stays still
@@ -1147,6 +1296,9 @@ export class TraceCache {
     const members = await this.groupSessions(machineId, sessionId);
     const dropped = new Set(members);
     const groups = await this.#groups(machineId);
+    for (const group of groups) {
+      if (group.sessions.includes(sessionId)) await this.discardWindows(machineId, group.sessionId);
+    }
     // Until nothing changes: every Session that stays keeps whatever its own group names.
     for (let changed = true; changed;) {
       changed = false;
