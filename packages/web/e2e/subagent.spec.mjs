@@ -480,3 +480,43 @@ test("previous and next turns retain the original child through another send and
   await cold.getByTestId("subagent-open-session").click();
   await expect(cold).toHaveURL(new RegExp(`/chat/${firstId}$`));
 });
+
+test("a fork can read the copied messages without acquiring its source's child in the Agents panel", async ({
+  page,
+}) => {
+  const { sessionId } = await provisionSession(page, "forkchildreader");
+  const path = BASE + "/api/sessions/" + sessionId;
+  await page.goto(BASE + "/chat/" + sessionId);
+  await page.locator('[data-slot="composer"] textarea').first().fill("run a subagent");
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
+  const { items } = await (await page.request.get(path + "/subagents")).json();
+  expect(items).toHaveLength(1);
+  const { files } = await (await page.request.get(path + "/traces")).json();
+  const { index } = files.at(-1);
+  const { events } = await (
+    await page.request.get(path + "/traces/" + index + "?limit=100")
+  ).json();
+  const ordinal = events.findLastIndex(
+    (record) =>
+      record.type === "model_msg" &&
+      !record.origin?.length &&
+      record.payload?.role === "assistant" &&
+      typeof record.payload.text === "string",
+  );
+  expect(ordinal).toBeGreaterThan(0);
+  const fork = await page.request.post(path + "/fork", {
+    data: { position: { fileIndex: index, ordinal } },
+  });
+  await expect(fork).toBeOK();
+  const forkId = (await fork.json()).session.sessionId;
+  const forkRoster = await page.request.get(BASE + "/api/sessions/" + forkId + "/subagents");
+  expect((await forkRoster.json()).items).toEqual([]);
+  await page.goto(BASE + "/chat/" + forkId);
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
+  await revealChip(page);
+  await openPanelViaChip(page);
+  const dock = page.getByTestId("dock");
+  await expect(dock.getByTestId("subagent-open-session")).toHaveCount(0);
+  await expect(dock.getByText("这个会话还没有子智能体")).toBeVisible();
+});

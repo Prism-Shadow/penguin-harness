@@ -150,7 +150,9 @@ export function SubagentsView({
     ? history.turns.findIndex((turn) => turn.some((child) => child.sessionId === anchor))
     : 0;
   const turn = history.turns[index];
-  const liveAnchor = latest.find((node) => node.depth === 1)?.sessionId;
+  const liveAnchor = latest.find(
+    (node) => node.depth === 1 && liveStates.has(node.sessionId),
+  )?.sessionId;
   const pendingLive =
     !!liveAnchor &&
     !history.turns.some((group) => group.some((child) => child.sessionId === liveAnchor));
@@ -159,7 +161,12 @@ export function SubagentsView({
     const graph = lookup
       ? extractTopologyForChild(model, session.sessionId, taskRunning, lookup, liveStates)
       : null;
-    if (!turn || (!anchor && pendingLive)) return graph ?? latest;
+    if (!turn || (!anchor && pendingLive)) {
+      // A fork retains the source conversation's transcript, including its delegation chips.
+      // Only this parent runtime or its durable index may identify a child in the panel.
+      const candidate = graph ?? latest;
+      return candidate.filter((node) => node.depth === 0 || liveStates.has(node.origin[0]!));
+    }
     const root = graph?.[0] ?? { ...latest[0]!, running: index === 0 && taskRunning };
     const result = [root];
     const ids = new Set(turn.map((child) => child.sessionId));
@@ -316,7 +323,7 @@ export function SubagentsView({
             </button>
           </div>
         )}
-        {nodes.length > 1 ? (
+        {nodes.length > 1 && (
           <div className="max-h-48 overflow-y-auto">
             <AgentTopologyView
               nodes={nodes}
@@ -326,8 +333,6 @@ export function SubagentsView({
               onSelect={(node) => setSelected({ sessionId: node.sessionId, origin: node.origin })}
             />
           </div>
-        ) : (
-          <p className="py-1 text-xs text-gray-400 dark:text-gray-500">{S.subagentPanel.empty}</p>
         )}
       </div>
 
