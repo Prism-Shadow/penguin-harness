@@ -401,7 +401,7 @@ test("a system app's tile opens its page, where the App Center stays lit", async
   await setAccountPrefs(page.request, { lang: "en" });
   await page.goto(`${BASE}/apps`);
   const grid = page.getByRole("list", { name: "App Center" });
-  await grid.getByRole("button", { name: "Evaluation Center, system app" }).click();
+  await grid.getByRole("button", { name: "Self-Evolution Workbench, system app" }).click();
   await expect(page).toHaveURL(`${BASE}/benchmark`);
   const appCenter = page.locator("aside").first().getByRole("link", { name: "App Center" });
   await expect(appCenter).toHaveAttribute("aria-current", "page");
