@@ -56,6 +56,7 @@ test("choosing a model in Slides changes only the presentation's next turn", asy
   await app.locator("#recent-decks .file-row button").first().click();
   await app.locator("#chat-model button").click();
   await picker.getByText("Review", { exact: true }).click();
+  await app.locator('#choice-confirm [value="switch"]').click();
   await expect(app.locator("#chat-model button")).toContainText("Review");
   await ask("Shorten slide two");
   await expect(app.locator("#talk")).toContainText("Served by " + second, { timeout: 30000 });

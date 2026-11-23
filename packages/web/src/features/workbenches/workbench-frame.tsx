@@ -30,10 +30,12 @@ const FRAME_REVEAL_TIMEOUT_MS = 4000;
 
 export function WorkbenchFrame({
   projectId,
+  agentId,
   tab,
   onFillApp,
 }: {
   projectId: string;
+  agentId: string;
   tab: WorkbenchTab;
   /** The page asked to fill the app; absent where it already does (the full page). */
   onFillApp?: () => void;
@@ -102,6 +104,7 @@ export function WorkbenchFrame({
       <WorkbenchModelPicker
         key={`model-picker/${frameKey}`}
         frame={frameRef}
+        agentId={agentId}
         projectId={projectId}
         machineId={tab.machineId}
       />

@@ -21,7 +21,7 @@
  *   GET    /events               server-sent events: `decks` whenever a deck file changed
  *   GET    /ask?deck=:id         the deck's Session and whether it is running
  *   POST   /ask                  { deck, text, slide?, selection? } runs one request of the Agent on the deck
- *   POST   /ask/session          { deck, model } opens the deck's conversation on the chosen model, or returns its existing Session
+ *   POST   /ask/session          { deck, model? } opens the deck's conversation on the chosen model, or returns its existing Session
  *   POST   /ask/reset            { deck } forgets the deck's Session; the next request opens a new one
  *   POST   /export?name=…        keeps a file the page built in the cache folder; answers the link that downloads it
  *   GET    /export/:token
@@ -619,8 +619,7 @@ export default {
                   const model = candidate as { provider: string; modelId: string } | undefined;
                   if (route === "/ask/session") {
                     const id = String(body.deck ?? "");
-                    if (!DECK_ID.test(id) || !model)
-                      return json({ error: "deck and model are required" }, 400);
+                    if (!DECK_ID.test(id)) return json({ error: "deck is required" }, 400);
                     const sessionId = await ensureSession(id, model);
                     return sessionId ? json({ sessionId }) : json({ error: "no such deck" }, 404);
                   }
@@ -632,11 +631,6 @@ export default {
                   if (text.length > 20_000) return json({ error: "text is too long" }, 400);
                   const sessionId = await ensureSession(id, model);
                   if (!sessionId) return json({ error: "no such deck" }, 404);
-                  if (statusOf(sessionId) === "compacting")
-                    return json(
-                      { error: "The Session is switching context. Try again when it finishes." },
-                      409,
-                    );
                   const slide = (body.slide ?? null) as { id?: unknown; number?: unknown } | null;
                   const selection = Array.isArray(body.selection)
                     ? body.selection.filter((s): s is string => typeof s === "string").slice(0, 40)

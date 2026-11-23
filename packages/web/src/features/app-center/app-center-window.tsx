@@ -80,6 +80,7 @@ function AgentWorkbenchWindow(props: WindowProps) {
           <WorkbenchFrame
             key={shown.tabId}
             projectId={projectId}
+            agentId={shortcut.agentId}
             tab={shown}
             onFillApp={() => onFullScreen(path)}
           />
