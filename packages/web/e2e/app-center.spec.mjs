@@ -5,9 +5,7 @@
  *   served by the icon route. A click opens it windowed over the grid; the window's minimize
  *   returns to the grid with the tile marked running, and the tile brings back the same frame;
  *   the window's close returns to the grid; "Open full screen" in the tile's menu opens the full
- *   page, whose exit comes back to the App Center. The App Center switch on the workbench's row (the Plugins
- *   tab's Workbenches sub-page) takes the tile off and puts
- *   it back.
+ *   page, whose exit comes back to the App Center. Manage apps opens the Plugin Market. Workbench settings can open a hidden workbench.
  * - With three workbenches of a fresh account's Agent: a real pointer drag of one tile onto the
  *   middle of another rings the target while it hovers and makes a folder on release, which
  *   opens as a panel over the grid; the menu moves a tile backward; the arrangement outlives a
@@ -31,7 +29,7 @@ async function openSupportRow(page) {
   await page.goto(`${BASE}${SUPPORT}`);
 }
 
-test("the App Center opens Support windowed and full screen, and Hide and Unhide remove and restore its tile", async ({
+test("the App Center opens Support windowed or full screen, and a hidden workbench remains accessible from settings", async ({
   page,
 }) => {
   await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
@@ -78,39 +76,37 @@ test("the App Center opens Support windowed and full screen, and Hide and Unhide
   await page.getByRole("button", { name: "Exit full screen" }).click();
   await expect(page).toHaveURL(`${BASE}/apps`);
 
-  await openSupportRow(page);
-  const title = page
-    .getByRole("listitem")
-    .filter({ has: page.getByRole("button", { name: "Hide from App Center Support" }) })
-    .getByRole("button", { name: /^Support(?: |$)/ })
-    .first();
-  await title.focus();
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog", { name: "Support" })).toBeVisible();
-  await page.keyboard.press("Escape");
-  const hide = page.getByRole("button", { name: "Hide from App Center Support" });
-  const unhide = page.getByRole("button", { name: "Unhide in App Center Support" });
-  await hide.focus();
-  await page.keyboard.press("Enter");
-  await expect(unhide).toBeEnabled({ timeout: 30_000 });
-
+  await tile.click();
+  const apps = page.getByRole("navigation", { name: "Apps", exact: true });
+  await apps.getByRole("button", { name: "Manage apps" }).click();
+  await expect(page).toHaveURL(`${BASE}/plugins`);
   await page.goto(`${BASE}/apps`);
-  await expect(grid).toBeVisible();
+  await tile.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Remove from the App Center" }).click();
   await expect(tile).toHaveCount(0);
-  const { shortcuts } = await (
-    await page.request.get(`${BASE}/api/projects/default_project/app-center`)
-  ).json();
-  await expect(page.getByText("No apps from agents yet")).toBeVisible({
-    visible: shortcuts.length === 0,
-  });
-  await expect(page.getByRole("button", { name: "Create with AI" })).toBeVisible();
-
-  await openSupportRow(page);
-  await unhide.focus();
-  await page.keyboard.press("Space");
-  await expect(hide).toBeEnabled({ timeout: 30_000 });
-  await page.goto(`${BASE}/apps`);
-  await expect(grid.getByRole("button", { name: /^Support/ })).toBeVisible();
+  try {
+    await openSupportRow(page);
+    const row = page
+      .getByRole("listitem")
+      .filter({ has: page.getByRole("button", { name: "Open workbench Support", exact: true }) });
+    await expect(row.getByRole("switch")).toBeVisible();
+    await expect(row.getByRole("button", { name: /Hide|Unhide|More/ })).toHaveCount(0);
+    const title = row.getByRole("button", { name: /^Support(?: |$)/ });
+    await title.focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("dialog", { name: "Support" }).getByRole("button", { name: "More Support" }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await row.getByRole("button", { name: "Open workbench Support" }).click();
+    await expect(appWindow.locator("iframe")).toBeVisible();
+  } finally {
+    const restore = await page.request.patch(
+      `${BASE}/api/projects/default_project/agents/penguin_support/workbenches/support/app-center`,
+      { data: { show: true } },
+    );
+    expect(restore.ok()).toBe(true);
+  }
 });
 
 // ------------------------------------------------------------------ three apps of one Agent

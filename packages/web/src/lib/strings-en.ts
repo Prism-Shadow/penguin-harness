@@ -1154,10 +1154,6 @@ export const en: Strings = {
     importOverwriteAction: "Overwrite",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
-    appCenterVisibility: (shown: boolean): string =>
-      shown ? "Hide from App Center" : "Unhide in App Center",
-    appCenterVisibilityHint:
-      "Changes the App Center shortcut for everyone in this Project. The workbench keeps its data and version history.",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
     /** The row's "⋯" button, which holds its other actions. */

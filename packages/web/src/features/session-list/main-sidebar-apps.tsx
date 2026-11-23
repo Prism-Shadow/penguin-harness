@@ -49,7 +49,7 @@ function writeFolded(folded: boolean): void {
 
 export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
   const workspace = usePageWorkspace();
-  const { agent, rows } = useSidebarApps(workspace?.layout.pages);
+  const { rows } = useSidebarApps(workspace?.layout.pages);
   const navigate = useNavigate();
   const [folded, setFolded] = useState(readFolded);
   const [searching, setSearching] = useState(false);
@@ -219,13 +219,11 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
             ))}
           </Menu>
         </Dropdown>
-        {agent && (
-          <SidebarControl
-            glyph={ICONS.gear}
-            label={S.sidebarApps.manage}
-            onClick={() => go(agentSettingsPath(agent.agentId, agent.machineId, "workbenches"))}
-          />
-        )}
+        <SidebarControl
+          glyph={ICONS.gear}
+          label={S.sidebarApps.manage}
+          onClick={() => go("/plugins")}
+        />
       </SidebarListHeader>
       <Fold open={!folded || searching}>
         {visible.length === 0 && (

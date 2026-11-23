@@ -18,6 +18,7 @@
  * - The More menu's sidebar row is checked by default; picking it writes the sidebar setting at
  *   once and nothing of the App Center's, and a refused write puts it back.
  */
+import { rowOf } from "./helpers/agent-plugins";
 import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
@@ -82,11 +83,11 @@ afterEach(async () => {
 });
 /** Picks a row of the workbench's More menu. */
 async function more(item: string) {
+  if (!hasButton(`${en.workbenches.more} Support`))
+    await click(rowOf("Support").querySelector("button")!);
   await click(button(`${en.workbenches.more} Support`));
   await click(menuItem(item));
 }
-const visibilityName = (shown: boolean) => `${en.workbenches.appCenterVisibility(shown)} Support`;
-const visibility = (shown: boolean) => button(visibilityName(shown));
 /** The settings page with the shell's windows beside it, as the app mounts them. */
 async function openWithWindows(over: Partial<WorkbenchInfo> = {}) {
   setActiveStrings(en);
@@ -148,51 +149,20 @@ it("asks before removing from the More menu: a cancel deletes nothing, a confirm
   await waitFor(() => !hasButton(`${en.workbenches.more} Support`));
   expect(document.body.textContent).toContain(en.agentPlugins.workbenchesEmpty);
 });
-it("offers one contextual App Center action, restoring it after a refused write", async () => {
-  const { server } = await open();
-  const writes = () => server.writes().filter((request) => request.path.endsWith("/app-center"));
-  expect(switchNamed(en.workbenches.enableOne("Support")).closest("label")?.textContent).toBe(
-    en.workbenches.enableLabel,
+it("offers Enable and Open but makes no visibility changes for a hidden workbench", async () => {
+  const title = "Support";
+  const { server } = await open(
+    [{ id: "support.main", key: "main", title, renderer: { iframe: { src: "/support" } } }],
+    { enabled: true, appCenter: { show: false } },
   );
-  expect(visibility(false).textContent).toBe(en.workbenches.appCenterVisibility(false));
-  server.refuseNext(409, "workbench_manifest_invalid", "package.json is not valid JSON");
-  await click(visibility(false));
-  await waitFor(
-    () => writes().length === 1 && hasButton(visibilityName(false)) && !visibility(false).disabled,
-  );
-  await click(visibility(false));
-  await waitFor(() => hasButton(visibilityName(true)) && !visibility(true).disabled);
-  await click(visibility(true));
-  await waitFor(() => hasButton(visibilityName(false)) && !visibility(false).disabled);
-  expect(writes().map((request) => [request.method, request.body])).toEqual([
-    ["PATCH", { show: true }],
-    ["PATCH", { show: true }],
-    ["PATCH", { show: false }],
-  ]);
-  await click(button(`${en.workbenches.more} Support`));
-  expect(document.querySelector('[role="menu"]')?.textContent).not.toMatch(/App Center/);
-  expect(() => menuItem("Show in the sidebar")).toThrow();
+  const row = rowOf(title);
+  expect(row.querySelectorAll("button")).toHaveLength(3); // Name, Enable, Open.
+  expect(switchNamed(en.workbenches.enableOne(title))).toBeTruthy();
+  expect(hasButton(`${en.workbenches.open} ${title}`)).toBe(true);
+  expect(hasButton(`${en.workbenches.more} ${title}`)).toBe(false);
+  expect(server.writes().filter((r) => r.path.endsWith("/app-center"))).toHaveLength(0);
 });
-it("writes the visibility of a machine's Agent on that machine", async () => {
-  setActiveStrings(en);
-  const server = agentServer(undefined, {
-    workbenches: [info([])],
-    machines: [{ machineId: "gpu1", alias: "gpu-box", agents: [AGENT_ID] }],
-  });
-  await mountAgentApp(h(AgentSettingsPage), {
-    at: `/agents/${AGENT_ID}?machine=gpu1&tab=workbenches`,
-  });
-  await waitFor(() => document.body.textContent?.includes("Support") === true);
-  await click(visibility(false));
-  await waitFor(() => hasButton(visibilityName(true)));
-  expect(
-    server
-      .writes()
-      .filter((request) => request.path.endsWith("/app-center"))
-      .map((request) => [request.machine, request.body]),
-  ).toEqual([["gpu1", { show: true }]]);
-});
-const row = () => visibility(false).closest("li")!;
+const row = () => rowOf("Support");
 it("leads the row with the workbench's own App Center icon", async () => {
   await open([], { icon: { url: "/api/icons/support.png?rev=1", tint: false } });
   expect(row().querySelector("img")?.getAttribute("src")).toBe("/api/icons/support.png?rev=1");
