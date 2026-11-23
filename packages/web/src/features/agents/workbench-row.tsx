@@ -6,18 +6,8 @@
  * - The mark is the workbench's own App Center icon when its manifest names one that reads clean
  *   (an image the server serves; a monochrome one drawn in the tile's ink), else its plugin's
  *   icon on the tile, else the anvil tile.
- * - A switch sits in a `<label>` whose words flip it too ("Enable", "Show in the App Center"); a
- *   longer hint — what showing in the App Center means, and what the switch does to the
- *   package.json — is the label's tooltip.
- * - "More" is the portaled `Dropdown` with the `Menu` family's rows, as every row menu in the
- *   app: first, on a row that has it, "Show in the App Center" as a checkable row — the same
- *   setting as the row's switch (`AppCenterControl`), so picking it writes at once — and "Show in
- *   the sidebar", the installation's sidebar setting, checkable the same way (absent when the
- *   Agent's server predates it); then a rule, Reload (while the workbench runs), Version history
- *   and Export, then Remove in the danger tone. Opening focuses the first row, the arrow keys
- *   move, Enter picks, and Esc closes this menu only and hands focus back to its button. A pick
- *   closes the menu; the menu acts through the rows' owner, which writes both settings: Remove
- *   still asks there first.
+ * - The Enable label toggles its switch. "More" offers the separate sidebar setting,
+ *   reload, version history, export and removal.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -32,7 +22,6 @@ import {
   Menu,
   MenuItem,
   MenuSeparator,
-  Switch,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { SkillTile } from "../skills";
@@ -67,20 +56,16 @@ export function WorkbenchMark({
 /** A switch with its word beside it, in one `<label>`, so a click on the word flips it too. */
 export function LabelledSwitch({
   text,
-  hint,
   disabled,
   children,
 }: {
   text: string;
-  /** What the switch does, beyond its word: the label's tooltip. */
-  hint?: string;
   disabled: boolean;
   /** The switch. */
   children: ReactNode;
 }) {
   return (
     <label
-      {...(hint !== undefined ? { "data-tooltip": hint, "data-tooltip-extra": true } : {})}
       className={`mr-2 flex items-center gap-1.5 text-xs text-fg-muted ${
         disabled ? "cursor-not-allowed" : "cursor-pointer"
       }`}
@@ -98,39 +83,9 @@ export interface SettingControl {
   onChange: (show: boolean) => void;
 }
 
-/** One workbench's App Center setting, as a control shows it. */
-export type AppCenterControl = SettingControl;
-
-/** The App Center switch, its words beside it; a click on either flips it. */
-export function AppCenterToggle({
-  title,
-  checked,
-  disabled,
-  onChange,
-}: AppCenterControl & {
-  /** The row's title, for the switch's accessible name. */
-  title: string;
-}) {
-  return (
-    <LabelledSwitch
-      text={S.workbenches.showInAppCenter}
-      hint={S.workbenches.showInAppCenterHint}
-      disabled={disabled}
-    >
-      <Switch
-        checked={checked}
-        disabled={disabled}
-        onChange={onChange}
-        aria-label={`${S.workbenches.showInAppCenter} ${title}`}
-      />
-    </LabelledSwitch>
-  );
-}
-
 export function WorkbenchRowMenu({
   title,
   disabled,
-  appCenter,
   sidebar,
   onReload,
   onHistory,
@@ -140,8 +95,6 @@ export function WorkbenchRowMenu({
   /** The row's title, for the button's and the menu's accessible name. */
   title: string;
   disabled: boolean;
-  /** The row's App Center setting, drawn as the menu's first, checkable row; absent on a machine's Agent. */
-  appCenter?: AppCenterControl | undefined;
   /** The installation's sidebar setting, checkable; absent when the Agent's server predates it. */
   sidebar?: SettingControl | undefined;
   /** Absent while the workbench does not run: there is nothing to reload. */
@@ -180,15 +133,6 @@ export function WorkbenchRowMenu({
       }
     >
       <Menu label={label} density="sm" className="py-1">
-        {appCenter !== undefined && (
-          <MenuItem
-            glyph={ICONS.tiles}
-            label={S.workbenches.showInAppCenter}
-            checked={appCenter.checked}
-            disabled={appCenter.disabled}
-            onSelect={pick(() => appCenter.onChange(!appCenter.checked))}
-          />
-        )}
         {sidebar !== undefined && (
           <MenuItem
             glyph={ICONS.panelLeft}
@@ -198,7 +142,7 @@ export function WorkbenchRowMenu({
             onSelect={pick(() => sidebar.onChange(!sidebar.checked))}
           />
         )}
-        {(appCenter !== undefined || sidebar !== undefined) && <MenuSeparator />}
+        {sidebar !== undefined && <MenuSeparator />}
         {onReload !== undefined && (
           <MenuItem glyph={ICONS.refresh} label={S.workbenches.reload} onSelect={pick(onReload)} />
         )}

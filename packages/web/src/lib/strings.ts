@@ -1253,11 +1253,10 @@ export const zh = {
     importOverwriteAction: "覆盖导入",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
-    /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
-    showInAppCenter: "展示到应用中心",
-    /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
-    showInAppCenterHint:
-      "打开后，这个工作台会作为一个应用出现在「应用中心」页面：Project 的每个成员都能在那里看到它的图标，点一下即可打开使用，不必先进入对话。关闭只是把入口从应用中心撤下，工作台本身、它的数据与历史版本都不受影响。拨动开关会改写工作台 package.json 中的 penguin.appCenter.show，并记为一个版本。",
+    appCenterVisibility: (shown: boolean): string =>
+      shown ? "从应用中心隐藏" : "在应用中心取消隐藏",
+    appCenterVisibilityHint:
+      "更改所有 Project 成员看到的应用中心入口。工作台的数据和历史版本会保留。",
     /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
     showInSidebar: "展示到侧边栏",
     /** The row's text button: opens the workbench beside a new chat. */

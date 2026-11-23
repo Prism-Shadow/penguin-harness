@@ -31,7 +31,7 @@ async function openSupportRow(page) {
   await page.goto(`${BASE}${SUPPORT}`);
 }
 
-test("the App Center opens Support windowed and full screen, and its switch takes the tile off and back", async ({
+test("the App Center opens Support windowed and full screen, and Hide and Unhide remove and restore its tile", async ({
   page,
 }) => {
   await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
@@ -71,12 +71,20 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(page).toHaveURL(`${BASE}/apps`);
 
   await openSupportRow(page);
-  const toggle = page.getByRole("switch", { name: "Show in the App Center Support" });
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
-  await toggle.click();
-  // The reload behind the switch compiles the workbench: the row reads back once it is done.
-  await expect(toggle).toHaveAttribute("aria-checked", "false", { timeout: 30_000 });
-  await expect(toggle).toBeEnabled({ timeout: 30_000 });
+  const title = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("button", { name: "Hide from App Center Support" }) })
+    .getByRole("button", { name: /^Support(?: |$)/ })
+    .first();
+  await title.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Support" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  const hide = page.getByRole("button", { name: "Hide from App Center Support" });
+  const unhide = page.getByRole("button", { name: "Unhide in App Center Support" });
+  await hide.focus();
+  await page.keyboard.press("Enter");
+  await expect(unhide).toBeEnabled({ timeout: 30_000 });
 
   await page.goto(`${BASE}/apps`);
   await expect(grid).toBeVisible();
@@ -90,9 +98,9 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(page.getByRole("button", { name: "Create with AI" })).toBeVisible();
 
   await openSupportRow(page);
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-checked", "true", { timeout: 30_000 });
-  await expect(toggle).toBeEnabled({ timeout: 30_000 });
+  await unhide.focus();
+  await page.keyboard.press("Space");
+  await expect(hide).toBeEnabled({ timeout: 30_000 });
   await page.goto(`${BASE}/apps`);
   await expect(grid.getByRole("button", { name: /^Support/ })).toBeVisible();
 });
