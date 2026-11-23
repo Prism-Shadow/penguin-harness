@@ -87,6 +87,8 @@ export function setupModelChoice({
       deck.choiceRead = (deck.choiceRead || 0) + 1;
       deck.waitingChoice = null;
       deck.pendingModel = status === 202 ? target : null;
+      // Idle-only hosts do not report a pending target while they summarize the conversation.
+      deck.idleHandoff = !waitIfBusy && status === 202 ? target : null;
       if (status === 200) deck.model = target;
     } catch (error) {
       if (
@@ -127,12 +129,12 @@ export function setupModelChoice({
       notice(S.handoffFailed);
     deck.seenSwitchFailure = failure?.id;
     deck.model = model;
-    deck.pendingModel = pending;
+    if (session.status !== "compacting" || pending) deck.idleHandoff = null;
+    deck.pendingModel = pending ?? deck.idleHandoff;
     deck.effort = session.thinkingLevel ?? null;
     const waiting = deck.waitingChoice;
     if (waiting && waiting.id !== id) deck.waitingChoice = null;
-    else if (waiting && !deck.choosingModel && session.status === "idle") {
-      deck.waitingChoice = null;
+    else if (waiting && !deck.choosingModel && !deck.retryingChoice && session.status === "idle") {
       if (key(waiting.target) !== key(pending ?? model)) {
         deck.retryingChoice = true;
         try {
@@ -144,6 +146,7 @@ export function setupModelChoice({
           deck.retryingChoice = false;
         }
       }
+      deck.waitingChoice = null;
     }
     draw();
   }
