@@ -20,7 +20,15 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 import type { IconRef } from "../src/api/types.js";
 import { WorkbenchService } from "../src/workbenches/service.js";
-import { apiClient, createTestApp, loginAdmin, writeTraceFile, type TestApp } from "./helpers.js";
+import {
+  apiClient,
+  createTestApp,
+  loginAdmin,
+  provisionUser,
+  restartTestApp,
+  writeTraceFile,
+  type TestApp,
+} from "./helpers.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { MOCK_MODEL_ID, startMockLLM, type MockLLM } from "./live-session.js";
 const BASE = "/api/projects/default_project/agents/penguin_support/workbenches/support";
@@ -54,6 +62,35 @@ interface Ticket {
   error: string | null;
   stopped?: boolean;
 }
+it("lets only the owner remove the preset Support Agent and keeps it removed after restart", async () => {
+  let app = await createTestApp({ durableDatabase: true });
+  const base = "/api/projects/default_project/agents";
+  try {
+    const owner = apiClient(app.app, (await loginAdmin(app.app)).cookie);
+    const member = apiClient(app.app, (await provisionUser(app.app, "teammate")).cookie);
+    expect(
+      (await owner.post("/api/projects/default_project/members", { userId: "teammate" })).status,
+    ).toBe(201);
+    expect((await member.delete(`${base}/penguin_support`)).status).toBe(403);
+    for (const id of ["default_agent", "system_agent"]) {
+      expect((await owner.delete(`${base}/${id}`)).status).toBe(409);
+    }
+    expect((await owner.delete(`${base}/penguin_support`)).status).toBe(202);
+    app = await restartTestApp(app);
+    const restarted = apiClient(app.app, (await loginAdmin(app.app)).cookie);
+    const list = (await (await restarted.get(base)).json()) as { agents: { agentId: string }[] };
+    expect(list.agents.map((a) => a.agentId)).not.toContain("penguin_support");
+    expect((await restarted.get(BASE)).status).toBe(404);
+    expect(
+      await fs
+        .stat(path.join(app.root, "projects/default_project/agents/penguin_support"))
+        .catch(() => null),
+    ).toBeNull();
+  } finally {
+    await app.cleanup();
+  }
+}, 30000);
+
 describe("built-in support workbench", { timeout: 30000 }, () => {
   let t: TestApp, admin: ReturnType<typeof apiClient>;
   const ids = [uniqueSessionId(), uniqueSessionId(), uniqueSessionId()];
@@ -130,9 +167,6 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     expect(icon.status).toBe(200);
     expect(icon.headers.get("content-type")).toBe("image/svg+xml");
     expect(icon.headers.get("content-security-policy")).toContain("sandbox");
-    expect(
-      (await admin.delete("/api/projects/default_project/agents/penguin_support")).status,
-    ).toBe(409);
   });
   it("recovers persisted jobs once and keeps failures isolated across reloads", async () => {
     // Loading the workbench followed the Sessions its state says are running; the restart ended

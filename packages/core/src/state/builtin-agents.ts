@@ -23,11 +23,7 @@ export const SUPPORT_AGENT_ID = "penguin_support";
 /** The system Agent's id: the owner of the system apps, in every Project (system-agent.ts). */
 export const SYSTEM_AGENT_ID = "system_agent";
 
-/**
- * The set of Project builtin Agent ids (supplied along with the Project, cannot be deleted from
- * Web). `system_agent` is built in only as the system Agent, the id with its `system: true` key
- * (system-agent.ts): an Agent of the user's that already held the id stays theirs.
- */
+/** Preset ids, in provisioning order. Support is a removable preset in the default Project. */
 export const BUILTIN_AGENT_IDS: readonly string[] = [
   DEFAULT_AGENT_ID,
   SUPPORT_AGENT_ID,

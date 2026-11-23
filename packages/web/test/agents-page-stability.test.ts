@@ -87,6 +87,22 @@ describe("the Agents page while machines answer", () => {
     vi.useRealTimers();
   });
 
+  it("offers the owner the normal delete confirmation for Support", async () => {
+    const server = agentServer(undefined, {
+      moreAgents: [{ agentId: "penguin_support", name: "Support" }],
+    });
+    await openPage();
+    await waitFor(() => cards().some((card) => describeCard(card) === "Support"));
+    const support = cards().find((card) => describeCard(card) === "Support")!;
+    await click(support.querySelector(`button[aria-label="${en.agent.deleteAgent}"]`)!);
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Support");
+    expect(server.requests().some((r) => r.method === "DELETE")).toBe(false);
+    await click(button(en.common.delete));
+    await waitFor(() =>
+      server.requests().some((r) => r.method === "DELETE" && r.path.endsWith("/penguin_support")),
+    );
+  });
+
   it("shows a remembered machine's cards before it answers, inert without the plug, and changes no text when it answers", async () => {
     const server = agentServer(undefined, { machines: [GPU] });
     const slow = await afterAReload(() => server.hold("gpu1"));
