@@ -82,6 +82,8 @@ import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
 import { DockPanelTitle } from "../../lib/dock-panel-empty";
 import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
 
+import { usePageWorkspace } from "../../lib/page-workspace";
+import { dockPageId, sessionAppPair, SessionAppDockBody } from "../../lib/session-app-dock";
 import { panelGlyph, panelLabel } from "./panel-meta";
 import {
   dockPanelDefinition,
@@ -194,10 +196,18 @@ function PanelBody({
     }),
     [id, position, merged, active, fullscreen],
   );
+  const workspace = usePageWorkspace();
+  const appId = dockPageId(id);
+  const page = appId && workspace?.layout.pages.find((p) => p.id === appId);
+  const session = workspace && sessionAppPair(workspace.layout)?.session;
   const Body = dockPanelDefinition(id)?.Body;
   return (
     <DockPanelProvider handle={handle}>
-      {Body !== undefined ? (
+      {page && session ? (
+        <CrashBoundary resetKey={id}>
+          <SessionAppDockBody page={page} sessionId={session.id.slice(5)} active={active} />
+        </CrashBoundary>
+      ) : Body !== undefined ? (
         // A panel that crashes (a plugin's, or one of ours) takes down its own tab, not the
         // conversation beside it.
         <CrashBoundary resetKey={id}>
@@ -252,7 +262,19 @@ export function DockPanel({
   // editor holding unsaved text), which asks first: the tab's × is the one gesture here that
   // really unmounts a body. Closing the terminal panel's tab leaves its shells running — its
   // own strip's × is what ends one.
-  const closeTab = useCallback((tab: DockTab) => closeWhenAllowed(tabKey(tab)), []);
+  const workspace = usePageWorkspace();
+  const pageOf = (key: string) => workspace?.layout.pages.find((p) => p.id === dockPageId(key));
+  const closeTab = (tab: DockTab) => {
+    const page = pageOf(tabKey(tab));
+    if (page && workspace) workspace.close(page.id);
+    else closeWhenAllowed(tabKey(tab));
+  };
+  const selectTab = (key: string) => {
+    const page = pageOf(key);
+    const session = workspace && sessionAppPair(workspace.layout)?.session;
+    if (page && session && workspace) workspace.openBesideSession(session.id.slice(5), page);
+    activateTab(key);
+  };
   // Hiding puts the surface away and nothing else — every body stays mounted at zero size —
   // so there is nothing to ask about, however much unsaved work a tab is holding.
   const hide = useCallback(() => hideView(view), [view]);
@@ -606,7 +628,7 @@ export function DockPanel({
   // the puzzle piece while no definition is registered).
   const stripTabs: DockTabItem[] = tabs.map((tab) => ({
     key: tabKey(tab),
-    label: panelLabel(tab.panel),
+    label: pageOf(tab.panel)?.title ?? panelLabel(tab.panel),
     glyph: panelGlyph(tab.panel, ICON_SIZE.inlineGlyph),
     badge: panelBadges?.[tab.panel] === true,
     closeLabel: S.dock.closeTab,
@@ -703,7 +725,7 @@ export function DockPanel({
         <DockTabs
           tabs={stripTabs}
           active={activeKey}
-          onSelect={activateTab}
+          onSelect={selectTab}
           onClose={closeByKey}
           coarse={coarsePointer}
           stripRef={stripRef}

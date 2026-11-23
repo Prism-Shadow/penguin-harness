@@ -315,6 +315,22 @@ describe("the panel toggle (Ctrl+`)", () => {
 });
 
 describe("persistence", () => {
+  it("keeps temporary application tabs in the window and preserves the saved panel selection", async () => {
+    const owner = dock.currentDockScope();
+    dock.openPanel("memory", "right");
+    dock.openPanel("agents", "right");
+    dock.activateTab("memory");
+    dock.openPanel(":app:penguin_support/support", "right");
+    expect(dock.dockActiveKey("right")).toBe(":app:penguin_support/support");
+    dock.setDockScope("temporary-app-other");
+    dock.setDockScope(owner);
+    expect(dock.dockActiveKey("right")).toBe(":app:penguin_support/support");
+    vi.resetModules();
+    dock = await import("../src/features/dock/dock-state");
+    dock.setDockScope(owner);
+    expect(dock.dockActiveKey("right")).toBe("memory");
+    expect(dock.dockTabs("right").map(dock.tabKey)).toEqual(["memory", "agents"]);
+  });
   it("round-trips each scope's arrangement — tabs, active, open flags — across a reload", async () => {
     const a = `scope-persist-a-${scopeSeq}`;
     const b = `scope-persist-b-${scopeSeq}`;

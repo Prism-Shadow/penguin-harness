@@ -126,6 +126,10 @@ test("a workbench shares the session viewport and its iframe survives changing p
   const app = slot(page, "app:penguin_support/support");
   await expect(chat).toHaveAttribute("data-pane", "left");
   await expect(app).toHaveAttribute("data-pane", "right");
+  await expect(page.getByRole("region", { name: "Left pane", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Right pane", exact: true })).toHaveCount(0);
+  const dockTab = page.getByRole("tab", { name: /Support/ });
+  await expect(dockTab).toBeVisible();
   const frame = app.locator("iframe").first();
   await expect(frame).toBeVisible();
   const node = await frame.elementHandle();

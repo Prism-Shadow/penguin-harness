@@ -12,10 +12,16 @@ import { useLayoutEffect } from "react";
 import { useMatch } from "react-router";
 import { useProject } from "../../state/project";
 import { announceDockScope } from "./dock-listeners";
-import { setDockScope } from "./dock-state";
+import { usePageWorkspace } from "../../lib/page-workspace";
+import { sessionAppPair, dockPageKey } from "../../lib/session-app-dock";
+import { setDockScope, openPanel, detachDockPage } from "./dock-state";
 
 export function DockScope() {
-  const scope = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
+  const sessionRoute = useMatch("/chat/:sessionId")?.params.sessionId;
+  const workspace = usePageWorkspace();
+  const pair = workspace?.current && sessionAppPair(workspace.layout);
+  const scope = pair ? pair.session.id.slice(5) : (sessionRoute ?? null);
+  const appId = pair ? pair.app.id : null;
   const { currentProject } = useProject();
   useLayoutEffect(() => {
     const projectId = currentProject?.projectId ?? null;
@@ -24,5 +30,11 @@ export function DockScope() {
     announceDockScope({ scope: dockScope, projectId });
     setDockScope(dockScope);
   }, [scope, currentProject?.projectId]);
+  useLayoutEffect(() => {
+    if (!appId || !scope) return;
+    const key = dockPageKey(appId);
+    detachDockPage(key, scope);
+    openPanel(key, "right");
+  }, [appId, scope]);
   return null;
 }

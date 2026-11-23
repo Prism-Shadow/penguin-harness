@@ -5,6 +5,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { useDockBounds, sessionAppPair, slotDomId, contextualDockPage } from "./session-app-dock";
 import { PaneFocus } from "./page-focus";
 import { usePageWorkspace } from "./page-workspace";
 import { PAGE_DRAG_TYPE } from "./page-layout";
@@ -35,28 +36,59 @@ export function PageSlot({
 }) {
   const workspace = usePageWorkspace();
   const narrow = useNarrow();
+  const bounds = useDockBounds(id);
   const [dropSide, setDropSide] = useState<0 | 1 | null>(null);
   if (!workspace) return children;
   const { layout, current } = workspace;
   const page = layout.pages.find((item) => item.id === id);
   const side = layout.visible.indexOf(id);
-  const split = !narrow && layout.visible.length === 2;
-  const shown = !!current && side >= 0 && (!narrow || id === layout.focus);
+  const pair = sessionAppPair(layout);
+  const docked = pair?.app.id === id;
+  const split = !pair && !narrow && layout.visible.length === 2;
+  const shown =
+    !!current &&
+    (docked
+      ? !!bounds && bounds.width > 0 && bounds.height > 0 && !contextualDockPage(pair.app.path)
+      : side >= 0 && (!!pair || !narrow || id === layout.focus));
   const focused = shown && layout.focus === id;
-  const style: CSSProperties = split
-    ? {
-        left: side === 1 ? "var(--workspace-divider)" : 0,
-        right: side === 1 ? 0 : "calc(100% - var(--workspace-divider))",
-        top: "var(--workspace-tabs-height)",
-      }
-    : {};
+  const style: CSSProperties =
+    docked && bounds
+      ? {
+          left: bounds.left,
+          top: bounds.top,
+          right: "auto",
+          bottom: "auto",
+          width: bounds.width,
+          height: bounds.height,
+          zIndex: 1,
+        }
+      : split
+        ? {
+            left: side === 1 ? "var(--workspace-divider)" : 0,
+            right: side === 1 ? 0 : "calc(100% - var(--workspace-divider))",
+            top: "var(--workspace-tabs-height)",
+          }
+        : {};
   const activate = () => {
     if (page && shown && !focused) workspace.focus(page);
   };
   return (
     <div
+      id={slotDomId(id)}
       data-workspace-page={id}
-      data-pane={shown ? (split ? (side === 1 ? "right" : "left") : "full") : undefined}
+      data-pane={
+        shown
+          ? pair
+            ? docked
+              ? "right"
+              : "left"
+            : split
+              ? side === 1
+                ? "right"
+                : "left"
+              : "full"
+          : undefined
+      }
       className={`absolute inset-0 min-w-0 ${shown ? "" : "invisible"}`}
       inert={!shown}
       style={style}

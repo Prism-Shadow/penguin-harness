@@ -283,24 +283,26 @@ export function renderMainChatBody(scope: MainChatView) {
                 )}
               </ChatDropRegion>
 
-              {scope.paneFocused && archivedRow === null && rightMount.view && (
+              {(scope.hostsAppPanel || (scope.paneFocused && archivedRow === null)) &&
+                rightMount.view && (
+                  <DockPanel
+                    view={rightMount.view}
+                    open={rightMount.open}
+                    animateEntrance={rightMount.animateEntrance}
+                    panelBadges={{ agents: anySubagentPending }}
+                  />
+                )}
+            </div>
+
+            {(scope.hostsAppPanel || (scope.paneFocused && archivedRow === null)) &&
+              bottomMount.view && (
                 <DockPanel
-                  view={rightMount.view}
-                  open={rightMount.open}
-                  animateEntrance={rightMount.animateEntrance}
+                  view={bottomMount.view}
+                  open={bottomMount.open}
+                  animateEntrance={bottomMount.animateEntrance}
                   panelBadges={{ agents: anySubagentPending }}
                 />
               )}
-            </div>
-
-            {scope.paneFocused && archivedRow === null && bottomMount.view && (
-              <DockPanel
-                view={bottomMount.view}
-                open={bottomMount.open}
-                animateEntrance={bottomMount.animateEntrance}
-                panelBadges={{ agents: anySubagentPending }}
-              />
-            )}
           </div>
         </ReplyFilesProvider>
       </ChatDockProvider>

@@ -15,6 +15,8 @@ import { machineForSession } from "../../../lib/session-machines";
 import { useMachineModels } from "../../../lib/machine-models";
 import { setDockConversation, dockVersion, openPanel, panelDock, subscribeDock } from "../../dock";
 import { terminalApiSupported, subscribeTerminals } from "../../terminal";
+import { usePageWorkspace } from "../../../lib/page-workspace";
+import { sessionAppPair } from "../../../lib/session-app-dock";
 import type { useMainChatInputs } from "./main-chat-inputs";
 
 /** Exact consecutive main ChatPage statements 26..61; called once, in original order. */
@@ -23,6 +25,10 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
 
   const paneFocused = usePaneFocus();
   const routeSessionId = params.sessionId ?? null;
+  const workspace = usePageWorkspace();
+  const hostsAppPanel =
+    !!workspace?.current &&
+    sessionAppPair(workspace.layout)?.session.id === "chat:" + routeSessionId;
   // The docks' arrangement lives in the dock store (features/dock) — tabs, active tab,
   // sizes, all global and persisted. This page re-renders on any dock change and owns only
   // the stream-driven JUMP COMMANDS the panel bodies consume: each is a fresh object per
@@ -238,6 +244,7 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
   return {
     ...scope,
     paneFocused,
+    hostsAppPanel,
     routeSessionId,
     fileOpenRequest,
     setFileOpenRequest,

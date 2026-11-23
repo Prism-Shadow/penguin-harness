@@ -204,6 +204,35 @@ function sanitizeScope(key: string, stored: unknown): ScopeLayout {
   };
 }
 
+// Window-local running apps occupy ordinary dock tabs while attached. Only the
+// original panel IDs belong in a saved conversation arrangement.
+const beforePage = new WeakMap<DockAreaState, { active: string | null; open: boolean }>();
+const beforePageFocus = new WeakMap<ScopeLayout, DockPosition>();
+function storedArea(area: DockAreaState) {
+  const tabs = area.tabs.map(tabKey).filter(isPanelId);
+  const transient = area.active !== null && !isPanelId(area.active);
+  const prior = transient ? beforePage.get(area) : undefined;
+  const prefer = prior?.active ?? area.active;
+  return {
+    tabs,
+    active: prefer && tabs.includes(prefer) ? prefer : (tabs.at(-1) ?? null),
+    open: prior?.open ?? area.open,
+  };
+}
+
+function savedScope(s: ScopeLayout) {
+  const right = storedArea(s.right),
+    bottom = storedArea(s.bottom);
+  if (!right.tabs.length && !bottom.tabs.length && !right.open && !bottom.open) return null;
+  const active = s[s.focus].active;
+  return {
+    right,
+    bottom,
+    focus: active && !isPanelId(active) ? (beforePageFocus.get(s) ?? s.focus) : s.focus,
+    ...(s.shell !== null ? { shell: s.shell } : {}),
+  };
+}
+
 interface StoredLayout {
   scopes: Record<string, unknown>;
   bottomRatio: unknown;
@@ -251,29 +280,24 @@ function persist(): void {
     const { [scope]: _previous, ...rest } = scopes;
     scopes = { ...rest, [scope]: layout };
   }
-  const keys = Object.keys(scopes);
-  if (keys.length > MAX_SCOPES) {
-    scopes = Object.fromEntries(keys.slice(keys.length - MAX_SCOPES).map((k) => [k, scopes[k]!]));
-  }
   writeScopes();
 }
 
-/** The scope map and the size preference, as storage holds them. */
+/** The size limit applies to saved layouts. A window-only tab cannot evict a saved conversation. */
 function writeScopes(): void {
-  writeJson(LAYOUT_KEY, {
-    scopes: Object.fromEntries(
-      Object.entries(scopes).map(([key, s]) => [
-        key,
-        {
-          right: { ...s.right, tabs: s.right.tabs.map(tabKey) },
-          bottom: { ...s.bottom, tabs: s.bottom.tabs.map(tabKey) },
-          focus: s.focus,
-          ...(s.shell !== null ? { shell: s.shell } : {}),
-        },
-      ]),
-    ),
-    bottomRatio: ratio,
-  });
+  const saved: Record<string, NonNullable<ReturnType<typeof savedScope>>> = {};
+  for (const [key, s] of Object.entries(scopes)) {
+    const value = savedScope(s);
+    if (value) saved[key] = value;
+  }
+  const keys = Object.keys(saved);
+  for (const key of keys.slice(0, Math.max(0, keys.length - MAX_SCOPES))) {
+    delete saved[key];
+    const entry = scopes[key]!;
+    if (![...entry.right.tabs, ...entry.bottom.tabs].some((t) => !isPanelId(tabKey(t))))
+      delete scopes[key];
+  }
+  writeJson(LAYOUT_KEY, { scopes: saved, bottomRatio: ratio });
 }
 
 const listeners = new Set<() => void>();
@@ -555,6 +579,13 @@ export function activateTab(key: string): void {
 
 function insertTab(tab: DockTab, position: DockPosition): void {
   const key = tabKey(tab);
+  if (!isPanelId(key)) {
+    const area = layout[position];
+    if (!area.active || isPanelId(area.active))
+      beforePage.set(area, { active: area.active, open: area.open });
+    if (!layout[layout.focus].active || isPanelId(layout[layout.focus].active!))
+      beforePageFocus.set(layout, layout.focus);
+  }
   const existing = findTab(key);
   if (existing && existing.position !== position) {
     layout[existing.position].tabs = layout[existing.position].tabs.filter(
@@ -576,6 +607,23 @@ function insertTab(tab: DockTab, position: DockPosition): void {
  * removing the LAST tab puts the dock away — from the user's seat the × closed the
  * content, so no empty surface (nor a surprise picker) should linger.
  */
+/** Remove a window-local app tab from conversations other than its current host. */
+export function detachDockPage(key: string, except?: string) {
+  if (!key.startsWith(":")) return;
+  let changed = false;
+  for (const [owner, entry] of Object.entries({ ...scopes, [scope]: layout })) {
+    if (owner === except) continue;
+    for (const area of [entry.right, entry.bottom]) {
+      if (!area.tabs.some((tab) => tabKey(tab) === key)) continue;
+      area.tabs = area.tabs.filter((tab) => tabKey(tab) !== key);
+      if (area.active === key) area.active = area.tabs.length ? tabKey(area.tabs.at(-1)!) : null;
+      if (!area.tabs.length) area.open = false;
+      changed = true;
+    }
+  }
+  if (changed) commit();
+}
+
 export function removeTab(key: string): void {
   const found = findTab(key);
   if (!found) return;
