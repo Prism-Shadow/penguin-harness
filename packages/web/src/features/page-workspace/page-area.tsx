@@ -19,6 +19,7 @@ import { useRunningAppRecords } from "../../lib/running-apps";
 import { usePageWorkspace } from "../../lib/page-workspace";
 import { ScopedChat } from "./scoped-chat";
 import { WorkbenchExitBall } from "../workbenches";
+import { useAppDockDrop } from "./app-dock-drop";
 import { WorkbenchDirectory } from "./workbench-directory";
 
 function PaneHeader({ side }: { side: 0 | 1 }) {
@@ -150,21 +151,7 @@ export function PageArea({
   const narrow = useNarrow();
   const root = useRef<HTMLElement>(null);
   const [divider, setDivider] = useState(50);
-  const [draggingPage, setDraggingPage] = useState(false);
-  useEffect(() => {
-    const start = (event: DragEvent) => {
-      if (event.dataTransfer?.types.includes(PAGE_DRAG_TYPE)) setDraggingPage(true);
-    };
-    const end = () => setDraggingPage(false);
-    document.addEventListener("dragstart", start);
-    document.addEventListener("dragend", end);
-    document.addEventListener("drop", end);
-    return () => {
-      document.removeEventListener("dragstart", start);
-      document.removeEventListener("dragend", end);
-      document.removeEventListener("drop", end);
-    };
-  }, []);
+  const appDrop = useAppDockDrop(narrow);
   const { current, layout } = workspace;
   const split = !!current && !narrow && layout.visible.length === 2 && !sessionAppPair(layout);
   // A pointer landing inside a live frame transfers focus to its browsing context, so
@@ -194,7 +181,8 @@ export function PageArea({
     <main
       ref={root}
       data-page-viewport
-      className={`relative min-h-0 min-w-0 flex-1 overflow-hidden ${draggingPage ? "[&_iframe]:pointer-events-none" : ""}`}
+      {...appDrop.events}
+      className={`relative min-h-0 min-w-0 flex-1 overflow-hidden ${appDrop.draggingId ? "[&_iframe]:pointer-events-none" : ""}`}
       style={
         { "--workspace-divider": divider + "%", "--workspace-tabs-height": "2rem" } as CSSProperties
       }
@@ -229,6 +217,7 @@ export function PageArea({
         </PageSlot>
       ))}
       {layers}
+      {appDrop.indicator}
       {workspace.exitFullScreen && (
         <WorkbenchExitBall
           label={S.workbenches.exitFullPageButton}

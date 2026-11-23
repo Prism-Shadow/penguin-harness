@@ -16,6 +16,7 @@ import {
   fullscreenDock,
   type DockPosition,
 } from "./dock-state";
+import { usePanelWidthValue } from "./use-panel-width";
 import type { DockMount } from "./use-dock-mount";
 
 export interface PanelBodyProps {
@@ -79,6 +80,7 @@ export function DockPanelArea({
   Body: ComponentType<PanelBodyProps>;
   children: ReactNode;
 }) {
+  const width = usePanelWidthValue();
   const page = useContext(PageIdentity);
   const parking = useRef<HTMLDivElement>(null);
   const pool = useRef<PanelContainers>({ nodes: new Map(), parking }).current;
@@ -124,7 +126,7 @@ export function DockPanelArea({
   }
   return (
     <Containers.Provider value={pool}>
-      <div data-dock-area className="flex min-h-0 flex-1 flex-col">
+      <div data-dock-area data-right-dock-width={width} className="flex min-h-0 flex-1 flex-col">
         <div ref={parking} hidden />
         {children}
         {[...placements.values()].map((props) => {

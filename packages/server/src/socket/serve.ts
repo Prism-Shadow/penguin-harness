@@ -117,6 +117,9 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   };
 
   const send = (frame: ServerFrame): void => {
+    // A route or its response body can have waited since admission. Recheck before
+    // committing a response; later stream data uses the existing revocation heartbeat.
+    if ("status" in frame && !authorized()) return;
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
   };
 
