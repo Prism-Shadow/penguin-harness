@@ -1,7 +1,7 @@
 /**
  * Draft view (/chat/new): the pre-persistence form of a new
  * conversation, before any Session exists. The page around the input card is the start
- * dashboard (start-dashboard.tsx: the brand above the card, examples, shortcuts and counts
+ * dashboard (start-dashboard.tsx: the brand above the card, examples and shortcuts
  * below it); this module keeps the draft itself. Before sending,
  * this is where Agent / Workspace / approval mode / Model are all
  * chosen in one place — two small buttons sit right below the card: the Agent dialog and Workspace
@@ -1045,33 +1045,12 @@ export function DraftView({
   );
 
   return (
-    <div className="anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-6 md:px-4">
-      {/*
-       * Vertical layout: everything visible — the brand, project counts, the input card,
-       * the ownership pills, the dashboard's examples — lives in ONE block between two empty flex-1
-       * spacers, so the block is centred and the free space above and below it is exactly equal.
-       * The header deliberately sits inside that block rather than in the upper spacer: keeping
-       * the brand in the spacer made the upper gap shorter than the lower one by the brand's own
-       * height, which pushed the card up the viewport. When the viewport is too short the spacers
-       * collapse to nothing, the container's own py-6 keeps the content off the edges, and the
-       * page falls back to natural scrolling; the composer's upward menus measure the room above
-       * the card (chat-input.tsx) rather than assume it.
-       */}
-      <div className="flex-1" />
-
-      <div className="mx-auto w-full max-w-3xl">
-        <StartDashboard
-          projectId={projectId}
-          composer={composer}
-          skillsLoaded={skillsLoaded}
-          fill={fillComposer}
-          exampleText={exampleText}
-          readComposerText={readComposerText}
-        />
-      </div>
-
-      {/* Lower symmetric space — empty, so it matches the upper one exactly */}
-      <div className="flex-1" />
-    </div>
+    <StartDashboard
+      composer={composer}
+      skillsLoaded={skillsLoaded}
+      fill={fillComposer}
+      exampleText={exampleText}
+      readComposerText={readComposerText}
+    />
   );
 }
