@@ -5,6 +5,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { layer } from "@prismshadow/penguin-ui";
 import { useDockBounds, sessionAppPair, slotDomId, contextualDockPage } from "./session-app-dock";
 import { PaneFocus, PageIdentity } from "./page-focus";
 import { usePageWorkspace } from "./page-workspace";
@@ -63,7 +64,7 @@ export function PageSlot({
           bottom: "auto",
           width: bounds.width,
           height: bounds.height,
-          zIndex: 1,
+          zIndex: layer("raised"),
         }
       : split
         ? {
