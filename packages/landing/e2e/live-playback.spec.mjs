@@ -63,9 +63,13 @@ for (const [lang, play, stop] of [
     await expect(evaluation).toBeVisible();
     await page.clock.runFor(600);
     await page.clock.fastForward(15_000);
-    if (lang === "en" && (await frame.locator("[data-workspace-page]").count())) {
+    if (lang === "en") {
       await expect(frame.locator('[data-pane="left"] [data-slot="composer"]')).toBeVisible();
       await expect(frame.locator('[data-pane="right"] svg.ui-chart').first()).toBeVisible();
+    } else {
+      await expect(
+        frame.locator('[data-pane="left"]:visible, [data-pane="right"]:visible'),
+      ).toHaveCount(0);
     }
     await expect(chart).toBeVisible();
     await page.getByRole("button", { name: stop, exact: true }).click();

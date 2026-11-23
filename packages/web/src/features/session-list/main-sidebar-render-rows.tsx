@@ -105,6 +105,7 @@ export function useMainSidebarRenderRows(scope: ReturnType<typeof useMainSidebar
         return (
           <SidebarSessionRow
             key={s.sessionId}
+            {...(scope.onNavigate ? { onNavigate: scope.onNavigate } : {})}
             s={s}
             active={s.sessionId === activeSessionId}
             // Busy / settled / read / never-ran, decided in one place (session-activity.ts) so

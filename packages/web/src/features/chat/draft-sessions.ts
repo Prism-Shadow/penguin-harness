@@ -24,6 +24,7 @@ import { DRAFT_SESSION_ID } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import { randomHex } from "../../lib/random-id";
+import { forgetDraftUploads, parkDraftUploads } from "../../lib/draft-uploads";
 import { subscribeAccountApplied, syncedStorage } from "../../lib/account-sync/cache";
 import {
   clearDraft,
@@ -187,7 +188,11 @@ export function parkActiveDraft(
     savedAt: new Date().toISOString(),
     draft,
   };
-  writeEntries(key, [entry, ...readEntries(key, storage)].slice(0, MAX_DRAFTS), storage);
+  const entries = [entry, ...readEntries(key, storage)];
+  parkDraftUploads(userId, projectId, entry.id);
+  for (const dropped of entries.slice(MAX_DRAFTS))
+    forgetDraftUploads(userId, projectId, dropped.id);
+  writeEntries(key, entries.slice(0, MAX_DRAFTS), storage);
   if (draft.modelRef) saveDraft(activeKey, { modelRef: draft.modelRef }, storage);
   else clearDraft(activeKey, storage);
   return entry.id;
@@ -228,6 +233,7 @@ export function removeDraftSession(
   id: string,
   storage?: DraftStorage,
 ): void {
+  forgetDraftUploads(userId, projectId, id);
   const key = draftSessionsKey(userId, projectId);
   const entries = readEntries(key, storage);
   if (!entries.some((e) => e.id === id)) return;

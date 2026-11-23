@@ -26,7 +26,6 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
-import { MainSidebarApps } from "../src/features/session-list/main-sidebar-apps";
 import { SystemAppPage } from "../src/features/app-center/system-app-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -105,10 +104,7 @@ async function open(at = "/apps") {
       // Every other page of the table, as the shell mounts them: the redirect lives there.
       { path: "*", element: h(ThemeProvider, null, h(ShellRoutes)) },
     ],
-    layers: [
-      h(ThemeProvider, null, h(WorkspaceWindows, null, h(MainSidebarApps))),
-      h(SwitchLanguage),
-    ],
+    layers: [h(ThemeProvider, null, h(WorkspaceWindows)), h(SwitchLanguage)],
   });
   await until(() => tile() !== null || windowOf() !== null);
   return router;

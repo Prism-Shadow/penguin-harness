@@ -1,4 +1,3 @@
-import { OpenPages } from "../../features/page-workspace";
 import type { ReactNode } from "react";
 import {
   MainSidebarFragments,
@@ -131,7 +130,6 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
         renderSections("body")
       ) : (
         <MainSidebarFragments.Provider value={{ sessionList: mainSessionList }}>
-          <OpenPages {...(onNavigate ? { onNavigate } : {})} />
           {sectionsIn(sections, "dev", "body").map(({ id, section: { Full } }) => (
             <Full key={id} {...(onNavigate ? { onNavigate } : {})} />
           ))}

@@ -409,12 +409,14 @@ export class SessionService {
     const messagingChannel = this.deps.messagingChannel?.(row.sessionId) ?? null;
     const orgId = orgIds ? orgIds.get(row.sessionId) : this.deps.orgIdOfSession?.(row.sessionId);
     const backgroundTasks = this.deps.manager.backgroundTasksOf(row.sessionId);
+    const pendingModel = this.deps.manager.pendingModel(row.sessionId);
     return {
       sessionId: row.sessionId,
       projectId: row.projectId,
       agentId: row.agentId,
       provider: row.provider,
       modelId: row.modelId,
+      ...(pendingModel ? { pendingModel } : {}),
       workspace: row.workspace,
       approvalMode: row.approvalMode,
       sandbox: this.sandboxView(this.sandboxOf(row)),
