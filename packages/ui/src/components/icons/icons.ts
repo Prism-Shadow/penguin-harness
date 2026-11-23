@@ -528,3 +528,23 @@ export const ICONS = {
 
 /** A glyph's registry key. */
 export type IconName = keyof typeof ICONS;
+
+/** Layer outlines for the 32-unit system app marks drawn by GlyphAppIcon. */
+export const APP_MARK_PATHS = {
+  terminal: {
+    divider: "M5 7h22",
+    prompt: "m7 13 5.5 5-5.5 5",
+    cursor: "M16 23h7",
+  },
+  workspace: {
+    back: "M4 10a2.3 2.3 0 0 1 2.3-2.3h5.5l3.1 2.7h10.7a2.2 2.2 0 0 1 2.2 2.2v10.8H4z",
+    paper: "M6.6 13h18.8v4H6.6z",
+    front:
+      "M3.7 15a1.8 1.8 0 0 1 1.8-1.8h21a1.8 1.8 0 0 1 1.8 1.8l-1 8.3a2.3 2.3 0 0 1-2.3 2H7a2.3 2.3 0 0 1-2.3-2z",
+  },
+  browser: {
+    ticks: "M16 4.8v2M27.2 16h-2M16 27.2v-2M4.8 16h2",
+    needleSouth: "m7.5 24.5 5.9-11.1 5.2 5.2z",
+    needleNorth: "m24.5 7.5-5.9 11.1-5.2-5.2z",
+  },
+} as const;
