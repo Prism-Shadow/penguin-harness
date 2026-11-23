@@ -42,6 +42,7 @@ export const WEB_MODULES: readonly WebModule[] = [
       // Where the server is, and which machine a shell runs on.
       "lib/server-context",
       "lib/terminal-machines",
+      "lib/terminal-http",
       // The glyph a docked terminal's tab shows.
       "lib/nav-icons",
       // The dock's visibility store: the view pool keeps a shell mounted while its dock tab is
