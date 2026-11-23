@@ -10,7 +10,7 @@
  *   visible rather than on the whole library — so a filtered 全选 adds only the matches;
  * - creating with a selection installs exactly those plugins into the new Agent: the settings
  *   page's Skills sub-page lists their skills, and the server's installed list agrees;
- * - creating with nothing picked still yields a plain Agent with no skills.
+ * - creating with nothing picked leaves an ordinary Agent without optional contributions.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -44,6 +44,11 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
   const library = await (await page.request.get(`${BASE}/api/plugins`)).json();
   const libraryNames = library.groups.flatMap((g) => g.plugins.map((p) => p.name));
   expect(libraryNames.length).toBeGreaterThan(2);
+  const catalog = await (await page.request.get(`${BASE}/api/plugins/registry`)).json();
+  expect(catalog.plugins).toContainEqual(
+    expect.objectContaining({ name: "@penguinharness/agent-state-git" }),
+  );
+  expect(libraryNames).not.toContain("agent-state-git");
 
   await page.goto(`${BASE}/agents`);
   await page.getByRole("button", { name: "手动创建", exact: true }).first().click();
@@ -58,6 +63,7 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
   await picker.click();
 
   // Every library plugin has a row, and the bulk row reports an empty selection.
+  await expect(row(page, "agent-state-git")).toHaveCount(0);
   for (const name of libraryNames) {
     await expect(row(page, name)).toBeVisible();
   }
@@ -96,8 +102,10 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
     await page.request.get(`${BASE}/api/projects/${projectId}/agents/seeded_agent/skills`)
   ).json();
   expect(installed.skills.map((s) => s.name).sort()).toEqual([
+    "agent-initialization",
     "penguin-config",
     "penguin-orchestration",
+    "penguin-plugin",
     "penguin-sdk",
     "software-engineering",
     "unified-llm-api",
@@ -116,7 +124,10 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
   await page.getByRole("button", { name: "创建", exact: true }).click();
   await page.waitForURL(/\/agents\/plain_agent$/);
   const none = await (
-    await page.request.get(`${BASE}/api/projects/${projectId}/agents/plain_agent/skills`)
+    await page.request.get(`${BASE}/api/projects/${projectId}/agents/plain_agent/plugins`)
   ).json();
   expect(none.skills).toEqual([]);
+  expect(none.hooks).toEqual([]);
+  expect(none.workbenches).toEqual([]);
+  expect(none.mcpServers).toEqual([]);
 });

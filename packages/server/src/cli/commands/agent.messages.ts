@@ -18,7 +18,7 @@ export interface AgentText {
     createAuthorInvalid(value: string): string;
     /** --plugins: comma-separated library plugin names to seed the new agent with. */
     createPlugins: string;
-    /** --no-default-plugins: leave out the plugins every new agent gets (goal and plan). */
+    /** --no-default-plugins: leave out the library’s defaults. */
     createNoDefaultPlugins: string;
     created(agentId: string, projectId: string): string;
     colId(): string;
@@ -121,8 +121,7 @@ export const agentEn: AgentText = {
     createAuthorInvalid: (value) => `Unknown --author "${value}": use user, agent or company.`,
     createPlugins:
       "Library plugins to preinstall, comma-separated (e.g. software-development,goal)",
-    createNoDefaultPlugins:
-      "Leave out the plugins every new agent gets: goal (Goal mode) and plan (Plan mode)",
+    createNoDefaultPlugins: "Install only the plugins selected with --plugins",
     created: (agentId, projectId) => `Agent ${agentId} created in project ${projectId}.`,
     colId: () => "ID",
     colName: () => "NAME",
@@ -216,8 +215,7 @@ export const agentZh: AgentText = {
     createAuthor: "由谁创建：user、agent 或 company（缺省：在会话内为 agent，否则为 user）",
     createAuthorInvalid: (value) => `未知的 --author「${value}」：请用 user、agent 或 company。`,
     createPlugins: "预装的插件库插件，逗号分隔（如 software-development,goal）",
-    createNoDefaultPlugins:
-      "不安装每个新 Agent 默认安装的插件：goal（目标模式）与 plan（计划模式）",
+    createNoDefaultPlugins: "仅安装 --plugins 指定的插件",
     created: (agentId, projectId) => `已在 Project ${projectId} 创建 Agent ${agentId}。`,
     colId: () => "ID",
     colName: () => "名称",

@@ -62,7 +62,7 @@ export interface PreinstallOnceDeps {
 /** Lists each preinstalled module in every Project not handled for it yet. Never throws. */
 export async function listPreinstalledOnce(deps: PreinstallOnceDeps): Promise<void> {
   try {
-    const modules = await preinstalledModules(deps.bases);
+    const modules = await preinstalledModules(deps.bases, true);
     if (modules.length === 0) return;
     const at = deps.now();
     for (const module of modules) seedLedger(deps.ledger, module, at);

@@ -532,9 +532,15 @@ importers:
       '@penguinharness/agent-evaluation':
         specifier: workspace:*
         version: link:../../plugins/agent-evaluation
+      '@penguinharness/agent-state-git':
+        specifier: workspace:*
+        version: link:../../plugins/agent-state-git
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
+      '@penguinharness/computer-use':
+        specifier: workspace:*
+        version: link:../../plugins/computer-use
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
@@ -608,6 +614,9 @@ importers:
       '@penguinharness/awm-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/continual-learning':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
       '@penguinharness/default-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
@@ -720,9 +729,15 @@ importers:
       '@penguinharness/agent-evaluation':
         specifier: workspace:*
         version: link:../../plugins/agent-evaluation
+      '@penguinharness/agent-state-git':
+        specifier: workspace:*
+        version: link:../../plugins/agent-state-git
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
+      '@penguinharness/computer-use':
+        specifier: workspace:*
+        version: link:../../plugins/computer-use
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
@@ -769,6 +784,9 @@ importers:
       '@penguinharness/awm-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/continual-learning':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
       '@penguinharness/default-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
@@ -940,6 +958,9 @@ importers:
       '@penguinharness/computer-use':
         specifier: workspace:*
         version: link:../../plugins/computer-use
+      '@penguinharness/continual-learning':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
@@ -1072,9 +1093,15 @@ importers:
       '@penguinharness/agent-evaluation':
         specifier: workspace:*
         version: link:../../plugins/agent-evaluation
+      '@penguinharness/agent-state-git':
+        specifier: workspace:*
+        version: link:../../plugins/agent-state-git
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
+      '@penguinharness/computer-use':
+        specifier: workspace:*
+        version: link:../../plugins/computer-use
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
@@ -1220,6 +1247,9 @@ importers:
       '@penguinharness/awm-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/continual-learning':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
       '@penguinharness/default-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
@@ -3082,6 +3112,10 @@ packages:
   '@penguinharness/agent-evaluation@file:plugins/agent-evaluation':
     resolution: {directory: plugins/agent-evaluation, type: directory}
 
+  '@penguinharness/agent-state-git@file:plugins/agent-state-git':
+    resolution: {directory: plugins/agent-state-git, type: directory}
+    engines: {node: '>=24'}
+
   '@penguinharness/ape-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ape-rsi-toolkit-0.2.19-rc.1.tgz':
     resolution: {integrity: sha512-9rrQ/xp99yRg6X62F4e/MS2dOlCSobnXlfufEz308BJDEhNcoIVN9Bh4+ZC+eaxSEzZMvM+ib9wFsPJ6XGq8JQ==, tarball: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ape-rsi-toolkit-0.2.19-rc.1.tgz}
     version: 0.2.19-rc.1
@@ -3093,6 +3127,14 @@ packages:
   '@penguinharness/browser-automation@file:plugins/browser-automation':
     resolution: {directory: plugins/browser-automation, type: directory}
     engines: {node: '>=24'}
+
+  '@penguinharness/computer-use@file:plugins/computer-use':
+    resolution: {directory: plugins/computer-use, type: directory}
+    engines: {node: '>=24'}
+
+  '@penguinharness/continual-learning@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz':
+    resolution: {integrity: sha512-6Spzm6IBWhqwhE/by6KhaQwKNxAw9ww3ivMj5W9ub+9anbfAy7C3iWTGGnhScEcnpPy8nyuFSVUbLfpx6FK7MQ==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz}
+    version: 0.2.19-rc.2
 
   '@penguinharness/data-analysis@file:plugins/data-analysis':
     resolution: {directory: plugins/data-analysis, type: directory}
@@ -7960,11 +8002,17 @@ snapshots:
 
   '@penguinharness/agent-evaluation@file:plugins/agent-evaluation': {}
 
+  '@penguinharness/agent-state-git@file:plugins/agent-state-git': {}
+
   '@penguinharness/ape-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ape-rsi-toolkit-0.2.19-rc.1.tgz': {}
 
   '@penguinharness/awm-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz': {}
 
   '@penguinharness/browser-automation@file:plugins/browser-automation': {}
+
+  '@penguinharness/computer-use@file:plugins/computer-use': {}
+
+  '@penguinharness/continual-learning@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz': {}
 
   '@penguinharness/data-analysis@file:plugins/data-analysis': {}
 
@@ -8071,7 +8119,9 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/agent-state-git': file:plugins/agent-state-git
       '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/computer-use': file:plugins/computer-use
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/goal': file:plugins/goal
@@ -8109,7 +8159,9 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/agent-state-git': file:plugins/agent-state-git
       '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/computer-use': file:plugins/computer-use
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/goal': file:plugins/goal
@@ -8557,7 +8609,9 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/agent-state-git': file:plugins/agent-state-git
       '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/computer-use': file:plugins/computer-use
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/goal': file:plugins/goal
@@ -8619,7 +8673,9 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/agent-state-git': file:plugins/agent-state-git
       '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/computer-use': file:plugins/computer-use
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/goal': file:plugins/goal
@@ -8681,7 +8737,9 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/agent-state-git': file:plugins/agent-state-git
       '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/computer-use': file:plugins/computer-use
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/goal': file:plugins/goal

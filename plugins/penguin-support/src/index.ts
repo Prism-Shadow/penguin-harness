@@ -17,7 +17,6 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         shortDescriptionZh: "产品问答、来源引用与客服工作台。",
         category: "office-productivity",
         icon: "icon.svg",
-        preinstall: false,
         quickStart: {
           prompt:
             "How do I create an agent and choose its model in PenguinHarness? Cite the official docs.",

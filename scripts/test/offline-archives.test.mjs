@@ -54,6 +54,20 @@ it("carries the listed plugins the build does not ship, and nothing else", async
   }
 });
 
+it("keeps the separately released tarball for Computer Use when its module ships in the prefix", async () => {
+  const { root, indexFile, pluginsSrc } = await workspace();
+  try {
+    const name = "@penguinharness/computer-use";
+    const dir = path.join(pluginsSrc, "computer-use");
+    await fs.writeFile(path.join(dir, "package.json"), JSON.stringify({ name, version: "1.2.3" }));
+    await fs.writeFile(indexFile, JSON.stringify([{ name }]));
+    const candidates = await offlineCandidates({ pluginsSrc, indexFile, shipped: new Set([name]) });
+    assert.deepEqual(candidates, [{ name, version: "1.2.3", dir }]);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 it("stages each one's tarball with its sha512, its manifest and its table", async () => {
   const { root, indexFile, pluginsSrc } = await workspace();
   const out = path.join(root, "prefix");

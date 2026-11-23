@@ -5,8 +5,7 @@
  *   a non-array or one malformed entry fails the document, naming the source or the position
  *   (unlike a plugin list's per-entry tolerance).
  * - The builtin catalogue lists the server modules that live in plugins/ — the sandbox backends
- *   (in their category) and agent-state-git (in none) the build ships, and the market-only ones it
- *   does not (computer-use, in the category its card names) — each named,
+ *   (in their category) and agent-state-git (in none), alongside computer-use (in the category its card names) — each named,
  *   versioned, titled, described and licensed as the package names itself, described in both
  *   languages as its own card contribution describes it and drawn with its icon.svg (both of which
  *   it publishes), repeats the platforms each declares itself the default backend for (what the

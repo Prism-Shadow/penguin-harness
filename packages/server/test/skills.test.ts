@@ -232,11 +232,13 @@ describe("skills api", () => {
       expect(plugin.version, plugin.name).toBe(libraryPlugin(plugin.name)!.version);
       expect(plugin.version, plugin.name).toMatch(/^\d+\.\d+\.\d+/);
       expect(plugin.source, plugin.name).toBe("builtin");
-      // Every plugin ships something: a Skill, a hook package, or (an app-only plugin) a workbench.
+      // Some packages contribute only a server module, such as the native Git engine.
       expect(
         plugin.skills.length > 0 ||
           plugin.hooks.length > 0 ||
-          (plugin.workbenches ?? []).length > 0,
+          (plugin.workbenches ?? []).length > 0 ||
+          plugin.mcpServers.length > 0 ||
+          plugin.modules === true,
         plugin.name,
       ).toBe(true);
       for (const skill of plugin.skills) {

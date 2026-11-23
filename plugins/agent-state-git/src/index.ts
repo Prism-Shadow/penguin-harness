@@ -1,7 +1,7 @@
 /**
  * @penguinharness/agent-state-git — native Git for the Agent State repository.
  *
- * A PLUGIN PACKAGE, not part of the platform: an administrator installs it on the Plugins page,
+ * The product ships this plugin for new Projects. Administrators manage it on the Plugins page,
  * and the harness resolves it from the installation (see the server's plugin/loader.ts). It
  * compiles against `@prismshadow/penguin-core/plugin` alone and contributes one engine to the
  * server's `AgentStateHistoryModule.engines` slot.
@@ -33,7 +33,8 @@ export { keptFiles, locateGit, pinFor } from "./binary.js";
         shortDescription: "Record workbench versions with native Git.",
         shortDescriptionZh: "以原生 Git 记录 Workbench 版本。",
         icon: "icon.svg",
-        preinstall: false,
+        preinstall: true,
+        preinstallExistingProjects: false,
       },
     ],
     // The engine; its id also names its directory under the data root's `cache/`.

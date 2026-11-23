@@ -64,7 +64,7 @@ The **Report-writing agent** example creates an agent with the id `report-writer
 3. Optional: in **Name**, enter a name. An empty name uses the agent id.
 4. In **Agent id**, enter an id, or select **Generate with AI** beside the field to have the Project's default model derive one from the name, or from the description while the name is empty. An id is 2–64 characters long, starts with a lowercase letter, and uses only lowercase letters, digits and underscores. A proposal replaces what is in the box and stays editable. You cannot change the id later.
 5. Optional: fill in **Description**.
-6. Optional: in **Plugins**, select plugins from the plugin library to install on the new agent. Their Skills and hook packages are installed when the agent is created. **Goal Mode** and **Plan mode** start selected, since every new agent gets them; clear them to leave them out.
+6. Optional: in **Plugins**, select plugins from the plugin library to install on the new agent. Their Skills and hook packages are installed when the agent is created.
 7. Optional: in **Import Skills from a project directory**, select a directory. PenguinHarness reads the Skills under its `.agents/skills` and `.claude/skills` folders; select the ones to install. If a Skill from the directory has the same name as a Skill from a selected plugin, the directory's Skill is installed.
 8. Select **Create**. The new agent's settings open.
 
