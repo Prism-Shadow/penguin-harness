@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** feature
 - **Scope:** `server`, `multimodal-tools`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1784
 
 [中文版](2026-11-23-gemini-dictation.zh.md)
 
