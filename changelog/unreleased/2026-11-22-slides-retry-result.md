@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** fix
 - **Scope:** `use-bento-slides`
+- **PR:** [#1707](https://github.com/Prism-Shadow/penguin-harness/pull/1707)
 - **Issue:** [#1701](https://github.com/Prism-Shadow/penguin-harness/issues/1701)
 
 [中文版](2026-11-22-slides-retry-result.zh.md)
