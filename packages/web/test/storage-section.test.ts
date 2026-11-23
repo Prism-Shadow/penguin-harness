@@ -90,17 +90,15 @@ afterEach(unmountAll);
 
 describe("the Storage page", () => {
   it("labels the first measurement and only shows totals after a completed result", async () => {
-    const initial = Promise.withResolvers<Response>();
-    fetch = stubFetch(() => initial.promise);
+    const initial = Promise.withResolvers<StorageUsage>();
+    fetch = stubFetch(async () => json(await initial.promise));
     const { container } = await mount(
       h(LocaleProvider, null, h(StorageSection, { openPage: () => undefined })),
     );
     const status = () => container.querySelector('[role="status"]')?.getAttribute("aria-label");
     expect(status()).toBe(S.storage.firstMeasurement);
     expect(text(container)).not.toContain(S.storage.used("0 B"));
-    initial.resolve(
-      json({ ...MEMBER, measuredAt: null, measuring: true, bytes: 0, categories: ZERO }),
-    );
+    initial.resolve({ ...MEMBER, measuredAt: null, measuring: true, bytes: 0, categories: ZERO });
     await waitFor(() => headings(container).includes(S.storage.cleanup));
     expect(status()).toBe(S.storage.firstMeasurement);
     expect(headings(container)).not.toContain(S.storage.byProject);
