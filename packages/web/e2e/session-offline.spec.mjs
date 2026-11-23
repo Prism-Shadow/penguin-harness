@@ -273,7 +273,8 @@ test("cached remote history opens in another tab while disconnected and catches 
   const transcript = (p, text) =>
     p.locator('[data-find-region="conversation"]').getByText(text, { exact: true });
   try {
-    await page.goto("/chat");
+    // /chat would first open the most recent Session and already warm the cold fixture.
+    await page.goto("/chat/new");
     await page.locator("[data-session-id='" + warmId + "']").click();
     await expect(transcript(page, old)).toBeVisible();
     await expect(offline(page)).toHaveCount(0);

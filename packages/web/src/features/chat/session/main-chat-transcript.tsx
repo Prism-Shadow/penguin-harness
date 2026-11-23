@@ -7,7 +7,7 @@ import { buildOutline } from "../outline-model";
 import { useMemoryListing } from "../use-memory-listing";
 import { deletedChangeKeys } from "../memory-nav";
 import { panelDock } from "../../dock";
-import { machineForSession } from "../../../lib/session-machines";
+import { machineForSession, sessionKnownHere } from "../../../lib/session-machines";
 import { useSessionDraft } from "../use-session-draft";
 import { useOfflineSessionHistory } from "../offline-session-history";
 import { useSessionStream } from "../use-session-stream";
@@ -17,17 +17,33 @@ import type { useMainChatRouting } from "./main-chat-routing";
 export function useMainChatTranscript(scope: ReturnType<typeof useMainChatRouting>) {
   const { projectId, setTitle, routeSessionId, selected } = scope;
 
+  const sessionId = selected?.sessionId ?? null;
+  const scopeKey = JSON.stringify([projectId, scope.user?.userId, sessionId]);
+  const owner = sessionId
+    ? (machineForSession(sessionId) ?? (sessionKnownHere(sessionId) ? null : undefined))
+    : undefined;
+  // A deep link can already be reading the right Session through the hub before
+  // the machine list supplies its owner. Keep that stream and its mounted composer.
+  // An actual move between two confirmed owners gets fresh history and subscriptions.
+  const route = useRef({ scopeKey, owner, generation: 0 });
+  const previous = route.current;
+  if (previous.scopeKey !== scopeKey) {
+    route.current = { scopeKey, owner, generation: 0 };
+  } else if (owner !== undefined && previous.owner !== owner) {
+    route.current = {
+      scopeKey,
+      owner,
+      generation: previous.generation + (previous.owner === undefined ? 0 : 1),
+    };
+  }
+
   // No handler for the sub-session registration the parent's channel announces: a subagent
   // Session is in no list (its parent's Agent panel opens it), so nothing here has to refresh.
   const stream = useSessionStream(
-    selected?.sessionId ?? null,
+    sessionId,
     selected?.status ?? "idle",
     setTitle,
-    JSON.stringify([
-      projectId,
-      scope.user?.userId,
-      selected && machineForSession(selected.sessionId),
-    ]),
+    JSON.stringify([scopeKey, route.current.generation]),
   );
 
   // Chat input area draft: caches text, both staged switch chips (`/agent` target, `/model`
