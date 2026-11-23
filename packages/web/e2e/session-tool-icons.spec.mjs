@@ -53,7 +53,10 @@ for (const [name, width, themeId, themeMode] of [
         if (id === ids[0]) await page.goto("/chat/" + id);
         else {
           if (name === "phone")
-            await page.getByRole("button", { name: "Sessions", exact: true }).first().click();
+            await page
+              .getByRole("banner")
+              .getByRole("button", { name: /^Sessions/ })
+              .click();
           await page
             .locator('[data-session-id="' + id + '"]:visible')
             .first()
@@ -72,7 +75,7 @@ for (const [name, width, themeId, themeMode] of [
             await expect(mark(catalog, kind)).toBeVisible();
             expect(await mark(catalog, kind).locator("svg").innerHTML()).toBe(marks.get(kind));
           }
-          await page.goBack();
+          await page.getByRole("button", { name: "Close panel: App Center", exact: true }).click();
           await shortcuts.click();
         }
         const terminal = page.getByTestId("dock-launcher-open-terminal");
@@ -84,7 +87,10 @@ for (const [name, width, themeId, themeMode] of [
         await expect(mark(tab, "terminal")).toBeVisible();
       }
       if (name === "phone")
-        await page.getByRole("button", { name: "Sessions", exact: true }).first().click();
+        await page
+          .getByRole("banner")
+          .getByRole("button", { name: /^Sessions/ })
+          .click();
       const running = page.getByRole("navigation", { name: "Apps", exact: true });
       await expect(mark(running, "terminal")).toHaveCount(2);
       for (const row of await mark(running, "terminal").all()) {
