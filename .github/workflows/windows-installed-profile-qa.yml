@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        path_test: [wizard, upgrade]
+        path_test: ${{ fromJSON(contains(github.event.head_commit.message, '[upgrade only]') && '["upgrade"]' || contains(github.event.head_commit.message, '[wizard only]') && '["wizard"]' || '["wizard","upgrade"]') }}
     runs-on: windows-latest
     timeout-minutes: 75
     env:

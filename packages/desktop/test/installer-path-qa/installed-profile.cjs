@@ -11,7 +11,7 @@ assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.PH_DISPOSABLE_WINDOWS, "yes");
 assert.ok(path.resolve(record).startsWith(path.resolve(process.env.RUNNER_TEMP) + path.sep));
 const key = "installer-profile-check";
-const user = "installer_qa";
+const user = "admin";
 const asset = Buffer.from("a real attachment from the original account\n");
 const phase = mode === "seed" ? { password: crypto.randomBytes(24).toString("hex") } : JSON.parse(fs.readFileSync(record));
 const env = { ...process.env, PENGUIN_SEED_ADMIN_PASSWORD: phase.password };
@@ -31,9 +31,17 @@ async function run() {
       return response;
     }
     if (mode === "seed") {
-      await api("POST", "/api/auth/login", { userId: "admin", password: phase.password });
-      await api("POST", "/api/admin/users", { userId: user, password: phase.password });
-      await api("POST", "/api/auth/login", { userId: user, password: phase.password });
+      const login = await api("POST", "/api/auth/login", { userId: user, password: phase.password });
+      const cookie = (await login.headersArray()).find(({ name, value }) =>
+        name.toLowerCase() === "set-cookie" && value.startsWith("penguin_session="));
+      assert.ok(cookie, "a real password login established a persistent session");
+      phase.loginCookie = cookie.value.split(";")[0];
+      phase.profileCookie = crypto.randomUUID();
+      await desktop.evaluate(async ({ session }, { url, value }) => {
+        await session.defaultSession.cookies.set({
+          url, name: "installer_qa_profile", value, httpOnly: true, expirationDate: Date.now() / 1000 + 86400,
+        });
+      }, { url: base, value: phase.profileCookie });
       const projects = await (await api("GET", "/api/projects")).json();
       phase.project = projects.projects[0].projectId;
       const project = "/api/projects/" + phase.project;
@@ -55,6 +63,11 @@ async function run() {
     }
     const me = await (await api("GET", "/api/me")).json();
     assert.equal(me.user.userId, user, "the original signed-in account is still active");
+    const original = await fetch(base + "/api/me", { headers: { Cookie: phase.loginCookie } });
+    assert.ok(original.ok && (await original.json()).user.userId === user, "the original login remains valid");
+    const profileCookie = await desktop.evaluate(async ({ session }, url) =>
+      (await session.defaultSession.cookies.get({ url, name: "installer_qa_profile" }))[0]?.value, base);
+    assert.ok(profileCookie === phase.profileCookie, "the original Electron profile cookie survived");
     assert.equal(await page.evaluate((k) => localStorage.getItem(k), key), "existing desktop preference");
     const sid = "/api/sessions/" + phase.sid;
     const restored = (await (await api("GET", sid)).json()).session;
