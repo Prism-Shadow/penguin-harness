@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** fix
 - **Scope:** `ui`, `web`
+- **PR:** [#1746](https://github.com/Prism-Shadow/penguin-harness/pull/1746)
 
 [English](2026-11-23-sidebar-group-disclosure.md)
 
