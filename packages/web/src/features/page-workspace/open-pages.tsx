@@ -7,6 +7,7 @@ import {
   SearchInput,
   GroupHeader,
   GlyphIcon,
+  GlyphAppIcon,
   ICONS,
   APP_ROW_ICON_PX,
   type RowActionItem,
@@ -197,11 +198,11 @@ export function OpenPages({ onNavigate }: { onNavigate?: () => void }) {
         icon={
           app ? (
             <TileIcon shortcut={app.shortcut} title={page.title} size={APP_ROW_ICON_PX} />
+          ) : sys ? (
+            <GlyphAppIcon appKey={sys.key} d={glyphOf(sys.icon)} size={APP_ROW_ICON_PX} />
           ) : (
             <GlyphIcon
-              d={
-                sys ? glyphOf(sys.icon) : page.kind === "session" ? ICONS.bubbleLines : ICONS.tiles
-              }
+              d={page.kind === "session" ? ICONS.bubbleLines : ICONS.tiles}
               size={APP_ROW_ICON_PX}
             />
           )
