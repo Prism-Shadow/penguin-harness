@@ -43,14 +43,14 @@ test("the source desktop renders the start page and reopens the actual Bento edi
       "Desktop host",
       await shell.evaluate(() => ({ os: process.platform, version: process.versions.electron })),
     );
-    await verifySlides(page, base, info);
+    await verifySlides(page, base, info, path.join(scratch, "data"));
   } finally {
     await shell.close();
     await fs.rm(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
 
-async function verifySlides(page, base, info) {
+async function verifySlides(page, base, info, dataRoot) {
   const entries = [];
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -90,6 +90,7 @@ async function verifySlides(page, base, info) {
     const editor = frame.frameLocator("#editor");
     const cover = editor
       .getByText(/^(An agent that keeps getting better at your work\.|越用越懂你工作的智能体)$/)
+      .filter({ visible: true })
       .last();
     await expect(cover).toBeVisible();
     await expect(editor.locator(".ed-thumb").first()).toBeVisible();
@@ -102,6 +103,48 @@ async function verifySlides(page, base, info) {
     await expect(cover).toBeVisible();
     await expect(editor.locator(".ed-thumb").first()).toBeVisible();
     await expect(frame.locator("#editor")).not.toHaveAttribute("inert", "");
+    if (dataRoot) {
+      const fixtureTitle = "Night train — Windows";
+      const deck = (await saved.json()).decks[0];
+      const sample = JSON.parse(
+        (await (await page.request.get(decks + "/" + deck.id)).json()).text,
+      );
+      sample.title = fixtureTitle;
+      const file = path.join(
+        dataRoot,
+        "projects",
+        project,
+        "agents",
+        "default_agent",
+        "app",
+        "data",
+        "slides",
+        "decks",
+        "winter.bento.json",
+      );
+      await fs.writeFile(file, "\uFEFF" + JSON.stringify(sample), "utf8");
+      await page.reload();
+      const previous = frame.locator('[data-open-deck="winter"]');
+      await expect(previous).toBeVisible();
+      console.log("Windows UTF-8 deck listed as", await previous.innerText());
+      await previous.click();
+      try {
+        await expect(cover).toBeVisible({ timeout: 4500 });
+        await expect(editor.locator(".ed-thumb")).toHaveCount(4);
+        console.log("Windows UTF-8 deck opened with 4 slides");
+      } catch (error) {
+        console.log(
+          "Windows UTF-8 deck remained at",
+          await frame.locator("#app").getAttribute("data-view"),
+          "message",
+          await frame
+            .locator("#notice")
+            .textContent({ timeout: 1000 })
+            .catch(() => ""),
+        );
+        throw error;
+      }
+    }
   } finally {
     const frames = await Promise.all(
       page.frames().map(async (f) => ({

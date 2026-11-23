@@ -6,6 +6,10 @@ permissions:
   contents: read
 jobs:
   native:
+    strategy:
+      fail-fast: false
+      matrix:
+        bento: [current, previous]
     runs-on: windows-latest
     timeout-minutes: 25
     env:
@@ -13,6 +17,15 @@ jobs:
       CI: true
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Check out the previous workbench source
+        if: matrix.bento == 'previous'
+        shell: bash
+        run: git checkout 9abf561e6^ -- plugins/use-bento-slides
+      - name: Identify workbench version
+        shell: bash
+        run: node -p "JSON.stringify([require('./plugins/use-bento-slides/package.json').version,require('./plugins/use-bento-slides/workbenches/slides/package.json').penguin.version])"
       - id: setup
         uses: ./.github/actions/setup
         with:
@@ -41,7 +54,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: windows-bento-rendering
+          name: windows-bento-rendering-${{ matrix.bento }}
           path: |
             packages/web/test-results/
             ${{ runner.temp }}/web-results/
