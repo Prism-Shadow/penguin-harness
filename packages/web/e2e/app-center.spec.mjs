@@ -635,3 +635,113 @@ test("a multi-page workbench keeps its own selector above the active document", 
   expect(control.y + control.height).toBeLessThanOrEqual(document.y + 1);
   await expect(app.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
 });
+
+test("only open workbenches appear across the App Center, Session directory and Project changes", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await provisionAndLogin(page.request, "directoryreader", P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const { projects } = await (await page.request.get("/api/projects")).json();
+  const current = projects[0];
+  const base = `/api/projects/${current.projectId}`;
+  const projectName = "Cabinet collection";
+  await expect(await page.request.patch(base, { data: { name: projectName } })).toBeOK();
+  const alternate = "other_reader";
+  const otherProject = "directoryreader-empty";
+  await expect(
+    await page.request.post(`${base}/agents`, {
+      data: { agentId: alternate, name: "Second reader" },
+    }),
+  ).toBeOK();
+  await expect(
+    await page.request.post("/api/projects", {
+      data: { projectId: otherProject, name: "Empty scope" },
+    }),
+  ).toBeOK();
+  const model = { provider: "custom", modelId: "claude-4-8" };
+  for (const projectId of [current.projectId, otherProject]) {
+    await expect(
+      await page.request.put(`/api/projects/${projectId}/models`, {
+        data: {
+          defaultModel: model,
+          models: [
+            { ...model, apiKey: "sk-mock", baseUrl: process.env.MOCK_URL, contextWindow: 200000 },
+          ],
+        },
+      }),
+    ).toBeOK();
+  }
+  for (let index = 1; index <= 30; index++) {
+    await importApp(
+      page.request,
+      `${base}/agents/default_agent/workbenches`,
+      `Cabinet${String(index).padStart(2, "0")}`,
+    );
+  }
+  await importApp(page.request, `${base}/agents/${alternate}/workbenches`, "UnopenedAtlas");
+  for (const [agent, title] of [
+    ["default_agent", "Directory inspection"],
+    [alternate, "Other reader notes"],
+  ]) {
+    const response = await page.request.post(`${base}/agents/${agent}/sessions`, { data: {} });
+    await expect(response).toBeOK();
+    const { session } = await response.json();
+    await expect(
+      await page.request.patch(`/api/sessions/${session.sessionId}`, { data: { title } }),
+    ).toBeOK();
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/apps");
+  const grid = page.getByRole("list", { name: "App Center" });
+  const group = page.getByRole("navigation", { name: "Apps", exact: true });
+  const rows = group.getByRole("listitem");
+  const row = (id) => group.locator(`[data-app-row="default_agent/${id}"]`);
+  async function actOnLastApp(label) {
+    const item = rows.filter({ has: page.locator('[data-app-row="default_agent/cabinet30"]') });
+    await item.hover();
+    await item.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("menuitem", { name: label, exact: true }).click();
+  }
+  await expect(grid.getByRole("button", { name: /^Cabinet/ })).toHaveCount(30);
+  await expect(group).toHaveCount(0);
+  await grid.getByRole("button", { name: /^Cabinet01,/ }).click();
+  await expect(row("cabinet01")).toBeVisible();
+  await expect(rows).toHaveCount(1);
+
+  await page.getByText("Directory inspection", { exact: true }).first().click();
+  await page.getByRole("button", { name: "Browse workbenches" }).click();
+  const directory = page.getByRole("region", { name: "Workbenches" });
+  const secondApp = directory.getByRole("button", { name: "Cabinet30", exact: true });
+  await expect(secondApp).toBeVisible();
+  await expect(rows).toHaveCount(1);
+  await secondApp.click();
+  await expect(row("cabinet30")).toBeVisible();
+  await expect(rows).toHaveCount(2);
+  await actOnLastApp("Minimize");
+  await expect(rows).toHaveCount(2);
+  await actOnLastApp("Restore");
+  await actOnLastApp("Close");
+  await expect(rows).toHaveCount(1);
+  await expect(row("cabinet01")).toBeVisible();
+
+  await page.getByText("Other reader notes", { exact: true }).first().click();
+  await expect(rows).toHaveCount(1);
+  await expect(group.getByText("UnopenedAtlas", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: projectName, exact: true }).click();
+  await page
+    .getByRole("button", { name: /^Empty scope/ })
+    .first()
+    .click();
+  const emptyProject = page.getByRole("button", { name: "Empty scope", exact: true });
+  await expect(emptyProject).toBeVisible();
+  await expect(group).toHaveCount(0);
+  await emptyProject.click();
+  await page
+    .getByRole("button", { name: /^Cabinet collection/ })
+    .first()
+    .click();
+  await page.getByRole("link", { name: /^App Center(?: ·|$)/ }).click();
+  await expect(grid.getByRole("button", { name: /^Cabinet/ })).toHaveCount(30);
+  await expect(group).toHaveCount(0);
+});
