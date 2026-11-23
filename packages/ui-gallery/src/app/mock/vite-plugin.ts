@@ -24,7 +24,6 @@ export const SWAPPED_MODULES: Readonly<Record<string, string>> = {
   [here("../../../../web/src/api/client")]: here("./client.ts"),
   [here("../../../../web/src/lib/workbench-tabs")]: here("./workbench-tabs.ts"),
   [here("../../../../web/src/api/sse")]: here("./sse.ts"),
-  [here("../../../../web/src/features/workbenches/workbench-frame")]: here("./workbench-frame.tsx"),
 };
 
 /** The mock a relative import from `importer` should resolve to, or null for any other import. */

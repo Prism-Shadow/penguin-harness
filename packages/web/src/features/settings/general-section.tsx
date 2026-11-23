@@ -12,7 +12,14 @@
  * notifications and the platform granted them here.
  */
 import { useState, useSyncExternalStore } from "react";
-import { PrefRow, Segmented, SettingsGroup, ToggleRow, guardLeave } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  PrefRow,
+  Segmented,
+  SettingsGroup,
+  ToggleRow,
+  guardLeave,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
   enableNotifications,
@@ -30,9 +37,22 @@ import { resolveSystemLocale, useLocale, type LangPref } from "../../state/local
 
 import { useTheme, type Currency } from "../../state/theme";
 
+import { useFirstWorkbench, startFirstWorkbench } from "../../lib/first-workbench-entry";
+import { useProject } from "../../state/project";
+import { usePageAgent } from "../../lib/page-agent";
 import { TraceImportRow } from "./trace-import-row";
 
-export function GeneralSection() {
+export function GeneralSection({ onOpenGuide }: { onOpenGuide?: () => void }) {
+  const { currentProject, currentAgent } = useProject();
+  const published = usePageAgent();
+  const scope =
+    published?.agent.projectId === currentProject?.projectId && published
+      ? published.agent
+      : currentAgent && currentProject
+        ? { projectId: currentProject.projectId, agentId: currentAgent.agentId, machineId: null }
+        : null;
+  const available = useFirstWorkbench(scope);
+
   const { lang, locale, setLang } = useLocale();
   const { currency, setCurrency } = useTheme();
   const { serverEnabled, personalEnabled, setPersonalEnabled } = useCompany();
@@ -114,6 +134,19 @@ export function GeneralSection() {
           checked={personalEnabled}
           onChange={setPersonalEnabled}
         />
+      )}
+      {available && scope && (
+        <PrefRow label={S.firstWorkbench.title} info={S.firstWorkbench.help}>
+          <Button
+            size="sm"
+            onClick={() => {
+              onOpenGuide?.();
+              startFirstWorkbench(scope);
+            }}
+          >
+            {S.firstWorkbench.resume}
+          </Button>
+        </PrefRow>
       )}
       <TraceImportRow />
     </SettingsGroup>

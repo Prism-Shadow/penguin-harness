@@ -798,6 +798,9 @@ export class WorkbenchService implements Workbenches {
       );
       for (const shortcut of shortcuts) {
         const plugin = installedBy.get(shortcut.workbenchId);
+        // The first-party guide is hosted beside the product controls, including for installed
+        // copies whose manifest predates that entry. Hand-authored apps keep their own visibility.
+        if (plugin === "first-workbench-guide" && shortcut.workbenchId === plugin) continue;
         out.push(plugin === undefined ? shortcut : { ...shortcut, plugin });
       }
     }
