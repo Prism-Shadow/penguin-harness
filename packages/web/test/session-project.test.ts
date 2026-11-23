@@ -16,7 +16,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
-  matchesSessionId,
   resolveRoutedSession,
   routeSessionOutcome,
   routedView,
@@ -89,59 +88,11 @@ describe("resolveRoutedSession", () => {
     expect(resolveRoutedSession("session-a", [SESSION], SESSION, "project-b")).toBeNull();
   });
 
-  it("resolves an 8-hex short Session id against the full session-YYYY-MM-DD-HH-MM-SS-xxxxxxxx id", () => {
-    const full: SessionInfo = {
-      ...SESSION,
-      sessionId: "session-2026-11-10-10-40-17-2556a209",
-    };
-    expect(matchesSessionId(full.sessionId, "2556a209")).toBe(true);
-    expect(matchesSessionId(full.sessionId, "deadbeef")).toBe(false);
-    expect(resolveRoutedSession("2556a209", [full], null, "project-a")).toBe(full);
-    expect(resolveRoutedSession("2556a209", [], full, "project-a")).toBe(full);
-  });
-
-  it("rejects non-canonical candidates however their tails read", () => {
-    // Only a canonical session-YYYY-MM-DD-HH-MM-SS-xxxxxxxx id counts; a ticket note's
-    // `abc-2556a209` or a bare `session-2556a209` is not a Session id.
-    expect(matchesSessionId("abc-2556a209", "2556a209")).toBe(false);
-    expect(matchesSessionId("session-2556a209", "2556a209")).toBe(false);
-    expect(matchesSessionId("mysession-2026-11-10-10-40-17-2556a209", "2556a209")).toBe(false);
-    const fake: SessionInfo = { ...SESSION, sessionId: "note-2026-11-10-10-40-17-2556a209" };
-    expect(resolveRoutedSession("2556a209", [fake], fake, "project-a")).toBeNull();
-  });
-
-  it("refuses a suffix two listed rows share instead of letting the first win", () => {
-    const first: SessionInfo = {
-      ...SESSION,
-      sessionId: "session-2026-11-10-10-40-17-2556a209",
-    };
-    const second: SessionInfo = {
-      ...SESSION,
-      sessionId: "session-2026-11-11-09-00-00-2556a209",
-      agentId: "second_agent",
-    };
-    expect(resolveRoutedSession("2556a209", [first, second], null, "project-a")).toBeNull();
-    // The same Session read twice (mirrored by two sources) is one hit, not a collision.
-    expect(
-      resolveRoutedSession("2556a209", [first, { ...first, status: "running" }], null, "project-a"),
-    ).toBe(first);
-  });
-
-  it("a short id whose only match belongs to another Project does not open", () => {
-    const foreign: SessionInfo = {
-      ...SESSION,
-      sessionId: "session-2026-11-10-10-40-17-2556a209",
-      projectId: "project-b",
-    };
-    expect(resolveRoutedSession("2556a209", [foreign], foreign, "project-a")).toBeNull();
-    // A same-suffix row in another Project must not hide the current Project's own hit, and
-    // a cross-Project pair refuses just as a same-Project one does.
-    const local: SessionInfo = {
-      ...foreign,
-      sessionId: "session-2026-11-12-08-30-00-2556a209",
-      projectId: "project-a",
-    };
-    expect(resolveRoutedSession("2556a209", [foreign, local], null, "project-a")).toBe(local);
+  it("answers nothing for a suffix-shaped id: links carry the Session's full id only", () => {
+    const full: SessionInfo = { ...SESSION, sessionId: "session-2026-11-10-10-40-17-2556a209" };
+    // No suffix matching: a bare 8-hex id names no Session here, and the direct lookup of it
+    // is the 404 the page owns up to in place.
+    expect(resolveRoutedSession("2556a209", [full], full, "project-a")).toBeNull();
   });
 });
 

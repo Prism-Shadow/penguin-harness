@@ -15,8 +15,7 @@ import { latestTaskHasSubagent, taskStartCount } from "../agent-topology";
 import { DRAFT_SESSION_ID } from "../draft-sessions";
 import { routeSessionOutcome, sessionForProject } from "../session-project";
 import { RouteProbe } from "../route-probe";
-import { machineForSession, rememberSessionMachine } from "../../../lib/session-machines";
-import { createSourceListing, resolveRouteLookupId } from "./short-id-lookup";
+import { machineForSession } from "../../../lib/session-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
 import { goalPluginGate } from "../goal-plugin-gate";
 import { usePromptModes, useSessionSwitches } from "../prompt-modes";
@@ -50,7 +49,6 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     sessions,
     sessionsLoading,
     machineLabels,
-    machineIds,
     machinesUnreachable,
     offlineMachineIds,
     reloadSessions,
@@ -387,26 +385,12 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     // its answer stays valid across the list churn that re-runs this effect. Tying its
     // lifetime to one run is what made a deep link issue a dozen identical requests. One
     // lookup per Session in flight, the list's loading read when it settles, and an answer
-    // about a Session the route has left dropped: see route-probe.ts.
-    const listing = createSourceListing(projectId, api);
+    // about a Session the route has left dropped: see route-probe.ts. The route carries the
+    // Session's full id — a linkified id is always the whole `session-…-xxxxxxxx`, so the
+    // lookup is one direct read and nothing else: no suffix matching, no enumeration.
     routeProbe.run(
       probeKey,
-      async () => {
-        // A full id is asked for as it stands. A short id is resolved first — freshly, over
-        // what the Project's servers answer for right now, so a cold start resolves like a
-        // warm one and no loaded page or snapshot takes part — and only a unique readable
-        // Session opens. No unique answer: the route id is asked for as it stands, which no
-        // server holds a row for, and the 404 the page already owns up to is the refusal.
-        const lookup = await resolveRouteLookupId(routeSessionId, machineIds, listing);
-        if (lookup !== null && typeof lookup.machineId === "string") {
-          rememberSessionMachine(lookup.sessionId, lookup.machineId);
-        }
-        const asked = lookup ?? { sessionId: routeSessionId };
-        return sessionForProject(
-          (await api.getSession(asked.sessionId, asked.machineId)).session,
-          projectId,
-        );
-      },
+      async () => sessionForProject((await api.getSession(routeSessionId)).session, projectId),
       {
         found: (session, listLoading) => {
           scope.setOfflineOwner(null);
@@ -460,7 +444,6 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     selected,
     addSession,
     isSessionDeleted,
-    machineIds,
   ]);
   // The row found during the list's first load, added once the list has settled and only if
   // it did not bring the row itself (one beyond the first page, or an organization's row,

@@ -161,9 +161,12 @@ describe("resolveReplyLink", () => {
   });
 
   it("a path that is not an app route goes on to the file sorting, as before", () => {
-    // The URL parser normalizes these first: what is left is outside both route families.
+    // The URL parser normalizes these first: what is left is outside both route families, and
+    // the chat family is one non-empty segment, as the id itself is.
     expect(resolveReplyLink("/chat/", WS)).toEqual({ kind: "none" });
     expect(resolveReplyLink("/chat", WS)).toEqual({ kind: "none" });
+    expect(resolveReplyLink("/chat//", WS)).toEqual({ kind: "none" });
+    expect(resolveReplyLink("/chat/x/y", WS)).toEqual({ kind: "none" });
     expect(resolveReplyLink("/chat/x/../..", WS)).toEqual({ kind: "none" });
     expect(resolveReplyLink("http://localhost/chat/x/../../etc", WS)).toEqual({
       kind: "external",

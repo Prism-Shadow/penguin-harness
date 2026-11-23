@@ -1,47 +1,6 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { ofProject } from "../../lib/project-scope";
 
-const SHORT_SESSION_HEX_RE = /^[0-9a-f]{8}$/i;
-
-/** The canonical full id a Session row carries: `session-YYYY-MM-DD-HH-MM-SS-xxxxxxxx`. */
-const FULL_SESSION_ID_RE = /^session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}$/i;
-
-/** Whether `routeId` is a bare 8-hex short id, the `/chat/<shortId>` deep-link shape. */
-export function isShortSessionId(routeId: string): boolean {
-  return SHORT_SESSION_HEX_RE.test(routeId);
-}
-
-/** Whether `candidateId` matches `routeId`: exactly, or as a canonical full id ending in an 8-hex short id. */
-export function matchesSessionId(candidateId: string, routeId: string): boolean {
-  if (candidateId === routeId) return true;
-  if (!SHORT_SESSION_HEX_RE.test(routeId)) return false;
-  // A candidate that is not a canonical full id never counts, whatever its tail reads.
-  return (
-    FULL_SESSION_ID_RE.test(candidateId) &&
-    candidateId.toLowerCase().endsWith(`-${routeId.toLowerCase()}`)
-  );
-}
-
-/**
- * The one id in `candidates` the 8-hex short id `routeId` names, or null. Only canonical full
- * ids count as candidates, and exactly one may end in the suffix: two readable Sessions
- * sharing it (or none) refuse to resolve, instead of the first row silently winning.
- */
-export function resolveShortSessionId(
-  routeId: string,
-  candidates: readonly string[],
-): string | null {
-  if (!SHORT_SESSION_HEX_RE.test(routeId)) return null;
-  const suffix = `-${routeId.toLowerCase()}`;
-  const hits = new Map<string, string>();
-  for (const candidate of candidates) {
-    if (!FULL_SESSION_ID_RE.test(candidate)) continue;
-    const key = candidate.toLowerCase();
-    if (key.endsWith(suffix) && !hits.has(key)) hits.set(key, candidate);
-  }
-  return hits.size === 1 ? (hits.values().next().value ?? null) : null;
-}
-
 /**
  * The Session the route names: the loaded list's row when it holds one, otherwise the row a
  * direct lookup produced.
@@ -64,17 +23,10 @@ export function resolveRoutedSession(
   projectId: string | null,
 ): SessionInfo | null {
   if (sessionId === null) return null;
-  // Another Project's rows are not candidates at all — they neither resolve nor turn a short
-  // id ambiguous; what remains decides by uniqueness, so two readable Sessions sharing a
-  // suffix refuse instead of the first row silently winning.
-  const hits = sessions.filter(
-    (s) => ofProject(s, projectId) && matchesSessionId(s.sessionId, sessionId),
-  );
-  const row =
-    new Set(hits.map((s) => s.sessionId.toLowerCase())).size === 1 ? hits[0] : undefined;
-  if (row !== undefined) return row;
+  const row = sessions.find((s) => s.sessionId === sessionId);
+  if (row !== undefined) return ofProject(row, projectId) ? row : null;
   return fetched !== null &&
-    matchesSessionId(fetched.sessionId, sessionId) &&
+    fetched.sessionId === sessionId &&
     ofProject(fetched, projectId)
     ? fetched
     : null;
@@ -131,7 +83,7 @@ export function heldRouteSession(
   if (
     held === null ||
     routeSessionId === null ||
-    !matchesSessionId(held.sessionId, routeSessionId) ||
+    held.sessionId !== routeSessionId ||
     !ofProject(held, projectId)
   )
     return null;
