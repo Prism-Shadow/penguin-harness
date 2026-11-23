@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { DockTabs, GlyphIcon, ICONS, ResizeHandle } from "@prismshadow/penguin-ui";
+import {
+  Dropdown,
+  GlyphIcon,
+  IconButton,
+  ICONS,
+  Menu,
+  MenuItem,
+  ResizeHandle,
+} from "@prismshadow/penguin-ui";
 import { Outlet, useLocation, type Location } from "react-router";
 import { ErrorBoundary } from "../../rescue/error-boundary";
 import { RescuePanel } from "../../rescue/rescue-panel";
@@ -10,25 +18,30 @@ import { useRunningAppRecords } from "../../lib/running-apps";
 import { usePageWorkspace } from "../../lib/page-workspace";
 import { WorkbenchDirectory } from "./workbench-directory";
 
-function PaneTabs({ side }: { side: 0 | 1 }) {
+function PaneHeader({ side }: { side: 0 | 1 }) {
   const workspace = usePageWorkspace()!;
   const { layout } = workspace;
-  const pages = layout.pages.filter((page) => layout.right.includes(page.id) === (side === 1));
+  const page = layout.pages.find((item) => item.id === layout.visible[side])!;
+  const [open, setOpen] = useState(false);
+  const words = S.pageWorkspace;
+  const name = side === 0 ? words.leftPane : words.rightPane;
+  const choose = (action: () => void) => () => {
+    setOpen(false);
+    action();
+  };
   return (
     <div
+      role="group"
+      aria-label={name}
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes(PAGE_DRAG_TYPE)) event.preventDefault();
       }}
       onDrop={(event) => {
-        const id = event.dataTransfer.getData(PAGE_DRAG_TYPE);
-        const page = layout.pages.find((item) => item.id === id);
-        if (!page) return;
-        event.preventDefault();
-        const target =
-          event.target instanceof Element
-            ? event.target.closest<HTMLElement>("[data-tab-id]")
-            : null;
-        workspace.place(page, side, target?.dataset.tabId);
+        const dragged = workspace.pageForDrag(event.dataTransfer.getData(PAGE_DRAG_TYPE));
+        if (dragged) {
+          event.preventDefault();
+          workspace.place(dragged, side);
+        }
       }}
       className="absolute top-0 flex min-w-0 items-center border-b border-line bg-surface-muted px-1"
       style={{
@@ -37,30 +50,57 @@ function PaneTabs({ side }: { side: 0 | 1 }) {
         right: side === 1 ? 0 : "calc(100% - var(--workspace-divider))",
       }}
     >
-      <DockTabs
-        aria-label={S.pageWorkspace.panePages}
-        tabs={pages.map((page) => ({
-          key: page.id,
-          label: page.title,
-          glyph: (
-            <GlyphIcon
-              d={page.kind === "session" ? ICONS.bubbleLines : ICONS.appWindow}
-              size={14}
-            />
-          ),
-          onDragStart(event) {
-            event.dataTransfer.setData(PAGE_DRAG_TYPE, page.id);
-            event.dataTransfer.effectAllowed = "move";
-          },
-          closeLabel: S.common.close,
-        }))}
-        active={layout.visible[side]!}
-        onSelect={(id) => {
-          const page = pages.find((item) => item.id === id);
-          if (page) workspace.focus(page);
+      <button
+        type="button"
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer.setData(PAGE_DRAG_TYPE, page.id);
+          event.dataTransfer.effectAllowed = "move";
         }}
-        onClose={(id) => workspace.close(id)}
-      />
+        aria-pressed={layout.focus === page.id}
+        onClick={() => workspace.focus(page)}
+        className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-xs hover:bg-hover"
+      >
+        <GlyphIcon d={page.kind === "session" ? ICONS.bubbleLines : ICONS.appWindow} size={14} />
+        <span className="truncate">{page.title}</span>
+      </button>
+      <Dropdown
+        open={open}
+        setOpen={setOpen}
+        portal={{ direction: "down", align: "right" }}
+        button={
+          <IconButton
+            label={words.actions + " · " + page.title}
+            size="sm"
+            variant="ghost"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            <GlyphIcon d={ICONS.ellipsis} size={16} />
+          </IconButton>
+        }
+      >
+        <Menu>
+          <MenuItem
+            glyph={ICONS.arrowUpDown}
+            label={words.swap}
+            onSelect={choose(workspace.swap)}
+          />
+          <MenuItem
+            glyph={ICONS.square}
+            label={words.whole}
+            onSelect={choose(() => workspace.whole(page))}
+          />
+          <MenuItem
+            glyph={ICONS.cross}
+            label={
+              page.kind === "window" || page.kind === "system" ? S.common.close : words.closeView
+            }
+            onSelect={choose(() => workspace.close(page.id))}
+          />
+        </Menu>
+      </Dropdown>
     </div>
   );
 }
@@ -178,8 +218,8 @@ export function PageArea({
       {layers}
       {split && (
         <>
-          <PaneTabs side={0} />
-          <PaneTabs side={1} />
+          <PaneHeader side={0} />
+          <PaneHeader side={1} />
           <div className="absolute inset-y-0 z-sticky" style={{ left: "var(--workspace-divider)" }}>
             <ResizeHandle
               axis="x"

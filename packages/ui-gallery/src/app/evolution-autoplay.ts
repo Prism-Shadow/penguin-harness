@@ -26,6 +26,7 @@ export function installEvolutionAutoplay(
   let visible = false;
   let stopped = false;
   let sent = false;
+  let resultSessionId: string | undefined;
   let destination: "result" | "center" | "detail" | "chart" | "replay" | "restart" = "result";
   let index = 0;
   let timer: (() => void) | undefined;
@@ -103,6 +104,8 @@ export function installEvolutionAutoplay(
         (button) => button.getAttribute("aria-label") === S.chat.stop,
       );
       if (!running && shown("main table")) {
+        resultSessionId = shown<HTMLElement>('[data-session-id][aria-current="page"]')?.dataset
+          .sessionId;
         // The app opens its Agents panel during parallel evaluation; return the space to the result.
         shown<HTMLButtonElement>('[data-testid="dock-tab-close"]')?.click();
         destination = "center";
@@ -139,12 +142,11 @@ export function installEvolutionAutoplay(
       if (chart) {
         revealChart(chart);
         if (playOnce) {
-          // In the desktop workspace, drag the conversation from Open pages beside its chart.
-          const session = doc
-            .querySelector<HTMLElement>(
-              'nav [data-app-row^="chat:"]:not([data-app-row="chat:new"])',
-            )
-            ?.closest<HTMLElement>('[draggable="true"]');
+          // Drag this round's conversation from its workspace group beside its chart.
+          const session = shown<HTMLElement>(
+            "[data-session-id]",
+            (row) => row.dataset.sessionId === resultSessionId,
+          )?.closest<HTMLElement>('[draggable="true"]');
           const pane = chart.closest<HTMLElement>('[data-workspace-page][data-pane="full"]');
           if (
             pane &&

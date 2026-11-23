@@ -1,26 +1,25 @@
-// The compact sidebar is exercised through real Session links and App Center entries.
+/**
+ * - Opening many conversations leaves one Workspace row each; a native app opened twice
+ *   has one Apps row, can share a pane with a conversation and is reachable on a phone.
+ * - Minimizing a workbench keeps its document; closing it destroys that document and
+ *   keeps the conversation and its unfinished message available.
+ */
 import { expect, test } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
-const sidebarPages = (page) => page.getByRole("navigation", { name: "Open pages", exact: true });
-const allPages = (page) => page.getByRole("dialog", { name: "All open pages", exact: true });
-const pageButton = (area, id) => area.locator(`[data-app-row="${id}"]`);
+const apps = (page) => page.getByRole("navigation", { name: "Apps", exact: true });
 const slot = (page, id) => page.locator(`[data-workspace-page="${id}"]`);
 const composer = '[data-slot="composer"] textarea';
 
-async function fromRow(page, area, id, action) {
-  const row = area.getByRole("listitem").filter({ has: pageButton(page, id) });
-  await row.hover();
-  await row.getByRole("button", { name: /^Page actions/ }).click();
-  await page.getByRole("menu").getByText(action, { exact: true }).click();
-}
-
-async function openManager(page) {
-  await sidebarPages(page)
-    .getByRole("button", { name: /^All open pages/ })
+async function fromRow(page, target, action) {
+  await target.hover();
+  await target
+    .locator("xpath=ancestor::li[1]")
+    .getByRole("button", { name: "More actions", exact: true })
     .click();
-  return allPages(page);
+  const role = (await target.getAttribute("data-session-id")) !== null ? "button" : "menuitem";
+  await page.getByRole(role, { name: action, exact: true }).click();
 }
 
 async function addSession(request, project, title, agent = "default_agent") {
@@ -57,7 +56,7 @@ async function setup(page, account) {
   return project;
 }
 
-test("many open sessions and apps stay reachable while the sidebar keeps both visible panes", async ({
+test("many visited conversations and repeated launches use only their own sidebar groups", async ({
   page,
 }) => {
   test.setTimeout(120000);
@@ -81,60 +80,38 @@ test("many open sessions and apps stay reachable while the sidebar keeps both vi
     await page.locator(`button[data-session-id="${session.id}"]`).click();
     await expect(slot(page, session.key)).toBeVisible();
   }
-  await page
-    .getByRole("link", { name: /^App Center(?: ·|$)/ })
-    .or(page.getByRole("button", { name: /^App Center(?: ·|$)/ }))
-    .first()
-    .click();
-  const catalog = page.getByRole("list", { name: "App Center" });
-  await catalog.getByRole("button", { name: /^Models(?:,|$)|^Model library(?:,|$)/i }).click();
-  await expect(page).toHaveURL(/\/models(?:\?|$)/);
-
-  const compact = sidebarPages(page);
-  await expect(compact.locator("button[data-app-row]:visible")).toHaveCount(6);
-  let manager = await openManager(page);
-  for (const session of sessions) await expect(pageButton(manager, session.key)).toHaveCount(1);
-  const filter = manager.getByPlaceholder("Search open pages");
-  await filter.press("Control+ArrowDown");
-  await expect(filter).toBeFocused();
-  await filter.dispatchEvent("keydown", { key: "Enter", code: "Enter", isComposing: true });
-  await expect(manager).toBeVisible();
-  await filter.fill(first.title);
-  await expect(pageButton(manager, first.key)).toBeVisible();
-  await expect(pageButton(manager, last.key)).toHaveCount(0);
-  await filter.press("Escape");
-  await expect(filter).toHaveValue("");
-  await filter.press("Escape");
-  await expect(manager).toBeHidden();
-  await expect(page).toHaveURL(/\/models(?:\?|$)/);
-  manager = await openManager(page);
-  await fromRow(page, manager, first.key, "Open on the right");
+  const side = page.getByRole("complementary");
+  const appCenter = side.getByRole("link", { name: /^App Center(?: ·|$)/ });
+  const models = apps(page).locator('[data-app-row="system_agent/models"]');
+  for (let open = 0; open < 2; open++) {
+    await appCenter.click();
+    await page
+      .getByRole("list", { name: "App Center" })
+      .locator('[data-app="system_agent/models"] > button')
+      .first()
+      .click();
+    await expect(page).toHaveURL(/\/models(?:\?|$)/);
+    await expect(models).toHaveCount(1);
+  }
+  await expect(side.getByRole("navigation", { name: "Open pages", exact: true })).toHaveCount(0);
+  await expect(apps(page).getByRole("listitem")).toHaveCount(1);
+  const workspace = (id) => page.locator(`button[data-session-id="${id}"]:visible`);
+  await expect(side.locator("button[data-session-id]")).toHaveCount(sessions.length);
+  await fromRow(page, workspace(first.id), "Open on the right");
   await expect(slot(page, first.key)).toHaveAttribute("data-pane", "right");
+  await expect(slot(page, "app:system_agent/models")).toHaveAttribute("data-pane", "left");
   await expect(slot(page, first.key).locator(composer)).toHaveValue("A draft from the first page");
-  await expect(compact.locator("button[data-app-row]:visible")).toHaveCount(6);
-  await expect(pageButton(compact, first.key)).toBeVisible();
-  await expect(pageButton(compact, first.key)).toHaveAccessibleName(/Right pane/);
-  await expect(pageButton(compact, "app:system_agent/models")).toHaveAccessibleName(/Left pane/);
-  await compact.getByRole("button", { expanded: true }).first().click();
-  await expect(pageButton(compact, first.key)).not.toBeVisible();
-  manager = await openManager(page);
-  await expect(pageButton(manager, last.key)).toHaveCount(1);
-  await page.keyboard.press("Escape");
-
   await page.setViewportSize({ width: 390, height: 844 });
+  const drawer = page.getByRole("banner").getByRole("button", { name: /^Sessions/ });
   await expect(slot(page, first.key)).toBeVisible();
   await expect(slot(page, "app:system_agent/models")).not.toBeVisible();
-  await page
-    .getByRole("banner")
-    .getByRole("button", { name: /^Sessions/ })
-    .click();
-  manager = await openManager(page);
-  await manager.getByPlaceholder("Search open pages").fill(last.title);
-  await manager.getByPlaceholder("Search open pages").press("ArrowDown");
-  await expect(pageButton(manager, last.key)).toBeFocused();
-  await page.keyboard.press("Enter");
+  await drawer.click();
+  await models.click();
+  await expect(slot(page, "app:system_agent/models")).toBeVisible();
+  await drawer.click();
+  await workspace(last.id).click();
   await expect(slot(page, last.key)).toBeVisible();
-  await expect(slot(page, first.key)).not.toBeVisible();
+  await expect(slot(page, "app:system_agent/models")).not.toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -162,23 +139,24 @@ test("sidebar minimize restores the same workbench and close ends its frame", as
   });
   await expect(app.getByRole("button", { name: "Minimize", exact: true })).toHaveCount(0);
   await expect(app.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
-  const compact = sidebarPages(page);
-  await fromRow(page, compact, appKey, "Minimize");
+  const target = apps(page).locator('[data-app-row="penguin_support/support"]');
+  await fromRow(page, target, "Minimize");
   await expect(iframe).not.toBeVisible();
   await expect(chat.locator(composer)).toHaveValue("Keep this triage note");
-  await fromRow(page, compact, appKey, "Restore");
+  await fromRow(page, target, "Restore");
   await expect(iframe).toBeVisible();
   expect(await original.evaluate(() => window.openPagesRegression)).toBe("live workbench");
-  await fromRow(page, compact, appKey, "Close");
+  await fromRow(page, target, "Close");
   await expect(slot(page, appKey)).toHaveCount(0);
   expect(original.isDetached()).toBe(true);
+  await expect(page.locator(`button[data-session-id="${notes.id}"]`)).toHaveCount(1);
   await expect(chat.locator(composer)).toHaveValue("Keep this triage note");
   await chat.getByRole("button", { name: "Browse workbenches" }).click();
   await page
     .getByRole("region", { name: "Workbenches" })
     .getByText("Support", { exact: true })
     .click();
-  await fromRow(page, compact, appKey, "Open full screen");
+  await fromRow(page, target, "Open full screen");
   const fullPath = /\/app\/default_project\/penguin_support\/support(?:\/support)?$/;
   await expect(page).toHaveURL(fullPath);
   await page.getByRole("button", { name: "Exit full screen" }).click();

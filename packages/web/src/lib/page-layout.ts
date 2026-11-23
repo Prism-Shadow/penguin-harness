@@ -26,19 +26,6 @@ export const emptyLayout: PageLayout = {
   minimized: [],
 };
 
-/** The sidebar fits a fixed number of rows. Selection preserves the user's page order. */
-export const INLINE_PAGE_LIMIT = 6;
-
-export function inlinePages(layout: PageLayout): OpenPage[] {
-  if (layout.pages.length <= INLINE_PAGE_LIMIT) return layout.pages;
-  const ids = new Set<string>();
-  for (const id of [...layout.visible, ...layout.recent]) {
-    if (ids.size === INLINE_PAGE_LIMIT) break;
-    ids.add(id);
-  }
-  return layout.pages.filter((page) => ids.has(page.id));
-}
-
 function raised(layout: PageLayout, id: string) {
   return {
     recent:

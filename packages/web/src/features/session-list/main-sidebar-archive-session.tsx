@@ -10,13 +10,17 @@ import {
   sessionDraftKey,
   removeDraftSession,
   prepareNewChatDraft,
+  hasUnsentDraft,
 } from "../chat";
 import { docksOnScreen, openPanel, dockWorkspace } from "../dock";
 import type { useMainSidebarFetchScope } from "./main-sidebar-fetch-scope";
 import { failureNode } from "../../lib/failure";
 
 /** Consecutive live main statements 116..122, called once in original hook order. */
+import { usePageWorkspace } from "../../lib/page-workspace";
+
 export function useMainSidebarArchiveSession(scope: ReturnType<typeof useMainSidebarFetchScope>) {
+  const pages = usePageWorkspace();
   const {
     navigate,
     user,
@@ -140,6 +144,18 @@ export function useMainSidebarArchiveSession(scope: ReturnType<typeof useMainSid
     machineId,
     browseFiles,
   }: { agentId?: string; workspace?: string; machineId?: string; browseFiles?: boolean } = {}) => {
+    if (
+      agentId === undefined &&
+      workspace === undefined &&
+      !browseFiles &&
+      user &&
+      currentProjectId &&
+      hasUnsentDraft(user.userId, currentProjectId) &&
+      pages?.resumeDraft()
+    ) {
+      onNavigate?.();
+      return;
+    }
     // Typed-but-unsent text in the ACTIVE new-chat draft becomes a parked draft
     // conversation first (a row in the list below, sendable anytime — draft-sessions.ts),
     // so this click always lands on an empty composer and never silently shelves content;

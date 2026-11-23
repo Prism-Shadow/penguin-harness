@@ -56,20 +56,18 @@ test("the App Center opens Support windowed and full screen, and Hide and Unhide
     frame.dataset.e2eKept = "yes";
   });
   await page
-    .getByRole("navigation", { name: "Open pages" })
-    .getByRole("button", { name: "Support", exact: true })
-    .hover();
-  await page.getByRole("button", { name: "Page actions · Support", exact: true }).click();
+    .getByRole("navigation", { name: "Apps", exact: true })
+    .locator('[data-app-row="penguin_support/support"]')
+    .click({ button: "right" });
   await page.getByRole("menuitem", { name: "Minimize", exact: true }).click();
   await expect(page).toHaveURL(`${BASE}/apps`);
   await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toBeVisible();
   await tile.click();
   await expect(appWindow.locator('iframe[data-e2e-kept="yes"]')).toBeVisible();
   await page
-    .getByRole("navigation", { name: "Open pages" })
-    .getByRole("button", { name: "Support", exact: true })
-    .hover();
-  await page.getByRole("button", { name: "Page actions · Support", exact: true }).click();
+    .getByRole("navigation", { name: "Apps", exact: true })
+    .locator('[data-app-row="penguin_support/support"]')
+    .click({ button: "right" });
   await page.getByRole("menuitem", { name: "Close", exact: true }).click();
   await expect(page).toHaveURL(`${BASE}/apps`);
   await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toHaveCount(0);
@@ -345,10 +343,9 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   await page.evaluate(() => history.back());
   await expect.poll(() => inside.locator("body").evaluate(() => location.hash)).toBe("#review");
   await page
-    .getByRole("navigation", { name: "Open pages" })
-    .getByRole("button", { name: "Gamma", exact: true })
-    .hover();
-  await page.getByRole("button", { name: "Page actions · Gamma", exact: true }).click();
+    .getByRole("navigation", { name: "Apps", exact: true })
+    .locator('[data-app-row="default_agent/gamma"]')
+    .click({ button: "right" });
   await page.getByRole("menuitem", { name: "Close", exact: true }).click();
   await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeFocused();
 
@@ -472,13 +469,10 @@ test("searching, sorting and folding sidebar directories keeps the open page and
       apps.locator(`[data-app-row="default_agent/${title.toLowerCase()}"]`),
     ).toBeVisible();
   }
-  await side
-    .getByRole("navigation", { name: "Open pages" })
-    .locator('[data-app-row="chat:new"]')
-    .click();
+  const newChat = side.getByRole("button", { name: "New chat", exact: true });
+  await newChat.click();
   await expect(rows).toHaveCount(2);
-  const open = side.getByRole("navigation", { name: "Open pages" });
-  const count = await open.getByRole("listitem").count();
+  const count = await rows.count();
   await side.getByRole("button", { name: "Search apps", exact: true }).click();
   const query = side.getByRole("searchbox", { name: "Search apps" });
   await query.fill("gamma");
@@ -500,7 +494,7 @@ test("searching, sorting and folding sidebar directories keeps the open page and
   await apps.locator('[data-app-row="default_agent/gamma"]').click();
   await expect(rows.first()).toContainText("Gamma");
   await expect(rows.last()).toContainText("Alpha");
-  await open.locator('[data-app-row="chat:new"]').click();
+  await newChat.click();
 
   const foldApps = side.getByRole("button", { name: "Apps", exact: true });
   const foldWorkspaces = side.getByRole("button", { name: "Workspaces", exact: true });
@@ -510,7 +504,7 @@ test("searching, sorting and folding sidebar directories keeps the open page and
   await foldApps.click();
   await expect(foldWorkspaces).toHaveAttribute("aria-expanded", "false");
   await expect(rows.first()).toBeVisible();
-  await expect(open.getByRole("listitem")).toHaveCount(count);
+  await expect(rows).toHaveCount(count);
   await expect(editor).toHaveValue("Keep this draft while looking for an app");
   await expect(page).toHaveURL(/\/chat\/new$/);
 });

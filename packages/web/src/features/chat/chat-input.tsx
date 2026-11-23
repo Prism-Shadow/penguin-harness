@@ -183,6 +183,7 @@ import { ContextGauge } from "./context-gauge";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { isLongPaste, longPasteFileName } from "../../lib/long-paste";
 import { splitBySize } from "../../lib/upload-limits";
+import type { DraftUploads } from "../../lib/draft-uploads";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { ReferenceChip } from "./reference-chip";
 import { readSteerMode, writeSteerMode } from "./steer-mode";
@@ -638,9 +639,11 @@ export function ChatInput({
   initialPendingModelRef,
   onPendingModelChange,
   controlRef,
+  draftUploads,
   resizableDraft = false,
   variant = "session",
 }: {
+  draftUploads?: DraftUploads;
   status: SessionStatus;
   /**
    * Returns whether it succeeded: on failure the input draft is kept (not cleared).
@@ -924,11 +927,17 @@ export function ChatInput({
   /** Live text mirror for slash-command run() closures (the commands memo deliberately doesn't depend on text). */
   const textRef = useRef(text);
   textRef.current = text;
-  const [images, setImages] = useState<string[]>([]);
+  const [images, setImages] = useState<string[]>(() => draftUploads?.images ?? []);
   // File attachments picked from the "+" menu (any type): held as base64 data URLs, exactly
   // like images — a draft has no Session yet, so there is nothing to upload them to ahead of
   // time; they travel with the task request and the server files them into the scratchpad.
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>(() => draftUploads?.files ?? []);
+  useLayoutEffect(() => {
+    if (draftUploads) {
+      draftUploads.images = images;
+      draftUploads.files = attachments;
+    }
+  }, [images, attachments, draftUploads]);
   /**
    * Quotations staged from the Files panel. Held here rather than in the draft cache, exactly
    * like attachments: what they quote is a file on disk that may have moved on by the time a

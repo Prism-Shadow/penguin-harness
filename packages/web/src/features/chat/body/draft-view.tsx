@@ -38,6 +38,7 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
+import { draftUploads } from "../../../lib/draft-uploads";
 import { handOverSession } from "../session-handover";
 import {
   useCallback,
@@ -197,6 +198,7 @@ export function DraftView({
   // the corresponding content; switching accounts always goes through logout (clearing
   // the user unmounts the whole route tree), so logging back in is likewise a fresh
   // mount. A parked draft reads its own entry instead of the active slot.
+  const [uploads] = useState(() => (userId ? draftUploads(userId, projectId, draftId) : undefined));
   const [parkedMissing] = useState(
     () =>
       draftId !== undefined && (!userId || getDraftSession(userId, projectId, draftId) === null),
@@ -749,9 +751,13 @@ export function DraftView({
       removeDraftSession(userId, projectId, draftId);
       return;
     }
+    if (uploads) {
+      uploads.images = [];
+      uploads.files = [];
+    }
     if (modelRef) saveDraft(draftKey(userId, projectId), { modelRef });
     else clearDraft(draftKey(userId, projectId));
-  }, [cancelPendingSave, userId, projectId, draftId, modelRef]);
+  }, [cancelPendingSave, userId, projectId, draftId, modelRef, uploads]);
 
   const selectAgent = (a: AgentSummary) => {
     setAgentId(a.agentId);
@@ -981,6 +987,7 @@ export function DraftView({
         </Notice>
       )}
       <ChatInput
+        {...(uploads ? { draftUploads: uploads } : {})}
         resizableDraft
         status="idle"
         controlRef={composerRef}
