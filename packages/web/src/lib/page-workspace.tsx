@@ -154,7 +154,10 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
     }
   }, [path, location.key, currentId, title, publish]);
   function go(next: PageLayout, replace = false, closed?: string) {
-    const to = next.pages.find((entry) => entry.id === next.focus)?.path ?? "/chat/new";
+    // The last open draft already occupies /chat/new. Dismissing it must reveal another surface.
+    const fallback =
+      currentId === "chat:new" || next.minimized.includes("chat:new") ? "/apps" : "/chat/new";
+    const to = next.pages.find((entry) => entry.id === next.focus)?.path ?? fallback;
     if (path === to) {
       if (closed) closeApp(closed);
       publish(next);
