@@ -574,9 +574,9 @@ The preset catalog includes, among others:
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` / `gpt-5.6` / `gpt-5.5`
 - `glm-5.3` / `glm-5.3-flash`
 - `kimi-k3.1-pro` / `kimi-k3.1-pro-highspeed` / `kimi-k3` (the high-speed variant on Moonshot only)
-- `qwen3.8-max` / `qwen3.8-flash`
+- `qwen4-max` / `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
-- Hy4 with text and image input: `hy4` on TokenDance and `tencent/hy4` on OpenRouter
+- Hy4 with text and image input: `hy4` and `hy4-flash` on TokenDance and `tencent/hy4` on OpenRouter
 - `mimo-v2.6-pro` / `mimo-v2.6-flash` / `step-5-preview` / `ling-3.1-flash` (TokenDance)
 - `dots-3-note-preview` (free on TokenDance, 512K context)
 - `deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`, `Qwen/Qwen3.8-Flash-Next` (ModelScope's api-inference; preset rows with no price)
@@ -603,9 +603,9 @@ Gemini 4 Neon is preset in Google as `gemini-4-neon` and in OpenRouter as `googl
   - TokenDance also takes 20% off those four at peak, and off-peak too on `deepseek-v4.1-flash` and `deepseek-v4.1-flash-1017`. Those rows declare the 20% as a promotion beside their schedule, so their cards show `20% off` at peak and `60% off` off-peak, and the cost center bills what TokenDance bills. On `deepseek-v4-flash-0731` and `deepseek-v4-pro-0813` the 20% applies at peak only, which a promotion beside the schedule cannot express, so their peak hours are priced at the list rate, 25% above what TokenDance bills.
   - Qwen bills the DeepSeek models it resells on a schedule of its own, half price from 22:00 to 8:00 Beijing time every day. `deepseek-v4.1-flash` in both Qwen groups, and the Token Plan's `deepseek-v4-pro-0813`, declare that one instead, and the tag's tooltip names the windows of whichever schedule the row follows.
   - The stored price is always the peak price, so what is on disk does not depend on the hour a Project was created or synced.
-- **Flat promotions.** Eight TokenDance models are discounted today:
+- **Flat promotions.** TokenDance examples include:
   - `ling-3.0-flash` at 65% off
-  - the three Doubao Seed rows (`seed-2.1-pro`, `seed-2.1-turbo`, `seed-evolving`) at 50%
+  - `hy4-flash`, `seed-2.1-pro`, `seed-2.1-turbo` and `seed-evolving` at 50%
   - `glm-5.2` at 20%
   - `glm-5.3`, `glm-5.3-flash` and `qwen3.8-max` at 10%
 

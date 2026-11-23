@@ -573,9 +573,9 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` / `gpt-5.6` / `gpt-5.5`
 - `glm-5.3` / `glm-5.3-flash`
 - `kimi-k3.1-pro` / `kimi-k3.1-pro-highspeed` / `kimi-k3`（高速版仅 Moonshot 提供）
-- `qwen3.8-max` / `qwen3.8-flash`
+- `qwen4-max` / `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
-- Hy4 支持文本和图像输入，TokenDance 的模型 ID 为 `hy4`，OpenRouter 的为 `tencent/hy4`
+- Hy4 支持文本和图像输入，TokenDance 的模型 ID 为 `hy4`、`hy4-flash`，OpenRouter 的为 `tencent/hy4`
 - `mimo-v2.6-pro` / `mimo-v2.6-flash` / `step-5-preview` / `ling-3.1-flash`（TokenDance）
 - `dots-3-note-preview`（TokenDance 上免费，512K 上下文）
 - `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`、`Qwen/Qwen3.8-Flash-Next`（ModelScope 的 api-inference，没有价格的预置条目）
@@ -602,9 +602,9 @@ Google 分组以 `gemini-4-neon`、OpenRouter 分组以 `google/gemini-4-neon` �
   - TokenDance 还在高峰时段对这四条再打 8 折，`deepseek-v4.1-flash` 与 `deepseek-v4.1-flash-1017` 在空闲时段也打。这两条把 8 折作为促销与时段规则并列声明，卡片在高峰时段显示 `省 20%`、空闲时段显示 `省 60%`，成本中心按 TokenDance 实收计费。`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813` 的 8 折只在高峰时段生效，与时段规则并列的促销表达不了，所以它们的高峰时段按牌价计费，比 TokenDance 实收高 25%。
   - Qwen 转售的 DeepSeek 模型按它自己的时段计费：北京时间每天 22:00 至次日 8:00 半价。两个 Qwen 分组的 `deepseek-v4.1-flash` 和 Token Plan 的 `deepseek-v4-pro-0813` 声明的是这一套，折扣标签的悬停说明写的也是该条目所遵循时段的窗口。
   - 存储的价格始终是高峰价格，所以磁盘上的数值与 Project 创建或同步的时间无关。
-- **固定折扣。** 目前有八个 TokenDance 模型在打折：
+- **固定折扣。** 以 TokenDance 为例：
   - `ling-3.0-flash` 打 3.5 折
-  - 三条 Doubao Seed 条目（`seed-2.1-pro`、`seed-2.1-turbo`、`seed-evolving`）打 5 折
+  - `hy4-flash`、`seed-2.1-pro`、`seed-2.1-turbo`、`seed-evolving` 打 5 折
   - `glm-5.2` 打 8 折
   - `glm-5.3`、`glm-5.3-flash` 和 `qwen3.8-max` 打 9 折
 
