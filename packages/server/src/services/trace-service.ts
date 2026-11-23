@@ -38,6 +38,7 @@ import type {
   TraceIndex,
   TraceIndexStore,
   Traces,
+  OwnedSubagent,
 } from "@prismshadow/penguin-library-trace";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -476,6 +477,88 @@ export class TraceService implements Traces {
       }
     }
     return out;
+  }
+
+  /** Direct children across all parent Tasks. The sparse index includes no child conversation bodies. */
+  async ownedSubagents(parent: {
+    projectId: string;
+    agentId: string;
+    sessionId: string;
+    createdAt: string;
+  }): Promise<OwnedSubagent[]> {
+    const { projectId, agentId, sessionId } = parent;
+    const children = new Map<string, OwnedSubagent>();
+    const handles: Array<{ alias: string; start: number; end: number }> = [];
+    const spawnCalls = new Map<string, number>();
+    const pointerOrder = new Map<string, number>();
+    let order = 0;
+    let turnKey = "";
+    const ctx = { projectScanned: false };
+    for (const file of await this.locateAll(projectId, agentId, sessionId)) {
+      const entry = await this.lineIndex.ensure(file.path);
+      const events = entry.childContext;
+      let index = 0;
+      function accept(item: (typeof events)[number]) {
+        order++;
+        if (item.kind === "task") turnKey = file.index + "." + item.ordinal;
+        else if (item.kind === "spawn") spawnCalls.set(item.id, order);
+        else if (item.alias && spawnCalls.has(item.id)) {
+          handles.push({ alias: item.alias, start: spawnCalls.get(item.id)!, end: order });
+          spawnCalls.delete(item.id);
+        }
+      }
+      for (const pointer of entry.pointers) {
+        while (index < events.length && events[index]!.ordinal < pointer.ordinal)
+          accept(events[index++]!);
+        order++;
+        if (children.has(pointer.sessionId) || pointer.sessionId === sessionId) continue;
+        // A fork copies the source pointers verbatim. An equal/invalid timestamp alone cannot prove ownership.
+        if (!(Date.parse(pointer.timestamp) > Date.parse(parent.createdAt))) continue;
+        const row = this.sessions?.findById(pointer.sessionId);
+        if (row && row.projectId !== projectId) continue;
+        const position = file.index + "." + pointer.ordinal;
+        if (!turnKey) turnKey = position;
+        const agent =
+          row?.agentId ?? (await this.resolveChildAgent(projectId, pointer.sessionId, ctx));
+        pointerOrder.set(pointer.sessionId, order);
+        children.set(pointer.sessionId, {
+          sessionId: pointer.sessionId,
+          agentId: agent,
+          spawnedAt: pointer.timestamp,
+          position,
+          turnKey,
+          title: row?.title ?? null,
+          alias: null,
+        });
+      }
+      while (index < events.length) accept(events[index++]!);
+    }
+    const ordered = [...children.values()];
+    function firstAfter(order: number) {
+      let low = 0,
+        high = ordered.length;
+      while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        if (pointerOrder.get(ordered[mid]!.sessionId)! <= order) low = mid + 1;
+        else high = mid;
+      }
+      return low;
+    }
+    const resolved = new Map<string, OwnedSubagent | null>();
+    for (const handle of handles) {
+      // Match only the direct pointers written while this particular run_subagent call was open.
+      const candidates = ordered.slice(firstAfter(handle.start), firstAfter(handle.end - 1));
+      const matches =
+        candidates.length <= 1
+          ? candidates
+          : candidates.filter((child) => "subagent-" + child.sessionId.slice(-8) === handle.alias);
+      if (matches.length === 1) {
+        const old = resolved.get(handle.alias);
+        resolved.set(handle.alias, old === undefined || old === matches[0] ? matches[0]! : null);
+      }
+    }
+    for (const [alias, child] of resolved) if (child) child.alias = alias;
+    return ordered;
   }
 
   /** Deletes all of this Session's Trace files (called when the Session is deleted); the index rows go with them. */

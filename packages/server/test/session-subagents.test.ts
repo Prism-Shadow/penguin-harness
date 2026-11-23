@@ -11,7 +11,13 @@
  * - Foreign and unknown Sessions are 404s, as on every Session route.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { toolCall, withOrigin } from "@prismshadow/penguin-core";
+import {
+  sessionMeta,
+  subagentEvent,
+  taskBegin,
+  toolCall,
+  withOrigin,
+} from "@prismshadow/penguin-core";
 import type {
   BackgroundSubagentInfo,
   AmspRecord,
@@ -22,7 +28,7 @@ import { ApprovalRegistry } from "../src/runtime/approvals.js";
 import type { ServerEvent, SubagentMessageResponse } from "../src/api/types.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
-import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import { apiClient, createTestApp, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const PROJECT = "subuser-default_project";
@@ -100,7 +106,7 @@ describe("session subagent routes and liveness", () => {
   afterAll(async () => {
     await t.cleanup();
   });
-  beforeEach(() => {
+  beforeEach(async () => {
     SID = uniqueSessionId();
     CHILD_RELEASED = uniqueSessionId();
     children = [
@@ -110,13 +116,83 @@ describe("session subagent routes and liveness", () => {
     sent = [];
     aborts = [];
     stateListeners = [];
-    adoptSession(t.deps, subagentsFakeSession(SID, children, sent, aborts, stateListeners), {
-      projectId: PROJECT,
-      approvalMode: "always-ask",
-    });
+    const parent = adoptSession(
+      t.deps,
+      subagentsFakeSession(SID, children, sent, aborts, stateListeners),
+      {
+        projectId: PROJECT,
+        approvalMode: "always-ask",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    );
     // A released child with its own session row: the message route resolves its owning agent
     // from this row and asks core to revive it.
     t.deps.sessionsRepo.insert(sessionRow(CHILD_RELEASED, { projectId: PROJECT }));
+    await writeTraceFile(t.root, PROJECT, parent.agentId, "2026-02-01", SID, 1, [
+      sessionMeta({
+        session_id: SID,
+        provider: "custom",
+        model_id: "m1",
+        model_context_window: 1000,
+        system_prompt: "",
+        agent_state: "/tmp/a",
+        workspace: "/tmp/w",
+        source: "user",
+      }),
+      taskBegin(),
+      subagentEvent(CHILD_RELEASED),
+    ]);
+  });
+
+  it("pages direct children across Tasks and shards by pointer position, skipping inherited fork history", async () => {
+    const stamp = "2026-02-01T12:00:00.000Z";
+    const meta = sessionMeta({
+      session_id: SID,
+      provider: "custom",
+      model_id: "m1",
+      model_context_window: 1000,
+      system_prompt: "",
+      agent_state: "/tmp/a",
+      workspace: "/tmp/w",
+      source: "user",
+    });
+    const earlier = uniqueSessionId(),
+      later = uniqueSessionId(),
+      inherited = uniqueSessionId();
+    await writeTraceFile(t.root, PROJECT, "default_agent", "2026-02-01", SID, 1, [
+      meta,
+      taskBegin(),
+      { ...subagentEvent(inherited), timestamp: "2025-12-31T23:00:00.000Z" },
+      { ...subagentEvent(earlier), timestamp: stamp },
+    ]);
+    await writeTraceFile(t.root, PROJECT, "default_agent", "2026-02-01", SID, 2, [
+      meta,
+      taskBegin(),
+      { ...subagentEvent(later), timestamp: stamp },
+    ]);
+    const path = `/api/sessions/${SID}/subagents?limit=1`;
+    const first = (await (await api.get(path)).json()) as {
+      items: { sessionId: string; turnKey: string }[];
+      nextCursor: string;
+    };
+    expect(first.items.map((item) => item.sessionId)).toEqual([later]);
+    const next = (await (
+      await api.get(path + "&before=" + first.nextCursor)
+    ).json()) as typeof first;
+    expect(next.items.map((item) => item.sessionId)).toEqual([earlier]);
+    expect(next.items[0]!.turnKey).not.toBe(first.items[0]!.turnKey);
+    expect(next.nextCursor).toBeNull();
+    expect((await api.get(path + "&before=incorrect")).status).toBe(400);
+  });
+
+  it("does not revive a different parent's child merely because its row is in the same Project", async () => {
+    const unrelated = uniqueSessionId();
+    t.deps.sessionsRepo.insert(sessionRow(unrelated, { projectId: PROJECT }));
+    const res = await api.post(`/api/sessions/${SID}/subagents/${unrelated}/message`, {
+      text: "Hello",
+    });
+    expect(res.status).toBe(404);
+    expect((await outsider.get(`/api/sessions/${SID}/subagents`)).status).toBe(404);
   });
 
   it("message: steering while the child runs, a follow-up run while it is idle", async () => {
