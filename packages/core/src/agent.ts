@@ -43,6 +43,8 @@ import {
   resolveEntryCredential,
   resolveModelRef,
   resolveRoot,
+  relocatedSystemPrompt,
+  relocatedWorkspace,
   sameModelRef,
   sessionScratchpadDir,
   systemConfigPath,
@@ -894,7 +896,7 @@ export class Agent {
     }
 
     // The Workspace carries over from the original Session and must still exist (throw if missing, never auto-create).
-    const workspaceDir = meta.workspace;
+    const workspaceDir = relocatedWorkspace(this.state.root, meta.workspace);
     let stat;
     try {
       stat = await fs.stat(workspaceDir);
@@ -970,7 +972,9 @@ export class Agent {
     const context = await this.assembleContext(
       spec,
       modelEntry,
-      resumed.contextClosed ? {} : { systemPrompt: meta.system_prompt },
+      resumed.contextClosed
+        ? {}
+        : { systemPrompt: relocatedSystemPrompt(this.state.root, meta.system_prompt) },
     );
     const rt = this.buildRuntime(spec, context, { validateClient: unreachable === undefined });
 
