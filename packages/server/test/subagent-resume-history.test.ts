@@ -132,6 +132,36 @@ it("keeps prior children addressable by their issued handles after reconnect and
     await deliver("SECOND_CHILD", 1);
     await deliver("FULL_ID", 0);
     expect(await roster()).toEqual(initial);
+
+    // Fork at a real completed reply after both delegations. Its copied history still
+    // describes those children, but only the original parent owns their conversations.
+    const file = (await host.deps.traceService.listTraceFiles(project, agent, parent)).at(-1)!;
+    const { events } = await host.deps.traceService.readEvents(
+      project,
+      agent,
+      parent,
+      file.index,
+      0,
+      1000,
+    );
+    const ordinal = events.findLastIndex(
+      (record) =>
+        record.type === "model_msg" &&
+        !record.origin?.length &&
+        (record.payload as { role?: string }).role === "assistant" &&
+        typeof (record.payload as { text?: string }).text === "string",
+    );
+    expect(ordinal).toBeGreaterThan(0);
+    const forked = await client.post(url + "/fork", {
+      position: { fileIndex: file.index, ordinal },
+    });
+    expect(forked.status, await forked.clone().text()).toBe(201);
+    const forkId = ((await forked.json()) as { session: { sessionId: string } }).session.sessionId;
+    expect(JSON.stringify(await trace(forkId))).toContain(ids[0]);
+    const forkRoster = await client.get("/api/sessions/" + forkId + "/subagents");
+    expect(forkRoster.status).toBe(200);
+    expect(await forkRoster.json()).toEqual({ items: [], nextCursor: null });
+    expect(await roster()).toEqual(initial);
   } finally {
     await host.cleanup();
     await provider.close();
