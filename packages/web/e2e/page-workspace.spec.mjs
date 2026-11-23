@@ -1,23 +1,32 @@
+/**
+ * - Two Workspace conversations keep their own text across split, swap and closing a view.
+ * - A conversation and a running app share the screen; pane actions preserve the actual iframe.
+ * - A phone selects the other conversation from the Workspace in its drawer.
+ * - Returning to an unsent conversation restores its staged upload and text.
+ * - Account settings and repeated New chat shortcuts leave a fresh sidebar empty; sending
+ *   creates one real conversation in its Workspace.
+ */
 import { test, expect } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
 const composer = '[data-slot="composer"] textarea';
-const openPages = (page) => page.getByRole("navigation", { name: "Open pages" });
 const slot = (page, id) => page.locator(`[data-workspace-page="${id}"]`);
-const tab = (page, id) =>
-  openPages(page)
-    .getByRole("listitem")
-    .filter({ has: page.locator(`[data-app-row="${id}"]`) });
+const sessionRow = (page, key) => page.locator(`button[data-session-id="${key.slice(5)}"]:visible`);
+const apps = (page) => page.getByRole("navigation", { name: "Apps", exact: true });
 
-async function action(page, id, label) {
-  const row = tab(page, id);
-  await row.hover();
-  await row.getByRole("button", { name: /^Page actions/ }).click();
-  await page.getByRole("menu").getByText(label, { exact: true }).click();
+async function action(page, key, label) {
+  const target = key.startsWith("chat:")
+    ? sessionRow(page, key)
+    : apps(page).locator(`[data-app-row="${key.slice(4)}"]`);
+  const row = target.locator("xpath=ancestor::li[1]");
+  await target.hover();
+  await row.getByRole("button", { name: "More actions", exact: true }).click();
+  const role = key.startsWith("chat:") ? "button" : "menuitem";
+  await page.getByRole(role, { name: label, exact: true }).click();
 }
 
-async function start(page, user) {
+async function setup(page, user) {
   if (user === ADMIN_ID) await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
   else await provisionAndLogin(page.request, user, "password123");
   await setAccountPrefs(page.request, { lang: "en" });
@@ -35,6 +44,11 @@ async function start(page, user) {
       data: { defaultModel: { provider: model.provider, modelId: model.modelId }, models: [model] },
     }),
   ).toBeOK();
+  return project;
+}
+
+async function start(page, user) {
+  const project = await setup(page, user);
   const ids = [];
   for (const [agent, title] of [
     [user === ADMIN_ID ? "penguin_support" : "default_agent", "Workspace notes"],
@@ -60,31 +74,42 @@ test("two sessions keep their own drafts through split, swap and close", async (
   await firstSlot.locator(composer).fill("First pane draft");
   await page.getByText("Release checklist", { exact: true }).first().click();
   await secondSlot.locator(composer).fill("Second pane draft");
+  await firstSlot.locator(composer).waitFor({ state: "hidden" });
   await action(page, first, "Open on the right");
   await expect(firstSlot).toHaveAttribute("data-pane", "right");
   await expect(secondSlot).toHaveAttribute("data-pane", "left");
   await expect(firstSlot.locator(composer)).toHaveValue("First pane draft");
+  await firstSlot.locator('input[type="file"]:not([accept])').setInputFiles({
+    name: "workspace-notes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Keep this upload"),
+  });
+  await expect(firstSlot.getByText("workspace-notes.txt", { exact: true })).toBeVisible();
   await expect(secondSlot.locator(composer)).toHaveValue("Second pane draft");
   await secondSlot.locator(composer).fill("Updated on left");
   await expect(firstSlot.locator(composer)).toHaveValue("First pane draft");
-  await action(page, second, "Swap panes");
+  const leftHeader = page.getByRole("group", { name: "Left pane", exact: true });
+  const rightHeader = page.getByRole("group", { name: "Right pane", exact: true });
+  await expect(
+    leftHeader.getByRole("button", { name: "Release checklist", exact: true }),
+  ).toBeVisible();
+  await expect(
+    rightHeader.getByRole("button", { name: "Workspace notes", exact: true }),
+  ).toBeVisible();
+  await leftHeader.getByRole("button", { name: "Pane actions · Release checklist" }).click();
+  await page.getByRole("menuitem", { name: "Swap panes", exact: true }).click();
   await expect(secondSlot).toHaveAttribute("data-pane", "right");
   const left = await firstSlot.boundingBox(),
     right = await secondSlot.boundingBox();
   expect(left.x + left.width).toBeLessThanOrEqual(right.x + 1);
-  await action(page, first, "Move down");
-  await expect(openPages(page).locator("[data-app-row]").first()).toHaveAttribute(
-    "data-app-row",
-    second,
-  );
-  const fold = openPages(page).locator("button[aria-expanded]").first();
-  await fold.click();
-  await expect(tab(page, first)).not.toBeVisible();
-  await fold.click();
-  await action(page, first, "Close");
-  await expect(tab(page, first)).toHaveCount(0);
+  await action(page, first, "Close view");
+  await expect(firstSlot).not.toBeVisible();
+  await expect(sessionRow(page, first)).toHaveCount(1);
   await expect(secondSlot).toHaveAttribute("data-pane", "full");
   await expect(secondSlot.locator(composer)).toHaveValue("Updated on left");
+  await sessionRow(page, first).click();
+  await expect(firstSlot.locator(composer)).toHaveValue("First pane draft");
+  await expect(firstSlot.getByText("workspace-notes.txt", { exact: true })).toBeVisible();
 });
 
 test("a workbench shares the session viewport and its iframe survives changing pages", async ({
@@ -126,7 +151,7 @@ test("a phone chooses one of the two open pages", async ({ page }) => {
     .getByRole("banner")
     .getByRole("button", { name: /^Sessions/ })
     .click();
-  await tab(page, second).locator("[data-app-row]").click();
+  await sessionRow(page, second).click();
   await expect(slot(page, second)).toBeVisible();
   await expect(slot(page, first)).not.toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -147,25 +172,57 @@ test("resuming an unsent new conversation keeps its staged file", async ({ page 
     buffer: Buffer.from("Release meeting"),
   });
   await expect(draft.getByText("agenda.txt", { exact: true })).toBeVisible();
-  await tab(page, existing).locator("button[data-app-row]").click();
-  await tab(page, "chat:new").locator("button[data-app-row]").click();
+  await sessionRow(page, existing).click();
+  await expect(slot(page, existing)).toBeVisible();
+  await page.goBack();
+  await expect(draft.locator(composer)).toHaveValue("Review the attached agenda");
+  await expect(draft.getByText("agenda.txt", { exact: true })).toBeVisible();
+  const side = page.getByRole("complementary");
+  await side.getByRole("link", { name: /^App Center(?: ·|$)/ }).click();
+  await page
+    .getByRole("list", { name: "App Center" })
+    .locator('[data-app="system_agent/models"] > button')
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/models(?:\?|$)/);
+  await side.getByRole("button", { name: "New chat", exact: true }).click();
   await expect(draft.locator(composer)).toHaveValue("Review the attached agenda");
   await expect(draft.getByText("agenda.txt", { exact: true })).toBeVisible();
 });
 
-test("minimizing the only new draft leaves the App Center visible and restores the unsent draft", async ({
-  page,
-}) => {
-  await start(page, "onlypagedraft");
+test("a fresh sidebar gains its first conversation only after sending", async ({ page }) => {
+  const user = "sidebarnewconversation";
+  await setup(page, user);
   await page.goto("/chat/new");
-  await slot(page, "chat:new").locator(composer).fill("A draft to resume");
-  await action(page, "chat:new", "Minimize");
-  await expect(page).toHaveURL(/\/apps$/);
-  await expect(slot(page, "catalog")).toBeVisible();
-  await action(page, "chat:new", "Restore");
-  await expect(slot(page, "chat:new").locator(composer)).toHaveValue("A draft to resume");
-  await action(page, "catalog", "Close");
-  await action(page, "chat:new", "Close");
-  await expect(slot(page, "chat:new")).toHaveCount(0);
-  await expect(slot(page, "catalog")).toBeVisible();
+  const draft = slot(page, "chat:new");
+  await expect(draft.locator(composer)).toBeVisible();
+  const side = page.getByRole("complementary");
+  const generic = side.getByRole("navigation", { name: "Open pages", exact: true });
+  const sessions = side.locator("button[data-session-id]");
+  await expect(generic).toHaveCount(0);
+  await expect(apps(page)).toHaveCount(0);
+  await expect(sessions).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+Alt+n");
+  await page.keyboard.press("ControlOrMeta+Alt+n");
+  await side
+    .getByRole("button", { name: new RegExp("^" + user) })
+    .last()
+    .click();
+  await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await expect(settings).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await expect(apps(page)).toHaveCount(0);
+  await expect(sessions).toHaveCount(0);
+  await draft.locator(composer).fill("Record this navigation check");
+  await draft.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page).toHaveURL(/\/chat\/session-/);
+  await expect(sessions).toHaveCount(1);
+  await expect(sessions).toHaveAttribute(
+    "data-session-id",
+    new URL(page.url()).pathname.split("/").at(-1),
+  );
+  await expect(generic).toHaveCount(0);
+  await expect(apps(page)).toHaveCount(0);
 });
