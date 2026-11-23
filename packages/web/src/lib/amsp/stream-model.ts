@@ -543,6 +543,8 @@ export interface TaskStatsItem {
   stats: TaskStats | null;
   /** This Task's assistant text (the copy button's target); an empty string when there's no text. */
   assistantText: string;
+  /** Speakable text from this Task's final reply. */
+  readAloudText?: string;
   /**
    * Timestamp (milliseconds) of this Task's last assistant text. The stats
    * row sits right below the AI reply and itself doubles as that reply's
@@ -685,6 +687,8 @@ export interface StreamModel {
    * assistant texts from there on with whether the Request completed.
    */
   openRequestFirstItemId: number | null;
+  /** First item of the latest non-compaction Request, retained for the reply footer. */
+  replyFirstItemId: number;
   /**
    * Total human approval wait time (milliseconds) within the currently
    * unclosed Request: deducted from the wall-clock duration at request_end,
@@ -801,6 +805,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     lastTsMs: 0,
     openRequestBeginMs: null,
     openRequestFirstItemId: null,
+    replyFirstItemId: 1,
     openApprovalWaitMs: 0,
     taskOpen: false,
     taskFirstItemId: 1,
@@ -1201,6 +1206,7 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   model.runEnded = false;
   model.taskOpen = true;
   model.taskFirstItemId = model.nextItemId;
+  model.replyFirstItemId = model.nextItemId;
   model.taskOutcome = null;
   model.taskModel = model.contextModel && {
     provider: model.contextModel.provider,
@@ -1270,6 +1276,7 @@ function finalizeOpenTask(model: StreamModel): void {
     id: nextId(model),
     stats,
     assistantText: reply.text,
+    ...(reply.readAloudText ? { readAloudText: reply.readAloudText } : {}),
     forkable: reply.completed,
     ...(reply.atMs !== undefined ? { atMs: reply.atMs } : {}),
     ...(reply.tracePosition !== undefined ? { forkPosition: reply.tracePosition } : {}),
@@ -1298,19 +1305,26 @@ function finalizeOpenTask(model: StreamModel): void {
  */
 function collectTaskAssistant(model: StreamModel): {
   text: string;
+  readAloudText: string;
   atMs?: number;
   tracePosition?: TracePosition;
   completed: boolean;
 } {
   const parts: string[] = [];
+  const finalParts: string[] = [];
+  let pastFinalReply = false;
   let atMs: number | undefined;
   let tracePosition: TracePosition | undefined;
   let completed = false;
   for (let i = model.items.length - 1; i >= 0; i--) {
     const it = model.items[i]!;
     if (it.kind === "task_stats") break;
+    // A joined stream or an older Trace may lack request_begin. A tool or user
+    // message still separates its preceding narration from the answer.
+    if (it.kind === "tool_call" || it.kind === "user_text") pastFinalReply = true;
     if (it.kind === "assistant_text" && it.text.trim()) {
       parts.push(it.text);
+      if (!pastFinalReply && it.id >= model.replyFirstItemId) finalParts.push(it.text);
       if (atMs === undefined) {
         atMs = it.atMs; // walking backward: the first hit is the last one
         tracePosition = it.tracePosition;
@@ -1320,6 +1334,7 @@ function collectTaskAssistant(model: StreamModel): {
   }
   return {
     text: parts.reverse().join("\n\n"),
+    readAloudText: finalParts.reverse().join("\n\n"),
     ...(atMs !== undefined ? { atMs } : {}),
     ...(tracePosition !== undefined ? { tracePosition } : {}),
     completed,
@@ -2141,6 +2156,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       if (!model.stats.compactionActive) {
         model.openRequestBeginMs = tsMs ?? null;
         model.openRequestFirstItemId = model.nextItemId;
+        model.replyFirstItemId = model.nextItemId;
         model.openApprovalWaitMs = 0;
         // A new turn: whatever the previous one owed the model has been sent with it.
         model.turnToolOutputs = false;

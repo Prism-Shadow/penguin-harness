@@ -20,12 +20,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { MODEL_PROVIDERS, PENGUIN_GO_PROVIDER_ID } from "@prismshadow/penguin-server/model-catalog";
 import { ModelSetupGuide } from "@prismshadow/penguin-ui";
+import { startFirstWorkbench, useFirstWorkbench } from "../../lib/first-workbench-entry";
 import * as api from "../../api/endpoints";
-import { locatedAppKey } from "../../lib/app-center-path";
-import { useRestoreApp } from "../../lib/running-apps";
-import { localizedText } from "../../lib/skill-use";
-import { useLocale } from "../../state/locale";
-import { useAgentApps } from "../../lib/use-agent-apps";
 import { onDefaultModelsRequest, onModelsChanged } from "../../lib/default-models-request";
 import {
   dismissOnboarding,
@@ -51,8 +47,6 @@ type Phase = "idle" | "guide" | "waiting" | "dialog";
 
 export function DefaultModelsLayer() {
   const navigate = useNavigate();
-  const restoreApp = useRestoreApp();
-  const { locale } = useLocale();
   const { pathname } = useLocation();
   /** The chat pages, the only ones the onboarding opens anything over on its own. */
   const onChat = pathname === "/" || pathname === "/chat" || pathname.startsWith("/chat/");
@@ -61,14 +55,11 @@ export function DefaultModelsLayer() {
   const projectId = currentProject?.projectId ?? null;
   const owner = currentProject?.role === "owner";
   const [phase, setPhase] = useState<Phase>("idle");
-  const { apps } = useAgentApps(
+  const guideScope =
     phase === "guide" && onChat && owner && projectId
       ? { projectId, agentId: "default_agent", machineId: null }
-      : null,
-  );
-  const guide = apps?.find(
-    (app) => app.workbenchId === "first-workbench-guide" && app.build !== "failed",
-  );
+      : null;
+  const guide = useFirstWorkbench(guideScope);
   /** The dialog was opened by the onboarding: its sentence says why. */
   const [fromOnboarding, setFromOnboarding] = useState(false);
   /** What is open shows on any page, not only over the chat pages (see the header). */
@@ -175,13 +166,13 @@ export function DefaultModelsLayer() {
         }))}
         keyText={S.defaultModels.keyText}
         keyAction={{ label: S.defaultModels.keyAction, onClick: () => toModels("/models") }}
-        {...(guide
+        {...(guide && guideScope
           ? {
               guideAction: {
-                label: localizedText(locale, guide.title, guide.titleZh),
+                label: S.firstWorkbench.title,
                 onClick: () => {
                   close();
-                  restoreApp(locatedAppKey(guide.agentId, guide.workbenchId), guide);
+                  startFirstWorkbench(guideScope);
                 },
               },
             }

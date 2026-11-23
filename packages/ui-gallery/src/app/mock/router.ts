@@ -5,8 +5,7 @@
  * treats as a gap. A signed-out request to anything but the public routes answers 401, as the
  * server does, so the app's sign-out path is exercised too.
  *
- * Machine-routed paths (`/server/<id>/api/…`) are answered as if by this server: the demo has
- * one machine's worth of everything.
+ * Machine-routed Session paths read that machine's own rows and channels.
  */
 import { ApiError, UNMOCKED } from "./errors";
 import type { DemoStore } from "./store";
@@ -116,7 +115,7 @@ export class Router {
   }
 
   async dispatch(store: DemoStore, method: Method, url: string, body: unknown): Promise<Answer> {
-    const { path, query } = splitUrl(url);
+    const { path, query, machineId } = splitUrl(url);
     const found = this.match(method, path);
     if (found === null) {
       throw new ApiError(
@@ -128,8 +127,16 @@ export class Router {
     if (!store.signedIn && !this.publicPaths.has(found.route.pattern)) {
       throw new ApiError(401, "unauthorized", "Not signed in.");
     }
+    const sessionRoute = /\/(?:sessions|archived-sessions)(?:\/|$)/.test(path);
+    if (
+      sessionRoute &&
+      found.params.projectId &&
+      found.params.projectId !== store.f.project.projectId
+    ) {
+      fail(404, "not_found", "Project not found.");
+    }
     const result = await found.route.handler({
-      store,
+      store: sessionRoute ? store.sessionsOn(machineId) : store,
       method,
       path,
       params: found.params,
@@ -168,16 +175,20 @@ function decode(segment: string): string {
 }
 
 /** The path (machine prefix removed) and query of a request URL, relative or absolute. */
-export function splitUrl(url: string): { path: string; query: URLSearchParams } {
+export function splitUrl(url: string): {
+  path: string;
+  query: URLSearchParams;
+  machineId: string | null;
+} {
   const withoutOrigin = url.replace(/^[a-z]+:\/\/[^/]+/i, "");
   const hash = withoutOrigin.indexOf("#");
   const clean = hash === -1 ? withoutOrigin : withoutOrigin.slice(0, hash);
   const q = clean.indexOf("?");
   let path = q === -1 ? clean : clean.slice(0, q);
   const query = new URLSearchParams(q === -1 ? "" : clean.slice(q + 1));
-  const machine = /^\/server\/[^/]+(\/api\/.*)$/.exec(path);
-  if (machine) path = machine[1]!;
-  return { path, query };
+  const machine = /^\/server\/([^/]+)(\/api\/.*)$/.exec(path);
+  if (machine) path = machine[2]!;
+  return { path, query, machineId: machine ? decode(machine[1]!) : null };
 }
 
 /** Whether a URL is one the mock answers: this server's API, or a machine's through it. */

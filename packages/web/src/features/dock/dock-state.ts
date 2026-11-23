@@ -210,17 +210,19 @@ const beforePage = new WeakMap<DockAreaState, { active: string | null; open: boo
 const beforePageFocus = new WeakMap<ScopeLayout, DockPosition>();
 // A contextual workbench can temporarily present a native panel already in this layout.
 // Its stored tab and the user's chosen edge stay intact while the app occupies the right dock.
-const panelLoans = new WeakMap<ScopeLayout, Map<string, string>>();
+const contextualPanels = new WeakMap<ScopeLayout, Map<string, { id: string; borrowed: boolean }>>();
 export function borrowedDockPanel(key: string): string | undefined {
-  return panelLoans.get(layout)?.get(key);
+  const panel = contextualPanels.get(layout)?.get(key);
+  return panel?.borrowed ? panel.id : undefined;
 }
 
 export function openDockPage(key: string, nativeId: string | null): void {
-  if (nativeId && isPanelId(nativeId) && panelDock(nativeId)) {
-    const loans = panelLoans.get(layout) ?? new Map<string, string>();
-    loans.set(key, nativeId);
-    panelLoans.set(layout, loans);
-    instant += 1;
+  if (nativeId && isPanelId(nativeId)) {
+    const panels = contextualPanels.get(layout) ?? new Map();
+    const borrowed = panelDock(nativeId) !== null;
+    panels.set(key, { id: nativeId, borrowed });
+    contextualPanels.set(layout, panels);
+    if (borrowed) instant += 1;
   }
   openPanel(key, "right");
 }
@@ -545,9 +547,11 @@ export interface DockView {
  */
 function projectedView(position: DockPosition): DockView {
   const { tabs, active } = area(position);
-  const loans = panelLoans.get(layout);
+  const loans = contextualPanels.get(layout);
   if (!loans?.size) return { position, merged: false, tabs, activeKey: active };
-  const borrowed = new Set(loans.values());
+  const borrowed = new Set(
+    [...loans.values()].filter((panel) => panel.borrowed).map((panel) => panel.id),
+  );
   const shown = tabs.filter((tab) => !borrowed.has(tabKey(tab)));
   const activeKey = active && borrowed.has(active) ? (shown.at(-1)?.panel ?? null) : active;
   return { position, merged: false, tabs: shown, activeKey };
@@ -650,7 +654,7 @@ function detachPages(matches: (key: string) => boolean, except?: string): void {
   let changed = false;
   for (const [owner, entry] of Object.entries({ ...scopes, [scope]: layout })) {
     if (owner === except) continue;
-    const loans = panelLoans.get(entry);
+    const loans = contextualPanels.get(entry);
     for (const key of loans?.keys() ?? []) {
       if (matches(key)) {
         loans!.delete(key);
@@ -854,6 +858,17 @@ export function openNativePanel(
   position?: DockPosition,
   fallback?: DockPosition,
 ): void {
+  // A live tool can open before its Chat context is ready after a reload. Reuse the
+  // scoped tab even when the foreground opener is not yet available.
+  if (isPanelId(id)) {
+    for (const [key, panel] of contextualPanels.get(layout) ?? []) {
+      const home = tabHome(key);
+      if (panel.id === id && home && (!position || position === home)) {
+        activateTab(key);
+        return;
+      }
+    }
+  }
   const target = position ?? panelDock(id) ?? fallback ?? "right";
   insertTab({ kind: "panel", panel: id }, target);
   commit();

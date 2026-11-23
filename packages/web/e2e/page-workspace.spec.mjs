@@ -149,6 +149,62 @@ test("a workbench shares the session viewport and its iframe survives changing p
   await expect(chat.locator(composer)).toHaveValue("Keep the support conversation");
 });
 
+test("dragging a running app previews the right dock that receives it", async ({ page }, info) => {
+  await page.setViewportSize({ width: 1366, height: 800 });
+  await page.addInitScript(() => localStorage.setItem("penguin.panelWidth", "410"));
+  const [id] = await start(page, ADMIN_ID);
+  const chat = slot(page, id);
+  await chat.locator(composer).fill("Preserve this draft across the drop");
+  await chat.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await chat.getByRole("button", { name: "Open App Center", exact: true }).click();
+  await page.locator('li[data-app="penguin_support/support"] > button').first().click();
+  const app = slot(page, "app:penguin_support/support");
+  const frame = app.locator("iframe").first();
+  await expect(frame).toBeVisible();
+  const document = await (await frame.elementHandle()).contentFrame();
+  await document.evaluate(() => (window.dropContinuity = "running"));
+  await action(page, id, "Show full page");
+  const row = apps(page).locator('[data-app-row="penguin_support/support"]');
+  const source = await row.boundingBox();
+  const host = chat.locator("[data-dock-row]");
+  const box = await host.boundingBox();
+  async function dragFromSidebar() {
+    await page.mouse.move(source.x + 12, source.y + source.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(source.x + 26, source.y + source.height / 2, { steps: 4 });
+    await page.mouse.move(box.x + box.width - 20, box.y + box.height / 3, { steps: 15 });
+    await page.mouse.move(box.x + box.width - 18, box.y + box.height / 3);
+  }
+  const overlay = page.getByTestId("session-app-drop-preview");
+  await dragFromSidebar();
+  await expect(overlay).toBeVisible();
+  await page.mouse.move(box.x + box.width - 18, box.y - 8, { steps: 8 });
+  await expect(overlay).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(app).not.toBeVisible();
+  await expect(chat.locator(composer)).toHaveValue("Preserve this draft across the drop");
+  await dragFromSidebar();
+  await expect(overlay).toBeVisible();
+  const before = await overlay.boundingBox();
+  await info.attach("while-dragging", { body: await page.screenshot(), contentType: "image/png" });
+  await page.mouse.up();
+  const dock = chat.locator('[data-testid="dock"][data-position="right"][data-open="true"]');
+  await expect(dock).toBeVisible();
+  await expect(app).toHaveAttribute("data-pane", "right");
+  await expect(chat.locator(composer)).toHaveValue("Preserve this draft across the drop");
+  expect(await document.evaluate(() => window.dropContinuity)).toBe("running");
+  const after = await dock.boundingBox();
+  expect(Math.round(after.width)).toBe(410);
+  await info.attach("after-drop", { body: await page.screenshot(), contentType: "image/png" });
+  for (const key of ["x", "y", "width", "height"]) {
+    expect(
+      Math.abs(before[key] - after[key]),
+      JSON.stringify({ before, after }),
+    ).toBeLessThanOrEqual(2);
+  }
+});
+
 test.describe("on a touch phone", () => {
   test.use({ hasTouch: true, viewport: { width: 320, height: 690 } });
 
