@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** fix
 - **Scope:** `server`, `web`
+- **PR:** [#1698](https://github.com/Prism-Shadow/penguin-harness/pull/1698)
 
 [English](2026-11-22-terminal-wrapped-links.md)
 
