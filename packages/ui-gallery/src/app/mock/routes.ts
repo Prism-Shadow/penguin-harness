@@ -3120,6 +3120,16 @@ const sidebarApps = (ctx: Ctx): AppCenterShortcut[] => {
   });
 };
 
+const appCenterListing = ({ store }: Ctx, hidden: boolean): AppCenterResponse => ({
+  layout: store.f.appCenter.layout,
+  shortcuts: store.f.appCenter.shortcuts.filter((app) => {
+    const source = store.f.installed[app.agentId]?.workbenches?.find(
+      (w) => w.id === app.workbenchId,
+    );
+    return (source?.appCenter?.show === false) === hidden;
+  }),
+});
+
 router
   .get(
     "/api/projects/:projectId/agents/:agentId/workbenches",
@@ -3181,12 +3191,28 @@ router
     });
     return { workbench };
   })
-  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", () =>
-    notFound("Workbench"),
-  )
+  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", (ctx) => {
+    const show = record(ctx.body).show;
+    if (typeof show !== "boolean") fail(400, "bad_request", "show must be true or false");
+    const installed = installedOf(ctx);
+    const current = installed.workbenches?.find((item) => item.id === ctx.params.workbenchId);
+    if (!current) notFound("Workbench");
+    const workbench = { ...current, appCenter: { ...current.appCenter, show } };
+    installed.workbenches = installed.workbenches!.map((item) =>
+      item.id === current.id ? workbench : item,
+    );
+    ctx.store.userChannel.event({
+      type: "workbench_updated",
+      projectId: ctx.params.projectId!,
+      agentId: ctx.params.agentId!,
+      workbench,
+    });
+    return { workbench };
+  })
   // The App Center lists shortcuts in every build state under a stored arrangement; the demo's
   // Agents keep no workbench files, so a tile opened in a window finds no page to show.
-  .get("/api/projects/:projectId/app-center", ({ store }): AppCenterResponse => store.f.appCenter)
+  .get("/api/projects/:projectId/app-center", (ctx) => appCenterListing(ctx, false))
+  .get("/api/projects/:projectId/app-center/hidden", (ctx) => appCenterListing(ctx, true))
   .put("/api/projects/:projectId/app-center/layout", ({ store, body }): AppCenterLayoutResponse => {
     const layout = (record(body).layout ?? null) as AppCenterLayout | null;
     store.f.appCenter = { ...store.f.appCenter, layout };
