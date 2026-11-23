@@ -86,6 +86,8 @@ export interface SessionStreamState {
   /** Prepend the previous history window (triggered near the top of the loaded transcript). */
   loadOlder: () => void;
   version: number;
+  /** First subscription and each subsequent reconnect. */
+  subscriptionGeneration?: number;
   /** True until history finishes loading. */
   loading: boolean;
   taskState: SessionStatus;
@@ -153,6 +155,7 @@ export function useSessionStream(
   onSessionTitle: (sessionId: string, title: string) => void,
   source: string,
 ): SessionStreamState {
+  const [subscriptionGeneration, setSubscriptionGeneration] = useState(0);
   const [version, setVersion] = useState(0);
   const [connectionGeneration, setConnectionGeneration] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -357,7 +360,10 @@ export function useSessionStream(
       onServerEvent: controller.handleServer,
       // Hydrate the goal banner only once the subscription is live (fires on first connect and
       // every reconnect); the prev/active guards keep it from clobbering a live banner.
-      onOpen: hydrateGoal,
+      onOpen: () => {
+        setSubscriptionGeneration((n) => n + 1);
+        hydrateGoal();
+      },
       // A stream refused for good (401/403/404) is reported as closed: ask whether this
       // browser is still signed in (api/session-probe.ts).
       onError: (closed) => {
@@ -419,6 +425,7 @@ export function useSessionStream(
   void pendingTick;
 
   return {
+    subscriptionGeneration,
     sessionId: describes.source === source ? describes.sessionId : null,
     historyMachineId:
       historyOwner && historyOwner.sessionId === sessionId && historyOwner.source === source
