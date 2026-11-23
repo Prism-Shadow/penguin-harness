@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1710
 
 [中文版](2026-11-23-compact-open-pages.zh.md)
 
