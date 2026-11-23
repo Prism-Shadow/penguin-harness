@@ -1,0 +1,31 @@
+name: Windows Bento rendering experiment
+on:
+  push:
+    branches: [test/windows-bento-browser-review]
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      PENGUIN_BUILD_JS_ONLY: "1"
+      CI: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          build: "@prismshadow/penguin-server...,@prismshadow/penguin-web...,@prismshadow/penguin-desktop..."
+          alongside: pnpm --filter @prismshadow/penguin-web exec playwright install chromium
+      - name: Native Windows installation and rendering
+        shell: bash
+        run: |
+          node -p 'JSON.stringify({ platform:process.platform, arch:process.arch, node:process.version })'
+          git config --get core.autocrlf || true
+          SKIP_BUILD=1 bash packages/web/e2e/run.sh bento-templates.spec.mjs
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-bento-browser-failure
+          path: packages/web/test-results/
+          retention-days: 7
