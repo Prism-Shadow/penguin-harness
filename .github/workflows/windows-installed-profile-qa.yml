@@ -1,0 +1,39 @@
+name: Installed Windows path and data acceptance
+on:
+  push:
+    branches: [test/windows-installer-paths]
+    paths: [packages/desktop/test/installer-path-qa/**, .github/workflows/windows-installed-profile-qa.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  acceptance:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    env:
+      PH_DISPOSABLE_WINDOWS: "yes"
+      PACKAGE_RUN: "45224263634"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Download the registered old and candidate installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          curl.exe -fLsS --retry 3 -o "$env:RUNNER_TEMP/previous.exe" https://github.com/Prism-Shadow/penguin-harness/releases/download/v0.2.18/penguin-desktop-win32-x64.exe
+          if ($LASTEXITCODE -ne 0 -or (Get-FileHash "$env:RUNNER_TEMP/previous.exe").Hash -ne '63cee08ac190f9b37e51283afc752179467ceddace81a18a8fe5420eccdba47f') {throw 'Old release checksum mismatch.'}
+          gh run watch $env:PACKAGE_RUN --interval 20 --exit-status
+          if ($LASTEXITCODE -ne 0) {throw 'Installer build failed.'}
+          gh run download $env:PACKAGE_RUN -n disposable-installer -D "$env:RUNNER_TEMP/installer"
+          if ($LASTEXITCODE -ne 0) {throw 'Could not download installer.'}
+      - name: Exercise the installed programs on disposable volumes
+        shell: powershell
+        run: |
+          & packages/desktop/test/installer-path-qa/installed-paths.ps1 -Installer "$env:RUNNER_TEMP/installer/penguin-desktop-win32-x64.exe" -OldInstaller "$env:RUNNER_TEMP/previous.exe"
