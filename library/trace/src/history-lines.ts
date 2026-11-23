@@ -490,6 +490,7 @@ export async function planHistoryLines(
   }));
   return {
     window: {
+      projectId,
       envelope: {
         ...(read?.page !== undefined ? { page: messagesPageInfo(read.page) } : {}),
         ...envelope,

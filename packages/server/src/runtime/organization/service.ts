@@ -2960,7 +2960,13 @@ export abstract class OrgService {
   // ---------------------------------------------------------------------------
   abstract chart(projectId: string, orgId: string): Promise<OrgChartResponse>;
 
-  abstract hire(projectId: string, orgId: string, req: OrgHireRequest): Promise<OrgEmployeeItem>;
+  abstract hire(
+    projectId: string,
+    orgId: string,
+    req: OrgHireRequest,
+    /** Who hires, for a new Agent's plugins' server modules; the system when absent. */
+    actor?: ModuleActor | null,
+  ): Promise<OrgEmployeeItem>;
 
   /** The employee's avatar image (organization/avatars.ts); 404 when it has none. */
   abstract employeeAvatar(

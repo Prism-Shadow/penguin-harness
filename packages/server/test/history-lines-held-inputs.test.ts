@@ -83,7 +83,10 @@ describe("a running Task's held inputs on the machine leg", () => {
       historyLinesRoutes({
         traces: harness.service,
         sessions: { findById: (id) => (id === S ? row : null) },
-        access: { requireProjectAccess: () => ({}) as never },
+        access: {
+          requireProjectAccess: () => ({}) as never,
+          requireProjectOwner: () => ({}) as never,
+        },
         manager: {
           statusOf: () => "running",
           liveFragments: () => [],
