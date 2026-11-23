@@ -6,7 +6,7 @@
  *
  * A row offers Enable and Open. The title, and a click anywhere else on the row that
  * is not one of its controls, opens the workbench's own files read-only (part-files-dialog.tsx).
- * A workbench a plugin installed carries the puzzle mark after its title, naming the plugin and
+ * A workbench a plugin installed shows the puzzle mark in its file details, naming the plugin and
  * pointing at its row on the Plugins sub-page, and its removal says which plugin installed it.
  *
  * - The Enable switch is the Project owner's and commits at once; while the Agent-wide "Enable

@@ -102,6 +102,7 @@ import { FolderNameDialog } from "./folder-name-dialog";
 import { FolderPanel } from "./folder-panel";
 import { NewFolderDialog } from "./new-folder-dialog";
 import { systemShortcutsOf } from "./system-tiles";
+import { HiddenWorkbenchesDialog } from "./hidden-workbenches-dialog";
 import { AppMenu, FolderMenu, GridMenu, type GridActions } from "./tile-menus";
 import { useTileDrag, type Drop, type Dragged } from "./tile-drag";
 import { useAppCenter } from "./use-app-center";
@@ -184,6 +185,7 @@ export function AppCenterPage() {
   const [renaming, setRenaming] = useState<GridFolder | null>(null);
   const [errorOf, setErrorOf] = useState<GridApp | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   /** The new-folder dialog's starting pick, while it is open. */
   const [newFolderPicked, setNewFolderPicked] = useState<string[] | null>(null);
 
@@ -376,6 +378,9 @@ export function AppCenterPage() {
         <GlyphIcon d={ICONS.folderPlus} />
         {S.appCenter.newFolderAction}
       </Button>
+      <Button size="sm" onClick={() => setShowHidden(true)}>
+        {S.appCenter.hiddenWorkbenches}
+      </Button>
       {hasWorkbench && create}
     </>
   );
@@ -387,7 +392,7 @@ export function AppCenterPage() {
           <div className="mx-auto flex min-h-full max-w-5xl flex-col">
             <PageHeader
               title={S.appCenter.title}
-              {...(grid !== null && grid.length > 0 ? { actions: headerActions } : {})}
+              {...(grid !== null ? { actions: headerActions } : {})}
             />
             {error !== null && (
               <NoticeStrip tone="danger">
@@ -500,6 +505,16 @@ export function AppCenterPage() {
           </div>
         </div>
       </AppWindow>
+      {showHidden && projectId && (
+        <HiddenWorkbenchesDialog
+          key={projectId}
+          projectId={projectId}
+          agentIds={agentIds}
+          titleOf={titleOf}
+          onRestored={refreshMachine}
+          onClose={() => setShowHidden(false)}
+        />
+      )}
       <FolderNameDialog
         name={renaming?.name ?? null}
         onClose={() => setRenaming(null)}

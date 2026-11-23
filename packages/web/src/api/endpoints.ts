@@ -3220,10 +3220,13 @@ export const setWorkbenchAppCenter = (
  * it is THAT machine's list, read through this server's proxy, its icons re-rooted onto it; the
  * arrangement that counts is always this server's.
  */
-export const getAppCenter = (projectId: string, machineId: string | null = null) =>
-  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`, {
-    server: machineId,
-  }).then((r) => ({ ...r, shortcuts: iconsOn(r.shortcuts, machineId) }));
+export const getAppCenter = (projectId: string, machineId: string | null = null, hidden = false) =>
+  apiFetch<AppCenterResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/app-center${hidden ? "/hidden" : ""}`,
+    {
+      server: machineId,
+    },
+  ).then((r) => ({ ...r, shortcuts: iconsOn(r.shortcuts, machineId) }));
 /** Stores the viewer's arrangement of the Project's App Center; null restores the server's order. */
 export const putAppCenterLayout = (projectId: string, layout: AppCenterLayout | null) =>
   apiFetch<AppCenterLayoutResponse>(

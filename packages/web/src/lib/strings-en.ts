@@ -1229,6 +1229,9 @@ export const en: Strings = {
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "New folder",
     /** The page header's button that opens the new-folder dialog. */
+    hiddenWorkbenches: "Hidden workbenches",
+    noHiddenWorkbenches: "No hidden workbenches.",
+    restoreWorkbench: "Show in App Center",
     newFolderAction: "New folder",
     menu: {
       open: "Open",

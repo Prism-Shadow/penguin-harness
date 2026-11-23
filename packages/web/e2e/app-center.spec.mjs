@@ -84,6 +84,7 @@ test("the App Center opens Support windowed or full screen, and a hidden workben
   await tile.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Remove from the App Center" }).click();
   await expect(tile).toHaveCount(0);
+  let restored = false;
   try {
     await openSupportRow(page);
     const row = page
@@ -100,12 +101,23 @@ test("the App Center opens Support windowed or full screen, and a hidden workben
     await page.keyboard.press("Escape");
     await row.getByRole("button", { name: "Open workbench Support" }).click();
     await expect(appWindow.locator("iframe")).toBeVisible();
+    await page.goto(`${BASE}/apps`);
+    await page.getByRole("button", { name: "Hidden workbenches", exact: true }).click();
+    const hidden = page.getByRole("dialog", { name: "Hidden workbenches" });
+    const support = hidden.getByRole("listitem").filter({ hasText: "Support" });
+    await support.getByRole("button", { name: "Show in App Center" }).click();
+    await expect(support).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(tile).toBeVisible();
+    restored = true;
   } finally {
-    const restore = await page.request.patch(
-      `${BASE}/api/projects/default_project/agents/penguin_support/workbenches/support/app-center`,
-      { data: { show: true } },
-    );
-    expect(restore.ok()).toBe(true);
+    if (!restored) {
+      const restore = await page.request.patch(
+        `${BASE}/api/projects/default_project/agents/penguin_support/workbenches/support/app-center`,
+        { data: { show: true } },
+      );
+      expect(restore.ok()).toBe(true);
+    }
   }
 });
 
