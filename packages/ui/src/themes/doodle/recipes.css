@@ -507,30 +507,6 @@
   font-weight: 800;
 }
 
-/* The three linked figures share one cut-paper card and a perforated fold between columns. */
-:root[data-theme="doodle"] .ui-start [data-slot="counts"] {
-  background: var(--_card);
-  border: 1px solid color-mix(in srgb, var(--_pen) 70%, var(--_card));
-  border-radius: 12px 15px 11px 14px / 15px 11px 14px 10px;
-  box-shadow: 0 2px 0 var(--_paper-shadow);
-  max-width: 100%;
-}
-:root[data-theme="doodle"] .ui-start [data-slot="count"] {
-  border: 0;
-}
-:root[data-theme="doodle"] .ui-start [data-slot="count"] + [data-slot="count"] {
-  border-inline-start: 1px dashed var(--ui-line);
-}
-:root[data-theme="doodle"] .ui-start [data-slot="count"] > a {
-  height: 100%;
-  justify-content: space-between;
-  border: 2px solid transparent;
-  border-radius: 9px 12px 9px 11px;
-  background-clip: padding-box;
-}
-:root[data-theme="doodle"] .ui-start [data-slot="count"] > a:is(:hover, :focus-visible) {
-  background-color: color-mix(in srgb, var(--_container) 65%, transparent);
-}
 :root[data-theme="doodle"] .ui-start [data-slot="count"] [data-slot="figure"] {
   text-decoration: underline var(--_container) 0.22em;
   text-underline-offset: -0.03em;
@@ -541,17 +517,6 @@
 }
 :root[data-theme="doodle"] .ui-start [data-slot="count"]:nth-child(3) [data-slot="figure"] {
   text-decoration-color: var(--_well);
-}
-@container (max-width: 24rem) {
-  :root[data-theme="doodle"] .ui-start [data-slot="counts"] > ul {
-    grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr) minmax(0, 1fr);
-  }
-  :root[data-theme="doodle"] .ui-start [data-slot="count"] svg {
-    display: none;
-  }
-  :root[data-theme="doodle"] .ui-start [data-slot="count"] > a > span:first-child {
-    white-space: normal;
-  }
 }
 :root[data-theme="doodle"] .ui-start [data-slot="figure"],
 :root[data-theme="doodle"] .ui-ledger [data-slot="figure"] {
@@ -567,24 +532,6 @@
 }
 :root[data-theme="doodle"] .ui-ledger [data-slot="label"][data-tone="danger"] {
   color: var(--ui-tone-danger-fg);
-}
-:root[data-theme="doodle"] .ui-start [data-slot="folder"] {
-  background-color: var(--ui-surface);
-  border-radius: var(--ui-radius-lg);
-  box-shadow: var(--_sticker-ring);
-}
-:root[data-theme="doodle"] .ui-start [data-slot="folder"][aria-expanded="true"] {
-  background-color: var(--ui-surface-muted);
-  box-shadow: inset 0 0 0 2px var(--_pen);
-}
-:root[data-theme="doodle"] .ui-start [data-slot="example-check"] {
-  display: inline-flex;
-}
-:root[data-theme="doodle"] .ui-start [data-slot="example-check"] + [data-slot="go"] {
-  display: none;
-}
-:root[data-theme="doodle"] .ui-start [data-slot="row"][aria-current="true"] {
-  font-weight: 600;
 }
 :root[data-theme="doodle"] .ui-library [data-slot="group"] {
   background-color: var(--ui-surface);
