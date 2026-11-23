@@ -366,7 +366,24 @@ class PenguinServer {
    * plaintext must not keep holding it (see initial-password.ts).
    */
   async seedAdmin(): Promise<void> {
-    await this.auth().seedAdmin();
+    try {
+      await this.auth().seedAdmin();
+    } catch (err) {
+      // A seed that fails leaves the server with no account: nobody can log in, and the
+      // first-login notice cannot be printed either. The port is already bound at this
+      // point, so a rejection escaping here would be caught by the CLI's error handler and
+      // leave a process that looks started while serving nobody (the unhandledRejection
+      // fallback is not installed yet — it comes two steps later, in ⑩). The start ends
+      // here instead, with the cause on the console and a nonzero exit, like a failed
+      // layout migration; the root stays unseeded, and the next start tries again.
+      const failure = err instanceof Error ? err : new Error(String(err));
+      console.error(`${failure.name}: ${failure.message}`);
+      console.error(
+        "[server] Seeding the built-in admin failed: the server would have no account to log in with and no first-login notice to print, so it will not start. Fix the cause above and start again.",
+      );
+      this.cleanupInstanceFiles();
+      process.exit(EXIT_SEED_FAILED);
+    }
     clearInitialAdminPassword(this.config.root);
     if (this.config.desktopToken !== null) return;
     if (!this.auth().adminPasswordIsInitial()) return;
@@ -651,6 +668,9 @@ const EXIT_NODE_BELOW_FLOOR = 1;
 
 /** Exit code for a data root whose layout migration stopped (layout/migrate-data-root.ts). */
 const EXIT_LAYOUT_MIGRATION = 4;
+
+/** Exit code for a data root whose built-in admin failed to seed (see seedAdmin). */
+const EXIT_SEED_FAILED = 5;
 
 /** Port announcement (PENGUIN_PORT_FILE): tmp + rename, so a polling reader never sees a partial write. */
 function writePortFile(file: string, port: number): void {
