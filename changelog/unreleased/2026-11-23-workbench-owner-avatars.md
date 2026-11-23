@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** feature
 - **Scope:** `web`, `ui`, `server`
+- **PR:** [#1743](https://github.com/Prism-Shadow/penguin-harness/pull/1743)
 
 [中文版](2026-11-23-workbench-owner-avatars.zh.md)
 

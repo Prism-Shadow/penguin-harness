@@ -259,6 +259,7 @@ describe("workbench switches", { timeout: 30_000 }, () => {
 
       expect(await sidebarOf(base)).toEqual([
         {
+          packageName: "Demo",
           agentId,
           agentName: agentId,
           workbenchId: "desk",
