@@ -25,7 +25,7 @@ import {
   TEST_DESKTOP_TOKEN,
 } from "./helpers.js";
 import type { ErrorBody, MeResponse } from "../src/api/types.js";
-import { wireShellUpdatePort } from "../src/services/desktop-update-port.js";
+import { wireShellUpdatePort } from "@prismshadow/penguin-library-setting/desktop-update-port";
 import { FakePort } from "./helpers/fake-shell-port.js";
 
 describe("desktop claim", () => {

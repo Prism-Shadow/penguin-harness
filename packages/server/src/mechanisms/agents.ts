@@ -1,85 +1,19 @@
 /**
  * The agents mechanisms: what a node may require, declared apart from what implements it.
+ * The agent domain's two mechanisms (AgentConfig, Memory) moved to the agent domain library
+ * (services+http+cli restack S3) and are re-exported here unchanged; the snapshot and
+ * lifecycle mechanisms stay with their server-side services.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { AgentConfigView } from "../services/agent-config-service.js";
-import type {
-  AgentAuthor,
-  AgentConfigUpdateRequest,
-  AgentDeletionInfo,
-  AgentKernelUpdateResponse,
-  BenchmarkCasesResponse,
-  BenchmarksResponse,
-  BenchmarkSummary,
-  CaseMaterial,
-  MemoryFileResponse,
-  MemoryFilesResponse,
-  MemoryImportMode,
-  MemoryImportResponse,
-  MemoryOverviewResponse,
-  MemoryScopeInfo,
-  VaultResponse,
-  VaultUpdateRequest,
-  WorkspaceFilesResponse,
-} from "../api/types.js";
-import type {
-  WorkspaceFileContent,
-  WorkspaceFileReadOptions,
-} from "../services/workspace-files-service.js";
+import type { AgentDeletionInfo } from "../api/types.js";
 import type { AgentCreation, AgentListItem } from "../services/agent-service.js";
-import type {
+export { Benchmarks } from "@prismshadow/penguin-library-benchmark/contract";
+export type {
   BenchmarkArchive,
   BenchmarkCreateInput,
   BenchmarkImportOptions,
-} from "../services/benchmark-service.js";
-
-/** AgentConfig: the mechanism AgentConfigService implements. */
-@Interface()
-export abstract class AgentConfig {
-  abstract exists(projectId: string, agentId: string): Promise<boolean>;
-  abstract requireExists(projectId: string, agentId: string): Promise<void>;
-  /** Whether the Agent is the Project's system Agent (core state/system-agent.ts). */
-  abstract isSystemAgent(projectId: string, agentId: string): Promise<boolean>;
-  /** Whether the Agent is built in, and so never deleted: the system Agent counts only as itself. */
-  abstract isBuiltinAgent(projectId: string, agentId: string): Promise<boolean>;
-  abstract readCardMeta(
-    projectId: string,
-    agentId: string,
-  ): Promise<{
-    name?: string;
-    description?: string;
-    author: AgentAuthor;
-    toolCount: number;
-    version: number;
-    kernelOutdated: boolean;
-    system?: true;
-  }>;
-  abstract getConfig(projectId: string, agentId: string): Promise<AgentConfigView>;
-  abstract updateConfig(
-    projectId: string,
-    agentId: string,
-    req: AgentConfigUpdateRequest,
-  ): Promise<void>;
-  /** Writes `author` only into a config that has none; false when it had one or there is no config. */
-  abstract stampMissingAuthor(
-    projectId: string,
-    agentId: string,
-    author: AgentAuthor,
-  ): Promise<boolean>;
-  abstract resetConfig(projectId: string, agentId: string): Promise<void>;
-  abstract kernelUpdate(projectId: string, agentId: string): Promise<AgentKernelUpdateResponse>;
-  abstract insertTemplatePlaceholder(
-    projectId: string,
-    agentId: string,
-    feature: "vault" | "skills" | "schedules",
-  ): Promise<AgentConfigView>;
-  abstract getVault(projectId: string, agentId: string): Promise<VaultResponse>;
-  abstract updateVault(
-    projectId: string,
-    agentId: string,
-    req: VaultUpdateRequest,
-  ): Promise<VaultResponse>;
-}
+} from "@prismshadow/penguin-library-benchmark/types";
+export { AgentConfig, Memory } from "@prismshadow/penguin-library-agent/contract";
 
 /** A package an import swaps in: a zip of the Agent's directory, or a `.tar.gz` snapshot. */
 export interface AgentPackage {
@@ -98,81 +32,6 @@ export abstract class Snapshots {
     pkg: AgentPackage,
     opts: { preSnapshot: boolean },
   ): Promise<{ version: number; backup?: string }>;
-}
-
-/** Memory: the mechanism MemoryService implements. */
-@Interface()
-export abstract class Memory {
-  abstract overview(projectId: string, agentId: string): Promise<MemoryOverviewResponse>;
-  abstract insertTemplatePlaceholder(
-    projectId: string,
-    agentId: string,
-  ): Promise<MemoryOverviewResponse>;
-  abstract listScopes(projectId: string, agentId: string): Promise<MemoryScopeInfo[]>;
-  abstract listFiles(
-    projectId: string,
-    agentId: string,
-    scopeKey: string,
-  ): Promise<MemoryFilesResponse>;
-  /** `filePath` is the file's place in the scope: a topic's name, or `<folder>/<path>` for a file it keeps. */
-  abstract readFile(
-    projectId: string,
-    agentId: string,
-    scopeKey: string,
-    filePath: string,
-  ): Promise<MemoryFileResponse>;
-  /** The scope folder as a zip. */
-  abstract exportScope(projectId: string, agentId: string, scopeKey: string): Promise<Uint8Array>;
-  abstract importScope(
-    projectId: string,
-    agentId: string,
-    scopeKey: string,
-    request: { mode: MemoryImportMode; confirm: boolean; payload?: unknown; dataBase64?: string },
-  ): Promise<MemoryImportResponse>;
-  /** `filePath` as in `readFile`; a topic goes together with the folder of files it keeps. */
-  abstract deleteFile(
-    projectId: string,
-    agentId: string,
-    scopeKey: string,
-    filePath: string,
-  ): Promise<void>;
-}
-
-/** Benchmarks: the mechanism BenchmarkService implements. */
-@Interface()
-export abstract class Benchmarks {
-  abstract list(projectId: string): Promise<BenchmarksResponse>;
-  /** Every id `create` refuses as taken, as names only, including a folder that does not list. */
-  abstract takenIds(projectId: string): Promise<string[]>;
-  abstract create(projectId: string, input: BenchmarkCreateInput): Promise<BenchmarkSummary>;
-  abstract remove(projectId: string, benchmarkId: string): Promise<void>;
-  /**
-   * Writes the package an uploaded zip holds, with origin `zip` or the git origin `options` names;
-   * a taken id is a 409 unless `overwrite`, and an overwrite of one still being evaluated a 409 too.
-   */
-  abstract importArchive(
-    projectId: string,
-    archive: Uint8Array,
-    options: BenchmarkImportOptions,
-  ): Promise<BenchmarkSummary>;
-  /** A published Benchmark's package as a zip. */
-  abstract exportArchive(projectId: string, benchmarkId: string): Promise<BenchmarkArchive>;
-  abstract listCases(projectId: string, benchmarkId: string): Promise<BenchmarkCasesResponse>;
-  abstract listCaseFiles(
-    projectId: string,
-    benchmarkId: string,
-    caseId: string,
-    rel: string,
-    material: CaseMaterial,
-  ): Promise<WorkspaceFilesResponse>;
-  abstract readCaseFile(
-    projectId: string,
-    benchmarkId: string,
-    caseId: string,
-    rel: string,
-    material: CaseMaterial,
-    options?: WorkspaceFileReadOptions,
-  ): Promise<WorkspaceFileContent>;
 }
 
 /** AgentLifecycle: the mechanism AgentService implements. */

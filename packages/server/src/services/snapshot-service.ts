@@ -1,7 +1,7 @@
 /**
  * Agent State import, and the snapshot an overwrite takes first.
  *
- * A package is a zip of the Agent's directory (./agent-zip.ts) or a `.tar.gz` snapshot exported
+ * A package is a zip of the Agent's directory (the agent domain library's agent-zip) or a `.tar.gz` snapshot exported
  * before, rooted at `agent_state/`; only the unpack differs. Import goes by the `version` inside
  * the package and keeps the current vault; before an overwrite, the current State is packed
  * afresh into `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`, **excluding
@@ -12,7 +12,8 @@
  * and no entry with a `.git` path segment is extracted (a planted repository's config runs code
  * when git is run there); the current vault must be readable (a missing one is simply absent).
  * A `system_config.yaml` without `system_prompt` is laid over the template's (./partial-config.ts).
- * The workbenches' data folders beside the State follow their workbenches (./agent-app-data.ts):
+ * The workbenches' data folders beside the State follow their workbenches (the agent domain
+ * library's agent-app-data):
  * the backup also holds each one the import replaces or removes.
  * Docs: /docs/self-improvement § "Snapshots and versions".
  */
@@ -35,45 +36,17 @@ import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock, Log, Paths } from "../hmr/capabilities.js";
 import type { AgentPackage, Snapshots } from "../mechanisms/agents.js";
-import { isGitName } from "../workbenches/repo.js";
-import { isTempName, STATE_FILE } from "../workbenches/store.js";
-import { AppDataImport } from "./agent-app-data.js";
-import { isZip, unpackAgentZip } from "./agent-zip.js";
+import { STATE_FILE } from "../workbenches/store.js";
+import { AppDataImport } from "@prismshadow/penguin-library-agent/agent-app-data";
+import {
+  isGitEntry,
+  isLeftOut,
+  VAULT_BASENAME,
+} from "@prismshadow/penguin-library-agent/agent-vocab";
+import { isZip, unpackAgentZip } from "@prismshadow/penguin-library-agent/agent-zip";
 import { overTemplate } from "./partial-config.js";
 
-/** Vault file name inside a snapshot/import package (used for archive filtering). */
-const VAULT_BASENAME = ".vault.toml";
-
-/**
- * An archive path's segments as extraction places them: separators unified, a drive prefix
- * (`C:`, which tar strips only after filtering) and `.` segments dropped.
- */
-function segmentsOf(entryPath: string): string[] {
-  return entryPath
-    .replaceAll("\\", "/")
-    .replace(/^[A-Za-z]:/, "")
-    .split("/")
-    .filter((s) => s !== "" && s !== ".");
-}
-
-/**
- * What a snapshot or an export leaves out and an import never takes from a package: any vault, in
- * any letter case, the server's staging leftovers (`*.penguin-tmp*`), and each workbench's
- * emitted code and installed packages. Paths are rooted at `agent_state/`.
- */
-export function isLeftOut(entryPath: string): boolean {
-  const segments = segmentsOf(entryPath);
-  if (segments.at(-1)?.toLowerCase() === VAULT_BASENAME || segments.some(isTempName)) return true;
-  const [top, child, ...rest] = segments;
-  // Anywhere inside `agent_state/workbenches/<id>/`.
-  return (
-    top === "agent_state" &&
-    child === "workbenches" &&
-    rest.slice(1).some((s) => s === ".build" || s === "node_modules")
-  );
-}
-
-/** The State folders an export may leave out (see agent-export.ts). */
+/** The State folders an export may leave out (see the agent domain library's agent-export). */
 const PART_FOLDERS = ["skills", "hooks", "memory", "workbenches", "schedule"];
 
 /**
@@ -100,11 +73,6 @@ async function keepAbsentParts(current: string, incoming: string): Promise<void>
     const to = path.join(workbenches, id, STATE_FILE);
     if (!(await exists(to)) && (await exists(from))) await fs.copyFile(from, to);
   }
-}
-
-/** An entry inside a git directory, under any spelling git itself treats as `.git`. */
-export function isGitEntry(entryPath: string): boolean {
-  return segmentsOf(entryPath).some(isGitName);
 }
 
 /** `target` is `base` itself or lies below it (both already resolved by `realpath`). */

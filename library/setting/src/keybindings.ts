@@ -10,8 +10,8 @@
  * registry lives in the Web App and grows without a server release — as long as they fit the id
  * grammar, and chords are checked against the grammar only, never against a key list.
  */
-import { HttpError } from "../http/errors.js";
-import type { StoredKeybindings } from "../api/types.js";
+import { HttpError } from "@prismshadow/penguin-library-http";
+import type { StoredKeybindings } from "./types.js";
 
 export const KEYBINDINGS_SECTION_MAX = 64;
 export const KEYBINDINGS_ID_MAX = 64;

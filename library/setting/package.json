@@ -48,6 +48,26 @@
       "types": "./dist/repos/plugin-module-requests.d.ts",
       "import": "./dist/repos/plugin-module-requests.js"
     },
+    "./theme-store": {
+      "types": "./dist/theme-store.d.ts",
+      "import": "./dist/theme-store.js"
+    },
+    "./keybindings": {
+      "types": "./dist/keybindings.d.ts",
+      "import": "./dist/keybindings.js"
+    },
+    "./desktop-service": {
+      "types": "./dist/desktop-service.d.ts",
+      "import": "./dist/desktop-service.js"
+    },
+    "./desktop-update-port": {
+      "types": "./dist/desktop-update-port.d.ts",
+      "import": "./dist/desktop-update-port.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    },
     "./repos/server-settings": {
       "types": "./dist/repos/server-settings.d.ts",
       "import": "./dist/repos/server-settings.js"
@@ -68,9 +88,12 @@
   },
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
-    "@prismshadow/penguin-library-db": "workspace:*"
+    "@prismshadow/penguin-library-db": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-theme-pack": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^24",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"

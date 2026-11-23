@@ -42,7 +42,10 @@ import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { migrateDataRoot as migrateRootLayout } from "./layout/migrate-data-root.js";
-import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
+import {
+  shellPortOf,
+  wireShellUpdatePort,
+} from "@prismshadow/penguin-library-setting/desktop-update-port";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { Auth } from "@prismshadow/penguin-library-auth";

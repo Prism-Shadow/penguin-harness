@@ -15,11 +15,11 @@
 import { describe, expect, it } from "vitest";
 import { createDesktopApp, createTestApp, desktopLoginCookie, loginAdmin } from "./helpers.js";
 import type { DesktopTrayPatch, DesktopTrayStatusResponse, ErrorBody } from "../src/api/types.js";
-import { DesktopService } from "../src/services/desktop-service.js";
+import { DesktopService } from "@prismshadow/penguin-library-setting/desktop-service";
 import {
   parseTrayStatusMessage,
   wireShellUpdatePort,
-} from "../src/services/desktop-update-port.js";
+} from "@prismshadow/penguin-library-setting/desktop-update-port";
 import { FakePort } from "./helpers/fake-shell-port.js";
 
 const put = (cookie: string, body: string) => ({

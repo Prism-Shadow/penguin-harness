@@ -62,6 +62,11 @@ export interface AgentApiKeyInfo {
   lastUsedAt: string | null;
 }
 
+/**
+ * One Agent's public API settings — this server's, kept in web.db, never in the Agent State or
+ * the Project file, so the Agent cannot expose itself or loosen its own approvals. An Agent
+ * never configured reads as disabled, keyed, allow-all, with no keys.
+ */
 export interface AgentApiSettings {
   /** The API tab's switch; off = every AMSP request for this Agent is 404 `agent_not_found`. */
   enabled: boolean;

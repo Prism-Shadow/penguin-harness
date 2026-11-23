@@ -5,7 +5,7 @@
  * as `<folder>/<path>` — a topic's scripts in its folder of the same name, or a folder no topic
  * keeps. Never the `.workspace` marker or any other dot entry, so an export imports back unchanged.
  *
- * The Skill archive's caps (skill-import-limits.ts) bound both directions, its file count raised
+ * The Skill archive's caps (@prismshadow/penguin-library-http/skill-import-limits) bound both directions, its file count raised
  * for a scope's scripts, and an upload is checked as every archive import here checks one: the
  * caps read off the central directory before an entry is inflated, no path that climbs out or
  * carries a control character, no link or special entry, no two names a disk that ignores letter
@@ -15,15 +15,19 @@
 import { isUtf8 } from "node:buffer";
 import { zipSync } from "fflate";
 import { MEMORY_INDEX_FILENAME } from "@prismshadow/penguin-core";
-import { HttpError, badRequest } from "../http/errors.js";
+import { HttpError, badRequest } from "@prismshadow/penguin-library-http";
 import {
   MAX_ARCHIVE_BYTES,
   MAX_FILE_BYTES,
   MAX_TOTAL_BYTES,
   assertSafeEntryPath,
   unzipBounded,
-} from "./skill-import-limits.js";
-import { CONTROL_CHARACTER, assertDistinctPaths, specialEntries } from "./zip-entries.js";
+} from "@prismshadow/penguin-library-http/skill-import-limits";
+import {
+  CONTROL_CHARACTER,
+  assertDistinctPaths,
+  specialEntries,
+} from "@prismshadow/penguin-library-http/zip-entries";
 
 /**
  * Files one memory zip may hold, the index and the topics included. A scope the model keeps runs

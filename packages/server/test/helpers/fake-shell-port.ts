@@ -4,7 +4,7 @@
  * sends are emitted. One fake for every suite that plays the shell — the updater, the tray,
  * folder access, window opening, and the agent browser's link (which also unsubscribes).
  */
-import type { ShellPort } from "../../src/services/desktop-update-port.js";
+import type { ShellPort } from "@prismshadow/penguin-library-setting/desktop-update-port";
 
 type Listener = (e: { data: unknown }) => void;
 

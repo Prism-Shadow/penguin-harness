@@ -39,7 +39,7 @@ import {
   SEARCH_MAX_HITS,
   SEARCH_MAX_QUERY_LEN,
   WorkspaceFilesService,
-} from "../src/services/workspace-files-service.js";
+} from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import type {
   AgentCreateResponse,
   ErrorBody,

@@ -1,0 +1,104 @@
+{
+  "name": "@prismshadow/penguin-library-agent",
+  "version": "0.2.18",
+  "description": "The agent domain: the AgentConfig and Memory mechanisms and their services (the Web App's Agent config, vault, skills/schedules prompt templates and Memory tabs), the Agent package import/export/zip caps, the avatar plumbing and the API vocabulary. One package, no server dependencies \u2014 the server imports these; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/agent"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "import": "./dist/contract.js"
+    },
+    "./ports": {
+      "types": "./dist/ports.d.ts",
+      "import": "./dist/ports.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    },
+    "./agent-vocab": {
+      "types": "./dist/agent-vocab.d.ts",
+      "import": "./dist/agent-vocab.js"
+    },
+    "./agent-config-service": {
+      "types": "./dist/agent-config-service.d.ts",
+      "import": "./dist/agent-config-service.js"
+    },
+    "./agent-app-data": {
+      "types": "./dist/agent-app-data.d.ts",
+      "import": "./dist/agent-app-data.js"
+    },
+    "./workbench-dirs": {
+      "types": "./dist/workbench-dirs.d.ts",
+      "import": "./dist/workbench-dirs.js"
+    },
+    "./system-agent": {
+      "types": "./dist/system-agent.d.ts",
+      "import": "./dist/system-agent.js"
+    },
+    "./memory-service": {
+      "types": "./dist/memory-service.d.ts",
+      "import": "./dist/memory-service.js"
+    },
+    "./memory-archive": {
+      "types": "./dist/memory-archive.d.ts",
+      "import": "./dist/memory-archive.js"
+    },
+    "./memory-transfer-document": {
+      "types": "./dist/memory-transfer-document.d.ts",
+      "import": "./dist/memory-transfer-document.js"
+    },
+    "./agent-export": {
+      "types": "./dist/agent-export.d.ts",
+      "import": "./dist/agent-export.js"
+    },
+    "./agent-zip": {
+      "types": "./dist/agent-zip.d.ts",
+      "import": "./dist/agent-zip.js"
+    },
+    "./agent-avatar": {
+      "types": "./dist/agent-avatar.d.ts",
+      "import": "./dist/agent-avatar.js"
+    },
+    "./avatar-file": {
+      "types": "./dist/avatar-file.d.ts",
+      "import": "./dist/avatar-file.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-library-session": "workspace:*",
+    "@prismshadow/penguin-library-trace": "workspace:*",
+    "fflate": "^0.8.3",
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "tsup": "^8"
+  },
+  "private": true
+}

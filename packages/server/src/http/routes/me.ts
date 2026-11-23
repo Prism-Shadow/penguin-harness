@@ -76,7 +76,7 @@ export interface MeRoutesSlots {
 }
 import { resolvePreviewTarget } from "../../services/preview-token.js";
 import { validateDraftShortcuts } from "../../services/draft-shortcuts.js";
-import { validateKeybindings } from "../../services/keybindings.js";
+import { validateKeybindings } from "@prismshadow/penguin-library-setting/keybindings";
 import { validateAccountSettings } from "../../services/account-settings.js";
 import {
   DRAFTS_MAX_COUNT,

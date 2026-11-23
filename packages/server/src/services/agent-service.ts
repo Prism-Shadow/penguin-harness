@@ -47,9 +47,9 @@ import {
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import { isNewSemanticId, NEW_ID_RULE, SEMANTIC_ID_RULE } from "./ids.js";
 import { migrateWorkbenches } from "../workbenches/migrate.js";
-import { agentAvatarRev } from "./agent-avatar.js";
+import { agentAvatarRev } from "@prismshadow/penguin-library-agent/agent-avatar";
 import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
-import { isTopicFileName } from "./memory-service.js";
+import { isTopicFileName } from "@prismshadow/penguin-library-agent/memory-service";
 import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
 import { resolveLibraryPlugins, seedPluginNames } from "./plugin-library.js";
 import type { PluginLibrary } from "../plugin/library-module.js";
@@ -166,7 +166,7 @@ export interface AgentListItem {
   pluginUpdates: PluginUpdateRef[];
   /** Number of memory topic files across every scope directory under memory/ (independent of the memory switch, like skillCount). */
   memoryCount: number;
-  /** The content revision of the Agent's own picture (agent-avatar.ts); absent when it has none. */
+  /** The content revision of the Agent's own picture (the agent domain library's agent-avatar); absent when it has none. */
   avatarRev?: string;
   /** Present on the system Agent only (core state/system-agent.ts). */
   system?: true;

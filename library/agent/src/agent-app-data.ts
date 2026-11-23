@@ -12,6 +12,10 @@
  *
  * Nothing here follows a link: a link on the way to a folder on disk leaves the folder out of
  * an export and refuses an import, and a package that holds a link below `app/` is refused.
+ *
+ * Moved from the server's services/agent-app-data.ts beside the export/zip/snapshot that
+ * consume it (services+http+cli restack S3); the link-safety helpers come from the library's
+ * workbench-dirs, the id predicate from the library's agent-vocab.
  */
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
@@ -22,10 +26,10 @@ import {
   workbenchDataDir,
   workbenchStateDir,
 } from "@prismshadow/penguin-core";
-import { badRequest } from "../http/errors.js";
-import { realDirs, removeBelow, WorkbenchDirError } from "../workbenches/data-dirs.js";
-import { isTempName, isWorkbenchId } from "../workbenches/store.js";
+import { badRequest } from "@prismshadow/penguin-library-http";
+import { isTempName, isWorkbenchId } from "./agent-vocab.js";
 import { APP_DATA } from "./agent-zip.js";
+import { realDirs, removeBelow, WorkbenchDirError } from "./workbench-dirs.js";
 
 /** The workbench folders directly below `dir` (an Agent State's `workbenches/`). */
 async function workbenchIds(dir: string): Promise<string[]> {

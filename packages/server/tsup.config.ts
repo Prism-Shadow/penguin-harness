@@ -76,12 +76,14 @@ export default defineConfig({
     "@prismshadow/penguin-library-db",
     "@prismshadow/penguin-library-setting",
     "@prismshadow/penguin-library-auth",
+    "@prismshadow/penguin-library-benchmark",
     "@prismshadow/penguin-library-observability",
     "@prismshadow/penguin-library-trace",
     "@prismshadow/penguin-library-project",
     "@prismshadow/penguin-library-session",
     "@prismshadow/penguin-library-messaging",
     "@prismshadow/penguin-library-organization",
+    "@prismshadow/penguin-library-agent",
     "@prismshadow/penguin-library-agent-api",
     "@prismshadow/penguin-library-http",
     "@prismshadow/penguin-library-machine",
@@ -89,6 +91,7 @@ export default defineConfig({
     "@prismshadow/penguin-library-workbench",
     // The CLI face: the `cli` subpath re-exports it, and the `lock` entry its lock reader.
     "@prismshadow/penguin-library-cli",
+    "@prismshadow/penguin-library-workspace",
 
     "@prismshadow/penguin-hmr",
     "@prismshadow/penguin-theme-pack",

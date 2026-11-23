@@ -90,27 +90,10 @@ export function agentStateRepoDir(agentDir: string): string {
   return path.join(agentDir, "agent_state.git");
 }
 
-/** The characters HFS+ ignores in a name. */
-const HFS_IGNORED = /[\u200C-\u200F\u202A-\u202E\u206A-\u206F\uFEFF]/g;
-
-/**
- * A tree entry name git refuses, by isomorphic-git's own check (git's `verify_path`): one that
- * holds a path separator, that is `.` or `..` once the characters HFS+ ignores are dropped, or
- * that spells `.git` — any case, trailing dots or spaces (NTFS), an NTFS short name (`git~1`),
- * or before a `:` stream.
- */
-export function isGitName(name: string): boolean {
-  const visible = name.replace(HFS_IGNORED, "");
-  const normalized = (visible.split(":")[0] ?? "").toLowerCase().replace(/[. ]+$/, "");
-  return (
-    name.includes("/") ||
-    name.includes("\\") ||
-    visible === "." ||
-    visible === ".." ||
-    normalized === ".git" ||
-    /^\.?git~[1-9]$/.test(normalized)
-  );
-}
+// The git-reserved name check is shared with the agent domain's State paths (its vocabulary
+// module owns it); imported for this module's own checks and re-exported for repo's consumers.
+import { isGitName } from "@prismshadow/penguin-library-agent/agent-vocab";
+export { isGitName };
 
 const hasGitName = (rel: string): boolean => rel.split("/").some(isGitName);
 
