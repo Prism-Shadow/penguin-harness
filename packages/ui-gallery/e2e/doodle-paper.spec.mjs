@@ -89,7 +89,8 @@ for (const [mode, lang, width] of [
       await frame.evaluate((el) => getComputedStyle(el).backgroundColor),
     );
     await expectPaperEdge(page, frame, head);
-    await expectCaptionInk(head.locator('[data-slot="detail"]:visible').first(), head);
+    await expectCaptionInk(head.locator("[data-step-count]"), head);
+    await expectCaptionInk(head.locator('[data-step-elapsed] [data-slot="detail"]'), head);
     await head.focus();
     await head.press("Enter");
     await expect(head).toHaveAttribute("aria-expanded", "false");

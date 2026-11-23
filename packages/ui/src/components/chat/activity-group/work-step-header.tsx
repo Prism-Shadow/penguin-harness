@@ -74,6 +74,7 @@ export function WorkStepHeader({
       </span>
       {count && (
         <span
+          data-slot="detail"
           data-step-count=""
           className="shrink-0 whitespace-nowrap font-mono text-xs tabular-nums text-fg-subtle"
         >
@@ -88,6 +89,7 @@ export function WorkStepHeader({
         >
           <span className="sr-only">{elapsed}</span>
           <DurationSlot
+            data-slot="detail"
             running={totalRunning}
             sinceMs={totalStartMs}
             durationMs={totalDurationMs}
