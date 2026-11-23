@@ -59,7 +59,7 @@ export function Chip({
   return (
     <span
       {...(tooltip !== undefined && !inline ? hint(tooltip, tooltipExtra) : {})}
-      className={`anim-pop flex ${inline ? "max-w-full" : "max-w-48"} items-center gap-1 rounded-md bg-fill-neutral py-0.5 pl-2 pr-1 text-xs text-fg ${mono ? "font-mono" : ""}`}
+      className={`anim-pop flex min-w-0 ${inline ? "max-w-full" : "max-w-48"} items-center gap-1 rounded-md bg-fill-neutral py-0.5 pl-2 pr-1 text-xs text-fg ${mono ? "font-mono" : ""}`}
     >
       {inline ? (
         <>
