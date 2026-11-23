@@ -141,6 +141,20 @@ describe("which shells a conversation's panel lists and starts", () => {
     expect(dock.panelDock(terminal.TERMINAL_PANEL)).toBe("bottom");
   });
 
+  it("selects a created shell without opening a panel unless the global command requests it", async () => {
+    stubFetch(answer);
+    openConversation();
+    await list.refreshTerminals();
+    await terminal.createShell();
+    expect(terminal.shownTerminalId()).toBe("created-1");
+    expect(dock.panelDock(terminal.TERMINAL_PANEL)).toBeNull();
+    expect(commands.runCommand("terminal.new")).toBe(true);
+    await vi.waitFor(() => {
+      expect(terminal.shownTerminalId()).toBe("created-2");
+      expect(dock.panelDock(terminal.TERMINAL_PANEL)).toBe("bottom");
+    });
+  });
+
   it("lists exactly the conversation's own shells, shows the newest, and starts nothing", async () => {
     const fake = stubFetch(answer);
     const mine = openConversation();
@@ -190,7 +204,7 @@ describe("which shells a conversation's panel lists and starts", () => {
     };
     expect(terminal.ownTerminals(group)).toEqual([]);
     expect(writes(fake)).toEqual([]);
-    await terminal.createShell(undefined, group);
+    await terminal.createShell(group);
     expect(writes(fake)).toMatchObject([
       { machine: "M", body: { sessionId: "sibling", cwd: "/sandbox" } },
     ]);
@@ -203,8 +217,8 @@ describe("which shells a conversation's panel lists and starts", () => {
     const first = { projectId: "project", machineId: "M", sessionId: "same", agentId: "agent" };
     const second = { ...first, machineId: "N" };
     for (const group of [first, second]) {
-      await terminal.createShell(undefined, group);
-      await terminal.createShell(undefined, group);
+      await terminal.createShell(group);
+      await terminal.createShell(group);
     }
     const selected = terminal.ownTerminals(first)[0]!.id;
     terminal.selectTerminal(selected, first);

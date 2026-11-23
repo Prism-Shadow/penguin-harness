@@ -137,7 +137,7 @@ export function TerminalPanel({
           active={shown}
           onSelect={(id) => selectTerminal(id, scope)}
           onClose={askKill}
-          onNew={() => void createShell(undefined, scope)}
+          onNew={() => void createShell(scope)}
           listLabel={S.terminal.tabsLabel}
           newLabel={S.terminal.newShell}
           closeLabel={S.terminal.killShell}
@@ -157,7 +157,7 @@ export function TerminalPanel({
             size="sm"
             data-testid="terminal-new-tab"
             disabled={sessionId === null}
-            onClick={() => void createShell(undefined, scope)}
+            onClick={() => void createShell(scope)}
           >
             {S.terminal.newShell}
           </Button>

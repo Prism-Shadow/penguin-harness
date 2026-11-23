@@ -179,8 +179,7 @@ function isBadCwd(err: unknown): boolean {
 }
 
 /**
- * Starts another shell for this conversation and shows it in the terminal panel, which comes on
- * screen in `position` (where its tab already lives, else the bottom dock). Nothing happens
+ * Starts and selects a shell inside this conversation’s terminal group. Nothing happens
  * without a Session to own it (a draft). The shell starts in the conversation's Workspace, on its
  * machine; a Workspace the server rejects (deleted since, or a path that server cannot see) falls
  * back to home rather than leaving the user with no terminal at all.
@@ -188,10 +187,7 @@ function isBadCwd(err: unknown): boolean {
  * carry the error, and a swallowed create looks like nothing happened, which is exactly
  * how a server-side spawn failure used to present. Resolves whether a shell started.
  */
-export async function createShell(
-  position?: DockPosition,
-  group?: SessionWorkbenchScope,
-): Promise<boolean> {
+export async function createShell(group?: SessionWorkbenchScope): Promise<boolean> {
   const sessionId = group?.sessionId ?? dockSessionId();
   if (sessionId === null) return false;
   // The machine is named explicitly: there is no terminal id yet for the routing rule to
@@ -220,9 +216,6 @@ export async function createShell(
     // Only into the docks it was asked from: the user may have moved to another conversation
     // while the shell started. It is that conversation's own either way, and its panel lists it.
     setShownShell(created.id, group ? terminalSelectionScope(group) : sessionId);
-    if (!group && currentDockScope() === sessionId) {
-      openPanel(TERMINAL_PANEL, position, TERMINAL_DOCK);
-    }
     return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -305,8 +298,11 @@ onCommand("terminal.toggle", () => {
 // declines on a page without docks (the browser's own key then runs): a toggle there would
 // flip nothing visible. A new terminal also declines without a Session to own it (a draft).
 onCommand("terminal.new", () => {
-  if (dockSessionId() === null) return false;
-  void createShell();
+  const owner = dockSessionId();
+  if (owner === null) return false;
+  void createShell().then((created) => {
+    if (created && dockSessionId() === owner) openTerminalPanel();
+  });
 });
 onCommand("dock.toggleRight", () => {
   if (!docksOnScreen()) return false;
