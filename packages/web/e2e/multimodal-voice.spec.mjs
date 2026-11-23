@@ -421,13 +421,30 @@ test("a reply plays the audio the plugin answers with, and stops on a second pre
   await page.getByRole("button", { name: "Send", exact: true }).click();
   const reply = page.getByText("Command finished; the result looks as expected.").first();
   await expect(reply).toBeVisible({ timeout: 30_000 });
+  await box.fill("slow text test");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const later = page.getByText(/chunk-1 chunk-2 .*chunk-40/).last();
+  await expect(later).toBeVisible({ timeout: 30_000 });
   await reply.hover();
   await page.getByRole("button", { name: "Read aloud" }).first().click();
   const stop = page.getByRole("button", { name: "Stop reading" }).first();
   await expect(stop).toBeVisible();
   // The control reads "Stop reading" from the press on; the request follows the binding's re-read.
   await expect.poll(() => reads.length).toBe(1);
-  expect(reads).toEqual([{ sessionId, text: expect.stringContaining("Command finished") }]);
+  expect(reads[0].sessionId).toBe(sessionId);
+  expect(reads[0].text).toMatch(/^Command finished; the result looks as expected\.\n\n/);
+  expect(reads[0].text.trimEnd()).toMatch(/\| completed \| [^|]+ \|$/);
   await stop.click();
-  await expect(page.getByRole("button", { name: "Read aloud" }).first()).toBeVisible();
+  const replay = page.getByRole("button", { name: "Read aloud" }).first();
+  await expect(replay).toBeVisible();
+  await replay.press("Enter");
+  await expect(stop).toHaveAttribute("aria-pressed", "true");
+  await stop.press("Enter");
+  expect(reads).toHaveLength(1);
+  await later.hover();
+  await page.getByRole("button", { name: "Read aloud" }).last().click();
+  await expect.poll(() => reads.length).toBe(2);
+  expect(reads[1].text.trim()).toBe(
+    Array.from({ length: 40 }, (_, i) => `chunk-${i + 1}`).join(" "),
+  );
 });
