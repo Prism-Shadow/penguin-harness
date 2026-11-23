@@ -105,7 +105,10 @@ export function storageRoutes(deps: StorageRouteDeps): Hono<AppEnv> {
   const reveals = (c: Context<AppEnv>) => deps.desktopMode && c.var.sessionVia === "desktop";
 
   app.get("/", async (c) =>
-    c.json({ ...(await deps.usage.usage(callerOf(c))), reveal: reveals(c) }),
+    c.json({
+      ...(await deps.usage.usage(callerOf(c), { wait: c.req.query("wait") === "1" })),
+      reveal: reveals(c),
+    }),
   );
 
   app.post("/refresh", async (c) =>

@@ -66,8 +66,9 @@ describe("the Storage page's usage", () => {
     const store = createStorageStore();
     await store.getState().load();
     expect(store.getState().usage?.bytes).toBe(1);
-    await vi.advanceTimersByTimeAsync(STORAGE_POLL_MS);
+    await vi.advanceTimersByTimeAsync(0);
     expect(store.getState().usage?.bytes).toBe(2);
+    expect(fetch.requests.map((request) => request.query.get("wait"))).toEqual([null, "1"]);
     await vi.advanceTimersByTimeAsync(STORAGE_POLL_MS);
     expect(store.getState().usage).toMatchObject({ bytes: 3, measuring: false });
     await vi.advanceTimersByTimeAsync(STORAGE_POLL_MS * 5);
@@ -114,6 +115,29 @@ describe("the Storage page's usage", () => {
     expect(errors).toEqual([]);
     await vi.advanceTimersByTimeAsync(STORAGE_POLL_RETRY_MS);
     expect(store.getState().usage).toMatchObject({ bytes: 6, measuring: false });
+  });
+
+  it("shows the first measurement's failure and clears it while a manual retry waits", async () => {
+    let attempt = 0;
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fetch = stubFetch(async () => {
+      if (++attempt === 1) return json({ ...usage(0, true), measuredAt: null });
+      if (attempt === 2) return apiError(503, "temporarily_unavailable", "try again");
+      await gate;
+      return json(usage(0, false));
+    });
+    const store = createStorageStore();
+    await store.getState().load();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState().loadError).toContain("try again");
+    const retry = store.getState().refresh();
+    expect(store.getState().loadError).toBeNull();
+    release();
+    await retry;
+    expect(store.getState().usage).toMatchObject({ bytes: 0, measuring: false });
   });
 
   it("says why when the first read fails, with no numbers to show", async () => {
