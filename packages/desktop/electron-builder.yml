@@ -150,9 +150,12 @@ win:
     - from: build/minigit
       to: git
 
+afterPack: build/windows-program-inventory.cjs
+
 nsis:
   oneClick: false
-  allowToChangeInstallationDirectory: true
+  # The custom program directory page shows the final path before installation.
+  include: build/windows-installer.nsh
 
 linux:
   # Pre-rendered freedesktop icon set (scripts/render-icon.mjs): a directory of NxN.png
