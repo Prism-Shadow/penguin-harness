@@ -453,6 +453,7 @@ export class StreamRenderer {
    */
   private subagentTotal = 0;
   /** Current context (= input+output = total of the most recent request), the context at the end of the previous task, and cumulative Session elapsed time (ms). */
+  private contextWindow: number | undefined;
   private contextNow = 0;
   private contextAtTaskStart = 0;
   private sessionElapsedMs = 0;
@@ -537,7 +538,14 @@ export class StreamRenderer {
    * the next message — a chat that resumed a Session and has sent nothing yet has seen none.
    */
   followSession(sessionId: string): void {
+    if (this.sessionId !== sessionId) this.contextWindow = undefined;
     this.sessionId = sessionId;
+  }
+
+  /** Adopt the effective window of the parent context, including a move to an unknown model. */
+  setContextWindow(raw: number | string): void {
+    const window = typeof raw === "number" ? raw : Number(raw);
+    this.contextWindow = Number.isFinite(window) && window > 0 ? window : undefined;
   }
 
   /**
@@ -787,7 +795,9 @@ export class StreamRenderer {
       if (Number.isFinite(ms)) this.taskFirstTsMs = ms;
     }
     if (msg.type === "session_meta") {
-      this.sessionId = (msg.payload as SessionMetaPayload).session_id;
+      const meta = msg.payload as SessionMetaPayload;
+      this.sessionId = meta.session_id;
+      this.setContextWindow(meta.model_context_window);
     }
     if (isModelMessage(msg)) {
       const payload = msg.payload;
@@ -1409,6 +1419,10 @@ export class StreamRenderer {
           this.t.taskStats({
             context: humanizeTokens(this.contextNow),
             contextDelta: signedDelta(humanizeTokens(contextDelta)),
+            contextPercent:
+              this.contextWindow === undefined
+                ? undefined
+                : Math.round((this.contextNow / this.contextWindow) * 100),
             tokens: humanizeTokens(this.sessionTotal + this.subagentTotal),
             tokensDelta: signedDelta(humanizeTokens(this.taskTokens)),
             elapsed: humanizeDuration(this.sessionElapsedMs),

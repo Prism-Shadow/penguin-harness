@@ -13,6 +13,7 @@ export interface RenderText {
   taskStats(s: {
     context: string;
     contextDelta: string;
+    contextPercent?: number;
     tokens: string;
     tokensDelta: string;
     elapsed: string;
@@ -84,7 +85,7 @@ export interface RenderText {
 /** The English half of this contribution's messages. */
 export const renderEn: RenderText = {
   taskStats: (s) =>
-    `[stats] context ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · ${s.elapsed} (${s.elapsedDelta})`,
+    `[stats] context ${s.context} (${s.contextDelta}${s.contextPercent === undefined ? "" : `, ${s.contextPercent}%`}) · tokens ${s.tokens} (${s.tokensDelta}) · ${s.elapsed} (${s.elapsedDelta})`,
 
   abortLabel: (abort) => {
     if (abort?.errorCode === "max_turns") return "[stopped]: reached the maximum turns per task";
@@ -182,7 +183,7 @@ export const renderEn: RenderText = {
 /** The Chinese half of this contribution's messages. */
 export const renderZh: RenderText = {
   taskStats: (s) =>
-    `[统计信息] 上下文 ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · 用时 ${s.elapsed} (${s.elapsedDelta})`,
+    `[统计信息] 上下文 ${s.context} (${s.contextDelta}${s.contextPercent === undefined ? "" : `, ${s.contextPercent}%`}) · tokens ${s.tokens} (${s.tokensDelta}) · 用时 ${s.elapsed} (${s.elapsedDelta})`,
 
   abortLabel: (abort) => {
     if (abort?.errorCode === "max_turns") return "[已停止]：已达到单次任务最大轮数";
