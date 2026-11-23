@@ -131,7 +131,8 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       kind: "session",
       path: contentPath,
       title:
-        sessions.find((row) => row.sessionId === sessionId)?.title ?? S.chat.defaultSessionTitle,
+        (!qualified && sessions.find((row) => row.sessionId === sessionId)?.title) ||
+        S.chat.defaultSessionTitle,
     };
   else if (location.pathname === "/apps" && directoryAgent)
     current = {
@@ -317,7 +318,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       }
       if (pair?.app.id === page.id && pair.session.id === session.id)
         openPanel(dockPageKey(page.id), "right");
-      go(paired(ref.current, session, page));
+      go(paired(ref.current, session, page), target === id && currentId === page.id);
     }
     const ordinary = pageForDrag("chat:" + id);
     const path = "/chat/" + encodeURIComponent(id);
@@ -357,6 +358,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       );
       const ordinaryInView =
         ordinary &&
+        currentId === ordinary.id &&
         ref.current.visible.includes(ordinary.id) &&
         machineForSession(id) === requested.machineId;
       const isolatedDraft = existing?.sessionHost?.isolatedDraft ?? !ordinaryInView;

@@ -22,6 +22,8 @@ export function DockScope() {
   const workspace = usePageWorkspace();
   const pair = workspace?.current && sessionAppPair(workspace.layout);
   const scope = pair ? pageSessionId(pair.session) : (sessionRoute ?? null);
+  const visibleSession = pair ? pair.session : workspace?.current;
+  const windowKey = visibleSession?.id.startsWith("scoped-chat:") ? visibleSession.id : undefined;
   const appId = pair ? pair.app.id : null;
   const previousScope = useRef<string | null>(null);
   const { currentProject } = useProject();
@@ -30,15 +32,16 @@ export function DockScope() {
     const provisional = scope === "new" || scope?.startsWith("draft-");
     const dockScope = provisional ? `${projectId ?? "~none"}:${scope}` : scope;
     announceDockScope({ scope: dockScope, projectId });
-    setDockScope(dockScope);
-  }, [scope, currentProject?.projectId]);
+    setDockScope(dockScope, windowKey);
+  }, [scope, windowKey, currentProject?.projectId]);
   useLayoutEffect(() => {
-    const sameScope = previousScope.current === scope;
-    previousScope.current = scope;
+    const owner = windowKey ?? scope;
+    const sameScope = previousScope.current === owner;
+    previousScope.current = owner;
     if (!appId || !scope) return;
     const key = dockPageKey(appId);
-    detachDockPage(key, scope);
+    detachDockPage(key, owner!);
     if (!panelDock(key) || sameScope) openPanel(key, "right");
-  }, [appId, scope]);
+  }, [appId, scope, windowKey]);
   return null;
 }

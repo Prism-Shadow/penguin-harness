@@ -8,6 +8,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
+import { watchSocket } from "./api-socket.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
 const composer = '[data-slot="composer"] textarea';
@@ -256,4 +257,42 @@ test("an archived Session’s native app deep link uses its own dock and leaves 
   await page.goBack();
   await expect(page).toHaveURL(/\/apps$/);
   await expect(page.getByRole("list", { name: "App Center" })).toBeVisible();
+});
+
+test("machine-qualified chats read their own session and leave an existing same-ID draft alone", async ({
+  page,
+}) => {
+  const socket = await watchSocket(page, {
+    // Both loopback machine routes serve real authenticated history and events.
+    forwardPath: (path) => path.replace(/^\/server\/(office|studio)\/api\//, "/api/"),
+  });
+  const [localKey] = await start(page, "qualifieddraft");
+  const id = localKey.slice(5);
+  const local = await (await page.request.get("/api/sessions/" + id)).json();
+  const draftKey = "penguin.chatDraft.session.qualifieddraft." + id;
+  const localText = "Draft for the original machine";
+  await slot(page, localKey).locator(composer).fill(localText);
+  await expect
+    .poll(() => page.evaluate((key) => localStorage.getItem(key), draftKey))
+    .toContain(localText);
+  for (const name of ["Office", "Studio"]) {
+    const machine = name.toLowerCase();
+    const path = "/server/" + machine + "/api/sessions/" + id;
+    socket.answer("GET", path, {
+      status: 200,
+      body: { ...local, session: { ...local.session, title: name + " session" } },
+    });
+    const calls = socket.calls.length;
+    await page.goto(
+      "/chat/" + id + "?" + new URLSearchParams({ project: local.session.projectId, machine }),
+    );
+    const editor = page.locator('[data-workspace-page^="scoped-chat:"]:visible').locator(composer);
+    await expect(page.getByRole("heading", { name: name + " session", exact: true })).toBeVisible();
+    await expect(editor).toBeVisible();
+    await expect(editor).toHaveValue("");
+    expect(socket.calls.slice(calls).some((call) => call.path === path)).toBe(true);
+    await editor.fill(name + " new draft");
+    await page.goto("/chat/" + id);
+    await expect(slot(page, localKey).locator(composer)).toHaveValue(localText);
+  }
 });

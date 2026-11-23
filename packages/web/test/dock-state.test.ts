@@ -675,3 +675,27 @@ it("removing app tabs restores the user's last active ordinary panel", () => {
   dock.clearDockPages();
   expect(dock.dockActiveKey("right")).toBe("memory");
 });
+
+it("separates same-ID machine workbench docks without writing new saved layouts", () => {
+  const session = "session-shared-id";
+  dock.setDockScope(session);
+  dock.openPanel("agents");
+  dock.setDockScope(session, "office-window");
+  expect(dock.currentDockScope()).toBe(session);
+  expect(dock.panelDock("agents")).toBeNull();
+  dock.openPanel("memory");
+  dock.openPanel(":app:office-files");
+  dock.setDockScope(session, "studio-window");
+  expect(dock.panelDock(":app:office-files")).toBeNull();
+  expect(dock.panelDock("memory")).toBeNull();
+  dock.openPanel(":app:studio-files");
+  dock.setDockScope(session, "office-window");
+  expect(dock.isTabShown(":app:office-files")).toBe(true);
+  expect(dock.panelDock(":app:studio-files")).toBeNull();
+  dock.setDockScope(session);
+  expect(dock.isTabShown("agents")).toBe(true);
+  const saved = JSON.parse(localStorage.getItem("penguin.dock.layout")!).scopes;
+  expect(saved[session]).toBeDefined();
+  expect(saved["office-window"]).toBeUndefined();
+  expect(saved["studio-window"]).toBeUndefined();
+});

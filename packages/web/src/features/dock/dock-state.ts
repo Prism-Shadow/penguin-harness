@@ -252,6 +252,8 @@ function loadStored(): { scopes: Record<string, ScopeLayout>; bottomRatio: numbe
 
 let { scopes, bottomRatio: ratio } = loadStored();
 let scope = NO_SCOPE;
+/** A qualified window owns its layout separately from the historical bare Session id. */
+const windowScopes = new Map<string, string>();
 // Unpacked into a local rather than read through `scopes[scope]` everywhere: the reads
 // are on every render path, and one live object per scope keeps switching cheap.
 let layout: ScopeLayout = scopes[scope] ?? emptyScope();
@@ -287,6 +289,7 @@ function persist(): void {
 function writeScopes(): void {
   const saved: Record<string, NonNullable<ReturnType<typeof savedScope>>> = {};
   for (const [key, s] of Object.entries(scopes)) {
+    if (windowScopes.has(key)) continue;
     const value = savedScope(s);
     if (value) saved[key] = value;
   }
@@ -350,8 +353,9 @@ export function subscribeDock(listener: () => void): () => void {
  * placeholder — /chat resolves to a Session a moment after it loads) is handed to the
  * conversation that is chosen, never clobbering one that has an arrangement of its own.
  */
-export function setDockScope(next: string | null): void {
-  switchScope(next ?? NO_SCOPE, scope === NO_SCOPE);
+export function setDockScope(next: string | null, windowKey?: string): void {
+  if (next && windowKey) windowScopes.set(windowKey, next);
+  switchScope(windowKey ?? next ?? NO_SCOPE, !windowKey && scope === NO_SCOPE);
 }
 
 /**
@@ -411,7 +415,7 @@ function switchScope(target: string, mayHandOver: boolean): void {
 
 /** The scope on screen (tests and diagnostics; components never need it). */
 export function currentDockScope(): string {
-  return scope;
+  return windowScopes.get(scope) ?? scope;
 }
 
 /**
@@ -630,6 +634,14 @@ export function detachDockPage(key: string, except?: string): void {
 }
 export function clearDockPages(): void {
   detachPages((key) => key.startsWith(":"));
+  for (const key of windowScopes.keys()) delete scopes[key];
+  if (windowScopes.has(scope)) {
+    scope = NO_SCOPE;
+    layout = scopes[scope] ?? emptyScope();
+    reconcileFullscreen();
+    notify();
+  }
+  windowScopes.clear();
 }
 
 /** Closing the last tab also hides its dock. */
