@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        bento: [current, previous, fixed]
+        bento: [original, fixed]
     runs-on: windows-latest
     timeout-minutes: 25
     env:
@@ -19,19 +19,13 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Check out the previous workbench source
-        if: matrix.bento == 'previous'
-        shell: bash
-        run: git checkout 9abf561e6^ -- plugins/use-bento-slides
-      - name: Check out the candidate from the pull request
+      - name: Check out the file preview candidate
         if: matrix.bento == 'fixed'
         shell: bash
         run: |
-          git fetch origin refs/pull/1719/head
-          git checkout e1f5b353f -- plugins/use-bento-slides packages/web/e2e/bento-templates.spec.mjs
-      - name: Identify workbench version
-        shell: bash
-        run: node -p "JSON.stringify([require('./plugins/use-bento-slides/package.json').version,require('./plugins/use-bento-slides/workbenches/slides/package.json').penguin.version])"
+          git fetch origin refs/pull/1720/head
+          git diff 7d7071744...97b8d996d --name-only -z > "$RUNNER_TEMP/bento-paths"
+          git restore --worktree --source=97b8d996d --pathspec-from-file="$RUNNER_TEMP/bento-paths" --pathspec-file-nul
       - id: setup
         uses: ./.github/actions/setup
         with:
@@ -42,11 +36,11 @@ jobs:
         run: |
           node -p 'JSON.stringify({ platform:process.platform, arch:process.arch, node:process.version })'
           git config --get core.autocrlf || true
-          SKIP_BUILD=1 bash packages/web/e2e/run.sh bento-workbench-open.spec.mjs --grep "the Slides window and full page"
-      - name: Candidate template creation and marked deck
+          SKIP_BUILD=1 bash packages/web/e2e/run.sh windows-bento-large-preview.spec.mjs --grep "the browser previews"
+      - name: Directory preview routing and retry
         if: matrix.bento == 'fixed'
         shell: bash
-        run: SKIP_BUILD=1 bash packages/web/e2e/run.sh bento-templates.spec.mjs
+        run: SKIP_BUILD=1 bash packages/web/e2e/run.sh files-folders.spec.mjs --grep "directory renders full HTML"
       - name: Keep browser evidence
         if: always()
         shell: bash
@@ -60,7 +54,7 @@ jobs:
           cd packages/desktop
           node scripts/preflight.mjs || exit 1
           cd ../web
-          pnpm exec playwright test -c e2e/playwright.config.mjs bento-workbench-open.spec.mjs --grep "source desktop"
+          pnpm exec playwright test -c e2e/playwright.config.mjs windows-bento-large-preview.spec.mjs --grep "source desktop"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
