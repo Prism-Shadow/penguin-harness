@@ -10,6 +10,7 @@ import {
   sessionDraftKey,
   removeDraftSession,
   prepareNewChatDraft,
+  hasUnsentDraft,
 } from "../chat";
 import { docksOnScreen, openPanel, dockWorkspace } from "../dock";
 import type { useMainSidebarFetchScope } from "./main-sidebar-fetch-scope";
@@ -143,7 +144,15 @@ export function useMainSidebarArchiveSession(scope: ReturnType<typeof useMainSid
     machineId,
     browseFiles,
   }: { agentId?: string; workspace?: string; machineId?: string; browseFiles?: boolean } = {}) => {
-    if (agentId === undefined && workspace === undefined && !browseFiles && pages?.resumeDraft()) {
+    if (
+      agentId === undefined &&
+      workspace === undefined &&
+      !browseFiles &&
+      user &&
+      currentProjectId &&
+      hasUnsentDraft(user.userId, currentProjectId) &&
+      pages?.resumeDraft()
+    ) {
       onNavigate?.();
       return;
     }

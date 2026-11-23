@@ -207,7 +207,7 @@ test("the workbench opened beside a conversation returns to its directory on min
   await expect(page).toHaveURL(`${BASE}/apps?workbenches=default_agent`);
   await expect(page.locator("iframe[title='Clear']")).toHaveCount(0);
   await page.locator(`[data-session-id="${sessionId}"]`).click({ button: "right" });
-  await page.getByRole("menuitem", { name: "整页显示", exact: true }).click();
+  await page.getByRole("button", { name: "整页显示", exact: true }).click();
   await expect(page).toHaveURL(`${BASE}/chat/${sessionId}`);
   await expect(dockAt(page, "right")).toBeVisible();
 });

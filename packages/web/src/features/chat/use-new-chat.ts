@@ -11,7 +11,7 @@ import { useNavigate } from "react-router";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { DRAFT_SESSION_ID } from "./draft-sessions";
-import { prepareNewChatDraft } from "./new-chat";
+import { hasUnsentDraft, prepareNewChatDraft } from "./new-chat";
 
 export function useNewChat(): () => void {
   const { user } = useAuth();
@@ -21,7 +21,8 @@ export function useNewChat(): () => void {
   const userId = user?.userId ?? null;
   const projectId = currentProject?.projectId ?? null;
   return useCallback(() => {
-    if (workspace?.resumeDraft()) return;
+    if (userId && projectId && hasUnsentDraft(userId, projectId) && workspace?.resumeDraft())
+      return;
     if (userId !== null && projectId !== null) prepareNewChatDraft(userId, projectId);
     navigate(`/chat/${DRAFT_SESSION_ID}`);
   }, [userId, projectId, navigate, workspace]);

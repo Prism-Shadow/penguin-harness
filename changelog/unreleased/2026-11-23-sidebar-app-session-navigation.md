@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** change
 - **Scope:** `web`
+- **PR:** [#1721](https://github.com/Prism-Shadow/penguin-harness/pull/1721)
 
 [中文版](2026-11-23-sidebar-app-session-navigation.zh.md)
 

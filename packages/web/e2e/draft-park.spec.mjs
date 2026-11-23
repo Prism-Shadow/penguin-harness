@@ -33,9 +33,17 @@ test("new-chat click parks typed text as a sendable draft conversation", async (
   expect(put.ok(), "put models").toBeTruthy();
 
   await page.goto(`${BASE}/chat/new`);
-  const ta = page.getByPlaceholder(/输入消息/);
+  const ta = page.getByPlaceholder(/输入消息/).filter({ visible: true });
   await ta.waitFor();
   await ta.fill("draft to park: build me a metronome");
+  const visibleComposer = page.locator("[data-workspace-page][data-pane]:visible");
+  await visibleComposer.locator('input[type="file"]:not([accept])').setInputFiles({
+    name: "metronome-notes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Keep the score."),
+  });
+  const attached = () => visibleComposer.getByText("metronome-notes.txt", { exact: true });
+  await expect(attached()).toBeVisible();
 
   // Clicking "New chat" parks the typed text: a 草稿 group appears with the row, and the
   // composer comes back empty.
@@ -45,13 +53,16 @@ test("new-chat click parks typed text as a sendable draft conversation", async (
   const row = page.getByText("draft to park: build me a metronome").first();
   await expect(row).toBeVisible();
   await expect(ta).toHaveValue("");
+  await expect(attached()).toHaveCount(0);
 
   // Opening the row resumes the draft (route /chat/draft-…, text restored).
   await row.click();
   await expect(page).toHaveURL(/\/chat\/draft-[0-9a-f]{8}$/);
-  await expect(page.getByPlaceholder(/输入消息/)).toHaveValue(
+  await expect(page.getByPlaceholder(/输入消息/).filter({ visible: true })).toHaveValue(
     "draft to park: build me a metronome",
   );
+
+  await expect(attached()).toBeVisible();
 
   // Sending converts it into a real session and the draft row disappears.
   await page.getByRole("button", { name: "发送", exact: true }).click();
@@ -61,7 +72,10 @@ test("new-chat click parks typed text as a sendable draft conversation", async (
 
   // Park another one and delete it from the row (confirm dialog).
   await page.getByRole("button", { name: "新建对话" }).first().click();
-  await page.getByPlaceholder(/输入消息/).fill("second parked draft");
+  await page
+    .getByPlaceholder(/输入消息/)
+    .filter({ visible: true })
+    .fill("second parked draft");
   await page.getByRole("button", { name: "新建对话" }).first().click();
   const row2 = page.getByText("second parked draft").first();
   await expect(row2).toBeVisible();

@@ -94,7 +94,9 @@ function PaneHeader({ side }: { side: 0 | 1 }) {
           />
           <MenuItem
             glyph={ICONS.cross}
-            label={words.closeView}
+            label={
+              page.kind === "window" || page.kind === "system" ? S.common.close : words.closeView
+            }
             onSelect={choose(() => workspace.close(page.id))}
           />
         </Menu>

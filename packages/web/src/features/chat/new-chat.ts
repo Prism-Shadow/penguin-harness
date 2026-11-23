@@ -22,6 +22,7 @@ import {
   type DraftStorage,
 } from "./draft-cache";
 
+import { hasDraftUploads } from "../../lib/draft-uploads";
 import { parkActiveDraft } from "./draft-sessions";
 
 /**
@@ -40,6 +41,12 @@ export function newChatAgentId(
   )
     return preferred;
   return pickDefaultAgent(agents)?.agentId ?? null;
+}
+
+/** A sent or abandoned empty composer starts afresh on the current Project defaults. */
+export function hasUnsentDraft(user: string, project: string): boolean {
+  const draft = loadDraft(draftKey(user, project));
+  return !!draft.text?.trim() || hasDraftUploads(user, project);
 }
 
 /**

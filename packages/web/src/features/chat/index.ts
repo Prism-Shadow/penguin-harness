@@ -17,7 +17,7 @@ export {
   saveDraft,
 } from "./draft-cache";
 export type { DraftCache, DraftStorage } from "./draft-cache";
-export { prepareNewChatDraft } from "./new-chat";
+export { hasUnsentDraft, prepareNewChatDraft } from "./new-chat";
 export { dispatchChatDefaultsChanged } from "./chat-defaults-event";
 export type { ChatDefaultsChangedDetail } from "./chat-defaults-event";
 export { BOOK_ICON, filterSkills, localizedShortText, localizedText } from "../../lib/skill-use";
