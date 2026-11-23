@@ -924,6 +924,37 @@ describe("MMSP's clients as the catalog reads them", () => {
     }
   });
 
+  it("advertises Gemini transcription only for the registered model, protocol and endpoint", () => {
+    const developer = "https://generativelanguage.googleapis.com";
+    const vertex = "https://aiplatform.googleapis.com";
+    const relay = "https://opencode.ai/inference/go/google";
+    expect(modelModalities("gemini-4-neon", "google-official", developer).audioTranscription).toBe(
+      true,
+    );
+    expect(modelModalities("gemini-3.8-flash", "google-genai", vertex).audioTranscription).toBe(
+      true,
+    );
+    expect(modelModalities("gemini-4-argon", "google-genai", relay + "/").audioTranscription).toBe(
+      true,
+    );
+    for (const [id, protocol, endpoint] of [
+      ["gemini-4-argon", "google-official", relay],
+      ["gemini-4-argon", "google-official", "https://custom.invalid"],
+      ["gemini-4-neon", "google-genai", vertex],
+      ["gemini-3.8-flash-tts", "google-official", developer],
+      ["gemini-nano-banana-2.1", "google-official", developer],
+      ["gemini-new-unlisted", "google-official", developer],
+    ] as const)
+      expect(modelModalities(id, protocol, endpoint).audioTranscription).toBe(false);
+    expect(modelModalities("gemini-4-argon", "mmsp", PENGUIN_GO_BASE_URL).input).toEqual([
+      "Text",
+      "Image",
+    ]);
+    expect(modelModalities("google/gemini-4-neon", "openai-responses").input).not.toContain(
+      "Audio",
+    );
+  });
+
   it("catalog invariant: a row MMSP's registry lists with no text output holds no chat, so it is marked a tool model", () => {
     // The chat pickers hide only `tool` rows (ModelInfo's `chatEligible`). A model that returns
     // only images, audio or search results, judged by MMSP's registry on the client the row
