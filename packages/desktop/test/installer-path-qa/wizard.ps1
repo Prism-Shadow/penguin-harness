@@ -52,12 +52,21 @@ function Accept-Folder($dialog) {
   $handle=[IntPtr]$dialog.Current.NativeWindowHandle
   $button=Spin {
     $child=Match-Node $dialog 'Button' '^OK$'
-    $tree=Items $dialog $deep | Where-Object {[FixtureNativeButton]::Class($_.Current.NativeWindowHandle) -eq 'SysTreeView32'} | Select-Object -First 1
-    # Wait for the native shell picker to select a tree item. It populates asynchronously.
-    if ($child -and $child.Current.IsEnabled -and $tree -and [FixtureNativeButton]::SendMessage([IntPtr]$tree.Current.NativeWindowHandle,0x110a,[IntPtr]9,[IntPtr]::Zero) -ne [IntPtr]::Zero) {$child}
-  } 'selected folder and enabled OK button'
+    if ($child -and $child.Current.IsEnabled) {$child}
+  } 'enabled folder picker OK button'
   $ok=[IntPtr]$button.Current.NativeWindowHandle
-  if (![FixtureNativeButton]::PostMessage($handle,0x0111,[IntPtr]1,$ok)) {throw 'Could not activate the native folder picker OK button.'}
+  # A shell folder picker can expose the UIA tree through a proxy on the hosted desktop.
+  # Click the real Win32 OK control at its client coordinates, then observe its closure.
+  $point=[IntPtr]((6 -shl 16) -bor 6)
+  [void][FixtureNativeButton]::PostMessage($ok,0x0201,[IntPtr]1,$point)
+  [void][FixtureNativeButton]::PostMessage($ok,0x0202,[IntPtr]::Zero,$point)
+  $until=[DateTime]::UtcNow.AddSeconds(4)
+  while ([FixtureNativeButton]::IsWindow($handle) -and [DateTime]::UtcNow -lt $until) {
+    Start-Sleep -Milliseconds 100
+  }
+  if ([FixtureNativeButton]::IsWindow($handle)) {
+    if (![FixtureNativeButton]::PostMessage($handle,0x0111,[IntPtr]1,$ok)) {throw 'Could not activate the native folder picker OK button.'}
+  }
   Spin {if (![FixtureNativeButton]::IsWindow($handle)) {$true}} 'accepted folder picker' | Out-Null
 }
 function Ready-SetupDialog {
