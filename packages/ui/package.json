@@ -14,6 +14,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./a2ui": "./src/a2ui.ts",
     "./theme.css": {
       "style": "./src/theme.css",
       "default": "./src/theme.css"
@@ -122,6 +123,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./a2ui": {
+        "types": "./dist/a2ui.d.ts",
+        "import": "./dist/a2ui.js"
       },
       "./highlighter": {
         "types": "./dist/highlighter.d.ts",

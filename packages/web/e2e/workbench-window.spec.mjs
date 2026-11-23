@@ -1,4 +1,5 @@
 /** The real window host, Apps rows, and workbench subpages in the conversation workspace. */
+import { readFile } from "node:fs/promises";
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
 import { zip } from "./workbench-zip.mjs";
@@ -49,8 +50,8 @@ export default {
   modules: { Workbench: { create() { return { api: { main: { async handle() { return { body: null }; } } } }; } } },
 } satisfies WorkbenchPackage;
 `;
-const page = (style) =>
-  `<!doctype html><html><head><meta charset="utf-8">${style}</head><body><h1>Board</h1><p>Rows.</p></body></html>`;
+const boardDocument = (style, title = "Board") =>
+  `<!doctype html><html><head><meta charset="utf-8">${style}</head><body><h1>${title}</h1><p>Rows.</p></body></html>`;
 
 let projectId;
 let sessionId;
@@ -81,8 +82,10 @@ test.beforeAll(async ({ browser }) => {
       dataBase64: zip({
         "window-demo/package.json": JSON.stringify(MANIFEST),
         "window-demo/index.ts": INDEX,
-        "window-demo/ui/clear.html": page(""),
-        "window-demo/ui/solid.html": page("<style>body { background: rgb(1, 2, 3); }</style>"),
+        "window-demo/ui/clear.html": boardDocument(""),
+        "window-demo/ui/solid.html": boardDocument(
+          "<style>body { background: rgb(1, 2, 3); }</style>",
+        ),
       }).toString("base64"),
     },
   });
@@ -296,4 +299,89 @@ test("opening a workbench in a second window leaves the first window's Apps list
   await expect(row(page)).toHaveCount(0);
   await expect(row(settings)).toHaveCount(1);
   await settings.close();
+});
+
+test("a docked workbench and its standalone copy expose versions, a portable download and scoped removal", async ({
+  page,
+}) => {
+  await openChat(page);
+  await launchFromChat(page);
+  const window = appWindow(page);
+  const more = window.getByRole("button", { name: "更多 Window demo" });
+  await more.click();
+  await page.getByRole("menuitem", { name: "历史版本" }).click();
+  const history = page.getByRole("dialog");
+  await expect(history.getByText("当前", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await more.click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("menuitem", { name: "下载到本地（ZIP）" }).click(),
+  ]);
+  const body = await readFile(await download.path());
+  expect(download.suggestedFilename()).toMatch(/window-demo.*\.zip$/);
+  const agent = "download_review";
+  const agentRoot = `${BASE}/api/projects/${projectId}/agents`;
+  const created = await page.request.post(agentRoot, {
+    data: { agentId: agent, name: "Review copy" },
+  });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  const copy = `${agentRoot}/${agent}/workbenches`;
+  const imported = await page.request.post(`${copy}/archive`, {
+    data: { dataBase64: body.toString("base64") },
+  });
+  expect(imported.ok(), await imported.text()).toBeTruthy();
+  await page.setViewportSize({ width: 375, height: 720 });
+  await page.goto(`${BASE}/app/${projectId}/${agent}/window-demo/clear`);
+  await expect(
+    page.frameLocator("iframe[title]").getByRole("heading", { name: "Board" }),
+  ).toBeVisible();
+  const standalone = page.getByRole("button", { name: "更多 Clear" });
+  const changed = await page.request.post(`${copy}/archive`, {
+    data: {
+      overwrite: true,
+      dataBase64: zip({
+        "window-demo/package.json": JSON.stringify({ ...MANIFEST, version: "1.1.0" }),
+        "window-demo/index.ts": INDEX,
+        "window-demo/ui/clear.html": boardDocument("", "Second edition"),
+        "window-demo/ui/solid.html": boardDocument(""),
+      }).toString("base64"),
+    },
+  });
+  expect(changed.ok(), await changed.text()).toBeTruthy();
+  await page.reload();
+  await expect(
+    page.frameLocator("iframe[title]").getByRole("heading", { name: "Second edition" }),
+  ).toBeVisible();
+  await standalone.click();
+  await page.getByRole("menuitem", { name: "历史版本" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "恢复", exact: true }).last().click();
+  await page
+    .getByRole("dialog", { name: "恢复版本" })
+    .getByRole("button", { name: "恢复", exact: true })
+    .click();
+  await expect(
+    page.frameLocator("iframe[title]").getByRole("heading", { name: "Board" }),
+  ).toBeVisible();
+  await standalone.click();
+  await page.getByRole("menuitem", { name: "移除", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText(agent);
+  await page.keyboard.press("Escape");
+  await expect(
+    page.frameLocator("iframe[title]").getByRole("heading", { name: "Board" }),
+  ).toBeVisible();
+  await standalone.click();
+  await page.getByRole("menuitem", { name: "移除", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "确认移除" }).click();
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(`${copy}?id=window-demo`)).json()).workbenches.length,
+    )
+    .toBe(0);
+  expect(
+    (await (await page.request.get(`${agentRoot}/default_agent/workbenches?id=window-demo`)).json())
+      .workbenches,
+  ).toHaveLength(1);
+  expect((await page.request.get(`${BASE}/api/sessions/${sessionId}`)).status()).toBe(200);
 });

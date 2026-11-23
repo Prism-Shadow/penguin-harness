@@ -14,9 +14,10 @@
  * remembers the Project and Agent the way the shell does — its localStorage keys — before
  * navigating.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import type { PaletteAction } from "@prismshadow/penguin-ui";
+import { useFirstWorkbench, GUIDE_ID } from "../../lib/first-workbench-entry";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
 import { useInstallManifest } from "../../lib/workbench-tabs";
@@ -31,6 +32,7 @@ import { usePaletteActions } from "../../lib/palette-actions";
 import { WorkbenchExitBall } from "./exit-ball";
 import { useAppPageTab } from "./use-app-page-tab";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { RunningWorkbenchActions } from "./workbench-actions";
 import { WorkbenchFrame } from "./workbench-frame";
 
 export function WorkbenchAppPage() {
@@ -58,6 +60,17 @@ export function WorkbenchAppPage() {
     ownEvents: true,
     enabled: !safe,
   });
+  const tour = useFirstWorkbench(
+    !safe && workbenchId === GUIDE_ID ? { projectId, agentId, machineId } : null,
+  );
+  useEffect(() => {
+    if (!tour) return;
+    rememberSelection(projectId, agentId);
+    void navigate("/chat/new", {
+      replace: true,
+      state: { firstWorkbench: { projectId, agentId, machineId } },
+    });
+  }, [tour, projectId, agentId, machineId, navigate]);
   const paletteShortcut = useShortcutLabel("palette.toggle");
   // The page is the app: the browser tab carries the tab's own name (the manifest's name is
   // the same title), not the main app's.
@@ -116,7 +129,7 @@ export function WorkbenchAppPage() {
     // A window of its own (`isolate`): its layers order only among themselves, under the
     // palette and every other overlay in the portal root. The theme's canvas shows through a
     // page that paints no background of its own.
-    <div className="relative isolate h-full w-full bg-canvas pt-[var(--window-band-height,0px)]">
+    <div className="relative isolate flex h-full w-full flex-col bg-canvas pt-[var(--window-band-height,0px)]">
       {/* A list request that fails after the page is up says so over it, rather than leaving
           a frame that quietly stopped following the workbench. */}
       {tab && failure !== null && (
@@ -127,18 +140,32 @@ export function WorkbenchAppPage() {
           {failure}
         </div>
       )}
-      {tab ? (
-        <WorkbenchFrame projectId={projectId} agentId={agentId} tab={tab} />
-      ) : (
-        <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-          <span>
-            {tab === undefined && failure === null
-              ? S.workbenches.loadingPage
-              : (failure ?? (off ? S.workbenches.offPage : S.workbenches.noSuchPage))}
-          </span>
-          <span>{S.workbenches.exitHint(paletteShortcut)}</span>
+      {workbench && (
+        <div className="flex shrink-0 justify-end px-2 py-1">
+          <RunningWorkbenchActions
+            running={!off}
+            projectId={projectId}
+            agentId={agentId}
+            machineId={machineId}
+            workbench={workbench}
+            title={tab?.title ?? workbench.name}
+          />
         </div>
       )}
+      <div className="relative min-h-0 flex-1">
+        {tab ? (
+          <WorkbenchFrame projectId={projectId} agentId={agentId} tab={tab} />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+            <span>
+              {tab === undefined && failure === null
+                ? S.workbenches.loadingPage
+                : (failure ?? (off ? S.workbenches.offPage : S.workbenches.noSuchPage))}
+            </span>
+            <span>{S.workbenches.exitHint(paletteShortcut)}</span>
+          </div>
+        )}
+      </div>
       <WorkbenchExitBall label={S.workbenches.exitFullPageButton} onExit={() => exit[0]!.run()} />
     </div>
   );

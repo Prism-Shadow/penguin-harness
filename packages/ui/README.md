@@ -139,3 +139,10 @@ import { highlight } from "@prismshadow/penguin-ui/highlighter";
 
 Apache-2.0. The package bundles KaTeX's stylesheet and fonts (MIT) and icon outlines from Lucide
 (ISC) and Octicons (MIT); their licence texts are in `dist/assets/LICENSES/`.
+
+## A2UI in a reply
+
+`Prose` draws A2UI fences inside Markdown. For a standalone block, import
+`A2uiBlock` from `@prismshadow/penguin-ui/a2ui` and pass its JSON as `source`.
+Both paths use the same renderer registry and `A2uiActionsProvider` for filling the
+composer. Forms and choices are read-only until the host supplies those actions.

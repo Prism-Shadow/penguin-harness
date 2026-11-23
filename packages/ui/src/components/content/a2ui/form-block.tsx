@@ -17,6 +17,7 @@
  * model's defaults; a field the message has no acceptable line for shows unanswered
  * (form-answers.ts). A message that is not the form's answer leaves the form as it was.
  */
+import { Card } from "../../layout/card/card";
 import { useCallback, useMemo } from "react";
 import type { FormEvent } from "react";
 import { fieldProblem, formFillText, parseFormFill } from "@prismshadow/a2ui";
@@ -63,32 +64,34 @@ export function FormBlock({ spec }: { spec: A2uiForm }) {
   };
 
   return (
-    <form className="a2ui-block my-3" data-a2ui="form" onSubmit={submit}>
-      {spec.title !== undefined && (
-        <div className={A2UI_TITLE}>
-          <InlineText text={spec.title} />
+    <Card className="a2ui-block my-3" data-a2ui="form">
+      <form onSubmit={submit}>
+        {spec.title !== undefined && (
+          <div className={A2UI_TITLE}>
+            <InlineText text={spec.title} />
+          </div>
+        )}
+        <div className="flex flex-col gap-3">
+          {spec.fields.map((field) => (
+            <FormFieldControl
+              key={field.id}
+              field={field}
+              answer={shown[field.id]}
+              onChange={(answer) => setAnswers((current) => ({ ...current, [field.id]: answer }))}
+              disabled={disabled}
+              strings={strings}
+              problem={fieldProblem(field, shown[field.id])}
+            />
+          ))}
         </div>
-      )}
-      <div className="flex flex-col gap-3">
-        {spec.fields.map((field) => (
-          <FormFieldControl
-            key={field.id}
-            field={field}
-            answer={shown[field.id]}
-            onChange={(answer) => setAnswers((current) => ({ ...current, [field.id]: answer }))}
-            disabled={disabled}
-            strings={strings}
-            problem={fieldProblem(field, shown[field.id])}
-          />
-        ))}
-      </div>
-      {interactive && (
-        <div className="mt-3">
-          <Button type="submit" variant="primary" size="sm" disabled={!ready}>
-            {spec.submitLabel ?? strings.fill}
-          </Button>
-        </div>
-      )}
-    </form>
+        {interactive && (
+          <div className="mt-3">
+            <Button type="submit" variant="primary" size="sm" disabled={!ready}>
+              {spec.submitLabel ?? strings.fill}
+            </Button>
+          </div>
+        )}
+      </form>
+    </Card>
   );
 }

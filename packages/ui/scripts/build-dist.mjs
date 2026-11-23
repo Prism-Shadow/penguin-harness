@@ -62,6 +62,7 @@ const { version } = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8"));
 
 const ENTRIES = {
   index: "src/index.ts",
+  a2ui: "src/a2ui.ts",
   "chat-markdown": "src/markdown/index.ts",
   highlighter: "src/components/content/code-block/highlighter-core.ts",
 };
