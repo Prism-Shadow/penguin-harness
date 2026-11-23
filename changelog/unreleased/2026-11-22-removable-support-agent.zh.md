@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1703
 
 [English](2026-11-22-removable-support-agent.md)
 
