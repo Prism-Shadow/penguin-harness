@@ -1366,7 +1366,23 @@ describe("Session and Project isolation", () => {
     const path = "/projects/project/session-resources";
     expect(await (await h.call("GET", path)).json()).toEqual({ counts: {} });
     await openOwned(h, 1, "parent");
-    await openOwned(h, 2, "child");
+    const childTabs = `${path}/child/tabs`;
+    expect(await (await h.call("GET", childTabs)).json()).toEqual({ tabs: [] });
+    expect((await h.call("GET", "/projects/elsewhere/session-resources/child/tabs")).status).toBe(
+      404,
+    );
+    const next = h.nextOpen();
+    const creating = h.call("POST", childTabs, { url: "about:blank" });
+    const opening = await next;
+    expect(opening.sessionId).toBe("child");
+    h.shell.show(tab(2));
+    await h.call("POST", "/tabs/claim", { requestId: opening.requestId, tabId: 2 });
+    expect((await creating).status).toBe(201);
+    expect(await (await h.call("GET", childTabs)).json()).toMatchObject({
+      tabs: [{ id: 2, sessionId: "child" }],
+    });
+    expect((await h.call("POST", childTabs + "/2/activate")).status).toBe(204);
+    expect((await h.call("DELETE", `${path}/parent/tabs/2`)).status).toBe(404);
     h.shell.show(tab(3)); // A guest without a Session never enters a managed group.
     expect(await (await h.call("GET", path)).json()).toEqual({ counts: { parent: 1, child: 1 } });
     const closing = h.call("POST", path + "/close", { sessionIds: ["child", "unknown"] });

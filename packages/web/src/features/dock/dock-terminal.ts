@@ -12,6 +12,7 @@
  * terminal at all until its first send.
  */
 import { useSyncExternalStore } from "react";
+import type { SessionWorkbenchScope } from "@prismshadow/penguin-web-plugin";
 import { S } from "../../lib/strings";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
 import {
@@ -30,7 +31,6 @@ import { rememberTerminalMachine } from "../../lib/terminal-machines";
 import {
   currentDockScope,
   docksOnScreen,
-  isTabShown,
   openPanel,
   setShownShell,
   shownShell,
@@ -111,18 +111,28 @@ export function useDockSessionId(): string | null {
 }
 
 /** The conversation's live shells, on its machine, in creation order — the panel's strip. */
-export function ownTerminals(): TerminalInfo[] {
-  const sessionId = dockSessionId();
-  return sessionId === null ? [] : terminalsOf(sessionId, conversation.machineId);
+export function ownTerminals(group?: SessionWorkbenchScope): TerminalInfo[] {
+  const sessionId = group?.sessionId ?? dockSessionId();
+  return sessionId === null
+    ? []
+    : terminalsOf(sessionId, group ? group.machineId : conversation.machineId);
+}
+
+function terminalSelectionScope(group: SessionWorkbenchScope): string {
+  return `terminal:${JSON.stringify([group.projectId, group.machineId, group.sessionId])}`;
+}
+
+export function selectTerminal(id: string, group?: SessionWorkbenchScope): void {
+  setShownShell(id, group ? terminalSelectionScope(group) : undefined);
 }
 
 /**
  * The shell the panel shows: the one last shown here while it is still one of the
  * conversation's live shells, else the newest; null when it has none.
  */
-export function shownTerminalId(): string | null {
-  const own = ownTerminals();
-  const kept = shownShell();
+export function shownTerminalId(group?: SessionWorkbenchScope): string | null {
+  const own = ownTerminals(group);
+  const kept = shownShell(group ? terminalSelectionScope(group) : undefined);
   if (kept !== null && own.some((t) => t.id === kept)) return kept;
   return own.at(-1)?.id ?? null;
 }
@@ -178,12 +188,16 @@ function isBadCwd(err: unknown): boolean {
  * carry the error, and a swallowed create looks like nothing happened, which is exactly
  * how a server-side spawn failure used to present. Resolves whether a shell started.
  */
-export async function createShell(position?: DockPosition): Promise<boolean> {
-  const sessionId = dockSessionId();
+export async function createShell(
+  position?: DockPosition,
+  group?: SessionWorkbenchScope,
+): Promise<boolean> {
+  const sessionId = group?.sessionId ?? dockSessionId();
   if (sessionId === null) return false;
   // The machine is named explicitly: there is no terminal id yet for the routing rule to
   // read, which is the one call in this feature that cannot use it.
-  const { workspace, machineId: machine } = conversation;
+  const machine = group ? group.machineId : conversation.machineId;
+  const workspace = group ? (group.workspace ?? null) : conversation.workspace;
   const create = (cwd: string): Promise<TerminalInfo> =>
     fetchJson<TerminalInfo>(
       "/api/terminals",
@@ -205,8 +219,8 @@ export async function createShell(position?: DockPosition): Promise<boolean> {
     noteTerminalCreated(created);
     // Only into the docks it was asked from: the user may have moved to another conversation
     // while the shell started. It is that conversation's own either way, and its panel lists it.
-    if (currentDockScope() === sessionId) {
-      setShownShell(created.id);
+    setShownShell(created.id, group ? terminalSelectionScope(group) : sessionId);
+    if (!group && currentDockScope() === sessionId) {
       openPanel(TERMINAL_PANEL, position, TERMINAL_DOCK);
     }
     return true;
@@ -233,39 +247,11 @@ export async function createShell(position?: DockPosition): Promise<boolean> {
 
 /**
  * Puts the terminal panel on screen in `position` (where its tab lives, else the bottom dock).
- * Opening it starts nothing by itself: the panel's body starts the conversation's first shell
- * when it has none (ensureShell).
+ * Opening the group only displays it. The New terminal action starts a shell.
  */
 export function openTerminalPanel(position?: DockPosition): void {
   if (dockSessionId() === null) return;
   openPanel(TERMINAL_PANEL, position, TERMINAL_DOCK);
-}
-
-let ensuring: Promise<boolean> | null = null;
-
-/**
- * The panel is never empty: shown with no live shell of the conversation, it starts one. The list
- * is read first — the conversation may have shells this window has not heard of yet (another
- * device, the CLI) — and nothing is started when the panel has left the screen meanwhile (its
- * last shell was just closed with ×, which closes the panel too). Concurrent asks share one try.
- * Resolves false only when a start was tried and failed (the toast has said why): the panel then
- * closes rather than stay empty, and the next open tries again.
- */
-export function ensureShell(): Promise<boolean> {
-  if (ensuring !== null) return ensuring;
-  const sessionId = dockSessionId();
-  if (sessionId === null) return Promise.resolve(true);
-  ensuring = (async () => {
-    try {
-      await refreshTerminals();
-      if (dockSessionId() !== sessionId || !isTabShown(TERMINAL_PANEL)) return true;
-      if (ownTerminals().length > 0) return true;
-      return await createShell();
-    } finally {
-      ensuring = null;
-    }
-  })();
-  return ensuring;
 }
 
 /**

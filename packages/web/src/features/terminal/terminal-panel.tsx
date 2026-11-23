@@ -7,41 +7,31 @@
  * The strip lists exactly the conversation's live shells as the server reports them, on its
  * machine (dock-terminal.ts `ownTerminals`): a shell opened for it on another device shows up
  * here too, and no other conversation's ever does. The shown one is kept per conversation in the
- * dock store, falling back to the newest. The panel is never empty: brought on screen with no
- * shell it starts one. A tab's × ends its shell after a confirm (the terminal.close keys inside
- * the shell take the same path); when the last shell ends — closed with ×, or exiting by itself —
- * the panel closes with it, and Ctrl+` opens it again with a fresh shell. A first shell that fails
- * to start closes it too: the toast says why, and the next open tries again.
+ * dock store, falling back to the newest. An empty group offers the same New terminal action
+ * as the tab strip. Closing the last shell leaves the group available.
  *
  * The screen is the pooled xterm view (terminal-view-pool.tsx), adopted by DOM handoff and
  * claimed only while this body is on screen, so tab churn never reconnects a shell and a hidden
  * dock costs no live view.
  */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ConfirmModal, GlyphIcon, ICON_SIZE, PanelTabs } from "@prismshadow/penguin-ui";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Button, ConfirmModal, GlyphIcon, ICON_SIZE, PanelTabs } from "@prismshadow/penguin-ui";
 import type { PanelTabItem } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
-import { dockVersion, setShownShell, subscribeDock } from "../dock/dock-state";
+import { dockVersion, subscribeDock } from "../dock/dock-state";
 import {
   createShell,
-  dockSessionId,
-  ensureShell,
   ownTerminals,
+  selectTerminal,
   shownTerminalId,
   useDockSessionId,
 } from "../dock/dock-terminal";
-import { useDockPanel } from "../dock/panel-context";
+import type { SessionWorkbenchScope } from "@prismshadow/penguin-web-plugin";
 import type { DockPanelBodyProps } from "../dock/panel-registry";
 import { useTerminalChrome } from "./terminal-appearance";
-import {
-  displayTitle,
-  killTerminal,
-  liveTerminals,
-  subscribeTerminals,
-  terminalListComplete,
-} from "./terminal-list";
+import { displayTitle, killTerminal, liveTerminals, subscribeTerminals } from "./terminal-list";
 import type { TerminalInfo } from "./terminal-view";
 import {
   claimTerminalView,
@@ -92,57 +82,18 @@ function TerminalScreen({ id, active }: { id: string; active: boolean }) {
   );
 }
 
-export function TerminalPanel({ active }: DockPanelBodyProps) {
-  const handle = useDockPanel();
+export function TerminalPanel({
+  active,
+  scope,
+}: DockPanelBodyProps & { scope?: SessionWorkbenchScope }) {
   const chrome = useTerminalChrome();
-  const sessionId = useDockSessionId();
+  const current = useDockSessionId();
+  const sessionId = scope?.sessionId ?? current;
   useSyncExternalStore(subscribeTerminals, liveTerminals);
   useSyncExternalStore(subscribeDock, dockVersion);
-  const shells = ownTerminals();
-  const shown = shownTerminalId();
+  const shells = ownTerminals(scope);
+  const shown = shownTerminalId(scope);
   const closeShortcut = useShortcutLabel("terminal.close");
-
-  // Two ways to have no shell, two answers. The conversation's shells all ended while the panel
-  // listed them — the last exited by itself, or was ended elsewhere — and the panel closes with
-  // them, once a complete list says so (a machine missing one round is not their end). Brought
-  // on screen with none yet, it starts one. Which way is per conversation: the body outlives a
-  // switch to another one, whose shells it has not listed yet.
-  const listedFor = useRef<string | null>(null);
-  const closing = useRef(false);
-  /** Closes the panel's tab, once; what it listed is forgotten with it. */
-  const closePanel = useCallback(() => {
-    if (closing.current) return;
-    closing.current = true;
-    listedFor.current = null;
-    handle.close();
-  }, [handle]);
-  // The body can outlive its own close (its dock animating away) and be shown again: coming back
-  // on screen is a fresh start.
-  const wasActive = useRef(active);
-  useEffect(() => {
-    if (active && !wasActive.current) closing.current = false;
-    wasActive.current = active;
-  }, [active]);
-  const empty = shells.length === 0;
-  const listComplete = useSyncExternalStore(subscribeTerminals, terminalListComplete);
-  useEffect(() => {
-    // The conversation this render saw must still be the one on screen: a route change can move
-    // the docks to the next conversation between the render and this effect, and closing then
-    // would take that conversation's tab.
-    if (sessionId === null || sessionId !== dockSessionId() || closing.current) return;
-    if (!empty) {
-      listedFor.current = sessionId;
-      return;
-    }
-    if (listedFor.current === sessionId) {
-      if (listComplete) closePanel();
-      return;
-    }
-    if (!active) return;
-    void ensureShell().then((started) => {
-      if (!started) closePanel();
-    });
-  }, [active, empty, sessionId, listComplete, closePanel]);
 
   // A shell's × ends the shell itself (server-side) — an easy mis-click beside its tab, so it
   // confirms first.
@@ -164,9 +115,7 @@ export function TerminalPanel({ active }: DockPanelBodyProps) {
   };
   const killConfirmed = (): void => {
     if (confirmKill === null) return;
-    const last = shells.length === 1 && shells[0]!.id === confirmKill.id;
     setConfirmKill(null);
-    if (last) closePanel();
     void killTerminal(confirmKill.id);
   };
 
@@ -175,30 +124,44 @@ export function TerminalPanel({ active }: DockPanelBodyProps) {
   // handler reads the current strip.
   const closeRequest = useRef<(id: string) => void>(() => {});
   closeRequest.current = askKill;
-  useEffect(() => subscribeTerminalCloseRequests((id) => closeRequest.current(id)), []);
+  useEffect(
+    () => (active ? subscribeTerminalCloseRequests((id) => closeRequest.current(id)) : undefined),
+    [active],
+  );
 
   return (
     <div data-testid="terminal-panel" className="flex h-full min-h-0 flex-col">
-      <PanelTabs
-        tabs={items}
-        active={shown}
-        onSelect={(id) => setShownShell(id)}
-        onClose={askKill}
-        onNew={() => void createShell()}
-        listLabel={S.terminal.tabsLabel}
-        newLabel={S.terminal.newShell}
-        closeLabel={S.terminal.killShell}
-        closeHint={
-          closeShortcut !== null
-            ? `${S.terminal.killShell} (${closeShortcut})`
-            : S.terminal.killShell
-        }
-        testIdPrefix="terminal"
-      />
+      {items.length > 0 && (
+        <PanelTabs
+          tabs={items}
+          active={shown}
+          onSelect={(id) => selectTerminal(id, scope)}
+          onClose={askKill}
+          onNew={() => void createShell(undefined, scope)}
+          listLabel={S.terminal.tabsLabel}
+          newLabel={S.terminal.newShell}
+          closeLabel={S.terminal.killShell}
+          closeHint={
+            closeShortcut !== null
+              ? `${S.terminal.killShell} (${closeShortcut})`
+              : S.terminal.killShell
+          }
+          testIdPrefix="terminal"
+        />
+      )}
       {shown !== null ? (
         <TerminalScreen key={shown} id={shown} active={active} />
       ) : (
-        <div className={`min-h-0 flex-1 ${chrome.surface}`} />
+        <div className={`flex min-h-0 flex-1 items-center justify-center ${chrome.surface}`}>
+          <Button
+            size="sm"
+            data-testid="terminal-new-tab"
+            disabled={sessionId === null}
+            onClick={() => void createShell(undefined, scope)}
+          >
+            {S.terminal.newShell}
+          </Button>
+        </div>
       )}
       <ConfirmModal
         open={confirmKill !== null}

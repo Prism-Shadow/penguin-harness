@@ -128,8 +128,10 @@ describe("which shells a conversation's panel lists and starts", () => {
     const local = openConversation(null, "/work/local");
 
     terminal.openTerminalPanel();
-    await terminal.ensureShell();
+    await list.refreshTerminals();
 
+    expect(writes(fake)).toEqual([]);
+    await terminal.createShell();
     expect(writes(fake)).toMatchObject([
       { method: "POST", machine: null, body: { cwd: "/work/local", sessionId: local } },
     ]);
@@ -151,7 +153,7 @@ describe("which shells a conversation's panel lists and starts", () => {
     ]);
 
     terminal.openTerminalPanel();
-    await terminal.ensureShell();
+    await list.refreshTerminals();
 
     expect(writes(fake)).toEqual([]);
     expect(terminal.ownTerminals().map((t) => t.id)).toEqual([
@@ -176,14 +178,39 @@ describe("which shells a conversation's panel lists and starts", () => {
     expect(terminal.shownTerminalId()).toBe("created-1");
   });
 
-  it("asked twice at once to start the first shell, starts one", async () => {
+  it("opens another Session's group without creating or selecting shells in the current conversation", async () => {
     const fake = stubFetch(answer);
     openConversation();
-    terminal.openTerminalPanel();
+    const group = {
+      projectId: "project",
+      machineId: "M",
+      sessionId: "sibling",
+      agentId: "agent",
+      workspace: "/sandbox",
+    };
+    expect(terminal.ownTerminals(group)).toEqual([]);
+    expect(writes(fake)).toEqual([]);
+    await terminal.createShell(undefined, group);
+    expect(writes(fake)).toMatchObject([
+      { machine: "M", body: { sessionId: "sibling", cwd: "/sandbox" } },
+    ]);
+    expect(terminal.shownTerminalId()).toBeNull();
+    expect(terminal.shownTerminalId(group)).toBe("created-1");
+  });
 
-    await Promise.all([terminal.ensureShell(), terminal.ensureShell()]);
-
-    expect(writes(fake)).toHaveLength(1);
+  it("keeps the selected shell independent for the same Session id on two machines", async () => {
+    stubFetch(answer);
+    const first = { projectId: "project", machineId: "M", sessionId: "same", agentId: "agent" };
+    const second = { ...first, machineId: "N" };
+    for (const group of [first, second]) {
+      await terminal.createShell(undefined, group);
+      await terminal.createShell(undefined, group);
+    }
+    const selected = terminal.ownTerminals(first)[0]!.id;
+    terminal.selectTerminal(selected, first);
+    terminal.selectTerminal(terminal.ownTerminals(second)[0]!.id, second);
+    expect(terminal.shownTerminalId(first)).toBe(selected);
+    expect(terminal.shownTerminalId(second)).toBe(terminal.ownTerminals(second)[0]!.id);
   });
 
   it("terminal.new starts another shell and shows it, the panel on screen", async () => {
@@ -227,7 +254,7 @@ describe("where no Session owns the docks", () => {
 
     expect(commands.runCommand("terminal.new")).toBe(false);
     expect(commands.runCommand("terminal.toggle")).toBe(false);
-    await terminal.ensureShell();
+    terminal.openTerminalPanel();
 
     expect(fake.requests).toEqual([]);
     expect(terminal.terminalPanelOffered()).toBe(false);

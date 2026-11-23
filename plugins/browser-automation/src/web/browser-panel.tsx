@@ -3,7 +3,7 @@
  * browser layer (browser-layer.tsx) lays the page on screen over. The panel lists only the current
  * conversation's pages, while the layer keeps other conversations' pages alive off screen — the panel holds no page itself, it only registers where the page should appear.
  *
- * The panel always has a tab: the layer opens the new-tab page when it shows none. A new tab
+ * An empty panel waits for a user or Agent to create a tab. A new tab
  * opens the homepage when one is set, and reads as that homepage while it loads. A blank one
  * shows the start page (new-tab-page.tsx), a few common sites, rather than a white page, and the
  * address bar takes the focus to wait for an address. A tab whose page crashed shows that in the slot, with
@@ -19,6 +19,9 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button, EmptyState, useWindowShown } from "@prismshadow/penguin-ui";
+import type { SessionWorkbenchScope } from "@prismshadow/penguin-web-plugin";
+import { showWorkbenchGroup } from "./dock-scope";
+import { ManagedBrowserPages } from "./managed-browser-pages";
 import { S } from "./strings";
 import { isBlankUrl, isWebUrl } from "./address";
 import {
@@ -29,6 +32,7 @@ import {
 } from "./browser-actions";
 import {
   activeTab,
+  canOfferFirstTab,
   sessionTabs,
   addressOf,
   builtinUsable,
@@ -93,8 +97,31 @@ function unavailableDetail(state: BrowserState): string | undefined {
   }
 }
 
-export function BuiltinBrowserPanel({ active }: { active: boolean }) {
-  const state = useSyncExternalStore(subscribeBrowser, browserState, browserState);
+export function BuiltinBrowserPanel({
+  active,
+  scope,
+}: {
+  active: boolean;
+  scope?: SessionWorkbenchScope;
+}) {
+  const live = useSyncExternalStore(subscribeBrowser, browserState, browserState);
+  const windowShown = useWindowShown();
+  const native = scope?.machineId === null && live.supported && live.backend === "builtin";
+  const sessionId = scope?.sessionId,
+    projectId = scope?.projectId;
+  useLayoutEffect(() => {
+    if (native && active && windowShown && sessionId && projectId)
+      return showWorkbenchGroup(sessionId, projectId);
+  }, [native, active, windowShown, sessionId, projectId]);
+  if (scope && !native)
+    return (
+      <ManagedBrowserPages
+        key={JSON.stringify([scope.machineId, scope.projectId, scope.sessionId])}
+        scope={scope}
+        active={active}
+      />
+    );
+  const state = scope ? { ...live, scope: scope.sessionId, projectId: scope.projectId } : live;
   const chrome = chromeInfo(state);
   if (state.backend === "chrome" && chrome !== null) {
     return <ChromeSurface state={state} active={active} />;
@@ -128,10 +155,18 @@ export function BuiltinBrowserPanel({ active }: { active: boolean }) {
       </div>
     );
   }
-  return <BrowserSurface state={state} active={active} />;
+  return <BrowserSurface state={state} active={active} {...(scope ? { group: scope } : {})} />;
 }
 
-function BrowserSurface({ state, active }: { state: BrowserState; active: boolean }) {
+function BrowserSurface({
+  state,
+  active,
+  group,
+}: {
+  state: BrowserState;
+  active: boolean;
+  group?: SessionWorkbenchScope;
+}) {
   const tab = activeTab(state);
   const tabId = tab?.id ?? null;
   const [importOpen, setImportOpen] = useState(false);
@@ -168,11 +203,11 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
   useEffect(() => {
     if (blankOnScreen !== null && !typingElsewhere(rootRef.current)) addressRef.current?.focus();
   }, [blankOnScreen]);
-  const newTab = () => void openBrowserTab();
+  const newTab = () => void openBrowserTab(undefined, state, group);
 
   const navigate = (url: string) => {
     if (tabId === null) {
-      void openBrowserTab(url);
+      void openBrowserTab(url, state, group);
       return;
     }
     drive(tabId, (view) => {
@@ -192,16 +227,18 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
 
   return (
     <div ref={rootRef} className="flex h-full min-h-0 flex-col">
-      <BrowserTabStrip
-        tabs={sessionTabs(state)}
-        activeTabId={tab?.id ?? null}
-        address={(shown) => addressOf(state, shown)}
-        busy={(id) => tabBusy(state, id)}
-        heavyMemory={(id) => heavyTabMemory(state.metrics, id)}
-        onSelect={activateBrowserTab}
-        onClose={closeBrowserTab}
-        onNew={newTab}
-      />
+      {sessionTabs(state).length > 0 && (
+        <BrowserTabStrip
+          tabs={sessionTabs(state)}
+          activeTabId={tab?.id ?? null}
+          address={(shown) => addressOf(state, shown)}
+          busy={(id) => tabBusy(state, id)}
+          heavyMemory={(id) => heavyTabMemory(state.metrics, id)}
+          onSelect={(id) => activateBrowserTab(id, "builtin", group)}
+          onClose={(id) => closeBrowserTab(id, group)}
+          onNew={newTab}
+        />
+      )}
       <BrowserToolbar
         tab={tab}
         address={address}
@@ -226,6 +263,16 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
         data-testid="builtin-browser-viewport"
         className="relative min-h-0 flex-1 overflow-hidden"
       >
+        {canOfferFirstTab(state, {
+          conversation: state.scope,
+          browserShown: active && windowShown,
+        }) && (
+          <div className="flex h-full items-center justify-center">
+            <Button size="sm" onClick={newTab}>
+              {S.builtinBrowser.newTab}
+            </Button>
+          </div>
+        )}
         {startPageShown(state, tab) && <NewTabPage onOpen={navigate} />}
         {tab?.crashed !== undefined && (
           <div
@@ -244,6 +291,7 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
           </div>
         )}
       </div>
+
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <ClearDataDialog open={clearOpen} onClose={() => setClearOpen(false)} />
       {homepageOpen && (

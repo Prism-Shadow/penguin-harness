@@ -60,18 +60,11 @@ import { isBlankUrl } from "./address";
 import {
   claimGuest,
   closeBrowserTab,
-  openBrowserTab,
   refreshBrowserSettings,
   refreshBrowserStatus,
 } from "./browser-actions";
 import { subscribeBuiltinBrowserEvents, subscribeBuiltinBrowserResync } from "./browser-events";
-import {
-  activeTab,
-  guestByKey,
-  shouldReveal,
-  wantsNewTabPage,
-  type BrowserGuest,
-} from "./browser-state";
+import { activeTab, guestByKey, shouldReveal, type BrowserGuest } from "./browser-state";
 import { browserState, dispatchBrowser, subscribeBrowser } from "./browser-store";
 import {
   DEFAULT_PARK_SIZE,
@@ -401,38 +394,13 @@ function LayerHost() {
 
   // A window hidden or shown again (minimized, closed to the tray) changes what is on screen, and
   // a hidden window lays out no frames to notice it by.
-  const [windowShown, setWindowShown] = useState(() => document.visibilityState !== "hidden");
   useEffect(() => {
     const changed = () => {
-      setWindowShown(document.visibilityState !== "hidden");
       placePages(ringRef.current);
     };
     document.addEventListener("visibilitychange", changed);
     return () => document.removeEventListener("visibilitychange", changed);
   }, []);
-
-  // The new-tab page for a panel on screen with no tab. The rule reads the store as it is now,
-  // not as this render saw it: a second run of the effect for the same render (StrictMode) then
-  // finds the first run's request on its way. Whether the panel is on screen is asked of the
-  // docks too, as they stand now: a conversation switch moves this store and the docks together,
-  // while the outgoing conversation's panel still holds a visible slot until the render after.
-  // A request that failed is not repeated until the panel goes and comes back or a tab opens; a
-  // window that cannot open tabs would otherwise ask, and say it failed, again and again.
-  const panelOnScreen = slotShown && windowShown;
-  const newTabPageFailed = useRef<string | null>(null);
-  useEffect(() => {
-    if (!panelOnScreen || activeTab(state) !== null) newTabPageFailed.current = null;
-    const onScreen = {
-      conversation: currentDockScope(),
-      browserShown: panelOnScreen && isTabShown(BROWSER_TAB),
-    };
-    if (newTabPageFailed.current === state.scope || !wantsNewTabPage(browserState(), onScreen))
-      return;
-    const scope = state.scope;
-    void openBrowserTab().then((tab) => {
-      if (tab === null) newTabPageFailed.current = scope;
-    });
-  }, [state, panelOnScreen]);
 
   // While a browser panel is on screen, follow its slot every frame.
   useEffect(() => {
