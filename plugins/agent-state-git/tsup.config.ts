@@ -1,7 +1,6 @@
 import { defineConfig } from "tsup";
 
-// dugite (its pinned table of Git builds) and tar (to unpack one) are devDependencies, so the
-// bundle carries them: a builtin plugin bundles what it runs (scripts/build-plugins.mjs).
+// The runtime reads the fixed platform table and extracts the local package payload.
 export default defineConfig({
   entry: ["src/index.ts"],
   format: ["esm"],

@@ -7,8 +7,4 @@
 
 [中文版](2026-10-27-socket-login-lifetime.zh.md)
 
-API sockets remain bound to the login used for their handshake. Password resets, logout and login expiry prevent further calls and stream delivery on that connection. The next incoming call, outgoing event or heartbeat closes the invalid socket and releases its requests. A fresh login can reconnect normally.
-
-Checking an open connection does not extend its login expiry.
-
-Revoked logins were rejected before dispatch into a disposed App. After the App was rebuilt, a fresh login could open a new socket normally.
+The API socket rechecks the original login after a platform reload and before sending a response or starting a subscription. Existing subscriptions also check access on their heartbeat. These checks do not renew the login.

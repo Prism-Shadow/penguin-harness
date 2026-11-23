@@ -23,7 +23,8 @@
  *   header wins.
  * - Revocation: a stream is authorised at connect and never again by the request path, so
  *   an authenticated route hands over {@link SseRevocation} — the registry that can end
- *   this stream from outside, and the check the heartbeat runs on it.
+ *   this stream from outside, and the check the heartbeat runs on it — and a route whose
+ *   access can be lost while a stream is open (a Session's) hands over its own check too.
  * Docs: /docs/server-api § "Delivery Guarantees".
  */
 import type { Context } from "hono";
@@ -62,6 +63,11 @@ export interface SseEndpointOptions {
   initialEvents?: ServerEvent[];
   /** Omitted only where there is no authenticated session to revoke. */
   revocation?: SseRevocation;
+  /**
+   * The route's own access check (the Session's Project, an Agent API key), re-run on every
+   * beat as the revocation check is: a reader who has lost access throws, and the stream ends.
+   */
+  authorize?: () => void;
   /**
    * Also write a `heartbeat` server event every beat, not only the id-less `ping` event. Set on
    * the user channel, whose readers (a browser tab, and the hub reading a machine's events)
@@ -132,6 +138,17 @@ export type StreamedChannel = Pick<Channel, "subscribe" | "replayAfter" | "sendT
  * workbench's `host.subscribe` (workbenches/subscribe.ts) keep exactly these.
  */
 export const isAmspRecord = (evt: ChannelEvent): boolean => evt.event === undefined;
+
+/** The beat's re-check: the session behind the connection is live and the route still admits it. Never renews either. */
+function stillAuthorized(opts: SseEndpointOptions): boolean {
+  if (opts.revocation !== undefined && !opts.revocation.sessionIsLive()) return false;
+  try {
+    opts.authorize?.();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Stream out a Channel as an SSE response. */
 export function sseEndpoint(
@@ -232,8 +249,9 @@ export function sseEndpoint(
         // a window whose session was revoked keeps streaming to a single interval, no
         // matter which caller dropped the rows or whether it remembered the registry. The
         // check must not renew the session: sliding the expiry from here would keep a
-        // window nobody has touched signed in for as long as it stays open.
-        if (revocation !== undefined && !revocation.sessionIsLive()) {
+        // window nobody has touched signed in for as long as it stays open. The route's own
+        // access is re-asked on the same beat: a member taken off the Project, a deleted key.
+        if (!stillAuthorized(opts)) {
           finish();
           return;
         }
@@ -337,7 +355,7 @@ function channelAnswered(
     heartbeat = setInterval(() => {
       // The same re-check as the HTTP heartbeat: one beat bounds how long a window whose
       // session was revoked keeps streaming, and the check must not renew the session.
-      if (revocation !== undefined && !revocation.sessionIsLive()) {
+      if (!stillAuthorized(opts)) {
         finish();
         return;
       }

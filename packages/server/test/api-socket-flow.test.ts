@@ -246,11 +246,12 @@ describe("acknowledged flow on the API socket", () => {
     ws.close();
   });
 
-  it("a one-shot call cancelled while its body is read gets no answer frame", async () => {
+  it.each(["cancel", "revoke"] as const)("a %s while a one-shot body is read sends no answer frame", async (action) => {
     const ws = new StandInSocket();
     let finish: () => void = () => {};
+    let live = true;
     serveApiSocket(ws as unknown as WebSocket, {
-      sessionIsLive: () => true,
+      sessionIsLive: () => live,
       fetch: async () =>
         new Response(
           new ReadableStream({
@@ -271,7 +272,8 @@ describe("acknowledged flow on the API socket", () => {
     });
     ws.frame({ id: 7, call: { method: "GET", path: "/server/m1/api/sessions/s/messages" } });
     await flush();
-    ws.frame({ id: 7, cancel: true });
+    if (action === "cancel") ws.frame({ id: 7, cancel: true });
+    else live = false;
     finish();
     await flush();
     expect(ws.sent.filter((f) => f.id === 7)).toEqual([]);
