@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 export const OWN_VERSION = new Map([
   [
     "@penguinharness/computer-use",
-    "market-only (scripts/build-plugins.mjs): an administrator installs it from the plugin market, so its version counts its own changes, not the harness releases that carried it",
+    "the built-in package and its separately published npm tarball share one plugin version",
   ],
 ]);
 

@@ -133,6 +133,17 @@ describe("a preinstalled built-in module, listed in Project config", () => {
     return events;
   }
 
+  it("can provision a new Project without changing an older Project's local module table", async () => {
+    const base = await stored("default_project");
+    await shipHybrids(t, { ...PRE, card: { preinstall: true, preinstallExistingProjects: false } });
+    expect(await boot()).toBe(true);
+    expect(await stored("default_project")).toEqual(base);
+    await createProject("newly_created");
+    expect(await own("newly_created")).toEqual({ [PRE.name]: {} });
+    expect(await boot()).toBe(true);
+    expect(await stored("default_project")).toEqual(base);
+  });
+
   it("the first boot of a build that ships it lists it in this server's own table of every Project, and runs it", async () => {
     const member = apiClient(t.app, (await provisionUser(t.app, "member")).cookie);
     await t.deps.projectConfigService.setPluginTables(MEMBER_PROJECT, {

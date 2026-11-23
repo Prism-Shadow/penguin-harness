@@ -15,7 +15,7 @@
  * Project — never the shared table, never another machine's:
  *   - when a Project is created (services/plugin-modules.ts, `PluginModules.preinstall`);
  *   - once for each Project created before that, at the first boot of a build that ships the
- *     package (services/preinstall-once.ts).
+ *     package (services/preinstall-once.ts), unless the card limits provisioning to newly created Projects.
  */
 import { libraryContributions, readPluginTable } from "@prismshadow/penguin-core";
 import { isBuiltin } from "./builtin.js";
@@ -31,22 +31,31 @@ export interface PreinstalledModule {
 /** Every preinstalled module this server's build ships, by package name. */
 export async function preinstalledModules(
   bases: readonly PluginBase[],
+  existingProject = false,
 ): Promise<PreinstalledModule[]> {
   const out: PreinstalledModule[] = [];
   for (const pkg of await discoverBuiltinPlugins(bases)) {
-    if (await isPreinstalled(pkg, bases)) out.push({ package: pkg, plugin: pluginNameOf(pkg) });
+    if (await isPreinstalled(pkg, bases, existingProject))
+      out.push({ package: pkg, plugin: pluginNameOf(pkg) });
   }
   return out;
 }
 
 /** Whether `pkg` is a preinstalled module on this server (see the header). */
-export async function isPreinstalled(pkg: string, bases: readonly PluginBase[]): Promise<boolean> {
+export async function isPreinstalled(
+  pkg: string,
+  bases: readonly PluginBase[],
+  existingProject = false,
+): Promise<boolean> {
   if (!(await isBuiltin(pkg, bases))) return false;
   const found = resolvePluginPackage(pkg, bases);
   if (found === null) return false;
   try {
     const table = readPluginTable(found.dir);
-    return table !== null && libraryContributions(table, []).card?.preinstall === true;
+    const card = table && libraryContributions(table, []).card;
+    return (
+      card?.preinstall === true && (!existingProject || card.preinstallExistingProjects !== false)
+    );
   } catch {
     // A table that will not read declares nothing; the loader says why when it loads it.
     return false;

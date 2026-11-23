@@ -57,6 +57,8 @@ export interface PluginCard {
   icon?: string;
   /** Whether default_agent gets the plugin at creation; absent = true for a shipped plugin, always false for one an operator installed. */
   preinstall?: boolean;
+  /** Whether a new preinstalled server module is also listed in existing Projects at upgrade. */
+  preinstallExistingProjects?: boolean;
   /**
    * Whether every Agent created from now on gets the plugin (an Agent create installs it unless
    * the request opts out); absent = false, and always false for one an operator installed.

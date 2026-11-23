@@ -4,7 +4,7 @@ Your Agents see and operate the apps on your computer's desktop with `penguin co
 
 ## Install
 
-1. An administrator installs **Computer Use** from the plugin market (Settings → Plugins). The plugin then downloads agent-desktop 1.3.1 from the npm registry of **Plugin Sources** (then its npm registry mirror, when chosen; an address is given up only after 30 s without data), checks it against the digests pinned in this package, and keeps only this machine's program, under `<data root>/cache/computer-use/`.
+1. PenguinHarness ships **Computer Use**. An administrator can enable its server module in Settings → Plugins. The plugin then downloads agent-desktop 1.3.1 from the npm registry of **Plugin Sources** (then its npm registry mirror, when chosen; an address is given up only after 30 s without data), checks it against the digests pinned in this package, and keeps only this machine's program, under `<data root>/cache/computer-use/`.
 2. Install the plugin on an Agent (its Plugins tab). The Agent gets the `computer-use` Skill.
 3. Check **Settings → Plugins → Computer Use**: it shows agent-desktop's state and what this machine still needs.
 

@@ -165,7 +165,12 @@ function readCard(table: PluginTable, warnings: string[]): LibraryContributions[
         `${at}.icon must be the path of a ${ICON_EXTENSIONS_TEXT} file in the package; ignored`,
       );
   }
-  for (const key of ["preinstall", "defaultInstall", "composerMode"] as const) {
+  for (const key of [
+    "preinstall",
+    "preinstallExistingProjects",
+    "defaultInstall",
+    "composerMode",
+  ] as const) {
     const value = entry[key];
     if (value === undefined) continue;
     if (typeof value === "boolean") card[key] = value;

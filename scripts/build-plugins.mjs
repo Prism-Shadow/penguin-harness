@@ -1,6 +1,6 @@
 /**
  * The builtin plugins, shipped as the npm packages they are: every `plugins/*` package with
- * a code entry, except the MARKET_ONLY ones, is built by its own `build` script, packed by
+ * a code entry is built by its own `build` script, packed by
  * `pnpm pack` — exactly what `npm publish` would send — and installed by npm into a staging
  * directory laid out as an npm prefix (`<out>/package.json` + `<out>/node_modules/<name>/…`,
  * dependencies included). That prefix is the one shape both consumers resolve from: the hot
@@ -83,20 +83,6 @@ const NATIVE_DEPENDENCIES = new Map([
   [
     "@deepseek-ai/node-addon-landlock-run",
     "resolves its per-platform launcher binary package at run time (sandbox-dsh)",
-  ],
-]);
-
-/**
- * The plugins of this repository that are NOT shipped, each with a reason: they are built,
- * tested and published to npm like every other (at a version of their own where
- * scripts/lib/own-version-plugins.mjs lists them), and the server's embedded index lists them, but
- * an administrator installs them from the plugin market — they are not in the builtin prefix, so
- * nothing carries them to every machine and no `409 plugin_shipped` stands in the market's way.
- */
-const MARKET_ONLY = new Map([
-  [
-    "@penguinharness/computer-use",
-    "not preinstalled: it downloads its own native program (agent-desktop) on the machine that runs it",
   ],
 ]);
 
@@ -203,8 +189,7 @@ async function bundleInputsHash(dir, into) {
 }
 
 /**
- * Every plugin package under `plugins/` with a code entry (`main` or `exports`) that is not
- * MARKET_ONLY: the packages of the server modules this build ships.
+ * Every plugin package under `plugins/` with a code entry (`main` or `exports`) ships in the prefix.
  */
 export async function pluginPackages(root) {
   const out = [];
@@ -217,7 +202,6 @@ export async function pluginPackages(root) {
     const pkg = JSON.parse(await fsp.readFile(manifestFile, "utf8"));
     // A package with a code entry is built and packed; one without (skills, hooks) carries no code.
     if (pkg.main === undefined && pkg.exports === undefined) continue;
-    if (MARKET_ONLY.has(pkg.name)) continue;
     const unbundled = Object.keys(pkg.dependencies ?? {}).filter(
       (d) => !NATIVE_DEPENDENCIES.has(d),
     );

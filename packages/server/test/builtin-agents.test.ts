@@ -104,8 +104,50 @@ describe("built-in Agent provisioning", () => {
     expect(ids).not.toContain("agent_optimizer");
     expect(list.agents.find((a) => a.agentId === "default_agent")?.name).toBe("General Agent");
 
-    // Install policy: default_agent is pre-installed with the library's preinstalled set
-    // (plugins marked `preinstall: false`, e.g. agent-company, stay manual-install only).
+    const preinstalled = loadPreinstalledPlugins();
+    const productBaseline = [
+      "a2ui",
+      "skill-porting",
+      "agent-company",
+      "agent-development",
+      "agent-evaluation",
+      "agent-state-git",
+      "browser-automation",
+      "computer-use",
+      "continual-learning",
+      "data-analysis",
+      "default-rsi-toolkit",
+      "goal",
+      "model-development",
+      "multimodal-tools",
+      "penguin-support",
+      "plan",
+      "software-development",
+      "storage",
+      "trace-lookup",
+      "use-bento-slides",
+    ];
+    expect(preinstalled.map((plugin) => plugin.name)).toEqual(
+      expect.arrayContaining(productBaseline),
+    );
+    const installedWorkbenches = path.join(
+      t.root,
+      "projects",
+      projectId,
+      "agents",
+      "default_agent",
+      "agent_state",
+      "workbenches",
+    );
+    for (const plugin of preinstalled) {
+      for (const workbench of plugin.workbenches ?? []) {
+        const manifest = await fs.readFile(
+          path.join(installedWorkbenches, workbench.name, "package.json"),
+          "utf8",
+        );
+        expect(JSON.parse(manifest).penguin.version).toBe(workbench.version);
+      }
+    }
     const skillsOf = async (agentId: string) =>
       (
         await fs.readdir(
@@ -113,9 +155,7 @@ describe("built-in Agent provisioning", () => {
         )
       ).sort();
     expect(await skillsOf("default_agent")).toEqual(
-      loadPreinstalledPlugins()
-        .flatMap((plugin) => plugin.skills.map((skill) => skill.name))
-        .sort(),
+      preinstalled.flatMap((plugin) => plugin.skills.map((skill) => skill.name)).sort(),
     );
     // The preinstalled plugins' hook packages land beside the skills, and no other plugin's.
     const hooksDir = path.join(
@@ -127,7 +167,7 @@ describe("built-in Agent provisioning", () => {
       "agent_state",
       "hooks",
     );
-    const hookPlugins = loadPreinstalledPlugins().filter((plugin) => plugin.hooks !== undefined);
+    const hookPlugins = preinstalled.filter((plugin) => plugin.hooks !== undefined);
     expect((await fs.readdir(hooksDir).catch(() => [])).sort()).toEqual(
       hookPlugins.map((plugin) => plugin.name).sort(),
     );
