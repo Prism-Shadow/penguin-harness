@@ -375,7 +375,6 @@ export function AppCenterPage() {
     duplicateOwners.has(id)
       ? {
           id: shortcut.agentId,
-          name: shortcut.agentName,
           src: avatarSrc(shortcut.agentId, shortcut.machineId),
         }
       : undefined;
