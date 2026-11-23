@@ -69,7 +69,7 @@
  * Keep independent edits in separate cases: six or seven compiler runs under one deadline
  * raced the coverage runner even though each individual operation completed normally.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
@@ -851,7 +851,17 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
   it("lists one workbench by id and loads that one alone", async () => {
     const other = path.join(path.dirname(dir), "other");
     await writeDemo(other);
-    const res = await owner.get(`${base}?id=demo`);
+    // Only the HTTP read is under test. A native watcher can separately build a sibling
+    // when the fixture's creation events arrive during the requested compile.
+    const watcher = vi.spyOn(nodeFs, "watch").mockImplementationOnce(() => {
+      throw new Error("Native notifications are unavailable for this query");
+    });
+    let res: Response;
+    try {
+      res = await owner.get(`${base}?id=demo`);
+    } finally {
+      watcher.mockRestore();
+    }
     expect(res.status).toBe(200);
     const body = (await res.json()) as { workbenches: WorkbenchInfo[]; enabled: boolean };
     expect(body.workbenches.map((w) => [w.id, w.error])).toEqual([["demo", null]]);
