@@ -227,7 +227,7 @@ export class Runs {
       if (task.result === "sources") record.sources = out.sources;
       if (task.result === "image" || task.result === "video" || task.result === "audio") {
         files = this.generated(task, record, out);
-      } else if (task.result === "text" && out.text.trim() === "") {
+      } else if (task.result === "text" && task.operation !== "s2t" && out.text.trim() === "") {
         throw new ToolError(502, "empty_result", "The model returned no text.");
       }
       signal.throwIfAborted();

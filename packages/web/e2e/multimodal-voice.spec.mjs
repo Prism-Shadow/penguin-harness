@@ -25,6 +25,33 @@ test.use({
   launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] },
 });
 
+// Keep Chromium's real permission and device lifecycle. Feed a known signal into the
+// resulting stream so encoder headers and the device's periodic test beep are unambiguous.
+async function microphoneSignal(page, amplitude) {
+  await page.addInitScript((amplitude) => {
+    const acquire = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async (constraints) => {
+      const original = await acquire(constraints);
+      const ctx = new AudioContext();
+      await ctx.resume();
+      const source = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.value = amplitude;
+      const destination = ctx.createMediaStreamDestination();
+      source.connect(gain).connect(destination);
+      source.start();
+      const track = destination.stream.getAudioTracks()[0];
+      const stop = track.stop.bind(track);
+      track.stop = () => {
+        stop();
+        original.getTracks().forEach((t) => t.stop());
+        void ctx.close();
+      };
+      return destination.stream;
+    };
+  }, amplitude);
+}
+
 /** A second of a quiet tone as 16 kHz PCM WAV: what the read-aloud route answers with here. */
 function toneWav() {
   const rate = 16000;
@@ -87,6 +114,12 @@ async function seed(page) {
   return { project, api };
 }
 
+async function sessionIds(page, api) {
+  const response = await page.request.get(api + "/agents/default_agent/sessions");
+  expect(response.ok(), await response.text()).toBeTruthy();
+  return (await response.json()).sessions.map((session) => session.sessionId);
+}
+
 async function bind(page, api, key, model) {
   const res = await page.request.patch(`${api}/models/tool-bindings`, { data: { key, model } });
   expect(res.ok(), await res.text()).toBeTruthy();
@@ -103,18 +136,25 @@ test("a tool model's dialog binds it; its card marks it and Project settings sho
     .locator('[data-slot="card"]')
     .filter({ has: page.locator('[data-slot="name"]').filter({ hasText: "DeepSeek ASR" }) })
     .last();
-  await expect(card.locator('[data-slot="in-use"]')).toHaveCount(0);
+  await expect(card.getByText("In use", { exact: true })).toHaveCount(0);
   await card.locator('[data-slot="name"]').click();
   const dialog = page.getByRole("dialog").last();
-  const row = dialog.locator('[data-operation="s2t"]');
-  await row.getByRole("button", { name: "Set default" }).click();
-  await expect(row.getByText("In use")).toBeVisible();
-  const { bindings } = await (await page.request.get(`${api}/models/tool-bindings`)).json();
-  expect(bindings.find((b) => b.key === "s2t").model).toEqual(ASR);
+  await dialog.getByRole("button", { name: "Use model", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .last()
+    .getByRole("button", { name: "Confirm", exact: true })
+    .click();
+  await expect
+    .poll(async () => {
+      const { bindings } = await (await page.request.get(`${api}/models/tool-bindings`)).json();
+      return bindings.find((b) => b.key === "s2t").model;
+    })
+    .toEqual(ASR);
   await page.keyboard.press("Escape");
-  await expect(card.locator('[data-slot="in-use"]')).toHaveAttribute(
-    "aria-label",
-    "In use: Speech recognition",
+  await expect(card.getByText("In use", { exact: true })).toHaveAttribute(
+    "data-tooltip",
+    /Speech recognition/,
   );
 
   await page.goto(`${BASE}/models?projectSettings=multimodal`);
@@ -125,41 +165,183 @@ test("a tool model's dialog binds it; its card marks it and Project settings sho
   );
 });
 
-test("dictation sends 16 kHz WAV to speech recognition and Send keeps its place", async ({
-  page,
-}) => {
-  const { api } = await seed(page);
-  await bind(page, api, "s2t", ASR);
-  const uploads = [];
-  await page.route("**/multimodal-tools/s2t/run", async (route) => {
-    const body = route.request().postDataJSON();
-    uploads.push(body.audio);
-    await route.fulfill({
-      json: {
-        id: "00000000-0000-4000-8000-000000000001",
-        operation: "s2t",
-        model: ASR,
-        createdAt: new Date().toISOString(),
-        status: "completed",
-        text: "Summarize the meeting",
-        files: [],
-      },
+for (const recorder of ["PCM", "MediaRecorder"]) {
+  test.describe(recorder, () => {
+    test.beforeEach(async ({ page }) => {
+      if (recorder === "MediaRecorder")
+        await page.addInitScript(() =>
+          Object.defineProperty(window, "AudioWorkletNode", { value: undefined }),
+        );
+    });
+    test("a short, quiet sound reaches recognition and Send submits the transcript once", async ({
+      page,
+    }) => {
+      await microphoneSignal(page, 2 / 32768);
+      const { api } = await seed(page);
+      const polish = await page.request.patch(api + "/multimodal-tools/voice-polish/settings", {
+        data: { enabled: false },
+      });
+      expect(polish.ok(), await polish.text()).toBeTruthy();
+      await bind(page, api, "s2t", ASR);
+      const initialSessions = await sessionIds(page, api);
+      const uploads = [];
+      await page.route("**/multimodal-tools/s2t/run", async (route) => {
+        const body = route.request().postDataJSON();
+        uploads.push(body.audio);
+        await route.fulfill({
+          json: {
+            id: "00000000-0000-4000-8000-000000000001",
+            operation: "s2t",
+            model: ASR,
+            createdAt: new Date().toISOString(),
+            status: "completed",
+            text: "Summarize the meeting",
+            files: [],
+          },
+        });
+      });
+      await page.goto(`${BASE}/chat/new`);
+      const mic = page.getByRole("button", { name: "Dictate", exact: true });
+      await mic.waitFor();
+      await page.locator('[data-slot="composer"] textarea').fill("");
+      const send = page.getByRole("button", { name: "Send", exact: true });
+      const before = await send.boundingBox();
+      await mic.click();
+      await page.getByRole("meter").first().waitFor();
+      await page.waitForTimeout(180); // Capture more than one PCM block of this very quiet tone.
+      expect(await send.boundingBox()).toEqual(before);
+      await expect(send).toBeDisabled();
+      await page.getByRole("button", { name: "Finish recording" }).click();
+      await expect(page.locator("textarea").first()).toHaveValue("Summarize the meeting");
+      expect(uploads).toHaveLength(1);
+      const audio = Buffer.from(uploads[0].data, "base64");
+      if (recorder === "PCM") {
+        const payload = audio.subarray(44);
+        const levels = Array.from({ length: payload.length / 2 }, (_, i) =>
+          Math.abs(payload.readInt16LE(i * 2)),
+        );
+        expect(levels.some((level) => level > 0)).toBe(true);
+        expect(levels.every((level) => level <= 3)).toBe(true);
+        expect(uploads[0].mimeType).toBe("audio/wav");
+        expect(audio.toString("ascii", 8, 12)).toBe("WAVE");
+      } else {
+        expect(uploads[0].mimeType).toBe("audio/webm");
+        expect(audio.length).toBeGreaterThan(0);
+      }
+      await send.click();
+      await expect(page).toHaveURL(/\/chat\/(?!new)[^/]+$/);
+      await expect
+        .poll(async () => (await sessionIds(page, api)).length)
+        .toBe(initialSessions.length + 1);
+    });
+    test("a silent microphone leaves an empty chat unsent and preserves an existing draft", async ({
+      page,
+    }) => {
+      await microphoneSignal(page, 0);
+      const { api } = await seed(page);
+      await bind(page, api, "s2t", ASR);
+      const speech = [];
+      const initialSessions = await sessionIds(page, api);
+      await page.route("**/multimodal-tools/s2t/run", async (route) => {
+        speech.push(route.request());
+        await route.fulfill({
+          status: 502,
+          json: { error: { code: "run_failed", message: "Speech endpoint failed" } },
+        });
+      });
+      await page.goto(BASE + "/chat/new");
+      const draft = page.locator('[data-slot="composer"] textarea');
+      const send = page.getByRole("button", { name: "Send", exact: true });
+      for (const text of ["", "Keep the slides draft"]) {
+        await draft.fill(text);
+        if (text) {
+          await page.locator('input[type="file"]:not([accept])').setInputFiles({
+            name: "agenda.txt",
+            mimeType: "text/plain",
+            buffer: Buffer.from("Meeting agenda"),
+          });
+        }
+        await page.getByRole("button", { name: "Dictate", exact: true }).click();
+        await page.getByRole("meter").first().waitFor();
+        await page.waitForTimeout(180);
+        await expect(send).toBeDisabled();
+        await page.getByRole("button", { name: "Finish recording", exact: true }).click();
+        await expect(
+          page.getByText("No speech was recognized.", { exact: true }).last(),
+        ).toBeVisible();
+        await expect(draft).toHaveValue(text);
+        if (text) await expect(page.getByText("agenda.txt", { exact: true })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Dictate", exact: true })).toBeVisible();
+        if (!text) {
+          await draft.press("Enter");
+          await expect(send).toBeDisabled();
+        }
+        expect(await sessionIds(page, api)).toEqual(initialSessions);
+        expect(speech).toHaveLength(0);
+      }
+      await send.click();
+      await expect(page).toHaveURL(/\/chat\/(?!new)[^/]+$/);
+      await expect
+        .poll(async () => (await sessionIds(page, api)).length)
+        .toBe(initialSessions.length + 1);
     });
   });
-  await page.goto(`${BASE}/chat/new`);
-  const mic = page.getByRole("button", { name: "Dictate", exact: true });
-  await mic.waitFor();
-  const send = page.getByRole("button", { name: "Send", exact: true });
-  const before = await send.boundingBox();
-  await mic.click();
-  await page.getByRole("meter").first().waitFor();
-  expect(await send.boundingBox()).toEqual(before);
-  await expect(send).toBeDisabled();
-  await page.getByRole("button", { name: "Finish recording" }).click();
-  await expect(page.locator("textarea").first()).toHaveValue("Summarize the meeting");
-  expect(uploads).toHaveLength(1);
-  expect(uploads[0].mimeType).toBe("audio/wav");
-  expect(Buffer.from(uploads[0].data, "base64").toString("ascii", 8, 12)).toBe("WAVE");
+}
+
+test("cancellation ignores a late transcript and a real recognition failure stays visible", async ({
+  page,
+}) => {
+  await microphoneSignal(page, 0.1);
+  const { api } = await seed(page);
+  await bind(page, api, "s2t", ASR);
+  let finish;
+  let attempts = 0;
+  const held = new Promise((resolve) => {
+    finish = resolve;
+  });
+  await page.route("**/multimodal-tools/s2t/run", async (route) => {
+    attempts++;
+    if (attempts === 1) {
+      await held;
+      await route.fulfill({ json: { text: "Late transcript" } }).catch(() => {});
+    } else if (attempts === 2) {
+      await route.fulfill({ json: { text: "   " } });
+    } else {
+      await route.fulfill({
+        status: 502,
+        json: { error: { code: "run_failed", message: "The model provider returned HTTP 503." } },
+      });
+    }
+  });
+  await page.goto(BASE + "/chat/new");
+  const draft = page.locator('[data-slot="composer"] textarea');
+  await draft.fill("Keep my words");
+  const dictate = page.getByRole("button", { name: "Dictate", exact: true });
+  const record = async (twice = false) => {
+    await dictate.click();
+    await page.getByRole("meter").first().waitFor();
+    await page.waitForTimeout(180);
+    const finish = page.getByRole("button", { name: "Finish recording", exact: true });
+    if (twice) await finish.dblclick();
+    else await finish.click();
+  };
+  try {
+    await record(true);
+    await expect.poll(() => attempts).toBe(1);
+    await page.keyboard.press("Escape");
+    await expect(dictate).toBeEnabled();
+  } finally {
+    finish();
+  }
+  await record();
+  await expect(page.getByText("No speech was recognized.", { exact: true })).toBeVisible();
+  await expect(draft).toHaveValue("Keep my words");
+  await record();
+  await expect(
+    page.getByText("The model provider returned HTTP 503.", { exact: true }),
+  ).toBeVisible();
+  await expect(draft).toHaveValue("Keep my words");
+  expect(attempts).toBe(3);
 });
 
 test("a reply plays the audio the plugin answers with, and stops on a second press", async ({

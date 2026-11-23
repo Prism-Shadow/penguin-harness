@@ -128,6 +128,25 @@ describe("penguin tools", () => {
     expect(run.files[0]!.name.endsWith(".wav")).toBe(true);
   });
 
+  it.each(["", "  \n "])(
+    "completes speech recognition when the provider heard no words",
+    async (transcript) => {
+      const { tools } = await setup(() => answer([{ type: "text.done", text: transcript }]), {
+        s2t: ASR,
+      });
+      const result = await runCli(
+        tools,
+        ["tools", "s2t", "--audio", "quiet.wav", "--json"],
+        agent,
+        {
+          "quiet.wav": { name: "quiet.wav", data: WAV },
+        },
+      );
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({ operation: "s2t", status: "completed" });
+    },
+  );
+
   it("transcribes the recording the terminal sent, and turns away a container DeepSeek refuses before sending", async () => {
     const { model, tools } = await setup(
       () => answer([{ type: "text.done", text: "Recorded words" }]),
