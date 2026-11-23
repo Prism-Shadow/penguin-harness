@@ -33,7 +33,7 @@ export function useSessionDraft(sessionId: string | null): {
   /** Staged `/model` switch target change (picked/removed); like the handoff target, a discrete action writes immediately. */
   onPendingModelChange: (ref: ModelRefDto | null) => void;
   /** Selected-skills change (wired directly to ChatInput's onSkillsChange; a discrete action writes immediately). */
-  onSkillsChange: (names: string[]) => void;
+  onSkillsChange: (names: string[], steering?: string[]) => void;
   /** Discard the current session's draft after a successful send. */
   discard: () => void;
 } {
@@ -47,6 +47,7 @@ export function useSessionDraft(sessionId: string | null): {
   const handoffRef = useRef<string | null>(initial.handoffAgentId ?? null);
   const switchModelRef = useRef<ModelRefDto | null>(initial.switchModelRef ?? null);
   const skillsRef = useRef<string[]>(initial.skills ?? []);
+  const steeringSkillsRef = useRef(initial.steeringSkills ?? []);
   const timer = useRef<number | null>(null);
 
   const cancelPending = useCallback(() => {
@@ -71,6 +72,7 @@ export function useSessionDraft(sessionId: string | null): {
     if (handoffAgentId) data.handoffAgentId = handoffAgentId;
     if (pendingModel) data.switchModelRef = pendingModel;
     if (skills.length > 0) data.skills = skills;
+    if (steeringSkillsRef.current.length) data.steeringSkills = steeringSkillsRef.current;
     saveDraft(key, data);
   }, [cancelPending, key]);
 
@@ -84,6 +86,7 @@ export function useSessionDraft(sessionId: string | null): {
       handoffRef.current = initial.handoffAgentId ?? null;
       switchModelRef.current = initial.switchModelRef ?? null;
       skillsRef.current = initial.skills ?? [];
+      steeringSkillsRef.current = initial.steeringSkills ?? [];
     }
     return () => {
       if (timer.current !== null) {
@@ -125,8 +128,9 @@ export function useSessionDraft(sessionId: string | null): {
   );
 
   const onSkillsChange = useCallback(
-    (names: string[]) => {
+    (names: string[], steering: string[] = []) => {
       skillsRef.current = names;
+      steeringSkillsRef.current = steering;
       // Same as the handoff target: discrete action writes immediately.
       persistNow();
     },
@@ -141,6 +145,7 @@ export function useSessionDraft(sessionId: string | null): {
     // toggle, a staged chip) would resurrect the already-sent text or selection.
     textRef.current = "";
     skillsRef.current = [];
+    steeringSkillsRef.current = [];
     handoffRef.current = null;
     switchModelRef.current = null;
     if (key) clearDraft(key);

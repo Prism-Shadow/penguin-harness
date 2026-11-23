@@ -626,6 +626,7 @@ export function ChatInput({
   currentAgentId,
   skills,
   initialSkills,
+  initialSteeringSkills,
   initialGoal,
   goalPlugin = null,
   switches,
@@ -851,6 +852,8 @@ export function ChatInput({
    * in that list are pruned.
    */
   initialSkills?: string[];
+  /** The subset explicitly chosen for the running task in this draft. */
+  initialSteeringSkills?: string[] | undefined;
   /** Start in goal mode (a plugin's quick start whose demo is a goal): read once on mount. */
   initialGoal?: boolean;
   /**
@@ -868,7 +871,7 @@ export function ChatInput({
   /** A notice drawn as the composer card's top band (`ComposerBanner`): what Send waits for. */
   banner?: ReactNode;
   /** Callback when selected skills change (check/prune; the clear after a successful send does not call back, same as onTextChange). */
-  onSkillsChange?: (names: string[]) => void;
+  onSkillsChange?: (names: string[], steering?: string[]) => void;
   /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
   initialText?: string;
   /**
@@ -969,6 +972,7 @@ export function ChatInput({
   const [pendingModel, setPendingModel] = useState<ModelInfo | null>(null);
   // Selected skills (dropdown checklist, multi-select): initial value comes from draft restore (quick-invoke pre-selection), cleared on successful send.
   const [selectedSkills, setSelectedSkills] = useState<string[]>(initialSkills ?? []);
+  const [steeringSkills, setSteeringSkills] = useState<string[]>(initialSteeringSkills ?? []);
   // Cursor position (tracked via onChange/onSelect): the slash menu matches the token at the caret.
   const [caret, setCaret] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1169,7 +1173,7 @@ export function ChatInput({
     stagedRoute,
     hasHandoffTarget: target !== null,
     hasPendingModel: pendingModel !== null,
-    hasText: text.trim().length > 0,
+    hasText: text.trim().length > 0 || steeringSkills.some((name) => selectedSkills.includes(name)),
     hasImages: images.length > 0,
     hasFiles: attachments.length > 0,
     hasContent: draftHasContent,
@@ -1335,9 +1339,13 @@ export function ChatInput({
     (name: string) => {
       const next = toggleSkillName(selectedSkills, name);
       setSelectedSkills(next);
-      onSkillsChange?.(next);
+      const steering = next.filter(
+        (skill) => steeringSkills.includes(skill) || (running && skill === name),
+      );
+      setSteeringSkills(steering);
+      onSkillsChange?.(next, steering);
     },
-    [selectedSkills, onSkillsChange],
+    [selectedSkills, steeringSkills, running, onSkillsChange],
   );
 
   /** The text the last fill put in the box, so a fill over it untouched does not ask (fillPrompt). */
@@ -1359,9 +1367,11 @@ export function ChatInput({
       lastFillRef.current = fill.text;
       setCaret(0);
       if (
+        steeringSkills.length > 0 ||
         fill.skills.length !== selectedSkills.length ||
         fill.skills.some((name, i) => name !== selectedSkills[i])
       ) {
+        setSteeringSkills([]);
         setSelectedSkills(fill.skills);
         onSkillsChange?.(fill.skills);
       }
@@ -1377,7 +1387,7 @@ export function ChatInput({
         el.scrollTop = 0;
       });
     },
-    [skills, selectedSkills, onTextChange, onSkillsChange],
+    [skills, selectedSkills, steeringSkills, onTextChange, onSkillsChange],
   );
   /**
    * Every fill passes here, whichever surface sent it (an example task, a saved shortcut, a
@@ -1424,7 +1434,7 @@ export function ChatInput({
       onTextChange?.(next);
     };
     const items: SlashCommand[] = [
-      ...(onCompact
+      ...(!running && onCompact
         ? [
             {
               cmd: "/compact",
@@ -1438,7 +1448,7 @@ export function ChatInput({
         : []),
       // Goal mode is offered wherever a main conversation is composed, the draft included (its
       // first send starts the goal): only the subagent variant offers no way in.
-      ...(variant !== "subagent"
+      ...(!running && variant !== "subagent"
         ? [
             {
               cmd: "/goal",
@@ -1454,7 +1464,7 @@ export function ChatInput({
       // draft state has its own model picker). Gated on the model list being loaded: without
       // it the picker would open empty. Running the command consumes the /model token (like
       // /compact) and opens the picker; the rest of the draft stays.
-      ...(onSwitchModel && models && models.length > 0
+      ...(!running && onSwitchModel && models && models.length > 0
         ? [
             {
               cmd: "/model",
@@ -1471,7 +1481,7 @@ export function ChatInput({
       // same way too: the parent passes onHandoff for an active Session only, because a draft
       // has nothing to hand over (and already picks its Agent in the draft page's own
       // selector). Candidates must exist, or the picker would open empty.
-      ...(onHandoff && agents.length > 0
+      ...(!running && onHandoff && agents.length > 0
         ? [
             {
               cmd: "/agent",
@@ -1540,7 +1550,11 @@ export function ChatInput({
   // until the caret sits on a different token; suppressed while a switch picker is open (the
   // picker took over the interaction, and its own search box owns the keyboard).
   const slashTok =
-    !running && !compacting && !modelSwitchOpen && !agentSwitchOpen
+    (!running || onSteer !== undefined) &&
+    !busy &&
+    !compacting &&
+    !modelSwitchOpen &&
+    !agentSwitchOpen
       ? matchSlash(text, caret)
       : null;
   slashMatchRef.current = slashTok;
@@ -1725,8 +1739,10 @@ export function ChatInput({
     const next = selectedSkills.filter((n) => skills.some((s) => s.name === n));
     if (next.length === selectedSkills.length) return;
     setSelectedSkills(next);
-    onSkillsChange?.(next);
-  }, [skills, selectedSkills, onSkillsChange]);
+    const steering = steeringSkills.filter((name) => next.includes(name));
+    setSteeringSkills(steering);
+    onSkillsChange?.(next, steering);
+  }, [skills, selectedSkills, steeringSkills, onSkillsChange]);
 
   /**
    * The two chips are restored from the draft cache by two effects that fire whenever their own
@@ -1804,6 +1820,7 @@ export function ChatInput({
           setText("");
           setImages([]);
           setSelectedSkills([]);
+          setSteeringSkills([]);
           toggleGoal(false);
         }
       } finally {
@@ -1861,6 +1878,7 @@ export function ChatInput({
         setTarget(null);
         setPendingModel(null);
         setSelectedSkills([]);
+        setSteeringSkills([]);
       }
     } finally {
       setBusy(false);
@@ -1890,7 +1908,12 @@ export function ChatInput({
       // for the running agent; all are sent and cleared together — selected skills stay for
       // a normal send (a staged switch chip blocks this branch outright, see midRunAction).
       if (!steerAction) return;
-      const steerText = withReferences(references, text.trim());
+      const invoked = selectedSkills.filter((name) => steeringSkills.includes(name));
+      const typed = withReferences(references, text.trim());
+      const steerText = buildSkillsMessage(
+        invoked,
+        typed || (invoked.length ? S.chat.skillsAutoMessage(invoked) : ""),
+      );
       const steerImages = images;
       const steerFiles = attachments.map((f) => ({ fileName: f.name, dataUrl: f.dataUrl }));
       setBusy(true);
@@ -1902,6 +1925,10 @@ export function ChatInput({
           // (steeringDeliveredCount increases) — see the effect below.
           steerBaseline.current = steeringDeliveredCount ?? 0;
           setSteerPending(true);
+          const remaining = selectedSkills.filter((name) => !invoked.includes(name));
+          setSelectedSkills(remaining);
+          setSteeringSkills([]);
+          if (selectedSkills.length > 0) onSkillsChange?.(remaining, []);
           setText("");
           setImages([]);
           setAttachments([]);
@@ -1986,6 +2013,7 @@ export function ChatInput({
       return;
     }
     if (slashOpen) {
+      if (e.nativeEvent.isComposing) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setSlashIndex((i) => (i + 1) % slashMatches.length);
@@ -1996,7 +2024,7 @@ export function ChatInput({
         setSlashIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length);
         return;
       }
-      if (((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") && !e.nativeEvent.isComposing) {
+      if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
         e.preventDefault();
         activeSlash?.run();
         return;
@@ -2005,6 +2033,8 @@ export function ChatInput({
         // Only closes the popup, doesn't clear the input: with positional matching the `/token`
         // is part of the text body like any other word, and wiping a controlled textarea is not
         // undoable with Ctrl+Z. Reopens if the user keeps typing on another token.
+        e.preventDefault();
+        e.stopPropagation();
         setSlashDismissed(slashTok?.start ?? null);
         return;
       }

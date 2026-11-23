@@ -269,6 +269,14 @@ export class SessionsRepo implements SessionIndex {
     return rows.map(mapRow);
   }
 
+  /** The Session's original case and punctuation matter; the suffix is literal SQL data. */
+  findBySuffix(projectId: string, suffix: string): SessionRow[] {
+    return this.db
+      .prepare("SELECT * FROM sessions WHERE project_id = ? AND substr(session_id, -length(?)) = ?")
+      .all(projectId, suffix, suffix)
+      .map(mapRow);
+  }
+
   updateApprovalMode(sessionId: string, mode: ApprovalMode): void {
     this.db
       .prepare("UPDATE sessions SET approval_mode = ? WHERE session_id = ?")

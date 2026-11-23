@@ -36,15 +36,15 @@ test("models: a group's gear sorts its models and still opens its settings", asy
 
   const openRouter = page.getByRole("button", { name: /^OpenRouter\s*\d+ models/ });
   await openRouter.click();
-  const section = page.locator("section", { has: openRouter });
+  const section = page.locator('[data-slot="group"]', { has: openRouter });
   const byPrice = await cards(section);
   expect(byPrice.length, "OpenRouter holds the catalog's rows").toBeGreaterThan(3);
   const firstPaid = byPrice.findIndex((card) => !card.free);
   expect(firstPaid, "a free model leads the default order").toBeGreaterThan(0);
   expect(byPrice.slice(firstPaid).some((card) => card.free)).toBe(false);
-  const tokenDance = page.locator("section", {
-    has: page.getByRole("button", { name: /^TokenDance\s*\d+ models/ }),
-  });
+  const tokenDanceHeader = page.getByRole("button", { name: /^TokenDance\s*\d+ models/ });
+  await tokenDanceHeader.click();
+  const tokenDance = page.locator('[data-slot="group"]', { has: tokenDanceHeader });
   const tokenDanceByPrice = await cards(tokenDance);
 
   // Keyboard: open, walk, pick.

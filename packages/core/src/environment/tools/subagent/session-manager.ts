@@ -137,7 +137,7 @@ export class SubagentSessionManager {
 
   /**
    * Registers a still-running session as a background session, allocating and returning a
-   * unique `subagent_id`: `subagent-<last 8 hex of child Session id>` (falls back to random on
+   * real Session address: the last eight characters of its child Session id (full Session id on
    * collision), whose suffix aligns with the message origin/frontend nesting label
    * (`agent-<last 3 chars>`) for correlation.
    */
@@ -147,20 +147,17 @@ export class SubagentSessionManager {
     // completed, idle ones); if still no room, register anyway, tolerating a brief overshoot
     // (see MAX_SESSIONS).
     this.registry.makeRoom(false);
-    const previous =
-      alias ?? [...this.registered].find(([, prior]) => prior.sessionId === session.sessionId)?.[0];
-    const id = this.registry.register(
-      session,
-      previous?.slice("subagent-".length) ?? session.sessionId.slice(-8),
-      (candidate) => {
-        const prior = this.registered.get(candidate);
-        return prior !== undefined && prior.sessionId !== session.sessionId;
-      },
-    );
-    // Tombstone for the revival path: a subagent session is never destroyed the way a process
-    // is — releasing it (idle eviction) only frees the slot, and this record lets a later
-    // input_subagent on the same id resume the child instead of erroring. Parent-session
-    // lifetime, one small record per registration.
+    return this.registry.registerAs(session, this.remember(session, alias));
+  }
+
+  /** Keep just the original identity after a foreground window has already finished. */
+  remember(session: ManagedSubagentSession, alias?: string): string {
+    const previous = this.registered.get(session.sessionId);
+    if (previous) return session.sessionId;
+    const short = session.sessionId.slice(-8);
+    const prior = this.registered.get(short);
+    const id =
+      alias ?? (prior && prior.sessionId !== session.sessionId ? session.sessionId : short);
     this.registered.set(id, {
       sessionId: session.sessionId,
       ...(session.resumeAgentId !== undefined ? { agentId: session.resumeAgentId } : {}),
@@ -174,6 +171,25 @@ export class SubagentSessionManager {
   /** The resume clue for a subagent_id no longer in the registry; undefined for ids this parent session never allocated. */
   releasedInfo(subagentId: string): { sessionId: string; agentId?: string } | undefined {
     return this.registered.get(subagentId);
+  }
+
+  /** Resolve a real id/suffix against this environment when there is no wider host index. */
+  localTarget(address: string): { sessionId: string; agentId?: string } | undefined {
+    if (address.startsWith("subagent-")) return this.releasedInfo(address);
+    const suffix = address;
+    const ids = new Map<string, { sessionId: string; agentId?: string }>();
+    for (const child of this.live) {
+      if (!child.disposed) ids.set(child.sessionId, { sessionId: child.sessionId });
+    }
+    for (const child of this.registered.values()) ids.set(child.sessionId, child);
+    if (ids.has(suffix)) return ids.get(suffix);
+    if (suffix.length >= 8) {
+      const matches = [...ids.values()].filter((child) => child.sessionId.endsWith(suffix));
+      if (matches.length > 1)
+        throw new Error("Ambiguous Session suffix. Supply more characters or the full Session ID.");
+      if (matches.length) return matches[0];
+    }
+    return this.releasedInfo(address);
   }
 
   resolveHistorical?: SubagentResolver;

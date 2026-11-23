@@ -56,6 +56,8 @@ export interface DraftCache {
    * installed list once it's ready; cleared along with the entire draft on successful send.
    */
   skills?: string[];
+  /** Installed skills explicitly picked for an interjection, a subset of skills. */
+  steeringSkills?: string[];
   /** Start in goal mode (written by a plugin's quick start whose demo is a goal); cleared with the draft on send. */
   goal?: true;
   /** The composer's switches on in this draft (prompt-modes.ts); on send they move to the Session it creates. */
@@ -127,6 +129,11 @@ export function draftFromUnknown(parsed: unknown): DraftCache {
     // filtering, the whole field is omitted.
     const skills = o.skills.filter((s): s is string => typeof s === "string");
     if (skills.length > 0) out.skills = skills;
+    const steering = o.steeringSkills;
+    if (Array.isArray(steering)) {
+      const selected = skills.filter((name) => steering.includes(name));
+      if (selected.length) out.steeringSkills = selected;
+    }
   }
   if (o.aiPrefill === true) out.aiPrefill = true;
   if (o.goal === true) out.goal = true;

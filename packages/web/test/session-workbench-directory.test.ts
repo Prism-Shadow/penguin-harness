@@ -45,7 +45,11 @@ vi.mock("../src/lib/page-workspace", () => ({
   usePageWorkspace: () => ({ openBesideSession: fixture.open }),
 }));
 vi.mock("../src/features/dock/panel-registry", () => ({
-  useSessionWorkbenchPanels: () => [{ id: "terminal", label: () => "Terminal" }],
+  useSessionWorkbenchPanels: () => [
+    { id: "terminal", label: () => "Terminal" },
+    { id: "builtin-browser", label: () => "Browser" },
+    { id: "workspace", label: () => "Files" },
+  ],
 }));
 vi.mock("../src/api/endpoints", () => ({ listSessions: fixture.list, getSession: fixture.get }));
 vi.mock("../src/lib/session-resource-counts", () => ({
@@ -59,13 +63,23 @@ afterEach(async () => {
   setActiveStrings(zh);
 });
 
+async function directory(kind: string) {
+  await mount(
+    h(
+      MemoryRouter,
+      { initialEntries: ["/session-tools/" + kind] },
+      h(Routes, null, h(Route, { path: "/session-tools/:kind", element: h(SessionWorkbenchPage) })),
+    ),
+  );
+}
+
 it("keeps same-ID local and remote resource groups distinct, reports a failed target and retries only that target", async () => {
   setActiveStrings(en);
   const live = new Map<string | null, number>([
     [null, 1],
     ["remote-a", 2],
   ]);
-  fixture.list.mockResolvedValue({ sessions: [fixture.row] });
+  fixture.get.mockResolvedValue({ session: fixture.row });
   fixture.counts.mockImplementation(async (_kind, _project, machine: string | null) => {
     if (machine === "remote-b") throw new Error("Not permitted");
     return { shared: live.get(machine) ?? 0 };
@@ -81,19 +95,14 @@ it("keeps same-ID local and remote resource groups distinct, reports a failed ta
       return { results: [{ sessionId: "shared", closed: count }] };
     },
   );
-  await mount(
-    h(
-      MemoryRouter,
-      { initialEntries: ["/session-tools/terminal"] },
-      h(Routes, null, h(Route, { path: "/session-tools/:kind", element: h(SessionWorkbenchPage) })),
-    ),
-  );
+  await directory("terminal");
   const checkbox = (host: string) =>
     document.querySelector<HTMLInputElement>(
       'input[aria-label="Select Session Notes (' + host + ')"]',
     )!;
   await waitFor(() => checkbox("Studio") !== null);
-  expect(checkbox("Workshop").disabled).toBe(true);
+  expect(checkbox("Workshop")).toBeNull();
+  expect(fixture.list).not.toHaveBeenCalled();
   expect(document.body.textContent).toContain("Away (Unavailable)");
   expect(document.body.textContent).toContain("Workshop: Not permitted");
   const activateRow = checkbox("Studio").closest("li")!.querySelector("button")!;
@@ -114,13 +123,36 @@ it("keeps same-ID local and remote resource groups distinct, reports a failed ta
   await waitFor(
     () => document.body.textContent?.includes("Studio (shared): close_failed") === true,
   );
-  expect(checkbox("This server").checked).toBe(false);
+  await waitFor(() => checkbox("This server") === null);
   expect(checkbox("Studio").checked).toBe(true);
   retry = true;
   await click(button("Close selected resources (1)"));
   await click(button("Close"));
-  await waitFor(() => checkbox("Studio").disabled);
+  await waitFor(() => checkbox("Studio") === null);
   const targets = fixture.close.mock.calls.map((call) => call[2]);
   expect(targets.slice(0, 2)).toEqual(expect.arrayContaining([null, "remote-a"]));
   expect(targets.slice(2)).toEqual(["remote-a"]);
+});
+
+it("lists archived workspaces by path without counting terminal or browser resources", async () => {
+  setActiveStrings(en);
+  fixture.list.mockResolvedValue({ sessions: [{ ...fixture.row, archived: true }] });
+  await directory("workspace");
+  await waitFor(() => document.body.textContent?.includes("/notes") === true);
+  expect(document.body.textContent).toContain("Archived");
+  expect(document.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+  expect(fixture.counts).not.toHaveBeenCalled();
+});
+
+it("keeps authorized browser groups with no pages available alongside active browser groups", async () => {
+  setActiveStrings(en);
+  fixture.list.mockResolvedValue({ sessions: [fixture.row] });
+  fixture.counts.mockImplementation(async (_kind, _project, machine) =>
+    machine === "remote-a" ? { shared: 3 } : {},
+  );
+  await directory("builtin-browser");
+  await waitFor(() => document.body.textContent?.includes("3 open pages") === true);
+  expect(document.querySelector("li")?.textContent).toContain("Studio");
+  expect(document.body.textContent).toContain("0 open pages");
+  expect(fixture.get).not.toHaveBeenCalled();
 });

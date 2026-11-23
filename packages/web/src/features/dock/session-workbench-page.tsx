@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { Button, Checkbox, ConfirmModal, Input } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  Button,
+  Checkbox,
+  ConfirmModal,
+  EmptyState,
+  SearchInput,
+} from "@prismshadow/penguin-ui";
 import { getSession, listSessions } from "../../api/endpoints";
 import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import { usePageWorkspace } from "../../lib/page-workspace";
@@ -227,7 +234,8 @@ function SessionPicker({
             const leaders = Object.entries(counts)
               .filter(([, count]) => count > 0)
               .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-            const limit = pages * PAGE_SIZE;
+            // Searching live terminals must include owners beyond the current page.
+            const limit = resource === "terminal" && needle ? leaders.length : pages * PAGE_SIZE;
             if (leaders.length > limit) hasMore = true;
             const relevant = new Set(leaders.slice(0, limit).map(([id]) => id));
             for (const id of active.keys()) if (!relevant.has(id)) active.delete(id);
@@ -251,10 +259,12 @@ function SessionPicker({
             }
           }
           for (const [id, session] of new Map([...listed, ...active])) {
+            const count = counts === null ? null : (counts[id] ?? 0);
+            if (resource === "terminal" && !count) continue;
             if (
               !listed.has(id) &&
               needle &&
-              ![session.title, session.sessionId, session.workspace, session.agentId].some(
+              ![session.title, session.sessionId, session.workspace, session.agentId, host].some(
                 (value) => value?.toLowerCase().includes(needle.toLowerCase()),
               )
             )
@@ -263,7 +273,7 @@ function SessionPicker({
               session,
               host,
               machineId,
-              count: counts === null ? null : (counts[id] ?? 0),
+              count,
             });
           }
         }),
@@ -298,7 +308,7 @@ function SessionPicker({
     timer = setTimeout(
       async () => {
         setLoading(true);
-        await listHistory();
+        if (resource !== "terminal") await listHistory();
         if (!current) return;
         refreshResources.current = () => {
           void readCounts();
@@ -320,6 +330,7 @@ function SessionPicker({
     };
   }, [sources, resource, project, needle, pages, refresh]);
   const countLabel = kind === "terminal" ? S.dock.openTerminals : S.dock.openBrowserPages;
+  const searchLabel = kind === "terminal" ? S.dock.searchActiveSessions : S.dock.searchSessions;
   const chosen = rows.filter((row) => selected.includes(idOf(row)) && (row.count ?? 0) > 0);
   function open(row: Row) {
     workspace?.openBesideSession(
@@ -379,25 +390,23 @@ function SessionPicker({
     <section
       ref={directory}
       aria-label={title}
-      className="mx-auto flex h-full w-full max-w-3xl flex-col gap-3 overflow-y-auto p-4"
+      className="@container mx-auto flex h-full w-full min-w-0 max-w-3xl flex-col gap-3 overflow-y-auto p-3 @sm:p-4"
     >
       <h1 className="text-lg font-semibold">{title}</h1>
-      <label className="flex flex-col gap-1">
-        {S.dock.chooseSession}
-        <Input
-          value={query}
-          placeholder={S.dock.searchSessions}
-          aria-label={S.dock.searchSessions}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setRows([]);
-            setPages(1);
-            setSelected([]);
-            setResult([]);
-            setClosed(null);
-          }}
-        />
-      </label>
+      <SearchInput
+        icon
+        value={query}
+        placeholder={searchLabel}
+        aria-label={searchLabel}
+        onChange={(value) => {
+          setQuery(value);
+          setRows([]);
+          setPages(1);
+          setSelected([]);
+          setResult([]);
+          setClosed(null);
+        }}
+      />
       {resource && chosen.length > 0 && (
         <Button variant="danger" onClick={() => setConfirm(chosen)}>
           {S.dock.closeSelected} ({chosen.length})
@@ -419,12 +428,12 @@ function SessionPicker({
       {errors.length > 0 && (
         <Button onClick={() => setRefresh((n) => n + 1)}>{S.common.retry}</Button>
       )}
-      <ul className="divide-y divide-border">
+      <ul className="divide-y divide-line">
         {rows.map((row) => {
           const { session, count } = row;
           const name = session.title || session.sessionId;
           return (
-            <li key={idOf(row)} className="flex min-w-0 items-center gap-3 py-2">
+            <li key={idOf(row)} className="flex min-w-0 items-center gap-2">
               {resource && (
                 <Checkbox
                   aria-label={S.dock.selectSession(name, row.host)}
@@ -441,27 +450,37 @@ function SessionPicker({
               )}
               <button
                 type="button"
-                className="min-w-0 flex-1 cursor-pointer break-words text-left"
+                className="flex min-h-12 min-w-0 flex-1 cursor-pointer flex-col items-start gap-1 rounded-md px-2 py-2 text-left hover:bg-hover focus-visible:outline-2 focus-visible:outline-focus @sm:flex-row @sm:items-center @sm:gap-4"
                 onClick={() => open(row)}
               >
-                <span className="block font-medium">{name}</span>
-                <span className="flex flex-wrap gap-x-2 text-sm text-fg-muted">
-                  {[
-                    row.host,
-                    session.agentId,
-                    session.archived ? S.dock.archivedSession : null,
-                    session.source === "subagent" ? S.dock.childSession : null,
-                    session.source === "subagent" && session.title ? session.sessionId : null,
-                  ]
-                    .filter((label): label is string => Boolean(label))
-                    .map((label, index) => (
-                      <span key={index}>{label}</span>
-                    ))}
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium wrap-anywhere">{name}</span>
+                  <span className="flex flex-wrap gap-x-2 text-xs text-fg-muted wrap-anywhere">
+                    {[
+                      row.host,
+                      session.agentId,
+                      session.archived ? S.dock.archivedSession : null,
+                      session.source === "subagent" ? S.dock.childSession : null,
+                      session.source === "subagent" && session.title ? session.sessionId : null,
+                    ]
+                      .filter((label): label is string => Boolean(label))
+                      .map((label, index) => (
+                        <span key={index}>{label}</span>
+                      ))}
+                  </span>
+                  {kind === "workspace" && session.workspace && (
+                    <span
+                      dir="auto"
+                      className="block font-mono text-xs text-fg-muted wrap-anywhere"
+                    >
+                      {session.workspace}
+                    </span>
+                  )}
                 </span>
                 {resource && (
-                  <span className="text-sm">
+                  <Badge tone={count ? "info" : "neutral"} size="sm">
                     {count === null ? S.dock.unavailableMachine : countLabel(count)}
-                  </span>
+                  </Badge>
                 )}
               </button>
             </li>
@@ -469,7 +488,13 @@ function SessionPicker({
         })}
       </ul>
       {loading && <p role="status">{S.common.loading}</p>}
-      {!loading && !rows.length && !errors.length && <p>{S.dock.emptySessions}</p>}
+      {!loading && !rows.length && !errors.length && (
+        <EmptyState
+          dashed
+          title={kind === "terminal" && !needle ? S.dock.noOpenTerminals : S.dock.emptySessions}
+          description={kind === "terminal" && !needle ? S.dock.startSessionTerminal : undefined}
+        />
+      )}
       {more && (
         <Button disabled={loading} onClick={() => setPages((n) => n + 1)}>
           {S.dock.moreSessions}
