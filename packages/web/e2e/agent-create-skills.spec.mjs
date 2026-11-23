@@ -10,7 +10,7 @@
  *   visible rather than on the whole library — so a filtered 全选 adds only the matches;
  * - creating with a selection installs exactly those plugins into the new Agent: the settings
  *   page's Skills sub-page lists their skills, and the server's installed list agrees;
- * - creating with nothing picked still yields a plain Agent with no skills.
+ * - creating with nothing picked leaves an ordinary Agent without optional contributions.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -96,8 +96,10 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
     await page.request.get(`${BASE}/api/projects/${projectId}/agents/seeded_agent/skills`)
   ).json();
   expect(installed.skills.map((s) => s.name).sort()).toEqual([
+    "agent-initialization",
     "penguin-config",
     "penguin-orchestration",
+    "penguin-plugin",
     "penguin-sdk",
     "software-engineering",
     "unified-llm-api",
@@ -116,7 +118,10 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
   await page.getByRole("button", { name: "创建", exact: true }).click();
   await page.waitForURL(/\/agents\/plain_agent$/);
   const none = await (
-    await page.request.get(`${BASE}/api/projects/${projectId}/agents/plain_agent/skills`)
+    await page.request.get(`${BASE}/api/projects/${projectId}/agents/plain_agent/plugins`)
   ).json();
   expect(none.skills).toEqual([]);
+  expect(none.hooks).toEqual([]);
+  expect(none.workbenches).toEqual([]);
+  expect(none.mcpServers).toEqual([]);
 });
