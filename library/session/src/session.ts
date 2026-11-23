@@ -14,6 +14,7 @@ import type {
   SessionTitleResult,
   StopReason,
   SubagentMessageOptions,
+  SubagentResolver,
   SubagentMessageOutcome,
   ThinkingLevelName,
   ToolCallPayload,
@@ -414,6 +415,7 @@ export interface RuntimeSession {
   /** Whether a background subagent is mid-round (core `Session.hasRunningBackgroundSubagents`); pins the entry against idle eviction. Optional, like listBackgroundCommands. */
   hasRunningBackgroundSubagents?(): boolean;
   /** All live subagent child sessions of the Session's environment (core `Session.listBackgroundSubagents`). Optional, like listBackgroundCommands. */
+  setSubagentResolver?(resolve: SubagentResolver): void;
   listBackgroundSubagents?(): BackgroundSubagentInfo[];
   /** Host message to one child session — steering mid-run, a follow-up run when idle, a revival when released (core `Session.sendToBackgroundSubagent`). Optional. */
   sendToBackgroundSubagent?(

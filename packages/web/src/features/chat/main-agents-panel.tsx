@@ -1,4 +1,5 @@
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
+import { machineForSession } from "../../lib/session-machines";
 import { S } from "../../lib/strings";
 import { panelLabel, type PanelId } from "../dock/index";
 
@@ -28,9 +29,14 @@ function AgentsPanelBody() {
     parentThinkingLevel,
   } = useChatDock();
   if (!selected) return draftPlaceholder("agents");
+  if (stream.sessionId !== selected.sessionId) return null;
   return (
     <SubagentsView
-      key={selected.sessionId}
+      key={JSON.stringify([
+        selected.projectId,
+        selected.sessionId,
+        machineForSession(selected.sessionId),
+      ])}
       session={selected}
       // The merged view (backfilled windows included): a chip on an older turn keeps
       // its historical graph and child conversation reachable after pagination.
@@ -41,6 +47,7 @@ function AgentsPanelBody() {
       focusRequest={subagentFocus}
       taskScope={subagentTaskScope}
       subagents={stream.subagents}
+      connection={stream.subscriptionGeneration}
       models={models?.models ?? []}
       approvalMode={selected.approvalMode}
       approvalModes={approvalModeChoices(selected.client, selected.approvalMode)}

@@ -57,7 +57,7 @@ import { lazyToolFs, localFsPort } from "./tools/fs-port.js";
 import type { ToolFs } from "./tools/fs-port.js";
 import { McpToolProvider } from "./mcp/provider.js";
 import { CommandSessionManager } from "./tools/command/index.js";
-import { ManagedSubagentSession, SubagentSessionManager } from "./tools/subagent/index.js";
+import { SubagentSessionManager } from "./tools/subagent/index.js";
 import {
   TRUNCATED_TOOL_OUTPUT_FILE_LIMIT_BYTES,
   TruncatedToolOutputArchive,
@@ -470,17 +470,12 @@ export class Environment implements EnvironmentInterface {
     }
     // Same admission rule as a spawn: never evict a running child to make room.
     if (!this.subagentSessions.makeRoom()) return "busy";
-    let session: ManagedSubagentSession;
-    try {
-      session = new ManagedSubagentSession(
-        await runner.resume({ agentId, sessionId: childSessionId }),
-        { resumeAgentId: agentId },
-      );
-    } catch {
-      return "gone"; // No trace to resume from, or the agent is gone: nothing to revive.
-    }
-    this.subagentSessions.track(session);
-    this.subagentSessions.register(session);
+    const session = await this.subagentSessions
+      .restore({ sessionId: childSessionId, agentId }, runner, opts?.resume?.subagentId)
+      .catch(() => null);
+    if (!session) return "gone";
+    if (session.steer(messages)) return "steered";
+    if (session.running) return "busy";
     this.attachHostTap(session);
     try {
       // Host-initiated like the started path: no completion notice at the parent.
@@ -489,6 +484,10 @@ export class Environment implements EnvironmentInterface {
       return "gone";
     }
     return "resumed";
+  }
+
+  setSubagentResolver(resolve: import("../interfaces/index.js").SubagentResolver): void {
+    this.subagentSessions.resolveHistorical = resolve;
   }
 
   /** Host-initiated abort of one child session's current run (see EnvironmentInterface.abortBackgroundSubagentRun). */

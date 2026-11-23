@@ -810,8 +810,8 @@ export const en: Strings = {
     resourceLimits: {
       title: "Terminal and browser limits",
       info: "Lowering a limit leaves existing terminals and browser pages available.",
-      terminalMaxOpen: "Maximum active terminals",
-      browserMaxOpen: "Maximum built-in browser pages",
+      terminalMaxOpen: "Maximum active terminals per user",
+      browserMaxOpen: "Maximum pages per built-in browser backend",
       restore: "Restore defaults",
       invalid: "Enter a positive whole number within the safe integer range.",
     },
@@ -1162,10 +1162,6 @@ export const en: Strings = {
     importOverwriteAction: "Overwrite",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
-    appCenterVisibility: (shown: boolean): string =>
-      shown ? "Hide from App Center" : "Unhide in App Center",
-    appCenterVisibilityHint:
-      "Changes the App Center shortcut for everyone in this Project. The workbench keeps its data and version history.",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1241,6 +1237,9 @@ export const en: Strings = {
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "New folder",
     /** The page header's button that opens the new-folder dialog. */
+    hiddenWorkbenches: "Hidden workbenches",
+    noHiddenWorkbenches: "No hidden workbenches.",
+    restoreWorkbench: "Show in App Center",
     newFolderAction: "New folder",
     menu: {
       open: "Open",
@@ -5525,9 +5524,12 @@ Scenarios:
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
+    previousTurn: "Previous turn",
+    nextTurn: "Next turn",
+    latestTurn: "Latest turn",
     topologyLabel: "Call graph",
     mainSessionNote: "The main conversation stays in the chat area",
-    empty: "No subagents in the current task yet",
+    empty: "No subagents in this conversation yet",
     nodeRunning: "running",
     nodeDone: "done",
     openAsSession: "Jump to this session",

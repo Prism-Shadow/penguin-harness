@@ -300,7 +300,7 @@ function shortcutOf(
  * Which of an Agent's workbenches a listing keeps: the App Center's tiles, or the rows of the
  * Agent's sidebar list (GET …/workbenches?view=sidebar).
  */
-export type ShortcutView = "appCenter" | "sidebar";
+export type ShortcutView = "appCenter" | "hidden" | "sidebar";
 
 /**
  * Whether a workbench whose own switch is on belongs in `view`. The App Center keeps a
@@ -310,7 +310,7 @@ export type ShortcutView = "appCenter" | "sidebar";
 async function inView(view: ShortcutView, dir: string, manifest: AppCenterManifest) {
   if (view === "sidebar")
     return manifest.tabs.length > 0 && !(await isSwitchedOff(dir, HIDDEN_FROM_SIDEBAR));
-  return manifest.appCenter?.show === true;
+  return manifest.appCenter?.show === (view !== "hidden");
 }
 
 /**
@@ -333,7 +333,8 @@ export async function agentShortcuts(
     if (!entry.isDirectory() || !isWorkbenchId(entry.name)) continue;
     const dir = path.join(base, entry.name);
     const manifest = await readAppCenterManifest(dir, entry.name);
-    if (!(await inView(view, dir, manifest)) || (await isSwitchedOff(dir))) continue;
+    if (!(await inView(view, dir, manifest)) || (view !== "hidden" && (await isSwitchedOff(dir))))
+      continue;
     const build = await buildOf(dir, building(entry.name));
     // The sidebar lists only what is shown there; a tile carries the setting for its menu.
     const showInSidebar = view === "sidebar" || !(await isSwitchedOff(dir, HIDDEN_FROM_SIDEBAR));

@@ -24,6 +24,7 @@ import {
   readResourceLimit,
   writeResourceLimit,
   type ResourceLimit,
+  type Settings,
 } from "@prismshadow/penguin-library-setting";
 import { Hono } from "hono";
 import type {
@@ -52,7 +53,6 @@ import {
   probeProxyReachabilityOf,
   proxyProbeTarget,
 } from "../../services/proxy-probe.js";
-import type { Settings } from "@prismshadow/penguin-library-setting";
 
 /**
  * proxyUrl update value -> stored value: null and empty/whitespace-only clear the

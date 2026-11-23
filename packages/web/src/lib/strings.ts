@@ -915,8 +915,8 @@ export const zh = {
     resourceLimits: {
       title: "终端与浏览器上限",
       info: "降低上限后，已经打开的终端和浏览器页面可继续使用。",
-      terminalMaxOpen: "运行中的终端数上限",
-      browserMaxOpen: "内置浏览器页数上限",
+      terminalMaxOpen: "每位用户运行的终端数上限",
+      browserMaxOpen: "每个内置浏览器后端的页数上限",
       restore: "恢复默认",
       invalid: "请输入大于零的安全整数。",
     },
@@ -1263,10 +1263,6 @@ export const zh = {
     importOverwriteAction: "覆盖导入",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
-    appCenterVisibility: (shown: boolean): string =>
-      shown ? "从应用中心隐藏" : "在应用中心取消隐藏",
-    appCenterVisibilityHint:
-      "更改所有 Project 成员看到的应用中心入口。工作台的数据和历史版本会保留。",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "打开",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1350,6 +1346,9 @@ export const zh = {
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "新建分组",
     /** The page header's button that opens the new-folder dialog. */
+    hiddenWorkbenches: "已隐藏的工作台",
+    noHiddenWorkbenches: "没有隐藏的工作台。",
+    restoreWorkbench: "恢复显示",
     newFolderAction: "新建分组",
     menu: {
       open: "打开",
@@ -5773,9 +5772,12 @@ Benchmark：
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
+    previousTurn: "上一轮",
+    nextTurn: "下一轮",
+    latestTurn: "最新一轮",
     topologyLabel: "调用关系",
     mainSessionNote: "主会话请在对话区查看",
-    empty: "本次任务尚未派生子智能体",
+    empty: "这个会话还没有子智能体",
     nodeRunning: "运行中",
     nodeDone: "已完成",
     /** Identity-strip jump: opens the selected subagent's own Session in the chat area. */
