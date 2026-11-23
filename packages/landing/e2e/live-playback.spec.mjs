@@ -7,12 +7,12 @@ import { test, expect } from "@playwright/test";
 
 const composer = '[data-slot="composer"] textarea';
 
-async function openHero(page, lang = "zh") {
+async function openHero(page, lang = "zh", useVirtualClock = true) {
   await page.addInitScript((lang) => {
     localStorage.setItem("penguin-site.lang", lang);
     localStorage.setItem("penguin-site.theme", "light");
   }, lang);
-  await page.clock.install({ time: new Date("2026-10-28T00:00:00Z") });
+  if (useVirtualClock) await page.clock.install({ time: new Date("2026-10-28T00:00:00Z") });
   await page.goto("/");
   await page
     .getByRole("button", { name: /^(Play demo|Stop demo|播放演示|停止演示)$/ })
@@ -79,6 +79,41 @@ for (const [lang, play, stop] of [
     await expect(frame.locator(composer)).not.toHaveValue("");
   });
 }
+
+test("the desktop walkthrough finishes with its conversation beside the score curve in real time", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const { frame } = await openHero(page, "en", false);
+  const conversation = frame.locator('[data-pane="left"] [data-slot="composer"] textarea');
+  const benchmark = frame.locator('[data-pane="right"]');
+  await expect(benchmark.getByRole("heading", { name: "Docs QA v1", exact: true })).toBeVisible({
+    timeout: 45_000,
+  });
+  await expect(benchmark.getByText("Score over time", { exact: true })).toBeVisible();
+  await expect(conversation).toBeVisible();
+  const plot = benchmark.locator("svg.ui-chart:visible").first();
+  await expect(plot).toBeVisible();
+  await expect
+    .poll(() =>
+      plot.evaluate(
+        (svg) =>
+          new Promise((resolve) => {
+            const observer = new IntersectionObserver(
+              ([entry]) => {
+                observer.disconnect();
+                resolve(entry.intersectionRatio);
+              },
+              { root: svg.ownerDocument.documentElement },
+            );
+            observer.observe(svg);
+          }),
+      ),
+    )
+    .toBeGreaterThan(0.99);
+  const [inputBox, plotBox] = await Promise.all([conversation.boundingBox(), plot.boundingBox()]);
+  expect(inputBox.x + inputBox.width).toBeLessThanOrEqual(plotBox.x + 1);
+});
 
 test("the live homepage preview uses the new chat header and shortcut strip", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -232,8 +267,12 @@ test("a keyboard-activated navigation link keeps its destination while the scrip
 test("taking over the split preview releases the scripted drag", async ({ page }) => {
   const { frame } = await openHero(page, "en");
   await page.clock.pauseAt(await page.evaluate(() => new Date(Date.now() + 250).toISOString()));
+  const results = frame.locator('[data-workspace-page^="chat:"][data-pane] table:visible').first();
+  for (let step = 0; step < 140 && !(await results.isVisible()); step++)
+    await page.clock.runFor(450);
+  await expect(results).toBeVisible();
   const tile = frame.locator('li[data-app="system_agent/benchmark"] > button:visible');
-  for (let step = 0; step < 140 && !(await tile.isVisible()); step++) await page.clock.runFor(450);
+  for (let step = 0; step < 150 && !(await tile.isVisible()); step++) await page.clock.runFor(30);
   await expect(tile).toBeVisible();
   const preview = frame.locator("[data-pane=full] .z-drag-preview");
   for (let step = 0; step < 150 && !(await preview.isVisible()); step++)

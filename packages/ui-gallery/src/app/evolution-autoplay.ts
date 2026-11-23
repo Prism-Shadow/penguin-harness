@@ -27,7 +27,8 @@ export function installEvolutionAutoplay(
   let stopped = false;
   let sent = false;
   let resultSessionId: string | undefined;
-  let destination: "result" | "center" | "detail" | "chart" | "replay" | "restart" = "result";
+  let destination: "result" | "center" | "detail" | "chart" | "comparison" | "replay" | "restart" =
+    "result";
   let index = 0;
   let timer: (() => void) | undefined;
 
@@ -76,7 +77,7 @@ export function installEvolutionAutoplay(
     sent = true;
     button.click();
   };
-  const revealChart = (chart: Element) => {
+  const revealChart = (chart: Element, center = false) => {
     for (
       let parent = chart.parentElement;
       parent && parent !== doc.body;
@@ -88,7 +89,7 @@ export function installEvolutionAutoplay(
       ) {
         const rect = chart.getBoundingClientRect();
         const box = parent.getBoundingClientRect();
-        if (rect.top < box.top + 48 || rect.bottom > box.bottom - 16)
+        if (center || rect.top < box.top + 48 || rect.bottom > box.bottom - 16)
           parent.scrollTop +=
             rect.top - box.top - Math.max(64, (parent.clientHeight - rect.height) / 2);
         break;
@@ -104,8 +105,6 @@ export function installEvolutionAutoplay(
         (button) => button.getAttribute("aria-label") === S.chat.stop,
       );
       if (!running && shown("main table")) {
-        resultSessionId = shown<HTMLElement>('[data-session-id][aria-current="page"]')?.dataset
-          .sessionId;
         // The app opens its Agents panel during parallel evaluation; return the space to the result.
         shown<HTMLButtonElement>('[data-testid="dock-tab-close"]')?.click();
         destination = "center";
@@ -120,6 +119,10 @@ export function installEvolutionAutoplay(
         tile.click();
         timer = playback.schedule(advance, 700);
       } else if (appCenter) {
+        // Closing the Agents dock returns focus to the conversation. Remember its row
+        // immediately before navigating away, so the final comparison uses that Session.
+        resultSessionId = shown<HTMLElement>('[data-session-id][aria-current="page"]')?.dataset
+          .sessionId;
         appCenter.click();
         timer = playback.schedule(advance, 700);
       } else {
@@ -165,10 +168,10 @@ export function installEvolutionAutoplay(
             pane.dispatchEvent(drag("dragover"));
             const cancelDrop = playback.schedule(() => {
               timer = undefined;
+              destination = "comparison";
               pane.dispatchEvent(drag("drop"));
               session.dispatchEvent(drag("dragend"));
-              revealChart(chart);
-              stop();
+              queue();
             }, 100);
             timer = () => {
               cancelDrop();
@@ -182,6 +185,13 @@ export function installEvolutionAutoplay(
         }
         destination = "replay";
         timer = playback.schedule(advance, 4000);
+      }
+    } else if (destination === "comparison") {
+      // The narrower dock lays the chart out in a different scrolling viewport.
+      const chart = shown('[data-pane="right"] svg.ui-chart');
+      if (chart) {
+        revealChart(chart, true);
+        stop();
       }
     } else if (destination === "replay") {
       const button = [...doc.querySelectorAll<HTMLButtonElement>("button")].find(
