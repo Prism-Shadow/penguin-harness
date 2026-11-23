@@ -278,39 +278,36 @@ describe("a revoked login", () => {
 });
 
 describe("streams", () => {
-  it(
-    "closes an expired login's live socket on the heartbeat without renewing it",
-    async () => {
-      const userId = "expired_heartbeat";
-      const login = await provisionUser(t.app, userId);
-      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-      const s = await open({ cookie: login.cookie });
-      if (!("ws" in s)) throw new Error("handshake refused");
-      try {
-        send(s.ws, {
-          id: 1,
-          call: { method: "GET", path: "/api/events", headers: { accept: "text/event-stream" } },
-        });
-        expect(await s.next()).toMatchObject({ stream: true, status: 200 });
-        expect((await s.next()).event).toBe("server_event");
-        t.deps.db
-          .prepare("UPDATE auth_sessions SET expires_at = ? WHERE user_id = ?")
-          .run("2000-01-01T00:00:00.000Z", userId);
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
-        expect((await s.closed()).code).toBe(1008);
-        expect(t.deps.channels.get(`user:${userId}`).subscriberCount).toBe(0);
-        expect((await apiClient(t.app, login.cookie).get("/api/me")).status).toBe(401);
-      } finally {
-        vi.useRealTimers();
-        s.ws.close();
-      }
-    },
-  );
+  it("closes an expired login's live socket on the heartbeat without renewing it", async () => {
+    const userId = "expired_heartbeat";
+    const login = await provisionUser(t.app, userId);
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const s = await open({ cookie: login.cookie });
+    if (!("ws" in s)) throw new Error("handshake refused");
+    try {
+      send(s.ws, {
+        id: 1,
+        call: { method: "GET", path: "/api/events", headers: { accept: "text/event-stream" } },
+      });
+      expect(await s.next()).toMatchObject({ stream: true, status: 200 });
+      expect((await s.next()).event).toBe("server_event");
+      t.deps.db
+        .prepare("UPDATE auth_sessions SET expires_at = ? WHERE user_id = ?")
+        .run("2000-01-01T00:00:00.000Z", userId);
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+      expect((await s.closed()).code).toBe(1008);
+      expect(t.deps.channels.get(`user:${userId}`).subscriberCount).toBe(0);
+      expect((await apiClient(t.app, login.cookie).get("/api/me")).status).toBe(401);
+    } finally {
+      vi.useRealTimers();
+      s.ws.close();
+    }
+  });
 
   it.each(["call", "subscribe"] as const)(
     "rejects a fresh %s on an old socket after an admin password reset",
     async (action) => {
-      const userId = `revoked_${action}`;
+      const userId = `revoked_stream_${action}`;
       const old = await provisionUser(t.app, userId);
       const s = await open({ cookie: old.cookie });
       if (!("ws" in s)) throw new Error("handshake refused");
