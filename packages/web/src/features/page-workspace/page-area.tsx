@@ -65,6 +65,27 @@ function PaneTabs({ side }: { side: 0 | 1 }) {
   );
 }
 
+/** A hidden page keeps its own history entry. DraftView uses that entry's key to
+ * distinguish an explicit New chat from resuming the already-open draft. */
+function PageRoute({
+  path,
+  active,
+  location,
+  renderRoute,
+}: {
+  path: string;
+  active: boolean;
+  location: Location;
+  renderRoute: (location: string | Location) => ReactNode;
+}) {
+  const entry = useRef<Location | null>(null);
+  if (active) {
+    const resumeDraft = location.pathname === "/chat/new" && location.state?.workspaceRequest;
+    if (!resumeDraft || !entry.current) entry.current = location;
+  }
+  return renderRoute(entry.current ?? path);
+}
+
 export function PageArea({
   renderRoute,
   layers,
@@ -138,7 +159,12 @@ export function PageArea({
             {page.kind === "workbenches" ? (
               <WorkbenchDirectory path={page.path} />
             ) : (
-              renderRoute(page.path === here ? location : page.path)
+              <PageRoute
+                path={page.path}
+                active={page.path === here}
+                location={location}
+                renderRoute={renderRoute}
+              />
             )}
           </ErrorBoundary>
         </PageSlot>

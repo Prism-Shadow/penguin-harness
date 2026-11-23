@@ -131,3 +131,24 @@ test("a phone chooses one of the two open pages", async ({ page }) => {
   await expect(slot(page, first)).not.toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test("resuming an unsent new conversation keeps its staged file", async ({ page }) => {
+  const [existing] = await start(page, "splitnewdraft");
+  await page
+    .getByRole("link", { name: "New chat", exact: true })
+    .or(page.getByRole("button", { name: "New chat", exact: true }))
+    .first()
+    .click();
+  const draft = slot(page, "chat:new");
+  await draft.locator(composer).fill("Review the attached agenda");
+  await draft.locator('input[type="file"]:not([accept])').setInputFiles({
+    name: "agenda.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Release meeting"),
+  });
+  await expect(draft.getByText("agenda.txt", { exact: true })).toBeVisible();
+  await tab(page, existing).locator("button[data-app-row]").click();
+  await tab(page, "chat:new").locator("button[data-app-row]").click();
+  await expect(draft.locator(composer)).toHaveValue("Review the attached agenda");
+  await expect(draft.getByText("agenda.txt", { exact: true })).toBeVisible();
+});
