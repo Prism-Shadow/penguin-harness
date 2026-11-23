@@ -158,6 +158,7 @@ import type {
 import { isThemeId } from "@prismshadow/penguin-ui";
 // The catalog decides which groups publish a balance, as it does on the server.
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
+import { agentPluginGroups } from "../../../../web/src/features/plugins/agent-plugin-groups";
 import { declaredServerModules } from "../../../../web/src/lib/module-gate";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
@@ -896,8 +897,25 @@ router
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get("/api/projects/:projectId/agents", ({ store }): AgentsResponse => ({
-    agents: store.f.agents,
+  .get("/api/projects/:projectId/agents", (ctx): AgentsResponse => ({
+    agents: ctx.store.f.agents.map((agent) => {
+      const installed = ctx.store.f.installed[agent.agentId];
+      const groups = agentPluginGroups(
+        ctx.store.f.library.groups,
+        {
+          skills: installed?.skills ?? [],
+          hooks: installed?.hooks ?? [],
+          mcpServers: ctx.store.f.agentConfigs[agent.agentId]
+            ? mcpServerItems({ ...ctx, params: { ...ctx.params, agentId: agent.agentId } })
+            : [],
+          workbenches: installed?.pluginWorkbenches ?? [],
+          modules: [],
+        },
+        installed?.workbenches ?? [],
+        [],
+      );
+      return { ...agent, pluginCount: groups.groups.length };
+    }),
   }))
   .post("/api/projects/:projectId/agents", ({ store, body }): unknown => {
     const { agentId, name, description } = record(body);
@@ -918,6 +936,7 @@ router
       vaultKeyCount: 0,
       scheduleCount: 0,
       workbenchCount: 0,
+      pluginCount: 0,
       skillCount: 0,
       hookCount: 0,
       pluginUpdates: [],

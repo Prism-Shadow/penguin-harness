@@ -63,7 +63,8 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { agentSettingsPath } from "../../lib/agent-location";
-import { APP_CENTER_PATH } from "../../lib/app-center-path";
+import { usePageWorkspace } from "../../lib/page-workspace";
+import { APP_CENTER_PATH, appWindowPath } from "../../lib/app-center-path";
 import { windowEntryState, WINDOW_PARAM } from "../../lib/app-window-address";
 import { openFullPage, returnToHostEntry } from "../../lib/host-history";
 import { launchApp, takeListedShortcuts, useRunningApps } from "../../lib/running-apps";
@@ -147,6 +148,7 @@ export function AppCenterPage() {
   const projectId = currentProject?.projectId ?? null;
   const { locale } = useLocale();
   const navigate = useNavigate();
+  const workspace = usePageWorkspace();
   const [params, setParams] = useSearchParams();
   /** The Agent list as a value: a new array with the same Agents does not read again. */
   const agentIds = agents.map((agent) => agent.agentId).join("\n");
@@ -174,13 +176,18 @@ export function AppCenterPage() {
   /** Opening a folder from the grid adds an entry and another replaces it; closing leaves it. */
   const setOpenFolderId = (id: string | null) => {
     const next = new URLSearchParams(params);
-    if (id === null) {
-      next.delete(FOLDER_PARAM);
-      returnToHostEntry(navigate, appCenterPath(next));
-    } else {
-      next.set(FOLDER_PARAM, id);
-      setParams(next, { replace: openFolderId !== null });
-    }
+    if (id === null) next.delete(FOLDER_PARAM);
+    else next.set(FOLDER_PARAM, id);
+    const path = appCenterPath(next);
+    if (
+      workspace?.openFromAppCenter(
+        { id: "catalog", kind: "catalog", title: S.appCenter.title, path },
+        openFolderId !== null,
+      )
+    )
+      return;
+    if (id === null) returnToHostEntry(navigate, path);
+    else setParams(next, { replace: openFolderId !== null });
   };
   const [renaming, setRenaming] = useState<GridFolder | null>(null);
   const [errorOf, setErrorOf] = useState<GridApp | null>(null);
@@ -304,7 +311,19 @@ export function AppCenterPage() {
   };
   /** Opens an app in its window, or a system app that has none as its page. */
   const launch = (app: GridApp) => {
-    if (opensInWindow(app)) openWindow(app);
+    const isWindow = opensInWindow(app);
+    if (
+      workspace?.openFromAppCenter({
+        id: "app:" + app.id,
+        kind: isWindow ? "window" : "system",
+        title: titleOf(app.shortcut),
+        path: isWindow ? appWindowPath(app.id) : app.shortcut.path,
+      })
+    ) {
+      if (isWindow && projectId) launchApp({ key: app.id, projectId, shortcut: app.shortcut });
+      return;
+    }
+    if (isWindow) openWindow(app);
     else void navigate(app.shortcut.path);
   };
 

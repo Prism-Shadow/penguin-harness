@@ -7,6 +7,10 @@ export interface OpenPage {
   kind: "session" | "window" | "system" | "catalog" | "workbenches";
   title: string;
   path: string;
+  /** Launched from the App Center inside a conversation, including its Session directories. */
+  catalogDock?: boolean;
+  /** An explicitly selected resource group can belong to another conversation. */
+  resourceHost?: OpenPage["sessionHost"];
   /** Metadata already authorized by the exact machine's Session endpoint. Window-local only. */
   sessionHost?: { session: SessionInfo; machineId: string | null; isolatedDraft: boolean };
 }
@@ -52,6 +56,8 @@ function withPage(layout: PageLayout, page: OpenPage): OpenPage[] {
   if (
     before.title === page.title &&
     before.path === page.path &&
+    before.catalogDock === page.catalogDock &&
+    before.resourceHost === page.resourceHost &&
     before.sessionHost === page.sessionHost
   )
     return layout.pages;
