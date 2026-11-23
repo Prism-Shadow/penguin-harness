@@ -162,15 +162,21 @@ describe("saving a deck the Agent edits too", () => {
     const { call } = mount(host);
     const created = await call("POST", "/decks", { id: "q4", text: deckText("Q4") });
     expect(created.status).toBe(201);
-    await agentWrites("decks/q4.bento.json", deckText("Q4, as the Agent wrote it"));
+    // Windows PowerShell can mark a UTF-8 file with a BOM. Index it by title, while keeping
+    // its exact contents in conflict responses and revision history.
+    const agentVersion = "\uFEFF" + deckText("Q4, as the Agent wrote it");
+    await agentWrites("decks/q4.bento.json", agentVersion);
+    expect((await call("GET", "/decks")).body.decks).toEqual([
+      expect.objectContaining({ title: "Q4, as the Agent wrote it" }),
+    ]);
 
     const stale = await call("PUT", "/decks/q4", {
       text: deckText("Q4, by hand"),
       base: created.body.rev,
     });
     expect(stale.status).toBe(409);
-    expect(stale.body.text).toBe(deckText("Q4, as the Agent wrote it"));
-    expect(await text("decks/q4.bento.json")).toBe(deckText("Q4, as the Agent wrote it"));
+    expect(stale.body.text).toBe(agentVersion);
+    expect(await text("decks/q4.bento.json")).toBe(agentVersion);
 
     const merged = await call("PUT", "/decks/q4", {
       text: deckText("Q4, both"),
@@ -182,7 +188,7 @@ describe("saving a deck the Agent edits too", () => {
     const { versions } = (await call("GET", "/decks/q4/history")).body;
     expect(versions.map((version: { by: string }) => version.by)).toEqual(["agent"]);
     const kept = await call("GET", `/decks/q4/history/${versions[0].name}`);
-    expect(kept.body.text).toBe(deckText("Q4, as the Agent wrote it"));
+    expect(kept.body.text).toBe(agentVersion);
   });
 
   it("keeps the newest twenty replaced versions, newest first", async () => {
