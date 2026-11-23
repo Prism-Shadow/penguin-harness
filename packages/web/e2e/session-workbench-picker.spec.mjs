@@ -106,6 +106,31 @@ test("an App Center workbench lists archived Sessions and closes only their sele
   const childRow = page.getByRole("button").filter({ hasText: child.sessionId });
   await expect(childRow).toContainText("Subagent");
   await expect(childRow).toContainText("1 open terminal");
+  // While the directory stays open, another client can open/close a real child PTY.
+  // Its count changes without fetching the paged Session history or clearing selection.
+  const retainedSelection = page.getByRole("checkbox", { name: /Select Session Prior terminal/ });
+  await retainedSelection.check();
+  const historyPages = [];
+  const recordDirectoryRead = (request) => {
+    if (
+      request.method() === "GET" &&
+      /\/agents\/[^/]+\/sessions$/.test(new URL(request.url()).pathname)
+    )
+      historyPages.push(request.url());
+  };
+  page.on("request", recordDirectoryRead);
+  const extra = await page.request.post("/api/terminals", {
+    data: { sessionId: child.sessionId, cwd: child.workspace },
+  });
+  await expect(extra).toBeOK();
+  await expect(childRow).toContainText("2 open terminals", { timeout: 15000 });
+  await expect(retainedSelection).toBeChecked();
+  await expect(await page.request.delete("/api/terminals/" + (await extra.json()).id)).toBeOK();
+  await expect(childRow).toContainText("1 open terminal", { timeout: 15000 });
+  await expect(retainedSelection).toBeChecked();
+  expect(historyPages).toEqual([]);
+  page.off("request", recordDirectoryRead);
+  await retainedSelection.uncheck();
   // Archived parents and subagents are first-class resource owners. Inspecting either
   // group leaves its archive state and the other Session's live terminals intact.
   await page.setViewportSize({ width: 1280, height: 800 });

@@ -21,6 +21,7 @@ import { useProject } from "../../state/project";
 import { useSessionWorkbenchPanels } from "./panel-registry";
 
 const PAGE_SIZE = 32;
+const RESOURCE_REFRESH_MS = 5_000;
 type Row = { session: SessionInfo; machineId: string | null; host: string; count: number | null };
 const idOf = (row: Row) => JSON.stringify([row.machineId, row.session.sessionId]);
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -140,120 +141,182 @@ function SessionPicker({
   const [selected, setSelected] = useState<string[]>([]);
   const [confirm, setConfirm] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const directory = useRef<HTMLElement>(null);
+  const refreshResources = useRef<() => void>(() => {});
   const resource = kind === "terminal" || kind === "builtin-browser" ? kind : null;
   useEffect(() => {
     let current = true;
-    const timer = setTimeout(
-      () => {
-        setLoading(true);
-        const positions = new Map<string | null, string>([[null, S.dock.here]]);
-        for (const s of sources)
-          if (s.on) positions.set(s.on.machine.machineId, s.on.machine.label);
-        const output = new Map<string, Row>();
-        const problems: string[] = [];
-        let hasMore = false;
-        async function loadHost(machineId: string | null, host: string) {
+    let reading = false;
+    let requested = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let hasLaterSessions = false;
+    const listErrors: string[] = [];
+    const hosts = new Map<string | null, string>([[null, S.dock.here]]);
+    for (const source of sources)
+      if (source.on) hosts.set(source.on.machine.machineId, source.on.machine.label);
+    const directories = [...hosts].map(([machineId, host]) => ({
+      machineId,
+      host,
+      agents: sources.filter((source) => (source.on?.machine.machineId ?? null) === machineId),
+      listed: new Map<string, SessionInfo>(),
+      active: new Map<string, SessionInfo>(),
+    }));
+    const visible = () =>
+      document.visibilityState !== "hidden" && !directory.current?.closest("[inert]");
+    // Page through the Session directory once per search, page or machine change.
+    // Polling a resource count never scans this history again.
+    async function listHistory() {
+      await Promise.all(
+        directories.flatMap(({ machineId, host, agents, listed }) =>
+          agents.map(async ({ agent }) => {
+            try {
+              let before: { lastActiveAt: string; sessionId: string } | undefined;
+              for (let index = 0; current && index < pages; index++) {
+                const { sessions } = await listSessions(
+                  project,
+                  agent.agentId,
+                  {
+                    order: "activity",
+                    limit: PAGE_SIZE + 1,
+                    ...(needle ? { search: needle } : {}),
+                    ...(before ? { before } : {}),
+                  },
+                  machineId,
+                );
+                const page = sessions.slice(0, PAGE_SIZE);
+                for (const session of page)
+                  if (session.projectId === project && session.agentId === agent.agentId)
+                    listed.set(session.sessionId, session);
+                const last = page.at(-1);
+                if (!last || sessions.length <= PAGE_SIZE) break;
+                before = { lastActiveAt: last.lastActiveAt, sessionId: last.sessionId };
+                if (index === pages - 1) hasLaterSessions = true;
+              }
+            } catch (error) {
+              listErrors.push(host + " (" + agent.agentId + "): " + messageOf(error));
+            }
+          }),
+        ),
+      );
+    }
+    async function readCounts() {
+      if (!current) return;
+      if (reading) {
+        requested = true;
+        return;
+      }
+      clearTimeout(timer);
+      reading = true;
+      const output: Row[] = [];
+      const problems = [...listErrors];
+      let hasMore = hasLaterSessions;
+      await Promise.all(
+        directories.map(async ({ machineId, host, agents, listed, active }) => {
           let counts: Record<string, number> | null = null;
           if (resource)
             try {
               counts = await listSessionResourceCounts(resource, project, machineId);
-            } catch (e) {
-              problems.push(host + ": " + messageOf(e));
+            } catch (error) {
+              active.clear();
+              problems.push(host + ": " + messageOf(error));
             }
           if (!current) return;
-          const localAgents = sources.filter(
-            (s) => (s.on?.machine.machineId ?? null) === machineId,
-          );
-          const visibleAgents = new Set(localAgents.map((s) => s.agent.agentId));
-          function add(session: SessionInfo) {
-            if (session.projectId !== project || !visibleAgents.has(session.agentId)) return;
-            const row = {
-              session,
-              machineId,
-              host,
-              count: counts === null ? null : (counts[session.sessionId] ?? 0),
-            };
-            output.set(idOf(row), row);
-          }
-          await Promise.all(
-            localAgents.map(async ({ agent }) => {
-              try {
-                let before: { lastActiveAt: string; sessionId: string } | undefined;
-                for (let index = 0; current && index < pages; index++) {
-                  const { sessions } = await listSessions(
-                    project,
-                    agent.agentId,
-                    {
-                      order: "activity",
-                      limit: PAGE_SIZE + 1,
-                      ...(needle ? { search: needle } : {}),
-                      ...(before ? { before } : {}),
-                    },
-                    machineId,
-                  );
-                  const page = sessions.slice(0, PAGE_SIZE);
-                  page.forEach(add);
-                  const last = page.at(-1);
-                  if (!last || sessions.length <= PAGE_SIZE) break;
-                  before = { lastActiveAt: last.lastActiveAt, sessionId: last.sessionId };
-                  if (index === pages - 1) hasMore = true;
-                }
-              } catch (e) {
-                problems.push(host + " (" + agent.agentId + "): " + messageOf(e));
-              }
-            }),
-          );
-          if (!current || !counts) return;
-          // The resource index covers the whole authorized Project, including archived children
-          // below the ordinary Session page. Resolve the leading active IDs in bounded batches.
-          const leaders = Object.entries(counts)
-            .filter(([, count]) => count > 0)
-            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-          const limit = pages * PAGE_SIZE;
-          if (leaders.length > limit) hasMore = true;
-          const absent = leaders
-            .slice(0, limit)
-            .filter(([sid]) => !output.has(JSON.stringify([machineId, sid])));
-          for (let start = 0; current && start < absent.length; start += 6) {
-            await Promise.all(
-              absent.slice(start, start + 6).map(async ([sid]) => {
-                try {
-                  const { session } = await getSession(sid, machineId);
-                  const query = needle.toLowerCase();
-                  if (
-                    !query ||
-                    [session.title, session.sessionId, session.workspace, session.agentId].some(
-                      (value) => value?.toLowerCase().includes(query),
+          // Off-page owners (including historical subagents) come from the complete
+          // authorized resource index. Only newly active IDs need a metadata lookup.
+          if (counts !== null) {
+            const leaders = Object.entries(counts)
+              .filter(([, count]) => count > 0)
+              .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+            const limit = pages * PAGE_SIZE;
+            if (leaders.length > limit) hasMore = true;
+            const relevant = new Set(leaders.slice(0, limit).map(([id]) => id));
+            for (const id of active.keys()) if (!relevant.has(id)) active.delete(id);
+            const missing = [...relevant].filter((id) => !listed.has(id) && !active.has(id));
+            for (let start = 0; current && start < missing.length; start += 6) {
+              await Promise.all(
+                missing.slice(start, start + 6).map(async (id) => {
+                  try {
+                    const { session } = await getSession(id, machineId);
+                    if (
+                      session.sessionId === id &&
+                      session.projectId === project &&
+                      agents.some(({ agent }) => agent.agentId === session.agentId)
                     )
-                  )
-                    add(session);
-                } catch (e) {
-                  problems.push(host + ": " + messageOf(e));
-                }
-              }),
-            );
+                      active.set(id, session);
+                  } catch (error) {
+                    problems.push(host + ": " + messageOf(error));
+                  }
+                }),
+              );
+            }
           }
+          for (const [id, session] of new Map([...listed, ...active])) {
+            if (
+              !listed.has(id) &&
+              needle &&
+              ![session.title, session.sessionId, session.workspace, session.agentId].some(
+                (value) => value?.toLowerCase().includes(needle.toLowerCase()),
+              )
+            )
+              continue;
+            output.push({
+              session,
+              host,
+              machineId,
+              count: counts === null ? null : (counts[id] ?? 0),
+            });
+          }
+        }),
+      );
+      reading = false;
+      if (!current) return;
+      setRows(
+        output.sort(
+          (a, b) =>
+            (b.count ?? 0) - (a.count ?? 0) ||
+            b.session.lastActiveAt.localeCompare(a.session.lastActiveAt) ||
+            idOf(a).localeCompare(idOf(b)),
+        ),
+      );
+      setErrors(problems);
+      setMore(hasMore);
+      setLoading(false);
+      if (requested) {
+        requested = false;
+        void readCounts();
+      } else if (resource) {
+        timer = setTimeout(poll, RESOURCE_REFRESH_MS);
+      }
+    }
+    function poll() {
+      if (visible()) void readCounts();
+      else if (current) timer = setTimeout(poll, RESOURCE_REFRESH_MS);
+    }
+    function onFocus() {
+      if (visible()) refreshResources.current();
+    }
+    timer = setTimeout(
+      async () => {
+        setLoading(true);
+        await listHistory();
+        if (!current) return;
+        refreshResources.current = () => {
+          void readCounts();
+        };
+        if (resource) {
+          document.addEventListener("visibilitychange", onFocus);
+          window.addEventListener("focus", onFocus);
         }
-        void Promise.all([...positions].map(([id, host]) => loadHost(id, host))).then(() => {
-          if (!current) return;
-          setRows(
-            [...output.values()].sort(
-              (a, b) =>
-                (b.count ?? 0) - (a.count ?? 0) ||
-                b.session.lastActiveAt.localeCompare(a.session.lastActiveAt) ||
-                idOf(a).localeCompare(idOf(b)),
-            ),
-          );
-          setErrors(problems);
-          setMore(hasMore);
-          setLoading(false);
-        });
+        await readCounts();
       },
       needle ? 150 : 0,
     );
     return () => {
       current = false;
+      refreshResources.current = () => {};
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onFocus);
     };
   }, [sources, resource, project, needle, pages, refresh]);
   const countLabel = kind === "terminal" ? S.dock.openTerminals : S.dock.openBrowserPages;
@@ -310,10 +373,11 @@ function SessionPicker({
     setSelected(unresolved);
     setConfirm(null);
     setBusy(false);
-    setRefresh((i) => i + 1);
+    refreshResources.current();
   }
   return (
     <section
+      ref={directory}
       aria-label={title}
       className="mx-auto flex h-full w-full max-w-3xl flex-col gap-3 overflow-y-auto p-4"
     >
