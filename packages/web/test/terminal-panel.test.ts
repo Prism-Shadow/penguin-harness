@@ -188,6 +188,21 @@ describe("the terminal panel", () => {
     expect(document.querySelector('[data-testid="terminal-new-tab"]')).not.toBeNull();
   });
 
+  it("reads shells opened by another client when the group becomes visible again", async () => {
+    const fake = stubFetch(answer);
+    const id = await conversationWith([]);
+    const { show } = await renderPanel();
+    await show(false);
+    held.set(null, [
+      { id: "other-client", seq: 1, sessionId: id },
+      { id: "other-session", seq: 2, sessionId: "another-session" },
+    ]);
+    await show(true);
+    await waitFor(() => screenId() === "other-client");
+    expect(tabs()).toHaveLength(1);
+    expect(writes(fake)).toEqual([]);
+  });
+
   it("opens an empty group without starting a shell, including after hiding and showing", async () => {
     const fake = stubFetch(answer);
     await conversationWith([]);

@@ -31,7 +31,13 @@ import {
 import type { SessionWorkbenchScope } from "@prismshadow/penguin-web-plugin";
 import type { DockPanelBodyProps } from "../dock/panel-registry";
 import { useTerminalChrome } from "./terminal-appearance";
-import { displayTitle, killTerminal, liveTerminals, subscribeTerminals } from "./terminal-list";
+import {
+  displayTitle,
+  killTerminal,
+  liveTerminals,
+  refreshTerminals,
+  subscribeTerminals,
+} from "./terminal-list";
 import type { TerminalInfo } from "./terminal-view";
 import {
   claimTerminalView,
@@ -91,6 +97,10 @@ export function TerminalPanel({
   const sessionId = scope?.sessionId ?? current;
   useSyncExternalStore(subscribeTerminals, liveTerminals);
   useSyncExternalStore(subscribeDock, dockVersion);
+  // Another client may have opened or closed shells since the last background poll.
+  useEffect(() => {
+    if (active && sessionId) void refreshTerminals();
+  }, [active, sessionId, scope?.machineId, scope?.projectId]);
   const shells = ownTerminals(scope);
   const shown = shownTerminalId(scope);
   const closeShortcut = useShortcutLabel("terminal.close");
