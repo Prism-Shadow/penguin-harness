@@ -4,7 +4,7 @@ import { mainPanelDefinition as mainWorkspace } from "../src/features/workspace/
 import { mainPanelDefinition as mainTrace } from "../src/features/traces/main-dock-panel";
 import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/main-dock-panel";
 import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
-import { mainPanelDefinition as mainBrowser } from "../src/features/builtin-browser/main-dock-panel";
+import { mainPanelDefinition as mainBrowser } from "../../../plugins/browser-automation/src/web/main-dock-panel";
 import { TerminalModule } from "../src/features/terminal/module";
 import { dockPanelDefinition, type DockPanelDefinition } from "../src/features/dock/panel-registry";
 
@@ -18,10 +18,12 @@ const OrgProposalsPage = () => null;
  * - bootWeb() boots the tree and hands back WebApp's root component.
  * - Every page has a unique id, key and path, and the component its module bound.
  * - Terminal and the workflow app pages mount outside the shell; everything else inside it.
- * - The main nav is Agents, Models, Plugins, Machines, Usage, Benchmark in that order, all
- *   released, Machines alone admin-only, and every page names its nav title in both languages
- *   (the words the nav dictionary held) and a glyph in the icon registry.
- * - A member's nav drops admin-only pages and adds nothing the admin lacks.
+ * - The main nav is Agents and the App Center, both released and open to members, each naming
+ *   its nav title in both languages (the words the nav dictionary held) and a glyph in the icon
+ *   registry.
+ * - The system apps are Models, Plugins, Machines, the Cost Center and the Evaluation Center in
+ *   that order, off the nav, each naming its title in both languages and a glyph; a member's drop
+ *   Machines, the one admin-only app, and add nothing the admin lacks.
  * - The chat page is the chat page; the dashboard and one machine's ports are
  *   pages of their own modules, off the nav, the ports page admin-only.
  * - Home (`/` and every unmatched path) is company mode's page, since it depends on the mode.
@@ -30,11 +32,14 @@ const OrgProposalsPage = () => null;
  *   company-mode proposals page is drawn by the proposals page, inside company mode and from
  *   the root alike.
  * - The shell receives company's provider and the update badges' owner for the signed-in
- *   session, the five layers in their mount order, and the user event handlers of company, the
- *   built-in browser and schedules in their dispatch order.
+ *   session, the layers beside the columns in their mount order, the App Center's windows
+ *   over the page area, and the user event handlers of company, the built-in browser and
+ *   schedules in their dispatch order.
  * - The sidebar receives the Project switcher and the session list for development mode,
- *   company's mode with its switcher, channels, roadmaps and desks, the to-do dots and the
- *   balance on their anchors, and company's unread count on the contributed proposals page's row
+ *   company's mode with its switcher, channels, roadmaps and desks, the to-do dots on the
+ *   anchors that still have a row (Agents, the App Center, the account and the drawer button; the
+ *   system apps' trails ride on the App Center's) and the balance on the account, and company's
+ *   unread count on the contributed proposals page's row
  *   (anchored by the renderer's name);
  *   the session list receives the messaging binding, the scheduled mark and the dock's "Browse
  *   files".
@@ -47,25 +52,25 @@ const OrgProposalsPage = () => null;
 import type { ComponentType, ReactElement } from "react";
 import {
   bootModules,
-  moduleDefOf,
   type ClassCtx,
   type Contributed,
   type IfaceTable,
-  type ManifestTable,
   type ModuleClass,
 } from "@prismshadow/penguin-core/kernel";
 
 import { beforeAll, describe, expect, it } from "vitest";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 import table from "../src/ifaces.json";
-import { bootWeb, WebRoot } from "../src/web-root";
+import { bootWeb, webRootDef } from "../src/web-root";
+import { setRunningServerModules } from "../src/lib/module-gate";
+import { pluginWebModules } from "../src/plugin-web.gen";
 import { WebAppModule } from "../src/web-app/module";
 import { navPagesOf, type WebAppPage } from "../src/web-app";
 
 import { pageTableOf } from "../src/web-app/page-table";
 import { contributedPagesOf } from "../src/web-app/contributions";
 import { orgPagesOf } from "../src/features/company/use-org-pages";
-import { navKeysFor } from "../src/web-app/sidebar/nav-state";
+import { navKeysFor } from "../src/lib/nav-pages";
 import { SidebarModule } from "../src/web-app/sidebar/module";
 import { badgesOf, marksFor, modesOf, sectionsIn, sectionsOf } from "../src/web-app/sidebar/modes";
 import { SessionListModule } from "../src/features/session-list/module";
@@ -74,6 +79,7 @@ import { rowExtensionsOf, type RowExtensions } from "../src/features/session-lis
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { glyphOf } from "../src/lib/nav-icons";
+import { systemAppsOf } from "../src/lib/system-apps";
 import { AgentsPage } from "../src/features/agents/agents-page";
 import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
 import { OrgRoutes } from "../src/features/company/org-routes";
@@ -81,12 +87,15 @@ import { HomeRedirect } from "../src/features/company/home-redirect";
 import { ChatPage } from "../src/features/chat/chat-page";
 import { CompanyProvider, companyUserEvents } from "../src/features/company/company-state";
 import { ShortcutRuntime } from "../src/features/settings/shortcut-runtime";
-import { BuiltinBrowserLayer } from "../src/features/builtin-browser/browser-layer";
-import { builtinBrowserUserEvents } from "../src/features/builtin-browser/browser-events";
+import { BuiltinBrowserLayer } from "../../../plugins/browser-automation/src/web/browser-layer";
+import { builtinBrowserUserEvents } from "../../../plugins/browser-automation/src/web/browser-events";
 import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
+import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
+import { ProjectSettingsLayer } from "../src/features/projects/project-settings-layer";
+import { DefaultModelsLayer } from "../src/features/models/default-models-layer";
 import { ProjectSwitcher } from "../src/features/projects/project-switcher";
 import {
   companyChannels,
@@ -100,9 +109,9 @@ import { browseFilesAction } from "../src/features/dock/browse-files";
 import type { UserEventHandler } from "../src/state/user-events";
 import { DockModule } from "../src/features/dock/module";
 import { ChatModule } from "../src/features/chat/module";
-import { fileRenderersOf, sessionTabsOf } from "../src/features/chat/deps";
+import { fileRenderersOf } from "../src/features/chat/deps";
 import { AudioFile } from "../src/features/audio/audio-file";
-import { WorkbenchSessionTab } from "../src/features/workbenches/session-tab";
+import { MainSidebarApps } from "../src/features/session-list/main-sidebar-apps";
 
 let pages: readonly WebAppPage[] = [];
 let pageRenderers: readonly Contributed[] = [];
@@ -113,7 +122,6 @@ let sidebarSlots: Readonly<Record<string, readonly Contributed[]>> = {};
 let rows: RowExtensions | null = null;
 let sessionListSection: unknown = null;
 let dockPanels: readonly Contributed[] = [];
-let sessionTabs: readonly Contributed[] = [];
 let fileRenderers: readonly Contributed[] = [];
 
 /** A slot's code halves in the order the shell mounts them. */
@@ -162,14 +170,13 @@ beforeAll(async () => {
   });
   const chat = Object.assign(new ChatModule(), {
     setup(ctx: ClassCtx) {
-      sessionTabs = ctx.contributions.sessionTabs ?? [];
       fileRenderers = ctx.contributions.fileRenderers ?? [];
       ChatModule.prototype.setup.call(chat, ctx);
     },
   });
+  // As bootWeb boots it: the app's modules and the shipped plugins' web halves (the browser's).
   await bootModules(
-    moduleDefOf(WebRoot, {
-      manifests: table.modules as unknown as ManifestTable,
+    webRootDef(pluginWebModules, {
       instances: new Map<ModuleClass, object>([
         [WebAppModule, webApp],
         [SidebarModule, sidebar],
@@ -201,11 +208,12 @@ describe("the booted page table", () => {
     expect(pages.find((p) => p.path === "/org/*")?.Component).toBe(OrgRoutes);
   });
 
-  it("mounts the terminal and the workflow app pages outside the shell", () => {
+  it("mounts the terminal, the workflow app pages and a system app's full page outside the shell", () => {
     expect(pages.filter((p) => p.frame === "bare").map((p) => p.path)).toEqual([
       "/terminal",
       "/app/:projectId/:agentId/:workbenchId",
       "/app/:projectId/:agentId/:workbenchId/:tabKey",
+      "/app/:projectId/system_agent/:appKey",
     ]);
   });
 
@@ -214,12 +222,8 @@ describe("the booted page table", () => {
     expect(nav.map(({ key, admin, released }) => ({ key, admin, released }))).toEqual([
       { key: "agents", admin: false, released: true },
       { key: "apps", admin: false, released: true },
-      { key: "models", admin: false, released: true },
-      { key: "plugins", admin: false, released: true },
-      { key: "machines", admin: true, released: true },
-      { key: "usage", admin: false, released: true },
-      { key: "benchmark", admin: false, released: true },
     ]);
+    expect(navKeysFor(nav, false)).toEqual(navKeysFor(nav, true));
   });
 
   it("names every nav page's title in both languages and its glyph", () => {
@@ -227,6 +231,13 @@ describe("the booted page table", () => {
     expect(nav.map(({ key, title, titleZh, icon }) => ({ key, title, titleZh, icon }))).toEqual([
       { key: "agents", title: en.nav.agents, titleZh: zh.nav.agents, icon: "robot" },
       { key: "apps", title: en.appCenter.title, titleZh: zh.appCenter.title, icon: "tiles" },
+    ]);
+    for (const page of nav) expect(glyphOf(page.icon)).not.toBe("");
+  });
+
+  it("names the system apps in their order, with their titles in both languages and a glyph", () => {
+    const apps = systemAppsOf(pages, true);
+    expect(apps.map(({ key, title, titleZh, icon }) => ({ key, title, titleZh, icon }))).toEqual([
       { key: "models", title: "Models", titleZh: "模型库", icon: "chip" },
       { key: "plugins", title: en.nav.plugins, titleZh: zh.nav.plugins, icon: "puzzle" },
       {
@@ -238,13 +249,13 @@ describe("the booted page table", () => {
       { key: "usage", title: en.nav.usage, titleZh: zh.nav.usage, icon: "barChart" },
       { key: "benchmark", title: "Evaluation Center", titleZh: "评估中心", icon: "trophy" },
     ]);
-    for (const page of nav) expect(glyphOf(page.icon)).not.toBe("");
+    for (const app of apps) expect(glyphOf(app.icon)).not.toBe("");
+    for (const app of apps) expect(navPagesOf(pages).some((p) => p.key === app.key)).toBe(false);
   });
 
-  it("the nav a member sees drops admin-only pages", () => {
-    const nav = navPagesOf(pages);
-    const admin = navKeysFor(nav, true);
-    const member = navKeysFor(nav, false);
+  it("the system apps a member sees drop the admin-only one", () => {
+    const admin = systemAppsOf(pages, true).map((app) => app.key);
+    const member = systemAppsOf(pages, false).map((app) => app.key);
     expect(admin).toContain("machines");
     expect(member).not.toContain("machines");
     expect(member.every((key) => admin.includes(key))).toBe(true);
@@ -324,13 +335,21 @@ describe("the booted shell slots", () => {
     expect(new Set(codes).size).toBe(2);
   });
 
-  it("mounts the five layers in their order, the dock's scope last", () => {
-    expect(codeByOrder(layers)).toEqual([
+  it("mounts the layers beside the columns in their order, the dock's scope last", () => {
+    expect(codeByOrder(layers.filter((layer) => layer.data.area !== "page"))).toEqual([
       TerminalDockRuntime,
       ShortcutRuntime,
       SettingsLayer,
+      ProjectSettingsLayer,
+      DefaultModelsLayer,
       BuiltinBrowserLayer,
       DockScope,
+    ]);
+  });
+
+  it("mounts the App Center's windows over the page area, so they outlive its page", () => {
+    expect(codeByOrder(layers.filter((layer) => layer.data.area === "page"))).toEqual([
+      AppCenterWindows,
     ]);
   });
 
@@ -340,12 +359,14 @@ describe("the booted shell slots", () => {
 });
 
 describe("the booted sidebar slots", () => {
-  it("development mode: the Project switcher above, the session list below", () => {
+  it("development mode: the Project switcher above, the Agent's apps then the session list below", () => {
     const sections = sectionsOf(sidebarSlots.sections ?? []);
     expect(sectionsIn(sections, "dev", "header").map((s) => s.section.Full)).toEqual([
       ProjectSwitcher,
     ]);
-    expect(sectionsIn(sections, "dev", "body").map((s) => s.section)).toEqual([sessionListSection]);
+    const body = sectionsIn(sections, "dev", "body").map((s) => s.section);
+    expect(body.map((section) => section.Full)).toEqual([MainSidebarApps, expect.any(Function)]);
+    expect(body[1]).toBe(sessionListSection);
   });
 
   it("company contributes its mode, its switcher, its channels, its roadmaps and its desks", () => {
@@ -363,7 +384,7 @@ describe("the booted sidebar slots", () => {
   });
   it("binds main badge hooks and balance without restoring the retired todos provider", () => {
     const badges = badgesOf(sidebarSlots.navBadges ?? []);
-    for (const anchor of ["agents", "models", "plugins", "usage", "menu", "account"]) {
+    for (const anchor of ["agents", "apps", "menu", "account"]) {
       const on = badges.filter((b) => b.anchor === anchor && typeof b.badge.useNote === "function");
       expect(on).toHaveLength(1);
       expect(typeof on[0]!.badge.useNote).toBe("function");
@@ -385,6 +406,8 @@ describe("the booted sidebar slots", () => {
 
 describe("the booted dock slot", () => {
   it("registers the eight main panel definitions from their owners without a retired ports panel", () => {
+    // The browser's is a plugin's, registered while its server module runs.
+    setRunningServerModules(["BuiltinBrowserModule"]);
     const definitions = dockPanels
       .flatMap(
         (c) => (c.code as { mainDefinitions: readonly DockPanelDefinition[] }).mainDefinitions,
@@ -432,11 +455,6 @@ describe("the booted dock slot", () => {
 });
 
 describe("the booted chat slot", () => {
-  it("the chat page receives the workflow tab strip", () => {
-    expect(sessionTabsOf(sessionTabs).map(({ Tab }) => Tab)).toEqual([WorkbenchSessionTab]);
-    expect(sessionTabs.map((c) => c.from)).toEqual(["WorkbenchesModule"]);
-  });
-
   it("the chat page's file renderer registry holds the audio module's player as `audio`", () => {
     expect([...fileRenderersOf(fileRenderers)]).toEqual([["audio", AudioFile]]);
     expect(fileRenderers.map((c) => c.from)).toEqual(["AudioModule"]);

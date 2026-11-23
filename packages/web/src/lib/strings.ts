@@ -16,12 +16,87 @@ import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "./peak-windows";
 import type { ProtocolClientType } from "./protocol-client-types";
 import type { ModelGroupSort } from "../features/models/model-sort";
-import type { StartPageSiteId } from "./browser-start-sites";
 import { EVOLUTION_DEMO } from "./evolution-demo";
 import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
+import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";
 
 export const zh = {
   appName: "PenguinHarness",
+
+  voice: {
+    /** The Project settings page of the multimodal models. */
+    models: "多模态模型",
+    modelHelp:
+      "penguin tools 命令使用这里选定的模型；「图片理解」就是项目的视觉模型，也替不支持图片的模型读图。聊天里，语音输入使用「语音识别」，朗读使用「语音合成」，润色使用「文本生成」。",
+    /** Image understanding: the Project's vision model, listed among the operations. */
+    imageUnderstanding: "图片理解",
+    unbound: "未指定",
+    /** The Project settings group that holds dictation's polish. */
+    dictation: "语音输入",
+    polish: "润色语音输入",
+    polishWith: (model: string, provider: string) => `由 ${model}（${provider}）润色`,
+    polishNeedsText: "请先选择文本生成模型",
+    prompt: "润色提示词",
+    restorePrompt: "恢复默认",
+    record: "语音输入",
+    recording: "正在录音",
+    permission: "等待麦克风授权",
+    inputLevel: "麦克风音量",
+    quiet: "安静",
+    soundDetected: "收到声音",
+    finish: "完成录音",
+    cancel: "取消语音输入",
+    transcribing: "正在转写",
+    polishing: "正在润色",
+    denied: "请在浏览器或系统设置中允许使用麦克风。",
+    unsupported: "当前页面无法录音。请通过 HTTPS 在支持麦克风的浏览器中打开。",
+    recordFailed: "未能从麦克风录音。",
+    tooLarge: "录音文件太大，请缩短录音时长。",
+    empty: "未识别到语音。",
+    original: "润色未完成，已插入原始转写。",
+    listen: "朗读回复",
+    stop: "停止朗读",
+    play: "播放语音",
+    audioError: "无法播放这条回复的语音。",
+    preparing: "正在生成语音",
+  },
+
+  defaultModels: {
+    /** The dialog's title, and the Models header's button that opens it. */
+    title: "默认模型设置",
+    /** Behind the "?" beside the dialog's title. */
+    intro: "新对话、多模态工具与语音交互默认使用这些模型。每项选好即保存。",
+    introMember: "新对话、多模态工具与语音交互默认使用这些模型。只有 Project 所有者可以更改。",
+    /** The sentence when the first-run guide opened the dialog. */
+    introOnboarding:
+      "先选一个默认对话模型，新对话就会用它；多模态与工具可以稍后再设。每项选好即保存。",
+    chat: "对话",
+    multimodal: "多模态",
+    tools: "工具",
+    chatModel: "默认对话模型",
+    chatHint: "新建对话时使用",
+    /** A row nothing can serve, and where it sends the reader. */
+    empty: "连接一个提供这类模型的供应商",
+    emptyAction: "前往模型库",
+    done: "完成",
+    /** Text generation with nothing bound: it runs on the default chat model. */
+    followsDefault: (model: string) => `跟随默认对话模型（${model}）`,
+    followDefault: "跟随默认对话模型",
+    /** The first-run guide, before any chat model has a key. */
+    guideTitle: "先连接一个模型供应商",
+    guideBody:
+      "这个 Project 还没有可用的模型：没有任何对话模型配置了 API key。连接一个供应商，或在模型库填写 key，之后再选择默认模型。",
+    tokendance: "一个钱包使用多家模型，无需逐个填写 key",
+    penguinGo: "PenguinHarness 自带的模型服务",
+    connect: "连接",
+    keyText: "已有某家供应商的 API key？",
+    keyAction: "填写 API key",
+    later: "稍后",
+    /** The composer's notice while a new chat has no model to run on, for the owner and a member. */
+    composerNone: "还没有默认模型",
+    composerNoneMember: "还没有默认模型，请找所有者设置",
+    composerAction: "设置默认模型",
+  },
 
   nav: {
     chat: "对话",
@@ -39,16 +114,16 @@ export const zh = {
     userSettings: "用户设置",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
+    /** The handle on the pinned sidebar's edge: its accessible name and tooltip. */
+    resizeSidebar: "调整侧栏宽度",
     /** The desktop window's title band: back and forward through the pages visited. */
     back: "后退",
     forward: "前进",
+    /** A fold's toggle: the UI package's words for every fold it draws (lib/ui-strings.ts). */
     collapseGroup: "折叠",
     expandGroup: "展开",
     pinGroup: "置顶分组",
     unpinGroup: "取消置顶",
-    /** A nav entry's favourite toggle (a star): a favourite stays visible when the collapsible area folds. */
-    pinEntry: "收藏",
-    unpinEntry: "取消收藏",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest). */
     org: {
       overview: "概览",
@@ -599,238 +674,6 @@ export const zh = {
     panelUnavailable: "此面板暂不可用",
   },
 
-  /** The agent browser — the built-in one (desktop app) or the user's own Chrome: its dock panel, toolbar and dialogs. */
-  builtinBrowser: {
-    panelTitle: "浏览器",
-    /** The browser's own tab strip (its accessible name). */
-    tabs: "标签页",
-    newTab: "新建标签页",
-    closeTab: "关闭标签页",
-    /** A tab with no title yet — a blank new tab. */
-    untitled: "新标签页",
-    back: "后退",
-    forward: "前进",
-    reload: "重新加载",
-    stop: "停止加载",
-    /** The address bar's accessible name, and its placeholder. */
-    address: "地址栏",
-    addressPlaceholder: "搜索或输入网址",
-    /** The history suggestions under the address bar (their accessible name). */
-    suggestions: "历史记录",
-    /** The toolbar's overflow menu. */
-    more: "更多",
-    importAction: "从浏览器导入…",
-    clearDataAction: "清除浏览数据…",
-    /** Opens the homepage dialog. */
-    setHomepageAction: "设置主页…",
-    openExternal: "在系统浏览器中打开",
-    devTools: "开发者工具",
-    /** The toolbar's button to the homepage, beside reload; shown only while one is set. */
-    home: "主页",
-    /** The toolbar's mark while an agent drives the browser; `action` is one of `actions`. */
-    agentBusy: (action: string): string => `智能体正在使用浏览器：${action}`,
-    /** A busy tab's tooltip in the strip, after its title. */
-    agentBusyTab: "智能体正在使用此标签页",
-    actions: {
-      navigate: "打开网页",
-      scan: "读取页面",
-      exec: "运行脚本",
-      click: "点击页面",
-      type: "输入文字",
-      screenshot: "截取屏幕",
-      cdp: "发送调试命令",
-    },
-    /** The panel where the browser cannot run; the title, then why. */
-    unavailableTitle: "内置浏览器不可用",
-    unavailableDesktop: "内置浏览器只能在 PenguinHarness 桌面应用中使用。",
-    unavailableShell: "当前桌面应用版本过旧，请更新后使用内置浏览器。",
-    unavailableWindow: "没有可以显示浏览器的应用窗口。",
-    /** After the reason, where the server offers Chrome but none is paired: where to pair one. */
-    unavailablePairChrome: "要让 Agent 改用你的 Chrome，先在设置 › 浏览器中配对。",
-    /** The unavailable built-in panel's way out, where the server offers the user's Chrome. */
-    useChrome: "改用系统 Chrome",
-    /** A new tab without a homepage: the start page's common sites, and its landmark's name. */
-    startPage: {
-      label: "常用网站",
-      sites: {
-        google: "谷歌",
-        bing: "必应",
-        baidu: "百度",
-        github: "GitHub",
-        stackoverflow: "Stack Overflow",
-        wikipedia: "维基百科",
-      } satisfies Record<StartPageSiteId, string>,
-    },
-    openFailed: (reason: string): string => `无法打开标签页：${reason}`,
-    closeFailed: (reason: string): string => `无法关闭标签页：${reason}`,
-    /** The two backends, as Settings › Browser offers them (desktop app). */
-    backendBuiltin: "内置",
-    backendChrome: "系统 Chrome",
-    /** The Chrome surface's menu row: the user's Chrome as the server last said. */
-    chromeConnected: (name: string | null): string =>
-      name !== null ? `Chrome：已连接 · ${name}` : "Chrome：已连接",
-    chromeNotConnected: "Chrome：未连接",
-    chromeNotPaired: "尚未配对 Chrome",
-    chromeDisabled: "Chrome 连接已关闭",
-    /** The status row's action: the pairing dialog, or Settings › Browser once one is paired. */
-    connectChrome: "连接你的 Chrome…",
-    manageChrome: "管理…",
-    /** The toast after a switch, and the one when an agent at work refuses it. */
-    switchedToChrome: "Agent 现在使用你的 Chrome",
-    switchedToBuiltin: "Agent 现在使用内置浏览器",
-    switchRefused: "Agent 正在使用浏览器，等它完成后再切换",
-    switchFailed: (reason: string): string => `无法切换浏览器：${reason}`,
-    /** The Chrome surface: in place of the page, a card for a tab that lives in the user's Chrome. */
-    chromeTabCard: "此标签页在你的 Chrome 中打开",
-    showInChrome: "在 Chrome 中显示",
-    chromeNoTabsTitle: "你的 Chrome 里还没有 Agent 的标签页",
-    chromeNoTabsBody: "Agent 打开的页面会出现在 Chrome 的 Penguin 标签组里。",
-    /** Paired but not connected: the title, which Chrome, and the fold with what to check. */
-    chromeDisconnectedTitle: "Chrome 未连接",
-    chromeDisconnectedBody: (name: string | null): string =>
-      name !== null
-        ? `${name} 现在没有连到这台服务器。`
-        : "你配对的 Chrome 现在没有连到这台服务器。",
-    reconnectHelp: "重新连接帮助",
-    reconnectOpen: "打开 Chrome，确认 PenguinHarness Browser 扩展在 chrome://extensions 中已启用。",
-    reconnectResume: "点工具栏上的扩展图标；如果显示已暂停，选择「继续」。",
-    reconnectPair: "服务器地址变了，或扩展里移除了这台服务器时，需要重新配对。",
-    /** The admin's switch is off. */
-    chromeDisabledTitle: "Chrome 连接已关闭",
-    chromeDisabledBody: "这台服务器的管理员关闭了 Chrome 扩展连接。",
-    /** No Chrome paired: the line above the pairing steps the panel shows in its place. */
-    chromeUnpairedIntro:
-      "安装 PenguinHarness Browser 扩展并完成配对后，Agent 就能在你自己的 Chrome 里打开和操作网页，使用你在 Chrome 中的登录状态。",
-    /** The pairing dialog, and the same three steps inline in the panel while no Chrome is paired. */
-    pairTitle: "连接你的 Chrome",
-    pairStepInstall:
-      "安装扩展并把它固定到工具栏。推荐从 Chrome 应用商店安装，Chrome 会自动更新它。",
-    pairStore: "打开 Chrome 应用商店",
-    /** Under the store link: the zip, for a network that cannot reach the store. */
-    pairStepInstallZip:
-      "打不开商店时，也可以下载 zip 并解压，在 chrome://extensions 开启「开发者模式」，选择「加载已解压的扩展程序」并选中解压出的文件夹。",
-    pairDownload: "下载扩展（zip）",
-    pairStepOpen: "点工具栏上的 PenguinHarness Browser 图标，选择「设置」，打开扩展的配对页。",
-    pairStepPaste: "把下面的服务器地址和配对码粘贴进去，选择「连接」。",
-    pairServer: "服务器地址",
-    pairCode: "配对码",
-    /** Under the code: one use, until when (a local HH:mm). */
-    pairCodeExpiry: (time: string): string => `只能使用一次，${time} 前有效`,
-    pairCodeExpired: "配对码已过期",
-    pairNewCode: "换一个",
-    pairCodeFailed: (reason: string): string => `无法生成配对码：${reason}`,
-    pairWaiting: "正在等待 Chrome…",
-    pairConnected: "已连接",
-    /** The import dialog: copies sign-ins and history from a browser installed on this computer. */
-    importTitle: "从浏览器导入",
-    importIntro:
-      "将系统浏览器的登录状态导入当前 Project，历史记录导入内置浏览器。其他 Project 的登录状态和原浏览器的数据不会改变。",
-    importLoading: "正在查找浏览器…",
-    importNone: "这台电脑上没有找到可以导入的浏览器。",
-    importSourcesFailed: (reason: string): string => `无法读取浏览器列表：${reason}`,
-    importSource: "导入来源",
-    importWhat: "导入内容",
-    importCookies: "Cookie 与登录状态",
-    importHistory: "历史记录",
-    importDomains: "仅限这些网站",
-    importDomainsHint: "用逗号分隔，例如 amazon.com, github.com；留空则导入全部网站",
-    importDomainsPlaceholder: "amazon.com, github.com",
-    importKeychainNote: "Mac 可能会请求钥匙串访问权限。",
-    importRun: "导入",
-    importRunning: "正在导入…",
-    importDone: "完成",
-    importCookiesResult: (c: {
-      found: number;
-      imported: number;
-      skipped: number;
-      failed: number;
-    }): string =>
-      `Cookie：已导入 ${c.imported} / ${c.found}` +
-      (c.skipped > 0 ? `，跳过 ${c.skipped}` : "") +
-      (c.failed > 0 ? `，失败 ${c.failed}` : ""),
-    importHistoryResult: (h: { found: number; imported: number }): string =>
-      `历史记录：已导入 ${h.imported} / ${h.found} 条`,
-    importFailed: (reason: string): string => `导入失败：${reason}`,
-    /** The clear-browsing-data confirmation. */
-    clearTitle: "清除浏览数据",
-    clearBody:
-      "Cookie、缓存和网站存储仅清除当前 Project 的数据；历史记录会从整个内置浏览器中清除。此操作无法撤销。",
-    clearCookies: "Cookie 与登录状态",
-    clearCache: "缓存的图片和文件",
-    clearStorage: "网站存储的数据",
-    clearHistory: "历史记录",
-    clearConfirm: "清除",
-    clearDone: "已清除浏览数据",
-    clearFailed: (reason: string): string => `清除失败：${reason}`,
-    /** The homepage dialog: the page new tabs and the Home button open. */
-    homepageTitle: "设置主页",
-    homepageIntro: "新建标签页和主页按钮会打开这个页面。",
-    homepageAddress: "网址",
-    homepagePlaceholder: "example.com",
-    /** The address field's hint: what an empty field means, else the page the entry opens. */
-    homepageHintEmpty: "留空表示不设主页，新建标签页为空白页。",
-    homepageHintOpens: (url: string): string => `将打开 ${url}`,
-    /** Fills the field with the page on screen. */
-    homepageUseCurrent: "使用当前页面",
-    /** Empties the field; saving it then removes the homepage. */
-    homepageClear: "清除",
-    homepageFailed: (reason: string): string => `无法保存主页：${reason}`,
-    /** A tab whose page crashed: the panel's notice in its place, with Reload as the action. */
-    crashedTitle: "此页面已崩溃",
-    /** The notice's body when the page ran out of memory (the system took its memory back). */
-    crashedOutOfMemory: "它耗尽了内存。请先关闭不再需要的标签页，再重新加载。",
-    crashedBody: "重新加载即可再试一次。",
-    /** A crashed tab's tooltip line in the strip, after its title, and its mark's accessible name. */
-    crashedTab: "页面已崩溃",
-    /**
-     * The browser's load, when the server warns about it: the toolbar's mark (its tooltip and
-     * accessible name) and the one toast per warning. Sentences joined in the order given here.
-     */
-    load: {
-      memory: (size: string, tabs: number): string =>
-        `浏览器正在使用 ${size} 内存（${tabs} 个标签页）。`,
-      lowSystemMemory: (percent: number): string => `这台电脑的可用内存不足（剩余 ${percent}%）。`,
-      manyTabs: (tabs: number): string => `已打开 ${tabs} 个标签页。`,
-      advice: "请关闭不再需要的标签页。",
-      /** The sentences above, as one warning. */
-      join: (sentences: string[]): string => sentences.join(""),
-      /** A heavy tab's tooltip line in the strip, after its title, and its mark's accessible name. */
-      heavyTab: (size: string): string => `占用 ${size} 内存`,
-    },
-  },
-
-  /** Settings › Personal › Browser (the user's agent browser) and Settings › Server › Chrome extension. */
-  browserSettings: {
-    /** The backend choice; only on the desktop app, which has both. */
-    backend: "Agent 使用的浏览器",
-    backendInfo:
-      "内置浏览器在桌面应用里，有自己的登录状态；系统 Chrome 是你自己的 Chrome，Agent 只操作它打开的标签页和你交给它的标签页。Agent 自己不能切换。",
-    paired: "已配对的 Chrome",
-    pairedNone: "还没有配对的 Chrome。",
-    /** A paired Chrome's line under its name: the extension's version, and when it was last connected. */
-    pairedLine: (version: string, seen: string | null): string =>
-      seen === null ? `扩展 ${version} · 尚未连接过` : `扩展 ${version} · 最近连接 ${seen}`,
-    /** The state dot's accessible name. */
-    connected: "已连接",
-    notConnected: "未连接",
-    revoke: "撤销",
-    revokeTitle: "撤销这个 Chrome？",
-    revokeBody: (name: string): string =>
-      `撤销后，Agent 不能再操作「${name}」，它会立即断开；要再使用它，需要重新配对。`,
-    revoked: (name: string): string => `已撤销「${name}」`,
-    revokeFailed: (reason: string): string => `无法撤销：${reason}`,
-    connectFirst: "连接你的 Chrome",
-    connectAnother: "连接另一个 Chrome",
-    loadFailed: (reason: string): string => `无法读取已配对的 Chrome：${reason}`,
-    disabledNote: "这台服务器的管理员关闭了 Chrome 扩展连接。",
-    /** Settings › Server › Chrome extension: the admin's switch, and the question before it goes off. */
-    allow: "允许 Chrome 扩展连接",
-    offTitle: "关闭 Chrome 扩展连接？",
-    offBody:
-      "所有用户的扩展会立即断开，整个服务器上的 Agent 都不能再使用 Chrome。配对会保留，重新开启后扩展会自行重连。",
-    off: "关闭",
-  },
-
   /** Settings › Personal › Archived chats (features/settings/archived-sessions-section.tsx). */
   archivedSessions: {
     search: "搜索已归档对话",
@@ -879,11 +722,6 @@ export const zh = {
     languageInfo: "界面语言，可跟随浏览器设置。",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "设置",
-    /** Settings › Personal › Browser, and the server page with the admin's Chrome switch. */
-    browserTitle: "浏览器",
-    chromeExtensionTitle: "Chrome 扩展",
-    chromeExtensionInfo:
-      "开启时，这台服务器上的每个用户都可以配对自己的 Chrome，让 Agent 在其中操作；关闭时，所有扩展断开，已有的配对保留。",
     /** Settings › Server › Agent API: the admin's switch over every Agent's public API, and the question before it goes off. */
     agentApiTitle: "Agent API",
     agentApiToggle: "允许 Agent API",
@@ -895,6 +733,8 @@ export const zh = {
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
+    /** The rail's last group: a page per plugin that has options. */
+    groupPlugins: "插件",
     /** Personal pages of the settings dialog. */
     profile: "个人资料",
     generalTitle: "通用",
@@ -952,8 +792,12 @@ export const zh = {
       tls: "TLS 握手失败",
       network: "无法连接",
     },
-    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
-    pluginsTitle: "插件",
+    /** The Plugins group's first page (admin, server-global): where plugins install from. */
+    pluginsTitle: "插件源",
+    /** The Plugins group's second page (admin, server-global): the sandbox Agents run in. */
+    sandboxTitle: "Agent 运行沙箱",
+    sandboxInfo:
+      "新建的 Session 进入哪种沙箱：开关与预设对之后新建的 Session 生效，已有 Session 保留创建时的策略。检查里每个沙箱后端插件各占一行，它自己的选项与检查在它的插件页。",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) => `${title}（不支持：${reason}）`,
     /** A switch one of whose positions this machine cannot honour, under the switch. */
@@ -962,9 +806,94 @@ export const zh = {
     pluginPositionOn: "开启",
     pluginPositionOff: "关闭",
     pluginsInfo:
-      "开关下方是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响本浏览器在插件页列出哪些插件。",
-    /** The page's own switch, above the server's cards: a display preference of this browser. */
-    pluginsIncompatibleOnly: "只显示不兼容的插件",
+      "插件从哪里安装：npm registry、插件索引与镜像。与插件本身一样是服务器全局的；保存后立即送达，无需重启。",
+    /** A plugin's page in the Plugins group: its parts, the status page's blocks and words. */
+    pluginPage: {
+      /** The heading over the preconditions; its other end holds the one "check again". */
+      checks: "检查",
+      /** The heading over the switches and fields. */
+      options: "选项",
+      /** The heading over the fields a plugin marks as security settings. */
+      security: "安全设置",
+      /** A precondition's state: the mark's tooltip and accessible name. */
+      checkState: {
+        ok: "通过",
+        action: "需要处理",
+        unknown: "未知",
+        na: "不适用",
+      },
+      /** The version element's state word. */
+      versionState: {
+        installed: "已安装",
+        preparing: "准备中",
+        failed: "安装失败",
+        missing: "未安装",
+        unsupported: "此机器不支持",
+        unknown: "状态未知",
+      },
+      /** The fold under a check or the version element. */
+      details: "详情",
+      /** A check's link to the page it names (a sandbox backend's plugin page). */
+      openPage: "查看",
+      /** That fold's accessible name on a check's row: the row it belongs to. */
+      detailsAbout: (subject: string) => `详情：${subject}`,
+      /** The picked machine holds none of this plugin's settings. */
+      noneOnMachine: (machine: string) => `${machine} 上没有这个插件的选项。`,
+      /** A plugin's page that only a machine has, switched to this server. */
+      notOnThisServer: "本机没有安装这个插件。在上方选择装有它的机器，即可查看它的选项。",
+      /**
+       * The picked machine names no plugin on any of its groups: none of this plugin's, or a build
+       * older than the naming, which lists every plugin's options on the management page.
+       */
+      onAdminPage: (machine: string, page: string) =>
+        `${machine} 上没有标明属于这个插件的选项。版本较旧的机器不标明选项属于哪个插件，它的插件选项都列在「${page}」里。`,
+    },
+    /**
+     * The Plugins group's page of requests to run a library plugin's server module, and the
+     * decisions on them (admin): its rail name and heading, and its explanation on the "?".
+     */
+    moduleRequests: {
+      title: "模块请求",
+      info: "成员把带服务端模块的插件装到 Agent 上，而本服务端既未运行、构建也不自带该模块时，会在这里留下请求。启用会把它列入该 Project 在本服务端的插件表并重新装载服务器插件，正在运行的 Agent 不受影响。内置插件的模块随 Agent 安装自动启用，也记在这里。",
+      empty: "没有等待处理的请求",
+      /** The rail row's accessible name while requests wait: its name and the count beside it. */
+      waitingCount: (n: number) => `模块请求，${n} 个待处理`,
+      /** In place of the list when the server on screen cannot answer (null: this server). */
+      unreadable: (machine: string | null, reason: string) =>
+        machine === null
+          ? `无法读取模块请求：${reason}`
+          : `无法读取 ${machine} 上的模块请求：${reason}`,
+      waiting: "待处理",
+      waitingHint: "等待你启用或拒绝",
+      declined: "已拒绝",
+      declinedHint: "已拒绝或已停用：它不会随 Agent 安装再次启用，成员也不能再请求",
+      /** How an enabled module came to be enabled, and what that means on hover. */
+      via: { builtin: "内置自动", admin: "管理员", approval: "已批准" },
+      viaHint: {
+        builtin: "已启用：内置插件的模块随 Agent 安装自动启用",
+        admin: "已启用：由管理员启用",
+        approval: "已启用：管理员批准了成员的请求",
+      },
+      /** A module behind a system app: it always runs and offers no stop. */
+      systemApp: "系统应用，内置",
+      systemAppHint: "它为应用中心里的一个系统应用提供服务，始终运行，不能停用",
+      /** In place of a Project that was deleted, and of a requester that is no person. */
+      projectGone: "Project 已删除",
+      system: "系统",
+      sep: "、",
+      enable: "启用",
+      decline: "拒绝",
+      stop: "停用",
+      stopTitle: (name: string) => `停用 ${name} 的服务端模块？`,
+      stopBody: (name: string) =>
+        `将在本服务端停用 ${name} 的服务端模块，并阻止它随 Agent 安装再次启用。各 Agent 上的 Skill 等内容不受影响。`,
+      enabledToast: (name: string) => `已启用 ${name} 的服务端模块`,
+      declinedToast: (name: string) => `已拒绝 ${name} 的服务端模块请求`,
+      stoppedToast: (name: string) => `已在本服务端停用 ${name} 的服务端模块`,
+      /** A stop that leaves the module running: these Projects' shared tables still list it. */
+      stillListed: (name: string, projects: string) =>
+        `${name} 的服务端模块仍在运行：${projects} 的共享插件表仍列出它，可在插件页移除。`,
+    },
     /** A list field's editor: the row buttons and the add row. */
     pluginListMoveUp: "上移",
     pluginListMoveDown: "下移",
@@ -1128,6 +1057,12 @@ export const zh = {
     launcherInfo:
       "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
     toolAliases: "工具短名",
+    activityDisplayMode: "思考显示方式",
+    activityDisplayModeInfo:
+      "标准列出每一步，点开可看详情。展开直接显示思考和工具调用的内容。紧凑跟随当前步骤，可前后翻页。",
+    activityDisplayStandard: "标准",
+    activityDisplayExpanded: "展开",
+    activityDisplayCompact: "紧凑",
     toolAliasesInfo:
       "对话里的工具卡片用短名称呼内置工具，read_file 显示为「读取」。其余工具（含 MCP 工具）与轨迹观测始终是工具原本的名字；悬停短名也能看到它。",
     notifications: "任务完成通知",
@@ -1220,6 +1155,7 @@ export const zh = {
     leaveAction: "离开安全模式（重新加载服务端贡献）",
   },
   modelPicker: {
+    clearAssignment: "取消指定",
     /** Accessible name of the dialog's provider-group rail. */
     groups: "模型分组",
     /** Footer toggle while models without a key are listed: turns the listing back off. */
@@ -1250,14 +1186,8 @@ export const zh = {
     noMatches: "没有匹配的智能体。",
     searchAgents: "搜索智能体",
 
-    tabsLabel: "聊天与工作台",
-    chatTab: "聊天",
-    brokenMark: "当前文件加载失败",
     reload: "重新加载",
-    reloading: "加载中…",
     history: "历史",
-    loadError: "加载失败",
-    loadingHistory: "加载历史…",
     /** The full-page route while it is still finding out which page it should show. */
     loadingPage: "正在打开页面…",
     noHistory: "还没有记录过版本。",
@@ -1268,23 +1198,17 @@ export const zh = {
     restoreConfirm: (revision: string) =>
       `恢复到版本 ${revision}？工作台的文件会换成该版本并立即重新加载，数据（state.json）保持不变；从未成功加载过的改动会丢失。`,
     remove: "移除",
-    fillApp: "占满应用",
-    /** `palette` is the formatted palette.toggle chord, null while unbound. */
-    fillAppHint: (palette: string | null): string =>
-      palette === null
-        ? "让这个页面占满整个应用；打开命令面板可退出"
-        : `让这个页面占满整个应用；${palette} 打开命令面板可退出`,
-    exitFullPage: "退出全页模式（回到工作台）",
+    /** The full page's way out to the app's window (the one it was opened from, or a new one). */
+    exitToWindow: "退出全屏（回到应用窗口）",
     exitFullPageButton: "退出全屏",
     exitBallTuck: "收起到边缘",
     exitBallShow: "显示退出按钮",
     retryHistory: "重试",
     exitHint: (palette: string | null): string =>
-      palette === null ? "打开命令面板可回到工作台。" : `按 ${palette} 打开命令面板可回到工作台。`,
+      palette === null ? "打开命令面板可退出全屏。" : `按 ${palette} 打开命令面板可退出全屏。`,
     noSuchPage: "这个工作台不存在或没有页面。",
     removeConfirm: "删除这个工作台及其数据？历史版本将不再列出。",
     removeYes: "确认移除",
-    removing: "移除中…",
     removeNo: "取消",
     importTitle: "导入工作台",
     importChatTitle: "推荐：让 Agent 在对话中导入",
@@ -1334,6 +1258,8 @@ export const zh = {
     /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
     showInAppCenterHint:
       "打开后，这个工作台会作为一个应用出现在「应用中心」页面：Project 的每个成员都能在那里看到它的图标，点一下即可打开使用，不必先进入对话。关闭只是把入口从应用中心撤下，工作台本身、它的数据与历史版本都不受影响。拨动开关会改写工作台 package.json 中的 penguin.appCenter.show，并记为一个版本。",
+    /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
+    showInSidebar: "展示到侧边栏",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "打开",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1343,27 +1269,56 @@ export const zh = {
     /** The full page's way out when it was opened from the App Center. */
     exitToAppCenter: "退出全页模式（回到应用中心）",
   },
+  /** The sidebar's app list, under the nav and above the conversations (main-sidebar-apps.tsx). */
+  sidebarApps: {
+    title: "应用",
+    /** The group header's action: the Agent's Workbenches sub-page. */
+    manage: "管理应用",
+    /** A row's menu. */
+    open: "打开",
+    removeFromSidebar: "从侧边栏移除",
+    viewInSettings: "在 Agent 设置中查看",
+    /**
+     * A row's accessible name, and its hint when that says more than the name: the title, the
+     * Agent of an app that is only listed because it runs, and the app's state.
+     */
+    rowName: (title: string, agent: string | null, state: string | null) =>
+      [title, agent === null ? null : `来自 ${agent}`, state].filter((s) => s !== null).join("，"),
+  },
   appCenter: {
     title: "应用中心",
     loading: "加载中…",
     emptyTitle: "应用中心还是空的",
     empty:
-      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建 Workbench，并在 Agent 设置的工作台行打开「展示到应用中心」开关后，它就会出现在这里。",
+      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建的 Workbench 加载后就会出现在这里；不想在这里看到的，可在 Agent 设置的工作台行关掉「展示到应用中心」。",
     /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
     broken: "加载失败",
     /** A tile whose app is still being built: it opens once the build is done. */
     building: "构建中",
+    /** A tile whose app is running behind the grid, its window minimized. */
+    running: "运行中",
     /** A tile's hint: its whole title and the Agent that owns it. */
     tileTip: (title: string, agent: string) => `${title}，来自 ${agent}`,
     buildingTip: (title: string, agent: string) =>
       `${title}，来自 ${agent}。构建中，完成后即可打开`,
     failedTip: (title: string, agent: string) =>
       `${title}，来自 ${agent}。加载失败，菜单中可查看错误`,
+    runningTip: (title: string, agent: string) => `${title}，来自 ${agent}。运行中，点击恢复窗口`,
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}，${agent}` : `${title}，${agent}，${state}`,
-    folderTip: (name: string, count: number) => `${name}，${count} 个应用`,
-    folderName: (name: string, count: number) => `${name}，分组，${count} 个应用`,
+    /** A system app's tile (lib/system-apps.ts): its hint, and its accessible name with its state. */
+    systemTileName: (title: string, state: string | null = null) =>
+      state === null ? `${title}，系统应用` : `${title}，系统应用，${state}`,
+    /** A system app's hint while it runs behind the grid, its window minimized. */
+    systemRunningTip: (title: string) => `${title}，系统应用。运行中，点击恢复窗口`,
+    /** Under the system apps' tiles while no Agent has an app here: what a workbench is. */
+    workbenchesEmptyTitle: "还没有 Agent 的应用",
+    /** A folder's hint and accessible name: its apps, and how many of them are running. */
+    folderTip: (name: string, count: number, running: number) =>
+      `${name}，${count} 个应用${running > 0 ? `，${running} 个运行中` : ""}`,
+    folderName: (name: string, count: number, running: number) =>
+      `${name}，分组，${count} 个应用${running > 0 ? `，${running} 个运行中` : ""}`,
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "新建分组",
     /** The page header's button that opens the new-folder dialog. */
@@ -1377,6 +1332,8 @@ export const zh = {
       removeFromFolder: "移出分组",
       removeFromAppCenter: "从应用中心移除",
       viewInSettings: "在 Agent 设置中查看",
+      /** Checkable: the installation's sidebar setting, the row's 「展示到侧边栏」. */
+      showInSidebar: "在侧边栏显示",
       showError: "查看错误",
       rename: "重命名",
       dissolve: "解散分组",
@@ -1405,10 +1362,13 @@ export const zh = {
     /** A failed tile with no recorded message (an older status file). */
     errorUnknown: "没有记录错误信息。打开应用可查看它的加载状态。",
     /** The windowed app's title bar. */
-    windowClose: "关闭，回到应用中心",
+    windowMinimize: "最小化",
+    windowClose: "关闭",
     windowFullScreen: "全屏打开",
-    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
-    machinesNote: "机器上 Agent 的应用不在这里，请从它们的 Agent 设置页进入。",
+    /** A system app's full page: its way out, back to the app's window where the page is now. */
+    exitToWindow: "退出全页模式（回到应用窗口）",
+    /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
+    machinesOffline: (names: string) => `暂时无法连接：${names}。已缓存的内容仍可查看。`,
     aiCreateTitle: "用 AI 创建应用",
     aiCreateDescription: "选定的 Agent 会做一个 Workbench，并让它出现在应用中心。",
     aiCreatePlaceholder: "描述你想要的应用，例如：一个记录每日待办的看板",
@@ -1607,6 +1567,8 @@ export const zh = {
     pluginUpdates: (n: number) => `${n} 个插件有更新`,
     presetUpdates: (n: number) => `${n} 个新预置模型可同步`,
     unexpectedErrors: (n: number) => `${n} 条未预期错误`,
+    /** Several trails' sentences under one dot (the App Center's entry, a folder), or a tile's name with its trail's. */
+    joined: (parts: readonly string[]) => parts.join("；"),
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "有待处理事项",
     /** Clears an update the user has decided not to take now (a later one raises the badge again). */
@@ -1987,6 +1949,7 @@ export const zh = {
       "这是当前账号最后一个 Project，删除后将无 Project 可用；请先创建新的 Project",
     noCredentialTitle: "尚未配置模型 credential",
     noCredentialBody: "当前 Project 的默认模型尚未配置 API key，发起对话前请先前往模型页配置。",
+    noChatModels: "请为这个项目添加一个支持对话的模型，然后发送消息。",
     goToModels: "前往模型页",
     later: "稍后再说",
   },
@@ -2200,6 +2163,20 @@ export const zh = {
       ["discard", "不生成摘要，直接丢弃旧上下文，下一轮从新窗口重新开始。"],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "摘要提示词",
+    maxRounds: "最多工具轮数",
+    maxRoundsInfo:
+      "生成摘要时，模型在给出摘要之前最多可用几轮工具调用（例如写交接文件）；用尽仍没有摘要，下一个上下文以交接说明开头。",
+    maxRoundsHint: "0 表示不留工具轮",
+    maxRoundsInvalid: "必须是 ≥ 0 的整数",
+    compactionReminder: "每轮提醒",
+    compactionReminderInfo: "生成摘要期间，每个工具轮之后附在工具输出后面发给模型的一行。",
+    compactionReminderHint:
+      "可用占位符 {{ROUNDS_USED}}、{{ROUNDS_LEFT}}、{{SCRATCHPAD_DIR}}；留空则不发提醒",
+    compactionHandoffNote: "交接说明",
+    compactionHandoffNoteInfo:
+      "取不到摘要时，下一个上下文以这段说明开头：harness 从 Trace 文件填入占位符，不再请求模型。",
+    compactionHandoffNoteHint:
+      "可用占位符 {{ERROR}}、{{USER_MESSAGES}}、{{LAST_TURN}}、{{TRACE_PATH}}、{{SCRATCHPAD_DIR}}；留空则只留引述的内容",
     numberInvalid: "必须是 > 0 的整数或 -1",
     numberCannotClear: "已保存的值不能清空：请填写数值，或点「重置」还原",
     toolFieldInvalid: (name: string, field: string) => `${name}: ${field} 必须是 > 0 的整数或 -1`,
@@ -2305,6 +2282,21 @@ export const zh = {
       `确认删除 ${machine} 上的 Agent「${name}」？它在那台机器上的目录（含全部 Trace）将被递归删除，不可恢复。`,
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
+    /** The system Agent (lib/builtin-agents.ts): its name and one line, never read from its file. */
+    systemName: "系统",
+    systemDescription: "系统应用的所有者：模型库、插件市场、机器管理、成本中心与评估中心。",
+    /** The pill after its name on the Agents page, and what the pill means. */
+    systemTag: "系统",
+    systemTagHint: "系统 Agent 拥有系统应用；它不对话、不装插件，也不能删除或导出。",
+    /** Its settings page's Plugins tab: the system apps it owns, listed read-only. */
+    systemAppsDesc: "系统 Agent 拥有的系统应用。它们随平台提供，从应用中心打开。",
+    systemAppsEmpty: "还没有系统应用。",
+    /** A system app's row there: its tag, and the system Agent's card's count of them. */
+    systemAppTag: "系统应用",
+    systemAppCount: (n: number) => `${n} 个系统应用`,
+    /** The Agents page's notice to the owner: an Agent of theirs holds the id reserved for the system Agent. */
+    systemIdHeld: (name: string): string =>
+      `Agent「${name}」占用了系统 Agent 的保留 id。导出它，以另一个 id 导入，再删除它；系统 Agent 会在下次加载时补齐。`,
     /** The Agents page's section of organization employees, and its "?" (what an employee is here). */
     employeesSection: "公司模式员工",
     employeesSectionInfo:
@@ -2624,7 +2616,7 @@ export const zh = {
     aiAddTail: (projectId: string): string =>
       [
         "请使用 penguin-config 技能完成上面的配置：",
-        "- 下面每条命令都要带 `--root <数据根目录>`，即环境信息中 App Data Dir 的上级目录。命令的环境里没有这个值，不带 `--root` 会配置到另一个数据根目录，本 Project 什么也拿不到。",
+        "- 下面每条命令都要带 `--root <数据根目录>`：环境信息中的 App Data Dir 为 `<数据根目录>/projects/<project id>`，数据根目录即它往上两级的目录。命令的环境里没有这个值，不带 `--root` 会配置到另一个数据根目录，本 Project 什么也拿不到。",
         `- 每个模型执行一次 \`penguin config model add --provider <分组名> --model-id <上游模型 id> --project-id ${projectId} --root <数据根目录> [--base-url <端点>] [--client-type openai] [--api-key <key>] [--context-window <n>] [--price-cache-read <n> --price-cache-write <n> --price-output <n>]\`：\`--provider\` 必填，\`--model-id\` 用网关自己的模型 id；OpenAI 兼容端点加 \`--client-type openai --base-url <端点>\`。`,
         "- 来源是网页时先抓取页面：优先加我点名的模型，没有点名就选最常用的，最多 10 个左右。",
         "- 需要 API key 而我没给时只问我一次；我不提供就把 key 留空，并告诉我到模型库页补填。",
@@ -2648,6 +2640,12 @@ export const zh = {
     speedTestStart: "开始测速",
     speedPending: "测速中…",
     speedFailed: "测速失败",
+    /** A model that is not chatted with: how long its one request took. */
+    latencyTitle: "完成这次请求用的时间",
+    /** A model the group test leaves out, the reason on hover. */
+    speedSkipped: "不测速",
+    speedSkipVideo: "生成视频要等几分钟，费用也高，测速时跳过。",
+    speedSkipUnused: "这个模型不能对话，本项目也没有用到它的功能，无法测速。",
     ttftTitle: "首 token 延迟(TTFT)",
     tpsTitle: "输出速率(TPS)",
     modelCount: (n: number): string => `${n} 个模型`,
@@ -2741,8 +2739,6 @@ export const zh = {
     foldedGroups: (n: number): string => `其余 ${n} 个分组`,
     /** Badge on a row the seller is currently discounting: the rate off its list price. */
     discountBadge: (pct: number): string => `省 ${pct}%`,
-    offerFromBadge: (tenths: number): string => `${tenths / 10}折起`,
-    offerFromTitle: (pct: number): string => `供应商报价：最低为牌价的 ${pct}%`,
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
     /**
      * Same badge as a flat promotion; only the explanation differs, because this rate comes and
@@ -2763,8 +2759,7 @@ export const zh = {
     /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "该模型累计消耗的 Token（不限时间范围）",
-    setVisionModel: "设为视觉代理模型",
-    visionModelHint: "供不支持图片的模型在 read_file 读图时代读",
+    visionModelHint: "设为视觉模型：不支持图片的模型读图时由它代读，penguin tools i2t 也用它",
     priceUnitShort: "/M tok",
     testConnection: "测试连通性",
     testing: "测试中…",
@@ -2811,9 +2806,8 @@ export const zh = {
     groupMenuTitle: (sort: string): string => `设置 · 排序：${sort}`,
     /** The gear menu's first section: how the group's models are ordered (radio rows). */
     sortHeading: "排序",
-    /** In-group orders; price is the blended rate billed right now. */
+    /** The three orders; price is the blended rate billed right now. */
     sortModes: {
-      catalog: "目录顺序",
       "price-asc": "价格（从低到高）",
       "price-desc": "价格（从高到低）",
       name: "名称（A→Z）",
@@ -2976,7 +2970,7 @@ export const zh = {
       `请求发往 ${defaultBaseUrl}；环境里设置了 ${envBaseUrlKey} 时改发往该地址`,
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
-      `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
+      `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读，penguin tools i2t 也使用它。`,
     /** The add-model dialog's footer verb (the settings dialog's is the common Save). */
     addAction: "添加",
     /** A save that changes a promoted row's price or identity: the server then drops the promotion. */
@@ -2986,7 +2980,21 @@ export const zh = {
     confirmDefaultTitle: "设为默认模型",
     confirmDefault: (name: string): string =>
       `确定把「${name}」设为默认模型？新建的 Session 将默认使用它。`,
+    /** The tag on the Project's default chat model. */
     default: "默认",
+    /** The tag on a model chosen for some multimodal job or tool, which its hover names. */
+    inUse: "使用中",
+    usedFor: (jobs: readonly string[]) => `用于：${jobs.join("、")}`,
+    /** A model that cannot chat: chosen for every job it can do, asked first. */
+    useModel: "使用模型",
+    useHint: (jobs: readonly string[]) => `在本项目用于：${jobs.join("、")}`,
+    confirmUse: (name: string, jobs: readonly string[]) =>
+      `确定让「${name}」用于以下各项？${jobs.join("、")}。`,
+    used: (jobs: readonly string[]) => `已用于：${jobs.join("、")}`,
+    /** The same button once it is chosen for every job it can do. */
+    stopUsing: "取消使用模型",
+    stopUsingHint: (jobs: readonly string[]) => `不再用于：${jobs.join("、")}`,
+    stoppedUsing: (jobs: readonly string[]) => `已不再用于：${jobs.join("、")}`,
     setDefault: "设为默认模型",
     remove: "删除模型",
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",
@@ -3170,7 +3178,7 @@ export const zh = {
     aiAddTail: (agentId: string, projectId: string): string =>
       [
         `请使用 penguin-config 技能，把上面的密钥写进智能体 ${agentId} 的保险柜（Project ${projectId}）：`,
-        "- 下面每条命令都要带 `--root <数据根目录>`，即环境信息中 App Data Dir 的上级目录。命令的环境里没有这个值，不带 `--root` 会写到另一个数据根目录，这个智能体的保险柜仍然是空的。",
+        "- 下面每条命令都要带 `--root <数据根目录>`：环境信息中的 App Data Dir 为 `<数据根目录>/projects/<project id>`，数据根目录即它往上两级的目录。命令的环境里没有这个值，不带 `--root` 会写到另一个数据根目录，这个智能体的保险柜仍然是空的。",
         `- 每个密钥执行一次 \`penguin config vault set --key <键名> --value <值> --agent-id ${agentId} --project-id ${projectId} --root <数据根目录>\`；只需创建键名时，值先填占位符 TODO，并告诉我该键的用途与申请地址。`,
         "- 不要在回复里复述任何值，不要读取 .vault.toml。",
         `- 最后运行 \`penguin config vault list --agent-id ${agentId} --project-id ${projectId} --root <数据根目录>\` 列出键名。`,
@@ -3236,6 +3244,7 @@ export const zh = {
     workspace: "Workspace",
     model: "Model",
     modelDefault: "Project 默认",
+    modelRequired: "这个 Project 没有默认模型，请为定时任务选择模型。",
     deleteTitle: "删除定时任务",
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
     /** Toasts after a write. A schedule fires on its own clock, so none of them mentions when a conversation picks the change up: there is nothing to pick up. */
@@ -3346,7 +3355,7 @@ export const zh = {
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
   plugins: {
     builtin: "内置",
-    builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
+    builtinHint: "随本次构建自带，不能从服务端卸载：启用它不需要下载，但仍需你点启用才会加载。",
     installedRestart: "待重启",
     stateFailed: "加载失败",
     /** A module plugin the running build cannot run at all: it needs a module or interface this build lacks. */
@@ -3357,10 +3366,98 @@ export const zh = {
     unsatisfiedNotice: (n: number) => `当前构建无法完整运行 ${n} 个已装插件，原因见各自的条目。`,
     /** The notice's action: filters the list down to those rows. */
     unsatisfiedShow: "查看",
-    /** Page notice while Settings › Plugins narrows the list to the incompatible plugins. */
+    /** Page notice while the filter beside the search narrows the list to the incompatible plugins. */
     incompatibleOnlyNotice: "当前只显示不兼容的插件。",
     /** That notice's action: turns the filter off. */
     incompatibleOnlyShowAll: "显示全部",
+    /** The admin's notice while members' requests to run a plugin's server module wait. */
+    moduleRequestsNotice: (n: number) => `${n} 个服务端模块等待启用`,
+    /** That notice's action: opens the Settings dialog's module requests page, where they are decided. */
+    moduleRequestsView: "查看",
+    /**
+     * What an install did about the plugin's server module, after the install's own sentence
+     * (`said`): enabled, asked of the admin, stopped by the admin, failed to start, or — on a
+     * machine whose build does not ship it — to be installed for that machine.
+     */
+    /**
+     * The two installs of a plugin and their controls (05 「插件库」 「安装模型」): the server's
+     * and an Agent's, with what each does said before the click.
+     */
+    installModel: {
+      enableTitle: (name: string) => `启用 ${name} 的服务端模块`,
+      enableBody: (name: string) =>
+        `将为本 Project 启用 ${name} 的服务端模块。它随构建自带，不需要下载。`,
+      disableTitle: (name: string) => `停用 ${name} 的服务端模块`,
+      disableBody: (name: string) =>
+        `将为本 Project 停用 ${name} 的服务端模块；仍有其他 Project 启用它时，它继续运行。`,
+      installServer: "安装到服务端",
+      uninstallServer: "从服务端卸载",
+      enableModule: "启用服务端模块",
+      disableModule: "停用服务端模块",
+      /** A member's server control: held, saying why. */
+      adminOnly: "只有管理员能改动服务端",
+      installAgent: "安装到 Agent",
+      /** The install flow: the server first, then the Agents. */
+      flowTitle: (name: string) => `安装 ${name}`,
+      stepServer: "安装到服务端",
+      stepAgents: "安装到 Agent",
+      stepOf: (step: number, steps: number) => `第 ${step} 步，共 ${steps} 步`,
+      stepDone: "已完成",
+      serverDone: (name: string) => `${name} 已在服务端，所有 Project 共用。`,
+      askBody: "它还不在服务端：请管理员把它安装到服务端，装好后你再把它装到 Agent。",
+      askAdmin: "请管理员安装",
+      asked: "已请管理员安装。它装到服务端后，再回到这里把它装到 Agent。",
+      finish: "完成",
+      /** The flow's Agent step: how the Agents' copies relate to the server. */
+      onServer: "从服务端卸载会同时从所有 Agent 卸载。",
+      /** Progress on the clicked control. */
+      checking: "检查插件源…",
+      installing: "安装中…",
+      fromOffline: "从离线包安装…",
+      loading: "加载模块…",
+      /** The same steps on a card's one-line install control. */
+      stepShort: { checking: "检查插件源…", fromOffline: "从离线包安装…", loading: "加载模块…" },
+      /** The server-uninstall confirm. */
+      uninstallTitle: (name: string) => `从服务端卸载 ${name}`,
+      uninstallBody: (name: string, agents: number) =>
+        agents === 0
+          ? `将从服务端卸载 ${name}。没有 Agent 装有它。`
+          : `将从服务端卸载 ${name}，并同时从 ${agents} 个 Agent 卸载。`,
+      uninstallCopies: "这些 Agent 上的副本会被删除，包括本地改动，以及 Workbench 的数据与历史。",
+      holdersLoading: "正在查找装有它的 Agent…",
+      moreAgents: (n: number) => `还有 ${n} 个 Agent`,
+      sharedRefused: (projects: string) =>
+        `${projects} 的插件表为所有机器列入了它：先在 Project 配置中移除，再从服务端卸载。`,
+      uninstalledToast: (name: string, agents: number) =>
+        agents === 0
+          ? `已从服务端卸载 ${name}`
+          : `已从服务端卸载 ${name}，并从 ${agents} 个 Agent 卸载`,
+      uninstalledPartly: (name: string, parts: string) =>
+        `已从服务端卸载 ${name}；以下部件未能删除：${parts}`,
+      /** A machine too old for the cascade: its Agents keep their copies. */
+      machineKeepsCopies: (machine: string) =>
+        `${machine} 的服务端版本较旧，那里的 Agent 保留了各自的副本。`,
+      /** The failure note under the card, with what to do next. */
+      failedNote: (reason: string) => `安装失败：${reason}`,
+      sourcesSettings: "插件源设置",
+      importFromFile: "从文件导入",
+      dismiss: "关闭",
+      /** What an install from the Agent dialog did, when the plugin was not on the server. */
+      requestedToast: (name: string) => `已请管理员把 ${name} 安装到服务端，装好后即可装到 Agent`,
+      offlineToast: (name: string) => `已从随构建携带的离线包安装 ${name}`,
+      loadingToast: (name: string) => `已安装 ${name}，它的服务端模块仍在启动`,
+      /** The administrator's request row for a package not on the server yet. */
+      requestNotOnServer: "尚未安装到服务端：先在插件页把它安装到服务端，再启用。",
+      openPlugins: "打开插件页",
+    },
+    moduleInstall: {
+      enabled: (said: string) => `${said}。它的服务端模块已启用。`,
+      requested: (said: string) => `${said}。它的服务端模块需要管理员启用，已发出请求。`,
+      blocked: (said: string) => `${said}。管理员已停用它的服务端模块。`,
+      failed: (said: string, reason: string) => `${said}。但它的服务端模块未能启动：${reason}`,
+      onMachine: (said: string, machine: string) =>
+        `${said}。它的服务端模块未在 ${machine} 上运行，可在插件页为该机器安装。`,
+    },
     repair: "用 AI 修复",
     repairTitle: (name: string) => `用 AI 修复 ${name}？`,
     repairBody: (name: string) =>
@@ -3389,17 +3486,20 @@ export const zh = {
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} 加载失败：${reason}`,
     /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    updatePackageTo: (version: string) => `更新到 v${version}`,
     applyConfirmInstall: (name: string) => `安装 ${name}`,
     applyConfirmRemove: (name: string) => `移除 ${name}`,
     applyConfirmInstallBody: (name: string) => `将把 ${name} 安装到整个服务端，所有 Project 共用。`,
     applyConfirmRemoveBody: (name: string) =>
       `将从服务端移除 ${name}；仍有其他 Project 使用它时会保留。`,
     applyConfirmWarning: (install: boolean) =>
-      `${install ? "安装" : "移除"}会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。`,
+      `${install ? "安装" : "移除"}会重新装载服务器插件；正在运行的 Agent 不受影响。`,
     pageTitle: "插件",
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "机器",
     thisServer: "本机",
+    /** The machine picker's first choice: every machine's cards at once (the default). */
+    allMachines: "所有机器",
     /** A row the Project lists for a machine that has not reported it running yet. */
     notSynced: "尚未同步到该机器",
     /** The tag on a row the shared table lists, and its tooltip (Remove is unavailable on it). */
@@ -3414,6 +3514,12 @@ export const zh = {
     openSettings: "设置",
     pageDesc:
       "所有插件按分类列出。只含技能和／或钩子包的插件随本次构建自带，装到 Agent 上使用；服务端模块插件（如 Agent 运行沙箱后端）由管理员安装到整个服务端。",
+    /**
+     * The filter beside the search: a toggle that narrows the list to the plugins this build cannot
+     * fully run, remembered in this browser; the group's accessible name, and the toggle's words.
+     */
+    filterLabel: "筛选插件",
+    incompatibleOnlyFilter: "只看不兼容",
     /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "分组方式",
     groupBy: {
@@ -3437,10 +3543,12 @@ export const zh = {
     status: {
       update: "可更新",
       installed: "已安装",
+      awaiting: "待启用",
       restart: "待重启",
       failed: "加载失败",
       "not-here": "不在本机",
       incompatible: "不兼容",
+      stopped: "已停用",
       available: "可安装",
     },
     /** What a status means for this plugin, on hover over its glyph. */
@@ -3454,16 +3562,62 @@ export const zh = {
       failed: (reason: string) => `加载失败：${reason}`,
       elsewhere: (machines: string) => `只在 ${machines} 上运行，本机不运行`,
       unsynced: "已安装，尚未同步到该机器",
+      awaiting: "等待管理员启用它的服务端模块",
+      stopped: "管理员已停用它的服务端模块",
       /** Appended to a library status counted with Agents on a machine out of reach. */
       lastSeenOn: (n: number) => `（含 ${n} 个在不可达机器上的 Agent，按上次看到）`,
     },
     noMatch: "没有匹配的插件。",
+    /** The search matched nothing in the tab on show, but matches plugins in other tabs. */
+    noMatchHere: (n: number) => `当前标签下没有匹配的插件，全部插件中有 ${n} 个匹配。`,
+    showAllResults: "在全部中查看",
+    /** A plugin the market's curation selects: the carousel's eyebrow and a card's tag. */
+    selected: "精选",
+    /** The cards / list switch: its name, and each icon button's name and hover words. */
+    layoutLabel: "插件布局",
+    cardsLayout: "卡片视图",
+    listLayout: "列表视图",
+    /** The first tab of the market: every plugin, whatever the grouping. */
+    tabAll: "全部",
+    /** The sort select: its accessible name and its options. */
+    sortLabel: "排序",
+    sort: {
+      featured: "精选优先",
+      recent: "最近更新",
+      used: "本项目在用最多",
+      name: "名称",
+      popular: "热门",
+    },
+    /** The ranking beside the grid: its heading, its two boards, and each figure in full words. */
+    openApp: "打开",
+    openAppHint: "在应用中心打开",
+    /** The detail's sections: its screenshots, what it installs, and its quick start. */
+    detailScreenshots: "截图",
+    detailIncludes: "包含内容",
+    detailQuickStart: "快速开始",
+    quickStartSkills: (names: string) => `预选技能：${names}`,
+    /** The kind of one part a plugin installs, beside its name. */
+    partKind: {
+      skill: "技能",
+      hook: "钩子",
+      mcp: "MCP 服务器",
+      workbench: "工作台",
+    },
+    /** The detail's column of facts: each row's label. */
+    fact: {
+      version: "版本",
+      category: "类别",
+      author: "作者",
+      license: "许可证",
+      package: "包名",
+      links: "链接",
+    },
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "随本次构建自带；市场里还没有它的条目。",
     /** In place of the description of a package that carries none. */
     noDescription: "暂无描述",
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
-    libraryBuiltinHint: "随本次构建自带；安装到 Agent 即可在那里使用。",
+    libraryBuiltinHint: "随本次构建自带，不能从服务端卸载；安装到 Agent 即可在那里使用。",
     /** Plugin count in the group header (small text to the right of the category name). */
     pluginCount: (n: number): string => `${n} 个插件`,
     /** Search box of the create dialog's plugin picker. */
@@ -3472,7 +3626,6 @@ export const zh = {
     detailDescription: "说明",
     detailFiles: "文件",
     detailSkills: "技能",
-    detailWorkbenches: "工作台",
     uninstallWorkbenchRecords: "其工作台及保存的记录也会被删除。",
     detailHooks: "钩子",
     /** The detail dialog's section of the MCP servers a plugin installs into an Agent's tools. */
@@ -3522,7 +3675,7 @@ export const zh = {
     /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
     importLinkSubpath: "仓库内的文件夹或文件请用「Agent 安装」。",
     importLinkAskAgent: "改为让 Agent 安装",
-    importCost: "含服务端模块的插件会重新装载服务器插件，中止所有 Project 中正在运行的 Agent。",
+    importCost: "含服务端模块的插件会重新装载服务器插件；正在运行的 Agent 不受影响。",
     /** On the npm, link and zip tabs: what installing runs, said plainly. */
     importScriptsRun: "安装脚本将在服务器上运行，请确认来源可信。",
     importAgentWhy:
@@ -3575,14 +3728,27 @@ export const zh = {
     replaceAction: "替换",
     /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
-    /** Quick start's tooltip: what pressing it does, and what it does not. */
-    quickStartHint: "快速开始：打开一份带该插件演示的草稿——点发送之前什么都不会运行",
+    marketAgentInstalls: (n: number): string => `${n} 个 Agent 已装`,
+    marketServerInstalled: "服务端已装",
+    quickAction: "快速调用",
+    noQuickAction: "这个插件没有快速调用示例。",
+    packageUpdateBody: (name: string, from: string, to: string) =>
+      `将插件库中的 ${name} 从 v${from} 更新到 v${to}。完成后，可将新版本应用到使用它的 Agent。`,
+    /** The market explains quick start using the selected Agent’s installation. */
+    quickStartHint: "在当前 Agent 的新对话中打开示例草稿。",
     quickStartInstallTitle: (plugin: string, agent: string) =>
       `先把 ${plugin} 安装到 ${agent} 再快速开始？`,
-    quickStartAfterInstall: "随后打开一份带演示的草稿；点发送之前什么都不会运行。",
+    quickStartAfterInstall: "请先安装此插件，再快速调用。",
     /** Top toast shown on successful install / uninstall. */
     installedToast: (plugin: string, agent: string): string => `已将 ${plugin} 安装到 ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string => `已从 ${agent} 卸载 ${plugin}`,
+    /** The manage-installs dialog's first row: a new Agent for this plugin, made through the Create agent dialog. */
+    blankAgent: "新建空白 Agent",
+    blankAgentCreate: "新建并安装",
+    /** The row button's hint: it opens a dialog rather than creating at once. */
+    blankAgentHint: "打开「创建 Agent」对话框，已勾选此插件",
+    /** Names the new Agent alone: its default name is the plugin's title, which the list's title already shows. */
+    blankAgentCreatedToast: (agent: string): string => `已新建 ${agent}，并装上此插件`,
     updateOutdated: (n: number): string => `有新版本：更新 ${n} 个 Agent 的安装`,
     updateConfirmTitle: (name: string): string => `更新 ${name}`,
     updateConfirmWarning: (name: string): string =>
@@ -3593,7 +3759,7 @@ export const zh = {
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
     uninstallConfirmBody: (plugin: string, agent: string, withMcp: boolean): string =>
       `确定从 ${agent} 卸载 ${plugin} 吗？其已安装的技能与钩子文件（含本地改动）${withMcp ? "以及它的 MCP 服务器" : ""}将被删除。`,
-    /** An MCP server's marks (the detail dialog, Manage installs): icons whose hover sentence says what stands between the server and its tools. */
+    /** An MCP server's marks (the detail dialog, the install flow's Agent step): icons whose hover sentence says what stands between the server and its tools. */
     mcpNeedsSetup: (keys: string[]): string => `待设置：${keys.join("、")}`,
     /** Appended to the needs-setup sentence: where the values go, and who may write them. */
     mcpSetUpWhere: "在「密钥保险柜」中填写",
@@ -3684,6 +3850,47 @@ export const zh = {
     uninstallPartly: (plugin: string, failed: string) =>
       `${plugin} 已卸载，但这些部件没能删除：${failed}`,
     updatedToast: (plugin: string, agent: string) => `已在 ${agent} 上更新 ${plugin}`,
+    /**
+     * A plugin's server module on the Agent's server: the row's mark (it names the module) and the
+     * detail line's state word (the line is named after it), what each means on hover, the two
+     * actions, and the toasts of an ask.
+     */
+    module: {
+      title: "服务端模块",
+      mark: {
+        off: "服务端模块未启用",
+        awaiting: "服务端模块待启用",
+        stopped: "服务端模块已停用",
+        failed: "服务端模块加载失败",
+        restart: "服务端模块待重启",
+      },
+      state: {
+        running: "运行中",
+        off: "未启用",
+        awaiting: "等待管理员启用",
+        stopped: "已停用",
+        failed: "加载失败",
+        restart: "待重启",
+      },
+      hint: {
+        running: "已在这台服务端运行：它的命令与页面可用。",
+        off: "服务端模块未启用：它的命令与页面暂不可用。",
+        offOnMachine: "服务端模块未在这台机器上启用：在插件页为这台机器安装它。",
+        awaiting: "等待管理员启用服务端模块。",
+        stopped: "管理员已停用该插件的服务端模块。",
+        failed: (reason: string) => `服务端模块加载失败：${reason}`,
+        restart: "服务端模块已列入，服务端重启后运行。",
+      },
+      enable: "启用服务端模块",
+      request: "请求管理员启用",
+      asked: {
+        enabled: (name: string) => `已启用 ${name} 的服务端模块`,
+        requested: (name: string) => `已请求管理员启用 ${name} 的服务端模块`,
+        blocked: (name: string) => `管理员已停用 ${name} 的服务端模块`,
+        failed: (name: string, reason: string) => `${name} 的服务端模块未能启动：${reason}`,
+        onMachine: (name: string) => `${name} 的服务端模块需要在插件页为这台机器安装`,
+      },
+    },
     /** A plugin's detail: what of it is on this Agent, by kind, and where each kind is managed. */
     onAgentTitle: "在这个 Agent 上",
     partKinds: {
@@ -3790,8 +3997,6 @@ export const zh = {
     selectAll: "全选",
     selectNone: "全不选",
     selectedCount: (n: number): string => `已选 ${n} 个`,
-    manageInstall: "管理安装",
-    manageInstallTitle: (name: string): string => `管理安装：${name}`,
     install: "安装",
     installed: "已安装",
     uninstall: "卸载",
@@ -4692,6 +4897,8 @@ Benchmark：
       heavy: "完整输出正在同步",
       /** Under an unfolded output or thinking block while its whole text arrives. */
       body: "正在加载完整内容",
+      /** On an unfolded output or thinking block the reader did not open (an Expanded view, a search): fetch the whole. */
+      bodyLoad: "加载完整内容",
       /** The fetch failed: a notice line like the earlier-messages one, the failure in parentheses. */
       bodyFailed: (reason: string) => `[加载失败]：完整内容没能加载（${reason}）`,
       /** The Trace panel bringing a machine's Trace file over before it opens it. */
@@ -4789,9 +4996,18 @@ Benchmark：
       `当前模型的上下文窗口 ${n} 小于本 Agent 的压缩阈值 ${m}，压缩实际会在窗口边缘触发。拖动上下文面板里的虚线或在 Agent 设置中把阈值调到窗口以下，立即生效。`,
     contextWindowUnderThresholdAction: "打开 Agent 设置",
     contextWindowUnderThresholdDismiss: "忽略",
-    /** Composer notice in the same slot, with the same two buttons: the Session's latest compaction was a refusal hand-off (see composerNotice). */
-    contextRefusedHandoff:
-      "服务商拒绝了上一次请求：留给压缩的空间不足，本对话已改由 Trace 交接说明接续。请在模型配置中更正该模型的上下文窗口，或调低本 Agent 的压缩阈值（可拖动上下文面板里的虚线）。",
+    /**
+     * Composer notice in the same slot, with the same two buttons: the Session's latest compaction
+     * was a refusal hand-off (see composerNotice). Why first: the lead, then the provider's own
+     * words after its colon when it sent any; then what was done, the likely cause and what to
+     * correct.
+     */
+    contextRefusedHandoff: {
+      reason: (said: boolean): string =>
+        said ? "服务商拒绝了上一次请求：" : "服务商拒绝了上一次请求。",
+      advice:
+        "本对话已改由 Trace 交接说明接续。多半是因为留给压缩的空间不足：请在模型配置中更正该模型的上下文窗口，或调低本 Agent 的压缩阈值（可拖动上下文面板里的虚线）。",
+    },
     slashHint: "输入 / 使用命令",
     /** `/agent` handoff: command description, picker title, search box, no-match hint, and the staged target's description and remove button. */
     switchAgent: "交给其他 Agent，发送时开启新会话",
@@ -4891,16 +5107,28 @@ Benchmark：
       tracePath
         ? `没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件：${tracePath}`
         : "没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件",
-    /** The settled row's status-mark tooltip and accessible name when the compaction completed without a full summary: the title stays 压缩完毕, only the mark says it; carries the end's error message when there is one. */
-    compactionDegradedHint: (errorMessage?: string): string =>
-      errorMessage !== undefined
-        ? `未能生成完整摘要，新上下文改以 Trace 交接说明开头：${errorMessage}`
-        : "未能生成完整摘要，新上下文改以 Trace 交接说明开头",
-    /** The same when too little room was left for the compaction (compactionShortOfRoom): what to correct, then the provider's own words when it refused. */
-    compactionRoomHint: (providerMessage?: string): string =>
-      `留给压缩的空间不足，新上下文改以 Trace 交接说明开头。请更正该模型的上下文窗口，或调低压缩阈值。${
-        providerMessage !== undefined ? `服务商的原话：${providerMessage}` : ""
-      }`,
+    /**
+     * The settled row's status-mark tooltip and accessible name when the compaction completed without
+     * a full summary: the title stays 压缩完毕, only the mark says it. Why first — the cause in words
+     * (the retry line's, with the HTTP status) and the error's own words — then what was done, then,
+     * short of room (compactionShortOfRoom), the likely cause and what to correct. One line each.
+     */
+    compactionDegradedHint: (
+      why: string | null,
+      errorMessage: string | undefined,
+      room: boolean,
+    ): string =>
+      [
+        why !== null && errorMessage !== undefined
+          ? `${why}：${errorMessage}`
+          : (why ?? errorMessage),
+        "未能生成完整摘要，新上下文改以 Trace 交接说明开头。",
+        room
+          ? "多半是因为留给压缩的空间不足：请更正该模型的上下文窗口，或调低压缩阈值。"
+          : undefined,
+      ]
+        .filter((line) => line !== undefined)
+        .join("\n"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
@@ -4927,6 +5155,17 @@ Benchmark：
     } as Record<string, string>,
     workRunning: "运行中",
     workDone: "运行完毕",
+    workFailed: "运行失败",
+    workStopped: "已停止",
+    workRetryStep: (n: number) => `第 ${n} 次重试`,
+    previousWorkStep: "上一步",
+    nextWorkStep: "下一步",
+    latestWorkStep: "最新步骤",
+    waitingWorkStep: "查看待处理步骤",
+    workElapsed: "总耗时",
+    /** The words around the step number in Compact's pager; the number between them is a field. */
+    workStepWords: ["第 ", " 步"] as readonly [before: string, after: string],
+    workStepJump: "跳转到步骤",
     workGroupSteps: (n: number) => `${n} 步`,
     approvalWaiting: "待审批",
     copyCode: "复制代码",
@@ -5115,6 +5354,11 @@ Benchmark：
     goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
     goalBudgetSave: "保存预算",
     goalRemove: "退出目标模式",
+    /** The remove label of a composer switch's chip (a plugin's mode, e.g. Plan mode). */
+    switchOff: (title: string): string => `关闭${title}`,
+    /** The end of a "+" menu row for a composer mode the Agent lacks: picking it installs the plugin on the Agent, then turns the mode on. */
+    switchInstall: "安装",
+    switchInstalling: "正在安装…",
     /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
     goalPluginMissing: "目标模式需要 goal 插件：安装到此 Agent 后即可发起目标。",
     goalPluginInstall: "安装到此 Agent",
@@ -5132,13 +5376,10 @@ Benchmark：
     } as Record<string, string>,
     /**
      * The conversation's menu for a web link: a secondary click on it, or Shift+F10 / the Menu
-     * key while it has focus. The built-in browser's row shows only in the desktop app with the
-     * browser available; the external row names the system browser there, a new tab elsewhere.
+     * key while it has focus. Rows other modules contribute (`ChatModule.linkActions`) come
+     * first; the external row names the system browser in the desktop app, a new tab elsewhere.
      */
     linkMenu: {
-      openInBuiltinBrowser: "在内置浏览器中打开",
-      /** The same row while the agents drive the user's Chrome: the link opens in a tab there. */
-      openInChromeTab: "在 Agent 的 Chrome 标签页中打开",
       openExternal: "在系统浏览器中打开",
       openInNewTab: "在新标签页中打开",
       copyLink: "复制链接地址",
@@ -5654,7 +5895,12 @@ Benchmark：
     last7d: "近 7 天",
     total: "累计",
     tokens: "Token",
-    requests: "Requests",
+    requests: "请求数",
+    /** The summary row of the requests a plugin made for its tools (counted in the request count and the cost, not in Token). */
+    toolRequestsIncluded: "其中工具请求",
+    /** The card listing tool requests by what they were for. */
+    toolRequests: "工具请求",
+    toolColumn: "工具",
     /** The range picker's name: it has no visible title in the header's row of filters. */
     rangeDates: "起止日期",
     colCacheRead: "缓存命中",
@@ -5672,7 +5918,8 @@ Benchmark：
     rangeCustom: "自定义",
     chartRequestsByAgent: "各 Agent 请求与成功率",
     chartRequestsByModel: "各模型请求与成功率",
-    legendSuccessRate: "成功率",
+    legendRequestCount: "请求数（左轴）",
+    legendSuccessRate: "成功率（右轴）",
     chartTokenTrend: "Token 变化",
     chartCostTrend: "成本变化",
     legendOther: (n: number): string => `其他 ${n} 项`,
@@ -5756,6 +6003,8 @@ Benchmark：
     inProgress: "进行中",
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
+    /** A `session_update` row's summary: what the record is, ahead of the model it names. */
+    sessionUpdate: "Session 设置变更",
     exportFile: "导出",
     /** The round navigator the toolbar's rounds button opens: its title, and how many rounds it lists. */
     roundNav: "轮次导航",
@@ -5904,6 +6153,7 @@ Benchmark：
     /** The evaluation dialog's Ask AI tail: this evaluation's facts, and what to read before answering. */
     askEvaluationTail: (p: {
       benchmarkId: string;
+      benchmarkDir: string;
       time: string;
       label: string;
       version: number | string;
@@ -5918,7 +6168,8 @@ Benchmark：
       cases: { id: string; score: string; cost: string; duration: string; sessionIds: string[] }[];
     }): string =>
       "请解释下面这次 Benchmark 评估的结果。只做阅读与分析：不要修改这套 Benchmark，也不要修改被测智能体。\n\n" +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，记分板为 \`benchmarks/${p.benchmarkId}/scoreboard.yaml\`）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`（记分板为 \`${p.benchmarkDir}/scoreboard.yaml\`）\n` +
       `- 评估时间：${p.time}\n` +
       `- 系列标签：${p.label}\n` +
       `- 被测版本：v${p.version}\n` +
@@ -5962,14 +6213,16 @@ Benchmark：
     /** The case dialog's Ask AI tail: the two READMEs to read, and this case's latest run results. */
     askCaseTail: (p: {
       benchmarkId: string;
+      benchmarkDir: string;
       caseId: string;
       latest: { time: string; score: string; runs: { score: string; sessionId: string }[] } | null;
     }): string =>
       "请解释下面这道 Benchmark 题目考的是什么、怎样才算答好。题目创建即冻结，只做阅读与分析，不要修改这套 Benchmark。\n\n" +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`\n` +
       `- case_id：\`${p.caseId}\`\n` +
-      `- 题干：\`benchmarks/${p.benchmarkId}/${p.caseId}/statement/README.md\`\n` +
-      `- 评分细则：\`benchmarks/${p.benchmarkId}/${p.caseId}/rubric/README.md\`\n` +
+      `- 题干：\`${p.benchmarkDir}/${p.caseId}/statement/README.md\`\n` +
+      `- 评分细则：\`${p.benchmarkDir}/${p.caseId}/rubric/README.md\`\n` +
       (p.latest === null
         ? "- 这套 Benchmark 还没有评估记录。\n"
         : `- 最近一次评估（${p.latest.time}）在这道题上的平均分 ${p.latest.score}\n` +
@@ -6011,7 +6264,7 @@ Benchmark：
       },
     },
     /** The fixed tail after the draft: the `benchmark-design` inputs and the layout it writes. */
-    aiCreateTail: (targetAgentId: string): string =>
+    aiCreateTail: (targetAgentId: string, benchmarksDir: string): string =>
       "请使用 `benchmark-design` Skill，作为 Builder 为下面的被测智能体设计并校准一套 Benchmark，不要修改被测智能体本身。\n\n" +
       `- test_agent_id：\`${targetAgentId}\`\n` +
       "- benchmark_id：上文已指定则沿用，否则按场景取一个简短的语义化 id（仅字母、数字、`_` 和 `-`）\n" +
@@ -6019,7 +6272,7 @@ Benchmark：
       "- 出题手法：隐藏的先验条件、模糊或不完整的输入、互相冲突的材料、严格的交付格式；不要靠堆行数、堆规则来加难度\n" +
       "- desired_baseline_score：`<50`（上文另有要求时以上文为准）\n" +
       "- pilot_iteration_limit：`4`（上文另有要求时以上文为准）\n\n" +
-      "Benchmark 与 Agent 平级：在 Project 的 `benchmarks/<benchmark_id>/` 下（不在被测智能体目录内）创建 `benchmark_config.toml`" +
+      `Benchmark 与 Agent 平级：它的目录 BENCHMARK_DIR 为 \`${benchmarksDir}/<benchmark_id>/\`，在评估中心的数据目录里（不在被测智能体目录内）。在其中创建 \`benchmark_config.toml\`` +
       '（id 与目录名相同、title、description、version 为当天的日期版本 `"YYYY.MM.DD.1"`、status、runs = 1，以及 `kind = "agent"` 的 `[origin]` 表；不记录被测智能体）、' +
       "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
       "以及 `scoreboard.yaml`（初始为 `evaluations: []`；每条 evaluation 记录被测的 `agent_id`、`version`、成对的 `provider` / `model_id` 与 `thinking_level`）。" +
@@ -6028,7 +6281,7 @@ Benchmark：
     // New Benchmark, manual mode: the form.
     manualCreateTitle: "手动创建 Benchmark",
     manualCreateIntro:
-      "填好标题、题干与评分细则后，目录结构会按技能约定写入 Project 的 benchmarks/ 下；Benchmark 与 Agent 平级，之后可以用它评测任意智能体。",
+      "填好标题、题干与评分细则后，目录结构会按技能约定写入评估中心的数据目录；Benchmark 与 Agent 平级，之后可以用它评测任意智能体。",
     idField: "Benchmark id",
     idHint: "目录名即标识：仅字母、数字、_ 和 -，例如 report-writing-v1",
     /** The id field's generation clause: a Benchmark is named by its title, not a display name. */
@@ -6088,13 +6341,15 @@ Benchmark：
     evaluateTail: (p: {
       targetAgentId: string;
       benchmarkId: string;
+      benchmarkDir: string;
       runs: number;
       provider: string;
       modelId: string;
     }): string =>
       "请使用 `agent-evaluation` Skill，在这套已冻结的 Benchmark 上评估被测智能体。\n\n" +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`\n` +
       `- runs：\`${p.runs}\`\n` +
       `- provider：\`${p.provider}\`\n` +
       `- model_id：\`${p.modelId}\`\n\n` +
@@ -6127,6 +6382,7 @@ Benchmark：
     optimizeTail: (p: {
       targetAgentId: string;
       benchmarkId: string;
+      benchmarkDir: string;
       runs: number;
       provider: string;
       modelId: string;
@@ -6135,7 +6391,8 @@ Benchmark：
     }): string =>
       "请使用 `agent-optimization` Skill，针对已冻结的 Benchmark 优化被测智能体。\n\n" +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`\n` +
       `- runs：\`${p.runs}\`\n` +
       `- provider：\`${p.provider}\`\n` +
       `- model_id：\`${p.modelId}\`\n` +
@@ -6180,13 +6437,15 @@ Benchmark：
       skill: string;
       targetAgentId: string;
       benchmarkId: string;
+      benchmarkDir: string;
       testRepetitions: number;
       provider: string;
       modelId: string;
     }): string =>
       `请使用 \`${p.skill}\` 技能，从这套 Benchmark 出发对被测智能体运行它的方法。\n\n` +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`\n` +
       `- test_repetitions：\`${p.testRepetitions}\`\n` +
       `- provider：\`${p.provider}\`\n` +
       `- model_id：\`${p.modelId}\`\n\n` +
@@ -6234,11 +6493,11 @@ Benchmark：
       reference: (s: string): string => `找到这个 Benchmark，并把它作为包导入：${s}。`,
     },
     /** The fixed tail: the benchmark-design Skill's import procedure when the Agent has it, then the rules for one that does not — the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
-    importPromptTail: (projectId: string): string =>
+    importPromptTail: (projectId: string, benchmarksDir: string): string =>
       [
         "若有 `benchmark-design` 技能，先读 `reference/package.md` 的导入说明。仓库来源先用 `git ls-remote` 将分支或标签固定到 40 位提交号，只获取所选包；本地 zip 先解压到临时目录。",
         '检查包内的 `benchmark_config.toml`（`status = "published"`）及各个 `CASE-*/statement/README.md`、`CASE-*/rubric/README.md`。读完所有文件，拒绝符号链接、可执行文件及无关内容。',
-        `在 Project \`${projectId}\` 的 \`<app_data_dir>/benchmarks/<id>/\` 中直接复制清单和各个 \`CASE-*/\`，保留包的 id、版本与题目；不要复制上游的 \`scoreboard.yaml\` 或 \`.jobs/\`。新建 \`scoreboard.yaml\`，内容为 \`evaluations: []\`。`,
+        `在 Project \`${projectId}\` 的 Benchmark 目录 BENCHMARK_DIR，即 \`${benchmarksDir}/<id>/\` 中直接复制清单和各个 \`CASE-*/\`，保留包的 id、版本与题目；不要复制上游的 \`scoreboard.yaml\` 或 \`.jobs/\`。新建 \`scoreboard.yaml\`，内容为 \`evaluations: []\`。`,
         '更新清单的 `[origin]`：仓库来源用 `kind = "git"`，记录 `url`、`ref`（提交号）、`path` 和 `imported_at`；本地来源用 `kind = "zip"` 与导入时间。目标目录已存在时先问我，未经同意不得覆盖；仍在评估的目录不得替换。',
         "核对复制后的清单和题数，报告 id、标题、版本、题数与路径。导入不运行评估。",
       ].join("\n"),
@@ -7031,13 +7290,13 @@ Benchmark：
     },
   },
   /**
-   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a serious error, the
+   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a failure, the
    * report dialog it opens, and the notice a crashed part of the page shows.
    */
   report: {
     action: "报告问题",
     title: "报告问题",
-    lead: "这类错误多半是 PenguinHarness 的缺陷。提交到 GitHub 能帮助改进这个开源项目。",
+    lead: "这可能是 PenguinHarness 的缺陷，也可能来自网络、模型服务或所连的机器。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
     check: "报告已去掉密钥、Token 与个人路径一类的内容，发送前仍请检查有没有不想公开的信息。",
     label: "报告",
     copy: "复制",
@@ -7065,7 +7324,7 @@ Benchmark：
     },
     modelCredentialMissing: (modelId: string) =>
       `模型 ${modelId} 还没有可用的 API key，请先在「模型」页为它配置`,
-    noDefaultModel: "该 Project 还没有默认模型，请先在「模型」页添加模型并设为默认",
+    noDefaultModel: "该 Project 还没有默认模型，请先在模型库的「默认模型设置」中设置",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       invalid_credentials: "用户名或密码错误。",
@@ -7120,8 +7379,11 @@ Benchmark：
         "该模型 ID 无法路由：厂商分组按模型 ID 开头的厂商前缀（gpt-、claude-、gemini-、glm-、kimi-、deepseek-、minimax-）路由。请在自定义分组中添加该模型，并选择或检测其接口协议。",
       unknown_skill: "所选目录下没有这个技能。",
       unknown_plugin: "该插件不在插件库中。",
+      system_app_module_locked: "该插件为应用中心里的系统应用提供服务，不能停用或移除。",
       goal_plugin_not_installed:
         "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
+      prompt_hook_not_installed:
+        "这个 Agent 已没有该开关所需的钩子包，或钩子已关闭。请关闭这个开关，或重新安装对应插件。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       hook_too_large: "该钩子包过大，超出了导入限制。",
       workbench_too_large: "该工作台的源码过大，超出了导出限制。",
@@ -7208,9 +7470,6 @@ Benchmark：
       ticket_session_failed: "无法发起工单会话。",
       handbook_file_not_found: "该文档已不存在。",
       handbook_index_required: "手册索引（README.md）不能删除。",
-      browser_unavailable:
-        "浏览器现在不可用：内置浏览器需要打开 PenguinHarness 桌面应用，你的 Chrome 需要连上 PenguinHarness Browser 扩展。",
-      source_not_found: "找不到这个浏览器配置文件。",
       shell_unreachable: "无法联系桌面应用。",
       timeout: "操作超时，请重试。",
     },
@@ -7223,10 +7482,12 @@ export type Strings = typeof zh;
 /**
  * Runtime active dictionary (live binding): the locale Provider calls setActiveStrings
  * to switch before render, and remounts the whole tree keyed by locale so every `S.x`
- * read reflects the current language.
+ * read reflects the current language. The same call tells the plugin face the language, so a
+ * plugin web half's own tables (its `defineStrings`) switch with this one.
  */
 export let S: Strings = zh;
 
 export function setActiveStrings(next: Strings): void {
   S = next;
+  setWebLocale(next === zh ? "zh" : "en");
 }

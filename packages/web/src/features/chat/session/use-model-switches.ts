@@ -9,7 +9,7 @@ import type { ModelRefDto, ModelsResponse, SessionInfo } from "@prismshadow/peng
 import { toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
+import { toastApiError } from "../../../lib/toast-api-error";
 import { sameModelRef } from "../../models";
 import {
   compactionTally,
@@ -80,7 +80,7 @@ export function useModelSwitches({
       await syncHealedSessionId(selected.sessionId, res.sessionId);
       return true;
     } catch (e) {
-      toastError(apiErrorText(e, { modelId: selected.modelId }));
+      toastApiError(e, { modelId: selected.modelId });
       return false;
     }
   }, [selected, syncHealedSessionId]);
@@ -231,7 +231,7 @@ export function useModelSwitches({
     } catch (e) {
       // The codes that take a model name are about the model the Session is on (its loader's
       // missing credential); a refusal of the target names it in its own message.
-      toastError(apiErrorText(e, { modelId: selected.modelId }));
+      toastApiError(e, { modelId: selected.modelId });
     } finally {
       setModelSwitchPosting(false);
       setModelSwitchAsk(null);

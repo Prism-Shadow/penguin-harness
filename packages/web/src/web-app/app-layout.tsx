@@ -16,6 +16,7 @@ import { Outlet, useLocation } from "react-router";
 import { AppShell, Drawer, MobileTopBar, Notice, UpdateDot } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { nagsAboutInitialPassword } from "../lib/account-menu";
+import { useSidebarWidth } from "../lib/sidebar-width";
 import { S } from "../lib/strings";
 import { onCommand } from "../lib/shortcuts/dispatcher";
 import { ErrorBoundary } from "../rescue/error-boundary";
@@ -99,6 +100,9 @@ export function AppLayout() {
       localStorage.setItem("penguin.sidebarCollapsed", next ? "1" : "0");
       return next;
     });
+  // The pinned sidebar's width as the reader dragged its edge (persisted); folding keeps it, so
+  // the sidebar comes back at the same width.
+  const sidebarWidth = useSidebarWidth();
   // The commands whose surface is this layout. Each declines (returns false, so the browser's
   // own key runs) when its effect could not be seen: the pinned sidebar exists only from the
   // `md` breakpoint up (below it the drawer's own sidebar answers while open), and a contributed
@@ -146,6 +150,7 @@ export function AppLayout() {
           : backgroundStyle(background.image, background.settings)
       }
       navCollapsed={collapsed}
+      navResize={{ ...sidebarWidth, label: S.nav.resizeSidebar }}
       band={
         band ? <TitleBand sidebarCollapsed={collapsed} onToggleSidebar={foldSidebar} /> : undefined
       }
@@ -215,7 +220,9 @@ export function AppLayout() {
         </Notice>
       )}
 
-      <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+      {/* relative: the page area is the box a page-area layer's surfaces cover. At z-index auto
+          it makes no stacking context, so the stacking in styles.css's header holds. */}
+      <main data-page-viewport className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         {/* A page that crashes says so here, and leaves the sidebar working: going to another
             page gives the body another chance. The recovery panel (error details, safe reload,
             harness history) stands in for the bare crash notice — the same fallback the shell
@@ -223,13 +230,14 @@ export function AppLayout() {
         <ErrorBoundary key={pathname} fallback={(error) => <RescuePanel error={error} />}>
           <Outlet />
         </ErrorBoundary>
+        {/* The page-area layers: after the page, so what they show paints over it, and outside
+            its boundary, so a route change neither remounts nor re-parents them. */}
+        {layers.map(({ id, Component, area }) => area === "page" && <Component key={id} />)}
       </main>
       {/* The layers modules contributed (WebAppModule.layers): overlays and headless runtimes,
           mounted once here, outside every page, so navigating never remounts or re-parents
           one — a terminal would reconnect, a built-in browser's webview would reload. */}
-      {layers.map(({ id, Component }) => (
-        <Component key={id} />
-      ))}
+      {layers.map(({ id, Component, area }) => area === "shell" && <Component key={id} />)}
     </AppShell>
   );
 }

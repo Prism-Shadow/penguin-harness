@@ -16,16 +16,16 @@ A package is how a Benchmark travels between Projects and servers: a folder name
 ```
 
 - `benchmark_config.toml` is the manifest: `id` (the folder's name), `title`, `description`, `version` (`"x.y.z"`; existing `"YYYY.MM.DD.N"` versions are also accepted), `status`, optional `runs`, and an optional `[origin]` table last (`kind`, plus `url`, `ref`, `path` and `imported_at` for a repository import). A manifest written before `id`, `version` and `[origin]` existed has none of them and is still a package: its folder's name is its id, and it is unversioned. A package is always `published`: a draft or a failed calibration does not travel.
-- Benchmark manifests include `last_update` (ISO 8601) and `[author]` (`name`, with optional `email` and `homepage`). Preserve `title_zh` and `description_zh` when supplied.
+- Benchmark manifests include `last_update` (ISO 8601) and `[author]` (`name`, with optional `email` and `homepage`). The optional `data_url` links to the external data repository. Preserve `title_zh` and `description_zh` when supplied.
 - Every `CASE-*` folder holds `statement/README.md`, `rubric/README.md` and `task_config.toml` for the case's metadata and optional budget; older packages may omit `task_config.toml`. After `CASE-` come letters, digits, `_` and `-` only.
 - Never in a package: `scoreboard.yaml` (the copy's evaluation records), `.jobs/` (its Harbor trials), any other entry whose name starts with `.`, and symlinks. A package's scores start empty wherever it lands.
-- No large originals. A case whose task needs large files names their repository and full 40-character lowercase commit in its statement, the way the built-in Benchmarks' `## How this case is run` sections do. For Harbor tasks, the Task link, run-rules link and checkout instruction use that same commit. This pins task execution; the display package may be fetched from `main`.
+- No large originals. A case whose task needs large files names their repository and full 40-character lowercase commit in its statement, the way the built-in Benchmarks' `## How this case is run` sections do. For Harbor tasks, the Task link, run-rules link and checkout instruction use that same commit. A Case using the shared Penguin adapter also links the `agents/` directory of `Prism-Shadow/penguin-harness-benchmark` at its own full commit. Its launch takes `PYTHONPATH` and any shared Compose overlay from that directory. The display package may be fetched from `main`.
 
 The built-in Benchmarks are published in this format under `packages/<id>/` of https://github.com/Prism-Shadow/penguin-harness-benchmark.
 
 ## Importing a package
 
-A Benchmark's files are the source of truth. Import it by copying its manifest and case folders into the Project's `<app_data_dir>/benchmarks/<id>/`; the Evaluation Center reads that directory directly.
+A Benchmark's files are the source of truth. Import it by copying its manifest and case folders into the Benchmark's folder `BENCHMARK_DIR`: the one the request names, or, when it names none, `<app_data_dir>/agents/system_agent/app/data/benchmark/<id>/`, the Evaluation Center's data folder. The Evaluation Center reads that directory directly.
 
 1. **Find the package.** A repository folder link names one package. For a repository root, a list of packages or an ambiguous description, list the choices and ask which to import. A local folder can be read directly; extract a local zip to a temporary directory first. Use the target Project's `app_data_dir` from its context, not the session workspace or an assumed default data root.
 2. **Pin repository sources.** Resolve the link's branch or tag to a 40-character commit with `git ls-remote`. A branch may contain `/`: use the longest matching ref prefix to separate the ref from the folder path. Fetch the package at that commit into a temporary directory:
@@ -39,13 +39,13 @@ A Benchmark's files are the source of truth. Import it by copying its manifest a
 
    A sparse checkout at the same commit also works. When a named package has a documented train/test companion, import the pair at the same commit, each under its own id. Keep their cases separate.
 3. **Read the package.** Check the manifest and every case against the format above. The id must match the folder and contain only letters, digits, `_` and `-`. Refuse missing READMEs, unpublished packages, symlinks, executables and unrelated content. Keep large upstream materials at the links in the statements.
-4. **Check the destination.** If `<app_data_dir>/benchmarks/<id>/` already exists, stop and ask before replacing it: replacement deletes its evaluation records and run results. Do not replace a Benchmark while it is being evaluated; unfinished trials under `.jobs/` (no `result.json`) or packed `*.agent-state.tar.gz` files are signs of an active evaluation. Wait for it to finish. An approved replacement removes the old directory whole before copying, so cases from different versions cannot mix.
+4. **Check the destination.** If `BENCHMARK_DIR` already exists, stop and ask before replacing it: replacement deletes its evaluation records and run results. Do not replace a Benchmark while it is being evaluated; unfinished trials under `.jobs/` (no `result.json`) or packed `*.agent-state.tar.gz` files are signs of an active evaluation. Wait for it to finish. An approved replacement removes the old directory whole before copying, so cases from different versions cannot mix.
 5. **Copy the files.** For a new destination, create its directory, copy the manifest and case folders, and write an empty scoreboard. Stop if any command fails, especially if the destination already exists:
 
    ```bash
    set -e
-   DEST="<app_data_dir>/benchmarks/<id>"
-   mkdir -p "<app_data_dir>/benchmarks"
+   DEST="<BENCHMARK_DIR>"
+   mkdir -p "$(dirname "$DEST")"
    mkdir "$DEST"
    cp "$PKG/benchmark_config.toml" "$DEST/"
    cp -R "$PKG"/CASE-* "$DEST/"

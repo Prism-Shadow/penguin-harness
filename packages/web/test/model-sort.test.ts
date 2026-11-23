@@ -20,8 +20,6 @@
  * - Storage that throws, or holds anything but known sorts, leaves every group on price low to
  *   high, and a failed write is swallowed.
  * - A user-defined group named like an Object method keeps its own choice.
- * - A curated group can explicitly choose price low to high, high to low or name across reloads,
- *   then restore catalog order without changing any other group's sort.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -285,22 +283,6 @@ describe("remembering each group's sort", () => {
     expect(modelGroupSortOf(initialModelGroupSorts(), "openrouter")).toBe("price-asc");
     expect(() => storeModelGroupSorts({ openrouter: "name" })).not.toThrow();
   });
-
-  it.each(["price-asc", "price-desc", "name"] as const)(
-    "remembers an explicit %s for a curated group and can restore catalog order",
-    (mode) => {
-      const storage = memoryStorage();
-      const previous = withModelGroupSort({}, "openrouter", "name");
-      storeModelGroupSorts(withModelGroupSort(previous, "jellytoken", mode), storage);
-      const reloaded = initialModelGroupSorts(storage);
-      expect(modelGroupSortOf(reloaded, "jellytoken")).toBe(mode);
-      storeModelGroupSorts(withModelGroupSort(reloaded, "jellytoken", "catalog"), storage);
-      const restored = initialModelGroupSorts(storage);
-      expect(modelGroupSortOf(restored, "jellytoken")).toBe("catalog");
-      expect(modelGroupSortOf(restored, "openrouter")).toBe("name");
-      expect(modelGroupSortOf(restored, "siliconflow")).toBe("price-asc");
-    },
-  );
 
   it("a user-defined group named like an Object method keeps its own choice", () => {
     for (const id of ["constructor", "toString", "__proto__"]) {

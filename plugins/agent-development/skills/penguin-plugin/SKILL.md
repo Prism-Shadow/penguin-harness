@@ -1,7 +1,7 @@
 ---
 name: penguin-plugin
 description: Use for PenguinHarness plugins and workbenches — what a plugin package is and how to build, test, share and submit one, and the workbenches (the tabs and pages beside the chat, with server code behind them) an Agent keeps in its Agent State — building one, changing it, showing it as the whole app, restoring an earlier version, and removing it when the user wants the custom UI gone.
-version: 2026.11.17.2
+version: 2026.11.21.2
 ---
 
 # Penguin Plugins
@@ -31,6 +31,9 @@ A workbench is a plugin of the server's own kind, which is where this skill's na
   - [Undoing, reverting, removing](#undoing-reverting-removing)
   - [Filling the app](#filling-the-app)
   - [The App Center](#the-app-center)
+- [Data and storage](#data-and-storage)
+  - [Adding configuration](#adding-configuration)
+  - [A workbench's folders](#a-workbenchs-folders)
 - [Test a plugin](#test-a-plugin)
   - [Unit testing using vitest](#unit-testing-using-vitest)
   - [E2E testing using electron](#e2e-testing-using-electron)
@@ -67,7 +70,7 @@ Use this pattern for uploads, research and support tickets:
 - Let the page poll GET every few seconds while visible; to show the answer as it is written, follow the Session too (*Follow the Agent live*). Reopening the tab or reloading code resumes from persisted session ids. Do not keep the only job state in a detached promise or a timer that disappears on reload.
 - For text reports, ask the Agent to put the complete report in its **final answer**; store that returned text and serve it with a download content type and `Content-Disposition: attachment`. Link directly to the same-origin report route with an `<a download>`; avoid fetching a Blob and clicking an object URL, which did not download in the embedded browser. Verify the saved file, not a toast saying it started. No Trace parsing or cross-workspace report-file probe is needed.
 - `host.getState()` is synchronous, `unknown`, initially `null`. Clone before editing; serialize read/modify/write handlers to avoid lost updates. Await `host.setState` before returning success.
-- Store large upload bytes outside the watched source folder, e.g. the target Agent's `scratchpad/<workbench_id>/uploads/`. Keep metadata in host state. Source changes trigger reloads; runtime files in `workbenches/<id>/` trigger needless rebuilds and enter version history. `import.meta.url` points into `.build/<revision>/`, not the source root.
+- Store large upload bytes and persistent artifacts in the workbench's `dataDir` with `node:fs` (see *Data and storage*), outside the watched source folder. Keep metadata in host state. Source changes trigger reloads; runtime files in `workbenches/<id>/` trigger needless rebuilds and enter version history. `import.meta.url` points into `.build/<revision>/`, not the source root.
 
 ### Follow the Agent live (AMSP)
 
@@ -110,6 +113,7 @@ function closeItem() {
 - `followSession(sessionId, options?)` returns the SDK's `SessionReader` on the Session's stream, taking `tailLimit` and the reader's other options: it reads the latest Tasks of the history (events with `source: "history"`), then the live tail, and reconnects on its own. On `reset`, drop what you drew; the history follows again. Records of subagents come through with an `origin`; skip them yourself.
 - `task_end` is a hint, not the result: on it, refresh from your handler, whose saved answer is what stays. Keep the polling path from *Background jobs* as the fallback for a failed import, and keep the list itself on (slower) polling.
 - `abortSession(sessionId)` stops the running task, for a Stop button, and resolves `true` when there was one to stop, `false` when nothing was running.
+- `chooseChatModel(current?)` opens the app's own model picker over the page and resolves `{ provider, modelId, label }`, or `null` when the user closes it; `getChatModel(current?)` resolves a model's `{ provider, modelId, label }` as the app names it (the Project default when you pass none), or `null`. Hand the choice to your handler, which opens the Session with `host.createSession({ model: { provider, modelId } })`; to change the model of a Session that exists, `POST` `/sessions/<id>/switch-model` `{ provider, modelId }` through `transport`. Both reject with an error named `WorkbenchHostUnavailable` when the page is not shown in the app (opened on its own, or in an app too old to answer): fall back to the Project default.
 - `workbench.js` re-exports everything `@prismshadow/amsp` does, plus `apiBase` and `transport` for other reads of the signed-in user's door. Never write an absolute `/api/…` path into a page: a workbench on a machine is served under `/server/<machine>/api/…`, a reverse proxy may add a prefix of its own, and `apiBase` already says which.
 
 **The handler** gets the same records from `host.subscribe(sessionId, listener)`, which returns the function that stops them. It is live only: nothing from before the call, no history, so subscribe before `host.run`. A record is a `WorkbenchRecord` (`{ timestamp, type, payload: { type?, … }, origin? }`, from `@prismshadow/penguin-server/plugin`). Treat it as a trigger and keep `await host.sessionResult(sessionId)` as the authoritative snapshot:
@@ -235,10 +239,15 @@ export default {
 
 ### Design the interaction before writing the UI
 
-Treat the workbench as an application people return to. Before coding, choose its main list,
-its item detail, and how a person creates and revisits an item. Use that structure even when the
-request only says “build a Q&A app”. Do not turn independent conversations into one ever-growing
-page of complete answers.
+Choose one task people repeat. When improving an existing workbench, try that task with a real
+item and note the exact step where you get stuck or lose work. See how an established app for
+that task handles the step, using its official guide if needed. Adapt the interaction to the
+workbench's content and Penguin's controls.
+
+For document editors or workbenches with AI chat, read
+[Document editors and AI conversations](reference/editors-and-chat.md) for the file menu,
+saving an embedded editor, choosing a Session model and showing each turn's progress.
+For a Q&A app or a job queue, give each item its own detail view.
 
 - For questions, requests and jobs, start with a compact, centered list of titles, statuses and
   update times. Open one item's conversation in a dialog or detail panel. Keep follow-up messages
@@ -381,7 +390,7 @@ Each entry under `WebModule.sessionTabs` is one tab beside the chat: `key` (uniq
 
 ### The host
 
-`WorkbenchHost` (published as module `Host`) speaks the SDK's verbs, scoped to the workbench's Project: `listAgents()` returns the Project's Agents as `{ agentId }[]`; `createSession({ agentId?, approvalMode? })` opens a Session of this Agent — or of another Agent of the same Project — and returns `{ sessionId }`. Every tool call in it runs (`allow-all`) unless `approvalMode` is `"deny-all"`, which denies them all: pass it for a Session that only talks — a character, a game host, anything that hands the model the user's words or a text the user imported — and say in its prompt as well that it has no tools. No other mode is accepted: nobody is there to answer an ask. These Sessions carry source `workbench` and are automatically archived from the main chat sidebar; your list still reads and runs them through the host. `sessionTitle(sessionId)` returns the current generated title (or `null` before one exists); `run(sessionId, [{ text: "…" }])` — the SDK's `session.run`, its input items spelled out because a workbench has no package to import `userText` from — runs one turn in a Session, new or existing, and returns `{ sessionId, queued }` once it has started (a busy Session queues it as a follow-up; the Agent hears it as a message from the server, not from a person); `sessionStatus(sessionId)` says `idle` / `running` / …; `await sessionResult(sessionId)` returns a snapshot of the latest task (see *Background jobs*); `subscribe(sessionId, listener)` hands the listener the Session's AMSP records as they are written, live only, and returns the function that stops it (see *Follow the Agent live*); `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workbench`, with their own `requires` between them — the tree is checked as a whole.
+`WorkbenchHost` (published as module `Host`) speaks the SDK's verbs, scoped to the workbench's Project: `listAgents()` returns the Project's Agents as `{ agentId }[]`; `createSession({ agentId?, approvalMode?, model? })` opens a Session of this Agent — or of another Agent of the same Project — and returns `{ sessionId }`; it runs on the Project's default model unless `model` (`{ provider, modelId }`, a model of the Project's catalog, such as one the user chose with the page SDK's `chooseChatModel()`) names another. Every tool call in it runs (`allow-all`) unless `approvalMode` is `"deny-all"`, which denies them all: pass it for a Session that only talks — a character, a game host, anything that hands the model the user's words or a text the user imported — and say in its prompt as well that it has no tools. No other mode is accepted: nobody is there to answer an ask. These Sessions carry source `workbench` and are automatically archived from the main chat sidebar; your list still reads and runs them through the host. `sessionTitle(sessionId)` returns the current generated title (or `null` before one exists); `run(sessionId, [{ text: "…" }])` — the SDK's `session.run`, its input items spelled out because a workbench has no package to import `userText` from — runs one turn in a Session, new or existing, and returns `{ sessionId, queued }` once it has started (a busy Session queues it as a follow-up; the Agent hears it as a message from the server, not from a person); `sessionStatus(sessionId)` says `idle` / `running` / …; `await sessionResult(sessionId)` returns a snapshot of the latest task (see *Background jobs*); `subscribe(sessionId, listener)` hands the listener the Session's AMSP records as they are written, live only, and returns the function that stops it (see *Follow the Agent live*); `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `dataPaths(level?)` returning the workbench's own folders `{ dataDir, cacheDir, stateDir }` at the `agent` (default), `server` or `machine` level, and `socketPath(name, level?)` for a local socket in that `stateDir` (see *Data and storage*); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workbench`, with their own `requires` between them — the tree is checked as a whole.
 
 ### HTTP
 
@@ -421,6 +430,57 @@ The App Center (`/apps` in the sidebar) is the Project's home screen: a grid of 
 - `tab` is optional: the key of the tab the shortcut opens; the first tab without it.
 
 When you build a workbench for the user, set `"appCenter": { "show": true }` unless they say otherwise, so they find it again. While the server is loading your files the tile shows a building ring and does not open; a failed load leaves it marked, and its menu shows the error from `.build/status.json`. A declaration that does not hold up does not stop the load: the workbench loads, has no shortcut, and `.build/status.json` lists the fix in `hints`. The user turns the shortcut on or off with the switch on the workbench's row in Agent settings, which rewrites `penguin.appCenter.show` in this file and records a version; read the file before editing it again. The App Center lists the Agents of the server it runs on, so a workbench of an Agent on a connected machine opens from that Agent's settings instead.
+
+## Data and storage
+
+Keep each kind of thing where it belongs:
+
+| Kind | Where it lives | What belongs here |
+| --- | --- | --- |
+| Secrets | Agent Vault (`penguin config vault`) | API keys, tokens and credentials — never in config files or data folders |
+| Configuration | `PluginConfig` / `PluginConfigProvider.groups` | Text key-value pairs and structured settings |
+| A workbench's small state | `host.getState()` / `host.setState()` (`state.json`) | Session ids, metadata, what the page last showed |
+| A workbench's files | `host.dataPaths().dataDir`, through `node:fs` | Documents the user edits and the Agent changes, uploads, media, exports — never code |
+| A workbench's cache | `host.dataPaths().cacheDir` | What can be made again: thumbnails, intermediate renders |
+| A workbench's runtime files | `host.dataPaths().stateDir` | Unix sockets, pipes, locks |
+| What every copy of an app shares | `host.dataPaths("server")` or `("machine")` | A model's weights, a tool's binaries, a small local server — never anything one Project must not see |
+
+### Adding configuration
+
+Use PenguinHarness's built-in configuration mechanism rather than writing standalone config files to the filesystem, unless an external tool requires its own file format:
+
+- **Plugin settings.** Contribute a settings group schema to `PluginConfigProvider.groups` (`string`, `secret`, `boolean`, `number`, `enum`, `list` or `table` fields) so the **Settings › Plugins** page renders and validates it; read values and watch live edits through `PluginConfig` (`get(group)` and `watch(group, cb)`).
+- **Secrets.** Store per-agent secrets in the Agent Vault (`penguin config vault set --key <NAME> --value <value> --agent-id <id>`), which injects them into shell subprocesses as environment variables.
+
+### A workbench's folders
+
+`host.dataPaths(level?)` returns three folders of the workbench's own, outside its source folder and made by the time it returns. The handler runs in the server process with Node's modules typed for it, so it reads and writes them with `node:fs` like any Node program and serves what its page needs from its own routes; the host has no file API. The Agent edits the same files with its own file tools, so a document the user edits in the page and asks the Agent to change is one file on disk:
+
+```ts
+import { readFile, rename, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+const { dataDir } = host.dataPaths();
+const deck = path.join(dataDir, "deck.json");
+// A route of your own: the page PUTs the deck, written whole (a temporary name, then rename).
+await writeFile(`${deck}.tmp`, JSON.stringify(body));
+await rename(`${deck}.tmp`, deck);
+// Asking the Agent to edit it: name the path in the run's text.
+await host.run(sessionId, [{ text: `${request}\n\nDeck file: ${deck}` }]);
+// Noticing the Agent's write: compare mtimeMs and size on a timer while a page is open.
+const { mtimeMs, size } = await stat(deck);
+```
+
+- `dataDir`: files kept for good. `cacheDir`: what can be made again, never exported. `stateDir`: runtime-only files — Unix sockets, pipes, locks — never exported. A Unix socket path holds at most 103 bytes (macOS's limit; Linux allows 108), so listen on `host.socketPath("dev.sock", level?)`, which throws naming the limit when the path would be longer. On Windows it answers a named pipe, `\\.\pipe\penguin-…-dev.sock`, which is no file on disk: `net.createServer().listen(host.socketPath(…))` works on every platform. The state folder survives a restart, so unlink a stale socket before listening.
+- **Choose the level by who shares the files.**
+  - `"agent"` (the default) is this Agent's copy of the app: `<agent>/app/{data,cache}/<id>/`. The Agent edits these files with its own file tools, even in a sandbox. The Agent export carries `dataDir` only with **With their data**, and removing the workbench removes all three folders. The user's documents go here, and nothing private goes anywhere else.
+  - `"server"` is every copy of the same app on this server, across its Projects and Agents: a TTS model's weights, a local language model. It lives under the data root's `app/`.
+  - `"machine"` is every PenguinHarness on this computer for this OS user (the installed app and a dev instance alike): a minimal server one computer runs once. It lives under `~/.penguin/machine/`. Other OS users never share it: anything they need is a system package an administrator installs.
+  - The two shared levels are never exported and never removed with a workbench; a user clears them by hand. Only an app installed from a plugin has them, since the plugin's name is what makes two copies one app; a workbench made in place gets an error and keeps to the agent level.
+  - Only the handler writes the shared levels. The Agent's sandboxed commands may read them but not write them, so a download step or a long-running process for them runs from the handler: `fetch`, or a child process it spawns. Anything written there is seen by every Project's copy of the app, so store only what is the same for everyone.
+- A write in these folders reloads nothing and records no version; restoring a version or updating the plugin leaves them alone. Removing the workbench, or uninstalling its plugin, removes its agent-level folders: say so before a removal that would discard documents the user made.
+- Under a `workspace-write` sandbox the Agent's commands can write the agent-level folders. So the handler never follows a link the Agent may have left: `lstat` a path before reading or writing through it, and refuse a link or a path that leaves the folder. The host itself refuses a link where one of the folders belongs.
+- The handler names every path it gives the Agent. Never have the Agent work a path out from its `# Environment` block, and never put code in these folders.
 
 ## Test a plugin
 

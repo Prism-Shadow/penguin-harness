@@ -212,8 +212,11 @@
 }
 /* No status marks: a step reads as its words, its details and the small chevron after them —
    the sweep across the label says it runs, the label at rest that it settled. An error keeps
-   its mark, the danger cross beside the danger-ink label. */
-:root[data-theme-base="modern"] .ui-activity:not([data-state="error"]) [data-slot="mark"] {
+   its mark, the danger cross beside the danger-ink label, and so does a settled step that needs
+   attention (`data-attention`): its mark's tooltip is the only place that says why. */
+:root[data-theme-base="modern"]
+  .ui-activity:not([data-state="error"], [data-attention])
+  [data-slot="mark"] {
   display: none;
 }
 :root[data-theme-base="modern"] .ui-frame:has(> .ui-activity) .ui-tree > [data-depth] {

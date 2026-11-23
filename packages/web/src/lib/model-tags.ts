@@ -14,7 +14,6 @@
  * and amber the marks have always worn, and identity is carried by the words in every case —
  * the tone only sorts them at a glance, and never alone says which mark this is.
  */
-import type { ModelCatalogEntry } from "@prismshadow/penguin-server/model-catalog";
 import type { ToneName } from "@prismshadow/penguin-ui";
 import { S } from "./strings";
 import type { DiscountedPrice } from "./model-grouping";
@@ -27,7 +26,7 @@ export const TAG_TONE = {
 } as const satisfies Record<string, ToneName>;
 
 export interface ModelTag {
-  key: "default" | "vision" | "visionModel" | "fastMode" | "free" | "discount" | "offerFrom";
+  key: "default" | "inUse" | "vision" | "visionModel" | "fastMode" | "free" | "discount";
   label: string;
   /** Hover text, for a mark whose word needs a sentence behind it (a discount's terms). */
   title?: string;
@@ -40,19 +39,18 @@ type MarkGroup = keyof typeof TAG_TONE;
 /** A group's tone, as the mark carries it. */
 const toneOf = (group: MarkGroup) => ({ tone: TAG_TONE[group] });
 
-/** JellyToken's initial presets make no image capability claim, even on an older project
- * row whose missing annotation defaults to true. Hand-added models keep their annotation. */
-export function showsVisionDetails(preset: ModelCatalogEntry | undefined): boolean {
-  return preset?.provider !== "jellytoken" || preset.supportsVision;
-}
-
 /** What a list knows about one model, from which its marks follow. */
 export interface ModelTagFacts {
-  preset: ModelCatalogEntry | undefined;
-  /** The Project's default model. */
+  /** The Project's default chat model. */
   isDefault: boolean;
   /** Accepts image input (the effective annotation: unset counts as supported). */
   vision: boolean;
+  /**
+   * The bindings this model is chosen for (text generation, speech recognition, web search …),
+   * by name; absent or empty when none. Only the models page knows them: its In use mark names
+   * them on hover.
+   */
+  inUse?: readonly string[];
   /** The Project's vision proxy for read_file. Only the models page shows it. */
   isVisionModel?: boolean;
   /** Fast mode (premium serving tier) is on for this entry. */
@@ -63,33 +61,35 @@ export interface ModelTagFacts {
   discount?: DiscountedPrice | undefined;
 }
 
+/** The In use mark, when the model is chosen for some binding: its hover names them. */
+export function inUseTag(jobs: readonly string[] | undefined): ModelTag | undefined {
+  if (jobs === undefined || jobs.length === 0) return undefined;
+  return {
+    key: "inUse",
+    label: S.models.inUse,
+    title: S.models.usedFor(jobs),
+    ...toneOf("status"),
+  };
+}
+
 /**
  * Every mark `facts` earns, in a fixed order rather than by which happen to be true, so the eye
- * can learn where to look: what this Project chose (default, vision proxy) before what the
+ * can learn where to look: what this Project chose (default, in use, vision proxy) before what the
  * model is (vision, fast, free) before what it costs today (the discount).
  */
 export function modelTags(facts: ModelTagFacts): ModelTag[] {
-  const { discount, preset } = facts;
-  const showVision = showsVisionDetails(preset);
-  const offer = preset?.offerFromTenths;
+  const { discount } = facts;
   const tags: Array<ModelTag | false | undefined> = [
     facts.isDefault && { key: "default", label: S.models.default, ...toneOf("status") },
-    showVision &&
-      facts.vision && { key: "vision", label: S.models.visionBadge, ...toneOf("capability") },
-    showVision &&
-      facts.isVisionModel && {
-        key: "visionModel",
-        label: S.models.visionModelBadge,
-        ...toneOf("capability"),
-      },
+    inUseTag(facts.inUse),
+    facts.vision && { key: "vision", label: S.models.visionBadge, ...toneOf("capability") },
+    facts.isVisionModel && {
+      key: "visionModel",
+      label: S.models.visionModelBadge,
+      ...toneOf("capability"),
+    },
     facts.fastMode && { key: "fastMode", label: S.models.fastModeBadge, ...toneOf("capability") },
     facts.free && { key: "free", label: S.models.freeBadge, ...toneOf("price") },
-    offer !== undefined && {
-      key: "offerFrom",
-      label: S.models.offerFromBadge(offer),
-      title: S.models.offerFromTitle(offer),
-      ...toneOf("price"),
-    },
     discount && {
       key: "discount",
       label: S.models.discountBadge(discount.percent),

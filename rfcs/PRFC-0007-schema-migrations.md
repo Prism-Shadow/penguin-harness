@@ -1,4 +1,4 @@
-# PRFC-0007: Schema changes are ordered, stamped, run-once migrations
+# PRFC-0007 DB Schema Migration
 
 [中文版](PRFC-0007-schema-migrations.zh.md)
 

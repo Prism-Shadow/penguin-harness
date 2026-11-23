@@ -1,9 +1,12 @@
 import { createContext, useContext } from "react";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 import type { WebAppPage } from "../web-app";
+import type { StartMetric } from "./start-metrics";
 export interface ContributionsValue {
   /** The module plugins' quick starts; none until the server answers. */
   quickStarts: readonly never[];
+  /** The counts server modules contribute to the start page (lib/start-metrics.ts); absent: none. */
+  startMetrics?: readonly StartMetric[];
   refresh: () => Promise<ContributionsResponse | null>;
 }
 
@@ -28,6 +31,16 @@ export function useWebAppPages(): readonly WebAppPage[] {
 /** The quick starts the server contributes, and the way to ask again. */
 export function useContributions(): ContributionsValue {
   return usePagesValue();
+}
+
+const NO_METRICS: readonly StartMetric[] = [];
+
+/**
+ * The counts the server's modules contribute to the start page, in their order; none outside the
+ * page table (a surface mounted on its own has no server contributions).
+ */
+export function useStartMetrics(): readonly StartMetric[] {
+  return useContext(PagesContext)?.startMetrics ?? NO_METRICS;
 }
 
 /**

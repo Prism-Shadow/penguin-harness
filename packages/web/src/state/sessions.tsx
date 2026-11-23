@@ -1774,12 +1774,16 @@ export function applyUserEvent(
   if (ev.type === "org_run" && ev.projectId === store.getState().projectId) {
     void store.getState().reload();
   }
-  // A workbench of some Agent was (re)loaded: the chat page's tab strip owns that list and
-  // listens on window (it is mounted per page, this provider per app).
+  // A workbench of some Agent was (re)loaded or removed: the lists that show workbenches (the
+  // sidebar's apps, the App Center, an app's window) listen on window for it.
   if (ev.type === "workbench_updated" || ev.type === "workbench_removed") {
     window.dispatchEvent(
       new CustomEvent(WORKBENCH_UPDATED_EVENT, {
-        detail: { projectId: ev.projectId, agentId: ev.agentId },
+        detail: {
+          projectId: ev.projectId,
+          agentId: ev.agentId,
+          ...(source ? { machineId: source } : {}),
+        },
       }),
     );
     return;
@@ -1787,7 +1791,12 @@ export function applyUserEvent(
   if (ev.type === "workbench_building") {
     window.dispatchEvent(
       new CustomEvent(WORKBENCH_BUILDING_EVENT, {
-        detail: { projectId: ev.projectId, agentId: ev.agentId, workbenchId: ev.workbenchId },
+        detail: {
+          projectId: ev.projectId,
+          agentId: ev.agentId,
+          workbenchId: ev.workbenchId,
+          ...(source ? { machineId: source } : {}),
+        },
       }),
     );
     return;
@@ -2205,6 +2214,15 @@ export function useSessions(): SessionsContextValue {
   const ctx = useContext(SessionsContext);
   if (!ctx) throw new Error("useSessions must be used within a SessionsProvider");
   return ctx;
+}
+
+/**
+ * The Session list's state when there is one, null outside a SessionsProvider: for a page that
+ * reads only what it decorates with (the connected machines a picker offers) and works without
+ * it, as `useProjectIfAny` does for the Project.
+ */
+export function useSessionsIfAny(): SessionsContextValue | null {
+  return useContext(SessionsContext);
 }
 
 /**

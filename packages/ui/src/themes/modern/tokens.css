@@ -331,7 +331,7 @@
      on a soft spring (a touch of overshoot, never a bounce) scaling up from 0.96 with a 6px
      blur-in and an 8px slide from their edge, and leave quickly on the overlay-out curve;
      streamed text de-blurs in word by word over 360ms; the sidebar's width settles on a long
-     ease-out. */
+     ease-out. A change of page has no motion: the next page is simply there. */
   --ui-dur-fast: 120ms;
   --ui-dur-base: 200ms;
   --ui-dur-slow: 320ms;
@@ -348,6 +348,9 @@
   --ui-enter-shift: 8px;
   --ui-enter-scale: 0.96;
   --ui-enter-blur: 6px;
+  --ui-page-duration: 0ms;
+  --ui-page-enter: none;
+  --ui-page-exit: none;
   --ui-dur-reveal: 360ms;
   --ui-reveal-blur: 4px;
   --ui-dur-layout: 320ms;

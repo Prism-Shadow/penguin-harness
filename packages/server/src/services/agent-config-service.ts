@@ -13,6 +13,9 @@ import type { Document } from "yaml";
 import {
   AGENT_AUTHORS,
   agentAuthorOf,
+  DEFAULT_COMPACTION_HANDOFF_NOTE,
+  DEFAULT_COMPACTION_MAX_ROUNDS,
+  DEFAULT_COMPACTION_REMINDER,
   DEFAULT_MEMORY_PROMPT,
   DEFAULT_MEMORY_WORKSPACE_PROMPT,
   DEFAULT_SCHEDULES_PROMPT,
@@ -33,6 +36,9 @@ import {
   insertSchedulesPlaceholder,
   insertSkillsPlaceholder,
   insertVaultPlaceholder,
+  isBuiltinAgent,
+  isSystemAgent,
+  isSystemAgentConfig,
   VAULT_VALUE_MAX_LENGTH,
   isValidVaultKey,
   loadAgentVault,
@@ -64,6 +70,7 @@ import type {
   VaultUpdateRequest,
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
+import { refuseSystemAgentChange } from "./system-agent.js";
 import {
   badRequest,
   optionalBoolean,
@@ -133,10 +140,18 @@ export class AgentConfigService implements AgentConfig {
     }
   }
 
+  isSystemAgent(projectId: string, agentId: string): Promise<boolean> {
+    return isSystemAgent(this.root, projectId, agentId);
+  }
+
+  isBuiltinAgent(projectId: string, agentId: string): Promise<boolean> {
+    return isBuiltinAgent(this.root, projectId, agentId);
+  }
+
   /**
    * Read list-card metadata: name / description + tool count (sum of tools.builtin
-   * and tools.mcpServers entries; MCP counted per server). Silently falls back to
-   * empty / 0 if the file is corrupt.
+   * and tools.mcpServers entries; MCP counted per server), and `system` on the system Agent.
+   * Silently falls back to empty / 0 if the file is corrupt.
    */
   async readCardMeta(
     projectId: string,
@@ -148,6 +163,7 @@ export class AgentConfigService implements AgentConfig {
     toolCount: number;
     version: number;
     kernelOutdated: boolean;
+    system?: true;
   }> {
     try {
       const raw = await fs.readFile(systemConfigPath(this.root, projectId, agentId), "utf8");
@@ -163,6 +179,7 @@ export class AgentConfigService implements AgentConfig {
         kernelOutdated: isKernelOutdated(
           typeof parsed.kernel_version === "string" ? parsed.kernel_version : null,
         ),
+        ...(isSystemAgentConfig(agentId, parsed) ? { system: true as const } : {}),
       };
     } catch {
       // A corrupt config carries no readable stamp either: reported outdated, like a pre-stamp one.
@@ -210,6 +227,18 @@ export class AgentConfigService implements AgentConfig {
         ? { mode: compaction.mode }
         : {}),
       ...(typeof compaction.prompt === "string" ? { prompt: compaction.prompt } : {}),
+      // Effective values, not the literal YAML: a file written before these keys existed runs
+      // on the built-in defaults, and an empty box would read as the blank that sends none.
+      maxRounds:
+        typeof compaction.max_rounds === "number"
+          ? compaction.max_rounds
+          : DEFAULT_COMPACTION_MAX_ROUNDS,
+      reminder:
+        typeof compaction.reminder === "string" ? compaction.reminder : DEFAULT_COMPACTION_REMINDER,
+      handoffNote:
+        typeof compaction.handoff_note === "string"
+          ? compaction.handoff_note
+          : DEFAULT_COMPACTION_HANDOFF_NOTE,
     };
     // Memory's effective state, not the literal YAML: core treats anything but an explicit
     // `false` as on and falls back to the built-in prompts, so a config predating the section
@@ -257,6 +286,7 @@ export class AgentConfigService implements AgentConfig {
       ...(typeof parsed.name === "string" ? { name: parsed.name } : {}),
       ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
       author: agentAuthorOf(parsed),
+      ...(isSystemAgentConfig(agentId, parsed) ? { system: true as const } : {}),
       version: agentStateVersion({ version: parsed.version as number | undefined }),
       kernelVersion,
       kernelLatest: KERNEL_VERSION,
@@ -284,7 +314,8 @@ export class AgentConfigService implements AgentConfig {
   /**
    * PUT accepts any subset: only the provided keys are updated (parseDocument
    * preserves comments and untouched content); agentsMd is overwritten in full.
-   * Numeric validation: >0 or -1; thinkingLevel / mode are validated as enums.
+   * Numeric validation: >0 or -1; thinkingLevel / mode are validated as enums. The system
+   * Agent's name, description and author are refused (409 `builtin_agent_locked`).
    */
   async updateConfig(
     projectId: string,
@@ -292,6 +323,15 @@ export class AgentConfigService implements AgentConfig {
     req: AgentConfigUpdateRequest,
   ): Promise<void> {
     await this.requireExists(projectId, agentId);
+    // The system Agent's identity is the platform's, not the Project's to rename.
+    const identity = req.config ?? {};
+    if (
+      identity.name !== undefined ||
+      identity.description !== undefined ||
+      identity.author !== undefined
+    ) {
+      await refuseSystemAgentChange(this, projectId, agentId, "identity");
+    }
     // Finish all config validation and document changes before writing to disk
     // (if validation fails, AGENTS.md is not written either, avoiding a partial update).
     if (req.config !== undefined) {
@@ -419,6 +459,12 @@ export class AgentConfigService implements AgentConfig {
       );
       setIfProvided(["compaction", "mode"], optionalEnum(compaction, "mode", COMPACTION_MODES));
       setIfProvided(["compaction", "prompt"], optionalString(compaction, "prompt"));
+      setIfProvided(
+        ["compaction", "max_rounds"],
+        optionalNumber(compaction, "maxRounds", { integer: true, nonNegative: true }),
+      );
+      setIfProvided(["compaction", "reminder"], optionalString(compaction, "reminder"));
+      setIfProvided(["compaction", "handoff_note"], optionalString(compaction, "handoffNote"));
     }
     if (cfg.memory !== undefined) {
       // The toggle only decides whether Memory reaches the context and whether Workspace

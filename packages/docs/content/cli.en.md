@@ -263,11 +263,12 @@ Options of `agent create`:
 | `--name <name>` / `--description <text>` | Display name and description. | — |
 | `--author <author>` | Who is creating the agent: `user`, `agent` or `company`. | `agent` inside a conversation, otherwise `user` |
 | `--plugins <names>` | Comma-separated library plugin names to preinstall, each with its Skills and hook package. Unknown names are rejected before anything is created. | — |
+| `--no-default-plugins` | Leave out the plugins every new agent gets, `goal` ([goal mode](/goal-mode)) and `plan` (Plan mode). | Both installed |
 | `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
 
 ```bash
 penguin agent ls
-penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+penguin agent create --agent-id helper --name "Helper" --plugins software-development
 ```
 
 ### penguin agent export and import
@@ -667,11 +668,11 @@ note: No visible change on the page.
 `import` and `history` belong to the built-in browser. Asked of the user's Chrome, they fail with `not_supported`.
 
 - `--list` lists the browser profiles on this machine: the source id, the browser, the profile's name, and whether it holds cookies and history.
-- `--from` takes a source id from that list, or a browser (`chrome`, `edge`, `brave`, `arc`, `vivaldi`, `opera`, `chromium` or `firefox`) for its `Default` profile, or its only one.
+- `--from` takes a source id from that list, or a browser (`chrome`, `edge`, `brave`, `arc`, `vivaldi`, `opera`, `chromium` or `firefox`) for its `Default` profile, or its only one. `chrome-extension`, listed while the user's Chrome is connected, imports cookies through it after the user allows it in Chrome.
 - `--cookies` and `--history` choose what to import; neither means both.
 - `--domain` keeps only the cookies of a site and its subdomains. Repeat it, or separate sites with commas.
 
-The result names the source, then prints `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`, `history: <n> imported (<n> found)` and a `warning:` line for each warning. Platform details, such as the macOS Keychain prompt and Chrome's app-bound cookies on Windows, are in [Import from your browser](/builtin-browser#import-from-your-browser).
+The result names the source, then prints `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`, a `skipped:` line giving each reason a cookie was skipped with its count, `history: <n> imported (<n> found)`, and a `warning:` line for anything else to know. Platform details, such as the macOS Keychain prompt and Chrome's app-bound cookies on Windows, are in [Import from your browser](/builtin-browser#import-from-your-browser).
 
 ### history
 
@@ -687,9 +688,24 @@ An error is one line on stderr, `error: <code>: <message>`, and the command exit
 - `keyboard_focus_failed`: the built-in browser could not give the tab keyboard focus in the app window, so nothing was typed. `type` reports it as a failed result with this message; a raw `cdp` keyboard command answers with the code. Retry once.
 - `cdp_refused`: a raw command outside what the backend allows (see [screenshot and cdp](#screenshot-and-cdp)).
 - `not_supported`: import or history asked of the user's Chrome; the message says to have the user sign in in the Penguin tab in Chrome instead.
+- `import_declined`: the user did not allow, in Chrome, an import through the extension. `extension_outdated`: their extension is too old for it.
 - `script_error`, `timeout`, `invalid_url`, `source_not_found` and `import_failed`.
 
 The CLI adds `invalid_argument` for a command typed wrong, `io_error` for a file it cannot read or write, and `request_failed` when the server cannot be reached.
+
+## penguin storage
+
+What the data root holds, and its cleanup: [Settings › Storage](/settings#storage) in the shell, a thin client over the server's `/api/me/storage` routes. The caller sees what the page shows them: a member the Projects they can open, an admin the whole data root. The preinstalled `storage` plugin carries the command with the page.
+
+```bash
+penguin storage [--refresh]                                  # the space used, by category, Project, agent and (admin) server entry
+penguin storage clean [--older-than <days>] [--all] [--yes]  # review what can be removed now; --yes removes it
+```
+
+- The server measures in the background. The command waits for a measurement under way to end, so it never prints an empty disk. `--refresh` measures again first.
+- `clean` is a dry run unless `--yes`. It prints the review the page shows and marks with `x` what a removal would take: what the page ticks to begin with (scratchpads of deleted chats, orphaned temporary workspaces, server caches), or with `--all` every item, the scratchpads of idle chats and the agents' tool environments included. `--older-than` is the idle age, 1–3650 days, 7 by default.
+- With `--yes` each item is checked again as it is removed, as on the page, and the last line says how many went, how much space they freed, and how many were skipped because they were in use or gone. A removal takes a person's sign-in: the local API token an agent's shell holds is refused with `human_required`, so sign in with [`penguin auth login`](#penguin-auth-login) first, or clean up on the page.
+- `--json` prints the response as one line of JSON (with `clean`'s dry run, the review plus `chosen`, the ids `--yes` would remove), and `--server` works as everywhere. When no Project on the server runs the plugin's module, both fail with `storage_unavailable`.
 
 ## Approval modes (--approve)
 
@@ -735,7 +751,7 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 - The CLI never derives `--provider` from the model id. Gateways resell vendor models under their upstream ids, so a guessed group could write the credential onto another vendor's endpoint. Use `custom` for any endpoint outside the built-in groups.
 - A new entry stores `--client-type`, `--base-url` and `--api-key` only when you pass them. Left out, each follows the group, and with no group value the client's default; the built-in catalog is not read. A new Project's file already holds the gateways' endpoints and protocols, Penguin Go's relay URL, and `vllm`'s `openai-chat-vllm-adapter` and local base URL `http://127.0.0.1:8000/v1`, on their groups. A `custom` or user-defined entry whose group sets no protocol gets `openai-chat`. Updating an existing entry changes these fields only when you pass the flags; a `--clear-*` flag removes the entry's own value, after which it follows the group.
 - Re-adding a removed preset this way stores only what you pass; **Add new models** on the Models page brings it back with its catalog protocol and endpoint.
-- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow`, `jellytoken`, `atlascloud`, `runcrate` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
+- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow`, `atlascloud`, `runcrate` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
 - `penguin-go`'s protocol is fixed to `mmsp`, as on the Models page and its API: any other `--client-type` is refused, unless it is the value the entry or group already stores, and so is `--clear-client-type` on the group.
 - Turning on `--fast-mode` for a model whose MMSP client rejects the parameter still writes the entry, but prints a warning on stderr.
 - In both forms, a field you do not name is left as it is, each set/clear pair is exclusive, and an empty value is refused: remove a value with its `--clear-*` flag.
@@ -790,7 +806,7 @@ Sets the CLI's interface language (`en` or `zh`) by writing `PENGUIN_LANG` into 
 
 ## penguin exec
 
-Runs a plugin's command on the server. A plugin contributes commands the way it contributes anything else: a class whose `contributes["PluginCliCommandsProvider.commands"]` entry is the command's data half — a `key` (the command path, `a.b.c` answering `penguin a b c ARGS`) and a one-line summary in each language — and whose `@Bind(entry.id)` field is its code half. The commands live in the server's tree, so the CLI lists them from the server (`GET /api/cli/commands`) and asks the server to run one (`POST /api/cli/commands/run`); running a plugin's code is an admin operation, which the CLI's local API token carries, as for `penguin plugin install`.
+Runs a plugin's command on the server. A plugin contributes commands the way it contributes anything else: a class whose `contributes["PluginCliCommandsProvider.commands"]` entry is the command's data half — a `key` (the command path, `a.b.c` answering `penguin a b c ARGS`) and a one-line summary in each language — and whose `@Bind(entry.id)` field is its code half. The commands live in the server's tree, so the CLI lists them from the server (`GET /api/cli/commands`) and asks the server to run one (`POST /api/cli/commands/run`); running a plugin's code is an admin operation unless the command is a member command (below), and the CLI's local API token carries it, as for `penguin plugin install`.
 
 ```bash
 penguin exec <id> [args...]
@@ -807,6 +823,8 @@ Two or more plugins answering the same words is ambiguous: the report lists one 
 penguin exec sandbox.wsl.restart --prod
 penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # when ids collide
 ```
+
+A command a plugin marks `access: "member"` runs for any member of the Project, not only the administrator. A run names its caller's Project and Session: inside an Agent's shell, its `PENGUIN_PROJECT_ID` and `PENGUIN_SESSION_ID`; outside one, `default_project` for such a command. A command can also declare the options that name local files: the CLI reads the file each `read` option names, relative to the current directory, and sends it with the run, and an unreadable file stops the run before anything is sent. The files the command hands back are saved under the directory its `write` option names, or in the current directory, never over an existing file (`name-1.ext` instead), and each saved path is printed on stderr. A command may also run only where the Project has its plugin enabled, and may ask that an agent's call run for the person whose message the agent's Session is working on rather than for the administrator the local API token stands for; such a command refuses a call with the token that names no Session (`session_required`) or whose Session has no run a signed-in person started in progress (`driver_unknown`).
 
 ## penguin server / penguin web
 

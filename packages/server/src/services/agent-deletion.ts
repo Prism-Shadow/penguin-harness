@@ -16,7 +16,7 @@
  */
 import type { AgentDeletionInfo, Employment } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import { settleWithin } from "../http/settle.js";
+import { settleWithin } from "@prismshadow/penguin-library-http/settle";
 import type { UserDraftsStore } from "@prismshadow/penguin-library-auth";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { AgentConfig, AgentLifecycle } from "../mechanisms/agents.js";
@@ -30,7 +30,7 @@ import { refuseBuiltinDeletion } from "./agent-service.js";
 
 /** What a deletion reaches: the Agent's folder, its runs, and every table keyed on it. */
 export interface AgentDeletionDeps {
-  agentConfigService: Pick<AgentConfig, "requireExists">;
+  agentConfigService: Pick<AgentConfig, "requireExists" | "isBuiltinAgent">;
   agentService: Pick<AgentLifecycle, "deleteAgent">;
   orgService: Pick<OrgService, "employersOf">;
   manager: Pick<SessionManager, "beginAgentDeletion" | "endAgentDeletion">;
@@ -70,7 +70,7 @@ export async function refuseUndeletable(
   agentId: string,
 ): Promise<void> {
   await deps.agentConfigService.requireExists(projectId, agentId);
-  refuseBuiltinDeletion(agentId);
+  await refuseBuiltinDeletion(deps.agentConfigService, projectId, agentId);
   // An employee is refused before anything is touched: deleting its Agent would leave the
   // organization's chart naming an Agent that is gone, and its desk naming a Session that is.
   // Leaving the organization is the way out, and it keeps the Agent.

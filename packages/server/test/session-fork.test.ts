@@ -40,6 +40,7 @@ import {
   parseTraceLines,
   scratchpadDir,
   sessionMeta,
+  sessionUpdate,
   subagentEvent,
   taskBegin,
   taskEnd,
@@ -142,7 +143,14 @@ describe("session fork", () => {
       model_id: "fork-model",
       model_context_window: 10_000,
       system_prompt: `Session ${SID}; scratchpad ${modelVisiblePath(scratch)}`,
-      agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
+      agent_state: path.join(
+        t.root,
+        "projects",
+        projectId,
+        "agents",
+        "default_agent",
+        "agent_state",
+      ),
       workspace,
       source: "cli",
     };
@@ -327,6 +335,53 @@ describe("session fork", () => {
     expect(kinds.filter((k) => k === "task_begin")).toHaveLength(1);
   });
 
+  it("the last reply before a switch can be forked: the cut stops at the switch's session_update, and the fork runs on the model of the context it copies", async () => {
+    await seedSource();
+    const file = path.join(
+      tracesDir(t.root, projectId, "default_agent"),
+      "2026-08-14",
+      `${SID}_001.jsonl`,
+    );
+    // The source then switched away from a model it could no longer reach: no compaction, the
+    // target recorded behind the last reply, the next file not opened yet.
+    await fs.appendFile(
+      file,
+      JSON.stringify(
+        at(
+          "2026-08-14T11:00:00.000Z",
+          sessionUpdate({ provider: "custom", model_id: "fork-model-b" }),
+        ),
+      ) + "\n",
+      "utf8",
+    );
+    const history = (await (
+      await api.get(`/api/sessions/${SID}/messages`)
+    ).json()) as MessagesResponse;
+    const selected = history.messages.find(
+      (message) => (message.payload as { text?: string }).text === "later answer",
+    );
+
+    const response = await api.post(`/api/sessions/${SID}/fork`, {
+      position: selected!.tracePosition,
+    });
+    expect(response.status).toBe(201);
+    const { session } = (await response.json()) as SessionForkResponse;
+    expect(session).toMatchObject({ provider: "custom", modelId: "fork-model" });
+    const forked = parseTraceLines(
+      await fs.readFile(
+        path.join(
+          tracesDir(t.root, projectId, "default_agent"),
+          "2026-08-14",
+          `${session.sessionId}_001.jsonl`,
+        ),
+        "utf8",
+      ),
+    );
+    expect(forked.map((m) => (m.payload as { type?: string }).type)).not.toContain(
+      "session_update",
+    );
+  });
+
   it("shares one persistent number sequence across different reply positions", async () => {
     await seedSource();
 
@@ -462,7 +517,14 @@ describe("session fork", () => {
       model_id: "fork-model",
       model_context_window: 10_000,
       system_prompt: `Session ${sessionId}`,
-      agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
+      agent_state: path.join(
+        t.root,
+        "projects",
+        projectId,
+        "agents",
+        "default_agent",
+        "agent_state",
+      ),
       workspace,
       source: from,
     });
@@ -549,7 +611,14 @@ describe("session fork", () => {
       model_id: "fork-model",
       model_context_window: 10_000,
       system_prompt: `Session ${SID}; scratchpad ${modelVisiblePath(scratch)}`,
-      agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
+      agent_state: path.join(
+        t.root,
+        "projects",
+        projectId,
+        "agents",
+        "default_agent",
+        "agent_state",
+      ),
       workspace,
       source: "user",
     };
@@ -632,7 +701,14 @@ describe("session fork", () => {
       model_id: "fork-model",
       model_context_window: 10_000,
       system_prompt: `Session ${SID}`,
-      agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
+      agent_state: path.join(
+        t.root,
+        "projects",
+        projectId,
+        "agents",
+        "default_agent",
+        "agent_state",
+      ),
       workspace,
       source: "user",
     };
@@ -714,7 +790,14 @@ describe("session fork", () => {
       model_id: nextModel.model_id,
       model_context_window: 20_000,
       system_prompt: `Session ${SID}; scratchpad ${modelVisiblePath(scratch)}`,
-      agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
+      agent_state: path.join(
+        t.root,
+        "projects",
+        projectId,
+        "agents",
+        "default_agent",
+        "agent_state",
+      ),
       workspace,
       source: "user",
     };
@@ -785,7 +868,14 @@ describe("session fork", () => {
           model_id: "fork-model",
           model_context_window: 10_000,
           system_prompt: `Session ${SID}; scratchpad ${modelVisiblePath(scratch)}`,
-          agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
+          agent_state: path.join(
+            t.root,
+            "projects",
+            projectId,
+            "agents",
+            "default_agent",
+            "agent_state",
+          ),
           workspace,
           source: "user",
         }),
@@ -856,7 +946,14 @@ describe("session fork", () => {
           model_id: "fork-model-b",
           model_context_window: 20_000,
           system_prompt: `Session ${SID}; scratchpad ${modelVisiblePath(scratch)}`,
-          agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
+          agent_state: path.join(
+            t.root,
+            "projects",
+            projectId,
+            "agents",
+            "default_agent",
+            "agent_state",
+          ),
           workspace,
           source: "user",
         }),

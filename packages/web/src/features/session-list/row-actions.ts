@@ -17,14 +17,61 @@ import type {
   WorkspaceGroupEntry,
 } from "../../lib/session-row-contributions";
 import type { RowActionData } from "./iface";
+import { contributionShown, useContributionShown } from "../../lib/module-gate";
 
 /** What a row's marks say, by kind; an absent kind draws no mark. */
 export type RowMarks = Partial<Record<SessionRowMarkKind, string>>;
 
+/** A contributed entry with the module it came from, when that module may be gated. */
+type FromModule = { from?: string };
+
 export interface RowExtensions {
-  sessionEntries: readonly SessionRowEntry[];
-  workspaceEntries: readonly WorkspaceGroupEntry[];
+  sessionEntries: readonly (SessionRowEntry & FromModule)[];
+  workspaceEntries: readonly (WorkspaceGroupEntry & FromModule)[];
   marks: readonly SessionRowMark[];
+}
+
+/**
+ * The contributions with each entry carrying its module and each mark falling silent while that
+ * module waits for its server module (lib/module-gate.ts); `shownRows` then leaves the entries
+ * of such a module out. The list's own module applies it at boot.
+ */
+export function gatedRowActions(contributions: readonly Contributed[]): Contributed[] {
+  return contributions.map((c) => {
+    const action = c.code as RowAction;
+    const from = c.from;
+    const mark = action.sessionMark;
+    const gated: RowAction = {
+      ...(action.sessionEntry !== undefined
+        ? { sessionEntry: { ...action.sessionEntry, from } as SessionRowEntry }
+        : {}),
+      ...(action.workspaceEntry !== undefined
+        ? { workspaceEntry: { ...action.workspaceEntry, from } as WorkspaceGroupEntry }
+        : {}),
+      ...(mark !== undefined
+        ? {
+            sessionMark: {
+              kind: mark.kind,
+              useLabel: () => {
+                const label = mark.useLabel();
+                return useContributionShown(from) ? label : () => null;
+              },
+            },
+          }
+        : {}),
+    };
+    return { ...c, code: gated };
+  });
+}
+
+/** The entries drawn now: those whose module is shown. Re-read whenever the gates move. */
+export function shownRows(rows: RowExtensions): RowExtensions {
+  const shown = (entry: FromModule) => entry.from === undefined || contributionShown(entry.from);
+  return {
+    sessionEntries: rows.sessionEntries.filter(shown),
+    workspaceEntries: rows.workspaceEntries.filter(shown),
+    marks: rows.marks,
+  };
 }
 
 /** The contributions by `order`, split by what each adds. */

@@ -29,7 +29,7 @@
  * A write that fails therefore leaves the screen agreeing with the server and says so inline,
  * rather than showing a picture that silently disappears on the next load.
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { UpdateProfileRequest, UserInfo } from "@prismshadow/penguin-server/api";
 import {
@@ -45,12 +45,12 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 
 import { AvatarPicker } from "../../components/ui/avatar-picker";
 import { profileControls } from "../../lib/profile-form";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { useAuth } from "../../state/auth";
+import { failureNode } from "../../lib/failure";
 
 /** Which row is mid-write. One at a time, so the busy mark always names the row being used. */
 type PendingWrite = "avatar" | "nickname";
@@ -62,7 +62,7 @@ export function ProfileSection() {
     scope: SETTINGS_SCOPE,
     normalize: (value) => value.trim(),
   });
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [pending, setPending] = useState<PendingWrite | null>(null);
   // A nickname write (Save, or Restore default) holds the dialog's close until it answers; an
   // avatar write is direct manipulation with no draft to lose, so it holds nothing.
@@ -80,7 +80,7 @@ export function ProfileSection() {
       toastSuccess(S.common.saved);
       return res.user;
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a profile could not be saved" }));
       return null;
     }
   };

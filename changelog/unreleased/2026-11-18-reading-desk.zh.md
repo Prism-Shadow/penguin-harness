@@ -1,0 +1,12 @@
+# 阅读工作台
+
+- **Date:** 2026-11-18
+- **Type:** feature
+- **Scope:** `plugins`, `reading-desk`
+- **PR:** [#1594](https://github.com/Prism-Shadow/penguin-harness/pull/1594)
+
+[English](2026-11-18-reading-desk.md)
+
+「实用工具」新增了阅读工作台。给 Agent 安装后，可从 Agent 的标签页或应用中心打开，界面跟随应用的中英文设置。
+
+本地书架支持 EPUB、DOCX、Markdown 和纯文本。书架显示 EPUB 原书封面和每本书的阅读进度，支持按书名或作者查找。换屏宽或字号后，继续阅读能回到上次的段落。读者可以给段落划线、写下批注，也可以将一本书的笔记下载为 Markdown。

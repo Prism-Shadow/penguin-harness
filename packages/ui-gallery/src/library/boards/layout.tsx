@@ -1,12 +1,17 @@
 /**
  * 布局: a page frame with its header (the display title and its "?", the line under it, the way
  * back and the actions), the card padded and flush, the ruled section, the collapsible section
- * open and folded, the entity header, and the navigation list at both densities — all from the
- * package.
+ * open and folded, the entity header, the navigation list at both densities, an app window's
+ * title bar with all three controls, with close alone and with the app's pages to switch between,
+ * and the sidebar's app list in each of its rows' states — all from the package.
  */
 import { useState } from "react";
 import {
   AgentAvatar,
+  APP_ROW_ICON_PX,
+  AppRow,
+  AppShell,
+  AppWindowBar,
   Badge,
   Button,
   Card,
@@ -15,7 +20,9 @@ import {
   CopyButton,
   Count,
   EntityHeader,
+  GlyphAppIcon,
   GlyphIcon,
+  GroupHeader,
   ICONS,
   ICON_SIZE,
   IconButton,
@@ -26,7 +33,14 @@ import {
   PageFrame,
   PageHeader,
   ProviderLogo,
+  Rail,
+  RailItem,
   RuledSection,
+  Segmented,
+  SidebarAccountButton,
+  SidebarFrame,
+  SidebarNavArea,
+  SidebarSwitcherButton,
   Text,
 } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
@@ -52,6 +66,11 @@ export function LayoutBoard() {
   const [query, setQuery] = useState("");
   const [groupOpen, setGroupOpen] = useState(true);
   const [navPage, setNavPage] = useState<NavPage>("overview");
+  const [shellWidth, setShellWidth] = useState<number | null>(null);
+  const [shellFolded, setShellFolded] = useState(false);
+  const [windowPage, setWindowPage] = useState("0");
+  const [appsOpen, setAppsOpen] = useState(true);
+  const [frontApp, setFrontApp] = useState<string | null>("notes");
   return (
     <div className="gf-board">
       <BoardGroup title={t.page} aside={t.pageHint}>
@@ -175,6 +194,140 @@ export function LayoutBoard() {
           </div>
         </EntityHeader>
       </BoardGroup>
+      <BoardGroup title={t.window} aside={t.windowHint}>
+        <div className="lib-stack lib-stack-wide">
+          <span className="lib-caption">{t.windowFull}</span>
+          <div className="lib-box">
+            <AppWindowBar
+              icon={<GlyphIcon d={ICONS.appWindow} size={ICON_SIZE.sectionMark} />}
+              title={t.windowTitle}
+              labels={{
+                minimize: t.windowMinimize,
+                fullScreen: t.windowFullScreen,
+                close: t.windowClose,
+              }}
+              onMinimize={() => {}}
+              onFullScreen={() => {}}
+              onClose={() => {}}
+            />
+            <Text variant="caption" className="block px-3 py-6 text-center">
+              {t.windowBody}
+            </Text>
+          </div>
+          <span className="lib-caption">{t.windowCloseOnly}</span>
+          <div className="lib-box">
+            <AppWindowBar
+              icon={<GlyphIcon d={ICONS.appWindow} size={ICON_SIZE.sectionMark} />}
+              title={t.windowTitle}
+              labels={{
+                minimize: t.windowMinimize,
+                fullScreen: t.windowFullScreen,
+                close: t.windowClose,
+              }}
+              onClose={() => {}}
+            />
+          </div>
+          <span className="lib-caption">{t.windowPages}</span>
+          <div className="lib-box">
+            <AppWindowBar
+              icon={<GlyphIcon d={ICONS.appWindow} size={ICON_SIZE.sectionMark} />}
+              title={t.windowTitle}
+              controls={
+                <div className="shrink-0">
+                  <Segmented
+                    options={t.windowPageNames.map((label, i) => ({ value: String(i), label }))}
+                    value={windowPage}
+                    onChange={setWindowPage}
+                    cols={3}
+                  />
+                </div>
+              }
+              labels={{
+                minimize: t.windowMinimize,
+                fullScreen: t.windowFullScreen,
+                close: t.windowClose,
+              }}
+              onMinimize={() => {}}
+              onFullScreen={() => {}}
+              onClose={() => {}}
+            />
+          </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.apps} aside={t.appsHint}>
+        <div className="lib-box" data-narrow>
+          <div className="bg-surface-muted p-2">
+            <GroupHeader
+              open={appsOpen}
+              onToggle={() => setAppsOpen(!appsOpen)}
+              glyph={ICONS.tiles}
+              label={t.appsGroup}
+              uppercase
+              actions={
+                <IconButton variant="ghost" size="sm" label={t.appsManage}>
+                  <GlyphIcon d={ICONS.gear} size={ICON_SIZE.groupHeaderAction} />
+                </IconButton>
+              }
+            />
+            {appsOpen && (
+              <ul aria-label={t.appsGroup} className="space-y-px">
+                {(
+                  [
+                    { key: "board", glyph: ICONS.tiles, build: "ready", running: false },
+                    { key: "notes", glyph: ICONS.penLine, build: "ready", running: true },
+                    { key: "build", glyph: ICONS.chip, build: "building", running: false },
+                    { key: "broken", glyph: ICONS.alarmClock, build: "failed", running: false },
+                  ] as const
+                ).map((app) => {
+                  const state = app.running
+                    ? t.appsRunning
+                    : app.build === "building"
+                      ? t.appsBuilding
+                      : app.build === "failed"
+                        ? t.appsFailed
+                        : null;
+                  const name = t.appsRows[app.key];
+                  const label = state === null ? undefined : `${name} · ${state}`;
+                  return (
+                    <AppRow
+                      key={app.key}
+                      appKey={app.key}
+                      icon={<GlyphAppIcon d={app.glyph} size={APP_ROW_ICON_PX} />}
+                      name={name}
+                      {...(label !== undefined ? { label, hint: label } : {})}
+                      active={frontApp === app.key}
+                      running={app.running}
+                      build={app.build}
+                      menuActions={[
+                        {
+                          id: "open",
+                          label: t.appsOpen,
+                          glyph: ICONS.appWindow,
+                          onSelect: () => setFrontApp(app.key),
+                        },
+                        {
+                          id: "remove",
+                          label: t.appsRemove,
+                          glyph: ICONS.eyeOff,
+                          onSelect: () => {},
+                        },
+                        {
+                          id: "settings",
+                          label: t.appsSettings,
+                          glyph: ICONS.gear,
+                          onSelect: () => {},
+                        },
+                      ]}
+                      moreLabel={t.appsMore}
+                      onOpen={() => setFrontApp(app.key)}
+                    />
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+      </BoardGroup>
       <BoardGroup title={t.nav} aside={t.navHint}>
         <div className="lib-stack lib-stack-wide">
           <span className="lib-caption">{t.navRail}</span>
@@ -211,6 +364,72 @@ export function LayoutBoard() {
               ))}
             </NavList>
           </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.shell} aside={t.shellHint}>
+        {/* The app window as the Web App lays it out: the pinned sidebar's end edge drags its
+            width (and steps it with the arrow keys once focused), a double click puts back the
+            theme's width, and folding to the rail and out again keeps the width dragged. */}
+        <div className="lib-box" style={{ height: 360 }}>
+          <AppShell
+            navCollapsed={shellFolded}
+            navResize={{ width: shellWidth, label: t.shellResize, onChange: setShellWidth }}
+            nav={
+              shellFolded ? (
+                <Rail
+                  head={
+                    <RailItem
+                      label={t.shellUnfold}
+                      glyph={ICONS.chevronRightPipe}
+                      className="shrink-0"
+                      onClick={() => setShellFolded(false)}
+                    />
+                  }
+                >
+                  {NAV_PAGES.slice(0, 3).map((page) => (
+                    <RailItem
+                      key={page.key}
+                      label={t.navRows[page.key]}
+                      glyph={page.glyph}
+                      active={navPage === page.key}
+                      onClick={() => setNavPage(page.key)}
+                    />
+                  ))}
+                </Rail>
+              ) : (
+                <SidebarFrame
+                  switcher={<SidebarSwitcherButton label={t.shellProject} onClick={() => {}} />}
+                  collapse={{ label: t.shellFold, onClick: () => setShellFolded(true) }}
+                  pinned={
+                    <SidebarNavArea>
+                      {NAV_PAGES.slice(0, 3).map((page) => (
+                        <NavRow
+                          key={page.key}
+                          surface="muted"
+                          label={t.navRows[page.key]}
+                          glyph={page.glyph}
+                          active={navPage === page.key}
+                          onClick={() => setNavPage(page.key)}
+                        />
+                      ))}
+                    </SidebarNavArea>
+                  }
+                  account={
+                    <SidebarAccountButton
+                      avatar={<AgentAvatar id={AGENT_ID} size={24} />}
+                      name={t.entityName}
+                      expanded={false}
+                      onClick={() => {}}
+                    />
+                  }
+                />
+              )
+            }
+          >
+            <Text variant="caption" className="block px-3 py-6 text-center">
+              {t.shellBody}
+            </Text>
+          </AppShell>
         </div>
       </BoardGroup>
     </div>

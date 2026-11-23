@@ -18,7 +18,8 @@
  *   `client_type = "openai"` reads as openai-chat; a file written before MMSP's names and group
  *   connections is rewritten once on its first read into the shape a new Project is written in
  *   (OpenCode Go's and Penguin Go's included), then served from the cache; a model the catalog
- *   dropped still loads and stays usable; one model_id under two providers is two rows.
+ *   dropped still loads and stays usable; one model_id under two providers is two rows; a
+ *   catalog tool model (image, speech, web) reads as not chat-eligible.
  * - PUT persists a custom model's vision flag and max_tokens (clearing and rejecting bad values),
  *   falls back to OPENAI_API_KEY for the openai protocol, requires a provider, refuses an id a
  *   vendor group cannot route when the request introduces it (unless its group names a
@@ -39,10 +40,6 @@
  *   group's table field by field (a field the table holds is followed, one it lacks is written on
  *   the row, a group with neither rows nor table gets the catalog's), and moves nothing else: a
  *   row already there without a promotion stays without one.
- * - A newly seeded JellyToken Project routes through its group endpoint with the group key, while
- *   an unset group key never falls back to OPENAI_API_KEY.
- * - Additive sync on a pre-existing group named JellyToken preserves its custom connection,
- *   custom model and existing row overrides, adding only missing JellyToken presets.
  * - "Restore defaults" leaves what a new Project has (its rows, group
  *   settings, promotions and default model; no vision model) and keeps only the API keys, on
  *   their built-in group or preset row — a key a group's keyed rows share, deleted rows
@@ -133,7 +130,7 @@ async function storeRows(
   rows: Array<{ provider: string; modelId: string; clientType?: string; baseUrl?: string }>,
 ): Promise<void> {
   await writeFile(
-    path.join(root, projectId, ".project_config.toml"),
+    path.join(root, "projects", projectId, ".project_config.toml"),
     renderProjectConfigToml({
       providers: presetProviderTable(),
       models: rows.map((r) => ({
@@ -197,7 +194,7 @@ describe("models preset & catalog enrichment", () => {
     expect(JSON.stringify(body)).not.toContain("sk-server-inline-1");
 
     // Secrets inlined in the single config file (persisted 0600); provider and model_id are separate columns, no concatenated string.
-    const projectDir = path.join(t.root, projectId);
+    const projectDir = path.join(t.root, "projects", projectId);
     const cfgFile = path.join(projectDir, ".project_config.toml");
     const cfgRaw = await readFile(cfgFile, "utf8");
     expect(cfgRaw).toContain("sk-server-inline-1");
@@ -213,43 +210,12 @@ describe("models preset & catalog enrichment", () => {
     await expect(readFile(path.join(projectDir, "project_config.toml"), "utf8")).rejects.toThrow();
   });
 
-  it("a new Project's JellyToken preset runs through its group endpoint with its group key", async () => {
-    await api.put(`${url()}/providers/jellytoken`, { apiKey: "jelly-group-key-001" });
-    const network = stubFetch(() =>
-      jsonResponse({ error: { message: "Incorrect API key provided." } }, 401),
-    );
-    try {
-      const created = await api.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {
-        provider: "jellytoken",
-        modelId: "glm-5.3",
-      });
-      expect(created.status).toBe(201);
-      const { session } = (await created.json()) as SessionCreateResponse;
-      expect(
-        (
-          await api.post(`/api/sessions/${session.sessionId}/tasks`, {
-            input: [{ type: "text", text: "hello" }],
-          })
-        ).status,
-      ).toBe(202);
-      await waitFor(() => network.calls.length > 0, 20_000);
-      expect(network.calls[0]!.url).toBe("https://aiservice.jellytoken.com/v1/chat/completions");
-      expect(network.calls[0]!.headers.get("authorization")).toBe("Bearer jelly-group-key-001");
-      expect((JSON.parse(network.calls[0]!.body) as { model: string }).model).toBe("glm-5.3");
-      await waitFor(() => t.deps.manager.statusOf(session.sessionId) !== "running", 20_000);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
   it("a new Project's file carries every built-in model and each built-in group's endpoint and protocol, and every preset runs on what the file says", async () => {
     const res = await api.get(url());
     expect(res.status).toBe(200);
     const body = (await res.json()) as ModelsResponse;
-    expect(body.defaultModel).toEqual({
-      provider: "deepseek",
-      modelId: "deepseek-flash",
-    });
+    // No default model: the owner chooses one (the Web App's first-run guide).
+    expect(body.defaultModel).toBeUndefined();
     expect(body.models.map(pairKey)).toEqual(catalogPairs);
     // A retired catalog row is kept only for the Projects that already carry it, so a new
     // Project gets none of them.
@@ -260,7 +226,10 @@ describe("models preset & catalog enrichment", () => {
     // The catalog's group connections are written into the file once, as `[providers.<id>]`
     // tables: the gateways', vLLM's protocol and local server, Penguin Go's relay. The first-party vendors and
     // custom get none — their rows run on the client's defaults, or carry their own.
-    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     for (const id of Object.keys(presetProviderTable())) {
       expect(toml, id).toContain(`[providers.${id}]`);
     }
@@ -339,7 +308,7 @@ describe("models preset & catalog enrichment", () => {
     expect(sonnet.clientType).toBeUndefined();
     expect(sonnet.effective).toMatchObject({ baseUrlSource: "none", clientTypeSource: "none" });
     expect(pick(body, "deepseek", "deepseek-v4-pro").envKey).toBe("DEEPSEEK_API_KEY");
-    expect(pick(body, "deepseek", "deepseek-flash").isDefault).toBe(true);
+    expect(body.models.some((m) => m.isDefault)).toBe(false);
 
     // A catalog row on a promotion is preset at its LIST price like every other row, and the
     // promotion is seeded beside it in web.db: the rows reporting a discount are exactly the
@@ -528,7 +497,10 @@ describe("models preset & catalog enrichment", () => {
     const again = (await (await api.get(url())).json()) as ModelsResponse;
     expect(pick(again, "custom", "my-model").vision).toBe(false);
     expect(pick(again, "custom", "my-model").clientType).toBe("openai-chat");
-    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).toContain('client_type = "openai-chat"');
     expect(toml).not.toContain('"openai"');
 
@@ -544,7 +516,7 @@ describe("models preset & catalog enrichment", () => {
   });
 
   it("PUT refuses an id a vendor group cannot route when the request introduces it, and carries a stored one through", async () => {
-    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const cfgFile = path.join(t.root, "projects", projectId, ".project_config.toml");
     // A row in the shape a vendor-group add used to produce: no client_type, and an id of no
     // family MMSP knows, so it fails at request time with its `No client for model` sentence.
     // Rows like this exist in configs written before the rule below.
@@ -739,7 +711,7 @@ describe("models preset & catalog enrichment", () => {
     // Simulate an existing user config written by an older harness version: the deprecated
     // bare "openai" spelling on disk. Reading must not error and must report the canonical
     // spelling (normalize-on-read, no disk rewrite needed until the next PUT).
-    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const cfgFile = path.join(t.root, "projects", projectId, ".project_config.toml");
     await writeFile(
       cfgFile,
       [
@@ -781,7 +753,7 @@ describe("models preset & catalog enrichment", () => {
         "",
       ]);
     const tokendance = catalogGroupConnection("tokendance")!;
-    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const cfgFile = path.join(t.root, "projects", projectId, ".project_config.toml");
     await writeFile(
       cfgFile,
       [
@@ -868,7 +840,7 @@ describe("models preset & catalog enrichment", () => {
     // keeps a row on disk that catalogEntryFor no longer matches. Everything presetModelEntries
     // persisted must survive — only display_name lived solely in the catalog — and the row must
     // stay a normal, selectable entry rather than being pruned, rejected or blanked.
-    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const cfgFile = path.join(t.root, "projects", projectId, ".project_config.toml");
     await writeFile(
       cfgFile,
       [
@@ -946,7 +918,10 @@ describe("models preset & catalog enrichment", () => {
     // Round-trips through disk (persisted as snake_case on the entry, not just echoed back).
     const again = (await (await api.get(url())).json()) as ModelsResponse;
     expect(pick(again, "custom", "local-qwen").maxTokens).toBe(8000);
-    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).toContain("max_tokens = 8000");
 
     // Full-table PUT omitting the field clears the annotation (same replace semantics as vision/contextWindow).
@@ -957,7 +932,7 @@ describe("models preset & catalog enrichment", () => {
     const clearedRow = pick((await cleared.json()) as ModelsResponse, "custom", "local-qwen");
     expect("maxTokens" in clearedRow).toBe(false);
     expect(
-      await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8"),
+      await readFile(path.join(t.root, "projects", projectId, ".project_config.toml"), "utf8"),
     ).not.toContain("max_tokens");
 
     // Not a positive integer → 400 with the field-labelled message (nothing written).
@@ -1004,6 +979,13 @@ describe("models preset & catalog enrichment", () => {
     const again = (await (await api.get(url())).json()) as ModelsResponse;
     expect(again.models.map(pairKey).sort()).toEqual(body.models.map(pairKey).sort());
   });
+
+  it("a preset tool model (image, speech, web) reads as not chat-eligible, and every chat preset as eligible", async () => {
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(body, "deepseek", "deepseek-search").chatEligible).toBe(false);
+    expect(pick(body, "openai", "gpt-image-2.5-flare").chatEligible).toBe(false);
+    expect(pick(body, "deepseek", "deepseek-v4-pro").chatEligible).toBeUndefined();
+  });
 });
 
 describe("default_project presets", () => {
@@ -1022,7 +1004,7 @@ describe("default_project presets", () => {
     await t.cleanup();
   });
 
-  it("when the seeded admin adopts default_project, the preset models and the default model are filled in (no prior .project_config.toml)", async () => {
+  it("when the seeded admin adopts default_project, the preset models are filled in and no default model is (no prior .project_config.toml)", async () => {
     // The default_project shared by admin seeding and the CLI (the dir already exists, so writeInitialConfig is skipped).
     t = await createTestApp();
     const { cookie } = await loginAdmin(t.app);
@@ -1030,10 +1012,8 @@ describe("default_project presets", () => {
     const res = await api.get("/api/projects/default_project/models");
     expect(res.status).toBe(200);
     const body = (await res.json()) as ModelsResponse;
-    expect(body.defaultModel).toEqual({
-      provider: "deepseek",
-      modelId: "deepseek-flash",
-    });
+    // No default model: the owner chooses one (the Web App's first-run guide).
+    expect(body.defaultModel).toBeUndefined();
     expect(body.models.map(pairKey)).toEqual(catalogPairs);
     // The built-in groups' tables come with them, as in a new Project.
     expect(Object.keys(body.providers).sort()).toEqual(Object.keys(presetProviderTable()).sort());
@@ -1042,11 +1022,20 @@ describe("default_project presets", () => {
       presetPromotions().length,
     );
 
-    // The point of presets is "works out of the box": creating a Session should succeed without passing a model ref.
-    const created = await api.post(
-      "/api/projects/default_project/agents/default_agent/sessions",
-      {},
+    // A Session that names no model waits for a default: refused, saying how to set one; once
+    // the owner chooses one, it runs on it.
+    const sessions = "/api/projects/default_project/agents/default_agent/sessions";
+    const refused = await api.post(sessions, {});
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+      "no_default_model",
     );
+    const chosen = await api.put("/api/projects/default_project/models/default", {
+      provider: "deepseek",
+      modelId: "deepseek-flash",
+    });
+    expect(chosen.status).toBe(200);
+    const created = await api.post(sessions, {});
     expect(created.status).toBe(201);
     const { session } = (await created.json()) as SessionCreateResponse;
     expect(session.provider).toBe("deepseek");
@@ -1075,10 +1064,14 @@ describe("default_project presets", () => {
       baseUrl: "https://or-proxy.example/v1",
       apiKeyMasked: "sk-o…0018",
     });
-    // Its models follow its endpoint and carry the protocol it lacks; other groups get theirs.
+    // Its models follow its endpoint and carry the protocol it lacks (a row that pins its own, an
+    // image or speech model on OpenRouter, keeps it); other groups get theirs.
     for (const row of body.models.filter((m) => m.provider === "openrouter")) {
       expect(row.credential, row.modelId).toBeUndefined();
-      expect(row.clientType, row.modelId).toBe(catalogGroupConnection("openrouter")!.client_type);
+      expect(row.clientType, row.modelId).toBe(
+        catalogEntryFor("openrouter", row.modelId)?.clientType ??
+          catalogGroupConnection("openrouter")!.client_type,
+      );
       expect(row.effective.baseUrl, row.modelId).toBe("https://or-proxy.example/v1");
     }
     expect(body.providers.tokendance).toBeDefined();
@@ -1266,6 +1259,19 @@ describe("model-reference rekeying and the connectivity test", () => {
     expect(again.defaultModel).toEqual({ provider: "custom", modelId: "new-id" });
   });
 
+  it("an omitted vision model stays, and a null one is cleared while its row stays", async () => {
+    const vision = { provider: "custom", modelId: "reader" };
+    const models = [{ provider: "custom", modelId: "reader", contextWindow: 4096 }];
+    expect((await api.put(url(), { visionModel: vision, models })).status).toBe(200);
+    const kept = (await (await api.put(url(), { models })).json()) as ModelsResponse;
+    expect(kept.visionModel).toEqual(vision);
+    const cleared = await api.put(url(), { visionModel: null, models });
+    expect(cleared.status).toBe(200);
+    const body = (await cleared.json()) as ModelsResponse;
+    expect(body.visionModel).toBeUndefined();
+    expect(body.models.map(pairKey)).toEqual(["custom\0reader"]);
+  });
+
   it("a group change is a rekey too: the credential migrates with it; envKey resolves by client, not by group (PRN-021)", async () => {
     // Move the preset DeepSeek model to another group (changing provider is a key change; the paired renamedFrom migrates it).
     const put = await api.put(url(), {
@@ -1386,7 +1392,10 @@ describe("model-reference rekeying and the connectivity test", () => {
     expect(pick(body, "openai", "gpt-5.4").displayName).toBe("My GPT");
 
     // Clean on disk: unchanged preset models don't write display_name; provider is stored as a separate column, no concatenated string.
-    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).not.toContain(`display_name = "${catalogName}"`);
     expect(toml).toContain('display_name = "My GPT"');
     expect(toml).toContain('provider = "openai"');
@@ -1526,7 +1535,7 @@ describe("model-reference rekeying and the connectivity test", () => {
     // Out of range or not a number: 400 before anything is written, so neither the file nor
     // the table moves — not even for the valid row beside it, whose new price would otherwise
     // have cleared its promotion.
-    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const cfgFile = path.join(t.root, "projects", projectId, ".project_config.toml");
     const before = await readFile(cfgFile, "utf8");
     for (const bad of [0, 1, -0.2, 1.5, "0.2"]) {
       const res = await api.put(url(), {
@@ -1545,7 +1554,7 @@ describe("model-reference rekeying and the connectivity test", () => {
     // Two different requests, and reading them as one is how a client that simply has no name
     // for a model — one built from the catalog, which stores no name of its own — destroys the
     // name of every model it sends.
-    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const cfgFile = path.join(t.root, "projects", projectId, ".project_config.toml");
     await api.put(url(), { models: [{ provider: "openai", modelId: "gpt-5.5" }] });
     const inherited = (await (await api.get(url())).json()) as ModelsResponse;
     expect(pick(inherited, "openai", "gpt-5.5").displayName).toBe(
@@ -1580,7 +1589,10 @@ describe("model-reference rekeying and the connectivity test", () => {
     });
     const body = (await (await api.get(url())).json()) as ModelsResponse;
     expect(pick(body, "openai", "gpt-5.5").displayName).toBe("Renamed");
-    let toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    let toml = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).not.toContain('display_name = ""');
 
     // A model outside the catalog has no name to inherit, so absence already says "no name"
@@ -1591,7 +1603,7 @@ describe("model-reference rekeying and the connectivity test", () => {
         { provider: "custom", modelId: "my-own-model", displayName: "" },
       ],
     });
-    toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    toml = await readFile(path.join(t.root, "projects", projectId, ".project_config.toml"), "utf8");
     expect(toml).not.toContain('display_name = ""');
     const after = (await (await api.get(url())).json()) as ModelsResponse;
     expect(pick(after, "custom", "my-own-model").displayName).toBeUndefined();
@@ -1863,7 +1875,6 @@ describe("model-reference rekeying and the connectivity test", () => {
       // config — it may name a variable to set, never a value the environment holds.
       for (const [provider, modelId] of [
         ["tokendance", "glm-5.3"],
-        ["jellytoken", "glm-5.3"],
         ["openrouter", "openai/gpt-5.5"],
         ["custom", "Atria-Dawn"],
       ] as const) {
@@ -1996,7 +2007,7 @@ describe("group connections ([providers.<id>])", () => {
   let projectId: string;
   const url = () => `/api/projects/${projectId}/models`;
   const groupUrl = (provider: string) => `${url()}/providers/${provider}`;
-  const cfgFile = () => path.join(t.root, projectId, ".project_config.toml");
+  const cfgFile = () => path.join(t.root, "projects", projectId, ".project_config.toml");
 
   beforeAll(async () => {
     t = await createTestApp();
@@ -2396,7 +2407,7 @@ describe("preset sync: add new models / restore defaults", () => {
   let projectId: string;
   const url = () => `/api/projects/${projectId}/models`;
   const sync = (mode: unknown, as = api) => as.post(`${url()}/sync-presets`, { mode });
-  const cfgFile = () => path.join(t.root, projectId, ".project_config.toml");
+  const cfgFile = () => path.join(t.root, "projects", projectId, ".project_config.toml");
   /** The table as the models page sends it back unchanged: each row with what it stores. */
   const asEntries = (body: ModelsResponse) =>
     body.models.map((m) => ({
@@ -2426,49 +2437,6 @@ describe("preset sync: add new models / restore defaults", () => {
       await api.post("/api/projects", { projectId: `gina-sync_${projects}`, name: "Sync" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-  });
-
-  it("adding JellyToken presets is additive and preserves a pre-existing same-name group's connection and model", async () => {
-    const preset = (await (await api.get(url())).json()) as ModelsResponse;
-    const existing = {
-      provider: "jellytoken",
-      modelId: "glm-5.3",
-      clientType: "openai-chat",
-      baseUrl: "https://old-jelly.example/v1",
-      apiKey: "old-jelly-row-key",
-      contextWindow: 123456,
-    };
-    const put = await api.put(url(), {
-      models: [existing],
-      providers: {
-        jellytoken: {
-          baseUrl: "https://old-jelly.example/v1",
-          clientType: "openai-chat",
-          apiKey: "old-jelly-group-key",
-        },
-      },
-      defaultModel: { provider: "jellytoken", modelId: "glm-5.3" },
-    });
-    expect(put.status).toBe(200);
-
-    const first = (await (await sync("add")).json()) as PresetSyncResponse;
-    expect(first.added).toBe(220);
-    expect(first.restored).toBe(0);
-    expect(first.providers.jellytoken).toMatchObject({
-      baseUrl: "https://old-jelly.example/v1",
-      clientType: "openai-chat",
-      apiKeyMasked: "old-…-key",
-    });
-    expect(pick(first, "jellytoken", "glm-5.3")).toMatchObject({
-      contextWindow: 123456,
-      clientType: "openai-chat",
-      credential: {
-        baseUrl: "https://old-jelly.example/v1",
-        apiKeyMasked: "old-…-key",
-      },
-    });
-    expect(first.models.filter((model) => model.provider === "jellytoken")).toHaveLength(9);
-    expect((await (await sync("add")).json()).added).toBe(0);
   });
 
   it("adding new models brings back only the presets the table lacks, with their promotions, and moves nothing else", async () => {

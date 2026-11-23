@@ -231,12 +231,15 @@
   --ui-tracking-mono: normal;
   --ui-tracking-label: normal;
 
-  /* ---- Motion: bouncy cartoon spatial spring without blur ---- */
+  /* ---- Motion: bouncy cartoon spatial spring without blur; a change of page has none ---- */
   --ui-dur-enter: 320ms;
   --ui-ease-enter: linear(0, 0.276, 0.707, 0.989, 1.09, 1.082, 1.041, 1.008, 0.993, 0.991, 1);
   --ui-enter-shift: 10px;
   --ui-enter-scale: 0.92;
   --ui-enter-blur: 0px;
+  --ui-page-duration: 0ms;
+  --ui-page-enter: none;
+  --ui-page-exit: none;
   --ui-reveal-blur: 0px;
 
   /* ---- Icons: bold 1.7 round marker stroke + rich 0.32 duotone fill in 9 kawaii sticker hues ---- */

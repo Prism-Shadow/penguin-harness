@@ -45,12 +45,11 @@ import {
   Input,
   RuledSection,
   Select,
-  SkeletonList,
   ToggleRow,
+  Waiting,
   useUnsavedChanges,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -61,6 +60,7 @@ import { APPROVAL_MODES } from "../chat";
 import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 export const AGENT_API_DOCS_URL = "https://penguin.ooo/docs/agent-api";
 
@@ -371,7 +371,7 @@ export interface ApiTabViewProps {
   agentRef: string;
   /** The name typed for a new key; null while no key is being made. */
   draftName: string | null;
-  draftError?: string;
+  draftError?: ReactNode;
   /** A just-created key's secret, until Done; null otherwise. */
   secret: string | null;
   sessionSettings: ReactNode;
@@ -556,14 +556,14 @@ export function ApiTab({
   );
   const [settings, setSettings] = useState<AgentApiSettings | null>(null);
   // Only the initial load failure renders inline; writes report via toast.
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ReactNode>(null);
   const [serverEnabled, setServerEnabled] = useState(true);
   const [busy, setBusy] = useState(false);
   const [confirmOff, setConfirmOff] = useState(false);
   const [confirmKeyless, setConfirmKeyless] = useState(false);
   const [deleting, setDeleting] = useState<AgentApiKeyInfo | null>(null);
   const [draftName, setDraftName] = useState<string | null>(null);
-  const [draftError, setDraftError] = useState<string | undefined>(undefined);
+  const [draftError, setDraftError] = useState<ReactNode>(undefined);
   const [secret, setSecret] = useState<string | null>(null);
   /** Drops the name typed for a new key: Cancel, Esc, and what a confirmed leave runs. */
   const dropDraft = () => {
@@ -585,7 +585,8 @@ export function ApiTab({
         setServerEnabled(res.serverEnabled);
       },
       (e: unknown) => {
-        if (!cancelled) setLoadError(apiErrorText(e));
+        if (cancelled) return;
+        setLoadError(failureNode(e, { what: "an Agent's API settings could not be loaded" }));
       },
     );
     return () => {
@@ -623,14 +624,14 @@ export function ApiTab({
       setDraftName(null);
       setDraftError(undefined);
     } catch (e) {
-      setDraftError(apiErrorText(e));
+      setDraftError(failureNode(e, { what: "an Agent API key could not be created" }));
     } finally {
       setBusy(false);
     }
   };
 
   if (loadError !== null) return <p className={`text-sm ${toneInk.danger}`}>{loadError}</p>;
-  if (settings === null) return <SkeletonList rows={3} />;
+  if (settings === null) return <Waiting rows={3} />;
 
   return (
     <>

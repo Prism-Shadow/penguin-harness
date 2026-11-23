@@ -1,23 +1,21 @@
 /**
- * The tab strip's view of an Agent's workbenches.
+ * An Agent's workbench pages as the Web shows them: in the App Center's window (opened from the
+ * App Center or the sidebar's app list, switched in the window's title bar when there are
+ * several) and as the full page.
  *
- * A tab is a CONTRIBUTION: a workbench's manifest puts an entry into `WebModule.sessionTabs`
- * for each page it wants beside the chat — several, or none for a handler-only workbench —
- * and the server hands them over with each page's URL resolved. `uiRev`, the content hash
- * of the workbench's `ui/` tree, is only the cache key an open tab compares to notice its
- * page changed under it (the iframe reloads on a new one). A tab whose renderer this build
- * does not carry is left out: there is nothing to draw it with.
- *
- * Chat is not one of these. It is always present and always reachable, so a workbench tab
- * disappearing (folder removed, Agent switched) falls back to Chat rather than leaving
- * the strip pointing at nothing.
+ * A page is a CONTRIBUTION: a workbench's manifest puts an entry into `WebModule.sessionTabs`
+ * for each page it has — several, or none for a handler-only workbench — and the server hands
+ * them over with each page's URL resolved. The slot keeps its name, so no installed manifest has
+ * to change. `uiRev`, the content hash of the workbench's `ui/` tree, is only the cache key an
+ * open page compares to notice it changed under it (the iframe reloads on a new one). A page
+ * whose renderer this build does not carry is left out: there is nothing to draw it with.
  */
 import { useEffect } from "react";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "./server-context";
 
 export interface WorkbenchTab {
-  /** `<workbenchId>/<key>`: what the strip selects by. */
+  /** `<workbenchId>/<key>`: what a frame keys its page on. */
   tabId: string;
   workbenchId: string;
   /** The contribution's key, unique within its workbench; the fourth segment of the full-page route. */
@@ -26,6 +24,7 @@ export interface WorkbenchTab {
   titleZh?: string;
   /** Where the page is served from — through the machine's connection when the workbench lives on one. */
   src: string;
+  pointerLock?: true;
   /** The machine whose server holds the workbench (the Agent's Session runs there); null = this server. */
   machineId: string | null;
   /** The workbench's package name, for the frame's bar. */
@@ -46,6 +45,7 @@ export interface WorkbenchTab {
 export const WORKBENCH_UPDATED_EVENT = "penguin:workbench-updated";
 
 export interface WorkbenchUpdatedDetail {
+  machineId?: string | null;
   projectId: string;
   agentId: string;
 }
@@ -68,27 +68,6 @@ export function workbenchesBase(projectId: string, agentId: string): string {
 /** A tab's page, keyed on the UI revision so a changed page is a new URL. */
 export function workbenchUiUrl(tab: Pick<WorkbenchTab, "src" | "uiRev">): string {
   return `${tab.src}${tab.src.includes("?") ? "&" : "?"}rev=${tab.uiRev}`;
-}
-
-/**
- * A workbench the reader would otherwise never hear about: it contributes no tab, so nothing
- * of it can appear in the strip, and yet the server has something to say about it — the load
- * failed, or it loaded and the harness noticed the pages go nowhere (`hints`). A workbench
- * that HAS tabs carries its error on them instead, on the tab itself.
- *
- * The author is an Agent and reads `.build/status.json`, but the person watching the chat
- * page has only this.
- */
-export interface WorkbenchNotice {
-  workbenchId: string;
-  error: string | null;
-  hints: readonly string[];
-}
-
-export function workbenchNoticesOf(workbenches: readonly WorkbenchInfo[]): WorkbenchNotice[] {
-  return workbenches
-    .filter((w) => w.tabs.length === 0 && (w.error !== null || (w.hints ?? []).length > 0))
-    .map((w) => ({ workbenchId: w.id, error: w.error, hints: w.hints ?? [] }));
 }
 
 /**
@@ -121,6 +100,7 @@ export function workbenchTabsOf(
               title: tab.title,
               ...(tab.titleZh === undefined ? {} : { titleZh: tab.titleZh }),
               src: apiUrl(tab.renderer.iframe.src, machineId),
+              ...(tab.renderer.iframe.pointerLock === true ? { pointerLock: true as const } : {}),
               machineId,
               name: w.name,
               version: w.version,
@@ -134,19 +114,11 @@ export function workbenchTabsOf(
   );
 }
 
-/** Which tab to show after the list changed: the active one if it still exists, else Chat. */
-export function settleActiveTab(
-  active: string | null,
-  tabs: readonly WorkbenchTab[],
-): string | null {
-  return active !== null && tabs.some((t) => t.tabId === active) ? active : null;
-}
-
 /**
- * The route that shows one workbench page as the whole app (no sidebar, no chat, no tab
- * strip): what `penguin web --app <project>/<agent>/<workbench>[/<tab>]` opens, and what a
- * tab's "fill the app" action navigates to. Without a tab key the workbench's first tab is
- * shown. The command palette is the way out.
+ * The route that shows one workbench page as the whole app (no sidebar, no chat): what
+ * `penguin web --app <project>/<agent>/<workbench>[/<tab>]` opens, and what a window's "Open
+ * full screen" navigates to. Without a tab key the workbench's first page is shown. The exit
+ * button and the command palette are the way out.
  */
 export function workbenchAppPath(
   projectId: string,
@@ -173,6 +145,15 @@ export function appPageTab(
 
 /** A page's own request to fill the app, posted to its parent: `{ type: "penguin:fill-app" }`. */
 export const FILL_APP_MESSAGE = "penguin:fill-app";
+
+/**
+ * A page's question about a chat model, posted to its parent by the page SDK's
+ * `chooseChatModel()` / `getChatModel()`: `{ type, id, op: "choose" | "get", current }`. The app
+ * answers on the same id with {@link CHAT_MODEL_REPLY}: `{ accepted: true }` at once, then
+ * `{ model }` (null when none was chosen) or `{ error }`.
+ */
+export const CHAT_MODEL_MESSAGE = "penguin:chat-model";
+export const CHAT_MODEL_REPLY = "penguin:chat-model-reply";
 
 /** The main app's manifest, the literal the template ships and what leaving the page restores. */
 export const MAIN_MANIFEST_HREF = "/manifest.webmanifest";

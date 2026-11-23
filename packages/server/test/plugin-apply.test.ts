@@ -20,9 +20,9 @@ import type { LoadedPlugin } from "../src/plugin/host.js";
 /** A data root whose one Project asks for these specifiers. */
 async function rootAsking(specifiers: string[]): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), "penguin-apply-"));
-  await mkdir(path.join(root, "p1"), { recursive: true });
+  await mkdir(path.join(root, "projects", "p1"), { recursive: true });
   await writeFile(
-    path.join(root, "p1", ".project_config.toml"),
+    path.join(root, "projects", "p1", ".project_config.toml"),
     `models = []\n[plugins]\n${specifiers.map((s) => `${JSON.stringify(s)} = "*"`).join("\n")}\n`,
     "utf8",
   );

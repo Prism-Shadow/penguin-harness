@@ -6,6 +6,16 @@
  * never overwrites existing config. The default Project gets a support Agent with its workbench;
  * other Projects do not, and reprovisioning preserves user edits to the support files. The shipped
  * library's own preinstalled set is the server suite's (builtin-agents.test.ts there).
+ *
+ * The system Agent (PRFC-0033):
+ * - Given any Project, when it is provisioned, then it holds `system_agent` with the `system: true`
+ *   key and no plugin, and it is a built-in Agent.
+ * - Given a Project made before the system Agent, when it is given one, then it has it, and a
+ *   second time changes nothing.
+ * - Given an Agent the user already named `system_agent`, when the Project is provisioned, then
+ *   that Agent stays an ordinary one, byte for byte, and is not reported as built in (C1 b).
+ * - Given the system Agent, when its config is reset to the defaults, then it is still the
+ *   system Agent.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -13,15 +23,23 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { librarySkill, loadPreinstalledPlugins, usePushedPluginLibrary } from "../src/index.js";
 import {
+  agentDir,
   agentsMdPath,
   assembleSystemPrompt,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
   SUPPORT_AGENT_ID,
+  SYSTEM_AGENT_ID,
+  isBuiltinAgent,
+  isSystemAgent,
+  listInstalledHooks,
   listInstalledSkills,
   loadAgentState,
   provisionProjectAgents,
+  provisionSystemAgent,
+  resetSystemConfigToDefaults,
   skillsDir,
+  systemConfigPath,
 } from "../src/state/index.js";
 import { libraryHost, pluginPackage, skillFile } from "./helpers/plugin-packages.js";
 
@@ -127,7 +145,7 @@ describe("Skill installation policy", () => {
 describe("provisionProjectAgents", () => {
   it("default_agent installs the library's preinstalled Skills, AGENTS.md is empty", async () => {
     const ids = await provisionProjectAgents();
-    expect(ids).toEqual([DEFAULT_AGENT_ID, SUPPORT_AGENT_ID]);
+    expect(ids).toEqual([DEFAULT_AGENT_ID, SUPPORT_AGENT_ID, SYSTEM_AGENT_ID]);
 
     // name/description are written into system_config; AGENTS.md is an empty file.
     const state = await loadAgentState({ init: {}, agentId: DEFAULT_AGENT_ID });
@@ -145,7 +163,7 @@ describe("provisionProjectAgents", () => {
   it("provision is idempotent: running it again does not change the result", async () => {
     await provisionProjectAgents();
     const ids = await provisionProjectAgents();
-    expect(ids).toEqual([DEFAULT_AGENT_ID, SUPPORT_AGENT_ID]);
+    expect(ids).toEqual([DEFAULT_AGENT_ID, SUPPORT_AGENT_ID, SYSTEM_AGENT_ID]);
     const md = await fs.readFile(
       agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
       "utf8",
@@ -173,7 +191,7 @@ describe("provisionProjectAgents", () => {
 describe("support Agent provisioning", () => {
   it("seeds the default Project's editable workbench once and preserves user edits", async () => {
     await provisionProjectAgents();
-    const base = path.join(tmpRoot, DEFAULT_PROJECT_ID, "agents", SUPPORT_AGENT_ID);
+    const base = agentDir(tmpRoot, DEFAULT_PROJECT_ID, SUPPORT_AGENT_ID);
     const file = path.join(base, "agent_state/workbenches/support/ui/index.html");
     expect((await fs.readFile(file, "utf8")).length).toBeGreaterThan(0);
     const config = await loadAgentState({ agentId: SUPPORT_AGENT_ID });
@@ -190,6 +208,55 @@ describe("support Agent provisioning", () => {
     await expect(
       fs.stat(path.join(tmpRoot, "team/agents", SUPPORT_AGENT_ID)),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+describe("system Agent provisioning", () => {
+  const configOf = (projectId: string) =>
+    fs.readFile(systemConfigPath(tmpRoot, projectId, SYSTEM_AGENT_ID), "utf8");
+
+  it("every Project gets the system Agent with its key and no plugin, built in", async () => {
+    expect(await provisionProjectAgents({ root: tmpRoot, projectId: "team" })).toEqual([
+      DEFAULT_AGENT_ID,
+      SYSTEM_AGENT_ID,
+    ]);
+    const state = await loadAgentState({ projectId: "team", agentId: SYSTEM_AGENT_ID });
+    expect(state.systemConfig.system).toBe(true);
+    expect(await listInstalledSkills(tmpRoot, "team", SYSTEM_AGENT_ID)).toEqual([]);
+    expect(await listInstalledHooks(tmpRoot, "team", SYSTEM_AGENT_ID)).toEqual([]);
+    expect(await isSystemAgent(tmpRoot, "team", SYSTEM_AGENT_ID)).toBe(true);
+    expect(await isBuiltinAgent(tmpRoot, "team", SYSTEM_AGENT_ID)).toBe(true);
+  });
+
+  it("a Project made before the system Agent gets one, and a second time changes nothing", async () => {
+    await loadAgentState({ init: {}, projectId: "old", agentId: DEFAULT_AGENT_ID });
+    expect(await isSystemAgent(tmpRoot, "old", SYSTEM_AGENT_ID)).toBe(false);
+
+    expect(await provisionSystemAgent({ root: tmpRoot, projectId: "old" })).toBe(true);
+    const first = await configOf("old");
+    expect(await provisionSystemAgent({ root: tmpRoot, projectId: "old" })).toBe(true);
+    expect(await configOf("old")).toBe(first);
+    expect(await isSystemAgent(tmpRoot, "old", SYSTEM_AGENT_ID)).toBe(true);
+  });
+
+  it("an Agent the user already named system_agent stays theirs, untouched (C1 b)", async () => {
+    await loadAgentState({ init: { preset: { name: "Mine" } }, agentId: SYSTEM_AGENT_ID });
+    const before = await configOf(DEFAULT_PROJECT_ID);
+
+    expect(await provisionProjectAgents()).toEqual([DEFAULT_AGENT_ID, SUPPORT_AGENT_ID]);
+    expect(await provisionSystemAgent()).toBe(false);
+
+    expect(await configOf(DEFAULT_PROJECT_ID)).toBe(before);
+    expect(await isSystemAgent(tmpRoot, DEFAULT_PROJECT_ID, SYSTEM_AGENT_ID)).toBe(false);
+    expect(await isBuiltinAgent(tmpRoot, DEFAULT_PROJECT_ID, SYSTEM_AGENT_ID)).toBe(false);
+    expect(await isBuiltinAgent(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID)).toBe(true);
+  });
+
+  it("resetting the system Agent's config to the defaults keeps it the system Agent", async () => {
+    await provisionSystemAgent();
+    const next = await resetSystemConfigToDefaults(tmpRoot, DEFAULT_PROJECT_ID, SYSTEM_AGENT_ID);
+    expect(next.system).toBe(true);
+    expect(await isSystemAgent(tmpRoot, DEFAULT_PROJECT_ID, SYSTEM_AGENT_ID)).toBe(true);
   });
 });
 

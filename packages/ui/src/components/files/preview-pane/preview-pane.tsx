@@ -28,7 +28,7 @@ import { CodeSurface } from "../../content/code-block/code-block";
 import { MarkdownReader } from "../../content/markdown-reader/markdown-reader";
 import type { MarkdownReaderState } from "../../content/markdown-reader/markdown-reader";
 import { EmptyState } from "../../feedback/empty-state/empty-state";
-import { SkeletonList } from "../../feedback/skeleton/skeleton";
+import { Waiting } from "../../feedback/waiting/waiting";
 import { ZoomableImage } from "../../overlays/lightbox/lightbox";
 
 /** What the pane draws. */
@@ -39,7 +39,8 @@ export type PreviewView =
   | { kind: "opening" }
   /** Part of the file's view is still loading (a page's source fetched on demand). */
   | { kind: "loading" }
-  | { kind: "error"; message: string }
+  /** The failure's words, and 「[报告问题]」 after them for a failure (`FailureText`). */
+  | { kind: "error"; message: ReactNode }
   /** `reloadKey` remounts the image when the file is re-read under the same URL. */
   | { kind: "image"; src: string; alt: string; reloadKey?: Key }
   | { kind: "pdf"; src: string; title: string; reloadKey?: Key }
@@ -103,7 +104,7 @@ function TruncatedNote({ note, source }: { note: string | undefined; source: boo
 function viewBody(view: PreviewView): ReactNode {
   switch (view.kind) {
     case "loading":
-      return <SkeletonList rows={6} />;
+      return <Waiting rows={6} />;
     case "error":
       return <p className="text-sm text-tone-danger-fg">{view.message}</p>;
     case "image":
@@ -169,7 +170,7 @@ export function PreviewPane({
   if (view.kind === "empty") {
     content = <EmptyState title={view.title} action={view.action} />;
   } else if (view.kind === "opening") {
-    content = <SkeletonList rows={6} />;
+    content = <Waiting rows={6} />;
   } else if (view.kind === "markdown" && !given(editor)) {
     content = (
       <>

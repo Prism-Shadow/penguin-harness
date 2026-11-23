@@ -1,7 +1,7 @@
 ---
 name: trace-rsi-toolkit
 description: "Evolve a modular skill bank with TRACE from Actor trajectories and Curator distillation, and select a checkpoint by training scores."
-version: 2026.11.17.1
+version: 2026.11.20.1
 ---
 
 # TRACE

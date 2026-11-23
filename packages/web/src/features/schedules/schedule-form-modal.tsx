@@ -19,7 +19,7 @@
  * field's error shows once it differs from what the dialog opened with (an untouched one has its
  * asterisk). A rejection from the server lands under the form, and the dialog stays open.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   ModelInfo,
   ModelRefDto,
@@ -45,13 +45,13 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { ModelCatalogSelect } from "../model-picker";
 import { WorkspaceSelect } from "../workspace";
 import { sameModelRef } from "../models";
 import { itemModelRef } from "./schedule-upsert";
+import { failureNode } from "../../lib/failure";
 
 /** ISO → the date-and-time picker's value (local timezone, minute precision); "" when missing/invalid. */
 function toLocalInput(iso: string | undefined): string {
@@ -283,7 +283,7 @@ function ScheduleFormDialog({
   /** The machine the Agent lives on (null: this server): its models, Workspaces and tasks. */
   const machineId = useAgentLocation();
   // A submit rejection that isn't attributable to one field, under the form.
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   // Model dropdown data; a load failure doesn't block the form — falling back to "Project default" is fine.
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -301,6 +301,10 @@ function ScheduleFormDialog({
   const form = draft.draft;
   const requestClose = useGuardedClose(onClose, draft.scope, { locked: busy });
   const missing = missingFields(form);
+  // A task that names no model runs on the Project's default: with none, it must name one (the
+  // server refuses it too, 400 no_default_model).
+  const needsModel =
+    form.target === "new" && models.length > 0 && defaultModel === null && form.model === null;
   /** A required field's error, once the field differs from what the dialog opened with. */
   const requiredError = (field: "name" | "prompt" | "startAt" | "sessionId") =>
     missing.has(field) && form[field] !== draft.baseline[field]
@@ -334,7 +338,7 @@ function ScheduleFormDialog({
   };
 
   const submit = async () => {
-    if (!projectId || !draft.dirty || missing.size > 0 || busy) return;
+    if (!projectId || !draft.dirty || missing.size > 0 || needsModel || busy) return;
     setFormError(null);
     const name = form.editing ?? form.name.trim();
     // Empty-string keys are always omitted; target is one of two choices — sessionId is
@@ -370,7 +374,7 @@ function ScheduleFormDialog({
       onSaved();
     } catch (e) {
       // A 400 (validated with the same rules as hand-written files) isn't tied to one field — show it under the form.
-      setFormError(apiErrorText(e));
+      setFormError(failureNode(e, { what: "a scheduled task could not be saved" }));
     } finally {
       setBusy(false);
     }
@@ -392,7 +396,7 @@ function ScheduleFormDialog({
           <Button
             size="sm"
             variant="primary"
-            disabled={!draft.dirty || missing.size > 0 || busy}
+            disabled={!draft.dirty || missing.size > 0 || needsModel || busy}
             onClick={() => void submit()}
           >
             {form.editing !== null ? S.common.save : S.common.create}
@@ -483,14 +487,18 @@ function ScheduleFormDialog({
                   <div>
                     <FieldLabel>{S.schedule.model}</FieldLabel>
                     {models.length > 0 ? (
-                      <ModelCatalogSelect
-                        models={models}
-                        value={form.model ?? defaultModel}
-                        {...(defaultModel ? { defaultModel } : {})}
-                        onChange={(ref) => set({ model: ref })}
-                        disabled={busy}
-                        variant="form"
-                      />
+                      <>
+                        <ModelCatalogSelect
+                          models={models}
+                          value={form.model ?? defaultModel}
+                          {...(defaultModel ? { defaultModel } : {})}
+                          onChange={(ref) => set({ model: ref })}
+                          disabled={busy}
+                          variant="form"
+                          emptyLabel={S.voice.unbound}
+                        />
+                        {needsModel && <FieldError>{S.schedule.modelRequired}</FieldError>}
+                      </>
                     ) : (
                       <p className="text-xs text-gray-400">{S.schedule.modelDefault}</p>
                     )}

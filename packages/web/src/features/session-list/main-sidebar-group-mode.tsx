@@ -13,10 +13,10 @@ import { loadGroupOrder } from "./group-order";
 import { initialGroupMode, type GroupMode } from "../../components/ui/group-list";
 
 import { loadGroupSet } from "../../lib/main-sidebar-persistence";
-import type { useMainSidebarNavCollapsed } from "./main-sidebar-nav-collapsed";
+import type { useMainSidebarSessions } from "./main-sidebar-sessions";
 
 /** Consecutive live main statements 37..48, called once in original hook order. */
-export function useMainSidebarGroupMode(scope: ReturnType<typeof useMainSidebarNavCollapsed>) {
+export function useMainSidebarGroupMode(scope: ReturnType<typeof useMainSidebarSessions>) {
   const { currentProjectId, collapseStoreKey, pinStoreKey } = scope;
 
   /** Grouping mode of the Session list (Workspace by default; the choice persists across sessions). */

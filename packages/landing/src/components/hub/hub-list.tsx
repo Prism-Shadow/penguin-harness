@@ -4,8 +4,11 @@
  * facets (a side column from 1024 px, rows above the list below it) and the cards. The query, the facets and the order live
  * in the URL, so a filtered list can be linked and Back restores it; the scroll is noted on every
  * click inside the page, so Back returns to it too (lib/hub/back.ts).
+ *
+ * A page may put a `lead` above its filters and may lay the shown items out in a list of
+ * its own (`wrapList`, the Plugins page's cover grid); by default they are cards in two columns.
  */
-import { useEffect, useMemo } from "react";
+import { Fragment, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import { SearchIcon, SiteSegmented, XIcon } from "@prismshadow/penguin-ui/site";
@@ -38,11 +41,14 @@ export function HubList<T>({
   facets,
   sorts = [],
   renderItem,
+  wrapList,
+  lead,
+  controls,
 }: {
   title: string;
   /** One line under the title: what the list holds. */
-  description: string;
-  source: { href: string; label: string };
+  description?: string;
+  source?: { href: string; label: string };
   items: readonly T[];
   keyOf: (item: T) => string;
   texts: (item: T) => readonly (string | undefined)[];
@@ -50,6 +56,12 @@ export function HubList<T>({
   /** The first is the default; one or none shows no control. */
   sorts?: readonly HubSort<T>[];
   renderItem: (item: T) => ReactNode;
+  /** Lays the shown items out — `renderItem`'s, keyed, in order — in the page's own list. */
+  wrapList?: (items: ReactNode[]) => ReactNode;
+  /** Editorial content independent of the results. */
+  lead?: ReactNode;
+  /** Extra list controls beside the sort, when this catalogue has them. */
+  controls?: ReactNode;
 }) {
   const [params, setParams] = useSearchParams();
   const { key } = useLocation();
@@ -73,6 +85,10 @@ export function HubList<T>({
   const shown = filterItems(items, options);
   if (sort) shown.sort(sort.compare);
   const filtered = query !== "" || offered.some((facet) => (selection[facet.id] ?? []).length > 0);
+  // A three-way order is wide: beside it the search keeps room for its placeholder, and on a
+  // phone it takes a line of its own. A two-way order leaves the row as it was.
+  const searchWidth =
+    sorts.length > 2 ? "min-w-48 sm:w-80 sm:flex-none" : "min-w-0 sm:w-56 sm:flex-none";
 
   const update = (change: (next: URLSearchParams) => void) =>
     setParams(
@@ -140,27 +156,32 @@ export function HubList<T>({
   return (
     <ExternalLinkScope>
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+        {lead && <div className="mb-6">{lead}</div>}
         <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {title}
-              <span className="ml-2 text-base font-normal text-gray-500 tabular-nums dark:text-gray-400">
-                {items.length}
-              </span>
-            </h1>
-            <p className="mt-1.5 text-sm text-gray-600 dark:text-gray-400">{description}</p>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {S.hub.source}{" "}
-              <ExternalLink
-                href={source.href}
-                className="text-gray-900 underline decoration-gray-300 underline-offset-4 hover:decoration-gray-500 dark:text-gray-100 dark:decoration-gray-700"
-              >
-                {source.label}
-              </ExternalLink>
-            </p>
-          </div>
+          {description && source ? (
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {title}
+                <span className="ml-2 text-base font-normal text-gray-500 tabular-nums dark:text-gray-400">
+                  {items.length}
+                </span>
+              </h1>
+              <p className="mt-1.5 text-sm text-gray-600 dark:text-gray-400">{description}</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {S.hub.source}{" "}
+                <ExternalLink
+                  href={source.href}
+                  className="text-gray-900 underline decoration-gray-300 underline-offset-4 hover:decoration-gray-500 dark:text-gray-100 dark:decoration-gray-700"
+                >
+                  {source.label}
+                </ExternalLink>
+              </p>
+            </div>
+          ) : (
+            <h1 className="sr-only">{title}</h1>
+          )}
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <label className="relative min-w-0 flex-1 sm:w-56 sm:flex-none">
+            <label className={`relative flex-1 ${searchWidth}`}>
               <span className="sr-only">{S.hub.searchPlaceholder}</span>
               <SearchIcon
                 aria-hidden
@@ -197,6 +218,7 @@ export function HubList<T>({
                 }
               />
             )}
+            {controls}
           </div>
         </header>
 
@@ -216,6 +238,10 @@ export function HubList<T>({
                   </button>
                 )}
               </div>
+            ) : wrapList ? (
+              wrapList(
+                shown.map((item) => <Fragment key={keyOf(item)}>{renderItem(item)}</Fragment>),
+              )
             ) : (
               // One shrinkable column on a phone: a card's long title is cut, never widening the page.
               <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">

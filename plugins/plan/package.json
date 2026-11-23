@@ -1,0 +1,35 @@
+{
+  "name": "@penguinharness/plan",
+  "version": "0.2.18",
+  "description": "Discuss goals, trade-offs and architecture before implementing a task.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "hooks"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/plan"
+  },
+  "files": [
+    "icon.svg",
+    "hooks",
+    "ifaces.json",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
+  }
+}

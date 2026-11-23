@@ -36,11 +36,12 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
-import { originRule } from "./http/public-origin.js";
-import { attachExtensionWebSocket } from "./builtin-browser/extension-ws.js";
-import type { ExtensionGate } from "./builtin-browser/extension-ws.js";
+import { originRule } from "@prismshadow/penguin-library-http/public-origin";
+import { attachUpgradeSeam, platformUpgradeDeps } from "./hmr/upgrade-seam.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { migrateDataRoot as migrateRootLayout } from "./layout/migrate-data-root.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { Errors } from "@prismshadow/penguin-library-observability";
@@ -60,6 +61,8 @@ async function main(): Promise<void> {
   server.readConfig();
   await server.ensureSoleInstance();
   server.listen();
+  // The data root's layout, before anything reads a Project of it: the lock is held from here.
+  await server.migrateDataRoot();
   // Reconcile only after this process owns the root (the lock was acquired in listen):
   // a start that lost the ownership race exits at ensureSoleInstance before touching the
   // root, so a reconciling copy can never interleave with a live server's push — the
@@ -219,6 +222,37 @@ class PenguinServer {
   }
 
   /**
+   * The data root's one-time layout migration (core's state/layout-migration/, PRFC-0034):
+   * Project folders into `projects/`, Benchmarks into the Evaluation Center's data folder. Run
+   * once the listener is up — the lock is this process's then (onListening) — and before the
+   * platform, so before every route, runtime, file watcher and the plugin loader; meanwhile the
+   * port answers the starting response. web.db is opened for it alone, to rewrite the paths it
+   * stores, and closed again. The platform runs the same migration before it builds anything,
+   * which finds nothing left to do here (layout/migrate-data-root.ts).
+   *
+   * A migration that stops ends the start: its sentence (a Project called `projects`, a folder
+   * that cannot be moved) is printed as an `Error:` line, which the desktop app's start dialog
+   * and a machine's start failure show, and the process exits without serving.
+   */
+  async migrateDataRoot(): Promise<void> {
+    await this.bound;
+    let failure: unknown = null;
+    const db = openDatabase(this.config.dbPath);
+    try {
+      await migrateRootLayout(this.config.root, db, (line) => console.log(line));
+    } catch (err) {
+      failure = err;
+    } finally {
+      db.close();
+    }
+    if (failure === null) return;
+    const name = failure instanceof Error ? failure.name : "Error";
+    console.error(`${name}: ${failure instanceof Error ? failure.message : String(failure)}`);
+    this.cleanupInstanceFiles();
+    process.exit(EXIT_LAYOUT_MIGRATION);
+  }
+
+  /**
    * A SHIM, since the platform loads its own (plugin/loader.ts's loadPluginHost, called from
    * the platform's create()). Which plugins a deployment runs, and how that list is read, is
    * policy — it ships by push, and a machine whose program predates a new rule must still
@@ -294,25 +328,20 @@ class PenguinServer {
 
   /**
    * Assembles the layer's middleware and routes; from here the listening port answers
-   * with them. The terminal stream is a WebSocket upgrade, which never reaches the fetch
-   * handler — it is bound on each Node listener here, once the platform it asks exists.
+   * with them. The terminal stream and the contributed WebSocket endpoints are upgrades, which
+   * never reach the fetch handler — they are bound on each Node listener here, once the
+   * platform they ask exists.
    */
   buildApp(): void {
     this.app = createApp(this.deps);
     attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
-    attachExtensionWebSocket(
-      this.httpServer as unknown as HttpServer,
-      this.extensionWebSocketDeps(),
-    );
+    attachUpgradeSeam(this.httpServer as unknown as HttpServer, this.upgradeSeamDeps());
     if (this.ipv6Loopback !== null) {
       attachTerminalWebSocket(
         this.ipv6Loopback as unknown as HttpServer,
         this.terminalWebSocketDeps(),
       );
-      attachExtensionWebSocket(
-        this.ipv6Loopback as unknown as HttpServer,
-        this.extensionWebSocketDeps(),
-      );
+      attachUpgradeSeam(this.ipv6Loopback as unknown as HttpServer, this.upgradeSeamDeps());
     }
   }
 
@@ -529,30 +558,17 @@ class PenguinServer {
     // loopback opened after buildApp() (never in practice) gets it here.
     if (this.app !== undefined) {
       attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
-      attachExtensionWebSocket(loopback as unknown as HttpServer, this.extensionWebSocketDeps());
+      attachUpgradeSeam(loopback as unknown as HttpServer, this.upgradeSeamDeps());
     }
   }
 
   /**
-   * The Chrome extension's WebSocket wiring, beside the terminal's on every listener: the
-   * upgrade is checked here, and the socket handed to the current generation's browser module.
+   * The contributed WebSocket endpoints' wiring, beside the terminal's on every listener: each
+   * upgrade goes to the current generation's HTTP surface (`HttpModule.upgrades`), and to the
+   * extension's legacy gate when that generation predates the slot (hmr/upgrade-seam.ts).
    */
-  private extensionWebSocketDeps() {
-    const hmr = this.deps.hmr;
-    return {
-      gate: async (): Promise<ExtensionGate | null> => {
-        const platform = await hmr.ensure();
-        const tree = typeof platform.api.business === "function" ? platform.api.business() : null;
-        if (tree === null || !tree.has("BuiltinBrowserModule")) return null;
-        try {
-          return tree.api<ExtensionGate>("BuiltinBrowserModule", "BrowserExtensionGate");
-        } catch {
-          // A pushed platform from before the extension: no gate, so the upgrade is a 503.
-          return null;
-        }
-      },
-      log: (line: string) => console.log(line),
-    };
+  private upgradeSeamDeps() {
+    return platformUpgradeDeps(this.deps.hmr, (line: string) => console.log(line));
   }
 
   /** Terminal WebSocket wiring, shared by every listener this process opens. */
@@ -629,6 +645,9 @@ const EXIT_ALREADY_RUNNING = 3;
 
 /** Exit code for a Node below the floor (core's node-floor.ts): a plain failure. */
 const EXIT_NODE_BELOW_FLOOR = 1;
+
+/** Exit code for a data root whose layout migration stopped (layout/migrate-data-root.ts). */
+const EXIT_LAYOUT_MIGRATION = 4;
 
 /** Port announcement (PENGUIN_PORT_FILE): tmp + rename, so a polling reader never sees a partial write. */
 function writePortFile(file: string, port: number): void {

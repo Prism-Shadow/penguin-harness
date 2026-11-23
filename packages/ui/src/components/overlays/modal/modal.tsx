@@ -18,13 +18,17 @@
 import { useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
+import { ICON_GAP } from "../../../icon-scale";
 import { CloseButton } from "../../actions/close-button/close-button";
 import { useDialogLayer } from "../esc-layers/esc-layers";
+import { InfoPopover } from "../info-popover/info-popover";
 
 export interface ModalProps {
   open: boolean;
   /** Dialog name: rendered as the header bar and used to name the dialog, or (headerless) exposed as the panel's aria-label only. */
   title: string;
+  /** What the dialog is for, behind a "?" beside the title (not with `headerless`). */
+  titleInfo?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
@@ -48,6 +52,7 @@ export interface ModalProps {
 export function Modal({
   open,
   title,
+  titleInfo,
   onClose,
   children,
   footer,
@@ -95,8 +100,12 @@ export function Modal({
             data-slot="head"
             className="flex items-center justify-between border-b border-line px-4 py-3"
           >
-            <h2 id={titleId} className="text-base font-semibold">
+            <h2
+              id={titleId}
+              className={`flex min-w-0 items-center ${ICON_GAP.row} text-base font-semibold`}
+            >
               {title}
+              {titleInfo !== undefined && <InfoPopover label={title}>{titleInfo}</InfoPopover>}
             </h2>
             <CloseButton onClose={onClose} label={closeLabel} />
           </div>

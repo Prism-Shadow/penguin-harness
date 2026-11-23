@@ -34,6 +34,7 @@ import {
   VERSION,
   effectivePluginTable,
   loadProjectConfig,
+  projectsDir,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord, ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
 import type {
@@ -198,6 +199,7 @@ function localModelsOf(config: ProjectConfig): LocalModels {
     ...(config.providers !== undefined ? { providers: config.providers } : {}),
     ...(config.default_model !== undefined ? { defaultModel: config.default_model } : {}),
     ...(config.vision_model !== undefined ? { visionModel: config.vision_model } : {}),
+    ...(config.tools !== undefined ? { toolModels: config.tools } : {}),
     ...(config.name !== undefined ? { name: config.name } : {}),
   };
 }
@@ -878,12 +880,16 @@ export class MachinesService {
     this.#changed();
   }
 
-  /** Every Project on this server that uses a given machine — who its credentials belong to. */
+  /**
+   * Every Project on this server that uses a given machine — who its credentials belong to. The
+   * Projects are the real folders where they are kept; a link left where one used to be is not
+   * another Project.
+   */
   #projectsUsing(address: string): string[] {
     let dirs: string[] = [];
     try {
       dirs = fs
-        .readdirSync(this.dataRoot, { withFileTypes: true })
+        .readdirSync(projectsDir(this.dataRoot), { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name);
     } catch {

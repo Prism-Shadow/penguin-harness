@@ -20,12 +20,13 @@
  * Opening the chat hands the source over, so the draft is forgotten before the page moves to the
  * conversation.
  */
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 
 import type { AgentSummary, BenchmarkSummary } from "@prismshadow/penguin-server/api";
 import {
   Button,
   ConfirmModal,
+  FailureText,
   HiddenFileInput,
   InfoPopover,
   Modal,
@@ -35,21 +36,22 @@ import {
   toastSuccess,
   useFormDraft,
   useGuardedClose,
+  type Failure,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { agentDisplayName } from "../../state/project";
 import { AiExamples, PromptFold, pickDefaultAgent, useAiBridge } from "../ai-create";
 import { benchmarkImportChat, buildBenchmarkImportPrompt } from "./benchmark-import-prompt";
+import { failureOf } from "../../lib/failure";
 
 /** What one upload came to: written, refused for a taken id (the confirm's question), or refused with a reason to show. */
 export type ArchiveUploadResult =
   | { kind: "imported"; benchmark: BenchmarkSummary }
   | { kind: "exists"; benchmarkId: string }
-  | { kind: "refused"; message: string };
+  | { kind: "refused"; failure: Failure };
 
 /**
  * Posts one zip to the import route. A 409 `benchmark_exists` is the question the overwrite
@@ -71,7 +73,10 @@ export async function uploadBenchmarkArchive(
     if (e instanceof ApiError && e.status === 409 && e.code === "benchmark_exists") {
       return { kind: "exists", benchmarkId: e.details?.benchmarkId ?? options.fallbackId };
     }
-    return { kind: "refused", message: apiErrorText(e) };
+    return {
+      kind: "refused",
+      failure: failureOf(e, { what: "a Benchmark archive could not be imported" }),
+    };
   }
 }
 
@@ -86,11 +91,14 @@ const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");
 
 export function ImportBenchmarkModal({
   projectId,
+  benchmarksDir,
   agents,
   onClose,
   onImported,
 }: {
   projectId: string;
+  /** The folder the Project's Benchmarks are in, as the prompt names it (benchmark-prompts.ts). */
+  benchmarksDir: string;
   agents: readonly AgentSummary[];
   onClose: () => void;
   /** A zip was written: the Benchmark as the list now reads it. The dialog has toasted it already. */
@@ -101,7 +109,7 @@ export function ImportBenchmarkModal({
   const form = useFormDraft<string>("", { normalize: (text) => text.trim() });
   const source = form.draft;
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<ReactNode>(null);
   // A refusal lands under the upload button, at the foot of a dialog whose body may scroll — an
   // overwrite refused while the Benchmark is being evaluated among them: bring it into view.
   const uploadErrorRef = useRef<HTMLParagraphElement>(null);
@@ -118,9 +126,10 @@ export function ImportBenchmarkModal({
   const chatPrompt = buildBenchmarkImportPrompt(
     trimmedSource || S.benchmark.importSourceToken,
     projectId,
+    benchmarksDir,
   );
   const executor = pickDefaultAgent(agents);
-  const chat = benchmarkImportChat(trimmedSource, projectId, agents);
+  const chat = benchmarkImportChat(trimmedSource, projectId, benchmarksDir, agents);
 
   const openChat = () => {
     if (chat === null) return;
@@ -144,7 +153,7 @@ export function ImportBenchmarkModal({
       setOverwriting({ dataBase64, benchmarkId: result.benchmarkId });
     } else {
       setOverwriting(null);
-      setUploadError(result.message);
+      setUploadError(<FailureText failure={result.failure} />);
     }
   };
 

@@ -170,12 +170,14 @@ function Metric({ label, value, strong }: { label: string; value: string; strong
  */
 function askParams(
   benchmarkId: string,
+  benchmarkDir: string,
   evaluation: BenchmarkEvaluation,
   labelText: string,
   currency: Currency,
 ): AskEvaluationParams {
   return {
     benchmarkId,
+    benchmarkDir,
     time: formatDateTime(evaluation.time),
     label: labelText,
     version: evaluation.version,
@@ -199,6 +201,7 @@ function askParams(
 
 export function EvaluationDetailModal({
   benchmarkId,
+  benchmarkDir,
   evaluation,
   avatarSrc,
   caseTitles,
@@ -206,6 +209,8 @@ export function EvaluationDetailModal({
   onClose,
 }: {
   benchmarkId: string;
+  /** The Benchmark's folder the question names (benchmark-prompts.ts's benchmarkFolder). */
+  benchmarkDir: string;
   evaluation: BenchmarkEvaluation;
   /** The tested Agent's own picture, when it has one (lib/agent-avatar.ts). */
   avatarSrc: string | undefined;
@@ -383,7 +388,9 @@ export function EvaluationDetailModal({
           description={S.benchmark.askEvaluationDescription}
           question={S.benchmark.askEvaluationExamples.explain.prompt}
           examples={askEvaluationExamples()}
-          tail={askEvaluationTail(askParams(benchmarkId, evaluation, labelText, currency))}
+          tail={askEvaluationTail(
+            askParams(benchmarkId, benchmarkDir, evaluation, labelText, currency),
+          )}
         />
       )}
     </>

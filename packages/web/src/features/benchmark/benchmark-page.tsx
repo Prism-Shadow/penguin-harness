@@ -12,7 +12,7 @@
  * creating one, any member may import one (benchmark-import-modal.tsx): through an Agent from a
  * repository folder, or from a package zip.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import type {
   AgentSummary,
@@ -36,13 +36,14 @@ import {
   Select,
   Skeleton,
   SkeletonCard,
+  Waiting,
   Sparkline,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { cardBodyClick } from "../../lib/card-open";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
@@ -60,13 +61,18 @@ import {
   matchesBenchmarkQuery,
   sparklineSeries,
 } from "./benchmark-metrics";
-import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompts";
+import {
+  benchmarkCreateExamples,
+  benchmarkCreateTail,
+  benchmarksFolder,
+} from "./benchmark-prompts";
 import { ImportBenchmarkModal } from "./benchmark-import-modal";
 import { benchmarkRoute } from "./benchmark-route";
 import { useBenchmarksAcross } from "./benchmark-sources";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** The Skills a design conversation is opened with (see the create modal below). */
 const BENCHMARK_DESIGN_SKILLS = ["benchmark-design", "agent-evaluation"];
@@ -375,7 +381,7 @@ export function BenchmarkCard({
 /** Card-shaped placeholders, so nothing shifts when the fetch lands. */
 function CardSkeletons({ rows }: { rows: number }) {
   return (
-    <div className="space-y-3">
+    <Waiting className="space-y-3">
       {Array.from({ length: rows }, (_, i) => (
         <SkeletonCard key={i} className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
           <div className="min-w-[14rem] flex-1">
@@ -387,7 +393,7 @@ function CardSkeletons({ rows }: { rows: number }) {
           <Skeleton className="h-8 w-44" />
         </SkeletonCard>
       ))}
-    </div>
+    </Waiting>
   );
 }
 
@@ -423,7 +429,14 @@ export function BenchmarkPage() {
   // flight. A machine that connects re-asks, with the cards on screen kept.
   const listed = useBenchmarksAcross(projectId, machineIds, reload);
   const benchmarks = listed.benchmarks;
-  const error = listed.error === null ? null : apiErrorText(listed.error);
+  // Made once per failure, so its report keeps the time it failed at.
+  const error = useMemo(
+    () =>
+      listed.error === null
+        ? null
+        : failureNode(listed.error, { what: "a Project's Benchmarks could not be listed" }),
+    [listed.error],
+  );
 
   // The Project's models, for the Use dialog's conversation-model picker; a failure just
   // leaves the picker at the Project default.
@@ -611,7 +624,9 @@ export function BenchmarkPage() {
         // `[use_skills]` block names them on send: the designer's own, and the evaluator it has
         // to delegate every trial evaluation to. An agent that lacks one keeps its list short.
         skills={BENCHMARK_DESIGN_SKILLS}
-        {...(aiTarget !== "" ? { tail: benchmarkCreateTail(aiTarget) } : {})}
+        {...(aiTarget !== ""
+          ? { tail: benchmarkCreateTail(aiTarget, benchmarksFolder(listed.dir)) }
+          : {})}
         intro={
           <Select
             size="sm"
@@ -620,7 +635,7 @@ export function BenchmarkPage() {
             value={aiTarget}
             onChange={(e) => setAiTarget(e.target.value)}
           >
-            {agents.map((a) => (
+            {agents.filter(isConversationAgent).map((a) => (
               <option key={a.agentId} value={a.agentId}>
                 {agentDisplayName(a)}
               </option>
@@ -637,6 +652,7 @@ export function BenchmarkPage() {
       {importOpen && (
         <ImportBenchmarkModal
           projectId={projectId}
+          benchmarksDir={benchmarksFolder(listed.dir)}
           agents={agents}
           onClose={() => setImportOpen(false)}
           // The list is read again whole: an overwrite replaced a card, and machines merge in.

@@ -32,7 +32,15 @@
  * with unsaved edits asks first. A reload of the tab's data moves what they are compared with
  * and keeps what is being typed.
  */
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type RefObject,
+  type ReactNode,
+} from "react";
 
 import type {
   MemoryFileInfo,
@@ -63,10 +71,10 @@ import {
   Notice,
   RadioGroup,
   Sheet,
-  SkeletonList,
   Textarea,
   ToggleRow,
   UploadIcon,
+  Waiting,
   bodyWithoutFrontmatter,
   buttonClass,
   languageForFileName,
@@ -79,7 +87,6 @@ import {
 
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatBytes, formatRelativeDate } from "../../lib/format";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
@@ -96,6 +103,7 @@ import {
 } from "./memory-transfer";
 import { toastApiError } from "../../lib/toast-api-error";
 import { downloadArchive } from "../../lib/archive-download";
+import { failureNode } from "../../lib/failure";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
@@ -194,7 +202,7 @@ export function MemoryTab({
   const [memoryDir, setMemoryDir] = useState("");
   const [groups, setGroups] = useState<ScopeGroup[] | null>(null);
   // Tab-level error is the initial load failure only; actions report via toast.
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [switchBusy, setSwitchBusy] = useState(false);
   const collapseKey =
     userId && projectId ? collapsedStoreKey(userId, projectId, agentKey(machineId, agentId)) : null;
@@ -250,9 +258,10 @@ export function MemoryTab({
     setCollapsed(next);
   };
 
+  // A read after a change refreshes in place: the groups on screen stay until the answer
+  // replaces them, so a delete or an import never drops the tab back to its wait.
   const load = useCallback(async () => {
     if (!projectId || !agentId) return;
-    setGroups(null);
     setError(null);
     try {
       const [overview, configView] = await Promise.all([
@@ -297,7 +306,7 @@ export function MemoryTab({
         ),
       );
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an Agent's memory could not be loaded" }));
     }
   }, [projectId, agentId, machineId, collapseKey]);
 
@@ -776,32 +785,39 @@ export function MemoryTab({
       {/* Tab-level description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
       <HelpFold label={S.agent.tabMemory}>{S.memory.desc}</HelpFold>
 
-      <ToggleRow
-        variant="card"
-        label={S.memory.enable}
-        checked={enabled}
-        onChange={(v) => void toggleEnabled(v)}
-        disabled={switchBusy}
-      />
-
-      {!templateHasMemory && (
-        <Notice
-          tone="attention"
-          variant="callout"
-          action={{ label: S.memory.insertPlaceholder, onClick: () => void insertPlaceholder() }}
-        >
-          {S.memory.templateMissing}
-        </Notice>
-      )}
-
+      {/* The switch, the notice, the groups and the prompts come from one read and arrive
+          together; until then the tab's one wait stands under the description, so no switch
+          flips and no prompt fills in after it is drawn. */}
       {groups === null ? (
-        <SkeletonList rows={4} />
+        <Waiting rows={4} />
       ) : (
-        <div className={enabled ? "space-y-4" : "space-y-4 opacity-60"}>
-          {groups.map(({ scope, files, orphanFiles }) => {
-            const open = !collapsed.has(scope.scopeKey);
-            return (
-              /* One collapsible section per scope: the head strip folds the group; the group's
+        <>
+          <ToggleRow
+            variant="card"
+            label={S.memory.enable}
+            checked={enabled}
+            onChange={(v) => void toggleEnabled(v)}
+            disabled={switchBusy}
+          />
+
+          {!templateHasMemory && (
+            <Notice
+              tone="attention"
+              variant="callout"
+              action={{
+                label: S.memory.insertPlaceholder,
+                onClick: () => void insertPlaceholder(),
+              }}
+            >
+              {S.memory.templateMissing}
+            </Notice>
+          )}
+
+          <div className={enabled ? "space-y-4" : "space-y-4 opacity-60"}>
+            {groups.map(({ scope, files, orphanFiles }) => {
+              const open = !collapsed.has(scope.scopeKey);
+              return (
+                /* One collapsible section per scope: the head strip folds the group; the group's
                  own actions sit after the toggle, outside it, since a button cannot hold
                  another. The section is a size container, not a viewport breakpoint: the
                  settings panel narrows independently of the window. Below @md the three action
@@ -810,160 +826,163 @@ export function MemoryTab({
                  tier (state/theme.tsx), so the threshold scales with the labels it measures. No
                  action is hidden at any width; each keeps its icon, an aria-label and a
                  tooltip. */
-              <CollapsibleSection
-                key={scope.scopeKey}
-                className="@container"
-                title={
-                  scope.kind === "workspace" && scope.workspacePath !== undefined ? (
-                    <>
-                      {scopeTitle(scope)}
-                      <span className="ml-2 font-mono text-xs font-normal text-gray-400 dark:text-gray-500">
-                        {scope.workspacePath}
-                      </span>
-                    </>
-                  ) : (
-                    scopeTitle(scope)
-                  )
-                }
-                meta={S.memory.itemCount(files.length)}
-                open={open}
-                onOpenChange={() => toggleCollapsed(scope.scopeKey)}
-                actions={
-                  /* Whole-group transfer, icon + label (the labels are what say which way a
+                <CollapsibleSection
+                  key={scope.scopeKey}
+                  className="@container"
+                  title={
+                    scope.kind === "workspace" && scope.workspacePath !== undefined ? (
+                      <>
+                        {scopeTitle(scope)}
+                        <span className="ml-2 font-mono text-xs font-normal text-gray-400 dark:text-gray-500">
+                          {scope.workspacePath}
+                        </span>
+                      </>
+                    ) : (
+                      scopeTitle(scope)
+                    )
+                  }
+                  meta={S.memory.itemCount(files.length)}
+                  open={open}
+                  onOpenChange={() => toggleCollapsed(scope.scopeKey)}
+                  actions={
+                    /* Whole-group transfer, icon + label (the labels are what say which way a
                      transfer goes, wherever the row is wide enough to keep them): export for any
                      member, import for the owner. The tooltip carries what the label cannot —
                      that the whole group travels — and on a narrow row, where the label is gone,
                      it carries the direction too, alongside the aria-label. */
-                  <>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      title={S.memory.exportScopeHint}
-                      data-tooltip-extra
-                      aria-label={S.memory.exportScopeLabel(scopeTitle(scope))}
-                      onClick={() => void exportScope(scope)}
-                    >
-                      <DownloadIcon size={13} />
-                      <span className="hidden @md:inline">{S.memory.exportScope}</span>
-                    </Button>
-                    {isOwner && (
-                      <label
-                        className={`${GHOST_LABEL_CLASS} shrink-0`}
-                        data-tooltip={S.memory.importScopeHint}
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title={S.memory.exportScopeHint}
                         data-tooltip-extra
-                        aria-label={S.memory.importScopeLabel(scopeTitle(scope))}
+                        aria-label={S.memory.exportScopeLabel(scopeTitle(scope))}
+                        onClick={() => void exportScope(scope)}
                       >
-                        <HiddenFileInput
-                          accept=".zip,application/zip,.json,application/json"
-                          onChange={(e) => void pickImport(scope, e)}
-                        />
-                        <UploadIcon size={13} />
-                        <span className="hidden @md:inline">{S.memory.importScope}</span>
-                      </label>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      title={S.memory.add}
-                      aria-label={S.memory.addScopeLabel(scopeTitle(scope))}
-                      onClick={() => openAdd(scope)}
-                    >
-                      <GlyphIcon d={ICONS.plus} size={13} />
-                      <span className="hidden @md:inline">{S.memory.add}</span>
-                    </Button>
-                  </>
-                }
-              >
-                {files.length === 0 && orphanFiles.length === 0 ? (
-                  <p className="px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
-                    {scope.kind === "user" ? S.memory.emptyUserScope : S.memory.emptyScope}
-                  </p>
-                ) : (
-                  <>
-                    {files.length > 0 && <ul>{files.map((file) => fileRow(scope, file))}</ul>}
-                    {orphanSection(scope, orphanFiles, files.length > 0)}
-                  </>
-                )}
-              </CollapsibleSection>
-            );
-          })}
-        </div>
+                        <DownloadIcon size={13} />
+                        <span className="hidden @md:inline">{S.memory.exportScope}</span>
+                      </Button>
+                      {isOwner && (
+                        <label
+                          className={`${GHOST_LABEL_CLASS} shrink-0`}
+                          data-tooltip={S.memory.importScopeHint}
+                          data-tooltip-extra
+                          aria-label={S.memory.importScopeLabel(scopeTitle(scope))}
+                        >
+                          <HiddenFileInput
+                            accept=".zip,application/zip,.json,application/json"
+                            onChange={(e) => void pickImport(scope, e)}
+                          />
+                          <UploadIcon size={13} />
+                          <span className="hidden @md:inline">{S.memory.importScope}</span>
+                        </label>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title={S.memory.add}
+                        aria-label={S.memory.addScopeLabel(scopeTitle(scope))}
+                        onClick={() => openAdd(scope)}
+                      >
+                        <GlyphIcon d={ICONS.plus} size={13} />
+                        <span className="hidden @md:inline">{S.memory.add}</span>
+                      </Button>
+                    </>
+                  }
+                >
+                  {files.length === 0 && orphanFiles.length === 0 ? (
+                    <p className="px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
+                      {scope.kind === "user" ? S.memory.emptyUserScope : S.memory.emptyScope}
+                    </p>
+                  ) : (
+                    <>
+                      {files.length > 0 && <ul>{files.map((file) => fileRow(scope, file))}</ul>}
+                      {orphanSection(scope, orphanFiles, files.length > 0)}
+                    </>
+                  )}
+                </CollapsibleSection>
+              );
+            })}
+          </div>
+        </>
       )}
 
-      <Card as="section" padding="md" className="space-y-3">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 dark:text-gray-200">
-          {S.memory.promptSection}
-          <InfoPopover label={S.memory.promptSection}>{S.memory.promptSectionHint}</InfoPopover>
-        </h3>
-        <Textarea
-          ref={mainPromptRef}
-          label={S.memory.promptLabel}
-          mono
-          size="sm"
-          rows={12}
-          value={prompts.draft.prompt}
-          onFocus={() => setLastPromptField("main")}
-          onChange={(e) => prompts.patch({ prompt: e.target.value })}
-        />
-        <Textarea
-          ref={workspacePromptRef}
-          label={S.memory.workspacePromptLabel}
-          mono
-          size="sm"
-          rows={6}
-          value={prompts.draft.workspace}
-          onFocus={() => setLastPromptField("workspace")}
-          onChange={(e) => prompts.patch({ workspace: e.target.value })}
-        />
-        {/* Placeholder reference, the Prompt tab's convention — a chip inserts into whichever field was focused last.
-            Inside the card it takes the step below the card's radius. */}
-        <div className="rounded-sm border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
-          <p className="mb-2 text-xs font-semibold text-gray-500">{S.agent.placeholdersTitle}</p>
-          <ul className="space-y-1">
-            {S.memory.promptPlaceholders.map(([token, desc]) => (
-              <li key={token} className="flex items-center gap-3 text-xs">
-                <button
-                  type="button"
-                  onClick={() =>
-                    lastPromptField === "main"
-                      ? insertPromptToken(
-                          mainPromptRef,
-                          prompts.draft.prompt,
-                          (prompt) => prompts.patch({ prompt }),
-                          token!,
-                        )
-                      : insertPromptToken(
-                          workspacePromptRef,
-                          prompts.draft.workspace,
-                          (workspace) => prompts.patch({ workspace }),
-                          token!,
-                        )
-                  }
-                  data-tooltip={S.memory.insertToken}
-                  data-tooltip-extra
-                  className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
-                >
-                  {token}
-                </button>
-                <span className="text-gray-500 dark:text-gray-400">{desc}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="flex justify-end gap-2">
-          <Button size="sm" disabled={!prompts.dirty || savingPrompts} onClick={prompts.reset}>
-            {S.common.reset}
-          </Button>
-          <Button
+      {groups !== null && (
+        <Card as="section" padding="md" className="space-y-3">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 dark:text-gray-200">
+            {S.memory.promptSection}
+            <InfoPopover label={S.memory.promptSection}>{S.memory.promptSectionHint}</InfoPopover>
+          </h3>
+          <Textarea
+            ref={mainPromptRef}
+            label={S.memory.promptLabel}
+            mono
             size="sm"
-            variant="primary"
-            disabled={storedPrompts === null || !prompts.dirty || savingPrompts}
-            onClick={() => void savePrompts()}
-          >
-            {S.common.save}
-          </Button>
-        </div>
-      </Card>
+            rows={12}
+            value={prompts.draft.prompt}
+            onFocus={() => setLastPromptField("main")}
+            onChange={(e) => prompts.patch({ prompt: e.target.value })}
+          />
+          <Textarea
+            ref={workspacePromptRef}
+            label={S.memory.workspacePromptLabel}
+            mono
+            size="sm"
+            rows={6}
+            value={prompts.draft.workspace}
+            onFocus={() => setLastPromptField("workspace")}
+            onChange={(e) => prompts.patch({ workspace: e.target.value })}
+          />
+          {/* Placeholder reference, the Prompt tab's convention — a chip inserts into whichever field was focused last.
+            Inside the card it takes the step below the card's radius. */}
+          <div className="rounded-sm border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
+            <p className="mb-2 text-xs font-semibold text-gray-500">{S.agent.placeholdersTitle}</p>
+            <ul className="space-y-1">
+              {S.memory.promptPlaceholders.map(([token, desc]) => (
+                <li key={token} className="flex items-center gap-3 text-xs">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      lastPromptField === "main"
+                        ? insertPromptToken(
+                            mainPromptRef,
+                            prompts.draft.prompt,
+                            (prompt) => prompts.patch({ prompt }),
+                            token!,
+                          )
+                        : insertPromptToken(
+                            workspacePromptRef,
+                            prompts.draft.workspace,
+                            (workspace) => prompts.patch({ workspace }),
+                            token!,
+                          )
+                    }
+                    data-tooltip={S.memory.insertToken}
+                    data-tooltip-extra
+                    className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
+                  >
+                    {token}
+                  </button>
+                  <span className="text-gray-500 dark:text-gray-400">{desc}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button size="sm" disabled={!prompts.dirty || savingPrompts} onClick={prompts.reset}>
+              {S.common.reset}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={storedPrompts === null || !prompts.dirty || savingPrompts}
+              onClick={() => void savePrompts()}
+            >
+              {S.common.save}
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* The view: a right Drawer on desktop, a bottom Sheet below the breakpoint (the same split
           as the chat page's panels — Sheet brings the grab handle, snap points and swipe-down).

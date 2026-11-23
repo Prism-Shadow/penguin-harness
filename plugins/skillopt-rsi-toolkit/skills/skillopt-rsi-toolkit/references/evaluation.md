@@ -6,12 +6,12 @@ Freeze the best accepted Skill after the learning budget, including accepted slo
 
 ## Run and collect
 
-Resolve the Project from the Environment's App Data Dir:
+Resolve the Project from the Environment's App Data Dir, and each Benchmark's folder from the request that names it:
 
 ```text
 TARGET    = <app_data_dir>/agents/<test_agent_id>
 STATE     = TARGET/agent_state
-BENCHMARK = <app_data_dir>/benchmarks/<benchmark_id>
+BENCHMARK = <the BENCHMARK_DIR the request names>   # when it names none: <app_data_dir>/agents/system_agent/app/data/benchmark/<benchmark_id>
 CASE      = BENCHMARK/<case_id>
 ```
 

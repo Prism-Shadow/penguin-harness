@@ -9,6 +9,9 @@
  * - When the reader opens it, the preview shows its head and tail around an ellipsis, the whole
  *   output is asked for by its ref, and once it has arrived the card shows it in place of the
  *   preview.
+ * - Given a work group in the Expanded display mode, the call is open from the start but nothing
+ *   is fetched: the mode opened it, not the reader. "Load the full text" asks for the whole.
+ * - Given a work group in Standard, the reader opening the step asks for the whole.
  */
 import { createElement as h, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,14 +19,17 @@ import { assistantText, toolCall, toolCallOutput, userText } from "@prismshadow/
 import type { AmspRecord } from "@prismshadow/amsp";
 import type { HistoryMessage } from "@prismshadow/penguin-server/api";
 import { ElidedBodiesContext } from "../src/features/chat/elided-body";
+import { SessionWorkGroup } from "../src/features/chat/work-group";
 import type { StreamRenderContext } from "../src/features/chat/message-stream";
 import { SessionToolCall } from "../src/features/chat/tool-call-card";
 import { createStreamController } from "../src/lib/amsp/stream-controller";
 import type { StreamController } from "../src/lib/amsp/stream-controller";
 import { findToolCard } from "../src/lib/amsp/stream-model";
+import { S } from "../src/lib/strings";
 import { ThemeProvider } from "../src/state/theme";
-import { click, mount, run, unmountAll } from "./helpers/dom";
+import { button, click, mount, run, unmountAll } from "./helpers/dom";
 import { FakeHistoryStream } from "./helpers/history-stream";
+import { memoryStorage, stubLocalStorage } from "./helpers/storage";
 
 beforeEach(() => {
   // jsdom has no `matchMedia`; the theme asks it for the system's light or dark.
@@ -52,8 +58,13 @@ const CTX: StreamRenderContext = {
   taskRunning: false,
 };
 
-/** A controller whose window holds one call with its output folded, and the page drawing it. */
-async function openWindow(): Promise<{ stream: FakeHistoryStream; container: HTMLElement }> {
+/**
+ * A controller whose window holds one call with its output folded, and the page drawing it: the
+ * call alone, or the work group it belongs to.
+ */
+async function openWindow(
+  shape: "call" | "group" = "call",
+): Promise<{ stream: FakeHistoryStream; container: HTMLElement }> {
   const stream = new FakeHistoryStream();
   const listeners = new Set<() => void>();
   const controller: StreamController = createStreamController({
@@ -105,7 +116,9 @@ async function openWindow(): Promise<{ stream: FakeHistoryStream; container: HTM
       h(
         ElidedBodiesContext.Provider,
         { value: { load: controller.loadBodies } },
-        h(SessionToolCall, { item: card, ctx: CTX }),
+        shape === "call"
+          ? h(SessionToolCall, { item: card, ctx: CTX })
+          : h(SessionWorkGroup, { items: [card], ctx: CTX, isLast: false }),
       ),
     );
   }
@@ -134,5 +147,23 @@ describe("unfolding a folded tool output", () => {
     });
     expect(container.textContent).toContain(WHOLE);
     expect(container.textContent).not.toContain(`${HEAD}\n…`);
+  });
+
+  it("opens the call in an Expanded group without fetching, and fetches when the reader asks", async () => {
+    stubLocalStorage(memoryStorage({ "penguin.activityDisplayMode": "expanded" }));
+    const { stream, container } = await openWindow("group");
+    expect(container.textContent).toContain(`${HEAD}\n…\n${TAIL}`);
+    expect(stream.bodies).toHaveLength(0);
+    await click(button(S.chat.historyTransfer.bodyLoad));
+    expect(stream.bodies.map((b) => b.ref)).toEqual(["r-1"]);
+  });
+
+  it("fetches when the reader opens the step of a Standard group", async () => {
+    stubLocalStorage(memoryStorage());
+    const { stream, container } = await openWindow("group");
+    await click(container.querySelector("button[data-group-header]")!);
+    expect(stream.bodies).toHaveLength(0);
+    await click(container.querySelector('.ui-tree button[aria-expanded="false"]')!);
+    expect(stream.bodies.map((b) => b.ref)).toEqual(["r-1"]);
   });
 });

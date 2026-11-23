@@ -17,7 +17,6 @@
  * order. Storage stays out of this module: the caller loads the array and passes it in.
  */
 import {
-  MODEL_CATALOG,
   MODEL_PROVIDERS,
   catalogEntryFor,
   offPeakAt,
@@ -41,6 +40,18 @@ export function sameModelRef(
   b: ModelRefValue | null | undefined,
 ): boolean {
   return !!a && !!b && a.provider === b.provider && a.modelId === b.modelId;
+}
+
+/**
+ * The model a new chat starts on: the Project's default, when it names a chat model of the table.
+ * Nothing otherwise — a Project with no default (a new one starts with none) leaves the new chat
+ * without a model until one is chosen, rather than running it on whichever model is listed first.
+ */
+export function defaultChatModel<T extends ModelRefValue & { chatEligible?: boolean }>(
+  models: readonly T[],
+  preferred: ModelRefValue | null | undefined,
+): T | undefined {
+  return models.find((m) => m.chatEligible !== false && sameModelRef(m, preferred));
 }
 
 /** Minimal row shape needed for grouping/filtering (models-page's RowState and the DTO's ModelInfo are both supersets of this). */
@@ -99,22 +110,6 @@ export interface ProviderGroup<T extends ModelRowLike> {
   rows: T[];
 }
 
-// Only providers that publish a display order have a rank table. Unlisted project rows trail
-// their presets in the same relative order they had in the project.
-const catalogRanks = new Map(
-  MODEL_PROVIDERS.filter((p) => p.catalogOrder).map((p) => [
-    p.id,
-    new Map(MODEL_CATALOG.filter((m) => m.provider === p.id).map((m, i) => [m.modelId, i])),
-  ]),
-);
-
-export function catalogOrderedRows<T extends ModelRowLike>(rows: readonly T[]): T[] {
-  const ranks = rows[0] && catalogRanks.get(rows[0].provider);
-  if (!ranks) return [...rows];
-  const rank = (m: T) => ranks.get(m.modelId) ?? ranks.size;
-  return [...rows].sort((a, b) => rank(a) - rank(b));
-}
-
 /**
  * Filter + group by vendor; rows within a group keep their original order (the models page
  * then orders each group by that group's sort, model-sort.ts; the chat model picker keeps
@@ -151,17 +146,14 @@ export function groupModelRows<T extends ModelRowLike>(
  * Flattens the library grouping into one ordered list (the chat model picker uses this):
  * rows ordered exactly as the model page shows them — built-in provider groups in
  * MODEL_PROVIDERS order (custom last), then user-defined groups, with `groupOrder` applied
- * on top; project row order is preserved unless the group publishes a catalog order.
- * Passing the page's stored order here is what keeps
+ * on top; in-group row order preserved. Passing the page's stored order here is what keeps
  * "exactly as the model page shows them" true once a user has dragged their groups.
  */
 export function orderModelsLikeLibrary<T extends ModelRowLike>(
   rows: T[],
   groupOrder: readonly string[] = [],
 ): T[] {
-  return groupModelRows(rows, "", groupOrder).flatMap((g) =>
-    g.provider.catalogOrder ? catalogOrderedRows(g.rows) : g.rows,
-  );
+  return groupModelRows(rows, "", groupOrder).flatMap((g) => g.rows);
 }
 
 /**
@@ -179,6 +171,8 @@ export interface ModelCredentialRowLike extends ModelRowLike {
   envKeyMasked?: string;
   /** Where the key the row is used with comes from (GET /models' `effective`); its group's key included. */
   effective?: { apiKeySource: "model" | "provider" | "env" | "none" };
+  /** False for a tool model (GET /models): an image, speech or web model, never a chat candidate. */
+  chatEligible?: boolean;
 }
 
 /**
@@ -399,19 +393,29 @@ export interface VisibleChatModelsOptions {
   defaultModel?: ModelRefValue | null;
   /** The models page's stored group order; omitted = the catalog's automatic order. */
   groupOrder?: readonly string[];
+  /**
+   * The list is a tool binding's candidates (an image, speech or web operation), not chat's:
+   * the tool models stay in it.
+   */
+  tools?: boolean;
 }
 
 /**
- * Candidate list for the chat model picker: library order → keep only models with a key
- * (hasConfiguredKey: its own, its group's or env-backed; plus the selected and the default model, unless
- * showAll) → the query then filters whatever is visible. When NO model has a key, the filter
- * degrades to showAll (everything listed), so the picker is never uselessly empty.
+ * Candidate list for the chat model picker: library order → drop the tool models (an image,
+ * speech or web model the catalog marks, which cannot hold a conversation) unless one is the
+ * selected model or the list is a tool binding's (`tools`) → keep only models with a key (hasConfiguredKey: its own, its group's or
+ * env-backed; plus the selected and the default model, unless showAll) → the query then filters
+ * whatever is visible. When NO model has a key, the filter degrades to showAll (everything
+ * listed), so the picker is never uselessly empty.
  */
 export function visibleChatModels<T extends ModelCredentialRowLike>(
   models: T[],
-  { showAll, query, selected, defaultModel, groupOrder }: VisibleChatModelsOptions,
+  { showAll, query, selected, defaultModel, groupOrder, tools }: VisibleChatModelsOptions,
 ): T[] {
-  const ordered = orderModelsLikeLibrary(models, groupOrder);
+  const ordered = orderModelsLikeLibrary(
+    tools ? models : models.filter((m) => m.chatEligible !== false || sameModelRef(m, selected)),
+    groupOrder,
+  );
   const keep =
     showAll || !ordered.some(hasConfiguredKey)
       ? ordered

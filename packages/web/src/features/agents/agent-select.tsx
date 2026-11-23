@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { AgentAvatar, GlyphIcon, ICON_SIZE, ICONS, PickerDialog } from "@prismshadow/penguin-ui";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
@@ -18,7 +18,8 @@ export function AgentSelect({
   agents: AgentSummary[];
   selected: AgentSummary | null;
   onSelect: (agent: AgentSummary) => void;
-  empty: string;
+  /** Said when there are no Agents: why, with 「[报告问题]」 when they could not be read. */
+  empty: ReactNode;
   /** The machine `agents` lives on, for their pictures; null for this server. */
   machineId?: string | null;
 }) {

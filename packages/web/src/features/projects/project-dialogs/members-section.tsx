@@ -1,17 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { MemberInfo } from "@prismshadow/penguin-server/api";
-import { Badge, Button, ConfirmModal, Input } from "@prismshadow/penguin-ui";
+import { Badge, Button, ConfirmModal, Input, Waiting } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
 import { toastApiError } from "../../../lib/toast-api-error";
 import { useAuth } from "../../../state/auth";
+import { failureNode } from "../../../lib/failure";
 
 export function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
   const { user } = useAuth();
   const [members, setMembers] = useState<MemberInfo[] | null>(null);
   const [newMemberId, setNewMemberId] = useState("");
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ReactNode>(null);
   /** The member whose removal awaits confirmation: it revokes their access at once. */
   const [removing, setRemoving] = useState<string | null>(null);
 
@@ -25,7 +25,9 @@ export function MembersSection({ projectId, isOwner }: { projectId: string; isOw
         if (!cancelled) setMembers(res.members);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setLoadError(apiErrorText(e));
+        if (!cancelled) {
+          setLoadError(failureNode(e, { what: "a Project's members could not be listed" }));
+        }
       });
     return () => {
       cancelled = true;
@@ -55,7 +57,7 @@ export function MembersSection({ projectId, isOwner }: { projectId: string; isOw
   };
 
   if (loadError) return <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>;
-  if (members === null) return <p className="text-xs text-gray-400">{S.common.loading}</p>;
+  if (members === null) return <Waiting rows={3} />;
   return (
     // Member permission table: username / role / actions; cells never wrap. Last row
     // (owner only) = add member: small username input + add button (new members are

@@ -25,7 +25,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FocusEvent, HTMLAttributes, ReactNode } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
-import { SkeletonList } from "../../feedback/skeleton/skeleton";
+import { Waiting } from "../../feedback/waiting/waiting";
 import { SearchInput } from "../../forms/search-input/search-input";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
@@ -48,8 +48,8 @@ export interface TreePaneProps extends Omit<HTMLAttributes<HTMLDivElement>, "chi
   search: TreePaneSearch;
   /** The header's actions, after the search box. */
   actions?: ReactNode;
-  /** The listing failed: said in place of the tree. */
-  error?: string | null;
+  /** The listing failed: said in place of the tree (its words, and 「[报告问题]」 for a failure). */
+  error?: ReactNode;
   /** The first listing is on its way. */
   loading?: boolean;
   /** Waiting for an answer that decides what the tree shows: said in place of it. */
@@ -156,7 +156,7 @@ export function TreePane({
       {error !== null ? (
         <p className="px-3 py-3 text-sm text-tone-danger-fg">{error}</p>
       ) : loading ? (
-        <SkeletonList rows={6} />
+        <Waiting rows={6} />
       ) : pending !== null ? (
         <p className="px-3 py-3 text-xs text-fg-subtle">{pending}</p>
       ) : (

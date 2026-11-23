@@ -355,7 +355,7 @@
      enters in three frames over 120ms and leaves in two over 60ms, with no slide, no scale and
      no blur; an appended chunk or row is simply there (a zero reveal — a streaming reply is
      paced by the typewriter below instead); the sidebar's width jumps through four steps;
-     the live signals tick. */
+     the live signals tick. A change of page has no motion: the next page is simply there. */
   --ui-dur-fast: 120ms;
   --ui-dur-base: 150ms;
   --ui-dur-slow: 260ms;
@@ -372,6 +372,9 @@
   --ui-enter-shift: 0px;
   --ui-enter-scale: 1;
   --ui-enter-blur: 0px;
+  --ui-page-duration: 0ms;
+  --ui-page-enter: none;
+  --ui-page-exit: none;
   --ui-dur-reveal: 0ms;
   --ui-reveal-blur: 0px;
   --ui-dur-layout: 160ms;

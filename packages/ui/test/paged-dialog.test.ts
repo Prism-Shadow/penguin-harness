@@ -2,7 +2,8 @@
  * PagedDialog (src/components/overlays/paged-dialog/paged-dialog.tsx): a dialog with a page rail.
  * The rail is a named navigation whose active row is the current page, group headings appear only
  * when there is more than one group and set on the eyebrow rung, the rail glyphs are decorative,
- * and the pane heading is the active page's label with its "?" when the page explains itself.
+ * and the pane heading is the active page's label with its "?" when the page explains itself. A
+ * page's count sits at the end of its row, which then carries the name that includes it.
  */
 import { createElement } from "react";
 import type { ReactNode } from "react";
@@ -51,6 +52,20 @@ describe("PagedDialog", () => {
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-label="Settings"');
     expect(html).toMatch(/<nav aria-label="Settings"/);
+  });
+
+  it("ends a row with its page's count, under a name that says it", () => {
+    const counted = GROUPS.map((group) => ({
+      ...group,
+      items: group.items.map((item) =>
+        item.key === "account"
+          ? { ...item, badge: createElement("span", null, "3"), ariaLabel: "Account, 3 waiting" }
+          : item,
+      ),
+    }));
+    expect(dialog(counted, "general")).toMatch(
+      /<button[^>]*aria-label="Account, 3 waiting"[^>]*>.*Account.*<span>3<\/span><\/span><\/button>/s,
+    );
   });
 
   it("marks the active page as the current one, and only it", () => {

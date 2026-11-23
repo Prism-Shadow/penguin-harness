@@ -12,7 +12,7 @@
  * | `project`   | none (admin)         | `_`          | `^[a-z][a-z0-9_]{1,63}$`                 |
  * | `project`   | `<username>-` (user) | `_`          | `<username>-[a-z0-9_]+`, 64 at most      |
  * | `agent`     | none                 | `_`          | `^[a-z][a-z0-9_]{1,63}$`                 |
- * | `benchmark` | none                 | `-`          | letters, digits, `_` and `-`; 100 at most |
+ * | contributed | none                 | `-`          | letters, digits, `_` and `-`; 100 at most |
  *
  * The organization's and the channel's prefix says what an id names and makes every core a
  * valid id; a core that already carries it is not prefixed twice. A non-admin's Project id
@@ -29,9 +29,9 @@
  * `placeholderSemanticId` is the floor — a valid, dated, obviously-temporary id, so the dialog
  * is never left with nothing to put in the box.
  */
-import { isValidId } from "@prismshadow/penguin-core";
+import { isValidId, RESERVED_PROJECT_IDS } from "@prismshadow/penguin-core";
 import type { SemanticIdKind } from "../api/types.js";
-import { PROJECT_ID_MAX_LENGTH, PROJECT_SUFFIX_PATTERN, SEMANTIC_ID_PATTERN } from "./ids.js";
+import { isNewSemanticId, PROJECT_ID_MAX_LENGTH, PROJECT_SUFFIX_PATTERN } from "./ids.js";
 
 /** What a kind's id looks like: everything the generator, the sanitizer and the prompt need. */
 export interface SemanticIdRule {
@@ -49,7 +49,7 @@ export interface SemanticIdRule {
   examples: string;
 }
 
-const snakeCaseId = (id: string): boolean => SEMANTIC_ID_PATTERN.test(id);
+const snakeCaseId = (id: string): boolean => isNewSemanticId(id);
 
 const SNAKE_EXAMPLES =
   "Plugin Marketplace → plugin_marketplace; 科研论文公司 → research_paper_lab; 市场推广 → marketing; Site → site.";
@@ -76,7 +76,7 @@ export const SEMANTIC_ID_RULES: Record<SemanticIdKind, SemanticIdRule> = {
     prefix: "",
     separator: "_",
     maxLength: 64,
-    accepts: snakeCaseId,
+    accepts: (id) => snakeCaseId(id) && !RESERVED_PROJECT_IDS.includes(id),
     noun: "project",
     examples:
       "Plugin Marketplace → plugin_marketplace; 科研论文项目 → research_papers; 官网改版 → website_redesign; Site → site.",
@@ -90,16 +90,25 @@ export const SEMANTIC_ID_RULES: Record<SemanticIdKind, SemanticIdRule> = {
     examples:
       "Report Writer → report_writer; 金融助手 → finance_copilot; 深度研究报告智能体 → deep_research_reporter; Notes → notes.",
   },
-  benchmark: {
+  benchmark: contributedIdRule("benchmark"),
+};
+
+/**
+ * The rule of a kind a server module contributes (services/semantic-id-kinds.ts): a kebab-case
+ * id of letters, digits, `_` and `-`, at most 100 (core's `isValidId`, which every folder-named
+ * object meets), its placeholder named after the kind. The Evaluation Center's Benchmarks are one.
+ */
+export function contributedIdRule(kind: string): SemanticIdRule {
+  return {
     prefix: "",
     separator: "-",
     maxLength: 64,
     accepts: (id) => id.length <= 100 && isValidId(id),
-    noun: "benchmark",
+    noun: kind,
     examples:
       "Report Writing → report-writing; 代码审查能力 → code-review; 深度研究 v2 → deep-research-v2; SQL → sql.",
-  },
-};
+  };
+}
 
 /**
  * A Project id as `userId` may create it: the admin's is a plain semantic id, anyone else's is

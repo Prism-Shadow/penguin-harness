@@ -1,4 +1,4 @@
-import type { WebAppPage } from "./page-table";
+import { routePathOf, type WebAppPage } from "./page-table";
 import { WebAppPagesProvider, useWebAppPages, useWebAppPagesPending } from "./contributions";
 /**
  * Router: /login is public; all other routes go through the RequireAuth guard (redirects to
@@ -43,6 +43,7 @@ import { useRuntimeLanguages } from "../lib/use-runtime-languages";
 import { ProjectProvider } from "../state/project";
 import { MachinesProvider } from "../state/machines";
 import { SessionsProvider } from "../state/sessions";
+import { withPageTransitions } from "./page-transitions";
 import { AppLayout } from "./app-layout";
 import { LoginPage } from "../pages/login";
 import { webAppDeps } from "./deps";
@@ -113,7 +114,8 @@ function RootFrame() {
 /** Every shell page, the company-mode ones included: a contributed page mounts both under the
  * organization (org-routes.tsx) and from the root, its rooted path (contributions.tsx). They stay
  * below the one data router and its leave guard; keep the router/history identity stable, so a
- * pending URL does not redirect before its page arrives. */
+ * pending URL does not redirect before its page arrives. A page that opens in the App Center's
+ * window answers every address under its path too (page-table.ts `routePathOf`). */
 export function ShellRoutes() {
   const pages = useWebAppPages();
   const pending = useWebAppPagesPending();
@@ -121,8 +123,12 @@ export function ShellRoutes() {
     <Routes>
       {pages
         .filter((page) => page.frame === "shell")
-        .map(({ id, path, Component }) => (
-          <Route key={id} path={path} element={path === "*" && pending ? null : <Component />} />
+        .map((page) => (
+          <Route
+            key={page.id}
+            path={routePathOf(page)}
+            element={page.path === "*" && pending ? null : <page.Component />}
+          />
         ))}
     </Routes>
   );
@@ -187,15 +193,33 @@ function appRoutes(pages: readonly WebAppPage[]) {
  */
 let browserRouter: ReturnType<typeof createBrowserRouter> | null = null;
 
+/** The page table as the shell routes on it now, contributed pages included (see LivePages). */
+let livePages: readonly WebAppPage[] = [];
+
+/** Keeps livePages current for the page transition, which runs outside React. */
+function LivePages() {
+  const pages = useWebAppPages();
+  useLayoutEffect(() => {
+    livePages = pages;
+  }, [pages]);
+  return null;
+}
+
 export interface AppRouterProps {
   initialPath?: string;
 }
 
 export function AppRouter({ initialPath }: AppRouterProps = {}) {
   const { pages } = webAppDeps.useDeps();
+  // withPageTransitions replaces this router's `navigate`: a navigation that changes the page
+  // asks for the theme's view transition (page-transitions.ts). A navigate that behaves
+  // differently from React Router's own starts there.
   const [router] = useState(() =>
     initialPath === undefined
-      ? (browserRouter ??= createBrowserRouter(appRoutes(pages)))
+      ? (browserRouter ??= withPageTransitions(
+          createBrowserRouter(appRoutes(pages)),
+          () => livePages,
+        ))
       : createMemoryRouter(appRoutes(pages), { initialEntries: [initialPath] }),
   );
   // A problem report names the page by its route's pattern, never by the ids in the address.
@@ -205,6 +229,7 @@ export function AppRouter({ initialPath }: AppRouterProps = {}) {
   }, [router]);
   return (
     <WebAppPagesProvider>
+      <LivePages />
       <RouterProvider router={router} />
     </WebAppPagesProvider>
   );

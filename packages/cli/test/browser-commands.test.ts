@@ -8,7 +8,10 @@
  * - `status` names the backend the user chose — the built-in browser, or their own Chrome with
  *   its name and the extension's version — and, when it cannot be driven, why and what to tell
  *   the user: Chrome not paired, not connected, or switched off by an admin. A server that names
- *   no backend gets the status alone.
+ *   no backend gets the status alone. A server that runs no browser module at all (its plugin's
+ *   server module stopped) gets, on any subcommand, one error line saying an administrator turns
+ *   it on; a server that predates the browser is told to update instead; a route's own 404 (a tab
+ *   the running browser does not know) stays what it is.
  * - Inside a session every call carries PENGUIN_SESSION_ID — in the body, or in the query of a
  *   GET or DELETE — so the server acts for the person driving the session (their Chrome).
  * - What only the built-in browser has (import, history), asked of the user's Chrome, says to
@@ -23,14 +26,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuiltinBrowserExecResult, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import { cli } from "../src/index.js";
 import {
-  getMessages,
+  browserEn,
+  browserZh,
   localMinute,
   RETURN_LIMIT,
   renderExec,
-} from "@prismshadow/penguin-server/cli";
+} from "@penguinharness/browser-automation/cli";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { FakeServer } from "./fake-server.js";
 
-const t = getMessages("en");
+// The bundle the browser's commands receive: the host's, with the browser module's own group.
+const t = { ...browserEn, ...getMessages("en") };
 const SESSION = "session-2026-09-24-10-00-00-b10b0001";
 
 let server: FakeServer;
@@ -253,6 +259,34 @@ describe("status and tabs", () => {
       `status: unavailable (no_window)\nnote: ${t.browser.unavailableHint("no_window")}\n`,
     );
     expect(out()).toContain("desktop app");
+  });
+
+  it.each([["status"], ["tabs"], ["scan"]])(
+    "%s exits 1 saying the browser is off when the server runs no browser module (its routes answer 404)",
+    async (command) => {
+      // No route is set: the fake server answers 404 not_found on every browser path, as a server
+      // without the plugin's server module does, and lists the modules it runs (none).
+      expect(await cli(["browser", command])).toBe(1);
+      expect(out()).toBe("");
+      const line = stderr.join("");
+      expect(line).toContain("browser_unavailable");
+      expect(line).toContain("Settings › Plugins");
+    },
+  );
+
+  it("says the server predates the browser when it lists no plugin modules at all", async () => {
+    server.contributions = {};
+    expect(await cli(["browser", "status"])).toBe(1);
+    const line = stderr.join("");
+    expect(line).toContain("browser_unavailable");
+    expect(line).not.toContain("Settings › Plugins");
+    expect(line).toContain("update PenguinHarness");
+  });
+
+  it("keeps a route's own 404 (a tab it does not know) when the browser is running", async () => {
+    routes["GET /status"] = () => ({ body: { available: true, tabs: [], activeTabId: null } });
+    expect(await cli(["browser", "scan", "--tab", "99"])).toBe(1);
+    expect(stderr.join("")).toContain("not_found");
   });
 
   it("tabs prints a table, and --json the response", async () => {
@@ -661,8 +695,15 @@ describe("import and history", () => {
     routes["POST /import"] = (body) => ({
       body: {
         sourceId: body?.sourceId,
-        cookies: { found: 45, imported: 43, skipped: 2, failed: 0 },
-        warnings: ["Skipped 2 cookies that could not be decrypted."],
+        browserName: "Chrome",
+        cookies: {
+          found: 45,
+          imported: 43,
+          skipped: 2,
+          failed: 0,
+          skips: [{ reason: "undecryptable", count: 2 }],
+        },
+        notes: [{ code: "store_busy", store: "history" }],
       },
     });
     const code = await cli([
@@ -687,7 +728,8 @@ describe("import and history", () => {
       [
         "source: chrome:Default",
         "cookies: 43 imported, 2 skipped, 0 failed (45 found)",
-        "warning: Skipped 2 cookies that could not be decrypted.",
+        "skipped: 2 that could not be decrypted",
+        "warning: Chrome is holding its history open; close Chrome and import again.",
         "",
       ].join("\n"),
     );
@@ -697,8 +739,9 @@ describe("import and history", () => {
     routes["POST /import"] = () => ({
       body: {
         sourceId: "firefox:ab12.default-release",
+        browserName: "Firefox",
         history: { found: 120, imported: 120 },
-        warnings: [],
+        notes: [],
       },
     });
     expect(await cli(["browser", "import", "--from", "firefox:ab12.default-release"])).toBe(0);
@@ -709,6 +752,27 @@ describe("import and history", () => {
     });
     expect(browserRequests().some((r) => r.path.endsWith("/import/sources"))).toBe(false);
     expect(out()).toBe("source: firefox:ab12.default-release\nhistory: 120 imported (120 found)\n");
+  });
+
+  it("--from names the connected Chrome extension by its id; a browser's name never picks it", async () => {
+    const extension = {
+      id: "chrome-extension",
+      browser: "chrome",
+      browserName: "Chrome",
+      profile: "Chrome 130 on Windows",
+      profileName: "Chrome 130 on Windows",
+      hasCookies: true,
+      hasHistory: false,
+      via: "extension",
+    };
+    routes["GET /import/sources"] = () => ({ body: { sources: [extension, SOURCES[0]] } });
+    routes["POST /import"] = (body) => ({
+      body: { sourceId: body?.sourceId, browserName: "Chrome", notes: [] },
+    });
+    expect(await cli(["browser", "import", "--from", "chrome-extension", "--cookies"])).toBe(0);
+    expect(lastBody()).toMatchObject({ sourceId: "chrome-extension" });
+    expect(await cli(["browser", "import", "--from", "chrome", "--cookies"])).toBe(0);
+    expect(lastBody()).toMatchObject({ sourceId: "chrome:Default" });
   });
 
   it("refuses an unknown browser, a missing mode, and both modes", async () => {
@@ -779,7 +843,9 @@ describe("the calling session", () => {
       "POST /tabs/15/activate": () => ({ body: { tab: GOOGLE } }),
       "POST /tabs/active/scan": () => ({ body: scan }),
       "POST /tabs/active/cdp": () => ({ body: { result: {} } }),
-      "POST /import": () => ({ body: { sourceId: "chrome:Default", warnings: [] } }),
+      "POST /import": () => ({
+        body: { sourceId: "chrome:Default", browserName: "Chrome", notes: [] },
+      }),
     });
     for (const args of [
       ["status"],
@@ -902,7 +968,7 @@ describe("errors", () => {
 
 describe("output in Chinese", () => {
   it("puts every figure of the load into the zh line, and every warning into one sentence", () => {
-    const zh = getMessages("zh");
+    const zh = { ...browserZh, ...getMessages("zh") };
     const memory = zh.browser.memoryLine("2.1 GB", 7, { free: "3.2 GB", total: "16.0 GB" });
     for (const figure of ["2.1 GB", "7", "3.2 GB", "16.0 GB"]) expect(memory).toContain(figure);
     // The first sentence (up to the full-width stop) carries each warning's own clause.
@@ -913,7 +979,7 @@ describe("output in Chinese", () => {
   });
 
   it("labels the exec lines in the zh dictionary", () => {
-    const zh = getMessages("zh");
+    const zh = { ...browserZh, ...getMessages("zh") };
     expect(
       renderExec(execResult({ value: 3, diff: { changed: 2 }, transients: ["已加入购物车"] }), zh, {
         alwaysReturn: true,

@@ -3,6 +3,10 @@
  * platform boots as children of its tree. Kept out of ./index.ts so the published
  * `@prismshadow/penguin-server/plugin` subpath stays types only.
  */
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { readPackageCard } from "@prismshadow/penguin-core";
+import type { IconImage } from "@prismshadow/penguin-core";
 import type { IfaceTable, ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
 import type { UnsatisfiedPlugin } from "../api/types.js";
 
@@ -119,6 +123,118 @@ export class PluginHost {
 
   /** Nothing to release at process exit: modules dispose with the App that created them. */
   dispose(): void {}
+}
+
+/**
+ * The names of the server modules plugins add to the generation `host` belongs to: every loaded
+ * plugin's modules and stand-ins, except those of a plugin this build left out
+ * (plugin/unsatisfied.ts). What `GET /api/contributions` lists as `modules`, so the Web App draws a
+ * plugin's web half only while its server half runs. Read when asked, not at boot: the host
+ * learns what was left out once the tree has booted.
+ */
+export function runningPluginModules(host: PluginHost): string[] {
+  // A host registered by a generation older than the record has none to give.
+  const unmet = typeof host.unsatisfied === "function" ? host.unsatisfied() : new Map();
+  return [...host.entries().values()]
+    .filter((plugin) => unmet.get(plugin.specifier)?.disabled !== true)
+    .flatMap((plugin) => [...plugin.modules, ...plugin.replaces].map((m) => m.manifest.name));
+}
+
+/**
+ * The package (its specifier) of the loaded plugin that adds `module` to the tree — one of its
+ * modules or stand-ins, or a child of one — or undefined for a module of the host's own. What a
+ * settings group declared by that module is said to belong to (the Settings dialog draws it on
+ * the plugin's page).
+ */
+export function pluginPackageOf(host: PluginHost, module: string): string | undefined {
+  const declares = (def: ModuleDef): boolean =>
+    def.manifest.name === module || (def.children ?? []).some(declares);
+  for (const plugin of host.entries().values()) {
+    if ([...plugin.modules, ...plugin.replaces].some(declares)) return plugin.specifier;
+  }
+  return undefined;
+}
+
+/**
+ * A loaded plugin's display name, from its card (`PluginLibraryModule.cards`, which any of its
+ * modules may contribute): what a page that names another plugin calls it. Undefined when the
+ * package is not loaded or carries no titled card.
+ */
+export function pluginTitleOf(
+  host: PluginHost,
+  specifier: string,
+): { title: string; titleZh?: string } | undefined {
+  const plugin = host.entries().get(specifier);
+  if (plugin === undefined) return undefined;
+  const walk = (def: ModuleDef): { title: string; titleZh?: string } | undefined => {
+    for (const card of def.manifest.contributes["PluginLibraryModule.cards"] ?? []) {
+      if (typeof card.title === "string") {
+        return {
+          title: card.title,
+          ...(typeof card.titleZh === "string" ? { titleZh: card.titleZh } : {}),
+        };
+      }
+    }
+    for (const child of def.children ?? []) {
+      const found = walk(child);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  for (const def of [...plugin.modules, ...plugin.replaces]) {
+    const found = walk(def);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/** What a loaded plugin's package says of itself on this machine: its npm version and its icon. */
+export interface PluginPackageDisplay {
+  version?: string;
+  icon?: IconImage;
+}
+
+const packageDisplays = new WeakMap<LoadedPlugin, PluginPackageDisplay>();
+
+/**
+ * A loaded plugin's package as this machine holds it: the version its package.json carries and its
+ * icon (the card's `icon`, else `icon.<ext>` at the package root; one that will not do is left
+ * out), read from the package its entry file was imported from — the nearest package.json above
+ * it — once per loaded plugin. What names the page of a plugin the plugin library does not list (a
+ * sandbox backend's) beside its card title. Empty when the package is not loaded, its entry file
+ * is not known, or nothing there reads.
+ */
+export function pluginPackageDisplayOf(host: PluginHost, specifier: string): PluginPackageDisplay {
+  const plugin = host.entries().get(specifier);
+  if (plugin === undefined) return {};
+  const known = packageDisplays.get(plugin);
+  if (known !== undefined) return known;
+  const display: PluginPackageDisplay = {};
+  const dir = plugin.file ? packageDirAbove(plugin.file) : null;
+  if (dir !== null) {
+    try {
+      const { version } = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8")) as {
+        version?: unknown;
+      };
+      if (typeof version === "string" && version !== "") display.version = version;
+    } catch {
+      // A package.json that will not parse names no version.
+    }
+    const { icon } = readPackageCard(dir);
+    if (icon !== undefined) display.icon = icon;
+  }
+  packageDisplays.set(plugin, display);
+  return display;
+}
+
+/** The directory of the nearest package.json above `file`, or null when there is none. */
+function packageDirAbove(file: string): string | null {
+  for (let dir = path.dirname(file); ;) {
+    if (existsSync(path.join(dir, "package.json"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
 }
 
 /**

@@ -21,7 +21,7 @@ In the sidebar, select **Models**. Models are listed in groups, one per provider
 - **Open and close groups.** Select a group's header to open or close it. On your first visit only the TokenDance group is open. The browser remembers which groups you opened, per Project.
 - **Reorder groups.** Drag a group's header to move it. The order is saved in this browser, per Project, and the model picker in the chat uses the same order. Dragging is not available on touch screens or while searching.
 - **Search.** Type in **Search models: id / name / provider** to show only the matching models. While you search, every matching group is open.
-- **Order within a group.** Groups other than JellyToken default to listing models by price, low to high. JellyToken defaults to its preset order. The price compared is the one billed right now, after a running promotion or off-peak rate, weighted as 85% cache hits, 10% cache misses (cache writes) and 5% output. Free models come first, models without a price come last, and equal prices are ordered by name. To change it, select the gear at the end of the group's header and choose **Price (low to high)**, **Price (high to low)** or **Name (A→Z)**; the current choice is checked. Each group keeps its own order, saved in this browser. Search results follow it; the order of the groups and the model picker in the chat do not change.
+- **Order within a group.** A group lists its models by price, low to high. The price compared is the one billed right now, after a running promotion or off-peak rate, weighted as 85% cache hits, 10% cache misses (cache writes) and 5% output. Free models come first, models without a price come last, and equal prices are ordered by name. To change it, select the gear at the end of the group's header and choose **Price (low to high)**, **Price (high to low)** or **Name (A→Z)**; the current choice is checked. Each group keeps its own order, saved in this browser. Search results follow it; the order of the groups and the model picker in the chat do not change.
 
 Each model card shows the model's display name, tags, context window, prices, key status, and the Tokens the model has used so far.
 
@@ -42,7 +42,7 @@ A group's header shows the provider's logo, the group's name, its model count an
 
 - the group's balance, for TokenDance, Penguin Go and DeepSeek once the group has a key; select the amount for a menu that pins or refreshes it; see [Account balances](#account-balances);
 - the connection, for TokenDance, Penguin Go and ModelScope: **Not connected**, which you select to connect, or **Connected**, a menu with **Sync models** (Penguin Go only), **Reconnect** and **Disconnect**; see [Connect an account](#connect-an-account);
-- **Add model**, a plus icon, on **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow**, **JellyToken**, **Atlas Cloud**, **Runcrate** and groups you created; see [Add a model](#add-a-model);
+- **Add model**, a plus icon, on **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow**, **Atlas Cloud**, **Runcrate** and groups you created; see [Add a model](#add-a-model);
 - the speed test and **Settings** (a gear), which end every group, **Custom** included, so the two stand at the same right edge on every group; see [Measure speed](#measure-speed). The gear opens a menu: the group's sort, then **Group settings…**; see [Group settings](#group-settings).
 
 While the TokenDance group has no key, a banner above the groups offers to connect your TokenDance wallet, so the models there need no key set by hand. Its **Connect** runs the same flow as the group's. Select × to hide the banner in this browser.
@@ -101,14 +101,14 @@ All of the group's models, their API keys and the group's settings are removed. 
 
 ## Add a model
 
-**Add model** is on the headers of **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow**, **JellyToken**, **Atlas Cloud**, **Runcrate** and the groups you created. The other built-in groups — the vendors and the other gateways — carry their built-in models only; see [Built-in models only](#built-in-models-only).
+**Add model** is on the headers of **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow**, **Atlas Cloud**, **Runcrate** and the groups you created. The other built-in groups — the vendors and the other gateways — carry their built-in models only; see [Built-in models only](#built-in-models-only).
 
 1. On the group's header, select **Add model** (the plus icon).
 2. In **Model ID**, enter the model id exactly as the provider's API expects it, for example `qwen3-32b`. **Get model IDs** opens the provider's model list.
 3. Optional: in **Display name**, enter a display name. An empty display name shows the model id.
 4. Check **Group**: it starts on the group whose header you used.
 5. Optional: open **Details**, collapsed by default, for everything else. A new model follows its group's connection, so the connection fields there are overrides:
-   - **API key** and **Custom base URL**: a field the group sets reads "Leave blank to use the group's setting"; leave it empty to follow the group, or type a value of the model's own. The model needs a key, its own or the group key, whenever a base URL other than its client's default endpoint is set on it or its group: the environment's key goes only to that endpoint. On **OpenRouter**, **TokenDance**, **SiliconFlow**, **JellyToken**, **Atlas Cloud** and **Runcrate**, an empty base URL uses the gateway's endpoint on the group; on the other groups the base URL is required unless the group's settings give one.
+   - **API key** and **Custom base URL**: a field the group sets reads "Leave blank to use the group's setting"; leave it empty to follow the group, or type a value of the model's own. The model needs a key, its own or the group key, whenever a base URL other than its client's default endpoint is set on it or its group: the environment's key goes only to that endpoint. On **OpenRouter**, **TokenDance**, **SiliconFlow**, **Atlas Cloud** and **Runcrate**, an empty base URL uses the gateway's endpoint on the group; on the other groups the base URL is required unless the group's settings give one.
    - The protocol, picked from the suffix of the base URL field or found with **Detect**; see [Detect a custom model's protocol](#detect-a-custom-models-protocol).
    - **Context window**: the model's context window in Tokens. For a model that is not in the built-in catalog, an empty field saves as 1000000.
    - **Max output tokens**: the most output Tokens per request. Leave it empty to use the agent's setting; lower it for models with a small context.
@@ -120,12 +120,12 @@ All of the group's models, their API keys and the group's settings are removed. 
 
 Which protocol a new model uses depends on its group:
 
-- **vLLM** uses `openai-chat-vllm-adapter`, **OpenRouter** `openai-responses`, and **TokenDance**, **SiliconFlow**, **JellyToken**, **Atlas Cloud** and **Runcrate** `openai-chat`, the protocol a new Project stores in the group's settings. The model stores none and follows its group.
+- **vLLM** uses `openai-chat-vllm-adapter`, **OpenRouter** `openai-responses`, and **TokenDance**, **SiliconFlow**, **Atlas Cloud** and **Runcrate** `openai-chat`, the protocol a new Project stores in the group's settings. The model stores none and follows its group.
 - **Custom** and groups you created: the group's protocol when its settings set one; otherwise pick the protocol from the base URL field, or detect it. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
 
 ### Built-in models only
 
-Every built-in group except **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow**, **JellyToken**, **Atlas Cloud** and **Runcrate** carries the models in PenguinHarness's built-in catalog and nothing else. Their keys are managed per group, and which models they hold is the catalog's to decide.
+Every built-in group except **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow**, **Atlas Cloud** and **Runcrate** carries the models in PenguinHarness's built-in catalog and nothing else. Their keys are managed per group, and which models they hold is the catalog's to decide.
 
 - These groups have no **Add model**, and **Model settings** does not offer them as a group to move a model into.
 - The server refuses a new model in one of these groups unless it is one of the group's built-in models: saving it fails with "This group carries its built-in models only". `penguin config model add` refuses it the same way. A built-in model you deleted can be added back, which is what **Add new models** does.
@@ -135,7 +135,7 @@ Every built-in group except **Custom**, **vLLM**, **OpenRouter**, **TokenDance**
 
 ### Edit or delete a model
 
-Select the model's card to open **Model settings**. Change the fields, select **Confirm**, and confirm the save. From the same dialog you can **Test connection**, **Set as default model**, **Set as proxy vision model**, or **Delete model**.
+Select the model's card to open **Model settings**. Change the fields, select **Confirm**, and confirm the save. From the same dialog you can **Test connection**, **Set as default model** (a chat model) or **Use model** (any other model), or **Delete model**.
 
 The API key, base URL and protocol stay in view. The context window, **Max output tokens**, prices, **Vision support** and **Fast mode** sit in **Details**, collapsed by default each time the dialog opens. An API key or base URL the model leaves to its group reads "Leave blank to use the group's setting", without the group's value. An API key with nothing to fall back on, meaning no key of its own, no group key that reaches it and no environment variable the server sets, reads "Enter an API key", or "Leave blank to use no API key" for a model its client calls without a key (vLLM, a self-hosted MMSP server).
 
@@ -219,7 +219,7 @@ A group holds one key, the **group key**, and every model in the group without a
 - **A whole group.** Enter the key in [Group settings](#group-settings), the gear on the group's header, or let [Connect an account](#connect-an-account) write it. Either way it becomes the group key; a key set on one model is not touched.
 - **One model.** In **Model settings**, enter the key in **API key**. Once saved, the key is shown masked; leave the field empty to keep it, or select **Clear stored API key** to remove it, after which the model uses the group key again. A model that uses the group key shows it masked as well.
 - **Another endpoint.** A key belongs to the endpoint it was issued for: the group key reaches a model only when the model has no base URL of its own, or its own base URL has the same origin (scheme, host and port) as the group's. OpenCode Go's Anthropic Messages models, on another path of the group's host, take it. A model pointed at another host does not and needs a key of its own, such as one OpenRouter model sent through a proxy, or **Custom**'s preset Atria Dawn, which carries its own endpoint, so a **Custom** key never reaches its host. Such a model's card reads **No key**, and the key field in **Model settings** says the group key does not apply.
-- **No key.** A model with neither its own key nor a group key that reaches it uses an environment variable on the server **only when no base URL is set on the model or its group, or the one set is its client's own default endpoint** (see [Provider credential variables](/configuration#provider-credential-variables)). The MMSP client it routes to reads its own `*_API_KEY`, and with no base URL its `*_BASE_URL` as well, so the key and the endpoint both come from the server's environment. A new Project gives the seven first-party groups no base URL: DeepSeek, Google, OpenAI, Anthropic, Z.AI, Moonshot and MiniMax. To reach a vendor's second host (bigmodel.cn, moonshot.ai), a proxy or Bedrock with an environment key, leave the base URL empty and set the vendor's `*_BASE_URL` beside the key; once you type any other base URL in the group's or the model's settings, its models need a key in the file. A **Custom** or user-created model with no base URL anywhere reads its protocol client's pair, `OPENAI_*` for the OpenAI-compatible protocols, and its requests go to that client's default endpoint (`https://api.openai.com/v1`) unless `OPENAI_BASE_URL` is set; the dialog names the endpoint beside the key field. A **vLLM** model reads vLLM's own pair, `VLLM_API_KEY` and `VLLM_BASE_URL`, and never `OPENAI_*` (see [Connect a local or self-hosted endpoint](#connect-a-local-or-self-hosted-endpoint)). Every other model with a base URL needs a key of its own or its group's: the gateway groups (TokenDance, OpenRouter, Fireworks AI, SiliconFlow, JellyToken, Atlas Cloud, Runcrate, OpenCode Go, the Qwen gateways), Penguin Go, ModelScope, and any model or group you point at an endpoint. A Session, a connection test or a group speed test on a keyless row there fails with "has no API key" instead of borrowing `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. A model on the `mmsp` or `openai-chat-vllm-adapter` protocol with a base URL and no key is sent no key, the way a server started without one is called; the vLLM client sends vLLM's placeholder key `EMPTY`. The card and the dialog show when a key is read from an environment variable; see [Built-in provider groups](#built-in-provider-groups).
+- **No key.** A model with neither its own key nor a group key that reaches it uses an environment variable on the server **only when no base URL is set on the model or its group, or the one set is its client's own default endpoint** (see [Provider credential variables](/configuration#provider-credential-variables)). The MMSP client it routes to reads its own `*_API_KEY`, and with no base URL its `*_BASE_URL` as well, so the key and the endpoint both come from the server's environment. A new Project gives the seven first-party groups no base URL: DeepSeek, Google, OpenAI, Anthropic, Z.AI, Moonshot and MiniMax. To reach a vendor's second host (bigmodel.cn, moonshot.ai), a proxy or Bedrock with an environment key, leave the base URL empty and set the vendor's `*_BASE_URL` beside the key; once you type any other base URL in the group's or the model's settings, its models need a key in the file. A **Custom** or user-created model with no base URL anywhere reads its protocol client's pair, `OPENAI_*` for the OpenAI-compatible protocols, and its requests go to that client's default endpoint (`https://api.openai.com/v1`) unless `OPENAI_BASE_URL` is set; the dialog names the endpoint beside the key field. A **vLLM** model reads vLLM's own pair, `VLLM_API_KEY` and `VLLM_BASE_URL`, and never `OPENAI_*` (see [Connect a local or self-hosted endpoint](#connect-a-local-or-self-hosted-endpoint)). Every other model with a base URL needs a key of its own or its group's: the gateway groups (TokenDance, OpenRouter, Fireworks AI, SiliconFlow, Atlas Cloud, Runcrate, OpenCode Go, the Qwen gateways), Penguin Go, ModelScope, and any model or group you point at an endpoint. A Session, a connection test or a group speed test on a keyless row there fails with "has no API key" instead of borrowing `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. A model on the `mmsp` or `openai-chat-vllm-adapter` protocol with a base URL and no key is sent no key, the way a server started without one is called; the vLLM client sends vLLM's placeholder key `EMPTY`. The card and the dialog show when a key is read from an environment variable; see [Built-in provider groups](#built-in-provider-groups).
 
 A key you type is stored in the hidden Project config file, which has mode 0600. The Web App always masks it.
 
@@ -296,19 +296,22 @@ The same settings are available as `penguin config model add --provider <group>`
 
 ## Set the default model
 
-New conversations use the Project's default model unless you pick another one. A new Project's default is `deepseek-flash` (DeepSeek V4.1 Flash), which reads images itself.
+New conversations use the Project's default model unless you pick another one. A new Project has none until you choose it. When you open such a Project, **Default model settings** opens by itself if some chat model already has a key, including a key in the server's environment. Otherwise a guide asks you to connect TokenDance or Penguin Go, or to add a key, and **Default model settings** opens once a key is set. Until there is a default, a new conversation shows "No default model yet" at the top of the message box and waits for you to choose its model.
 
-1. Select the model's card to open **Model settings**.
-2. Select **Set as default model** and confirm.
+- Select **Default model settings** in the page header and choose the **Default chat model**. Each choice is saved as you make it; the **?** beside the dialog's title says so.
+- Or select the model's card to open **Model settings**, then select **Set as default model** and confirm. Setting the default also saves any unsaved changes in the dialog.
 
-The first model added to a table without a default becomes the default automatically. Setting the default also saves any unsaved changes in the dialog.
+The first model added to a table without a default becomes the default automatically.
+
+**Default model settings** also holds the models used for the multimodal jobs (text generation, image generation, image understanding, video generation, speech recognition and speech synthesis) and, in a quieter group, the tools (web search and reading a web page). Each picker lists only the models that can do that job. Project settings › **Multimodal models** shows the same rows. In the settings of a model that cannot chat, such as a speech, search or image model, **Use model** chooses it for every job it can do, after you confirm, and names the ones it took; once it is used for all of them, the button reads **Stop using model**.
+
+A card's **Default** tag marks the default chat model. Its **In use** tag marks a model chosen for a multimodal job or a tool; hover the tag to see which. A chat model can carry both. The proxy vision model has its own tag.
 
 ### Set the proxy vision model
 
 A model without vision cannot see images. When it reads an image with `read_file`, a proxy vision model describes the image for it. There is none by default.
 
-1. Open **Model settings** for a model with **Vision support** on.
-2. Select **Set as proxy vision model** and confirm.
+In **Default model settings** or Project settings › **Multimodal models**, choose the model for **Image understanding**. Only models with **Vision support** on are listed.
 
 The proxy vision role is cleared when that model is deleted or its vision is turned off. For a model with `vision = false`, such as `deepseek-v4-pro`, the text-only member of the DeepSeek group, images from the conversation are saved to the Session scratchpad and handed over as a file path in the text. `read_file` passes an image to the proxy vision model for a description instead of returning it. See [Tools & Approval](/tools).
 
@@ -325,8 +328,11 @@ To compare the models in a group:
 
 PenguinHarness sends one real request to each model in turn, which uses a small amount of your API quota, and shows on each card:
 
-- the time to first token, in milliseconds: green under 1000, yellow up to 3000, red above;
-- the output rate, in Tokens per second: green at 40 or more, yellow at 15 or more, red below.
+- for a chat model, the time to first token, in milliseconds: green under 1000, yellow up to 3000, red above;
+- for a chat model, the output rate, in Tokens per second: green at 40 or more, yellow at 15 or more, red below;
+- for a model that cannot chat, how long its request took. A speech recognizer transcribes a short spoken sentence, a speech synthesizer reads a word aloud, a search model runs one search, a page reader fetches one page, and an image model draws one small picture.
+
+A video model is not tested and its card says **Not tested**: a video takes minutes and costs more. Neither is a model that cannot chat when nothing in the Project uses it.
 
 While the test runs, the same icon stops it (**Stop speed test**): the model being measured finishes, no further request is sent, and the results so far stay. Results stay only on the page and are gone after a reload.
 
@@ -355,10 +361,10 @@ A catalog correction to a model the Project already has, such as a new price or 
 - Every model that is not a preset is deleted: the models you added, in any group, and those an earlier version added that the catalog has since dropped, retired rows included. Groups you created are deleted with their settings and key.
 - Built-in groups' settings return to the catalog's base URL and protocol: **Custom**'s base URL is cleared, and **vLLM**'s goes back to `http://127.0.0.1:8000/v1`.
 - Promotions return to the catalog's.
-- As in a new Project, the default model is the catalog default and no proxy vision model is set.
+- As in a new Project, no default model and no proxy vision model are set.
 - The API keys of built-in groups and of preset models stay where they are. A built-in group with no group key gets one when every model in it that holds a key, deleted ones included, holds the same one and the group key would reach all of them; the models drop their copies. Other keys on deleted models go with them.
 - Penguin Go is reset like every other group, so the models the platform added beyond the presets and the platform's promotions go too. **Sync models** in the group's **Connected** menu brings them back; see [The Penguin Go group](#the-penguin-go-group).
-- Usage recorded on a deleted model that is or once was the default model of new Projects, such as `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, stays priced: the catalog keeps its list price for that. The cost center reports usage on any other deleted model as uncosted, as it does after you delete a model yourself.
+- Usage recorded on a deleted model that new Projects were once given as their default, such as `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, stays priced: the catalog keeps its list price for that. The cost center reports usage on any other deleted model as uncosted, as it does after you delete a model yourself.
 
 Both actions run on the server, as `POST /api/projects/:id/models/sync-presets` with `mode` `add` or `restore` (owner only).
 
@@ -371,6 +377,7 @@ The pickers offer `low` and above. Many models cannot turn thinking off, but a s
 - `max` is the deepest tier. Each client maps it to the deepest effort its vendor accepts and falls back silently where there is no such tier, so picking it never fails. On Gemini and MiniMax M3 it lands on the same effort as `xhigh`.
 - For MiniMax M3, `none` maps directly to `reasoning.effort = "none"`.
 - For Gemini 4 Argon on Google's official client, `none` maps to `low`, and `xhigh` and `max` map to `high`. `low`, `medium` and `high` keep their values; omitting the level preserves Google's default `medium`.
+- For Gemini 4 Neon on Google's official client, `none` maps to `low` and `max` to `xhigh`. `low`, `medium`, `high` and `xhigh` keep their values.
 - DeepSeek V4 accepts `low`, `high` and `max`, and folds `medium` and `xhigh` into `high` on its side. Pick `max` for DeepSeek's deepest effort.
 
 ### In a new chat
@@ -481,8 +488,6 @@ The per-request output limit and the compaction threshold both follow this windo
 
 ## Built-in provider groups
 
-JellyToken presets, in default order: `deepseek-v4.1-flash-1017`, `qwen4-max`, `glm-5.3`, `glm-5.3-flash`, `qwen3.8-flash`, `glm-5.3-flashx`, `doubao-seed-2.1-lite`, `doubao-seed-2-1-pro`, `kimi-k3`. Each is configured with a 1M-token window. The starting-offer labels describe the seller’s offers; they do not further reduce the stored rates. The key management, model list and model ID links open the [JellyToken login page](https://www.jellytoken.com/models?utm_source=penguin-harness).
-
 The table below lists the built-in groups and, for the seven first-party groups, which a new Project gives no base URL, the environment variable their models use when neither the model nor the group has a key and no base URL other than the vendor's default endpoint is set; the other groups use none (—). The catalog source is `packages/server/src/model-catalog/`. Each variable also has a `_BASE_URL` variant, for example `ANTHROPIC_BASE_URL`. The **Models** page lists the groups in this order, followed by the groups you create. The gateway groups carry a base URL, so their rows **never fall back**: a gateway's protocol client reads `OPENAI_*` (or `ANTHROPIC_*`), which holds your vendor key, and that key is not sent to it (see [Set API keys](#set-api-keys)).
 
 | Provider | API key env var | Notes |
@@ -490,14 +495,13 @@ The table below lists the built-in groups and, for the seven first-party groups,
 | tokendance | — | The recommended group. OpenAI-compatible gateway, preset base URL `https://tokendance.space/gateway/v1`; model ids are bare, with no vendor prefix (e.g. `glm-5.3`, `kimi-k3`); pricing is the gateway's own CNY rates, several of them currently discounted |
 | penguin-go | — | Preset MMSP relay group, base URL `https://go.penguin.ooo/api/v1`; its header connects for you, or set the key in its group settings. See [The Penguin Go group](#the-penguin-go-group) |
 | opencode-go | — | OpenCode Go subscription gateway. Each model pins its own protocol: Chat Completions or Responses at `https://opencode.ai/zen/go/v1`, Anthropic Messages at `https://opencode.ai/zen/go`, and Gemini generateContent at `https://opencode.ai/inference/go/google`. See [The OpenCode Go group](#the-opencode-go-group) |
-| deepseek | `DEEPSEEK_API_KEY` | Group of the default model |
+| deepseek | `DEEPSEEK_API_KEY` | DeepSeek official |
 | openrouter | — | OpenAI-compatible gateway, preset base URL `https://openrouter.ai/api/v1` |
 | fireworks | — | Fireworks AI (OpenAI-compatible), preset base URL `https://api.fireworks.ai/inference/v1`; API model ids look like `accounts/fireworks/models/<slug>` |
 | google | `GEMINI_API_KEY` | |
 | openai | `OPENAI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | siliconflow | — | OpenAI-compatible gateway, preset base URL `https://api.siliconflow.cn/v1` |
-| jellytoken | — | JellyToken Chat Completions gateway, `https://aiservice.jellytoken.com/v1`; enter a JellyToken API key in group settings. |
 | atlascloud | — | Atlas Cloud (OpenAI-compatible gateway), preset base URL `https://api.atlascloud.ai/v1`; model ids keep their vendor prefix (e.g. `deepseek-ai/deepseek-v4.1-flash`) |
 | runcrate | — | Runcrate (OpenAI-compatible gateway for open-weight models), preset base URL `https://api.runcrate.ai/v1`; model ids are the upstream repo names (e.g. `deepseek-ai/DeepSeek-V4.1-Flash`) |
 | zhipu | `ZAI_API_KEY` | |
@@ -509,9 +513,9 @@ The table below lists the built-in groups and, for the seven first-party groups,
 | vllm | — | Self-hosted vLLM servers: protocol fixed to `openai-chat-vllm-adapter`, base URL `http://127.0.0.1:8000/v1` in a new Project, eight preset models priced at 0 (see [Connect a local or self-hosted endpoint](#connect-a-local-or-self-hosted-endpoint)) |
 | custom | — | Any OpenAI-protocol endpoint; ships one preset, Atria Dawn (Anthropic Messages API at `api.atria-asi.ai`, needs its own key, 256K window, priced at $0 until the vendor publishes prices) |
 
-The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / jellytoken / atlascloud / runcrate / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through MMSP's generic OpenAI-protocol clients, whose variable is `OPENAI_API_KEY`; a keyless row there is refused rather than sent your OpenAI key. The same holds for a custom or user-created row with a base URL on itself or its group, unless that is its protocol client's own default endpoint; with none anywhere, it reads its protocol client's pair (see [Set API keys](#set-api-keys)). A vLLM row with a base URL and no key is sent none instead, since a vLLM server checks no key unless it was started with one. ModelScope's credential is an api-inference token, and all three presets pin the generic Responses protocol; a keyless ModelScope row is refused the same way.
+The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / atlascloud / runcrate / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through MMSP's generic OpenAI-protocol clients, whose variable is `OPENAI_API_KEY`; a keyless row there is refused rather than sent your OpenAI key. The same holds for a custom or user-created row with a base URL on itself or its group, unless that is its protocol client's own default endpoint; with none anywhere, it reads its protocol client's pair (see [Set API keys](#set-api-keys)). A vLLM row with a base URL and no key is sent none instead, since a vLLM server checks no key unless it was started with one. ModelScope's credential is an api-inference token, and all three presets pin the generic Responses protocol; a keyless ModelScope row is refused the same way.
 
-- The OpenRouter group uses the Responses client (`client_type = "openai-responses"`) for its presets and for any model you add to it, because OpenRouter serves the Responses API at that same base URL for every model it resells.
+- The OpenRouter group uses the Responses client (`client_type = "openai-responses"`) for its chat presets and for any model you add to it, because OpenRouter serves the Responses API at that same base URL for every model it resells. The image preset `google/gemini-nano-banana-2.1` is the exception: it pins the Images client (`client_type = "openai-image"`) at the same base URL.
 - The other gateway presets use the Chat Completions client (`client_type = "openai-chat"`).
 - ModelScope is an aggregate gateway like Penguin Go, but all three of its presets use MMSP's generic Responses client (`client_type = "openai-responses"`).
 - Either way every gateway carries a base URL, so the credential rule is the same for all of them.
@@ -560,7 +564,8 @@ The preset catalog includes, among others:
 
 - `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3.1-Flash` / `MiniMax-M3`
-- `gemini-4-argon` / `gemini-3.8-flash`
+- `gemini-4-neon` / `gemini-4-argon` / `gemini-3.8-flash`
+- `gemini-nano-banana-2.1` (Google) / `google/gemini-nano-banana-2.1` (OpenRouter)
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` / `gpt-5.6` / `gpt-5.5`
@@ -568,6 +573,7 @@ The preset catalog includes, among others:
 - `kimi-k3.1-pro` / `kimi-k3.1-pro-highspeed` / `kimi-k3` (the high-speed variant on Moonshot only)
 - `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
+- Hy4 with text and image input: `hy4` on TokenDance and `tencent/hy4` on OpenRouter
 - `mimo-v2.6-pro` / `mimo-v2.6-flash` / `step-5-preview` / `ling-3.1-flash` (TokenDance)
 - `dots-3-note-preview` (free on TokenDance, 512K context)
 - `deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`, `Qwen/Qwen3.8-Flash-Next` (ModelScope's api-inference; preset rows with no price)
@@ -575,6 +581,8 @@ The preset catalog includes, among others:
 The list is not exhaustive.
 
 Gemini 4 Argon is preset in Google, Penguin Go and OpenRouter, with a shared input/output context window of 1,048,576 tokens and image input. Google and Penguin Go use `gemini-4-argon`; OpenRouter uses `google/gemini-4-argon`. MMSP's synchronous stream supports up to 65,536 output tokens, including thinking; Google's longer background generation is outside this interface.
+
+Gemini 4 Neon is preset in Google as `gemini-4-neon` and in OpenRouter as `google/gemini-4-neon`, with a 1,048,576-token context window and image input. Both record list prices of $3 input, $15 output and $0.15 cached input per million tokens, with no promotion.
 
 - **DeepSeek images.** `deepseek-flash` is V4.1 Flash and reads images; `deepseek-v4-pro` is the V4 Pro 0813 release and is text-only. To send an image, use `deepseek-flash`.
 - **Retired rows.** DeepSeek still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, and serves both from V4.1 Flash. They are no longer presets, but the catalog keeps them, together with TokenDance's `deepseek-v4-flash-vision-exp`, as retired rows: a Project that still carries one keeps its display name, until **Restore defaults** deletes it with every other model that is not a preset. A retired row is never added to a Project that does not have it, and a new Project never gets one.

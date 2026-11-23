@@ -23,6 +23,7 @@ import type {
 } from "@prismshadow/penguin-core/plugin";
 import { providerDimensions, requestedDimensions } from "./dimensions.js";
 import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import { pluginHostFrom, pluginPackageOf } from "../plugin/host.js";
 import type { Slot, ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 
 interface MountedProvider {
@@ -83,7 +84,11 @@ export class SandboxService {
    *   waiting. The default settings never consult a backend, so that window only
    *   exists for deployments flipping the mode in the first milliseconds after boot.
    */
-  constructor(registrations: Iterable<[string, SandboxProviderSource]> = []) {
+  constructor(
+    registrations: Iterable<[string, SandboxProviderSource]> = [],
+    /** The package of the plugin that registered a backend, by its name; read when asked. */
+    private readonly packageOf: (name: string) => string | undefined = () => undefined,
+  ) {
     const loads: Registration[] = [...registrations].map(([name, source]) => ({
       name,
       source,
@@ -189,6 +194,17 @@ export class SandboxService {
   }
 
   /**
+   * Every registered backend in routing order, with the package of the plugin that registered
+   * it when one did: what the settings page links each backend's line to (its plugin's page).
+   */
+  origins(): Array<{ name: string; package?: string }> {
+    return this.registrations.map(({ name }) => {
+      const pkg = this.packageOf(name);
+      return pkg === undefined ? { name } : { name, package: pkg };
+    });
+  }
+
+  /**
    * The mounted backends and what each implements, in routing preference: the one a policy
    * goes to first (diagnostics / the config surface).
    */
@@ -221,7 +237,7 @@ export class SandboxService {
    * The same closure under a policy the caller keeps — a Session's own snapshot. The
    * backends are still this service's, so a backend change reaches every Session.
    */
-  confinerFor(policyOf: () => SandboxSettings): SpawnConfiner {
+  confinerFor(policyOf: () => SandboxSettings, writableRoots?: readonly string[]): SpawnConfiner {
     return (argv, opts) => {
       const settings = policyOf();
       const required = requestedDimensions(settings);
@@ -240,14 +256,21 @@ export class SandboxService {
       // it on disk: bubblewrap refuses to start on a missing bind source. Ensured on every
       // spawn, here, where every confined spawn meets — see SandboxPolicy.writableRoots.
       if (scratchpadDir !== undefined) ensureScratchpad(scratchpadDir);
+      // The caller's further roots (the Agent's workbench folders) are bound only once they
+      // exist: whoever writes there first creates them, and a spawn never does, so an Agent with
+      // no workbench data gets no directory it did not ask for.
+      const extraRoots =
+        settings.mode === "workspace-write" ? (writableRoots ?? []).filter(isDirectory) : [];
+      const roots = [...(scratchpadDir !== undefined ? [scratchpadDir] : []), ...extraRoots];
       // workspaceRoot is the Session's Workspace, never the per-command cwd: a command
       // running in a workdir outside the Workspace must not widen the writable roots.
       const policy: SandboxPolicy = {
         mode: settings.mode,
         workspaceRoot: opts.workspaceDir,
-        // The Session's scratchpad is writable beside the Workspace: the plan file, a goal's
-        // state file and the attachments live there, and hooks and commands both write it.
-        ...(scratchpadDir !== undefined ? { writableRoots: [scratchpadDir] } : {}),
+        // The Session's scratchpad and the Agent's workbench folders are writable beside the
+        // Workspace: the plan file, a goal's state file and the attachments live in the one, the
+        // files and sockets a workbench shares with its Agent in the others.
+        ...(roots.length > 0 ? { writableRoots: roots } : {}),
         ...(settings.network !== undefined ? { network: settings.network } : {}),
         ...(settings.maskPaths !== undefined && settings.maskPaths.length > 0
           ? { maskPaths: settings.maskPaths }
@@ -333,6 +356,19 @@ function ensureScratchpad(dir: string): void {
   }
 }
 
+/**
+ * A further writable root is bound when it is a real directory. Never through a link: a Session
+ * that ran unconfined could have left `<agentDir>/app` pointing anywhere, and binding the target
+ * would let the next confined Session write there.
+ */
+function isDirectory(dir: string): boolean {
+  try {
+    return fs.lstatSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 function copySettings(settings: SandboxSettings): SandboxSettings {
   return {
     mode: settings.mode,
@@ -352,6 +388,7 @@ export abstract class Sandbox extends Interface<
     | "backends"
     | "failures"
     | "declined"
+    | "origins"
     | "retryFailed"
     | "confiner"
     | "confinerFor"
@@ -361,10 +398,17 @@ export abstract class Sandbox extends Interface<
 
 export interface SandboxSlots {
   /**
-   * A backend: its static half here (name, the dimensions it implements), its code half
-   * bound by the contributor — a provider, or a promise of one for backends that probe.
+   * A backend: its static half here (name, the dimensions it implements, and the platforms it is
+   * the default backend for, as `process.platform` names them), its code half bound by the
+   * contributor — a provider, or a promise of one for backends that probe. `defaultFor` is package
+   * metadata the plugin index repeats on the package's row (`sandboxDefaultFor`): the host offers
+   * the index's defaults for its platform when the sandbox is turned on with no backend, and names
+   * none of its own.
    */
-  providers: Slot<{ name: string; dimensions: SandboxDimension[] }, SandboxProviderSource>;
+  providers: Slot<
+    { name: string; dimensions: SandboxDimension[]; defaultFor?: string[] },
+    SandboxProviderSource
+  >;
 }
 
 @Module({
@@ -382,12 +426,19 @@ export interface SandboxSlots {
 })
 export class SandboxModule {
   @Provide() sandbox!: Sandbox;
-  setup({ contributions }: ClassCtx, context: Json) {
+  setup({ contributions, resources }: ClassCtx, context: Json) {
     const providers = (contributions.providers ?? []).map(
       (c) =>
         [c.data.name as string, c.code as SandboxProviderSource] as [string, SandboxProviderSource],
     );
-    const sandbox = new SandboxService(providers);
+    const contributor = new Map(
+      (contributions.providers ?? []).map((c) => [c.data.name as string, c.from]),
+    );
+    // The plugin host is claimed per read: what this generation loaded is recorded on it.
+    const sandbox = new SandboxService(providers, (name) => {
+      const from = contributor.get(name);
+      return from === undefined ? undefined : pluginPackageOf(pluginHostFrom(resources), from);
+    });
     // Parked settings ride the swap: without this every push would construct a fresh
     // service on defaults and silently un-confine a confining deployment.
     const parked = (context as { settings?: SandboxSettings } | null)?.settings;

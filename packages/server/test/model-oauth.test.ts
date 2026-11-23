@@ -52,13 +52,12 @@ import {
   ModelOAuthService,
   openedMode,
 } from "../src/services/model-oauth-service.js";
-import { publicOrigin } from "../src/http/public-origin.js";
+import { publicOrigin } from "@prismshadow/penguin-library-http/public-origin";
 import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import type { FetchFake } from "./fixtures/fetch.js";
 import { sessionRow } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-import { wire } from "@prismshadow/penguin-core/kernel";
 
 /** The catalog group under test; the flow exists only because this entry declares it. */
 const TOKENDANCE = providerInfo("tokendance")!;
@@ -216,7 +215,7 @@ describe("flow store", () => {
     clock = 1_700_000_000_000;
     applied = [];
     exchange = fakeFetch(() => jsonResponse({ key: "sk-minted" }));
-    service = wire(ModelOAuthService, {
+    service = new ModelOAuthService({
       applyGroupKey: async (projectId: string, provider: string, apiKey: string) => {
         applied.push({ projectId, provider, apiKey });
         return { applied: 6 };
@@ -291,7 +290,7 @@ describe("flow store", () => {
   });
 
   it("a failed exchange ends the flow and reports the mapped reason", async () => {
-    service = wire(ModelOAuthService, {
+    service = new ModelOAuthService({
       applyGroupKey: async () => ({ applied: 6 }),
       fetchImpl: fakeFetch(() => jsonResponse({}, 403)).fetch,
       now: () => clock,
@@ -306,7 +305,7 @@ describe("flow store", () => {
   });
 
   it("a key that cannot be stored is reported as such, not as a success", async () => {
-    service = wire(ModelOAuthService, {
+    service = new ModelOAuthService({
       applyGroupKey: async () => {
         throw new Error("disk full");
       },
@@ -472,6 +471,10 @@ describe("model-oauth routes", () => {
       })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
+    // The default its owner chose (a new Project starts with none).
+    expect(
+      (await owner.put(`/api/projects/${projectId}/models/default`, DEEPSEEK_FLASH)).status,
+    ).toBe(200);
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_m" })).status,
     ).toBe(201);
@@ -559,7 +562,10 @@ describe("model-oauth routes", () => {
     expect(JSON.stringify(models)).not.toContain("sk-oauth-minted-key-9911");
 
     // Stored once, for the group — not once per model.
-    const cfg = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const cfg = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(cfg.match(/sk-oauth-minted-key-9911/g)).toHaveLength(1);
 
     expect(
@@ -656,7 +662,10 @@ describe("model-oauth routes", () => {
     for (const m of body.models.filter((row) => row.provider === "tokendance")) {
       expect(m.effective.apiKeySource, m.modelId).toBe(m.modelId === "glm-5.3" ? "model" : "none");
     }
-    const cfg = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const cfg = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(cfg).not.toContain("sk-oauth-minted-key-9911");
     expect(cfg).toContain("sk-td-own-row-0017");
   });
@@ -781,6 +790,10 @@ describe("model-oauth callback without a session", () => {
   beforeEach(async () => {
     projects += 1;
     projectId = await create(`owner_o-cb_${projects}`);
+    // The default its owner chose (a new Project starts with none).
+    expect(
+      (await owner.put(`/api/projects/${projectId}/models/default`, DEEPSEEK_FLASH)).status,
+    ).toBe(200);
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "stranger_s" })).status,
     ).toBe(201);

@@ -1,6 +1,5 @@
 import type { DragEvent as ReactDragEvent } from "react";
 import { ICONS } from "@prismshadow/penguin-ui";
-import type { NavEntryKey, NavEntryKey as NavGroupKey } from "./sidebar-nav-state";
 
 export const SESSION_DRAG_MIME = "application/x-penguin-session-id";
 
@@ -8,15 +7,6 @@ export const GROUP_DRAG_MIME = "application/x-penguin-group-key";
 
 export const isGroupDrag = (e: ReactDragEvent): boolean =>
   e.dataTransfer.types.includes(GROUP_DRAG_MIME);
-
-export const NAV_DRAG_MIME = "application/x-penguin-nav-entry";
-
-export const isNavDrag = (e: ReactDragEvent): boolean =>
-  e.dataTransfer.types.includes(NAV_DRAG_MIME);
-
-export type NavArea = "pinned" | "collapsible";
-
-export const isNavPage = (key: NavEntryKey): key is NavGroupKey => key !== "newChat";
 
 export const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
 

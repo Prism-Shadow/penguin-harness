@@ -4,7 +4,11 @@
  * keyboard (Shift+F10, the ContextMenu key) and touch (press and hold) reach all of it: "Move
  * to…" opens the new-folder dialog with the app picked, puts it into a folder or makes a new
  * folder with another app, and forward / backward step an item through the grid or its folder.
- * The empty space's menu opens the new-folder dialog too.
+ * The empty space's menu opens the new-folder dialog too. A workbench's menu also carries the
+ * checkable "Show in the sidebar", the installation's sidebar setting (the Workbenches row's
+ * same-named one), when its server reports it. A system app's menu has only the rows that open
+ * and arrange it: it opens as its page, has no build to fail, belongs to no Agent's settings and
+ * is never removed from the grid. An iframe system app can also open full screen.
  *
  * "Move to…" opens a second page in the same menu rather than a submenu, which a phone has no
  * room for: Back returns to the first page, and focus moves to the first row of whichever page
@@ -45,10 +49,14 @@ export interface GridActions {
   /** Shows a new arrangement and stores it. */
   arrange: (next: GridItem[]) => void;
   open: (app: GridApp) => void;
+  /** The app is running, its window minimized: Open brings that window back, even mid-build. */
+  isRunning: (app: GridApp) => boolean;
   openFullScreen: (app: GridApp) => void;
   showError: (app: GridApp) => void;
   viewInSettings: (app: GridApp) => void;
   removeFromAppCenter: (app: GridApp) => void;
+  /** The installation's sidebar setting, the row's "Show in the sidebar" (PRFC-0033). */
+  setShowInSidebar: (app: GridApp, show: boolean) => void;
   openFolder: (folder: GridFolder) => void;
   /** Opens the new-folder dialog, with this app picked (null: none). */
   newFolder: (picked: GridApp | null) => void;
@@ -124,6 +132,8 @@ export function AppMenu({
   const { grid } = actions;
   const building = app.shortcut.build === "building";
   const holder = folderOf(grid, app.id);
+  /** A system app is never removed and has no Agent: its menu only opens and arranges it. */
+  const system = app.shortcut.system !== undefined;
 
   if (page === "move") {
     const folders = grid.filter(
@@ -182,15 +192,17 @@ export function AppMenu({
       <MenuItem
         glyph={ICONS.appWindow}
         label={S.appCenter.menu.open}
-        disabled={building}
+        disabled={(building && !actions.isRunning(app)) || app.shortcut.unavailable}
         onSelect={act(close, () => actions.open(app))}
       />
-      <MenuItem
-        glyph={ICONS.cornersOut}
-        label={S.appCenter.menu.openFullScreen}
-        disabled={building}
-        onSelect={act(close, () => actions.openFullScreen(app))}
-      />
+      {!system && (
+        <MenuItem
+          glyph={ICONS.cornersOut}
+          label={S.appCenter.menu.openFullScreen}
+          disabled={building || app.shortcut.unavailable}
+          onSelect={act(close, () => actions.openFullScreen(app))}
+        />
+      )}
       <MenuSeparator />
       <MenuItem
         glyph={ICONS.folder}
@@ -206,24 +218,42 @@ export function AppMenu({
           onSelect={act(close, () => actions.arrange(takeOutOfFolder(grid, app.id)))}
         />
       )}
-      <MenuSeparator />
-      {app.shortcut.build === "failed" && (
-        <MenuItem
-          glyph={ICONS.alertCircle}
-          label={S.appCenter.menu.showError}
-          onSelect={act(close, () => actions.showError(app))}
-        />
+      {!system && (
+        <>
+          <MenuSeparator />
+          {app.shortcut.build === "failed" && (
+            <MenuItem
+              glyph={ICONS.alertCircle}
+              label={S.appCenter.menu.showError}
+              onSelect={act(close, () => actions.showError(app))}
+            />
+          )}
+          <MenuItem
+            glyph={ICONS.gear}
+            label={S.appCenter.menu.viewInSettings}
+            disabled={app.shortcut.unavailable}
+            onSelect={act(close, () => actions.viewInSettings(app))}
+          />
+          {/* A server older than the setting does not say it, and gets no row. */}
+          {app.shortcut.showInSidebar !== undefined && (
+            <MenuItem
+              glyph={ICONS.panelLeft}
+              label={S.appCenter.menu.showInSidebar}
+              checked={app.shortcut.showInSidebar}
+              disabled={app.shortcut.unavailable}
+              onSelect={act(close, () =>
+                actions.setShowInSidebar(app, !app.shortcut.showInSidebar),
+              )}
+            />
+          )}
+          <MenuItem
+            glyph={ICONS.eyeOff}
+            label={S.appCenter.menu.removeFromAppCenter}
+            disabled={app.shortcut.unavailable}
+            onSelect={act(close, () => actions.removeFromAppCenter(app))}
+          />
+        </>
       )}
-      <MenuItem
-        glyph={ICONS.gear}
-        label={S.appCenter.menu.viewInSettings}
-        onSelect={act(close, () => actions.viewInSettings(app))}
-      />
-      <MenuItem
-        glyph={ICONS.eyeOff}
-        label={S.appCenter.menu.removeFromAppCenter}
-        onSelect={act(close, () => actions.removeFromAppCenter(app))}
-      />
       {actions.customized && (
         <>
           <MenuSeparator />

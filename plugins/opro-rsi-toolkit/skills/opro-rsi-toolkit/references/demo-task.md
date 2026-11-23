@@ -12,11 +12,11 @@ The demo that this Skill's quick start runs. A fresh summary writer starts from 
 | Parameters | 2 steps × 4 proposals, 3 exemplars per step (statements only), threshold 0, the other parameters as in the smoke profile |
 | Budget | at most (1 + 2 × 4) × 6 × 1 = 54 Target executions and 8 proposer calls |
 
-If `PROJECT_DIR/benchmarks/precise-summary/` exists, reuse it unchanged when it is published and its case ids and statements match this file, and say so; otherwise stop and ask. Name the Target you used in the report.
+If `PROJECT_DIR/agents/system_agent/app/data/benchmark/precise-summary/` exists, reuse it unchanged when it is published and its case ids and statements match this file, and say so; otherwise stop and ask. Name the Target you used in the report.
 
 ## Write the Benchmark
 
-Write it under `PROJECT_DIR/benchmarks/precise-summary/`, beside `agents/`. `benchmark_config.toml`, with today's date in the version:
+Write it under `PROJECT_DIR/agents/system_agent/app/data/benchmark/precise-summary/`, the Evaluation Center's data folder, outside the Target. `benchmark_config.toml`, with today's date in the version:
 
 ```toml
 id = "precise-summary"

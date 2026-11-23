@@ -1,0 +1,1010 @@
+/**
+ * The RFC surface's chrome: the left sidebar rail (Search trigger + "RFCs" section with 4-digit
+ * monospace numbers and short titles), the mobile collapsible navigation bar, the previous/next
+ * pager, the section-level search dialog, the borderless PR Stack Graph tree view, and the
+ * shared 3-column layout shell.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
+import {
+  currentSearchShortcutLabel,
+  SearchIcon,
+  SiteSearchButton,
+  SiteSearchDialog,
+  SiteToc,
+  useSearchHotkey,
+  useSiteLocale,
+} from "@prismshadow/penguin-ui/site";
+import type {
+  SiteMarkdownComponents,
+  SiteSearchResult,
+  TocEntry,
+} from "@prismshadow/penguin-ui/site";
+import {
+  buildRfcSearchRecords,
+  collapsibleRfcTreeKeys,
+  countRfcTreeDescendantEntries,
+  findRfcSearchMatchRanges,
+  readRfcTreeCollapsed,
+  rfcDocForLocale,
+  rfcEntries,
+  rfcEntryOf,
+  rfcEntryShortTitle,
+  rfcPagerFor,
+  rfcPrOfUrl,
+  rfcTree,
+  searchRfcRecords,
+  shortRfcNumber,
+  writeRfcTreeCollapsed,
+} from "../lib/rfcs";
+import type { RfcEntry, RfcStatus, RfcTreeNode } from "../lib/rfcs";
+import { S } from "../lib/strings";
+
+export function RfcSidebar({
+  onNavigate,
+  onOpenSearch,
+}: {
+  onNavigate?: () => void;
+  onOpenSearch?: (trigger: HTMLButtonElement) => void;
+}) {
+  const { pathname } = useLocation();
+  const { locale } = useSiteLocale();
+  const activeId = pathname
+    .replace(/^\/rfcs\/?/, "")
+    .replace(/\/$/, "")
+    .replace(/\.zh$/, "");
+  const isIndex = pathname === "/rfcs" || pathname === "/rfcs/";
+  const resolvedActiveId =
+    (!isIndex && activeId ? rfcEntryOf(activeId)?.id : undefined) ?? activeId;
+
+  return (
+    <nav aria-label={S.rfcs.indexLabel} className="site-sidebar text-sm">
+      {onOpenSearch && (
+        <SiteSearchButton
+          label={S.rfcs.search.open}
+          shortcut={currentSearchShortcutLabel()}
+          onOpen={onOpenSearch}
+        />
+      )}
+      <div className="mb-6">
+        <p className="site-eyebrow mb-2">{S.rfcs.sidebarTitle}</p>
+        <ul className="site-rail-list site-rail-tight">
+          <li>
+            <Link
+              to="/rfcs"
+              onClick={onNavigate}
+              aria-current={isIndex ? "page" : undefined}
+              className="site-rail-link py-1 pl-3"
+            >
+              {S.rfcs.indexLabel}
+            </Link>
+          </li>
+          {rfcEntries
+            .filter((entry) => entry.status === "merged" && rfcDocForLocale(entry, locale))
+            .map((entry) => {
+              const active = !isIndex && resolvedActiveId === entry.id;
+              return (
+                <li key={entry.id}>
+                  <Link
+                    to={`/rfcs/${entry.id}`}
+                    onClick={onNavigate}
+                    aria-current={active ? "page" : undefined}
+                    className="site-rail-link py-1 pl-3"
+                  >
+                    <span className="flex items-baseline gap-2">
+                      <span className="shrink-0 font-mono text-xs text-gray-400 dark:text-gray-500">
+                        {shortRfcNumber(entry.number)}
+                      </span>
+                      <span>{rfcEntryShortTitle(entry, locale)}</span>
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+        </ul>
+      </div>
+    </nav>
+  );
+}
+
+export function RfcPager({ activeId }: { activeId: string }) {
+  const { locale } = useSiteLocale();
+  const { prev, next } = rfcPagerFor(activeId, locale, S.rfcs.indexLabel);
+  if (!prev && !next) return null;
+  const stepClass =
+    "group flex flex-col gap-1 rounded-lg border border-gray-200 p-4 transition-colors hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700";
+
+  return (
+    <div className="mt-10 grid gap-3 border-t border-gray-200 pt-6 sm:grid-cols-2 dark:border-gray-800">
+      {prev ? (
+        <Link to={prev.href} className={stepClass}>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{S.rfcs.prev}</span>
+          <span className="text-sm font-medium group-hover:text-brand-700 dark:group-hover:text-brand-300">
+            {prev.title}
+          </span>
+        </Link>
+      ) : (
+        <span />
+      )}
+      {next && (
+        <Link to={next.href} className={`${stepClass} sm:items-end sm:text-right`}>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{S.rfcs.next}</span>
+          <span className="text-sm font-medium group-hover:text-brand-700 dark:group-hover:text-brand-300">
+            {next.title}
+          </span>
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function RfcPrStatusIcon({
+  status,
+  className = "inline-block shrink-0 translate-y-[3px]",
+}: {
+  status: RfcStatus;
+  className?: string;
+}) {
+  const color =
+    status === "merged"
+      ? "text-purple-600 dark:text-purple-400"
+      : status === "open"
+        ? "text-emerald-600 dark:text-emerald-400"
+        : status === "closed"
+          ? "text-rose-600 dark:text-rose-400"
+          : "text-gray-500 dark:text-gray-400";
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="currentColor"
+      aria-label={status}
+      className={`${className} ${color}`}
+    >
+      {status === "merged" ? (
+        <path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z" />
+      ) : status === "open" ? (
+        <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
+      ) : status === "closed" ? (
+        <path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 5.5a.25.25 0 0 1 .25.25v3.878a2.251 2.251 0 1 1-1.5 0V6.75a.25.25 0 0 1 .25-.25h1Zm-10.25-3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm1.28-10.53a.75.75 0 0 1 0 1.06L13.06 3.5l.97.97a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L12 4.56l-.97.97a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l.97-.97-.97-.97a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l.97.97.97-.97a.75.75 0 0 1 1.06 0Z" />
+      ) : (
+        <path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z" />
+      )}
+    </svg>
+  );
+}
+
+interface FlatTreeRow {
+  rowIndex: number;
+  parentRowIndex: number | null;
+  childRowIndices: number[];
+  node: RfcTreeNode;
+  depth: number;
+  hasChildren: boolean;
+  isCollapsed: boolean;
+  descendantCount: number;
+  hiddenChildCount: number;
+}
+
+function flattenRfcTree(
+  roots: readonly RfcTreeNode[],
+  collapsed: ReadonlySet<string>,
+): FlatTreeRow[] {
+  const rows: FlatTreeRow[] = [];
+  const visit = (node: RfcTreeNode, depth: number, parentRowIndex: number | null): number => {
+    const children = node.children ?? [];
+    const hasChildren = children.length > 0;
+    const isCollapsed = hasChildren && collapsed.has(node.key);
+    const visibleChildren = isCollapsed ? [] : children;
+    const descendantCount = hasChildren ? countRfcTreeDescendantEntries(node) : 0;
+    const hiddenChildCount = children.length;
+    const rowIndex = rows.length;
+    const childRowIndices: number[] = [];
+
+    rows.push({
+      rowIndex,
+      parentRowIndex,
+      childRowIndices,
+      node,
+      depth,
+      hasChildren,
+      isCollapsed,
+      descendantCount,
+      hiddenChildCount,
+    });
+
+    for (const child of visibleChildren) {
+      const childRowIdx = visit(child, depth + 1, rowIndex);
+      childRowIndices.push(childRowIdx);
+    }
+
+    return rowIndex;
+  };
+  for (const root of roots) {
+    visit(root, 0, null);
+  }
+  return rows;
+}
+
+function RfcPrBadge({ href, number, status }: { href: string; number: number; status: RfcStatus }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xs tabular-nums text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+    >
+      <RfcPrStatusIcon status={status} className="shrink-0" />
+      <span>#{number}</span>
+    </a>
+  );
+}
+
+function nodeAccessibleName(node: RfcTreeNode, locale: string): string {
+  if (node.entry) {
+    return `${node.entry.number} ${rfcEntryShortTitle(node.entry, locale)}`;
+  }
+  if (node.editionPr) {
+    return `#${node.editionPr.number} ${node.editionPr.title}`;
+  }
+  return node.label ?? node.key;
+}
+
+function RfcEntryLink({ entry, locale }: { entry: RfcEntry; locale: string }) {
+  const doc = rfcDocForLocale(entry, locale);
+  const shortTitle = rfcEntryShortTitle(entry, locale);
+  if (entry.status === "merged" && doc) {
+    return (
+      <Link
+        to={`/rfcs/${entry.id}`}
+        className="group inline-flex min-w-0 items-baseline gap-1.5 text-sm"
+      >
+        <span className="shrink-0 font-mono text-xs tabular-nums text-gray-500 group-hover:text-brand-700 dark:text-gray-400 dark:group-hover:text-brand-300">
+          {entry.number}
+        </span>
+        <span className="truncate font-medium text-gray-900 group-hover:text-brand-700 dark:text-gray-100 dark:group-hover:text-brand-300">
+          {shortTitle}
+        </span>
+      </Link>
+    );
+  }
+  if (entry.prHref) {
+    return (
+      <a
+        href={entry.prHref}
+        target="_blank"
+        rel="noreferrer"
+        className="group inline-flex min-w-0 items-baseline gap-1.5 text-sm"
+      >
+        <span className="shrink-0 font-mono text-xs tabular-nums text-gray-500 group-hover:text-brand-700 dark:text-gray-400 dark:group-hover:text-brand-300">
+          {entry.number}
+        </span>
+        <span className="truncate font-medium text-gray-700 group-hover:text-brand-700 dark:text-gray-300 dark:group-hover:text-brand-300">
+          {shortTitle}
+        </span>
+      </a>
+    );
+  }
+  return (
+    <span className="inline-flex min-w-0 items-baseline gap-1.5 text-sm">
+      <span className="shrink-0 font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400">
+        {entry.number}
+      </span>
+      <span className="truncate font-medium text-gray-700 dark:text-gray-300">{shortTitle}</span>
+    </span>
+  );
+}
+
+// ============================================================================
+// PR Stack Graph / Smartlog
+// Continuous single-canvas Bezier fluid curves + 360° node halo masks + lineage hover
+// ============================================================================
+
+function SmartlogGraphTreeView({
+  rows,
+  locale,
+  onToggle,
+}: {
+  rows: readonly FlatTreeRow[];
+  locale: string;
+  onToggle: (key: string) => void;
+}) {
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [activeSource, setActiveSource] = useState<"hover" | "focus">("hover");
+  const activeKey =
+    activeSource === "focus" ? (focusedKey ?? hoveredKey) : (hoveredKey ?? focusedKey);
+  const CELL = 24;
+  const PAD_L = 12;
+  const ROW_H = 34;
+  const MID = ROW_H / 2;
+  const xOf = (c: number) => c * CELL + PAD_L;
+  const yOf = (idx: number) => idx * ROW_H + MID;
+
+  const maxDepth = rows.reduce((m, r) => Math.max(m, r.depth), 0);
+  const svgWidth = (maxDepth + 1) * CELL + 16;
+  const totalHeight = rows.length * ROW_H;
+
+  const hoveredIdx = useMemo(() => {
+    if (activeKey === null) return null;
+    const idx = rows.findIndex((r) => r.node.key === activeKey);
+    return idx >= 0 ? idx : null;
+  }, [activeKey, rows]);
+
+  // Compute active ancestor lineage set when a row is hovered or keyboard-focused.
+  const activeLineageSet = useMemo(() => {
+    const set = new Set<number>();
+    if (hoveredIdx === null) return set;
+    let cur: number | null = hoveredIdx;
+    while (cur !== null && cur >= 0 && cur < rows.length) {
+      set.add(cur);
+      cur = rows[cur]!.parentRowIndex;
+    }
+    return set;
+  }, [hoveredIdx, rows]);
+
+  // Trunk on Column 0 spans from the first root down to the last root's last depth-1 child
+  // (or down to the last root itself when that root is collapsed).
+  const R = 13;
+  const rootRows = rows.filter((r) => r.depth === 0);
+  const firstRootY = rootRows.length > 0 ? yOf(rootRows[0]!.rowIndex) : MID;
+  const lastRootRow = rootRows[rootRows.length - 1];
+  const lastTrunkY =
+    lastRootRow && lastRootRow.childRowIndices.length > 0
+      ? Math.max(
+          firstRootY,
+          yOf(lastRootRow.childRowIndices[lastRootRow.childRowIndices.length - 1]!) - R,
+        )
+      : lastRootRow
+        ? yOf(lastRootRow.rowIndex)
+        : firstRootY;
+
+  const hoveredRow = hoveredIdx !== null ? rows[hoveredIdx] : undefined;
+  const hoveredStatus = hoveredRow?.node.editionPr?.status ?? hoveredRow?.node.entry?.status;
+  const highlightColorClass =
+    hoveredStatus === "merged"
+      ? "text-violet-500 dark:text-violet-400"
+      : hoveredStatus === "open"
+        ? "text-emerald-500 dark:text-emerald-400"
+        : "text-slate-600 dark:text-slate-300";
+
+  return (
+    <div aria-label={S.rfcs.sectionAll} className="relative select-none">
+      {/* Unified full-tree vector SVG layer: zero row seams, squircle Bezier curves */}
+      <svg
+        aria-hidden="true"
+        width={svgWidth}
+        height={totalHeight}
+        fill="none"
+        className="pointer-events-none absolute top-0 left-0 z-10 overflow-visible"
+      >
+        {/* Layer 1: Base continuous trunk + clean G2-continuous squircle Bezier branch curves */}
+        {rootRows.length > 0 && lastTrunkY > firstRootY && (
+          <line
+            x1={xOf(0)}
+            y1={firstRootY}
+            x2={xOf(0)}
+            y2={lastTrunkY}
+            stroke="currentColor"
+            strokeWidth={1.75}
+            strokeLinecap="round"
+            className="text-slate-300 dark:text-slate-700"
+          />
+        )}
+
+        {rows.map((parent) => {
+          if (parent.childRowIndices.length === 0) return null;
+          const xp = xOf(parent.depth);
+          const yp = yOf(parent.rowIndex);
+          const xc = xOf(parent.depth + 1);
+
+          return parent.childRowIndices.map((childIdx, idx) => {
+            const child = rows[childIdx]!;
+            const ym = yOf(childIdx);
+            const isLast = idx === parent.childRowIndices.length - 1;
+            const yFork = Math.max(yp, ym - R);
+            // Smooth squircle cubic Bezier elbow (radius R = 13px) with crisp departure
+            // from the vertical rail and horizontal entry into the node halo.
+            const pathD =
+              isLast && parent.depth > 0
+                ? `M ${xp} ${yp} L ${xp} ${yFork} C ${xp} ${ym - 4.5}, ${xp + 4.5} ${ym}, ${xp + R} ${ym} H ${xc}`
+                : `M ${xp} ${yFork} C ${xp} ${ym - 4.5}, ${xp + 4.5} ${ym}, ${xp + R} ${ym} H ${xc}`;
+
+            return (
+              <path
+                key={`edge-${parent.node.key}->${child.node.key}`}
+                d={pathD}
+                stroke="currentColor"
+                strokeWidth={1.75}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-slate-300 dark:text-slate-700"
+              />
+            );
+          });
+        })}
+
+        {/* Layer 1.5: Active ancestor lineage highlight path on hover */}
+        {hoveredIdx !== null &&
+          rows.map((parent) => {
+            if (!activeLineageSet.has(parent.rowIndex) || parent.childRowIndices.length === 0) {
+              return null;
+            }
+            const xp = xOf(parent.depth);
+            const yp = yOf(parent.rowIndex);
+            const xc = xOf(parent.depth + 1);
+            return parent.childRowIndices.map((childIdx) => {
+              if (!activeLineageSet.has(childIdx)) return null;
+              const ym = yOf(childIdx);
+              const yFork = Math.max(yp, ym - R);
+              return (
+                <path
+                  key={`active-${parent.node.key}->${rows[childIdx]!.node.key}`}
+                  d={`M ${xp} ${yp} L ${xp} ${yFork} C ${xp} ${ym - 4.5}, ${xp + 4.5} ${ym}, ${xp + R} ${ym} H ${xc}`}
+                  stroke="currentColor"
+                  strokeWidth={2.2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={highlightColorClass}
+                />
+              );
+            });
+          })}
+
+        {/* Layer 2: 360-degree breathing halo cutout masks around every node */}
+        {rows.map((row) => {
+          const cx = xOf(row.depth);
+          const cy = yOf(row.rowIndex);
+          if (row.isCollapsed) {
+            return (
+              <rect
+                key={`halo-${row.node.key}`}
+                x={cx - 6.5}
+                y={cy - 9.5}
+                width={13}
+                height={19}
+                rx={6.5}
+                className="fill-white dark:fill-gray-950"
+              />
+            );
+          }
+          const haloR = row.depth === 0 ? 6.75 : 6.25;
+          return (
+            <circle
+              key={`halo-${row.node.key}`}
+              cx={cx}
+              cy={cy}
+              r={haloR}
+              className="fill-white dark:fill-gray-950"
+            />
+          );
+        })}
+
+        {/* Layer 3: Minimalist Solid Dots, Crisp Hollow Rings, and Folded Capsules */}
+        {rows.map((row) => {
+          const cx = xOf(row.depth);
+          const cy = yOf(row.rowIndex);
+          const entry = row.node.entry;
+          const editionPr = row.node.editionPr;
+          const isLineage = activeLineageSet.has(row.rowIndex);
+          const isHovered = hoveredIdx === row.rowIndex;
+
+          if (row.isCollapsed) {
+            const capsuleStroke =
+              entry?.status === "merged"
+                ? "stroke-violet-600 dark:stroke-violet-400"
+                : entry?.status === "open"
+                  ? "stroke-emerald-500 dark:stroke-emerald-400"
+                  : "stroke-slate-600 dark:stroke-slate-300";
+            const capsuleDotFill =
+              entry?.status === "merged"
+                ? "fill-violet-600 dark:fill-violet-400"
+                : entry?.status === "open"
+                  ? "fill-emerald-500 dark:fill-emerald-400"
+                  : "fill-slate-600 dark:fill-slate-300";
+            return (
+              <g key={`node-${row.node.key}`}>
+                <rect
+                  x={cx - 4.25}
+                  y={cy - 7.25}
+                  width={8.5}
+                  height={14.5}
+                  rx={4.25}
+                  strokeWidth={1.75}
+                  className={`fill-white dark:fill-gray-950 ${capsuleStroke}`}
+                />
+                <circle cx={cx} cy={cy - 2.6} r={1.3} className={capsuleDotFill} />
+                <circle cx={cx} cy={cy + 2.6} r={1.3} className={capsuleDotFill} />
+              </g>
+            );
+          }
+
+          if (row.depth === 0) {
+            return (
+              <circle
+                key={`node-${row.node.key}`}
+                cx={cx}
+                cy={cy}
+                r={isHovered ? 5 : 4.5}
+                className="fill-slate-800 dark:fill-slate-100"
+              />
+            );
+          }
+
+          if (!entry && !editionPr) {
+            return (
+              <circle
+                key={`node-${row.node.key}`}
+                cx={cx}
+                cy={cy}
+                r={isHovered ? 4.5 : 4}
+                strokeWidth={1.85}
+                className={`fill-white dark:fill-gray-950 ${
+                  isLineage
+                    ? "stroke-slate-700 dark:stroke-slate-200"
+                    : "stroke-slate-500 dark:stroke-slate-400"
+                }`}
+              />
+            );
+          }
+
+          const status = editionPr ? editionPr.status : entry!.status;
+
+          if (status === "merged") {
+            return (
+              <circle
+                key={`node-${row.node.key}`}
+                cx={cx}
+                cy={cy}
+                r={isHovered ? 4.75 : 4.15}
+                className="fill-violet-600 dark:fill-violet-400"
+              />
+            );
+          }
+
+          if (status === "open") {
+            return (
+              <circle
+                key={`node-${row.node.key}`}
+                cx={cx}
+                cy={cy}
+                r={isHovered ? 4.5 : 4}
+                strokeWidth={1.85}
+                className="fill-white stroke-emerald-500 dark:fill-gray-950 dark:stroke-emerald-400"
+              />
+            );
+          }
+
+          // Draft PR node
+          return (
+            <circle
+              key={`node-${row.node.key}`}
+              cx={cx}
+              cy={cy}
+              r={isHovered ? 4.5 : 4}
+              strokeWidth={1.75}
+              className="fill-white stroke-slate-400 dark:fill-gray-950 dark:stroke-slate-500"
+            />
+          );
+        })}
+      </svg>
+
+      <ol className="relative">
+        {rows.map((row) => {
+          const {
+            rowIndex,
+            node,
+            depth,
+            hasChildren,
+            isCollapsed,
+            descendantCount,
+            hiddenChildCount,
+          } = row;
+          const isHovered = hoveredIdx === rowIndex;
+          const cx = xOf(depth);
+          const contentLeft = (depth + 1) * CELL + 4;
+          const entry = node.entry;
+          const editionPr = node.editionPr;
+          const name = nodeAccessibleName(node, locale);
+
+          return (
+            <li
+              key={node.key}
+              onMouseEnter={() => {
+                setHoveredKey(node.key);
+                setActiveSource("hover");
+              }}
+              onMouseLeave={() => setHoveredKey((prev) => (prev === node.key ? null : prev))}
+              onFocus={() => {
+                setFocusedKey(node.key);
+                setActiveSource("focus");
+              }}
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  setFocusedKey((prev) => (prev === node.key ? null : prev));
+                }
+              }}
+              style={{ height: `${ROW_H}px`, paddingLeft: `${contentLeft}px` }}
+              className={`group/row relative flex items-center rounded-lg pr-2 transition-colors duration-150 ${
+                isHovered ? "bg-slate-50/90 dark:bg-slate-900/45" : ""
+              }`}
+            >
+              {hasChildren && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => onToggle(node.key)}
+                  aria-expanded={!isCollapsed}
+                  aria-label={isCollapsed ? S.rfcs.expandNode(name) : S.rfcs.collapseNode(name)}
+                  style={{ left: `${cx - 10}px`, top: `${MID - 10}px` }}
+                  className="absolute z-20 h-5 w-5 cursor-pointer rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                />
+              )}
+
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2 select-text">
+                <div className="flex min-w-0 items-center gap-2">
+                  {editionPr ? (
+                    <a
+                      href={editionPr.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="group inline-flex min-w-0 items-center gap-1.5 text-xs"
+                    >
+                      <RfcPrStatusIcon status={editionPr.status} className="shrink-0" />
+                      <span className="shrink-0 font-mono tabular-nums text-gray-600 group-hover:text-brand-700 dark:text-gray-400 dark:group-hover:text-brand-300">
+                        #{editionPr.number}
+                      </span>
+                      <span className="truncate text-gray-600 group-hover:text-brand-700 dark:text-gray-400 dark:group-hover:text-brand-300">
+                        {editionPr.title}
+                      </span>
+                    </a>
+                  ) : !entry ? (
+                    <button
+                      type="button"
+                      onClick={() => onToggle(node.key)}
+                      aria-expanded={!isCollapsed}
+                      aria-label={isCollapsed ? S.rfcs.expandNode(name) : S.rfcs.collapseNode(name)}
+                      className="inline-flex cursor-pointer items-center gap-2 text-left"
+                    >
+                      <span
+                        className={
+                          depth === 0
+                            ? "text-sm font-semibold text-gray-900 dark:text-gray-100"
+                            : "text-sm font-medium text-gray-700 dark:text-gray-300"
+                        }
+                      >
+                        {node.label}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-mono text-xs leading-none tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                        {isCollapsed ? `+${descendantCount}` : descendantCount}
+                      </span>
+                    </button>
+                  ) : (
+                    <>
+                      <RfcEntryLink entry={entry} locale={locale} />
+                      {hasChildren && isCollapsed && (
+                        <button
+                          type="button"
+                          onClick={() => onToggle(node.key)}
+                          aria-expanded={false}
+                          aria-label={S.rfcs.expandNode(name)}
+                          className="cursor-pointer rounded-full bg-slate-100 px-1.5 py-0.5 font-mono text-xs leading-none tabular-nums text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400"
+                        >
+                          +{hiddenChildCount}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {entry?.prNumber && entry.prHref && (
+                  <RfcPrBadge href={entry.prHref} number={entry.prNumber} status={entry.status} />
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+/** Hierarchical PR Stack Graph tree view of all RFCs with persistent collapsed state. */
+export function RfcTreeView({ locale, headingId }: { locale: string; headingId?: string }) {
+  const collapsibleKeys = useMemo(() => collapsibleRfcTreeKeys(rfcTree), []);
+  const validKeysSet = useMemo(() => new Set(collapsibleKeys), [collapsibleKeys]);
+  const [collapsed, setCollapsedState] = useState<Set<string>>(() =>
+    readRfcTreeCollapsed(validKeysSet),
+  );
+
+  useEffect(() => {
+    writeRfcTreeCollapsed(collapsed);
+  }, [collapsed]);
+
+  const toggleNode = useCallback((key: string) => {
+    setCollapsedState((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const expandAll = useCallback(() => {
+    setCollapsedState(new Set<string>());
+  }, []);
+
+  const collapseAll = useCallback(() => {
+    setCollapsedState(new Set(collapsibleKeys));
+  }, [collapsibleKeys]);
+
+  const rows = useMemo(() => flattenRfcTree(rfcTree, collapsed), [collapsed]);
+  const allExpanded = collapsed.size === 0;
+  const allCollapsed = collapsibleKeys.length > 0 && collapsed.size >= collapsibleKeys.length;
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2
+          id={headingId}
+          className="scroll-mt-24 text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100"
+        >
+          {S.rfcs.sectionAll}
+        </h2>
+        <div className="inline-flex items-center gap-2 text-xs">
+          <button
+            type="button"
+            onClick={expandAll}
+            disabled={allExpanded}
+            className="cursor-pointer text-gray-500 transition-colors hover:text-gray-900 disabled:cursor-default disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-100"
+          >
+            {S.rfcs.expandAll}
+          </button>
+          <button
+            type="button"
+            onClick={collapseAll}
+            disabled={allCollapsed}
+            className="cursor-pointer text-gray-500 transition-colors hover:text-gray-900 disabled:cursor-default disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-100"
+          >
+            {S.rfcs.collapseAll}
+          </button>
+        </div>
+      </div>
+
+      <SmartlogGraphTreeView rows={rows} locale={locale} onToggle={toggleNode} />
+    </div>
+  );
+}
+
+/** Markdown link adapter for both the RFC index and individual RFC pages. */
+export function RfcMdLink({ href = "", children }: { href?: string; children?: ReactNode }) {
+  if (href.startsWith("#")) {
+    return <a href={href}>{children}</a>;
+  }
+  if (href.startsWith("/")) {
+    return <Link to={href}>{children}</Link>;
+  }
+  if (/^(?:\.\/|\.\.\/)?README(?:\.zh)?\.md(#.*)?$/i.test(href)) {
+    const hash = href.includes("#") ? href.slice(href.indexOf("#")) : "";
+    return <Link to={`/rfcs${hash}`}>{children}</Link>;
+  }
+  const rfcMatch = /^(?:\.\/)?(PRFC-\d+-[A-Za-z0-9_-]+)(?:\.zh)?\.md(#.*)?$/.exec(href);
+  if (rfcMatch) {
+    const targetId = rfcMatch[1]!;
+    const hash = rfcMatch[2] ?? "";
+    const entry = rfcEntryOf(targetId);
+    if (entry && entry.status !== "merged") {
+      const externalHref = entry.prHref ?? entry.en?.href;
+      if (externalHref) {
+        return (
+          <a href={externalHref} target="_blank" rel="noreferrer">
+            {children}
+          </a>
+        );
+      }
+    }
+    return <Link to={`/rfcs/${entry?.id ?? targetId}${hash}`}>{children}</Link>;
+  }
+  if (/^https?:\/\//.test(href)) {
+    const pr = rfcPrOfUrl(href);
+    const text = typeof children === "string" ? children : "";
+    if (pr && (text === `#${pr.number}` || text.startsWith(`#${pr.number} `))) {
+      return (
+        <span className="inline-flex items-baseline gap-1">
+          <RfcPrStatusIcon status={pr.status} />
+          <a href={href} target="_blank" rel="noreferrer" className="min-w-0">
+            {children}
+          </a>
+        </span>
+      );
+    }
+    return (
+      <a href={href} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    );
+  }
+  return <a href={href}>{children}</a>;
+}
+
+/** Module-level, so react-markdown keeps one element type across renders. */
+export const RFC_MD_COMPONENTS: SiteMarkdownComponents = {
+  a: ({ href, children }) => <RfcMdLink href={href}>{children}</RfcMdLink>,
+};
+
+interface RfcDialogResult extends SiteSearchResult {
+  target: string;
+}
+
+export function RfcShell({
+  activeId,
+  mobileLabel,
+  editHref,
+  indexSearchBody,
+  toc,
+  activeTocId,
+  onPinToc,
+  children,
+}: {
+  activeId: string;
+  mobileLabel: string;
+  editHref: string;
+  indexSearchBody: string;
+  toc: readonly TocEntry[];
+  activeTocId: string;
+  onPinToc: (id: string) => void;
+  children: ReactNode;
+}) {
+  const { locale } = useSiteLocale();
+  const { pathname, hash, key } = useLocation();
+  const navigate = useNavigate();
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchReturnFocusRef = useRef<HTMLElement | null>(null);
+  const mobileDetailsRef = useRef<HTMLDetailsElement | null>(null);
+
+  const openSearch = useCallback((trigger?: HTMLElement) => {
+    const activeEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const detailsEl = mobileDetailsRef.current;
+    const summaryEl = detailsEl?.querySelector("summary");
+    const fallbackEl =
+      detailsEl?.open &&
+      activeEl &&
+      detailsEl.contains(activeEl) &&
+      summaryEl instanceof HTMLElement
+        ? summaryEl
+        : activeEl;
+    searchReturnFocusRef.current = trigger ?? fallbackEl;
+    if (detailsEl) detailsEl.open = false;
+    setSearchOpen(true);
+  }, []);
+
+  const openSearchByKey = useCallback(() => openSearch(), [openSearch]);
+  useSearchHotkey(searchOpen, openSearchByKey);
+
+  useEffect(() => {
+    if (mobileDetailsRef.current) mobileDetailsRef.current.open = false;
+  }, [pathname, hash, key]);
+
+  useEffect(() => {
+    if (!hash) return;
+    const rawId = hash.slice(1);
+    if (!rawId) return;
+    let targetId = rawId;
+    try {
+      targetId = decodeURIComponent(rawId);
+    } catch {
+      // Keep raw fragment if malformed URI component.
+    }
+    const scrollToTarget = (): boolean => {
+      const el = document.getElementById(targetId);
+      if (!el) return false;
+      el.scrollIntoView();
+      onPinToc(targetId);
+      return true;
+    };
+    if (!scrollToTarget()) {
+      const frame = requestAnimationFrame(() => {
+        scrollToTarget();
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [pathname, hash, key, onPinToc]);
+
+  const records = useMemo(
+    () => buildRfcSearchRecords(locale, { title: S.rfcs.indexLabel, body: indexSearchBody }),
+    [locale, indexSearchBody],
+  );
+
+  const search = useCallback(
+    (query: string): RfcDialogResult[] =>
+      searchRfcRecords(records, query).map(({ record, snippet }, idx) => ({
+        key: `${record.href}:${record.anchor || "page"}:${idx}`,
+        title: record.heading || record.pageTitle,
+        context: record.heading ? record.pageTitle : undefined,
+        snippet: snippet || undefined,
+        target: record.anchor ? `${record.href}#${record.anchor}` : record.href,
+      })),
+    [records],
+  );
+
+  const showToc = toc.length >= 2;
+
+  return (
+    <div className="mx-auto w-full max-w-7xl lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
+      <aside className="hidden border-r border-gray-200 lg:block dark:border-gray-800">
+        <div className="sticky top-14 max-h-[calc(100vh-3.5rem)] overflow-y-auto px-6 py-8">
+          <RfcSidebar onOpenSearch={openSearch} />
+        </div>
+      </aside>
+      <div className="min-w-0">
+        <div
+          className={`anim-rise px-4 py-10 sm:px-6 lg:px-10 ${
+            showToc ? "xl:grid xl:grid-cols-[minmax(0,1fr)_14rem] xl:gap-10" : ""
+          }`}
+        >
+          <div className="min-w-0">
+            <div className="mb-6 flex items-start gap-2 lg:hidden">
+              <details
+                ref={mobileDetailsRef}
+                className="min-w-0 flex-1 rounded-lg border border-gray-200 text-sm dark:border-gray-800"
+              >
+                <summary className="cursor-pointer px-3 py-1.5 font-medium">
+                  {S.rfcs.sidebarTitle}: {mobileLabel}
+                </summary>
+                <div className="border-t border-gray-200 px-3 py-2 dark:border-gray-800">
+                  <RfcSidebar
+                    onNavigate={() => {
+                      if (mobileDetailsRef.current) mobileDetailsRef.current.open = false;
+                    }}
+                  />
+                </div>
+              </details>
+              <button
+                type="button"
+                onClick={(event) => openSearch(event.currentTarget)}
+                aria-label={S.rfcs.search.open}
+                className="site-search-trigger inline-flex h-9 w-9 shrink-0 items-center justify-center"
+              >
+                <SearchIcon className="h-4 w-4" />
+              </button>
+            </div>
+
+            <article className="mx-auto w-full max-w-3xl xl:mx-0">
+              {children}
+              <RfcPager activeId={activeId} />
+              <p className="mt-6 flex flex-wrap gap-x-4 text-xs text-gray-400 dark:text-gray-500">
+                <a
+                  href={editHref}
+                  className="transition-colors hover:text-gray-700 dark:hover:text-gray-300"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {S.rfcs.editOnGithub}
+                </a>
+              </p>
+            </article>
+          </div>
+          {showToc && (
+            <SiteToc
+              label={S.rfcs.toc}
+              entries={toc}
+              activeId={activeTocId}
+              onNavigate={onPinToc}
+            />
+          )}
+        </div>
+      </div>
+      <SiteSearchDialog
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        returnFocusRef={searchReturnFocusRef}
+        search={search}
+        highlight={findRfcSearchMatchRanges}
+        onSelect={(result) => navigate(result.target)}
+        labels={S.rfcs.search}
+      />
+    </div>
+  );
+}

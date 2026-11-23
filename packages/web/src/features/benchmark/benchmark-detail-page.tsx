@@ -6,7 +6,7 @@
  * button is the way out rather than a close cross. An id that no longer resolves — a deleted
  * Benchmark or a stale link — says so in place of the detail and keeps that way out.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import type {
   BenchmarkManifestProblem,
@@ -21,7 +21,7 @@ import {
   ICONS,
   PageFrame,
   PageHeader,
-  Skeleton,
+  Waiting,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
@@ -29,7 +29,6 @@ import { nameOnMachine } from "../../lib/workspace-machines";
 import { useSessions } from "../../state/sessions";
 import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { downloadArchive } from "../agents";
@@ -38,6 +37,7 @@ import { benchmarkPath } from "./benchmark-prompts";
 import { useBenchmarksAcross } from "./benchmark-sources";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /**
  * What stands in place of the detail for a Benchmark that is not published: still being built,
@@ -92,8 +92,9 @@ const QUIET_ICON_BUTTON =
   "inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:bg-surface-muted hover:text-fg-muted";
 
 /**
- * What the header says under the Benchmark's title: the directory its files live in, with a copy
- * button — and, for a published Benchmark, Export beside it, which downloads its package — and
+ * What the header says under the Benchmark's title: the directory its files live in, relative to
+ * the App Data Dir, with a copy button that copies its absolute folder as the server holding the
+ * copy named it — and, for a published Benchmark, Export beside it, which downloads its package — and
  * the version its manifest is at; under them, for a copy an Agent imported from a repository
  * folder, a link to that folder. A draft, a failed Benchmark and one whose manifest cannot be read
  * have no package, and no Export. A Benchmark whose manifest was written before versions or could
@@ -104,7 +105,7 @@ export function BenchmarkHeaderFacts({
   benchmark,
   onExport,
 }: {
-  benchmark: Pick<BenchmarkSummary, "id" | "version" | "origin"> &
+  benchmark: Pick<BenchmarkSummary, "id" | "version" | "origin" | "dir"> &
     Partial<Pick<BenchmarkSummary, "status">>;
   /** Downloads the package; shown only when the Benchmark is published. */
   onExport?: () => void;
@@ -118,7 +119,7 @@ export function BenchmarkHeaderFacts({
             {benchmarkPath(benchmark.id)}
           </span>
           <CopyButton
-            text={benchmarkPath(benchmark.id)}
+            text={benchmark.dir ?? benchmarkPath(benchmark.id)}
             label={S.benchmark.copyPath}
             size="sm"
             className="shrink-0"
@@ -187,7 +188,14 @@ export function BenchmarkDetailPage() {
     benchmarkId === "" ? null : (listed.benchmarks?.find((b) => b.id === benchmarkId) ?? null);
   /** The Project's list came back without this id: the Benchmark was deleted, or the link is stale. */
   const missing = benchmark === null && listed.benchmarks !== null && listed.pending.length === 0;
-  const error = listed.error === null ? null : apiErrorText(listed.error);
+  // Made once per failure, so its report keeps the time it failed at.
+  const error = useMemo(
+    () =>
+      listed.error === null
+        ? null
+        : failureNode(listed.error, { what: "a Project's Benchmarks could not be listed" }),
+    [listed.error],
+  );
 
   useDocumentTitle(benchmark?.title ?? S.benchmark.title);
 
@@ -249,12 +257,7 @@ export function BenchmarkDetailPage() {
   } else if (missing) {
     body = <EmptyState title={S.benchmark.notFound} description={S.benchmark.notFoundHint} />;
   } else if (benchmark === null) {
-    body = (
-      <div className="space-y-3">
-        <Skeleton className="h-6 w-64" />
-        <Skeleton className="h-32 w-full" />
-      </div>
-    );
+    body = <Waiting form="page" />;
   } else if (masked) {
     body = (
       <UnpublishedNotice

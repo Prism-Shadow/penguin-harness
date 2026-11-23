@@ -8,19 +8,13 @@ import {
   UserAvatar,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import {
-  navChildKeysFor,
-  navEntryKeysFor,
-  splitModeNavItems,
-  splitNavEntries,
-  type NavEntryKey as NavGroupKey,
-} from "../../lib/sidebar-nav-state";
+import { navChildKeysFor, navKeysFor } from "../../lib/nav-pages";
 
+import { APP_CENTER_PATH } from "../../lib/app-center-path";
 import { glyphOf } from "../../lib/nav-icons";
 import { pageTitle } from "../index";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
-import { isNavPage } from "../../lib/main-sidebar-persistence";
 import type { MainSidebarState } from "../../features/session-list";
 
 /** One page entry as the nav draws it, in either mode. */
@@ -32,14 +26,17 @@ interface NavEntryView {
   /** The resolved drawing. */
   glyph: string;
   /**
-   * The rows this entry carries below it (a page's `parent`), drawn indented: a child has no
-   * pin choice and no drag of its own, and it follows its parent's area (nav-state.ts). The
+   * The rows this entry carries below it (a page's `parent`), drawn indented under it. The
    * collapsed rail draws entries only (rail.tsx lights the parent while a child is open).
    */
   children?: readonly NavEntryView[];
 }
 
-export function createMainSidebarNavigation(scope: MainSidebarState) {
+/**
+ * The nav as the sidebar draws it. `onSystemApp`: the page on screen is a system app or lies under
+ * one (lib/system-apps.ts), where the App Center's row is lit, since that is where those open.
+ */
+export function createMainSidebarNavigation(scope: MainSidebarState, onSystemApp = false) {
   const {
     location,
     locale,
@@ -49,143 +46,83 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
     modeStates,
     currentMode,
     notes,
-    navCollapsed,
     navPages,
-    navPins,
-    modeNavPins,
-    pinFocusRef,
-    navToggleRef,
-    setNavPinned,
-    isNavEntryPinned,
-    navEntryDragProps,
     onNavigate,
   } = scope;
 
-  /** The pages each entry carries below it (nav-state.ts), by the entry's key. */
+  /** The pages each entry carries below it (lib/nav-pages.ts), by the entry's key. */
   const childKeys = navChildKeysFor(navPages, user?.isAdmin === true);
   /** A development-mode page as the nav draws it; nothing for a key with no page. */
-  const devNavEntry = (key: NavGroupKey): NavEntryView[] => {
+  const devNavRow = (key: string): NavEntryView[] => {
     const page = navPages.find((page) => page.key === key);
     if (page === undefined) return [];
     // A page names itself in the interface's language (PageData.title / titleZh).
     return [
-      {
-        key,
-        to: page.path,
-        label: pageTitle(page, locale),
-        glyph: glyphOf(page.icon ?? key),
-        children: (childKeys.get(key) ?? []).flatMap((child) => devNavRow(child)),
-      },
+      { key, to: page.path, label: pageTitle(page, locale), glyph: glyphOf(page.icon ?? key) },
     ];
   };
-  /** A page under an entry: a plain indented row — no pin choice and no drag of its own. */
-  const devNavRow = (key: NavGroupKey): NavEntryView[] => {
-    const page = navPages.find((page) => page.key === key);
-    return page === undefined
-      ? []
-      : [
-          {
-            key,
-            to: page.path,
-            label: pageTitle(page, locale),
-            glyph: glyphOf(page.icon ?? key),
-          },
-        ];
-  };
 
   /**
-   * The nav's page entries by area, in the current mode. Development mode (nav-state.ts): the
-   * main nav's pages minus the entries this user's role cannot reach, after New chat, which is
-   * always pinned and drawn as a plain row at the head of the fixed block. A contributed mode:
+   * The nav's page entries in the current mode, in order. Development mode: the main nav's pages
+   * minus the entries this user's role cannot reach (Agents and the App Center), each with the
+   * pages under it; New chat heads them in the fixed block (main-frame.tsx). A contributed mode:
    * its own rows (company mode: the organization's six pages and the company-mode pages plugins
-   * add — channels are not among them, they are the list below), none pinned until the user
-   * pins one. Both areas keep their order.
+   * add — channels are not among them, they are the list below).
    */
-  const navAreas: { pinned: NavEntryView[]; collapsible: NavEntryView[] } = (() => {
-    if (currentMode >= 0) {
-      const rows = modeStates[currentMode]!.navItems.map((item) => ({
-        key: item.key,
-        to: item.to,
-        label: item.label,
-        glyph: glyphOf(item.icon),
-        children: item.children?.map((child) => ({
-          key: child.key,
-          to: child.to,
-          label: child.label,
-          glyph: glyphOf(child.icon),
-        })),
-      }));
-      return splitModeNavItems(rows, modeNavPins);
-    }
-    const split = splitNavEntries(navEntryKeysFor(navPages, user?.isAdmin === true), navPins);
-    return {
-      pinned: split.pinned.filter(isNavPage).flatMap(devNavEntry),
-      collapsible: split.collapsible.filter(isNavPage).flatMap(devNavEntry),
-    };
-  })();
+  const navEntries: NavEntryView[] =
+    currentMode >= 0
+      ? modeStates[currentMode]!.navItems.map((item) => ({
+          key: item.key,
+          to: item.to,
+          label: item.label,
+          glyph: glyphOf(item.icon),
+          children: item.children?.map((child) => ({
+            key: child.key,
+            to: child.to,
+            label: child.label,
+            glyph: glyphOf(child.icon),
+          })),
+        }))
+      : navKeysFor(navPages, user?.isAdmin === true).flatMap((key) =>
+          devNavRow(key).map((entry) => ({
+            ...entry,
+            children: (childKeys.get(key) ?? []).flatMap(devNavRow),
+          })),
+        );
 
   /**
-   * One page entry: the package's pinnable nav row, bound to its route, its badge trail, its pin
-   * choice and its drag. In development mode four entries sit on a badge trail — Agents (an
-   * outdated kernel, fixed on the Agent settings page two clicks down), Plugins, Models and the
-   * Cost Center (each cleared on the page itself). The row's own label is visible, so the hint
-   * only adds what the dot means, and the accessible name keeps the label as its prefix. The dot
-   * hangs at the row's right edge, vertically centred on the row.
+   * One page entry: the column's nav row, bound to its route and its badge trail. In development
+   * mode two entries sit on badge trails — Agents (an outdated kernel, fixed on the Agent settings
+   * page two clicks down) and the App Center, whose one dot covers the system apps' trails
+   * (Plugins, Models and the Cost Center, each cleared on its page; lib/system-app-notes.ts) and
+   * whose hint joins their sentences. The row's own label is visible, so the hint only adds what
+   * the dot means (marked extra, so it shows over the visible label), and the accessible name
+   * keeps the label as its prefix. The dot hangs at the row's right edge, vertically centred on
+   * the row.
    *
-   * A row with nowhere to go (company mode before there is an organization) keeps its place —
-   * the area its pin choice puts it in — and its glyph, muted, with nothing to click, drag or tab
-   * to, the star included: a live star would be the one control on a row that otherwise answers
-   * nothing.
+   * A row with nowhere to go (company mode before there is an organization) keeps its place and
+   * its glyph, muted, with nothing to click or tab to.
    */
   const renderNavEntry = ({ key, to, label, glyph, children }: NavEntryView) => {
     if (to === null) {
       return <NavRow key={key} surface="muted" label={label} glyph={glyph} href="" disabled />;
     }
     const note = currentMode < 0 ? (notes.get(key) ?? null) : null;
-    const pinned = isNavEntryPinned(key);
     const row = (
       <SidebarNavEntry
         key={key}
         label={label}
         glyph={glyph}
         href={to}
-        active={isCurrentPath(to, location.pathname)}
+        active={isCurrentPath(to, location.pathname) || (to === APP_CENTER_PATH && onSystemApp)}
         renderLink={renderRouterLink}
         onClick={() => onNavigate?.()}
-        {...navEntryDragProps(key)}
-        pin={{
-          pinned,
-          label: S.nav.pinEntry,
-          tooltip: pinned ? S.nav.unpinEntry : S.nav.pinEntry,
-          onToggle: (e) => {
-            // A keyboard toggle follows its row into the other area (see pinFocusRef). A row
-            // that lands in the folded area is not on screen: the chevron that unfolds it is the
-            // nearest place to stand, read once the move has committed, since the commit may be
-            // mounting the chevron itself.
-            if (e.currentTarget.matches(":focus-visible")) {
-              if (pinned && navCollapsed) {
-                requestAnimationFrame(() => navToggleRef.current?.focus());
-              } else {
-                pinFocusRef.current = key;
-              }
-            }
-            setNavPinned(key, !pinned);
-          },
-          buttonRef: (el) => {
-            if (el === null || pinFocusRef.current !== key) return;
-            pinFocusRef.current = null;
-            el.focus();
-            // A row that lands in an area still folding away is inert and cannot take focus:
-            // the chevron again, once this commit is done.
-            if (document.activeElement !== el) {
-              queueMicrotask(() => navToggleRef.current?.focus());
-            }
-          },
-        }}
         {...(note !== null
           ? {
               ariaLabel: `${label} · ${note}`,
+              // The sentence is not on screen beside the label: the hint shows over it.
               tooltip: note,
+              tooltipExtra: true,
               badge: <UpdateDot size="inline" position="right-2.5 top-1/2 -translate-y-1/2" />,
             }
           : {})}
@@ -196,8 +133,7 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
       <Fragment key={key}>
         {row}
         {children.map((child) => (
-          /* A child has no pin choice and no drag of its own (navChildKeysFor): a plain
-             indented row under its parent, wherever the parent sits. */
+          /* A child is a plain indented row under its parent. */
           <div key={child.key} className="ps-5">
             <NavRow
               surface="muted"
@@ -260,7 +196,7 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
   );
   return {
     ...scope,
-    navAreas,
+    navEntries,
     renderNavEntry,
     accountRow,
   };

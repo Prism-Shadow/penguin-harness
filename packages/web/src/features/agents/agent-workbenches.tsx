@@ -16,11 +16,22 @@
  *   workbenches" is off every row's switch is greyed at its own value, and a server older than
  *   the switches gets none. A workbench that does not run (its own switch or the Agent-wide one
  *   is off) has nothing to open or reload; its history, restore, export and removal stay.
- * - The App Center setting, on a row of an Agent on this server (the App Center lists those
- *   only), commits at once too, from the switch or from the menu's row — one setting, two
- *   controls: it rewrites `penguin.appCenter.show` in the workbench's package.json, and the
- *   reload that follows (none while it does not run) records the edit as a version. A refused
- *   write puts both back where the file says.
+ * - The App Center setting commits at once too, from the switch or from the menu's row — one
+ *   setting, two controls: it rewrites `penguin.appCenter.show` in the workbench's package.json,
+ *   and the reload that follows (none while it does not run) records the edit as a version. A
+ *   refused write puts both back where the file says. A machine's Agent has it as well, written
+ *   on that machine: the App Center lists a machine's apps for an administrator, and its "Remove
+ *   from App Center" is this same setting, so this row is where such an app comes back.
+ * - The sidebar setting is the menu's checkable "Show in the sidebar", on every row whose server
+ *   reports it (`showInSidebar`). It commits at once and writes the installation's
+ *   `.hidden-from-sidebar` marker, never the package.json: no reload and no version, and a plugin
+ *   update keeps it, where it resets the App Center's. Every member sees the same sidebar list.
+ *   A refused write puts it back.
+ * - "Open" opens the app's window over the main area, the one the App Center and the sidebar's
+ *   list open (lib/running-apps.ts): the same live window when the app runs, and closing or
+ *   minimizing it comes back here.
+ * - A workbench without a page has no window to show what its load said, so its row does: the
+ *   load error, else the first hint, with every hint in the row's hint.
  *
  * Everything but the Enable switch is member-level, matching the workbench routes, and goes to
  * the server the Agent lives on.
@@ -33,7 +44,9 @@
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { useNavigate } from "react-router";
+import { locatedAppKey } from "../../lib/app-center-path";
+import { useRestoreApp } from "../../lib/running-apps";
+import { shortcutOfWorkbench } from "../../lib/workbench-shortcut";
 import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -50,7 +63,7 @@ import { useInstantSetting } from "../../lib/instant-setting";
 import { S } from "../../lib/strings";
 import { workbenchTabsOf } from "../../lib/workbench-tabs";
 import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
+import { agentDisplayName, useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../../lib/skill-use";
 import { toastApiError } from "../../lib/toast-api-error";
@@ -65,6 +78,7 @@ import {
   WorkbenchMark,
   WorkbenchRowMenu,
   type AppCenterControl,
+  type SettingControl,
 } from "./workbench-row";
 
 /** The row of the newest version holding the workbench's current files; -1 when none does. */
@@ -150,6 +164,8 @@ function WorkbenchAppCenter({
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  /** The machine the Agent lives on, whose copy of the workbench is written; null for this server. */
+  const machineId = useAgentLocation();
   const setting = useInstantSetting(workbench.appCenter?.show === true, async (show: boolean) => {
     if (!projectId) return;
     const res = await api.setWorkbenchAppCenter(
@@ -157,7 +173,7 @@ function WorkbenchAppCenter({
       options.agentId,
       workbench.id,
       show,
-      null,
+      machineId,
     );
     options.onSwitched(res.workbench);
   });
@@ -166,6 +182,64 @@ function WorkbenchAppCenter({
     disabled: setting.busy,
     onChange: (show) => void setting.set(show),
   });
+}
+
+/**
+ * One workbench's sidebar setting: its `.hidden-from-sidebar` marker, written at once on the
+ * server the Agent lives on and adopted from the answer, rolled back with a toast when refused.
+ * Absent (`children(undefined)`) when that server does not report the setting.
+ */
+function WorkbenchSidebar({
+  workbench,
+  options,
+  children,
+}: {
+  workbench: WorkbenchInfo;
+  options: WorkbenchRowsOptions;
+  children: (sidebar: SettingControl | undefined) => ReactNode;
+}) {
+  const { currentProject } = useProject();
+  const projectId = currentProject?.projectId ?? null;
+  /** The machine the Agent lives on, whose copy of the workbench carries the marker. */
+  const machineId = useAgentLocation();
+  const setting = useInstantSetting(workbench.showInSidebar !== false, async (show: boolean) => {
+    if (!projectId) return;
+    const res = await api.setWorkbenchSidebar(
+      projectId,
+      options.agentId,
+      workbench.id,
+      show,
+      machineId,
+    );
+    options.onSwitched(res.workbench);
+  });
+  if (workbench.showInSidebar === undefined) return children(undefined);
+  return children({
+    checked: setting.value,
+    disabled: setting.busy,
+    onChange: (show) => void setting.set(show),
+  });
+}
+
+/**
+ * What a row says under its title: the load error when its files do not load; for a workbench
+ * without a page, which has no window to say it in, the first thing its load noticed (every one
+ * in the hint); else its id.
+ */
+function loadNotice(workbench: WorkbenchInfo): ReactNode {
+  // Strings stay strings: the row caps a long line it is given as text.
+  if (workbench.error !== null) return workbench.error;
+  const hints = workbench.tabs.length === 0 ? (workbench.hints ?? []) : [];
+  if (hints.length === 0) return workbench.id;
+  return (
+    <span
+      data-tooltip={hints.join("\n")}
+      data-tooltip-content="text"
+      data-tooltip-extra={hints.length > 1}
+    >
+      {hints[0]}
+    </span>
+  );
 }
 
 /**
@@ -178,12 +252,14 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
   modals: ReactNode;
 } {
   const { agentId, onChanged, sourceOf, onOpenFiles, onShowPlugin } = options;
-  const { currentProject } = useProject();
+  const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   /** The machine the Agent lives on, where its workbenches are; null for this server. */
   const machineId = useAgentLocation();
   const { locale } = useLocale();
-  const navigate = useNavigate();
+  const restore = useRestoreApp();
+  const local = agents.find((agent) => agent.agentId === agentId);
+  const agentName = machineId === null && local ? agentDisplayName(local) : agentId;
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<{
     workbench: WorkbenchInfo;
@@ -225,32 +301,22 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
     const source = sourceOf(workbench.id);
     // The body opens the workbench's files; "Open" stays the way into the app.
     const open = () => onOpenFiles({ kind: "workbench", name: workbench.id, title });
-    /** The row's controls, with the App Center setting when the row has one. */
-    const controls = (appCenter: AppCenterControl | undefined) => (
+    /** The row's controls, the App Center setting among them, and the sidebar's when it has one. */
+    const controls = (appCenter: AppCenterControl, sidebar: SettingControl | undefined) => (
       <>
         {enabled !== undefined && (
           <WorkbenchSwitch workbench={{ ...workbench, enabled }} title={title} options={options} />
         )}
-        {appCenter !== undefined && <AppCenterToggle title={title} {...appCenter} />}
+        <AppCenterToggle title={title} {...appCenter} />
         {first && running && projectId && (
           <Button
             size="sm"
             aria-label={`${S.workbenches.open} ${title}`}
             onClick={() =>
-              void navigate("/chat/new", {
-                state: {
-                  agentId,
-                  workspace: "",
-                  // A machine's Agent runs there: its temporary Workspace on it.
-                  ...(machineId !== null ? { machineId } : {}),
-                  workbench: {
-                    projectId,
-                    agentId,
-                    tabId: first.tabId,
-                    machineId,
-                  },
-                },
-              })
+              restore(
+                locatedAppKey(agentId, workbench.id, machineId),
+                shortcutOfWorkbench(projectId, { agentId, agentName }, workbench, machineId),
+              )
             }
           >
             {S.workbenches.openAction}
@@ -260,6 +326,7 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
           title={title}
           disabled={busy}
           appCenter={appCenter}
+          sidebar={sidebar}
           onReload={
             running
               ? () =>
@@ -298,17 +365,16 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
             />
           )
         }
-        description={workbench.error ?? workbench.id}
+        description={loadNotice(workbench)}
         meta={workbench.version ? `v${workbench.version}` : undefined}
         trailing={
-          // The App Center lists this server's Agents only: a machine's row has no such setting.
-          machineId === null ? (
-            <WorkbenchAppCenter workbench={workbench} options={options}>
-              {controls}
-            </WorkbenchAppCenter>
-          ) : (
-            controls(undefined)
-          )
+          <WorkbenchSidebar workbench={workbench} options={options}>
+            {(sidebar) => (
+              <WorkbenchAppCenter workbench={workbench} options={options}>
+                {(appCenter) => controls(appCenter, sidebar)}
+              </WorkbenchAppCenter>
+            )}
+          </WorkbenchSidebar>
         }
       />
     );

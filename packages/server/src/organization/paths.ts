@@ -1,6 +1,6 @@
 /**
  * Where an organization lives on disk. Every path is under the Project directory —
- * `<root>/<projectId>/organizations/<orgId>/` — so the model's `<app_data_dir>` placeholder
+ * `<root>/projects/<projectId>/organizations/<orgId>/` — so the model's `<app_data_dir>` placeholder
  * (its Environment's App Data Dir is the Project directory) resolves to the same place the
  * server reads. Files are the truth for company mode; nothing here touches SQLite.
  */

@@ -2,6 +2,8 @@
  * Given a plugin with a workbench, installing on any Agent copies its runnable source and Skill.
  * Given an installed copy, updating removes retired source but preserves state, history and user files.
  * Given a manually owned name or a second plugin with that name, installation refuses before writing Skills.
+ * Given a workbench named as Windows reserves (`aux`), a new install refuses before writing Skills,
+ * while a copy already installed under that name still updates.
  * Given a symlink parent or an unsafe payload, installation never writes outside the Agent.
  * Given a restored package version, installed metadata reflects the restored source rather than the last install.
  * Given an interrupted installation receipt, retry completes the original plugin's install.
@@ -12,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import {
+  agentDir,
   installPlugin,
   listInstalledWorkbenches,
   readLibraryPackage,
@@ -44,7 +47,7 @@ const SUPPORT_APP = {
 /** A support plugin as the library reads it: a Skill and the support workbench, declared in its table. */
 let supportPlugin: LibraryPlugin;
 const plugin = () => structuredClone(supportPlugin);
-const base = () => path.join(root, project, "agents", agent);
+const base = () => agentDir(root, project, agent);
 const dir = () => path.join(base(), "agent_state/workbenches/support");
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-wb-"));
@@ -67,6 +70,32 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true });
+});
+it("refuses a new workbench named as Windows reserves, but still updates one already installed under it", async () => {
+  const reserved = () => {
+    const p = plugin();
+    p.workbenches![0]!.name = "aux";
+    return p;
+  };
+  const aux = path.join(base(), "agent_state/workbenches/aux");
+  await expect(installPlugin(root, project, agent, reserved())).rejects.toThrow(
+    /Windows reserves it/,
+  );
+  await expect(fs.stat(aux)).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(fs.stat(path.join(base(), "agent_state/skills"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+
+  // Installed before the rule, on a disk that allowed the name: the update goes through.
+  await fs.mkdir(aux, { recursive: true });
+  await fs.writeFile(
+    path.join(aux, ".plugin.json"),
+    JSON.stringify({ name: "aux", plugin: "penguin-support", version: "2026.10.13.1", files: [] }),
+  );
+  await installPlugin(root, project, agent, reserved());
+  expect(
+    (await listInstalledWorkbenches(root, project, agent)).map((w) => [w.name, w.version]),
+  ).toEqual([["aux", "2026.10.14.1"]]);
 });
 it("installs a plugin's runnable workbench and Skill on an ordinary Agent", async () => {
   await installPlugin(root, project, agent, plugin());

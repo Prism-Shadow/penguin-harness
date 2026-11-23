@@ -218,6 +218,7 @@ describe("benchmark packages", () => {
       const metadata = {
         version: "0.1.0",
         title_zh: "报告写作",
+        data_url: "https://github.com/example/report-writing",
         last_update: "2026-10-30T12:00:00Z",
         author: { name: "Prism-Shadow" },
       };
@@ -678,7 +679,7 @@ describe("benchmark packages", () => {
       expect(res.status).toBe(status);
       expect(((await res.json()) as { error: { code: string } }).error.code).toBe(code);
       expect(await fs.readdir(dir)).toEqual([]);
-      expect(await exists(path.join(t.root, projectId, "escape.md"))).toBe(false);
+      expect(await exists(path.join(t.root, "projects", projectId, "escape.md"))).toBe(false);
       expect(await exists(path.join(t.root, "escape.md"))).toBe(false);
     });
   });

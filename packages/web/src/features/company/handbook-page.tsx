@@ -13,14 +13,14 @@
  * the page, so nothing offers to add a file to one. A relative link between documents opens the
  * linked document in place, as it does for any Workspace file.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, EmptyState, SkeletonList } from "@prismshadow/penguin-ui";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Button, EmptyState, Waiting } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { WorkspaceBrowser } from "../workspace";
 import { useOrg } from "./org-layout";
+import { failureNode } from "../../lib/failure";
 
 /** The index, `handbook/README.md`: opened on arrival, and kept where it is. */
 const HANDBOOK_INDEX = "README.md";
@@ -33,14 +33,14 @@ export function HandbookPage() {
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.handbook}` : S.nav.org.handbook);
   /** The handbook directory's absolute path, once the listing has named it. */
   const [dir, setDir] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
 
   const load = useCallback(async () => {
     setError(null);
     try {
       setDir((await api.listOrgHandbookFiles(projectId, orgId)).dir);
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an organization's handbook could not be listed" }));
     }
   }, [projectId, orgId]);
 
@@ -65,9 +65,7 @@ export function HandbookPage() {
         }
       />
     ) : (
-      <div aria-busy="true">
-        <SkeletonList rows={8} />
-      </div>
+      <Waiting rows={8} />
     );
   }
 

@@ -33,7 +33,7 @@ export interface ModelOauthRouteDeps extends ModelsRouteDeps {
   access: Access;
 }
 import { HttpError } from "../errors.js";
-import { publicOriginOf } from "../public-origin.js";
+import { publicOriginOf } from "@prismshadow/penguin-library-http/public-origin";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { modelConfigChanged } from "./models.js";
 import type { ModelsRouteDeps } from "./models.js";

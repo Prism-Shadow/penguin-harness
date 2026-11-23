@@ -5,7 +5,7 @@ description: >-
   experiment with a dedicated optimization Session: an annealed edit budget bounds each proposal, a leakage Critic
   screens it before any measurement, a Pruner deletes machinery that stopped earning its place,
   and a noise-adjusted floor plus a token-cost rule select the next harness.
-version: 2026.11.12.2
+version: 2026.11.20.1
 ---
 
 # RRSI
@@ -62,10 +62,9 @@ scratchpad. SKILL_DIR below is the copy of the method references prepared for th
 ```text
 PROJECT_DIR  = <app_data_dir>
 PROJECT_ID   = basename of PROJECT_DIR
-PENGUIN_HOME = dirname of PROJECT_DIR
 TARGET       = PROJECT_DIR/agents/<test_agent_id>
 STATE        = TARGET/agent_state
-BENCHMARK    = PROJECT_DIR/benchmarks/<benchmark_id>
+BENCHMARK    = <the BENCHMARK_DIR the request names>   # when it names none: PROJECT_DIR/agents/system_agent/app/data/benchmark/<benchmark_id>
 CASE         = BENCHMARK/<case_id>       # statement/README.md is public; rubric/README.md is private
 SCOREBOARD   = BENCHMARK/scoreboard.yaml
 SNAPSHOTS    = TARGET/snapshots

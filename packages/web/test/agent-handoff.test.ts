@@ -3,7 +3,8 @@
  * it re-exports are core's, tested in packages/core/test/markers.test.ts.
  *
  * - The `/agent` picker's search matches any part of an Agent's id or name, case-insensitively;
- *   an empty query lists every candidate and a query matching nothing lists none.
+ *   an empty query lists every candidate and a query matching nothing lists none. The system
+ *   Agent is never a candidate.
  * - A staged chip acts only on send: with nothing staged the message is an ordinary post; a
  *   staged handoff opens the new chat whatever this session is doing; a staged model fork goes
  *   out only while the session is idle and is blocked (never degraded into a post) otherwise;
@@ -43,6 +44,12 @@ describe("filterAgents (the /agent picker's search box)", () => {
   it("an empty or whitespace-only query returns all candidates", () => {
     expect(filterAgents(AGENTS, "")).toHaveLength(4);
     expect(filterAgents(AGENTS, "   ")).toHaveLength(4);
+  });
+
+  it("never offers the system Agent, by an empty query or by its own id", () => {
+    const withSystem = [...AGENTS, { ...agent("system_agent", "System"), system: true as const }];
+    expect(filterAgents(withSystem, "")).toHaveLength(4);
+    expect(filterAgents(withSystem, "system")).toEqual([]);
   });
 
   it("filters by agentId, case-insensitively", () => {
