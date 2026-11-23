@@ -257,6 +257,17 @@ test("an archived Session’s native app deep link uses its own dock and leaves 
   await page.goBack();
   await expect(page).toHaveURL(/\/apps$/);
   await expect(page.getByRole("list", { name: "App Center" })).toBeVisible();
+  await page.setViewportSize({ width: 1360, height: 820 });
+  await page.goForward();
+  await expect(dock.getByRole("tab", { name: /Models|Model Library/ })).toBeVisible();
+  await page
+    .locator("aside")
+    .first()
+    .getByRole("link", { name: /^App Center/ })
+    .click();
+  await expect(page).toHaveURL(/\/apps$/);
+  await expect(slot(page, "catalog")).toHaveAttribute("data-pane", "full");
+  await expect(page.getByRole("list", { name: "App Center" })).toBeVisible();
 });
 
 test("machine-qualified chats read their own session and leave an existing same-ID draft alone", async ({

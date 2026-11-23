@@ -217,7 +217,13 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       );
     } else if (current) {
       let next = visitPage(ref.current, current);
-      if (toolSession !== undefined && (!toolSession || !hosts.current.has(current.id))) {
+      // Leaving a conversation dock through an ordinary link opens that destination alone.
+      // Keeping a bound workbench beside the catalog would reattach its previous Session.
+      const leavingDock = !beside && current.kind !== "session" && sessionAppPair(ref.current);
+      if (
+        leavingDock ||
+        (toolSession !== undefined && (!toolSession || !hosts.current.has(current.id)))
+      ) {
         next = { ...next, visible: [current.id], focus: current.id, right: [] };
       } else if (beside && current.kind !== "session" && current.kind !== "catalog") {
         const session = hosts.current.get(current.id) ??
