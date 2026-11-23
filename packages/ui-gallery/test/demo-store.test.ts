@@ -11,7 +11,6 @@
  * - Given paused playback, the evolution stream waits, then continues the same turn on resume.
  * - Given repeated rounds, completed automatic Sessions are reclaimed while manual and running Sessions stay.
  */
-import serverPackage from "../../server/package.json";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import {
@@ -84,42 +83,33 @@ function collector(): StreamHandlers & { messages: AmspRecord[]; events: ServerE
 }
 
 describe("the fixtures", () => {
-  it("starts the homepage with the installed apps and a new conversation", async () => {
-    const { f } = resetStore({ lang: "en", signedIn: true, freshProject: true, now: NOW });
-    expect(f.agents.map((agent) => agent.agentId)).toEqual([
-      "default_agent",
-      "penguin_support",
-      "system_agent",
-    ]);
-    // Check a fresh checkout both before and after the optional guide ships.
-    const guideShips = "@penguinharness/first-workbench-guide" in serverPackage.dependencies;
-    const defaultApps = ["slides", "images", ...(guideShips ? ["first-workbench-guide"] : [])];
-    expect(f.appCenter.shortcuts.map((app) => app.workbenchId)).toEqual([
-      ...defaultApps,
-      "support",
-    ]);
-    const sidebar = await getSidebarApps(IDS.project, IDS.agents.general, null);
-    expect(sidebar).toMatchObject({
-      apps: [
-        { workbenchId: "slides", titleZh: "AI PPT" },
-        { workbenchId: "images", titleZh: "图像工作室" },
-        ...(guideShips
-          ? [
-              {
-                agentId: IDS.agents.general,
-                workbenchId: "first-workbench-guide",
-                title: "Your first workbench",
-                titleZh: "我的第一个工作台",
-              },
-            ]
-          : []),
-      ],
-    });
-    expect(f.sessions).toHaveLength(0);
-    expect(f.models.defaultModel).toBeUndefined();
-    expect(f.benchmarks.map((bench) => bench.id)).toContain("example-benchmark");
-    expect(f.benchmarks.map((bench) => bench.id)).not.toContain(IDS.benchmarks.docs);
-  });
+  it.each(["en", "zh"] as const)(
+    "starts the %s homepage with the installed apps and a new conversation",
+    async (lang) => {
+      const { f } = resetStore({ lang, signedIn: true, freshProject: true, now: NOW });
+      expect(f.agents.map((agent) => agent.agentId)).toEqual([
+        "default_agent",
+        "penguin_support",
+        "system_agent",
+      ]);
+      expect(f.appCenter.shortcuts.map((app) => app.workbenchId)).toEqual([
+        "slides",
+        "images",
+        "support",
+      ]);
+      const sidebar = await getSidebarApps(IDS.project, IDS.agents.general, null);
+      expect(sidebar).toMatchObject({
+        apps: [
+          { workbenchId: "slides", titleZh: "AI PPT" },
+          { workbenchId: "images", titleZh: "图像工作室" },
+        ],
+      });
+      expect(f.sessions).toHaveLength(0);
+      expect(f.models.defaultModel).toBeUndefined();
+      expect(f.benchmarks.map((bench) => bench.id)).toContain("example-benchmark");
+      expect(f.benchmarks.map((bench) => bench.id)).not.toContain(IDS.benchmarks.docs);
+    },
+  );
 
   it("hold the same structure and the same ids in both languages", () => {
     const en = buildFixtures("en", NOW);
