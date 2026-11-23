@@ -68,7 +68,7 @@ import {
 import type { ActivityKind, ActivityMark } from "../../layout/disclosure-row/disclosure-row";
 import { DisclosureControlContext } from "../../layout/disclosure-row/disclosure-control";
 import { Fold } from "../../layout/fold/fold";
-import { CompactStepHeader } from "./compact-step-header";
+import { WorkStepHeader } from "./work-step-header";
 import { WallpaperBackdrop } from "../../shell/app-shell/wallpaper";
 
 /**
@@ -263,18 +263,12 @@ export function ActivityGroup({
   const compact = displayMode === "compact";
   const finding = !!stepNavigation?.revealAll;
   const currentRow =
-    compact && !finding ? (rows?.findLast((row) => row.active) ?? rows?.at(-1)) : undefined;
+    compact && running && !terminal && !finding
+      ? (rows?.findLast((row) => row.active) ?? rows?.at(-1))
+      : undefined;
   const rawSummary = currentRow?.summary;
   const stepSummary = typeof rawSummary === "function" ? rawSummary() : rawSummary;
-  const summary: ActivityStepSummary =
-    terminal && terminal.state !== "done"
-      ? terminal
-      : stepSummary
-        ? {
-            ...stepSummary,
-            ...(terminal ? { state: terminal.state, stateLabel: terminal.label } : {}),
-          }
-        : { label: title, state };
+  const summary: ActivityStepSummary = terminal ?? stepSummary ?? { label: title, state };
   const shown =
     expandable &&
     (finding ||
@@ -376,12 +370,12 @@ export function ActivityGroup({
       className={`ui-frame ${DISCLOSURE_CARD_CLASS}`}
       data-step-view={stepNavigation ? (finding ? "find" : displayMode) : undefined}
     >
-      {compact && stepNavigation && !finding && (rows?.length ?? 0) > 0 ? (
+      {stepNavigation && (rows?.length ?? 0) > 0 ? (
         <button
           type="button"
           data-slot="head"
           data-group-header
-          data-step-head=""
+          data-step-head={compact && !finding ? "" : undefined}
           data-kind={summary.kind ?? kind}
           data-state={activityState(summary.state)}
           data-step-terminal={terminal ? true : undefined}
@@ -390,8 +384,11 @@ export function ActivityGroup({
           className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} ${DISCLOSURE_HEADER_ROW_CLASS} min-w-0 max-sm:gap-1 max-sm:pe-[var(--activity-head-reserve,0.75rem)]`}
         >
           <WallpaperBackdrop />
-          <CompactStepHeader
+          <WorkStepHeader
             summary={summary}
+            live={running && !terminal}
+            progress={inFlight && !terminal}
+            titleInk={TITLE_INK[activityState(summary.state)]}
             count={stepNavigation.count ?? count}
             elapsed={stepNavigation.elapsed}
             open={shown}

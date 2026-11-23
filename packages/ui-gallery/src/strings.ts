@@ -1122,7 +1122,7 @@ export const zh = {
       compact: "紧凑",
       finish: "结束运行",
       restart: "重新运行",
-      finished: "运行完毕",
+      finished: "已完成",
       activity: "运行步骤",
       running: "运行中",
       thinking: "思考",

@@ -137,7 +137,7 @@ function useWorkGroupState(
       ? S.chat.workFailed
       : outcome?.state === "stopped"
         ? S.chat.workStopped
-        : running
+        : !outcome && running
           ? S.chat.workRunning
           : S.chat.workDone;
   return {

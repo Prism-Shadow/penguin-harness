@@ -89,7 +89,7 @@ describe("work display modes", () => {
     const view = await mount(group([think(1, "First decision"), call(2)]));
     expect(header().getAttribute("aria-expanded")).toBe("true");
     expect(rows()).toHaveLength(2);
-    expect(count()).toBeUndefined();
+    expect(count()).toBe(S.chat.workGroupSteps(2));
     expect(view.container.textContent).not.toContain("First decision");
     expect(view.container.textContent).not.toContain("Output 2");
     expect(view.container.textContent).toContain("Details for command 2");
@@ -166,10 +166,12 @@ describe("work display modes", () => {
       last.workOutcome = { state, durationMs: 2300 };
       const finished = () =>
         group([think(1, "First decision"), last], { ...context, taskRunning: false });
-      await mount(finished());
+      const view = await mount(group([think(1, "First decision"), call(2)]));
+      expect(header().textContent).toContain("Details for command 2");
+      await view.rerender(finished());
       const label =
         state === "done"
-          ? "Details for command 2"
+          ? S.chat.workDone
           : state === "failed"
             ? S.chat.workFailed
             : S.chat.workStopped;

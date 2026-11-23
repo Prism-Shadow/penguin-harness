@@ -55,7 +55,7 @@ async function createSession(page, approvalMode) {
 async function openToolOutput(page) {
   const group = page
     .locator("button[aria-expanded]")
-    .filter({ hasText: /运行中|运行完毕/ })
+    .filter({ hasText: /运行中|已完成/ })
     .first();
   await expect(group).toBeVisible();
   if ((await group.textContent())?.includes("运行中")) {

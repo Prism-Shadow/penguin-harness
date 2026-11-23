@@ -5145,7 +5145,7 @@ Benchmark：
       input_subagent: "交流",
     } as Record<string, string>,
     workRunning: "运行中",
-    workDone: "运行完毕",
+    workDone: "已完成",
     workFailed: "运行失败",
     workStopped: "已停止",
     workRetryStep: (n: number) => `第 ${n} 次重试`,
