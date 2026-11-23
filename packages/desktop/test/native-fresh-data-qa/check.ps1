@@ -10,7 +10,7 @@ $volName=@('R:','T:','V:','Y:','W:') | Where-Object {![IO.Directory]::Exists($_+
 if (!$volName) {throw 'No unused drive letter.'}
 $underlying=Join-Path $root 'volume'
 [void](New-Item -ItemType Directory -Path $underlying -Force)
-$target=Join-Path ($volName+'\') 'Character and Session data'
+$target=$volName+'\Character and Session data'
 $program=Join-Path $root 'Fresh installed program'
 $record=Join-Path $root 'case.json'
 $installer=Join-Path $env:RUNNER_TEMP 'installer\penguin-desktop-win32-x64.exe'
