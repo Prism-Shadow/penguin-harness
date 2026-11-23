@@ -45,8 +45,17 @@ export interface DockPanelData {
   lead?: boolean;
 }
 
-/** A panel's body; `active` is whether its tab is the shown one in an open dock. */
-export type DockPanelBody = ComponentType<{ active: boolean }>;
+/** The authorized Session that a host workbench was opened for. */
+export interface SessionWorkbenchScope {
+  projectId: string;
+  machineId: string | null;
+  agentId: string;
+  sessionId: string;
+  workspace?: string;
+}
+
+/** A panel's body; a host workbench receives the explicit Session that owns its tools. */
+export type DockPanelBody = ComponentType<{ active: boolean; scope?: SessionWorkbenchScope }>;
 
 /**
  * `DockModule.panels`, code half: the body itself, or `{ mainDefinitions }` when the panel names
