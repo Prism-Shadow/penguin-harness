@@ -6,7 +6,7 @@
  * network as before.
  */
 import { ApiError } from "./errors";
-import { isApiUrl, splitUrl } from "./router";
+import { isApiUrl } from "./router";
 import type { Method } from "./router";
 import { router } from "./routes";
 import { workbenchAnswer } from "./workbench-api";
@@ -65,14 +65,6 @@ export function installFetchShim(): void {
     ).toUpperCase() as Method;
     const body = bodyOf(init);
     const preview = workbenchAnswer(getStore(), url, method, body);
-    return preview
-      ? Promise.resolve(preview)
-      : answerAsResponse(method, splitUrl(url).path + urlQuery(url), body);
+    return preview ? Promise.resolve(preview) : answerAsResponse(method, url, body);
   };
-}
-
-function urlQuery(url: string): string {
-  const { query } = splitUrl(url);
-  const qs = query.toString();
-  return qs ? `?${qs}` : "";
 }

@@ -10,6 +10,7 @@
  */
 import type { ServerEvent, SessionInfo } from "@prismshadow/penguin-server/api";
 import type { VoicePolishSettings } from "../../../../web/src/api/tool-types";
+import { ApiError } from "./errors";
 import { buildFixtures, DEFAULT_MODEL, effectiveOf } from "./fixtures";
 import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
@@ -131,14 +132,20 @@ export class DemoStore {
   private demoTakenOver = false;
   private readonly live = new Map<string, Live>();
   private created = 0;
+  private readonly remoteSessions = new Map<string, DemoStore>();
 
   constructor(
     private readonly init: StoreInit,
     now: number,
+    private readonly machine?: { id: string; catalog: DemoFixtures },
   ) {
     const { lang, signedIn, embedded, evolutionDemo, notices } = init;
     this.lang = lang;
     this.signedIn = signedIn;
+    if (machine) {
+      this.f = { ...machine.catalog, sessions: [] };
+      return;
+    }
     this.f = buildFixtures(lang, now, embedded);
     if (init.freshProject) {
       const f = this.f;
@@ -196,6 +203,31 @@ export class DemoStore {
 
   // ---- Sessions --------------------------------------------------------------------------
 
+  /** A machine shares the Project catalog but owns its conversations and event channels. */
+  sessionsOn(machineId: string | null): DemoStore {
+    if (machineId === null) return this;
+    const machine = this.f.machines.machines.find(
+      (candidate) =>
+        candidate.machineId === machineId ||
+        candidate.id === machineId ||
+        candidate.alias === machineId,
+    );
+    if (machine?.local) return this;
+    if (!machine?.machineId || !machine.api) {
+      throw new ApiError(503, "not_connected", "The machine is not connected.");
+    }
+    const owner = machine.machineId;
+    let store = this.remoteSessions.get(owner);
+    if (!store) {
+      store = new DemoStore({ lang: this.lang, signedIn: this.signedIn }, Date.now(), {
+        id: owner,
+        catalog: this.f,
+      });
+      this.remoteSessions.set(owner, store);
+    }
+    return store;
+  }
+
   session(sessionId: string): SessionInfo | undefined {
     return this.f.sessions.find((s) => s.sessionId === sessionId);
   }
@@ -245,7 +277,7 @@ export class DemoStore {
     this.created += 1;
     const now = Date.now();
     const row: SessionInfo = {
-      sessionId: `s-new-${this.created}`,
+      sessionId: `s-${this.machine ? this.machine.id + "-" : ""}new-${this.created}`,
       projectId: IDS.project,
       agentId,
       provider: body.provider ?? DEFAULT_MODEL.provider,
@@ -600,6 +632,7 @@ export class DemoStore {
   }
 
   dispose(): void {
+    for (const remote of this.remoteSessions.values()) remote.dispose();
     this.evolutionPlayback.dispose();
     for (const id of this.live.keys()) this.stopScript(id);
   }

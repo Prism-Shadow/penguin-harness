@@ -83,8 +83,6 @@ afterEach(async () => {
 });
 /** Picks a row of the workbench's More menu. */
 async function more(item: string) {
-  if (!hasButton(`${en.workbenches.more} Support`))
-    await click(rowOf("Support").querySelector("button")!);
   await click(button(`${en.workbenches.more} Support`));
   await click(menuItem(item));
 }
@@ -149,17 +147,17 @@ it("asks before removing from the More menu: a cancel deletes nothing, a confirm
   await waitFor(() => !hasButton(`${en.workbenches.more} Support`));
   expect(document.body.textContent).toContain(en.agentPlugins.workbenchesEmpty);
 });
-it("offers Enable and Open but makes no visibility changes for a hidden workbench", async () => {
+it("offers management, Enable and Open without making visibility changes for a hidden workbench", async () => {
   const title = "Support";
   const { server } = await open(
     [{ id: "support.main", key: "main", title, renderer: { iframe: { src: "/support" } } }],
     { enabled: true, appCenter: { show: false } },
   );
   const row = rowOf(title);
-  expect(row.querySelectorAll("button")).toHaveLength(3); // Name, Enable, Open.
+  expect(row.querySelectorAll("button")).toHaveLength(4); // Name, Enable, Open, More.
   expect(switchNamed(en.workbenches.enableOne(title))).toBeTruthy();
   expect(hasButton(`${en.workbenches.open} ${title}`)).toBe(true);
-  expect(hasButton(`${en.workbenches.more} ${title}`)).toBe(false);
+  expect(hasButton(`${en.workbenches.more} ${title}`)).toBe(true);
   expect(server.writes().filter((r) => r.path.endsWith("/app-center"))).toHaveLength(0);
 });
 const row = () => rowOf("Support");
