@@ -1393,8 +1393,12 @@ describe("Session and Project isolation", () => {
     const first = h.call("POST", "/tabs", { sessionId: "parent" });
     const request = await opening;
     expect((await h.call("POST", "/tabs", { sessionId: "child" })).status).toBe(409);
+    // The renderer's claim and the desktop's first tab event arrive on independent transports.
+    const claim = h.call("POST", "/tabs/claim", { requestId: request.requestId, tabId: 11 });
+    await until(() => h.browser.tabs.openRequest(request.requestId)?.claimedTabId === 11, "claim");
+    expect((await h.call("POST", "/tabs", { sessionId: "child" })).status).toBe(409);
     h.shell.show(tab(11));
-    await h.call("POST", "/tabs/claim", { requestId: request.requestId, tabId: 11 });
+    await claim;
     expect((await first).ok).toBe(true);
     limit = 2;
     await openOwned(h, 12, "child");
@@ -1404,6 +1408,20 @@ describe("Session and Project isolation", () => {
     expect((await h.call("POST", "/tabs", { sessionId: "child" })).status).toBe(409);
     h.shell.close(11);
     expect((await openOwned(h, 13, "child")).sessionId).toBe("child");
+  });
+
+  it("releases a guest claimed before it closes without joining the tab list", async () => {
+    const h = mount({ maxOpen: () => 1 });
+    const announced = h.nextOpen();
+    const first = h.call("POST", "/tabs", { sessionId: "first" });
+    const { requestId } = await announced;
+    const claim = h.call("POST", "/tabs/claim", { requestId, tabId: 11 });
+    await until(() => h.browser.tabs.openRequest(requestId)?.claimedTabId === 11, "claim");
+    expect((await h.call("POST", "/tabs", { sessionId: "another" })).status).toBe(409);
+    h.shell.event({ kind: "tab-closed", tabId: 11 });
+    expect((await first).status).toBe(503);
+    await claim;
+    expect((await openOwned(h, 12, "another")).sessionId).toBe("another");
   });
 
   it("adopts a draft and its pending popup without moving its storage", async () => {

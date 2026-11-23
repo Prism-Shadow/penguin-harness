@@ -522,6 +522,15 @@ export class BrowserBackendRuntime {
       throw new BrowserUnavailableError("no_window");
     }
     if (!this.tabs.has(tabId)) await this.refreshTabs().catch(() => undefined);
+    if (!this.tabs.has(tabId)) {
+      // The renderer can claim before the desktop reports the guest, even for a blank page.
+      await this.tabs.waitForFirstPage(tabId, this.timing.openClaimMs);
+      if (!this.tabs.has(tabId)) {
+        this.deps.publish({ type: "builtin_browser_close", tabId });
+        this.tabs.remove(tabId);
+        throw new BrowserUnavailableError("no_window");
+      }
+    }
     return tabId;
   }
 
