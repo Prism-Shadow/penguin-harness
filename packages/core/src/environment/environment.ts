@@ -412,7 +412,10 @@ export class Environment implements EnvironmentInterface {
     );
   }
 
-  /** Whether a managed subagent session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */
+  disposeSubagents(): Promise<void> {
+    return this.subagentSessions.dispose();
+  }
+
   hasRunningBackgroundSubagents(): boolean {
     return this.subagentSessions.hasRunning();
   }

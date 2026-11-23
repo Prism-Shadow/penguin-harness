@@ -120,7 +120,9 @@ export function createInputSubagentTool(
                 },
                 runner,
                 "alias" in clue && typeof clue.alias === "string" ? clue.alias : subagentId,
+                signal,
               )) ?? undefined;
+            if (signal?.aborted || manager.isDisposed) return { status: "aborted" };
             if (session) yield delta(`[subagent ${subagentId} resumed]\n`);
           }
         }

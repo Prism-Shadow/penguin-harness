@@ -465,6 +465,13 @@ export function isHumanInput(input: readonly AmspRecord[]): boolean {
   });
 }
 
+function hasBackgroundWork(runtime: RuntimeSession): boolean {
+  return !!(
+    runtime.hasRunningBackgroundSubagents?.() ||
+    runtime.listBackgroundCommands?.().some((command) => command.running)
+  );
+}
+
 /** Active-table idle eviction: same convention as the SSE channel (an idle entry with no activity for 30 minutes releases its memory). */
 const ENTRY_IDLE_MS = 30 * 60 * 1000;
 const ENTRY_SWEEP_INTERVAL_MS = 60 * 1000;
@@ -2283,11 +2290,32 @@ export class SessionManager {
    * once the drive and the children's cancellation writes are done.
    */
   private disposeRemoved(entry: RuntimeEntry): Promise<void> {
-    for (const child of entry.session.listBackgroundSubagents?.() ?? []) {
-      entry.session.abortBackgroundSubagentRun?.(child.sessionId);
+    const runtimes = [entry.session, ...(entry.retired?.keys() ?? [])];
+    const pending: Promise<void>[] = [];
+    for (const runtime of runtimes) {
+      const cleanup = entry.retired?.get(runtime);
+      if (cleanup) {
+        pending.push(cleanup);
+        continue;
+      }
+      if (runtime.disposeSubagents) {
+        pending.push(runtime.disposeSubagents());
+      } else {
+        for (const child of runtime.listBackgroundSubagents?.() ?? []) {
+          runtime.abortBackgroundSubagentRun?.(child.sessionId);
+        }
+      }
+      const dispose = () => runtime.dispose?.();
+      pending.push(
+        runtime === entry.session && entry.running
+          ? entry.running.then(dispose, dispose)
+          : Promise.resolve(dispose()),
+      );
     }
-    const dispose = (): void | Promise<void> => entry.session.dispose?.();
-    return entry.running ? entry.running.then(dispose, dispose) : Promise.resolve(dispose());
+    return Promise.allSettled(pending).then((results) => {
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure) throw failure.reason;
+    });
   }
 
   /**
@@ -2409,6 +2437,21 @@ export class SessionManager {
    */
   sweepIdle(now: number = Date.now(), idleMs: number = ENTRY_IDLE_MS): void {
     for (const [key, entry] of this.entries) {
+      const retired = entry.retired;
+      if (retired?.size) {
+        for (const [runtime, cleanup] of retired) {
+          if (cleanup || hasBackgroundWork(runtime)) continue;
+          // Keep the cleanup reachable by a deletion racing this sweep.
+          retired.set(
+            runtime,
+            Promise.resolve()
+              .then(() => runtime.dispose?.())
+              .catch((error) => this.log(`Session cleanup failed: ${error}`))
+              .finally(() => retired.delete(runtime)),
+          );
+        }
+        continue;
+      }
       if (entry.status !== "idle" || entry.approvals.size !== 0 || entry.running !== null) continue;
       if (entry.queuedModel || entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
       // A live background process (e.g. a dev server the conversation started) pins the
@@ -2583,7 +2626,7 @@ export class SessionManager {
       ) {
         return existing;
       }
-      this.entries.delete(sessionId);
+      // Keep the old runtime reachable if loading fails or deletion begins during the load.
       discardedBackgroundTasks = existing.backgroundTasks;
     }
     const notFound = (): HttpError =>
@@ -2625,8 +2668,11 @@ export class SessionManager {
       this.deps.sessions.replaceId(row.sessionId, session.sessionId);
       currentId = session.sessionId;
     }
+    const retired = existing?.retired ?? new Map<RuntimeSession, Promise<void> | null>();
+    if (existing && hasBackgroundWork(existing.session)) retired.set(existing.session, null);
     const entry: RuntimeEntry = {
       sessionId: currentId,
+      ...(retired.size ? { retired } : {}),
       projectId: row.projectId,
       agentId: row.agentId,
       provider: row.provider,
@@ -2659,6 +2705,7 @@ export class SessionManager {
     if (refusal && !onTarget) {
       entry.stranded = { status: refusal.status, code: refusal.code, message: refusal.message };
     }
+    if (currentId !== sessionId) this.entries.delete(sessionId);
     this.entries.set(currentId, entry);
     this.registerNoticeListener(currentId, session);
     if (discardedBackgroundTasks !== undefined) this.publishBackgroundTasks(currentId);

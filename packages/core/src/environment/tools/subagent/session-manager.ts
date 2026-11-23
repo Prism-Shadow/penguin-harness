@@ -132,7 +132,7 @@ export class SubagentSessionManager {
    * object nobody holds any more.
    */
   hasRunning(): boolean {
-    return this.registry.list().some(({ task }) => task.running);
+    return this.resuming.size > 0 || this.registry.list().some(({ task }) => task.running);
   }
 
   /**
@@ -193,21 +193,34 @@ export class SubagentSessionManager {
   }
 
   resolveHistorical?: SubagentResolver;
-  private readonly resuming = new Map<string, Promise<ManagedSubagentSession | null>>();
+  private readonly resuming = new Map<
+    string,
+    { job: Promise<ManagedSubagentSession | null>; callers: Set<AbortSignal | undefined> }
+  >();
 
   /** One runtime per child, even when the panel and two tool calls reach a released Session together. */
   async restore(
     clue: { sessionId: string; agentId?: string },
     runner: SubagentRunner,
     alias?: string,
+    signal?: AbortSignal,
   ): Promise<ManagedSubagentSession | null> {
+    if (signal?.aborted) return null;
     const existing = this.bySessionId(clue.sessionId);
     if (existing) return existing;
     const pending = this.resuming.get(clue.sessionId);
-    if (pending) return pending;
+    if (pending) {
+      pending.callers.add(signal);
+      return pending.job;
+    }
     if (this.isDisposed || !runner.resume || !this.makeRoom()) return null;
+    const callers = new Set([signal]);
     const job = runner.resume(clue).then(async (handle) => {
-      if (this.isDisposed || handle.sessionId !== clue.sessionId) {
+      if (
+        this.isDisposed ||
+        handle.sessionId !== clue.sessionId ||
+        [...callers].every((caller) => caller?.aborted)
+      ) {
         await handle.dispose();
         return null;
       }
@@ -219,7 +232,7 @@ export class SubagentSessionManager {
       this.register(child, alias);
       return child;
     });
-    this.resuming.set(clue.sessionId, job);
+    this.resuming.set(clue.sessionId, { job, callers });
     try {
       return await job;
     } finally {
@@ -246,6 +259,9 @@ export class SubagentSessionManager {
     const children = new Set([...this.live, ...this.registry.list().map(({ task }) => task)]);
     this.registry.dispose();
     for (const child of children) child.kill();
-    return Promise.allSettled([...children].map((child) => child.whenSettled())).then(() => {});
+    return Promise.allSettled([
+      ...[...children].map((child) => child.whenSettled()),
+      ...[...this.resuming.values()].map(({ job }) => job),
+    ]).then(() => {});
   }
 }

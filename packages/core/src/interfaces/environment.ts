@@ -545,6 +545,8 @@ export interface EnvironmentInterface {
    * listBackgroundCommands.
    */
   hasRunningBackgroundSubagents?(): boolean;
+  /** On parent removal, close child admission immediately and drain pending revivals and runs. */
+  disposeSubagents?(): Promise<void>;
   /**
    * All live subagent child sessions (foreground-window ones included), for a host UI's
    * subagents panel. Optional, like listBackgroundCommands.
