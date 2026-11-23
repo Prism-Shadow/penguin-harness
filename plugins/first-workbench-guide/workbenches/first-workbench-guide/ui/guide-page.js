@@ -13,8 +13,16 @@ export async function mountGuide(sdk) {
   const lang = language().startsWith("zh") ? "zh" : "en",
     w = words[lang];
   document.documentElement.lang = lang;
-  const storageKey = "first-workbench-guide:" + location.pathname;
-  let saved = JSON.parse(sessionStorage.getItem(storageKey) ?? "null") ?? { key: token() };
+  // The same browser tab may sign in as another member of this Project. The frame's
+  // path identifies the Project, Agent and machine, but only the host identifies the user.
+  const me = await request("/api/me").catch(() => null);
+  const userId = me?.user?.userId;
+  const storageKey = userId
+    ? "first-workbench-guide:" + JSON.stringify([userId, location.pathname])
+    : null;
+  let saved = (storageKey && JSON.parse(sessionStorage.getItem(storageKey) ?? "null")) ?? {
+    key: token(),
+  };
   let refreshFailed = false;
   let guide = null,
     defaultModel = null,
@@ -23,7 +31,7 @@ export async function mountGuide(sdk) {
     notice = "",
     timer;
   function save() {
-    sessionStorage.setItem(storageKey, JSON.stringify(saved));
+    if (storageKey) sessionStorage.setItem(storageKey, JSON.stringify(saved));
   }
   save();
   function el(tag, text) {
