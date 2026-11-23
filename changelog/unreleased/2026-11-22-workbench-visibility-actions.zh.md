@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1705
 
 [English](2026-11-22-workbench-visibility-actions.md)
 
