@@ -44,16 +44,20 @@ const NEWS_SETTLE_MS = 120;
 const remoteApps = createCatalogStore<AppCenterShortcut[]>(
   "apps.v1",
   (shortcuts) =>
-    shortcuts.map(({ agentId, agentName, workbenchId, title, titleZh, tab, build }) => ({
-      agentId,
-      agentName,
-      workbenchId,
-      title,
-      titleZh,
-      tab,
-      build,
-      path: "",
-    })),
+    shortcuts.map(
+      ({ agentId, agentName, workbenchId, packageName, plugin, title, titleZh, tab, build }) => ({
+        agentId,
+        agentName,
+        workbenchId,
+        ...(packageName ? { packageName } : {}),
+        ...(plugin ? { plugin } : {}),
+        title,
+        titleZh,
+        tab,
+        build,
+        path: "",
+      }),
+    ),
   Array.isArray,
 );
 

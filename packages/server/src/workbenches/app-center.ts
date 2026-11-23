@@ -63,6 +63,7 @@ interface ManifestTab {
 
 /** What a folder's package.json says, as far as the App Center is concerned. */
 export interface AppCenterManifest {
+  packageName?: string;
   /** The package name, else the folder's id. */
   name: string;
   tabs: ManifestTab[];
@@ -181,17 +182,19 @@ async function readDeclaration(
   } catch {
     // Nothing to read: no declaration, and the load names what is wrong with the file.
   }
-  const name =
-    isRecord(pkg) && typeof pkg["name"] === "string" && pkg["name"] !== "" ? pkg["name"] : id;
+  const identity =
+    isRecord(pkg) && typeof pkg["name"] === "string" && pkg["name"].trim()
+      ? { name: pkg["name"], packageName: pkg["name"] }
+      : { name: id };
   const penguin = isRecord(pkg) && isRecord(pkg["penguin"]) ? pkg["penguin"] : null;
-  if (penguin === null) return { manifest: { name, tabs: [], hint: null }, icon: null };
+  if (penguin === null) return { manifest: { ...identity, tabs: [], hint: null }, icon: null };
   const tabs = manifestTabs(penguin);
   // No declaration reads as the default, shown. The manifest reports that effective value, so the
   // row's switch reads what the App Center does.
   if (penguin["appCenter"] === undefined) {
     return {
       manifest: {
-        name,
+        ...identity,
         tabs,
         ...(SHOWN_UNLESS_SAID ? { appCenter: { show: true } } : {}),
         hint: null,
@@ -204,12 +207,12 @@ async function readDeclaration(
     const hint =
       `package.json#penguin.appCenter is ignored: ${checked.problem}. ` +
       `Until it is fixed the workbench has no shortcut in the App Center.`;
-    return { manifest: { name, tabs, hint }, icon: null };
+    return { manifest: { ...identity, tabs, hint }, icon: null };
   }
   const { appCenter, icon } = checked;
   return {
     manifest: {
-      name,
+      ...identity,
       tabs,
       appCenter,
       ...(icon !== null ? { icon: { rev: iconRev(icon), tint: icon.tint } } : {}),
@@ -284,6 +287,7 @@ function shortcutOf(
     agentId: agent.agentId,
     agentName: agent.agentName,
     workbenchId,
+    ...(manifest.packageName ? { packageName: manifest.packageName } : {}),
     title: appCenter?.title ?? first?.title ?? manifest.name,
     ...(titleZh !== undefined ? { titleZh } : {}),
     ...(manifest.icon !== undefined
