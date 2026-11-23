@@ -180,13 +180,42 @@ describe("a plugin on the server", () => {
     expect(p.onToggleInstall).toHaveBeenCalledWith("helper", LIBRARY, true);
   });
 
-  it("leaves uninstalling from the server to the detail, an admin's", async () => {
-    const onServerUninstall = vi.fn();
-    await show(props({ row: installedRow, status: "installed", onServerUninstall }));
-    expect(buttonNamed(`${words.uninstallServer} computer-use`)).toBeUndefined();
-    await click(document.querySelector<HTMLElement>(".showcase-card-open")!);
-    await click(buttonNamed(`${words.uninstallServer} computer-use`)!);
-    expect(onServerUninstall).toHaveBeenCalledOnce();
+  it.each(["card", "detail"] as const)(
+    "navigates in both directions without mutating the installation from the %s",
+    async (entry) => {
+      const onServerUninstall = vi.fn();
+      const p = props({ row: installedRow, status: "installed", onServerUninstall });
+      await show(p);
+      if (entry === "detail") {
+        await click(document.querySelector<HTMLElement>(".showcase-card-open")!);
+        await click(buttonNamed(`${words.installAgent} computer-use`)!);
+      } else {
+        await click(installControl(en.skills.install)!);
+      }
+      await click(buttonWithText(words.backToServer)!);
+      expect(buttonWithText(words.toAgents)).toBeDefined();
+      expect(buttonWithText(words.uninstallServer)).toBeDefined();
+      expect(onServerUninstall).not.toHaveBeenCalled();
+      await click(buttonWithText(words.toAgents)!);
+      expect(buttonNamed(`${en.skills.install} helper`)).toBeDefined();
+      expect(p.onToggleInstall).not.toHaveBeenCalled();
+      await click(buttonWithText(words.backToServer)!);
+      await click(buttonWithText(words.uninstallServer)!);
+      expect(onServerUninstall).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    { isAdmin: false, row: installedRow },
+    {
+      isAdmin: true,
+      row: { ...installedRow, library: { ...LIBRARY, source: "builtin" as const } },
+    },
+  ])("keeps server removal unavailable after going back", async (options) => {
+    await show(props({ ...options, status: "installed", onServerUninstall: vi.fn() }));
+    await click(installControl(en.skills.install)!);
+    await click(buttonWithText(words.backToServer)!);
+    expect(buttonWithText(words.uninstallServer)).toBeUndefined();
   });
 });
 

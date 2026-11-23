@@ -3417,6 +3417,8 @@ export const zh = {
       installAgent: "安装到 Agent",
       /** The install flow: the server first, then the Agents. */
       flowTitle: (name: string) => `安装 ${name}`,
+      backToServer: "返回服务端步骤",
+      toAgents: "继续选择 Agent",
       stepServer: "安装到服务端",
       stepAgents: "安装到 Agent",
       stepOf: (step: number, steps: number) => `第 ${step} 步，共 ${steps} 步`,

@@ -3218,6 +3218,8 @@ export const en: Strings = {
       adminOnly: "Only an admin can change the server",
       installAgent: "Install on Agent",
       flowTitle: (name: string) => `Install ${name}`,
+      backToServer: "Back to server",
+      toAgents: "Continue to Agents",
       stepServer: "Install on server",
       stepAgents: "Install on Agents",
       stepOf: (step: number, steps: number) => `Step ${step} of ${steps}`,
