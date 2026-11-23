@@ -947,7 +947,8 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           },
           subagent_id: {
             type: "string",
-            description: "The subagent_id returned by run_subagent for the background subagent.",
+            description:
+              "The full subagent Session ID or its unique trailing eight or more characters. Use more characters if the suffix is ambiguous.",
           },
           prompt: {
             type: "string",

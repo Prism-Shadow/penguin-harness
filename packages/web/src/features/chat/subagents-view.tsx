@@ -23,6 +23,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
+  CopyButton,
   EmptyState,
   GlyphIcon,
   ICONS,
@@ -366,6 +367,7 @@ export function SubagentsView({
             >
               {shortSessionId(active.sessionId)}
             </span>
+            <CopyButton text={active.sessionId} label={S.chat.copySessionId} size="sm" />
             {activeRunning && (
               <StatusIcon state="running" size="xs" label={S.chat.subagentRunning} />
             )}

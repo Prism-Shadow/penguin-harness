@@ -551,7 +551,9 @@ export class TraceService implements Traces {
       const matches =
         candidates.length <= 1
           ? candidates
-          : candidates.filter((child) => "subagent-" + child.sessionId.slice(-8) === handle.alias);
+          : candidates.filter((child) =>
+              child.sessionId.endsWith(handle.alias.replace(/^subagent-/, "")),
+            );
       if (matches.length === 1) {
         const old = resolved.get(handle.alias);
         resolved.set(handle.alias, old === undefined || old === matches[0] ? matches[0]! : null);

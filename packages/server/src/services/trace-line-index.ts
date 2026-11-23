@@ -267,7 +267,7 @@ export class TraceLineIndex {
           typeof payload.tool_call_id === "string"
         ) {
           const alias =
-            /(?:^|\n)\[(?:subagent running(?: in background)?|moved to the background by the user) with subagent_id (subagent-[a-f0-9]{8});[^\n]*\]$/.exec(
+            /(?:^|\n)\[(?:subagent running(?: in background)?|moved to the background by the user) with subagent_id ([\w-]+);[^\n]*\]$/.exec(
               payload.output,
             )?.[1];
           if (alias)
