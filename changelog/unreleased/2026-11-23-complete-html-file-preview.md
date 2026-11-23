@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1720](https://github.com/Prism-Shadow/penguin-harness/pull/1720)
 
 [中文版](2026-11-23-complete-html-file-preview.zh.md)
 
