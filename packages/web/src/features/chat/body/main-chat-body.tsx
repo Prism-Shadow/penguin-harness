@@ -5,6 +5,8 @@ import { ChatDropRegion } from "../drop-zone";
 import { ConversationOutline } from "../conversation-outline";
 import { DraftView } from "./draft-view";
 import { GoalStatusBanner } from "../goal-banner";
+import { RouteOfflineNotice } from "../route-offline-notice";
+import { OfflineSessionHistory } from "../offline-session-history";
 import { HistoryLoadFailed } from "../history-load-failed";
 import { HistoryLoading } from "../history-loading";
 import { RequestFailureDialog } from "../request-failure-dialog";
@@ -47,6 +49,7 @@ export function renderMainChatBody(scope: MainChatView) {
     routeSessionOwner,
     routeSessionPending,
     routeSessionOffline,
+    offlineHistory,
     routeOutcome,
     composerRef,
     addComposerReference,
@@ -119,6 +122,8 @@ export function renderMainChatBody(scope: MainChatView) {
                           navigate("/chat");
                         }}
                       />
+                    ) : offlineHistory && (selected || routeSessionPending) ? (
+                      <OfflineSessionHistory {...offlineHistory} />
                     ) : selected ? (
                       stream.error ? (
                         // History failed to load: say why and offer the way on, instead of staying on
@@ -238,15 +243,11 @@ export function renderMainChatBody(scope: MainChatView) {
                         </>
                       )
                     ) : routeSessionOffline ? (
-                      <EmptyState
-                        title={
-                          routeSessionOwner === null
-                            ? S.chat.sessionOnOfflineMachineUnknown
-                            : S.chat.sessionOnOfflineMachine(
-                                machineLabels.get(routeSessionOwner) ?? routeSessionOwner,
-                              )
-                        }
-                        description={S.chat.sessionOfflineHint}
+                      <RouteOfflineNotice
+                        owner={routeSessionOwner}
+                        offline={scope.offlineMachineIds}
+                        disconnected={scope.disconnectedMachineIds}
+                        labels={machineLabels}
                       />
                     ) : !sessionsLoading && routeOutcome === "notFound" ? (
                       // A dead link: said in place, with the one way on that fits the mode —

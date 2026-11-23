@@ -4603,6 +4603,14 @@ Scenarios:
     statParenClose: ")",
     noSessions: "No Sessions yet",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    offlineHistory: {
+      disconnected: (alias: string) => `${alias} is not connected.`,
+      cached: "Showing the conversation from the last sync.",
+      miss: "No cached history is available. The conversation will open when the machine reconnects.",
+      empty: "There were no messages at the last sync.",
+      refreshing: (alias: string) => `${alias} is connected. Updating the conversation.`,
+      failed: "The cached conversation could not be read.",
+    },
     sessionOnOfflineMachine: (machine: string) =>
       `This conversation is on ${machine}, which is not connected right now.`,
     sessionOnQuietMachine: (machine: string) =>

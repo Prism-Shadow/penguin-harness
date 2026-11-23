@@ -39,14 +39,12 @@ import {
   useCountdown,
   useElapsedPast,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
+import { HistoryMachineRetry } from "./history-machine-retry";
 import { transferAmount } from "../../lib/history/transfer-amount";
 import { machineForSession } from "../../lib/session-machines";
 import { S } from "../../lib/strings";
 import { useMachines } from "../../state/machines";
-import { retryStatus } from "../machines/machine-card";
 import { machineAway } from "./machine-away";
-import { toastApiError } from "../../lib/toast-api-error";
 
 /** How long a read may take before its progress replaces the skeleton. */
 const SKELETON_MS = 1_000;
@@ -171,20 +169,6 @@ export function HistoryLoading({
   }
 
   const away = machineAway(machines.state, machines.settled, machineId);
-  const entry = away?.machine ?? null;
-  // The Machines page's presses: the server tries the connection now, or stops trying. A refusal
-  // is said and rejects, so the press can be made again.
-  const ask = async (
-    send: (projectId: string, machineId: string) => ReturnType<typeof api.reconnectMachine>,
-  ): Promise<void> => {
-    if (projectId === null || entry === null) return;
-    try {
-      machines.accept(await send(projectId, entry.id));
-    } catch (err) {
-      toastApiError(err);
-      throw err;
-    }
-  };
 
   const total = progress?.totalBytes ?? 0;
   return (
@@ -199,15 +183,7 @@ export function HistoryLoading({
         />
         <div className="min-h-5 text-sm">
           {away !== null && away.retry !== null ? (
-            <RetryStatus
-              {...retryStatus(away.retry, {
-                onRetry: () => ask(api.reconnectMachine),
-                onStop: () => ask(api.stopReconnectingMachine),
-                held: false,
-                size: "sm",
-              })}
-              className="justify-center text-left"
-            />
+            <HistoryMachineRetry projectId={projectId} away={away} />
           ) : progress !== null && progress.waiting !== null ? (
             <LinkRetry
               waiting={progress.waiting}

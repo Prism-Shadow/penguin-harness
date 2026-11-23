@@ -94,7 +94,7 @@ export function SelectionMenuRows({
 }: {
   selection: CapturedSelection;
   /** Stages the excerpt in this conversation's composer. */
-  onAddExcerpt: (reference: ComposerReference) => void;
+  onAddExcerpt: ((reference: ComposerReference) => void) | undefined;
   /** Runs after either row has acted: closes the panel and puts the highlight back. */
   onDone: (selection: CapturedSelection) => void;
 }) {
@@ -113,7 +113,7 @@ export function SelectionMenuRows({
               onDone(selection);
             }}
           />
-        ) : (
+        ) : onAddExcerpt ? (
           <MenuItem
             key={item}
             glyph={ICONS.messagePlus}
@@ -123,7 +123,7 @@ export function SelectionMenuRows({
               onDone(selection);
             }}
           />
-        ),
+        ) : null,
       )}
     </>
   );
@@ -250,7 +250,7 @@ export interface StreamSelectionMenu {
 }
 
 export function useStreamSelectionMenu(
-  onAddExcerpt: (reference: ComposerReference) => void,
+  onAddExcerpt?: (reference: ComposerReference) => void,
 ): StreamSelectionMenu {
   // The row hook's anchor state and dismissal, with the stream as its "row": its owner is what a
   // scroll must move for the panel to close, and that is the stream's own scroll.

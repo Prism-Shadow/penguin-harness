@@ -9,6 +9,7 @@ import { deletedChangeKeys } from "../memory-nav";
 import { panelDock } from "../../dock";
 import { machineForSession } from "../../../lib/session-machines";
 import { useSessionDraft } from "../use-session-draft";
+import { useOfflineSessionHistory } from "../offline-session-history";
 import { useSessionStream } from "../use-session-stream";
 import type { useMainChatRouting } from "./main-chat-routing";
 
@@ -22,6 +23,11 @@ export function useMainChatTranscript(scope: ReturnType<typeof useMainChatRoutin
     selected?.sessionId ?? null,
     selected?.status ?? "idle",
     setTitle,
+    JSON.stringify([
+      projectId,
+      scope.user?.userId,
+      selected && machineForSession(selected.sessionId),
+    ]),
   );
 
   // Chat input area draft: caches text, both staged switch chips (`/agent` target, `/model`
@@ -49,6 +55,18 @@ export function useMainChatTranscript(scope: ReturnType<typeof useMainChatRoutin
         : stream.model.items,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stream.version, stream.prefixItems, routeSessionId],
+  );
+
+  const offlineId = selected?.sessionId ?? routeSessionId;
+  const offlineHistory = useOfflineSessionHistory(
+    projectId,
+    scope.user?.userId ?? null,
+    !scope.draft && !scope.archivedRow && offlineId && !scope.isSessionDeleted(offlineId)
+      ? offlineId
+      : null,
+    stream,
+    allItems,
+    scope.offlineOwner,
   );
   // Derivations over the stream items (the model mutates in place, so `version` — its own
   // repaint signal — keys the memos; the session id covers a switch racing a same-valued
@@ -131,6 +149,7 @@ export function useMainChatTranscript(scope: ReturnType<typeof useMainChatRoutin
   const railFit = useOutlineRailFit(streamScrollRef, stream.version);
   return {
     ...scope,
+    offlineHistory,
     stream,
     sessionDraft,
     onDraftTextChange,

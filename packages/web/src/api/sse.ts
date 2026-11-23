@@ -182,6 +182,7 @@ export const HISTORY_STREAM_BEAT_MS = 5_000;
 export type HistoryStreamQuery =
   | { kind: "tail"; limit: number; budget?: number; fill?: boolean }
   | { kind: "before"; cursor: string; limit: number; budget?: number }
+  | { kind: "cached" }
   | { kind: "full" }
   | { kind: "fill"; file: number; agent?: string };
 
@@ -263,6 +264,9 @@ function historyQuery(query: HistoryStreamQuery): string {
       params.set("limit", String(query.limit));
       if (query.budget !== undefined) params.set("budget", String(query.budget));
       break;
+    case "cached":
+      params.set("cached", "1");
+      break;
     case "full":
       break;
     case "fill":
@@ -284,9 +288,10 @@ export function openHistoryStream(
   sessionId: string,
   query: HistoryStreamQuery,
   handlers: HistoryStreamHandlers,
+  machineId = machineForSession(sessionId),
 ): StreamConnection {
   const path = `/api/sessions/${encodeURIComponent(sessionId)}/history${historyQuery(query)}`;
-  return subscribeHistory(apiUrl(path, machineForSession(sessionId)), handlers);
+  return subscribeHistory(apiUrl(path, machineId), handlers);
 }
 
 /**

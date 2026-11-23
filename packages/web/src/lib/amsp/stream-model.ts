@@ -85,7 +85,7 @@ import type {
 } from "@prismshadow/amsp";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
 import type { ElidedBody, HistoryRecordLike } from "@prismshadow/penguin-core/interfaces";
-import type { TracePosition } from "@prismshadow/penguin-server/api";
+import type { MessagesPageInfo, TracePosition } from "@prismshadow/penguin-server/api";
 import {
   addLlmDuration,
   addToolExecution,
@@ -95,6 +95,7 @@ import {
   endCompaction,
   endTask,
   resetTaskCounters,
+  seedPriorStats,
   trackMainUsage,
   trackSubagentUsage,
   type TaskStats,
@@ -1062,6 +1063,17 @@ function tsOf(timestamp: string): number | undefined {
 function advanceLastTs(model: StreamModel, timestamp: string): void {
   const ms = Date.parse(timestamp);
   if (Number.isFinite(ms)) model.lastTsMs = ms;
+}
+
+/** Restore the context and accounting established by records before a history window. */
+export function seedHistoryWindow(
+  target: StreamModel,
+  page: MessagesPageInfo,
+  sessionId: string,
+): void {
+  seedPriorStats(target.stats, page.prior);
+  if (page.contextModel !== undefined) target.contextModel = { sessionId, ...page.contextModel };
+  if (page.agentState !== undefined) target.agentState = page.agentState;
 }
 
 /**
