@@ -1,6 +1,8 @@
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const http = require("node:http");
+const { once } = require("node:events");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { createRequire } = require("node:module");
@@ -18,6 +20,17 @@ const env = { ...process.env, PENGUIN_SEED_ADMIN_PASSWORD: phase.password };
 const cut = (p) => path.normalize(p).toLowerCase().replace(/[\\/]+$/, "");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function run() {
+  const endpoint = http.createServer((req,res) => {
+    req.resume();
+    const usage = {prompt_tokens:3,cached_tokens:0,response_tokens:1,thoughts_tokens:0};
+    const reply = [{role:"assistant",event_type:"delta",content_items:[{type:"text.done",text:"Saved."}],usage_metadata:null,finish_reason:null},
+      {role:"assistant",event_type:"stop",content_items:[],usage_metadata:usage,finish_reason:"stop"}];
+    res.writeHead(200,{"content-type":"text/event-stream"});
+    res.end(reply.map(x=>"data: "+JSON.stringify(x)+"\n\n").join("")+"data: [DONE]\n\n");
+  });
+  endpoint.listen(0,"127.0.0.1");
+  await once(endpoint,"listening");
+  endpoint.unref();
   const desktop = await _electron.launch({ executablePath: path.join(program, "PenguinHarness.exe"), env, timeout: 90000 });
   try {
     const page = await desktop.firstWindow({ timeout: 90000 });
@@ -39,7 +52,7 @@ async function run() {
       phase.project = projects.projects[0].projectId;
       const project = "/api/projects/" + phase.project;
       const model = { provider: "custom", modelId: "installer-fixture" };
-      await api("PUT", project + "/models", { defaultModel: model, models: [{ ...model, contextWindow: 32000, baseUrl: "http://127.0.0.1:1", apiKey: "installer-fixture", pricing: { cacheRead: 1, cacheWrite: 1, output: 1 } }] });
+      await api("PUT", project + "/models", { defaultModel: model, providers:{custom:{clientType:"mmsp",baseUrl:"http://127.0.0.1:"+endpoint.address().port+"/v1",apiKey:"fixture"}}, models: [{ ...model, contextWindow: 32000, pricing: { cacheRead: 1, cacheWrite: 1, output: 1 } }] });
       const created = await (await api("POST", project + "/agents/default_agent/sessions", model)).json();
       phase.sid = created.session.sessionId;
       const sid = "/api/sessions/" + phase.sid;
@@ -87,6 +100,7 @@ async function run() {
     }
     console.log(mode + ": original account, Session, attachment, Electron preference, workspace and installed CLI verified.");
   } finally {
+    endpoint.closeAllConnections();endpoint.close();
     await desktop.close();
     await sleep(1200);
   }
