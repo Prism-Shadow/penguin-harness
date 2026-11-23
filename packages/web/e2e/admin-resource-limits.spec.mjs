@@ -22,8 +22,10 @@ test("an administrator edits independent limits and restores the defaults", asyn
   ).toBeOK();
   const dialog = await openSettings(page, ADMIN_ID);
   await dialog.getByRole("button", { name: "Terminal and browser limits", exact: true }).click();
-  const terminals = dialog.getByRole("spinbutton", { name: "Maximum active terminals" });
-  const tabs = dialog.getByRole("spinbutton", { name: "Maximum built-in browser pages" });
+  const terminals = dialog.getByRole("spinbutton", { name: "Maximum active terminals per user" });
+  const tabs = dialog.getByRole("spinbutton", {
+    name: "Maximum pages per built-in browser backend",
+  });
   await expect(terminals).toHaveValue("4");
   await expect(tabs).toHaveValue("5");
   await tabs.fill("0");

@@ -15,8 +15,8 @@ afterEach(unmountAll);
 it("preserves stored limits, rejects invalid values, and saves just the edited limit", async () => {
   const server = adminSettingsServer({ ...STORED_SETTINGS, terminalMaxOpen: 7, browserMaxOpen: 9 });
   await mount(createElement(ResourceLimitsSection));
-  const terminal = () => field("Maximum active terminals");
-  const browser = () => field("Maximum built-in browser pages");
+  const terminal = () => field("Maximum active terminals per user");
+  const browser = () => field("Maximum pages per built-in browser backend");
   await waitFor(() => terminal().value === "7");
   expect(browser().value).toBe("9");
   expect(button("Save").disabled).toBe(true);

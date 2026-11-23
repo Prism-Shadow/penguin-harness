@@ -915,8 +915,8 @@ export const zh = {
     resourceLimits: {
       title: "终端与浏览器上限",
       info: "降低上限后，已经打开的终端和浏览器页面可继续使用。",
-      terminalMaxOpen: "运行中的终端数上限",
-      browserMaxOpen: "内置浏览器页数上限",
+      terminalMaxOpen: "每位用户运行的终端数上限",
+      browserMaxOpen: "每个内置浏览器后端的页数上限",
       restore: "恢复默认",
       invalid: "请输入大于零的安全整数。",
     },

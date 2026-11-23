@@ -810,8 +810,8 @@ export const en: Strings = {
     resourceLimits: {
       title: "Terminal and browser limits",
       info: "Lowering a limit leaves existing terminals and browser pages available.",
-      terminalMaxOpen: "Maximum active terminals",
-      browserMaxOpen: "Maximum built-in browser pages",
+      terminalMaxOpen: "Maximum active terminals per user",
+      browserMaxOpen: "Maximum pages per built-in browser backend",
       restore: "Restore defaults",
       invalid: "Enter a positive whole number within the safe integer range.",
     },
