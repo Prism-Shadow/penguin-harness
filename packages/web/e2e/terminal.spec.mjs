@@ -5,6 +5,7 @@
  *   scrollback, colours and cursor included — instead of starting over;
  * - the reattached page is a live terminal, not a screenshot of one;
  * - work started before the reload is still running after it (the shell never restarted);
+ * - every displayed portion of a wrapped URL opens its full address, live and after reload;
  * - "New terminal" is the one action that deliberately drops the session;
  * - the page is deep-linkable: ?id= attaches an existing terminal (the dock's detach
  *   handoff), ?cwd= picks the starting directory of a new one.
@@ -156,4 +157,53 @@ test("?id= attaches an existing terminal with its screen (deep link)", async ({ 
   await expect.poll(() => screenText(page), { timeout: 15000 }).toContain("DEEP_LINK_MARKER");
   await run(page, "echo DEEP_LINK_LIVE");
   await expect.poll(() => screenText(page), { timeout: 15000 }).toContain("DEEP_LINK_LIVE");
+});
+
+test("opens the complete URL from every part of a wrapped link, live and after reload", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.openedTerminalLinks = [];
+    window.open = (uri) => {
+      window.openedTerminalLinks.push(uri);
+      return null;
+    };
+  });
+  await provisionAndLogin(page.request, U, P);
+  await killAllTerminals(page.request);
+  await page.goto(`${BASE}/terminal`);
+  await waitForShell(page, "SHELL_UP_LINKS");
+  const id = new URL(page.url()).searchParams.get("id");
+  const { cols, rows } = await (await page.request.get(`${BASE}/api/terminals/${id}`)).json();
+
+  const prefix = "https://links.example/";
+  const short = prefix.padEnd(cols, "a") + "/first";
+  const fullRows = Math.ceil(2700 / cols);
+  const long = prefix.padEnd(fullRows * cols, "0") + "/last";
+  // printf generates the long path inside the shell so its command echo stays short.
+  await run(
+    page,
+    `printf '\\033[H\\033[2J%s\\n%s%0*d/last\\n' '${short}' '${prefix}' ${fullRows * cols - prefix.length} 0`,
+  );
+  const screen = page.locator(".xterm-screen");
+  const lastRow = fullRows + 2;
+  for (const reload of [false, true]) {
+    if (reload) await page.reload();
+    await expect(page.locator(".xterm-rows > div").nth(lastRow)).toHaveText("/last");
+    const box = await screen.boundingBox();
+    for (const [row, expected] of [
+      [0, short],
+      [1, short],
+      [2, long],
+      [2 + Math.floor(fullRows / 2), long],
+      [lastRow, long],
+    ]) {
+      // Enter each row from an empty cell, as a reader can first hover any part of the URL.
+      await page.mouse.move(box.x + box.width * 0.9, box.y + box.height * 0.9);
+      await screen.click({
+        position: { x: (2.5 * box.width) / cols, y: ((row + 0.5) * box.height) / rows },
+      });
+      expect(await page.evaluate(() => window.openedTerminalLinks.splice(0))).toEqual([expected]);
+    }
+  }
 });

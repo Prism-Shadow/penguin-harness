@@ -183,8 +183,10 @@ describe("UpdateJobService", () => {
 
 describe("classifyUpdateRun", () => {
   it("reads the CLI's refusal copy as unsupported, and any other clean exit as updated", () => {
-    // Literal CLI copy (packages/cli/src/i18n.ts, the update refusals): the classifier matches
-    // fragments of these exact strings, so a reworded refusal must fail here.
+    // This test's own copies of the CLI's update refusals as packages/cli/src/i18n.ts words them
+    // today: it holds that the classifier reads each of them as unsupported. It does not follow
+    // the CLI's copy — a refusal reworded there still passes here; the CLI's own
+    // update-refusal-markers test holds each refusal it prints to UPDATE_REFUSAL_MARKERS.
     for (const refusal of [
       "This penguin runs from a source checkout, so there is nothing to download — update it with `git pull` and rebuild (`pnpm install && pnpm -r build`).",
       "Cannot tell how this penguin was installed (running from /opt/penguin/cli.js), so it will not be replaced. Re-install with the official installer, or upgrade with the package manager you used.",

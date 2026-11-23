@@ -32,7 +32,7 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   ModelProtocolDetectRequest,
-  ModelsResponse,
+  ProviderConnectionResponse,
   ProviderConnectionDto,
   ProviderConnectionUpdate,
 } from "@prismshadow/penguin-server/api";
@@ -46,7 +46,6 @@ import {
   Link,
   Modal,
   PasswordInput,
-  toastError,
   toastInfo,
   toastSuccess,
   useFormDraft,
@@ -56,10 +55,10 @@ import {
   fixedClientType,
   providerCalledKeyless,
   providerEnvFallbackKey,
+  type ModelProviderInfo,
 } from "@prismshadow/penguin-server/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
+
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { protocolPathForModel } from "./protocol-path";
@@ -71,9 +70,12 @@ import {
   isCustomLikeGroup,
   isGenericProtocolClientType,
   protocolSelectorValue,
+  type ProtocolClientType,
 } from "./protocol-types";
-import type { ProtocolClientType } from "./protocol-types";
+
 import type { RowState } from "./models-page";
+import { toastApiError } from "../../lib/toast-api-error";
+import { toastDetectFailed, type DetectMiss } from "./detect-failure";
 
 /** A group's row as this dialog reads it: what it stores of its own. */
 type GroupRow = Pick<RowState, "clientType" | "originalBaseUrl">;
@@ -243,7 +245,7 @@ export type GroupSaveResult =
   | { kind: "invalid"; baseUrlError: string }
   | { kind: "unchanged" }
   | { kind: "dismissed" }
-  | { kind: "saved"; res: ModelsResponse };
+  | { kind: "saved"; res: ProviderConnectionResponse };
 
 /**
  * One Save of the group settings: the base URL checked (providerBaseUrlError, nothing sent on a
@@ -317,8 +319,8 @@ export function ProviderSettingsDialog({
   /** Env-fallback variables the server reported a value for (see the page's detectedEnvKeys). */
   detectedEnvKeys: ReadonlySet<string>;
   onClose: () => void;
-  /** The table the server answered with, once the group's connection is written. */
-  onSaved: (res: ModelsResponse) => void;
+  /** The table the server answered with, once the group's connection is written, and the default model a first key offers, if any. */
+  onSaved: (res: ProviderConnectionResponse) => void;
 }) {
   // Dirty means a Save would send something: the draft is compared as the update it makes.
   const form = useFormDraft(initialDraft(group), {
@@ -379,10 +381,10 @@ export function ProviderSettingsDialog({
 
   /** One probe of the draft's endpoint, shown in the dialog; resolves to what it found, or null. */
   const detect = async (mode: "manual" | "save"): Promise<ProbeFound | null> => {
-    const failed = () => {
+    const failed = (miss: DetectMiss) => {
       setDetectFailed(true);
       if (mode === "save") toastInfo(S.models.detectFellBack);
-      else toastError(S.models.detectFailedBody);
+      else toastDetectFailed(miss);
     };
     const seq = ++detectSeq.current;
     setDetecting(true);
@@ -391,13 +393,13 @@ export function ProviderSettingsDialog({
       const found = await probeGroupProtocol(projectId, id, group, draft);
       if (seq !== detectSeq.current) return null;
       if (found === null) {
-        failed();
+        failed("none");
         return null;
       }
       set(found);
       return found;
-    } catch {
-      if (seq === detectSeq.current) failed();
+    } catch (error) {
+      if (seq === detectSeq.current) failed({ error });
       return null;
     } finally {
       if (seq === detectSeq.current) setDetecting(false);
@@ -441,7 +443,7 @@ export function ProviderSettingsDialog({
         if (!dismissed.current) onSaved(result.res);
       }
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSaving(false);
     }

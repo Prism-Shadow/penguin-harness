@@ -27,7 +27,40 @@
  * caught by the stat. The cached table is shared between callers and must be treated
  * as immutable — every mutating method here copies before changing.
  */
-import type { Dirent } from "node:fs";
+import type {
+  ChatDefaultsDto,
+  CommandPolicyDto,
+  ModelTestRequestSource,
+  ProjectConfigStore,
+} from "@prismshadow/penguin-library-project";
+import type {
+  DefaultModelOffer,
+  ModelEffectiveConnection,
+  ModelInfo,
+  ModelPricingDto,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
+  ModelTestRequest,
+  ModelTestResponse,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  PresetSyncMode,
+  PresetSyncResponse,
+  ProviderConnectionDto,
+  ProviderConnectionResponse,
+  ProviderConnectionUpdate,
+  PricingRates,
+  TieredRates,
+  GroupKeyApplied,
+  ModelPromotion,
+  ModelProviderAuthToken,
+  ModelProviderAuthTokens,
+  ModelPromotions,
+} from "@prismshadow/penguin-library-model";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
@@ -36,6 +69,7 @@ import {
   atomicWriteFile,
   DEFAULT_CHAT_THINKING_LEVELS,
   DEFAULT_COMMAND_POLICY_RULES,
+  commandPolicyPatternError,
   effectiveCommandPolicyRules,
   parseCommandPolicy,
   parsePluginTables,
@@ -47,9 +81,11 @@ import {
   effectiveConnection,
   groupKeyReaches,
   imageUrlMessage,
+  listProjectDirs,
   metaMaxTokens,
   migrateProjectConfigTable,
   parseProviderTable,
+  parseToolModelTable,
   projectConfigFromTable,
   projectConfigPath,
   providerConnectionShape,
@@ -90,38 +126,19 @@ import type {
   ProviderConnectionShape,
   ProviderTable,
 } from "@prismshadow/penguin-core";
-import type {
-  ChatDefaultsDto,
-  CommandPolicyDto,
-  CommandPolicyRuleDto,
-  EndpointModelListRequest,
-  EndpointModelListResponse,
-  ModelEffectiveConnection,
-  ModelInfo,
-  ModelPricingDto,
-  ModelProtocolDetectRequest,
-  ModelProtocolDetectResponse,
-  ModelRefDto,
-  ModelsResponse,
-  ModelsUpdateRequest,
-  ModelTestRequest,
-  ModelTestResponse,
-  ModelVisionDetectRequest,
-  ModelVisionDetectResponse,
-  PresetSyncMode,
-  PresetSyncResponse,
-  ProviderConnectionDto,
-  ProviderConnectionUpdate,
-} from "../api/types.js";
+import type { CommandPolicyRuleDto } from "../api/types.js";
+import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import { badRequest } from "../http/validate.js";
 import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";
+import { connectDefaultOffer } from "./connect-default-offer.js";
 import type {
   PlatformCatalogPricing,
   PlatformModelApplyResult,
   PlatformModelCatalog,
-} from "./platform-auth-types.js";
+} from "@prismshadow/penguin-library-model/platform-auth-flow";
 import { detectModelProtocol } from "./protocol-detect.js";
+import { testToolModel } from "./tool-model-test.js";
 import { migratePenguinGoRoutes } from "./project-config-migrations.js";
 import { presetProjectConfig } from "./project-config-seed.js";
 import {
@@ -132,16 +149,8 @@ import {
   classifyVisionProbe,
   classifyVisionProbeError,
 } from "./vision-detect.js";
-import type { PricingRates, TieredRates } from "./usage-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type {
-  ModelPromotion,
-  ModelProviderAuthToken,
-  ModelProviderAuthTokens,
-  ModelPromotions,
-  ProjectConfigStore,
-} from "../mechanisms/projects.js";
 
 export type RawTable = Record<string, unknown>;
 
@@ -259,14 +268,21 @@ function optStr(v: unknown): string | undefined {
   return typeof v === "string" && v !== "" ? v : undefined;
 }
 
-/** Command-policy rules as DTOs: per-rule `enabled` made explicit (stored absence = on). */
+/** Command-policy rules as DTOs: per-rule `enabled` made explicit (stored absence = on); `action` only where it departs from `deny`, as it is stored. */
 function toCommandPolicyRuleDtos(rules: readonly CommandPolicyRule[]): CommandPolicyRuleDto[] {
-  return rules.map((r) => ({
-    name: r.name,
-    pattern: r.pattern,
-    ...(r.description !== undefined ? { description: r.description } : {}),
-    enabled: r.enabled !== false,
-  }));
+  return rules.map((r) => {
+    // A stored pattern this engine cannot compile is skipped at match time; say so here, so
+    // the settings page can mark the rule rather than show it as if it guarded anything.
+    const patternError = commandPolicyPatternError(r.pattern);
+    return {
+      name: r.name,
+      pattern: r.pattern,
+      ...(r.description !== undefined ? { description: r.description } : {}),
+      enabled: r.enabled !== false,
+      ...(r.action === "ask" ? { action: "ask" as const } : {}),
+      ...(patternError !== null ? { patternError } : {}),
+    };
+  });
 }
 
 /** Leniently reads a paired reference table (default_model / vision_model); returns undefined on a shape mismatch (including the old string format). */
@@ -282,6 +298,18 @@ function optRef(v: unknown): ModelRef | undefined {
 /** Whether an entry matches a paired reference (the entry's provider / model_id fields must be strings). */
 function entryMatches(m: RawTable, provider: string, modelId: string): boolean {
   return m.provider === provider && m.model_id === modelId;
+}
+
+/** The `[tools]` bindings that name a row of the table, as DTOs: what the models view reports. */
+function configuredToolModels(raw: RawTable): Record<string, ModelRefDto> {
+  const rows = asArray(raw.models);
+  const out: Record<string, ModelRefDto> = {};
+  for (const [key, ref] of Object.entries(parseToolModelTable(raw.tools) ?? {})) {
+    if (rows.some((m) => entryMatches(m, ref.provider, ref.model_id))) {
+      out[key] = { provider: ref.provider, modelId: ref.model_id };
+    }
+  }
+  return out;
 }
 
 /** In-process Map/Set key for a paired reference (\0-separated to avoid concatenation ambiguity; never persisted, not an id format). */
@@ -412,6 +440,27 @@ function rowsFollowingGroupKey(raw: RawTable, provider: string): number {
       groupKeyReaches(optStr(m.base_url), groupBaseUrl) &&
       (optStr(m.api_key)?.trim() ?? "") === "",
   ).length;
+}
+
+/**
+ * The default a write that stores `provider`'s group key offers (connectDefaultOffer), from the
+ * table as it stood (`before`) and the one the write stores (`next`). The offer is only reported:
+ * the write keeps the Project's default as it is.
+ */
+function connectOfferOf(
+  before: RawTable,
+  next: RawTable,
+  provider: string,
+): DefaultModelOffer | undefined {
+  const current = optRef(before.default_model);
+  return connectDefaultOffer({
+    provider,
+    hadKey: providerTableOf(before)[provider]?.api_key !== undefined,
+    hasKey: providerTableOf(next)[provider]?.api_key !== undefined,
+    current:
+      current === undefined ? undefined : { provider: current.provider, modelId: current.model_id },
+    holds: (modelId) => asArray(before.models).some((m) => entryMatches(m, provider, modelId)),
+  });
 }
 
 /** A group's stored connection as the page reads it: the group's own values, the key masked. */
@@ -859,17 +908,9 @@ export class ProjectConfigService implements ProjectConfigStore {
    * (changelog/0.2.17/2026-10-15-backward-compatibility.md).
    */
   async migrateStoredConfigs(): Promise<void> {
-    let entries: Dirent[];
-    try {
-      entries = await fs.readdir(this.root, { withFileTypes: true });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
-      throw err;
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    for (const { id } of await listProjectDirs(this.root)) {
       try {
-        await this.readTable(entry.name);
+        await this.readTable(id);
       } catch {
         // An unparseable file: the read that needs it reports it, with its own context.
       }
@@ -957,7 +998,8 @@ export class ProjectConfigService implements ProjectConfigStore {
 
   /**
    * Initial config for a newly created Project: display name + the built-in catalog's seed
-   * (presetProjectConfig: the default model, each built-in group's `[providers.<id>]` table —
+   * (presetProjectConfig: no default model — the user chooses one — each built-in group's
+   * `[providers.<id>]` table —
    * endpoint and protocol — and all preset entries; an entry stores its catalog facts, plus a
    * protocol or endpoint only where it differs from its group's table — and no key). From here
    * on the file alone says where every request goes; the catalog is not read again when one is
@@ -969,7 +1011,6 @@ export class ProjectConfigService implements ProjectConfigStore {
     const preset = presetProjectConfig();
     await this.writeRaw(projectId, {
       name,
-      ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
       // The factory command-policy rules are seeded exactly like the model presets:
       // copied in at creation, owned by the project from then on.
       ...(preset.command_policy !== undefined ? { command_policy: preset.command_policy } : {}),
@@ -995,15 +1036,11 @@ export class ProjectConfigService implements ProjectConfigStore {
   async ensurePresetModels(projectId: string): Promise<boolean> {
     const raw = await this.readRaw(projectId);
     if (asArray(raw.models).length > 0) return false;
-    const preset = presetProjectConfig();
     const { providers, added } = presetAdditions(raw);
-    await this.writeRaw(projectId, {
-      ...raw,
-      // Also reset to the preset default_model if the existing one points at a now-deleted model, to keep the default model valid.
-      ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
-      providers,
-      models: added,
-    });
+    // A table with no rows can name no valid default (nor vision model): the stale pointers go,
+    // and the Project starts with no default model, as a new one does.
+    const { default_model: _default, vision_model: _vision, ...rest } = raw;
+    await this.writeRaw(projectId, { ...rest, providers, models: added });
     return true;
   }
 
@@ -1061,6 +1098,51 @@ export class ProjectConfigService implements ProjectConfigStore {
       default_model: { provider: ref.provider, model_id: ref.modelId },
     });
     return { provider: ref.provider, modelId: ref.modelId };
+  }
+
+  async getToolModels(projectId: string): Promise<Record<string, ModelRefDto>> {
+    return configuredToolModels(await this.readRaw(projectId));
+  }
+
+  /**
+   * Binds one `[tools]` key, or with null unbinds it: read-modify-write of the same toml, under
+   * the lock the whole-table PUT and "Restore defaults" take, so a binding saved beside them sees
+   * their final rows. The model must be a configured row (400 otherwise); the key's grammar and
+   * which models it accepts are the declaring plugin's (ToolModelBindings checks them first).
+   */
+  async setToolModel(
+    projectId: string,
+    key: string,
+    model: ModelRefDto | null,
+  ): Promise<Record<string, ModelRefDto>> {
+    return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, async () => {
+      const raw = await this.readRaw(projectId);
+      if (
+        model !== null &&
+        !asArray(raw.models).some((m) => entryMatches(m, model.provider, model.modelId))
+      ) {
+        throw badRequest(
+          `The model must be included in models: ${showRef(model.provider, model.modelId)}.`,
+        );
+      }
+      const tools: RawTable = { ...asTable(raw.tools) };
+      if (model === null) delete tools[key];
+      else tools[key] = { provider: model.provider, model_id: model.modelId };
+      const next: RawTable = { ...raw };
+      if (Object.keys(tools).length > 0) next.tools = tools;
+      else delete next.tools;
+      await this.writeRaw(projectId, next);
+      return configuredToolModels(next);
+    });
+  }
+
+  /** The key the host resolves for one request to this model (the Sessions' resolver), if any. */
+  async modelRequestApiKey(projectId: string, model: ModelRefDto): Promise<string | undefined> {
+    return this.modelApiKeyResolver?.({
+      projectId,
+      provider: model.provider,
+      modelId: model.modelId,
+    });
   }
 
   /**
@@ -1135,14 +1217,20 @@ export class ProjectConfigService implements ProjectConfigStore {
    * always materializes the full rule list into the file — model-presets style: once
    * written, later factory changes never rewrite it — storing per field only what departs
    * from the defaults (`enabled = false`, a rule's `enabled = false`, a non-empty
-   * description). Read-modify-write like setChatDefaults, preserving every other key.
-   * Returns the block as re-read.
+   * description, a rule's `action = "ask"`). Read-modify-write like setChatDefaults,
+   * preserving every other key. Returns the block as re-read.
    */
   async setCommandPolicy(
     projectId: string,
     req: {
       enabled?: boolean;
-      rules: { name: string; pattern: string; description?: string; enabled?: boolean }[];
+      rules: {
+        name: string;
+        pattern: string;
+        description?: string;
+        enabled?: boolean;
+        action?: "deny" | "ask";
+      }[];
     },
   ): Promise<CommandPolicyDto> {
     const raw = await this.readRaw(projectId);
@@ -1155,6 +1243,7 @@ export class ProjectConfigService implements ProjectConfigStore {
         ? { description: r.description }
         : {}),
       ...(r.enabled === false ? { enabled: false } : {}),
+      ...(r.action === "ask" ? { action: "ask" } : {}),
     }));
     await this.writeRaw(projectId, { ...raw, command_policy: block });
     return this.getCommandPolicy(projectId);
@@ -1341,10 +1430,18 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
   }
 
-  async testModel(projectId: string, req: ModelTestRequest): Promise<ModelTestResponse> {
+  async testModel(
+    projectId: string,
+    req: ModelTestRequest,
+    testRequestFor?: ModelTestRequestSource,
+  ): Promise<ModelTestResponse> {
     const raw = await this.readRaw(projectId);
     // Testable even if the model isn't in the config yet (validate before saving when adding a custom model): in that case all parameters come from the request body.
     const entry = asArray(raw.models).find((m) => entryMatches(m, req.provider, req.modelId)) ?? {};
+    // A tool model refuses the chat probe (a speech recognizer takes no text): the binding that
+    // accepts it names what to send instead (ToolModelBindings.testRequest).
+    const toolTest = await this.toolModelTest(projectId, raw, entry, req, testRequestFor);
+    if (toolTest !== undefined) return toolTest;
     // Fast mode follows the form draft like baseUrl (the frontend always sends the current
     // toggle), falling back to the stored annotation: the probe then exercises exactly the
     // serving tier sessions would use, so a model rejecting fast_mode fails the test with
@@ -1422,6 +1519,51 @@ export class ProjectConfigService implements ProjectConfigStore {
       }
     } catch (err) {
       // Defensive: an unexpected exception during construction/iteration (the LLM layer promises not to throw; this is a fallback).
+      return {
+        ok: false,
+        message: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+      };
+    }
+  }
+
+  /**
+   * The connection test of a model a binding names its own test request for, over the same draft
+   * connection the chat probe reads (draftCredential, and the managed key unless the draft names
+   * or clears one); undefined when no binding names one, and the chat probe is the test.
+   */
+  private async toolModelTest(
+    projectId: string,
+    raw: RawTable,
+    entry: RawTable,
+    req: ModelTestRequest,
+    testRequestFor: ModelTestRequestSource | undefined,
+  ): Promise<ModelTestResponse | undefined> {
+    if (testRequestFor === undefined) return undefined;
+    const credential = draftCredential(raw, req);
+    const body = testRequestFor({
+      provider: req.provider,
+      modelId: req.modelId,
+      ...(credential.clientType !== undefined ? { clientType: credential.clientType } : {}),
+      ...(entry.vision === false ? { vision: false } : {}),
+    });
+    if (body === undefined) return undefined;
+    try {
+      const managedApiKey =
+        req.apiKey === undefined && req.clearApiKey !== true
+          ? await this.modelApiKeyResolver?.({
+              projectId,
+              provider: req.provider,
+              modelId: req.modelId,
+            })
+          : undefined;
+      return await testToolModel({
+        provider: req.provider,
+        modelId: req.modelId,
+        credential,
+        ...(managedApiKey !== undefined ? { managedApiKey } : {}),
+        body,
+      });
+    } catch (err) {
       return {
         ok: false,
         message: (err instanceof Error ? err.message : String(err)).slice(0, 300),
@@ -1619,6 +1761,7 @@ export class ProjectConfigService implements ProjectConfigStore {
           provider,
           modelId,
           ...(displayName !== undefined ? { displayName } : {}),
+          ...(cat?.tool === true ? { chatEligible: false } : {}),
           isDefault:
             defaultRef !== undefined &&
             defaultRef.provider === provider &&
@@ -1651,10 +1794,12 @@ export class ProjectConfigService implements ProjectConfigStore {
       provider: ref.provider,
       modelId: ref.model_id,
     });
+    const toolModels = configuredToolModels(raw);
     const updatedAt = await this.configUpdatedAt(projectId);
     return {
       ...(defaultRef !== undefined ? { defaultModel: toDto(defaultRef) } : {}),
       ...(visionRef !== undefined ? { visionModel: toDto(visionRef) } : {}),
+      ...(Object.keys(toolModels).length > 0 ? { toolModels } : {}),
       ...(updatedAt !== undefined ? { updatedAt } : {}),
       providers: Object.fromEntries(
         Object.entries(providers).map(([id, connection]) => [id, providerDto(connection)]),
@@ -1787,13 +1932,13 @@ export class ProjectConfigService implements ProjectConfigStore {
       );
     }
 
-    // Only custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and user-defined groups
-    // take models added by hand (core's isAddableGroup); every other built-in group, the other
-    // gateways included, carries its catalog presets and the rows it already stores. The
-    // same grandfathering as above: a stored row is written as it stands, hand-added
-    // ones from before this rule included, and so is a row renamed inside its own group. A row
-    // moved in from another group is being added here, and a preset is always welcome back
-    // (the preset sync writes a deleted one again).
+    // Only custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud, Runcrate and
+    // user-defined groups take models added by hand (core's isAddableGroup); every other
+    // built-in group, the other gateways included, carries its catalog presets and the rows it
+    // already stores. The same grandfathering as above: a stored row is written as it stands,
+    // hand-added ones from before this rule included, and so is a row renamed inside its own
+    // group. A row moved in from another group is being added here, and a preset is always
+    // welcome back (the preset sync writes a deleted one again).
     for (const entry of req.models) {
       if (!unaddableModel(entry.provider, entry.modelId)) continue;
       if (prevModels.some((m) => entryMatches(m, entry.provider, entry.modelId))) continue;
@@ -1964,7 +2109,9 @@ export class ProjectConfigService implements ProjectConfigStore {
     const targetOf = (ref: ModelRefDto) =>
       req.models.find((m) => m.provider === ref.provider && m.modelId === ref.modelId);
     let visionModel: ModelRefDto | undefined;
-    if (req.visionModel !== undefined) {
+    if (req.visionModel === null) {
+      // Cleared: no model reads images for another.
+    } else if (req.visionModel !== undefined) {
       if (!seen.has(refKey(req.visionModel.provider, req.visionModel.modelId))) {
         throw badRequest(
           `visionModel must be included in models: ${showRef(req.visionModel.provider, req.visionModel.modelId)}.`,
@@ -1991,6 +2138,28 @@ export class ProjectConfigService implements ProjectConfigStore {
       }
     }
 
+    // [tools]: given, the table becomes exactly what was sent, every model in the table being
+    // written; omitted, each stored binding follows a renamed model and goes with a removed one.
+    const toolModels: Record<string, ModelRefDto> = {};
+    if (req.toolModels !== undefined) {
+      for (const [key, ref] of Object.entries(req.toolModels)) {
+        if (!seen.has(refKey(ref.provider, ref.modelId))) {
+          throw badRequest(
+            `toolModels.${key} must be included in models: ${showRef(ref.provider, ref.modelId)}.`,
+          );
+        }
+        toolModels[key] = ref;
+      }
+    } else {
+      for (const [key, ref] of Object.entries(parseToolModelTable(raw.tools) ?? {})) {
+        const followed = renamed.get(refKey(ref.provider, ref.model_id)) ?? {
+          provider: ref.provider,
+          modelId: ref.model_id,
+        };
+        if (seen.has(refKey(followed.provider, followed.modelId))) toolModels[key] = followed;
+      }
+    }
+
     const toRaw = (ref: ModelRefDto): RawTable => ({
       provider: ref.provider,
       model_id: ref.modelId,
@@ -2000,6 +2169,11 @@ export class ProjectConfigService implements ProjectConfigStore {
     else delete next.default_model;
     if (visionModel !== undefined) next.vision_model = toRaw(visionModel);
     else delete next.vision_model;
+    if (Object.keys(toolModels).length > 0) {
+      next.tools = Object.fromEntries(
+        Object.entries(toolModels).map(([key, ref]) => [key, toRaw(ref)]),
+      );
+    } else delete next.tools;
     const commit = async (): Promise<ModelsResponse> => {
       await this.writeRaw(projectId, next);
       if (this.promotions !== undefined) {
@@ -2030,22 +2204,26 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the group's authorization (its refresh token) goes with the old one — "Disconnect" is
    * `{ clearApiKey: true }` here, and for ModelScope it ends the authorization too. A protocol
    * Penguin Go's fixed one does not allow is refused before anything is written
-   * (checkGroupProtocol). Returns the models view as it now stands.
+   * (checkGroupProtocol). Returns the models view as it now stands, with the default a group's
+   * first key offers (connectOfferOf); the default itself is left as it is.
    */
   async setProviderConnection(
     projectId: string,
     provider: string,
     patch: ProviderConnectionUpdate,
-  ): Promise<ModelsResponse> {
+  ): Promise<ProviderConnectionResponse> {
     return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, async () => {
       const raw = await this.readRaw(projectId);
       checkGroupProtocol(raw, provider, patch.clientType);
       const { table, keyChanged } = patchProviderTable(asTable(raw.providers), provider, patch);
-      await this.writeRaw(projectId, { ...raw, providers: table });
+      const next = { ...raw, providers: table };
+      const defaultOffer = connectOfferOf(raw, next, provider);
+      await this.writeRaw(projectId, next);
       if (keyChanged && provider === MODELSCOPE_PROVIDER_ID) {
         this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
       }
-      return this.getModels(projectId);
+      const res = await this.getModels(projectId);
+      return defaultOffer === undefined ? res : { ...res, defaultOffer };
     });
   }
 
@@ -2056,15 +2234,20 @@ export class ProjectConfigService implements ProjectConfigStore {
    * and a caller that never saw the rest of the table cannot flatten it. A group with no rows
    * still takes the key.
    *
-   * Returns how many of the group's rows now use it — the ones without a key of their own.
+   * Returns how many of the group's rows now use it — the ones without a key of their own —
+   * and the default a group's first key offers (connectOfferOf), which is not written.
    */
-  async setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number> {
+  async setGroupApiKey(
+    projectId: string,
+    provider: string,
+    apiKey: string,
+  ): Promise<GroupKeyApplied> {
     if (provider === MODELSCOPE_PROVIDER_ID) {
       return this.withProviderCredentialLock(projectId, provider, async () => {
-        const applied = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
+        const written = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
         // Written by hand: the authorization's refresh token belongs to the key it replaced.
         this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
-        return applied;
+        return written;
       });
     }
     return this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
@@ -2088,7 +2271,7 @@ export class ProjectConfigService implements ProjectConfigStore {
         const current = this.providerAuthTokens?.get(projectId, provider);
         if (current?.refreshToken !== options.expectedRefreshToken) return 0;
       }
-      const applied = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
+      const { applied } = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
       this.providerAuthTokens?.upsert(projectId, {
         provider,
         refreshToken: token.refreshToken,
@@ -2102,11 +2285,14 @@ export class ProjectConfigService implements ProjectConfigStore {
     projectId: string,
     provider: string,
     apiKey: string,
-  ): Promise<number> {
+  ): Promise<GroupKeyApplied> {
     const raw = await this.readRaw(projectId);
     const { table } = patchProviderTable(asTable(raw.providers), provider, { apiKey });
-    await this.writeRaw(projectId, { ...raw, providers: table });
-    return rowsFollowingGroupKey(raw, provider);
+    const next = { ...raw, providers: table };
+    const defaultOffer = connectOfferOf(raw, next, provider);
+    await this.writeRaw(projectId, next);
+    const applied = rowsFollowingGroupKey(raw, provider);
+    return defaultOffer === undefined ? { applied } : { applied, defaultOffer };
   }
 
   /** A group's key (`[providers.<id>].api_key`), never a row's own; never sent over HTTP. */
@@ -2166,7 +2352,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    *
    * Returns how many rows were added, `updated` (price, promotion or route changed),
    * and `applied`: on authorization, how many of the group's rows now use the group key;
-   * otherwise the rows added.
+   * otherwise the rows added. An authorization that writes the group's first key reports the
+   * default it offers as `defaultOffer` (connectOfferOf), without writing it.
    */
   async mergePlatformModels(
     projectId: string,
@@ -2252,15 +2439,18 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
 
     const nextModels = [...current, ...added];
+    let defaultOffer: DefaultModelOffer | undefined;
     if (added.length > 0 || routesUpdated > 0 || pricesChanged || applyKeyToExisting) {
       const providers = applyKeyToExisting
         ? patchProviderTable(asTable(raw.providers), provider, { apiKey }).table
         : raw.providers;
-      await this.writeRaw(projectId, {
+      const next = {
         ...raw,
         ...(providers !== undefined ? { providers } : {}),
         models: nextModels,
-      });
+      };
+      defaultOffer = connectOfferOf(before, next, provider);
+      await this.writeRaw(projectId, next);
     }
     // After the file write, so each promotion applies to the list price that was persisted.
     // A missing promotion clears the advertised row's old one; unadvertised rows are kept.
@@ -2281,7 +2471,12 @@ export class ProjectConfigService implements ProjectConfigStore {
     const applied = applyKeyToExisting
       ? rowsFollowingGroupKey({ providers: raw.providers, models: nextModels }, provider)
       : added.length;
-    return { added: added.length, updated: Math.max(routesUpdated, changedIds.size), applied };
+    return {
+      added: added.length,
+      updated: Math.max(routesUpdated, changedIds.size),
+      applied,
+      ...(defaultOffer !== undefined ? { defaultOffer } : {}),
+    };
   }
 
   /**
@@ -2294,8 +2489,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    *   table, promotion, key or reference.
    * - `restore`: the model configuration becomes a new Project's (presetProjectConfig) and
    *   keeps only the API keys. The rows are the non-retired presets in catalog order, the
-   *   built-in groups' tables the catalog's, the default model the catalog's, and there is no
-   *   vision model. Everything else goes: every row that is not a preset (the user's own,
+   *   built-in groups' tables the catalog's, and there is no default model and no vision model
+   *   (a new Project's state: the first-run guide asks for a default again). Everything else goes: every row that is not a preset (the user's own,
    *   and those an older catalog added, retired rows included), every user-defined group,
    *   every override on a preset row, and every group setting the catalog does not write
    *   (custom's base URL included; vLLM's returns to the catalog's local address). Promotions
@@ -2384,11 +2579,13 @@ export class ProjectConfigService implements ProjectConfigStore {
     if (defaultModel !== undefined) next.default_model = defaultModel;
     else delete next.default_model;
     delete next.vision_model;
+    delete next.tools;
     const changed =
       !sameValue(current, nextModels) ||
       !sameValue(asTable(raw.providers), providers) ||
       !sameValue(optRef(raw.default_model), defaultModel) ||
-      raw.vision_model !== undefined;
+      raw.vision_model !== undefined ||
+      raw.tools !== undefined;
     if (changed) await this.writeRaw(projectId, next);
 
     this.promotions?.replaceAll(projectId, presetPromotions());

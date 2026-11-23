@@ -39,13 +39,11 @@
  * - Given a pick's text, a single choice shows that option pressed and a multiple choice its
  *   boxes ticked; an answer the reader wrote, or the open question, picks nothing.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createElement } from "react";
 import type { KeyboardEvent, ReactElement } from "react";
 import { describe, expect, it } from "vitest";
-import { fieldProblem } from "@prismshadow/penguin-core/a2ui";
-import type { A2uiForm, A2uiFormAnswer, A2uiFormField } from "@prismshadow/penguin-core/a2ui";
+import { fieldProblem } from "@prismshadow/a2ui";
+import type { A2uiForm, A2uiFormAnswer, A2uiFormField } from "@prismshadow/a2ui";
 import { A2uiActionsProvider } from "../src/components/content/a2ui/actions";
 import type { A2uiActions, A2uiDrafts } from "../src/components/content/a2ui/actions";
 import { A2uiBlock } from "../src/components/content/a2ui/a2ui-block";
@@ -62,7 +60,6 @@ import { a2uiRendererFor, registerA2uiRenderer } from "../src/components/content
 import { Md } from "../src/components/content/prose/prose";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
 import { renderStatic } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
 
 const LIVE: A2uiActions = { interactive: true, fill: () => {}, lang: "en" };
 
@@ -86,6 +83,17 @@ const tags = (html: string, name: string, ...attrs: string[]) =>
 
 /** Every `<button>` opening tag. */
 const buttons = (html: string) => tags(html, "button");
+
+const DATES = DEFAULT_UI_STRINGS.dates;
+
+/**
+ * What the date or time picker titled `label` shows, read from its name ("Day: Oct 21, 2026"):
+ * the answer as the reader's locale writes it, or the picker's placeholder while there is none.
+ */
+const shown = (html: string, label: string) =>
+  new RegExp(`aria-haspopup="dialog"[^>]*aria-label="${label}: ([^"]*)"`)
+    .exec(html)?.[1]
+    ?.replace(/[\u00a0\u2009\u202f]/g, " ");
 
 /**
  * The options that open on a decorative lead — a card's radio disc, or the pen of its "Other…" —
@@ -236,13 +244,6 @@ describe("ChoiceBlock", () => {
     expect(block({ ...CHOICE, multiple: true })).not.toContain("Fill in");
   });
 
-  it("fills nothing from either Other…, which empties the composer", () => {
-    // A static render cannot press a button: the two controls' handlers are read from source.
-    const source = readFileSync(join(SRC_DIR, "components/content/a2ui/choice-block.tsx"), "utf8");
-    expect(source.match(/actions\.fill\(""\)/g)).toHaveLength(2);
-    expect(source).not.toContain("actions.focus");
-  });
-
   it("sets a few short options as a row of chips, and longer ones as cards led by a disc", () => {
     const short = {
       type: "choice",
@@ -302,9 +303,10 @@ describe("FormBlock", () => {
     const [toggle] = tags(schedule, "button", 'role="switch"');
     const switchId = /id="([^"]+)"/.exec(toggle ?? "")?.[1];
     expect(schedule).toMatch(new RegExp(`<label for="${switchId}"[^>]*>Notify me</label>`));
-    expect(tags(schedule, "input", 'type="date"')).toHaveLength(1);
-    expect(tags(schedule, "input", 'type="time"')).toHaveLength(1);
-    expect(tags(schedule, "input", 'type="datetime-local"')).toHaveLength(1);
+    // The calendar kinds are the package's pickers, each a button that opens its panel.
+    expect(tags(schedule, "button", 'aria-haspopup="dialog"')).toHaveLength(3);
+    expect(shown(schedule, "Day")).toBe(DATES.pickDate);
+    expect(shown(schedule, "Run until")).toBe(DATES.pickDateTime);
   });
 
   it("keeps radios and checkboxes for options that carry a description", () => {
@@ -326,7 +328,7 @@ describe("FormBlock", () => {
     expect(tags(deploy, "input", 'value="3"')).toHaveLength(1);
     const schedule = block(SCHEDULE, LIVE);
     expect(tags(schedule, "button", 'role="switch"', 'aria-checked="true"')).toHaveLength(1);
-    expect(tags(schedule, "input", 'type="time"', 'value="09:30"')).toHaveLength(1);
+    expect(shown(schedule, "Time")).toBe("9:30 AM");
     // Defaults alone do not answer a required day...
     expect(formReady(SCHEDULE, initialAnswers(SCHEDULE))).toBe(false);
     expect(formReady(SCHEDULE, { ...initialAnswers(SCHEDULE), day: "2026-10-20" })).toBe(true);
@@ -394,12 +396,10 @@ describe("FormBlock", () => {
     expect(keys).toEqual([expect.stringMatching(/^s1:[0-9a-z]+$/)]);
     // A boolean comes back on the switch, never on the date; a label only among the options.
     expect(tags(html, "button", 'role="switch"', 'aria-checked="false"')).toHaveLength(1);
-    expect(tags(html, "input", 'type="date"', 'value=""')).toHaveLength(1);
+    expect(shown(html, "Day")).toBe(DATES.pickDate);
     expect(html).toContain(DEFAULT_UI_STRINGS.a2ui.choose);
-    expect(tags(html, "input", 'type="time"', 'value="10:15"')).toHaveLength(1);
-    expect(tags(html, "input", 'type="datetime-local"', 'value="2026-10-20T18:00"')).toHaveLength(
-      1,
-    );
+    expect(shown(html, "Time")).toBe("10:15 AM");
+    expect(shown(html, "Run until")).toBe("Oct 20, 2026, 6:00 PM");
     // A text on the switch is refused, and the switch keeps its default.
     const kept = block(SCHEDULE, { ...LIVE, drafts: store({ notify: "no" }), draftScope: "s1" });
     expect(tags(kept, "button", 'role="switch"', 'aria-checked="true"')).toHaveLength(1);
@@ -496,29 +496,27 @@ describe("answered blocks", () => {
     );
     expect(schedule).not.toContain(DEFAULT_UI_STRINGS.a2ui.choose);
     expect(tags(schedule, "button", 'role="switch"', 'aria-checked="false"')).toHaveLength(1);
-    expect(tags(schedule, "input", 'type="date"', 'value="2026-10-21"')).toHaveLength(1);
-    expect(
-      tags(schedule, "input", 'type="datetime-local"', 'value="2026-10-21T18:00"'),
-    ).toHaveLength(1);
+    expect(shown(schedule, "Day")).toBe("Oct 21, 2026");
+    expect(shown(schedule, "Run until")).toBe("Oct 21, 2026, 6:00 PM");
     // The time has a default, but the message has no line for it: it was not answered.
-    expect(tags(schedule, "input", 'type="time"', 'value=""')).toHaveLength(1);
+    expect(shown(schedule, "Time")).toBe(DATES.pickTime);
     // A switch with no line cannot show no answer: it stands at its starting answer, on.
     const edited = block(SCHEDULE, answered("Day: 2026-10-21"));
     expect(tags(edited, "button", 'role="switch"', 'aria-checked="true"')).toHaveLength(1);
-    expect(tags(edited, "input", 'type="time"', 'value=""')).toHaveLength(1);
+    expect(shown(edited, "Time")).toBe(DATES.pickTime);
   });
 
   it("show the form as asked for a message that is not its answer", () => {
     const html = block(SCHEDULE, answered("Sounds good, go ahead."));
     expect(tags(html, "button", 'role="switch"', 'aria-checked="true"')).toHaveLength(1);
-    expect(tags(html, "input", 'type="time"', 'value="09:30"')).toHaveLength(1);
+    expect(shown(html, "Time")).toBe("9:30 AM");
     expect(html).toContain(DEFAULT_UI_STRINGS.a2ui.choose);
   });
 
   it("leave the open question to its own answers", () => {
     const html = block(SCHEDULE, { ...LIVE, answeredWith: "Notify me: No\nTime: 10:15" });
     expect(tags(html, "button", 'role="switch"', 'aria-checked="true"')).toHaveLength(1);
-    expect(tags(html, "input", 'type="time"', 'value="09:30"')).toHaveLength(1);
+    expect(shown(html, "Time")).toBe("9:30 AM");
     expect(tags(html, "button", 'type="submit"')).toHaveLength(1);
   });
 
@@ -596,7 +594,7 @@ describe("CalloutBlock", () => {
 
   it("leads the text with the model's title in the same line", () => {
     const html = callout({ tone: "tip", title: "Faster", text: "Cache the build." });
-    expect(html).toMatch(/<span class="font-semibold">Faster <\/span>Cache the build\./);
+    expect(html).toMatch(/<span class="[^"]*">Faster <\/span>Cache the build\./);
   });
 });
 
@@ -613,7 +611,7 @@ describe("A2uiBlock", () => {
   });
 
   it("brings a block that draws in under the theme's reveal", () => {
-    expect(block(CHOICE)).toMatch(/^<div data-reveal="true"><div class="a2ui-block/);
+    expect(block(CHOICE)).toMatch(/^<div data-reveal="true"><div /);
   });
 
   it("is a placeholder while the reply streams, and parses nothing", () => {

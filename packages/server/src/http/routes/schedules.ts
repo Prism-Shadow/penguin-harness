@@ -43,7 +43,7 @@ import {
   parseScheduleFile,
   slotInWindow,
 } from "../../runtime/schedule-file.js";
-import type { ScheduleStateRow } from "../../db/repos/schedules.js";
+import type { ScheduleStateRow } from "@prismshadow/penguin-library-session/repos/schedules";
 import {
   deleteScheduleFile,
   readScheduleFile,
@@ -54,8 +54,8 @@ import {
 import { scheduleStatus } from "../../runtime/scheduler.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config } from "../../hmr/capabilities.js";
-import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
-import type { Schedules, Scheduling } from "../../mechanisms/sessions.js";
+import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
+import type { Schedules, Scheduling } from "@prismshadow/penguin-library-session";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 
 /** Validate and shape the POST/PUT request body into file fields (semantic validation is left to parseScheduleFile). */
@@ -172,7 +172,7 @@ export function scheduleRoutes(deps: SchedulesRouteDeps): Hono<AppEnv> {
     if (await readScheduleFile(deps.config.root, projectId, agentId, name)) {
       throw new HttpError(409, "schedule_exists", `Schedule already exists: ${name}`);
     }
-    await upsert(deps, c.var.user.userId, projectId, agentId, name, body);
+    await upsert(deps, personOf(c), projectId, agentId, name, body);
     return c.json(await readItem(deps, projectId, agentId, name), 201);
   });
 
@@ -209,7 +209,7 @@ export function scheduleRoutes(deps: SchedulesRouteDeps): Hono<AppEnv> {
       throw new HttpError(404, "schedule_not_found", `Schedule does not exist: ${name}`);
     }
     const body = await readJson(c);
-    await upsert(deps, c.var.user.userId, projectId, agentId, name, body);
+    await upsert(deps, personOf(c), projectId, agentId, name, body);
     return c.json(await readItem(deps, projectId, agentId, name));
   });
 
@@ -256,10 +256,18 @@ export function projectScheduleRoutes(deps: SchedulesRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+/**
+ * Who a save vouches for: the signed-in person, or null for the local API token — the credential
+ * every Agent's shell holds, so an Agent's save makes nobody the schedule's creator.
+ */
+function personOf(c: { var: { user: { userId: string }; sessionVia: string } }): string | null {
+  return c.var.sessionVia === "token" ? null : c.var.user.userId;
+}
+
 /** Write + register creator + reconcile immediately (API changes take effect right away). */
 async function upsert(
   deps: SchedulesRouteDeps,
-  userId: string,
+  person: string | null,
   projectId: string,
   agentId: string,
   name: string,
@@ -283,15 +291,28 @@ async function upsert(
   // The pairing rule itself is enforced by parseScheduleFile above, which rejects half a reference.
   const refError = await validateScheduleModelRef(deps.projectConfigService, projectId, parsed.def);
   if (refError !== null) throw badRequest(`Invalid schedule configuration: ${refError}`);
+  // One that names no model runs on the Project's default: with none, every run would fail.
+  if (
+    parsed.def.modelId === undefined &&
+    (await deps.projectConfigService.getDefaultModelRef(projectId)) === undefined
+  ) {
+    throw new HttpError(
+      400,
+      "no_default_model",
+      "This Project has no default model: choose the model this schedule runs on, or set the Project's default model first.",
+    );
+  }
   await writeScheduleFile(deps.config.root, projectId, agentId, name, raw);
-  // Creator attribution: the API writer is the creator (falls back to the Project owner only for hand-edited files).
+  // Creator attribution: the person who saved it with their own sign-in; none for the local API
+  // token (an Agent's shell), whose saves — like an Agent's edits of the file — vouch for nobody.
   deps.schedulesRepo.registerOrSync({
     projectId,
     agentId,
     name,
     startAtMs: parsed.def.startAtMs,
     defHash: createHash("sha1").update(raw).digest("hex"),
-    creatorUserId: userId,
+    creatorUserId: person,
+    attested: true,
   });
   await deps.scheduler.reconcileAgent(projectId, agentId);
 }

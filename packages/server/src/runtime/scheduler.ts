@@ -25,10 +25,15 @@
  * so an unchanged tree ticks with zero readdir/readFile — manual edits are still
  * picked up next tick because every edit variant moves an mtime the gate stats.
  */
+import type {
+  ScheduleServerEvent,
+  ProjectConfigStore,
+  Projects,
+} from "@prismshadow/penguin-library-project";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin-core";
-import type { ScheduleStateRow } from "../db/repos/schedules.js";
+import type { ScheduleStateRow } from "@prismshadow/penguin-library-session/repos/schedules";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import type { ErrorSink } from "./error-recorder.js";
 import type { ScheduleDefinition } from "./schedule-file.js";
@@ -40,8 +45,8 @@ import {
   validateScheduleModelRef,
 } from "./schedule-store.js";
 import type { ScheduleConfigSource } from "./schedule-store.js";
-import type { ScheduleServerEvent, ScheduleStatus } from "../api/types.js";
-import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import type { ScheduleStatus } from "../api/types.js";
+import { Component, Interface, Opaque, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { userChannelKey } from "../http/routes/events.js";
 import type { Channels, Clock, Paths } from "../hmr/capabilities.js";
@@ -50,9 +55,8 @@ import type {
   Scheduling,
   SessionDrivers,
   SessionIndex,
-} from "../mechanisms/sessions.js";
-import type { ProjectConfigStore, Projects } from "../mechanisms/projects.js";
-import type { Errors } from "../mechanisms/observability.js";
+} from "@prismshadow/penguin-library-session";
+import type { Errors } from "@prismshadow/penguin-library-observability";
 
 /** Reconcile and fire-check interval (min period is 5m, so 30s granularity is plenty). */
 const TICK_INTERVAL_MS = 30_000;
@@ -63,7 +67,7 @@ export interface ScheduleTaskRunnerShape {
   startTask(
     sessionId: string,
     input: ReturnType<typeof userText>[],
-    opts?: { queueIfBusy?: boolean },
+    opts?: { queueIfBusy?: boolean; driver?: string },
   ): Promise<{ sessionId: string; queued: boolean }>;
 }
 
@@ -77,9 +81,10 @@ export interface ScheduleSessionCreatorShape {
     provider?: string;
     /**
      * Unattended creators pass `allow-all`: nobody is there to answer an ask the default
-     * preset's approval mode would bring.
+     * preset's approval mode would bring. A workbench Session that only talks passes
+     * `deny-all`, which asks nobody either.
      */
-    approvalMode?: "allow-all";
+    approvalMode?: "allow-all" | "deny-all";
     source?: "schedule" | "workbench";
     client?: "workbench";
   }): Promise<{ sessionId: string }>;
@@ -139,7 +144,7 @@ export class Scheduler implements Scheduling {
   private ticking = false;
   private filesCache: ScheduleFileCache | null = null;
   /** mtime-gated schedule-file scans (public for test observability of its counters). */
-  get files(): ScheduleFileCache {
+  get files(): ScheduleFileCache & Opaque<"ScheduleFileCache"> {
     return (this.filesCache ??= new ScheduleFileCache(this.root));
   }
   /** Per-Project agents-dir listing gate: dir mtime → Agent ids (creating/removing an Agent dir moves it). */
@@ -201,7 +206,7 @@ export class Scheduler implements Scheduling {
     try {
       const projects = this.projects.listAll();
       for (const project of projects) {
-        await this.reconcileProject(project.projectId, project.ownerUserId);
+        await this.reconcileProject(project.projectId);
       }
       // A deleted Project simply stops being listed, so its cache entries are swept
       // here (removed Agents inside a live Project are dropped by listAgentIds).
@@ -222,7 +227,7 @@ export class Scheduler implements Scheduling {
   async reconcileAgent(projectId: string, agentId: string): Promise<void> {
     const project = this.projects.findById(projectId);
     if (!project) return;
-    await this.reconcileOneAgent(projectId, agentId, project.ownerUserId, { force: true });
+    await this.reconcileOneAgent(projectId, agentId, { force: true });
     await this.drainQueue();
   }
 
@@ -231,8 +236,6 @@ export class Scheduler implements Scheduling {
     projectId: string,
     agentId: string,
   ): Promise<{ entries: ScheduleEntryView[]; invalid: Array<{ name: string; error: string }> }> {
-    const project = this.projects.findById(projectId);
-    const owner = project?.ownerUserId ?? null;
     const files = await this.files.list(projectId, agentId);
     const entries: ScheduleEntryView[] = [];
     const invalid: Array<{ name: string; error: string }> = [];
@@ -251,7 +254,7 @@ export class Scheduler implements Scheduling {
         invalid.push({ name: file.name, error: refError });
         continue;
       }
-      const state = this.registerEntry(projectId, agentId, owner, file.parsed.def, file.raw);
+      const state = this.registerEntry(projectId, agentId, file.parsed.def, file.raw);
       // A settled task is archived here too, so no listing ever shows one (a task found already
       // past at its first registration lands here); it stays listed only while it cannot move.
       if (await this.archiveIfSettled(projectId, agentId, file.parsed.def)) continue;
@@ -304,9 +307,9 @@ export class Scheduler implements Scheduling {
     return `${projectId}\0${agentId}\0${name}`;
   }
 
-  private async reconcileProject(projectId: string, ownerUserId: string): Promise<void> {
+  private async reconcileProject(projectId: string): Promise<void> {
     for (const agentId of await this.listAgentIds(projectId)) {
-      await this.reconcileOneAgent(projectId, agentId, ownerUserId);
+      await this.reconcileOneAgent(projectId, agentId);
     }
   }
 
@@ -345,7 +348,6 @@ export class Scheduler implements Scheduling {
   private async reconcileOneAgent(
     projectId: string,
     agentId: string,
-    ownerUserId: string,
     opts: { force?: boolean } = {},
   ): Promise<void> {
     const files = await this.files.list(projectId, agentId, opts);
@@ -374,7 +376,7 @@ export class Scheduler implements Scheduling {
         });
         continue;
       }
-      const state = this.registerEntry(projectId, agentId, ownerUserId, def, file.raw);
+      const state = this.registerEntry(projectId, agentId, def, file.raw);
       await this.evaluateEntry(projectId, agentId, def, state);
       await this.archiveIfSettled(projectId, agentId, def);
     }
@@ -389,18 +391,19 @@ export class Scheduler implements Scheduling {
   private registerEntry(
     projectId: string,
     agentId: string,
-    ownerUserId: string | null,
     def: ScheduleDefinition,
     raw: string,
   ): ScheduleStateRow {
     const defHash = createHash("sha1").update(raw).digest("hex");
+    // A file found on disk attests to nobody: it registers, or re-registers once it changed,
+    // with no creator. Only the schedules route, for a person's own sign-in, names one.
     const { row, fresh } = this.repo.registerOrSync({
       projectId,
       agentId,
       name: def.name,
       startAtMs: def.startAtMs,
       defHash,
-      creatorUserId: ownerUserId,
+      creatorUserId: null,
     });
     if (!fresh) return row;
     // Baseline: if the due time is already in the past at registration → no backfill (mark one-shot tasks
@@ -542,13 +545,20 @@ export class Scheduler implements Scheduling {
     sessionId: string,
   ): Promise<void> {
     const firedAt = new Date(this.now()).toISOString();
-    // The run acts for the schedule's creator: an agent's browser calls in it drive their Chrome.
+    // The run acts for the schedule's creator: an agent's browser calls in it drive their Chrome,
+    // and it is the run's driver (RuntimeEntry.runDriver). Only a person who saved the schedule
+    // with their own sign-in is its creator; a schedule an Agent or the local token wrote, or
+    // changed since, has none (schedulesRepo.registerOrSync), and its runs are driven by nobody.
     if (state.creatorUserId) this.drivers?.note(sessionId, state.creatorUserId);
     try {
-      await this.runner.startTask(sessionId, [
-        // sender "server": in the Trace this user turn was injected by the server's scheduler, not typed by a human.
-        userText(scheduledMessage(def.name, firedAt, def.prompt), "server"),
-      ]);
+      await this.runner.startTask(
+        sessionId,
+        [
+          // sender "server": in the Trace this user turn was injected by the server's scheduler, not typed by a human.
+          userText(scheduledMessage(def.name, firedAt, def.prompt), "server"),
+        ],
+        state.creatorUserId ? { driver: state.creatorUserId } : undefined,
+      );
     } catch (err) {
       this.errors.record({
         source: "schedule",
@@ -597,9 +607,9 @@ export class Scheduler implements Scheduling {
     }
   }
 
-  /** Notify the creator (falls back to the Project owner at registration; silent if still absent). */
+  /** Notify the creator, else the Project's owner (a schedule with no creator); silent if neither. */
   private notifyFor(state: ScheduleStateRow, event: ScheduleServerEvent): void {
-    const userId = state.creatorUserId;
+    const userId = state.creatorUserId ?? this.projects.findById(state.projectId)?.ownerUserId;
     if (userId) this.notify(userId, event);
   }
 }

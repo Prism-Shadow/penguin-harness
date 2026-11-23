@@ -1,5 +1,5 @@
 /**
- * Employee Agents in development mode (features/agents/agent-employment.ts).
+ * Employee Agents in development mode (lib/agent-employment.ts).
  *
  * - The Agents page splits its rows into the Agents worked with directly and the
  *   organizations' employees, each part in the order it was given; an Agent employed by
@@ -11,11 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AgentSummary, Employment } from "@prismshadow/penguin-server/api";
-import {
-  dropsEmployeeGroup,
-  employeesLast,
-  splitByEmployment,
-} from "../src/features/agents/agent-employment";
+import { dropsEmployeeGroup, employeesLast, splitByEmployment } from "../src/lib/agent-employment";
 
 const job = (orgId: string, title: string): Employment => ({
   orgId,

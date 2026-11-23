@@ -1,81 +1,76 @@
 /**
  * Protocol auto-detection for custom model endpoints.
  *
- * Given a base URL (plus an optional API key), probes which of three MMSP compatible
- * clients (one generic wire protocol each) the endpoint actually serves, in this fixed order:
+ * Given a base URL and optional API key, probes the supported generic protocols in order:
  *
  *   1. `openai-responses` — OpenAI Responses API,   POST {base}/responses
  *   2. `ant-messages`     — Anthropic Messages API, POST {base}/v1/messages
  *   3. `openai-chat`      — OpenAI Chat Completions, POST {base}/chat/completions
+ *   4. `google-genai`     — Google GenAI,           GET  {base}/v1beta/models
  *
- * The two other protocols the dialogs offer, `google-genai` (generateContent) and `mmsp` (an
- * MMSP server), are picked by hand and never probed: generateContent puts the model id in the
- * path, and a `{}` probe of an MMSP server's `/stream` answers like any other API's 400.
+ * MMSP is selected by hand. Google uses its read-only model list, which needs no model id.
  *
  * Paths and auth headers mirror exactly what the MMSP clients construct (verified
  * against the SDKs they wrap): the OpenAI SDK appends `/responses` / `/chat/completions`
  * to the base URL and authenticates with `Authorization: Bearer`; the Anthropic SDK
  * appends `/v1/messages` and MMSP's AntMessagesClient sends the credential through
  * BOTH `x-api-key` and `Authorization: Bearer` (plus `anthropic-version`), which every
- * covered server/gateway accepts. Probing the same URL the client would call means a
- * detected protocol is one that will actually work after saving.
+ * covered server/gateway accepts. Google sends `x-goog-api-key`.
  *
- * Probe design: each probe POSTs a deliberately minimal invalid body (`{}`) — zero token
- * cost, no valid model id needed, and the error it provokes reveals whether the route is
- * really an API endpoint. Classification:
- *   - 404 / 405 → the route does not exist (`route_missing`). This is judged by status
- *     alone: OpenAI-style servers wrap unknown paths in protocol-shaped 404 JSON, and the
- *     probe body carries no model id, so a 404 can never mean "model not found".
- *   - other 4xx (400 validation, 401/403 auth, 422, 429 …) with a JSON API-error shape →
- *     the route exists and answers like an API (`served`). Auth failures count: probing
- *     without a key still detects the protocol. The error-shape check is deliberately
- *     tolerant (OpenAI `{error:{…}}`, Anthropic `{type:"error",…}`, vLLM/FastAPI
- *     `{detail:…}` / `{object:"error",…}`, bare `{message:…}`) because the probed PATH
- *     is what discriminates protocols — the shape check only weeds out HTML error pages
- *     and gateway junk.
- *   - 2xx → `served` only with protocol-specific success markers (guards against
- *     catch-all gateways that 200 every path).
- *   - 5xx → `server_error`, not served: gateways emit 5xx regardless of path existence,
- *     so it proves nothing; detection moves on to the next protocol.
- *   - non-JSON body → `junk`; fetch failures → `timeout` / `network_error`.
+ * The POST probes send an invalid `{}` body to elicit a validation or auth reply without
+ * generating tokens. Messages requires Anthropic's error envelope. OpenAI-compatible
+ * validation also accepts gateway and FastAPI payloads, but auth failures need a structured
+ * error. The Google probe requires a successful model list. Generic auth replies can come
+ * from a gateway even when it does not serve the requested protocol.
  *
  * Probes run sequentially in the order above and stop at the first `served` hit. The API
  * key is only ever placed in request headers — never in URLs, results, or logs.
+ * Probes with custom API key headers follow redirects only within the original origin.
+ * Google service account JSON is used by the SDK for OAuth and is never sent by the probes.
  *
  * The typed URL is not taken literally: it is normalized and paired with its neighbouring
  * `/v1` form (see candidateBaseUrls), and every candidate gets the full protocol sequence
  * before the next one is tried. The candidate that answered is reported back as `baseUrl`
- * so the caller can correct the field. Worst case a detection is six short probes.
+ * so the caller can correct the field.
  *
  * Credentials: the caller passes the key typed in the dialog or the entry's stored one. With
  * neither, each probe takes what MMSP's client for the protocol IT speaks would read (PRN-021,
  * MMSP's rule — see envApiKeyForProtocol): the protocol's variable only when the probed URL is
  * that client's own default endpoint, so a gateway or a private server gets an anonymous probe.
- * Detection still works with no credential at all (a protocol-shaped 401 identifies the route),
- * and the user's vendor key never goes to a URL they typed.
+ * A protocol-shaped 401 can identify a POST route without credentials.
  */
-import { userAgent } from "@prismshadow/penguin-core";
-import { clientEnvKey } from "../model-catalog/env-keys.js";
 import type {
-  ModelProtocolDetectResponse,
   ModelProtocolProbeDto,
   ProtocolProbeOutcome,
-} from "../api/types.js";
+  ModelProtocolDetectResponse,
+} from "@prismshadow/penguin-library-model";
+import { userAgent } from "@prismshadow/penguin-core";
+import { clientEnvKey } from "../model-catalog/env-keys.js";
 
 /**
  * The MMSP compatible client types detection probes (one generic protocol each), in the
  * required order.
  */
-export const PROTOCOL_CLIENT_TYPES = ["openai-responses", "ant-messages", "openai-chat"] as const;
+export const PROTOCOL_CLIENT_TYPES = [
+  "openai-responses",
+  "ant-messages",
+  "openai-chat",
+  "google-genai",
+] as const;
 export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
 
 /** Per-probe timeout: cheap probes against live endpoints answer well under this; a hung gateway must not stall the dialog. */
 export const PROBE_TIMEOUT_MS = 5_000;
+const GOOGLE_PROBE_REDIRECT_LIMIT = 3;
+const FETCH_REDIRECT_LIMIT = 20;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const POST_TO_GET_REDIRECT_STATUSES = new Set([301, 302, 303]);
 
 /** One probe target: the protocol's client type, request path, and auth header shape. */
 interface ProbeSpec {
   clientType: ProtocolClientType;
   path: string;
+  method: "GET" | "POST";
   headers: (apiKey?: string) => Record<string, string>;
 }
 
@@ -101,11 +96,18 @@ function anthropicHeaders(apiKey?: string): Record<string, string> {
   };
 }
 
-/** The three probes in the required order: Responses first, Messages second, Chat Completions as the last resort. */
+const GOOGLE_MODELS_PATH = "/v1beta/models";
+
 export const PROTOCOL_PROBES: readonly ProbeSpec[] = [
-  { clientType: "openai-responses", path: "/responses", headers: bearerHeaders },
-  { clientType: "ant-messages", path: "/v1/messages", headers: anthropicHeaders },
-  { clientType: "openai-chat", path: "/chat/completions", headers: bearerHeaders },
+  { clientType: "openai-responses", method: "POST", path: "/responses", headers: bearerHeaders },
+  { clientType: "ant-messages", method: "POST", path: "/v1/messages", headers: anthropicHeaders },
+  { clientType: "openai-chat", method: "POST", path: "/chat/completions", headers: bearerHeaders },
+  {
+    clientType: "google-genai",
+    path: `${GOOGLE_MODELS_PATH}?pageSize=1`,
+    method: "GET",
+    headers: (apiKey): Record<string, string> => (apiKey ? { "x-goog-api-key": apiKey } : {}),
+  },
 ];
 
 /**
@@ -113,8 +115,8 @@ export const PROTOCOL_PROBES: readonly ProbeSpec[] = [
  * the variable MMSP's client for that protocol reads when handed no key at that URL (the
  * catalog's clientEnvKey, which asks MMSP's credentials module) — `ANTHROPIC_API_KEY` for
  * `ant-messages` at Anthropic's default endpoint, `OPENAI_API_KEY` for the two OpenAI protocols
- * at OpenAI's, and nothing anywhere else. Which variable backs a request depends on the protocol
- * spoken, and detection is precisely the case where the protocol is not yet known, so it is
+ * at OpenAI's, `GEMINI_API_KEY` at Google's, and nothing on custom URLs.
+ * Which variable backs a request depends on the protocol spoken, so it is
  * resolved once per probe; it is the rule the saved model is held to, so a probe never sends a
  * key the model would not.
  *
@@ -128,6 +130,11 @@ export function envApiKeyForProtocol(
 ): string | undefined {
   const name = clientEnvKey(clientType, baseUrl);
   return name !== undefined ? env[name]?.trim() || undefined : undefined;
+}
+
+/** MMSP treats a Google credential beginning with a JSON object as a service account. */
+function isJsonCredential(apiKey: string | undefined): boolean {
+  return apiKey?.trimStart().startsWith("{") ?? false;
 }
 
 /** Whether a string is an absolute http(s) URL (the only base URLs worth probing). */
@@ -155,6 +162,7 @@ export function probeUrl(baseUrl: string, path: string): string {
  * stripped rather than its tail.
  */
 const ENDPOINT_PATH_SUFFIXES = [
+  GOOGLE_MODELS_PATH,
   "/chat/completions",
   "/v1/messages",
   "/completions",
@@ -172,7 +180,7 @@ const ENDPOINT_PATH_SUFFIXES = [
  * query and fragment dropped, trailing slashes removed, a trailing endpoint path stripped,
  * runs of repeated `/v1` collapsed to one — and then its neighbouring form is tried as
  * well: the trailing `/v1` removed when it has one, `/v1` appended when it has not. Those
- * two forms are the whole list, so a detection costs at most six short probes.
+ * two forms are the whole list.
  *
  * Pure string work, deliberately: `new URL()` would lowercase the host and re-encode the
  * path, and a base URL must be probed as it was written apart from the edits above.
@@ -193,14 +201,39 @@ export function candidateBaseUrls(typed: string): string[] {
   return [base, base.endsWith("/v1") ? base.slice(0, -"/v1".length) : `${base}/v1`];
 }
 
-/** A JSON body that looks like a structured API error (vs an HTML page / junk): see the header doc for why this check is tolerant. */
-function isApiErrorShape(body: Record<string, unknown>): boolean {
+function hasMessage(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function isProtocolError(
+  protocol: Exclude<ProtocolClientType, "google-genai">,
+  status: number,
+  body: Record<string, unknown>,
+): boolean {
   const err = body.error;
-  if (err !== null && typeof err === "object") return true;
-  if (typeof err === "string" && err !== "") return true;
-  if (body.type === "error") return true;
-  if (body.object === "error") return true;
-  if (typeof body.message === "string" && body.message !== "") return true;
+  if (protocol === "ant-messages") {
+    return (
+      body.type === "error" &&
+      err !== null &&
+      typeof err === "object" &&
+      "type" in err &&
+      hasMessage(err.type) &&
+      "message" in err &&
+      hasMessage(err.message)
+    );
+  }
+  if (body.type === "error") return false;
+  if (err !== null && typeof err === "object" && "message" in err && hasMessage(err.message)) {
+    if ("type" in err && hasMessage(err.type)) return true;
+    const code = "code" in err ? err.code : undefined;
+    // Google RPC errors have a numeric code and a named status.
+    const hasRpcStatus = "status" in err && hasMessage(err.status);
+    if (hasMessage(code) || (typeof code === "number" && !hasRpcStatus)) return true;
+  }
+  if (body.object === "error" && hasMessage(body.message)) return true;
+  // A gateway can reject authorization before it knows whether the route exists.
+  if (status !== 400 && status !== 422) return false;
+  if (hasMessage(err) || hasMessage(body.message)) return true;
   // FastAPI/vLLM `detail`: it must actually carry a message. `{"detail": null}` and
   // `{"detail": ""}` say nothing about the route, and accepting them (a bare `!== undefined`
   // check did) let a JSON body with one empty field pass as proof the route exists.
@@ -219,6 +252,15 @@ function isSuccessShape(clientType: ProtocolClientType, body: Record<string, unk
       return body.type === "message" || (Array.isArray(body.content) && "role" in body);
     case "openai-chat":
       return body.object === "chat.completion" || Array.isArray(body.choices);
+    case "google-genai":
+      return (
+        Array.isArray(body.models) &&
+        body.models.every(
+          (model) =>
+            typeof model?.name === "string" &&
+            /^(?:publishers\/google\/)?models\/[^/]+$/.test(model.name),
+        )
+      );
   }
 }
 
@@ -242,7 +284,9 @@ export function classifyProbeResponse(
   const body = parsed as Record<string, unknown>;
   if (status >= 200 && status < 300) return isSuccessShape(clientType, body) ? "served" : "junk";
   if (status >= 500) return "server_error";
-  return isApiErrorShape(body) ? "served" : "junk";
+  return clientType !== "google-genai" && status >= 400 && isProtocolError(clientType, status, body)
+    ? "served"
+    : "junk";
 }
 
 /** AbortSignal.timeout aborts surface as TimeoutError (undici) or AbortError; both mean the probe timed out. */
@@ -294,6 +338,42 @@ async function readCappedBody(res: Response): Promise<{ text: string; truncated:
   return { text: truncated ? "" : Buffer.concat(chunks).toString("utf8"), truncated };
 }
 
+/** Fetch follows redirects without stripping custom auth headers. Keep those probes on-origin. */
+async function fetchSameOriginProbe(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit,
+  maxRedirects: number,
+): Promise<Response> {
+  const original = new URL(url);
+  let request: RequestInit = { ...init, redirect: "manual" };
+  for (let hops = 0; ; hops++) {
+    const response = await fetchImpl(url, request);
+    const location = response.headers.get("location");
+    if (!REDIRECT_STATUSES.has(response.status) || !location || hops === maxRedirects) {
+      return response;
+    }
+    const target = URL.parse(location, url);
+    if (
+      !target ||
+      target.protocol !== original.protocol ||
+      target.origin !== original.origin ||
+      target.username ||
+      target.password
+    ) {
+      return response;
+    }
+    await response.body?.cancel().catch(() => {});
+    // Match Fetch's POST rewrite. Content-Type is the only body header the probe sets.
+    if (request.method === "POST" && POST_TO_GET_REDIRECT_STATUSES.has(response.status)) {
+      const headers = new Headers(request.headers);
+      headers.delete("content-type");
+      request = { ...request, method: "GET", body: null, headers };
+    }
+    url = target.href;
+  }
+}
+
 async function runProbe(
   spec: ProbeSpec,
   baseUrl: string,
@@ -303,19 +383,23 @@ async function runProbe(
 ): Promise<ModelProtocolProbeDto> {
   const url = probeUrl(baseUrl, spec.path);
   try {
-    const res = await fetchImpl(url, {
-      method: "POST",
-      headers: { ...spec.headers(apiKey), "user-agent": userAgent() },
-      body: "{}",
+    const headers = { ...spec.headers(apiKey), "user-agent": userAgent() };
+    const init: RequestInit = {
+      method: spec.method,
+      headers,
+      ...(spec.method === "POST" ? { body: "{}" } : {}),
       signal: AbortSignal.timeout(timeoutMs),
-      // Redirects stay followed (fetch's default). It is tempting to pin `redirect: "manual"`
-      // so a base URL cannot bounce the server somewhere it never named, but the SDKs the
-      // real clients wrap follow redirects too — pinning it would report "no protocol" for
-      // the ordinary case of a base URL that 301s http -> https, i.e. break the invariant
-      // that a detected protocol is one that actually works after saving. The probe reply is
-      // reduced to an outcome enum plus a status and is never echoed, so a followed redirect
-      // leaks no response content.
-    });
+    };
+    const google = spec.clientType === "google-genai";
+    const res =
+      google || "x-api-key" in headers
+        ? await fetchSameOriginProbe(
+            fetchImpl,
+            url,
+            init,
+            google ? GOOGLE_PROBE_REDIRECT_LIMIT : FETCH_REDIRECT_LIMIT,
+          )
+        : await fetchImpl(url, init);
     // The same timeout signal covers the body read (a junk endpoint may stream forever);
     // the byte cap covers the other direction (an endpoint that streams a lot, fast).
     const { text, truncated } = await readCappedBody(res);
@@ -337,7 +421,7 @@ async function runProbe(
 /**
  * Runs the protocol probes in the required order against each candidate base URL (see
  * candidateBaseUrls) and stops at the first protocol an endpoint serves: candidate by
- * candidate, and within a candidate Responses, then Messages, then Chat Completions.
+ * candidate, in the order in PROTOCOL_PROBES.
  * The candidate that answered comes back as `baseUrl`, so a URL that was typed one `/v1`
  * off — or pasted as a full endpoint URL — is reported in the form that actually works.
  * Never throws: every failure mode is a probe outcome. The result lists only the probes
@@ -363,9 +447,13 @@ export async function detectModelProtocol(options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? PROBE_TIMEOUT_MS;
   const probes: ModelProtocolProbeDto[] = [];
+  // The detector tries other protocols too, so suppress an explicit OAuth credential before
+  // any probe can use it as an API key.
+  if (isJsonCredential(options.apiKey)) return { probes };
   for (const baseUrl of candidateBaseUrls(options.baseUrl)) {
     for (const spec of PROTOCOL_PROBES) {
       const apiKey = options.apiKey ?? envApiKeyForProtocol(spec.clientType, baseUrl, options.env);
+      if (isJsonCredential(apiKey)) continue;
       const probe = await runProbe(spec, baseUrl, apiKey, fetchImpl, timeoutMs);
       probes.push(probe);
       if (probe.outcome === "served") return { detected: spec.clientType, baseUrl, probes };

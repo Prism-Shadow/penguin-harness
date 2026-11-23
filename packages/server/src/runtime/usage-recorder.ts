@@ -18,19 +18,14 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import { formatLocalDate } from "../internal/dates.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import type { UsageRecording, UsageStore } from "../mechanisms/observability.js";
+import type {
+  UsageContext,
+  UsageRecording,
+  UsageStore,
+} from "@prismshadow/penguin-library-observability";
+import type { Projects } from "@prismshadow/penguin-library-project";
 
 /** Attribution context for one record (top-level Session scope). */
-export interface UsageContext {
-  projectId: string;
-  agentId: string;
-  /** Top-level Session id (the current actual id after self-heal). */
-  sessionId: string;
-  /** Vendor grouping for the top-level Session's model (paired with modelId; the fallback attribution when the origin mapping has no hit). */
-  provider: string;
-  /** Upstream model_id of the top-level Session (paired with provider). */
-  modelId: string;
-}
 
 /** Cap on the subagent attribution mapping: over the limit, evicts the oldest by insertion order (an evicted entry falls back to the main Session's Model attribution). */
 export const ORIGIN_MODELS_MAX = 1000;
@@ -41,11 +36,22 @@ export class UsageRecorder implements UsageRecording {
   private readonly originModels = new Map<string, { provider: string; modelId: string }>();
   /** One request at a time per Session: whether its streamed request_begin has been metered. */
   private readonly requests = new Map<string, boolean>();
+  /**
+   * Sessions inside a compaction span: its requests bill their usage alone, no failed Request
+   * row (a failed attempt is the compaction's, which its `compaction_end` reports).
+   */
+  private readonly compacting = new Set<string>();
 
   @Use() private readonly usage!: UsageStore;
   @Use() private readonly clock!: Clock;
+  @Use() private readonly projects!: Projects;
 
-  /** Standalone usage (such as titles) is billed without metering the Session's active request. */
+  /**
+   * Standalone usage — a request beside the Session's own (its title, or a tool request through
+   * ProjectModelRequests) — never touches the Session's request bookkeeping: its `token_usage` is
+   * one row, and its failed `request_end` one 0-token row with the status, even while the Session's
+   * own request or compaction is in flight. `ctx.purpose` is written to the row as it is.
+   */
   async record(
     ctx: UsageContext,
     msg: AmspRecord,
@@ -76,12 +82,27 @@ export class UsageRecorder implements UsageRecording {
     const originSessionId =
       msg.origin && msg.origin.length > 0 ? msg.origin[msg.origin.length - 1]! : null;
     const requestSessionId = originSessionId ?? ctx.sessionId;
-    if (payload.type === "request_begin") {
-      this.requests.set(requestSessionId, false);
-      return;
+    const standalone = source === "standalone";
+    if (!standalone) {
+      if (payload.type === "compaction_begin") this.compacting.add(requestSessionId);
+      else if (payload.type === "compaction_end") this.compacting.delete(requestSessionId);
+      if (
+        (payload.type === "request_begin" || payload.type === "request_end") &&
+        this.compacting.has(requestSessionId)
+      ) {
+        return;
+      }
+      if (payload.type === "request_begin") {
+        this.requests.set(requestSessionId, false);
+        return;
+      }
     }
-    const metered = this.requests.get(requestSessionId) === true;
-    if (payload.type === "request_end") this.requests.delete(requestSessionId);
+    const metered = !standalone && this.requests.get(requestSessionId) === true;
+    if (payload.type === "request_end" && !standalone) this.requests.delete(requestSessionId);
+    // A request that outlived its Project's deletion (past the deletion's wait) is billed to
+    // nothing: its row would outlive the Project, and count for a later one given its id.
+    const billable = payload.type === "token_usage" || payload.type === "request_end";
+    if (billable && this.projects.findById(ctx.projectId) === null) return;
     // Empty origin → main session's Model; otherwise look up the mapping, falling back to the main Session's Model (paired) on a miss.
     const ref =
       originSessionId === null
@@ -100,6 +121,7 @@ export class UsageRecorder implements UsageRecording {
       originSessionId,
       provider: ref.provider,
       modelId: ref.modelId,
+      ...(ctx.purpose !== undefined ? { purpose: ctx.purpose } : {}),
     };
 
     if (payload.type === "token_usage" && payload.request) {
@@ -112,7 +134,7 @@ export class UsageRecorder implements UsageRecording {
         output: r.output,
         total: r.total,
       });
-      // Compaction streams usage but keeps its request boundaries in the Trace. Do not
+      // A compaction's request boundaries are skipped above. Do not
       // retain state for those unpaired records after the compaction has finished.
       if (source === "stream" && this.requests.has(requestSessionId)) {
         this.requests.set(requestSessionId, true);

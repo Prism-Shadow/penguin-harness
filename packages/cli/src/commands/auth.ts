@@ -14,9 +14,10 @@
  * The session lands in `<root>/cli-session.json` (0600) rather than a shell's history.
  * Docs: /docs/cli § "penguin auth".
  */
-import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
+import { mintApiTokenOnceSeeded } from "@prismshadow/penguin-server/auth-token";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 import {
   call,
   clearSession,
@@ -24,11 +25,13 @@ import {
   promptPassword,
   readSession,
   sessionFile,
+  terminalInput,
   tokenFromSetCookie,
   writeSession,
-} from "../auth-session.js";
-import { resolveRootOption } from "../root-option.js";
-import type { Messages } from "../i18n.js";
+  resolveRootOption,
+} from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /**
  * Must match the server's SESSION_COOKIE — the name a login's Set-Cookie carries for a client
@@ -44,6 +47,9 @@ const DEFAULT_USER = "admin";
  * anchors on this rather than on position, so nothing the shell prints on its own can be
  * mistaken for a credential.
  */
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export const TOKEN_MARK = "---penguin-auth-token---";
 
 /**
@@ -88,9 +94,7 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
-export function registerAuthCommand(program: Command, t: Messages): void {
-  const auth = program.command("auth").description(t.auth.desc);
-
+export function registerAuthCommand(auth: Command, t: Messages): void {
   auth
     .command("login")
     .description(t.auth.loginDesc)
@@ -120,16 +124,29 @@ export function registerAuthCommand(program: Command, t: Messages): void {
         // A script cannot answer a prompt, so a non-interactive password suppresses both
         // questions; the account is only asked for when the password will be too.
         const given = opts.password ?? process.env.PENGUIN_PASSWORD;
-        const userId =
-          opts.userId ??
-          (given === undefined && process.stdin.isTTY === true
-            ? await promptLine(t.auth.accountPrompt(DEFAULT_USER), DEFAULT_USER)
-            : DEFAULT_USER);
-        // Env before prompt, but never argv by default: a command line is world-readable
-        // through ps. The prompt names the account, so one account's password is not typed
-        // at another's.
-        const password = given ?? (await promptPassword(t.auth.prompt(userId)));
-        if (password === "") return fail(t.auth.emptyPassword);
+        let userId = opts.userId ?? DEFAULT_USER;
+        let password = given;
+        if (given === undefined) {
+          // The terminal both questions are read from: stdin, or the console where the runtime
+          // was given no stdin (the desktop app's launchers on Windows, console-input.ts).
+          const input = terminalInput();
+          try {
+            if (opts.userId === undefined && input.stream.isTTY === true) {
+              userId = await promptLine(
+                t.auth.accountPrompt(DEFAULT_USER),
+                DEFAULT_USER,
+                input.stream,
+              );
+            }
+            // Env before prompt, but never argv by default: a command line is world-readable
+            // through ps. The prompt names the account, so one account's password is not typed
+            // at another's.
+            password = await promptPassword(t.auth.prompt(userId), input.stream);
+          } finally {
+            input.release();
+          }
+        }
+        if (password === "" || password === undefined) return fail(t.auth.emptyPassword);
 
         let answer;
         try {
@@ -224,9 +241,11 @@ export function registerAuthCommand(program: Command, t: Messages): void {
       }
       const root = resolveRootOption(opts.root);
       // A session row written straight into web.db (auth-token.ts); no server needed, and safe
-      // while one runs. PENGUIN_WEB_DB honored as everywhere else, or the token would be
-      // minted into a file the live server never reads.
-      const result = mintApiToken(root, {
+      // while one runs. A server still starting is waited for (bounded) until it has seeded
+      // its accounts: a controller sends this the moment that machine's port answers, which
+      // is before the admin exists. PENGUIN_WEB_DB honored as everywhere else, or the token
+      // would be minted into a file the live server never reads.
+      const result = await mintApiTokenOnceSeeded(root, {
         userId: opts.userId,
         ...(process.env.PENGUIN_WEB_DB ? { dbPath: process.env.PENGUIN_WEB_DB } : {}),
         ...(ttl === undefined ? {} : { ttlMs: ttl * 1000 }),
@@ -254,4 +273,30 @@ export function registerAuthCommand(program: Command, t: Messages): void {
       if (opts.mark) process.stdout.write(TOKEN_MARK + "\n");
       process.stdout.write(result.token + "\n");
     });
+}
+
+/** `penguin auth`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.auth",
+        key: "auth",
+        summary: {
+          en: "Sign in to a PenguinHarness server from the terminal",
+          zh: "在终端里登录 PenguinHarness 服务",
+        },
+      },
+    ],
+  },
+})
+export class AuthCommand {
+  @Bind("cli.auth") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerAuthCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }

@@ -3,9 +3,11 @@
  * script writes the app's own storage keys, and the one key the package does not export is the
  * app's. A page outside the gallery names three preferences and leaves the rest to the app. A
  * frame whose URL names a custom background boots with it; the gallery's own frames name none.
+ * Given an autoplay request, only an embedded new conversation accepts it; other routes,
+ * standalone frames and unknown walkthrough names remain ordinary interactive frames. A frame
+ * whose URL names a desktop platform is handed a window bridge for that platform before the app
+ * boots, one the app accepts as the desktop shell's; any other frame gets none.
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 import { BACKGROUND_STORAGE_KEYS, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
@@ -37,6 +39,7 @@ describe("the frame URL", () => {
       signedOut: true,
       open: "settings",
       notices: true,
+      window: "win32",
     });
     expect(src.startsWith(`/gallery${APP_FRAME_PATH}?`)).toBe(true);
     const params = parseFrameParams(src.slice(src.indexOf("?")));
@@ -46,6 +49,7 @@ describe("the frame URL", () => {
       signedOut: true,
       open: "settings",
       notices: true,
+      window: "win32",
     });
     for (const [param, key] of Object.entries(SEEDED_KEYS)) {
       expect(src, key).toContain(`${param}=`);
@@ -88,6 +92,27 @@ describe("the frame URL", () => {
     expect(parseFrameParams("?route=http://evil&lang=fr")).toEqual({ route: "/chat", lang: "en" });
   });
 
+  it("starts the evolution walkthrough only in an embedded new conversation", () => {
+    const src = embeddedFrameSrc(
+      "/gallery",
+      { theme: "modern", mode: "light", lang: "en" },
+      "/chat/new",
+      "evolution",
+    );
+    expect(parseFrameParams(new URL(src, "https://example.test").search)).toMatchObject({
+      route: "/chat/new",
+      embedded: true,
+      autoplay: "evolution",
+    });
+    for (const search of [
+      "?route=/chat/new&autoplay=evolution",
+      "?route=/agents&embed=1&autoplay=evolution",
+      "?route=/chat/new&embed=1&autoplay=unknown",
+    ]) {
+      expect(parseFrameParams(search).autoplay).toBeUndefined();
+    }
+  });
+
   it("boots with a custom background only when the URL names one", () => {
     const seeded = (search: string) => {
       const window: Record<string, unknown> = {};
@@ -111,23 +136,29 @@ describe("the frame URL", () => {
     expect(plain.getItem(BACKGROUND_STORAGE_KEYS.settings)).toBeNull();
   });
 
-  it("seeds the app's own storage keys, every one of them the package's or the app's", () => {
-    expect(SEEDED_KEYS).toEqual({
-      theme: THEME_STORAGE_KEYS.themeId,
-      mode: THEME_STORAGE_KEYS.mode,
-      accent: THEME_STORAGE_KEYS.accent,
-      size: THEME_STORAGE_KEYS.textSize,
-      latin: THEME_STORAGE_KEYS.fontLatin,
-      cjk: THEME_STORAGE_KEYS.fontCjk,
-      lang: APP_LANG_KEY,
-    });
-    // The language key is the app's own (state/locale-pref.ts), spelled here to keep the
-    // gallery's frame script free of the app's modules.
-    const locale = readFileSync(
-      fileURLToPath(new URL("../../web/src/state/locale-pref.ts", import.meta.url)),
-      "utf8",
+  it("hands the app a desktop window bridge only when the URL names a platform", () => {
+    const bridgeOf = (search: string) => {
+      const window: Record<string, unknown> = {};
+      vm.runInContext(
+        storageSeedScript(),
+        vm.createContext({ window, location: { search }, URLSearchParams, Object }),
+      );
+      return window.penguinWindow as Record<string, unknown> | undefined;
+    };
+    const src = appFrameSrc("http://g", PREFS, { route: "/plugins", window: "linux" });
+    const bridge = bridgeOf(new URL(src).search);
+    expect(bridge?.platform).toBe("linux");
+    // What the app checks before it takes the object for the shell's bridge, and what it calls.
+    expect(typeof bridge?.toggleMaximize).toBe("function");
+    expect((bridge?.isMaximized as () => boolean)()).toBe(false);
+    expect(typeof (bridge?.onMaximizedChange as (f: () => void) => unknown)(() => {})).toBe(
+      "function",
     );
-    expect(locale).toContain(`export const LANG_KEY = "${APP_LANG_KEY}";`);
+    expect(bridgeOf(new URL(appFrameSrc("http://g", PREFS, { route: "/plugins" })).search)).toBe(
+      undefined,
+    );
+    expect(bridgeOf("?route=/plugins&window=beos")).toBeUndefined();
+    expect(parseFrameParams("?route=/plugins&window=beos").window).toBeUndefined();
   });
 
   it("is a classic script that gives the document a seeded in-memory storage", () => {

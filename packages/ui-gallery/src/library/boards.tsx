@@ -10,6 +10,7 @@ import { FocusBoard } from "../foundations/focus";
 import { HooksBoard } from "../foundations/hooks";
 import { IconsBoard } from "../foundations/icons";
 import { MotionBoard } from "../foundations/motion";
+import { PacksBoard } from "../foundations/packs";
 import { ShapeBoard } from "../foundations/shape";
 import { TypeBoard } from "../foundations/typography";
 import { AttachmentsBoard } from "./boards/attachments";
@@ -26,17 +27,27 @@ import { InputsBoard } from "./boards/inputs";
 import { LayoutBoard } from "./boards/layout";
 import { LoadingBoard } from "./boards/loading";
 import { MachinesBoard } from "./boards/machines";
+import { ModelsBoard } from "./boards/models";
 import { NoticesBoard } from "./boards/notices";
 import { PickersBoard } from "./boards/pickers";
+import { ReportBoard } from "./boards/report";
 import { RetryBoard } from "./boards/retry";
+import { ShowcaseBoard } from "./boards/showcase";
 import { SiteBoard } from "./boards/site";
+import { StatusBoard } from "./boards/status";
 import { StreamingBoard } from "./boards/streaming";
 import { TabsBoard } from "./boards/tabs";
 import { ToastsBoard } from "./boards/toasts";
 import { TooltipsBoard } from "./boards/tooltips";
+import type { LibraryPart } from "./frame";
 import type { TopicId } from "./topics";
 
-export const BOARDS: Readonly<Record<TopicId, ComponentType>> = {
+/** What a board is handed: the piece of it its frame opens alone, if any (frame.ts). */
+export interface BoardProps {
+  part?: LibraryPart;
+}
+
+export const BOARDS: Readonly<Record<TopicId, ComponentType<BoardProps>>> = {
   buttons: ButtonsBoard,
   inputs: InputsBoard,
   pickers: PickersBoard,
@@ -57,8 +68,13 @@ export const BOARDS: Readonly<Record<TopicId, ComponentType>> = {
   layout: LayoutBoard,
   data: DataBoard,
   machines: MachinesBoard,
+  models: ModelsBoard,
+  status: StatusBoard,
   retry: RetryBoard,
+  report: ReportBoard,
   attachments: AttachmentsBoard,
+  showcase: ShowcaseBoard,
+  packs: PacksBoard,
   colour: ColourBoard,
   type: TypeBoard,
   shape: ShapeBoard,

@@ -1,4 +1,4 @@
-# PRFC-0022 RFC Invariants：一个永久节，写下必须一直成立的性质
+# PRFC-0022 RFC Invariant
 
 [English](PRFC-0022-rfc-invariant.md)
 

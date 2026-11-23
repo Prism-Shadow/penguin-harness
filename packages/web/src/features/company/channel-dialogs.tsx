@@ -12,7 +12,7 @@
  * "you are not a member" notice and the sidebar row's own Join — so the two cannot ask
  * different questions.
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { OrgChannelItem } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -28,10 +28,11 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { channelIdProblem } from "./channel-list";
-import type { ChannelIdProblem } from "./channel-list";
-import { SemanticIdField } from "../semantic-id/semantic-id-field";
+import { channelIdProblem, type ChannelIdProblem } from "./channel-list";
+
+import { SemanticIdField } from "../semantic-id";
 import { ErrorLine } from "./shared";
+import { failureNode } from "../../lib/failure";
 
 /** The error codes that are about the id the user typed; every other failure is the form's. */
 const ID_ERROR_CODES = new Set(["channel_exists", "bad_request"]);
@@ -70,7 +71,7 @@ function NewChannelForm({
   const { channelId, name, purpose } = form.draft;
   /** What the server refused about the id; cleared by the next edit of it. */
   const [refusedId, setRefusedId] = useState<string | undefined>(undefined);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const id = channelId.trim();
@@ -94,9 +95,8 @@ function NewChannelForm({
       discardUnsaved(form.scope);
       onCreated(created);
     } catch (e) {
-      const text = apiErrorText(e);
-      if (e instanceof ApiError && ID_ERROR_CODES.has(e.code)) setRefusedId(text);
-      else setFormError(text);
+      if (e instanceof ApiError && ID_ERROR_CODES.has(e.code)) setRefusedId(apiErrorText(e));
+      else setFormError(failureNode(e, { what: "a channel could not be created" }));
     } finally {
       setBusy(false);
     }
@@ -200,7 +200,7 @@ function ChannelTextForm({
 }: Omit<ChannelTextDialogProps, "open">) {
   const form = useFormDraft(initial, { normalize: (text) => text.trim() });
   const value = form.draft;
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const valid = !required || value.trim() !== "";
@@ -213,7 +213,7 @@ function ChannelTextForm({
     try {
       await onSubmit(next);
     } catch (e) {
-      setFormError(apiErrorText(e));
+      setFormError(failureNode(e, { what: "a channel's details could not be saved" }));
     } finally {
       setBusy(false);
     }

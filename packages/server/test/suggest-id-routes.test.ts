@@ -19,7 +19,7 @@ import type {
   ProjectsResponse,
   SemanticIdSuggestResponse,
 } from "../src/api/types.js";
-import type { UtilityCompletion } from "../src/services/project-config-service.js";
+import type { UtilityCompletion } from "@prismshadow/penguin-library-project";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -213,7 +213,7 @@ describe("suggest-id routes", () => {
       recursive: true,
     });
     await fs.mkdir(path.join(agentsDir(t.root, project), "report_writer"));
-    await fs.mkdir(path.join(t.root, "olivia-research_lab"));
+    await fs.mkdir(path.join(t.root, "projects", "olivia-research_lab"));
     const benchmarks = (await (
       await owner.get(`/api/projects/${project}/benchmarks`)
     ).json()) as BenchmarksResponse;

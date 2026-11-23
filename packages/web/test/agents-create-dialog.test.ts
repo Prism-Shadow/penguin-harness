@@ -9,7 +9,8 @@
  *   leaves the dialog and the typing.
  * - An untouched dialog closes at once.
  * - A created Agent closes the dialog and the page goes on to it without asking: the form was
- *   saved, so the navigation that follows finds nothing unsaved.
+ *   saved, so the navigation that follows finds nothing unsaved. A person filled it, so the
+ *   Agent is created with `user` as its author.
  * - A refused create keeps the dialog open with the reason under the id, still unsaved.
  * - A picked plugin with a stdio MCP server asks before anything is created, showing the command
  *   it runs on this server; confirming creates the Agent with the plugin.
@@ -18,6 +19,9 @@
  *   offers that machine's library, and Create creates the Agent there — this server is written
  *   nothing — and hands the page the machine, so it goes to that machine's Agent.
  * - A new location drops the plugins picked for the old one.
+ * - The library's default-install plugins start ticked and an untouched dialog still closes at
+ *   once; Create sends the list on screen with `defaultPlugins: false`, so unticking one leaves it
+ *   out and ticking it back is clean again.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createElement as h, useState } from "react";
@@ -25,7 +29,7 @@ import { useNavigate } from "react-router";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { CreateAgentDialog } from "../src/features/agents/create-agent-dialog";
+import { CreateAgentDialog, pluginPickItems } from "../src/features/agents/create-agent-dialog";
 import type { LocationChoice, PluginPickItem } from "../src/features/agents/create-agent-dialog";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import {
@@ -50,11 +54,13 @@ import {
 } from "./helpers/dom";
 
 /** A library plugin whose MCP server is a command this server runs. */
-const MAIL: PluginPickItem = {
+const MAIL = {
   name: "mail",
   description: "Mail tools",
   version: "1.0.0",
   title: "Mail tools",
+  skills: [],
+  hooks: [],
   mcpServers: [
     {
       name: "mail",
@@ -65,7 +71,7 @@ const MAIL: PluginPickItem = {
       signIn: false,
     },
   ],
-};
+} as unknown as PluginItem;
 
 /** A plugin of the machine's own library, which this server's does not have. */
 const GPU_TOOLS = {
@@ -109,9 +115,10 @@ function Harness({
   });
 }
 
-async function openCreate(library: PluginPickItem[] = [], machines: LocationChoice[] = []) {
-  const server = agentServer(undefined, { machines: [GPU_MACHINE] });
-  const router = await mountAgentApp(h(Harness, { library, machines }), {
+/** The dialog over this server's `library`, offered as the Agents page offers it. */
+async function openCreate(library: PluginItem[] = [], machines: LocationChoice[] = []) {
+  const server = agentServer(undefined, { machines: [GPU_MACHINE], library });
+  const router = await mountAgentApp(h(Harness, { library: pluginPickItems(library), machines }), {
     route: "/create",
     at: "/create",
   });
@@ -120,6 +127,20 @@ async function openCreate(library: PluginPickItem[] = [], machines: LocationChoi
 }
 
 const GPU_CHOICE: LocationChoice = { value: "gpu1", label: "gpu-box" };
+
+/** The library's two default-install plugins, beside one that is not. */
+const MODE = (name: string, title: string): PluginItem =>
+  ({
+    name,
+    description: `${title} plugin`,
+    version: "1.0.0",
+    title,
+    skills: [],
+    hooks: [],
+    mcpServers: [],
+    defaultInstall: true,
+  }) as unknown as PluginItem;
+const WITH_DEFAULTS = [MODE("goal", "Goal Mode"), MODE("plan", "Plan mode"), MAIL];
 
 /** Picks `label` in the dialog's Location dropdown. */
 async function pickLocation(label: string) {
@@ -198,9 +219,12 @@ describe("creating an Agent", () => {
     expect(promptOpen()).toBe(false);
     expect(dialogs()).toEqual([]);
     expect(hasUnsaved()).toBe(false);
+    // A person filled the dialog: the Agent records them as its author.
     expect(server.writes(`/api/projects/${PROJECT_ID}/agents`)[0]!.body).toEqual({
       agentId: "writer",
+      author: "user",
       name: "Writer",
+      defaultPlugins: false,
     });
   });
 
@@ -221,7 +245,9 @@ describe("creating an Agent", () => {
     await waitFor(() => whereIs(router) === "/agents");
     expect(server.writes(`/api/projects/${PROJECT_ID}/agents`)[0]!.body).toEqual({
       agentId: "writer",
+      author: "user",
       plugins: ["mail"],
+      defaultPlugins: false,
     });
   });
 
@@ -247,7 +273,10 @@ describe("creating an Agent", () => {
     await waitFor(() => whereIs(router) === "/agents/trainer?machine=gpu1");
     const writes = server.writes(`/api/projects/${PROJECT_ID}/agents`);
     expect(writes.map((w) => [w.machine, w.body])).toEqual([
-      ["gpu1", { agentId: "trainer", plugins: ["gpu-tools"] }],
+      [
+        "gpu1",
+        { agentId: "trainer", author: "user", plugins: ["gpu-tools"], defaultPlugins: false },
+      ],
     ]);
     expect(server.machineAgents("gpu1")).toContain("trainer");
   });
@@ -264,8 +293,55 @@ describe("creating an Agent", () => {
     );
     await click(create());
     await waitFor(() => server.writes(`/api/projects/${PROJECT_ID}/agents`).length === 1);
+    const body = server.writes(`/api/projects/${PROJECT_ID}/agents`)[0]!.body;
+    expect(body).toMatchObject({ agentId: "writer", author: "user" });
+    expect(body).not.toHaveProperty("plugins");
+  });
+
+  it("starts with the default-install plugins ticked, and an untouched dialog still closes at once", async () => {
+    await openCreate(WITH_DEFAULTS);
+    expect(topDialog().textContent).toContain(en.agent.createPluginsPicked(2));
+    await pressEscape();
+    expect(promptOpen()).toBe(false);
+    expect(dialogs()).toEqual([]);
+  });
+
+  it("creates the Agent with the ticked defaults, and the server is told the list is complete", async () => {
+    const { server } = await openCreate(WITH_DEFAULTS);
+    await type(id(), "writer");
+    await click(create());
+    await waitFor(() => server.writes(`/api/projects/${PROJECT_ID}/agents`).length === 1);
     expect(server.writes(`/api/projects/${PROJECT_ID}/agents`)[0]!.body).toEqual({
       agentId: "writer",
+      author: "user",
+      plugins: ["goal", "plan"],
+      defaultPlugins: false,
+    });
+  });
+
+  it("leaves out a default the user unticks, and ticking it back leaves nothing unsaved", async () => {
+    const { server } = await openCreate(WITH_DEFAULTS);
+    await click(buttonIn(topDialog(), en.agent.createPlugins));
+    // The picker stays open while rows are toggled, as a checklist being filled in.
+    const planRow = () =>
+      [...document.querySelectorAll("[aria-pressed]")].find((b) =>
+        b.textContent?.includes("Plan mode"),
+      )!;
+    expect(planRow().getAttribute("aria-pressed")).toBe("true");
+    await click(planRow());
+    expect(topDialog().textContent).toContain(en.agent.createPluginsPicked(1));
+    expect(hasUnsaved()).toBe(true);
+    await click(planRow());
+    expect(hasUnsaved()).toBe(false);
+    await click(planRow());
+    await type(id(), "writer");
+    await click(create());
+    await waitFor(() => server.writes(`/api/projects/${PROJECT_ID}/agents`).length === 1);
+    expect(server.writes(`/api/projects/${PROJECT_ID}/agents`)[0]!.body).toEqual({
+      agentId: "writer",
+      author: "user",
+      plugins: ["goal"],
+      defaultPlugins: false,
     });
   });
 

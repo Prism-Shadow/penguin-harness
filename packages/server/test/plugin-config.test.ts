@@ -3,8 +3,25 @@
  * an admin fills it in on the Plugins page through /api/admin/plugin-config, and the module
  * reads the document back through the PluginConfig mechanism — defaults merged in, secrets
  * masked at the API and kept when the mask is sent back, every save handed to the watchers.
+ *
+ * - A group a plugin's module declares (or a child of one) names that plugin's package on the
+ *   page; the host's own groups name none. It also names that package's version and icon as the
+ *   package on this server says them, the icon served to admins by its own route; a plugin whose
+ *   package is not known here names neither.
+ * - A status contributor's report reaches the page with the group's entry; a group whose
+ *   contributor reports none carries none.
+ * - A report from a plugin built against another version of the contract is read safely: a state
+ *   this build does not know reads as unknown, a field of the wrong type is dropped, a check or a
+ *   version missing what names it is dropped, a progress outside 0–1 is clamped.
+ * - A status contributor that throws costs only its own group: the other groups are read as
+ *   ever, and its group says the status could not be read.
+ * - A field's advanced and security marks are kept, and a mark that is not a boolean refuses the
+ *   declaration.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { PluginConfigResponse } from "../src/api/types.js";
 import {
@@ -16,7 +33,7 @@ import {
 } from "../src/plugin/config.js";
 import { PluginConfigPage } from "../src/plugin/config-page.js";
 import { PluginHost } from "../src/plugin/host.js";
-import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser, tokenClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const SCHEMA = parsePluginConfiguration(
@@ -90,19 +107,28 @@ describe("parsePluginConfiguration", () => {
     expect(bad({ a: { type: "string", title: "A", advanced: "yes" } })).toThrow(
       /\.a\.advanced must be a boolean/,
     );
+    expect(bad({ a: { type: "boolean", title: "A", security: 1 } })).toThrow(
+      /\.a\.security must be a boolean/,
+    );
   });
 
-  it("keeps a field's advanced mark, and leaves it off a field not marked", () => {
+  it("keeps a field's advanced and security marks, and leaves them off a field not marked", () => {
     const schema = parsePluginConfiguration(
       {
         properties: {
-          basic: { type: "boolean", title: "Basic", advanced: false },
+          basic: { type: "boolean", title: "Basic", advanced: false, security: false },
           tuned: { type: "number", title: "Tuned", advanced: true },
+          members: { type: "boolean", title: "Members", security: true },
         },
       },
       "acme/package.json",
     )!;
     expect(schema.properties.tuned).toEqual({ type: "number", title: "Tuned", advanced: true });
+    expect(schema.properties.members).toEqual({
+      type: "boolean",
+      title: "Members",
+      security: true,
+    });
     expect(schema.properties.basic).toEqual({ type: "boolean", title: "Basic" });
   });
 });
@@ -221,8 +247,21 @@ describe("PluginConfigStore", () => {
 describe("/api/admin/plugin-config", () => {
   let t: TestApp;
   let admin: ReturnType<typeof apiClient>;
+  /** The second plugin's package on disk: its version and icon beside the entry it was loaded from. */
+  let kitDir: string;
 
   beforeEach(async () => {
+    kitDir = await mkdtemp(path.join(tmpdir(), "penguin-acme-kit-"));
+    await mkdir(path.join(kitDir, "dist"));
+    await writeFile(path.join(kitDir, "dist", "index.js"), "");
+    await writeFile(
+      path.join(kitDir, "package.json"),
+      JSON.stringify({ name: "@acme/kit", version: "2.0.1" }),
+    );
+    await writeFile(
+      path.join(kitDir, "icon.svg"),
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h16v16H4z" /></svg>\n',
+    );
     const host = new PluginHost();
     host.use({
       specifier: "@acme/bot",
@@ -241,24 +280,117 @@ describe("/api/admin/plugin-config", () => {
       ],
       replaces: [],
     });
+    // A second plugin whose settings come from a child of its module.
+    host.use({
+      specifier: "@acme/kit",
+      file: path.join(kitDir, "dist", "index.js"),
+      modules: [
+        {
+          manifest: parseManifest({
+            name: "AcmeKit",
+            requires: {},
+            provides: {},
+            children: ["AcmeKitSettings"],
+          }),
+          create: () => ({ api: {} }),
+          children: [
+            {
+              manifest: parseManifest({
+                name: "AcmeKitSettings",
+                requires: {},
+                provides: {},
+                contributes: {
+                  "PluginConfigProvider.groups": [
+                    { id: "acme-kit", properties: { on: { type: "boolean", title: "On" } } },
+                  ],
+                },
+                children: [],
+              }),
+              create: () => ({ api: {} }),
+            },
+          ],
+        },
+      ],
+      replaces: [],
+    });
     t = await createTestApp({ plugins: host });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
   });
   afterEach(async () => {
     await t.cleanup();
+    await rm(kitDir, { recursive: true, force: true });
+  });
+
+  it("names a plugin's version and icon from its package here, and serves the icon to admins", async () => {
+    const body = (await (
+      await admin.get("/api/admin/plugin-config")
+    ).json()) as PluginConfigResponse;
+    const kit = body.plugins.find((p) => p.name === "acme-kit")!;
+    expect(kit.pluginVersion).toBe("2.0.1");
+    expect(kit.pluginIcon).toEqual({
+      url: expect.stringMatching(
+        /^\/api\/admin\/plugin-config\/icon\?plugin=%40acme%2Fkit&rev=\w+$/,
+      ),
+      tint: true,
+    });
+    const icon = await admin.get(kit.pluginIcon!.url);
+    expect(icon.status).toBe(200);
+    expect(icon.headers.get("content-type")).toBe("image/svg+xml");
+    // Loaded from no file this server knows: no version, no icon.
+    const bot = body.plugins.find((p) => p.name === "acme-bot")!;
+    expect([bot.pluginVersion, bot.pluginIcon]).toEqual([undefined, undefined]);
+    expect((await admin.get("/api/admin/plugin-config/icon?plugin=%40acme%2Fbot")).status).toBe(
+      404,
+    );
+    const member = apiClient(t.app, (await provisionUser(t.app, "member")).cookie);
+    expect((await member.get(kit.pluginIcon!.url)).status).toBe(403);
   });
 
   it("lists the declared groups, and is for admins only", async () => {
     const res = await admin.get("/api/admin/plugin-config");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginConfigResponse;
-    // The sandbox's group is ordered ahead of the rest.
-    expect(body.plugins[0]!.name).toBe("sandbox");
-    expect(body.plugins.slice(1)).toEqual([
+    // The Plugin Sources card leads the page (order 0) with the index and mirrors entries
+    // drawn inside it (order 1–2, parent "plugin-sources", each saved under its own key);
+    // the sandbox's group and the packages' groups follow.
+    expect(body.plugins.map((p) => p.name)).toEqual([
+      "plugin-sources",
+      "plugin-index",
+      "plugin-mirrors",
+      "sandbox",
+      "acme-bot",
+      "acme-kit",
+    ]);
+    // Each plugin's group names its package, a child module's included; the host's name none.
+    expect(body.plugins.map((p) => [p.name, p.plugin])).toEqual([
+      ["plugin-sources", undefined],
+      ["plugin-index", undefined],
+      ["plugin-mirrors", undefined],
+      ["sandbox", undefined],
+      ["acme-bot", "@acme/bot"],
+      ["acme-kit", "@acme/kit"],
+    ]);
+    expect(body.plugins[0]!.name).toBe("plugin-sources");
+    const index = body.plugins.find((p) => p.name === "plugin-index")!;
+    // The test app stores an emptied list (no test may reach the network to list plugins);
+    // the declared default beside it carries the release's published index.
+    expect(index.values).toEqual({ sources: [] });
+    expect(index.parent).toBe("plugin-sources");
+    const mirrors = body.plugins.find((p) => p.name === "plugin-mirrors")!;
+    expect(mirrors.values).toEqual({ mirrors: [] });
+    // The mirror entries are chosen from the built-in mirrors' fixed set.
+    expect(mirrors.configuration.properties.mirrors?.items?.options?.map((o) => o.value)).toEqual([
+      "npm-registry",
+      "github-raw",
+      "github-proxy",
+    ]);
+    expect(mirrors.parent).toBe("plugin-sources");
+    expect(body.plugins.filter((p) => p.name === "acme-bot")).toEqual([
       {
         name: "acme-bot",
         configuration: SCHEMA,
         values: { agent: "default_agent", enabled: true },
+        plugin: "@acme/bot",
       },
     ]);
     const member = apiClient(t.app, (await provisionUser(t.app, "member")).cookie);
@@ -302,6 +434,82 @@ describe("/api/admin/plugin-config", () => {
       values: [],
     });
     expect(shapeless.status).toBe(400);
+  });
+
+  // Every Agent's shell holds the local API token, which stands for the administrator: it may
+  // read the settings, but changing them — loosening its own sandbox, say — takes a person.
+  it("lets the local API token read the settings but never save them or run an action", async () => {
+    const agent = tokenClient(t.app, t.deps.authService.localApiToken()!);
+    expect((await agent.get("/api/admin/plugin-config")).status).toBe(200);
+    const save = await agent.put("/api/admin/plugin-config", {
+      name: "acme-bot",
+      values: { project: "agent-chosen" },
+    });
+    expect(save.status).toBe(403);
+    expect(await save.json()).toMatchObject({ error: { code: "human_required" } });
+    const action = await agent.post("/api/admin/plugin-config/action", {
+      name: "sandbox",
+      action: "anything",
+    });
+    expect(action.status).toBe(403);
+    expect(await action.json()).toMatchObject({ error: { code: "human_required" } });
+    const after = (await (
+      await admin.get("/api/admin/plugin-config")
+    ).json()) as PluginConfigResponse;
+    expect(after.plugins.find((e) => e.name === "acme-bot")!.values).not.toHaveProperty("project");
+  });
+});
+
+// Given a field carrying a flag a later host reads (a status page's `security`), this host
+// still loads the module's group with all its fields: the kernel refuses undeclared keys at a
+// contribution's top level only, so a key nested in a field is ignored, not fatal.
+describe("a settings field flagged for a later host", () => {
+  it("loads the group, with the flagged field, on this host", async () => {
+    const host = new PluginHost();
+    host.use({
+      specifier: "@acme/guard",
+      modules: [
+        {
+          manifest: parseManifest({
+            name: "AcmeGuard",
+            requires: {},
+            provides: {},
+            contributes: {
+              "PluginConfigProvider.groups": [
+                {
+                  id: "acme-guard",
+                  title: "Guard",
+                  properties: {
+                    allowMembers: {
+                      type: "boolean",
+                      title: "Allow members",
+                      security: true,
+                      default: false,
+                    },
+                    note: { type: "string", title: "Note" },
+                  },
+                },
+              ],
+            },
+            children: [],
+          }),
+          create: () => ({ api: {} }),
+        },
+      ],
+      replaces: [],
+    });
+    const t = await createTestApp({ plugins: host });
+    try {
+      const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+      const body = (await (
+        await admin.get("/api/admin/plugin-config")
+      ).json()) as PluginConfigResponse;
+      const group = body.plugins.find((p) => p.name === "acme-guard");
+      expect(Object.keys(group?.configuration.properties ?? {})).toEqual(["allowMembers", "note"]);
+      expect(group?.values).toEqual({ allowMembers: false });
+    } finally {
+      await t.cleanup();
+    }
   });
 });
 
@@ -359,6 +567,124 @@ describe("PluginConfigPage actions", () => {
     await settled;
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(saves).toEqual(["sandbox"]);
+  });
+});
+
+describe("PluginConfigPage report", () => {
+  it("hands a status contributor's report to the page with its group, and none to a group without one", () => {
+    const report = {
+      summary: { state: "attention" as const, text: "Needs setup" },
+      version: { name: "helper", state: "installed" as const, version: "1.0.0" },
+      checks: [{ id: "display", label: "Display", state: "action" as const, action: "guide" }],
+      recheck: "check",
+    };
+    const node = new PluginConfigPage() as unknown as {
+      entries: unknown;
+      pluginConfig: unknown;
+      pluginConfigAdmin: { describe(): Array<Record<string, unknown>> };
+      setup(ctx: unknown): void;
+    };
+    node.entries = {
+      describe: () => [
+        { name: "helper", configuration: { properties: {} }, values: {} },
+        { name: "plain", configuration: { properties: {} }, values: {} },
+      ],
+      set: () => {
+        throw new Error("unused");
+      },
+    };
+    node.pluginConfig = { get: () => ({}) };
+    node.setup({
+      contributions: {
+        status: [
+          { data: { group: "helper" }, code: { notices: () => [], report: () => report } },
+          { data: { group: "plain" }, code: { notices: () => [{ tone: "muted", text: "Hi" }] } },
+        ],
+      },
+    });
+    const [helper, plain] = node.pluginConfigAdmin.describe();
+    expect(helper!.report).toEqual(report);
+    expect(plain).not.toHaveProperty("report");
+    expect(plain!.notices).toEqual([{ tone: "muted", text: "Hi" }]);
+  });
+
+  /** A page node over the named groups, each with the status code given. */
+  function pageOver(groups: Record<string, Record<string, unknown>>) {
+    const node = new PluginConfigPage() as unknown as {
+      entries: unknown;
+      pluginConfig: unknown;
+      pluginConfigAdmin: { describe(): Array<Record<string, unknown>> };
+      setup(ctx: unknown): void;
+    };
+    node.entries = {
+      describe: () =>
+        Object.keys(groups).map((name) => ({
+          name,
+          configuration: { properties: {} },
+          values: {},
+        })),
+      set: () => {
+        throw new Error("unused");
+      },
+    };
+    node.pluginConfig = { get: () => ({}) };
+    node.setup({
+      contributions: {
+        status: Object.entries(groups).map(([group, code]) => ({ data: { group }, code })),
+      },
+    });
+    return node.pluginConfigAdmin;
+  }
+
+  it("reads a report from another version of the contract safely", () => {
+    const admin = pageOver({
+      newer: {
+        notices: () => [],
+        report: () => ({
+          summary: { state: "brewing", text: "Brewing", hint: 3 },
+          version: { name: "helper", state: "updating", progress: 7, platform: ["x"] },
+          checks: [
+            { id: "display", label: "Display", state: "blocked", text: 42 },
+            { id: "nameless", state: "ok" },
+            "not a check",
+          ],
+          recheck: 5,
+        }),
+      },
+      odd: { notices: () => [], report: () => ({ version: { state: "installed" }, checks: "x" }) },
+    });
+    const [newer, odd] = admin.describe();
+    expect(newer!.report).toEqual({
+      summary: { state: "unknown", text: "Brewing" },
+      version: { name: "helper", state: "unknown", progress: 1 },
+      checks: [{ id: "display", label: "Display", state: "unknown" }],
+    });
+    // Nothing of it holds: no report at all.
+    expect(odd).not.toHaveProperty("report");
+  });
+
+  it("costs only its own group when a status contributor throws", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const admin = pageOver({
+      broken: {
+        notices: () => [{ tone: "muted", text: "kept" }],
+        report: () => {
+          throw new Error("probe crashed");
+        },
+      },
+      fine: { notices: () => [{ tone: "muted", text: "fine" }] },
+    });
+    const [broken, fine] = admin.describe();
+    expect(broken).not.toHaveProperty("report");
+    expect(broken!.notices).toEqual([
+      { tone: "muted", text: "kept" },
+      expect.objectContaining({
+        tone: "attention",
+        text: expect.stringContaining("probe crashed"),
+      }),
+    ]);
+    expect(fine!.notices).toEqual([{ tone: "muted", text: "fine" }]);
+    warn.mockRestore();
   });
 });
 

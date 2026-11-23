@@ -49,7 +49,7 @@ interface SessionMetaPayload {
 }
 ```
 
-The Workspace is fixed for the Session's lifetime. The model and the system prompt are fixed per context: an in-session model switch opens its new context on another model, and this record is the only place that says so.
+The Workspace is fixed for the Session's lifetime. The model and the system prompt are fixed per context: an in-session model switch opens its new context on another model. Each context's model is named in its own `session_meta`; until the next context's is written, the switch's `session_update` names it (see [event_msg](#eventmsg)).
 
 `source` says what kind of conversation the Session is, and is fixed for its lifetime too:
 
@@ -195,7 +195,7 @@ Renderers can therefore paint deltas as they arrive and swap in the complete mes
 
 ## event_msg
 
-Fourteen event payloads record the runtime events outside the model context:
+Fifteen event payloads record the runtime events outside the model context:
 
 | Event `type` | What it records |
 | --- | --- |
@@ -204,6 +204,7 @@ Fourteen event payloads record the runtime events outside the model context:
 | `mcp_connect_end` | The overall connect status and the per-server results |
 | `task_begin` | The start of a Task |
 | `task_end` | The end of the Task the last `task_begin` opened |
+| `session_update` | The new value of a Session-level setting that changed: today the model the Session's next context opens on |
 | `request_begin` | The start of a model request, with the thinking level it went out at |
 | `request_end` | The request's terminal status, plus the retry detail block (`error_code`, `error_message`, `attempt`, `retry_in_ms`) |
 | `approval_decision` | An approval decision, paired with its `tool_call_id` |
@@ -214,9 +215,11 @@ Fourteen event payloads record the runtime events outside the model context:
 | `subagent` | A pointer in the parent Trace to a direct child Session |
 | `hook` | A hook's answer: the hook point, name, decision and the hook's own record |
 
-The vocabulary is closed: a record or field is added only when no existing record carries the fact and no reader can derive it. `task_begin` / `task_end` are one of its two stated exceptions (the other is `request_begin.thinking_level`). Before them no record said where a Task starts or whether it reached its end, and every reader derived both from the user's prompts.
+The vocabulary is closed: a record or field is added only when no existing record carries the fact and no reader can derive it. `task_begin` / `task_end` are one of its three stated exceptions (the others are `request_begin.thinking_level` and `session_update`). Before them no record said where a Task starts or whether it reached its end, and every reader derived both from the user's prompts.
 
 The Session writes one pair around each Task: one prompt's run, followed by the `hook` records of the stop hooks it consults. A Task that a stop hook's `continue` drives, such as a goal round, gets a pair of its own. A manual compaction and a model switch are not Tasks and get none. The payload is the type alone. How the Task ended is read from the records inside the pair (`abort`, a terminal `request_end` or `compaction_end`), and who started it from its input. A Task that throws writes no `task_end`, so an unclosed `task_begin` means the Task never reached its end. Where the records sit in the Trace is covered under [Trace design](/sessions-and-traces#trace-design).
+
+`session_update` records that a Session-level run setting changed, and carries the new value under the name the setting has elsewhere. It carries one setting today, the model: `provider` and `model_id`, the pair `session_meta` uses, name the model the Session's **next** context opens on. The Session writes it when an in-session model switch completes, through its own Trace sink as it writes the Task records, and it never opens a file: it lands at the end of the file of the context being left, behind the `compaction_end` when there is one, and is streamed once, when written. Until a `request_begin` follows it, that file's context is closed and the next context opens on the model it names; of several, the last one wins. It is not a message, starts no Task and takes no part in a Task's timing. It is a stated exception because between a completed switch and the next file's `session_meta` no other record names the target. Traces written before it carry none, and readers derive a switch from two consecutive `session_meta` records.
 
 Every payload that reports a failure carries the same error pair: `error_code`, a stable machine-readable cause that render layers localize from, and `error_message`, the raw text of the failure, shown verbatim. The complete listing:
 
@@ -233,8 +236,10 @@ type ErrorCode =
   | "malformed"               // response failed parsing/validation, or the stream was truncated
   | "output_truncated"        // the response stopped at its output cap; retried, never committed
   | "auth"                    // the provider rejected the credentials
-  | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
-  | "image_rejected"          // a provider 4xx on an input holding images, retried with them replaced
+  | "rejected"                // the provider refused this request as sent: HTTP 400, 413, 415 or 422
+  | "denied"                  // the provider will not serve this account or model: any other
+                              // definitive 4xx (402, 403, 404, …; 401 is auth; 408/429 retried)
+  | "image_rejected"          // a rejected request whose input held images, retried with them replaced
   | "unsupported"             // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input"           // the input failed to assemble into a request
   // MCP connect failures (per-server results of mcp_connect_end)
@@ -299,6 +304,14 @@ interface TaskEndPayload {
                               // the pair say how); absent when the Task threw
 }
 
+interface SessionUpdatePayload {
+  type: "session_update";     // a Session-level setting changed: its new value; written
+                              // and streamed by the Session, at the end of the file of the
+                              // context being left
+  provider?: string;          // the model the Session's next context opens on, as in
+  model_id?: string;          // session_meta; the two come together
+}
+
 interface RequestBeginPayload {
   type: "request_begin";
   thinking_level?: ThinkingLevelName; // the level sent: the Session's pin, else the context's
@@ -322,7 +335,9 @@ interface RequestEndPayload {
                               // completion that needed retries; absent on a clean first try
   retry_in_ms?: number;       // planned reconnect wait (ms), present only when the engine
                               // will retry in-run — the Web App renders it as a countdown;
-                              // a failed request_end without it is the run's terminal record
+                              // 0 for a resend at once (image_rejected, and a rejected
+                              // request answered by a hand-off); a failed request_end
+                              // without it is the run's terminal record
 }
 
 interface ApprovalDecisionPayload {
@@ -360,13 +375,18 @@ interface CompactionEndPayload {
   type: "compaction_end";
   reason: CompactionReason;
   mode: CompactionMode;
-  status: StopReason;         // completed / retryable (abandoned after the retries ran out;
-                              // the standing trigger makes it up) / fatal (a failure no
-                              // retry can fix) / aborted (user interrupted); any status
-                              // but completed keeps the original context
-  attempt?: number;           // the final attempt's ordinal, failed attempts included
-  error_code?: ErrorCode;     // the last failure's cause and detail
-  error_message?: string;
+  status: StopReason;         // completed: the next context is open (with the error pair it
+                              // opened with a Trace hand-off note, not a full summary) /
+                              // aborted (user interrupted) / fatal (the next context could
+                              // not be opened); both keep the original context / retryable:
+                              // written only by resume, closing a span the process died in.
+                              // Old Traces' retryable, fatal and failed all read "abandoned,
+                              // original context kept"
+  attempt?: number;           // the final attempt's ordinal, failed attempts included;
+                              // absent when the span made no request (a refused
+                              // request's hand-off)
+  error_code?: ErrorCode;     // the last failure's cause and detail; on a completed end,
+  error_message?: string;     // why there was no full summary
 }
 
 interface AbortPayload {
@@ -402,7 +422,7 @@ interface HookPayload {
 
 A server that is skipped rather than contacted, because its entry references a vault key the agent lacks or because it needs an OAuth sign-in, appears in `results` as `fatal` with `mcp_needs_setup` or `mcp_sign_in_required`; its `error_message` names the missing keys, never a value. See [Vault references](/tools#vault-references).
 
-`compaction_end` never carries `retry_in_ms`: compaction retries are announced on the compaction request's own `request_end`, which stays in the Trace. Older Traces may still spell an MCP connect failure or an abandoned compaction as `failed`, and carry a per-server `error` field instead of the error pair.
+`compaction_end` never carries `retry_in_ms`: compaction retries are announced on the compaction request's own `request_end`, which stays in the Trace. A `completed` end may carry the error pair: the compaction completed without a full summary, and the pair says why. It is the one fact replay reads to rebuild that opening, the hand-off note, from the `compaction.handoff_note` template in force at resume, so a `completed` end without the pair replays exactly as before (see [Compaction](/agent-loop#when-no-summary-can-be-had)). A span may hold no request at all: when the provider refuses an ordinary request on a context that has completed a turn, its `request_end` is `retryable` with `error_code: "rejected"` and `retry_in_ms: 0`, and the `compaction_begin` / `compaction_end` pair that follows, `completed` with that error pair and no `attempt`, holds nothing between them; replay rebuilds the hand-off note from it (see [A refused request hands off](/agent-loop#a-refused-request-hands-off)). Only a `compaction_end` that is not `completed` can end a run. Older Traces may still spell an MCP connect failure or an abandoned compaction as `failed`, and carry a per-server `error` field instead of the error pair.
 
 ## End reasons
 
@@ -422,7 +442,7 @@ A status answers one question: should this be retried? The kind of failure rides
 | `completed` | finished normally; the turn is committed | continue |
 | `aborted` | user interruption or cancellation | stop, emit an `abort` event, hand back to the user |
 | `retryable` | a failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, a response that arrived whole but stopped at its output cap (`error_code: "output_truncated"`), and anything unclassifiable | reconnect within the run on the backoff ladder; an attempt stopped at its cap is not committed. When the retries run out, the last `request_end` (no `retry_in_ms`) is the terminal record |
-| `fatal` | a failure no retry can fix: a definitive provider 4xx rejection (parameters, quota), rejected credentials, or a deterministic client-side rejection | stop the run and hand back to the user; no `abort` event follows, and the `request_end` is the terminal record |
+| `fatal` | a failure no retry can fix: the provider refusing the request as sent (`rejected`: 400, 413, 415, 422) or declining the account or model (`denied`: any other definitive 4xx), rejected credentials, or a deterministic client-side rejection | stop the run and hand back to the user; no `abort` event follows, and the `request_end` is the terminal record. A `rejected` request on a context with a completed turn is recorded `retryable` instead and answered by a hand-off |
 
 A tool result's `status` says what the result is:
 
@@ -490,8 +510,9 @@ How messages travel along these surfaces, and every ordering guarantee, is cover
 
 `@prismshadow/amsp` exports every record type, plus the following, and `@prismshadow/penguin-core` re-exports all of it:
 
-- a builder per message kind in `records/builders.ts`: `userText`, `assistantText`, `toolCall`, `toolCallOutput`, `partialText`, `tokenUsage`, `withOrigin`, `emptyTokenCounts`, `addTokenCounts`, and more;
-- runtime guards: `isCompleteModelMessage`, `isPartialPayload`, `isModelMessage`, `isEventMessage`, `isSessionMeta`, `isTaskRecord`, and `lastNonTaskRecord`, which finds the record that decides whether a Trace file was closed by a compaction.
+- a builder per message kind in `records/builders.ts`: `userText`, `assistantText`, `toolCall`, `toolCallOutput`, `partialText`, `tokenUsage`, `sessionUpdate`, `withOrigin`, `emptyTokenCounts`, `addTokenCounts`, and more;
+- runtime guards: `isCompleteModelMessage`, `isPartialPayload`, `isModelMessage`, `isEventMessage`, `isSessionMeta`, `isTaskRecord`;
+- the readers of whether a Trace file's context is closed, in `records/context-state.ts`: `closingCompaction` (the completed `compaction_end` that closed it), `pendingModel` (the model a completed switch left for the next context) and `updatedModel` (the model one `session_update` names).
 
 ```ts
 import { userText, isCompleteModelMessage } from "@prismshadow/amsp";

@@ -153,7 +153,8 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   info?: ReactNode;
   /** Accessible name for that "?" (defaults to the generic "More info"). */
   infoLabel?: string;
-  error?: string;
+  /** The error under the box: a rule's words, or a failure's with 「[报告问题]」 after them. */
+  error?: ReactNode;
   /**
    * Marks the field red without rendering error text: use this when the input has a custom
    * wrapper (a trailing menu button, say) and the caller places the error text outside that
@@ -203,7 +204,7 @@ export function Input({
   const control = (
     <input
       id={info !== undefined ? controlId : id}
-      className={`${baseClass} ${sizeClass[size]} ${bad ? errorClass : ""} ${className ?? ""}`}
+      className={`ui-edge ${baseClass} ${sizeClass[size]} ${bad ? errorClass : ""} ${className ?? ""}`}
       style={affix === undefined ? style : { ...style, ...affixStyle }}
       aria-invalid={bad ? true : undefined}
       aria-required={required || undefined}
@@ -305,7 +306,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         // sizeClass — a multi-line box keeps the roomier px-3 py-2 at both tiers, because the
         // sm tier's py-1 is sized for one line of text and crowds a block of them. The extra
         // leading goes with that, and only at sm, where the lines are closest together.
-        className={`${baseClass} px-3 py-2 ${sizeTextClass[size]} ${size === "sm" ? "leading-relaxed" : ""} ${mono ? "font-mono" : ""} ${bad ? errorClass : ""} ${className ?? ""}`}
+        className={`ui-edge ${baseClass} px-3 py-2 ${sizeTextClass[size]} ${size === "sm" ? "leading-relaxed" : ""} ${mono ? "font-mono" : ""} ${bad ? errorClass : ""} ${className ?? ""}`}
         aria-invalid={bad ? true : undefined}
         aria-required={required || undefined}
         aria-describedby={error ? errorId : undefined}

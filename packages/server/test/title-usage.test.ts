@@ -7,9 +7,9 @@ import { expect, it } from "vitest";
 import { requestBegin, requestEnd, withOrigin } from "@prismshadow/penguin-core";
 import type { SessionTitleResult } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import { openDatabase } from "../src/db/database.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { ChannelHub } from "../src/runtime/channel.js";
 import { TitleGenerator } from "../src/runtime/title-generator.js";
 import { UsageRecorder } from "../src/runtime/usage-recorder.js";
@@ -37,7 +37,8 @@ it.each(["main", "child"])(
       lastActiveAt: "2026-10-26T00:00:00Z",
     });
     const usage = wire(UsageRepo, { db });
-    const recorder = wire(UsageRecorder, { usage, clock: { now: () => new Date() } });
+    const projects = { findById: (projectId: string) => ({ projectId }) };
+    const recorder = wire(UsageRecorder, { usage, projects, clock: { now: () => new Date() } });
     let finishModel!: (result: SessionTitleResult) => void;
     const model = new Promise<SessionTitleResult>((resolve) => (finishModel = resolve));
     let titleFinished!: () => void;

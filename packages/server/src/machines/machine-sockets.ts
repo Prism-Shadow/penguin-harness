@@ -25,9 +25,11 @@
 import http from "node:http";
 import { WebSocket } from "ws";
 import type { MachineSocketFact } from "../api/types.js";
+import { CREDIT_FLOW } from "../socket/frames.js";
 import type { EventFrame, ServerFrame } from "../socket/frames.js";
 import { apiSocketPath } from "../socket/ref.js";
 import { HEARTBEAT_MS } from "../socket/serve.js";
+import { API_SOCKET_DEFLATE } from "../socket/compression.js";
 
 /** The machine answered the handshake with a status: it is up, and has no socket to offer (or refused this server). */
 export class HandshakeRefused extends Error {
@@ -56,6 +58,31 @@ export class ServerPredatesSocket extends Error {
     );
   }
 }
+
+/**
+ * How a socket tells a dead link from a busy one. The default period is two of the machine's
+ * beats; `heardAt` is the machine's link (link-activity.ts): when bytes last came from the
+ * machine on any connection to it.
+ */
+export interface MachineSocketLiveness {
+  heardAt?: () => number | null;
+  /** The link's bytes per second lately (LinkActivity.rate). */
+  rate?: () => number;
+  silenceMs?: number;
+}
+
+/**
+ * What the machine's ssh server may queue for one channel ahead of this socket's bytes (an
+ * OpenSSH channel window): on a busy link this socket's own silence is half-open only once it
+ * outlasts that much at the link's rate.
+ */
+export const CHANNEL_QUEUE_BYTES = 2 * 1024 * 1024;
+/**
+ * The most periods a socket's own silence is let stretch to on a slow link: 10 minutes at the
+ * default 40 s. A link that only trickles would otherwise excuse a half-open channel for hours
+ * (2 MiB at 100 B/s is nearly six).
+ */
+export const OWN_SILENCE_MAX_PERIODS = 15;
 
 export interface MachineSocketTarget {
   agent: http.Agent;
@@ -151,7 +178,8 @@ export function incompatibleAnswer(detail: string): Response {
 
 /** What a caller's stream call hears back from a socket (or, for the event hub, from its upstream). */
 export interface Sink {
-  onStart(status: number): void;
+  /** The stream began; `headers` are its start frame's (an `x-flow: credit` echo says it reads acks). */
+  onStart(status: number, headers?: Record<string, string>): void;
   onEvent(event: EventFrame): void;
   onEnd(): void;
   onResponse(status: number, body: unknown): void;
@@ -161,20 +189,57 @@ export interface Sink {
 export class MachineSocket {
   readonly #ws: WebSocket;
   readonly #calls = new Map<number, Sink>();
+  /** Calls whose start frame echoed `x-flow: credit`: the only ones `ack` speaks for. */
+  readonly #credited = new Set<number>();
   #next = 1;
   #closed = false;
+  /**
+   * Who hears the bytes of the connection under the socket, which say the link is alive before a
+   * frame is whole: one `data` listener on the connection for all of them, however many streams.
+   */
+  readonly #traffic = new Set<() => void>();
 
-  private constructor(ws: WebSocket) {
+  private constructor(
+    ws: WebSocket,
+    raw: NodeJS.EventEmitter | null = null,
+    liveness: MachineSocketLiveness = {},
+  ) {
     this.#ws = ws;
-    // Silence watchdog: the machine's socket sends a heartbeat frame every beat; nothing for
-    // two beats means the channel is dead under us (an ssh session gone quiet), and every
-    // stream on it must end so the browser re-issues — not sit on a socket that never speaks.
-    let watchdog = setTimeout(() => ws.terminate(), 2 * HEARTBEAT_MS);
-    watchdog.unref?.();
+    // Silence watchdog. The machine's socket sends a heartbeat frame every beat, and nothing
+    // from the machine for two beats means the channel is dead under us (an ssh session gone
+    // quiet): every stream on it must end so the browser re-issues, not sit on a socket that
+    // never speaks. Nothing means no byte at all — of this socket, whole frame or not, or of
+    // any other connection to the machine: on a slow link its ssh server queues those ahead of
+    // this socket's bytes, and a socket behind a long queue is on a busy link, not a dead one.
+    const silenceMs = liveness.silenceMs ?? 2 * HEARTBEAT_MS;
+    let heard = Date.now();
+    raw?.on("data", () => {
+      heard = Date.now();
+      for (const listener of this.#traffic) listener();
+    });
+    const tick = setInterval(() => {
+      const now = Date.now();
+      const last = Math.max(heard, liveness.heardAt?.() ?? 0);
+      // The link's bytes stand in for this socket's for a while, not for good: a channel of its
+      // own that stays silent (not even a pong to the pings below) past what another channel can
+      // queue ahead of it at the link's rate — never less than twice the period, never more than
+      // OWN_SILENCE_MAX_PERIODS of it — is half-open, however busy the rest of the link is.
+      const rate = liveness.rate?.() ?? 0;
+      const ownLimit = Math.min(
+        OWN_SILENCE_MAX_PERIODS * silenceMs,
+        Math.max(2 * silenceMs, rate > 0 ? (CHANNEL_QUEUE_BYTES / rate) * 1000 : 0),
+      );
+      if (now - last >= silenceMs || now - heard >= ownLimit) {
+        ws.terminate();
+        return;
+      }
+      // Heard within the period: the machine is told so too. Its own check waits on the answer
+      // to its ping, which sits behind that same queue, or on anything from here (socket/serve.ts).
+      if (ws.readyState === ws.OPEN) ws.ping();
+    }, silenceMs / 4);
+    tick.unref?.();
     ws.on("message", (data, isBinary) => {
-      clearTimeout(watchdog);
-      watchdog = setTimeout(() => ws.terminate(), 2 * HEARTBEAT_MS);
-      watchdog.unref?.();
+      heard = Date.now();
       if (isBinary) return;
       let frame: ServerFrame;
       try {
@@ -187,19 +252,22 @@ export class MachineSocket {
       if (sink === undefined) return;
       if ("event" in frame) sink.onEvent(frame);
       else if ("end" in frame) {
-        this.#calls.delete(frame.id);
+        this.#forget(frame.id);
         sink.onEnd();
-      } else if ("stream" in frame) sink.onStart(frame.status);
-      else {
-        this.#calls.delete(frame.id);
+      } else if ("stream" in frame) {
+        if (frame.headers["x-flow"] === CREDIT_FLOW) this.#credited.add(frame.id);
+        sink.onStart(frame.status, frame.headers);
+      } else {
+        this.#forget(frame.id);
         sink.onResponse(frame.status, frame.body);
       }
     });
     const drop = () => {
-      clearTimeout(watchdog);
+      clearInterval(tick);
       this.#closed = true;
       const sinks = [...this.#calls.values()];
       this.#calls.clear();
+      this.#credited.clear();
       for (const sink of sinks) sink.onEnd();
     };
     ws.on("close", drop);
@@ -210,7 +278,11 @@ export class MachineSocket {
    * Resolves on the open handshake; rejects when the machine refuses (no socket there), cannot
    * be reached, or has not answered within `timeoutMs`.
    */
-  static open(target: MachineSocketTarget, timeoutMs: number): Promise<MachineSocket> {
+  static open(
+    target: MachineSocketTarget,
+    timeoutMs: number,
+    liveness: MachineSocketLiveness = {},
+  ): Promise<MachineSocket> {
     return new Promise((resolve, reject) => {
       // No Origin: the machine's guard reads its absence as a non-browser client, which this is.
       // The socket's own route: the session minted over there is the admin's, and the
@@ -218,16 +290,23 @@ export class MachineSocket {
       const ws = new WebSocket(`ws://127.0.0.1:${target.port}${apiSocketPath()}`, {
         agent: target.agent,
         headers: { host: `localhost:${target.port}`, cookie: target.cookie },
-        perMessageDeflate: false,
+        // Offered, not imposed: a machine whose server predates compression answers without it.
+        perMessageDeflate: API_SOCKET_DEFLATE,
       });
       const deadline = setTimeout(() => {
         reject(new HandshakeTimeout(timeoutMs));
         ws.terminate();
       }, timeoutMs);
       deadline.unref?.();
+      // The upgrade's connection, kept for `onTraffic`: a frame larger than what a slow link
+      // carries in one stream's watchdog is still arriving, and its bytes say so.
+      let raw: NodeJS.EventEmitter | null = null;
+      ws.once("upgrade", (res) => {
+        raw = res.socket;
+      });
       ws.once("open", () => {
         clearTimeout(deadline);
-        resolve(new MachineSocket(ws));
+        resolve(new MachineSocket(ws, raw, liveness));
       });
       ws.once("unexpected-response", (_req, res) => {
         clearTimeout(deadline);
@@ -239,6 +318,17 @@ export class MachineSocket {
         reject(err);
       });
     });
+  }
+
+  /**
+   * Tells `listener` whenever bytes arrive on the connection, whole frames or not: liveness for
+   * a stream waiting on a frame that a slow link is still carrying. Returns the stop.
+   */
+  onTraffic(listener: () => void): () => void {
+    // A wrapper of its own, so the same listener given twice is two subscriptions.
+    const heard = (): void => listener();
+    this.#traffic.add(heard);
+    return () => this.#traffic.delete(heard);
   }
 
   get closed(): boolean {
@@ -271,8 +361,27 @@ export class MachineSocket {
   }
 
   cancel(id: number): void {
+    this.#credited.delete(id);
     if (!this.#calls.delete(id)) return;
     if (this.#ws.readyState === this.#ws.OPEN) this.#ws.send(JSON.stringify({ id, cancel: true }));
+  }
+
+  #forget(id: number): void {
+    this.#calls.delete(id);
+    this.#credited.delete(id);
+  }
+
+  /**
+   * Acknowledges a credit-flow stream (`x-flow: credit`, socket/frames.ts AckFrame): this
+   * server has handled `cumulative` of that call's event data (`ping`s not counted). Nothing
+   * for a call already over, or for one whose start frame did not echo the header — a machine
+   * older than acks closes its socket on one.
+   */
+  ack(id: number, cumulative: number): void {
+    if (!this.#calls.has(id) || !this.#credited.has(id)) return;
+    if (this.#ws.readyState === this.#ws.OPEN) {
+      this.#ws.send(JSON.stringify({ id, ack: cumulative }));
+    }
   }
 
   /** Tears the socket down as dead: every stream on it ends, and the relay dials again next time. */
@@ -308,6 +417,9 @@ export class MachineSockets {
    * answered as they always were.
    */
   readonly #settle: ((machineId: string) => StreamSettle | null) | undefined;
+  readonly #heardAt: ((machineId: string) => number | null) | undefined;
+  readonly #rateOf: ((machineId: string) => number) | undefined;
+  readonly #silenceMs: number | undefined;
   #closed = false;
 
   constructor(
@@ -321,11 +433,20 @@ export class MachineSockets {
        */
       announce?: () => void;
       settle?: (machineId: string) => StreamSettle | null;
+      /** When bytes last came from a machine on any connection to it (MachinesService.links). */
+      heardAt?: (machineId: string) => number | null;
+      /** How fast bytes come from a machine lately (MachinesService.links). */
+      rateOf?: (machineId: string) => number;
+      /** The silence a socket is dropped after (MachineSocketLiveness.silenceMs). */
+      silenceMs?: number;
     } = {},
   ) {
     this.#dialTimeoutMs = options.dialTimeoutMs ?? SOCKET_DIAL_TIMEOUT_MS;
     this.#announce = options.announce ?? (() => undefined);
     this.#settle = options.settle;
+    this.#heardAt = options.heardAt;
+    this.#rateOf = options.rateOf;
+    this.#silenceMs = options.silenceMs;
   }
 
   /** Ends this generation's sockets, including a dial that settles after disposal. */
@@ -363,9 +484,16 @@ export class MachineSockets {
    * One dial, with an unanswered handshake told apart: the same port answering HTTP means the
    * server is up and older than the socket, which no amount of dialling again will change.
    */
-  async #dial(target: MachineSocketTarget): Promise<MachineSocket> {
+  async #dial(machineId: string, target: MachineSocketTarget): Promise<MachineSocket> {
+    const heardAt = this.#heardAt;
+    const rateOf = this.#rateOf;
+    const liveness: MachineSocketLiveness = {
+      ...(heardAt !== undefined ? { heardAt: () => heardAt(machineId) } : {}),
+      ...(rateOf !== undefined ? { rate: () => rateOf(machineId) } : {}),
+      ...(this.#silenceMs !== undefined ? { silenceMs: this.#silenceMs } : {}),
+    };
     try {
-      return await MachineSocket.open(target, this.#dialTimeoutMs);
+      return await MachineSocket.open(target, this.#dialTimeoutMs, liveness);
     } catch (err) {
       if (!(err instanceof HandshakeTimeout) || this.#closed) throw err;
       const checkMs = Math.min(this.#dialTimeoutMs, HTTP_CHECK_TIMEOUT_MS);
@@ -408,7 +536,7 @@ export class MachineSockets {
       if (this.#facts.get(machineId)?.state !== "unanswered") this.#state(machineId, "dialling");
       const entry: CachedSocket = {
         session: target.session,
-        pending: this.#dial(target),
+        pending: this.#dial(machineId, target),
       };
       entry.pending.then(
         (socket) => {

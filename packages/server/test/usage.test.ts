@@ -9,6 +9,10 @@
  * - A billed request with an abnormal finish counts once; its unbilled retry still counts separately.
  * - Interleaved main and child sessions cannot suppress each other's failed requests.
  * - Compaction usage without streamed request boundaries does not hide the next request's failure.
+ * - A request that outlives its Project's deletion records nothing.
+ * - A compaction's own requests, streamed inside its span (tool rounds included), are billed by
+ *   their usage alone: a failed attempt is the compaction's failure, no failed request row, and
+ *   the request after the span is recorded as ever.
  *
  * Querying:
  * - A scheduled model is priced per record by the tier its request ran in, each seller by its
@@ -21,6 +25,10 @@
  * - Success counts completed requests over every non-aborted one: a user's Stop is not a model
  *   failure.
  * - Model totals sum every record a model ever wrote, per paired reference, per Project.
+ * - Tool requests (rows with a purpose): their Tokens stay out of the Token figures while their
+ *   requests and cost count, the summary carries their count and cost, and they are listed by
+ *   purpose; one with no Session counts toward the Project's totals only; one that failed before
+ *   any usage fails the success rate at no cost, a cancelled one is in neither.
  * - Series are zero-filled buckets by minute, hour (local clock), day, ISO week or month, with
  *   per-Agent and per-model series aligned to them; a minute series needs a timestamp window,
  *   the range defaults to 30 days, and an oversized series is refused.
@@ -31,6 +39,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  compactionBegin,
+  compactionEnd,
   requestBegin,
   requestEnd,
   sessionMeta,
@@ -39,11 +49,11 @@ import {
 } from "@prismshadow/penguin-core";
 import type { SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { ORIGIN_MODELS_MAX, UsageRecorder } from "../src/runtime/usage-recorder.js";
-import { ErrorsRepo } from "../src/db/repos/errors.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
+import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
+import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { UsageService } from "../src/services/usage-service.js";
 import type { PricingRates } from "../src/services/usage-service.js";
-import { openDatabase } from "../src/db/database.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
 import { enumerateBuckets, enumerateTsBuckets, formatLocalDate } from "../src/internal/dates.js";
 import { switchTimeZone } from "./helpers/time-zone.js";
 import type { DatabaseSync } from "node:sqlite";
@@ -77,15 +87,34 @@ function meta(sessionId: string, modelId: string, provider = "custom"): SessionM
 describe("usage-recorder", () => {
   let db: DatabaseSync;
   let repo: UsageRepo;
+  /** The Projects the recorder finds (its one read of them). */
+  let existing: Set<string>;
+  const projects = {
+    findById: (projectId: string) => (existing.has(projectId) ? { projectId } : null),
+  };
 
   beforeEach(() => {
     db = openDatabase(":memory:");
     repo = wire(UsageRepo, { db: db });
+    existing = new Set([CTX.projectId]);
   });
   afterEach(() => db.close());
 
+  it("a request that outlives its Project's deletion records nothing, its usage nor its failure", async () => {
+    // The deletion waits a bounded time for the Project's runs and then drops its rows: what
+    // lands later would outlive the Project, and count for a new one given the same id.
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
+    await rec.record(CTX, requestBegin());
+    existing.delete(CTX.projectId);
+    await rec.record(CTX, tokenUsage(counts(12), counts(12)));
+    await rec.record(CTX, requestEnd("completed"));
+    await rec.record(CTX, requestBegin());
+    await rec.record(CTX, requestEnd("retryable", { errorCode: "network" }));
+    expect(db.prepare("SELECT * FROM usage_records").all()).toEqual([]);
+  });
+
   it("token_usage → one row (the request bucket; only Tokens persisted, never cost)", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     await rec.record(CTX, tokenUsage(counts(1000), counts(115)));
     const rows = db.prepare("SELECT * FROM usage_records").all();
     expect(rows).toHaveLength(1);
@@ -98,7 +127,7 @@ describe("usage-recorder", () => {
   });
 
   it("a request cut off at its output cap is metered by its token_usage and adds no failure row; a failed one adds a 0-token row", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     await rec.record(CTX, tokenUsage(counts(500), counts(500)));
     await rec.record(
       CTX,
@@ -117,7 +146,7 @@ describe("usage-recorder", () => {
   });
 
   it("a sub-session's session_meta registers the origin→model mapping; token_usage is attributed via it", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     const childMeta = withOrigin(
       sessionMeta(meta("session-child", "child-model")),
       "session-child",
@@ -131,7 +160,7 @@ describe("usage-recorder", () => {
   });
 
   it("counts a billed abnormal finish once and records its unbilled retry separately", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     await rec.record(CTX, requestBegin());
     await rec.record(CTX, tokenUsage(counts(115), counts(115)));
     // GenerativeModel reports usage even when an unknown finish reason returns malformed.
@@ -148,7 +177,7 @@ describe("usage-recorder", () => {
   it.each(["another session", "child session"])(
     "keeps metering separate from an interleaved %s",
     async (kind) => {
-      const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+      const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
       const otherCtx = kind === "another session" ? { ...CTX, sessionId: "session-other" } : CTX;
       const other = (msg: Parameters<UsageRecorder["record"]>[1]) =>
         kind === "child session" ? withOrigin(msg, "session-child") : msg;
@@ -165,7 +194,7 @@ describe("usage-recorder", () => {
   );
 
   it("keeps a failure after compaction usage without streamed request boundaries", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     // Compaction streams token_usage, but its request_begin/request_end stay in the Trace.
     await rec.record(CTX, tokenUsage(counts(115), counts(115)));
     await rec.record(CTX, requestBegin());
@@ -176,21 +205,47 @@ describe("usage-recorder", () => {
     ]);
   });
 
+  it("bills a compaction's requests by their usage alone, and records the request after its span as ever", async () => {
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
+    for (const msg of [
+      compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
+      // A tool round's request, then a summary attempt the transport dropped, then the summary.
+      requestBegin(),
+      tokenUsage(counts(100), counts(100)),
+      requestEnd("completed"),
+      requestBegin(),
+      requestEnd("retryable", { errorCode: "timeout", retryInMs: 2000 }),
+      requestBegin(),
+      tokenUsage(counts(220), counts(120)),
+      requestEnd("completed"),
+      compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "auth" }),
+    ]) {
+      await rec.record(CTX, msg);
+    }
+    expect(db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all()).toEqual([
+      { status: "completed", total: 100 },
+      { status: "completed", total: 120 },
+      { status: "fatal", total: 0 },
+    ]);
+  });
+
   it("falls back to the main Session's Model when the origin mapping is missing", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     await rec.record(CTX, withOrigin(tokenUsage(counts(5), counts(5)), "session-unknown"));
     const row = db.prepare("SELECT model_id FROM usage_records").get()!;
     expect(row.model_id).toBe("main-model");
   });
 
   it("non-token_usage messages are a no-op", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     await rec.record(CTX, sessionMeta(meta("session-main", "main-model")));
     expect(db.prepare("SELECT COUNT(*) AS n FROM usage_records").get()!.n).toBe(0);
   });
 
   it("the origin mapping is capped: past the limit the earliest entry is evicted and falls back to the main Session's Model", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     for (let i = 0; i <= ORIGIN_MODELS_MAX; i++) {
       // ORIGIN_MODELS_MAX + 1 entries total: the earliest, sub-0, gets evicted.
       await rec.record(CTX, withOrigin(sessionMeta(meta(`sub-${i}`, "sub-model")), `sub-${i}`));
@@ -466,6 +521,163 @@ describe("usage-service (cost computed on the fly)", () => {
     const byAgent = await svc.query("p1", { ...range, agentId: "a1" });
     expect(byAgent.byModelSeries.map((s) => s.modelId)).toEqual(["m1"]);
     expect(byAgent.series[0]!.requests).toBe(1);
+  });
+});
+
+describe("usage-service: tool requests in the Cost Center", () => {
+  let db: DatabaseSync;
+  let repo: UsageRepo;
+  let svc: UsageService;
+  const CHAT = { cacheRead: 1, cacheWrite: 2, output: 4 };
+  const IMAGE = { cacheRead: 0, cacheWrite: 5, output: 30 };
+  const pricing: Record<string, PricingRates> = { chat: CHAT, image: IMAGE, search: CHAT };
+  const DAY = "2026-07-06";
+
+  beforeEach(() => {
+    db = openDatabase(":memory:");
+    repo = wire(UsageRepo, { db: db });
+    svc = wire(UsageService, {
+      usage: repo,
+      errors: wire(ErrorsRepo, { db: db }),
+      lookupPricing: async (_p: string, _provider: string, modelId: string) => {
+        const rates = pricing[modelId];
+        return rates === undefined ? undefined : { peak: rates, offPeak: rates };
+      },
+      clock: { now: () => new Date(`${DAY}T10:00:00`) },
+    });
+  });
+  afterEach(() => db.close());
+
+  function insert(opts: Partial<Parameters<UsageRepo["insert"]>[0]> = {}): void {
+    repo.insert({
+      ts: `${DAY}T08:00:00.000Z`,
+      date: DAY,
+      projectId: "p1",
+      agentId: "a1",
+      sessionId: "s1",
+      originSessionId: null,
+      provider: "custom",
+      modelId: "chat",
+      cacheRead: 100,
+      cacheWrite: 10,
+      output: 5,
+      total: 115,
+      ...opts,
+    });
+  }
+  const chatCost = (100 * 1 + 10 * 2 + 5 * 4) / 1e6;
+  /** One image request: 200 prompt and 1,000 image output tokens. */
+  const image = (opts: Partial<Parameters<UsageRepo["insert"]>[0]> = {}) =>
+    insert({
+      modelId: "image",
+      cacheRead: 0,
+      cacheWrite: 200,
+      output: 1000,
+      total: 1200,
+      purpose: "@acme/tools:t2i",
+      ...opts,
+    });
+  const imageCost = (200 * 5 + 1000 * 30) / 1e6;
+  /** One search, which MMSP counts as 1,000 prompt tokens. */
+  const search = () =>
+    insert({
+      modelId: "search",
+      cacheRead: 0,
+      cacheWrite: 1000,
+      output: 0,
+      total: 1000,
+      purpose: "@acme/tools:search",
+    });
+  const searchCost = (1000 * 2) / 1e6;
+  const day = { groupBy: "date", from: DAY, to: DAY } as const;
+
+  it("Tokens count chat turns only, while requests and cost count the tool requests, which the summary and the list carry apart", async () => {
+    insert();
+    image();
+    image();
+    search();
+    const res = await svc.query("p1", day);
+    expect(res.summary.today).toMatchObject({
+      total: 115,
+      requests: 4,
+      toolRequests: 3,
+      hasUncosted: false,
+    });
+    expect(res.summary.today.cost).toBeCloseTo(chatCost + 2 * imageCost + searchCost, 12);
+    expect(res.summary.today.toolCost).toBeCloseTo(2 * imageCost + searchCost, 12);
+    // Costliest first.
+    expect(res.tools.map((t) => [t.purpose, t.requests])).toEqual([
+      ["@acme/tools:t2i", 2],
+      ["@acme/tools:search", 1],
+    ]);
+    expect(res.tools[0]!.cost).toBeCloseTo(2 * imageCost, 12);
+    // The Token trend is the chat turn's; the cost trend and the request count are everything's.
+    expect(res.series[0]).toMatchObject({ cacheRead: 100, cacheWrite: 10, output: 5, total: 115 });
+    expect(res.series[0]).toMatchObject({ requests: 4 });
+    expect(res.series[0]!.cost).toBeCloseTo(chatCost + 2 * imageCost + searchCost, 12);
+    expect(res.byModelSeries.map((s) => s.modelId).sort()).toEqual(["chat", "image", "search"]);
+  });
+
+  it("a range with no tool requests has none to list", async () => {
+    insert();
+    const res = await svc.query("p1", day);
+    expect(res.tools).toEqual([]);
+    expect(res.summary.today).toMatchObject({ toolRequests: 0, toolCost: null });
+  });
+
+  it("a tool request of a Session counts in its Session and Agent; one with no Session in the Project's totals alone", async () => {
+    insert();
+    image();
+    image({ agentId: "", sessionId: "" });
+    const res = await svc.query("p1", day);
+    expect(res.summary.today.toolRequests).toBe(2);
+    expect(res.summary.today.cost).toBeCloseTo(chatCost + 2 * imageCost, 12);
+    expect(res.tools[0]).toMatchObject({ purpose: "@acme/tools:t2i", requests: 2 });
+
+    const bySession = await svc.query("p1", { ...day, groupBy: "session" });
+    expect(bySession.groups.map((g) => g.key)).toEqual(["s1"]);
+    expect(bySession.groups[0]!.cost).toBeCloseTo(chatCost + imageCost, 12);
+    const byAgent = await svc.query("p1", { ...day, groupBy: "agent" });
+    expect(byAgent.groups.map((g) => [g.key, g.requests])).toEqual([["a1", 2]]);
+    expect(res.byAgentSeries.map((s) => [s.agentId, s.requests])).toEqual([["a1", [2]]]);
+    expect(res.agentIds).toEqual(["a1"]);
+    const sessions = await svc.costBySession(
+      "p1",
+      ["s1"],
+      "2000-01-01T00:00:00.000Z",
+      "2100-01-01T00:00:00.000Z",
+    );
+    expect(sessions.bySession.get("s1")).toBeCloseTo(chatCost + imageCost, 12);
+  });
+
+  it("a tool request that failed before any usage fails the rate at no cost; a cancelled one is in neither", async () => {
+    // A request the provider was paid for is recorded with its usage, as chat records one, so it
+    // is charged; one that failed or was cancelled before reporting any is a 0-token row.
+    image();
+    image({ status: "fatal", cacheWrite: 0, output: 0, total: 0 });
+    image({ status: "aborted", cacheWrite: 0, output: 0, total: 0 });
+    const res = await svc.query("p1", day);
+    expect(res.summary.today.toolCost).toBeCloseTo(imageCost, 12);
+    expect(res.series[0]).toMatchObject({ requests: 3, completed: 1, denominator: 2 });
+    expect(res.byModelSeries[0]).toMatchObject({ completed: [1], denominator: [2] });
+    expect(res.tools[0]).toMatchObject({ requests: 3 });
+  });
+
+  it("a tool request on an unpriced model is counted and flagged, not priced", async () => {
+    insert({ modelId: "unpriced", purpose: "@acme/tools:t2s" });
+    const res = await svc.query("p1", day);
+    expect(res.tools).toEqual([
+      { purpose: "@acme/tools:t2s", requests: 1, cost: null, hasUncosted: true },
+    ]);
+    expect(res.summary.today).toMatchObject({ toolRequests: 1, toolCost: null, hasUncosted: true });
+  });
+
+  it("a model serving both chat and a tool is one entry in the model totals", () => {
+    insert();
+    insert({ purpose: "@acme/tools:t2t" });
+    expect(svc.modelTotals("p1").totals).toEqual([
+      { provider: "custom", modelId: "chat", tokens: 230, requests: 2 },
+    ]);
   });
 });
 

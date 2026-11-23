@@ -3,7 +3,7 @@
  * Each machine's Agents (lib/machine-agent-lists.ts), as the Agents page, the plugin market and
  * the session list read them.
  *
- * One list across servers (`mixAgents`), as the Agents page and Manage installs show it:
+ * One list across servers (`mixAgents`), as the Agents page and Install on Agent show it:
  * - A machine's Agents fall where their creation puts them among this server's: no machine goes
  *   first.
  * - Agents created at the same moment go by id, then this server's first, then by machine name.
@@ -72,6 +72,19 @@ describe("mixAgents", () => {
       [machine("zeta", [agent("b", at), agent("a", at)]), machine("alpha", [agent("b", at)])],
     );
     expect(read(rows)).toEqual(["a@zeta", "b", "b@alpha", "b@zeta"]);
+  });
+
+  it("retains each host's plugin count for the same Agent id, including an unreported older host", () => {
+    const same = agent("default_agent");
+    const rows = mixAgents(
+      [{ ...same, pluginCount: 0 }],
+      [machine("alpha", [{ ...same, pluginCount: 2 }]), machine("beta", [same])],
+    );
+    expect(rows.map(({ agent, on }) => [on?.machine.label ?? "local", agent.pluginCount])).toEqual([
+      ["local", 0],
+      ["alpha", 2],
+      ["beta", undefined],
+    ]);
   });
 
   it("puts an Agent with no creation time last", () => {

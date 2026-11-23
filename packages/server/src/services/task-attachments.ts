@@ -22,9 +22,10 @@ import {
   modelVisiblePath,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
+import type { RecallableFile } from "@prismshadow/penguin-library-session";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { AttachmentLimits } from "./attachment-limits.js";
+import type { AttachmentLimits } from "@prismshadow/penguin-library-setting/attachment-limits";
 
 /**
  * The size limits are no longer constants here: they are admin-settable (see attachment-limits.ts
@@ -148,16 +149,9 @@ export function parseAttachmentPart(
   return { fileName, bytes, mime: match[1]! };
 }
 
-/**
- * A queued message's file attachment as held for recall: the scratchpad path it was written
- * to, plus what is needed to rebuild the composer-shaped part — the submitted name and media
- * type (the bytes stay on disk; queued entries never hold file payloads in memory).
- */
-export interface RecallableFile {
-  fileName: string;
-  path: string;
-  mime: string;
-}
+/** The recall file shape moved to @prismshadow/penguin-library-session (the AgentState
+ * closed shape reaches it); re-exported here for the existing import paths. */
+export type { RecallableFile };
 
 /**
  * Read recalled attachments back from the scratchpad into the `{fileName, dataUrl}` shape the
@@ -269,7 +263,7 @@ async function writeAttachment(dir: string, attachment: TaskAttachment): Promise
  * `fs.mkdir(…, {recursive:true})` succeeds silently when the directory is already a **symlink**
  * to somewhere else, and nothing downstream would notice — so the result is realpath'd and
  * required to still sit inside the Agent's scratchpad root, the same containment rule the
- * Workspace upload path applies (workspace-files-service.resolveWriteParent). Only the Agent
+ * Workspace upload path applies (the workspace domain library's resolveWriteParent). Only the Agent
  * process can plant such a link and it runs as this server's uid, so this is consistency rather
  * than a privilege boundary; it costs one resolution per message that carries attachments.
  *

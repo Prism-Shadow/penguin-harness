@@ -10,7 +10,7 @@
  * the box as it is typed), and closing one with anything typed asks first. Each form is mounted
  * only while its dialog is open, so every opening starts empty.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { UserInfo } from "@prismshadow/penguin-server/api";
 import {
   Badge,
@@ -18,6 +18,7 @@ import {
   Input,
   Modal,
   PasswordInput,
+  Waiting,
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
@@ -28,11 +29,12 @@ import { apiErrorText } from "../../lib/api-error";
 import { USERNAME_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime } from "../../lib/format";
 import { useAuth } from "../../state/auth";
+import { failureNode } from "../../lib/failure";
 
 export function AdminUsersSection() {
   const { user, desktopMode } = useAuth();
   const [users, setUsers] = useState<UserInfo[] | null>(null);
-  const [listError, setListError] = useState<string | null>(null);
+  const [listError, setListError] = useState<ReactNode>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [resetting, setResetting] = useState<UserInfo | null>(null);
   const [deleting, setDeleting] = useState<UserInfo | null>(null);
@@ -42,7 +44,7 @@ export function AdminUsersSection() {
       setUsers((await api.adminListUsers()).users);
       setListError(null);
     } catch (e) {
-      setListError(apiErrorText(e));
+      setListError(failureNode(e, { what: "the users could not be listed" }));
     }
   }, []);
 
@@ -64,7 +66,7 @@ export function AdminUsersSection() {
       </div>
 
       {users === null ? (
-        <p className="text-sm text-gray-400">{S.common.loading}</p>
+        <Waiting rows={3} />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
           <table className="w-full text-sm">
@@ -157,7 +159,7 @@ function CreateUserDialog({
 function CreateUserForm({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const form = useFormDraft({ userId: "", password: "" });
   /** What the server refused, on the field it is about. Cleared by the next keystroke. */
-  const [refused, setRefused] = useState<{ userId?: string; password?: string }>({});
+  const [refused, setRefused] = useState<{ userId?: ReactNode; password?: ReactNode }>({});
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const id = form.draft.userId.trim();
@@ -184,7 +186,7 @@ function CreateUserForm({ onClose, onDone }: { onClose: () => void; onDone: () =
       if (e instanceof ApiError && e.code === "invalid_password") {
         setRefused({ password: apiErrorText(e) });
       } else {
-        setRefused({ userId: apiErrorText(e) });
+        setRefused({ userId: failureNode(e, { what: "a user could not be created" }) });
       }
     } finally {
       setBusy(false);
@@ -251,7 +253,7 @@ function ResetPasswordDialog({ user, onClose }: { user: UserInfo | null; onClose
 
 function ResetPasswordForm({ user, onClose }: { user: UserInfo; onClose: () => void }) {
   const form = useFormDraft("");
-  const [refused, setRefused] = useState<string | undefined>(undefined);
+  const [refused, setRefused] = useState<ReactNode>(undefined);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const password = form.draft;
@@ -264,7 +266,7 @@ function ResetPasswordForm({ user, onClose }: { user: UserInfo; onClose: () => v
       await api.adminResetPassword(user.userId, { password });
       onClose();
     } catch (e) {
-      setRefused(apiErrorText(e));
+      setRefused(failureNode(e, { what: "a user's password could not be reset" }));
     } finally {
       setBusy(false);
     }
@@ -322,7 +324,7 @@ function DeleteUserDialog({
   onDone: () => void;
 }) {
   const [confirmed, setConfirmed] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -339,7 +341,7 @@ function DeleteUserDialog({
       await api.adminDeleteUser(user.userId);
       onDone();
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a user could not be deleted" }));
     } finally {
       setBusy(false);
     }

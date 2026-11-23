@@ -2,14 +2,15 @@
  * PagedDialog (src/components/overlays/paged-dialog/paged-dialog.tsx): a dialog with a page rail.
  * The rail is a named navigation whose active row is the current page, group headings appear only
  * when there is more than one group and set on the eyebrow rung, the rail glyphs are decorative,
- * and the pane heading is the active page's label with its "?" when the page explains itself.
+ * and the pane heading is the active page's label with its "?" when the page explains itself. A
+ * page's count sits at the end of its row, which then carries the name that includes it.
  */
 import { createElement } from "react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { PagedDialog } from "../src/components/overlays/paged-dialog/paged-dialog";
 import type { PagedDialogGroup } from "../src/components/overlays/paged-dialog/paged-dialog";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 import { stubDialogGlobals } from "./helpers/dialog-env";
 
 vi.mock("react-dom", async (importOriginal) => ({
@@ -53,10 +54,24 @@ describe("PagedDialog", () => {
     expect(html).toMatch(/<nav aria-label="Settings"/);
   });
 
+  it("ends a row with its page's count, under a name that says it", () => {
+    const counted = GROUPS.map((group) => ({
+      ...group,
+      items: group.items.map((item) =>
+        item.key === "account"
+          ? { ...item, badge: createElement("span", null, "3"), ariaLabel: "Account, 3 waiting" }
+          : item,
+      ),
+    }));
+    expect(dialog(counted, "general")).toMatch(
+      /<button[^>]*aria-label="Account, 3 waiting"[^>]*>.*Account.*<span>3<\/span><\/span><\/button>/s,
+    );
+  });
+
   it("marks the active page as the current one, and only it", () => {
     const html = dialog(GROUPS, "appearance");
     expect([...html.matchAll(/aria-current="page"/g)]).toHaveLength(1);
-    expect(html).toMatch(/aria-current="page"[^>]*><span class="min-w-0 truncate">Appearance</);
+    expect(html).toMatch(/aria-current="page"[^>]*><span class="[^"]*">Appearance</);
   });
 
   it("heads the pane with the active page's label, and its explanation behind a ?", () => {
@@ -66,11 +81,10 @@ describe("PagedDialog", () => {
     expect(dialog(GROUPS, "general")).not.toContain("More info");
   });
 
-  it("sets group headings on the eyebrow rung, and drops a lone group's heading", () => {
+  it("sets group headings on the eyebrow hook, and drops a lone group's heading", () => {
     const html = dialog(GROUPS, "general");
     expect(html).toMatch(/<p class="ui-eyebrow [^"]*">App<\/p>/);
     expect(html).toMatch(/<p class="ui-eyebrow [^"]*">You<\/p>/);
-    expect(classTokens(html)).not.toContain("uppercase");
     const lone = dialog([GROUPS[0]!], "general");
     expect(lone).not.toContain("ui-eyebrow");
   });

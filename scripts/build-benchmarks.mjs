@@ -1,5 +1,5 @@
 /**
- * Fetch the Benchmark manifests and Case Markdown at build time for packaging.
+ * Fetch the Benchmark/task manifests and Case Markdown at build time for packaging.
  * Content lives in penguin-harness-benchmark/packages; this repository keeps no copy in git.
  * --refresh takes main again. PENGUIN_BENCHMARKS_SOURCE can name a local packages/ directory
  * when developing both repositories.
@@ -78,6 +78,10 @@ export async function buildBenchmarks({ refresh = false } = {}) {
           const target = path.join(dest, item.name, part);
           await fs.mkdir(target, { recursive: true });
           await fs.writeFile(path.join(target, "README.md"), text, "utf8");
+        }
+        const taskConfig = path.join(caseDir, "task_config.toml");
+        if (existsSync(taskConfig)) {
+          await fs.copyFile(taskConfig, path.join(dest, item.name, "task_config.toml"));
         }
         cases.push({
           id: item.name,

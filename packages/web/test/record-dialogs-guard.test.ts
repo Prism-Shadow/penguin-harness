@@ -4,8 +4,8 @@
  * hand in the add dialog (features/machines/add-machine-dialog.tsx), and a host's configure
  * dialog (features/machines/ssh-host-dialog.tsx) — the manual Benchmark form
  * (features/benchmark/create-benchmark-modal.tsx), the chat's shortcut editor
- * (features/chat/shortcuts-folder.tsx) and the built-in browser's homepage
- * (features/builtin-browser/homepage-dialog.tsx).
+ * (features/chat/saved-prompts.tsx) and the built-in browser's homepage
+ * (plugins/browser-automation/src/web/homepage-dialog.tsx).
  *
  * - The verb waits for what it needs: a new ssh host's name and address, a malformed value — or a
  *   name the page already has — said under its field as it is typed; a change to a configured
@@ -21,10 +21,13 @@
  *   question.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { createElement as h, Fragment } from "react";
-import type { ReactElement } from "react";
+import { createElement as h, Fragment, type ReactElement } from "react";
+
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { en as browserEn } from "../../../plugins/browser-automation/src/web/strings";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
 import type {
   MachineInfo,
@@ -34,8 +37,8 @@ import type {
 import { AddMachineDialog } from "../src/features/machines/add-machine-dialog";
 import { SshHostDialog } from "../src/features/machines/ssh-host-dialog";
 import { CreateBenchmarkModal } from "../src/features/benchmark/create-benchmark-modal";
-import { ShortcutsFolder } from "../src/features/chat/shortcuts-folder";
-import { HomepageDialog } from "../src/features/builtin-browser/homepage-dialog";
+import { SavedPrompts } from "../src/features/chat/saved-prompts";
+import { HomepageDialog } from "../../../plugins/browser-automation/src/web/homepage-dialog";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import {
   button,
@@ -268,13 +271,12 @@ describe("record dialogs", () => {
       };
     }
 
-    async function openFolder() {
+    async function openShortcuts() {
       const server = prefsServer();
       await mount(
         withPrompt(
-          h(ShortcutsFolder, {
-            open: true,
-            onOpen: () => {},
+          h(SavedPrompts, {
+            locale: "en",
             readComposerText: () => "Summarize the diff",
             onFill: () => {},
           }),
@@ -284,8 +286,27 @@ describe("record dialogs", () => {
       return server;
     }
 
+    it("reloads saved shortcuts before allowing edits when the initial read fails", async () => {
+      const stored = { id: "sc-notes", title: "Notes", prompt: "Summarize my notes" };
+      let reads = 0;
+      stubFetch((req) => {
+        expect(req.path).toBe("/api/me/prefs");
+        expect(req.method).toBe("GET");
+        return ++reads === 1
+          ? apiError(500, "internal")
+          : json({ prefs: { draftShortcuts: [stored] } });
+      });
+      await mount(h(SavedPrompts, { locale: "en", readComposerText: () => "", onFill: () => {} }));
+      await waitFor(() => hasButton(s.retry));
+      expect(hasButton(s.new)).toBe(false);
+      expect(hasButton(s.manage)).toBe(false);
+      await click(button(s.retry));
+      await waitFor(() => hasButton(stored.title));
+      expect(hasButton(s.manage)).toBe(true);
+    });
+
     it("keeps the dialog and the typing when the write is refused, and lists the shortcut once it lands", async () => {
-      const server = await openFolder();
+      const server = await openShortcuts();
       await click(button(s.new));
       await type(field(s.titleLabel), "Diff summary");
       server.refuseNext();
@@ -301,7 +322,7 @@ describe("record dialogs", () => {
     });
 
     it("saves a new shortcut as the composer filled it, and closes it untouched without a question", async () => {
-      await openFolder();
+      await openShortcuts();
       await click(button(s.new));
       expect(button(en.common.save).disabled).toBe(false);
       await pressEscape();
@@ -316,7 +337,7 @@ describe("record dialogs", () => {
   });
 
   describe("the homepage", () => {
-    const bb = en.builtinBrowser;
+    const bb = browserEn.builtinBrowser;
 
     it("waits for an entry that opens another page than the saved one, and asks before Esc drops it", async () => {
       stubFetch(() => apiError(404, "not_found"));

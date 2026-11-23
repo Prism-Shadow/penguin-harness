@@ -92,6 +92,7 @@ From top to bottom, the sidebar holds:
 | --- | --- | --- |
 | **New chat** | Open a new conversation draft | [Chat](/chat) |
 | **Agents** | Create agents and edit their prompt, memory, runtime, tools, Skills, hooks, Vault and scheduled tasks | [Agents](/agents) |
+| **App Center** | Shortcuts to the workbenches of the Project's agents, a home screen for the apps they host | [The App Center](#the-app-center) |
 | **Models** | Configure the Project's models, providers and credentials | [Models](/models) |
 | **Plugins** | Browse plugins, install their Skills and hook packages onto agents, and add server plugins to the Project | [Skills](/skills) |
 | **Machines** | Install this PenguinHarness build on other hosts over ssh and manage the connections to them (admins only) | [Security Model](/security#manage-remote-machines-over-ssh) |
@@ -106,7 +107,7 @@ From top to bottom, the sidebar holds:
 
 ### Favorite and collapsible entries
 
-**New chat** always shows. **Agents**, **Models** and **Plugins** are favorites by default: they always show. The other entries sit in a collapsible area under them, and the chevron bar at the bottom of that area folds it away or opens it again. The area starts open, and the browser remembers whether you folded it.
+**New chat** always shows. **Agents**, **App Center**, **Models** and **Plugins** are favorites by default: they always show. The other entries sit in a collapsible area under them, and the chevron bar at the bottom of that area folds it away or opens it again. The area starts open, and the browser remembers whether you folded it.
 
 To change which entries are favorites:
 
@@ -142,6 +143,26 @@ On a narrow window, the sidebar hides behind a menu button in a top bar and open
 
 The interface language (English / 中文 / System) and the theme (Light / Dark / System) can be switched at any time in [Settings](/settings), and on the login page. Both are saved with your account, so every browser you sign in from uses them; a choice made on the login page is saved to the account that signs in next.
 
+## The App Center
+
+The **App Center** is the Project's home screen: a grid of tiles, one for each workbench of the Project's agents that is set to show there. A workbench is a page an agent hosts beside the chat; see [Workbench plugins](/skills#workbench-plugins). A tile is the workbench's icon, or a coloured letter when it has none, and its name, as on a phone. Hover a tile to see its full name and the agent it belongs to.
+
+Select a tile to open the workbench in a window over the grid. The sidebar stays, and the window's close button brings you back to the grid. To open it full screen instead, right-click the tile and choose **Open full screen**; that page's **Exit full screen** button brings you back.
+
+While a workbench is still being built, its tile is dimmed under a turning ring, and it opens once the build is done; the tile turns live on its own. A tile whose last build failed is dimmed and marked with a warning icon. It still opens, and **Show error** in its menu shows what went wrong.
+
+You arrange the tiles yourself. Drag a tile between two others to move it, or drop it onto another tile to make a folder of the two, called **New folder** until you rename it; drop a tile onto a folder to add it. While you drag, a line marks where the tile would go, and a ring marks the tile or folder it would join. Select a folder to open it over the grid, and drag a tile out of it to take it out.
+
+To make a folder without dragging, select **New folder** at the top of the page. Name the folder and check the apps to put in it; an app that is already in a folder says which one, and leaves it when you check it. The new folder takes the place of the first app you checked.
+
+Your arrangement is kept with your account, for each Project, so it follows you to other browsers. A workbench added later goes at the end. A folder stays as long as it holds an app, even just one, and goes away once it is empty.
+
+Every tile has a menu: right-click it, focus it and press Shift+F10 or the menu key, or press and hold it on a touch screen. Besides opening the workbench, it moves the tile forward or backward, moves it into a new folder, into an existing one or into a new one with another app (**Move to…**), takes it out of its folder, removes it from the App Center, and opens the agent's settings on the Workbenches sub-page of its Plugins tab. A folder's menu opens, renames and ungroups it. The menu of the grid's empty space has **New folder…** and **Restore default order**, which clears your arrangement after asking.
+
+Every workbench appears here unless its own `package.json` sets `penguin.appCenter.show` to `false`. To take one off or bring it back, use the **Show in the App Center** switch on its row on the agent's [Workbenches](/agents#workbenches) sub-page, or the same item in the row's **More** menu. A workbench that is turned off there has no tile. With nothing to show yet, the page explains what a workbench is and offers **Create with AI**, which asks an agent to build one and put it here.
+
+The App Center lists the agents of the server you are signed in to. Workbenches of agents on connected machines open from those agents' settings instead.
+
 ## Projects and members
 
 A Project holds its agents, models, Benchmarks, and conversations. The Project switcher at the top of the sidebar lists the Projects you own or belong to, each with its role (`owner` or `member`), and switches between them. The same menu has **New Project** and **Project settings**.
@@ -170,7 +191,7 @@ The id is 2–64 characters long. It starts with a lowercase letter and uses onl
 | **General** | The display name, the **Project ID**, and **Delete Project**, which removes the Project's directory recursively and cannot be undone |
 | **Members** | Who belongs to the Project, and with what role. The owner adds an existing user by username (**Add member**) and removes members (**Remove**). Not in the desktop app. |
 | **Defaults** | **New chat defaults**: the agent, working directory, approval mode, thinking level and default model that every new chat starts with |
-| **Security policy** | Command policy rules. A command matching an enabled rule is refused, whatever the approval mode. See [Command policy](/configuration#command-policy) |
+| **Security policy** | Command policy rules. A command matching an enabled rule waits for a person's go-ahead or is refused, as the rule says, whatever the approval mode. See [Command policy](/configuration#command-policy) |
 
 ### Roles
 
@@ -181,7 +202,7 @@ The owner alone can:
 - Rename or delete the Project, manage its members, and change **Defaults** and **Security policy**. Members see these pages read-only.
 - Change models, Vault, and scheduled tasks.
 - Create and delete Benchmarks, delete agents, clear Cost Center errors, and set up remote control.
-- Import agent snapshots, memory, and Traces.
+- Overwrite or replace an agent from a file, and import memory and Traces.
 
 Members can still create agents and conversations, and delete conversations, Skills, hook packages, and memory files.
 
@@ -194,7 +215,7 @@ Many things the Web App creates from a form can also be described to an agent in
 
 | What you can create | Where |
 | --- | --- |
-| An agent | The Agents page |
+| An agent | The Agents page. Its **Import agent** dialog pairs the two paths for an agent from elsewhere: migrate another framework's agent in a conversation, or import an exported file |
 | A model group | The Models page |
 | A Benchmark | The Evaluation Center |
 | A vault secret | An agent's Vault tab |

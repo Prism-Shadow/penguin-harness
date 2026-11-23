@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getMessages, maskApiKey, resolveLanguage } from "../src/i18n.js";
+import { browserEn, browserZh } from "@penguinharness/browser-automation/cli";
+import { getMessages, maskApiKey, resolveLanguage } from "@prismshadow/penguin-server/cli";
+import { bootBuiltinCommands } from "../src/cli-commands.js";
 
 describe("resolveLanguage (env PENGUIN_LANG, default en)", () => {
   let prev: string | undefined;
@@ -40,7 +42,6 @@ describe("getMessages", () => {
     // Command/option descriptions are also localized.
     expect(getMessages("zh").config.addDesc).toContain("模型");
     expect(getMessages("en").config.addDesc).toContain("model");
-    expect(getMessages("en").run.desc).toContain("Task");
     // config lang copy.
     expect(getMessages("zh").config.langDesc).toContain("语言");
     expect(getMessages("en").config.langDesc).toContain("language");
@@ -85,12 +86,12 @@ describe("getMessages", () => {
       expect(m.switchModelUnavailable("b (q)", "no key")).toContain("no key");
       expect(m.switchModelUnavailable("b (q)", "")).not.toMatch(/[:：]$/);
       expect(m.switchModelBusy().length).toBeGreaterThan(0);
-      expect(m.switchModelNoCompaction().length).toBeGreaterThan(0);
+      expect(m.switchModelHandedOver("/t/s_001.jsonl")).toContain("/t/s_001.jsonl");
     }
     // Two languages, not one copied twice.
     expect(zh.switchModelDone("a", "b")).not.toBe(en.switchModelDone("a", "b"));
     expect(zh.switchModelBusy()).not.toBe(en.switchModelBusy());
-    expect(zh.switchModelNoCompaction()).not.toBe(en.switchModelNoCompaction());
+    expect(zh.switchModelHandedOver()).not.toBe(en.switchModelHandedOver());
   });
 
   it("server-backed command families exist in both languages (spot checks)", () => {
@@ -102,7 +103,6 @@ describe("getMessages", () => {
       expect(m.log.desc.length).toBeGreaterThan(0);
       expect(m.agent.lsDesc.length).toBeGreaterThan(0);
       expect(m.project.lsDesc.length).toBeGreaterThan(0);
-      expect(m.cost.desc.length).toBeGreaterThan(0);
       expect(m.schedule.lsDesc.length).toBeGreaterThan(0);
       // Interpolating messages carry their arguments in both languages.
       expect(m.ls.empty("proj-x")).toContain("proj-x");
@@ -165,19 +165,21 @@ describe("getMessages", () => {
       );
       expect(m.org.ticketHead("2026-09-02-site", "review", false, "waiting")).toContain("waiting");
       expect(m.org.financeTotal("2026-09", "$1.0000")).toContain("2026-09");
-      // The built-in browser family: the error line keeps its code, the hint names the app.
-      expect(m.browser.execDesc.length).toBeGreaterThan(0);
-      expect(m.browser.errorLine("no_such_tab", "gone")).toContain("no_such_tab");
-      expect(m.browser.errorLine("no_such_tab", "gone")).toContain("gone");
+      // The built-in browser family (its CLI module's own group): the error line keeps its code,
+      // the hint names the app.
+      const browser = (lang === "zh" ? browserZh : browserEn).browser;
+      expect(browser.execDesc.length).toBeGreaterThan(0);
+      expect(browser.errorLine("no_such_tab", "gone")).toContain("no_such_tab");
+      expect(browser.errorLine("no_such_tab", "gone")).toContain("gone");
       for (const reason of [undefined, "not_desktop", "shell_unsupported", "no_window"]) {
-        expect(m.browser.unavailableHint(reason)).toContain("PenguinHarness");
+        expect(browser.unavailableHint(reason)).toContain("PenguinHarness");
       }
-      expect(m.browser.tabHead(12, "Orders", "https://a.example/", false)).toContain("12");
-      expect(m.browser.sourceNotFound("safari", ["chrome"])).toContain("safari");
-      expect(m.browser.elementsChanged(14)).toContain("14");
+      expect(browser.tabHead(12, "Orders", "https://a.example/", false)).toContain("12");
+      expect(browser.sourceNotFound("safari", ["chrome"])).toContain("safari");
+      expect(browser.elementsChanged(14)).toContain("14");
     }
-    expect(getMessages("zh").browser.unavailableHint(undefined)).not.toBe(
-      getMessages("en").browser.unavailableHint(undefined),
+    expect(browserZh.browser.unavailableHint(undefined)).not.toBe(
+      browserEn.browser.unavailableHint(undefined),
     );
     // Argument errors really are translated, not the English text twice.
     expect(getMessages("zh").usage.missingArgument("sessionId")).not.toBe(
@@ -188,8 +190,6 @@ describe("getMessages", () => {
     );
     // The dictionaries are genuinely two languages, not one copied twice.
     expect(getMessages("zh").ls.desc).not.toBe(getMessages("en").ls.desc);
-    expect(getMessages("zh").org.desc).not.toBe(getMessages("en").org.desc);
-    expect(getMessages("zh").session.desc).not.toBe(getMessages("en").session.desc);
     expect(getMessages("zh").session.renamed("s", "t")).not.toBe(
       getMessages("en").session.renamed("s", "t"),
     );
@@ -210,6 +210,21 @@ describe("getMessages", () => {
       expect(lines[3]).toContain("mod");
       expect(lines[4]).toContain("http://localhost:7368 (/dev)");
     }
+  });
+});
+
+describe("command summaries (declared with each command)", () => {
+  it("every command of the CLI is summarized in both languages, and not with one text twice", async () => {
+    const summaries = new Map(
+      (await bootBuiltinCommands()).map((command) => [command.key, command.summary]),
+    );
+    for (const summary of summaries.values()) {
+      expect(summary.en.length).toBeGreaterThan(0);
+      expect(summary.zh.length).toBeGreaterThan(0);
+      expect(summary.zh).not.toBe(summary.en);
+    }
+    expect(summaries.get("run")!.en).toContain("Task");
+    expect(summaries.get("cost")!.zh).toContain("Token");
   });
 });
 

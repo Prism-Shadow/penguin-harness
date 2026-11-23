@@ -98,8 +98,9 @@ and `check-publishable.mjs` fails if a published package depends on it.
 | `CHANGELOG.md`, `CHANGELOG.zh.md` | One line at the top, linking `changelog/<version>/`. |
 | `packages/web/src/lib/release-notes-data.ts` | One entry at the top: the version, the release line's date, and 2–5 short user-facing lines in zh and in en (App Store "What's New" register, no internal names). The App info dialog renders it; it is edited here and nowhere else. |
 | `README.md`, `README.zh.md` | The Docker example pins the exact version (`hiyouga/penguinharness:<version>`). |
-| `package.json`, `packages/*/package.json`, `plugins/*/package.json` | Version, in lockstep. |
+| `package.json`, `packages/*/package.json`, `plugins/*/package.json` | Version, in lockstep, except the plugins in `scripts/lib/own-version-plugins.mjs`. |
 | `packages/core/src/index.ts` | `export const VERSION`. |
+| `packages/server/src/plugin/builtin-market.json`, `packages/server/src/plugin/market-covers/` | Refreshed from the community repository's `main` (`Prism-Shadow/penguin-harness-community`, a fresh checkout): `node scripts/sync-market-assets.mjs <community checkout>` copies `assets/plugins/market.json` over `builtin-market.json`, and replaces `market-covers/` with every built-in plugin's `cover.webp` and `cover-640.webp` as the document names them. It prints the bytes the build now carries. Then `pnpm exec prettier --write packages/server/src/plugin/builtin-market.json`, so only the formatting differs. The server answers with this copy and these covers until the published document arrives, and serves the covers offline; the landing site falls back to the copy. Run the server's `plugin-market.test.ts` afterwards: a copy the server refuses fails it. Screenshots are not copied; the server fetches them. |
 | `packages/landing/content/blog/penguinharness-<v-with-dashes>.{en,zh}.md` | The post pair. |
 | `packages/landing/test/blog.test.ts` | The new slug joins the expected list. |
 
@@ -108,7 +109,19 @@ previous release's number without thinking about it. For the rest, decide and re
 in the PR body:
 
 - `plugins/sandbox-*` track their own line deliberately — leave them. The release stamps the
-  tag's version on them when it publishes, as on every plugin.
+  tag's version on them when it publishes, as on every plugin but the next case.
+- A plugin listed in `scripts/lib/own-version-plugins.mjs` (`computer-use`) carries its own
+  version — leave it. The stamp and the npm chain skip it; the release job attaches its tarball to
+  the Release (`scripts/pack-own-plugins.mjs`), and `publish-own-plugins` publishes that file to
+  npm once the repository variable `NPM_TRUSTED_PUBLISHING` is `true`. Its version moves in the
+  pull request that changes the package (`check-plugin-versions.mjs`), never at release.
+- An external built-in plugin (a `@penguinharness/*` package from another repository, pinned in
+  `packages/server`, `packages/cli` and `packages/desktop`; `plugins/README.md`) is not on the
+  release's line at all. The stamp and `check-plugin-versions.mjs` leave it alone and the release
+  publishes nothing for it; its version moves only through a pin-raising pull request (the three
+  pins, its `minimumReleaseAgeExclude` entry, `pnpm install`) after its own release is registered
+  in the plugin index. The build fetches its locked tarball, so a release run needs npm (or the
+  index's github channel) the way it needs the registry for the native dependencies.
 - A package created mid-cycle at whatever number its author typed is the other case. `packages/hmr`
   arrived from #656 at 0.2.9 and was pulled into lockstep at 0.2.12: it is `private: true` and never
   published, so nothing ships wrong either way, and a package inside `packages/*` sitting three
@@ -146,7 +159,7 @@ host. Screenshots are named `penguinharness-<v-with-dashes>-<feature>-<lang>.png
 per UI language** — the post pair references `-en.png` and `-zh.png` separately.
 
 The assets live in the sibling `Prism-Shadow/penguin-harness-community` repo under
-`blog-assets/`, not here.
+`assets/blog-assets/`, not here.
 
 ## Screenshots
 

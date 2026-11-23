@@ -16,8 +16,8 @@
  * The server has no per-Session schedule field and no push channel for the schedule directories —
  * an agent may write a task file at any moment — so the store decides *when* to look: on
  * navigation (the Project or the Session on screen changing), whenever the window regains focus
- * while a reader is mounted, on the `schedule_fired` / `schedule_queued` events (wired in
- * state/sessions.tsx), on the panel's slow poll while it is on screen, after every mutation the
+ * while a reader is mounted, on the `schedule_fired` / `schedule_queued` events
+ * (`scheduleUserEvents`, this feature's share of the user event stream), on the panel's slow poll while it is on screen, after every mutation the
  * panel makes, and on the edge where a turn settles (chat-page.tsx) — a turn may have written a
  * task file of its own.
  *
@@ -35,10 +35,11 @@
  * of them. A machine's schedule events reach the store through this server's relay, as that
  * machine's.
  */
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import type { ProjectScheduleItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
+import type { UserEventHandler } from "../../state/user-events";
+import { failureNode } from "../../lib/failure";
 
 interface Entry {
   projectId: string;
@@ -46,8 +47,11 @@ interface Entry {
   machineId: string | null;
   /** Null until this Project has answered once; a refetch keeps the list it already has. */
   items: ProjectScheduleItem[] | null;
-  /** Last failure text, cleared by the next success. The panel shows it only while `items` is null. */
-  error: string | null;
+  /**
+   * Last failure, as the panel says it (with 「[报告问题]」 for a failure), cleared by the next
+   * success. The panel shows it only while `items` is null.
+   */
+  error: ReactNode;
   /** This Project's request: concurrent readers share it, another Project gets its own. */
   inflight: Promise<void> | null;
   /** Mounted readers of this Project (retainSchedules); zero means nothing on screen shows this list. */
@@ -119,11 +123,11 @@ export function scheduleItemsAcross(
   ];
 }
 
-/** This Project's last failure text on that server, or null. */
+/** This Project's last failure on that server, or null. */
 export function scheduleError(
   projectId: string | null,
   machineId: string | null = null,
-): string | null {
+): ReactNode {
   return peek(projectId, machineId)?.error ?? null;
 }
 
@@ -147,7 +151,7 @@ export function refreshSchedules(
       entry.error = null;
     } catch (e) {
       // The list it already has stays: a refetch failing is not news that the tasks are gone.
-      entry.error = apiErrorText(e);
+      entry.error = failureNode(e, { what: "a Project's scheduled tasks could not be listed" });
     } finally {
       entry.inflight = null;
     }
@@ -178,7 +182,7 @@ export function retainSchedules(
 }
 
 /**
- * A schedule event landed for some Project on some server (state/sessions.tsx, chat-page.tsx):
+ * A schedule event landed for some Project on some server (scheduleUserEvents, chat-page.tsx):
  * refresh only when that Project's list on that server is on screen, so a task firing in another
  * Project, or on a machine nothing shows, costs no request.
  */
@@ -187,6 +191,20 @@ export function noteScheduleEvent(projectId: string, machineId: string | null = 
   if (entry === undefined || entry.readers === 0) return;
   void refreshSchedules(projectId, machineId);
 }
+
+/**
+ * The schedules' handler on the user event stream (`SessionsModule.userEvents`). Either schedule
+ * event moves a task's state — nextFireAt, lastFiredAt, the queued flag, or a one-off going
+ * done — so the conversation's schedule list is stale from here; `noteScheduleEvent` decides
+ * whether the Project on that server is on screen.
+ */
+export const scheduleUserEvents: UserEventHandler = {
+  event: (ev, source) => {
+    if (ev.type === "schedule_fired" || ev.type === "schedule_queued") {
+      noteScheduleEvent(ev.projectId, source);
+    }
+  },
+};
 
 /** Regaining focus re-reads every list a mounted reader is showing, and no other. */
 const onFocus = (): void => {
@@ -227,7 +245,7 @@ export function useProjectSchedules(
   refreshKey: string,
   /** The server the reader shows: a machine's own id, or null for this one. */
   machineId: string | null = null,
-): { items: ProjectScheduleItem[] | null; error: string | null } {
+): { items: ProjectScheduleItem[] | null; error: ReactNode } {
   useSyncExternalStore(subscribeSchedules, schedulesVersion, schedulesVersion);
   // Held for as long as this reader is mounted, and deliberately not keyed on `refreshKey`:
   // moving between two conversations of one Project must not release the entry and take it again.

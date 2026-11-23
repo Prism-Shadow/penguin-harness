@@ -9,6 +9,9 @@
  */
 import type {
   AgentApiSettings,
+  AppCenterResponse,
+  WorkbenchInfo,
+  AppCenterShortcut,
   AgentConfigResponse,
   AgentSummary,
   BenchmarkCaseSummary,
@@ -20,17 +23,24 @@ import type {
   DirListResponse,
   HookItem,
   InstalledPluginsResponse,
+  PluginModuleRequest,
+  PluginModuleStatus,
   MachinesResponse,
   MeResponse,
   MemberInfo,
   MemoryFileResponse,
+  MemoryFolderFile,
   MemoryOverviewResponse,
   ModelEffectiveConnection,
   ModelInfo,
+  MarketPopularity,
   ModelsResponse,
+  PluginArt,
   PluginConfigEntry,
   PluginIndexResponse,
+  PluginItem,
   PluginLibraryResponse,
+  PluginMarketResponse,
   ProjectScheduleItem,
   ProviderConnectionDto,
   ProjectSummary,
@@ -65,7 +75,16 @@ import bundledBenchmarks from "../../../../../node_modules/.cache/penguin-benchm
 import type { AmspRecord } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
-import { agentEvaluationPlugin, rsiToolkitPlugins } from "./library-plugins";
+import {
+  agentEvaluationPlugin,
+  goalPlugin,
+  marketPlugins,
+  penguinSupportPlugin,
+  rsiToolkitPlugins,
+  shippedIcon,
+} from "./library-plugins";
+// The market's curation as this build embeds it: its paths are the gallery's static files.
+import builtinMarket from "../../../../server/src/plugin/builtin-market.json";
 import {
   docsAgentsMd,
   RSI_ROUND,
@@ -94,6 +113,95 @@ type BuiltinBenchmark = Pick<
   cases: Array<{ id: string; title: string; statement: string; rubric: string }>;
 };
 const BUILTIN_BENCHMARKS = bundledBenchmarks as BuiltinBenchmark[];
+
+/** The curation document's shape (plugin/builtin-market.json): paths relative to its folder. */
+interface MarketDocument {
+  hero: string[];
+  selected: string[];
+  popularity?: MarketPopularity;
+  plugins: Record<
+    string,
+    {
+      cover?: { src: string; thumb?: string; tone?: string };
+      icon?: string;
+      screenshots?: Array<{ src: string; thumb?: string; caption?: string; captionZh?: string }>;
+    }
+  >;
+}
+
+/** The covers this build ships beside its curation (server/src/plugin/market-covers/<dir>/). */
+const BUNDLED_PICTURES = import.meta.glob<string>(
+  "../../../../server/src/plugin/market-covers/**/*.{webp,png,jpg}",
+  { eager: true, query: "?url", import: "default" },
+);
+/**
+ * A local copy of the community repository's `assets/plugins/` (packages/ui-gallery/market-assets/,
+ * never committed): the screenshots and anything else the build does not ship, for whoever wants
+ * the gallery's market with every picture.
+ */
+const LOCAL_PICTURES = import.meta.glob<string>("../../../market-assets/**/*.{webp,png,jpg}", {
+  eager: true,
+  query: "?url",
+  import: "default",
+});
+
+/** A path of the document as a URL the gallery serves, or undefined when it has no such picture. */
+function pictureUrl(path: string): string | undefined {
+  return (
+    BUNDLED_PICTURES[`../../../../server/src/plugin/market-covers/${path}`] ??
+    LOCAL_PICTURES[`../../../market-assets/${path}`]
+  );
+}
+
+/**
+ * GET /api/plugins/market as the server answers from the document this build embeds, with its
+ * popularity figures (placeholders, as the document's are for now). The server serves each
+ * picture from its own route; the gallery has none, so a picture is the cover this build ships,
+ * else the local copy of the community assets, and a picture it has neither of is left out — a
+ * cover then falls back to the generated one, as on a server that could not fetch it.
+ */
+function marketFixture(): PluginMarketResponse {
+  const doc = builtinMarket as MarketDocument;
+  const art: Record<string, PluginArt> = {};
+  for (const [name, entry] of Object.entries(doc.plugins)) {
+    const cover = entry.cover === undefined ? undefined : pictureUrl(entry.cover.src);
+    const thumb = entry.cover?.thumb === undefined ? undefined : pictureUrl(entry.cover.thumb);
+    const icon = entry.icon === undefined ? undefined : pictureUrl(entry.icon);
+    const screenshots = (entry.screenshots ?? []).flatMap((shot) => {
+      const url = pictureUrl(shot.src);
+      const thumbUrl = shot.thumb === undefined ? undefined : pictureUrl(shot.thumb);
+      if (url === undefined) return [];
+      return [
+        {
+          url,
+          ...(thumbUrl !== undefined ? { thumbUrl } : {}),
+          ...(shot.caption !== undefined ? { caption: shot.caption } : {}),
+          ...(shot.captionZh !== undefined ? { captionZh: shot.captionZh } : {}),
+        },
+      ];
+    });
+    art[name] = {
+      ...(cover !== undefined
+        ? {
+            cover: {
+              url: cover,
+              ...(thumb !== undefined ? { thumbUrl: thumb } : {}),
+              ...(entry.cover?.tone !== undefined ? { tone: entry.cover.tone } : {}),
+            },
+          }
+        : {}),
+      ...(icon !== undefined ? { icon: { url: icon } } : {}),
+      ...(screenshots.length > 0 ? { screenshots } : {}),
+    };
+  }
+  return {
+    hero: doc.hero,
+    selected: doc.selected,
+    art,
+    source: "embedded",
+    ...(doc.popularity !== undefined ? { popularity: doc.popularity } : {}),
+  };
+}
 
 /**
  * What a model is used with, as GET /models reports it: its own values, else its group's
@@ -154,6 +262,13 @@ export const DEFAULT_MODEL: ModelRef = {
 // Rows
 // ---------------------------------------------------------------------------------------------
 
+/** A file a demo memory keeps in its folder, with its text: what the file route reads back. */
+export interface DemoKeptFile {
+  scopeKey: string;
+  file: MemoryFolderFile;
+  content: string;
+}
+
 export interface DemoFixtures {
   lang: Lang;
   now: number;
@@ -171,9 +286,31 @@ export interface DemoFixtures {
   schedules: ProjectScheduleItem[];
   library: PluginLibraryResponse;
   pluginFiles: Record<string, Record<string, string>>;
-  installed: Record<string, { skills: SkillMetadataItem[]; hooks: HookItem[] }>;
+  /**
+   * Installed parts and the workbench settings for each Agent in this demo, and the workbenches
+   * library plugins installed on it (`pluginWorkbenches`, the Agent's plugin listing).
+   */
+  installed: Record<
+    string,
+    {
+      skills: SkillMetadataItem[];
+      hooks: HookItem[];
+      workbenches?: WorkbenchInfo[];
+      pluginWorkbenches?: Array<{ name: string; plugin: string; version: string }>;
+      workbenchesOff?: boolean;
+    }
+  >;
   installedPlugins: InstalledPluginsResponse;
+  /**
+   * How the library's server modules stand on the demo's server, and the administrator's ledger
+   * of requests to run them: none by default — the demo library has no plugin that is both — so
+   * a suite or a frame that wants the section populated puts its rows here.
+   */
+  pluginModules: PluginModuleStatus[];
+  pluginModuleRequests: PluginModuleRequest[];
   pluginIndex: PluginIndexResponse;
+  /** The market's curation: the selected plugins, which may lead, and their art. */
+  market: PluginMarketResponse;
   readmes: Record<string, string>;
   benchmarks: BenchmarkSummary[];
   benchmarkCases: Record<string, BenchmarkCaseSummary[]>;
@@ -181,7 +318,15 @@ export interface DemoFixtures {
   machines: MachinesResponse;
   version: VersionResponse;
   update: UpdateCheckResponse;
-  memory: Record<string, { overview: MemoryOverviewResponse; files: MemoryFileResponse[] }>;
+  memory: Record<
+    string,
+    {
+      overview: MemoryOverviewResponse;
+      files: MemoryFileResponse[];
+      /** The files the topics keep in their folders (`<topic>/<path>`), each with its text. */
+      folderFiles: DemoKeptFile[];
+    }
+  >;
   vault: Record<string, VaultResponse>;
   /** Each Agent's public API settings, keyed by Agent id; an Agent missing here never had them set. */
   agentApi: Record<string, AgentApiSettings>;
@@ -194,6 +339,8 @@ export interface DemoFixtures {
   context: SessionContextResponse;
   usage: UsageDay[];
   usageErrors: UsageErrorItem[];
+  /** The App Center: a tile in each build state, and a folder in the viewer's arrangement. */
+  appCenter: AppCenterResponse;
 }
 
 /** One day of one Agent on one model, the grain the usage routes aggregate from. */
@@ -209,9 +356,14 @@ export interface UsageDay {
   requests: number;
   completed: number;
   aborted: number;
+  /**
+   * A plugin's tool requests (`<package>:<operation>`): requests and cost like the rest, but
+   * their Tokens stay out of the Token figures. Absent on a chat turn's day.
+   */
+  purpose?: string;
 }
 
-export function buildFixtures(lang: Lang, now: number): DemoFixtures {
+export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFixtures {
   const L = <T>(zh: T, en: T): T => (lang === "zh" ? zh : en);
   const ago = (days: number, minutes = 0) => now - days * DAY - minutes * 60_000;
 
@@ -251,6 +403,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "回答关于 Claude Code 文档的问题，每条结论都引用语料库里的真实文件。",
         "Answers questions about the Claude Code docs, citing a real corpus file for every claim.",
       ),
+      author: "user",
       createdAt: iso(ago(90)),
       // The self-evolution round's accepted candidate: its version, written when the round edited it.
       updatedAt: iso(rsi.evaluatedAt),
@@ -265,7 +418,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       workbenchCount: 0,
       skillCount: 3,
       hookCount: 1,
-      pluginUpdates: [{ name: IDS.plugins.registry, version: "2026.09.20.1" }],
+      pluginUpdates: embedded ? [] : [{ name: IDS.plugins.registry, version: "2026.09.20.1" }],
       memoryCount: 4,
       // Its API is on: see `agentApi` below.
       apiEnabled: true,
@@ -277,6 +430,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "从变更日志起草发布说明，中英各一份。",
         "Drafts release notes from the changelog, in both languages.",
       ),
+      // Made by the general agent through "Create with AI", so the list shows a second group.
+      author: "agent",
       createdAt: iso(ago(40)),
       updatedAt: iso(ago(6)),
       activeSessionCount: 0,
@@ -284,7 +439,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       sessionActivity: activity(11, 2),
       toolCount: 4,
       version: 3,
-      kernelOutdated: true,
+      kernelOutdated: !embedded,
       vaultKeyCount: 0,
       scheduleCount: 1,
       workbenchCount: 0,
@@ -337,6 +492,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     config: {
       name: agent.name,
       description: agent.description,
+      author: agent.author ?? "user",
       version: agent.version,
       kernelVersion: agent.kernelOutdated ? "2026-08-20" : "2026-09-11",
       kernelLatest: "2026-09-11",
@@ -344,7 +500,16 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       systemPrompt,
       maxTurns: 40,
       model: { maxTokens: 32_000, thinkingLevel: "medium", timeoutMs: 120_000 },
-      compaction: { maxContextLength: 800_000, maxSessionTurns: 60, mode: "summarize" },
+      compaction: {
+        maxContextLength: 800_000,
+        maxSessionTurns: 60,
+        mode: "summarize",
+        maxRounds: 8,
+        reminder:
+          "Tool round {{ROUNDS_USED}} done. Reply with the summary as soon as the hand-off files are written.",
+        handoffNote:
+          "No summary of the earlier conversation could be written.\n\n{{ERROR}}\n\n{{USER_MESSAGES}}\n\n{{LAST_TURN}}\n\nTrace file: {{TRACE_PATH}}",
+      },
       memory: {
         enabled: true,
         prompt: "# Memory\n\n{{USER_MEMORY_INDEX}}",
@@ -780,85 +945,27 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     shortDescriptionZh: zh,
     version,
   });
-  // The self-evolution toolkits and the evaluator are the shipped packages' own listings; the
-  // other groups are the demo's.
+  // The self-evolution toolkits, the evaluator and the market's plugins are the shipped
+  // packages' own listings, in their cards' categories; the demo adds a few of its own, and the
+  // server's order holds: categories in the library's order, plugins by name within each.
   const toolkits = rsiToolkitPlugins();
   const evaluationPlugin = agentEvaluationPlugin();
+  const supportPlugin = penguinSupportPlugin();
+  const market = marketPlugins();
+  const byName = (plugins: PluginItem[]) =>
+    [...plugins].sort((a, b) => a.name.localeCompare(b.name));
   const library: PluginLibraryResponse = {
     groups: [
       { id: "rsi", title: "Agent Self-Evolution", titleZh: "Agent 自进化", plugins: toolkits },
       {
-        id: "developer",
-        title: "Developer",
-        titleZh: "开发",
-        plugins: [
-          {
-            name: IDS.plugins.registry,
-            description:
-              "Answer questions about Claude Code from its documentation, with citations.",
-            descriptionZh: "基于 Claude Code 文档回答问题，并给出引用。",
-            shortDescription: "Claude Code docs, with citations",
-            shortDescriptionZh: "带引用的 Claude Code 文档问答",
-            version: "0.2.13",
-            package: `@penguinharness/${IDS.plugins.registry}`,
-            source: "builtin",
-            skills: [
-              skill(
-                "claude-code-expert",
-                "检索并引用 Claude Code 文档",
-                "Search and cite the Claude Code docs",
-                "2026.09.20.1",
-              ),
-              skill("docs-sync", "从上游同步文档语料库", "Sync the docs corpus from upstream"),
-            ],
-            hooks: [],
-            mcpServers: [],
-          },
-          {
-            name: "penguin-sdk",
-            description:
-              "Build with the PenguinHarness SDK: the Session, Agent State and AMSP record APIs.",
-            descriptionZh: "使用 PenguinHarness SDK 开发：Session、Agent State 与 AMSP 记录接口。",
-            version: "0.2.13",
-            package: "@penguinharness/penguin-sdk",
-            source: "builtin",
-            skills: [
-              skill("penguin-sdk", "PenguinHarness SDK 用法", "How to use the PenguinHarness SDK"),
-            ],
-            hooks: [],
-            mcpServers: [],
-          },
-          {
-            name: "web-design",
-            description: "Design and build web pages that do not read as templated defaults.",
-            descriptionZh: "设计并实现不像模板默认值的网页。",
-            version: "0.2.13",
-            package: "@penguinharness/web-design",
-            source: "builtin",
-            skills: [skill("web-design", "网页视觉设计", "Web visual design")],
-            hooks: [],
-            mcpServers: [],
-          },
-        ],
-      },
-      {
-        id: "office",
+        id: "office-productivity",
         title: "Office Productivity",
         titleZh: "办公效率",
-        plugins: [
-          {
-            name: "goal",
-            description:
-              "Run a Session round after round until an objective is met, within a token budget.",
-            descriptionZh: "在 Token 预算内一轮轮推进，直到达成目标。",
-            version: "0.2.13",
-            package: "@penguinharness/goal",
-            source: "builtin",
-            skills: [],
-            hooks: ["stop"],
-            hookVersion: "2026.09.02.1",
-            mcpServers: [],
-          },
+        plugins: byName([
+          ...market.office,
+          ...market.studios,
+          goalPlugin(),
+          supportPlugin,
           {
             name: "continual-learning",
             description: "Write what a Session learned into the Agent's memory when it ends.",
@@ -889,13 +996,43 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             hooks: [],
             mcpServers: [],
           },
-        ],
+        ]),
+      },
+      {
+        id: "software-development",
+        title: "Software Development",
+        titleZh: "软件开发",
+        plugins: byName([
+          ...market.software,
+          {
+            name: IDS.plugins.registry,
+            description:
+              "Answer questions about Claude Code from its documentation, with citations.",
+            descriptionZh: "基于 Claude Code 文档回答问题，并给出引用。",
+            shortDescription: "Claude Code docs, with citations",
+            shortDescriptionZh: "带引用的 Claude Code 文档问答",
+            version: "0.2.13",
+            package: `@penguinharness/${IDS.plugins.registry}`,
+            source: "builtin",
+            skills: [
+              skill(
+                "claude-code-expert",
+                "检索并引用 Claude Code 文档",
+                "Search and cite the Claude Code docs",
+                "2026.09.20.1",
+              ),
+              skill("docs-sync", "从上游同步文档语料库", "Sync the docs corpus from upstream"),
+            ],
+            hooks: [],
+            mcpServers: [],
+          },
+        ]),
       },
       {
         id: "ai-app-development",
         title: "AI App Development",
         titleZh: "AI 应用开发",
-        plugins: [evaluationPlugin],
+        plugins: byName([...market.aiApp, evaluationPlugin]),
       },
     ],
   };
@@ -907,6 +1044,27 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "#!/usr/bin/env node\n// BM25 over corpus/*.md\n",
       "skills/docs-sync/SKILL.md":
         "---\nname: docs-sync\nversion: 2026.09.11.1\ndescription: Sync the docs corpus from upstream\n---\n\n# Docs sync\n",
+    },
+    // The market's detail shots open these: a Skill's head, and a workbench's manifest and page.
+    a2ui: {
+      "skills/a2ui/SKILL.md":
+        "---\nname: a2ui\nversion: 2026.11.04.1\ndescription: Make a reply easier to read and act on with rich blocks inside ordinary Markdown.\n---\n\n# A2UI interactive answers\n\nWrite a block as a fenced code block whose info string names it: `choice`, `form`, `steps`, `callout`, `chart`, `weather`, `clock`.\n\nRun `scripts/check.mjs` on the draft before sending it.\n",
+      "skills/a2ui/scripts/check.mjs":
+        "#!/usr/bin/env node\n// Validates every block of a draft reply and prints a self-review rubric.\n",
+    },
+    "penguin-support": {
+      "skills/penguin-support/SKILL.md":
+        "---\nname: penguin-support\nversion: 2026.10.14.2\ndescription: Answer PenguinHarness product questions from the official documentation and source code.\n---\n\n# PenguinHarness support\n\nSearch the docs first, then the source; cite every answer.\n",
+      "workbenches/support/package.json":
+        '{\n  "name": "penguin-support-workbench",\n  "penguin": { "version": "2026.11.04.1", "appCenter": { "show": true } }\n}\n',
+      "workbenches/support/ui/index.html":
+        '<!doctype html>\n<title>Support</title>\n<main id="app"></main>\n<script type="module" src="app.js"></script>\n',
+    },
+    "bento-studio": {
+      "workbenches/studio/package.json":
+        '{\n  "name": "bento-studio-workbench",\n  "penguin": { "version": "2026.11.14.1", "appCenter": { "show": true } }\n}\n',
+      "workbenches/studio/ui/index.html":
+        '<!doctype html>\n<title>AI PPT Workbench</title>\n<main id="deck"></main>\n<script type="module" src="app.js"></script>\n',
     },
     goal: {
       "hooks/hooks.json":
@@ -920,7 +1078,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     .find((plugin) => plugin.name === IDS.plugins.registry)!;
   const docsSkills = registryPlugin.skills.map((s) => ({
     ...s,
-    version: s.name === "claude-code-expert" ? "2026.09.11.1" : s.version,
+    version: !embedded && s.name === "claude-code-expert" ? "2026.09.11.1" : s.version,
   }));
   const installed: DemoFixtures["installed"] = {
     [IDS.agents.docs]: {
@@ -944,12 +1102,17 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       ],
       hooks: [],
     },
-    // Every toolkit and the evaluator, each Skill wearing its plugin's icon, as an install writes it.
+    // Every toolkit and the evaluator, each Skill wearing its plugin's icon, as an install writes
+    // it; and the Q&A assistant, whose support workbench is on the App Center.
     [IDS.agents.general]: {
-      skills: [...toolkits, evaluationPlugin].flatMap((plugin) =>
+      skills: [...toolkits, evaluationPlugin, supportPlugin].flatMap((plugin) =>
         plugin.skills.map((s) => ({ ...s, ...(plugin.icon ? { icon: plugin.icon } : {}) })),
       ),
       hooks: [],
+      pluginWorkbenches: (supportPlugin.workbenches ?? []).map((w) => ({
+        ...w,
+        plugin: supportPlugin.name,
+      })),
     },
   };
 
@@ -997,10 +1160,14 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     machineId: "demo-machine-0001",
     restartPending: false,
   };
+  if (embedded)
+    installedPlugins.plugins = installedPlugins.plugins.filter((plugin) => !plugin.unsatisfied);
   // The sandbox backends' cards: their rows carry the bilingual descriptions and the shield
-  // icons the packages' own package.json (its `penguin` block) and icon hold.
+  // icons the packages' own cards (declared in each backend's src/index.ts) and icons hold.
   const shield = (inner: string) =>
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`;
+    shippedIcon(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`,
+    );
   const pluginIndex: PluginIndexResponse = {
     plugins: [
       {
@@ -1398,6 +1565,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     description: string,
     content: string,
     days: number,
+    kept: DemoKeptFile[] = [],
   ): MemoryFileResponse => ({
     scopeKey,
     file: {
@@ -1407,10 +1575,43 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       updatedAt: dayKey(ago(days)),
       size: content.length,
       modifiedAt: iso(ago(days)),
+      files: kept.map((k) => k.file),
     },
     content,
   });
+  /** A file a topic keeps in its folder: `filePath` is `<topic>/<path>`. */
+  const keptFile = (
+    scopeKey: string,
+    filePath: string,
+    content: string,
+    days: number,
+  ): DemoKeptFile => ({
+    scopeKey,
+    file: { path: filePath, size: content.length, modifiedAt: iso(ago(days)) },
+    content,
+  });
   const workspaceScope = "docs-expert-4f2a9c";
+  // The corpus topic keeps the checker it describes, a folder of its own beside it.
+  const corpusFiles = [
+    keptFile(
+      workspaceScope,
+      "corpus-layout/broken-links.py",
+      [
+        "# Usage: python3 broken-links.py <docs-dir>",
+        "# Prints every relative Markdown link under <docs-dir> whose target file is missing.",
+        "import pathlib, re, sys",
+        "",
+        "root = pathlib.Path(sys.argv[1])",
+        'link = re.compile(r"\\]\\(([^)#\\s]+\\.md)")',
+        'for page in sorted(root.rglob("*.md")):',
+        '    for target in link.findall(page.read_text(encoding="utf-8")):',
+        "        if not (page.parent / target).exists():",
+        '            print(f"{page.relative_to(root)}: {target}")',
+        "",
+      ].join("\n"),
+      2,
+    ),
+  ];
   const memory: DemoFixtures["memory"] = {
     [IDS.agents.docs]: {
       overview: {
@@ -1459,10 +1660,12 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
           "corpus-layout.md",
           L("语料库结构", "Corpus layout"),
           L("corpus/ 下按上游仓库分目录。", "corpus/ is split by upstream repository."),
-          `---\nname: ${L("语料库结构", "Corpus layout")}\nupdated_at: ${dayKey(ago(2))}\n---\n\ncorpus/claude-code-docs/ · corpus/penguin-docs/\n`,
+          `---\nname: ${L("语料库结构", "Corpus layout")}\nupdated_at: ${dayKey(ago(2))}\n---\n\ncorpus/claude-code-docs/ · corpus/penguin-docs/\n\n${L("检查失效链接：", "Check for broken links:")} [broken-links.py](corpus-layout/broken-links.py) — python3 broken-links.py <docs-dir>\n`,
           2,
+          corpusFiles,
         ),
       ],
+      folderFiles: corpusFiles,
     },
     [IDS.agents.notes]: {
       overview: {
@@ -1472,6 +1675,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
       },
       files: [],
+      folderFiles: [],
     },
     [IDS.agents.general]: {
       overview: {
@@ -1481,6 +1685,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
       },
       files: [],
+      folderFiles: [],
     },
   };
 
@@ -1599,10 +1804,11 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       enabled: true,
     },
     {
-      name: "no-force-push",
+      name: "git-push-force",
       pattern: "git\\s+push\\s+.*--force",
-      description: L("强制推送", "Force pushing"),
+      description: L("强制推送会改写共享历史", "A force-push rewrites shared history"),
       enabled: true,
+      action: "ask",
     },
     {
       name: "no-curl-pipe-sh",
@@ -1748,18 +1954,24 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     const busy = day % 7 !== 0 && day % 7 !== 6;
     const scale = busy ? 1 : 0.25;
     const docsRequests = Math.round((6 + rnd() * 14) * scale);
+    const cacheRead = Math.round(docsRequests * (18_000 + rnd() * 9_000));
+    const cacheWrite = Math.round(docsRequests * (2_000 + rnd() * 1_500));
+    const output = Math.round(docsRequests * (900 + rnd() * 700));
+    const failed = rnd() < 0.15 ? 1 : 0;
+    const aborted = rnd() < 0.1 ? 1 : 0;
     usage.push({
       date,
       agentId: IDS.agents.docs,
       sessionId: day === 0 ? IDS.sessions.done : IDS.sessions.older[day % 4]!,
       provider: DEFAULT_MODEL.provider,
       modelId: DEFAULT_MODEL.modelId,
-      cacheRead: Math.round(docsRequests * (18_000 + rnd() * 9_000)),
-      cacheWrite: Math.round(docsRequests * (2_000 + rnd() * 1_500)),
-      output: Math.round(docsRequests * (900 + rnd() * 700)),
+      cacheRead,
+      cacheWrite,
+      output,
       requests: docsRequests,
-      completed: docsRequests - (rnd() < 0.15 ? 1 : 0),
-      aborted: rnd() < 0.1 ? 1 : 0,
+      // An aborted request is not a completed one: the success rate leaves it out of both sides.
+      completed: docsRequests - failed - aborted,
+      aborted,
     });
     if (day % 3 === 0) {
       const notesRequests = Math.round((2 + rnd() * 5) * scale);
@@ -1775,6 +1987,42 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         requests: notesRequests,
         completed: notesRequests,
         aborted: 0,
+      });
+    }
+    // The docs Agent's tool requests through the multimodal-tools plugin: an image every few
+    // days, web searches on the busy ones (MMSP counts a search as 1,000 prompt tokens).
+    if (day % 4 === 1) {
+      const images = 1 + Math.round(rnd() * 2);
+      usage.push({
+        date,
+        agentId: IDS.agents.docs,
+        sessionId: IDS.sessions.older[day % 4]!,
+        provider: "openai",
+        modelId: "gpt-image-2.5-flare",
+        cacheRead: 0,
+        cacheWrite: images * 120,
+        output: images * 4_200,
+        requests: images,
+        completed: images,
+        aborted: 0,
+        purpose: "@penguinharness/multimodal-tools:t2i",
+      });
+    }
+    if (busy && day % 2 === 0) {
+      const searches = 2 + Math.round(rnd() * 4);
+      usage.push({
+        date,
+        agentId: IDS.agents.docs,
+        sessionId: day === 0 ? IDS.sessions.done : IDS.sessions.older[day % 4]!,
+        provider: "deepseek",
+        modelId: "deepseek-search",
+        cacheRead: 0,
+        cacheWrite: searches * 1_000,
+        output: 0,
+        requests: searches,
+        completed: searches,
+        aborted: 0,
+        purpose: "@penguinharness/multimodal-tools:search",
       });
     }
   }
@@ -1809,6 +2057,61 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     },
   ];
 
+  const shortcut = (
+    agent: AgentSummary,
+    workbenchId: string,
+    title: string,
+    titleZh: string,
+    build: AppCenterShortcut["build"] = "ready",
+    error?: string,
+  ): AppCenterShortcut => ({
+    agentId: agent.agentId,
+    agentName: agent.name ?? agent.agentId,
+    workbenchId,
+    title,
+    titleZh,
+    path: `/app/${IDS.project}/${agent.agentId}/${workbenchId}`,
+    build,
+    ...(error !== undefined ? { error } : {}),
+  });
+  const [docsAgent, notesAgent, generalAgent] = [agents[0]!, agents[1]!, agents[2]!];
+  const releaseApps = [shortcut(notesAgent, "changelog-board", "Changelog board", "变更看板")];
+  if (!embedded)
+    releaseApps.push(
+      shortcut(
+        notesAgent,
+        "release-calendar",
+        "Release calendar",
+        "发布日历",
+        "failed",
+        "src/index.ts:12:7 TS2322 Type 'string' is not assignable to type 'number'.",
+      ),
+    );
+  const appCenter: AppCenterResponse = {
+    shortcuts: [
+      shortcut(docsAgent, "corpus-search", "Corpus search", "语料检索"),
+      shortcut(docsAgent, "citation-check", "Citation check", "引用核对", "building"),
+      ...releaseApps,
+      shortcut(generalAgent, "daily-todos", "Daily to-dos", "每日待办"),
+      shortcut(generalAgent, "expenses", "Expense log", "报销登记"),
+    ],
+    layout: {
+      v: 1,
+      items: [
+        { type: "app", app: `${docsAgent.agentId}/corpus-search` },
+        {
+          type: "folder",
+          id: "release",
+          name: L("发布", "Release"),
+          apps: releaseApps.map((app) => `${app.agentId}/${app.workbenchId}`),
+        },
+        { type: "app", app: `${docsAgent.agentId}/citation-check` },
+        { type: "app", app: `${generalAgent.agentId}/daily-todos` },
+        { type: "app", app: `${generalAgent.agentId}/expenses` },
+      ],
+    },
+  };
+
   return {
     lang,
     now,
@@ -1840,6 +2143,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       proxyUrl: null,
       attachmentMaxMb: 100,
       attachmentTotalMb: 120,
+      terminalMaxOpen: 12,
+      browserMaxOpen: 20,
       companyMode: false,
       browserExtensionsEnabled: true,
       agentApiEnabled: true,
@@ -1862,7 +2167,10 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     pluginFiles,
     installed,
     installedPlugins,
+    pluginModules: [],
+    pluginModuleRequests: [],
     pluginIndex,
+    market: marketFixture(),
     readmes,
     benchmarks,
     benchmarkCases,
@@ -1881,7 +2189,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     dirs,
     context,
     usage,
-    usageErrors,
+    usageErrors: embedded ? [] : usageErrors,
+    appCenter,
   };
 }
 

@@ -1,0 +1,109 @@
+{
+  "name": "@prismshadow/penguin-library-setting",
+  "version": "0.2.18",
+  "description": "The settings domain: the Settings and UiPrefsStore mechanisms, the attachment size arithmetic those settings govern, and the repos that store them. A library package — the server imports it; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/setting"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./resource-limits": {
+      "types": "./dist/resource-limits.d.ts",
+      "import": "./dist/resource-limits.js"
+    },
+    "./attachment-limits": {
+      "types": "./dist/attachment-limits.d.ts",
+      "import": "./dist/attachment-limits.js"
+    },
+    "./setting": {
+      "types": "./dist/setting.d.ts",
+      "import": "./dist/setting.js"
+    },
+    "./plugin-module-preinstalls": {
+      "types": "./dist/plugin-module-preinstalls.d.ts",
+      "import": "./dist/plugin-module-preinstalls.js"
+    },
+    "./plugin-module-requests": {
+      "types": "./dist/plugin-module-requests.d.ts",
+      "import": "./dist/plugin-module-requests.js"
+    },
+    "./repos/plugin-module-preinstalls": {
+      "types": "./dist/repos/plugin-module-preinstalls.d.ts",
+      "import": "./dist/repos/plugin-module-preinstalls.js"
+    },
+    "./repos/plugin-module-requests": {
+      "types": "./dist/repos/plugin-module-requests.d.ts",
+      "import": "./dist/repos/plugin-module-requests.js"
+    },
+    "./theme-store": {
+      "types": "./dist/theme-store.d.ts",
+      "import": "./dist/theme-store.js"
+    },
+    "./keybindings": {
+      "types": "./dist/keybindings.d.ts",
+      "import": "./dist/keybindings.js"
+    },
+    "./desktop-service": {
+      "types": "./dist/desktop-service.d.ts",
+      "import": "./dist/desktop-service.js"
+    },
+    "./desktop-update-port": {
+      "types": "./dist/desktop-update-port.d.ts",
+      "import": "./dist/desktop-update-port.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    },
+    "./repos/server-settings": {
+      "types": "./dist/repos/server-settings.d.ts",
+      "import": "./dist/repos/server-settings.js"
+    },
+    "./repos/ui-prefs": {
+      "types": "./dist/repos/ui-prefs.d.ts",
+      "import": "./dist/repos/ui-prefs.js"
+    },
+    "./repos": {
+      "types": "./dist/repos/index.d.ts",
+      "import": "./dist/repos/index.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-db": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-theme-pack": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true
+}

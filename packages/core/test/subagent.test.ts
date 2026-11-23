@@ -1,10 +1,6 @@
 /**
  * Behavior tests for run_subagent / input_subagent: foreground delegation, backgrounding,
  * polling, resuming with an appended Prompt, the approval queue, and lifecycle finalization.
- * Disposing waits for cancellation cleanup, including a child still in its foreground window;
- * repeated disposal waits for the same cleanup and does not release the child twice.
- * A cancellation or disposal during spawn or metadata delivery prevents the first child run;
- * a launch that stays live still starts once.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { Environment } from "../src/environment/index.js";
@@ -676,54 +672,46 @@ describe("run_subagent backgrounding + input_subagent", () => {
     expect(decision).toBe("deny");
   });
 
-  it.each([false, true])(
-    "disposal waits for cancellation cleanup (registered=%s), including repeated disposal",
-    async (registered) => {
-      let finishCleanup!: () => void;
-      const cleanup = new Promise<void>((resolve) => {
-        finishCleanup = resolve;
-      });
-      let onInterrupt!: () => void;
-      const interrupted = new Promise<void>((resolve) => {
-        onInterrupt = resolve;
-      });
-      let released = 0;
-      const session = new ManagedSubagentSession({
-        sessionId: HOP,
+  it("disposal resolves once every child has finished its cancellation writes, a cancelled one the live list hides included", async () => {
+    // The host deletes a Session's files once its disposal resolves: a child still writing its
+    // abort records then would bring them back. The foreground child was already cancelled by
+    // its parent's stop, and listing the live children no longer shows it.
+    let finishCleanup!: () => void;
+    const cleanup = new Promise<void>((resolve) => (finishCleanup = resolve));
+    const released: string[] = [];
+    const child = (sessionId: string) =>
+      new ManagedSubagentSession({
+        sessionId,
+        // eslint-disable-next-line require-yield
         async *run({ signal }) {
-          yield withOrigin(partialText("delta", "working"), HOP);
           await aborted(signal);
-          onInterrupt();
           await cleanup;
           return null;
         },
         dispose() {
-          released += 1;
+          released.push(sessionId);
         },
       });
-      const { manager } = makeServices();
+    const { manager } = makeServices();
+    const background = child("session-background");
+    const foreground = child("session-foreground");
+    for (const session of [background, foreground]) {
       manager.track(session);
       session.startRun([userText("work")]);
-      if (registered) manager.register(session);
-      let settled = false;
-      const disposal = Promise.resolve(manager.dispose()).then(() => {
-        settled = true;
-      });
-      const repeated = manager.dispose();
-      try {
-        expect(session.disposed).toBe(true);
-        await interrupted;
-        expect(settled).toBe(false);
-        expect(released).toBe(0);
-      } finally {
-        session.kill();
-        finishCleanup();
-        await Promise.all([disposal, repeated]);
-      }
-      expect(released).toBe(1);
-      expect(session.running).toBe(false);
-    },
-  );
+    }
+    manager.register(background);
+    foreground.kill();
+    expect(manager.listLive().map((info) => info.sessionId)).toEqual(["session-background"]);
+
+    let settled = false;
+    const disposal = manager.dispose().then(() => (settled = true));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(settled).toBe(false);
+    expect(released).toEqual([]);
+    finishCleanup();
+    await disposal;
+    expect(released.sort()).toEqual(["session-background", "session-foreground"]);
+  });
 
   it("delivers output arriving while the consumer is suspended without waiting out the window", async () => {
     // Wake-race regression: when output arrives while suspended at `yield`, its wakeup happens
@@ -1098,6 +1086,48 @@ describe("subagent steering and per-run abort", () => {
       expect(prompts).toEqual(["task", "wake up"]);
     } finally {
       env.dispose();
+    }
+  });
+
+  it("a panel and a restored model handle share one revival and keep the originally issued alias", async () => {
+    const manager = new SubagentSessionManager();
+    let resumeCalls = 0;
+    let release!: () => void;
+    const wait = new Promise<void>((ok) => {
+      release = ok;
+    });
+    const runner: SubagentRunner = {
+      async spawn() {
+        throw new Error("this fixture only resumes");
+      },
+      async resume({ sessionId }) {
+        resumeCalls++;
+        await wait;
+        return {
+          sessionId,
+          async *run() {
+            yield withOrigin(assistantText("ready"), sessionId);
+            return null;
+          },
+          dispose() {},
+        };
+      },
+    };
+    try {
+      const clue = { sessionId: HOP, agentId: "owner_agent" };
+      const control = new AbortController();
+      const one = manager.restore(clue, runner, "subagent-ffff0123", control.signal);
+      const two = manager.restore(clue, runner, "subagent-ffff0123");
+      control.abort();
+      release();
+      const [panel, model] = await Promise.all([one, two]);
+      expect(resumeCalls).toBe(1);
+      expect(panel).toBe(model);
+      expect(manager.listLive()).toEqual([
+        { sessionId: HOP, subagentId: "subagent-ffff0123", running: false },
+      ]);
+    } finally {
+      await manager.dispose();
     }
   });
 

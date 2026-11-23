@@ -37,7 +37,7 @@
  *     segmentation; the request's thinking and the summary's own text (live
  *     partial_thinking / partial_text fragments, or the span's complete thinking
  *     and assistant text on rebuild) accumulate onto the running compaction
- *     banner instead (issue #290);
+ *     banner instead (issue #290), and its tool calls become cards on it (CompactionItem.work);
  *     user text prefixed with `[context_summary]` is a compaction-summary
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
@@ -62,8 +62,13 @@ import {
   isPartialPayload,
   isTaskRecord,
   normalizeSessionSource,
+  updatedModel,
 } from "@prismshadow/amsp";
-import { parseBackgroundTaskDoneMessage, parseUserSteeringText } from "@prismshadow/amsp/markers";
+import {
+  parseBackgroundTaskDoneMessage,
+  parseInPlaceModelSwitch,
+  parseUserSteeringText,
+} from "@prismshadow/amsp/markers";
 import type {
   ApprovalDecision,
   CompactionMode,
@@ -78,7 +83,9 @@ import type {
   TokenUsagePayload,
   ToolStatus,
 } from "@prismshadow/amsp";
-import type { TracePosition } from "@prismshadow/penguin-server/api";
+import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
+import type { ElidedBody, HistoryRecordLike } from "@prismshadow/penguin-core/interfaces";
+import type { MessagesPageInfo, TracePosition } from "@prismshadow/penguin-server/api";
 import {
   addLlmDuration,
   addToolExecution,
@@ -88,12 +95,19 @@ import {
   endCompaction,
   endTask,
   resetTaskCounters,
+  seedPriorStats,
   trackMainUsage,
   trackSubagentUsage,
+  type TaskStats,
+  type TaskStatsTracker,
 } from "./task-stats";
-import type { TaskStats, TaskStatsTracker } from "./task-stats";
-import { classifyMemoryPath, mergeMemoryChanges } from "./memory-changes";
-import type { MemoryChangeEntry, MemoryChangeRow } from "./memory-changes";
+
+import {
+  classifyMemoryPath,
+  mergeMemoryChanges,
+  type MemoryChangeEntry,
+  type MemoryChangeRow,
+} from "./memory-changes";
 
 // ---------------------------------------------------------------------------
 // View model types
@@ -178,7 +192,39 @@ export interface AssistantTextItem {
   tracePosition?: TracePosition;
 }
 
-export interface ThinkingItem {
+/**
+ * A history record that came with values left out — the bulky bodies the transcript shows folded
+ * (a tool's output, a long argument, a thinking block, a child's inline image): the record as it
+ * arrived, previews in place, and the entries naming what was left out. The whole values are
+ * fetched when the reader unfolds the item; `takeWholeRecord` then puts the record back.
+ */
+export interface ElidedRecord {
+  record: HistoryRecordLike;
+  entries: ElidedBody[];
+}
+
+/** An item's folded values being fetched: the bytes so far of their total, or why it failed. */
+export interface BodyLoad {
+  doneBytes: number;
+  totalBytes: number;
+  error: string | null;
+  /** The failed read's error, kept beside its words so the note offers its report. */
+  cause?: unknown;
+}
+
+/** One clock per Task; its work groups share the live anchor and the settled trace span. */
+interface WorkTiming {
+  startMs: number;
+  durationMs?: number;
+}
+
+interface WorkStep {
+  workTiming?: WorkTiming;
+  /** Only the final work step of a settled Task carries its outcome and trace duration. */
+  workOutcome?: { state: "done" | "failed" | "stopped"; durationMs: number };
+}
+
+export interface ThinkingItem extends WorkStep {
   kind: "thinking";
   id: number;
   thinking: string;
@@ -187,9 +233,13 @@ export interface ThinkingItem {
   startedAtMs?: number;
   /** Thinking duration (settled when the complete message arrives: message time - start time). */
   durationMs?: number;
+  /** The text came as a preview of a longer one (a history window folds long thinking). */
+  elided?: ElidedRecord;
+  /** The whole text being fetched. */
+  bodyLoad?: BodyLoad;
 }
 
-export interface ToolCallItem {
+export interface ToolCallItem extends WorkStep {
   kind: "tool_call";
   id: number;
   toolCallId: string;
@@ -241,6 +291,12 @@ export interface ToolCallItem {
   argStartedAtMs?: number;
   /** Total tool duration (settled when the tool_call_output complete message arrives) = the argument-generation segment + the execution segment, excluding the approval wait (see settleToolDuration). */
   durationMs?: number;
+  /** The call's arguments came with a long string value as a preview (a history window folds it). */
+  elidedCall?: ElidedRecord;
+  /** The output (or a child's inline image) came as a preview. */
+  elidedOutput?: ElidedRecord;
+  /** The whole values being fetched. */
+  bodyLoad?: BodyLoad;
 }
 
 /** A standalone sub-session card for when no run_subagent tool card can be bound. */
@@ -266,13 +322,25 @@ export interface AbortItem {
  * A run-ending LLM failure, from a `request_end` with status `fatal` (an LLM failure
  * produces no abort event — the request_end is its terminal record).
  */
-export interface LlmErrorItem {
+export interface LlmErrorItem extends RequestFailureFacts {
   kind: "llm_error";
   id: number;
   /** Machine-readable cause (request_end.error_code). */
   errorCode?: string;
-  /** The provider's own error text (request_end.error_message), shown verbatim. */
+  /** The provider's own error text (request_end.error_message), shown in the failure details. */
   errorMessage?: string;
+  /** The request's ordinal within its retry run (request_end.attempt); absent on a first try and in old Traces. */
+  attempt?: number;
+}
+
+/**
+ * What a failed request's details report beyond its record, read from the records around it:
+ * the model its context was opened on (`StreamModel.contextModel` when the request ended; absent
+ * when no `session_meta` had said which yet) and when it ended (the request_end's timestamp).
+ */
+export interface RequestFailureFacts {
+  model?: { provider: string; modelId: string };
+  atMs?: number;
 }
 
 /** `retryable` is the live protocol; failed/timeout/malformed are legacy Trace spellings kept for replay. */
@@ -285,7 +353,7 @@ function isReconnectStatus(status: string | undefined): status is ReconnectStatu
 }
 
 /** An LLM Request ending retryable → the engine retries carrying the content already produced. */
-export interface ReconnectItem {
+export interface ReconnectItem extends RequestFailureFacts, WorkStep {
   kind: "reconnect";
   id: number;
   /** Trigger status (legacy Traces carry the finer pre-convergence spellings). */
@@ -298,7 +366,7 @@ export interface ReconnectItem {
   gaveUp?: boolean;
   /** Machine-readable cause (request_end.error_code); the cause wording localizes from it. */
   errorCode?: string;
-  /** The final failure's detail (request_end.error_message), rendered in the gave-up state. */
+  /** The latest failure's detail (request_end.error_message), shown in the failure details. */
   errorMessage?: string;
   /**
    * The engine's planned wait before the next attempt (request_end.retry_in_ms; absent
@@ -316,7 +384,12 @@ export interface ReconnectItem {
   arrivedAtMs?: number;
 }
 
-export interface CompactionItem {
+/**
+ * A compaction row. It also keeps what a failed request's details report (`RequestFailureFacts`,
+ * set at an end that carries the error pair or did not complete): a refusal hand-off's pair is
+ * the refused request's, and the composer's notice opens its details.
+ */
+export interface CompactionItem extends RequestFailureFacts {
   kind: "compaction";
   id: number;
   reason: CompactionReason;
@@ -324,6 +397,8 @@ export interface CompactionItem {
   /** True between begin and end (renders a "compaction in progress" banner). */
   running: boolean;
   status?: StopReason;
+  /** compaction_end.error_code; either half of the pair on a `completed` end: no full summary (compactionDegraded). */
+  errorCode?: string;
   /** Last failure detail from compaction_end.error_message (its share of the RetryDetail block; present on failed ends from new cores). */
   errorMessage?: string;
   /** The begin message's timestamp (ms); ticks the running row and anchors durationMs. */
@@ -336,8 +411,16 @@ export interface CompactionItem {
    * replay from the span's complete assistant text — the banner shows the summary being
    * written and keeps it readable after a reload. Raw model output (summary tags included;
    * the banner strips them for display); absent when nothing streamed (e.g. discard mode).
+   * Each of the span's requests starts it over (only the last one's text is the summary), and
+   * an end carrying the error pair drops it: that draft is not what the next context opened with.
    */
   summaryText?: string;
+  /**
+   * The compaction's tool calls, run or refused, one transcript tool card each (registered in
+   * `toolCards`, so an approval finds it): never transcript items nor the Task's tool time, and
+   * dropped with the drafts when the compaction does not complete.
+   */
+  work?: ToolCallItem[];
   /**
    * Raw text of the thinking the compaction request produced ahead of its summary:
    * accumulated live from the span's own partial_thinking fragments, and rebuilt identically
@@ -363,8 +446,8 @@ export interface CompactionItem {
    * the complete message's own time settles it — the ThinkingItem convention (see
    * `settleThinkingDuration`), so a reload lands within a message hop of the live numbers.
    *
-   * A retried compaction concatenates every attempt into one draft (`thinkingText` and
-   * `summaryText` both), so a start is recorded once and a later stop only extends the settled
+   * A compaction of several requests concatenates their thinking into one draft (`summaryText`
+   * starts over instead), so a start is recorded once and a later stop only extends the settled
    * value: the wall time covers the whole span that produced the prose on screen, the failed
    * attempts and the gaps between them included. Timing the last attempt alone would print a
    * short number against text it did not write.
@@ -379,19 +462,27 @@ export interface CompactionItem {
 }
 
 /**
- * The Session moved to another model between two contexts: derived from two consecutive
- * main-session `session_meta` records naming different (provider, model_id) pairs — an
- * in-session model switch opens its new context on the model the user picked, and nothing else
- * on the stream says so. Model ids rather than display names: the marker renders from the Trace
- * alone, and a model removed from the configuration since must still read.
+ * The Session moved to another model between two contexts: derived from a main-session
+ * `session_update` naming another (provider, model_id) pair than the model held — the record an
+ * in-session model switch leaves when it completes — or, for Traces written without one, from
+ * two consecutive main-session `session_meta` records naming different pairs. The context's own
+ * `session_meta` that follows a `session_update` names the model already held and adds no
+ * second marker. Model ids rather than display names: the marker renders from the Trace alone,
+ * and a model removed from the configuration since must still read.
  */
 export interface ModelChangeItem {
   kind: "model_change";
   id: number;
   from: { provider: string; modelId: string };
   to: { provider: string; modelId: string };
-  /** The timestamp of the `session_meta` that named the new model (ms). */
+  /** The timestamp of the record that named the new model (ms). */
   tsMs?: number;
+  /**
+   * The switch handed the history over by its Trace path instead of a summary: the
+   * `[model_switch_from]` handoff naming this Session that followed the marker's record (folded
+   * into this marker rather than shown as a message), with the file it named.
+   */
+  handover?: { tracePath?: string };
 }
 
 /** One MCP tool for the connect row's expandable list (from tool_list_ready, `mcp__` entries only). */
@@ -522,9 +613,10 @@ export interface StreamModel {
    * The model the running context was opened on, and the Session its `session_meta` names (null
    * until one arrives, or a history window says which model it starts on). A Session's model
    * can change between contexts — each context's meta records its own — so this follows
-   * rotations, and a main-session meta naming another model than the one held pushes a
-   * model-change marker. The chat page moves its Session row to this model when the two
-   * disagree (see `sessionRowStale`).
+   * rotations, and moves on a main-session `session_update` (the model a completed switch left
+   * for the next context) under the Session already held; a record naming another model than
+   * the one held pushes a model-change marker. The chat page moves its Session row to this model
+   * when the two disagree (see `sessionRowStale`).
    */
   contextModel: { sessionId: string; provider: string; modelId: string } | null;
   /** `contextModel` as the open Task began: a switch only happens between Tasks, so this is the model the whole Task runs on (see `TaskStatsItem.model`). */
@@ -608,6 +700,9 @@ export interface StreamModel {
   openApprovalWaitMs: number;
   /** Task segmentation state. */
   taskOpen: boolean;
+  taskFirstItemId: number;
+  /** Latest normal request or abort outcome, published on the last work step only when the Task closes. */
+  taskOutcome: NonNullable<WorkStep["workOutcome"]>["state"] | null;
   /**
    * Local-clock instant the running Task's header elapsed ticks from — display
    * only; no settled duration is ever derived from it (see finalizeOpenTask,
@@ -619,7 +714,8 @@ export interface StreamModel {
    * from the server's own clock rather than the Trace's tail so that an event
    * still in flight is counted too.
    */
-  taskStartLocalMs: number;
+  readonly taskStartLocalMs: number;
+  taskClock: WorkTiming;
   /** The Task's first message timestamp, in SERVER time: both the settled duration and the back-dated live anchor measure from it. */
   taskFirstTsMs: number;
   /**
@@ -707,7 +803,12 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     openRequestFirstItemId: null,
     openApprovalWaitMs: 0,
     taskOpen: false,
-    taskStartLocalMs: 0,
+    taskFirstItemId: 1,
+    taskOutcome: null,
+    taskClock: { startMs: 0 },
+    get taskStartLocalMs() {
+      return this.taskClock.startMs;
+    },
     taskFirstTsMs: 0,
     taskLastTsMs: 0,
     taskLastReqEndMs: null,
@@ -757,7 +858,9 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
     // reads the identical content back from the span's complete thinking and assistant text
     // — both accumulate onto the running banner, so a reload shows the same text the live
     // viewer watched being written.
-    if (model.stats.compactionActive) {
+    // A tool round's records take the transcript's path below.
+    const type = (msg.payload as { type?: string }).type ?? "";
+    if (model.stats.compactionActive && !/^(partial_)?tool_call(_output)?$/.test(type)) {
       touchTask(model, msg.timestamp);
       const tsMs = tsOf(msg.timestamp);
       if (isPartialPayload(msg.payload)) {
@@ -803,11 +906,32 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
       msg.timestamp,
       nowMs,
       (msg as AmspRecord & { tracePosition?: TracePosition }).tracePosition,
+      elidedOf(msg),
     );
     advanceLastTs(model, msg.timestamp);
     return;
   }
   if (isEventMessage(msg)) {
+    // session_update: a Session-level setting changed. Like session_meta it is no part of a
+    // Task — the Session writes it at a Task boundary, possibly long before the next Task — so
+    // it opens, touches and times none, and renders nothing of its own. The one setting it
+    // carries today, the model the Session's next context opens on, moves the held model the
+    // way a session_meta does, under the Session already held: a nested child's record changes
+    // nothing, and with no model held there is no Session to name, so the context's own
+    // session_meta says it.
+    if (msg.payload.type === "session_update") {
+      const next = updatedModel(msg);
+      const held = model.contextModel;
+      if (!model.nested && next !== undefined && held !== null) {
+        moveContextModel(
+          model,
+          held.sessionId,
+          { provider: next.provider, modelId: next.model_id },
+          msg.timestamp,
+        );
+      }
+      return;
+    }
     // A Retry's first request opens its Task here, before anything is timed against the
     // cut-short one — the same point a Prompt opens its own (see StreamModel.runEnded).
     if (startsRetryRun(model, msg)) startTask(model, msg.timestamp, nowMs);
@@ -824,28 +948,16 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
   // child, on which model); the main session takes the rest of its identity/config from the
   // Session DTO. A rewritten session_meta (file rotation) overwrites with the same values. On
   // the main session a meta naming another model than the one held means the Session switched
-  // models: a marker says so — never for a same-model rewrite, a nested child's meta, or the
-  // first meta of a model that was told nothing of the context it starts in.
+  // models (see moveContextModel).
   if (msg.type === "session_meta") {
     const p = msg.payload as SessionMetaPayload;
     model.agentState = p.agent_state;
-    const next = { provider: p.provider, modelId: p.model_id };
-    const held = model.contextModel;
-    if (
-      !model.nested &&
-      held !== null &&
-      (held.provider !== next.provider || held.modelId !== next.modelId)
-    ) {
-      const tsMs = tsOf(msg.timestamp);
-      model.items.push({
-        kind: "model_change",
-        id: nextId(model),
-        from: { provider: held.provider, modelId: held.modelId },
-        to: next,
-        ...(tsMs !== undefined ? { tsMs } : {}),
-      });
-    }
-    model.contextModel = { sessionId: p.session_id, ...next };
+    moveContextModel(
+      model,
+      p.session_id,
+      { provider: p.provider, modelId: p.model_id },
+      msg.timestamp,
+    );
   }
   if (msg.type === "session_meta" && model.nested) {
     const p = msg.payload as SessionMetaPayload;
@@ -857,6 +969,38 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
       source: normalizeSessionSource(p.source),
     };
   }
+}
+
+/**
+ * The model a record says the Session is on from here: a main-session `session_update` (the
+ * model the next context opens on) or a `session_meta` (the model a context opened on). When it
+ * names another model than the one held, the Session switched models and a marker says so —
+ * never for a same-model record (the meta that confirms a `session_update`, a rotation's
+ * rewrite, the same record served twice), a nested child's meta, or the first record of a model
+ * that was told nothing of the context it starts in.
+ */
+function moveContextModel(
+  model: StreamModel,
+  sessionId: string,
+  next: { provider: string; modelId: string },
+  timestamp: string,
+): void {
+  const held = model.contextModel;
+  if (
+    !model.nested &&
+    held !== null &&
+    (held.provider !== next.provider || held.modelId !== next.modelId)
+  ) {
+    const tsMs = tsOf(timestamp);
+    model.items.push({
+      kind: "model_change",
+      id: nextId(model),
+      from: { provider: held.provider, modelId: held.modelId },
+      to: next,
+      ...(tsMs !== undefined ? { tsMs } : {}),
+    });
+  }
+  model.contextModel = { sessionId, ...next };
 }
 
 /**
@@ -921,6 +1065,17 @@ function advanceLastTs(model: StreamModel, timestamp: string): void {
   if (Number.isFinite(ms)) model.lastTsMs = ms;
 }
 
+/** Restore the context and accounting established by records before a history window. */
+export function seedHistoryWindow(
+  target: StreamModel,
+  page: MessagesPageInfo,
+  sessionId: string,
+): void {
+  seedPriorStats(target.stats, page.prior);
+  if (page.contextModel !== undefined) target.contextModel = { sessionId, ...page.contextModel };
+  if (page.agentState !== undefined) target.agentState = page.agentState;
+}
+
 /**
  * Replay a history rebuild. `serverNowMs` is the server's clock when it produced the
  * response (see StreamControllerDeps.loadMessages); null when unavailable.
@@ -958,7 +1113,7 @@ export function pushMessages(
   if (model.taskOpen) {
     const tracedSpan = model.taskLastTsMs - model.taskFirstTsMs;
     const serverSpan = serverNowMs === null ? 0 : serverNowMs - model.taskFirstTsMs;
-    model.taskStartLocalMs = nowMs - Math.max(0, tracedSpan, serverSpan);
+    model.taskClock.startMs = nowMs - Math.max(0, tracedSpan, serverSpan);
   }
 }
 
@@ -1045,11 +1200,13 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   // along, and the Task's own next request belongs to it.
   model.runEnded = false;
   model.taskOpen = true;
+  model.taskFirstItemId = model.nextItemId;
+  model.taskOutcome = null;
   model.taskModel = model.contextModel && {
     provider: model.contextModel.provider,
     modelId: model.contextModel.modelId,
   };
-  model.taskStartLocalMs = nowMs;
+  model.taskClock = { startMs: nowMs };
   const ts = Date.parse(timestamp);
   model.taskFirstTsMs = Number.isFinite(ts) ? ts : nowMs;
   model.taskLastTsMs = model.taskFirstTsMs;
@@ -1083,6 +1240,21 @@ function finalizeOpenTask(model: StreamModel): void {
   // latency folded into it.
   const endMs = model.taskLastReqEndMs ?? model.taskLastTsMs;
   const elapsed = Math.max(0, endMs - model.taskFirstTsMs);
+  model.taskClock.durationMs = elapsed;
+  if (model.taskOutcome) {
+    for (let i = model.items.length - 1; i >= 0; i--) {
+      const item = model.items[i]!;
+      if (item.id < model.taskFirstItemId) break;
+      if (
+        item.kind === "thinking" ||
+        item.kind === "tool_call" ||
+        (item.kind === "reconnect" && !item.gaveUp)
+      ) {
+        item.workOutcome = { state: model.taskOutcome, durationMs: elapsed };
+        break;
+      }
+    }
+  }
   const stats = endTask(model.stats, elapsed);
   if (model.nested) return;
   const reply = collectTaskAssistant(model);
@@ -1226,6 +1398,7 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
         const item: ThinkingItem = {
           kind: "thinking",
           id: nextId(model),
+          ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
           thinking: p.thinking ?? "",
           streaming: true,
         };
@@ -1306,12 +1479,20 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
 // Complete messages
 // ---------------------------------------------------------------------------
 
+/** What a history record left out, or undefined for a record carried whole (every live one). */
+function elidedOf(msg: AmspRecord): ElidedRecord | undefined {
+  const record = msg as HistoryRecordLike;
+  const entries = record.elided;
+  return entries !== undefined && entries.length > 0 ? { record, entries } : undefined;
+}
+
 function handleComplete(
   model: StreamModel,
   p: CompleteModelPayload,
   timestamp: string,
   nowMs: number,
   tracePosition?: TracePosition,
+  elided?: ElidedRecord,
 ): void {
   switch (p.type) {
     case "text": {
@@ -1322,6 +1503,21 @@ function handleComplete(
         // Traces containing it are re-rendered through this reducer.
         if (p.text.startsWith("[context_summary]") || p.text.startsWith("<context_summary>")) {
           touchTask(model, timestamp);
+          return;
+        }
+        // The Trace handoff an in-session model switch opened the context with instead of a
+        // summary (a whole `[model_switch_from]` block naming this Session — a `/model` new
+        // conversation's names its source): no bubble and no Task either; it marks the switch.
+        const handover = parseInPlaceModelSwitch(p.text, model.contextModel?.sessionId);
+        if (handover !== null) {
+          touchTask(model, timestamp);
+          const marker = model.items.findLast(
+            (i): i is ModelChangeItem => i.kind === "model_change",
+          );
+          if (marker) {
+            marker.handover =
+              handover.tracePath !== undefined ? { tracePath: handover.tracePath } : {};
+          }
           return;
         }
         // Mid-run steering (`[user_steering]`-wrapped user text, delivered between turns):
@@ -1472,6 +1668,8 @@ function handleComplete(
         }
         target.thinking = p.thinking;
         target.streaming = false;
+        if (elided !== undefined) target.elided = elided;
+        else delete target.elided;
         settleThinkingDuration(target, tsMs);
         if (target === model.openThinking) model.openThinking = null;
         model.pendingThinking = null;
@@ -1483,8 +1681,10 @@ function handleComplete(
       const item: ThinkingItem = {
         kind: "thinking",
         id: nextId(model),
+        ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
         thinking: p.thinking,
         streaming: false,
+        ...(elided !== undefined ? { elided } : {}),
       };
       // History rebuild (no fragment): approximate the thinking start with the previous message's time.
       if (model.lastTsMs > 0) item.startedAtMs = model.lastTsMs;
@@ -1505,6 +1705,8 @@ function handleComplete(
       if (card) {
         card.name = p.name;
         card.argumentsText = p.arguments;
+        if (elided !== undefined) card.elidedCall = elided;
+        else delete card.elidedCall;
         card.callStreaming = false;
         card.callComplete = true;
         if (tsMs !== undefined) card.callStartedAtMs = tsMs;
@@ -1526,6 +1728,7 @@ function handleComplete(
         callStreaming: false,
       });
       created.callComplete = true;
+      if (elided !== undefined) created.elidedCall = elided;
       if (tsMs !== undefined) created.callStartedAtMs = tsMs;
       noteApprovalWait(model, created); // createToolCard may have already backfilled a pending approval timestamp
       // History rebuild (no partial_tool_call start): approximate "argument
@@ -1548,6 +1751,8 @@ function handleComplete(
         });
       }
       card.output = p.output;
+      if (elided !== undefined) card.elidedOutput = elided;
+      else delete card.elidedOutput;
       // The complete message converges the images (the streamed delta already carried them once; overwrites with the same value; also serves as a fallback for a mid-stream join).
       if (p.images && p.images.length > 0) card.images = p.images;
       card.outputStreaming = false;
@@ -1557,7 +1762,7 @@ function handleComplete(
       settleToolDuration(card, tsOf(timestamp), model.stats);
       // This turn owes the model its results, so a compaction triggering now is mid-Task
       // and the round is not over (see turnToolOutputs).
-      model.turnToolOutputs = true;
+      if (!model.stats.compactionActive) model.turnToolOutputs = true;
       return;
     }
     // inline_data / inline_thinking: same convention as the CLI's history rendering — not shown for now.
@@ -1661,7 +1866,7 @@ function settleToolDuration(
   // The execution half alone feeds the session's tool wall time: the generation half above is
   // the model streaming arguments and is already inside taskLlmMs. Settling twice (a streamed
   // stop, then the complete message) is harmless — the intervals are unioned, not summed.
-  if (stats) addToolExecution(stats, execStart, endMs);
+  if (stats && !stats.compactionActive) addToolExecution(stats, execStart, endMs);
 }
 
 /**
@@ -1692,6 +1897,7 @@ function createToolCard(
   const item: ToolCallItem = {
     kind: "tool_call",
     id: nextId(model),
+    ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
     toolCallId: init.toolCallId,
     name: init.name,
     argumentsText: init.argumentsText,
@@ -1714,7 +1920,10 @@ function createToolCard(
     }
   }
   model.toolCards.set(init.toolCallId, item);
-  model.items.push(item);
+  // A compaction's tool round goes on its banner (CompactionItem.work), not the transcript.
+  const banner = model.stats.compactionActive ? findLastRunningCompaction(model) : null;
+  if (banner) (banner.work ??= []).push(item);
+  else model.items.push(item);
   return item;
 }
 
@@ -1753,6 +1962,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       model.items.push(item);
       // The stop ended the run with its turn held: a Retry's first request opens a new Task.
       model.runEnded = true;
+      model.taskOutcome = "stopped";
       return;
     }
     case "token_usage":
@@ -1844,24 +2054,44 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
     case "compaction_end": {
       // status decides whether context usage is cleared: when not completed, the original context is kept (see endCompaction).
       endCompaction(model.stats, p.status);
+      // A refused request announced a resend at once and its hand-off then could not open the
+      // next context: that resend will never go out, so the retry line waiting on it settles.
+      if (p.status === "fatal") {
+        const waiting = findLastWaitingReconnect(model);
+        if (waiting) waiting.gaveUp = true;
+      }
+      const degraded =
+        p.status === "completed" && (p.error_code !== undefined || p.error_message !== undefined);
+      // An end that says something failed keeps what its details report: the model the closing
+      // context ran on (the next context's session_meta comes after this end) and the time.
+      const facts = degraded || p.status !== "completed" ? failureFacts(model, tsMs) : {};
       const item = findLastRunningCompaction(model);
       if (item) {
         item.running = false;
         item.status = p.status;
+        if (p.error_code !== undefined) item.errorCode = p.error_code;
         if (p.error_message !== undefined) item.errorMessage = p.error_message;
+        Object.assign(item, facts);
         if (tsMs !== undefined && item.beginTsMs !== undefined) {
           item.durationMs = Math.max(0, tsMs - item.beginTsMs);
+        }
+        if (degraded) {
+          delete item.summaryText;
+          delete item.summaryStartedAtMs;
         }
         // The result section runs for as long as the row does, so its wall time ends here too.
         if (tsMs !== undefined && item.summaryStartedAtMs !== undefined) {
           item.summaryDurationMs = Math.max(0, tsMs - item.summaryStartedAtMs);
         }
+        // A call card that never got its output will not get one now.
+        for (const card of item.work ?? []) if (!card.outputComplete) settleUnfinishedCard(card);
         // A compaction that did not complete produced no summary — only a half-written
         // draft that was never adopted (a user quitting mid-compaction is the common case,
         // closed as `failed` when the session next loads). Discard it, and the thinking that
         // led to it, rather than leave a truncated summary on screen implying the context
         // was replaced by it.
         if (p.status !== "completed") {
+          delete item.work;
           delete item.summaryText;
           delete item.thinkingText;
           delete item.thinkingStreaming;
@@ -1884,13 +2114,26 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           mode: p.mode,
           running: false,
           status: p.status,
+          ...(p.error_code !== undefined ? { errorCode: p.error_code } : {}),
           ...(p.error_message !== undefined ? { errorMessage: p.error_message } : {}),
+          ...facts,
         };
         model.items.push(created);
       }
       return;
     }
     case "request_begin": {
+      // A compaction's request starts its summary over (CompactionItem.summaryText); it is
+      // neither timed nor the resend a waiting reconnect hint announced.
+      if (model.stats.compactionActive) {
+        const item = findLastRunningCompaction(model);
+        if (item) {
+          delete item.summaryText;
+          delete item.summaryStartedAtMs;
+        }
+        return;
+      }
+      model.taskOutcome = null;
       // A retry request was sent: mark the waiting reconnect hint as resent (a no-op when there's no such item before a normal first request).
       const waiting = findLastWaitingReconnect(model);
       if (waiting) waiting.retrying = true;
@@ -1909,9 +2152,12 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // produced, rendering a retry hint (with the attempt number); the terminal
       // statuses aren't rendered (Request duration is covered by Trace performance
       // analysis) and reset the consecutive-failure count. request events
-      // within a compaction range (only visible during history rebuild)
+      // within a compaction range (a call one cut short settles as in a turn)
       // are neither rendered nor counted — the compaction process only exposes the compaction event pair to the Human.
-      if (model.stats.compactionActive) return;
+      if (model.stats.compactionActive) {
+        settleCutShortCalls(model, p.status === "completed");
+        return;
+      }
       // Pairs with request_begin to compute this Request's wall-clock
       // duration, deducts the human approval wait, and adds the result to
       // this Task's LLM time (for output TPS) — this duration includes tool
@@ -1941,14 +2187,26 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // retry_in_ms; `0` is an immediate retry). A request after it opens a new Task.
       model.runEnded =
         p.status === "fatal" || (p.status === "retryable" && p.retry_in_ms === undefined);
+      model.taskOutcome = model.runEnded
+        ? "failed"
+        : p.status === "aborted"
+          ? "stopped"
+          : p.status === "completed"
+            ? "done"
+            : null;
       // A fatal end stops the run — no abort event follows; this request_end is the
       // terminal record, rendered as an error banner.
       if (p.status === "fatal") {
-        const item: LlmErrorItem = { kind: "llm_error", id: nextId(model) };
+        const item: LlmErrorItem = {
+          kind: "llm_error",
+          id: nextId(model),
+          ...failureFacts(model, tsMs),
+        };
         if (typeof p.error_code === "string") item.errorCode = p.error_code;
         if (typeof p.error_message === "string" && p.error_message) {
           item.errorMessage = p.error_message;
         }
+        if (typeof p.attempt === "number") item.attempt = p.attempt;
         model.items.push(item);
         return;
       }
@@ -1958,11 +2216,13 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         const item: ReconnectItem = {
           kind: "reconnect",
           id: nextId(model),
+          ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
           status: p.status,
           // The core stamps the authoritative ordinal on every retryable request_end; only
           // Traces written before the field existed lack it (rendered as attempt 1).
           attempt: p.attempt ?? 1,
           retrying: false,
+          ...failureFacts(model, tsMs),
         };
         if (typeof p.error_code === "string") item.errorCode = p.error_code;
         if (typeof p.error_message === "string" && p.error_message) {
@@ -1999,6 +2259,15 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
   }
+}
+
+/** The model the running context was opened on and the record's time, for a failed request's details. */
+function failureFacts(model: StreamModel, tsMs: number | undefined): RequestFailureFacts {
+  const held = model.contextModel;
+  return {
+    ...(held !== null ? { model: { provider: held.provider, modelId: held.modelId } } : {}),
+    ...(tsMs !== undefined ? { atMs: tsMs } : {}),
+  };
 }
 
 function findLastRunningMcpConnect(model: StreamModel): McpConnectItem | null {
@@ -2326,33 +2595,53 @@ const IMAGE_IN_KEY = "<image>";
  */
 function imageInKey(value: unknown): unknown {
   if (typeof value !== "string") return value;
-  return value.startsWith("data:") || /^\/api\/sessions\/[^/?#]+\/trace-image\?/.test(value)
+  // "" is an image a history window folded away (a child's output has no Trace position to be
+  // carried by reference, so its large image is elided whole): the same picture as its bytes.
+  return value === "" ||
+    value.startsWith("data:") ||
+    /^\/api\/sessions\/[^/?#]+\/trace-image\?/.test(value)
     ? IMAGE_IN_KEY
     : value;
 }
 
+/** Where a dedup key's folded values would be fetched from: nowhere, the key drops the refs. */
+const KEY_SOURCE = { agentId: "", sessionId: "", fileIndex: 0, ordinal: 0 };
+
 /**
  * The envelope a history copy and its SSE copy share. Disk-only transport metadata
- * (`tracePosition`) must not make an otherwise identical SSE envelope look new, and neither
- * may an image's form: a windowed history page carries a user `image_url` and a tool output's
- * `images` by reference while the stream carries the bytes, and an SSE copy that escaped the
- * overlap dedup would draw the person's image twice. Two images of one prompt may then share a
- * key (same timestamp); that is harmless, since a history read holds a prompt whole (the server
- * appends held inputs the Trace lacks), so each stream copy has its own history copy to match.
+ * (`tracePosition`, the `elided` entries) must not make an otherwise identical SSE envelope look
+ * new, and neither may a value's form:
+ *
+ * - An image: a windowed history page carries a user `image_url` and a tool output's `images` by
+ *   reference while the stream carries the bytes, and an SSE copy that escaped the overlap dedup
+ *   would draw the person's image twice. Every form stands in as one token, before anything is
+ *   folded: the bytes, the reference, and the empty string a window leaves where it folded an
+ *   image away — a child's record has no Trace position to carry its image by reference, so a
+ *   large one comes folded on the history side only. Two images of one prompt may then share a
+ *   key (same timestamp); that is harmless, since a history read holds a prompt whole (the server
+ *   appends held inputs the Trace lacks), so each stream copy has its own history copy to match.
+ * - A bulky value: a history window carries a tool's output, a long argument or a thinking
+ *   block folded (a head and a tail) while the stream carries it whole, so the key folds the
+ *   stream's copy by the same rule the server folds by (folding a folded copy changes nothing).
  */
-function dedupKey(msg: AmspRecord): string {
-  const { tracePosition: _tracePosition, ...envelope } = msg as AmspRecord & {
-    tracePosition?: TracePosition;
-  };
+function dedupKey(input: AmspRecord): string {
+  let msg = input as HistoryRecordLike;
   if (msg.type === "model_msg") {
     const p = msg.payload as { type?: string; image_url?: unknown; images?: unknown };
     if (p.type === "image_url") {
-      return JSON.stringify({ ...envelope, payload: { ...p, image_url: imageInKey(p.image_url) } });
-    }
-    if (p.type === "tool_call_output" && Array.isArray(p.images)) {
-      return JSON.stringify({ ...envelope, payload: { ...p, images: p.images.map(imageInKey) } });
+      msg = { ...msg, payload: { ...p, image_url: imageInKey(p.image_url) } } as HistoryRecordLike;
+    } else if (p.type === "tool_call_output" && Array.isArray(p.images)) {
+      msg = { ...msg, payload: { ...p, images: p.images.map(imageInKey) } } as HistoryRecordLike;
     }
   }
+  const folded = elideHistoryRecord(msg, KEY_SOURCE).record;
+  const {
+    tracePosition: _tracePosition,
+    elided: _elided,
+    ...envelope
+  } = folded as HistoryRecordLike & {
+    tracePosition?: TracePosition;
+  };
   return JSON.stringify(envelope);
 }
 
@@ -2368,6 +2657,57 @@ export function buildDedupIndex(messages: AmspRecord[], limit = 100): Set<string
 /** Determine whether a complete message/event is exactly identical to history's envelope JSON (overlap dedup). */
 export function isDuplicate(index: Set<string>, msg: AmspRecord): boolean {
   return index.has(dedupKey(msg));
+}
+
+// ---------------------------------------------------------------------------
+// Folded bodies (history windows carry bulky values as previews)
+// ---------------------------------------------------------------------------
+
+/** Which of an item's values a folded record fills: a call's arguments, its output, a thinking text. */
+export type ElidedSlot = "call" | "output" | "thinking";
+
+/** An item's folded records, each with the slot its whole values go back into. */
+export function elidedRecordsOf(
+  item: ToolCallItem | ThinkingItem,
+): { slot: ElidedSlot; elided: ElidedRecord }[] {
+  if (item.kind === "thinking") {
+    return item.elided === undefined ? [] : [{ slot: "thinking", elided: item.elided }];
+  }
+  const out: { slot: ElidedSlot; elided: ElidedRecord }[] = [];
+  if (item.elidedCall !== undefined) out.push({ slot: "call", elided: item.elidedCall });
+  if (item.elidedOutput !== undefined) out.push({ slot: "output", elided: item.elidedOutput });
+  return out;
+}
+
+/**
+ * The item takes a record whose values are whole again (`withElidedBody` put each one back): it
+ * shows them from now on, and that slot is folded no more.
+ */
+export function takeWholeRecord(
+  item: ToolCallItem | ThinkingItem,
+  slot: ElidedSlot,
+  record: HistoryRecordLike,
+): void {
+  const p = record.payload as {
+    arguments?: unknown;
+    output?: unknown;
+    images?: unknown;
+    thinking?: unknown;
+  };
+  if (item.kind === "thinking") {
+    if (slot !== "thinking") return;
+    if (typeof p.thinking === "string") item.thinking = p.thinking;
+    delete item.elided;
+    return;
+  }
+  if (slot === "call") {
+    if (typeof p.arguments === "string") item.argumentsText = p.arguments;
+    delete item.elidedCall;
+  } else if (slot === "output") {
+    if (typeof p.output === "string") item.output = p.output;
+    if (Array.isArray(p.images) && p.images.length > 0) item.images = p.images as string[];
+    delete item.elidedOutput;
+  }
 }
 
 /**
@@ -2432,5 +2772,15 @@ export function discardFragmentFor(model: StreamModel, msg: AmspRecord): void {
 
 function removeItem(model: StreamModel, item: ChatItem): void {
   const idx = model.items.indexOf(item);
-  if (idx >= 0) model.items.splice(idx, 1);
+  if (idx >= 0) {
+    model.items.splice(idx, 1);
+    return;
+  }
+  // A compaction's work card lives in its banner, not the transcript.
+  if (item.kind !== "tool_call") return;
+  for (const it of model.items) {
+    if (it.kind !== "compaction" || !it.work) continue;
+    const at = it.work.indexOf(item);
+    if (at >= 0) it.work.splice(at, 1);
+  }
 }

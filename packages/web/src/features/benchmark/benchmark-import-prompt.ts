@@ -9,9 +9,9 @@
  */
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
-import { composeAiPrompt, pickDefaultAgent } from "../ai-create";
-import type { AiChatRequest } from "../ai-create";
-import { classifyImportSource } from "../agents/skill-import-source";
+import { composeAiPrompt, pickDefaultAgent, type AiChatRequest } from "../ai-create";
+
+import { classifyImportSource } from "../agents";
 
 /** What the pasted source is, as far as the prompt's lead sentence cares. */
 export type BenchmarkSourceKind = "repoFolderUrl" | "localPath" | "reference";
@@ -29,12 +29,20 @@ export function classifyBenchmarkSource(input: string): BenchmarkSourceKind {
   return "reference";
 }
 
-/** The whole prompt for one source in Project `projectId`: the lead, then the tail after a blank line. */
-export function buildBenchmarkImportPrompt(input: string, projectId: string): string {
+/**
+ * The whole prompt for one source in Project `projectId`: the lead, then the tail after a blank
+ * line. `benchmarksDir` is the folder the copy goes into (benchmark-prompts.ts's
+ * benchmarksFolder): the server names it, the Agent does not work it out.
+ */
+export function buildBenchmarkImportPrompt(
+  input: string,
+  projectId: string,
+  benchmarksDir: string,
+): string {
   const source = input.trim();
   return composeAiPrompt(
     S.benchmark.importPromptLead[classifyBenchmarkSource(source)](source),
-    S.benchmark.importPromptTail(projectId),
+    S.benchmark.importPromptTail(projectId, benchmarksDir),
   );
 }
 
@@ -48,13 +56,14 @@ export function buildBenchmarkImportPrompt(input: string, projectId: string): st
 export function benchmarkImportChat(
   input: string,
   projectId: string,
+  benchmarksDir: string,
   agents: readonly AgentSummary[],
 ): AiChatRequest | null {
   const agent = pickDefaultAgent(agents);
   if (agent === null || input.trim() === "") return null;
   return {
     agentId: agent.agentId,
-    text: buildBenchmarkImportPrompt(input, projectId),
+    text: buildBenchmarkImportPrompt(input, projectId, benchmarksDir),
     skills: ["benchmark-design"],
   };
 }

@@ -17,7 +17,8 @@
  * `provider` and `model_id` as two independent fields, with the `(provider, model_id)` pair as
  * the unique key — string concatenation like `<provider>/<id>` is forbidden anywhere in the
  * pipeline. `model_id` is the upstream request id, sent to MMSP unchanged; `default_model` /
- * `vision_model` are paired `{ provider, model_id }` references (a TOML inline table).
+ * `vision_model` are paired `{ provider, model_id }` references (a TOML inline table), and so is
+ * every entry of the `[tools]` table.
  *
  * A caller always supplies the **complete pair**: `provider` is never guessed from the builtin
  * catalog and never derived from whichever configured entry happens to carry the same
@@ -33,6 +34,7 @@ import type {
   CommandPolicyRule,
   ThinkingLevelName,
 } from "../interfaces/index.js";
+import { SUBAGENT_THINKING_LEVELS } from "../interfaces/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
 import { canonicalClientType, sameClientType } from "./client-type.js";
@@ -154,15 +156,12 @@ export type ChatApprovalMode = (typeof CHAT_APPROVAL_MODES)[number];
  * Thinking levels storable in `[default_chat]`: the selectable tiers only — never
  * `"none"` (the project default is a fallback for Agents without an explicit level, and
  * "no thinking" is not offered as a default; see the web picker's SELECTABLE_THINKING_LEVELS).
+ * One ladder with the levels `run_subagent` takes (SUBAGENT_THINKING_LEVELS), so the two cannot
+ * disagree.
  */
 export type DefaultChatThinkingLevel = Exclude<ThinkingLevelName, "none">;
-export const DEFAULT_CHAT_THINKING_LEVELS: readonly DefaultChatThinkingLevel[] = [
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
+export const DEFAULT_CHAT_THINKING_LEVELS: readonly DefaultChatThinkingLevel[] =
+  SUBAGENT_THINKING_LEVELS;
 
 /**
  * New-chat defaults (`[default_chat]`): per-Project prefill for newly created chats.
@@ -202,6 +201,14 @@ export interface ProviderConnection {
 export type ProviderTable = Record<string, ProviderConnection>;
 
 /**
+ * `[tools]`: the models bound to the tools plugins offer outside a chat turn, keyed by the
+ * binding's key — `t2i = { provider = "…", model_id = "…" }`. An open table: a plugin declares
+ * the bindings it reads (the server's `ToolModelBindingsProvider.bindings` slot) and core
+ * reads none of them. Every entry is a paired reference to a configured model.
+ */
+export type ToolModelTable = Record<string, ModelRef>;
+
+/**
  * Project-level config.
  * Docs: /docs/configuration § "Project config".
  */
@@ -217,6 +224,11 @@ export interface ProjectConfig {
    * default — models that don't support images won't be able to read images.
    */
   vision_model?: ModelRef;
+  /**
+   * The tool-model bindings (`[tools]`, see ToolModelTable); absent = none bound. Loaded
+   * tolerantly (parseToolModelTable).
+   */
+  tools?: ToolModelTable;
   /**
    * New-chat defaults block; absent by default (`defaultProjectConfig` never includes it —
    * absent = the pre-existing behavior). Loaded tolerantly: invalid values drop per key.
@@ -572,6 +584,22 @@ export function parseProviderTable(value: unknown): ProviderTable | undefined {
 }
 
 /**
+ * Leniently parses the `[tools]` table: a value that is not a table reads as absent, and a
+ * member that is not a `{ provider, model_id }` pair is dropped — a binding a plugin wrote
+ * badly must never block reading the model table. Undefined when no member remains. Exported
+ * for the server, which narrows its cached parse the same way.
+ */
+export function parseToolModelTable(value: unknown): ToolModelTable | undefined {
+  if (!isTable(value)) return undefined;
+  const out: ToolModelTable = {};
+  for (const [key, member] of Object.entries(value)) {
+    if (key.trim() === "" || !isModelRefShape(member)) continue;
+    out[key] = { provider: member.provider, model_id: member.model_id };
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
  * Leniently parses the `[default_chat]` block (new-chat defaults): each key is validated
  * independently and an invalid value (wrong type / unknown enum member / `"none"` as a
  * thinking level) drops that key rather than failing the load — the block only ever
@@ -607,7 +635,8 @@ function parseDefaultChat(value: unknown): ProjectChatDefaults | undefined {
  * that is not an array reads as absent, i.e. the factory set. A present array is the
  * literal list — invalid entries are dropped individually, which can narrow the deny set,
  * but the write paths validate up front and the file is never hand-edited by design, so
- * this only fires for hand-placed data.
+ * this only fires for hand-placed data. A rule's `action` other than `"deny"` / `"ask"`
+ * reads as absent, i.e. `deny` (the safe direction again).
  *
  * Exported for the server's ProjectConfigService, which holds a cached parse of the same
  * file — the same sharing rule as projectConfigFromTable, so the two paths can never
@@ -752,6 +781,7 @@ export function parseCommandPolicy(value: unknown): CommandPolicyConfig | undefi
           ? { description: r.description }
           : {}),
         ...(typeof r.enabled === "boolean" ? { enabled: r.enabled } : {}),
+        ...(r.action === "deny" || r.action === "ask" ? { action: r.action } : {}),
       });
     }
     out.rules = rules;
@@ -775,6 +805,7 @@ export function projectConfigFromTable(
 ): ProjectConfig {
   const defaultModel = parseRefField(file, "default_model", parsed.default_model);
   const visionModel = parseRefField(file, "vision_model", parsed.vision_model);
+  const tools = parseToolModelTable(parsed.tools);
   const defaultChat = parseDefaultChat(parsed.default_chat);
   const commandPolicy = parseCommandPolicy(parsed.command_policy);
   const plugins = parsePluginTables(parsed.plugins);
@@ -783,6 +814,7 @@ export function projectConfigFromTable(
     ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
     ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
     ...(visionModel !== undefined ? { vision_model: visionModel } : {}),
+    ...(tools !== undefined ? { tools } : {}),
     ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
     ...(commandPolicy !== undefined ? { command_policy: commandPolicy } : {}),
     ...(plugins !== undefined ? { plugins } : {}),
@@ -832,13 +864,25 @@ function isModelRefShape(v: unknown): v is ModelRef {
   return typeof o.provider === "string" && typeof o.model_id === "string";
 }
 
+/** A non-empty table whose every member is a paired reference (the `[tools]` shape). */
+function isRefTable(v: unknown): v is Record<string, ModelRef> {
+  return isTable(v) && Object.keys(v).length > 0 && Object.values(v).every(isModelRefShape);
+}
+
+/** A key as TOML writes it: bare when it can be, quoted otherwise (smol-toml's own rule). */
+function tomlKey(key: string): string {
+  const line = stringifyToml({ [key]: 0 }).trim();
+  return line.slice(0, line.lastIndexOf(" = "));
+}
+
 /**
  * Renders the full text of `.project_config.toml` — the **single source of the write format
  * site-wide** (shared by core's saveProjectConfig and the interface layer's full-table write, to
  * avoid the same file ending up in two different formats).
  *
  * Paired references (default_model / vision_model) are rendered as a TOML inline table
- * `{ provider = "...", model_id = "..." }`; `models` is always
+ * `{ provider = "...", model_id = "..." }`, and a table whose every member is one (`[tools]`)
+ * as its header followed by one `key = { … }` line per member; `models` is always
  * placed last, since any table header after `[[models]]` would be read as its sub-table. Unknown
  * extension fields are kept as-is.
  *
@@ -864,6 +908,15 @@ export function renderProjectConfigToml(data: Record<string, unknown>): string {
     if (key === "providers" && noProviders) continue;
     if (isModelRefShape(value)) {
       head.push(`${key} = ${tomlInlineRef(value)}`);
+      continue;
+    }
+    if (isRefTable(value)) {
+      tables.push(
+        [
+          `[${tomlKey(key)}]`,
+          ...Object.entries(value).map(([k, ref]) => `${tomlKey(k)} = ${tomlInlineRef(ref)}`),
+        ].join("\n"),
+      );
       continue;
     }
     const rendered = stringifyToml({ [key]: value }).trim();
@@ -1148,10 +1201,11 @@ export async function setVisionModel(
  * have is not an error and writes nothing, so the caller decides whether a missing entry
  * deserves a message.
  *
- * `default_model` / `vision_model` are cleared when they named the removed entry. Leaving a
- * pointer behind would name a model that is no longer configured, which createSession rejects
- * outright — the same rule the models page applies when a row is deleted, kept on one behavior
- * so the CLI and the Web App never disagree about what a deletion leaves behind.
+ * `default_model` / `vision_model`, and every `[tools]` binding, are cleared when they named the
+ * removed entry. Leaving a pointer behind would name a model that is no longer configured, which
+ * createSession rejects outright — the same rule the models page applies when a row is deleted,
+ * kept on one behavior so the CLI and the Web App never disagree about what a deletion leaves
+ * behind.
  */
 export async function removeModel(
   root: string,
@@ -1167,6 +1221,11 @@ export async function removeModel(
   }
   if (cfg.vision_model && sameModelRef(cfg.vision_model, ref)) {
     delete cfg.vision_model;
+  }
+  if (cfg.tools !== undefined) {
+    const kept = Object.entries(cfg.tools).filter(([, bound]) => !sameModelRef(bound, ref));
+    if (kept.length > 0) cfg.tools = Object.fromEntries(kept);
+    else delete cfg.tools;
   }
   await saveProjectConfig(root, projectId, cfg);
   return cfg;

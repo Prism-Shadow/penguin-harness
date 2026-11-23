@@ -11,6 +11,12 @@
  * with the very index it is about to change. Deleting confirms first and also drops the file's
  * MEMORY.md index lines (server-side).
  *
+ * A memory may keep files — the scripts it describes — in a folder of its name. Its row counts
+ * them, and its view shows them under the Markdown, each opening read-only as code with line
+ * numbers and deletable on its own; deleting the memory deletes its folder. A file is the Agent's
+ * code, so it has no edit bridge: the Agent changes it in a chat like any other file. Files in a
+ * folder no memory keeps are listed apart, under a note, so nothing on disk is hidden.
+ *
  * A whole group moves in one piece, though: each header carries export and import, following
  * the Agent State snapshot's split — any member may download a group, only the owner may write
  * one back. Import defaults to the mode that loses nothing, and the two that do not are held
@@ -26,17 +32,26 @@
  * with unsaved edits asks first. A reload of the tab's data moves what they are compared with
  * and keeps what is being typed.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChangeEvent, RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type RefObject,
+  type ReactNode,
+} from "react";
+
 import type {
   MemoryFileInfo,
+  MemoryFolderFile,
   MemoryImportMode,
-  MemoryScopeExport,
   MemoryScopeInfo,
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
   Card,
+  CodeSurface,
   CollapsibleSection,
   ConfirmModal,
   CopiedStatus,
@@ -47,6 +62,7 @@ import {
   HelpFold,
   HiddenFileInput,
   ICONS,
+  ICON_SIZE,
   IconButton,
   InfoPopover,
   ListRow,
@@ -55,22 +71,23 @@ import {
   Notice,
   RadioGroup,
   Sheet,
-  SkeletonList,
   Textarea,
   ToggleRow,
   UploadIcon,
+  Waiting,
   bodyWithoutFrontmatter,
   buttonClass,
+  languageForFileName,
   toastError,
   toastSuccess,
   useCopied,
   useFormDraft,
+  type SheetSnap,
 } from "@prismshadow/penguin-ui";
-import type { SheetSnap } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatRelativeDate } from "../../lib/format";
+import { formatBytes, formatRelativeDate } from "../../lib/format";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
@@ -79,11 +96,14 @@ import { useAiBridge } from "../ai-create";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
   MemoryDocumentError,
-  memoryDocumentFileName,
-  parseMemoryScopeDocument,
-  planMemoryImport,
+  importConfirmPlan,
+  memoryUploadOf,
+  type MemoryImportPlan,
+  type MemoryUpload,
 } from "./memory-transfer";
-import type { MemoryImportPlan } from "./memory-transfer";
+import { toastApiError } from "../../lib/toast-api-error";
+import { downloadArchive } from "../../lib/archive-download";
+import { failureNode } from "../../lib/failure";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
@@ -127,6 +147,8 @@ function writeCollapsedScopes(key: string | null, collapsed: ReadonlySet<string>
 interface ScopeGroup {
   scope: MemoryScopeInfo;
   files: MemoryFileInfo[];
+  /** Files in folders no memory keeps. */
+  orphanFiles: MemoryFolderFile[];
 }
 
 /** The two memory prompts as one draft: the always-injected half and the Workspace addendum. */
@@ -138,11 +160,21 @@ interface MemoryPrompts {
 /** The prompts' baseline until the stored ones arrive. */
 const NO_PROMPTS: MemoryPrompts = { prompt: "", workspace: "" };
 
-/** A memory selected for an action (view drawer / delete confirm). */
+/** A memory selected for an action (edit modal). */
 interface Selected {
   scope: MemoryScopeInfo;
   file: MemoryFileInfo;
 }
+
+/** A file kept in a folder, with the memory that keeps it (null for a folder no memory keeps). */
+interface SelectedFile {
+  scope: MemoryScopeInfo;
+  file: MemoryFolderFile;
+  topic: MemoryFileInfo | null;
+}
+
+/** What the view panel shows, and what a delete confirmation is about: a memory, or one kept file. */
+type Target = ({ kind: "topic" } & Selected) | ({ kind: "file" } & SelectedFile);
 
 export function MemoryTab({
   agentId,
@@ -170,7 +202,7 @@ export function MemoryTab({
   const [memoryDir, setMemoryDir] = useState("");
   const [groups, setGroups] = useState<ScopeGroup[] | null>(null);
   // Tab-level error is the initial load failure only; actions report via toast.
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [switchBusy, setSwitchBusy] = useState(false);
   const collapseKey =
     userId && projectId ? collapsedStoreKey(userId, projectId, agentKey(machineId, agentId)) : null;
@@ -187,7 +219,7 @@ export function MemoryTab({
   // Open flag and content are separate: the Sheet animates out on close, and nulling the
   // content with it would empty the panel mid-exit. The stale content is simply kept.
   const [viewOpen, setViewOpen] = useState(false);
-  const [viewing, setViewing] = useState<(Selected & { content: string }) | null>(null);
+  const [viewing, setViewing] = useState<(Target & { content: string }) | null>(null);
   const [editing, setEditing] = useState<Selected | null>(null);
   const [editRequirement, setEditRequirement] = useState("");
   const [adding, setAdding] = useState<MemoryScopeInfo | null>(null);
@@ -196,12 +228,12 @@ export function MemoryTab({
   const [importing, setImporting] = useState<{
     scope: MemoryScopeInfo;
     fileName: string;
-    doc: MemoryScopeExport;
+    upload: MemoryUpload;
   } | null>(null);
   const [importMode, setImportMode] = useState<MemoryImportMode>("skip");
   const [importPlan, setImportPlan] = useState<MemoryImportPlan | null>(null);
   const [importBusy, setImportBusy] = useState(false);
-  const [removing, setRemoving] = useState<Selected | null>(null);
+  const [removing, setRemoving] = useState<Target | null>(null);
   // ≥1024px the view opens as a right Drawer, below as a bottom Sheet — same live-updating
   // breakpoint as the chat page's panels; the two are mounted mutually exclusively.
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_QUERY).matches);
@@ -226,9 +258,10 @@ export function MemoryTab({
     setCollapsed(next);
   };
 
+  // A read after a change refreshes in place: the groups on screen stay until the answer
+  // replaces them, so a delete or an import never drops the tab back to its wait.
   const load = useCallback(async () => {
     if (!projectId || !agentId) return;
-    setGroups(null);
     setError(null);
     try {
       const [overview, configView] = await Promise.all([
@@ -257,21 +290,23 @@ export function MemoryTab({
         await Promise.all(
           overview.scopes.map(async (scope) => {
             try {
-              return {
-                scope,
-                files: (await api.getMemoryFiles(projectId, agentId, scope.scopeKey, machineId))
-                  .files,
-              };
+              const listed = await api.getMemoryFiles(
+                projectId,
+                agentId,
+                scope.scopeKey,
+                machineId,
+              );
+              return { scope, files: listed.files, orphanFiles: listed.orphanFiles };
             } catch {
               // One unreadable scope (bad hand-made directory name, raced delete) must not
               // blank the whole tab; it lists as an empty group instead.
-              return { scope, files: [] };
+              return { scope, files: [], orphanFiles: [] };
             }
           }),
         ),
       );
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an Agent's memory could not be loaded" }));
     }
   }, [projectId, agentId, machineId, collapseKey]);
 
@@ -293,7 +328,7 @@ export function MemoryTab({
       toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSwitchBusy(false);
     }
@@ -308,7 +343,7 @@ export function MemoryTab({
       toastSuccess(S.memory.insertPlaceholderDone);
       onConfigChanged?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -360,7 +395,7 @@ export function MemoryTab({
       toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSavingPrompts(false);
     }
@@ -371,15 +406,35 @@ export function MemoryTab({
     try {
       const res = await api.getMemoryFile(projectId, agentId, scope.scopeKey, file.name, machineId);
       setSheetSnap("half"); // Every mobile open starts at the browsing height, like the chat panels.
-      setViewing({ scope, file: res.file, content: res.content });
+      setViewing({ kind: "topic", scope, file: res.file, content: res.content });
       setViewOpen(true);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
-  const memoryFilePath = (scope: MemoryScopeInfo, file: MemoryFileInfo) =>
-    `${memoryDir}/${scope.scopeKey}/${file.name}`;
+  /** Opens one kept file as code, in the same panel; from a memory's view, Back returns to it. */
+  const openFileView = async (
+    scope: MemoryScopeInfo,
+    file: MemoryFolderFile,
+    topic: MemoryFileInfo | null,
+  ) => {
+    if (!projectId) return;
+    try {
+      // The one file route answers a kept file's path as well as a topic's name.
+      const res = await api.getMemoryFile(projectId, agentId, scope.scopeKey, file.path, machineId);
+      if (!viewOpen) setSheetSnap("half");
+      const read = { path: file.path, size: res.file.size, modifiedAt: res.file.modifiedAt };
+      setViewing({ kind: "file", scope, file: read, topic, content: res.content });
+      setViewOpen(true);
+    } catch (e) {
+      toastApiError(e);
+    }
+  };
+
+  /** Absolute path of a memory or of a file it keeps: `name` for a memory, `path` for a kept file. */
+  const memoryFilePath = (scope: MemoryScopeInfo, scopePath: string) =>
+    `${memoryDir}/${scope.scopeKey}/${scopePath}`;
 
   /** Opens the edit modal (closing the view panel if it is up): requirement field + prompt preview, then the chat jump. */
   const openEditor = (scope: MemoryScopeInfo, file: MemoryFileInfo) => {
@@ -424,45 +479,38 @@ export function MemoryTab({
     if (adding) openChatWithDraft(addPrompt, adding.workspacePath);
   };
 
-  /**
-   * Downloads one group as a transfer document. Fetched as JSON and saved through an object URL
-   * rather than followed as a link, so a failed request becomes a toast instead of an error body
-   * saved to disk (the skills tab's export made the same call).
-   */
+  /** Downloads one group's folder as a zip (the shared archive download: a failure is a toast, never a saved error body). */
   const exportScope = async (scope: MemoryScopeInfo) => {
     if (!projectId) return;
     try {
-      const doc = await api.exportMemoryScope(projectId, agentId, scope.scopeKey, machineId);
-      const url = URL.createObjectURL(
-        new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }),
+      await downloadArchive(
+        api.memoryScopeArchiveUrl(projectId, agentId, scope.scopeKey, machineId),
+        `${agentId}-${scope.scopeKey}-memory`,
       );
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = memoryDocumentFileName(agentId, scope.scopeKey, doc.exportedAt);
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
-  /** Reads the picked file and opens the import modal; a file that is not a document never gets that far. */
+  /** Reads the picked file and opens the import modal; a file that is neither a zip nor a document never gets that far. */
   const pickImport = async (scope: MemoryScopeInfo, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     // Cleared so picking the same file again still fires a change event.
     event.target.value = "";
     if (!file) return;
     try {
-      const doc = parseMemoryScopeDocument(await file.text());
+      const upload = memoryUploadOf(new Uint8Array(await file.arrayBuffer()));
       setImportMode("skip");
-      setImporting({ scope, fileName: file.name, doc });
+      setImporting({ scope, fileName: file.name, upload });
     } catch (e) {
       toastError(e instanceof MemoryDocumentError ? e.message : S.memory.importInvalidFile);
     }
   };
 
+  /**
+   * Sends the import. Without `confirm`, one that would destroy something comes back refused,
+   * naming what is at stake: that opens the confirmation, whose button sends it again confirmed.
+   */
   const runImport = async (confirm: boolean) => {
     if (!projectId || !importing) return;
     setImportBusy(true);
@@ -471,7 +519,7 @@ export function MemoryTab({
         projectId,
         agentId,
         importing.scope.scopeKey,
-        { mode: importMode, confirm, payload: importing.doc },
+        { mode: importMode, confirm, ...importing.upload },
         machineId,
       );
       const touched = res.added.length + res.overwritten.length + res.removed.length;
@@ -486,23 +534,12 @@ export function MemoryTab({
       // The agent card's memory count changed; refresh the list provider too.
       void reloadAgents();
     } catch (e) {
-      toastError(apiErrorText(e));
+      const plan = confirm ? null : importConfirmPlan(e);
+      if (plan !== null) setImportPlan(plan);
+      else toastApiError(e);
     } finally {
       setImportBusy(false);
     }
-  };
-
-  /** Import's first click: straight through when nothing would be lost, otherwise into the confirmation. */
-  const submitImport = () => {
-    if (!importing) return;
-    const group = groups?.find((g) => g.scope.scopeKey === importing.scope.scopeKey);
-    const plan = planMemoryImport(
-      importing.doc,
-      { names: group?.files.map((f) => f.name) ?? [], hasIndex: importing.scope.hasIndex },
-      importMode,
-    );
-    if (plan.destroys) setImportPlan(plan);
-    else void runImport(false);
   };
 
   const confirmRemove = async () => {
@@ -510,20 +547,42 @@ export function MemoryTab({
     const target = removing;
     setRemoving(null);
     try {
-      await api.deleteMemoryFile(
-        projectId,
-        agentId,
-        target.scope.scopeKey,
-        target.file.name,
-        machineId,
-      );
+      if (target.kind === "topic") {
+        await api.deleteMemoryFile(
+          projectId,
+          agentId,
+          target.scope.scopeKey,
+          target.file.name,
+          machineId,
+        );
+      } else {
+        await api.deleteMemoryFile(
+          projectId,
+          agentId,
+          target.scope.scopeKey,
+          target.file.path,
+          machineId,
+        );
+      }
       toastSuccess(S.memory.deleteDone);
-      if (viewing && viewing.file.name === target.file.name) setViewOpen(false);
+      if (viewing !== null && viewOpen) {
+        if (target.kind === "topic") {
+          // The memory took its folder along: neither it nor a file it kept is left to show.
+          const shown = viewing.kind === "topic" ? viewing.file : viewing.topic;
+          if (shown?.name === target.file.name) setViewOpen(false);
+        } else if (viewing.kind === "file" && viewing.file.path === target.file.path) {
+          // Back to the memory that kept it, whose file list just lost a row.
+          if (viewing.topic) void openView(viewing.scope, viewing.topic);
+          else setViewOpen(false);
+        } else if (viewing.kind === "topic" && target.topic?.name === viewing.file.name) {
+          void openView(viewing.scope, viewing.file);
+        }
+      }
       await load();
       // The agent card's memory count changed; refresh the list provider too.
       void reloadAgents();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -556,14 +615,16 @@ export function MemoryTab({
         variant="danger"
         label={`${S.memory.delete} ${file.title}`}
         title={S.memory.delete}
-        onClick={() => setRemoving({ scope, file })}
+        onClick={() => setRemoving({ kind: "topic", scope, file })}
       >
         <GlyphIcon d={ICONS.trash} size={14} />
       </IconButton>
     </div>
   );
 
-  // A memory's title is its file's identifier, so it keeps the data face on the code rung.
+  // A memory's title is its file's identifier, so it keeps the data face on the code rung. A
+  // memory that keeps files says how many beside its date — the glyph and the number, the
+  // wording in the tooltip and the accessible name.
   const fileRow = (scope: MemoryScopeInfo, file: MemoryFileInfo) => (
     <ListRow
       key={file.name}
@@ -571,7 +632,17 @@ export function MemoryTab({
       title={<span className="font-mono text-[length:var(--ui-text-code-size)]">{file.title}</span>}
       description={file.description ? file.description : undefined}
       meta={
-        <span className="tabular-nums">
+        <span className="flex items-center gap-2 tabular-nums">
+          {file.files.length > 0 && (
+            <span
+              data-tooltip={S.memory.fileCount(file.files.length)}
+              className="flex items-center gap-1"
+            >
+              <GlyphIcon d={ICONS.paperclip} size={ICON_SIZE.inlineGlyph} />
+              <span aria-hidden="true">{file.files.length}</span>
+              <span className="sr-only">{S.memory.fileCount(file.files.length)}</span>
+            </span>
+          )}
           {file.updatedAt ?? formatRelativeDate(file.modifiedAt, locale)}
         </span>
       }
@@ -579,63 +650,174 @@ export function MemoryTab({
     />
   );
 
-  /** Metadata + rendered body of the memory in view, shared by the Drawer and the Sheet. */
-  const viewMeta = viewing && (
-    <>
-      <span className="text-xs text-gray-400 dark:text-gray-500">
-        {viewing.file.updatedAt ?? formatRelativeDate(viewing.file.modifiedAt, locale)}
-      </span>
-      {viewing.file.description && (
-        <p className="text-xs text-gray-500 dark:text-gray-400">{viewing.file.description}</p>
-      )}
-      <div className="md-body border-t border-gray-100 pt-3 text-sm dark:border-gray-800">
-        <Md text={bodyWithoutFrontmatter(viewing.content)} />
-      </div>
-    </>
+  /** One kept file's row: its path, size and date, then View and Delete — no Edit, it is the Agent's code. */
+  const keptRow = (
+    scope: MemoryScopeInfo,
+    file: MemoryFolderFile,
+    topic: MemoryFileInfo | null,
+  ) => (
+    <ListRow
+      key={file.path}
+      as="li"
+      title={<span className="font-mono text-[length:var(--ui-text-code-size)]">{file.path}</span>}
+      meta={
+        <span className="flex items-center gap-2 tabular-nums">
+          <span>{formatBytes(file.size)}</span>
+          <span>{formatRelativeDate(file.modifiedAt, locale)}</span>
+        </span>
+      }
+      trailing={
+        <div className="flex shrink-0 items-center gap-1.5">
+          <IconButton
+            label={`${S.memory.view} ${file.path}`}
+            title={S.memory.view}
+            onClick={() => void openFileView(scope, file, topic)}
+          >
+            <GlyphIcon d={ICONS.eye} size={14} className="text-gray-600 dark:text-gray-300" />
+          </IconButton>
+          <IconButton
+            variant="danger"
+            label={`${S.memory.delete} ${file.path}`}
+            title={S.memory.delete}
+            onClick={() => setRemoving({ kind: "file", scope, file, topic })}
+          >
+            <GlyphIcon d={ICONS.trash} size={14} />
+          </IconButton>
+        </div>
+      }
+    />
   );
+
+  /** A group's files that no memory keeps, ruled off under a note that says where they come from. */
+  const orphanSection = (scope: MemoryScopeInfo, files: MemoryFolderFile[], ruled: boolean) =>
+    files.length === 0 ? null : (
+      <section className={ruled ? "border-t border-line-muted" : ""}>
+        <h4 className="flex items-center gap-1.5 px-3 pb-1 pt-3 text-xs font-medium text-fg-muted">
+          {S.memory.orphanFiles}
+          <InfoPopover label={S.memory.orphanFiles}>{S.memory.orphanFilesHint}</InfoPopover>
+        </h4>
+        <ul>{files.map((file) => keptRow(scope, file, null))}</ul>
+      </section>
+    );
+
+  /**
+   * Metadata + body of what is in view, shared by the Drawer and the Sheet: a memory's Markdown
+   * with its frontmatter stripped, then the files it keeps; or one kept file's code with line
+   * numbers under its absolute path.
+   */
+  const viewMeta =
+    viewing &&
+    (viewing.kind === "topic" ? (
+      <>
+        <span className="text-xs text-gray-400 dark:text-gray-500">
+          {viewing.file.updatedAt ?? formatRelativeDate(viewing.file.modifiedAt, locale)}
+        </span>
+        {viewing.file.description && (
+          <p className="text-xs text-gray-500 dark:text-gray-400">{viewing.file.description}</p>
+        )}
+        <div className="md-body border-t border-gray-100 pt-3 text-sm dark:border-gray-800">
+          <Md text={bodyWithoutFrontmatter(viewing.content)} />
+        </div>
+        {viewing.file.files.length > 0 && (
+          <section className="-mx-3 border-t border-line-muted">
+            <h4 className="flex items-center gap-1.5 px-3 pb-1 pt-3 text-xs font-medium text-fg-muted">
+              {S.memory.keptFiles}
+              <InfoPopover label={S.memory.keptFiles}>{S.memory.keptFilesHint}</InfoPopover>
+              <span className="ml-auto tabular-nums text-fg-subtle">
+                {S.memory.fileCount(viewing.file.files.length)}
+              </span>
+            </h4>
+            <ul>{viewing.file.files.map((file) => keptRow(viewing.scope, file, viewing.file))}</ul>
+          </section>
+        )}
+      </>
+    ) : (
+      <>
+        <span className="flex gap-2 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+          <span>{formatBytes(viewing.file.size)}</span>
+          <span>{formatRelativeDate(viewing.file.modifiedAt, locale)}</span>
+        </span>
+        <p className="break-all font-mono text-xs text-gray-400 dark:text-gray-500">
+          {memoryFilePath(viewing.scope, viewing.file.path)}
+        </p>
+        <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
+          <CodeSurface
+            language={languageForFileName(viewing.file.path)}
+            code={viewing.content}
+            highlight
+            lineNumbers
+            wrap
+            className="text-xs leading-relaxed"
+          />
+        </div>
+      </>
+    ));
 
   const viewActions = viewing && (
     <div className="flex shrink-0 justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-      <Button size="sm" onClick={() => openEditor(viewing.scope, viewing.file)}>
-        {S.memory.edit}
-      </Button>
+      {viewing.kind === "topic" ? (
+        <Button size="sm" onClick={() => openEditor(viewing.scope, viewing.file)}>
+          {S.memory.edit}
+        </Button>
+      ) : (
+        viewing.topic && (
+          <Button
+            size="sm"
+            className="mr-auto"
+            onClick={() => viewing.topic && void openView(viewing.scope, viewing.topic)}
+          >
+            {S.memory.backToMemory(viewing.topic.title)}
+          </Button>
+        )
+      )}
       <Button size="sm" variant="danger" onClick={() => setRemoving(viewing)}>
         {S.memory.delete}
       </Button>
     </div>
   );
 
+  /** The view panel's title: a memory's frontmatter name, or a kept file's path. */
+  const viewTitle =
+    viewing === null ? "" : viewing.kind === "topic" ? viewing.file.title : viewing.file.path;
+
   return (
     <div className="space-y-4">
       {/* Tab-level description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
       <HelpFold label={S.agent.tabMemory}>{S.memory.desc}</HelpFold>
 
-      <ToggleRow
-        variant="card"
-        label={S.memory.enable}
-        checked={enabled}
-        onChange={(v) => void toggleEnabled(v)}
-        disabled={switchBusy}
-      />
-
-      {!templateHasMemory && (
-        <Notice
-          tone="attention"
-          variant="callout"
-          action={{ label: S.memory.insertPlaceholder, onClick: () => void insertPlaceholder() }}
-        >
-          {S.memory.templateMissing}
-        </Notice>
-      )}
-
+      {/* The switch, the notice, the groups and the prompts come from one read and arrive
+          together; until then the tab's one wait stands under the description, so no switch
+          flips and no prompt fills in after it is drawn. */}
       {groups === null ? (
-        <SkeletonList rows={4} />
+        <Waiting rows={4} />
       ) : (
-        <div className={enabled ? "space-y-4" : "space-y-4 opacity-60"}>
-          {groups.map(({ scope, files }) => {
-            const open = !collapsed.has(scope.scopeKey);
-            return (
-              /* One collapsible section per scope: the head strip folds the group; the group's
+        <>
+          <ToggleRow
+            variant="card"
+            label={S.memory.enable}
+            checked={enabled}
+            onChange={(v) => void toggleEnabled(v)}
+            disabled={switchBusy}
+          />
+
+          {!templateHasMemory && (
+            <Notice
+              tone="attention"
+              variant="callout"
+              action={{
+                label: S.memory.insertPlaceholder,
+                onClick: () => void insertPlaceholder(),
+              }}
+            >
+              {S.memory.templateMissing}
+            </Notice>
+          )}
+
+          <div className={enabled ? "space-y-4" : "space-y-4 opacity-60"}>
+            {groups.map(({ scope, files, orphanFiles }) => {
+              const open = !collapsed.has(scope.scopeKey);
+              return (
+                /* One collapsible section per scope: the head strip folds the group; the group's
                  own actions sit after the toggle, outside it, since a button cannot hold
                  another. The section is a size container, not a viewport breakpoint: the
                  settings panel narrows independently of the window. Below @md the three action
@@ -644,157 +826,163 @@ export function MemoryTab({
                  tier (state/theme.tsx), so the threshold scales with the labels it measures. No
                  action is hidden at any width; each keeps its icon, an aria-label and a
                  tooltip. */
-              <CollapsibleSection
-                key={scope.scopeKey}
-                className="@container"
-                title={
-                  scope.kind === "workspace" && scope.workspacePath !== undefined ? (
-                    <>
-                      {scopeTitle(scope)}
-                      <span className="ml-2 font-mono text-xs font-normal text-gray-400 dark:text-gray-500">
-                        {scope.workspacePath}
-                      </span>
-                    </>
-                  ) : (
-                    scopeTitle(scope)
-                  )
-                }
-                meta={S.memory.itemCount(files.length)}
-                open={open}
-                onOpenChange={() => toggleCollapsed(scope.scopeKey)}
-                actions={
-                  /* Whole-group transfer, icon + label (the labels are what say which way a
+                <CollapsibleSection
+                  key={scope.scopeKey}
+                  className="@container"
+                  title={
+                    scope.kind === "workspace" && scope.workspacePath !== undefined ? (
+                      <>
+                        {scopeTitle(scope)}
+                        <span className="ml-2 font-mono text-xs font-normal text-gray-400 dark:text-gray-500">
+                          {scope.workspacePath}
+                        </span>
+                      </>
+                    ) : (
+                      scopeTitle(scope)
+                    )
+                  }
+                  meta={S.memory.itemCount(files.length)}
+                  open={open}
+                  onOpenChange={() => toggleCollapsed(scope.scopeKey)}
+                  actions={
+                    /* Whole-group transfer, icon + label (the labels are what say which way a
                      transfer goes, wherever the row is wide enough to keep them): export for any
                      member, import for the owner. The tooltip carries what the label cannot —
                      that the whole group travels — and on a narrow row, where the label is gone,
                      it carries the direction too, alongside the aria-label. */
-                  <>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      title={S.memory.exportScopeHint}
-                      data-tooltip-extra
-                      aria-label={S.memory.exportScopeLabel(scopeTitle(scope))}
-                      onClick={() => void exportScope(scope)}
-                    >
-                      <DownloadIcon size={13} />
-                      <span className="hidden @md:inline">{S.memory.exportScope}</span>
-                    </Button>
-                    {isOwner && (
-                      <label
-                        className={`${GHOST_LABEL_CLASS} shrink-0`}
-                        data-tooltip={S.memory.importScopeHint}
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title={S.memory.exportScopeHint}
                         data-tooltip-extra
-                        aria-label={S.memory.importScopeLabel(scopeTitle(scope))}
+                        aria-label={S.memory.exportScopeLabel(scopeTitle(scope))}
+                        onClick={() => void exportScope(scope)}
                       >
-                        <HiddenFileInput
-                          accept=".json,application/json"
-                          onChange={(e) => void pickImport(scope, e)}
-                        />
-                        <UploadIcon size={13} />
-                        <span className="hidden @md:inline">{S.memory.importScope}</span>
-                      </label>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      title={S.memory.add}
-                      aria-label={S.memory.addScopeLabel(scopeTitle(scope))}
-                      onClick={() => openAdd(scope)}
-                    >
-                      <GlyphIcon d={ICONS.plus} size={13} />
-                      <span className="hidden @md:inline">{S.memory.add}</span>
-                    </Button>
-                  </>
-                }
-              >
-                {files.length === 0 ? (
-                  <p className="px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
-                    {scope.kind === "user" ? S.memory.emptyUserScope : S.memory.emptyScope}
-                  </p>
-                ) : (
-                  <ul>{files.map((file) => fileRow(scope, file))}</ul>
-                )}
-              </CollapsibleSection>
-            );
-          })}
-        </div>
+                        <DownloadIcon size={13} />
+                        <span className="hidden @md:inline">{S.memory.exportScope}</span>
+                      </Button>
+                      {isOwner && (
+                        <label
+                          className={`${GHOST_LABEL_CLASS} shrink-0`}
+                          data-tooltip={S.memory.importScopeHint}
+                          data-tooltip-extra
+                          aria-label={S.memory.importScopeLabel(scopeTitle(scope))}
+                        >
+                          <HiddenFileInput
+                            accept=".zip,application/zip,.json,application/json"
+                            onChange={(e) => void pickImport(scope, e)}
+                          />
+                          <UploadIcon size={13} />
+                          <span className="hidden @md:inline">{S.memory.importScope}</span>
+                        </label>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title={S.memory.add}
+                        aria-label={S.memory.addScopeLabel(scopeTitle(scope))}
+                        onClick={() => openAdd(scope)}
+                      >
+                        <GlyphIcon d={ICONS.plus} size={13} />
+                        <span className="hidden @md:inline">{S.memory.add}</span>
+                      </Button>
+                    </>
+                  }
+                >
+                  {files.length === 0 && orphanFiles.length === 0 ? (
+                    <p className="px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
+                      {scope.kind === "user" ? S.memory.emptyUserScope : S.memory.emptyScope}
+                    </p>
+                  ) : (
+                    <>
+                      {files.length > 0 && <ul>{files.map((file) => fileRow(scope, file))}</ul>}
+                      {orphanSection(scope, orphanFiles, files.length > 0)}
+                    </>
+                  )}
+                </CollapsibleSection>
+              );
+            })}
+          </div>
+        </>
       )}
 
-      <Card as="section" padding="md" className="space-y-3">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 dark:text-gray-200">
-          {S.memory.promptSection}
-          <InfoPopover label={S.memory.promptSection}>{S.memory.promptSectionHint}</InfoPopover>
-        </h3>
-        <Textarea
-          ref={mainPromptRef}
-          label={S.memory.promptLabel}
-          mono
-          size="sm"
-          rows={12}
-          value={prompts.draft.prompt}
-          onFocus={() => setLastPromptField("main")}
-          onChange={(e) => prompts.patch({ prompt: e.target.value })}
-        />
-        <Textarea
-          ref={workspacePromptRef}
-          label={S.memory.workspacePromptLabel}
-          mono
-          size="sm"
-          rows={6}
-          value={prompts.draft.workspace}
-          onFocus={() => setLastPromptField("workspace")}
-          onChange={(e) => prompts.patch({ workspace: e.target.value })}
-        />
-        {/* Placeholder reference, the Prompt tab's convention — a chip inserts into whichever field was focused last.
-            Inside the card it takes the step below the card's radius. */}
-        <div className="rounded-sm border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
-          <p className="mb-2 text-xs font-semibold text-gray-500">{S.agent.placeholdersTitle}</p>
-          <ul className="space-y-1">
-            {S.memory.promptPlaceholders.map(([token, desc]) => (
-              <li key={token} className="flex items-center gap-3 text-xs">
-                <button
-                  type="button"
-                  onClick={() =>
-                    lastPromptField === "main"
-                      ? insertPromptToken(
-                          mainPromptRef,
-                          prompts.draft.prompt,
-                          (prompt) => prompts.patch({ prompt }),
-                          token!,
-                        )
-                      : insertPromptToken(
-                          workspacePromptRef,
-                          prompts.draft.workspace,
-                          (workspace) => prompts.patch({ workspace }),
-                          token!,
-                        )
-                  }
-                  data-tooltip={S.memory.insertToken}
-                  data-tooltip-extra
-                  className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
-                >
-                  {token}
-                </button>
-                <span className="text-gray-500 dark:text-gray-400">{desc}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="flex justify-end gap-2">
-          <Button size="sm" disabled={!prompts.dirty || savingPrompts} onClick={prompts.reset}>
-            {S.common.reset}
-          </Button>
-          <Button
+      {groups !== null && (
+        <Card as="section" padding="md" className="space-y-3">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 dark:text-gray-200">
+            {S.memory.promptSection}
+            <InfoPopover label={S.memory.promptSection}>{S.memory.promptSectionHint}</InfoPopover>
+          </h3>
+          <Textarea
+            ref={mainPromptRef}
+            label={S.memory.promptLabel}
+            mono
             size="sm"
-            variant="primary"
-            disabled={storedPrompts === null || !prompts.dirty || savingPrompts}
-            onClick={() => void savePrompts()}
-          >
-            {S.common.save}
-          </Button>
-        </div>
-      </Card>
+            rows={12}
+            value={prompts.draft.prompt}
+            onFocus={() => setLastPromptField("main")}
+            onChange={(e) => prompts.patch({ prompt: e.target.value })}
+          />
+          <Textarea
+            ref={workspacePromptRef}
+            label={S.memory.workspacePromptLabel}
+            mono
+            size="sm"
+            rows={6}
+            value={prompts.draft.workspace}
+            onFocus={() => setLastPromptField("workspace")}
+            onChange={(e) => prompts.patch({ workspace: e.target.value })}
+          />
+          {/* Placeholder reference, the Prompt tab's convention — a chip inserts into whichever field was focused last.
+            Inside the card it takes the step below the card's radius. */}
+          <div className="rounded-sm border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
+            <p className="mb-2 text-xs font-semibold text-gray-500">{S.agent.placeholdersTitle}</p>
+            <ul className="space-y-1">
+              {S.memory.promptPlaceholders.map(([token, desc]) => (
+                <li key={token} className="flex items-center gap-3 text-xs">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      lastPromptField === "main"
+                        ? insertPromptToken(
+                            mainPromptRef,
+                            prompts.draft.prompt,
+                            (prompt) => prompts.patch({ prompt }),
+                            token!,
+                          )
+                        : insertPromptToken(
+                            workspacePromptRef,
+                            prompts.draft.workspace,
+                            (workspace) => prompts.patch({ workspace }),
+                            token!,
+                          )
+                    }
+                    data-tooltip={S.memory.insertToken}
+                    data-tooltip-extra
+                    className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
+                  >
+                    {token}
+                  </button>
+                  <span className="text-gray-500 dark:text-gray-400">{desc}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button size="sm" disabled={!prompts.dirty || savingPrompts} onClick={prompts.reset}>
+              {S.common.reset}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={storedPrompts === null || !prompts.dirty || savingPrompts}
+              onClick={() => void savePrompts()}
+            >
+              {S.common.save}
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* The view: a right Drawer on desktop, a bottom Sheet below the breakpoint (the same split
           as the chat page's panels — Sheet brings the grab handle, snap points and swipe-down).
@@ -804,7 +992,7 @@ export function MemoryTab({
         <Drawer
           open={viewOpen}
           side="right"
-          title={viewing?.file.title ?? ""}
+          title={viewTitle}
           onClose={() => setViewOpen(false)}
           widthClass="max-w-lg"
         >
@@ -820,7 +1008,7 @@ export function MemoryTab({
           open={viewOpen}
           snap={sheetSnap}
           onSnapChange={setSheetSnap}
-          title={viewing?.file.title ?? ""}
+          title={viewTitle}
           onClose={() => setViewOpen(false)}
         >
           {viewing && (
@@ -842,7 +1030,7 @@ export function MemoryTab({
           <div className="space-y-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.editWhy}</p>
             <p className="break-all font-mono text-xs text-gray-400 dark:text-gray-500">
-              {memoryFilePath(editing.scope, editing.file)}
+              {memoryFilePath(editing.scope, editing.file.name)}
             </p>
             <Textarea
               label={S.memory.editRequirementLabel}
@@ -941,7 +1129,7 @@ export function MemoryTab({
           <div className="space-y-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.importWhy}</p>
             <p className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">
-              {S.memory.importFile(importing.fileName, importing.doc.files.length)}
+              {importing.fileName}
             </p>
             <RadioGroup
               label={S.memory.importModeLabel}
@@ -967,7 +1155,12 @@ export function MemoryTab({
               ]}
             />
             <div className="flex justify-end">
-              <Button size="sm" variant="primary" disabled={importBusy} onClick={submitImport}>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={importBusy}
+                onClick={() => void runImport(false)}
+              >
                 {S.memory.importAction}
               </Button>
             </div>
@@ -1003,14 +1196,20 @@ export function MemoryTab({
       <ConfirmModal
         open={removing !== null}
         tone="danger"
-        title={S.memory.deleteTitle}
+        title={removing?.kind === "file" ? S.memory.deleteFileTitle : S.memory.deleteTitle}
         confirmLabel={S.memory.delete}
         cancelLabel={S.common.cancel}
         onClose={() => setRemoving(null)}
         onConfirm={() => void confirmRemove()}
       >
         <p className="text-sm text-gray-700 dark:text-gray-300">
-          {removing ? S.memory.deleteConfirm(removing.file.title) : ""}
+          {removing === null
+            ? ""
+            : removing.kind === "file"
+              ? S.memory.deleteFileConfirm(removing.file.path)
+              : removing.file.files.length > 0
+                ? S.memory.deleteWithFilesConfirm(removing.file.title, removing.file.files.length)
+                : S.memory.deleteConfirm(removing.file.title)}
         </p>
       </ConfirmModal>
     </div>

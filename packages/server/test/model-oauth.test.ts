@@ -17,7 +17,9 @@
  * - The routes: only the owner starts, polls and redeems; the key lands once, as the group's key
  *   every model of the group uses, and the Project's open Session channels hear
  *   credentials_updated; a rejected code reaches the dialog through the poll and touches no
- *   model; a malformed link answers a page. Disconnect (clearing the group key) is all it
+ *   model; a malformed link answers a page. TokenDance's first key offers its DeepSeek V4.1
+ *   Flash as the default (connect-default-offer.test.ts has the rule) on every done answer of
+ *   the poll, like the redeemed code's, and leaves the default as it was. Disconnect (clearing the group key) is all it
  *   takes to undo it: no state of the flow outlives it, and models with their own key keep it.
  * - The redirect receiver answers without a session: the flow id buys a deposit and nothing
  *   more — not for another user, an unknown flow, another Project, a stale or replayed flow,
@@ -50,13 +52,12 @@ import {
   ModelOAuthService,
   openedMode,
 } from "../src/services/model-oauth-service.js";
-import { publicOrigin } from "../src/http/public-origin.js";
+import { publicOrigin } from "@prismshadow/penguin-library-http/public-origin";
 import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import type { FetchFake } from "./fixtures/fetch.js";
 import { sessionRow } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-import { wire } from "@prismshadow/penguin-core/kernel";
 
 /** The catalog group under test; the flow exists only because this entry declares it. */
 const TOKENDANCE = providerInfo("tokendance")!;
@@ -66,6 +67,14 @@ const TOKENDANCE = providerInfo("tokendance")!;
  * adding a row to this group does not fail three assertions that are not about the count.
  */
 const TOKENDANCE_MODELS = presetModelEntries().filter((m) => m.provider === "tokendance").length;
+
+/** A new Project's default model, which TokenDance's first key leaves in place. */
+const DEEPSEEK_FLASH = { provider: "deepseek", modelId: "deepseek-flash" };
+/** What TokenDance's first key offers a new Project. */
+const DEFAULT_OFFER = {
+  model: { provider: "tokendance", modelId: "deepseek-v4.1-flash" },
+  current: DEEPSEEK_FLASH,
+};
 
 describe("PKCE derivation", () => {
   it("challenge is the unpadded base64url SHA-256 of the verifier (RFC 7636 vector)", () => {
@@ -206,10 +215,10 @@ describe("flow store", () => {
     clock = 1_700_000_000_000;
     applied = [];
     exchange = fakeFetch(() => jsonResponse({ key: "sk-minted" }));
-    service = wire(ModelOAuthService, {
+    service = new ModelOAuthService({
       applyGroupKey: async (projectId: string, provider: string, apiKey: string) => {
         applied.push({ projectId, provider, apiKey });
-        return 6;
+        return { applied: 6 };
       },
       fetchImpl: exchange.fetch,
       now: () => clock,
@@ -281,8 +290,8 @@ describe("flow store", () => {
   });
 
   it("a failed exchange ends the flow and reports the mapped reason", async () => {
-    service = wire(ModelOAuthService, {
-      applyGroupKey: async () => 6,
+    service = new ModelOAuthService({
+      applyGroupKey: async () => ({ applied: 6 }),
       fetchImpl: fakeFetch(() => jsonResponse({}, 403)).fetch,
       now: () => clock,
     });
@@ -296,7 +305,7 @@ describe("flow store", () => {
   });
 
   it("a key that cannot be stored is reported as such, not as a success", async () => {
-    service = wire(ModelOAuthService, {
+    service = new ModelOAuthService({
       applyGroupKey: async () => {
         throw new Error("disk full");
       },
@@ -462,6 +471,10 @@ describe("model-oauth routes", () => {
       })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
+    // The default its owner chose (a new Project starts with none).
+    expect(
+      (await owner.put(`/api/projects/${projectId}/models/default`, DEEPSEEK_FLASH)).status,
+    ).toBe(200);
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_m" })).status,
     ).toBe(201);
@@ -516,7 +529,12 @@ describe("model-oauth routes", () => {
     const status = (await (
       await owner.get(`${base()}/${started.flowId}`)
     ).json()) as ModelOAuthStatusResponse;
-    expect(status).toEqual({ status: "done", provider: "tokendance", applied: TOKENDANCE_MODELS });
+    expect(status).toEqual({
+      status: "done",
+      provider: "tokendance",
+      applied: TOKENDANCE_MODELS,
+      defaultOffer: DEFAULT_OFFER,
+    });
 
     // The exchange spoke the documented protocol, with a verifier this side never published.
     expect(exchanges()).toHaveLength(1);
@@ -533,6 +551,8 @@ describe("model-oauth routes", () => {
     expect(group.length).toBeGreaterThan(0);
     expect(models.providers.tokendance?.apiKeyMasked).toBeTruthy();
     for (const m of group) expect(m.effective.apiKeySource).toBe("provider");
+    // The offer is only an offer: the default is the one the Project had.
+    expect(models.defaultModel).toEqual(DEEPSEEK_FLASH);
     // Only that group, and never in plaintext.
     expect(
       Object.entries(models.providers)
@@ -542,7 +562,10 @@ describe("model-oauth routes", () => {
     expect(JSON.stringify(models)).not.toContain("sk-oauth-minted-key-9911");
 
     // Stored once, for the group — not once per model.
-    const cfg = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const cfg = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(cfg.match(/sk-oauth-minted-key-9911/g)).toHaveLength(1);
 
     expect(
@@ -554,6 +577,7 @@ describe("model-oauth routes", () => {
     expect(await (await owner.get(`${base()}/${started.flowId}`)).json()).toEqual({
       status: "done",
       provider: "tokendance",
+      defaultOffer: DEFAULT_OFFER,
     });
     expect(
       events.filter(
@@ -638,7 +662,10 @@ describe("model-oauth routes", () => {
     for (const m of body.models.filter((row) => row.provider === "tokendance")) {
       expect(m.effective.apiKeySource, m.modelId).toBe(m.modelId === "glm-5.3" ? "model" : "none");
     }
-    const cfg = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const cfg = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(cfg).not.toContain("sk-oauth-minted-key-9911");
     expect(cfg).toContain("sk-td-own-row-0017");
   });
@@ -662,6 +689,7 @@ describe("model-oauth routes", () => {
     const body = (await res.json()) as ModelOAuthCodeResponse;
     expect(body.ok).toBe(true);
     expect(body.applied).toBeGreaterThan(0);
+    expect(body.defaultOffer).toEqual(DEFAULT_OFFER);
     expect(exchanges()[0]!.body.code).toBe("pasted-code");
 
     // Single use here too.
@@ -762,6 +790,10 @@ describe("model-oauth callback without a session", () => {
   beforeEach(async () => {
     projects += 1;
     projectId = await create(`owner_o-cb_${projects}`);
+    // The default its owner chose (a new Project starts with none).
+    expect(
+      (await owner.put(`/api/projects/${projectId}/models/default`, DEEPSEEK_FLASH)).status,
+    ).toBe(200);
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "stranger_s" })).status,
     ).toBe(201);
@@ -793,6 +825,7 @@ describe("model-oauth callback without a session", () => {
       status: "done",
       provider: "tokendance",
       applied: TOKENDANCE_MODELS,
+      defaultOffer: DEFAULT_OFFER,
     });
     expect(exchange.calls).toHaveLength(1);
     expect(await groupHasKey()).toBe(true);
@@ -809,6 +842,7 @@ describe("model-oauth callback without a session", () => {
       status: "done",
       provider: "tokendance",
       applied: TOKENDANCE_MODELS,
+      defaultOffer: DEFAULT_OFFER,
     });
     expect(exchange.calls).toHaveLength(1);
     expect(await groupHasKey()).toBe(true);

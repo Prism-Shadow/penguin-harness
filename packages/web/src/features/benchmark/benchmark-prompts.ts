@@ -2,17 +2,23 @@
  * The prompts the Evaluation Center sends through the "Create with AI" bridge, and the small
  * id helpers of its manual form. Every prompt ends in a fixed tail that names the Skill to use
  * and the parameters it requires — the Test Agent, the Benchmark id, run and round counts, the
- * target score — so a novice's one-line wish arrives as a request the Skill can act on without
- * asking anything back. An RSI toolkit other than the default gets a shorter tail: its own Skill,
- * the three inputs every toolkit takes, and its paper's budget left to it rather than a round
- * limit and a target. The two "Ask AI" tails are the same shape pointed the other way: they
+ * target score, the model the Test Agent runs on — so a novice's one-line wish arrives as a
+ * request the Skill can act on without asking anything back. An RSI toolkit other than the default
+ * gets a general tail: its own Skill, the Test Agent, the Benchmark it starts from, the test-set
+ * repetitions and the tested model. How the method trains, tests, budgets and records is the
+ * toolkit's own Skill's to say, so the tail asserts none of it and a new kind of method needs no
+ * new tail. The two "Ask AI" tails are the same shape pointed the other way: they
  * name no Skill and ask for no change, carrying the facts already on screen — an evaluation's
  * scores and Session ids, or a case's two material paths — so the answer is read out of the
  * files rather than guessed. The wording lives in the dictionaries; this module only assembles it.
+ *
+ * Every prompt names the Benchmark's folder, `BENCHMARK_DIR`, as the server that holds it gave it
+ * (the Evaluation Center's data folder, PRFC-0034): the Agent reads and writes there and never
+ * works the folder out from its App Data Dir. A copy only another machine answered for, or a
+ * machine whose server predates the field, is named by the Skills' own rule instead.
  */
 import { S } from "../../lib/strings";
-import { composeAiPrompt } from "../ai-create/ai-create-prompt";
-import type { AiExample } from "../ai-create/ai-create-panel";
+import { composeAiPrompt, type AiExample } from "../ai-create";
 
 /** Directory names and Benchmark ids share the Agent id alphabet. */
 export const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -31,9 +37,40 @@ export function isValidRuns(raw: string): boolean {
   return n >= 1 && n <= MAX_RUNS;
 }
 
+/**
+ * The Evaluation Center's data folder under the App Data Dir: the Skills' own rule for where a
+ * Benchmark is when no request names its folder.
+ */
+const BENCHMARKS_UNDER_APP_DATA = "agents/system_agent/app/data/benchmark";
+const APP_DATA_BENCHMARKS = `<app_data_dir>/${BENCHMARKS_UNDER_APP_DATA}`;
+
+/**
+ * The folder that holds the Project's Benchmarks, for a prompt that makes a new one: the absolute
+ * folder this server answered the list with, else the Skills' rule.
+ */
+export function benchmarksFolder(dir: string | undefined): string {
+  return dir ?? APP_DATA_BENCHMARKS;
+}
+
+/**
+ * One Benchmark's folder for a prompt (`BENCHMARK_DIR`). The conversation runs on this server, so
+ * the absolute folder is named only when this server's copy is the one listed first; otherwise
+ * the Skills' rule under the App Data Dir.
+ */
+export function benchmarkFolder(benchmark: {
+  id: string;
+  dir?: string;
+  machineIds?: readonly (string | null)[];
+}): string {
+  const local = benchmark.machineIds === undefined || benchmark.machineIds[0] === null;
+  return local && benchmark.dir !== undefined
+    ? benchmark.dir
+    : `${APP_DATA_BENCHMARKS}/${benchmark.id}`;
+}
+
 /** What the New Benchmark dialog's tail asks the `benchmark-design` Skill to do for a tested Agent. */
-export function benchmarkCreateTail(targetAgentId: string): string {
-  return S.benchmark.aiCreateTail(targetAgentId);
+export function benchmarkCreateTail(targetAgentId: string, benchmarksDir: string): string {
+  return S.benchmark.aiCreateTail(targetAgentId, benchmarksDir);
 }
 
 export function benchmarkCreateExamples(): AiExample[] {
@@ -50,8 +87,16 @@ export interface EvaluateParams {
   /** The Agent under test: the one the matrix is run against, picked in the dialog. */
   targetAgentId: string;
   benchmarkId: string;
+  /** The Benchmark's folder, as {@link benchmarkFolder} names it. */
+  benchmarkDir: string;
   /** Runs per case; the matrix is Case x runs. */
   runs: number;
+  /**
+   * The model every test run uses, picked in the dialog apart from the model of the conversation
+   * that carries the work out. An agent stores no model, so the tail always names this pair.
+   */
+  provider: string;
+  modelId: string;
 }
 
 export function evaluateTail(params: EvaluateParams): string {
@@ -68,8 +113,12 @@ export interface OptimizeParams {
   /** The Agent under test: the one the optimizer edits, picked in the dialog. */
   targetAgentId: string;
   benchmarkId: string;
+  benchmarkDir: string;
   /** Runs per case for every Candidate. */
   runs: number;
+  /** The tested model: its baseline is the Reference, and every Candidate runs on it. */
+  provider: string;
+  modelId: string;
   /** Complete valid Candidate rounds before the optimizer stops. */
   roundLimit: number;
   /** Reaching it ends the loop early. */
@@ -85,22 +134,27 @@ export function buildOptimizePrompt(focus: string, params: OptimizeParams): stri
   return composeAiPrompt(focus, optimizeTail(params));
 }
 
+/**
+ * How many complete times a toolkit tests on its test set unless the dialog is told otherwise:
+ * the count the published experiments record per State (`n_attempt`), and the toolkits' own
+ * default where they define one.
+ */
+export const DEFAULT_TEST_REPETITIONS = 3;
+
 /** What the Optimize tab hands an RSI toolkit other than the default (see rsi-methods.ts). */
 export interface RsiOptimizeParams {
   /** The toolkit's one Skill (rsi-methods.ts says which Skill of its plugin that is). */
   skill: string;
   /** The Agent under test: the one the toolkit initializes and improves. */
   targetAgentId: string;
+  /** The Benchmark the dialog was opened on; which data the method trains and tests on is its own. */
   benchmarkId: string;
-  /** Runs per case for every measurement. */
-  runs: number;
-  /**
-   * The provider and model the tested agent's baseline was recorded on — the pair the default
-   * loop keeps. Given both, the tail pins the toolkit's evaluations to them, so its scores join
-   * the baseline's series; without a baseline, the toolkit measures on its own conversation's.
-   */
-  provider?: string;
-  modelId?: string;
+  benchmarkDir: string;
+  /** Complete passes over the test set for each State the method reports. */
+  testRepetitions: number;
+  /** The tested model, as for {@link EvaluateParams}. */
+  provider: string;
+  modelId: string;
 }
 
 export function rsiOptimizeTail(params: RsiOptimizeParams): string {
@@ -126,10 +180,11 @@ export interface AskEvaluationCase {
  */
 export interface AskEvaluationParams {
   benchmarkId: string;
+  benchmarkDir: string;
   time: string;
   /** The series label text, or the unlabeled placeholder the legend uses. */
   label: string;
-  version: number;
+  version: number | string;
   provider: string;
   modelId: string;
   thinkingLevel: string;
@@ -157,6 +212,7 @@ export function askEvaluationExamples(): AiExample[] {
 /** The facts the case dialog's question carries; formatted values as above. */
 export interface AskCaseParams {
   benchmarkId: string;
+  benchmarkDir: string;
   caseId: string;
   /** This case's results in the newest evaluation; null when the Benchmark has none yet. */
   latest: { time: string; score: string; runs: { score: string; sessionId: string }[] } | null;
@@ -175,9 +231,12 @@ export function askCaseExamples(): AiExample[] {
   }));
 }
 
-/** A Benchmark's directory relative to the Project's App Data Dir — beside `agents/`, not under one. */
+/**
+ * A Benchmark's folder relative to the Project's App Data Dir: the Evaluation Center's data
+ * folder, which is the system Agent's (it sits beside the other Agents, owned by none of them).
+ */
 export function benchmarkPath(benchmarkId: string): string {
-  return `benchmarks/${benchmarkId}`;
+  return `${BENCHMARKS_UNDER_APP_DATA}/${benchmarkId}`;
 }
 
 /** `CASE-NNN-<slug>`: the case directory name from its 1-based position and slug. */

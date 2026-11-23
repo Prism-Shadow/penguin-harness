@@ -1,10 +1,12 @@
 /**
  * The live badges, read by every anchor on the five trails: the mobile menu button, the
- * sidebar avatar and its collapsed-rail twin, and the Agents / Plugins / Models / Cost Center
- * nav entries in both the pinned sidebar and the rail.
+ * sidebar avatar and its collapsed-rail twin, the Agents and App Center nav entries in both the
+ * pinned sidebar and the rail, the system apps' App Center tiles (system-app-notes.ts carries the
+ * Plugins, Models and Cost Center trails there), and the pages that clear each trail.
  *
- * One owner activates the fetches. `AppLayout` calls this with `eager` on, which is what makes
- * a badge appear on a fresh load at all — the anchors below it stay passive and read the shared
+ * One owner activates the fetches. The sidebar badges' module (features/models/
+ * main-sidebar-badges.module.ts) mounts one for the signed-in session that calls this with
+ * `eager` on, which is what makes a badge appear on a fresh load at all — the pages stay passive and read the shared
  * caches (`use-version-info.ts`, `use-desktop-update.ts`, `use-project-todos.ts`, and the
  * dismissal markers in `todo-dismissals.ts`), which push every consumer when a result lands.
  * All of them are module level, so "eager" still costs one request per browser session per
@@ -15,29 +17,42 @@
  * this file only wires them to the stores and turns each into localized copy. Two rules it
  * enforces on the way, both of them the same rule: a badge only appears where the user can
  * reach a control. The desktop shell hides the server-release row, so a newer release raises
- * nothing there; syncing presets is owner-only, so a member never sees the Models dot (and
+ * nothing there; syncing presets is owner-only, so a member never sees the Models trail (and
  * `use-project-todos.ts` does not even make that request).
  */
 import { useMemo } from "react";
 import { S } from "./strings";
 import { useUpdateFlow } from "./use-update-flow";
 import { useVersionInfo } from "./use-version-info";
-import { badgeNote, softwareUpdate } from "./update-badges";
-import type { BadgeSource, SoftwareUpdate, UpdateBadgeNote } from "./update-badges";
+import {
+  badgeNote,
+  softwareUpdate,
+  type BadgeSource,
+  type SoftwareUpdate,
+  type UpdateBadgeNote,
+} from "./update-badges";
+
 import {
   kernelUpdateTodo,
   pluginUpdateTodo,
   presetUpdateTodo,
   raisedTodo,
   unexpectedErrorTodo,
+  type Todo,
+  type TodoKey,
 } from "./todo-badges";
-import type { Todo, TodoKey } from "./todo-badges";
+
 import { useTodoDismissals } from "./todo-dismissals";
 import { useProjectTodos } from "./use-project-todos";
-import { catalogDelta } from "../features/models/catalog-sync";
+import { catalogDelta } from "./model-catalog-sync";
+import { usePluginModuleRequests } from "./plugin-modules";
 import { useProject } from "../state/project";
 
-/** The nav routes that can carry a dot, and what each one's dot leads to. */
+/**
+ * The routes whose page clears a trail: the Agents page, whose nav entry carries its dot, and
+ * three system apps' pages (lib/system-apps.ts), whose dots ride on the App Center's entry and on
+ * each app's tile (system-app-notes.ts).
+ */
 export type BadgedRoute = "/agents" | "/plugins" | "/models" | "/usage";
 
 export interface UpdateBadges {
@@ -45,7 +60,7 @@ export interface UpdateBadges {
   software: SoftwareUpdate | null;
   /** What the software anchors (the avatars) say — the App info row's own wording; null with no update. */
   softwareNote: string | null;
-  /** What each badged nav entry says; a route absent from the map carries no dot. */
+  /** What each trail's route says (see {@link BadgedRoute}); a route absent from the map carries no dot. */
   navNotes: Partial<Record<BadgedRoute, string>>;
   /** The raised to-do of each dismissible trail, for the page that clears it; absent when down. */
   todos: Partial<Record<TodoKey, Todo>>;
@@ -55,7 +70,13 @@ export interface UpdateBadges {
   note: string | null;
 }
 
-export function useUpdateBadges(eager = false): UpdateBadges {
+/**
+ * `admin` is the viewer being the server's administrator: the eager owner then also reads the
+ * members' requests to run a plugin's server module that wait (lib/plugin-modules.ts), which the
+ * Plugins dot counts — a trail that clears itself once they are decided, so there is nothing to
+ * dismiss. A passive instance counts what that read holds; for anyone else nothing reads it.
+ */
+export function useUpdateBadges(eager = false, admin = false): UpdateBadges {
   const { agents, currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   // Syncing presets is owner-only, so that trail has no control at its end for a member.
@@ -90,6 +111,7 @@ export function useUpdateBadges(eager = false): UpdateBadges {
     probes.errors === null ? null : unexpectedErrorTodo(probes.errors),
     "errors",
   );
+  const waitingModules = usePluginModuleRequests(null, admin && eager).value?.pending ?? 0;
 
   // Every raised source, in the order the trails appear in the nav. `badgeNote` reads the list;
   // the per-route map below is what each individual anchor says.
@@ -99,10 +121,15 @@ export function useUpdateBadges(eager = false): UpdateBadges {
   if (plugins !== null) sources.push({ kind: "plugins", count: plugins.count });
   if (models !== null) sources.push({ kind: "models", count: models.count });
   if (errors !== null) sources.push({ kind: "errors", count: errors.count });
+  if (waitingModules > 0) sources.push({ kind: "moduleRequests", count: waitingModules });
 
   const navNotes: Partial<Record<BadgedRoute, string>> = {};
   if (kernelTodo !== null) navNotes["/agents"] = S.agent.kernelOutdatedHint;
-  if (plugins !== null) navNotes["/plugins"] = S.todo.pluginUpdates(plugins.count);
+  const pluginNotes = [
+    ...(plugins !== null ? [S.todo.pluginUpdates(plugins.count)] : []),
+    ...(waitingModules > 0 ? [S.plugins.moduleRequestsNotice(waitingModules)] : []),
+  ];
+  if (pluginNotes.length > 0) navNotes["/plugins"] = pluginNotes.join(S.todo.listSeparator);
   if (models !== null) navNotes["/models"] = S.todo.presetUpdates(models.count);
   if (errors !== null) navNotes["/usage"] = S.todo.unexpectedErrors(errors.count);
 
@@ -122,10 +149,10 @@ export function useUpdateBadges(eager = false): UpdateBadges {
 }
 
 /**
- * The note one nav route's dot carries, or null. Routes off every trail are simply absent from
+ * The note one route's trail carries, or null. Routes off every trail are simply absent from
  * the map, so the lookup widens the key type rather than each caller asserting its own route
- * into {@link BadgedRoute} — the nav rows are built from a route manifest and only ever hold
- * strings.
+ * into {@link BadgedRoute} — the nav rows and the system apps are built from the page table and
+ * only ever hold strings.
  */
 export function navNoteFor(badges: UpdateBadges, route: string): string | null {
   return (badges.navNotes as Partial<Record<string, string>>)[route] ?? null;
@@ -151,6 +178,8 @@ function noteText(note: UpdateBadgeNote): string | null {
       return S.todo.presetUpdates(note.count);
     case "errors":
       return S.todo.unexpectedErrors(note.count);
+    case "moduleRequests":
+      return S.plugins.moduleRequestsNotice(note.count);
     default:
       return note.updatesOnly ? S.update.updatesAvailable : S.todo.pending;
   }

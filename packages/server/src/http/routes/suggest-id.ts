@@ -2,16 +2,17 @@
  * Semantic id proposals for every create dialog that names an object with a semantic id:
  *   POST /api/projects/:p/suggest-id   { name, kind, taken? } → { id, source, reason? }
  *
- * `kind` is `project`, `agent`, `benchmark`, `org` or `channel`. The proposal itself is the
- * shared one (services/semantic-id-suggest.ts): the default model of the Project in the path,
- * then the ASCII slug of the name, then a dated placeholder. What differs by kind is decided
- * here, beside the permission each kind's create route demands:
+ * `kind` is `project`, `agent`, `org` or `channel`, or a kind a server module contributes
+ * (`SemanticIdModule.kinds`, services/semantic-id-kinds.ts) — the Evaluation Center's `benchmark`
+ * is one. The proposal itself is the shared one (services/semantic-id-suggest.ts): the default
+ * model of the Project in the path, then the ASCII slug of the name, then a dated placeholder.
+ * What differs by kind is decided here, beside the permission each kind's create route demands:
  *
  * | kind        | who may ask                              | id shape                           | avoided on top of `taken`             |
  * | ----------- | ---------------------------------------- | ---------------------------------- | ------------------------------------- |
  * | `project`   | a member of `:p`                         | admin: plain; else `<username>-…`  | every Project row and data-root entry |
  * | `agent`     | a member of `:p`                         | snake_case                         | the Project's Agent rows and folders  |
- * | `benchmark` | the owner of `:p`                        | kebab-case                         | the Project's Benchmark folders       |
+ * | contributed | a member, or the owner (`access`)        | kebab-case                         | what the kind's `takenIds` names      |
  * | `org`       | a member of `:p`, company mode on        | `co_…`                             | nothing (the dialog's list)           |
  * | `channel`   | a member of `:p`, company mode on        | `ch_…`                             | nothing (the dialog's list)           |
  *
@@ -24,18 +25,23 @@
  * None of them reaches the prompt, only the collision suffix. `org` and `channel` delegate to
  * the organization service, recorded as the organization's.
  */
+import type {
+  Access,
+  ProjectConfigStore,
+  ProjectLifecycle,
+  UtilityCompletion,
+} from "@prismshadow/penguin-library-project";
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { SemanticIdKind } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { Log } from "../../hmr/capabilities.js";
-import type { AgentLifecycle, Benchmarks } from "../../mechanisms/agents.js";
-import type { Errors } from "../../mechanisms/observability.js";
-import type { Access, ProjectConfigStore, ProjectLifecycle } from "../../mechanisms/projects.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { AgentLifecycle } from "../../mechanisms/agents.js";
+import type { Errors } from "@prismshadow/penguin-library-observability";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { OrgService } from "../../runtime/organization/service.js";
-import type { UtilityCompletion } from "../../services/project-config-service.js";
-import { SEMANTIC_ID_RULES, projectIdRule } from "../../services/semantic-id.js";
+import { SEMANTIC_ID_RULES, contributedIdRule, projectIdRule } from "../../services/semantic-id.js";
+import { HOST_ID_KINDS } from "../../services/semantic-id-kinds.js";
+import type { SemanticIdKinds } from "../../services/semantic-id-kinds.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
 import { HttpError } from "../errors.js";
 import {
@@ -46,14 +52,13 @@ import {
   requireValidId,
 } from "../validate.js";
 
-const KINDS: readonly SemanticIdKind[] = ["project", "agent", "benchmark", "org", "channel"];
-
 /** What this route group reaches — declared here, at the consumer. */
 export interface SuggestIdRouteDeps {
   access: Pick<Access, "requireProjectAccess" | "requireProjectOwner">;
   projects: Pick<ProjectLifecycle, "takenProjectIds">;
   agents: Pick<AgentLifecycle, "takenAgentIds">;
-  benchmarks: Pick<Benchmarks, "takenIds">;
+  /** The kinds server modules contribute. */
+  kinds: Pick<SemanticIdKinds, "find" | "names">;
   orgService: Pick<OrgService, "suggestId">;
   settings: Pick<Settings, "getCompanyMode">;
   completeOnce: (projectId: string, prompt: string) => Promise<UtilityCompletion>;
@@ -71,7 +76,7 @@ export function suggestIdRoutes(deps: SuggestIdRouteDeps): Hono<AppEnv> {
     const body = await readJson(c);
     // The mission or a description may stand in for a name nobody typed yet.
     const name = requireString(body, "name", { minLen: 1, maxLen: 4000 });
-    const kind = requireEnum(body, "kind", KINDS);
+    const kind: string = requireEnum(body, "kind", [...HOST_ID_KINDS, ...deps.kinds.names()]);
     const taken = optionalStringArray(body, "taken");
 
     if (kind === "org" || kind === "channel") {
@@ -87,21 +92,28 @@ export function suggestIdRoutes(deps: SuggestIdRouteDeps): Hono<AppEnv> {
       );
     }
 
-    // Writing a Benchmark is Project management — owner only, as its create route demands.
-    if (kind === "benchmark") deps.access.requireProjectOwner(user.userId, projectId);
+    const contributed = kind === "project" || kind === "agent" ? null : deps.kinds.find(kind);
+    // A contributed kind asks whoever its create route admits: the owner, when that route is
+    // Project management (as a Benchmark's is).
+    if (contributed?.access === "owner") deps.access.requireProjectOwner(user.userId, projectId);
     const reserved =
       kind === "project"
         ? await deps.projects.takenProjectIds()
         : kind === "agent"
           ? await deps.agents.takenAgentIds(projectId)
-          : await deps.benchmarks.takenIds(projectId);
+          : await contributed!.takenIds(projectId);
     const res = await suggestSemanticId(
       { completeOnce: deps.completeOnce, recordFailure: deps.recordFailure },
       projectId,
       {
         name,
         kind,
-        rule: kind === "project" ? projectIdRule(user) : SEMANTIC_ID_RULES[kind],
+        rule:
+          kind === "project"
+            ? projectIdRule(user)
+            : kind === "agent"
+              ? SEMANTIC_ID_RULES.agent
+              : contributedIdRule(kind),
         taken: taken ?? [],
         reserved,
       },
@@ -129,7 +141,7 @@ export class SuggestIdRoutes {
   @Use() private readonly projects!: ProjectLifecycle;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly agents!: AgentLifecycle;
-  @Use() private readonly benchmarks!: Benchmarks;
+  @Use() private readonly kinds!: SemanticIdKinds;
   @Use() private readonly orgService!: OrgService;
   @Use() private readonly settings!: Settings;
   @Use() private readonly errors!: Errors;
@@ -140,7 +152,7 @@ export class SuggestIdRoutes {
       access: this.access,
       projects: this.projects,
       agents: this.agents,
-      benchmarks: this.benchmarks,
+      kinds: this.kinds,
       orgService: this.orgService,
       settings: this.settings,
       completeOnce: (projectId, prompt) => this.projectConfig.completeOnce(projectId, prompt),

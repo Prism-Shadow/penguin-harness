@@ -1,11 +1,16 @@
 /**
  * Cost and usage center:
  * top filters for Agent / Model + a date-range preset (trailing last hour /
- * last 24 hours, calendar 7/30/90 days, or a custom pair of date inputs);
+ * last 24 hours, calendar 7/30/90 days, or a custom range, whose two dates are picked in the
+ * range picker that shows beside it only then);
  * the range alone decides the time-series precision, so there is no second
  * control for it (controls have no external title — the explanation is
  * written into the dropdown options themselves);
  * three summary cards (today / last 7 days / cumulative, each stat on its own row);
+ * the Token figures count chat turns only: a tool request a plugin made (an image, a
+ * transcription, a search) is a request and a cost like any other, but its Tokens are MMSP's
+ * units, so the cards carry its count and cost on a row of its own and a "Tool requests" card
+ * below the charts lists them by what they were for — both only while the range has any;
  * a 2x2 grid of time-series charts over the shared range and precision —
  * requests + success rate broken down by Agent and, beside it, the same by
  * Model (requests stacked on the left axis, one rate line per entity on a
@@ -25,28 +30,31 @@
  * of them is what keeps an entity's history from sliding onto the wrong
  * intervals. Each chart marks the skipped intervals on its own axis.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
-import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
+import type {
+  ModelRefDto,
+  UsageBucket,
+  UsageResponse,
+  UsageToolRow,
+} from "@prismshadow/penguin-server/api";
 import {
   Card,
   CardHeader,
-  Input,
+  DateRangeField,
   PageFrame,
   PageHeader,
   Select,
   Skeleton,
   TodoNotice,
+  Waiting,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { refreshProjectTodos } from "../../lib/use-project-todos";
+import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
 import { formatMoney, humanizeTokens } from "../../lib/format";
-import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
+import { catalogEntryFor, providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { useOpenedInProject } from "../../lib/use-opened-in-project";
 import { useProject } from "../../state/project";
@@ -56,14 +64,16 @@ import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "
 import {
   compactCounts,
   compactSeries,
+  isoDate,
   presetDefaultGranularity,
   presetRange,
   presetTsWindow,
   rangeDays,
   type EntityCounts,
   type RangePreset,
-} from "./usage-controls";
+} from "../../lib/usage-controls";
 import { ErrorsPanel } from "./errors-panel";
+import { failureNode } from "../../lib/failure";
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */
 function SummaryRow({
@@ -80,34 +90,56 @@ function SummaryRow({
 }) {
   const tone = muted ? "text-gray-500 dark:text-gray-400" : "text-gray-900 dark:text-gray-100";
   return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+    <div data-slot="row" className="flex items-baseline justify-between gap-2">
+      <span data-slot="label" className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
         {label}
         {sup && <sup className="ml-px">*</sup>}
       </span>
-      <span className={`min-w-0 truncate font-mono text-sm font-semibold tabular-nums ${tone}`}>
+      <span
+        data-slot="figure"
+        className={`min-w-0 truncate font-mono text-sm font-semibold tabular-nums ${tone}`}
+      >
         {value}
       </span>
     </div>
   );
 }
 
-/** Usage summary card: a title + Token / request count / cost each on their own row. */
+/**
+ * Usage summary card: a title + Token / request count / cost each on their own row. It carries
+ * the `ui-ledger` hook, its rows the `row` slot, each a `label` beside its `figure`, so a theme
+ * may set the three cards apart as a ledger of their own. `showTools` adds the row of tool
+ * requests (their count and cost, both already inside Requests and Cost); the page passes the
+ * same answer to all three cards so their rows stay level.
+ */
 function SummaryCard({
   title,
   bucket,
   currency,
+  showTools,
 }: {
   title: string;
   bucket: UsageBucket;
   currency: "USD" | "CNY";
+  showTools: boolean;
 }) {
   return (
-    <Card>
+    <Card className="ui-ledger">
       <CardHeader title={title} />
       <div className="space-y-1">
         <SummaryRow label={S.usage.tokens} value={humanizeTokens(bucket.total)} />
         <SummaryRow label={S.usage.requests} value={String(bucket.requests)} muted />
+        {showTools && (
+          <SummaryRow
+            label={S.usage.toolRequestsIncluded}
+            // No tool request costs nothing; the dash is for tool requests that ran unpriced.
+            value={`${bucket.toolRequests} · ${formatMoney(
+              bucket.toolRequests === 0 ? 0 : bucket.toolCost,
+              currency,
+            )}`}
+            muted
+          />
+        )}
         {/* The unpriced-records asterisk sits on the word "cost" (superscript), keeping the number clean and readable; see the footer for the explanation */}
         <SummaryRow
           label={S.common.cost}
@@ -116,6 +148,58 @@ function SummaryCard({
         />
       </div>
     </Card>
+  );
+}
+
+/**
+ * A purpose (`<package>:<operation>`) as a row names it: the operation, and the package it came
+ * from without its npm scope.
+ */
+function toolPurposeLabel(purpose: string): { operation: string; source: string } {
+  const cut = purpose.lastIndexOf(":");
+  if (cut <= 0) return { operation: purpose, source: "" };
+  const pkg = purpose.slice(0, cut);
+  return { operation: purpose.slice(cut + 1), source: pkg.slice(pkg.lastIndexOf("/") + 1) };
+}
+
+/** The tool requests by purpose, one ruled line each: what they were for, how many, and their cost. */
+function ToolRequestsList({ tools, currency }: { tools: UsageToolRow[]; currency: "USD" | "CNY" }) {
+  return (
+    // Fixed layout: the two figures keep their width and the purpose takes the rest of the row.
+    <table className="w-full table-fixed text-sm">
+      <colgroup>
+        <col />
+        <col className="w-28" />
+        <col className="w-32" />
+      </colgroup>
+      <thead>
+        <tr className="text-left text-xs text-gray-500 dark:text-gray-400">
+          <th className="pb-1 font-normal">{S.usage.toolColumn}</th>
+          <th className="pb-1 text-right font-normal">{S.usage.requests}</th>
+          <th className="pb-1 text-right font-normal">{S.common.cost}</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+        {tools.map((t) => {
+          const { operation, source } = toolPurposeLabel(t.purpose);
+          return (
+            <tr key={t.purpose} data-tooltip={t.purpose}>
+              <td className="truncate py-1.5 pr-3">
+                <span className="text-gray-900 dark:text-gray-100">{operation}</span>
+                {source && (
+                  <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{source}</span>
+                )}
+              </td>
+              <td className="py-1.5 text-right font-mono tabular-nums">{t.requests}</td>
+              <td className="py-1.5 text-right font-mono tabular-nums">
+                {formatMoney(t.cost, currency)}
+                {t.hasUncosted && <sup className="ml-px">*</sup>}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -222,7 +306,7 @@ export function UsagePage() {
    * changes nothing (the panel's fetch effect depends on that identity).
    */
   const [loaded, setLoaded] = useState<LoadedRange>(() => ({ preset, from, to }));
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   // The legend / control state that lives in the card headers (ChartCard's
   // extra) while the marks live inside the cards, lifted to this level.
   const [tokenBucket, setTokenBucket] = useState<TokenLegendKey | null>(null);
@@ -256,7 +340,9 @@ export function UsagePage() {
       setData(scoped(projectId, res));
       setLoaded({ preset, ...range });
     } catch (e) {
-      if (ask === asked.current) setError(apiErrorText(e));
+      if (ask === asked.current) {
+        setError(failureNode(e, { what: "the Cost Center could not be loaded" }));
+      }
     }
   }, [projectId, preset, from, to, agentFilter, modelFilter?.provider, modelFilter?.modelId]);
 
@@ -287,6 +373,25 @@ export function UsagePage() {
 
   // Model filter candidates and the currently selected item's index (the option value uses the index, avoiding concatenating an id as the key).
   const modelOptions = data?.models ?? [];
+  // A model is named by its catalog name; where two providers sell one name, the provider joins
+  // it, so the filter and the requests chart never show two identical labels.
+  const modelName = (ref: ModelRefDto) =>
+    catalogEntryFor(ref.provider, ref.modelId)?.displayName ?? ref.modelId;
+  const refs = new Map<string, ModelRefDto>();
+  for (const ref of [...modelOptions, ...(data?.byModelSeries ?? [])]) {
+    refs.set(`${ref.provider}\u0000${ref.modelId}`, ref);
+  }
+  const nameCount = new Map<string, number>();
+  for (const ref of refs.values()) {
+    const name = modelName(ref);
+    nameCount.set(name, (nameCount.get(name) ?? 0) + 1);
+  }
+  const modelLabel = (ref: ModelRefDto) => {
+    const name = modelName(ref);
+    return (nameCount.get(name) ?? 0) > 1
+      ? S.models.modelInGroup(name, providerInfo(ref.provider)?.label ?? ref.provider)
+      : name;
+  };
   const selectedModelIndex = modelFilter
     ? modelOptions.findIndex(
         (m) => m.provider === modelFilter.provider && m.modelId === modelFilter.modelId,
@@ -298,7 +403,11 @@ export function UsagePage() {
   const hasUncostedRows =
     (summary?.today.hasUncosted ?? false) ||
     (summary?.last7d.hasUncosted ?? false) ||
-    (summary?.total.hasUncosted ?? false);
+    (summary?.total.hasUncosted ?? false) ||
+    (data?.tools ?? []).some((t) => t.hasUncosted);
+  const showTools =
+    summary !== undefined &&
+    [summary.today, summary.last7d, summary.total].some((b) => b.toolRequests > 0);
 
   // One compaction for the whole page (see the file header): every chart draws
   // these buckets, and every per-entity series is re-indexed through the same
@@ -313,7 +422,7 @@ export function UsagePage() {
     ...compactCounts(s, plotted.kept),
   }));
   const modelEntities: EntityCounts[] = (data?.byModelSeries ?? []).map((s) => ({
-    label: catalogEntryFor(s.provider, s.modelId)?.displayName ?? s.modelId,
+    label: modelLabel(s),
     ...compactCounts(s, plotted.kept),
   }));
   return (
@@ -354,12 +463,13 @@ export function UsagePage() {
                 <option value="">{S.usage.filterAllModels}</option>
                 {modelOptions.map((m, i) => (
                   <option key={`${m.provider}:${m.modelId}`} value={String(i)}>
-                    {catalogEntryFor(m.provider, m.modelId)?.displayName ?? m.modelId}
+                    {modelLabel(m)}
                   </option>
                 ))}
               </Select>
             </div>
-            {/* Date range: trailing windows and quick presets, with "custom" revealing the two date inputs */}
+            {/* Date range: the trailing windows, the calendar presets, and "custom", which reveals
+                the range field */}
             <div className="w-28">
               <Select
                 size="sm"
@@ -385,24 +495,19 @@ export function UsagePage() {
               </Select>
             </div>
             {preset === "custom" && (
-              /* A dash between the two inputs stands in for a "from/to" label */
-              <div className="flex items-center gap-1.5">
-                <Input
+              /* The custom range's two dates, shown only while the range is the custom one: a
+                 preset names its own span in the Select, so it has nothing to pick here. As wide
+                 as its two full dates in the theme's face, which differs from theme to theme,
+                 and narrower only when the row has no room. */
+              <div className="max-w-full">
+                <DateRangeField
                   size="sm"
-                  type="date"
-                  aria-label={S.usage.from}
-                  value={from}
-                  onChange={(e) => applyRange("custom", e.target.value, to)}
-                />
-                <span className="shrink-0 text-gray-400" aria-hidden>
-                  –
-                </span>
-                <Input
-                  size="sm"
-                  type="date"
-                  aria-label={S.usage.to}
-                  value={to}
-                  onChange={(e) => applyRange("custom", from, e.target.value)}
+                  aria-label={S.usage.rangeDates}
+                  required
+                  from={from}
+                  to={to}
+                  max={isoDate(new Date())}
+                  onChange={(range) => applyRange("custom", range.from, range.to)}
                 />
               </div>
             )}
@@ -428,16 +533,31 @@ export function UsagePage() {
       {/* Summary cards (today / last 7 days / cumulative) */}
       {data ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <SummaryCard title={S.usage.today} bucket={data.summary.today} currency={currency} />
-          <SummaryCard title={S.usage.last7d} bucket={data.summary.last7d} currency={currency} />
-          <SummaryCard title={S.usage.total} bucket={data.summary.total} currency={currency} />
+          <SummaryCard
+            title={S.usage.today}
+            bucket={data.summary.today}
+            currency={currency}
+            showTools={showTools}
+          />
+          <SummaryCard
+            title={S.usage.last7d}
+            bucket={data.summary.last7d}
+            currency={currency}
+            showTools={showTools}
+          />
+          <SummaryCard
+            title={S.usage.total}
+            bucket={data.summary.total}
+            currency={currency}
+            showTools={showTools}
+          />
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Waiting className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
-        </div>
+        </Waiting>
       )}
 
       {/* Time-series charts, all over the shared range + precision: requests +
@@ -447,6 +567,7 @@ export function UsagePage() {
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <ChartCard title={S.usage.chartRequestsByAgent}>
             <RequestsChart
+              label={S.usage.chartRequestsByAgent}
               series={plotted.points}
               entities={agentEntities}
               granularity={data.granularity}
@@ -455,6 +576,7 @@ export function UsagePage() {
           </ChartCard>
           <ChartCard title={S.usage.chartRequestsByModel}>
             <RequestsChart
+              label={S.usage.chartRequestsByModel}
               series={plotted.points}
               entities={modelEntities}
               granularity={data.granularity}
@@ -467,6 +589,7 @@ export function UsagePage() {
             extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}
           >
             <TokenBarChart
+              label={S.usage.chartTokenTrend}
               series={plotted.points}
               granularity={data.granularity}
               legend={tokenBucket}
@@ -475,6 +598,7 @@ export function UsagePage() {
           </ChartCard>
           <ChartCard title={S.usage.chartCostTrend}>
             <TrendChart
+              label={S.usage.chartCostTrend}
               series={plotted.points}
               granularity={data.granularity}
               currency={currency}
@@ -483,7 +607,16 @@ export function UsagePage() {
           </ChartCard>
         </div>
       ) : (
-        <Skeleton className="h-64" />
+        <Waiting>
+          <Skeleton className="h-64" />
+        </Waiting>
+      )}
+
+      {/* Tool requests over the selected range, by what they were for (only while there are any) */}
+      {data && data.tools.length > 0 && (
+        <ChartCard title={S.usage.toolRequests}>
+          <ToolRequestsList tools={data.tools} currency={currency} />
+        </ChartCard>
       )}
 
       {/* Errors (a single full-width panel: stats + a recent-errors table) */}

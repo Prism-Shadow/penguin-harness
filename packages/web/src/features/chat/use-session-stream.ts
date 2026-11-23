@@ -4,8 +4,9 @@
  *
  * 1. On entering a Session, connect SSE first; events are handed to the controller (buffered if
  *    history isn't ready yet);
- * 2. GET messages renders history, then replays the buffer (overlap deduped); on load failure,
- *    expose error and a retry entry point;
+ * 2. The history stream renders history — the newest Tasks first, older windows and the fill
+ *    behind them, with how far the bytes have come (`transfer`) — then replays the buffer
+ *    (overlap deduped); on load failure, expose error and a retry entry point;
  * 3. Disconnects are auto-reconnected by the browser (Last-Event-ID built in; server replays from
  *    its buffer), and a connection that went silent is reopened by api/sse.ts from the last id
  *    seen; resync_required → controller rebuilds the model and keeps consuming the same
@@ -24,22 +25,37 @@ import type {
   SessionStatus,
   SubagentRuntimeInfo,
 } from "@prismshadow/penguin-server/api";
-import { getGoal, getMessages } from "../../api/endpoints";
+import { getGoal } from "../../api/endpoints";
 import { probeSession } from "../../api/session-probe";
 import { apiSocket } from "../../api/socket";
-import { openSessionStream } from "../../api/sse";
+import { openHistoryStream, openSessionStream, openTraceBodyStream } from "../../api/sse";
 import { machineForSession } from "../../lib/session-machines";
 import { createStreamController } from "../../lib/amsp/stream-controller";
 import type {
+  HistoryTransfer,
   OlderHistoryState,
   PendingApproval,
   StreamController,
 } from "../../lib/amsp/stream-controller";
 import { createStreamModel } from "../../lib/amsp/stream-model";
-import type { ChatItem, StreamModel } from "../../lib/amsp/stream-model";
+import type {
+  ChatItem,
+  StreamModel,
+  ThinkingItem,
+  ToolCallItem,
+} from "../../lib/amsp/stream-model";
 import type { GoalBannerState } from "./goal-use";
 
-export type { OlderHistoryState, PendingApproval } from "../../lib/amsp/stream-controller";
+export type {
+  HistoryTransfer,
+  OlderHistoryState,
+  PendingApproval,
+} from "../../lib/amsp/stream-controller";
+
+/** Fetches the whole of an item's folded values (see the stream controller's loadBodies). */
+export interface ElidedBodies {
+  load: (item: ToolCallItem | ThinkingItem) => void;
+}
 
 /** Minimum spacing between version commits: below one frame at 8fps, invisible as staleness, but ~8× fewer full re-parses of the growing message during a fast large-code stream. */
 const BUMP_MIN_INTERVAL_MS = 120;
@@ -51,6 +67,8 @@ export interface SessionStreamState {
    * previous Session's, and nothing may act on it as the new one's.
    */
   sessionId: string | null;
+  /** Owner confirmed by a history transfer, including a deep link ahead of the sidebar. */
+  historyMachineId: string | null;
   /** View model (updated in place; version bump triggers re-render): the LIVE tail window. */
   model: StreamModel;
   /**
@@ -68,6 +86,8 @@ export interface SessionStreamState {
   /** Prepend the previous history window (triggered near the top of the loaded transcript). */
   loadOlder: () => void;
   version: number;
+  /** First subscription and each subsequent reconnect. */
+  subscriptionGeneration?: number;
   /** True until history finishes loading. */
   loading: boolean;
   taskState: SessionStatus;
@@ -93,8 +113,21 @@ export interface SessionStreamState {
   resolveApproval: (key: string) => void;
   /** History load failure message (paired with retry to show a retry entry point). */
   error: string | null;
+  /** What the failed load threw, for judging whether it is a defect worth a report; null with no failure. */
+  errorCause: unknown;
   /** Re-fetch history (only meaningful after a load failure). */
   retry: () => void;
+  /** Start fresh subscriptions when a remote machine returns. */
+  reconnect: () => void;
+  /**
+   * How far the reads behind the transcript have come: the window it waits on, an older window,
+   * and the fill behind the first paint. All null for a Session on this server.
+   */
+  transfer: HistoryTransfer;
+  /** Reads the window the transcript waits on again now (Retry now while the machine is waited for). */
+  retryNow: () => void;
+  /** Unfolds an item's folded values: their whole text is fetched and put in place. */
+  bodies: ElidedBodies;
   /**
    * Goal-banner state: an in-flight goal restored from the Session's GOAL.json on load (only
    * when still active), then kept live by goal_* server events; terminal states reached during this
@@ -106,15 +139,25 @@ export interface SessionStreamState {
 const EMPTY_PENDING: ReadonlyMap<string, PendingApproval> = new Map();
 const EMPTY_PREFIX: readonly ChatItem[] = [];
 const EMPTY_SUBAGENTS: ReadonlyMap<string, StreamModel> = new Map();
-const IDLE_OLDER: OlderHistoryState = { hasMore: false, loading: false, error: null };
+const IDLE_OLDER: OlderHistoryState = {
+  hasMore: false,
+  loading: false,
+  error: null,
+  errorCause: null,
+  beyondTail: false,
+};
+const NO_TRANSFER: HistoryTransfer = { window: null, older: null, fill: null };
 
 export function useSessionStream(
   sessionId: string | null,
   initialStatus: SessionStatus,
   /** Notification of a server auto-generated title (for updating the list in place); held in a ref, doesn't trigger a reconnect. */
-  onSessionTitle?: (sessionId: string, title: string) => void,
+  onSessionTitle: (sessionId: string, title: string) => void,
+  source: string,
 ): SessionStreamState {
+  const [subscriptionGeneration, setSubscriptionGeneration] = useState(0);
   const [version, setVersion] = useState(0);
+  const [connectionGeneration, setConnectionGeneration] = useState(0);
   const [loading, setLoading] = useState(true);
   const [taskState, setTaskState] = useState<SessionStatus>(initialStatus);
   const [queuedFollowUps, setQueuedFollowUps] = useState(0);
@@ -122,10 +165,21 @@ export function useSessionStream(
   const [returnedSteering, setReturnedSteering] = useState<PendingSteeringInfo[]>([]);
   const [pendingFollowUps, setPendingFollowUps] = useState<PendingFollowUpInfo[]>([]);
   const [subagents, setSubagents] = useState<SubagentRuntimeInfo[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setErrorText] = useState<string | null>(null);
+  const [errorCause, setErrorCause] = useState<unknown>(null);
+  const setError = useCallback((message: string | null, cause?: unknown) => {
+    setErrorText(message);
+    setErrorCause(message === null ? null : (cause ?? null));
+  }, []);
   const [pendingTick, setPendingTick] = useState(0);
   const [goal, setGoal] = useState<GoalBannerState | null>(null);
-  const [describes, setDescribes] = useState<string | null>(sessionId);
+  const [describes, setDescribes] = useState({ sessionId, source });
+  const [transfer, setTransfer] = useState<HistoryTransfer>(NO_TRANSFER);
+  const [historyOwner, setHistoryOwner] = useState<{
+    sessionId: string;
+    source: string;
+    machineId: string;
+  } | null>(null);
 
   /**
    * A history still loading after this is said out loud, with where the call went and what the
@@ -205,7 +259,7 @@ export function useSessionStream(
       // so "A is still running" would block sending in the new draft B after switching.
       controllerRef.current?.dispose();
       controllerRef.current = null;
-      setDescribes(null);
+      setDescribes({ sessionId: null, source });
       setTaskState("idle");
       setQueuedFollowUps(0);
       setPendingSteering([]);
@@ -215,14 +269,16 @@ export function useSessionStream(
       setLoading(false);
       setError(null);
       setGoal(null);
+      setTransfer(NO_TRANSFER);
       setPendingTick((t) => t + 1);
       setVersion((v) => v + 1);
       return;
     }
     setVersion((v) => v + 1);
-    setDescribes(sessionId);
+    setDescribes({ sessionId, source });
     setLoading(true);
     setError(null);
+    setTransfer(NO_TRANSFER);
     // First-frame placeholder: the task_state snapshot from the stream (pushed on subscribe)
     // subsequently overrides it as the authoritative state.
     setTaskState(initialStatus);
@@ -253,10 +309,24 @@ export function useSessionStream(
 
     const controller = createStreamController({
       sessionId,
-      // The whole response rides through: `live` (in-progress stream tail) lets the
-      // controller seed the currently streaming message after a reload, and `page` (the
-      // windowed-history envelope) drives tail-first loading (see stream-controller).
-      loadMessages: (page) => getMessages(sessionId, page),
+      // The whole window rides through: `live` (in-progress stream tail) lets the controller
+      // seed the currently streaming message after a reload, and `page` (the windowed-history
+      // envelope) drives tail-first loading (see stream-controller).
+      openHistory: (query, handlers) => openHistoryStream(sessionId, query, handlers),
+      openBody: (ref, handlers) => openTraceBodyStream(sessionId, ref, handlers),
+      onTransfer: (reading) => {
+        const machineId =
+          reading.window?.machineId ?? reading.fill?.machineId ?? reading.older?.machineId;
+        if (machineId)
+          setHistoryOwner((previous) =>
+            previous?.sessionId === sessionId &&
+            previous.source === source &&
+            previous.machineId === machineId
+              ? previous
+              : { sessionId, source, machineId },
+          );
+        setTransfer(reading);
+      },
       onTaskState: setTaskState,
       onQueuedFollowUps: setQueuedFollowUps,
       onPendingSteering: setPendingSteering,
@@ -290,7 +360,10 @@ export function useSessionStream(
       onServerEvent: controller.handleServer,
       // Hydrate the goal banner only once the subscription is live (fires on first connect and
       // every reconnect); the prev/active guards keep it from clobbering a live banner.
-      onOpen: hydrateGoal,
+      onOpen: () => {
+        setSubscriptionGeneration((n) => n + 1);
+        hydrateGoal();
+      },
       // A stream refused for good (401/403/404) is reported as closed: ask whether this
       // browser is still signed in (api/session-probe.ts).
       onError: (closed) => {
@@ -316,7 +389,13 @@ export function useSessionStream(
     // initialStatus only serves as the first-frame placeholder; it doesn't rebuild the connection
     // on parent re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, source, connectionGeneration]);
+
+  const reconnect = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    setConnectionGeneration((current) => current + 1);
+  }, []);
 
   const markLocalDecision = useCallback((toolCallId: string) => {
     controllerRef.current?.markLocalDecision(toolCallId);
@@ -334,11 +413,24 @@ export function useSessionStream(
     void controllerRef.current?.loadOlder();
   }, []);
 
+  const retryNow = useCallback(() => {
+    controllerRef.current?.retryNow();
+  }, []);
+
+  const bodiesRef = useRef<ElidedBodies>({
+    load: (item) => controllerRef.current?.loadBodies(item),
+  });
+
   // pendingTick participates in the render dependencies, ensuring pending-table changes trigger a re-render.
   void pendingTick;
 
   return {
-    sessionId: describes,
+    subscriptionGeneration,
+    sessionId: describes.source === source ? describes.sessionId : null,
+    historyMachineId:
+      historyOwner && historyOwner.sessionId === sessionId && historyOwner.source === source
+        ? historyOwner.machineId
+        : null,
     model: controllerRef.current?.model ?? placeholderRef.current,
     prefixItems: controllerRef.current?.prefixItems ?? EMPTY_PREFIX,
     prefixSubagents: controllerRef.current?.prefixSubagents ?? EMPTY_SUBAGENTS,
@@ -346,7 +438,9 @@ export function useSessionStream(
     older: controllerRef.current?.older ?? IDLE_OLDER,
     loadOlder,
     version,
-    loading,
+    loading:
+      loading ||
+      (!!sessionId && (describes.source !== source || describes.sessionId !== sessionId)),
     taskState,
     queuedFollowUps,
     pendingSteering,
@@ -357,7 +451,12 @@ export function useSessionStream(
     markLocalDecision,
     resolveApproval,
     error,
+    errorCause,
     retry,
+    reconnect,
+    transfer,
+    retryNow,
+    bodies: bodiesRef.current,
     goal,
   };
 }

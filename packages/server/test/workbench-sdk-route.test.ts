@@ -6,8 +6,15 @@
  * - workbench.js evaluates beside it and exposes AMSP's exports plus `apiBase`, `transport`,
  *   `followSession` and `abortSession`, the API base read from where it was loaded: `/api`, or
  *   `/server/<machineId>/api` for a machine's workbench.
+ * - Its `chooseChatModel` and `getChatModel` ask the app the page is framed in, on an id: the
+ *   answer is taken only from the page's parent and only on that id, an acknowledged question
+ *   waits for the person, and one no app acknowledges, or a page with no app above it, is told
+ *   the app is unavailable.
+ * - Opening native model settings resolves when the parent opens them and rejects its refusal.
  * - Both are answered only under an existing workbench of a Project the caller can read, and
  *   only to a signed-in caller.
+ * - The page runtime TSX pages import (`…/sdk/ui/*`) is served the same way, and never the
+ *   server's own files of it — its manifest and declarations — nor anything outside it.
  * - The browser build travels inside a bundled server, which has no node_modules to read it from.
  */
 import { createHash } from "node:crypto";
@@ -17,8 +24,9 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type * as Amsp from "@prismshadow/amsp";
-import { agentDir } from "@prismshadow/penguin-core";
+import { agentStateDir } from "@prismshadow/penguin-core";
 import { compilePushBundle, pushBundleOptions } from "../../../scripts/push-bundle.mjs";
+import { webDistWithUiRuntime } from "./fixtures/workbench-runtime.js";
 import { apiClient, createTestApp, makeTempRoot, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -54,6 +62,10 @@ type PageSdk = typeof Amsp & {
   transport: Amsp.HttpTransport;
   followSession(sessionId: string, options?: { tailLimit?: number }): Amsp.SessionReader;
   abortSession(sessionId: string): Promise<boolean>;
+  chooseChatModel(current?: unknown): Promise<unknown>;
+  getChatModel(current?: unknown): Promise<unknown>;
+  getChatThinkingOptions(): Promise<unknown>;
+  openModelSettings(): Promise<void>;
 };
 
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -61,9 +73,11 @@ const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest(
 describe("the workbench page SDK", () => {
   let t: TestApp;
   let cookie: string;
+  let web: string;
 
   beforeAll(async () => {
-    t = await createTestApp();
+    web = await webDistWithUiRuntime(await makeTempRoot());
+    t = await createTestApp({ config: { webDist: web } });
     const owner = await provisionUser(t.app, "owner");
     cookie = owner.cookie;
     const created = await apiClient(t.app, cookie).post("/api/projects", {
@@ -72,7 +86,7 @@ describe("the workbench page SDK", () => {
     });
     expect(created.status, await created.text()).toBe(201);
     // A workbench folder is enough: its load fails before the compiler, and it still exists.
-    const dir = path.join(agentDir(t.root, PROJECT, AGENT), "workbenches", "demo");
+    const dir = path.join(agentStateDir(t.root, PROJECT, AGENT), "workbenches", "demo");
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "package.json"), '{"name":"demo","type":"module"}');
   });
@@ -110,35 +124,35 @@ describe("the workbench page SDK", () => {
     expect(workbench.headers.get("cache-control")).toBe("no-cache");
   });
 
-  it("evaluates workbench.js with AMSP's exports and the door of the server it came from", async () => {
+  /** Writes the two files where `prefix` + the route would put them, and imports workbench.js. */
+  const loadAt = async (...prefix: string[]): Promise<PageSdk> => {
     const files = {
       "amsp.js": await fetchSdk("amsp.js"),
       "workbench.js": await fetchSdk("workbench.js"),
     };
-    /** Writes the two files where `prefix` + the route would put them, and imports workbench.js. */
-    const loadAt = async (...prefix: string[]): Promise<PageSdk> => {
-      const dir = path.join(
-        t.root,
-        "page",
-        ...prefix,
-        "projects",
-        PROJECT,
-        "agents",
-        AGENT,
-        "workbenches",
-        "demo",
-        "sdk",
-      );
-      await fs.mkdir(dir, { recursive: true });
-      for (const [name, bytes] of Object.entries(files)) {
-        await fs.writeFile(path.join(dir, name), bytes);
-      }
-      // The map amsp.js names, so the module loader does not report it missing.
-      await fs.copyFile(`${BROWSER_BUILD}.map`, path.join(dir, "amsp.js.map"));
-      const url = pathToFileURL(path.join(dir, "workbench.js")).href;
-      return (await import(/* @vite-ignore */ url)) as PageSdk;
-    };
+    const dir = path.join(
+      t.root,
+      "page",
+      ...prefix,
+      "projects",
+      PROJECT,
+      "agents",
+      AGENT,
+      "workbenches",
+      "demo",
+      "sdk",
+    );
+    await fs.mkdir(dir, { recursive: true });
+    for (const [name, bytes] of Object.entries(files)) {
+      await fs.writeFile(path.join(dir, name), bytes);
+    }
+    // The map amsp.js names, so the module loader does not report it missing.
+    await fs.copyFile(`${BROWSER_BUILD}.map`, path.join(dir, "amsp.js.map"));
+    const url = pathToFileURL(path.join(dir, "workbench.js")).href;
+    return (await import(/* @vite-ignore */ url)) as PageSdk;
+  };
 
+  it("evaluates workbench.js with AMSP's exports and the door of the server it came from", async () => {
     const plain = await loadAt("api");
     const machine = await loadAt("server", "m-1", "api");
     expect(plain.apiBase).toMatch(/\/page\/api$/);
@@ -172,6 +186,101 @@ describe("the workbench page SDK", () => {
         credentials: "same-origin",
       },
     ]);
+  });
+
+  it("asks the app it is framed in for a chat model on an id, and takes the answer only from that app", async () => {
+    const sdk = await loadAt("framed", "api");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // The page's window and the app above it: what the page posts, and what it hears.
+      const page = new EventTarget();
+      const posted: Array<{ type: string; id: string; op: string; current: unknown }> = [];
+      const app = { postMessage: (data: (typeof posted)[number]) => void posted.push(data) };
+      vi.stubGlobal("window", Object.assign(page, { parent: app }));
+      const hear = (source: unknown, data: unknown) =>
+        page.dispatchEvent(Object.assign(new Event("message"), { source, data }));
+      const reply = (data: object) =>
+        hear(app, { type: "penguin:chat-model-reply", id: posted.at(-1)!.id, ...data });
+
+      const current = { provider: "custom", modelId: "draft" };
+      const chosen = sdk.chooseChatModel(current);
+      expect(posted).toEqual([
+        { type: "penguin:chat-model", id: expect.any(String), op: "choose", current },
+      ]);
+      reply({ accepted: true });
+      // The person takes their time: an acknowledged question waits past the acknowledgement's window.
+      await vi.advanceTimersByTimeAsync(10_000);
+      // Neither another frame nor an answer on another id settles it.
+      const review = { provider: "custom", modelId: "review", label: "Review" };
+      hear(
+        {},
+        { type: "penguin:chat-model-reply", id: posted[0]!.id, model: { ...review, modelId: "x" } },
+      );
+      hear(app, { type: "penguin:chat-model-reply", id: "another", model: null });
+      reply({ model: review });
+      await expect(chosen).resolves.toEqual(review);
+
+      const levels = sdk.getChatThinkingOptions();
+      expect(posted.at(-1)).toMatchObject({ type: "penguin:chat-model", op: "thinking" });
+      const thinking = { defaultLevel: "high", options: [{ value: "max", label: "Max" }] };
+      reply({ thinking });
+      await expect(levels).resolves.toEqual(thinking);
+
+      const settings = sdk.openModelSettings();
+      expect(posted.at(-1)).toMatchObject({ type: "penguin:open-model-settings" });
+      reply({ opened: true });
+      await expect(settings).resolves.toBeUndefined();
+
+      const remoteSettings = sdk.openModelSettings();
+      reply({ error: "Configure this machine directly." });
+      await expect(remoteSettings).rejects.toThrow("Configure this machine directly.");
+
+      // An app that does not know the question never acknowledges it.
+      const unheard = expect(sdk.getChatModel()).rejects.toMatchObject({
+        name: "WorkbenchHostUnavailable",
+      });
+      expect(posted.at(-1)).toMatchObject({ type: "penguin:chat-model", op: "get", current: null });
+      await vi.advanceTimersByTimeAsync(3_000);
+      await unheard;
+
+      // A page opened on its own, with no app above it, is told at once.
+      const alone = Object.assign(new EventTarget(), { parent: null as unknown });
+      alone.parent = alone;
+      vi.stubGlobal("window", alone);
+      await expect(sdk.chooseChatModel()).rejects.toMatchObject({
+        name: "WorkbenchHostUnavailable",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("serves the page runtime revalidated by ETag, under a workbench that exists, and none of its own files", async () => {
+    const res = await t.app.request(`${SDK}/ui/react.js`, asModuleScript(cookie));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
+    expect(res.headers.get("cache-control")).toBe("no-cache");
+    const etag = res.headers.get("etag");
+    expect(etag).toMatch(/^"[\w-]+"$/);
+    expect(await res.text()).toBe(
+      await fs.readFile(path.join(web, "workbench-runtime", "react.js"), "utf8"),
+    );
+    const again = await t.app.request(
+      `${SDK}/ui/react.js`,
+      asModuleScript(cookie, { "if-none-match": etag! }),
+    );
+    expect(again.status).toBe(304);
+
+    const gone = `/api/projects/${PROJECT}/agents/${AGENT}/workbenches/gone/sdk/ui/react.js`;
+    expect((await t.app.request(gone, asModuleScript(cookie))).status).toBe(404);
+    for (const rel of [
+      "manifest.json",
+      "types/node_modules/@types/react/index.d.ts",
+      // `../workbench-runtime/manifest.json` once decoded: the manifest by way of the parent.
+      "..%2Fworkbench-runtime%2Fmanifest.json",
+    ]) {
+      expect((await t.app.request(`${SDK}/ui/${rel}`, asModuleScript(cookie))).status).toBe(404);
+    }
   });
 
   it("answers only a signed-in reader of the Project, under a workbench that exists", async () => {

@@ -11,7 +11,7 @@
  * the form with anything typed (cases included) asks first; nothing closes it while the write
  * is in flight.
  */
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { BenchmarkSummary } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -32,10 +32,10 @@ import {
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
-import { SemanticIdField } from "../semantic-id/semantic-id-field";
+import { SemanticIdField } from "../semantic-id";
 import { ID_PATTERN, caseId, isValidRuns } from "./benchmark-prompts";
+import { failureNode } from "../../lib/failure";
 
 interface CaseDraft {
   /** Stable React key, independent of position, so removing a case keeps the others' state. */
@@ -140,7 +140,7 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
   /** The id the server refused as taken; cleared by the next edit of the id. */
   const [idTaken, setIdTaken] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<ReactNode>(null);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
   const updateCase = (key: number, patch: Partial<CaseDraft>) =>
@@ -186,7 +186,7 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
       if (e instanceof ApiError && e.status === 409) {
         setIdTaken(true);
       } else {
-        setSubmitError(apiErrorText(e));
+        setSubmitError(failureNode(e, { what: "a Benchmark could not be created" }));
       }
     } finally {
       setBusy(false);

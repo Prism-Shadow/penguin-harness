@@ -37,6 +37,7 @@ import {
   requestEnd,
   approvalDecision,
   sessionMeta,
+  sessionUpdate,
   subagentEvent,
   taskBegin,
   taskEnd,
@@ -45,7 +46,11 @@ import {
   toolCallOutput,
   userText,
 } from "@prismshadow/penguin-core";
-import { buildBackgroundTaskDoneMessage, buildHandoffMessage } from "@prismshadow/amsp/markers";
+import {
+  buildBackgroundTaskDoneMessage,
+  buildHandoffMessage,
+  buildModelSwitchMessage,
+} from "@prismshadow/amsp/markers";
 import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { decodeCursor, encodeCursor } from "../src/services/message-window.js";
 import { MESSAGES_PAGE_MAX_BYTES } from "../src/services/trace-service.js";
@@ -711,6 +716,7 @@ describe("messages windowed reads", () => {
   it("cursor edge cases: unknown shard yields an empty end-of-history page; empty sessions page cleanly", async () => {
     expect(await service.readMessagesPage(P, A, S, { kind: "tail", limit: 5 })).toEqual({
       messages: [],
+      units: 0,
       prior: {
         turns: 0,
         subagentTokens: 0,
@@ -885,5 +891,83 @@ describe("messages windowed reads", () => {
     expect([...first.messages, ...older.messages, ...afterSwitch.messages]).toEqual(
       await service.readMessages(P, A, S),
     );
+  });
+
+  it("a window that starts behind a switch's pending session_update names the target, not the model its shard opened on", async () => {
+    // Shard 1 on m1, closed by the switch's compaction, the target recorded behind it. The next
+    // Task was stopped while its MCP servers connected, so its prompt landed in this shard too:
+    // the next file never opened.
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload({ model_id: "m1" })),
+      ...turn(0, 1, 1000),
+      ...turn(1, 2, 2000),
+      at(
+        "2026-07-20T10:02:00.000Z",
+        compactionBegin({ reason: "manual", mode: "summarize", context: 102, turns: 2 }),
+      ),
+      at("2026-07-20T10:02:01.000Z", requestBegin()),
+      at("2026-07-20T10:02:02.000Z", assistantText("[summary]s[/summary]")),
+      at("2026-07-20T10:02:03.000Z", requestEnd("completed")),
+      at(
+        "2026-07-20T10:02:04.000Z",
+        compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+      ),
+      at("2026-07-20T10:02:05.000Z", sessionUpdate({ provider: "other", model_id: "m2" })),
+      at("2026-07-20T10:03:00.000Z", taskBegin()),
+      at("2026-07-20T10:03:00.100Z", userText("q3")),
+      at("2026-07-20T10:03:01.000Z", abortEvent()),
+      at("2026-07-20T10:03:01.100Z", taskEnd()),
+    ]);
+
+    const last = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    expect(userTexts(last.messages)).toEqual(["q3"]);
+    expect(last.contextModel).toEqual({ provider: "other", modelId: "m2" });
+
+    // A window from before the switch starts on m1 and holds the record that tells it.
+    const across = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 2 });
+    expect(userTexts(across.messages)).toEqual(["q2", "q3"]);
+    expect(across.contextModel).toEqual({ provider: "custom", modelId: "m1" });
+    expect(
+      across.messages.filter((m) => (m.payload as { type?: string }).type === "session_update"),
+    ).toHaveLength(1);
+  });
+
+  it("a switch that handed over by Trace path opens no window of its own: like a summary, its handoff closes the window before", async () => {
+    // Shard 1 on m1, its summary request failed; shard 2 on m2 opens with the handoff naming
+    // this Session and shard 1, then two turns.
+    const shard1 = await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload({ model_id: "m1" })),
+      ...turn(0, 1, 1000),
+      ...turn(1, 2, 2000),
+      at(
+        "2026-07-20T10:02:00.000Z",
+        compactionBegin({ reason: "manual", mode: "summarize", context: 102, turns: 2 }),
+      ),
+      at(
+        "2026-07-20T10:02:04.000Z",
+        compactionEnd({ reason: "manual", mode: "summarize", status: "fatal" }),
+      ),
+    ]);
+    const handoff = buildModelSwitchMessage({
+      sessionId: S,
+      tracePath: shard1,
+      prevProvider: "custom",
+      prevModelId: "m1",
+    });
+    await writeTraceFile(root, P, A, "2026-07-20", S, 2, [
+      sessionMeta(metaPayload({ provider: "other", model_id: "m2" })),
+      at("2026-07-20T10:02:05.000Z", userText(handoff)),
+      ...turn(3, 3, 3000),
+      ...turn(4, 4, 4000),
+    ]);
+
+    const afterSwitch = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 2 });
+    expect(userTexts(afterSwitch.messages)).toEqual(["q3", "q4"]);
+    const older = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: decodeCursor(afterSwitch.before!)!,
+      limit: 1,
+    });
+    expect(userTexts(older.messages)).toEqual(["q2", handoff]);
   });
 });

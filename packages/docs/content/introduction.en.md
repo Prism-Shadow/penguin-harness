@@ -35,7 +35,7 @@ PenguinHarness is summed up in one line as the **Unified and Stable RSI Framewor
 | --- | --- |
 | **Simplest Is the Best** | A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, and complex tasks done efficiently. |
 | **Harness for Building Agents** | With the PenguinHarness SDK, an agent builds complete agent applications for you, autonomously and from scratch. |
-| **Harness for Recursive Self-Improvement** | With the RSI toolkits — the Default loop, OPRO, APE, ACE and AWM — an agent evaluates and optimizes itself, improving recursively over time; see [Self-Improvement](/self-improvement). |
+| **Harness for Recursive Self-Improvement** | With the RSI toolkits — the Default loop, OPRO, APE, ACE, AWM, SkillAdam, OpenSkill and TRACE — an agent evaluates and optimizes itself, improving recursively over time; see [Self-Improvement](/self-improvement). |
 
 ## Design tenets
 

@@ -58,9 +58,11 @@ import {
 import { checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 import { compilePushBundle, pushBundleOptions } from "./push-bundle.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
+import { MARKET_COVERS_NAME, MARKET_COVERS_SOURCE, marketCoverFiles } from "./market-covers.mjs";
 import { buildBuiltinPlugins } from "./build-plugins.mjs";
+import { shippedCliPackages } from "./gen-cli-modules.mjs";
 import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
-import { typescriptPayload } from "./typescript-payload.mjs";
+import { nodeTypesPayload, typescriptPayload } from "./typescript-payload.mjs";
 import { libraryPayload } from "./library-payload.mjs";
 import { BENCHMARKS_DIR, buildBenchmarks } from "./build-benchmarks.mjs";
 import { createHash } from "node:crypto";
@@ -267,19 +269,39 @@ async function targetRunsThisBuild(auth, build) {
  */
 async function compileEntry(entry, outfile) {
   if (!fs.existsSync(entry)) throw new Error(`compile entry missing: ${entry}`);
-  // The platform imports its generated interface table; make sure it is current.
+  // The platform and the CLI each import their generated interface table; make sure both
+  // are current.
   const { execFileSync } = await import("node:child_process");
-  execFileSync(
-    process.execPath,
-    [
-      path.join(ROOT, "scripts/gen-ifaces.mjs"),
-      "--project",
-      path.join(ROOT, "packages/server/tsconfig.json"),
-      "--out",
-      path.join(ROOT, "packages/server/src/ifaces.json"),
-    ],
-    { stdio: "inherit" },
-  );
+  // So are the tables the CLI's shipped modules boot against (a plugin's `cli-ifaces.json`,
+  // which the CLI bundle inlines): each is written by its plugin's own build, rerun here so a
+  // push never carries the one an earlier build left.
+  const windows = process.platform === "win32";
+  for (const name of shippedCliPackages(path.join(ROOT, "packages", "cli"))) {
+    execFileSync(windows ? "pnpm.cmd" : "pnpm", ["--filter", name, "run", "build"], {
+      cwd: ROOT,
+      stdio: "inherit",
+      shell: windows,
+    });
+  }
+  for (const pkg of ["server", "cli"]) {
+    // The CLI's generated table also names the server's command classes (its children come
+    // in through the server's `cli` subpath), so the CLI scan covers the server project too —
+    // the same projects the CLI's own `gen:ifaces` build line scans.
+    const projects = pkg === "cli" ? ["cli", "server"] : [pkg];
+    const args = [path.join(ROOT, "scripts/gen-ifaces.mjs")];
+    for (const p of projects)
+      args.push("--project", path.join(ROOT, "packages", p, "tsconfig.json"));
+    // Only the host's own sources and the library's, as the packages' `gen:ifaces` lines say: a
+    // shipped plugin's sources the programs reach (a test helper, the CLI's generated module
+    // list) carry their own table, and a copy here would stand in for theirs.
+    for (const p of projects) {
+      for (const dir of ["src", "test"])
+        args.push("--sources", path.join(ROOT, "packages", p, dir));
+    }
+    args.push("--sources", path.join(ROOT, "library"));
+    args.push("--out", path.join(ROOT, "packages", pkg, "src", "ifaces.json"));
+    execFileSync(process.execPath, args, { stdio: "inherit" });
+  }
   await compilePushBundle(pushBundleOptions(entry, outfile));
 }
 
@@ -349,13 +371,19 @@ async function readNativeAssets() {
   // predate it being a dependency (or be a desktop bundle with no node_modules), and a
   // platform that cannot find it compares no plugin interface and loads no workflow.
   // Content-addressed like everything here, so it crosses once.
-  files[`archives/${archiveName("", "typescript")}`] = await packArchive(
-    typescriptPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
+  // The Node declarations a workbench's server code is checked with travel in the same archive.
+  files[`archives/${archiveName("", "typescript")}`] = await packArchive([
+    ...typescriptPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
       rel: `node_modules/typescript/${rel}`,
       abs,
       exec: false,
     })),
-  );
+    ...nodeTypesPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
+      rel: `node_modules/${rel}`,
+      abs,
+      exec: false,
+    })),
+  ]);
   // The scripts that run on the FAR side — the release installers a remote install feeds
   // over, the one thing that has to arrive before the CLI does. A pushed bundle resolves them
   // from its own assets directory, so a push that omits one leaves a server that cannot
@@ -363,6 +391,15 @@ async function readNativeAssets() {
   for (const { name, from } of FAR_SIDE_SCRIPTS) {
     files[name] = await fsp.readFile(path.join(ROOT, from));
   }
+  // The built-in plugins' market covers (scripts/market-covers.mjs), one archive for the folder:
+  // a pushed platform reads them from its unpacked assets (src/plugin/market-covers.ts).
+  files[`archives/${MARKET_COVERS_NAME}.tgz`] = await packArchive(
+    marketCoverFiles(ROOT).map((rel) => ({
+      rel: `${MARKET_COVERS_NAME}/${rel}`,
+      abs: path.join(ROOT, MARKET_COVERS_SOURCE, ...rel.split("/")),
+      exec: false,
+    })),
+  );
   // The builtin plugins, as the npm prefix the loader resolves from (`plugins/package.json`
   // + `plugins/node_modules/<name>/…`, see scripts/build-plugins.mjs), from cache when
   // unchanged — one archive per package, so an unchanged plugin is an unchanged blob.
@@ -422,17 +459,22 @@ async function main() {
     log("reusing the existing web dist");
   } else {
     log("building the web dist…");
+    // The web build copies in the UI package's Workbench runtime, so that package builds first;
+    // on its own, because the extra args below are the web's.
+    const ui = ["--filter", "@prismshadow/penguin-ui", "build"];
     // Extra args reach the package's own `vite build`. Outside the package, vite would leave
     // the directory as it found it and warn; it is this run's own, so it is emptied.
     const build = ["--filter", "@prismshadow/penguin-web", "build"];
     if (webDist !== WEB_DIST) build.push("--outDir", webDist, "--emptyOutDir");
     const windows = process.platform === "win32";
-    execFileSync("pnpm", windows ? build.map(quoteForCmd) : build, {
-      cwd: ROOT,
-      stdio: "inherit",
-      // pnpm is a .cmd shim on Windows, which Node refuses to spawn without a shell.
-      shell: windows,
-    });
+    for (const args of [ui, build]) {
+      execFileSync("pnpm", windows ? args.map(quoteForCmd) : args, {
+        cwd: ROOT,
+        stdio: "inherit",
+        // pnpm is a .cmd shim on Windows, which Node refuses to spawn without a shell.
+        shell: windows,
+      });
+    }
   }
 
   log("compiling platform + cli…");

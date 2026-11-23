@@ -21,7 +21,7 @@ import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import { ICON_SIZE, MenuItem, SearchInput } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
-import { filterSkills, localizedShortText } from "../chat/skill-use";
+import { filterSkills, localizedShortText } from "../../lib/skill-use";
 import { SkillIcon } from "./skill-icon-view";
 
 /** A bulk-row action: a plain text button, sized to sit inside the panel's chrome without competing with the rows. */
@@ -109,7 +109,7 @@ export function SkillPickList({
                 aria-pressed={on}
                 checked={on}
                 onSelect={() => onToggle(s.name)}
-                // Each row's icon (icon.svg, sanitized and inlined), else the kind's glyph.
+                // Each row's icon (an image the server serves), else the kind's glyph.
                 glyph={
                   <SkillIcon
                     icon={s.icon}

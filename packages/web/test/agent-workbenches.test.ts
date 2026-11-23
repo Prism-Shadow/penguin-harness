@@ -1,14 +1,30 @@
 /** @vitest-environment jsdom */
 /**
- * Agent settings list UI and handler-only workbenches together, with open and management actions.
- * - Opening a workbench selects its owning Agent and tab in a new conversation.
- * - Reload failures remain recoverable; history can restore a recorded version.
- * - Cancelling removal writes nothing; confirming removes only that workbench and refreshes the list.
+ * A workbench's row on the Agent settings Plugins tab's Workbenches sub-page, a handler-only one
+ * included (one the user made, so it carries no plugin's mark), with its open and management
+ * actions.
+ * - "Open" opens the app's window over the main area, and its Close comes back to the row; a
+ *   workbench hidden from the sidebar and the App Center opens all the same, from the row's own
+ *   reading of it.
+ * - A workbench without a page shows what its load noticed on its row, every hint in the row's
+ *   hint.
+ * - Each row of the More menu does its action: Reload reloads (a failure stays recoverable),
+ *   Version history lists the versions and a restore asks first, and Remove asks first — a
+ *   cancel writes nothing, a confirmation removes only that workbench and refreshes the list,
+ *   which then says the Agent has no workbench.
+ * - Hide and Unhide write the owning machine's App Center setting once, roll back on failure,
+ *   and keep the sidebar setting independent.
+ * - The row leads with the workbench's own App Center icon when it has one, else no image.
+ * - The More menu's sidebar row is checked by default; picking it writes the sidebar setting at
+ *   once and nothing of the App Center's, and a refused write puts it back.
  */
+import { rowOf } from "./helpers/agent-plugins";
 import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
+import { ThemeProvider } from "../src/state/theme";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import {
@@ -20,9 +36,18 @@ import {
   buttonIn,
   topDialog,
 } from "./helpers/agent-app";
-import { button, click, pressScrim, unmountAll, waitFor } from "./helpers/dom";
+import {
+  button,
+  click,
+  hasButton,
+  menuItem,
+  pressScrim,
+  switchNamed,
+  unmountAll,
+  waitFor,
+} from "./helpers/dom";
 
-const info = (tabs: WorkbenchInfo["tabs"]): WorkbenchInfo => ({
+const info = (tabs: WorkbenchInfo["tabs"], over: Partial<WorkbenchInfo> = {}): WorkbenchInfo => ({
   id: "support",
   name: "Support",
   version: "1",
@@ -32,19 +57,17 @@ const info = (tabs: WorkbenchInfo["tabs"]): WorkbenchInfo => ({
   error: null,
   hints: [],
   tabs,
+  ...over,
 });
-async function open(tabs: WorkbenchInfo["tabs"] = []) {
+async function open(tabs: WorkbenchInfo["tabs"] = [], over: Partial<WorkbenchInfo> = {}) {
   setActiveStrings(en);
   const server = agentServer(undefined, {
-    workbenches: [info(tabs)],
+    workbenches: [info(tabs, over)],
     workbenchVersions: [
       {
         revision: "previous",
-        name: "Support",
-        version: "0",
-        uiRev: "ui0",
+        commit: "0123456789ab",
         savedAt: "2026-10-13T00:00:00Z",
-        files: ["index.ts"],
       },
     ],
   });
@@ -58,42 +81,64 @@ afterEach(async () => {
   await unmountAll();
   setActiveStrings(zh);
 });
-it("opens the selected workbench on its owning Agent", async () => {
-  const { router } = await open([
-    {
-      id: "support.main",
-      key: "main",
-      title: "Support",
-      renderer: { iframe: { src: "/support" } },
-    },
-  ]);
-  await click(button(`${en.workbenches.open} Support`));
-  expect(whereIs(router)).toBe("/chat/new");
-  expect(router.state.location.state).toMatchObject({
-    agentId: AGENT_ID,
-    workbench: { projectId: PROJECT_ID, agentId: AGENT_ID, tabId: "support/main" },
+/** Picks a row of the workbench's More menu. */
+async function more(item: string) {
+  if (!hasButton(`${en.workbenches.more} Support`))
+    await click(rowOf("Support").querySelector("button")!);
+  await click(button(`${en.workbenches.more} Support`));
+  await click(menuItem(item));
+}
+/** The settings page with the shell's windows beside it, as the app mounts them. */
+async function openWithWindows(over: Partial<WorkbenchInfo> = {}) {
+  setActiveStrings(en);
+  const tab = { id: "support.main", key: "main", title: "Support" };
+  agentServer(undefined, {
+    workbenches: [info([{ ...tab, renderer: { iframe: { src: "/support" } } }], over)],
   });
+  const router = await mountAgentApp(h(AgentSettingsPage), {
+    at: `/agents/${AGENT_ID}?tab=workbenches`,
+    extra: [{ path: "/apps", element: h("p", null, "App Center") }],
+    layers: [h(ThemeProvider, null, h(WorkspaceWindows))],
+  });
+  await waitFor(() => hasButton(`${en.workbenches.open} Support`));
+  return router;
+}
+const appWindow = () => document.querySelector<HTMLElement>('section[aria-label="Support"]');
+it("opens the app's window over the main area, and its Close comes back to the row", async () => {
+  const router = await openWithWindows();
+  await click(button(`${en.workbenches.open} Support`));
+  expect(whereIs(router)).toBe(`/apps?app=${encodeURIComponent(`${AGENT_ID}/support`)}`);
+  await waitFor(() => appWindow()?.querySelector("iframe") != null);
+  expect(appWindow()!.querySelector("iframe")!.getAttribute("title")).toBe("Support");
+
+  await pageAction("Support", en.appCenter.windowClose);
+  expect(whereIs(router)).toBe(`/agents/${AGENT_ID}?tab=workbenches`);
+  expect(appWindow()).toBeNull();
 });
-it("manages a handler-only workbench, retries failed reload and restores a recorded version", async () => {
+it("reloads from the More menu, keeps a failed reload recoverable, and restores a recorded version after asking", async () => {
   const { server } = await open();
+  const reloads = () => server.writes().filter((request) => request.path.endsWith("/reload"));
   server.refuseNext(500, "reload_failed", "Cannot reload");
-  await click(button(`${en.workbenches.reload} Support`));
+  await more(en.workbenches.reload);
   expect(document.body.textContent).toContain("Support");
-  await click(button(`${en.workbenches.reload} Support`));
-  await click(button(`${en.workbenches.history} Support`));
+  await more(en.workbenches.reload);
+  expect(reloads()).toHaveLength(2);
+  await more(en.workbenches.historyAction);
   expect(topDialog().textContent).toContain("previous");
   await click(buttonIn(topDialog(), en.workbenches.restore));
+  // Restore asks first: nothing is rolled back until the question is answered.
+  expect(server.writes().filter((request) => request.path.endsWith("/rollback"))).toEqual([]);
   await click(buttonIn(topDialog(), en.workbenches.restore));
   expect(server.writes().find((request) => request.path.endsWith("/rollback"))?.body).toEqual({
     revision: "previous",
   });
 });
-it("cancels without deleting, then removes only after confirmation", async () => {
+it("asks before removing from the More menu: a cancel deletes nothing, a confirmation removes only that workbench", async () => {
   const { server } = await open();
-  await click(button(`${en.workbenches.remove} Support`));
+  await more(en.workbenches.remove);
   await pressScrim();
   expect(server.writes().filter((request) => request.method === "DELETE")).toEqual([]);
-  await click(button(`${en.workbenches.remove} Support`));
+  await more(en.workbenches.remove);
   await click(buttonIn(topDialog(), en.workbenches.removeYes));
   expect(
     server
@@ -101,5 +146,45 @@ it("cancels without deleting, then removes only after confirmation", async () =>
       .filter((request) => request.method === "DELETE")
       .map((request) => request.path),
   ).toEqual([`/api/projects/${PROJECT_ID}/agents/${AGENT_ID}/workbenches/support`]);
-  expect(document.body.textContent).toContain(en.workbenches.empty);
+  await waitFor(() => !hasButton(`${en.workbenches.more} Support`));
+  expect(document.body.textContent).toContain(en.agentPlugins.workbenchesEmpty);
+});
+it("offers Enable and Open but makes no visibility changes for a hidden workbench", async () => {
+  const title = "Support";
+  const { server } = await open(
+    [{ id: "support.main", key: "main", title, renderer: { iframe: { src: "/support" } } }],
+    { enabled: true, appCenter: { show: false } },
+  );
+  const row = rowOf(title);
+  expect(row.querySelectorAll("button")).toHaveLength(3); // Name, Enable, Open.
+  expect(switchNamed(en.workbenches.enableOne(title))).toBeTruthy();
+  expect(hasButton(`${en.workbenches.open} ${title}`)).toBe(true);
+  expect(hasButton(`${en.workbenches.more} ${title}`)).toBe(false);
+  expect(server.writes().filter((r) => r.path.endsWith("/app-center"))).toHaveLength(0);
+});
+const row = () => rowOf("Support");
+it("leads the row with the workbench's own App Center icon", async () => {
+  await open([], { icon: { url: "/api/icons/support.png?rev=1", tint: false } });
+  expect(row().querySelector("img")?.getAttribute("src")).toBe("/api/icons/support.png?rev=1");
+});
+it("leads the row with the anvil tile when the workbench names no icon", async () => {
+  await open();
+  expect(row().querySelector("img")).toBeNull();
+});
+it("opens a workbench hidden from the sidebar and the App Center in its window all the same", async () => {
+  const router = await openWithWindows({ showInSidebar: false, appCenter: { show: false } });
+  await click(button(`${en.workbenches.open} Support`));
+  expect(whereIs(router)).toBe(`/apps?app=${encodeURIComponent(`${AGENT_ID}/support`)}`);
+  await waitFor(() => appWindow()?.querySelector("iframe") != null);
+});
+it("shows what the load of a workbench without a page noticed on its row", async () => {
+  const hints = [
+    "ui/extra.html is not shown by any page: list it in WebModule.sessionTabs",
+    "ui/old.html is not shown by any page: remove it",
+  ];
+  await open([], { hints });
+  const notice = [...document.querySelectorAll<HTMLElement>("[data-tooltip]")].find(
+    (el) => el.textContent === hints[0],
+  );
+  expect(notice?.dataset["tooltip"]).toBe(hints.join("\n"));
 });

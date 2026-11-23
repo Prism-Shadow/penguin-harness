@@ -1,14 +1,17 @@
 /**
  * End-to-end test for the plugin library (locale zh-CN):
- * - the sidebar nav shows "插件市场" ("Plugins"), and the page renders the library's plugin
- *   cards across group sections (a collapsible group header: category name + plugin count,
- *   **no icon**; the group name follows the UI language — when the server ships a Chinese
- *   group name it's "Agent 自进化 / 办公效率 / 软件开发 / AI 应用开发", falling back to
- *   English by default); cards carry a custom icon (the plugin's first skill's icon.svg,
- *   sanitized then inlined, not the book fallback), with metadata showing the plugin's npm
- *   version, its install status and usage count (worded semantically, not a bare number badge);
- * - the "Manage installation" Modal: an Agent row + Install / Installed (hover flips to
- *   Uninstall) button, with optimistic updates on install/uninstall;
+ * - the App Center shows the "插件市场" ("Plugins") system app, and the page renders the library's
+ *   plugins as cover cards under tabs — All first, then one per category (the category name
+ *   follows the UI language — when the server ships a Chinese group name it's "Agent 自进化 /
+ *   办公效率 / 软件开发 / AI 应用开发", falling back to English by default); a category tab narrows the grid and
+ *   names itself in the address; a card's facts show the plugin's npm version, its install
+ *   status as a glyph and its usage count, their words on hover; a plugin's detail opens over
+ *   the market, in the address, its tile carrying the plugin's custom icon (its icon.svg, served
+ *   by URL and drawn as a mask in the text colour, never inlined; not the book fallback);
+ * - the install flow's Agents step ("Install on Agent"): an Agent row + Install / Installed
+ *   and explicit owner-only Uninstall action, with optimistic updates on install/uninstall; its first row,
+ *   「新建空白 Agent」, opens Create Agent over it prefilled with the plugin, and the Agent it
+ *   creates joins the list installed while the list stays open;
  * - Quick invoke is gated on the currently selected agent having the skill installed (here the
  *   current agent is default_agent; its button is disabled for a preinstall:false skill like
  *   remote-claude-code the current agent lacks);
@@ -36,15 +39,15 @@ const P = "password123";
 
 // Category names follow the UI language: Chinese when the server dist ships titleZh, otherwise
 // falling back to English (both states are asserted). The page groups its cards by category by
-// default, each category a collapsible section, open on entry.
+// default, each category a tab after All.
 const CATEGORIES = [
   /Agent Self-Evolution|Agent 自进化/,
   /Office Productivity|办公效率/,
   /Software Development|软件开发/,
   /AI App Development|AI 应用开发/,
 ];
-// The "Office Productivity" section header: a collapsible button, open on entry.
-const SECTION_HEADER = /^(Office Productivity|办公效率)/;
+// The "Office Productivity" category: one of the market's tabs.
+const OFFICE_TAB = /^(Office Productivity|办公效率)$/;
 // Library plugin cards the page renders (merged plugins carry several skills each).
 const PLUGINS = [
   "default-rsi-toolkit",
@@ -103,79 +106,93 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  // The install target for "Manage installation": default_agent has all skills preinstalled, so use a blank Agent to exercise the install/uninstall flow.
+  // The install target for "Install on Agent": default_agent has all skills preinstalled, so use a blank Agent to exercise the install/uninstall flow.
   const created = await page.request.post(`${BASE}/api/projects/${projectId}/agents`, {
     data: { agentId: "agent_helper", name: "Helper Agent" },
   });
   expect(created.ok(), "create helper agent").toBeTruthy();
 
-  // —— Plugin library page: sidebar nav entry + cards in category sections, open on entry ——
+  // —— Plugin library page: the App Center's system app, the category tabs, a grid of cover cards ——
   await page.goto(`${BASE}/chat`);
-  const navLink = page.getByRole("link", { name: "插件市场" });
-  await expect(navLink).toBeVisible();
-  await navLink.click();
+  await page.getByRole("link", { name: "应用中心" }).click();
+  const appTile = page.getByRole("button", { name: "插件市场，系统应用" });
+  await expect(appTile).toBeVisible();
+  await appTile.click();
   await expect(page).toHaveURL(/\/plugins$/);
-  const sectionHeader = page.getByRole("button", { name: SECTION_HEADER });
-  await expect(sectionHeader).toBeVisible();
-  await expect(sectionHeader).toHaveAttribute("aria-expanded", "true");
-  // The section header carries no icon: the book path must not appear in it.
-  await expect(sectionHeader.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
+  // The groups are tabs: All first, chosen on entry, then each category.
+  const allTab = page.getByRole("tab", { name: /^(All|全部)$/ });
+  await expect(allTab).toHaveAttribute("aria-selected", "true");
   for (const c of CATEGORIES) {
-    await expect(page.getByText(c).first()).toBeVisible();
+    await expect(page.getByRole("tab", { name: c })).toBeVisible();
   }
+  const card = (name) => page.locator(`article[data-plugin="${name}"]`);
   for (const s of PLUGINS) {
-    await expect(page.getByText(s, { exact: true })).toBeVisible();
+    await expect(card(s)).toBeVisible();
   }
-  // Card metadata is worded semantically: `v<npm version>` + the install status + usage count
-  // (default_agent has every preinstalled plugin -> at least 1 in use).
-  await expect(page.getByText(/v\d+\.\d+\.\d+.*已安装.*Agent 在用/).first()).toBeVisible();
+  // A cover card's facts are marks: `v<npm version>`, the status as its glyph and the count of
+  // Agents using it, their words on hover and for assistive technology (default_agent has every
+  // preinstalled plugin -> installed, at least 1 in use).
+  const facts = card("data-analysis");
+  await expect(facts.getByText(/^v\d+\.\d+\.\d+$/)).toBeVisible();
+  await expect(facts.locator('[data-testid="plugin-status"]')).toHaveAttribute(
+    "data-tooltip",
+    /^已安装/,
+  );
+  await expect(facts.locator('[data-testid="plugin-used-by"]')).toHaveAttribute(
+    "data-tooltip",
+    /Agent 在用/,
+  );
 
   // Quick invoke opens a draft on the currently selected Agent (default_agent here), so it's
   // gated on that Agent having one of the plugin's skills: default_agent ships every preinstalled
   // plugin (data-analysis is enabled), while remote-claude-code is preinstall:false and
   // absent from it, so its button is disabled.
-  await expect(page.getByRole("button", { name: "快捷调用 data-analysis" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "快捷调用 use-claude-code" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "快速开始 data-analysis" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "快速开始 use-claude-code" })).toBeDisabled();
 
-  // Card icon: the DTO icon (icon.svg in the plugin's skill directory) is sanitized and rendered
-  // inline (an aria-hidden wrapper + svg); builtin plugins each carry a custom icon, not the book
-  // fallback. The card root = the nearest rounded-md ancestor of the name element (the new card
-  // layout has the icon spanning two rows on the left, with the name and short description as
-  // separate text columns, so it can no longer be located by "the innermost div containing the name").
-  const creationCard = page
-    .getByText("default-rsi-toolkit", { exact: true })
-    .locator("xpath=ancestor::div[contains(@class,'rounded-md')][1]");
-  await expect(creationCard.locator("span[aria-hidden] > svg")).toHaveCount(1);
-  await expect(creationCard.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
+  // The plugin's icon, on the tile beside its name in the detail: the DTO names the icon by URL,
+  // and a monochrome one is drawn as a mask in the text colour (an aria-hidden span over a hidden
+  // <img> of the same URL, which reports a failed load); builtin plugins each carry a custom
+  // icon, not the book fallback, and none is inlined as an <svg> of its own.
+  await card("default-rsi-toolkit").locator("button.showcase-card-open").click();
+  const detail = page.getByRole("dialog");
+  const tile = detail.locator(".showcase-product-heading > span").first();
+  await expect(
+    tile.locator(
+      'span[aria-hidden] > img[hidden][src*="/api/plugins/default-rsi-toolkit/icon?rev="]',
+    ),
+  ).toHaveCount(1);
+  await expect(tile.locator("span[aria-hidden] > svg")).toHaveCount(0);
+  await expect(tile.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
+  // The detail is in the address, and Escape closes it.
+  await expect(page).toHaveURL(/\/plugins\?plugin=default-rsi-toolkit$/);
+  await page.keyboard.press("Escape");
+  await expect(detail).toHaveCount(0);
+  await expect(page).toHaveURL(/\/plugins$/);
 
-  // Clicking the section header folds it: aria-expanded flips, and the section's content
-  // becomes inert (a zero-height card can't be interacted with); clicking again unfolds it.
-  // The folded content is still in the DOM (a grid-rows 0fr height transition), so assert
-  // inert rather than visibility.
-  const section = page.locator("section").filter({ has: sectionHeader });
-  await sectionHeader.click();
-  await expect(sectionHeader).toHaveAttribute("aria-expanded", "false");
-  await expect(section.locator("[inert]")).toHaveCount(1);
-  await sectionHeader.click();
-  await expect(sectionHeader).toHaveAttribute("aria-expanded", "true");
-  await expect(section.locator("[inert]")).toHaveCount(0);
+  // A category tab narrows the grid to its plugins, and the address names it; All brings every
+  // card back.
+  await page.getByRole("tab", { name: OFFICE_TAB }).click();
+  await expect(page).toHaveURL(/\/plugins\?tab=office-productivity$/);
+  await expect(card("data-analysis")).toBeVisible();
+  await expect(card("default-rsi-toolkit")).toHaveCount(0);
+  await allTab.click();
+  await expect(card("default-rsi-toolkit")).toBeVisible();
 
-  // —— Manage installation Modal: an Agent row + Install/Installed (clicking Installed uninstalls) ——
-  await page.getByRole("button", { name: "管理安装 data-analysis" }).click();
-  const dialog = page.locator("div").filter({ hasText: "管理安装：data-analysis" }).last();
-  // default_agent (display name General Agent) has everything preinstalled -> "已安装"
-  // ("Installed", whose accessible name is the uninstall action); agent_helper has nothing
-  // installed -> "安装" ("Install").
+  // The shared flow shows each Agent and its available action.
+  await page.getByRole("button", { name: "安装到 Agent data-analysis" }).click();
+  const dialog = page.getByRole("dialog").filter({ hasText: "安装到 Agent" });
+  // The default Agent already carries the plugin. The helper can install it.
   const uninstallDefault = page.getByRole("button", { name: "卸载 default_agent" });
   const installHelper = page.getByRole("button", { name: "安装 agent_helper" });
   await expect(uninstallDefault).toBeVisible();
-  await expect(uninstallDefault).toContainText("已安装");
+  await expect(uninstallDefault).toContainText("卸载");
   await expect(installHelper).toBeVisible();
-  // Install onto helper: optimistic update, the button flips to "已安装" ("Installed", the uninstall action).
+  // Install on the helper, then read the result from the server.
   await installHelper.click();
   const uninstallHelper = page.getByRole("button", { name: "卸载 agent_helper" });
   await expect(uninstallHelper).toBeVisible();
-  await expect(uninstallHelper).toContainText("已安装");
+  await expect(uninstallHelper).toContainText("卸载");
   // Server-side truth converges: the plugin's skill really does appear in helper's installed skills.
   await expect
     .poll(async () => {
@@ -185,15 +202,40 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
       return res.skills.map((s) => s.name);
     })
     .toContain("data-analysis");
-  // Clicking "已安装" ("Installed") uninstalls: flips back to "安装" ("Install").
+  // An explicit confirmation removes only the chosen Agent’s installation.
   await uninstallHelper.click();
+  await page
+    .getByRole("dialog", { name: "卸载 data-analysis" })
+    .getByRole("button", { name: "卸载", exact: true })
+    .click();
   await expect(page.getByRole("button", { name: "安装 agent_helper" })).toBeVisible();
+  // The first row, 「新建空白 Agent」: Create Agent opens over the list with the plugin ticked;
+  // once created, it closes and the new Agent is in the still-open list, installed.
+  await page.getByRole("button", { name: "新建并安装" }).click();
+  const createDialog = page.getByRole("dialog").filter({ hasText: "创建 Agent" });
+  await expect(createDialog).toBeVisible();
+  await createDialog.getByRole("textbox", { name: "Agent id", exact: true }).fill("blank_analyst");
+  await createDialog.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(createDialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "卸载 blank_analyst" })).toContainText("卸载");
+  await expect
+    .poll(async () => {
+      const res = await (
+        await page.request.get(`${BASE}/api/projects/${projectId}/agents/blank_analyst/skills`)
+      ).json();
+      return res.skills.map((s) => s.name);
+    })
+    .toContain("data-analysis");
+  // Deleted again, so the rest of the run sees only the Agents it set up.
+  expect(
+    (await page.request.delete(`${BASE}/api/projects/${projectId}/agents/blank_analyst`)).ok(),
+  ).toBe(true);
   // Escape closes the Modal (built into the Modal).
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
 
   // —— Quick invoke: navigates to /chat/new (default_agent), prefilling the invoke text + preselecting that skill ——
-  await page.getByRole("button", { name: "快捷调用 data-analysis" }).click();
+  await page.getByRole("button", { name: "快速开始 data-analysis" }).click();
   await page.waitForURL(/\/chat\/new$/);
   const ta = page.getByPlaceholder(/输入消息/);
   // Prefilled per the UI language (zh): 使用 X 技能 ("use the X skill").

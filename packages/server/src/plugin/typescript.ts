@@ -3,7 +3,8 @@
  *
  * The compiler decides whether the interfaces a package was written against still fit this
  * platform (./iface-check.ts) — for plugins and for workbenches alike — and type-checks and
- * transpiles a workbench's source (../workbenches/compile.ts). It is a dependency of this
+ * transpiles a workbench's source and its TSX pages (../workbenches/compile.ts,
+ * compile-ui.ts). It is a dependency of this
  * package, but the platform also runs as a single pushed bundle that sits outside any
  * `node_modules`, on machines whose program may predate that dependency — so the specifier
  * is kept out of the bundler's sight and resolved at run time, in three places: in the
@@ -28,10 +29,15 @@ export class TypeScriptUnavailable extends Error {}
 
 /**
  * The default library files a program here is checked against, which the compiler reads from
- * its entry's own directory: the interface check names `lib.es2022.d.ts`, and a workbench's
- * target (ES2022) brings `lib.es2022.full.d.ts`.
+ * its entry's own directory: the interface check names `lib.es2022.d.ts`, a workbench's
+ * target (ES2022) brings `lib.es2022.full.d.ts`, and its TSX pages name the DOM's two.
  */
-export const DEFAULT_LIBRARIES = ["lib.es2022.d.ts", "lib.es2022.full.d.ts"] as const;
+export const DEFAULT_LIBRARIES = [
+  "lib.es2022.d.ts",
+  "lib.es2022.full.d.ts",
+  "lib.dom.d.ts",
+  "lib.dom.iterable.d.ts",
+] as const;
 
 let loading: Promise<TypeScript> | null = null;
 
@@ -113,4 +119,32 @@ export function loadTypeScript(assets: string | null = null): Promise<TypeScript
     throw err;
   });
   return loading;
+}
+
+let nodeTypes: string | null | undefined;
+
+/**
+ * The Node declarations a workbench's server code is checked with, so a handler imports
+ * `node:fs`, `node:path` or `node:net` as any Node program does: the `@types` folder holding
+ * `@types/node`, looked for where the compiler is — in the push's assets
+ * (scripts/typescript-payload.mjs carries it beside the compiler), beside this module (a
+ * dependency of this package), beside the running program (the desktop bundle). Null when no
+ * place has it; a workbench importing `node:` then fails its load naming the module.
+ *
+ * Declarations only: they change what the compiler accepts, not what the code may do. A
+ * handler has always run in this process, unconfined.
+ */
+export function nodeTypesRoot(assets: string | null = null): string | null {
+  if (nodeTypes !== undefined) return nodeTypes;
+  // A variable, not a literal, as for the compiler: nothing for the bundler to follow.
+  const specifier = "@types/node/package.json";
+  for (const from of compilerBases(assets)) {
+    try {
+      const pkg = createRequire(from()).resolve(specifier);
+      return (nodeTypes = path.dirname(path.dirname(pkg)));
+    } catch {
+      // Not in this place: the next one.
+    }
+  }
+  return (nodeTypes = null);
 }

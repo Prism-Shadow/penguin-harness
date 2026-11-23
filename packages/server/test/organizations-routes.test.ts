@@ -207,7 +207,7 @@ describe("organization routes", () => {
     calls.length = 0;
     expect((await apiClient(t.app, mira.cookie).delete(path)).status).toBe(403);
     expect(calls).toEqual([]);
-    expect((await owner.delete(path)).status).toBe(204);
+    expect((await owner.delete(path)).status).toBe(200);
     expect(calls.at(-1)).toEqual({ method: "delete", args: [ownerProject, "acme"] });
     const patch = await owner.patch(`/api/projects/${ownerProject}/organizations/acme`, {
       status: "paused",
@@ -265,6 +265,8 @@ describe("organization routes", () => {
         ownerProject,
         { orgId: "acme", mission: "Build a marketplace", name: "Acme" },
         "olivia",
+        // Who creates it, for the CEO's plugins' server modules.
+        { userId: "olivia", isAdmin: false },
       ],
     });
   });
@@ -279,7 +281,12 @@ describe("organization routes", () => {
     ).toBe(201);
     expect(calls.at(-1)).toMatchObject({
       method: "create",
-      args: [ownerProject, { orgId: "acme", mission: "做一个市场", language: "zh" }, "olivia"],
+      args: [
+        ownerProject,
+        { orgId: "acme", mission: "做一个市场", language: "zh" },
+        "olivia",
+        { userId: "olivia", isAdmin: false },
+      ],
     });
     expect((await owner.patch(`${base}/acme`, { language: "de" })).status).toBe(400);
     expect((await owner.patch(`${base}/acme`, { language: "en" })).status).toBe(200);

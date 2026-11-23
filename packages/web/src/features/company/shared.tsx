@@ -8,8 +8,8 @@
  * KPI tile is the shared UI package's `StatTile`. Every status colour here is a tone from
  * lib/tone.ts, picked by meaning.
  */
-import { useId } from "react";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
+
 import type {
   OrgStatus,
   OrgTicketPriority,
@@ -28,19 +28,20 @@ import {
   Pill,
   ProgressBar,
   Ring,
+  type BadgeStyle,
+  type ToneName,
 } from "@prismshadow/penguin-ui";
-import type { BadgeStyle, ToneName } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import { formatMoney, formatPercent } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
 import { EmployeeAvatar } from "./employee-avatar";
 import { toStoredUsd, unitLabel } from "./budget-input";
-import { budgetTone } from "./finance-tree";
-import type { BudgetTone } from "./finance-tree";
+import { budgetTone, type BudgetTone } from "./finance-tree";
+
 import { parsePrincipal } from "./principals";
-import { ORG_STATUS_TONE, orgStatusKind } from "./shell-org-status";
-import type { OrgStatusKind } from "./shell-org-status";
+import { ORG_STATUS_TONE, orgStatusKind, type OrgStatusKind } from "./shell-org-status";
 
 /** Circled exclamation: the mark of an invalid chart entry or ticket file, and of the finance page's alert count. */
 export const INVALID_ICON = ICONS.alertCircle;
@@ -171,7 +172,7 @@ export function OrgStatusDot({ org }: { org: { status: OrgStatus; invalid?: stri
 /**
  * A refresh that failed while the page still holds what it last read: one danger strip
  * naming the failure, the server's reason beside it, and the retry — never a skeleton over
- * data that is already on screen.
+ * data that is already on screen. A failure's words carry 「[报告问题]」 after them (failureNode).
  */
 export function ErrorLine({
   message,
@@ -179,9 +180,9 @@ export function ErrorLine({
   onRetry,
   className = "",
 }: {
-  message: string;
-  /** The server's own wording (apiErrorText), shown after the message. */
-  detail?: string;
+  message: ReactNode;
+  /** The server's own wording (failureNode), shown after the message. */
+  detail?: ReactNode;
   onRetry: () => void;
   className?: string;
 }) {
@@ -491,7 +492,7 @@ export function PrincipalChip({
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
       {p.kind === "agent" ? (
-        <EmployeeAvatar id={p.id} name={label} size={size} className="shrink-0 rounded" />
+        <EmployeeAvatar id={p.id} size={size} className="shrink-0 rounded" />
       ) : (
         <span
           aria-hidden

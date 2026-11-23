@@ -4,19 +4,24 @@
  * usage pricing, the file store and the caches. app.ts binds the real services; tests bind
  * doubles — the same shape the schedule scheduler uses.
  */
-import type { AmspRecord } from "@prismshadow/penguin-core";
-import { Interface } from "@prismshadow/penguin-core/kernel";
 import type {
   ApprovalMode,
-  MessagingChannel,
-  ServerEvent,
   SessionStatus,
-} from "../../api/types.js";
-import type { OrgCache } from "../../mechanisms/organization.js";
-import type { Members, ProjectConfigStore, Projects } from "../../mechanisms/projects.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
+  SessionIndex,
+} from "@prismshadow/penguin-library-session";
+import type {
+  ServerEvent,
+  Members,
+  ProjectConfigStore,
+  Projects,
+  UtilityCompletion,
+} from "@prismshadow/penguin-library-project";
+import type { AmspRecord } from "@prismshadow/penguin-core";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { MessagingChannel } from "../../api/types.js";
+import type { ModuleActor } from "../../mechanisms/plugins.js";
+import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import type { OrgStore } from "../../organization/store.js";
-import type { UtilityCompletion } from "../../services/project-config-service.js";
 import type { ErrorSink } from "../error-recorder.js";
 
 /** The session manager as the runtime sees it: is a session busy, and start a Task on it. */
@@ -92,6 +97,7 @@ export function employeePlugins(extra: readonly string[] | undefined): string[] 
 /** The Agent lifecycle pieces hiring, creation and keeping an employee's plugins current need. */
 export interface OrgAgentGateway {
   exists(projectId: string, agentId: string): Promise<boolean>;
+  /** Creates an Agent with company mode as its author (`author: company`). */
   create(
     projectId: string,
     agentId: string,
@@ -116,6 +122,18 @@ export interface OrgAgentGateway {
   ): Promise<{ installed: string | null; library: string | null }>;
   /** Reinstalls one library plugin over the Agent's copy — the whole-plugin update the Agents page performs. */
   updatePlugin(projectId: string, agentId: string, plugin: string): Promise<void>;
+  /**
+   * Brings the server modules of an Agent's plugins along (PRFC-0031), as `actor` would — null is
+   * the system, which enables built-in modules only and never asks. It may re-assemble the App,
+   * so a flow calls it last, when nothing else it does needs this generation. Absent in tests
+   * that build the deps by hand.
+   */
+  ensureModules?(
+    projectId: string,
+    agentId: string,
+    plugins: readonly string[],
+    actor: ModuleActor | null,
+  ): Promise<void>;
 }
 
 /** Cost attribution by session (UsageService.costBySession / dailyCostForSessions). */

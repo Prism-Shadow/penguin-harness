@@ -41,7 +41,7 @@ import {
 } from "../src/auth/middleware.js";
 import { Hono } from "hono";
 import { identityFrom } from "../src/terminal/identity.js";
-import { mediaType } from "../src/http/media-type.js";
+import { mediaType } from "@prismshadow/penguin-library-http/media-type";
 import { handleError } from "../src/http/errors.js";
 import { generateInitialAdminPassword } from "../src/auth/service.js";
 import {
@@ -104,7 +104,9 @@ describe("auth", () => {
     expect(projects.projects[0]!.role).toBe("owner");
     // default_agent has been initialized (directory exists).
     await expect(
-      fs.access(path.join(t.root, "default_project", "agents", "default_agent", "agent_state")),
+      fs.access(
+        path.join(t.root, "projects", "default_project", "agents", "default_agent", "agent_state"),
+      ),
     ).resolves.toBeUndefined();
     // Seeding is idempotent: re-seeding neither duplicates the account nor rerolls its
     // password — the original still signs in.
@@ -125,15 +127,15 @@ describe("auth", () => {
     expect(p.name).toBe("bob");
     expect(p.role).toBe("owner");
     expect(p.ownerUserId).toBe("bob");
-    // The initial Project's .project_config.toml carries the display name and preset model config (the default model is written along with it).
+    // The initial Project's .project_config.toml carries the display name and the preset model
+    // config, and no default model: its owner chooses one.
     const toml = await fs.readFile(
-      path.join(t.root, "bob-default_project", ".project_config.toml"),
+      path.join(t.root, "projects", "bob-default_project", ".project_config.toml"),
       "utf8",
     );
     expect(toml).toContain('name = "bob"');
-    expect(toml).toContain(
-      'default_model = { provider = "deepseek", model_id = "deepseek-flash" }',
-    );
+    expect(toml).toContain('provider = "deepseek"');
+    expect(toml).not.toContain("default_model");
   });
 
   it("login / me / logout round trip; wrong password 401", async () => {

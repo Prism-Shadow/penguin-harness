@@ -25,12 +25,17 @@ import {
   MenuLabel,
   MenuRadioItem,
   MenuSeparator,
-  SkeletonList,
+  Waiting,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { projectDisplayName, useProject } from "../../state/project";
-import { groupOrganizationsByProject, orgKey, orgPagePath, parseOrgKey } from "./company-nav";
+import {
+  groupOrganizationsByProject,
+  orgKey,
+  orgPagePath,
+  parseOrgKey,
+} from "../../lib/company-nav";
 import {
   CreateOrganizationDialog,
   OrganizationSettingsDialog,
@@ -240,7 +245,7 @@ export function NoOrganizationsSidebar({ onNavigate }: { onNavigate?: () => void
   const [createOpen, setCreateOpen] = useState(false);
   // "No organization" is only true once the list has settled; before that it is a guess, and
   // a guess that flashes a call to action is worse than a placeholder.
-  if (!company.orgsLoaded) return <SkeletonList rows={3} />;
+  if (!company.orgsLoaded) return <Waiting rows={3} />;
   return (
     <div className="mt-3 space-y-2 px-2.5 pt-2">
       <p className="text-xs text-gray-400 dark:text-gray-500">{S.company.noOrganizations}</p>

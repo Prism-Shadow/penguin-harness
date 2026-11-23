@@ -53,8 +53,8 @@
  * editor's unsaved edits with the shared guard under a scope of its own, so leaving it asks
  * first — the dialog's close, the dock tab's ×, a route change.
  */
-import { useEffect, useId, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+
 import type {
   MessagingBindingInfo,
   MessagingBindingsResponse,
@@ -107,6 +107,8 @@ import {
   type MessagingFormErrors,
   type MessagingFormState,
 } from "./messaging-binding-form";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toldFailure } from "../../lib/failure";
 
 /** How often the visible editor refreshes the runtime status (connects settle within a poll or two). */
 const STATUS_POLL_MS = 3000;
@@ -506,7 +508,7 @@ export function useMessagingBinding(
         if (cancelled) return;
         if (initial) {
           initialDone = true; // reported; a retry is the host's call, not a silent loop
-          toastError(apiErrorText(e));
+          toastApiError(e);
           onLoadFailed?.();
         }
       }
@@ -602,6 +604,16 @@ export function useMessagingBinding(
     }
   };
 
+  /** A channel test the platform failed: its words, and a report holding the platform's own. */
+  const testFailed = (channel: string, text: string, error: string | undefined) =>
+    toastFailure(
+      toldFailure(text, {
+        what: "a messaging channel test failed",
+        facts: [["Channel", channel]],
+        detail: error ?? null,
+      }),
+    );
+
   const testConnection = async () => {
     if (!form) return;
     setTesting(true);
@@ -610,26 +622,28 @@ export function useMessagingBinding(
       if (draft.channel === "telegram") {
         const res = await api.testTelegramBinding(sessionId, draft.body);
         for (const notice of telegramTestNotices(res)) {
-          if (notice.tone === "error") toastError(notice.text);
+          if (notice.tone === "error") testFailed("telegram", notice.text, res.error);
           else if (notice.tone === "info") toastInfo(notice.text);
           else toastSuccess(notice.text);
         }
       } else if (draft.channel === "qq") {
         const res = await api.testQQBinding(sessionId, draft.body);
         if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
-        else toastError(S.messaging.testFail(res.error ?? S.common.unknownError));
+        else testFailed("qq", S.messaging.testFail(res.error ?? S.common.unknownError), res.error);
       } else if (draft.channel === "wechat") {
         // No body: this channel's probe reads the stored binding, there being no draft.
         const res = await api.testWeChatBinding(sessionId);
         if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
-        else toastError(S.messaging.testFail(res.error ?? S.common.unknownError));
+        else
+          testFailed("wechat", S.messaging.testFail(res.error ?? S.common.unknownError), res.error);
       } else {
         const res = await api.testFeishuBinding(sessionId, draft.body);
         if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
-        else toastError(S.messaging.testFail(res.error ?? S.common.unknownError));
+        else
+          testFailed("feishu", S.messaging.testFail(res.error ?? S.common.unknownError), res.error);
       }
     } catch (e) {
-      toastError(S.messaging.testFail(apiErrorText(e)));
+      toastApiError(e, { text: S.messaging.testFail(apiErrorText(e)) });
     } finally {
       setTesting(false);
     }
@@ -641,7 +655,7 @@ export function useMessagingBinding(
       await api.sendMessagingTestMessage(sessionId, selected);
       toastSuccess(S.messaging.testMessageSent);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSendingTest(false);
     }
@@ -663,7 +677,7 @@ export function useMessagingBinding(
       applyChannel(built.channel, res.binding, res.status);
       toastSuccess(S.common.saved);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -696,7 +710,7 @@ export function useMessagingBinding(
       if (unchecked !== null) setNote({ channel: selected, text: unchecked });
       onChanged?.(sessionId, next && res.binding?.enabled === true ? selected : null);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setToggling(false);
     }

@@ -1,28 +1,37 @@
 /**
  * @prismshadow/penguin-ui — the shared UI package: token contract, themes, fonts and the
- * component set. Source-only: a consumer's `workspace:*` dependency is linked to this directory,
- * so Vite, vitest and tsc read `src/` through the `exports` map in package.json, never a build.
+ * component set. Inside the repository it is read as source: a consumer's `workspace:*` dependency
+ * is linked to this directory, so Vite, vitest and tsc read `src/` through the `exports` map in
+ * package.json, never a build. The npm package and the Workbench runtime are built from this
+ * module (scripts/build-dist.mjs), so everything exported here is public there.
  *
  * Every component is exported from here, one line per module, grouped by the wave that moved it
- * in. A barrel costs no bundle bytes in a source-only package: the bundlers tree-shake it by
- * module.
+ * in. A barrel costs no bundle bytes: the bundlers tree-shake it by module.
  */
 export * from "./hooks";
 export * from "./tokens";
 export * from "./strings";
 export * from "./icon-scale";
+export * from "./layers";
 
 // W1 — icons: the glyph registry and its renderer, the chevron, the fixed-grid marks, the
 // spinner, logos and avatars.
 export * from "./components/icons/icons";
 export * from "./components/icons/glyph-icon/glyph-icon";
+export * from "./components/icons/image-icon/image-icon";
+export * from "./components/icons/app-icon-shape/app-icon-shape";
 export * from "./components/icons/chevron/chevron";
 export * from "./components/icons/marks/marks";
 export * from "./components/icons/spinner/spinner";
+export * from "./components/icons/glyph-app-icon/glyph-app-icon";
 export * from "./components/icons/logos/provider-logo";
 export * from "./components/icons/logos/penguin-logo";
 export * from "./components/icons/avatars/avatar";
 export * from "./components/icons/avatars/agent-avatar";
+export * from "./components/icons/avatars/agent-palette";
+export * from "./components/icons/avatars/agent-accessory";
+export { AGENT_AVATAR_VARIANT_NAMES } from "./components/icons/avatars/agent-avatar-variants";
+export type { AgentAvatarVariant } from "./components/icons/avatars/agent-avatar-variants";
 export * from "./components/icons/avatars/user-avatar";
 export * from "./components/icons/avatars/avatar-stack";
 
@@ -35,12 +44,16 @@ export * from "./components/icons/update-dot/update-dot";
 export * from "./components/feedback/badge/badge";
 export * from "./components/feedback/pill/pill";
 export * from "./components/feedback/skeleton/skeleton";
+export * from "./components/feedback/waiting/waiting";
 export * from "./components/feedback/empty-state/empty-state";
+export * from "./components/feedback/load-failed/load-failed";
 
 // W1 — actions.
 export * from "./components/actions/close-button/close-button";
 export * from "./components/actions/button/button";
+export * from "./components/actions/button/inline-icon-button";
 export * from "./components/actions/link/link";
+export * from "./components/actions/text-action/text-action";
 export * from "./components/actions/copy-button/copy-button";
 export * from "./components/actions/kbd/kbd";
 export * from "./components/actions/hidden-file-input/hidden-file-input";
@@ -82,6 +95,7 @@ export * from "./components/overlays/dropdown/dropdown";
 export * from "./components/overlays/menu/menu";
 export * from "./components/overlays/portal-panel/context-menu";
 export * from "./components/overlays/portal-panel/use-row-context-menu";
+export * from "./components/overlays/context-menu/context-menu";
 export * from "./components/forms/select/form-picker";
 export * from "./components/overlays/tooltip/tooltip";
 
@@ -90,10 +104,25 @@ export * from "./components/overlays/tooltip/tooltip";
 export * from "./components/overlays/esc-layers/esc-layers";
 export * from "./components/overlays/modal/modal";
 export * from "./components/overlays/confirm-modal/confirm-modal";
+export * from "./components/overlays/report-dialog/report-dialog";
+// The problem report kit: a report, its redaction and its GitHub link, the one rule for which
+// errors offer one, where reports open from, and the crash notice.
+export * from "./components/report/redact";
+export * from "./components/report/error-report";
+export * from "./components/report/reportable";
+export * from "./components/report/failure";
+export * from "./components/report/failure-text";
+export * from "./components/report/report-store";
+export * from "./components/report/report-host";
+export * from "./components/report/report-action";
+export * from "./components/report/exception-report";
+export * from "./components/report/crash-boundary";
 export * from "./components/overlays/paged-dialog/paged-dialog";
 export * from "./components/overlays/drawer/drawer";
 export * from "./components/overlays/drawer/sheet";
 export * from "./components/overlays/lightbox/lightbox";
+// A surface that unfolds in place from its trigger, as a launcher's folder does.
+export * from "./components/overlays/unfold-surface/unfold-surface";
 // The unsaved-changes guard: the registry every dirty form and every save in flight joins, the
 // hooks that join it and guard a dialog's close, and the host that draws the one discard prompt
 // and the unload guard.
@@ -115,10 +144,15 @@ export * from "./components/overlays/progress-toasts/progress-toasts";
 // language tables, the type roles, and the diff viewer. The Shiki engine is not here: it is the
 // `./highlighter` subpath, so no static import of this barrel reaches it.
 export * from "./components/content/prose/prose";
+export { ProseBlockTrailerProvider } from "./components/content/prose/block-trailer";
+export type { ProseBlockTrailer } from "./components/content/prose/block-trailer";
 export * from "./components/content/prose/markdown-plugins";
+export * from "./components/content/prose/site-markdown-plugins";
 export * from "./components/content/code-block/code-block";
 export * from "./components/content/code-block/code-languages";
+export * from "./components/content/code-block/code-place";
 export * from "./components/content/typography/typography";
+export * from "./components/content/clamped-text/clamped-text";
 export * from "./components/content/diff-viewer/diff-viewer";
 
 // A2UI — the components a model writes into a reply: the ```a2ui block that parses and dispatches
@@ -144,12 +178,13 @@ export * from "./components/content/a2ui/chart-block";
 export * from "./components/content/a2ui/resources-block";
 
 // W4-A — navigation, notices and readings: the tab bar, the grouped list's header, folder, more
-// row and pager, the create pair, the notice with its variants and the page to-do built on it,
-// the progress bar, the duration slot and its live clock, the beta tag, the disclosure row, and
-// the stat tile and chip.
+// row and pager (with the page number a reader can type over), the create pair, the notice with
+// its variants and the page to-do built on it, the progress bar, the duration slot and its live
+// clock, the beta tag, the disclosure row, and the stat tile and chip.
 export * from "./components/navigation/tabs/tabs";
 export * from "./components/navigation/group-header/group-header";
 export * from "./components/navigation/group-header/pager";
+export * from "./components/navigation/group-header/page-field";
 export * from "./components/actions/create-buttons/create-buttons";
 export * from "./components/feedback/notice/notice";
 export * from "./components/feedback/todo-notice/todo-notice";
@@ -159,9 +194,13 @@ export * from "./components/feedback/duration-slot/duration-slot";
 // gave up, blocked), its one-press buttons, and the second-ticking countdown under them.
 export * from "./components/feedback/retry-status/countdown";
 export * from "./components/feedback/retry-status/use-countdown";
+export * from "./components/feedback/retry-status/countdown-text";
 export * from "./components/feedback/retry-status/retry-status";
+// A transfer under way: what comes over, the amount against the whole, and a thin bar.
+export * from "./components/feedback/transfer-progress/transfer-progress";
 export * from "./components/feedback/beta-badge/beta-badge";
 export * from "./components/layout/disclosure-row/disclosure-row";
+export * from "./components/layout/disclosure-row/disclosure-control";
 export * from "./components/data/stat-tile/stat-tile";
 export * from "./components/data/stat-chip/stat-chip";
 
@@ -178,6 +217,8 @@ export * from "./components/data/list-row/list-row";
 export * from "./components/data/key-value/key-value";
 export * from "./components/data/log-view/log-view";
 export * from "./components/data/table/table";
+// The review before a removal: groups of one-line rows to choose from, with Select all.
+export * from "./components/data/review-list/review-list";
 
 // W4-C — navigation: the nav list and its rows, the rail of a paged dialog or a settings page.
 export * from "./components/navigation/nav-list/nav-list";
@@ -208,6 +249,8 @@ export * from "./components/charts/cartesian/line-chart";
 export * from "./components/charts/pie-chart/pie-chart";
 export * from "./components/charts/scatter-chart/scatter-chart";
 export * from "./components/charts/gauge/gauge";
+// The usage bar: one total split into its parts as a stack, with its legend of sizes.
+export * from "./components/charts/usage-bar/usage-bar";
 
 // W8-B — the command palette: the search box over the caller's actions, and its filter.
 export * from "./components/overlays/command-palette/command-palette";
@@ -237,9 +280,13 @@ export * from "./components/chat/transcript-note/transcript-note";
 export * from "./components/chat/subagent-chip/subagent-chip";
 
 // W6-B — the composer: its card, chip row, toolbar triggers, action button and slash list, the
-// toolbar select, the context ring, the model picker, and the chips with remove buttons.
+// dictation button and its level meter, the toolbar select, the context ring, the model picker,
+// and the chips with remove buttons.
 export * from "./components/chat/composer/composer";
 export * from "./components/chat/composer/toolbar-trigger";
+export * from "./components/chat/composer/record-button";
+export * from "./components/chat/composer/microphone-meter";
+export * from "./components/chat/composer/microphone-levels";
 export * from "./components/chat/menu-select/menu-select";
 export * from "./components/chat/context-ring/context-ring";
 export * from "./components/chat/model-select/model-select";
@@ -275,15 +322,22 @@ export * from "./components/shell/dock-frame/dock-frame";
 export * from "./components/shell/dock-picker/dock-picker";
 export * from "./components/shell/panels-toolbar/panels-toolbar";
 export * from "./components/shell/launcher/launcher";
+// The floating ball built on the launcher's ball: drags to an edge and tucks away there.
+export * from "./components/shell/floating-ball/floating-ball";
+export * from "./components/shell/floating-ball/floating-ball-geometry";
 
 // W7-B — the shell: the app window and its columns, the folded rail, the phone's top bar, the
-// pinned sidebar's frame with its nav fold, list header and controls, and the conversation row
-// with the hover actions it shares.
+// pinned sidebar's frame with its list header and controls, the conversation row with the hover
+// actions it shares, and the app list's row.
 export * from "./components/shell/app-shell/app-shell";
+export * from "./components/shell/app-row/app-row";
+export * from "./components/shell/app-window/app-window";
+export * from "./components/shell/app-window/app-window-bar";
 export { WallpaperSurface } from "./components/shell/app-shell/wallpaper";
 export type { WallpaperStyle } from "./components/shell/app-shell/wallpaper";
 export * from "./components/shell/rail/rail";
 export * from "./components/shell/mobile-top-bar/mobile-top-bar";
+export * from "./components/shell/window-band/window-band";
 export * from "./components/shell/sidebar-frame/sidebar-frame";
 export * from "./components/shell/session-row/session-row";
 
@@ -300,6 +354,10 @@ export * from "./components/machines/machine-list/machine-list";
 export * from "./components/machines/machine-toolbar/machine-toolbar";
 export * from "./components/machines/add-machine/add-machine";
 
+// Models: the Project's default-models dialog, and the guide shown before any model has a key.
+export * from "./components/models/default-models-dialog/default-models-dialog";
+export * from "./components/models/model-setup-guide/model-setup-guide";
+
 // Reading and finding: the find-in-page machinery the app's find bar and the Markdown reader share
 // (the text matcher, the DOM index with its highlight paint and reveal, the control row), the
 // reader with its outline model, and the measured width a layout that follows its own room reads.
@@ -314,3 +372,48 @@ export * from "./components/layout/measure/use-measured-width";
 // which the Workspace Files panel and the organization handbook both lay out with.
 export * from "./components/files/files-frame/files-layout";
 export * from "./components/files/files-frame/files-frame";
+
+// Things in a catalogue and on an Agent — the Plugins page and an Agent's plugin sub-pages: the
+// card a thing wears in a grid with its controls and the grid it sits in, the facts line, the
+// status as a glyph and a word, the flat glyph that acts, a detail section's one-line rows, and
+// the sub-page switch under a tab.
+export * from "./components/data/entity-card/entity-card";
+export * from "./components/data/meta-line/meta-line";
+export * from "./components/feedback/status-mark/status-mark";
+export * from "./components/actions/glyph-action/glyph-action";
+export * from "./components/data/fact-row/fact-row";
+// What a destructive action reaches, in its confirm: named up to a limit, the rest counted.
+export * from "./components/data/impact-list/impact-list";
+export * from "./components/navigation/sub-page-bar/sub-page-bar";
+
+// A status page — a plugin's page in Settings: the strip at its head, the version element of a
+// program the subject installs beside itself (with its "Details" fold), and the checklist of its
+// preconditions.
+export * from "./components/layout/status-strip/status-strip";
+export * from "./components/feedback/installed-version/installed-version";
+export * from "./components/data/checklist/checklist";
+
+// The showcase family, shared with the public sites (site.ts): the cover, the cover card and its
+// grid, the selected carousel and its turn-taking, and a product page's parts.
+export * from "./components/showcase/cover";
+export * from "./components/showcase/cover-card";
+export * from "./components/showcase/showcase-layout-toggle";
+export * from "./components/showcase/carousel-rotation";
+export * from "./components/showcase/showcase-carousel";
+export * from "./components/showcase/product-page";
+
+// Dates and times: the date, time, date-and-time and date-range fields, pickers after iOS's that
+// write the native inputs' formats (`YYYY-MM-DD`, `HH:mm`, `YYYY-MM-DDTHH:mm`).
+export { DateField } from "./components/forms/date-time/date-field";
+export type { DateFieldProps } from "./components/forms/date-time/date-field";
+export { TimeField } from "./components/forms/date-time/time-field";
+export type { ClockProps, TimeFieldProps } from "./components/forms/date-time/time-field";
+export { DateTimeField } from "./components/forms/date-time/date-time-field";
+export type { DateTimeFieldProps } from "./components/forms/date-time/date-time-field";
+export { DateRangeField } from "./components/forms/date-time/date-range-field";
+export type {
+  DateRangeFieldProps,
+  DateRangeValue,
+} from "./components/forms/date-time/date-range-field";
+export type { PickerFieldProps } from "./components/forms/date-time/picker-trigger";
+export type { HourCycle } from "./components/forms/date-time/date-locale";

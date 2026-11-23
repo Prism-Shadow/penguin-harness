@@ -31,8 +31,8 @@ import {
   unparsedNumbers,
 } from "../src/features/settings/plugin-config-card";
 import { ConfigMachinePicker } from "../src/features/settings/plugins-section";
-import { apiError, json, stubFetch } from "./helpers/fetch";
-import type { FakeFetch } from "./helpers/fetch";
+import { apiError, json, stubFetch, type FakeFetch } from "./helpers/fetch";
+
 import { button, click, field, mount, run, switchNamed, type, unmountAll } from "./helpers/dom";
 
 const ENTRY: PluginConfigEntry = {
@@ -199,6 +199,100 @@ describe("a plugin settings card", () => {
     await run(() => page.reload(reloaded("again from the server")));
     expect(field("Note").value).toBe("mine");
     expect(button("Save").disabled).toBe(false);
+  });
+
+  it("draws untitled child entries flat inside the card and adds rows to an empty list", async () => {
+    const members: PluginConfigEntry[] = [
+      {
+        name: "plugin-sources",
+        configuration: {
+          title: "Plugin Sources",
+          properties: {
+            npmRegistry: {
+              type: "enum",
+              title: "npm registry",
+              options: [{ value: "official", title: "npm official" }],
+            },
+          },
+        },
+        values: { npmRegistry: "official" },
+      },
+      {
+        name: "plugin-index",
+        parent: "plugin-sources",
+        configuration: {
+          properties: {
+            sources: {
+              type: "list",
+              title: "Plugin index",
+              description: "Index catalogues",
+            },
+          },
+        },
+        values: { sources: ["https://one.example/index.json"] },
+      },
+      {
+        name: "plugin-mirrors",
+        parent: "plugin-sources",
+        configuration: {
+          properties: {
+            mirrors: {
+              type: "list",
+              title: "Plugin mirrors",
+              description: "Fallback mirrors",
+              items: {
+                options: [
+                  { value: "npm-registry", title: "npmmirror" },
+                  { value: "github-raw", title: "jsDelivr" },
+                ],
+              },
+            },
+          },
+        },
+        values: { mirrors: [] },
+      },
+    ];
+    const fetch = stubFetch((request) => {
+      if (request.path === "/api/admin/plugin-config" && request.method === "PUT") {
+        const body = request.body as { name: string; values: Record<string, unknown> };
+        const updated = members.map((m) =>
+          m.name === body.name ? { ...m, values: { ...m.values, ...body.values } } : m,
+        );
+        return json({ plugins: updated });
+      }
+      return apiError(404, "not_found");
+    });
+    function SourcesCard() {
+      const [list, setList] = useState<PluginConfigEntry[]>(members);
+      const [busy, setBusy] = useState<string | null>(null);
+      return h(PluginCard, {
+        members: list,
+        machine: null,
+        busy,
+        setBusy,
+        locale: "en",
+        onStored: (stored) =>
+          setList((prev) => prev.map((e) => (e.name === stored.name ? stored : e))),
+        onStoredAll: setList,
+        onAction: () => {},
+        onSwitchedOn: () => {},
+      });
+    }
+    const root = await mount(h(SourcesCard));
+    expect(root.container.textContent).toContain("Plugin Sources");
+    expect(root.container.textContent).not.toContain("plugin-index");
+    expect(root.container.textContent).not.toContain("plugin-mirrors");
+    const addButtons = Array.from(root.container.querySelectorAll("button")).filter(
+      (b) => b.textContent?.trim() === "Add",
+    );
+    expect(addButtons).toHaveLength(2);
+    // Adding to the empty mirrors list picks the first available option and enables Save.
+    await click(addButtons[1]!);
+    expect(button("Save").disabled).toBe(false);
+    await click(button("Save"));
+    expect(puts(fetch)).toEqual([
+      { name: "plugin-mirrors", values: { mirrors: ["npm-registry"] } },
+    ]);
   });
 });
 

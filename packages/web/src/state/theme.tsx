@@ -3,9 +3,13 @@
  * and accent.
  * - Mode: html.dark class + Tailwind dark: variant; system mode tracks prefers-color-scheme
  *   live.
- * - Theme: html[data-theme] selects one of the shared UI package's themes (absent = the
- *   stylesheet's fallback, Primer). A browser that stores no choice starts in Frost
- *   (`INITIAL_THEME_ID`). Offered in Settings → Appearance.
+ * - Theme: html[data-theme] names the theme pack that renders the app, always written, with
+ *   data-theme-base beside it for a pack built on Frost. A built-in pack is in the bundled
+ *   stylesheet; a pack an admin imported on this server is a stylesheet of its own, which
+ *   lib/theme-pack-links.ts installs before the attributes name it, so a switch never paints half
+ *   a theme. A browser that stores no choice, or one this build cannot show, starts in Frost
+ *   (`INITIAL_THEME_ID`). Offered in Settings → Appearance, with the imported packs after the
+ *   built-in ones (lib/account-sync/theme-packs.ts keeps the list).
  * - Text size: five steps that set the root font-size, so every rem-based type and density
  *   token scales with it.
  * - Font pairing: html[data-font-latin] / [data-font-cjk] override the reading and interface
@@ -28,18 +32,30 @@
  * text size and font pairing before the first frame; the effects here keep them in sync
  * afterwards, through the same applyThemeAttributes the package defines.
  */
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { ACCENT_PRESETS, THEME_OWN_ACCENTS } from "@prismshadow/penguin-ui";
-import type { ThemeId } from "@prismshadow/penguin-ui";
+import type { ThemePackDto } from "@prismshadow/penguin-server/api";
+import type { ActivityDisplayMode, ThemeId } from "@prismshadow/penguin-ui";
 import { applyThemeAttributes, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
 import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
-import { CURRENCY_KEY, TERMINAL_THEME_KEY, TOOL_ALIASES_KEY, readThemePrefs } from "./theme-prefs";
+import {
+  ACTIVITY_DISPLAY_MODE_KEY,
+  activityDisplayModeValue,
+  CURRENCY_KEY,
+  TERMINAL_THEME_KEY,
+  TOOL_ALIASES_KEY,
+  readAccent,
+  readThemeId,
+  readThemePrefs,
+} from "./theme-prefs";
+import { shownTheme, type ThemeEntry } from "./theme-entries";
 import { subscribeAccountApplied, writeCached } from "../lib/account-sync/cache";
+import { useThemePackList } from "../lib/account-sync/theme-packs";
 import { syncThemeColor } from "../lib/theme-color";
+import { createThemeSwitcher, type ThemeTarget } from "../lib/theme-pack-links";
 import type { FontCjk, FontLatin, TextSize } from "./theme-prefs";
 
-export type { FontCjk, FontLatin, TextSize, ThemeId };
+export type { FontCjk, FontLatin, TextSize, ThemeEntry, ThemeId, ThemeTarget };
 export type ThemeMode = "light" | "dark" | "system";
 export type Accent = AccentChoice;
 /**
@@ -67,9 +83,24 @@ interface ThemeContextValue {
   /** Resolved effective theme (system mode already resolved against the system preference). */
   dark: boolean;
   setMode: (mode: ThemeMode) => void;
-  /** Which theme renders the app. */
-  themeId: ThemeId;
-  setThemeId: (themeId: ThemeId) => void;
+  /**
+   * The chosen theme as it reads: a built-in pack's id, or an imported pack's that this browser
+   * has the list entry of (theme-prefs.ts). What the picker marks.
+   */
+  themeId: string;
+  setThemeId: (themeId: string) => void;
+  /** The chosen theme's entry: its names, swatches and accent presets. */
+  theme: ThemeEntry;
+  /**
+   * What <html> shows now. It trails `themeId` while an imported pack's stylesheet loads, and
+   * stays on the theme shown before when that stylesheet fails. A new value each time the root
+   * changes, so a copy of the appearance (a Workbench's frame) knows to copy again.
+   */
+  appliedTheme: ThemeTarget;
+  /** The chosen pack, when its stylesheet failed to load; null otherwise. */
+  themePackFailed: string | null;
+  /** Asks for the chosen pack's stylesheet again. */
+  retryThemePack: () => void;
   textSize: TextSize;
   setTextSize: (size: TextSize) => void;
   /** The Latin sans the theme's own is replaced with ("theme" = keep the theme's). */
@@ -86,6 +117,9 @@ interface ThemeContextValue {
   setCurrency: (currency: Currency) => void;
   terminalMode: TerminalThemeMode;
   setTerminalMode: (mode: TerminalThemeMode) => void;
+  /** How work groups show thinking and tool steps: Standard, Expanded or Compact. */
+  activityDisplayMode: ActivityDisplayMode;
+  setActivityDisplayMode: (mode: ActivityDisplayMode) => void;
   /** Whether tool-call cards name the built-in tools by their short alias. */
   toolAliases: boolean;
   setToolAliases: (on: boolean) => void;
@@ -112,6 +146,10 @@ function initialToolAliases(): boolean {
   return localStorage.getItem(TOOL_ALIASES_KEY) !== "0";
 }
 
+function initialActivityDisplayMode(): ActivityDisplayMode {
+  return activityDisplayModeValue(localStorage.getItem(ACTIVITY_DISPLAY_MODE_KEY)) ?? "standard";
+}
+
 function initialCurrency(): Currency {
   return localStorage.getItem(CURRENCY_KEY) === "CNY" ? "CNY" : "USD";
 }
@@ -120,18 +158,28 @@ function systemDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
+/** Nothing imported: the list before this browser has read it. One identity, so effects keep still. */
+const NO_PACKS: readonly ThemePackDto[] = [];
+
+const targetOf = (theme: ThemeEntry): ThemeTarget => ({
+  id: theme.id,
+  base: theme.base,
+  href: theme.href,
+});
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(initialMode);
   const [sysDark, setSysDark] = useState(systemDark);
   // One read for the lot, which also migrates the legacy text-size key.
   const [initial] = useState(() => readThemePrefs(localStorage));
-  const [themeId, setThemeIdState] = useState<ThemeId>(initial.themeId);
+  const [themeId, setThemeIdState] = useState<string>(initial.themeId);
   const [textSize, setTextSizeState] = useState<TextSize>(initial.textSize);
   const [fontLatin, setFontLatinState] = useState<FontLatin>(initial.fontLatin);
   const [fontCjk, setFontCjkState] = useState<FontCjk>(initial.fontCjk);
   const [accent, setAccentState] = useState<Accent>(initial.accent);
   const [currency, setCurrencyState] = useState<Currency>(initialCurrency);
   const [terminalMode, setTerminalModeState] = useState<TerminalThemeMode>(initialTerminalMode);
+  const [activityDisplayMode, setActivityDisplayModeState] = useState(initialActivityDisplayMode);
   const [toolAliases, setToolAliasesState] = useState<boolean>(initialToolAliases);
 
   // The account's preferences replaced the cached ones at sign-in:
@@ -149,8 +197,32 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         setCurrencyState(initialCurrency());
         setTerminalModeState(initialTerminalMode());
         setToolAliasesState(initialToolAliases());
+        setActivityDisplayModeState(initialActivityDisplayMode());
       }),
     [],
+  );
+
+  // The server's imported packs, as this browser last read them. A list that changed may name
+  // the stored pack (it arrived) or no longer name it (it was removed, which shows Frost): the
+  // stored theme and accent are read again. Neither is ever rewritten for it.
+  const packs = useThemePackList().value ?? NO_PACKS;
+  useEffect(() => {
+    setThemeIdState(readThemeId(localStorage));
+    setAccentState(readAccent(localStorage));
+  }, [packs]);
+  const theme = useMemo(() => shownTheme(themeId, packs), [themeId, packs]);
+
+  const [appliedTheme, setAppliedTheme] = useState<ThemeTarget>(() => targetOf(theme));
+  const [themePackFailed, setThemePackFailed] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [switcher] = useState(() =>
+    createThemeSwitcher(document, {
+      applied: (target) => {
+        setAppliedTheme(target);
+        setThemePackFailed(null);
+      },
+      failed: (id) => setThemePackFailed(id),
+    }),
   );
 
   const dark = mode === "system" ? sysDark : mode === "dark";
@@ -160,10 +232,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     applyThemeAttributes(document.documentElement, { dark });
   }, [dark]);
 
+  // Every theme is named on the root; an imported pack only once its stylesheet is in.
+  const { id: shownId, base: shownBase, href: shownHref } = theme;
   useEffect(() => {
-    // Primer, the stylesheet's fallback, sets no data-theme: its selectors match a bare <html>.
-    applyThemeAttributes(document.documentElement, { themeId });
-  }, [themeId]);
+    switcher.show({ id: shownId, base: shownBase, href: shownHref });
+  }, [switcher, shownId, shownBase, shownHref, attempt]);
 
   useEffect(() => {
     applyThemeAttributes(document.documentElement, { textSize });
@@ -182,7 +255,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // After the attribute effects above, so the canvas read is the one now painted.
   useEffect(() => {
     syncThemeColor(document);
-  }, [dark, themeId]);
+  }, [dark, appliedTheme]);
 
   // system mode: track system preference changes.
   useEffect(() => {
@@ -199,10 +272,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setModeState(next);
   }, []);
 
-  const setThemeId = useCallback((next: ThemeId) => {
+  const setThemeId = useCallback((next: string) => {
     writeCached(THEME_ID_KEY, next);
     setThemeIdState(next);
   }, []);
+
+  const retryThemePack = useCallback(() => setAttempt((n) => n + 1), []);
 
   const setTextSize = useCallback((next: TextSize) => {
     writeCached(TEXT_SIZE_KEY, next);
@@ -234,6 +309,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTerminalModeState(next);
   }, []);
 
+  const setActivityDisplayMode = useCallback((next: ActivityDisplayMode) => {
+    writeCached(ACTIVITY_DISPLAY_MODE_KEY, next);
+    setActivityDisplayModeState(next);
+  }, []);
+
   const setToolAliases = useCallback((next: boolean) => {
     writeCached(TOOL_ALIASES_KEY, next ? "1" : "0");
     setToolAliasesState(next);
@@ -247,6 +327,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         setMode,
         themeId,
         setThemeId,
+        theme,
+        appliedTheme,
+        themePackFailed: themePackFailed === theme.id ? themePackFailed : null,
+        retryThemePack,
         textSize,
         setTextSize,
         fontLatin,
@@ -260,6 +344,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         terminalMode,
         setTerminalMode,
         terminalDark,
+        activityDisplayMode,
+        setActivityDisplayMode,
         toolAliases,
         setToolAliases,
       }}
@@ -267,6 +353,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       {children}
     </ThemeContext.Provider>
   );
+}
+
+/** Embedded read-only transcript views can render without an appearance provider. */
+export function useActivityAppearance() {
+  return useContext(ThemeContext);
 }
 
 export function useTheme(): ThemeContextValue {
@@ -277,17 +368,22 @@ export function useTheme(): ThemeContextValue {
 
 /**
  * The accent swatches a theme offers: "neutral" first (the theme's own accent, the absence of a
- * choice), then the theme's own presets in its own order, painted in their light values.
+ * choice), then the theme's own presets in its own order, painted in their light values — save
+ * one: in dark, a preset that is the pack's own light ink (Doodle's `ink`) is painted in the
+ * pack's dark ink, because a near-black dot on a dark row cannot be seen.
  */
 export function accentSwatches(
-  themeId: ThemeId,
+  theme: ThemeEntry,
   dark = false,
 ): ReadonlyArray<{ value: Accent; color: string }> {
-  // "Theme's own" paints the accent that choice resolves to — every theme's is black (white in
-  // dark) — rather than a stand-in grey.
-  const own = THEME_OWN_ACCENTS[themeId];
+  // "Theme's own" paints the accent that choice resolves to — black (white in dark) in most
+  // built-in themes, the ballpoint blue in Doodle — rather than a stand-in grey.
+  const own = theme.accent.own;
+  const ink = theme.swatches.light.ink.toLowerCase();
+  const paint = (swatch: string) =>
+    dark && swatch.toLowerCase() === ink ? theme.swatches.dark.ink : swatch;
   return [
     { value: "neutral", color: dark ? own.dark : own.light },
-    ...ACCENT_PRESETS[themeId].map((preset) => ({ value: preset.id, color: preset.swatch })),
+    ...theme.accent.presets.map((preset) => ({ value: preset.id, color: paint(preset.swatch) })),
   ];
 }

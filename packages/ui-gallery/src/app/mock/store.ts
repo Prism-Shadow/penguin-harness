@@ -9,13 +9,24 @@
  * language, and re-creatable for tests. Nothing here touches the DOM.
  */
 import type { ServerEvent, SessionInfo } from "@prismshadow/penguin-server/api";
-import { buildFixtures, DEFAULT_MODEL } from "./fixtures";
+import type { VoicePolishSettings } from "../../../../web/src/api/tool-types";
+import { buildFixtures, DEFAULT_MODEL, effectiveOf } from "./fixtures";
 import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
 import { IDS } from "./ids";
+import { seedFreshProject } from "./fresh-project";
 import { raiseNotices } from "./notices";
-import { rsiEvaluatorTranscript, rsiTestTranscript, rsiTranscript } from "./rsi-transcript";
+import {
+  rsiEvaluatorTranscript,
+  rsiPrompt,
+  rsiTestTranscript,
+  rsiTitle,
+  rsiTranscript,
+  RSI_WORKSPACE,
+} from "./rsi-transcript";
 import { streamScript } from "./stream-script";
+import { evolutionReply } from "./evolution-reply";
+import { EvolutionClock } from "../evolution-clock";
 import {
   abortEvent,
   approvalDecision,
@@ -96,26 +107,64 @@ interface Live {
   transcript: Transcript;
   channel: Channel;
   /** Timers of a running script, cleared on abort or dispose. */
-  timers: number[];
+  timers: (() => void)[];
   /** The history length the looping reply rewinds to (the streaming Session only). */
   loopFrom?: number;
   /** A stop left the turn held: the next message carries it, or a Retry resends it alone. */
   held?: boolean;
+  evolution?: boolean;
 }
 
 export class DemoStore {
   readonly f: DemoFixtures;
+  /** Transcript editing's switch and instructions (the multimodal tools plugin's settings). */
+  voicePolish: VoicePolishSettings = {
+    enabled: false,
+    prompt: "Edit the transcript.",
+    defaultPrompt: "Edit the transcript.",
+  };
   readonly lang: Lang;
   /** Signed in as the fixtures' admin, or nobody. */
   signedIn: boolean;
   readonly userChannel = new Channel();
+  readonly evolutionPlayback = new EvolutionClock();
+  private demoTakenOver = false;
   private readonly live = new Map<string, Live>();
   private created = 0;
 
-  constructor(lang: Lang, now: number, signedIn: boolean, notices = false) {
+  constructor(
+    private readonly init: StoreInit,
+    now: number,
+  ) {
+    const { lang, signedIn, embedded, evolutionDemo, notices } = init;
     this.lang = lang;
     this.signedIn = signedIn;
-    this.f = buildFixtures(lang, now);
+    this.f = buildFixtures(lang, now, embedded);
+    if (init.freshProject) {
+      const f = this.f;
+      // Only the evaluator and test sessions belong to the example. They are hidden from the sidebar.
+      const children = new Set<string>([...IDS.sessions.evaluators, ...IDS.sessions.tests]);
+      f.sessions = evolutionDemo ? f.sessions.filter((s) => children.has(s.sessionId)) : [];
+      seedFreshProject(f, evolutionDemo === true);
+      f.schedules = [];
+      f.usage = [];
+      if (!evolutionDemo) {
+        delete f.models.defaultModel;
+        delete f.models.visionModel;
+        for (const provider of Object.values(f.models.providers ?? {}))
+          delete provider.apiKeyMasked;
+        for (const model of f.models.models) {
+          model.isDefault = false;
+          delete model.envKeyMasked;
+          if (model.credential) delete model.credential.apiKeyMasked;
+          model.effective = effectiveOf(model, f.models.providers ?? {});
+        }
+      }
+    }
+    if (evolutionDemo) {
+      this.f.chatDefaults.agentId = IDS.agents.general;
+      this.f.chatDefaults.workspace = RSI_WORKSPACE;
+    }
     if (notices) raiseNotices(this.f);
     const ref = DEFAULT_MODEL;
     const seeded: Record<string, Transcript> = {
@@ -240,6 +289,25 @@ export class DemoStore {
     return true;
   }
 
+  /** Stop the scripted reply, leaving its Session and all manual controls available. */
+  takeOverEvolution(): void {
+    this.demoTakenOver = true;
+    for (const [sessionId, live] of this.live) {
+      if (live.evolution) this.abort(sessionId);
+    }
+    this.evolutionPlayback.dispose();
+  }
+
+  /** Discard only the completed automatic round before the walkthrough starts its next one. */
+  clearEvolutionRounds(): void {
+    for (const [sessionId, live] of this.live) {
+      const row = this.session(sessionId);
+      if (!live.evolution || row?.status !== "idle") continue;
+      this.deleteSession(sessionId);
+      this.userChannel.event({ type: "session_deleted", sessionId, projectId: row.projectId });
+    }
+  }
+
   patchSession(sessionId: string, patch: Partial<SessionInfo>): SessionInfo | undefined {
     const row = this.session(sessionId);
     if (!row) return undefined;
@@ -262,7 +330,13 @@ export class DemoStore {
     const row = this.session(sessionId);
     live.channel.event({ type: "task_state", state: row?.status ?? "idle" }, handlers);
     const pending = live.transcript.pendingApproval;
-    if (pending) live.channel.event({ type: "approval_request", toolCall: pending }, handlers);
+    const reason = live.transcript.pendingReason;
+    if (pending) {
+      live.channel.event(
+        { type: "approval_request", toolCall: pending, ...(reason ? { reason } : {}) },
+        handlers,
+      );
+    }
     for (const goal of live.transcript.goalEvents ?? []) live.channel.event(goal, handlers);
     if (sessionId === IDS.sessions.thinking) this.keepThinking(live);
     if (sessionId === IDS.sessions.streaming) this.keepStreaming(sessionId, live);
@@ -288,13 +362,18 @@ export class DemoStore {
   }
 
   private schedule(live: Live, at: number, run: () => void): void {
-    live.timers.push(setTimeout(run, at) as unknown as number);
+    if (live.evolution) {
+      live.timers.push(this.evolutionPlayback.schedule(run, at));
+    } else {
+      const timer = setTimeout(run, at);
+      live.timers.push(() => clearTimeout(timer));
+    }
   }
 
   private stopScript(sessionId: string): void {
     const live = this.live.get(sessionId);
     if (!live) return;
-    for (const timer of live.timers) clearTimeout(timer);
+    for (const cancel of live.timers) cancel();
     live.timers = [];
   }
 
@@ -389,6 +468,12 @@ export class DemoStore {
     if (!live || !row) return false;
     if (row.status !== "idle") return false;
     const firstTurn = live.transcript.history.length === 0;
+    live.evolution =
+      this.init.evolutionDemo &&
+      !this.demoTakenOver &&
+      firstTurn &&
+      row.agentId === IDS.agents.general &&
+      text === rsiPrompt(this.lang);
     this.stopScript(sessionId);
     delete live.held;
     this.setStatus(sessionId, "running");
@@ -414,11 +499,29 @@ export class DemoStore {
   /** The scripted reply of a running Task, then the Session settles (titled on its first turn). */
   private playReply(sessionId: string, live: Live, firstTurn: boolean): void {
     const callId = `call_${Date.now().toString(36)}`;
-    const steps = scriptedReply(this.lang, callId);
-    for (const step of steps) this.schedule(live, step.at, () => this.emit(live, step.msg));
+    const steps = live.evolution
+      ? evolutionReply(this.lang, Date.now(), DEFAULT_MODEL)
+      : scriptedReply(this.lang, callId);
+    for (const step of steps)
+      this.schedule(live, step.at, () => {
+        if (live.evolution && !step.msg.origin) {
+          const p = payloadOf(step.msg);
+          if (p?.type === "partial_text") {
+            if (p.event_type === "start")
+              live.transcript.openText = { startedAt: Date.now(), text: "" };
+            else if (p.event_type === "delta" && live.transcript.openText)
+              live.transcript.openText.text += p.text;
+            else if (p.event_type === "stop") delete live.transcript.openText;
+          }
+        }
+        this.emit(live, step.msg);
+      });
     const last = steps[steps.length - 1]?.at ?? 0;
     this.schedule(live, last + 200, () => {
-      if (firstTurn) this.patchSession(sessionId, { title: replyTitle(this.lang) });
+      if (firstTurn)
+        this.patchSession(sessionId, {
+          title: live.evolution ? rsiTitle(this.lang) : replyTitle(this.lang),
+        });
       this.setStatus(sessionId, "idle");
       live.timers = [];
     });
@@ -496,6 +599,7 @@ export class DemoStore {
   }
 
   dispose(): void {
+    this.evolutionPlayback.dispose();
     for (const id of this.live.keys()) this.stopScript(id);
   }
 }
@@ -512,24 +616,20 @@ interface StoreInit {
   signedIn: boolean;
   /** Raise the notices a conversation can carry (notices.ts). */
   notices?: boolean;
+  /** The public site embeds a working Project. Gallery boards also exercise maintenance states. */
+  embedded?: boolean;
+  evolutionDemo?: boolean;
+  freshProject?: boolean;
 }
 
 /** The store the frame's language and sign-in state ask for; created once per document. */
-export function getStore(init?: StoreInit): DemoStore {
-  if (current === null) {
-    current = new DemoStore(
-      init?.lang ?? "en",
-      Date.now(),
-      init?.signedIn ?? true,
-      init?.notices ?? false,
-    );
-  }
-  return current;
+export function getStore(init: StoreInit = { lang: "en", signedIn: true }): DemoStore {
+  return (current ??= new DemoStore(init, Date.now()));
 }
 
 /** A fresh store (tests, and a frame that re-seeds itself). */
 export function resetStore(init: StoreInit & { now?: number }): DemoStore {
   current?.dispose();
-  current = new DemoStore(init.lang, init.now ?? Date.now(), init.signedIn, init.notices ?? false);
+  current = new DemoStore(init, init.now ?? Date.now());
   return current;
 }

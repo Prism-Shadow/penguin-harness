@@ -13,8 +13,13 @@
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { CodeHighlighterProvider, Toaster, TooltipLayer } from "@prismshadow/penguin-ui";
-import { highlightCode } from "../../../web/src/features/chat/code-highlight";
+import {
+  CodeHighlighterProvider,
+  ReportHost,
+  Toaster,
+  TooltipLayer,
+} from "@prismshadow/penguin-ui";
+import { highlightCode } from "../../../web/src/lib/highlight/code-highlight";
 import { LocaleProvider, LocaleScope } from "../../../web/src/state/locale";
 import { ThemeProvider } from "../../../web/src/state/theme";
 import "./library.css";
@@ -52,9 +57,10 @@ createRoot(container).render(
         <ThemeProvider>
           <LocaleScope>
             <GalleryProvider>
-              <LibraryBoardPage topic={params.topic} />
+              <LibraryBoardPage topic={params.topic} part={params.part} />
             </GalleryProvider>
             <Toaster />
+            <ReportHost />
             <TooltipLayer />
           </LocaleScope>
         </ThemeProvider>

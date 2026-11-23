@@ -13,6 +13,7 @@
  * version rather than with this build. Swap semantics for anything the platform holds that
  * is not parked is a HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
  */
+import type { ServerEvent, Access } from "@prismshadow/penguin-library-project";
 import { createHash } from "node:crypto";
 import zlib from "node:zlib";
 import fs from "node:fs";
@@ -22,7 +23,11 @@ import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import type { HttpBindings } from "@hono/node-server";
 import { bodyLimit } from "hono/body-limit";
-import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
+import {
+  bodyLimitBytes,
+  toAttachmentLimits,
+} from "@prismshadow/penguin-library-setting/attachment-limits";
+import { isAgentImport, MAX_PACKAGE_BYTES } from "@prismshadow/penguin-library-agent/agent-zip";
 import type { DatabaseSync } from "node:sqlite";
 import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "./config.js";
@@ -38,6 +43,9 @@ import {
   HMR_HOST_RESOURCE_ID,
   HMR_CONTROL_RESOURCE_ID,
   HMR_OVERRIDES_RESOURCE_ID,
+  HMR_SHELL_FRAMES_RESOURCE_ID,
+  newShellFrames,
+  type ShellFrames,
   HMR_TEST_PLUGINS_RESOURCE_ID,
   type Replacements,
   HMR_PROXY_RESOURCE_ID,
@@ -46,19 +54,22 @@ import {
   type Log,
   type ProxyControl,
 } from "./hmr/capabilities.js";
-import { ensureCliShim } from "./services/cli-shim.js";
-import { openDatabase } from "./db/database.js";
-import { MachinesRepo } from "./db/repos/machines.js";
-import { ErrorsRepo } from "./db/repos/errors.js";
-import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
-import { SchedulesRepo } from "./db/repos/schedules.js";
-import { ServerSettingsRepo } from "./db/repos/server-settings.js";
-import { SessionsRepo } from "./db/repos/sessions.js";
-import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
-import { UsersRepo } from "./db/repos/users.js";
-import type { UserRow } from "./db/repos/users.js";
-import { jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
-import { originRule } from "./http/public-origin.js";
+import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
+import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
+import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import { SchedulesRepo } from "@prismshadow/penguin-library-session/repos/schedules";
+import { ServerSettingsRepo } from "@prismshadow/penguin-library-setting/repos/server-settings";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs";
+import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
+import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
+import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
+import type { Http } from "./http/app.js";
+import { legacyOwnOrigin } from "./hmr/legacy-browser.js";
+import { originRule } from "@prismshadow/penguin-library-http/public-origin";
+import { WEB_APP_CSP } from "@prismshadow/penguin-library-http/page-csp";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
@@ -68,10 +79,10 @@ import { PLUGINS_RESOURCE_ID, type PluginHost } from "./plugin/host.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
 import { newAuthRuntimeState } from "./auth/runtime-state.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
+import { AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
-import { attributedProjectId } from "./http/attribution.js";
+import { attributedProjectId } from "@prismshadow/penguin-library-http/attribution";
 import { STREAM_IDLE_MS } from "./http/sse.js";
 import { installRoutes } from "./http/routes/install.js";
 import { ChannelHub } from "./runtime/channel.js";
@@ -103,13 +114,9 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { AgentConfigService } from "./services/agent-config-service.js";
-import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
-import { BenchmarkService } from "./services/benchmark-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
-import { ModelOAuthService } from "./services/model-oauth-service.js";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
@@ -117,7 +124,6 @@ import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
 import { UsageService } from "./services/usage-service.js";
-import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { HmrHost, hmrControl } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
@@ -133,14 +139,13 @@ import type { PreviewTokenSigner } from "./services/preview-token.js";
 
 import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
-import { AgentsRepo } from "./db/repos/agents.js";
-import { MembersRepo } from "./db/repos/members.js";
-import { ProjectsRepo } from "./db/repos/projects.js";
-import { TraceIndexRepo } from "./db/repos/trace-index.js";
-import { UsageRepo } from "./db/repos/usage.js";
+import { AgentsRepo } from "@prismshadow/penguin-library-project/repos/agents";
+import { MembersRepo } from "@prismshadow/penguin-library-project/repos/members";
+import { ProjectsRepo } from "@prismshadow/penguin-library-project/repos/projects";
+import { TraceIndexRepo } from "@prismshadow/penguin-library-trace/repos/trace-index";
+import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { adminUsersRoutes } from "./http/routes/admin.js";
 import { adminSettingsRoutes } from "./http/routes/admin-settings.js";
-import type { ServerEvent } from "./api/types.js";
 import { meRoutes } from "./http/routes/me.js";
 import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
 import { projectsRoutes } from "./http/routes/projects.js";
@@ -156,7 +161,6 @@ import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "./http/routes/skills.js";
 import { agentHooksRoutes } from "./http/routes/hooks.js";
 import { agentPluginsRoutes, pluginLibraryRoutes } from "./http/routes/plugins.js";
-import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
 import { agentsRoutes } from "./http/routes/agents.js";
 import { dirsRoutes } from "./http/routes/dirs.js";
 import { directorySkillsRoutes } from "./http/routes/directory-skills.js";
@@ -171,10 +175,9 @@ import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import type { Settings } from "./mechanisms/settings.js";
-import type { Errors } from "./mechanisms/observability.js";
-import type { Access } from "./mechanisms/projects.js";
-import type { Auth } from "./mechanisms/identity.js";
+import type { Settings } from "@prismshadow/penguin-library-setting";
+import type { Errors } from "@prismshadow/penguin-library-observability";
+import type { Auth } from "@prismshadow/penguin-library-auth";
 
 /**
  * What the runtime process holds after boot: the capabilities it owns for the process
@@ -195,6 +198,8 @@ export interface ServerBoot {
    * hmr/platform.ts), which is why `tree` is derived from it on every read rather than held.
    */
   instance: Instance<PlatformApi>;
+  /** The host's message port as state; index.ts fills it when a port exists. */
+  shellFrames: ShellFrames;
   /**
    * The tree the running App serves — read through `instance` each time, so a plugin
    * change's re-assembly is seen without any push. A generation that has no tree to answer
@@ -295,26 +300,42 @@ export async function bootAppDeps(
   // test hands the tree) is honoured here too, and the process's own console otherwise.
   const logDouble = replacements.find(([cls]) => cls === ConsoleLog)?.[1] as Log | undefined;
   const shimLog = (line: string): void => (logDouble ?? new ConsoleLog()).line(line);
-  const shim = ensureCliShim(config.root, config.cliEntry ?? null, {
+  // Which entry `penguin` is, answered once by the shared procedure rather than privately
+  // here: this server's own entry — the record decides only whether a pushed bundle rides
+  // with it. Asked pre-boot for the same reason the shim is written pre-boot — it describes
+  // this installation, not a state a push can change under a running App.
+  const ownCli = {
+    entry: config.cliEntry ?? null,
     execArgs: config.cliLaunch?.execArgs ?? [],
     unavailable: config.cliLaunch?.unavailable ?? null,
+  };
+  const resolvedCli =
+    ownCli.entry === null
+      ? null
+      : await resolveCli({ callerEntry: ownCli.entry, root: config.root });
+  const shimDecision = shimFromResolution(ownCli, resolvedCli);
+  const shim = ensureCliShim(config.root, shimDecision.entry, {
+    execArgs: shimDecision.execArgs,
+    unavailable: shimDecision.unavailable,
     dbPath: config.dbPath,
   });
   if (shim.kind === "written") {
-    // The whole command the shim runs, loader included: which CLI `penguin` is, said once.
+    // The whole command the shim runs, loader included, and the answer it ran under.
     const command = [...shim.execArgs, shim.entry].join(" ");
-    shimLog(`Agent CLI: ${path.join(shim.dir, "penguin")} -> ${command}`);
+    shimLog(
+      `Agent CLI: ${path.join(shim.dir, "penguin")} -> ${command} (${shimDecision.answerName})`,
+    );
   } else if (shim.kind === "stub") {
     shimLog(
       `Agent CLI: this checkout's CLI cannot run, so ${path.join(shim.dir, "penguin")} says why ` +
-        `instead of running another installation's: ${shim.reason}`,
+        `instead of running another installation's: ${shim.detail}`,
     );
   } else if (shim.kind === "absent") {
     shimLog(
       "Agent CLI: no CLI entry found; commands an Agent runs resolve `penguin` on their own PATH.",
     );
   } else {
-    console.warn(`[server] could not write the penguin CLI shim: ${shim.reason}`);
+    console.warn(`[server] could not write the penguin CLI shim: ${shim.detail}`);
   }
 
   // What buildAppDeps claims (see hmr/capabilities.ts) — every entry must be in place before
@@ -331,6 +352,8 @@ export async function bootAppDeps(
   hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
+  const shellFrames = newShellFrames();
+  hmr.resources.register(HMR_SHELL_FRAMES_RESOURCE_ID, shellFrames);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -353,7 +376,10 @@ export async function bootAppDeps(
   // members: the runtime singletons published above, and `tree` — which follows the
   // instance of the moment, so a re-assembly (a plugin change, no push) is never missed.
   // Per-request business dispatch rides the seam.
-  booted = liveTree({ config, db, channels, hmr, control: ctl, desktop, instance }, tree);
+  booted = liveTree(
+    { config, db, channels, hmr, control: ctl, desktop, instance, shellFrames },
+    tree,
+  );
   return booted;
 }
 
@@ -396,9 +422,17 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   const settings = current(() => boot.tree.api<Settings>("SettingsModule", "Settings"));
   const access = current(() => boot.tree.api<Access>("ProjectsModule", "Access"));
   const authService = current(() => boot.tree.api<Auth>("IdentityModule", "Auth"));
+  const http = current(() => boot.tree.api<Partial<Pick<Http, "ownOrigin">>>("ApiModule", "Http"));
+  const ownOrigin = (path: string): boolean => {
+    const surface = http();
+    return typeof surface.ownOrigin === "function"
+      ? surface.ownOrigin(path)
+      : legacyOwnOrigin(path);
+  };
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
+    shellFrames: boot.shellFrames,
     get authService() {
       return authService();
     },
@@ -492,7 +526,10 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
-    const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
+    // An Agent package is uploaded raw, under the package cap rather than the attachment budget.
+    const size = isAgentImport(c.req.method, c.req.path)
+      ? MAX_PACKAGE_BYTES
+      : bodyLimitBytes(settings().getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
         size,
@@ -512,7 +549,10 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     }
     return capped.mw(c, next);
   });
-  app.use("/api/*", sameOriginWrites(originRule(deps.config)));
+  // The route groups that judge their callers' origin themselves are the current generation's
+  // to name (`origin: "own"`, Http.ownOrigin); one pushed before it could name them has the
+  // pairing route exempted by its path, as before (hmr/legacy-browser.ts).
+  app.use("/api/*", sameOriginWrites(originRule(deps.config), ownOrigin));
   app.use("/api/*", jsonOnlyWrites(originRule(deps.config)));
 
   // THE seam: every route is one the platform may take over by push — the upgrade channel
@@ -547,6 +587,7 @@ const CONTENT_TYPES: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json",
+  ".webmanifest": "application/manifest+json",
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -699,6 +740,11 @@ function staticResponse(
     "Cache-Control": cacheControlFor(servedPath),
     ETag: responseEtag,
   };
+  // The page's own policy (@prismshadow/penguin-library-http/page-csp), on HTML only: a header governs the document it
+  // arrives with, and the scripts, stylesheets and fonts are not documents. On the 304 too: a
+  // revalidation updates the stored response's headers, so a shell cached before the policy
+  // existed picks it up without a re-download.
+  if (ext === ".html") headers["Content-Security-Policy"] = WEB_APP_CSP;
   // Announced whenever the answer COULD have varied — on the 304 too, and even when this
   // particular client took no encoding: a shared cache keys on what the header says, so
   // leaving it off is how one client's gzip reaches another that cannot read it.
@@ -724,7 +770,65 @@ function staticResponse(
  * directory on disk. Serves the caching contract above, so pushes take effect
  * on the next navigation and hashed assets stop re-downloading.
  */
+/**
+ * A workbench's full-page route (`/app/<project>/<agent>/<workbench>[/<tabKey>]`) is its own
+ * installable app: served through the SPA fallback (no such file exists), its index.html's
+ * manifest link stops naming the main app's manifest and names the workbench's own — or, when
+ * the route names a tab (a fourth segment), that tab's own manifest: one app per tab, the
+ * launcher opening THAT tab. Null for every other path.
+ */
+function workbenchAppPage(
+  reqPath: string,
+  machineId?: string,
+): {
+  projectId: string;
+  agentId: string;
+  workbenchId: string;
+  tabKey?: string;
+  machineId?: string;
+} | null {
+  const m = /^\/app\/([^/]+)\/([^/]+)\/([^/]+)(?:\/([^/]+))?/.exec(reqPath);
+  if (m === null) return null;
+  return {
+    projectId: m[1]!,
+    agentId: m[2]!,
+    workbenchId: m[3]!,
+    ...(m[4] === undefined ? {} : { tabKey: m[4] }),
+    // The machine rides the query, which the request path does not carry — the caller
+    // reads it off the request and hands it in.
+    ...(machineId === undefined || machineId === "" ? {} : { machineId }),
+  };
+}
+
+/**
+ * index.html served for a workbench's app page, with its manifest link retargeted. The
+ * source link is the template's literal (`href="/manifest.webmanifest"`); when the built
+ * file ever words it differently the page is passed through untouched rather than
+ * half-rewritten. Other pages keep the main app's manifest.
+ */
+function withWorkbenchManifestLink(content: Buffer, reqPath: string, machineId?: string): Buffer {
+  const page = workbenchAppPage(reqPath, machineId);
+  if (page === null) return content;
+  const segments = [page.projectId, page.agentId, page.workbenchId].map(encodeURIComponent);
+  // `tabs/` is a literal, not a segment: only the tab key is encoded. A remote machine's
+  // workbench names the machine in the query — the auth-less gate hops to it.
+  const href =
+    `/api/projects/${segments[0]}/agents/${segments[1]}/workbenches/${segments[2]}` +
+    (page.tabKey === undefined ? "" : `/tabs/${encodeURIComponent(page.tabKey)}`) +
+    "/manifest.webmanifest" +
+    (page.machineId === undefined ? "" : `?machine=${encodeURIComponent(page.machineId)}`);
+  const html = content.toString("utf8");
+  const rewritten = html.replace('href="/manifest.webmanifest"', `href="${href}"`);
+  return rewritten === html ? content : Buffer.from(rewritten, "utf8");
+}
+
 function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<WebSource>): void {
+  // The machine query rides the app page's URL (`/app/...?machine=<id>`) and must reach the
+  // manifest-link rewrite; the request path alone does not carry it.
+  const machineOf = (c: { req: { query(name: string): string | undefined } }) => {
+    const machine = c.req.query("machine");
+    return machine === undefined || machine === "" ? undefined : machine;
+  };
   app.get("*", async (c) => {
     const reqPath = decodeURIComponent(c.req.path);
     if (reqPath.startsWith("/api/")) {
@@ -742,7 +846,11 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
       if (content === undefined) {
         return c.json(errorBody("not_found", "Resource does not exist."), 404);
       }
-      return staticResponse(c, content, servedPath, etagOfBuffer(content));
+      const served =
+        servedPath === "index.html"
+          ? withWorkbenchManifestLink(content, reqPath, machineOf(c))
+          : content;
+      return staticResponse(c, served, servedPath, etagOfBuffer(served));
     }
 
     const webDist = source.dir;
@@ -781,10 +889,21 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
     } catch {
       return c.json(errorBody("not_found", "Resource does not exist."), 404);
     }
-    // A weak size+mtime validator, the classic disk-file shape — hashing every
-    // response would cost more than the 304s save.
-    const etag = `W/"${content.byteLength}-${Math.round(mtimeMs)}"`;
-    return staticResponse(c, content, path.relative(base, file).split(path.sep).join("/"), etag);
+    const served =
+      file === path.join(base, "index.html")
+        ? withWorkbenchManifestLink(content, reqPath, machineOf(c))
+        : content;
+    // A weak size+mtime validator, the classic disk-file shape — hashing every response
+    // would cost more than the 304s save. A rewritten page is where that shape lies: the
+    // rewrite retargets the manifest link per workbench and per tab, so equal-length
+    // rewrites of one file are different representations with the same size and mtime,
+    // and a validator held for one would wrongly 304 the other. Those carry a hash of
+    // the rewritten bytes instead (the same identity the in-memory branch hashes).
+    const etag =
+      served === content
+        ? `W/"${served.byteLength}-${Math.round(mtimeMs)}"`
+        : `W/"${createHash("sha256").update(served).digest("base64url").slice(0, 16)}"`;
+    return staticResponse(c, served, path.relative(base, file).split(path.sep).join("/"), etag);
   });
 }
 

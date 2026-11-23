@@ -15,7 +15,7 @@
  * `data-tab-id`, which is why the strip's node can be shared through `stripRef`.
  */
 import { useEffect, useRef } from "react";
-import type { HTMLAttributes, ReactNode, RefObject } from "react";
+import type { DragEventHandler, HTMLAttributes, ReactNode, RefObject } from "react";
 import { CloseIcon } from "../../icons/marks/marks";
 import { Dot } from "../../icons/dot/dot";
 
@@ -26,6 +26,8 @@ export interface DockTabItem {
   /** The hover hint; the label when omitted. One that says more than the label shows over it in full. */
   title?: string;
   glyph: ReactNode;
+  /** Starts a native drag when the host can move this tab between panes. */
+  onDragStart?: DragEventHandler<HTMLDivElement>;
   /** An attention dot beside the name (a pending approval behind the tab). */
   badge?: boolean;
   /** The ×'s verb: its tooltip, and with the label its accessible name. */
@@ -53,6 +55,8 @@ export function DockTabButton({
 }: DockTabButtonProps) {
   return (
     <div
+      draggable={tab.onDragStart ? true : undefined}
+      onDragStart={tab.onDragStart}
       data-testid="dock-tab"
       data-tab-id={tab.key}
       data-active={active}

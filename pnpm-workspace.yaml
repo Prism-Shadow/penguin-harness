@@ -1,9 +1,15 @@
 packages:
   - "packages/*"
+  # Domain library packages (#255 restack): the contracts and their implementations,
+  # which packages/server imports. One-directional: a library package never imports
+  # the server.
+  - "library/*"
   # Plugin packages a Project asks for (the [plugins] table of its config). They sit at the top
-  # level, outside packages/, because they are not part of the harness: nothing under
-  # packages/ depends on one, and the platform bundle carries none of them — what ships
-  # them is scripts/build-plugins.mjs, which packs each self-contained.
+  # level, outside packages/, because they are not part of the harness: the platform bundle
+  # carries none of their code — what ships a server half is scripts/build-plugins.mjs, which
+  # packs each self-contained. The server, CLI and desktop list the content plugins so their
+  # Skills ship with the build, and the Web App lists the plugins whose web half it compiles in
+  # (packages/web/scripts/gen-web-table.mjs).
   - "plugins/*"
 # Dependency pins. pnpm 11 reads overrides ONLY from here — the package.json
 # "pnpm.overrides" block it used to honour is silently ignored, which resolved a second
@@ -80,6 +86,8 @@ allowBuilds:
   # compile and the prebuilt binding loads fine without it. Deliberately skipped, like
   # electron-winstaller.
   koffi: false
+  # The Agent State plugin stages dugite's pinned binaries when packing its own tarball.
+  dugite: false
   # node-pty compiles its native pty binding (node-gyp) on install; without this the
   # terminal server has no pty and every session fails to spawn.
   node-pty: true
@@ -100,4 +108,4 @@ minimumReleaseAgeExclude:
   - "@deepseek-ai/dsh-session@0.1.0-rc.7"
   - "@deepseek-ai/dsh-timeout@0.1.0-rc.7"
   - "@deepseek-ai/dsh-typert-protocol@0.1.0-rc.7"
-  - "@prismshadow/mmsp@0.5.6"
+  - "@prismshadow/mmsp@0.5.12"

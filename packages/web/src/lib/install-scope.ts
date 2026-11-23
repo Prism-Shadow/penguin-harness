@@ -36,6 +36,7 @@
  * being fixed. The practical consequence, which the changelog states plainly: state that is
  * ALREADY stale when this ships stays stale; only wipes from here on are handled.
  */
+import { forgetCatalogs } from "./catalog-storage";
 import * as api from "../api/endpoints";
 
 /** Where this browser records the data root it last saw. Never swept — it IS the marker. */
@@ -57,7 +58,8 @@ export type KeyScope = "install" | "browser";
 
 /**
  * One classification rule. `kind: "exact"` matches the key itself; `kind: "family"` matches
- * a key prefix that ends in `.` and covers every id-suffixed key under it.
+ * a key prefix that ends in `.` and covers every id-suffixed key under it. Both are in the
+ * `penguin.` namespace, and the types hold that, and a family's trailing `.`, for every rule.
  *
  * Plain prefix matching would be wrong twice over, which is why the distinction exists:
  * `penguin.sidebarCollapsed` (a preference) is a prefix of
@@ -65,9 +67,17 @@ export type KeyScope = "install" | "browser";
  * covers both `penguin.terminal.theme` (a preference) and `penguin.terminal.page.id`
  * (a terminal id).
  */
-export interface KeyRule {
-  kind: "exact" | "family";
-  key: string;
+export type KeyRule =
+  | (KeyRuleScope & { kind: "exact"; key: `${KeyNamespace}.${string}` })
+  | (KeyRuleScope & { kind: "family"; key: `${KeyNamespace}.${string}.` });
+
+/**
+ * The namespace every key is in. Named apart from the dot so the source holds no quoted
+ * `penguin.` of its own, which install-scope.test.ts's key scan would read as a stored key.
+ */
+type KeyNamespace = "penguin";
+
+interface KeyRuleScope {
   scope: KeyScope;
   /** Why this scope — one line, kept next to the rule so the two cannot drift apart. */
   why: string;
@@ -83,10 +93,10 @@ export interface KeyRule {
  * fails on any this table does not cover.
  *
  * Two `penguin.*` strings in the source are NOT here on purpose:
- *   - `penguin.chatRouteApplied.<field>` (features/chat/draft-view.tsx) is `sessionStorage`,
+ *   - `penguin.chatRouteApplied.<field>` (features/chat/body/draft-view.tsx) is `sessionStorage`,
  *     not `localStorage`: it is scoped to one tab's history and dies with the tab, so it
  *     cannot outlive a data root.
- *   - `penguin.ooo` (the shared UI package's remark-autolink-boundary.ts) is the product's
+ *   - `penguin.ooo` (the shared UI package's site comments, among others) is the product's
  *     domain inside an example URL in a doc comment. It is not a storage key.
  */
 export const KEY_RULES: readonly KeyRule[] = [
@@ -120,6 +130,18 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.themeId",
     scope: "browser",
     why: "Which theme renders the app (the key lives in @prismshadow/penguin-ui/boot); pure appearance.",
+  },
+  {
+    kind: "family",
+    key: "penguin.serverModules.",
+    scope: "install",
+    why: "The plugin server modules this server ran when this browser last asked, per account (web-app/running-modules.ts); they are this data root's plugins, so another root's list is stale.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.themePacks",
+    scope: "install",
+    why: "The server's imported theme packs as this browser last read them (the boot script links one); they live in the data root, so another root's list is stale.",
   },
   {
     kind: "exact",
@@ -159,6 +181,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.activityDisplayMode",
+    scope: "browser",
+    why: "How this browser displays thinking and tool steps.",
+  },
+  {
+    kind: "exact",
     key: "penguin.toolAliases",
     scope: "browser",
     why: "Whether tool cards name the built-in tools by their short alias; a display choice of this browser, naming nothing on the server.",
@@ -183,6 +211,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.sidebarWidth",
+    scope: "browser",
+    why: "How wide the sidebar was dragged, in px; the same chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
     key: "penguin.panelWidth",
     scope: "browser",
     why: "Side-panel width in px; its own module calls it a layout preference, not session data.",
@@ -198,6 +232,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.dock.launcherHidden",
     scope: "browser",
     why: "Whether the floating dock launcher shows at all; an appearance choice of this browser, and losing it would put a dismissed button back.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.workbench.exitBall",
+    scope: "browser",
+    why: "Where the full-page workbench's exit ball rests and whether it is tucked away; this browser's layout, naming nothing on the server.",
   },
   {
     kind: "exact",
@@ -231,15 +271,9 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
-    key: "penguin.sidebarNavGroupCollapsed",
+    key: "penguin.sidebarApps.folded",
     scope: "browser",
-    why: "Whether the static page-nav group is folded; the nav is built from a compile-time manifest.",
-  },
-  {
-    kind: "exact",
-    key: "penguin.sidebarNavPinned",
-    scope: "browser",
-    why: "Which nav entries stay out of the fold; keyed by the compile-time manifest, names nothing on the server.",
+    why: "Whether the sidebar's app group is folded; one flag for every Agent, names nothing on the server.",
   },
   {
     kind: "exact",
@@ -267,9 +301,27 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
-    key: "penguin.pluginsGroupsFolded",
+    key: "penguin.pluginsLayout",
     scope: "browser",
-    why: "Which of the Plugins page's sections are folded, keyed by grouping and category, status or contents id; those ids ship with the build and name nothing on the server.",
+    why: "The chosen plugin catalog view, cards or list, applies across projects and installations.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.pluginsSort",
+    scope: "browser",
+    why: "How the Plugins page orders its cards (selected first, recently updated, most used, name) — the MODE, valid against any root.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.agentsGroupBy",
+    scope: "browser",
+    why: "How the Agents page groups its list (by author or not at all) — the MODE, valid against any root.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.agentsGroupsFolded",
+    scope: "browser",
+    why: "Which of the Agents page's author sections are folded, by author value (user, agent, company); those values ship with the build and name nothing on the server.",
   },
   {
     kind: "exact",
@@ -329,9 +381,21 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.catalog.",
+    scope: "install",
+    why: "What each machine last answered the App Center (sessionStorage, lib/catalog-storage.ts): it names that machine's Agents and apps, so a sweep forgets the tab's copies too (forgetCatalogs).",
+  },
+  {
+    kind: "family",
     key: "penguin.machineSessions.",
     scope: "install",
     why: "The Sessions each machine was last seen holding, shown until its connection is held again. Project id and machine id in the key, Session ids in the value — a new root knows none of them.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.modelOnboardingDismissed",
+    scope: "install",
+    why: "The Projects whose first-run model guide was closed in this browser — Project ids of this root.",
   },
   {
     kind: "exact",
@@ -398,6 +462,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.a2uiDraft.",
     scope: "install",
     why: "A reply's A2UI form or multi-select answers in progress, keyed by Session id: a new root has no such Session.",
+  },
+  {
+    kind: "family",
+    key: "penguin.promptModes.",
+    scope: "install",
+    why: "The composer switches a Session has on (hook package names), keyed by user and Session id: a new root has no such Session.",
   },
   {
     kind: "exact",
@@ -609,7 +679,10 @@ export function reconcileInstallScope(
   if (stored === installId) return "unchanged";
 
   const swept = stored !== null;
-  if (swept) sweep(storage);
+  if (swept) {
+    sweep(storage);
+    forgetCatalogs(() => true);
+  }
   try {
     storage.setItem(INSTALL_ID_KEY, installId);
   } catch {
@@ -713,6 +786,7 @@ export function reactToInstallIdChange(
   if (change.oldValue === null || change.newValue === null) return false;
   if (change.oldValue === change.newValue) return false;
   sweep(storage);
+  forgetCatalogs(() => true);
   return true;
 }
 

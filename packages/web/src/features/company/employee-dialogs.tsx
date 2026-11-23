@@ -19,8 +19,8 @@
  * session pins only that session, which then no longer follows the config; the dialog says so
  * when the current desk is pinned.
  */
-import { useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+
 import type {
   AgentModelConfigDto,
   OrgEmployeeItem,
@@ -29,12 +29,10 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
-  buttonClass,
   ConfirmModal,
   FieldError,
   FieldLabel,
   FormPicker,
-  HiddenFileInput,
   ICONS,
   Input,
   Modal,
@@ -43,7 +41,6 @@ import {
   Select,
   Textarea,
   discardUnsaved,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -52,24 +49,22 @@ import {
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import {
-  avatarDataUrlFromImage,
-  loadAvatarImage,
-  releaseAvatarImage,
-} from "../../lib/avatar-image";
-import type { AvatarCrop } from "../../lib/avatar-image";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
-import { SkillPickList } from "../skills/skill-pick-list";
-import type { PickableItem } from "../skills/skill-pick-list";
-import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { StdioDisclosure } from "../plugins/plugin-mcp";
-import { stdioServers } from "../plugins/plugin-status";
+import { AvatarPicker } from "../../components/ui/avatar-picker";
+import {
+  SkillPickList,
+  addSkillNames,
+  removeSkillNames,
+  toggleSkillName,
+  type PickableItem,
+} from "../skills";
+
+import { StdioDisclosure, stdioServers } from "../plugins";
 import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
@@ -79,7 +74,9 @@ import {
   SELECTABLE_THINKING_LEVELS,
   effectiveThinkingLevel,
   thinkingLevelLabel,
-} from "../chat/thinking-level";
+} from "../model-picker";
+import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
 const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"];
@@ -159,13 +156,13 @@ function HireForm({
   onHired,
   library,
 }: Omit<HireDialogProps, "open"> & { library: HirePluginItem[] | null }) {
-  const { agents } = useProject();
+  const { agents, reloadAgents } = useProject();
   const { currency } = useTheme();
   const company = useCompany();
 
-  /** Agents of the Project not yet in the organization. */
+  /** Agents of the Project not yet in the organization; never the system Agent, which takes no work. */
   const employed = new Set(employees.map((e) => e.agentId));
-  const candidates = agents.filter((a) => !employed.has(a.agentId));
+  const candidates = agents.filter((a) => isConversationAgent(a) && !employed.has(a.agentId));
 
   // Where the form opens: an existing Agent when there is one to pick, else a new one.
   const [opening] = useState<HireDraft>(() => ({
@@ -267,12 +264,15 @@ function HireForm({
       // the sidebar's 工位 row carries its real id straight away, rather than a row that
       // cannot be opened or bound until some later event happens to refresh the cache.
       void company.reloadOrgSessions();
+      // The Agent is an employee now (and may be a new one): the Agent list carries every
+      // employment mark the shell shows — the Agents page's delete button among them.
+      void reloadAgents().catch(() => undefined);
       toastSuccess(S.company.chart.hired(hireName));
       setStdioConfirmOpen(false);
       onHired();
     } catch (e) {
       setStdioConfirmOpen(false);
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -572,7 +572,7 @@ export function EmployeeEditDialog({
       },
       (e: unknown) => {
         if (cancelled) return;
-        toastError(apiErrorText(e));
+        toastApiError(e);
         onClose();
       },
     );
@@ -627,7 +627,7 @@ export function EmployeeEditDialog({
       }
       onSaved();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -762,9 +762,10 @@ export function EmployeeEditDialog({
  * and the picture in the organization's `avatars/`. Both are the organization's, not the
  * Agent's — the same Agent may be someone else elsewhere. The picture is written as it is
  * picked (the picker re-encodes it to fit, like a person's own): direct manipulation, with
- * nothing to review first. The name is typed, so it waits for Save, live only while the trimmed
- * name differs from the stored one; closing with an unsaved name asks first, and nothing closes
- * the dialog while a write is in flight.
+ * nothing to review first. Restore default asks first, since it deletes the picture. The name
+ * is typed, so it waits for Save, live only while the trimmed name differs from the stored one;
+ * closing with an unsaved name asks first, and nothing closes the dialog while a write is in
+ * flight.
  */
 interface EmployeeProfileDialogProps {
   open: boolean;
@@ -792,7 +793,7 @@ function EmployeeProfileForm({
   /** The typed name against the stored one; trimmed before comparing, as Save stores it. */
   const form = useFormDraft(employee.givenName ?? "", { normalize: (value) => value.trim() });
   const name = form.draft;
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<ReactNode>(undefined);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
@@ -804,35 +805,10 @@ function EmployeeProfileForm({
       onChanged();
       done?.();
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an employee's profile could not be saved" }));
     } finally {
       setBusy(false);
     }
-  };
-
-  /** The picked image, decoded and waiting for its crop to be chosen. */
-  const [cropping, setCropping] = useState<HTMLImageElement | null>(null);
-  const endCrop = () => {
-    if (cropping !== null) releaseAvatarImage(cropping);
-    setCropping(null);
-  };
-
-  const onPickFile = (e: ChangeEvent<HTMLInputElement>): void => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (file === undefined) return;
-    setError(undefined);
-    loadAvatarImage(file).then(setCropping, () => setError(S.profile.avatarUnreadable));
-  };
-
-  const onCropped = (crop: AvatarCrop) => {
-    const image = cropping;
-    if (image === null) return;
-    void run(async () => {
-      const dataUrl = avatarDataUrlFromImage(image, crop);
-      if (dataUrl === null) throw new Error(S.profile.avatarTooLarge);
-      await api.putOrgEmployeeAvatar(projectId, orgId, employee.agentId, dataUrl);
-    }).finally(endCrop);
   };
 
   const save = () => {
@@ -867,35 +843,17 @@ function EmployeeProfileForm({
     >
       <div className="space-y-3">
         <div className="flex items-center gap-3">
-          <EmployeeAvatar
-            id={employee.agentId}
-            name={employee.name}
-            size={48}
-            className="rounded-lg"
+          <EmployeeAvatar id={employee.agentId} size={48} className="rounded-lg" />
+          <AvatarPicker
+            hasPicture={employee.avatarRev !== undefined}
+            busy={busy}
+            run={(work) => run(work)}
+            save={async (avatar) => {
+              await api.putOrgEmployeeAvatar(projectId, orgId, employee.agentId, avatar);
+            }}
+            onError={(message) => setError(message ?? undefined)}
           />
-          <label
-            className={`shrink-0 ${buttonClass("secondary", "sm")} ${busy ? "pointer-events-none opacity-60" : ""}`}
-          >
-            <HiddenFileInput
-              accept="image/png,image/jpeg,image/webp"
-              disabled={busy}
-              onChange={onPickFile}
-            />
-            {S.profile.changeAvatar}
-          </label>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="shrink-0"
-            disabled={busy || employee.avatarRev === undefined}
-            onClick={() =>
-              void run(() => api.putOrgEmployeeAvatar(projectId, orgId, employee.agentId, null))
-            }
-          >
-            {S.profile.restoreDefault}
-          </Button>
         </div>
-        <AvatarCropDialog image={cropping} busy={busy} onCancel={endCrop} onConfirm={onCropped} />
         <Input
           label={S.company.chart.employeeName}
           size="sm"
@@ -959,7 +917,7 @@ function DeskRenewForm({
   const form = useFormDraft(employee.workspace, { normalize: (value) => value.trim() });
   const workspace = form.draft;
   /** What the server refused about the workspace; cleared by the next keystroke. */
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<ReactNode>(undefined);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const plan = deskRenewPlan(employee.workspace, workspace);
@@ -981,7 +939,7 @@ function DeskRenewForm({
       setError(
         e instanceof ApiError && e.code === "invalid_workspace"
           ? S.company.chart.workspaceInvalid
-          : apiErrorText(e),
+          : failureNode(e, { what: "an employee's workspace could not be changed" }),
       );
       setBusy(false);
       return;
@@ -994,7 +952,7 @@ function DeskRenewForm({
       discardUnsaved(form.scope);
       onRenewed(desk.sessionId);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       if (patched) onChartChanged();
     } finally {
       setBusy(false);

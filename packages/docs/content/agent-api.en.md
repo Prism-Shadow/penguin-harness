@@ -198,7 +198,7 @@ A request refused before the stream starts gets an HTTP status and one envelope,
 | 413 | `payload_too_large` | The body exceeds the server's request size cap |
 | 415 | `unsupported_media_type` | A write without `Content-Type: application/json` |
 | 429 | `too_many_runs` | The agent has reached its configured concurrency limit; retry after `Retry-After` seconds |
-| 503 | as the server sends it | The server is shutting down, or the agent or conversation is being deleted |
+| 503 | as the server sends it | The server is shutting down, or the agent or conversation is being deleted; through the cookie door, `machine_no_answer` when a machine that could hold the Session did not answer in time (see [Machines](/server-api#machines-admin-only)) |
 
 Once the stream has started, an error is never a separate frame: the records say what happened, and a run the server could not finish leaves its last `task_begin` unclosed before `[DONE]`. See [A run's result](/amsp#a-runs-result) and the codes under [Errors](/amsp#errors).
 

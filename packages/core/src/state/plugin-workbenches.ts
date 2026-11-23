@@ -1,9 +1,10 @@
 /** Workbench payloads use the same plugin install path as Skills; runtime state is never payload. */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { LibraryPlugin } from "../plugins/index.js";
+import type { LibraryPlugin } from "../plugin/library-reader.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
-import { agentDir } from "./paths.js";
+import { workbenchesDir } from "./paths.js";
+import { isWindowsReservedName, WINDOWS_RESERVED_RULE } from "./reserved-names.js";
 
 export interface InstalledWorkbench {
   name: string;
@@ -19,8 +20,6 @@ const safeSource = (rel: string): boolean =>
   !path.isAbsolute(rel) &&
   !rel.includes("\\") &&
   rel.split("/").every((part) => part !== "" && !part.startsWith(".") && part !== "node_modules");
-const baseDir = (root: string, project: string, agent: string) =>
-  path.join(agentDir(root, project, agent), "workbenches");
 async function receipt(dir: string): Promise<Receipt | null> {
   try {
     const data = JSON.parse(await fs.readFile(path.join(dir, receiptFile), "utf8"));
@@ -40,12 +39,20 @@ async function receipt(dir: string): Promise<Receipt | null> {
     throw error;
   }
 }
+/**
+ * The plugin that installed the workbench folder `dir`, from its install receipt; null for a
+ * workbench made in place. The receipt is written by the install, inside the Agent State, which
+ * a sandboxed command cannot write.
+ */
+export async function installedPlugin(dir: string): Promise<string | null> {
+  return (await receipt(dir))?.plugin ?? null;
+}
 export async function listInstalledWorkbenches(
   root: string,
   project: string,
   agent: string,
 ): Promise<InstalledWorkbench[]> {
-  const base = baseDir(root, project, agent);
+  const base = workbenchesDir(root, project, agent);
   let dirs;
   try {
     dirs = await fs.readdir(base, { withFileTypes: true });
@@ -99,7 +106,7 @@ export async function assertPluginWorkbenchesInstallable(
         Object.keys(workbench.files).some((file) => !safeSource(file))
       )
         throw new Error("Invalid workbench payload");
-      const dir = path.join(baseDir(root, project, agent), workbench.name);
+      const dir = path.join(workbenchesDir(root, project, agent), workbench.name);
       const owner = seen.get(workbench.name);
       if (owner && owner !== plugin.name) throw new WorkbenchNameTakenError(workbench.name);
       seen.set(workbench.name, plugin.name);
@@ -107,6 +114,12 @@ export async function assertPluginWorkbenchesInstallable(
         if (error.code === "ENOENT") return null;
         throw error;
       });
+      // A new folder takes no name Windows refuses; one already on disk is updated as it is.
+      if (existing === null && isWindowsReservedName(workbench.name)) {
+        throw new Error(
+          `Invalid workbench name ${JSON.stringify(workbench.name)}: ${WINDOWS_RESERVED_RULE}.`,
+        );
+      }
       if (existing) {
         if (!existing.isDirectory()) throw new WorkbenchNameTakenError(workbench.name);
         const current = await receipt(dir);
@@ -125,7 +138,7 @@ export async function installPluginWorkbenches(
   plugin: LibraryPlugin,
 ): Promise<void> {
   for (const workbench of plugin.workbenches ?? []) {
-    const dir = path.join(baseDir(root, project, agent), workbench.name);
+    const dir = path.join(workbenchesDir(root, project, agent), workbench.name);
     const previous = await receipt(dir);
     await fs.mkdir(dir, { recursive: true });
     // Claim before writing source so a failed first install can be retried. Empty version stays outdated.
@@ -138,6 +151,9 @@ export async function installPluginWorkbenches(
         files: [...new Set([...(previous?.files ?? []), ...Object.keys(workbench.files)])],
       } satisfies Receipt),
     );
+    // A reader can load the new source as soon as it is published. Drop the old authoring
+    // types first so a compile against the previous contract cannot be cached for the new revision.
+    await fs.rm(path.join(dir, ".harness"), { recursive: true, force: true });
     for (const [rel, content] of Object.entries(workbench.files)) {
       // Refuse symlink parents: an editable workbench must not redirect an update outside its folder.
       let parent = dir;
@@ -160,9 +176,6 @@ export async function installPluginWorkbenches(
         await fs.rm(path.join(dir, rel), { force: true });
       }
     }
-    // A library update replaces the authored source, so check it against this host's types
-    // on its next load. Hand-authored workbenches keep their authoring contract unchanged.
-    await fs.rm(path.join(dir, ".harness"), { recursive: true, force: true });
     await atomicWriteFile(
       path.join(dir, receiptFile),
       JSON.stringify({

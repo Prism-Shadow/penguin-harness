@@ -16,8 +16,8 @@
  * list holds. Export is deliberately not here: a Trace is downloaded from the conversation
  * it belongs to, in the chat's Trace panel.
  */
-import { useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
+
 import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
 import {
   HiddenFileInput,
@@ -29,9 +29,10 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Client-side pre-check before reading the picked file (the same cap as the server's import route). */
 const MAX_TRACE_BYTES = 14 * 1024 * 1024;
@@ -90,7 +91,8 @@ export function TraceImportRow() {
     void api
       .listAgents(projectId, null)
       .then((res) => {
-        if (!cancelled) setAgents(res.agents);
+        // The system Agent holds no conversation to import into.
+        if (!cancelled) setAgents(res.agents.filter(isConversationAgent));
       })
       .catch(() => {
         // Unreachable list: the row disables itself rather than offering an empty picker.
@@ -118,7 +120,7 @@ export function TraceImportRow() {
       toastSuccess(S.settings.importTraceDone(target));
     } catch (e: unknown) {
       // Transient action failure → toast (the app's one notification rule).
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setImporting(false);
     }

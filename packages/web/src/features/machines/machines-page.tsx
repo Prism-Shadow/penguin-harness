@@ -7,9 +7,9 @@
  * program and its data stay on the machine, its host in the ssh config. A connected machine on
  * this server's build also has Sync config, which hands it this Project's config now. The Machine
  * dialog holds every other verb in one toolbar (machine-detail-dialog.tsx): Enable or Update, Stop
- * or Start its server, Restart it, Sync config, Configure SSH, Uninstall. While the server brings a
- * machine back, or after it stopped trying, the card's middle and the dialog show the shared retry
- * status, with its Retry.
+ * or Start its server, Restart it, Sync config, Configure SSH, Reinstall, Uninstall. While the
+ * server brings a machine back, or after it stopped trying, the card's middle and the dialog show
+ * the shared retry status, with its Retry.
  *
  * One card per machine, this server first, then the machines in use by name. A card says the
  * state once, as a labelled pill beside the name with the reason on hover (machine-card.tsx). While machines
@@ -27,7 +27,7 @@
  * The servers are re-probed on a widening schedule (probe-schedule.ts) so a machine that went
  * quiet is noticed without a tap.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import type {
   MachineInfo,
@@ -48,7 +48,6 @@ import {
   PageFrame,
   PageHeader,
   TodoNotice,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -56,7 +55,6 @@ import { useProject } from "../../state/project";
 import { useLocale } from "../../state/locale";
 import { useMachines } from "../../state/machines";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   anyJobPending,
@@ -68,12 +66,14 @@ import {
 } from "./machines-view";
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 import { SshHostDialog } from "./ssh-host-dialog";
-import { AddMachineDialog } from "./add-machine-dialog";
-import type { AddedMachines } from "./add-machine-dialog";
+import { AddMachineDialog, type AddedMachines } from "./add-machine-dialog";
+
 import { MachineCard } from "./machine-card";
-import { MachineDetailDialog } from "./machine-detail-dialog";
-import type { MachineVerb } from "./machine-detail-dialog";
+import { MachineDetailDialog, type MachineVerb } from "./machine-detail-dialog";
+
 import { programDirOf } from "./machine-detail-view";
+import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode, toldNode } from "../../lib/failure";
 
 /** While a job is on its way, the page reads the list this often too: a net under the server's word. */
 const FALLBACK_POLL_MS = 5_000;
@@ -82,14 +82,14 @@ const MONO = "font-mono text-xs tabular-nums";
 
 /**
  * A verb that stops or removes something, waiting on its confirmation: deleting a machine from
- * the Project, stopping its server, uninstalling the program, a forced install (the server there
+ * the Project, stopping its server, uninstalling the program, reinstalling it (the server there
  * restarts), and updating every machine that is behind (each reinstalls and reconnects).
  */
 type PendingVerb =
   | { kind: "delete"; id: string }
   | { kind: "stop"; id: string }
   | { kind: "uninstall"; id: string }
-  | { kind: "replaceProgram"; id: string }
+  | { kind: "reinstall"; id: string }
   | { kind: "updateAll"; ids: string[] };
 
 export function MachinesPage() {
@@ -105,7 +105,7 @@ export function MachinesPage() {
   const state = account.state;
   const { accept, refresh } = account;
   /** What the last request from this page answered with when it failed; the list's own read error otherwise. */
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const shownError = error ?? account.error;
   /** True while a POST has not come back yet. */
   const [posting, setPosting] = useState(false);
@@ -173,7 +173,9 @@ export function MachinesPage() {
       accept(next);
       setError(null);
     } catch (err) {
-      setError(apiErrorText(err));
+      setError(
+        failureNode(err, { what: "the machines could not be probed", mask: { hosts: true } }),
+      );
     }
   }, [projectId, accept]);
 
@@ -209,7 +211,7 @@ export function MachinesPage() {
       setError(null);
       return true;
     } catch (err) {
-      setError(apiErrorText(err));
+      setError(failureNode(err, { mask: { hosts: true } }));
       return false;
     } finally {
       setPosting(false);
@@ -267,12 +269,14 @@ export function MachinesPage() {
       );
     }
   };
-  // The three that stop or remove something — the machine's place in this Project, its server,
-  // its program — are reached only through the confirmation below.
+  // The four that stop, remove or replace something — the machine's place in this Project, its
+  // server, its program, the program installed over itself — are reached only through the
+  // confirmation below.
   const deleteMachine = (id: string) => post((project) => api.stopUsingMachines(project, [id]));
   const stopServer = (id: string) => post((project) => api.stopMachine(project, id));
   const uninstall = (id: string, withData: boolean) =>
     post((project) => api.uninstallMachine(project, id, withData));
+  const reinstall = (id: string) => use([id], true);
   const runPendingVerb = () => {
     const verb = pendingVerb;
     setPendingVerb(null);
@@ -280,7 +284,7 @@ export function MachinesPage() {
     if (verb.kind === "delete") void deleteMachine(verb.id);
     else if (verb.kind === "stop") void stopServer(verb.id);
     else if (verb.kind === "uninstall") void uninstall(verb.id, removeData);
-    else if (verb.kind === "replaceProgram") void use([verb.id], true);
+    else if (verb.kind === "reinstall") void reinstall(verb.id);
     else void use(verb.ids);
   };
   const machineOf = (id: string) => machines.find((machine) => machine.id === id);
@@ -314,11 +318,11 @@ export function MachinesPage() {
           body: c.uninstallBody(programDirOf(machineOf(pendingVerb.id)?.root ?? "")),
           tone: "danger" as const,
         };
-      case "replaceProgram":
+      case "reinstall":
         return {
-          title: S.machines.replaceProgram,
-          label: S.machines.replaceProgram,
-          body: S.machines.replaceProgramConfirm(aliasOf(pendingVerb.id)),
+          title: c.reinstallTitle(aliasOf(pendingVerb.id)),
+          label: S.machines.detail.toolbar.reinstall,
+          body: c.reinstallBody,
           tone: "danger" as const,
         };
       case "updateAll":
@@ -335,7 +339,7 @@ export function MachinesPage() {
     try {
       setHostForm(await api.getSshHost(projectId, alias));
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
     }
   };
   /**
@@ -372,7 +376,7 @@ export function MachinesPage() {
         setRemoveData(false);
         return setPendingVerb({ kind: "uninstall", id: machine.id });
       default:
-        // Stopping its server and a forced install interrupt someone: each waits on its confirmation.
+        // Stopping its server and reinstalling it interrupt someone: each waits on its confirmation.
         return setPendingVerb({ kind: verb, id: machine.id });
     }
   };
@@ -430,7 +434,12 @@ export function MachinesPage() {
         )}
         {image?.kind === "buildFailed" && shownError === null && (
           <NoticeStrip tone="attention" className="mt-4 rounded-md border px-3 py-2 text-sm">
-            <p>{S.machines.checkoutImageFailed}</p>
+            <p>
+              {toldNode(S.machines.checkoutImageFailed, {
+                what: "the image build for a checkout failed",
+                detail: image.detail,
+              })}
+            </p>
             {/* The build's own last lines: where pnpm, vite or the packer said what went wrong. */}
             <pre className={`mt-1 break-words whitespace-pre-wrap ${MONO}`}>{image.detail}</pre>
           </NoticeStrip>
@@ -498,7 +507,7 @@ export function MachinesPage() {
           cancelLabel={S.common.cancel}
         >
           <p className="text-sm font-medium">{verbPrompt.title}</p>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{verbPrompt.body}</p>
+          <p className="mt-1 text-sm text-fg-muted">{verbPrompt.body}</p>
           {/* An uninstall keeps the machine's data unless asked: the box says where it lives. */}
           {pendingVerb.kind === "uninstall" && (
             <Checkbox

@@ -7,11 +7,11 @@
  * mirror standing — the next hydrate reconciles.
  */
 import { useEffect } from "react";
-import { toastError } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { hydrateFromServer, setKeybindingsPersister } from "../../lib/shortcuts/store";
 import { useAuth } from "../../state/auth";
+import { toastApiError } from "../../lib/toast-api-error";
 
 export function ShortcutRuntime() {
   const { user } = useAuth();
@@ -19,7 +19,9 @@ export function ShortcutRuntime() {
   useEffect(() => {
     if (userId === null) return;
     setKeybindingsPersister((doc) => {
-      void api.putPrefs({ keybindings: doc }).catch(() => toastError(S.shortcuts.saveFailed));
+      void api
+        .putPrefs({ keybindings: doc })
+        .catch((err: unknown) => toastApiError(err, { text: S.shortcuts.saveFailed }));
     });
     let cancelled = false;
     void api

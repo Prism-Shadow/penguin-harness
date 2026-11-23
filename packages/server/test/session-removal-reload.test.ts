@@ -5,8 +5,8 @@
 import { expect, it } from "vitest";
 import { Environment, toolCall } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import { openDatabase } from "../src/db/database.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
 import { ChannelHub } from "../src/runtime/channel.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import { SessionManager } from "../src/runtime/session-manager.js";
@@ -118,3 +118,55 @@ it.each(["session", "agent", "project", "shutdown", "task", "reload-failure"] as
     }
   },
 );
+
+it("waits for a retired runtime that finished its child and is already being cleaned up", async () => {
+  const db = openDatabase(":memory:");
+  const sessions = wire(SessionsRepo, { db });
+  const channels = new ChannelHub();
+  const row = sessionRow("session-retired-cleanup");
+  sessions.insert(row);
+  const disposing = gate();
+  const release = gate();
+  let running = true;
+  let cleanups = 0;
+  const manager = new SessionManager({
+    sessions,
+    channels,
+    sources: new SessionSources(),
+    loader: { load: async () => fakeSession(row.sessionId) },
+    recorder: { record: async () => {} },
+    log: () => {},
+  });
+  manager.adopt(
+    row,
+    fakeSession(row.sessionId, {
+      hasRunningBackgroundSubagents: () => running,
+      async dispose() {
+        cleanups++;
+        disposing.resolve();
+        await release.promise;
+      },
+    }),
+  );
+  try {
+    manager.invalidateProjectRuntimes(row.projectId);
+    await manager.preload(row.sessionId);
+    running = false;
+    manager.sweepIdle();
+    await disposing.promise;
+    let removed = false;
+    const removal = Promise.all(manager.beginSessionDeletion(row.sessionId)).then(() => {
+      removed = true;
+    });
+    await Promise.resolve();
+    expect(removed).toBe(false);
+    release.resolve();
+    await removal;
+    expect(cleanups).toBe(1);
+  } finally {
+    release.resolve();
+    await manager.shutdown();
+    channels.dispose();
+    db.close();
+  }
+});

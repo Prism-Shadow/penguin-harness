@@ -7,10 +7,6 @@
 
 [中文版](2026-10-26-cancel-subagents-on-removal.zh.md)
 
-Session, Agent, and Project deletion and server shutdown cancelled live subagent runs before waiting for the main Task's interrupt cleanup. A slow main Task no longer left those children free to finish a tool turn and open another model request during that wait.
+A child whose creation or revival is still pending when its caller is cancelled releases its handle before the tool returns. Removing the parent during startup also prevents the child from starting its first model request.
 
-Environment disposal kept its existing order after the main Task settled. An ordinary Task stop continued to leave background subagents running.
-
-Cancellation during child creation or initial metadata delivery now prevents the child from starting. A credential refresh keeps ownership of the replaced runtime's background work, so later Session, Agent, Project deletion and shutdown still cancel it and wait for cleanup. Failed reloads keep the previous runtime reachable.
-
-Host and model requests that resumed a released child after cancellation or removal released the returned handle before answering, without starting another run.
+When credentials change, a reloaded Session retains ownership of background work started by its previous runtime. Deleting the Session, Agent or Project, or shutting down the server, cancels that work and waits for cleanup. Stopping an ordinary Task leaves its detached children running.

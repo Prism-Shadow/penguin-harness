@@ -2,14 +2,16 @@
  * The Plugins page's pieces, rendered: the header actions with the grouping select, a card's
  * actions by kind and role, a server module's confirm, and the detail dialog's sections by kind.
  *
- * - A member sees the search box and the grouping select, and neither Import plugin nor
- *   Settings; an admin sees, after those two, Import plugin and then Settings, with their words.
+ * - A member sees the search box and the incompatible-only filter, and neither Import plugin nor
+ *   Settings; an admin sees, after those, Import plugin and then Settings, with their words.
+ * - The filter beside the search shows whether the list holds only the incompatible plugins, and
+ *   pressing it asks for the other state.
  * - Choosing a grouping in the header regroups the cards that way.
  * - The grouping select shows the chosen grouping as its own phrase, and keeps an accessible name
  *   for what it groups.
  * - A server module's card offers an admin Install, or Remove once listed, each with its words;
  *   a member gets the card read-only — its status, and no way to change the server.
- * - A library plugin's card offers any member quick start and "manage installs".
+ * - A library plugin's card offers any member quick start and "Install on Agent".
  * - A card names its category, except inside that category's own section; a package an admin
  *   installed on the server says so where a shipped one says "built in".
  * - Export offers a library plugin's package and a server module's on this server, and nothing
@@ -38,8 +40,9 @@
  * - Installing a plugin with a stdio server asks first, and the question shows the command; an
  *   install of several plugins at once (a bulk update, a new Agent's plugins) names each plugin
  *   that runs one, with its commands.
- * - In Manage installs, an Agent whose copy waits for vault values says which; its owner gets
- *   Set up, a member is told the owner sets them. Saving writes the vault with every existing
+ * - In the install flow, an Agent whose copy waits for vault values says which; its owner gets
+ *   Set up, a member is told the owner sets them. Only the owner may uninstall: a member reads
+ *   "Installed" with no Uninstall behind it. Saving writes the vault with every existing
  *   key kept, the new values added, an empty field left out.
  * - While the list holds only the incompatible plugins, the page says so and offers the whole
  *   list back, not Show again; otherwise it counts what this build cannot fully run and offers
@@ -81,9 +84,13 @@ import {
   type PluginGroupBy,
   type PluginRow,
 } from "../src/features/plugins/plugin-groups";
-import { rowTitle, webLink } from "../src/features/plugins/plugin-marks";
+import { PluginStatusMark, rowTitle, webLink } from "../src/features/plugins/plugin-marks";
 import type { PluginStatus } from "../src/features/plugins/plugin-status";
-import { IncompatibleNotice, PluginsHeaderActions } from "../src/features/plugins/plugins-page";
+import {
+  IncompatibleNotice,
+  PluginsHeaderActions,
+  PluginsListControls,
+} from "../src/features/plugins/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { LocaleProvider } from "../src/state/locale";
@@ -123,12 +130,20 @@ const text = (html: string) =>
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ");
 
+/** Every element in a tree of plain elements, depth first, its children (and lists of them) followed. */
+const elements = (node: ReactNode): ReactElement<Record<string, unknown>>[] => {
+  if (Array.isArray(node)) return node.flatMap(elements);
+  if (!isValidElement(node)) return [];
+  const element = node as ReactElement<Record<string, unknown>>;
+  return [element, ...elements(element.props.children as ReactNode)];
+};
+
 type HeaderProps = Parameters<typeof PluginsHeaderActions>[0];
 const headerProps = (overrides: Partial<HeaderProps> = {}): HeaderProps => ({
   query: "",
   onQuery: () => undefined,
-  groupBy: "category",
-  onGroupBy: () => undefined,
+  incompatibleOnly: false,
+  onIncompatibleOnly: () => undefined,
   isAdmin: false,
   machinePicker: null,
   onOpenSettings: () => undefined,
@@ -138,24 +153,45 @@ const headerProps = (overrides: Partial<HeaderProps> = {}): HeaderProps => ({
 const header = (isAdmin: boolean) => inLocale(PluginsHeaderActions, headerProps({ isAdmin }));
 
 describe("the plugins page header", () => {
-  it("offers a member the search box and the grouping select, and neither Import plugin nor Settings", () => {
+  it("offers a member the search box and the filter, and neither Import plugin nor Settings", () => {
     const html = header(false);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
-    expect(buttonText(html, en.plugins.groupByLabel)).toBe(en.plugins.groupBy.category);
+    expect(buttonWords(html)).toContain(en.plugins.incompatibleOnlyFilter);
+    expect(html).not.toContain(`aria-label="${en.plugins.groupByLabel}"`);
     expect(buttonWords(html)).not.toContain(en.plugins.importPlugin);
     expect(buttonWords(html)).not.toContain(en.plugins.openSettings);
   });
 
-  it("offers an admin, after the search box and the grouping select, Import plugin and then Settings", () => {
+  it("offers an admin, after the search box and the filter, Import plugin and then Settings", () => {
     const html = header(true);
     const search = html.indexOf(`aria-label="${en.plugins.searchPlaceholder}"`);
     expect(search).toBeGreaterThanOrEqual(0);
-    expect(html.indexOf(`aria-label="${en.plugins.groupByLabel}"`)).toBeGreaterThan(search);
+    expect(html.indexOf(`aria-label="${en.plugins.filterLabel}"`)).toBeGreaterThan(search);
     expect(buttonWords(html)).toEqual([
-      en.plugins.groupBy.category,
+      en.plugins.incompatibleOnlyFilter,
       en.plugins.importPlugin,
       en.plugins.openSettings,
     ]);
+  });
+
+  it("shows the filter's state and asks for the other one when pressed", () => {
+    for (const on of [false, true]) {
+      const html = inLocale(PluginsHeaderActions, headerProps({ incompatibleOnly: on }));
+      const chip = /<button[^>]*aria-pressed="(true|false)"[^>]*>(.*?)<\/button>/s.exec(html);
+      expect(text(chip?.[2] ?? "").trim()).toBe(en.plugins.incompatibleOnlyFilter);
+      expect(chip?.[1]).toBe(String(on));
+      const asked: boolean[] = [];
+      const tree = PluginsHeaderActions(
+        headerProps({ incompatibleOnly: on, onIncompatibleOnly: (next) => asked.push(next) }),
+      );
+      const group = elements(tree).find((el) => el.props["aria-label"] === en.plugins.filterLabel);
+      const props = group?.props as {
+        onChange: (values: string[]) => void;
+        options: { value: string }[];
+      };
+      props.onChange(on ? [] : [props.options[0]!.value]);
+      expect(asked).toEqual([!on]);
+    }
   });
 });
 
@@ -229,7 +265,6 @@ const card = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardPro
     busy: false,
     blocked: false,
     onQuickStart: () => undefined,
-    onDeletePlugin: () => Promise.resolve(),
     onToggleInstall: () => Promise.resolve(true),
     onUpdateOutdated: () => Promise.resolve(),
     onModuleApply: () => undefined,
@@ -240,20 +275,43 @@ const card = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardPro
   });
 
 describe("a server module's card", () => {
-  it("offers an admin Install, and Remove once it is listed, each with its words", () => {
-    const available = card(moduleRow("none"), true);
-    expect(buttonText(available, `${en.plugins.install} sandbox-bwrap`)).toBe(en.plugins.install);
-    expect(buttonText(available, `${en.plugins.uninstall} sandbox-bwrap`)).toBeUndefined();
-    const listed = card(moduleRow("active"), true);
-    expect(buttonText(listed, `${en.plugins.uninstall} sandbox-bwrap`)).toBe(en.plugins.uninstall);
-    expect(buttonText(listed, `${en.plugins.install} sandbox-bwrap`)).toBeUndefined();
+  const words = en.plugins.installModel;
+  it("offers an admin Install on server for a market package, and leaves uninstalling to the detail", () => {
+    const available = card(moduleRow("none", false), true);
+    expect(buttonText(available, `${words.installServer} sandbox-bwrap`)).toBe(words.installServer);
+    const listed = card(moduleRow("active", false), true);
+    for (const html of [available, listed]) {
+      expect(buttonText(html, `${words.uninstallServer} sandbox-bwrap`)).toBeUndefined();
+    }
+    expect(buttonText(listed, `${words.installServer} sandbox-bwrap`)).toBeUndefined();
   });
 
-  it("shows a member its status and no way to change the server", () => {
+  it("offers an admin enabling a module the build ships, never uninstalling it, and leaves disabling to the detail", () => {
+    const available = card(moduleRow("none"), true);
+    expect(buttonText(available, `${words.enableModule} sandbox-bwrap`)).toBe(words.enableModule);
+    const listed = card(moduleRow("active"), true);
+    expect(buttonText(listed, `${words.disableModule} sandbox-bwrap`)).toBeUndefined();
+    for (const html of [available, listed]) {
+      expect(buttonText(html, `${words.uninstallServer} sandbox-bwrap`)).toBeUndefined();
+      expect(buttonText(html, `${words.installServer} sandbox-bwrap`)).toBeUndefined();
+    }
+  });
+
+  it("holds a member's server control on a market package, saying only an admin changes the server", () => {
+    const html = card(moduleRow("none", false), false);
+    const tag =
+      new RegExp(`<button[^>]*aria-label="${words.installServer} sandbox-bwrap"[^>]*>`).exec(
+        html,
+      )?.[0] ?? "";
+    expect(tag).toContain('disabled=""');
+    expect(tag).toContain(`data-tooltip="${words.adminOnly}"`);
+  });
+
+  it("shows a member its status and no way to change a module the build ships", () => {
     for (const state of ["none", "active"] as const) {
       const html = card(moduleRow(state), false);
-      expect(buttonText(html, `${en.plugins.install} sandbox-bwrap`)).toBeUndefined();
-      expect(buttonText(html, `${en.plugins.uninstall} sandbox-bwrap`)).toBeUndefined();
+      expect(buttonText(html, `${words.enableModule} sandbox-bwrap`)).toBeUndefined();
+      expect(buttonText(html, `${words.disableModule} sandbox-bwrap`)).toBeUndefined();
       expect(text(html)).toContain(
         state === "active" ? en.plugins.status.installed : en.plugins.status.available,
       );
@@ -265,13 +323,87 @@ describe("a server module's card", () => {
 });
 
 describe("a library plugin's card", () => {
-  it("offers any member quick start and managing its installs", () => {
+  it("offers any member quick start and installing it on Agents", () => {
     const html = card(libraryRow, false, { categoryTitle: "Office Productivity" });
-    expect(buttonText(html, `${en.skills.manageInstall} data-analysis`)).toBe(
-      en.skills.manageInstall,
+    expect(buttonText(html, `${en.plugins.installModel.installAgent} data-analysis`)).toBe(
+      en.plugins.installModel.installAgent,
     );
     expect(buttonText(html, `${en.skills.quickInvoke} data-analysis`)).toBe(en.skills.quickInvoke);
     expect(text(html)).toContain("v0.2.13");
+  });
+});
+
+describe("the market’s versioned actions", () => {
+  const current = { marketCard: true, currentAgentId: "alice", showPackageUpdates: true };
+  it("offers a verified package update before applying the new resources to the Agent", () => {
+    const newer = {
+      ...BWRAP,
+      version: "1.1.0",
+      localInstall: { version: "1.0.0", libraryOnly: true, updateAvailable: true },
+    };
+    const row = {
+      ...libraryRow,
+      module: { specifier: newer.name, state: "none" as const, shipped: false, entry: newer },
+    };
+    const html = card(row, true, current);
+    expect(buttonWords(html).slice(-2)).toEqual(["Update to v1.1.0", "Quick start"]);
+    expect(html).toContain('class="showcase-card-version">v1.0.0</span>');
+    expect(html).toContain(en.plugins.quickStartAfterInstall);
+  });
+  it("offers to update a reachable Agent other than the current one", () => {
+    for (const layout of ["cover", "row"] as const) {
+      const usage = { usedBy: ["bob"], behind: ["bob"] };
+      expect(buttonWords(card(libraryRow, true, { ...current, layout, usage })).at(-2)).toBe(
+        en.skills.updateAction,
+      );
+      expect(
+        buttonWords(
+          card(libraryRow, true, { ...current, layout, usage: { ...usage, lastSeen: ["bob"] } }),
+        ).at(-2),
+      ).toBe(en.plugins.marketAgentInstalls(1));
+    }
+  });
+  it("only enables a demo on the Agent that carries it", () => {
+    const installed = new Map([
+      [
+        "alice",
+        { skills: new Map([["data-analysis", "2026.10.04.1"]]), hooks: new Map(), mcp: new Map() },
+      ],
+    ]);
+    const usage = { usedBy: ["alice"], behind: [], lastSeen: [] };
+    const ready = card(libraryRow, false, { ...current, installed, usage });
+    expect(buttonWords(ready).slice(-2)).toEqual(["Installed on 1 Agent", "Quick start"]);
+    expect(ready).toContain(en.plugins.quickStartHint);
+    expect(ready).toContain('class="showcase-card-version">v0.2.13</span>');
+    // Another Agent has it: the count alone, never Install beside it; the demo waits.
+    const other = card(libraryRow, false, { ...current, installed, usage, currentAgentId: "bob" });
+    expect(buttonWords(other).slice(-2)).toEqual(["Installed on 1 Agent", "Quick start"]);
+    expect(other).toContain(en.plugins.quickStartAfterInstall);
+  });
+  it("distinguishes a running server plugin from a shipped or downloaded package", () => {
+    for (const layout of ["row", "cover"] as const) {
+      const props = { ...current, layout };
+      expect(buttonWords(card(moduleRow("active"), true, props)).at(-2)).toBe(
+        "Installed on server",
+      );
+      expect(buttonWords(card(moduleRow("none"), true, props)).at(-2)).toBe("Install");
+      expect(buttonWords(card(libraryRow, true, props)).at(-2)).toBe("Install");
+      const usage = { usedBy: ["alice", "bob"], behind: [], lastSeen: [] };
+      expect(buttonWords(card(libraryRow, true, { ...props, usage })).at(-2)).toBe(
+        "Installed on 2 Agents",
+      );
+    }
+  });
+  it("keeps a workbench with no example readable in both layouts", () => {
+    const row = {
+      ...libraryRow,
+      library: { ...LIBRARY, skills: [], workbenches: [{ name: "slides", version: "1" }] },
+    };
+    for (const layout of ["cover", "row"] as const) {
+      const html = card(row as PluginRow, true, { ...current, layout });
+      expect(html).toContain(en.plugins.noQuickAction);
+      expect(html).toMatch(/<button[^>]*disabled[^>]*aria-label="Quick start/);
+    }
   });
 });
 
@@ -320,10 +452,9 @@ describe("exporting a plugin", () => {
 
 describe("installing a server module", () => {
   it("names it and says it goes on the whole server, then what it costs the runs in progress", () => {
-    const html = text(inLocale(ModuleApplyBody, { install: true, name: "sandbox-bwrap" }));
+    const html = text(inLocale(ModuleApplyBody, { mode: "install", name: "sandbox-bwrap" }));
     const body = html.indexOf(en.plugins.applyConfirmInstallBody("sandbox-bwrap"));
     const cost = html.indexOf(en.plugins.applyConfirmWarning(true));
-    expect(en.plugins.applyConfirmInstallBody("sandbox-bwrap")).toContain("sandbox-bwrap");
     expect(body).toBeGreaterThanOrEqual(0);
     expect(cost).toBeGreaterThan(body);
   });
@@ -338,14 +469,6 @@ describe("the grouping select", () => {
     { id: "sandbox", title: "Agent Sandbox" },
   ];
 
-  /** Every element in a tree of plain elements, depth first, its children (and lists of them) followed. */
-  const elements = (node: ReactNode): ReactElement<Record<string, unknown>>[] => {
-    if (Array.isArray(node)) return node.flatMap(elements);
-    if (!isValidElement(node)) return [];
-    const element = node as ReactElement<Record<string, unknown>>;
-    return [element, ...elements(element.props.children as ReactNode)];
-  };
-
   /** Picks the option showing `words` in the select named `name`, as a reader choosing it would. */
   const choose = (tree: ReactNode, name: string, words: string) => {
     const select = elements(tree).find((el) => el.props["aria-label"] === name);
@@ -358,10 +481,20 @@ describe("the grouping select", () => {
     });
   };
 
-  it("choosing to group by status in the header regroups the cards by status", () => {
+  const controls = (overrides: Partial<Parameters<typeof PluginsListControls>[0]> = {}) => ({
+    groupBy: "category" as PluginGroupBy,
+    onGroupBy: () => undefined,
+    sort: "featured" as const,
+    sorts: ["featured", "recent", "used", "name"] as const,
+    onSort: () => undefined,
+    locale: "en" as const,
+    ...overrides,
+  });
+
+  it("choosing to group by status at the tab row's end regroups the cards by status", () => {
     let chosen: PluginGroupBy = "category";
-    const tree = PluginsHeaderActions(
-      headerProps({
+    const tree = PluginsListControls(
+      controls({
         onGroupBy: (by) => {
           chosen = by;
         },
@@ -375,14 +508,13 @@ describe("the grouping select", () => {
   });
 
   it("shows the chosen grouping as its own phrase, under a name that says what it groups", () => {
-    const html = inLocale(PluginsHeaderActions, headerProps({ groupBy: "status" }));
+    const html = inLocale(PluginsListControls, controls({ groupBy: "status" }));
     expect(buttonText(html, en.plugins.groupByLabel)).toBe(en.plugins.groupBy.status);
   });
 });
 
 const HEAD: PluginDetailHead = {
-  status: "installed",
-  statusHint: "",
+  status: createElement(PluginStatusMark, { status: "installed", hint: "" }),
   categoryTitle: "Agent Sandbox",
   usedBy: null,
 };
@@ -410,7 +542,8 @@ describe("the detail dialog", () => {
     const html = sections(moduleRow("active"), { kind: "text", text: "# Requirements\n\nLinux." });
     expect(html).toContain("Bubblewrap sandbox backend.");
     expect(html).toContain("Requirements");
-    expect(html).toContain(BWRAP.name);
+    // The package name as it reads: the facts row lets a line break after the scope's slash.
+    expect(html.replace(/\/ /g, "/")).toContain(BWRAP.name);
     expect(html).not.toContain(en.plugins.detailFiles);
   });
 
@@ -482,10 +615,14 @@ describe("a plugin's display name", () => {
     expect(onCard).not.toMatch(/\bnotes\b/);
     expect(rowTitle(titled, "en")).toBe("Notes Pro");
     expect(rowTitle(titled, "zh")).toBe("笔记专业版");
-    expect(sections(titled, { kind: "none" })).toContain("@acme/notes");
-    // Without a display name the plugin's name stands, and no package line joins it.
+    // Counted as the name reads: the facts row lets a line break after the scope's slash.
+    const times = (text: string, part: string) => text.replace(/\/ /g, "/").split(part).length - 1;
+    // The package is the line under a display name, and a row of the facts column.
+    expect(times(sections(titled, { kind: "none" }), "@acme/notes")).toBe(2);
+    // Without a display name the plugin's name stands, and no package line joins it: the
+    // package is named in the facts column alone.
     expect(rowTitle(libraryRow, "en")).toBe("data-analysis");
-    expect(sections(libraryRow, { kind: "none" })).not.toContain(LIBRARY.package);
+    expect(times(sections(libraryRow, { kind: "none" }), LIBRARY.package)).toBe(1);
   });
 });
 
@@ -551,7 +688,9 @@ describe("the package's own details in the dialog", () => {
         repository: "javascript:alert(1)",
       },
     });
-    expect(text(html)).toContain("Acme Labs · MIT");
+    // Each in its own row of the facts column, under its label.
+    expect(text(html)).toContain(`${en.plugins.fact.author} Acme Labs`);
+    expect(text(html)).toContain(`${en.plugins.fact.license} MIT`);
     expect(links(html)).toEqual([
       { href: "https://acme.example/notes", name: en.plugins.detailHomepage, apart: true },
     ]);
@@ -565,7 +704,9 @@ describe("the package's own details in the dialog", () => {
       { href: "https://github.com/acme/notes", name: en.plugins.detailRepository, apart: true },
     ]);
     // A server module's come from its index entry; a package with none of them links nowhere.
-    expect(text(details(moduleRow("none", false)))).toContain("Prism Shadow · Apache-2.0");
+    const moduleFacts = text(details(moduleRow("none", false)));
+    expect(moduleFacts).toContain(`${en.plugins.fact.author} Prism Shadow`);
+    expect(moduleFacts).toContain(`${en.plugins.fact.license} Apache-2.0`);
     expect(links(details(libraryRow))).toEqual([]);
   });
 
@@ -664,7 +805,7 @@ describe("a plugin's MCP servers", () => {
     expect(inLocale(StdioDisclosure, { plugins: [LIBRARY] })).toBe("");
   });
 
-  it("names the values an Agent's copy waits for, and offers its owner Set up", () => {
+  it("names the values an Agent's copy waits for, and offers its owner Set up and Uninstall", () => {
     const row = (isOwner: boolean) =>
       inLocale(InstallRow, {
         agentId: "default_agent",
@@ -682,8 +823,14 @@ describe("a plugin's MCP servers", () => {
     expect(owner).toContain(
       `${en.plugins.mcpNeedsSetup(["MAIL_CLIENT_SECRET"])} · ${en.plugins.mcpSetUpWhere}`,
     );
+    expect(buttonText(owner, `${en.skills.uninstall} default_agent`)).toContain(
+      en.skills.uninstall,
+    );
     const member = row(false);
     expect(buttonText(member, `${en.plugins.setUp} default_agent`)).toBeUndefined();
+    // Uninstalling is the owner's alone: a member reads that it is installed and nothing more.
+    expect(buttonText(member, `${en.skills.uninstall} default_agent`)).toBeUndefined();
+    expect(member).toContain(en.skills.installed);
     expect(member).toContain(
       `${en.plugins.mcpNeedsSetup(["MAIL_CLIENT_SECRET"])} · ${en.plugins.mcpSetUpByOwner}`,
     );
@@ -701,35 +848,5 @@ describe("a plugin's MCP servers", () => {
       { key: "MAIL_CLIENT_ID", value: "replaced-id" },
       { key: "MAIL_CLIENT_SECRET", value: "new-secret" },
     ]);
-  });
-});
-
-describe("a shared plugin's accessible removal", () => {
-  const row = (_installed: boolean, shared?: boolean) => {
-    const r = moduleRow("active");
-    if (shared) Object.assign(r.module!, { shared: true, removeBlocked: en.plugins.sharedHint });
-    return card(r, true);
-  };
-  /** The opening tag of the row's Remove button. */
-  const removeButton = (html: string) =>
-    new RegExp(`<button[^>]*aria-label="${en.plugins.uninstall} sandbox-bwrap"[^>]*>`).exec(
-      html,
-    )?.[0] ?? "";
-
-  it("describes a shared row's disabled Remove by its tag and hint", () => {
-    const html = row(true, true);
-    const button = removeButton(html);
-    expect(button).toContain('disabled=""');
-    const ids = /aria-describedby="([^"]+)"/.exec(button)?.[1]?.split(" ") ?? [];
-    const textOf = (id: string) =>
-      new RegExp(`id="${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>([^<]*)<`).exec(html)?.[1];
-    expect(ids.map(textOf)).toEqual([en.plugins.sharedTag, en.plugins.sharedHint]);
-  });
-
-  it("leaves an own row's Remove enabled and undescribed", () => {
-    const button = removeButton(row(true));
-    expect(button).not.toBe("");
-    expect(button).not.toContain('disabled=""');
-    expect(button).not.toContain("aria-describedby");
   });
 });

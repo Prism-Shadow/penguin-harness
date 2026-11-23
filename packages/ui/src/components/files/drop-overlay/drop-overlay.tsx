@@ -12,7 +12,8 @@
  * real element underneath (which is how a folder row can be the one the files land in), and
  * `aria-hidden` — it exists only during a pointer drag, and the accessible way in is the region's
  * own upload control. It is positioned `absolute inset-0`, so its region is its nearest
- * positioned ancestor, and it fades in once when it appears.
+ * positioned ancestor. Place it directly in the target so its corner radii follow the target's.
+ * Its own paint is clipped there, leaving the target's focus, menus and handles unrestricted.
  */
 import { ICON_SIZE } from "../../../icon-scale";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
@@ -36,7 +37,8 @@ export function DropOverlay({ variant = "veil", title, description, glyph }: Dro
     return (
       <div
         aria-hidden
-        className="anim-fade pointer-events-none absolute inset-0 z-20 flex items-end justify-center p-3"
+        className="anim-fade pointer-events-none absolute inset-0 z-raised rounded-[inherit] flex items-end justify-center p-3"
+        data-clip-surface=""
       >
         <div className="absolute inset-1 rounded-lg border-2 border-dashed border-fg-subtle bg-canvas/40" />
         <div className="relative flex items-center gap-2 rounded-md border border-line-emphasis bg-surface/95 px-3 py-1.5 text-xs font-medium text-fg shadow-sm">
@@ -49,7 +51,8 @@ export function DropOverlay({ variant = "veil", title, description, glyph }: Dro
   return (
     <div
       aria-hidden
-      className="anim-fade pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-canvas/70 p-6"
+      className="anim-fade pointer-events-none absolute inset-0 z-window-overlay rounded-[inherit] flex items-center justify-center bg-canvas/70 p-6"
+      data-clip-surface=""
     >
       <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-fg-subtle bg-surface/80 px-10 py-8 text-center">
         <GlyphIcon d={glyph} size={VEIL_GLYPH_PX} className="text-fg-subtle" />

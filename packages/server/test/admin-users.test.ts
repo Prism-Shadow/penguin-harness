@@ -58,7 +58,7 @@ describe("admin users backend", () => {
 
   it("default Project id taken: account creation fails and rolls back the user", async () => {
     // Occupy the frank-default_project directory (simulating CLI creation; no Web-side user can construct another's prefix).
-    await fs.mkdir(path.join(t.root, "frank-default_project"), { recursive: true });
+    await fs.mkdir(path.join(t.root, "projects", "frank-default_project"), { recursive: true });
     const res = await admin.post("/api/admin/users", { userId: "frank", password: "password-123" });
     expect(res.status).toBe(409);
     // The user row has been rolled back: frank is absent from the list and cannot log in.
@@ -135,8 +135,10 @@ describe("admin users backend", () => {
     // Both the DB row and the directory for the owned Project are gone.
     const rows = t.deps.db.prepare("SELECT project_id FROM projects ORDER BY project_id").all();
     expect(rows.map((r) => r.project_id)).toEqual(["default_project"]);
-    await expect(fs.access(path.join(t.root, "gone-default_project"))).rejects.toThrow();
-    await expect(fs.access(path.join(t.root, "gone-extra"))).rejects.toThrow();
+    await expect(
+      fs.access(path.join(t.root, "projects", "gone-default_project")),
+    ).rejects.toThrow();
+    await expect(fs.access(path.join(t.root, "projects", "gone-extra"))).rejects.toThrow();
 
     // The membership on default_project has been cascade-cleared.
     const members = (await (

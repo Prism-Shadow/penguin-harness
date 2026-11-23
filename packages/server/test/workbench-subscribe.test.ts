@@ -15,7 +15,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agentDir } from "@prismshadow/penguin-core";
+import { agentStateDir } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 import { readAmsp } from "@prismshadow/amsp";
 import type { AmspRecord } from "@prismshadow/amsp";
@@ -33,7 +33,7 @@ const A = "default_agent";
 const BASE = `/api/projects/${P}/agents/${A}/workbenches`;
 const HOST_KEY = "@prismshadow/penguin-server#WorkbenchHost";
 const MAIN_KEY = "@prismshadow/penguin-server#WorkbenchMain";
-const RECORD_KEY = "@prismshadow/penguin-server#WorkbenchRecord";
+const RECORD_KEY = "@prismshadow/penguin-library-workbench#WorkbenchRecord";
 
 const PACKAGE = JSON.stringify({
   name: "Follow",
@@ -136,7 +136,7 @@ describe("WorkbenchHost.subscribe", { timeout: 30_000 }, () => {
   const lines: string[] = [];
 
   const writeWorkbench = async (id: string, source: string) => {
-    const dir = path.join(agentDir(t.root, P, A), "workbenches", id);
+    const dir = path.join(agentStateDir(t.root, P, A), "workbenches", id);
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "package.json"), PACKAGE);
     await fs.writeFile(path.join(dir, "index.ts"), source);
@@ -248,7 +248,9 @@ describe("WorkbenchHost.subscribe", { timeout: 30_000 }, () => {
     const table = JSON.parse(await fs.readFile(tableFile, "utf8")) as IfaceTable;
     expect(table.ifaces[HOST_KEY]!.methods).toHaveProperty("subscribe");
     delete table.ifaces[HOST_KEY]!.methods["subscribe"];
+    expect(table.types).toHaveProperty(RECORD_KEY);
     delete table.types[RECORD_KEY];
+    expect(table.types).not.toHaveProperty(RECORD_KEY);
     await fs.writeFile(tableFile, JSON.stringify(table));
     const typesFile = path.join(dir, ".harness", "plugin.d.ts");
     const types = (await fs.readFile(typesFile, "utf8"))

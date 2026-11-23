@@ -17,7 +17,8 @@
  *   a subagent records decides it.
  * - Given a run with a compaction and a subagent, `text` is the main Session's answers without
  *   the summary or the child's, `usage` counts every request the child's included, and
- *   `sessionUsage` is the main Session's last count.
+ *   `sessionUsage` is the main Session's last count; the compaction's own requests (a tool round,
+ *   then the summary's) are no Requests of the run.
  * - Given a Request cut off at its output cap and retried, and one interrupted, `text` keeps only
  *   the completed Request's answer, though the others' texts have their records.
  *
@@ -339,10 +340,15 @@ describe("a run", () => {
         usage(counts(2, 20), counts(2, 20), child),
         requestEnd("completed", {}, child),
         compactionBegin(),
+        requestBegin(),
+        assistantText("Writing the plan first."),
+        requestEnd(),
+        requestBegin(),
         partialText("start"),
         partialText("delta", "summary"),
         assistantText("summary"),
         usage(counts(4, 40), counts(7, 70)),
+        requestEnd(),
         compactionEnd(),
         requestBegin(),
         assistantText("Second."),

@@ -48,26 +48,61 @@ case "$cmd" in
       sed -i "s/export const BUILD_COMMIT: string | null = [^;]*/export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"/" packages/core/src/index.ts
       grep -Fq "export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"" packages/core/src/index.ts
     fi
+    # The plugins that carry their own version (scripts/lib/own-version-plugins.mjs) keep the one
+    # their package.json was committed with; every other plugin takes the tag's.
+    OWN="$(node scripts/lib/own-version-plugins.mjs)"
     for dir in plugins/*/; do
+      name="$(node -p "require('./${dir}package.json').name")"
+      if printf '%s\n' "$OWN" | grep -qxF -- "$name"; then
+        echo "$name keeps its own version"
+        continue
+      fi
       (cd "$dir" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
     done
-    for p in amsp core server cli; do
+    for p in amsp a2ui chat-markdown core ui server cli; do
       (cd "packages/$p" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
     done
-    # The server embeds an index of the sandbox backends it ships, each at the version its
-    # package.json carries; those packages were just stamped, so the index follows. Left behind,
-    # the server would advertise a version that was never published.
+    # The server embeds an index of the workspace's server-module plugins (the sandbox backends,
+    # and the market-only ones such as computer-use), each at the version its package.json
+    # carries; those packages were just stamped, so the index follows. Left behind, the server
+    # would advertise a version that was never published. An entry for a package of another
+    # repository (an external built-in plugin, scripts/lib/external-plugins.mjs) keeps the version
+    # that repository released, and a plugin that carries its own version keeps the one its
+    # package.json says (checked here, so the two cannot drift): only the plugins/* packages
+    # stamped above take the tag's version.
     INDEX=packages/server/src/plugin/builtin-index.json
-    sed -i -E "s/(\"version\": \")[^\"]*\"/\1$V\"/" "$INDEX"
     node -e '
-      const [v, file] = process.argv.slice(1);
-      const off = require("./" + file).filter((e) => e.version !== v).map((e) => e.name);
+      const fs = require("fs");
+      const [v, file, ownList] = process.argv.slice(1);
+      const ownVersion = new Set(ownList.split("\n").filter(Boolean));
+      const stamped = new Set();
+      const kept = new Map();
+      for (const dir of fs.readdirSync("plugins")) {
+        let pkg;
+        try { pkg = JSON.parse(fs.readFileSync(`plugins/${dir}/package.json`, "utf8")); } catch { continue; }
+        if (ownVersion.has(pkg.name)) kept.set(pkg.name, pkg.version);
+        else stamped.add(pkg.name);
+      }
+      // Rewritten in place, so the file keeps its formatting: an entry names itself before its version.
+      const text = fs.readFileSync(file, "utf8").replace(
+        /("name": "([^"]+)"[^{}]*?"version": ")[^"]*"/g,
+        (whole, head, name) => (stamped.has(name) ? `${head}${v}"` : whole),
+      );
+      fs.writeFileSync(file, text);
+      const rows = JSON.parse(text);
+      const off = rows.filter((e) => stamped.has(e.name) && e.version !== v).map((e) => e.name);
       if (off.length) { console.error("builtin index not stamped: " + off.join(", ")); process.exit(1); }
-    ' "$V" "$INDEX"
+      const apart = rows
+        .filter((e) => kept.has(e.name) && e.version !== kept.get(e.name))
+        .map((e) => `${e.name} (${e.version}; its package.json says ${kept.get(e.name)})`);
+      if (apart.length) { console.error("builtin index lists another version than the package: " + apart.join(", ")); process.exit(1); }
+    ' "$V" "$INDEX" "$OWN"
     echo "stamped $V"
     ;;
   test)
     pnpm --filter @prismshadow/amsp test
+    pnpm --filter @prismshadow/a2ui test
+    pnpm --filter @prismshadow/chat-markdown test
     pnpm --filter @prismshadow/penguin-core test
     pnpm --filter @prismshadow/penguin-server test
     pnpm --filter @prismshadow/penguin-cli test
@@ -81,6 +116,8 @@ case "$cmd" in
     pnpm --filter @prismshadow/penguin-server gen:ifaces
     pnpm --filter @prismshadow/penguin-server exec vitest run \
       test/plugin-registry.test.ts test/version.test.ts test/deploy-same-build.test.ts
+    # The same for the CLI's table, which its command module imports.
+    pnpm --filter @prismshadow/penguin-cli gen:ifaces
     pnpm --filter @prismshadow/penguin-cli exec vitest run test/version.test.ts
     ;;
   *)

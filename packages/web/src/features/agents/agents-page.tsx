@@ -5,14 +5,17 @@
  * Info column has three lines: title line (small avatar + bold name + agentId); single-line
  * truncated description; and a stats line — icon + number only (Session count / tool count) plus
  * relative time (today/yesterday/n days ago), with meaning folded into the hover title; the
- * tool / skill / hook / memory / vault-key / schedule counts deep-link to the settings page's
- * matching tab (?tab=tools|skills|hooks|memory|vault|schedules) and appear in the settings tabs'
- * order.
+ * tool / skill / hook / workbench / memory / vault-key / schedule counts deep-link to the settings
+ * page's matching tab or Plugins sub-page (?tab=tools|skills|hooks|workbenches|memory|vault|
+ * schedules) and appear in the settings tabs' order. A workbench counts whether or not it is
+ * switched on, as a Skill or a hook package counts whatever its switch says: the count is what
+ * its sub-page lists.
  * A click anywhere on a card's body goes to the Agent's settings page (lib/card-open.ts), and every
  * control inside it acts on its own; the Agent's name is the link to that page, the keyboard's way in.
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
  * header) and "Settings" (goes to settings page) show text labels; "Usage" (deep links via
- * ?agentId= to the usage center) and "Delete" (with confirmation; built-in Agents show a
+ * ?agentId= to the usage center), "Export" (agent-export-dialog.tsx) and "Delete" (with
+ * confirmation; built-in Agents show a
  * non-interactive light gray placeholder with an undeletable tooltip) are square icon buttons
  * (tooltip shows the full name); "Create Agent" (create-agent-dialog.tsx) fills in name +
  * description and picks what the new Agent starts with — plugins from the library (each one's
@@ -30,20 +33,26 @@
  * answered from the first paint, greyed and inert without the plug until it answers in this page
  * load (lib/machine-agent-lists.ts); back on the page later they are live at once.
  *
+ * The list is grouped by who made each Agent unless the reader picks no grouping, a choice this
+ * browser remembers (agent-groups.ts): collapsible sections in the Plugins page's shape, each
+ * card unframed inside its section, employees filed under their author. With no grouping the
+ * list is one column, the organizations' employees in a ruled section after it.
+ *
  * The list is read again after a delete or a kernel update with the old one on screen: the
  * skeleton only stands in while no list of the Project has arrived yet. A delete answers once the
  * Agent has left every list; its files are removed in the background, on a progress card that
  * appears when that takes a while (agent-deletion-progress.ts).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+
 import { Link, useLocation, useNavigate } from "react-router";
-import type { AgentSummary } from "@prismshadow/penguin-server/api";
+import type { AgentAuthor, AgentSummary } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
   Pill,
   Button,
   Card,
+  CollapsibleSection,
   ConfirmModal,
   EmptyState,
   GlyphIcon,
@@ -51,46 +60,64 @@ import {
   ICON_GAP,
   ICON_SIZE,
   Input,
+  NoticeStrip,
   PageFrame,
   PageHeader,
   RuledSection,
+  Select,
   Skeleton,
   SkeletonCard,
+  Waiting,
   Sparkline,
   TodoNotice,
   UpdatePill,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { cardBodyClick } from "../../lib/card-open";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/bulk-update";
+import {
+  useUpdateBadges,
+  dismissTodo,
+  bulkOutcome,
+  failedList,
+  firstFailure,
+  noticeCounts,
+} from "../todos";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { prepareNewChatDraft } from "../chat/new-chat";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { DRAFT_SESSION_ID, prepareNewChatDraft } from "../chat";
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
 import { agentKey, agentSettingsPath } from "../../lib/agent-location";
 import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import type { PlacedAgent } from "../../lib/machine-agent-lists";
 import { toneInk } from "../../lib/tone";
-import { employmentsOf, splitByEmployment } from "./agent-employment";
+import { employmentsOf, splitByEmployment } from "../../lib/agent-employment";
+import { holdsSystemAgentId, isBuiltinAgent, isSystemAgent } from "../../lib/builtin-agents";
+import { useSystemApps } from "../../lib/system-apps";
+import {
+  AGENT_GROUP_BYS,
+  groupByAuthor,
+  initialAgentsGroupBy,
+  initialFoldedAuthors,
+  storeAgentsGroupBy,
+  storeFoldedAuthors,
+  type AgentGroupBy,
+} from "./agent-groups";
 import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
-import { followAgentDeletion } from "./agent-deletion-progress";
+import { AgentExportDialog } from "./agent-export-dialog";
+import { AgentImportDialog } from "./agent-import-dialog";
+import { followAgentDeletion } from "../../lib/agent-deletion-progress";
 import type { PluginPickItem } from "./create-agent-dialog";
-
-/** Built-in Agents; the server also rejects deletion, so no delete entry point is shown here. */
-const BUILTIN_AGENT_IDS = new Set(["default_agent", "penguin_support"]);
+import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** Card button icons (24x24 line path, rendered via GlyphIcon). */
 const CARD_ICONS = {
@@ -144,17 +171,22 @@ export function AgentApiMark({ enabled }: { enabled: boolean }) {
 export function AgentCard({
   onOpen,
   dimmed = false,
+  framed = true,
   children,
 }: {
   /** Enters the Agent's settings page; null for one that cannot be reached right now. */
   onOpen: (() => void) | null;
   /** Greyed: a machine's Agent as last seen, while that machine cannot be asked or has not answered yet. */
   dimmed?: boolean;
+  /** False inside a group's section, which owns the frame: the card is then marked by its hover fill. */
+  framed?: boolean;
   children: ReactNode;
 }) {
   return (
     <Card
       padding="md"
+      framed={framed}
+      data-agent-card=""
       interactive={onOpen !== null}
       className={`flex flex-wrap items-center gap-x-6 gap-y-2 ${dimmed ? "opacity-60" : ""}`}
       {...(onOpen === null ? {} : { onClick: cardBodyClick(onOpen) })}
@@ -183,7 +215,7 @@ export function AgentNameLink({
   onFollow: (() => void) | null;
 }) {
   // min-w-0: a flex child does not shrink below its content by default, and a long name must truncate.
-  const className = "min-w-0 truncate text-base font-bold";
+  const className = "min-w-0 break-words text-base font-bold [overflow-wrap:anywhere]";
   if (onFollow === null) return <span className={className}>{name}</span>;
   return (
     <Link
@@ -202,14 +234,42 @@ export function AgentsPage() {
   const { locale } = useLocale();
   const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
+  const avatarSrc = useAgentAvatarSrc();
+  /** The system apps the viewer sees: the system Agent's card counts them. */
+  const systemAppCount = useSystemApps().length;
+  /**
+   * An Agent of the user's holding the id reserved for the system Agent, which the Project then
+   * lacks: its owner is asked to move it, the only way the system Agent can be added.
+   */
+  const heldSystemId =
+    currentProject?.role === "owner" ? (agents.find(holdsSystemAgentId) ?? null) : null;
   /** Header search, the Models page's shape: name, id and description, case-insensitive. */
   const [query, setQuery] = useState("");
+  /** The header's grouping select and the folded author sections, both remembered per browser. */
+  const [groupBy, setGroupBy] = useState<AgentGroupBy>(() => initialAgentsGroupBy());
+  const [folded, setFolded] = useState<ReadonlySet<AgentAuthor>>(() => initialFoldedAuthors());
+  const chooseGroupBy = (by: AgentGroupBy) => {
+    setGroupBy(by);
+    storeAgentsGroupBy(by);
+  };
+  const toggleFold = (author: AgentAuthor) =>
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(author)) next.delete(author);
+      else next.add(author);
+      storeFoldedAuthors(next);
+      return next;
+    });
   /** The kernel trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
   const kernelTodo = useUpdateBadges().todos.agents;
   /** The bulk kernel update's confirmation is open. */
   const [kernelConfirmOpen, setKernelConfirmOpen] = useState(false);
   const [kernelRunning, setKernelRunning] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  /** The header's "Import agent" dialog. */
+  const [importOpen, setImportOpen] = useState(false);
+  /** The card whose export icon opened the export dialog. */
+  const [exporting, setExporting] = useState<PlacedAgent | null>(null);
   /** The "Create with AI" dialog, a separate surface from the form above: neither path is a step of the other. */
   const [aiOpen, setAiOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -219,7 +279,7 @@ export function AgentsPage() {
    * renders carries no meaning here. `null` until a fetch succeeds.
    */
   const [library, setLibrary] = useState<PluginPickItem[] | null>(null);
-  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [libraryError, setLibraryError] = useState<ReactNode>(null);
   /** In-flight guard for that fetch (StrictMode runs the effect twice), released on failure so reopening retries. */
   const libraryPending = useRef(false);
   /** Open the create dialog. Its form mounts with it, so every opening starts empty. */
@@ -239,7 +299,7 @@ export function AgentsPage() {
       .catch((e: unknown) => {
         // Leave `library` unset and release the guard, so the next open tries again.
         libraryPending.current = false;
-        setLibraryError(apiErrorText(e));
+        setLibraryError(failureNode(e, { what: "the plugin library could not be read" }));
       });
   }, [createOpen, library]);
 
@@ -262,7 +322,7 @@ export function AgentsPage() {
     name: string;
     machine: { machineId: string; label: string } | null;
   } | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<ReactNode>(null);
 
   const projectId = currentProject?.projectId;
   /** Each installed machine's own Agents, mixed into this server's list (lib/machine-agent-lists.ts). */
@@ -328,21 +388,49 @@ export function AgentsPage() {
     [agents, machineLists, matches],
   );
   /**
+   * The system Agent, pinned above the list whichever way it is grouped: no author made it and no
+   * organization employs it, so it is in no group and no group's count. The rest is the list.
+   */
+  const systemRows = useMemo(
+    () => shownAgents.filter((row) => isSystemAgent(row.agent)),
+    [shownAgents],
+  );
+  const listedAgents = useMemo(
+    () => shownAgents.filter((row) => !isSystemAgent(row.agent)),
+    [shownAgents],
+  );
+  /**
    * The list in two sections: the Agents the user works with directly, then the employees of
    * the Project's organizations (agent-employment.ts), a machine's among them. The search box
    * filters both.
    */
-  const sections = useMemo(() => splitByEmployment(shownAgents, (row) => row.agent), [shownAgents]);
+  const sections = useMemo(
+    () => splitByEmployment(listedAgents, (row) => row.agent),
+    [listedAgents],
+  );
+  /** The same Agents by who made them, for the grouping by author: employees go with their author. */
+  const authorGroups = useMemo(
+    () => groupByAuthor(listedAgents, (row) => row.agent),
+    [listedAgents],
+  );
 
   /**
    * Stat icon click: same navigation as the "Settings" button plus `?tab=` so the settings
-   * page lands directly on the matching tab (unknown keys fall back to Overview there, so
-   * "skills" is harmless until the Skills tab ships).
+   * page lands directly on the matching tab — the Skill, hook package and workbench counts on
+   * the Plugins tab's sub-page that lists them.
    */
   const openSettingsTab = (
     agentId: string,
     tab:
-      "overview" | "tools" | "vault" | "schedules" | "skills" | "hooks" | "workbenches" | "memory",
+      | "overview"
+      | "tools"
+      | "vault"
+      | "schedules"
+      | "plugins"
+      | "skills"
+      | "hooks"
+      | "workbenches"
+      | "memory",
     machineId: string | null = null,
   ) => {
     // The current Agent is one of THIS server's: a machine's Agent never becomes it.
@@ -377,7 +465,7 @@ export function AgentsPage() {
       if (machineId !== null) reloadMachine(machineId);
       else await reloadAgents();
     } catch (e) {
-      setDeleteError(apiErrorText(e));
+      setDeleteError(failureNode(e, { what: "an Agent could not be deleted" }));
       // Hired since the list was read: re-read it, so the card moves to the employees and its
       // delete button turns off.
       if (e instanceof ApiError && e.code === "agent_employed") {
@@ -414,9 +502,10 @@ export function AgentsPage() {
     const outcome = bulkOutcome(labels, results);
     if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
     else {
-      toastError(
-        `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
-      );
+      const failure = firstFailure(results);
+      toastApiError(failure, {
+        text: `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(failure)}`,
+      });
     }
     // The gate reads `AgentSummary.kernelOutdated` off the Project's Agent list, so the dot only
     // goes down once that list is re-read. Runs after a partial failure too — some Agent moved.
@@ -426,7 +515,7 @@ export function AgentsPage() {
     try {
       await reloadAgents();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setKernelRunning(false);
       setKernelConfirmOpen(false);
@@ -438,8 +527,13 @@ export function AgentsPage() {
    * Agent — every control then acts on that machine, and while the machine cannot be reached the
    * card is greyed and inert, its controls disabled with the reason — and null for this server's.
    */
-  const renderCard = ({ agent: a, on }: PlacedAgent) => {
-    const builtin = BUILTIN_AGENT_IDS.has(a.agentId);
+  const renderCard = ({ agent: a, on }: PlacedAgent, framed = true) => {
+    const builtin = isBuiltinAgent(a);
+    // The system Agent holds no conversation and no data of its own to export: its card keeps
+    // only its settings, and its words come from the dictionary.
+    const system = isSystemAgent(a);
+    const pluginCount =
+      "pluginCount" in a && typeof a.pluginCount === "number" ? a.pluginCount : undefined;
     const machineId = on?.machine.machineId ?? null;
     /** Whether the server holding the Agent can be acted on right now (this one always can). */
     const reachable = on === null || on.live;
@@ -461,19 +555,15 @@ export function AgentsPage() {
         key={agentKey(machineId, a.agentId)}
         onOpen={reachable ? () => openSettings(a.agentId, machineId) : null}
         dimmed={!reachable}
+        framed={framed}
       >
-        {/* Info column: once it can't fit within 14rem, everything after it
-                    (sparkline/buttons) wraps as a whole. The avatar counts as the first line
-                    (same line as the name); description/stats share the same left edge as the
-                    avatar (the column's left edge) */}
-        <div className="min-w-[14rem] flex-1">
-          {/* Title line: small avatar + name (+ the machine's SSH address) + agentId + version badge */}
-          <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-[1_1_18rem]">
+          <div className="flex min-w-0 items-start gap-2">
             <AgentAvatar
               id={a.agentId}
-              name={agentDisplayName(a)}
               size={18}
               className="shrink-0 rounded"
+              src={avatarSrc(a.agentId, machineId)}
             />
             <AgentNameLink
               agentId={a.agentId}
@@ -487,12 +577,14 @@ export function AgentsPage() {
                     : () => {}
               }
             />
+          </div>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             {/* The machine the Agent lives on, written as a machine's Workspace group writes it;
                 its hint says what that means. A machine out of reach adds the lifted plug, its
                 reason in the hint; one whose list is still being read adds nothing. */}
             {on !== null && (
               <span
-                className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500"
+                className="max-w-full truncate font-mono text-xs normal-case text-fg-subtle"
                 data-tooltip={S.agent.onMachineHint(on.machine.label)}
                 data-tooltip-extra
               >
@@ -511,16 +603,23 @@ export function AgentsPage() {
               </span>
             )}
             <AgentApiMark enabled={a.apiEnabled} />
-            <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
+            <span
+              className="max-w-full truncate font-mono text-xs text-fg-subtle"
+              data-tooltip={a.agentId}
+            >
               {a.agentId}
             </span>
-            <Pill>v{a.version}</Pill>
+            {system ? (
+              <Pill tooltip={S.agent.systemTagHint}>{S.agent.systemTag}</Pill>
+            ) : (
+              <Pill>v{a.version}</Pill>
+            )}
             {/* Kernel-outdated pill: the card the sidebar's Agents dot leads to, so it
                         names the state in words rather than as another bare dot — a capsule in
                         the version badge's own geometry, in the attention tint (behind is
                         unfinished, not failed), opening the settings overview where the update
                         action lives. Not on a card that cannot open it. */}
-            {a.kernelOutdated && reachable && (
+            {a.kernelOutdated && reachable && !system && (
               <UpdatePill onClick={() => openSettingsTab(a.agentId, "overview", machineId)}>
                 {S.agent.kernelUpdateNeeded}
               </UpdatePill>
@@ -528,7 +627,7 @@ export function AgentsPage() {
           </div>
           {/* Description truncated to one line (an empty description still takes up a line, keeping card heights equal) */}
           <p className="mt-1.5 min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
-            {a.description ?? ""}
+            {system ? S.agent.systemDescription : (a.description ?? "")}
           </p>
           {/* An employee's organizations, one line each: the building every company
                       surface wears, then `<organization> · <title>`. */}
@@ -541,29 +640,27 @@ export function AgentsPage() {
               <span className="min-w-0 truncate">{S.agent.employmentLine(e.orgName, e.title)}</span>
             </p>
           ))}
-          {/* Stats on their own line: same color/font size as the description; each
-                      item hugs its content, with spacing left to the container's uniform
-                      gap-x-4; meaning folded into the hover title. Tool/skill/hook/memory/
-                      vault/schedule counts are buttons deep-linking to the matching settings tab,
-                      listed in the settings tabs' order (also for built-in Agents — their
-                      Settings entry point has no gating either); session count and
-                      last-modified stay plain text.
-                      flex-wrap is load-bearing: every item is shrink-0 (a count must not be
-                      cut in half) and the row has no scroll box, so with nowrap the seven
-                      items simply spill past the card's padding once the info column is
-                      narrower than they are — a phone. Wrapping spends a second line instead,
-                      and never triggers where the row already fits. */}
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-            <span
-              className="inline-flex shrink-0 items-center gap-1 tabular-nums"
-              data-tooltip={S.agent.sessionCount(a.sessionCount)}
-            >
-              <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
-              {a.sessionCount}
-            </span>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-subtle">
+            {!system && (
+              <span
+                className="inline-flex shrink-0 items-center gap-1 tabular-nums"
+                data-tooltip={S.agent.sessionCount(a.sessionCount)}
+              >
+                <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
+                {a.sessionCount}
+              </span>
+            )}
             {(
               [
                 ["tools", STAT_ICONS.toolCalls, a.toolCount, S.agent.toolCount(a.toolCount)],
+                [
+                  "plugins",
+                  ICONS.puzzle,
+                  pluginCount ?? "—",
+                  pluginCount === undefined
+                    ? S.agent.pluginCountUnknown
+                    : S.plugins.pluginCount(pluginCount),
+                ],
                 ["skills", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
                 ["hooks", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
                 [
@@ -586,28 +683,43 @@ export function AgentsPage() {
                   S.agent.scheduleCount(a.scheduleCount),
                 ],
               ] as const
-            ).map(([tab, glyph, count, label]) => (
+            )
+              .filter(([tab]) => !system || tab === "skills" || tab === "plugins")
+              .map(([tab, glyph, count, label]) => (
+                <button
+                  key={tab}
+                  type="button"
+                  className={STAT_LINK_CLASS}
+                  disabled={!reachable}
+                  data-tooltip={label}
+                  aria-label={label}
+                  onClick={() => openSettingsTab(a.agentId, tab, machineId)}
+                >
+                  <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
+                  {count}
+                </button>
+              ))}
+            {system ? (
               <button
-                key={tab}
                 type="button"
                 className={STAT_LINK_CLASS}
-                disabled={!reachable}
-                data-tooltip={label}
-                aria-label={label}
-                onClick={() => openSettingsTab(a.agentId, tab, machineId)}
+                aria-label={S.agent.systemAppCount(systemAppCount)}
+                data-tooltip={S.agent.systemAppCount(systemAppCount)}
+                onClick={() => openSettingsTab(a.agentId, "workbenches", machineId)}
               >
-                <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
-                {count}
+                <GlyphIcon d={ICONS.tiles} size={ICON_SIZE.inlineGlyph} />
+                {systemAppCount}
               </button>
-            ))}
-            <span
-              className="inline-flex shrink-0 items-center gap-1"
-              data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
-              data-tooltip-extra={Boolean(a.updatedAt)}
-            >
-              <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
-              {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
-            </span>
+            ) : (
+              <span
+                className="inline-flex shrink-0 items-center gap-1"
+                data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
+                data-tooltip-extra={Boolean(a.updatedAt)}
+              >
+                <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
+                {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
+              </span>
+            )}
           </div>
         </div>
 
@@ -615,28 +727,34 @@ export function AgentsPage() {
                     against zero with a faint fill, in the success ink (an agent in use is a
                     healthy one). Hidden on narrow screens first, giving the horizontal space back
                     to content and buttons. */}
-        <Sparkline
-          values={a.sessionActivity}
-          label={S.agent.activity(a.sessionActivity.length || 30)}
-          area
-          tone="success"
-          width={100}
-          height={30}
-          className="hidden shrink-0 md:block"
-        />
+        {/* None on the system Agent's card: it never holds a conversation, so the line would
+            only ever be flat, and out of step with the other cards' beside its shorter buttons. */}
+        {!system && (
+          <Sparkline
+            values={a.sessionActivity}
+            label={S.agent.activity(a.sessionActivity.length || 30)}
+            area
+            tone="success"
+            width={100}
+            height={30}
+            className="hidden shrink-0 md:block"
+          />
+        )}
 
         {/* Button group to the right of the sparkline: "New Chat" shows text, the rest are square icon buttons (tooltip shows the full name) */}
-        <div className="flex shrink-0 items-center gap-2">
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={!reachable}
-            {...(offReason !== null ? { title: offReason, "data-tooltip-extra": true } : {})}
-            onClick={() => newChat(a.agentId, machineId)}
-          >
-            <GlyphIcon d={CARD_ICONS.newChat} />
-            {S.chat.newSessionMenu}
-          </Button>
+        <div className="flex max-w-full flex-wrap items-center gap-2">
+          {!system && (
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!reachable}
+              {...(offReason !== null ? { title: offReason, "data-tooltip-extra": true } : {})}
+              onClick={() => newChat(a.agentId, machineId)}
+            >
+              <GlyphIcon d={CARD_ICONS.newChat} />
+              {S.chat.newSessionMenu}
+            </Button>
+          )}
           <Button
             size="sm"
             disabled={!reachable}
@@ -647,19 +765,36 @@ export function AgentsPage() {
             {S.common.settings}
           </Button>
           {/* The usage center reads this server's records: a machine's Agent has none here. */}
-          <Button
-            size="icon"
-            title={machineId !== null ? S.agent.usageThisServerOnly : S.nav.usage}
-            aria-label={S.nav.usage}
-            disabled={machineId !== null}
-            onClick={() => navigate(`/usage?agentId=${encodeURIComponent(a.agentId)}`)}
-          >
-            <GlyphIcon
-              d={CARD_ICONS.usage}
-              size={15}
-              className="text-gray-600 dark:text-gray-300"
-            />
-          </Button>
+          {!system && (
+            <Button
+              size="icon"
+              title={machineId !== null ? S.agent.usageThisServerOnly : S.nav.usage}
+              aria-label={S.nav.usage}
+              disabled={machineId !== null}
+              onClick={() => navigate(`/usage?agentId=${encodeURIComponent(a.agentId)}`)}
+            >
+              <GlyphIcon
+                d={CARD_ICONS.usage}
+                size={15}
+                className="text-gray-600 dark:text-gray-300"
+              />
+            </Button>
+          )}
+          {!system && (
+            <Button
+              size="icon"
+              title={offReason ?? S.agent.exportAgent}
+              aria-label={S.agent.exportAgent}
+              disabled={!reachable}
+              onClick={() => setExporting({ agent: a, on })}
+            >
+              <GlyphIcon
+                d={ICONS.download}
+                size={ICON_SIZE.iconButton}
+                className="text-gray-600 dark:text-gray-300"
+              />
+            </Button>
+          )}
           {/* Built-in Agents can't be deleted: shown as a non-button light gray
                       placeholder (no border/background, no hover response, disabled cursor,
                       explained via tooltip); the transparent border keeps the same box size as
@@ -699,6 +834,19 @@ export function AgentsPage() {
     );
   };
 
+  /**
+   * Until the Project has an agent of its own, the list ends in the AI path's call to action: the
+   * built-in default is not one the user set up. Hidden while searching (the list itself is being
+   * filtered).
+   */
+  const firstAgentCall = !searching && agents.every(isBuiltinAgent) && (
+    <EmptyState
+      title={S.agent.firstAgentTitle}
+      description={S.agent.firstAgentDesc}
+      action={<AiCreateButtons size="sm" onAi={() => setAiOpen(true)} onManual={openCreate} />}
+    />
+  );
+
   return (
     <PageFrame>
       {/* The title row and the notice under it share one header block, so the gap below it (to
@@ -711,15 +859,37 @@ export function AgentsPage() {
         title={S.agent.listTitle}
         actions={
           <>
-            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
-              <Input
-                size="sm"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={S.agent.searchPlaceholder}
-              />
+            {/* The search box and the grouping select share a line on a phone, the box taking
+                what the select leaves; the Plugins page header has the same pair. */}
+            <div className="flex min-w-0 basis-full items-center gap-2 sm:basis-auto">
+              <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+                <Input
+                  size="sm"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={S.agent.searchPlaceholder}
+                />
+              </div>
+              <div className="w-40 shrink-0">
+                <Select
+                  size="sm"
+                  aria-label={S.agent.groupByLabel}
+                  value={groupBy}
+                  onChange={(e) => chooseGroupBy(e.target.value as AgentGroupBy)}
+                >
+                  {AGENT_GROUP_BYS.map((by) => (
+                    <option key={by} value={by}>
+                      {S.agent.groupBy[by]}
+                    </option>
+                  ))}
+                </Select>
+              </div>
             </div>
             <AiCreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
+            <Button size="sm" onClick={() => setImportOpen(true)}>
+              <GlyphIcon d={ICONS.upload} />
+              {S.agent.importAgent}
+            </Button>
           </>
         }
       >
@@ -728,6 +898,11 @@ export function AgentsPage() {
             behind the defaults generation — so the line states the upgradable count alone
             rather than padding it with a zero the page has no meaning for. The per-card capsule
             below and the per-Agent update in settings are untouched. */}
+        {heldSystemId !== null && (
+          <NoticeStrip tone="attention" as="p" className="rounded-md border px-3 py-2 text-xs">
+            {S.agent.systemIdHeld(agentDisplayName(heldSystemId))}
+          </NoticeStrip>
+        )}
         {kernelTodo && (
           <TodoNotice
             text={S.todo.changesUpgradable(noticeCounts(kernelTodo).updated)}
@@ -744,7 +919,7 @@ export function AgentsPage() {
         /* Same single-column row styling as the real list (space-y-3 + the card's p-4), with a
            three-line info column plus sparkline/button-group placeholders, so no layout shift
            occurs once the skeleton disappears */
-        <div className="space-y-3">
+        <Waiting className="space-y-3">
           {Array.from({ length: 4 }, (_, i) => (
             <SkeletonCard key={i} className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
               <div className="min-w-[14rem] flex-1">
@@ -756,9 +931,27 @@ export function AgentsPage() {
               <Skeleton className="h-8 w-52" />
             </SkeletonCard>
           ))}
-        </div>
+        </Waiting>
       ) : shownAgents.length === 0 ? (
         <EmptyState title={query.trim() === "" ? S.common.none : S.agent.searchEmpty} />
+      ) : groupBy === "author" ? (
+        /* One collapsible section per author, the Plugins page's grouping: a search opens every
+           section it leaves, since a match folded away would read as a missing one. */
+        <div className="space-y-3">
+          {systemRows.map((row) => renderCard(row))}
+          {authorGroups.map(({ author, items }) => (
+            <CollapsibleSection
+              key={author}
+              title={S.agent.authorGroups[author]}
+              meta={S.agent.agentCount(items.length)}
+              open={searching || !folded.has(author)}
+              onOpenChange={() => toggleFold(author)}
+            >
+              <div className="space-y-2 p-2">{items.map((row) => renderCard(row, false))}</div>
+            </CollapsibleSection>
+          ))}
+          {firstAgentCall}
+        </div>
       ) : (
         /* GitHub-repo-list-style single column: separate cards with row spacing; each row is
            one horizontal band of "info | sparkline | button group", with the info column
@@ -767,28 +960,18 @@ export function AgentsPage() {
            own, shown only when there is one to list. */
         <>
           <div className="space-y-3">
-            {sections.agents.map(renderCard)}
-            {/* Until the Project has an agent of its own, the list ends in the AI path's call to
-              action: the built-in default is not one the user set up. Hidden while searching
-              (the list itself is being filtered). */}
-            {query.trim() === "" && agents.every((a) => BUILTIN_AGENT_IDS.has(a.agentId)) && (
-              <EmptyState
-                title={S.agent.firstAgentTitle}
-                description={S.agent.firstAgentDesc}
-                action={
-                  <AiCreateButtons size="sm" onAi={() => setAiOpen(true)} onManual={openCreate} />
-                }
-              />
-            )}
+            {systemRows.map((row) => renderCard(row))}
+            {sections.agents.map((row) => renderCard(row))}
+            {firstAgentCall}
           </div>
           {sections.employees.length > 0 && (
             <RuledSection
               title={S.agent.employeesSection}
               count={sections.employees.length}
               info={S.agent.employeesSectionInfo}
-              className={sections.agents.length > 0 ? "mt-8" : ""}
+              className={sections.agents.length + systemRows.length > 0 ? "mt-8" : ""}
             >
-              <div className="space-y-3">{sections.employees.map(renderCard)}</div>
+              <div className="space-y-3">{sections.employees.map((row) => renderCard(row))}</div>
             </RuledSection>
           )}
         </>
@@ -803,8 +986,29 @@ export function AgentsPage() {
           .filter((list) => list.machine.link === "connected")
           .map((list) => ({ value: list.machine.machineId, label: list.machine.label }))}
         onClose={() => setCreateOpen(false)}
+        onImport={() => {
+          setCreateOpen(false);
+          setImportOpen(true);
+        }}
         onCreated={onCreated}
       />
+
+      {projectId && importOpen && (
+        <AgentImportDialog
+          projectId={projectId}
+          machineId={null}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
+      {projectId && exporting !== null && (
+        <AgentExportDialog
+          projectId={projectId}
+          agentId={exporting.agent.agentId}
+          agentName={agentDisplayName(exporting.agent)}
+          machineId={exporting.on?.machine.machineId ?? null}
+          onClose={() => setExporting(null)}
+        />
+      )}
 
       {/* The AI path, its own dialog rather than a mode of the form above: the draft plus the
           fixed tail lands in a new conversation with the Project's default agent, which runs the

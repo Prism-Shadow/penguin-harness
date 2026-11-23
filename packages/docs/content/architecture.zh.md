@@ -95,7 +95,7 @@ CLI 和 Web App 经 HTTP 与 SSE 同 Server 通信。随产品交付的各个应
 | 密钥 | 文件层 | Vault：`agent_state/.vault.toml`；模型凭据：`.project_config.toml`（两者权限均为 0600） |
 | 模型表与默认模型 | 文件层 | `<project>/.project_config.toml` |
 | 运行历史（恢复的唯一事实来源） | 文件层 | `traces/<date>/<session>_<index>.jsonl`，见 [Session 与 Trace](/sessions-and-traces) |
-| Benchmark 题目与分数 | 文件层 | `<project>/benchmarks/<id>/`，见[自我进化](/self-improvement) |
+| Benchmark 题目与分数 | 文件层 | `<project>/agents/system_agent/app/data/benchmark/<id>/`，见[自我进化](/self-improvement) |
 | 快照 | 文件层 | `snapshots/v<version>.tar.gz`；导出/导入服务由 Server 提供 |
 | 流式渲染、审批 UI、图表 | CLI / Web | `cli/src`、`web/src`（纯渲染，不含引擎逻辑） |
 
@@ -104,7 +104,7 @@ CLI 和 Web App 经 HTTP 与 SSE 同 Server 通信。随产品交付的各个应
 
 ## 状态层
 
-引擎之下是纯文件的状态层。数据根目录为 `~/.penguin/data`（可用 `PENGUIN_HOME` 修改），按 `<project>/agents/<agent>/` 组织：
+引擎之下是纯文件的状态层。数据根目录为 `~/.penguin/data`（可用 `PENGUIN_HOME` 修改），按 `projects/<project>/agents/<agent>/` 组织：
 
 | 组件 | 位置 | 内容 |
 | --- | --- | --- |

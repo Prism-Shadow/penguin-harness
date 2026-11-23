@@ -39,8 +39,8 @@ async function writeConfig(value: { plugins?: string[] }, projectId = "p1"): Pro
 
 /** Raw config text, for the malformed cases. */
 async function writeProject(projectId: string, text: string): Promise<void> {
-  await mkdir(path.join(root, projectId), { recursive: true });
-  await writeFile(path.join(root, projectId, PLUGINS_FILE), text, "utf8");
+  await mkdir(path.join(root, "projects", projectId), { recursive: true });
+  await writeFile(path.join(root, "projects", projectId, PLUGINS_FILE), text, "utf8");
 }
 
 /** A plugin module on disk, imported by absolute specifier (the dev-checkout path). */
@@ -105,14 +105,14 @@ describe("plugin list", () => {
     // EPERM, EISDIR, an I/O fault). It is that Project's fault to report (its list view
     // does), not a reason to keep every other Project's deployment from coming up.
     await writeProject("p2", 'models = []\n[plugins]\n"@acme/two" = "*"\n');
-    await mkdir(path.join(root, "p1", PLUGINS_FILE), { recursive: true });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await mkdir(path.join(root, "projects", "p1", PLUGINS_FILE), { recursive: true });
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       await expect(readProjectPluginList(root, "p1")).resolves.toEqual([]);
       expect(await readPluginClosure(root)).toEqual(["@acme/two"]);
-      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/p1: .*could not be read/));
+      expect(err).toHaveBeenCalledWith(expect.stringMatching(/p1: .*could not be read/));
     } finally {
-      warn.mockRestore();
+      err.mockRestore();
     }
   });
 

@@ -3,8 +3,9 @@
  *
  * Types, plus the five decorators — the same ones the harness's own modules are written
  * with (core kernel/decorators.ts: no imports, so a plugin's bundle carries them and
- * nothing else of the SDK) — and `sessionShell`, which a plugin reads from the host's copy
- * (see below). The host that drives a plugin lives in whatever embeds this SDK (for the
+ * nothing else of the SDK) — `sessionShell`, which a plugin reads from the host's copy
+ * (see below), and `atomicWriteFile`, the Harness's state-file writer, which a plugin's bundle
+ * carries (it reaches nothing beyond Node's fs). The host that drives a plugin lives in whatever embeds this SDK (for the
  * harness, `@prismshadow/penguin-server/plugin`); a plugin reaches THAT with `import type`
  * only and stays a self-contained library that happens to satisfy an interface.
  *
@@ -18,6 +19,11 @@
  * of every interface they name. That table IS the module payload: the host reads it
  * without executing the package, and the package's default export names the classes to
  * boot. A package without one ships no modules.
+ *
+ * What a plugin carries for an Agent — Skills, a hook package, MCP servers, Workbench apps —
+ * and its card are declared the same way, as contributions to the five data-only slots of the
+ * plugin library (./library.ts). The library reads them from the table without booting the
+ * module, so a plugin that carries only content has an empty class and no entry at all.
  *
  *   // package.json
  *   "files": ["dist", "ifaces.json"],
@@ -53,9 +59,23 @@ export { Interface } from "../kernel/markers.js";
  * bundler leaves alone and by namespace, because a host core from before this export has none.
  */
 export { sessionShell } from "../environment/tools/command/shell.js";
+/**
+ * The Harness's atomic file writer (temp file beside the target, then rename), for a plugin that
+ * keeps state files of its own. A code plugin bundles what it imports from this subpath, and
+ * this one reaches nothing beyond Node's fs, where the root entry would bring the whole SDK.
+ */
+export { atomicWriteFile } from "../internal/atomic-write.js";
+export type { AtomicWriteOptions } from "../internal/atomic-write.js";
+/**
+ * The id rule (letters, digits, `_` and `-`), for a plugin that checks an id it was handed before
+ * it builds a path from it. Like the writer above it reaches nothing beyond its own file.
+ */
+export { isValidId } from "../state/ids.js";
 
 export type * from "./sandbox.js";
+export type * from "./agent-state.js";
 export type * from "./languages.js";
+export type * from "./library.js";
 
 /**
  * What a plugin package's default export is.

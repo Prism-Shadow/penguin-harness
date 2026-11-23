@@ -29,7 +29,7 @@ import type {
 } from "../../src/api/types.js";
 import { hashPassword } from "../../src/auth/password.js";
 import { userChannelKey } from "../../src/http/routes/events.js";
-import type { Users } from "../../src/mechanisms/identity.js";
+import type { Users } from "@prismshadow/penguin-library-auth";
 import { adoptSession, fakeSession, uniqueSessionId } from "../fixtures/session.js";
 import {
   apiClient,
@@ -43,7 +43,7 @@ import {
   waitFor,
 } from "../helpers.js";
 import type { TestApp } from "../helpers.js";
-import { FakeShell, tab } from "./fake-shell.js";
+import { browserPlugin, FakeShell, tab } from "./plugin.js";
 
 let t: TestApp | null = null;
 afterEach(async () => {
@@ -70,7 +70,7 @@ async function pair(app: TestApp["app"], cookie: string): Promise<BrowserExtensi
 
 describe("a server without the desktop shell", () => {
   it("drives every user's own Chrome, and has no built-in browser to choose", async () => {
-    t = await createTestApp();
+    t = await createTestApp({ plugins: browserPlugin() });
     const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     expect(
       await json<BrowserBackendResponse>(await admin.get("/api/builtin-browser/backend")),
@@ -81,7 +81,7 @@ describe("a server without the desktop shell", () => {
   });
 
   it("says why Chrome cannot be driven: not paired, then not connected, then switched off", async () => {
-    t = await createTestApp();
+    t = await createTestApp({ plugins: browserPlugin() });
     const { cookie } = await provisionUser(t.app, "bob");
     const bob = apiClient(t.app, cookie);
     const reasonOf = async () =>
@@ -111,7 +111,7 @@ describe("a server without the desktop shell", () => {
   });
 
   it("answers the built-in browser's history, import and data with not_supported", async () => {
-    t = await createTestApp();
+    t = await createTestApp({ plugins: browserPlugin() });
     const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     for (const res of [
       await admin.get("/api/builtin-browser/history"),
@@ -128,7 +128,7 @@ describe("a server without the desktop shell", () => {
 describe("the desktop", () => {
   it("starts an admin on the built-in browser, switches them to Chrome, and tells their windows", async () => {
     const shell = new FakeShell();
-    t = await createDesktopApp({ browserShellPort: shell.port });
+    t = await createDesktopApp({ plugins: browserPlugin(shell.port) });
     const events: BuiltinBrowserServerEvent[] = [];
     t.deps.channels
       .get(userChannelKey("admin"))
@@ -161,7 +161,7 @@ describe("the desktop", () => {
 
   it("never lets a member drive the built-in browser", async () => {
     const shell = new FakeShell();
-    t = await createDesktopApp({ browserShellPort: shell.port });
+    t = await createDesktopApp({ plugins: browserPlugin(shell.port) });
     // The desktop manages no accounts, but its data root may hold one `penguin web` created.
     t.deps.tree.api<Users>("IdentityModule", "Users").insert({
       userId: "bob",
@@ -199,7 +199,7 @@ describe("the desktop", () => {
       if (method === "Page.getLayoutMetrics") await gate;
       return {};
     };
-    t = await createDesktopApp({ browserShellPort: shell.port });
+    t = await createDesktopApp({ plugins: browserPlugin(shell.port) });
     const admin = apiClient(t.app, await desktopLoginCookie(t.app));
     await admin.get("/api/builtin-browser/status");
 
@@ -221,7 +221,7 @@ describe("the desktop", () => {
 
 describe("an agent's call", () => {
   it("the API token drives the Chrome of the person who started its session's run, else the Project owner's", async () => {
-    t = await createTestApp();
+    t = await createTestApp({ plugins: browserPlugin() });
     const adminLogin = await loginAdmin(t.app);
     const admin = apiClient(t.app, adminLogin.cookie);
     // The admin's Chrome is paired (not connected); bob, a member of the admin's Project, has none.
@@ -273,7 +273,7 @@ describe("an agent's call", () => {
   });
 
   it("the API token can neither switch backends nor mint a pairing code; nor can a prefs write", async () => {
-    t = await createTestApp();
+    t = await createTestApp({ plugins: browserPlugin() });
     const headers = { authorization: `Bearer ${t.deps.authService.localApiToken()!}` };
     const asAgent = (method: string, path: string, body?: unknown) =>
       t!.app.request(path, {
@@ -294,7 +294,7 @@ describe("an agent's call", () => {
   });
 
   it("a Remote session is the person's sign-in: it switches backends and mints a pairing code", async () => {
-    t = await createTestApp();
+    t = await createTestApp({ plugins: browserPlugin() });
     const remote = apiClient(
       t.app,
       await remoteSessionCookie(t.app, t.deps.authService.localApiToken()!),

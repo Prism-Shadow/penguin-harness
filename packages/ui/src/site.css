@@ -1,8 +1,12 @@
 /** Public-site chrome and content. Import without the application theme or bundled fonts. */
+@import "./layers.css";
 @import "./cursors.css";
 @import "./site-content.css";
 @import "./site-prose.css";
 @import "./components/content/prose/markdown-table.css";
+/* The showcase family's sheet, in Tailwind's `components` layer so a page's utilities beat it; the
+   map onto the sites' palette is below. */
+@import "./components/showcase/showcase.css" layer(components);
 
 /* Pin the public site's scale even inside a gallery previewing another theme or text size.
    Portaled menus carry this scope too, so their typography and colours match the trigger. */
@@ -60,7 +64,7 @@
   .site-ui-header {
     position: sticky;
     top: 0;
-    z-index: 40;
+    z-index: var(--layer-window-overlay);
     border-bottom: 1px solid var(--site-line);
   }
   .site-ui-brand {
@@ -84,7 +88,7 @@
   }
   .site-ui-nav-link {
     position: relative;
-    z-index: 1;
+    z-index: var(--layer-raised);
     flex-shrink: 0;
     padding: 6px 8px;
     border-radius: 6px;
@@ -99,10 +103,20 @@
   .site-ui-nav-link:hover {
     color: var(--site-ink);
   }
-  .site-ui-nav-link[aria-current="page"] {
+  .site-ui-nav-link[aria-current="page"],
+  .site-ui-nav-link[data-current] {
     background: #000;
     color: #fff;
     box-shadow: 0 0 0 1px var(--site-active-line);
+  }
+  /* A group's trigger in the row: the row's link, with a chevron for the menu it opens. */
+  .site-ui-nav-menu {
+    flex-shrink: 0;
+  }
+  .site-ui-nav-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
   }
   .site-ui-highlight {
     position: absolute;
@@ -134,6 +148,22 @@
   }
   .site-ui-mobile-links .site-ui-nav-link:not([aria-current]):hover {
     background: var(--site-hover);
+  }
+  /* A group in the phone menu spans the grid: its name, then its pages set in under it. */
+  .site-ui-mobile-group {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .site-ui-mobile-group-label {
+    grid-column: 1 / -1;
+    padding: 6px 10px 0;
+    color: var(--site-muted);
+    font-size: 12px;
+  }
+  .site-ui-mobile-group .site-ui-nav-link {
+    margin-left: 12px;
   }
   .site-ui-icon-button,
   .site-ui-language-trigger,
@@ -185,7 +215,8 @@
       grid-template-rows: 0fr;
     }
   }
-  @media (min-width: 768px) {
+  /* The link row needs the room of all its entries; below it the menu button carries them. */
+  @media (min-width: 1024px) {
     .site-ui-desktop-links {
       display: flex;
     }
@@ -195,6 +226,54 @@
   }
 }
 
+/* The showcase family (components/showcase/showcase.css) on the sites' own palette: the same
+   cover cards, selected carousel and product page as the Web App's plugin market, mapped here
+   once. Scoped under `.site-ui` and unlayered, so in the gallery it outranks the application
+   theme's map. */
+.site-ui .showcase,
+.site-ui.showcase {
+  --showcase-surface: var(--site-surface);
+  --showcase-surface-muted: var(--site-hover);
+  --showcase-line: var(--site-line);
+  --showcase-line-muted: var(--site-line);
+  --showcase-line-strong: var(--site-gray-400);
+  --showcase-line-w: 1px;
+  --showcase-fg: var(--site-ink);
+  --showcase-fg-muted: var(--site-muted);
+  --showcase-accent: var(--site-accent);
+  --showcase-radius: 12px;
+  --showcase-radius-sm: 8px;
+  --showcase-text-sm: 0.875rem;
+  --showcase-text-xs: 0.75rem;
+  --showcase-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --showcase-dur: var(--site-dur-fast);
+  --showcase-hue-blue: #2f6bd8;
+  --showcase-hue-violet: #6d4fd8;
+  --showcase-hue-pink: #c2417f;
+  --showcase-hue-red: #c8453c;
+  --showcase-hue-orange: #c2601f;
+  --showcase-hue-amber: #a87400;
+  --showcase-hue-green: #2f8552;
+  --showcase-hue-teal: #1f857c;
+  --showcase-hue-slate: #5f6b78;
+  --showcase-field-mix: 12%;
+}
+:root.dark .site-ui .showcase,
+:root.dark .site-ui.showcase {
+  --showcase-surface-muted: #242424;
+  --showcase-line-strong: var(--site-gray-600);
+  --showcase-hue-blue: #8fb0ec;
+  --showcase-hue-violet: #b49ae9;
+  --showcase-hue-pink: #ee8fbc;
+  --showcase-hue-red: #ff8a7a;
+  --showcase-hue-orange: #ef9a6a;
+  --showcase-hue-amber: #e3ad4f;
+  --showcase-hue-green: #7fc193;
+  --showcase-hue-teal: #6cc5b8;
+  --showcase-hue-slate: #a7b2bf;
+  --showcase-field-mix: 20%;
+}
+
 /* Public chrome keeps the same appearance while the gallery changes application themes.
    These surface rules outrank the application's ui-glass theme hook. */
 .site-ui-header.ui-glass {
@@ -202,7 +281,8 @@
   backdrop-filter: blur(8px);
   border-color: var(--site-line);
 }
-.site-ui-language-panel {
+.site-ui-language-panel,
+.site-ui-nav-menu-panel {
   width: 144px;
   border: 1px solid var(--site-line);
   border-radius: 8px;
@@ -210,6 +290,20 @@
   box-shadow:
     0 10px 15px -3px rgb(0 0 0 / 0.1),
     0 4px 6px -4px rgb(0 0 0 / 0.1);
+  backdrop-filter: none;
+  animation: none;
+}
+.site-ui-menu-panel {
+  width: 16rem;
+  padding: 6px;
+  border: 1px solid var(--site-line);
+  border-radius: 8px;
+  background: var(--site-surface);
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.1),
+    0 4px 6px -4px rgb(0 0 0 / 0.1);
+  font-size: 14px;
+  line-height: 20px;
   backdrop-filter: none;
   animation: none;
 }
@@ -224,6 +318,31 @@
 }
 .site-ui-language-check {
   color: var(--site-accent);
+}
+/* A group's menu, as wide as its longest page. */
+.site-ui-nav-menu-panel {
+  width: auto;
+  min-width: 144px;
+}
+.site-ui-nav-menu-item {
+  display: block;
+  padding: 6px 12px;
+  color: var(--site-ink);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: default;
+  transition: background-color var(--site-dur-fast) ease-out;
+}
+.site-ui-nav-menu-item:hover,
+.site-ui-nav-menu-item[aria-current="page"] {
+  background: var(--site-pill);
+}
+.site-ui-nav-menu-item[aria-current="page"] {
+  font-weight: 500;
+}
+/* Inset, so the panel's own clipping does not cut the ring off. */
+.site-ui .site-ui-nav-menu-item:focus-visible {
+  outline-offset: -3px;
 }
 .site-ui .ui-glyph > [data-set] {
   display: none;

@@ -28,7 +28,7 @@
  * functions of their props; the dialog around them holds the state, reads the hosts' lines once
  * when it opens, and makes the requests.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   MachinesResponse,
   MachinesUseResponse,
@@ -46,9 +46,7 @@ import {
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { ADD_TABS, addPlan, hostRows } from "./add-machine-view";
-import type { AddTab, HostRow } from "./add-machine-view";
+import { ADD_TABS, addPlan, hostRows, type AddTab, type HostRow } from "./add-machine-view";
 import { highlightSegments } from "./machines-match";
 import {
   HostFields,
@@ -59,8 +57,12 @@ import {
   normalizeHostForm,
   shownErrors,
   validateHostForm,
+  type HostErrors,
+  type HostField,
+  type HostForm,
+  type SignIn,
 } from "./ssh-host-dialog";
-import type { HostErrors, HostField, HostForm, SignIn } from "./ssh-host-dialog";
+import { failureNode } from "../../lib/failure";
 
 export interface AddMachineBodyProps {
   tab: AddTab;
@@ -80,7 +82,7 @@ export interface AddMachineBodyProps {
   onField: (field: HostField, value: string) => void;
   onSignIn: (signIn: SignIn) => void;
   /** Why the last Add did not go through, when the server said so; null otherwise. */
-  error: string | null;
+  error: ReactNode;
 }
 
 /**
@@ -243,7 +245,7 @@ export function AddMachineDialog({
   /** What the server refused, under its field (the name, the password); cleared on the next edit. */
   const [refused, setRefused] = useState<{ field: HostField; text: string } | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   // The host this dialog wrote into the ssh config, when what followed failed: a second Add
   // rewrites that block with the form as it now stands instead of refusing the name it wrote.
   const [written, setWritten] = useState<string | null>(null);
@@ -326,7 +328,7 @@ export function AddMachineDialog({
       ) {
         setRefused({ field: "password", text: hostErrorText(err) });
       } else {
-        setError(apiErrorText(err));
+        setError(failureNode(err, { mask: { hosts: true } }));
       }
     } finally {
       setBusy(false);

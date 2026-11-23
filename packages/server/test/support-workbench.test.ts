@@ -1,5 +1,6 @@
 /**
- * Given a fresh default Project, its support Agent contributes a working tab without setup.
+ * Given a fresh default Project, its support Agent contributes a working tab without setup, and
+ * the workbench is on the Project's App Center with its icon.
  * Given persisted in-progress tickets after a restart, GET reconciles final answers once and stops
  * following their Sessions; failed/foreign jobs never receive an older or another Project's
  * answer. Reload preserves the ticket history.
@@ -17,13 +18,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
+import type { IconRef } from "../src/api/types.js";
 import { WorkbenchService } from "../src/workbenches/service.js";
-import { apiClient, createTestApp, loginAdmin, writeTraceFile, type TestApp } from "./helpers.js";
+import {
+  apiClient,
+  createTestApp,
+  loginAdmin,
+  provisionUser,
+  restartTestApp,
+  writeTraceFile,
+  type TestApp,
+} from "./helpers.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { MOCK_MODEL_ID, startMockLLM, type MockLLM } from "./live-session.js";
 const BASE = "/api/projects/default_project/agents/penguin_support/workbenches/support";
 const HOST_KEY = "@prismshadow/penguin-server#WorkbenchHost";
-const RECORD_KEY = "@prismshadow/penguin-server#WorkbenchRecord";
+const RECORD_KEY = "@prismshadow/penguin-library-workbench#WorkbenchRecord";
 const message = (role: string, text: string): AmspRecord =>
   ({
     timestamp: "2026-10-14T00:00:00Z",
@@ -52,13 +62,45 @@ interface Ticket {
   error: string | null;
   stopped?: boolean;
 }
+it("lets only the owner remove the preset Support Agent and keeps it removed after restart", async () => {
+  let app = await createTestApp({ durableDatabase: true });
+  const base = "/api/projects/default_project/agents";
+  try {
+    const owner = apiClient(app.app, (await loginAdmin(app.app)).cookie);
+    const member = apiClient(app.app, (await provisionUser(app.app, "teammate")).cookie);
+    expect(
+      (await owner.post("/api/projects/default_project/members", { userId: "teammate" })).status,
+    ).toBe(201);
+    expect((await member.delete(`${base}/penguin_support`)).status).toBe(403);
+    for (const id of ["default_agent", "system_agent"]) {
+      expect((await owner.delete(`${base}/${id}`)).status).toBe(409);
+    }
+    expect((await owner.delete(`${base}/penguin_support`)).status).toBe(202);
+    app = await restartTestApp(app);
+    const restarted = apiClient(app.app, (await loginAdmin(app.app)).cookie);
+    const list = (await (await restarted.get(base)).json()) as { agents: { agentId: string }[] };
+    expect(list.agents.map((a) => a.agentId)).not.toContain("penguin_support");
+    expect((await restarted.get(BASE)).status).toBe(404);
+    expect(
+      await fs
+        .stat(path.join(app.root, "projects/default_project/agents/penguin_support"))
+        .catch(() => null),
+    ).toBeNull();
+  } finally {
+    await app.cleanup();
+  }
+}, 30000);
+
 describe("built-in support workbench", { timeout: 30000 }, () => {
   let t: TestApp, admin: ReturnType<typeof apiClient>;
   const ids = [uniqueSessionId(), uniqueSessionId(), uniqueSessionId()];
   beforeAll(async () => {
     t = await createTestApp({
       beforeSeed: async (root) => {
-        const dir = path.join(root, "default_project/agents/penguin_support/workbenches/support");
+        const dir = path.join(
+          root,
+          "projects/default_project/agents/penguin_support/agent_state/workbenches/support",
+        );
         await fs.mkdir(dir, { recursive: true });
         await fs.writeFile(
           path.join(dir, "state.json"),
@@ -110,9 +152,21 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     expect(body.workbenches[0]?.error).toBeNull();
     expect(body.workbenches[0]?.tabs.map((t) => t.key)).toEqual(["support"]);
     expect((await admin.get(`${BASE}/ui/index.html`)).status).toBe(200);
-    expect(
-      (await admin.delete("/api/projects/default_project/agents/penguin_support")).status,
-    ).toBe(409);
+    // It is on the default Project's App Center from the start, with an icon that is served.
+    const center = (await (await admin.get("/api/projects/default_project/app-center")).json()) as {
+      shortcuts: Array<{ agentId: string; workbenchId: string; icon?: IconRef; path: string }>;
+    };
+    const tile = center.shortcuts.find((s) => s.agentId === "penguin_support");
+    expect(tile).toMatchObject({
+      workbenchId: "support",
+      path: "/app/default_project/penguin_support/support",
+    });
+    // An image from the icon route, never the file under ui/ served as a page of this origin.
+    expect(tile!.icon!.url).toMatch(new RegExp(`^${BASE}/app-center/icon\\?rev=[0-9a-f]+$`));
+    const icon = await admin.get(tile!.icon!.url);
+    expect(icon.status).toBe(200);
+    expect(icon.headers.get("content-type")).toBe("image/svg+xml");
+    expect(icon.headers.get("content-security-policy")).toContain("sandbox");
   });
   it("recovers persisted jobs once and keeps failures isolated across reloads", async () => {
     // Loading the workbench followed the Sessions its state says are running; the restart ended
@@ -186,7 +240,10 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     expect(await list.json()).toMatchObject({
       workbenches: [{ error: null, tabs: [{ key: "support" }] }],
     });
-    const disk = path.join(t.root, "default_project/agents/plugin_support/workbenches/support");
+    const disk = path.join(
+      t.root,
+      "projects/default_project/agents/plugin_support/agent_state/workbenches/support",
+    );
     const state = JSON.stringify({
       tickets: [{ id: "saved", title: "Keep", status: "resolved", messages: [] }],
     });
@@ -204,7 +261,21 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     await fs.writeFile(path.join(disk, "ui/app.js"), "local edit");
     const reload = await admin.post(`${agent}/workbenches/support/reload`);
     expect(await reload.json()).toMatchObject({ workbench: { error: null } });
-    expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(201);
+    // A list request can compile the current revision while the update is in progress.
+    // Let it do so with the old types still present, as a file watcher can on a slower disk.
+    const originalRm = fs.rm.bind(fs);
+    const rm = vi.spyOn(fs, "rm").mockImplementation(async (target, options) => {
+      if (target === path.join(disk, ".harness")) await admin.get(`${agent}/workbenches`);
+      await originalRm(target, options);
+    });
+    try {
+      expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(
+        201,
+      );
+    } finally {
+      rm.mockRestore();
+    }
+
     expect(await (await admin.get(`${agent}/workbenches`)).json()).toMatchObject({
       workbenches: [{ error: null }],
     });
@@ -217,7 +288,10 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
   it("refuses a conflicting workbench without installing the support Skill", async () => {
     const agent = "/api/projects/default_project/agents/conflict_support";
     await admin.post("/api/projects/default_project/agents", { agentId: "conflict_support" });
-    const dir = path.join(t.root, "default_project/agents/conflict_support/workbenches/support");
+    const dir = path.join(
+      t.root,
+      "projects/default_project/agents/conflict_support/agent_state/workbenches/support",
+    );
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "package.json"), "{}");
     expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(409);
@@ -230,7 +304,11 @@ describe("support workbench following a question live", { timeout: 30000 }, () =
   /** When set, the model holds its next answer until this settles. */
   let hold: Promise<void> | undefined;
   const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-  const dir = () => path.join(t.root, "default_project/agents/penguin_support/workbenches/support");
+  const dir = () =>
+    path.join(
+      t.root,
+      "projects/default_project/agents/penguin_support/agent_state/workbenches/support",
+    );
   /** The ticket as saved on disk, never read through GET. */
   const saved = async (id: string) =>
     (
@@ -326,7 +404,9 @@ describe("support workbench following a question live", { timeout: 30000 }, () =
       const tableFile = path.join(dir(), ".harness/ifaces.json");
       const table = JSON.parse(await fs.readFile(tableFile, "utf8")) as IfaceTable;
       delete table.ifaces[HOST_KEY]!.methods["subscribe"];
+      expect(table.types).toHaveProperty(RECORD_KEY);
       delete table.types[RECORD_KEY];
+      expect(table.types).not.toHaveProperty(RECORD_KEY);
       await fs.writeFile(tableFile, JSON.stringify(table));
       const typesFile = path.join(dir(), ".harness/plugin.d.ts");
       const types = (await fs.readFile(typesFile, "utf8"))

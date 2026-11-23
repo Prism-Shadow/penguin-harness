@@ -190,6 +190,7 @@ export function createSubagentTool(
         // Yielding metadata lets the host begin removal before this run has started.
         if (signal?.aborted || manager.isDisposed) {
           session.kill();
+          await session.whenSettled();
           return { status: "aborted" };
         }
         session.startRun([userText(prompt, "parent_agent")]);

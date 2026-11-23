@@ -22,8 +22,18 @@
  *   Premiere's timeline navigator. Scroll-wheel zoom is deliberately
  *   unsupported — to avoid accidentally changing zoom while scrolling the page.
  */
-import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import {
+  Fragment,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
+
 import type {
   TraceModelSegment,
   TraceOtherSpan,
@@ -41,8 +51,7 @@ import {
 import type { ChartPaint, LegendItem } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
-import { packToolLanes, toolSpanBounds } from "./lane-packing";
-import type { PackedLane } from "./lane-packing";
+import { packToolLanes, toolSpanBounds, type PackedLane } from "./lane-packing";
 
 /**
  * Linked highlighting: `ts` is the anchor shared by both sides; `key` /

@@ -10,7 +10,8 @@
  * reproduction of a trademark); ModelScope uses its official pixel mark flattened to currentColor; vLLM uses
  * its official mark from the
  * project's media kit, its two brand colours flattened to currentColor like
- * Qwen's gradient; OpenCode Go uses the pixel "G" of its "go" wordmark, as OpenCode's
+ * Qwen's gradient; Runcrate uses the `>_` prompt of its app icon, traced from the brand PNG
+ * with the tile dropped; OpenCode Go uses the pixel "G" of its "go" wordmark, as OpenCode's
  * own model registry (models.dev) publishes it for the group; custom models use a generic
  * cube. All are pure paths, no external image assets.
  *
@@ -96,8 +97,46 @@ const GLYPHS: Record<string, Glyph> = {
   // Atlas Cloud has no published vector mark, so this is a simplified geometric
   // approximation (twin peaks, echoing "Atlas") in the same spirit as Z.AI's glyph above,
   // not a reproduction of a trademark.
+  jellytoken: {
+    // The symbol from JellyToken's official header, with its two pink fills rendered as tints.
+    viewBox: "0 0 40 40",
+    path: (
+      <>
+        <path
+          opacity="0.1"
+          d="M12.44,3.42C7.16,2.75,2.68,7.3,3.44,12.57L4.35,18.85C4.46,19.61,4.46,20.39,4.35,21.15L3.44,27.43C2.68,32.7,7.16,37.25,12.44,36.58L21.05,35.48C21.83,35.38,22.62,35.4,23.4,35.53L26.88,36.11C32.27,37,36.97,32.4,36.19,27L35.34,21.15C35.23,20.39,35.23,19.61,35.34,18.85L36.19,13C36.97,7.6,32.27,3,26.88,3.89L23.4,4.47C22.62,4.6,21.83,4.62,21.05,4.52L12.44,3.42Z"
+        />
+        <path
+          fillRule="evenodd"
+          d="M3.02,20.96Q3.16,20,3.02,19.04L2.11,12.76Q1.45,8.15,4.72,4.82Q7.99,1.5,12.61,2.09L21.22,3.19Q22.2,3.31,23.18,3.15L26.66,2.57Q31.37,1.78,34.79,5.12Q38.2,8.46,37.52,13.19L36.67,19.04Q36.53,20,36.67,20.96L37.52,26.81Q38.2,31.54,34.79,34.88Q31.37,38.22,26.66,37.43L23.18,36.85Q22.2,36.69,21.22,36.81L12.61,37.91Q7.99,38.5,4.72,35.18Q1.45,31.85,2.11,27.24L3.02,20.96ZM5.68,21.34L4.77,27.62Q4.3,30.92,6.63,33.29Q8.97,35.67,12.27,35.24L20.88,34.15Q22.25,33.97,23.62,34.2L27.1,34.78Q30.47,35.34,32.91,32.95Q35.35,30.57,34.86,27.19L34.01,21.34Q33.82,20,34.01,18.66L34.86,12.81Q35.35,9.43,32.91,7.05Q30.47,4.66,27.1,5.22L23.62,5.8Q22.25,6.03,20.88,5.85L12.27,4.76Q8.97,4.33,6.63,6.71Q4.3,9.08,4.77,12.38L5.68,18.66Q5.87,20,5.68,21.34Z"
+        />
+        <path
+          opacity="0.35"
+          d="M13.55,7.58C10.03,7.15,7.07,10.18,7.58,13.68L8.38,19.23C8.45,19.74,8.45,20.26,8.38,20.77L7.58,26.32C7.07,29.82,10.03,32.85,13.55,32.42L21.43,31.46C21.96,31.39,22.49,31.4,23.02,31.5L25.81,31.99C29.41,32.62,32.58,29.55,32.06,25.93L31.32,20.77C31.24,20.26,31.24,19.74,31.32,19.23L32.06,14.07C32.58,10.45,29.41,7.38,25.81,8.01L23.02,8.5C22.49,8.59,21.96,8.61,21.43,8.54L13.55,7.58Z"
+        />
+        <path
+          fillRule="evenodd"
+          d="M15.04 14.75a2.19 3.6 0 1 0 0 7.2 2.19 3.6 0 1 0 0-7.2Zm10.13 0a2.19 3.6 0 1 0 0 7.2 2.19 3.6 0 1 0 0-7.2ZM27.39,25.85C27.48,25.69,27.52,25.51,27.52,25.33C27.52,24.71,27.02,24.2,26.4,24.2C25.98,24.2,25.6,24.43,25.4,24.8Q24.8,25.93,23.92,26.28Q22.99,26.64,21.6,26.25C21.5,26.22,21.4,26.2,21.29,26.2C20.67,26.2,20.17,26.71,20.17,27.33C20.17,27.83,20.5,28.27,20.98,28.41Q23.11,29.01,24.74,28.38Q26.4,27.72,27.39,25.85Z"
+        />
+      </>
+    ),
+  },
   atlascloud: {
     path: <path d="M2 19 8 7l4 7 3-5 7 10Z" />,
+  },
+  runcrate: {
+    // Runcrate publishes its mark only as a raster app icon: a `>_` prompt on a blue tile.
+    // The prompt is traced from that PNG (the chevron's round caps and outer join, the
+    // underscore's soft corners) with the tile and its colours dropped, like TokenDance's
+    // backdrop below. The viewBox is cropped to the ink, so at 1.43:1 it letterboxes top and
+    // bottom in a square box, as the other wide marks do.
+    viewBox: "0 0 13.35 9.35",
+    path: (
+      <>
+        <path d="M1.45.25 5.2 4a.85.85 0 0 1 0 1.2L1.45 8.95a.85.85 0 0 1-1.2-1.2L3.4 4.6.25 1.45a.85.85 0 0 1 1.2-1.2Z" />
+        <path d="M6.35 7.75h6.5a.5.5 0 0 1 .5.5v.6a.5.5 0 0 1-.5.5h-6.5a.5.5 0 0 1-.5-.5v-.6a.5.5 0 0 1 .5-.5Z" />
+      </>
+    ),
   },
   tokendance: {
     // The official TokenDance mark, taken from the brand SVG with its black rounded-square

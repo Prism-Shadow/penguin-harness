@@ -1,13 +1,20 @@
 {
   "name": "@penguinharness/use-bento-slides",
-  "version": "0.2.18",
-  "description": "Create and edit Bento presentations — self-contained .bento.html decks whose document is JSON. Use whenever the user wants a slide deck or presentation: from scratch, from source material, or by improving an existing file.",
+  "version": "0.2.25",
+  "description": "Bento slide decks: the Slides workbench, where you edit a deck while the Agent edits the same deck and both sides' edits are kept, and a Skill that authors decks there or as self-contained .bento.html files.",
   "keywords": [
     "penguin-plugin",
     "penguinharness",
-    "skills"
+    "skills",
+    "workbench",
+    "slides",
+    "presentation"
   ],
   "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
@@ -16,31 +23,22 @@
   "files": [
     "icon.svg",
     "skills",
+    "workbenches",
     "hooks",
-    "LICENSE"
+    "ifaces.json",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md",
+    "README.zh.md"
   ],
   "publishConfig": {
     "access": "public"
   },
-  "penguin": {
-    "short_description": "Author Bento slide decks.",
-    "short_description_zh": "制作 Bento 幻灯片。",
-    "category": "office-productivity",
-    "icon": "icon.svg",
-    "quick_start": {
-      "prompt": "Make a three-slide Bento deck in this Workspace introducing PenguinHarness: a title slide, what it does, and how to get started.",
-      "prompt_zh": "在当前工作区做一份三页的 Bento 幻灯片介绍 PenguinHarness：标题页、它能做什么、如何上手。",
-      "skills": [
-        "bento-slides"
-      ]
-    },
-    "title": "Bento Slides",
-    "title_zh": "Bento 幻灯片"
-  },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
   },
   "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/skills": "workspace:*",
     "vitest": "^4.1.12"
   }

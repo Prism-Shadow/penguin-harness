@@ -6,8 +6,8 @@
  *
  * - A folder link in a repository opens a draft, to the Project's default Agent, whose prompt
  *   names the link and asks for the package at a pinned 40-hex commit, imported into this Project
- *   by copying its manifest and cases to the Project directory, recording the git origin and
- *   starting an empty scoreboard, in either language.
+ *   by copying its manifest and cases to the Benchmark folder the server named, recording the git
+ *   origin and starting an empty scoreboard, in either language.
  * - The draft goes to the first Agent when the Project has no default_agent; with no Agent, or no
  *   source, there is nothing to open.
  * - A local path and a description get leads of their own, and the same tail.
@@ -26,6 +26,8 @@ import { en } from "../src/lib/strings-en";
 const FOLDER =
   "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-sec-a";
 
+const BENCHMARKS = "/data/projects/proj_1/agents/system_agent/app/data/benchmark";
+
 const agent = (agentId: string) => ({ agentId, name: agentId }) as AgentSummary;
 const AGENTS = [agent("report_writer"), agent("default_agent")];
 
@@ -38,7 +40,7 @@ const CONTRACT = [
   "40",
   'status = "published"',
   "`proj_1`",
-  "`<app_data_dir>/benchmarks/<id>/`",
+  "`/data/projects/proj_1/agents/system_agent/app/data/benchmark/<id>/`",
   "`[origin]`",
   "`imported_at`",
   "scoreboard.yaml",
@@ -54,7 +56,7 @@ describe("importing a Benchmark through an Agent", () => {
   it("drafts to the default Agent a prompt that names the folder and pins it to a commit, in either language", () => {
     for (const dict of [zh, en]) {
       setActiveStrings(dict);
-      const request = benchmarkImportChat(`  ${FOLDER}\n`, "proj_1", AGENTS);
+      const request = benchmarkImportChat(`  ${FOLDER}\n`, "proj_1", BENCHMARKS, AGENTS);
 
       expect(request?.agentId).toBe("default_agent");
       const draft = buildAiDraft({}, request!);
@@ -68,11 +70,11 @@ describe("importing a Benchmark through an Agent", () => {
   });
 
   it("drafts to the first Agent when the Project has no default_agent, and opens nothing without an Agent or a source", () => {
-    expect(benchmarkImportChat(FOLDER, "proj_1", [agent("report_writer")])?.agentId).toBe(
-      "report_writer",
-    );
-    expect(benchmarkImportChat(FOLDER, "proj_1", [])).toBeNull();
-    expect(benchmarkImportChat("   ", "proj_1", AGENTS)).toBeNull();
+    expect(
+      benchmarkImportChat(FOLDER, "proj_1", BENCHMARKS, [agent("report_writer")])?.agentId,
+    ).toBe("report_writer");
+    expect(benchmarkImportChat(FOLDER, "proj_1", BENCHMARKS, [])).toBeNull();
+    expect(benchmarkImportChat("   ", "proj_1", BENCHMARKS, AGENTS)).toBeNull();
   });
 
   it.each([
@@ -84,8 +86,8 @@ describe("importing a Benchmark through an Agent", () => {
     ["the Terminal-Bench subset from the benchmark repository", "reference"],
   ] as const)("leads %s as a %s, before the same tail", (source, kind) => {
     expect(classifyBenchmarkSource(source)).toBe(kind);
-    const prompt = buildBenchmarkImportPrompt(source, "proj_1");
+    const prompt = buildBenchmarkImportPrompt(source, "proj_1", BENCHMARKS);
     expect(prompt.startsWith(zh.benchmark.importPromptLead[kind](source))).toBe(true);
-    expect(prompt.endsWith(zh.benchmark.importPromptTail("proj_1"))).toBe(true);
+    expect(prompt.endsWith(zh.benchmark.importPromptTail("proj_1", BENCHMARKS))).toBe(true);
   });
 });

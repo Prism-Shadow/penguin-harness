@@ -6,6 +6,27 @@
  *   - Session-level: /api/sessions/:sessionId/* (no projectId; looks up project_id via the
  *     sessions index, then goes through requireProjectAccess; 404 if the index has no such Session).
  */
+import type {
+  SessionCategory,
+  TraceIndex,
+  TraceIndexStore,
+  Traces,
+} from "@prismshadow/penguin-library-trace";
+import type {
+  ApprovalMode,
+  SessionSandbox,
+  Schedules,
+  SessionDrivers,
+  SessionIndex,
+  SessionOrigins,
+} from "@prismshadow/penguin-library-session";
+import type {
+  ServerEvent,
+  Access,
+  ProjectConfigStore,
+  ProjectEvents,
+} from "@prismshadow/penguin-library-project";
+import type { UserDraftsStore, Auth } from "@prismshadow/penguin-library-auth";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
@@ -21,13 +42,10 @@ import {
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
-  ApprovalMode,
   FilesStatResponse,
   GoalResponse,
   GoalStateView,
   RecalledMessageResponse,
-  ServerEvent,
-  SessionCategory,
   SessionBatchResult,
   SessionContextResponse,
   SessionCreateResponse,
@@ -35,29 +53,32 @@ import type {
   SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
+  SessionsArchiveResponse,
   SessionsBatchResponse,
   SubagentMessageResponse,
   RetryNowResponse,
   TaskCreateResponse,
-  SessionSandbox,
 } from "../../api/types.js";
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { sessionMessages, sessionTraceImage } from "../../services/session-history.js";
 import { SESSION_ROUTES_BASE } from "../../services/trace-images.js";
+import { readableSession } from "../session-access.js";
 import { amspSessionStream } from "../../amsp/session-stream.js";
 import { pendingApprovals } from "../../amsp/approvals.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import { isGoalOutcome } from "../../runtime/goal-events.js";
 import { deleteSessionTree } from "../../services/session-deletion.js";
 import type { SessionDeletionDeps } from "../../services/session-deletion.js";
+import { archiveWorkspaceGroup } from "../../services/workspace-archive.js";
 import { HttpError } from "../errors.js";
 import { sseEndpoint, streamRevocation } from "../sse.js";
 import {
   badRequest,
   listingViewOfRequest,
+  optionalBoolean,
   optionalEnum,
   optionalSessionListPagingQuery,
   optionalString,
@@ -125,8 +146,8 @@ import {
   INLINE_IMAGE_MAX_BYTES,
   INLINE_IMAGE_MAX_MB,
   toAttachmentLimits,
-} from "../../services/attachment-limits.js";
-import type { AttachmentLimits } from "../../services/attachment-limits.js";
+} from "@prismshadow/penguin-library-setting/attachment-limits";
+import type { AttachmentLimits } from "@prismshadow/penguin-library-setting/attachment-limits";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
@@ -147,44 +168,20 @@ import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "./workspace-f
 import { archivedSessionsRoutes } from "./archived-sessions.js";
 import { ArchivedSessionsService } from "../../services/archived-sessions-service.js";
 import { PreviewTokens } from "./preview.js";
-import type {
-  Access,
-  ModelOAuth,
-  ProjectConfigStore,
-  ProjectEvents,
-} from "../../mechanisms/projects.js";
+import type { ModelOAuth } from "@prismshadow/penguin-library-model";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
-import type {
-  Schedules,
-  SessionDrivers,
-  SessionIndex,
-  SessionOrigins,
-} from "../../mechanisms/sessions.js";
-import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
-import type { TraceIndex, TraceIndexStore, Traces } from "../../mechanisms/traces.js";
+import type { ErrorLog, UsageQueries } from "@prismshadow/penguin-library-observability";
 import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
 import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { Settings } from "../../mechanisms/settings.js";
-import type { UserDraftsStore } from "../../mechanisms/account-data.js";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { LiveStreams } from "../../auth/live-streams.js";
-import type { Auth } from "../../mechanisms/identity.js";
-import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { OrgService } from "../../runtime/organization/service.js";
-
-/** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
-const SESSION_TITLE_MAX = 120;
-
-/**
- * What a manual title may not contain once its whitespace is collapsed: C0/C1 controls (an
- * ESC sequence would drive the terminal that `penguin session ls` prints it to) and the bidi
- * embeddings, overrides and isolates (U+202A–U+202E, U+2066–U+2069) that make a row read as
- * something else. Not all of `\p{Cf}`: U+200D (zero-width joiner) holds emoji sequences
- * together.
- */
-const SESSION_TITLE_FORBIDDEN = /[\p{Cc}\u202A-\u202E\u2066-\u2069]/u;
+import type { ToolModelBindings } from "../../services/tool-model-bindings.js";
+import { sessionTitle } from "../session-title.js";
 
 /** Max path count and per-path length for a single files/stat check (message file-card candidates never exceed this scale). */
 const STAT_MAX_PATHS = 100;
@@ -482,6 +479,20 @@ function parseGoalField(body: Record<string, unknown>): { budget: number } | nul
   return { budget: (budget as number | undefined) ?? -1 };
 }
 
+/** Validate the optional `promptHooks` field of a task request: hook package names, each once; absent or empty = none. */
+function parsePromptHooks(body: Record<string, unknown>): string[] {
+  const names = body.promptHooks;
+  if (names === undefined) return [];
+  if (
+    !Array.isArray(names) ||
+    names.some((name) => typeof name !== "string" || name.trim() === "") ||
+    new Set(names).size !== names.length
+  ) {
+    throw badRequest("promptHooks must be a list of distinct hook package names.");
+  }
+  return names as string[];
+}
+
 /** What deleting a Session reaches, from this route group's deps (shared with the archive page's batch delete). */
 export function sessionDeletionDeps(
   deps: Pick<
@@ -651,6 +662,39 @@ export function sessionsBatchRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+/**
+ * Project-level entry: POST /api/projects/:p/sessions/archive — the sidebar's "delete
+ * workspace". Archives every active Session of one Workspace group (services/workspace-archive.ts),
+ * the rows the sidebar has not loaded included, in one request: the sidebar holds ten rows a
+ * group, and a group can hold hundreds. A group on a machine is asked of that machine through
+ * the proxy, which archives its own Sessions.
+ */
+export function sessionsArchiveRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  app.post("/", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const { workspaceGroup } = await readJson(c);
+    if (typeof workspaceGroup !== "string" || workspaceGroup.trim() === "") {
+      throw badRequest("workspaceGroup must be a non-empty string.");
+    }
+    const done = await archiveWorkspaceGroup(
+      {
+        sessions: deps.sessionsRepo,
+        activeRows: (p, agentId, view) => deps.sessionService.activeRows(p, agentId, view),
+        notifyProjectUsers: (p, event) => deps.projectEvents.notifyProjectUsers(p, event),
+      },
+      projectId,
+      workspaceGroup,
+      listingViewOfRequest(c),
+    );
+    return c.json({ done } satisfies SessionsArchiveResponse);
+  });
+
+  return app;
+}
+
 /** Agent-level entry: /api/projects/:p/agents/:a/sessions. */
 export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -774,27 +818,11 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
 export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  /** Look up ownership and check access (404 if the index has no such Session, or access is denied — never leaking existence). */
+  /** Look up ownership and check access (http/session-access.ts: 404, or 403 to a refused admin). */
   const resolveSession = (c: Context<AppEnv>): SessionRow => {
     const sessionId = c.req.param("sessionId");
     const row = sessionId ? deps.sessionsRepo.findById(sessionId) : null;
-    if (!row) {
-      throw new HttpError(
-        404,
-        "session_not_found",
-        "Session does not exist or you do not have access.",
-      );
-    }
-    try {
-      deps.access.requireProjectAccess(c.var.user.userId, row.projectId);
-    } catch {
-      throw new HttpError(
-        404,
-        "session_not_found",
-        "Session does not exist or you do not have access.",
-      );
-    }
-    return row;
+    return readableSession(row, c.var.user, deps.access);
   };
 
   app.get("/:sessionId", async (c) => {
@@ -824,29 +852,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const archivedRaw = (body as Record<string, unknown>).archived;
     const archived = typeof archivedRaw === "boolean" ? archivedRaw : undefined;
     const titleRaw = (body as Record<string, unknown>).title;
-    let title: string | undefined;
-    if (titleRaw !== undefined) {
-      if (typeof titleRaw !== "string") {
-        throw new HttpError(400, "invalid_title", "title must be a string.");
-      }
-      // Newlines and tabs become plain spaces here, so what is left to refuse is only
-      // what no title should carry.
-      title = titleRaw.replace(/\s+/g, " ").trim();
-      if (!title || title.length > SESSION_TITLE_MAX) {
-        throw new HttpError(
-          400,
-          "invalid_title",
-          `title must be 1–${SESSION_TITLE_MAX} characters.`,
-        );
-      }
-      if (SESSION_TITLE_FORBIDDEN.test(title)) {
-        throw new HttpError(
-          400,
-          "invalid_title",
-          "title must not contain control or bidirectional-override characters.",
-        );
-      }
-    }
+    const title = titleRaw === undefined ? undefined : sessionTitle(titleRaw);
     if (
       approvalMode === undefined &&
       sandbox === undefined &&
@@ -1139,6 +1145,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         type: "approval_request" as const,
         toolCall: p.toolCall,
         ...(p.origin !== undefined ? { origin: p.origin } : {}),
+        ...(p.reason !== undefined ? { reason: p.reason } : {}),
       })),
     ];
     return sseEndpoint(c, channel, {
@@ -1151,6 +1158,24 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
+    const promptHooks = parsePromptHooks(body);
+    // A goal's round 1 is the goal plugin's protocol; a switch's text behind it would contradict
+    // it (and ride none of the later rounds).
+    if (goal && promptHooks.length > 0) {
+      throw badRequest("promptHooks cannot be combined with goal.");
+    }
+    // Interrupt-then-send is a way of starting a Task now, so it cannot also wait its turn in
+    // the queue or open a goal, which never queues.
+    const interrupt = body.interrupt === true;
+    if (interrupt && (goal || body.queueIfBusy === true)) {
+      throw badRequest("interrupt cannot be combined with queueIfBusy or goal.");
+    }
+    // Steer-if-busy hands the input to the running Task, so it can neither stop that Task nor
+    // open a goal; with queueIfBusy it is redundant (a Session it cannot steer queues anyway).
+    const steerIfBusy = body.steerIfBusy === true;
+    if (steerIfBusy && (interrupt || goal)) {
+      throw badRequest("steerIfBusy cannot be combined with interrupt or goal.");
+    }
     // A person starting a run is who it acts for; the API token is an agent (or a tool) on
     // somebody's behalf, and leaves the Session's driver as it was.
     const driver = c.var.sessionVia === "token" ? null : c.var.user.userId;
@@ -1196,7 +1221,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // running, without queueIfBusy — never writes bytes it would then have to take back. The
     // authoritative check still runs under the Session lock inside startTask; this one is
     // lock-free and may pass on a race, which the cleanup below covers.
-    deps.manager.assertCanAcceptTask(row.sessionId, { queueIfBusy });
+    deps.manager.assertCanAcceptTask(row.sessionId, { queueIfBusy, interrupt, steerIfBusy });
     // File attachments land in this Session's scratchpad (deleted along with the Session) and
     // are handed to the model as `[attached file: <path>]` lines on the message text. Written
     // even when the task ends up queued as a follow-up: the queued input must be complete, and
@@ -1210,16 +1235,30 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       row.sessionId,
     );
     try {
-      if (driver !== null) deps.drivers?.note(row.sessionId, driver);
+      // Steering starts no run, so a steered message leaves the driver as it was (as POST /steer
+      // does): with steerIfBusy the note waits for the outcome.
+      if (driver !== null && !steerIfBusy) deps.drivers?.note(row.sessionId, driver);
       // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
-      const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
+      const { sessionId, queued, steered } = await deps.manager.startTask(row.sessionId, input, {
         queueIfBusy,
-        // Original content, kept while the input waits in the follow-up queue so a recall
-        // (DELETE /follow-ups/:id) can hand it back; unused when the task starts directly.
+        interrupt,
+        steerIfBusy,
+        promptHooks,
+        // Original content, kept while the input waits in the follow-up queue (or as undelivered
+        // steering) so a recall (DELETE /follow-ups/:id, DELETE /steer/:id) can hand it back;
+        // unused when the task starts directly.
         recall: recallStore(parsed.texts.join("\n"), parsed.images, parsed.attachments, written),
+        // The person sending it drives the run it starts (now, or when it leaves the queue).
+        ...(driver !== null ? { driver } : {}),
       });
-      if (driver !== null && sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
-      return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
+      if (driver !== null && steered !== true) {
+        if (steerIfBusy) deps.drivers?.note(row.sessionId, driver);
+        if (sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
+      }
+      return c.json(
+        { sessionId, queued, ...(steered ? { steered } : {}) } satisfies TaskCreateResponse,
+        202,
+      );
     } catch (err) {
       // The Task never started, so nothing references these files and nothing will ever clean
       // them up — and the Web keeps the chips on failure, so the user's retry would otherwise
@@ -1260,7 +1299,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       row.sessionId,
     );
     try {
-      deps.manager.steer(row.sessionId, input, recallStore(text, images, files, written));
+      // A message from anyone but the run's driver leaves it with no driver (steerRunning).
+      deps.manager.steer(
+        row.sessionId,
+        input,
+        recallStore(text, images, files, written),
+        c.var.sessionVia === "token" ? undefined : c.var.user.userId,
+      );
     } catch (err) {
       // 409 (not running) or any other refusal: the files must not stay behind — the
       // frontend falls back to a normal task POST, which writes its own copies.
@@ -1277,6 +1322,37 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const recall = deps.manager.recallSteering(row.sessionId, pathParam(c, "steerId"));
     return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
+  });
+
+  app.get("/:sessionId/subagents", async (c) => {
+    const row = resolveSession(c);
+    const raw = c.req.query("limit") ?? "25";
+    if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 100)
+      throw badRequest("limit must be an integer from 1 to 100.");
+    const before = c.req.query("before");
+    if (before !== undefined && !/^\d+\.\d+$/.test(before))
+      throw badRequest("Invalid subagent cursor.");
+    const all = (await deps.traceService.ownedSubagents(row)).reverse();
+    const [beforeFile, beforeOrdinal] = (before ?? "").split(".").map(Number);
+    const candidates =
+      before === undefined
+        ? all
+        : all.filter((item) => {
+            const [file, ordinal] = item.position.split(".").map(Number);
+            return file! < beforeFile! || (file === beforeFile && ordinal! < beforeOrdinal!);
+          });
+    const page = candidates.slice(0, Number(raw));
+    const items = page.map(({ sessionId, agentId, spawnedAt, title, turnKey }) => ({
+      sessionId,
+      agentId,
+      spawnedAt,
+      title,
+      turnKey,
+    }));
+    return c.json({
+      items,
+      nextCursor: candidates.length > page.length ? page.at(-1)!.position : null,
+    });
   });
 
   // Panel message to one subagent child of this session (#272): a user input on the child,
@@ -1337,6 +1413,24 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const { recall } = deps.manager.recallFollowUp(row.sessionId, pathParam(c, "followUpId"));
     return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
+  });
+
+  // Send one waiting message now: the queued follow-up `followUpId` names, or the undelivered
+  // steering message `steerId` names, goes to the head of the queue and the run is aborted,
+  // so it starts as soon as the run settles. Exactly one of the two ids (400 otherwise); 409
+  // follow_up_started / not_pending when that message is no longer waiting.
+  app.post("/:sessionId/interrupt", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const { followUpId, steerId } = body;
+    if (typeof followUpId === "string" && steerId === undefined) {
+      deps.manager.interruptQueued(row.sessionId, { followUpId });
+    } else if (typeof steerId === "string" && followUpId === undefined) {
+      deps.manager.interruptQueued(row.sessionId, { steerId });
+    } else {
+      throw badRequest("Name exactly one waiting message: followUpId or steerId (a string).");
+    }
+    return c.body(null, 202);
   });
 
   // The Session's most recent goal run, read from the goal plugin's file in its scratchpad
@@ -1507,7 +1601,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const driver = c.var.sessionVia === "token" ? null : c.var.user.userId;
     if (driver !== null) deps.drivers?.note(row.sessionId, driver);
-    const { sessionId } = await deps.manager.retryTask(row.sessionId);
+    const { sessionId } = await deps.manager.retryTask(row.sessionId, driver ?? undefined);
     if (driver !== null && sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
     return c.json({ sessionId, queued: false } satisfies TaskCreateResponse, 202);
   });
@@ -1529,7 +1623,8 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       provider: requireString(body, "provider", { minLen: 1 }),
       modelId: requireString(body, "modelId", { minLen: 1 }),
     };
-    const outcome = await deps.manager.startSwitch(row.sessionId, ref);
+    const whenIdle = optionalBoolean(body, "whenIdle");
+    const outcome = await deps.manager.startSwitch(row.sessionId, ref, whenIdle);
     if (!outcome.switched) {
       return c.json({ sessionId: outcome.sessionId } satisfies TaskCreateResponse, 202);
     }
@@ -1772,6 +1867,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 255,
       },
       {
+        id: "session-api.sessions-archive",
+        prefix: "/api/projects/:projectId/sessions/archive",
+        auth: "user",
+        order: 256,
+      },
+      {
         id: "session-api.usage",
         prefix: "/api/projects/:projectId/usage",
         auth: "user",
@@ -1833,6 +1934,8 @@ export class SessionApiRoutes {
   @Use() private readonly orgService!: OrgService;
   @Use() private readonly workbenches!: Workbenches;
   @Use() private readonly drafts!: UserDraftsStore;
+  /** Optional for trees without the model tools group: every model then gets the chat probe. */
+  @Use() private readonly toolModelBindings?: ToolModelBindings;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -1846,6 +1949,7 @@ export class SessionApiRoutes {
   @Bind("session-api.vault") vaultRoutes!: Hono<AppEnv>;
   @Bind("session-api.agent-sessions") agentSessionsRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions-batch") sessionsBatchRoutes!: Hono<AppEnv>;
+  @Bind("session-api.sessions-archive") sessionsArchiveRoutes!: Hono<AppEnv>;
   @Bind("session-api.usage") usageRoutes!: Hono<AppEnv>;
   @Bind("session-api.workspace-files") workspaceFilesRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions") sessionsRoutes!: Hono<AppEnv>;
@@ -1905,6 +2009,9 @@ export class SessionApiRoutes {
     this.modelsRoutes = modelsRoutes({
       ...modelDeps,
       penguinGoOrigin: this.config.penguinGoOrigin ?? normalizePenguinGoOrigin(undefined),
+      ...(this.toolModelBindings !== undefined
+        ? { toolModelBindings: this.toolModelBindings }
+        : {}),
     });
     this.modelOauthRoutes = modelOAuthRoutes(modelOAuthDeps);
     this.platformAuthRoutes = platformAuthRoutes({ ...modelDeps, platformAuth: this.platformAuth });
@@ -1949,6 +2056,7 @@ export class SessionApiRoutes {
     this.vaultRoutes = vaultRoutes({ agentConfigService, manager, access });
     this.agentSessionsRoutes = agentSessionsRoutes(sessionsDeps);
     this.sessionsBatchRoutes = sessionsBatchRoutes(sessionsDeps);
+    this.sessionsArchiveRoutes = sessionsArchiveRoutes(sessionsDeps);
     this.usageRoutes = usageRoutes({ access, usageService: this.usage });
     this.workspaceFilesRoutes = workspaceFilesRoutes({
       access,

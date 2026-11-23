@@ -5,8 +5,8 @@
  * keyboard asked for it, and what an excerpt becomes once it is added to the conversation.
  * Kept free of the DOM so they can be tested in this package's node-only vitest environment.
  */
-import { isLongPressPointer } from "@prismshadow/penguin-ui";
-import type { AnchorRect } from "@prismshadow/penguin-ui";
+import { isLongPressPointer, type AnchorRect } from "@prismshadow/penguin-ui";
+
 import type { ExcerptReference } from "./workspace-tree";
 import { takesSelectionCopy } from "./selection-copy";
 import type { SelectionCopyRequest } from "./selection-copy";
@@ -133,19 +133,14 @@ export function menuLinkHref(rawHref: string | null): string | null {
     : null;
 }
 
-/** One row of the menu for a web link. */
-export type LinkMenuItem = "openInBuiltinBrowser" | "openExternal" | "copyLink";
+/** One of the app's own rows of the menu for a web link. */
+export type LinkMenuItem = "openExternal" | "copyLink";
 
 /**
- * A web link's rows, in order: open it in the agent browser, open it outside the app, copy its
- * address. The first only where the agent browser can open the page — the desktop app's window
- * with the built-in browser available, or any window while the user's Chrome is connected.
+ * The app's own rows for a web link, in order: open it outside the app, copy its address. Rows
+ * other modules contribute (`ChatModule.linkActions`) come before these.
  */
-export function linkMenuItems(agentBrowser: boolean): readonly LinkMenuItem[] {
-  return agentBrowser
-    ? ["openInBuiltinBrowser", "openExternal", "copyLink"]
-    : ["openExternal", "copyLink"];
-}
+export const LINK_MENU_ITEMS: readonly LinkMenuItem[] = ["openExternal", "copyLink"];
 
 /** A gesture as the whole menu takes it: the selection rules' request, and the link it landed on. */
 export interface StreamMenuRequest extends SelectionMenuRequest {

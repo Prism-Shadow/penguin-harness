@@ -11,7 +11,8 @@
  *   child Session's start a row of their own.
  * - Once the complete record arrives the row shows its content in place of the fragments.
  * - Every other record is a row of its own, labelled by its `payload.type`, with its key fields;
- *   a record type the panel does not know shows what it carries.
+ *   a `session_update` names the model the Session's next context opens on, and a record type
+ *   the panel does not know shows what it carries.
  *
  * The panel:
  * - A run reads as numbered rows — the input, the call, its output, the answer — with no row for
@@ -28,8 +29,8 @@
  * - New conversation forgets the Session and the output and keeps the input.
  */
 import { describe, expect, it, vi } from "vitest";
-import { createElement, isValidElement } from "react";
-import type { ReactElement, ReactNode } from "react";
+import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import type { AmspRecord, TokenCounts } from "@prismshadow/amsp";
 import { ApprovalButtons } from "@prismshadow/penguin-ui";
@@ -42,10 +43,13 @@ import {
   runTry,
   stopTry,
   tryBody,
+  type TryAction,
+  type TryRow,
+  type TryState,
 } from "../src/features/agents/api-try-log";
-import type { TryAction, TryRow, TryState } from "../src/features/agents/api-try-log";
-import { ApiTryView } from "../src/features/agents/api-try-panel";
-import type { ApiTryViewProps } from "../src/features/agents/api-try-panel";
+
+import { ApiTryView, type ApiTryViewProps } from "../src/features/agents/api-try-panel";
+
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
@@ -282,6 +286,17 @@ describe("the rendered view's rows", () => {
       fields: [{ value: "fatal" }, { value: "auth" }, { value: "bad key" }],
     });
     expect(rows[2]).toMatchObject({ fields: [{ value: '{"value":7}' }] });
+  });
+
+  it("names the model a session_update sets for the next context, and shows what one naming no model carries", () => {
+    const rows = rowsOf([
+      ev({ type: "session_update", provider: "anthropic", model_id: "claude" }),
+      ev({ type: "session_update" }),
+    ]);
+    expect(rows).toMatchObject([
+      { kind: "event", label: "session_update", fields: [{ value: "anthropic/claude" }] },
+      { kind: "event", label: "session_update", fields: [{ value: "{}" }] },
+    ]);
   });
 });
 

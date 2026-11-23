@@ -42,6 +42,7 @@
  * (test/setup/weighted-shards.ts, weights in test/shard-weights.json).
  */
 import { availableParallelism } from "node:os";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { WeightedShards } from "./test/setup/weighted-shards";
 
@@ -62,7 +63,34 @@ const WORKERS =
   process.platform === "darwin" ? Math.max(1, Math.min(4, availableParallelism())) : 2;
 
 export default defineConfig({
+  // The browser suites that boot the App load the browser-automation plugin from its sources
+  // (test/builtin-browser/plugin.ts), which reach this package through its published face; a
+  // package cannot resolve its own name, so the two subpaths point at their sources.
+  resolve: {
+    alias: {
+      "@prismshadow/penguin-server/plugin": fileURLToPath(
+        new URL("./src/plugin/index.ts", import.meta.url),
+      ),
+      "@prismshadow/penguin-server/api": fileURLToPath(
+        new URL("./src/api/types.ts", import.meta.url),
+      ),
+    },
+  },
   test: {
+    server: {
+      deps: {
+        // The setting domain library (an externalized node_modules package) imports the
+        // theme-pack and the UI package's pack rules, whose package exports are TypeScript
+        // sources; left external, the run's Node loader reaches them and refuses the
+        // extension. Inlining the libraries lets vite transform the chain the way it
+        // transforms this package's own imports.
+        inline: [
+          /@prismshadow\/penguin-library-setting/,
+          /@prismshadow\/penguin-theme-pack/,
+          /@prismshadow\/penguin-ui/,
+        ],
+      },
+    },
     environment: "node",
     maxWorkers: WORKERS,
     sequence: { sequencer: WeightedShards },
@@ -74,7 +102,7 @@ export default defineConfig({
     // Everything a run writes under the OS temp directory stays in one directory of its own,
     // which teardown reports on and removes; every file sweeps the temp roots it was handed.
     globalSetup: ["test/setup/run-temp-dir.ts"],
-    setupFiles: ["test/setup/temp-roots.ts"],
+    setupFiles: ["test/setup/temp-roots.ts", "test/setup/library-host.ts"],
     // `vitest run --coverage` maps every file under src/, loaded by a test or not.
     coverage: {
       provider: "v8",

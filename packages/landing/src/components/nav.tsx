@@ -11,7 +11,7 @@ import {
   useSiteLocale,
   useSiteTheme,
 } from "@prismshadow/penguin-ui/site";
-import type { SiteLinkProps } from "@prismshadow/penguin-ui/site";
+import type { SiteLink, SiteLinkProps } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { galleryUrl, REPO_API_URL, REPO_URL } from "../lib/links";
 
@@ -37,23 +37,42 @@ export function Nav() {
       home: route("/"),
       blog: route("/blog"),
       download: route("/download"),
+      plugins: route("/plugins"),
+      benchmarks: route("/benchmarks"),
+      leaderboards: route("/leaderboards"),
       amsp: route("/amsp"),
       gallery: { href: galleryUrl(locale) },
     },
   });
+  // The RFC index is this site's own page too; it joins the row just before the "More" group
+  // that ends it (siteNavLinks builds the shared sites' pages only).
+  const rfcsLink: SiteLink = {
+    id: "rfcs",
+    href: "/rfcs",
+    label: S.nav.rfcs,
+    active: pathname === "/rfcs" || pathname.startsWith("/rfcs/"),
+    render: routeLink,
+  };
+  const moreAt = links.findIndex((item) => "links" in item);
+  links.splice(moreAt === -1 ? links.length : moreAt, 0, rfcsLink);
   return (
     <SiteNav
       name={S.siteName}
       logo={`${import.meta.env.BASE_URL}penguin-logo.svg`}
       labels={S.nav}
       links={links}
-      home={{ ...links[0]!, render: (props) => routeLink({ ...props, onClick: close }) }}
+      home={{
+        id: "home",
+        href: "/",
+        label: S.nav.home,
+        render: (props) => routeLink({ ...props, onClick: close }),
+      }}
       language={{ value: lang, onChange: setLang, labels: S.lang }}
       theme={{ mode, onChange: setMode, labels: S.theme }}
       repo={{ href: REPO_URL, apiUrl: REPO_API_URL }}
-      menu={{ open, onToggle: () => setOpen((v) => !v), hiddenClass: "md:hidden" }}
+      menu={{ open, onToggle: () => setOpen((v) => !v), hiddenClass: "lg:hidden" }}
     >
-      <Fold open={open} className="site-ui-fold md:hidden">
+      <Fold open={open} className="site-ui-fold lg:hidden">
         <SiteNavLinks links={links} mobile onNavigate={close} />
       </Fold>
     </SiteNav>

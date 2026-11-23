@@ -10,6 +10,11 @@
  * Summary cards (today / last 7 days / cumulative), grouped aggregation (date /
  * agent / model / session, with the session dimension supporting agentId drill-down
  * filtering), and the zero-filled time series the cost center's charts draw.
+ * Tool requests — a plugin's requests through ProjectModelRequests, the rows with a
+ * `purpose` — are requests and cost like any other, but their Tokens are MMSP's units (a
+ * search counts as 1,000), so the summary and series Token figures count chat turns only
+ * and the tool requests are listed apart, by purpose, with their count and cost. The
+ * per-Agent and per-Session views skip a tool request made with no Session.
  * Server-side error statistics (error_records) ride along on the same response:
  * the statistics center fetches everything in one request, and filters are
  * naturally shared; unattributed errors (login failures, process crashes, and other
@@ -17,29 +22,37 @@
  * file header.
  */
 import type {
-  CostParts,
+  UsageGroupBy,
+  UsageQuery,
+  UsageErrorsQuery,
+  UsageErrorsClearQuery,
   UsageAgentSeries,
   UsageBucket,
   UsageErrors,
   UsageErrorsPage,
   UsageGranularity,
-  UsageGroupBy,
   UsageGroupRow,
   UsageModelSeries,
   UsageModelTotals,
   UsageResponse,
   UsageSeriesPoint,
-} from "../api/types.js";
-import type { ErrorFilter } from "../db/repos/errors.js";
+  UsageToolRow,
+  ErrorLog,
+  UsageQueries,
+  UsageStore,
+} from "@prismshadow/penguin-library-observability";
+import type { CostParts } from "@prismshadow/penguin-library-trace";
+import type { ErrorFilter } from "@prismshadow/penguin-library-observability/repos/errors";
 import { catalogEntryFor, offPeakAt, offPeakScheduledRefs } from "../model-catalog/catalog.js";
 import type {
   UsageModelSums,
   UsageGroupModelSums,
   UsageSeriesModelSums,
+  UsageToolModelSums,
   UsageAgentBucketCount,
   UsageFilter,
   PeakTier,
-} from "../db/repos/usage.js";
+} from "@prismshadow/penguin-library-observability/repos/usage";
 import {
   enumerateBuckets,
   enumerateTsBuckets,
@@ -49,8 +62,7 @@ import {
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import type { ErrorLog, UsageQueries, UsageStore } from "../mechanisms/observability.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 
 /**
  * Number of most-recent rows kept in the error detail table. Also the page size the whole
@@ -86,52 +98,7 @@ export type PricingLookup = (
   modelId: string,
 ) => Promise<TieredRates | undefined>;
 
-export interface UsageQuery {
-  from?: string;
-  to?: string;
-  groupBy: UsageGroupBy;
-  /** Top-level filter: view by Agent (also used for groupBy=session drill-down). */
-  agentId?: string;
-  /** Top-level filter: view by Model (paired with modelId; the dropdown always sends them as a pair). */
-  provider?: string;
-  modelId?: string;
-  /** Whether to include unattributed errors: admin only (the route passes user.isAdmin), defaults to false. */
-  includeGlobalErrors?: boolean;
-  /** Time-series precision for `series` / `byAgentSeries` / `byModelSeries`; defaults to day. The route validates the value; the bucket count is capped here. */
-  granularity?: UsageGranularity;
-  /**
-   * Timestamp window bounds (ISO UTC), for the trailing "last hour" / "last 24
-   * hours" ranges whose edges are instants rather than calendar dates: they
-   * refine every range-scoped aggregate down to the window, and minute/hour
-   * series buckets are enumerated between them. `minute` requires them.
-   */
-  fromTs?: string;
-  toTs?: string;
-  /**
-   * The viewer's offset east of UTC, in minutes: the calendar day the error table folds a
-   * day's repeats by (see ErrorsRepo.recent). Nothing else in the response reads it; absent,
-   * the day is the server's own.
-   */
-  utcOffsetMinutes?: number;
-}
-
 /** One page of the error detail table (see {@link UsageService.queryErrors}). */
-export interface UsageErrorsQuery {
-  offset: number;
-  limit: number;
-  from?: string;
-  to?: string;
-  /** The trailing window narrowing those dates (see {@link UsageQuery}); both or neither. */
-  fromTs?: string;
-  toTs?: string;
-  agentId?: string;
-  /** Narrow to one category — `unexpected` (500s / runtime exceptions) or `expected`; absent counts both. */
-  kind?: string;
-  /** Admin only: include errors with no Project attribution (see the ErrorsRepo file header). */
-  includeGlobalErrors?: boolean;
-  /** The viewer's offset east of UTC, in minutes (see {@link UsageQuery}). */
-  utcOffsetMinutes?: number;
-}
 
 /**
  * What a clear removes (see {@link UsageService.clearErrors}): the panel's own range — dates,
@@ -139,15 +106,6 @@ export interface UsageErrorsQuery {
  * panel has. No `kind`: the panel offers no such control, so a clear has no narrowing the
  * reader could have seen.
  */
-export interface UsageErrorsClearQuery {
-  from?: string;
-  to?: string;
-  fromTs?: string;
-  toTs?: string;
-  agentId?: string;
-  /** Admin only, the value the caller's reads carry: an admin's clear takes the unattributed rows an admin's panel shows. */
-  includeGlobalErrors?: boolean;
-}
 
 /** The "model price" formula: the three buckets at the given rates (USD per million Tokens), in USD. */
 export function requestCostUsd(
@@ -347,12 +305,16 @@ export class UsageService implements UsageQueries {
       tiers,
     );
     const totalRows = this.usage.bucketByModel(projectId, { ...win(q.from, q.to), ...ts }, tiers);
+    // An Agent or a Session row is that Agent's or Session's: a tool request with no Session
+    // counts toward the Project's totals alone.
+    const perSession = q.groupBy === "agent" || q.groupBy === "session";
     const groupRows = this.usage.groupsByModel(
       projectId,
       q.groupBy,
-      { ...win(q.from, q.to), ...ts },
+      { ...win(q.from, q.to), ...ts, ...(perSession ? { withSession: true } : {}) },
       tiers,
     );
+    const toolRows = this.usage.toolsByModel(projectId, { ...win(q.from, q.to), ...ts }, tiers);
     // Time series at the requested precision, zero-filled over the requested
     // range, defaulting to the last 30 days when no range is given.
     const granularity = q.granularity ?? "day";
@@ -400,6 +362,7 @@ export class UsageService implements UsageQueries {
       ...agentFree,
       from: seriesFrom,
       to: seriesTo,
+      withSession: true,
     });
     // With no model filter set, dropping the model filter leaves exactly the
     // query `seriesRows` already ran: reuse its rows instead of running the
@@ -427,7 +390,14 @@ export class UsageService implements UsageQueries {
     // Each paired reference that occurs is looked up for its current price only once.
     const rates = new Map<string, TieredRates | undefined>();
     const allRefs = new Map<string, { provider: string; modelId: string }>();
-    for (const r of [...todayRows, ...last7dRows, ...totalRows, ...groupRows, ...seriesRows]) {
+    for (const r of [
+      ...todayRows,
+      ...last7dRows,
+      ...totalRows,
+      ...groupRows,
+      ...seriesRows,
+      ...toolRows,
+    ]) {
       allRefs.set(refKey(r.provider, r.modelId), { provider: r.provider, modelId: r.modelId });
     }
     for (const [key, ref] of allRefs) {
@@ -446,6 +416,7 @@ export class UsageService implements UsageQueries {
       series: this.foldSeries(bucketKeys, seriesRows, rates),
       byAgentSeries: foldAgentSeries(bucketKeys, agentBucketRows),
       byModelSeries: foldModelSeries(bucketKeys, modelBucketRows),
+      tools: this.foldTools(toolRows, rates),
       errors: this.foldErrors(projectId, errorFilter, q.utcOffsetMinutes),
       agentIds: this.usage.distinctAgentIds(projectId),
       models: this.usage.distinctModels(projectId),
@@ -525,14 +496,22 @@ export class UsageService implements UsageQueries {
    * so the caller renders nothing rather than a zero.
    */
   modelTotals(projectId: string): UsageModelTotals {
-    return {
-      totals: this.usage.bucketByModel(projectId).map((r) => ({
+    // A model's chat turns and its tool requests (a chat model also serves text tools) come back
+    // as two sums: one entry per model.
+    const byRef = new Map<string, UsageModelTotals["totals"][number]>();
+    for (const r of this.usage.bucketByModel(projectId)) {
+      const key = refKey(r.provider, r.modelId);
+      const acc = byRef.get(key) ?? {
         provider: r.provider,
         modelId: r.modelId,
-        tokens: r.total,
-        requests: r.requests,
-      })),
-    };
+        tokens: 0,
+        requests: 0,
+      };
+      acc.tokens += r.total;
+      acc.requests += r.requests;
+      byRef.set(key, acc);
+    }
+    return { totals: [...byRef.values()] };
   }
 
   private foldBucket(
@@ -543,14 +522,47 @@ export class UsageService implements UsageQueries {
     let requests = 0;
     let cost: number | null = null;
     let hasUncosted = false;
+    let toolRequests = 0;
+    let toolCost: number | null = null;
     for (const r of rows) {
-      total += r.total;
+      if (!r.tool) total += r.total;
       requests += r.requests;
+      if (r.tool) toolRequests += r.requests;
       const rate = rates.get(refKey(r.provider, r.modelId));
-      if (rate) cost = (cost ?? 0) + costOf(r, rate);
-      else hasUncosted = true;
+      if (rate) {
+        const c = costOf(r, rate);
+        cost = (cost ?? 0) + c;
+        if (r.tool) toolCost = (toolCost ?? 0) + c;
+      } else hasUncosted = true;
     }
-    return { total, requests, cost, hasUncosted };
+    return { total, requests, cost, hasUncosted, toolRequests, toolCost };
+  }
+
+  /** The tool requests by purpose: count and cost, costliest first (the unpriced last, by count). */
+  private foldTools(
+    rows: UsageToolModelSums[],
+    rates: Map<string, TieredRates | undefined>,
+  ): UsageToolRow[] {
+    const byPurpose = new Map<string, UsageToolRow>();
+    for (const r of rows) {
+      const acc = byPurpose.get(r.purpose) ?? {
+        purpose: r.purpose,
+        requests: 0,
+        cost: null,
+        hasUncosted: false,
+      };
+      acc.requests += r.requests;
+      const rate = rates.get(refKey(r.provider, r.modelId));
+      if (rate) acc.cost = (acc.cost ?? 0) + costOf(r, rate);
+      else acc.hasUncosted = true;
+      byPurpose.set(r.purpose, acc);
+    }
+    return [...byPurpose.values()].sort(
+      (a, b) =>
+        (b.cost ?? -1) - (a.cost ?? -1) ||
+        b.requests - a.requests ||
+        a.purpose.localeCompare(b.purpose),
+    );
   }
 
   private foldGroups(
@@ -628,10 +640,13 @@ export class UsageService implements UsageQueries {
     for (const r of rows) {
       const acc = byKey.get(r.key);
       if (!acc) continue;
-      acc.cacheRead += r.cacheRead;
-      acc.cacheWrite += r.cacheWrite;
-      acc.output += r.output;
-      acc.total += r.total;
+      // The Token trend is chat turns': a tool request adds its request and its cost only.
+      if (!r.tool) {
+        acc.cacheRead += r.cacheRead;
+        acc.cacheWrite += r.cacheWrite;
+        acc.output += r.output;
+        acc.total += r.total;
+      }
       acc.requests += r.requests;
       acc.completed += r.completed;
       acc.denominator += r.denominator;

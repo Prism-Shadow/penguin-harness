@@ -13,13 +13,15 @@
  * for, an answer is applied only while that Project is still current (a late list of the
  * Project just left is dropped), and the context publishes only the current Project's list.
  */
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+
 import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
 import { isCurrentProject, scoped, scopedValue, type Scoped } from "../lib/project-scope";
+import { isConversationAgent, isSystemAgent } from "../lib/builtin-agents";
+import { S } from "../lib/strings";
 import { WORKBENCH_UPDATED_EVENT, type WorkbenchUpdatedDetail } from "../lib/workbench-tabs";
 
 const PROJECT_KEY = "penguin.lastProjectId";
@@ -32,6 +34,11 @@ const agentKey = (projectId: string) => `penguin.lastAgentId.${projectId}`;
 export function rememberSelection(projectId: string, agentId: string): void {
   localStorage.setItem(PROJECT_KEY, projectId);
   localStorage.setItem(agentKey(projectId), agentId);
+}
+
+/** Remembers a Project as rememberSelection does, leaving the Agent it had current as it was. */
+export function rememberProject(projectId: string): void {
+  localStorage.setItem(PROJECT_KEY, projectId);
 }
 
 interface ProjectContextValue {
@@ -55,8 +62,12 @@ export function projectDisplayName(p: ProjectSummary): string {
   return p.name ?? p.projectId;
 }
 
-/** Agent display name fallback: falls back to agentId when name is absent. */
+/**
+ * Agent display name fallback: falls back to agentId when name is absent. The system Agent is
+ * named by the dictionary, never by its file.
+ */
 export function agentDisplayName(a: AgentSummary): string {
+  if (isSystemAgent(a)) return S.agent.systemName;
   return a.name ?? a.agentId;
 }
 
@@ -162,6 +173,9 @@ function createProjectStore() {
 
     setCurrentAgentId: (agentId) => {
       const currentProjectId = get().currentProjectId;
+      // Opening the system Agent's card or settings keeps the Agent the user talks to.
+      const named = scopedValue(get().agents, currentProjectId)?.find((a) => a.agentId === agentId);
+      if (named !== undefined && !isConversationAgent(named)) return;
       if (currentProjectId) localStorage.setItem(agentKey(currentProjectId), agentId);
       set({ currentAgentId: agentId });
     },
@@ -173,16 +187,19 @@ function createProjectStore() {
  * (`default_agent`, then the first). The id may name an Agent only a machine has — a draft or
  * a Session on that machine follows its pick through to the current Agent — and the current
  * Agent is never one of those: the chat page renders nothing until there is a current Agent,
- * so resolving such an id to null left every chat route on its placeholder until a reload.
+ * so resolving such an id to null left every chat route on its placeholder until a reload. Nor
+ * is it ever the system Agent, which holds no conversation: opening its card or its settings
+ * leaves the current Agent where it was.
  */
 export function agentOf(
   agents: readonly AgentSummary[],
   agentId: string | null,
 ): AgentSummary | null {
+  const chat = agents.filter(isConversationAgent);
   return (
-    agents.find((a) => a.agentId === agentId) ??
-    agents.find((a) => a.agentId === "default_agent") ??
-    agents[0] ??
+    chat.find((a) => a.agentId === agentId) ??
+    chat.find((a) => a.agentId === "default_agent") ??
+    chat[0] ??
     null
   );
 }
@@ -253,4 +270,13 @@ export function useProject(): ProjectContextValue {
   const ctx = useContext(ProjectContext);
   if (!ctx) throw new Error("useProject must be used within a ProjectProvider");
   return ctx;
+}
+
+/**
+ * The Project state when there is one, null outside a ProjectProvider: for a reader that only
+ * decorates what a component already shows (an Agent's picture) and has nothing to say without
+ * a Project, where `useProject` would refuse.
+ */
+export function useProjectIfAny(): ProjectContextValue | null {
+  return useContext(ProjectContext);
 }

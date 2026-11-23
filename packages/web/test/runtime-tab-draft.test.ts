@@ -10,6 +10,8 @@
  *   change"), and an error.
  * - Typing the stored number back, spaces and all, is no change.
  * - A number is accepted when it is an integer > 0 or exactly -1; 0, 1.5 and words are not.
+ *   The compaction's tool rounds are the exception: any integer of 0 or more (0 allows none).
+ * - A text blanked is a change of its own (no reminder; the quoted data alone), sent as "".
  * - A box left as stored is never judged, so an odd stored value cannot block another edit.
  * - Save sends only the keys that changed, each in its own section.
  *
@@ -22,6 +24,9 @@
  * - An unset Agent thinking level shows the Project default without making the form dirty;
  *   choosing a localized tier waits for Save and sends its wire value.
  * - A persisted legacy off tier stays reachable before Save, and Reset restores it.
+ * - The tool rounds, the reminder and the hand-off note save with the rest of the form, with the
+ *   tool rounds' own inline error, and Reset puts the loaded values back; a server that does not
+ *   report them (an older one, on a machine) shows none of the three.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
@@ -34,8 +39,9 @@ import {
   runtimeDraftOf,
   runtimeErrors,
   runtimeUpdateOf,
+  type RuntimeDraft,
 } from "../src/features/agents/runtime-form";
-import type { RuntimeDraft } from "../src/features/agents/runtime-form";
+
 import { AGENT_ID, agentConfig, agentServer, mountAgentApp } from "./helpers/agent-app";
 import { button, click, dialogs, field, type, unmountAll, waitFor } from "./helpers/dom";
 
@@ -71,6 +77,23 @@ describe("the Runtime form's rules", () => {
     }
   });
 
+  it("accepts any integer of 0 or more as the tool rounds, and nothing else", () => {
+    for (const ok of ["0", "1", "12"]) {
+      expect(runtimeErrors(edit({ maxRounds: ok }), STORED)).toBeNull();
+    }
+    for (const bad of ["-1", "1.5", "abc"]) {
+      expect(runtimeErrors(edit({ maxRounds: bad }), STORED)).toEqual({ maxRounds: "invalid" });
+    }
+  });
+
+  it("sends a blanked text as the blank it is, beside the tool rounds", () => {
+    const draft = edit({ maxRounds: "0", reminder: "", handoffNote: "Carry on." });
+    expect(dirty(draft)).toBe(true);
+    expect(runtimeUpdateOf(draft, STORED)).toEqual({
+      compaction: { maxRounds: 0, reminder: "", handoffNote: "Carry on." },
+    });
+  });
+
   it("never judges a box left as stored", () => {
     const stored = { ...STORED, maxContextLength: "0" };
     expect(runtimeErrors({ ...stored, maxTurns: "60" }, stored)).toBeNull();
@@ -99,6 +122,17 @@ async function openRuntime(config = agentConfig(), projectThinking?: "low" | "hi
 }
 
 const maxTurns = () => field(en.agent.maxTurns);
+const maxRounds = () => field(en.agent.maxRounds);
+const reminder = () => field(en.agent.compactionReminder);
+const handoffNote = () => field(en.agent.compactionHandoffNote);
+const hasField = (label: string) => {
+  try {
+    field(label);
+    return true;
+  } catch {
+    return false;
+  }
+};
 const save = () => button(en.common.save);
 const reset = () => button(en.common.reset);
 
@@ -169,6 +203,69 @@ describe("the Runtime tab", () => {
     await click(reset());
     expect(button(en.chat.thinkingLevel).textContent).toContain("none");
     expect(server.writes()).toEqual([]);
+  });
+
+  it("saves the tool rounds and the two texts on Save, and Reset puts the loaded ones back", async () => {
+    const { server } = await openRuntime();
+    expect(maxRounds().value).toBe("8");
+    expect(reminder().value).toBe("Round {{ROUNDS_USED}} done.");
+    expect(handoffNote().value).toBe("No summary.\n{{LAST_TURN}}");
+
+    await type(maxRounds(), "3");
+    await type(reminder(), "");
+    await type(handoffNote(), "Carry on.\n{{USER_MESSAGES}}");
+    expect(save().disabled).toBe(false);
+    await click(reset());
+    expect(maxRounds().value).toBe("8");
+    expect(reminder().value).toBe("Round {{ROUNDS_USED}} done.");
+    expect(handoffNote().value).toBe("No summary.\n{{LAST_TURN}}");
+    expect(save().disabled).toBe(true);
+    expect(server.writes()).toEqual([]);
+
+    await type(maxRounds(), "3");
+    await type(reminder(), "");
+    await type(handoffNote(), "Carry on.\n{{USER_MESSAGES}}");
+    await click(save());
+    await waitFor(() => server.writes("/config").length === 1);
+    expect(server.writes("/config")[0]!.body).toEqual({
+      config: {
+        compaction: { maxRounds: 3, reminder: "", handoffNote: "Carry on.\n{{USER_MESSAGES}}" },
+      },
+    });
+    await waitFor(() => save().disabled);
+    // Compaction settings only: a running conversation picks them up at its next checkpoint.
+    expect(toastStore.getState().items.map((t) => t.text)).toEqual([en.agent.savedTakesEffectNow]);
+    expect(reminder().value).toBe("");
+    expect(hasUnsaved()).toBe(false);
+  });
+
+  it("holds Save with the tool rounds' own hint while they are not an integer of 0 or more", async () => {
+    await openRuntime();
+    await type(maxRounds(), "-1");
+    expect(save().disabled).toBe(true);
+    expect(document.body.textContent).toContain(en.agent.maxRoundsInvalid);
+    await type(maxRounds(), "0");
+    expect(save().disabled).toBe(false);
+    expect(document.body.textContent).not.toContain(en.agent.maxRoundsInvalid);
+  });
+
+  it("shows none of the three when the server does not report them", async () => {
+    const config = agentConfig();
+    config.config.compaction = {
+      maxContextLength: 100000,
+      mode: "summarize",
+      prompt: "Summarize.",
+    };
+    const { server } = await openRuntime(config);
+    expect(hasField(en.agent.maxRounds)).toBe(false);
+    expect(hasField(en.agent.compactionReminder)).toBe(false);
+    expect(hasField(en.agent.compactionHandoffNote)).toBe(false);
+    await type(field(en.agent.compactionPrompt), "Shorter.");
+    await click(save());
+    await waitFor(() => server.writes("/config").length === 1);
+    expect(server.writes("/config")[0]!.body).toEqual({
+      config: { compaction: { prompt: "Shorter." } },
+    });
   });
 
   it("keeps a refused edit, still unsaved", async () => {

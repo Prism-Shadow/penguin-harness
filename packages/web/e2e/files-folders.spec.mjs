@@ -9,9 +9,9 @@
  * - Copy relative path on an origin without the async Clipboard API (plain HTTP, not
  *   localhost) writes the Workspace-relative path to the clipboard of the machine the browser
  *   is on.
- * - The editor keeps its place: Edit opens where the preview was scrolled, Save leaves it open
- *   with the caret and the scroll untouched, and a clean editor takes an Agent's rewrite in
- *   place, on the caret's line.
+ * - The editor keeps its place: Edit opens where the preview was scrolled, the save shortcut
+ *   writes at once and leaves it open with the caret and the scroll untouched, and a clean
+ *   editor takes an Agent's rewrite in place, on the caret's line.
  * - A Workspace group's "Browse files" lands on a new-chat draft for that folder with its Files
  *   panel open, and "add to conversation" there stages the reference in the draft's composer; a
  *   temporary Workspace has nothing to browse and the toggle says why.
@@ -185,7 +185,6 @@ test("the editor keeps its place through Edit, Save and an Agent's rewrite", asy
 
   await page.keyboard.type("edited ");
   await page.keyboard.press("Control+s");
-  await page.getByRole("dialog").getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("已保存").first()).toBeVisible();
   await expect(textarea).toBeFocused();
   expect(await host.evaluate((el) => el.scrollTop)).toBe(3000);
@@ -232,4 +231,59 @@ test("Browse files on a Workspace group opens a draft on that folder, whose pane
   const toggle = page.getByTestId("dock-toggle-files");
   await expect(toggle).toHaveAttribute("aria-disabled", "true");
   await expect(toggle).toHaveAttribute("data-tooltip", /临时工作区在发送第一条消息时才创建/);
+});
+
+test("a workspace directory renders full HTML, keeps its source bounded and reports a failed full read", async ({
+  page,
+}) => {
+  const largePage = "季度简报 with spaces.html";
+  const alpha = workspace("presentation-preview", {
+    "short.html": "<!doctype html><h1>Short document</h1>",
+    [largePage]:
+      "<!doctype html><html><head></head><body><!--" +
+      "x".repeat(1024 * 1024) +
+      '--><h1></h1><script>localStorage.setItem("title","Quarterly report");' +
+      'document.querySelector("h1").textContent=localStorage.getItem("title")</script></body></html>',
+  });
+  const other = workspace("other-preview", {});
+  const [, session] = await setUp(page, [alpha, other]);
+  await page.goto(`${BASE}/chat/${session}`);
+  await page.getByText("presentation-preview", { exact: true }).first().hover();
+  await page
+    .locator('div[class*="group/header"]')
+    .filter({ hasText: "presentation-preview" })
+    .getByRole("button", { name: "工作区选项" })
+    .click();
+  await page.getByRole("menuitem", { name: "打开文件浏览" }).click();
+  await expect(page).toHaveURL(/\/chat\/new/);
+  const dock = page.getByTestId("dock");
+  await dock.locator('[data-tree-path="short.html"]').click();
+  await expect(
+    dock
+      .frameLocator('iframe[title="short.html"]')
+      .getByRole("heading", { name: "Short document" }),
+  ).toBeVisible();
+
+  // The rendered page needs its closing script. Source and editing keep the text limit.
+  await dock.locator(`[data-tree-path="${largePage}"]`).click();
+  const frame = dock.locator(`iframe[title="${largePage}"]`);
+  await expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+  await expect(
+    frame.contentFrame().getByRole("heading", { name: "Quarterly report" }),
+  ).toBeVisible();
+  await dock.getByRole("button", { name: "源码", exact: true }).click();
+  await expect(dock.getByText(/预览已截断/)).toBeVisible();
+  await expect(dock.getByRole("button", { name: `编辑 ${largePage}`, exact: true })).toHaveCount(0);
+  const content = (url) =>
+    url.searchParams.get("path") === largePage && url.pathname.endsWith("/content");
+  await page.route(content, (route) => route.fulfill({ status: 503 }));
+  await dock.getByRole("button", { name: "预览", exact: true }).click();
+  await expect(dock.getByRole("paragraph").filter({ hasText: "加载失败" })).toBeVisible();
+  await expect(frame).toHaveCount(0);
+  await page.unroute(content);
+  await dock.getByRole("button", { name: "源码", exact: true }).click();
+  await dock.getByRole("button", { name: "预览", exact: true }).click();
+  await expect(
+    frame.contentFrame().getByRole("heading", { name: "Quarterly report" }),
+  ).toBeVisible();
 });

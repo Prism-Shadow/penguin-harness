@@ -39,7 +39,7 @@ Web App 的服务器事件（运行状态、审批请求、标题、goal 进度�
 6. **流即 Trace，外加分片。** 主 Session 写入 Trace 的每条记录，都在写入之时、按 Trace 的顺序在流上出现恰好一次。例外如下：
    - 有两类记录只写 Trace、从不上流：压缩自身请求的 `request_begin` / `request_end`，以及 `subagent` 指针；
    - 子 Agent 的记录带 `origin`，只在父 Session 的流上出现，持久保存在子 Session 自己的 Trace 中；
-   - 新上下文开启时，其 `mcp_connect_begin` / `mcp_connect_end` 与 `tool_list_ready` 在上下文开启时上流，新文件开出后才写入。
+   - 新上下文开启时，其 `mcp_connect_begin` / `mcp_connect_end` 与 `tool_list_ready` 在上下文开启时上流，新文件开出后才写入；模型切换开启下一个上下文时所带的 `[model_switch_from]` 交接说明亦然。
 7. **`compaction_begin` 与 `compaction_end` 之间的内容属于压缩。** 其中的文本是摘要，不是回答。
 
 ### 流上的 session_meta
@@ -48,13 +48,13 @@ Web App 的服务器事件（运行状态、审批请求、标题、goal 进度�
 
 - **新 Session 的第一条消息。** 它位于该 Session 第一个 Trace 文件的开头，先于该 Task 的 `task_begin`，所以它是新建 Session 的运行流的第一条记录，运行流也正是凭它的 `session_id` 给出新 Session 的 id。
 - **压缩开启的新上下文。** 新文件在压缩之后第一条要写入的记录之前开出，`session_meta` 随之上流。压缩结束了上一个 Task 时，Task 记录不开新文件，下一个 Task 的 `task_begin` 已经流出，所以 `session_meta` 落在这个 `task_begin` 之后、该 Task 的输入之前。
-- **模型切换。** 切换完成时即开出新文件，这发生在两次运行之间，所以它的 `session_meta` 在 Session 流上，不在下一次运行的运行流里。
+- **模型切换开启的上下文。** 同样如此：它的文件随下一条消息开出，`session_meta` 落在下一个 Task 的 `task_begin` 之后、其输入之前。切换本身发生在两次运行之间，在 Session 流上以一条点名目标模型的 `session_update` 结束（见 [AMSP 记录](/amsp-records#eventmsg)）。
 
 同一条 `session_meta` 不会再次发送。之后需要模型的读取方读 `GET …/sessions/:sessionId`；需要其余内容时，读取完整历史，其中带有每个文件开头的 `session_meta`。子 Agent 的 `session_meta` 在子 Session 开始时带着 `origin` 上流。
 
 ### Task
 
-`task_begin` 与 `task_end` 括住一个 Task：一次 Prompt 的执行，连同其 stop 钩子的 `hook` 记录。一次运行可以包含多个 Task：stop 钩子回答 `continue` 时，同一次运行里会再开一个 Task，goal 模式的各轮就是这样运行的。手动压缩和模型切换不是 Task，由 `compaction_begin` / `compaction_end` 与新文件的 `session_meta` 框定。
+`task_begin` 与 `task_end` 括住一个 Task：一次 Prompt 的执行，连同其 stop 钩子的 `hook` 记录。一次运行可以包含多个 Task：stop 钩子回答 `continue` 时，同一次运行里会再开一个 Task，goal 模式的各轮就是这样运行的。手动压缩和模型切换不是 Task，由 `compaction_begin` / `compaction_end` 与切换的 `session_update` 框定。
 
 `task_begin` 先于该 Task 写下的一切记录，包括其输入。被中止的 Task 同样以 `task_end` 结束。一个 `task_begin` 在下一个 `task_begin` 或运行结束之前没有 `task_end`，说明该 Task 没有走到终点：服务器在驱动它时出了故障。
 
@@ -161,6 +161,7 @@ interface MessagesResponse {
   page?: {
     before?: string; // pass back as `before`; absent at the beginning
     earlierTurns: number;
+    units: number; // 窗口按切分时的口径所含的 Task 数
     prior: Record<string, number>;
     contextModel?: { provider: string; modelId: string };
     agentState?: string;
@@ -223,8 +224,9 @@ POST …/sessions/:sessionId/approvals/:toolCallId   {"decision": "allow" | "den
 | `malformed` | 模型响应解析失败或被截断 |
 | `output_truncated` | 模型响应停在输出上限：不提交，并会重试 |
 | `auth` | 供应商拒绝了凭据 |
-| `rejected` | 供应商明确拒绝了请求（参数、配额） |
-| `image_rejected` | 带图片的请求被供应商以 4xx 拒绝；引擎不看报文，一律视为图片被拒。图片换成一句固定说明后立即重试，供应商的报错原文由重试输入的 `[request_error]` 行携带（`retryable`，`retry_in_ms: 0`） |
+| `rejected` | 供应商拒绝按原样发出的请求（HTTP 400、413、415 或 422），例如参数或长度不被接受。上下文已有完成的轮次时，引擎交接上下文并重发这一轮（`retryable`，`retry_in_ms: 0`，随后是一个不含请求的压缩区间） |
+| `denied` | 供应商不为该账号或模型提供服务：其余确定性的 4xx，例如 402（余额）、403（权限）或 404（模型不存在） |
+| `image_rejected` | 带图片的请求被供应商拒绝（`rejected`）；引擎不看报文，一律视为图片被拒。图片换成一句固定说明后立即重试，供应商的报错原文由重试输入的 `[request_error]` 行携带（`retryable`，`retry_in_ms: 0`） |
 | `unsupported` | 请求要求了模型做不到的事 |
 | `invalid_input` | 输入无法组装成请求 |
 | `connect_failed` | 某个 MCP Server 连接失败 |

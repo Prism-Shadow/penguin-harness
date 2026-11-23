@@ -11,9 +11,18 @@
  * stand in for the Project's defaults on every later "New chat".
  */
 import type { AgentSummary, ChatDefaultsDto } from "@prismshadow/penguin-server/api";
-import { pickDefaultAgent } from "../ai-create/default-agent";
-import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
-import type { DraftCache, DraftStorage } from "./draft-cache";
+import { pickDefaultAgent } from "../ai-create";
+import { isConversationAgent } from "../../lib/builtin-agents";
+import {
+  clearDraft,
+  draftKey,
+  loadDraft,
+  saveDraft,
+  type DraftCache,
+  type DraftStorage,
+} from "./draft-cache";
+
+import { hasDraftUploads } from "../../lib/draft-uploads";
 import { parkActiveDraft } from "./draft-sessions";
 
 /**
@@ -26,8 +35,18 @@ export function newChatAgentId(
   defaults: ChatDefaultsDto,
 ): string | null {
   const preferred = defaults.agentId;
-  if (preferred !== undefined && agents.some((a) => a.agentId === preferred)) return preferred;
+  if (
+    preferred !== undefined &&
+    agents.some((a) => a.agentId === preferred && isConversationAgent(a))
+  )
+    return preferred;
   return pickDefaultAgent(agents)?.agentId ?? null;
+}
+
+/** A sent or abandoned empty composer starts afresh on the current Project defaults. */
+export function hasUnsentDraft(user: string, project: string): boolean {
+  const draft = loadDraft(draftKey(user, project));
+  return !!draft.text?.trim() || hasDraftUploads(user, project);
 }
 
 /**

@@ -11,16 +11,16 @@
  * The body is one of two shapes, or none. `rows` are the activity's own steps (the agent's steps,
  * a compaction's sections, an MCP connection's servers), hung off the head one tree level down;
  * `children` is one piece the caller styles (a report in the output block). With neither the head
- * is a static line: no button, no chevron, no hover.
+ * is a static line: no button, no chevron, no hover. A failure's text actions (its 「[报告问题]」)
+ * follow the duration on a static head, and the body's last line, after the detail, on one that
+ * expands.
  *
- * Expand policy, two layers deep: the body opens while the activity runs, so its rows are on
- * screen as they are appended, and folds itself away once it settles, leaving the one-line
- * summary the head exists to be; the rows inside it stay closed — the reader sees that a step happened
- * and how long it took, not its contents, until they ask. The caller's state bridges the gaps
- * between two steps (a work group the model may still add to counts as running), so the card
- * closes once and stays closed rather than flickering on every step. Once the reader toggles it
- * the card is theirs: a later automatic change never fights them. A step waiting on an approval
- * forces the body open (`pending`), since the approval buttons live in it.
+ * Work groups take one of three display modes. Standard lists the steps closed; Expanded opens
+ * every step; Compact keeps the current step, count and elapsed time in a single disclosure.
+ * The group holds each step's disclosure (`DisclosureControlContext`) and tells a step whether the reader opened it or the
+ * mode did: a folded value is fetched only for a step the reader asked for. A step waiting on an
+ * approval or a retry opens the group in every mode, so its actions are on screen. A search
+ * temporarily exposes all loaded rows without changing the reader's page or disclosures.
  *
  * The head is a title bar of its own (the muted ground, a short title that doubles as the state),
  * a different layer from the rows on the surface below it, so the parent and its children read
@@ -48,7 +48,7 @@
  * a fixed phrase in sentence case on the small rung, uppercased only by a theme's recipe; names
  * go in the detail, which no recipe recases.
  */
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { Key, ReactNode } from "react";
 import { useArrived } from "../../../motion/use-arrived";
 import { StatusIcon } from "../../icons/status-icon/status-icon";
@@ -66,7 +66,9 @@ import {
   activityState,
 } from "../../layout/disclosure-row/disclosure-row";
 import type { ActivityKind, ActivityMark } from "../../layout/disclosure-row/disclosure-row";
+import { DisclosureControlContext } from "../../layout/disclosure-row/disclosure-control";
 import { Fold } from "../../layout/fold/fold";
+import { CompactStepHeader } from "./compact-step-header";
 import { WallpaperBackdrop } from "../../shell/app-shell/wallpaper";
 
 /**
@@ -79,10 +81,43 @@ const TITLE_INK: Readonly<Record<ActivityMark["state"], string>> = {
   error: "text-tone-danger-fg",
 };
 
+export type ActivityDisplayMode = "standard" | "expanded" | "compact";
+
+export interface ActivityStepSummary {
+  kind?: ActivityKind;
+  label: string;
+  state: RunState;
+  stateLabel?: string;
+  /** Tool description and, for file operations, the path of this invocation. */
+  description?: string;
+  path?: { short: string; full: string };
+}
+
 /** One of the activity's steps under the head, keyed for React. */
 export interface ActivityGroupRow {
   key: Key;
   content: ReactNode;
+  summary?: ActivityStepSummary | (() => ActivityStepSummary | undefined);
+  /** An approval or a retry is waiting on this step. */
+  needsAction?: boolean;
+  /** This step is still executing or waiting for input. */
+  active?: boolean;
+}
+
+export interface ActivityStepNavigation {
+  /** Localized number of real rows in this group. */
+  count?: string;
+  /** Older callers may still supply the former pager labels. */
+  previous?: string;
+  next?: string;
+  latest?: string;
+  waiting?: string;
+  stepWords?: readonly [string, string];
+  jump?: string;
+  /** The total time's name, as its tooltip and to a screen reader; the line shows the time alone. */
+  elapsed: string;
+  /** Expose every step to a search of this transcript, preserving the reading position. */
+  revealAll: boolean;
 }
 
 /**
@@ -91,7 +126,13 @@ export interface ActivityGroupRow {
  * attribute stays put on a row for as long as it is mounted (removing it mid-way would cut the
  * reveal short), and a body reopened later mounts every row settled.
  */
-function ActivityRows({ rows }: { rows: readonly ActivityGroupRow[] }) {
+function ActivityRows({
+  rows,
+  revealNew = true,
+}: {
+  rows: readonly ActivityGroupRow[];
+  revealNew?: boolean;
+}) {
   const [present] = useState(() => new Set(rows.map((row) => row.key)));
   return (
     <>
@@ -100,7 +141,7 @@ function ActivityRows({ rows }: { rows: readonly ActivityGroupRow[] }) {
           key={row.key}
           data-depth="1"
           data-last={index === rows.length - 1 ? "true" : undefined}
-          data-reveal={present.has(row.key) ? undefined : true}
+          data-reveal={revealNew && !present.has(row.key) ? true : undefined}
         >
           {row.content}
         </div>
@@ -129,6 +170,12 @@ export interface ActivityGroupProps {
   stateLabel?: string;
   /** A mark naming the activity in place of the status icon (an injected message's hook); a registry glyph's path or a node. */
   mark?: ReactNode;
+  /**
+   * A settled activity that needs the reader's attention, said by its `mark` (an attention-ink
+   * glyph whose tooltip and accessible name say why: a compaction that wrote no full summary). The
+   * head carries `data-attention`, so a theme that draws no status marks keeps this one.
+   */
+  attention?: boolean;
   /** A count as words ("3 steps"), mono after the title. Hidden below `sm`: the head must stay one uncut line on a phone. */
   count?: string;
   /** One line of status or result, where names go (servers, a failure's reason); mono, truncating, with the full text as its tooltip. */
@@ -138,8 +185,9 @@ export interface ActivityGroupProps {
   /** The settled span, shown once nothing is in flight. */
   durationMs?: number;
   /**
-   * The body is forced open, the reader's own open state kept for later: a step waits on an
-   * approval, or the caller needs the rows on screen (a search of the transcript).
+   * A step waits on an approval or a retry, or the caller needs the rows on screen (a search of
+   * the transcript). The body is forced open, the reader's own open state kept for later; in
+   * Compact it opens by default instead, so the reader can still close the line.
    */
   pending?: boolean;
   /**
@@ -147,8 +195,32 @@ export interface ActivityGroupProps {
    * step lands) it adds the chevron.
    */
   rows?: readonly ActivityGroupRow[];
+  /** Presentation of reasoning and tool groups. Other activities keep their normal disclosure. */
+  displayMode?: ActivityDisplayMode;
+  /** Actual end of the turn, reported once on its last work group. */
+  terminal?: { state: "done" | "failed" | "stopped"; label: string; durationMs?: number };
+  /** Whole-turn timing, shared by its work groups. A duration freezes the clock. */
+  runTiming?: { startMs: number; durationMs?: number };
+  /** Pager and action labels for a work group and its transcript-search state. */
+  stepNavigation?: ActivityStepNavigation;
   /** A body of one piece the caller styles, in place of rows; its presence adds the chevron too. */
   children?: ReactNode;
+  /**
+   * Text actions for the activity (a failed row's 「[报告问题]」): after the duration on a head
+   * that does not expand. An expandable head is one button and a press cannot nest in it, so
+   * there they stand at the foot of the open body instead, after the detail in full.
+   */
+  actions?: ReactNode;
+}
+
+interface ReadingState {
+  mode: ActivityDisplayMode;
+  open: boolean | null;
+  disclosures: ReadonlyMap<Key, boolean>;
+}
+
+function initialReadingState(mode: ActivityDisplayMode): ReadingState {
+  return { mode, open: null, disclosures: new Map() };
 }
 
 export function ActivityGroup({
@@ -158,19 +230,27 @@ export function ActivityGroup({
   title,
   stateLabel,
   mark,
+  attention = false,
   count,
   detail,
   startMs,
   durationMs,
   pending = false,
   rows,
+  stepNavigation,
+  runTiming,
+  displayMode: preference = "standard",
+  terminal,
   children,
+  actions,
 }: ActivityGroupProps) {
   const hookState = activityState(state);
   const running = hookState === "running";
   const inFlight = stepRunning ?? state === "running";
-  const [open, setOpen] = useState(running);
-  const userToggled = useRef(false);
+  const displayMode = stepNavigation ? preference : "standard";
+  const [view, setView] = useState(() => initialReadingState(displayMode));
+  // A preference change applies the new defaults before React commits the next frame.
+  if (view.mode !== displayMode) setView(initialReadingState(displayMode));
   /** The reader closed the card: land the view on it once the fold has finished. */
   const landOnClose = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -178,15 +258,62 @@ export function ActivityGroup({
   const settledHere = useArrived(hookState);
   const hasChildren = children !== undefined && children !== null;
   const expandable = rows !== undefined || hasChildren;
+  const hasActions = actions !== undefined && actions !== null;
 
-  // Before any manual toggle, follow the activity's own state: open while it runs, closed the
-  // moment it settles. Afterwards the reader's choice stands, so a settled card they opened
-  // stays open and one they closed mid-run stays closed.
-  useEffect(() => {
-    if (!userToggled.current) setOpen(running);
-  }, [running]);
-
-  const shown = expandable && (open || pending);
+  const compact = displayMode === "compact";
+  const finding = !!stepNavigation?.revealAll;
+  const currentRow =
+    compact && !finding ? (rows?.findLast((row) => row.active) ?? rows?.at(-1)) : undefined;
+  const rawSummary = currentRow?.summary;
+  const stepSummary = typeof rawSummary === "function" ? rawSummary() : rawSummary;
+  const summary: ActivityStepSummary =
+    terminal && terminal.state !== "done"
+      ? terminal
+      : stepSummary
+        ? {
+            ...stepSummary,
+            ...(terminal ? { state: terminal.state, stateLabel: terminal.label } : {}),
+          }
+        : { label: title, state };
+  const shown =
+    expandable &&
+    (finding ||
+      (compact
+        ? (view.open ?? pending)
+        : pending || (view.open ?? (displayMode === "expanded" || running))));
+  function toggle() {
+    landOnClose.current = shown && !finding && (compact || !pending);
+    setView((prior) => ({ ...prior, open: !shown }));
+  }
+  function renderRows() {
+    if (!stepNavigation) return rows ?? [];
+    return (rows ?? []).map((row) => {
+      const chosen = view.disclosures.get(row.key);
+      const expanded = chosen ?? displayMode === "expanded";
+      return {
+        ...row,
+        content: (
+          <DisclosureControlContext.Provider
+            value={{
+              open: finding || expanded,
+              // Expanded and a search open rows by policy; only the reader's own opening asks
+              // for what a row holds folded.
+              requested: !finding && chosen === true,
+              toggle: () => {
+                if (!finding)
+                  setView((prior) => ({
+                    ...prior,
+                    disclosures: new Map(prior.disclosures).set(row.key, !expanded),
+                  }));
+              },
+            }}
+          >
+            {row.content}
+          </DisclosureControlContext.Provider>
+        ),
+      };
+    });
+  }
   const showDuration = inFlight
     ? startMs !== undefined
     : durationMs !== undefined && durationMs > 0;
@@ -233,31 +360,57 @@ export function ActivityGroup({
         />
       )}
       <ActivityProgress running={inFlight} />
+      {!expandable && hasActions && (
+        <span data-slot="actions" className="flex shrink-0 items-baseline gap-x-2 text-xs">
+          {actions}
+        </span>
+      )}
       {expandable && <ActivityToggle open={shown} />}
       <span className="min-w-0 flex-1" />
     </>
   );
 
   return (
-    <div ref={rootRef} className={`ui-frame ${DISCLOSURE_CARD_CLASS}`}>
-      {expandable ? (
+    <div
+      ref={rootRef}
+      className={`ui-frame ${DISCLOSURE_CARD_CLASS}`}
+      data-step-view={stepNavigation ? (finding ? "find" : displayMode) : undefined}
+    >
+      {compact && stepNavigation && !finding && (rows?.length ?? 0) > 0 ? (
+        <button
+          type="button"
+          data-slot="head"
+          data-group-header
+          data-step-head=""
+          data-kind={summary.kind ?? kind}
+          data-state={activityState(summary.state)}
+          data-step-terminal={terminal ? true : undefined}
+          aria-expanded={shown}
+          onClick={toggle}
+          className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} ${DISCLOSURE_HEADER_ROW_CLASS} min-w-0 max-sm:gap-1 max-sm:pe-[var(--activity-head-reserve,0.75rem)]`}
+        >
+          <WallpaperBackdrop />
+          <CompactStepHeader
+            summary={summary}
+            count={stepNavigation.count ?? count}
+            elapsed={stepNavigation.elapsed}
+            open={shown}
+            totalStartMs={runTiming?.startMs ?? startMs}
+            totalDurationMs={runTiming?.durationMs ?? terminal?.durationMs ?? durationMs}
+            totalRunning={runTiming ? runTiming.durationMs === undefined : running && !terminal}
+          />
+        </button>
+      ) : expandable ? (
         <button
           type="button"
           data-group-header
           aria-expanded={shown}
-          onClick={() => {
-            userToggled.current = true;
-            // Collapsing while the head is stuck: the card's top sits above the fold, so bring the
-            // (now head-only) card back into view once the fold has finished; `nearest` makes
-            // every other case a no-op. A forced-open card keeps its body, so that click moves
-            // nothing.
-            landOnClose.current = open && !pending;
-            setOpen((v) => !v);
-          }}
+          onClick={toggle}
           className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} ${DISCLOSURE_HEADER_ROW_CLASS}`}
           data-slot="head"
           data-kind={kind}
           data-state={hookState}
+          data-attention={attention ? "" : undefined}
         >
           <WallpaperBackdrop />
           {parts}
@@ -268,6 +421,7 @@ export function ActivityGroup({
           data-slot="head"
           data-kind={kind}
           data-state={hookState}
+          data-attention={attention ? "" : undefined}
         >
           {parts}
         </div>
@@ -285,7 +439,30 @@ export function ActivityGroup({
             rootRef.current?.scrollIntoView({ block: "nearest" });
           }}
         >
-          {() => (rows !== undefined ? <ActivityRows rows={rows} /> : children)}
+          {() => (
+            <>
+              {rows !== undefined ? (
+                <ActivityRows rows={renderRows()} revealNew={!compact} />
+              ) : (
+                children
+              )}
+              {hasActions && (
+                // The head's detail truncates; here it wraps, so the action follows the whole of
+                // what it is about.
+                <div
+                  data-slot="foot"
+                  className="flex flex-wrap items-baseline gap-x-2 px-3 py-1.5 text-xs"
+                >
+                  {detail !== undefined && (
+                    <span className="min-w-0 break-words font-mono text-fg-subtle">{detail}</span>
+                  )}
+                  <span data-slot="actions" className="flex shrink-0 items-baseline gap-x-2">
+                    {actions}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
         </Fold>
       )}
     </div>

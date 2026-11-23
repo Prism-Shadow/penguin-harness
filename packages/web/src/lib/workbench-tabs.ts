@@ -1,22 +1,21 @@
 /**
- * The tab strip's view of an Agent's workbenches.
+ * An Agent's workbench pages as the Web shows them: in the App Center's window (opened from the
+ * App Center or the sidebar's app list, switched in the window's title bar when there are
+ * several) and as the full page.
  *
- * A tab is a CONTRIBUTION: a workbench's manifest puts an entry into `WebModule.sessionTabs`
- * for each page it wants beside the chat — several, or none for a handler-only workbench —
- * and the server hands them over with each page's URL resolved. `uiRev`, the content hash
- * of the workbench's `ui/` tree, is only the cache key an open tab compares to notice its
- * page changed under it (the iframe reloads on a new one). A tab whose renderer this build
- * does not carry is left out: there is nothing to draw it with.
- *
- * Chat is not one of these. It is always present and always reachable, so a workbench tab
- * disappearing (folder removed, Agent switched) falls back to Chat rather than leaving
- * the strip pointing at nothing.
+ * A page is a CONTRIBUTION: a workbench's manifest puts an entry into `WebModule.sessionTabs`
+ * for each page it has — several, or none for a handler-only workbench — and the server hands
+ * them over with each page's URL resolved. The slot keeps its name, so no installed manifest has
+ * to change. `uiRev`, the content hash of the workbench's `ui/` tree, is only the cache key an
+ * open page compares to notice it changed under it (the iframe reloads on a new one). A page
+ * whose renderer this build does not carry is left out: there is nothing to draw it with.
  */
+import { useEffect } from "react";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "./server-context";
 
 export interface WorkbenchTab {
-  /** `<workbenchId>/<key>`: what the strip selects by. */
+  /** `<workbenchId>/<key>`: what a frame keys its page on. */
   tabId: string;
   workbenchId: string;
   /** The contribution's key, unique within its workbench; the fourth segment of the full-page route. */
@@ -25,6 +24,7 @@ export interface WorkbenchTab {
   titleZh?: string;
   /** Where the page is served from — through the machine's connection when the workbench lives on one. */
   src: string;
+  pointerLock?: true;
   /** The machine whose server holds the workbench (the Agent's Session runs there); null = this server. */
   machineId: string | null;
   /** The workbench's package name, for the frame's bar. */
@@ -45,8 +45,20 @@ export interface WorkbenchTab {
 export const WORKBENCH_UPDATED_EVENT = "penguin:workbench-updated";
 
 export interface WorkbenchUpdatedDetail {
+  machineId?: string | null;
   projectId: string;
   agentId: string;
+}
+
+/**
+ * Dispatched on `window` when the server starts loading a workbench's files (the watcher saw an
+ * edit, or a list or a reload asked for it). The App Center listens, to show the tile building;
+ * the end of the load is the WORKBENCH_UPDATED_EVENT above.
+ */
+export const WORKBENCH_BUILDING_EVENT = "penguin:workbench-building";
+
+export interface WorkbenchBuildingDetail extends WorkbenchUpdatedDetail {
+  workbenchId: string;
 }
 
 export function workbenchesBase(projectId: string, agentId: string): string {
@@ -59,24 +71,18 @@ export function workbenchUiUrl(tab: Pick<WorkbenchTab, "src" | "uiRev">): string
 }
 
 /**
- * A workbench the reader would otherwise never hear about: it contributes no tab, so nothing
- * of it can appear in the strip, and yet the server has something to say about it — the load
- * failed, or it loaded and the harness noticed the pages go nowhere (`hints`). A workbench
- * that HAS tabs carries its error on them instead, on the tab itself.
- *
- * The author is an Agent and reads `.build/status.json`, but the person watching the chat
- * page has only this.
+ * The workbenches that run, out of an Agent's list: none while the Agent-wide switch is off, and
+ * of the rest each only while its own switch is on. A switched-off workbench is still listed by
+ * the server (its settings row needs it) but loads nothing, so nothing outside the settings may
+ * offer it: no tab, no notice, no full page. A server older than the switches sends neither
+ * flag, and everything it lists runs.
  */
-export interface WorkbenchNotice {
-  workbenchId: string;
-  error: string | null;
-  hints: readonly string[];
-}
-
-export function workbenchNoticesOf(workbenches: readonly WorkbenchInfo[]): WorkbenchNotice[] {
-  return workbenches
-    .filter((w) => w.tabs.length === 0 && (w.error !== null || (w.hints ?? []).length > 0))
-    .map((w) => ({ workbenchId: w.id, error: w.error, hints: w.hints ?? [] }));
+export function runningWorkbenches(list: {
+  workbenches: readonly WorkbenchInfo[];
+  enabled?: boolean;
+}): WorkbenchInfo[] {
+  if (list.enabled === false) return [];
+  return list.workbenches.filter((w) => w.enabled !== false);
 }
 
 export function workbenchTabsOf(
@@ -94,6 +100,7 @@ export function workbenchTabsOf(
               title: tab.title,
               ...(tab.titleZh === undefined ? {} : { titleZh: tab.titleZh }),
               src: apiUrl(tab.renderer.iframe.src, machineId),
+              ...(tab.renderer.iframe.pointerLock === true ? { pointerLock: true as const } : {}),
               machineId,
               name: w.name,
               version: w.version,
@@ -107,19 +114,11 @@ export function workbenchTabsOf(
   );
 }
 
-/** Which tab to show after the list changed: the active one if it still exists, else Chat. */
-export function settleActiveTab(
-  active: string | null,
-  tabs: readonly WorkbenchTab[],
-): string | null {
-  return active !== null && tabs.some((t) => t.tabId === active) ? active : null;
-}
-
 /**
- * The route that shows one workbench page as the whole app (no sidebar, no chat, no tab
- * strip): what `penguin web --app <project>/<agent>/<workbench>[/<tab>]` opens, and what a
- * tab's "fill the app" action navigates to. Without a tab key the workbench's first tab is
- * shown. The command palette is the way out.
+ * The route that shows one workbench page as the whole app (no sidebar, no chat): what
+ * `penguin web --app <project>/<agent>/<workbench>[/<tab>]` opens, and what a window's "Open
+ * full screen" navigates to. Without a tab key the workbench's first page is shown. The exit
+ * button and the command palette are the way out.
  */
 export function workbenchAppPath(
   projectId: string,
@@ -146,3 +145,66 @@ export function appPageTab(
 
 /** A page's own request to fill the app, posted to its parent: `{ type: "penguin:fill-app" }`. */
 export const FILL_APP_MESSAGE = "penguin:fill-app";
+
+/**
+ * A page's question about a chat model, posted to its parent by the page SDK's
+ * `chooseChatModel()` / `getChatModel()`: `{ type, id, op: "choose" | "get", current }`. The app
+ * answers on the same id with {@link CHAT_MODEL_REPLY}: `{ accepted: true }` at once, then
+ * `{ model }` (null when none was chosen) or `{ error }`.
+ */
+export const CHAT_MODEL_MESSAGE = "penguin:chat-model";
+/** A visible workbench's request to open its Project's Models page, answered on the same id. */
+export const OPEN_MODEL_SETTINGS_MESSAGE = "penguin:open-model-settings";
+export const CHAT_MODEL_REPLY = "penguin:chat-model-reply";
+
+/** The main app's manifest, the literal the template ships and what leaving the page restores. */
+export const MAIN_MANIFEST_HREF = "/manifest.webmanifest";
+
+/** A workbench manifest's path on the local server (the auth-less gate), per tab or whole. */
+export function workbenchManifestHref(
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  tabKey?: string,
+  machineId: string | null = null,
+): string {
+  const segments = [projectId, agentId, workbenchId, ...(tabKey === undefined ? [] : [tabKey])].map(
+    encodeURIComponent,
+  );
+  return (
+    `/api/projects/${segments[0]}/agents/${segments[1]}/workbenches/${segments[2]}` +
+    (tabKey === undefined ? "" : `/tabs/${segments[3]}`) +
+    "/manifest.webmanifest" +
+    (machineId === null ? "" : `?machine=${encodeURIComponent(machineId)}`)
+  );
+}
+
+/**
+ * This page is its own installable app: while it is mounted, the document's manifest link
+ * names the page's own manifest (the tab's, or the workbench's when no tab key is in the
+ * route), and on unmount it is restored to the main app's literal link. The restore is the
+ * literal — NEVER the href found on arrival: on a page the server had already rewritten, the
+ * arrival href IS a workbench manifest, and keeping it would leave the install surface on
+ * the workbench after the page is gone.
+ *
+ * Returns the href the link now carries (the same string the server's rewrite builds), for
+ * the page's tests to assert against.
+ */
+export function useInstallManifest(
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  tabKey: string | undefined,
+  machineId: string | null = null,
+): string {
+  const href = workbenchManifestHref(projectId, agentId, workbenchId, tabKey, machineId);
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (link === null) return;
+    if (link.getAttribute("href") !== href) link.setAttribute("href", href);
+    return () => {
+      link.setAttribute("href", MAIN_MANIFEST_HREF);
+    };
+  }, [href]);
+  return href;
+}

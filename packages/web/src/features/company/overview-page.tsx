@@ -22,8 +22,16 @@
  * Loading discipline: the skeleton shows only until the first response or the first error;
  * a failed refresh keeps what was last read on screen under one error line with its retry.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+
 import { useNavigate } from "react-router";
 import type {
   OrgChartResponse,
@@ -42,23 +50,21 @@ import {
   RuledSection,
   Segmented,
   Text,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatRelativeShort } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneDot, toneInk, toneSurface } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
-import { useCompany } from "../../state/company";
+import { toneDot, toneInk, toneSurface, type Tone } from "../../lib/tone";
+
+import { useCompany } from "./company-state";
 import { useLocale } from "../../state/locale";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { orgChannelPath, orgKey, orgPagePath } from "./company-nav";
-import type { CompanyNavKey } from "./company-nav";
+import { orgChannelPath, orgKey, orgPagePath, type CompanyNavKey } from "../../lib/company-nav";
+
 import { CHANNEL_ICON } from "./channel-sidebar";
 import { OrgEmptyLine, OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
@@ -88,15 +94,15 @@ import {
   missionClampedGuess,
   spendSummary,
   todaySummary,
+  type FirstStep,
+  type InboxCategory,
+  type InboxFilter,
+  type InboxRow,
+  type InboxTarget,
+  type TimelineMark,
 } from "./overview-summary";
-import type {
-  FirstStep,
-  InboxCategory,
-  InboxFilter,
-  InboxRow,
-  InboxTarget,
-  TimelineMark,
-} from "./overview-summary";
+import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** How many of today's instances the timeline shows before pointing at the calendar. */
 const TIMELINE_ROWS = 6;
@@ -330,7 +336,7 @@ export function OverviewPage() {
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
   /** The whole calendar's size, read only while the organization is fresh (today's slice says nothing about next week). */
   const [calendarCount, setCalendarCount] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [openingDesk, setOpeningDesk] = useState(false);
   /** The inbox chip in force; local to the visit, as a filter over one section should be. */
   const [inboxFilter, setInboxFilter] = useState<InboxFilter>("all");
@@ -368,7 +374,7 @@ export function OverviewPage() {
         }
       }
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an organization's overview could not be loaded" }));
     }
   }, [projectId, orgId]);
 
@@ -396,7 +402,7 @@ export function OverviewPage() {
       const desk = await api.getOrgDesk(projectId, orgId, chart.ceoAgentId);
       navigate(`/chat/${desk.sessionId}`);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setOpeningDesk(false);
     }

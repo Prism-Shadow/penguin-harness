@@ -60,6 +60,15 @@ describe("humanizeTokens", () => {
     expect(humanizeTokens(-1200)).toBe("-1.2k");
     expect(humanizeTokens(-500)).toBe("-500");
   });
+
+  it("a value that rounds up to 1000 carries into the next unit", () => {
+    // Picking the unit from the raw value would print 1000k / 1000M.
+    expect(humanizeTokens(999_950)).toBe("1M");
+    expect(humanizeTokens(999_950_000)).toBe("1B");
+    expect(humanizeTokens(-999_950)).toBe("-1M");
+    // Just below the carry the unit is unchanged.
+    expect(humanizeTokens(999_949)).toBe("999.9k");
+  });
 });
 
 describe("humanizeDuration", () => {
@@ -115,6 +124,12 @@ describe("formatMoney", () => {
     expect(formatMoney(0.1234)).toBe("$0.1234");
     expect(formatMoney(1.5)).toBe("$1.50");
     expect(formatMoney(150)).toBe("$150");
+  });
+
+  it("a cost below a tenth of a cent keeps four significant digits instead of rounding to zero", () => {
+    expect(formatMoney(0.0000123)).toBe("$0.0000123");
+    expect(formatMoney(0.00045678)).toBe("$0.0004568");
+    expect(formatMoney(0.0001, "CNY")).toBe("¥0.0007");
   });
 
   it("CNY converted at 1:7", () => {

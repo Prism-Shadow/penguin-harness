@@ -12,6 +12,7 @@
  *   - the icon swap is silent, so every copy affordance also renders a CopiedStatus live region
  *     beside itself — the screen-reader half of the same feedback.
  */
+import { InlineIconButton } from "../button/inline-icon-button";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { useUiStrings } from "../../../strings";
@@ -55,6 +56,11 @@ export function ClipboardWriterProvider({
   return (
     <ClipboardWriterContext.Provider value={write}>{children}</ClipboardWriterContext.Provider>
   );
+}
+
+/** The app's clipboard writer, for a copy control that is not a `CopyButton` (a report's Copy). */
+export function useClipboardWriter(): ClipboardWriter {
+  return useContext(ClipboardWriterContext);
 }
 
 /**
@@ -125,18 +131,6 @@ export function CopiedStatus({
   );
 }
 
-/** The compact look every copy button shares: a quiet glyph that fills in on hover. */
-const LOOK =
-  "rounded-sm text-fg-subtle transition-colors duration-150 hover:bg-surface-muted hover:text-fg-muted";
-
-const SIZE = {
-  // Beside a line of small text (an id, a path, a stats row): a 20 px square, the line height
-  // those rows keep, so the button sits on the line without making it taller.
-  sm: "inline-flex size-5 items-center justify-center",
-  // A message footer, a code block's corner: the glyph with a rhythm step of padding round it.
-  md: "p-1",
-} as const;
-
 export function CopyButton({
   text,
   label,
@@ -147,22 +141,21 @@ export function CopyButton({
   text: string | (() => string);
   /** Accessible name and tooltip of the copy action; neither changes while copied. */
   label: string;
-  size?: keyof typeof SIZE;
+  size?: "sm" | "md";
   /** Layout the caller's row needs (`shrink-0`, a margin); the look is the button's own. */
   className?: string;
 }) {
   const { copied, flash } = useCopied();
   return (
     <>
-      <button
-        type="button"
-        data-tooltip={label}
-        aria-label={label}
+      <InlineIconButton
+        label={label}
+        size={size}
         onClick={() => flash(typeof text === "function" ? text() : text)}
-        className={`${LOOK} ${SIZE[size]} ${className}`}
+        className={className}
       >
         <CopyCheckGlyph copied={copied} />
-      </button>
+      </InlineIconButton>
       {/* Sibling, not a child: the button's accessible name stays `label`, and `sr-only` is
           position:absolute, so it is not a flex item and disturbs no caller's layout. */}
       <CopiedStatus copied={copied} />

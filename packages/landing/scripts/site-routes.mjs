@@ -8,9 +8,10 @@
  * gets a shell belongs in the sitemap (the gallery's views excepted, see galleryRoutes),
  * and a sitemap URL that has no shell is a 404.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hubRoutes as hubRouteList, loadHub } from "./hub/hub.mjs";
 
 /** Production origin, no trailing slash. Override for a staging deploy. */
 export const SITE_ORIGIN = (process.env.SITE_ORIGIN ?? "https://penguin.ooo").replace(/\/+$/, "");
@@ -26,6 +27,7 @@ export function absoluteUrl(route) {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BLOG_DIR = join(HERE, "..", "content", "blog");
 const DOCS_DIR = join(HERE, "..", "..", "docs", "content");
+const RFCS_DIR = join(HERE, "..", "..", "..", "rfcs");
 
 /** `<slug>.<lang>.md` -> slug, deduplicated across the two languages, sorted. */
 function slugsIn(dir) {
@@ -82,6 +84,19 @@ export function pageRoutes() {
   return [{ route: "/download/" }, { route: "/amsp/", meta: AMSP_META }];
 }
 
+/**
+ * The Plugins, Benchmarks and Leaderboards pages: each list and one page per entry, read from the
+ * same files the build read (the benchmark repository's clone the build just made, or
+ * PENGUIN_BENCHMARK_REPO; the market document and plugin index it fetched, hub/published.mjs).
+ * Each shell names its page; the share image is the site's own.
+ */
+export function hubRoutes() {
+  return hubRouteList(loadHub()).map(({ route, title, description }) => ({
+    route,
+    meta: { title, description, image: "/og-cover.png", imageAlt: "PenguinHarness" },
+  }));
+}
+
 /** Blog routes, one per post plus the list page. */
 export function blogRoutes() {
   return [
@@ -91,6 +106,23 @@ export function blogRoutes() {
       lastmod: newestDate(BLOG_DIR, slug),
     })),
   ];
+}
+
+/** RFC routes, the `/rfcs/` index plus one page per landed PRFC document in `rfcs/`. */
+export function rfcRoutes() {
+  const ids = new Set();
+  if (existsSync(RFCS_DIR)) {
+    for (const file of readdirSync(RFCS_DIR)) {
+      if (!/^PRFC-\d+-.+\.md$/.test(file) || file.endsWith(".zh.md")) continue;
+      const raw = readFileSync(join(RFCS_DIR, file), "utf8");
+      const bodyIdx = raw.indexOf("\n## ");
+      const header = bodyIdx === -1 ? raw : raw.slice(0, bodyIdx);
+      if (/\blanded\b|lands on the default branch|native to this repository|落地/.test(header)) {
+        ids.add(file.replace(/\.md$/, ""));
+      }
+    }
+  }
+  return [{ route: "/rfcs/" }, ...[...ids].sort().map((id) => ({ route: `/rfcs/${id}/` }))];
 }
 
 /** Routes served by the docs SPA, whose own postbuild already writes their shells. */

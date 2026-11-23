@@ -11,7 +11,8 @@
  *   words — and is not kept.
  * - On an open session, a command that outlasts its timeout answers with the timeout, and
  *   the next one gets a new live session; on a held session the corpse is dropped but the
- *   hold kept.
+ *   hold kept. A command whose work is cut answers the same way at once, and one cut before
+ *   it is sent starts no ssh.
  * - A held session that dies comes back on its own after the shortest reconnect wait; a
  *   closed one stays closed; closing lets go, and the next ask opens a new session.
  * - A session a command opened is up but is not a connection until it is held.
@@ -247,6 +248,28 @@ exit 1
     // The next command finds a session — reopened by the command itself or by the hold.
     expect(await conn.exec("echo after")).toMatchObject({ code: 0, stdout: "after\n" });
     expect(conn.held()).toBe(true);
+  });
+
+  it("a command whose work is cut answers at once and the next one gets a live session; one cut before it is sent starts no ssh", async () => {
+    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    const opened = await conn.open();
+    expect(opened.ok).toBe(true);
+    const work = new AbortController();
+    const cutConn = connectionTo({ alias: "nas", user: "deploy", signal: work.signal });
+    const started = Date.now();
+    const running = cutConn.stream("sleep 5", { input: Buffer.alloc(0) });
+    setTimeout(() => work.abort(), 100);
+    expect(await running).toMatchObject({ code: 255, stdout: "stopped before it finished" });
+    expect(Date.now() - started).toBeLessThan(4_000);
+
+    // The session it was cut on is gone, and its close does not take the next one down.
+    expect(await conn.exec("echo after")).toMatchObject({ code: 0, stdout: "after\n" });
+    expect(conn.session()?.pid).not.toBe(opened.ok ? opened.session.pid : undefined);
+    expect(spawns()).toHaveLength(2);
+
+    closeConnectionTo("ssh:nas");
+    expect((await cutConn.exec("echo never")).code).toBe(255);
+    expect(spawns()).toHaveLength(2);
   });
 
   it("closing lets go of the session; the next ask opens a new one", async () => {

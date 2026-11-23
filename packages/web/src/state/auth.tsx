@@ -9,13 +9,15 @@
  * theme and language, and every composer mounts with the account's draft. Signing out sends what
  * is still pending first, then stops carrying edits.
  */
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { clearDraftUploads } from "../lib/draft-uploads";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+
 import type { MeResponse, UploadLimits, UserInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
 import { ApiError, setUnauthorizedHandler } from "../api/client";
 import { probeSession } from "../api/session-probe";
 import { flushAccountSync, startAccountSync, stopAccountSync } from "../lib/account-sync/sync";
+import { forgetCatalogs } from "../lib/catalog-storage";
 
 /** How long signing out waits for pending edits to reach the account before it goes ahead. */
 const SIGN_OUT_FLUSH_MS = 2000;
@@ -121,8 +123,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       // The session is gone: nothing more can reach the account, and the journal keeps what
-      // was pending for this account's next sign-in.
+      // was pending for this account's next sign-in. What machines answered it is not kept.
       stopAccountSync();
+      clearDraftUploads();
+      forgetCatalogs(() => true);
       setUser(null);
     });
     return () => setUnauthorizedHandler(null);
@@ -214,9 +218,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       new Promise<void>((resolve) => setTimeout(resolve, SIGN_OUT_FLUSH_MS)),
     ]);
     stopAccountSync();
+    clearDraftUploads();
     try {
       await api.logout();
     } finally {
+      forgetCatalogs(() => true);
       setUser(null);
     }
   }, []);

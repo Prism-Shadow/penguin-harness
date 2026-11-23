@@ -25,8 +25,16 @@
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
-import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
-import type { SourceFile } from "./helpers/roots";
+import {
+  expectEveryRootScanned,
+  appIdOf,
+  appKeyOf,
+  expectSingleHome,
+  isAppFile,
+  scanSources,
+  sourceFile,
+  type SourceFile,
+} from "./helpers/roots";
 
 /** Web and the shared UI package: a control that moves keeps its call sites under this check. */
 const SCAN = scanSources();
@@ -43,6 +51,10 @@ const CONTROLS = new Set([
   "Checkbox",
   "Radio",
   "RadioGroup",
+  "DateField",
+  "TimeField",
+  "DateTimeField",
+  "DateRangeField",
 ]);
 
 /**
@@ -163,7 +175,8 @@ function findLooseFooterButtons(files: readonly JsxSource[] = tsxFiles()): strin
  * folds open (release notes, credits) are the rest — so every Button in them belongs with the
  * fields beside it on the `sm` rung, exactly as a footer button does. A parser cannot infer that
  * from the file alone (nothing in a section module says it renders in a dialog), so the fact is
- * declared here. Add a module when it becomes dialog content; drop one when it stops.
+ * declared here. Add a module when it becomes dialog content; drop one when it stops. A plugin web
+ * half's page (`SettingsModule.sections`) is named by its repo path, `plugins/<name>/src/web/…`.
  */
 const DIALOG_BODY_MODULES = new Set([
   "components/account/app-info-dialog.tsx",
@@ -175,13 +188,22 @@ const DIALOG_BODY_MODULES = new Set([
   "features/settings/profile-section.tsx",
   "features/settings/appearance-section.tsx",
   "features/settings/background-controls.tsx",
-  "features/settings/browser-section.tsx",
-  "features/settings/chrome-extension-section.tsx",
+  "plugins/browser-automation/src/web/browser-section.tsx",
+  "plugins/browser-automation/src/web/chrome-extension-section.tsx",
+  "plugins/storage/src/web/storage-breakdown.tsx",
+  "plugins/storage/src/web/storage-cleanup-dialog.tsx",
+  "plugins/storage/src/web/storage-review-foot.tsx",
+  "plugins/storage/src/web/storage-section.tsx",
+  "plugins/storage/src/web/storage-sessions-dialog.tsx",
   "features/settings/general-section.tsx",
+  "features/settings/module-requests-page.tsx",
+  "features/settings/plugin-module-requests.tsx",
   "features/settings/plugin-config-card.tsx",
+  "features/settings/plugin-group-page.tsx",
   "features/settings/proxy-section.tsx",
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",
+  "features/settings/theme-packs-section.tsx",
   "features/settings/trace-import-row.tsx",
   "features/settings/uploads-section.tsx",
   "features/admin/admin-users-page.tsx",
@@ -194,7 +216,7 @@ const DIALOG_BODY_MODULES = new Set([
 function findLooseDialogBodyButtons(): string[] {
   const loose: string[] = [];
   for (const file of tsxFiles()) {
-    if (file.root !== "web" || !DIALOG_BODY_MODULES.has(file.rel)) continue;
+    if (!isAppFile(file) || !DIALOG_BODY_MODULES.has(appKeyOf(file.id))) continue;
     const source = parse(file);
     const visit = (node: ts.Node): void => {
       if (jsxTag(node) === "Button") {
@@ -209,7 +231,7 @@ function findLooseDialogBodyButtons(): string[] {
             : "<none>";
         if (rung !== '"sm"' && rung !== '"icon"') {
           const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-          loose.push(`${file.rel}:${line} ${rung}`);
+          loose.push(`${appKeyOf(file.id)}:${line} ${rung}`);
         }
       }
       ts.forEachChild(node, visit);
@@ -258,7 +280,7 @@ describe("control font size", () => {
     expectEveryRootScanned(SCAN);
     for (const id of Object.values(FAMILY)) expectSingleHome(SCAN, id);
     // A listed module that was renamed or moved would silently drop out of the dialog-body rule.
-    for (const rel of DIALOG_BODY_MODULES) sourceFile(SCAN, `packages/web/src/${rel}`);
+    for (const rel of DIALOG_BODY_MODULES) sourceFile(SCAN, appIdOf(rel));
   });
 
   it("is never spelled on a call site's className", () => {
