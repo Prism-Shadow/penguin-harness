@@ -14,6 +14,37 @@ import type { Strings } from "./strings";
 
 export const en: Strings = {
   appName: "PenguinHarness",
+  firstWorkbench: {
+    updateNeeded:
+      "This agent has an earlier guide. Update it to generate a checklist from a chat reply.",
+    update: "Update guide on this agent",
+    updateWarning:
+      "Replace this agent’s guide code with the library version? Local edits to the guide code will be overwritten. Your progress and checklist data will stay available.",
+    updateUnavailable: "This server’s library does not yet have the updated guide.",
+    title: "Your first workbench",
+    help: "Build and test a checklist from one of your conversations.",
+    resume: "Start or resume guide",
+    later: "Dismiss",
+    refresh: "Refresh",
+    loading: "Loading…",
+    generating: "Generating your checklist…",
+    waitReply: "Wait for a completed reply in a chat with this agent.",
+    models: "Open Models to connect a provider, then choose a model in the chat composer.",
+    chat: "Choose a model in the composer. Send a task you want to turn into a checklist, then read its reply.",
+    reply: "Reply to use",
+    feedback: "Changes for the checklist",
+    modelSettings: "Open Models",
+    toChat: "Go to chat",
+    useReply: "Use this conversation",
+    retryChat: "Retry saved request",
+    generate: "Generate checklist",
+    verified: "Test passed. The checklist saved, completed and removed the test item.",
+    install: "Install checklist",
+    open: "Open checklist",
+    test: "Test checklist",
+    testItem: "Onboarding test item",
+    download: "Download plugin",
+  },
 
   voice: {
     models: "Multimodal models",
