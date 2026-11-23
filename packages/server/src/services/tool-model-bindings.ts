@@ -91,7 +91,7 @@ export interface ToolModelBindingCode {
    * The cheapest request a model this binding accepts takes, which the connection test sends it.
    * Absent: such a model is tested with the chat probe (a short text prompt).
    */
-  testRequest?(): ToolModelTestRequest;
+  testRequest?(model: ToolModelCandidate): ToolModelTestRequest;
 }
 
 export interface ToolModelBindingsSlots {
@@ -181,9 +181,12 @@ function accepts(binding: DeclaredBinding, model: ToolModelCandidate): boolean {
 }
 
 /** A binding's test request; a code half that throws declares none for this call. */
-function testRequestOf(binding: DeclaredBinding): ToolModelTestRequest | undefined {
+function testRequestOf(
+  binding: DeclaredBinding,
+  model: ToolModelCandidate,
+): ToolModelTestRequest | undefined {
   try {
-    return binding.code.testRequest?.();
+    return binding.code.testRequest?.(model);
   } catch (err) {
     console.warn(
       `[tool-model-bindings] '${binding.package}' binding '${binding.key}' failed to build its test request: ${err instanceof Error ? err.message : String(err)}`,
@@ -260,7 +263,7 @@ export function toolModelBindingsOver(
       };
       for (const binding of declared()) {
         if (binding.code.testRequest === undefined || !accepts(binding, candidate)) continue;
-        const request = testRequestOf(binding);
+        const request = testRequestOf(binding, candidate);
         if (request !== undefined) return request;
       }
       return undefined;

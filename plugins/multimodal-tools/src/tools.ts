@@ -102,13 +102,10 @@ export class Tools {
     op: Operation,
     input: OperationInput,
   ): Promise<{ record: RunRecord; done: Promise<Finished> }> {
-    const { messages, config } = operationRequest(op, input);
     const model = await this.modelFor(projectId, op);
-    if (
-      op === "s2t" &&
-      input.audio !== undefined &&
-      (await this.routedClient(projectId, model)) === DEEPSEEK_TRANSCRIPTION_CLIENT
-    ) {
+    const client = op === "s2t" ? await this.routedClient(projectId, model) : undefined;
+    const { messages, config } = operationRequest(op, input, client);
+    if (client === DEEPSEEK_TRANSCRIPTION_CLIENT && input.audio !== undefined) {
       requireDeepSeekAudio(input.audio);
     }
     return this.runs.start({

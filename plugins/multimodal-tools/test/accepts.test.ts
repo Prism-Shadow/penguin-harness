@@ -95,6 +95,19 @@ describe("which tools a model is offered for", () => {
     ).toEqual(["t2t"]);
   });
 
+  it.each(["google-official", "google-genai"])(
+    "offers only verified %s audio inputs for dictation",
+    (client) => {
+      const facts = { client, input: ["Text", "Audio"], output: ["Text"] };
+      expect(offeredFor(m("gemini", { ...facts, audioTranscription: true }))).toEqual([
+        "t2t",
+        "s2t",
+      ]);
+      expect(offeredFor(m("gemini", { ...facts, audioTranscription: false }))).toEqual(["t2t"]);
+      expect(offeredFor(m("gemini", facts))).toEqual(["t2t"]);
+    },
+  );
+
   it("offers a model MMSP does not list for text generation, unless its client does one media job", () => {
     expect(offeredFor(m("house-model", { client: "openai-chat" }))).toEqual(["t2t"]);
     expect(offeredFor(m("house-model", {}))).toEqual(["t2t"]);
