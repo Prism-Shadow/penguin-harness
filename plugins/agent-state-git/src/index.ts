@@ -10,8 +10,7 @@
  * anything, the history walk — and hands an engine only the two steps that grow with a
  * workbench: writing a commit, and reading a version's files back. This one does them with
  * GitHub Desktop's build of Git as dugite pins it (./binary.ts), in one process each
- * (./engine.ts). Until that Git is in place (it is fetched the first time the plugin runs on a
- * host), and wherever it cannot run, the built-in engine records versions; the two write the same
+ * (./engine.ts). On hosts where the packaged Git cannot run, the built-in engine records versions; the two write the same
  * commits, so the repository never notices which one wrote.
  */
 import { Bind, Component } from "@prismshadow/penguin-core/plugin";

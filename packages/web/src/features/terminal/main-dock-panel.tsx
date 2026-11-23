@@ -2,6 +2,7 @@ import { NAV_ICONS } from "../../lib/nav-icons";
 import { S } from "../../lib/strings";
 import { TERMINAL_PANEL, subscribeTerminalPanelOffered, terminalPanelOffered } from "../dock/index";
 
+import { terminalApiSupported, watchTerminals } from "./terminal-list";
 import { TerminalPanel } from "./terminal-panel";
 
 // The terminal is one panel whose body lists the conversation's shells as tabs. Unlike the
@@ -16,6 +17,8 @@ export const mainPanelDefinition = {
   lead: true,
   defaultPosition: "bottom",
   shortcut: "terminal.toggle",
+  availableFromAppCenter: terminalApiSupported,
+  subscribeAppCenterAvailability: watchTerminals,
   offered: terminalPanelOffered,
   subscribeOffered: subscribeTerminalPanelOffered,
   Body: TerminalPanel,

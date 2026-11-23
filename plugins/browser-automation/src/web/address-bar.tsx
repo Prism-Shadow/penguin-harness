@@ -48,12 +48,14 @@ export function AddressBar({
   url,
   onNavigate,
   inputRef,
+  disabled = false,
   suggest = true,
 }: {
   /** The address of the page on screen ("" with none). */
   url: string;
   onNavigate: (url: string) => void;
   inputRef?: Ref<HTMLInputElement>;
+  disabled?: boolean;
   /** Whether to offer the built-in browser's history while the user types. */
   suggest?: boolean;
 }) {
@@ -164,6 +166,7 @@ export function AddressBar({
       <input
         ref={setRefs}
         type="text"
+        disabled={disabled}
         role="combobox"
         aria-label={S.builtinBrowser.address}
         aria-autocomplete="list"

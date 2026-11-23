@@ -37,6 +37,7 @@ import {
   canStep,
   keepUnseenApps,
   dissolveFolder,
+  duplicateWorkbenchOwners,
   layoutOf,
   makeFolder,
   moveBeside,
@@ -70,6 +71,32 @@ const outline = (grid: readonly GridItem[]) =>
   );
 
 const stored = (items: AppCenterLayout["items"]): AppCenterLayout => ({ v: 1, items });
+
+it("matches visible workbench sources across Agents while preserving every installation key", () => {
+  const copy = (id: string, agent: string, packageName: string) => ({
+    ...shortcut(id, agent),
+    packageName,
+    title: "Notebook",
+  });
+  const first = copy("local-a", "reader", "portable-notes");
+  const second = copy("local-b", "writer", "portable-notes");
+  const other = copy("local-c", "writer", "different-notes");
+  const remote = { ...first, machineId: "laptop" };
+  const pack = { ...first, plugin: "suite", workbenchId: "agenda" };
+  const secondPack = { ...pack, agentId: "writer" };
+  const sibling = { ...secondPack, workbenchId: "timer" };
+  expect(
+    duplicateWorkbenchOwners([first, second, other, remote, pack, secondPack, sibling]),
+  ).toEqual(new Set([first, second, remote, pack, secondPack].map(appKeyOf)));
+  expect(duplicateWorkbenchOwners([first, { ...first, workbenchId: "another-install" }])).toEqual(
+    new Set(),
+  );
+  const titled = { ...shortcut("old-a", "alpha"), title: "  Shared  " };
+  const paired = { ...shortcut("old-b", "beta"), title: "SHARED" };
+  expect(duplicateWorkbenchOwners([titled, paired, shortcut("unique", "beta")])).toEqual(
+    new Set([appKeyOf(titled), appKeyOf(paired)]),
+  );
+});
 
 describe("arrange", () => {
   it("keeps the incoming order when there are no standard system apps", () => {

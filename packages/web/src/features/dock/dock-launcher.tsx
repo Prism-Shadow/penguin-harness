@@ -505,7 +505,7 @@ function FloatingLauncher({
           role="group"
           aria-label={S.dock.launcherPanels}
           data-testid="dock-launcher-fan"
-          className={`ui-glass ${menuPanelClass} absolute right-full mr-2 overscroll-contain`}
+          className={`${menuPanelClass} absolute right-full mr-2 overscroll-contain`}
           style={{
             top: 4 - fan.top,
             width: Math.min(220, listWidth),
