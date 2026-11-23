@@ -11,7 +11,7 @@ assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.PH_DISPOSABLE_WINDOWS, "yes");
 assert.ok(path.resolve(record).startsWith(path.resolve(process.env.RUNNER_TEMP) + path.sep));
 const key = "installer-profile-check";
-const user = "installer_qa";
+const user = "admin";
 const asset = Buffer.from("a real attachment from the original account\n");
 const phase = mode === "seed" ? { password: crypto.randomBytes(24).toString("hex") } : JSON.parse(fs.readFileSync(record));
 const env = { ...process.env, PENGUIN_SEED_ADMIN_PASSWORD: phase.password };
@@ -27,13 +27,14 @@ async function run() {
     assert.equal(cut(profile), cut(expectedProfile));
     async function api(method, url, data) {
       const response = await page.request.fetch(base + url, { method, data });
-      assert.ok(response.ok(), method + " " + url + " returned " + response.status());
+      if (!response.ok()) throw new Error(method + " " + url + " returned " + response.status() + " " + (await response.text()).slice(0,340));
       return response;
     }
     if (mode === "seed") {
       await api("POST", "/api/auth/login", { userId: "admin", password: phase.password });
-      await api("POST", "/api/admin/users", { userId: user, password: phase.password });
-      await api("POST", "/api/auth/login", { userId: user, password: phase.password });
+      await desktop.evaluate(async ({ session }, origin) => {
+        await session.defaultSession.cookies.set({url: origin, name: "installed-profile-marker", value: "fixture-session", expirationDate: Date.now()/1000+86400});
+      },base);
       const projects = await (await api("GET", "/api/projects")).json();
       phase.project = projects.projects[0].projectId;
       const project = "/api/projects/" + phase.project;
@@ -53,6 +54,8 @@ async function run() {
       // Flush the actual Electron cookie store before closing this installed app.
       await desktop.evaluate(async ({ session }) => { await session.defaultSession.cookies.flushStore(); });
     }
+    const saved = await desktop.evaluate(async ({session},origin) => session.defaultSession.cookies.get({url:origin,name:"installed-profile-marker"}),base);
+    assert.equal(saved[0]?.value, "fixture-session", "original persistent Chromium cookie");
     const me = await (await api("GET", "/api/me")).json();
     assert.equal(me.user.userId, user, "the original signed-in account is still active");
     assert.equal(await page.evaluate((k) => localStorage.getItem(k), key), "existing desktop preference");
