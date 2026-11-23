@@ -11,6 +11,7 @@
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { installedWindowsDataLocation } from "./windows-data-location.js";
 
 /** Default Project id used when none is specified. */
 export const DEFAULT_PROJECT_ID = "default_project";
@@ -25,7 +26,9 @@ export const DEFAULT_AGENT_ID = "default_agent";
  * `data/` subdir kept separate from the installer's binaries under `~/.penguin`).
  */
 export function resolveRoot(): string {
-  return process.env.PENGUIN_HOME ?? path.join(os.homedir(), ".penguin", "data");
+  if (process.env.PENGUIN_HOME !== undefined) return process.env.PENGUIN_HOME;
+  const base = installedWindowsDataLocation();
+  return base ? path.join(base, "data") : path.join(os.homedir(), ".penguin", "data");
 }
 
 /** The name of the data root's folder that holds the Projects, and the one id no new Project takes. */

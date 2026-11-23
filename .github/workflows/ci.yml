@@ -525,6 +525,11 @@ jobs:
         shell: pwsh
         run: ./packages/desktop/test/windows-program-directory.ps1
 
+      - name: Verify Windows data directory selection and migration
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./packages/desktop/test/windows-data-location.ps1
+
       - name: Bundled CLI runs from the packed app
         run: node packages/desktop/scripts/verify-packed-cli.mjs
 
