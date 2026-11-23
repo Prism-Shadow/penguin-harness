@@ -37,10 +37,12 @@ import { STAT_ICONS } from "../../lib/stat-icons";
 import {
   codePath,
   codeSessionId,
+  codeTicketId,
   pathKind,
   pathLabel,
   spellAsWritten,
   splitPaths,
+  ticketBoardPath,
   type PathScope,
 } from "./path-capsules";
 import { chatPath } from "./temp-session";
@@ -87,6 +89,14 @@ export function PathText({ text, scope }: { text: string; scope: PathScope }) {
             className="font-mono underline decoration-current/40 underline-offset-2 hover:decoration-current"
           >
             {piece.sessionId}
+          </a>
+        ) : piece.kind === "ticket" ? (
+          <a
+            key={i}
+            href={ticketBoardPath(scope.projectId!, scope.orgId!, piece.ticketId)}
+            className="font-mono underline decoration-current/40 underline-offset-2 hover:decoration-current"
+          >
+            {piece.ticketId}
           </a>
         ) : (
           <PathCapsule key={i} path={piece.path} label={piece.label} />
@@ -164,6 +174,15 @@ function walk(parent: MdNode, scope: CapsuleScope, source: string): void {
         };
         continue;
       }
+      const ticketId = scope.orgId ? codeTicketId(node.value) : null;
+      if (ticketId !== null) {
+        children[i] = {
+          type: "link",
+          url: ticketBoardPath(scope.projectId!, scope.orgId!, ticketId),
+          children: [node],
+        };
+        continue;
+      }
       const path = codePath(node.value, scope);
       if (path !== null) children[i] = capsuleNode(path);
       continue;
@@ -210,7 +229,13 @@ function walk(parent: MdNode, scope: CapsuleScope, source: string): void {
                 url: chatPath(p.sessionId),
                 children: [{ type: "text", value: p.sessionId }],
               }
-            : { type: "text", value: p.text },
+            : p.kind === "ticket"
+              ? {
+                  type: "link",
+                  url: ticketBoardPath(scope.projectId!, scope.orgId!, p.ticketId),
+                  children: [{ type: "text", value: p.ticketId }],
+                }
+              : { type: "text", value: p.text },
       );
       children.splice(i, 1, ...replaced);
       i += replaced.length - 1;
@@ -259,17 +284,20 @@ export function PathMarkdown({ text, scope }: { text: string; scope: PathScope }
  */
 export function PathCapsulesProvider({
   projectId,
+  orgId,
   children,
 }: {
   projectId: string | null;
+  /** The organization the conversations belong to: ticket ids in them link into its board. */
+  orgId?: string | null;
   children: ReactNode;
 }) {
   const extensions = useMemo<MdExtensions>(
     () => ({
-      plugins: [[remarkPathCapsules, { projectId, links: false }]],
+      plugins: [[remarkPathCapsules, { projectId, orgId, links: false }]],
       components: PATH_COMPONENTS,
     }),
-    [projectId],
+    [projectId, orgId],
   );
   return <MdExtensionsProvider extensions={extensions}>{children}</MdExtensionsProvider>;
 }

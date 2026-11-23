@@ -46,6 +46,8 @@
 export interface PathScope {
   /** The Project the ticket belongs to: the directory an absolute path must pass through. */
   projectId: string | null;
+  /** The organization the text belongs to, when one is known: its ticket ids become links. */
+  orgId?: string | null;
 }
 
 export type PathPiece =
@@ -53,14 +55,22 @@ export type PathPiece =
   /** `label`, when the text named the path: what its capsule reads instead of the last segment. */
   | { kind: "path"; path: string; label?: string }
   /** A Session id (`session-YYYY-MM-DD-HH-MM-SS-xxxxxxxx`) in prose: linked to `/chat/<sessionId>`. */
-  | { kind: "session"; sessionId: string };
+  | { kind: "session"; sessionId: string }
+  /** A ticket id (`ticket-YYYY-MM-DD-slug`) in prose: linked to the organization's ticket board. */
+  | { kind: "ticket"; ticketId: string };
 
 const PLACEHOLDER_ROOT = "<app_data_dir>";
 
-/** A Session id in prose or inline code: `session-YYYY-MM-DD-HH-MM-SS-xxxxxxxx`. */
-const PROSE_SESSION_ID =
-  /(?<![A-Za-z0-9._~+=@%/\\-])session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}(?![A-Za-z0-9_~+=@%/\\-]|\.[A-Za-z0-9])/g;
+/**
+ * A Session or ticket id in prose or inline code: a Session id is
+ * `session-YYYY-MM-DD-HH-MM-SS-xxxxxxxx`, a ticket id `ticket-YYYY-MM-DD-slug` — the
+ * prefixed form only, since a bare date-slug is prose (a legacy ticket id stays text). The
+ * two never overlap: a slug is letters-only, and a session id's tail is hex without a `k`.
+ */
+const PROSE_ID =
+  /(?<![A-Za-z0-9._~+=@%/\\-])(?:session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}|ticket-\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*)(?![A-Za-z0-9_~+=@%/\\-]|\.[A-Za-z0-9])/g;
 const CODE_SESSION_ID = /^session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}$/;
+const CODE_TICKET_ID = /^ticket-\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*$/;
 
 /** One segment of a prose path: plain characters, or a whole `<placeholder>`. */
 const PROSE_SEGMENT = String.raw`(?:<[a-z][a-z0-9_]*>|[A-Za-z0-9._~+=@%-])+`;
@@ -122,9 +132,15 @@ export function splitPaths(text: string, scope: PathScope): PathPiece[] {
   const pushText = (value: string) => {
     if (value === "") return;
     let lastIdx = 0;
-    for (const m of value.matchAll(PROSE_SESSION_ID)) {
+    for (const m of value.matchAll(PROSE_ID)) {
       pushPlainText(value.slice(lastIdx, m.index));
-      out.push({ kind: "session", sessionId: m[0] });
+      if (m[0].startsWith("ticket-")) {
+        // A ticket id names a ticket inside one organization; without it the id stays text.
+        if (scope.orgId) out.push({ kind: "ticket", ticketId: m[0] });
+        else pushPlainText(m[0]);
+      } else {
+        out.push({ kind: "session", sessionId: m[0] });
+      }
       lastIdx = m.index + m[0].length;
     }
     pushPlainText(value.slice(lastIdx));
@@ -166,6 +182,20 @@ export function codePath(code: string, scope: PathScope): string | null {
 export function codeSessionId(code: string): string | null {
   const value = code.trim();
   return CODE_SESSION_ID.test(value) ? value : null;
+}
+
+/** The ticket id an inline code span holds, when it holds one; null for anything else. */
+export function codeTicketId(code: string): string | null {
+  const value = code.trim();
+  return CODE_TICKET_ID.test(value) ? value : null;
+}
+
+/**
+ * The organization ticket board's deep link: the page reads `?ticket=` and opens that
+ * ticket's dialog on arrival. A ticket id is pattern-safe characters, so it needs no escape.
+ */
+export function ticketBoardPath(projectId: string, orgId: string, ticketId: string): string {
+  return `/org/${projectId}/${orgId}/tickets?ticket=${ticketId}`;
 }
 
 /**

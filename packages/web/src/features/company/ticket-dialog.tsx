@@ -434,7 +434,7 @@ function TicketDialog({
       <p className="text-xs text-gray-400 dark:text-gray-500">{empty}</p>
     ) : (
       <div className="md-body text-sm leading-relaxed text-gray-800 dark:text-gray-100">
-        <PathMarkdown text={text} scope={{ projectId }} />
+        <PathMarkdown text={text} scope={{ projectId, orgId }} />
       </div>
     );
 
@@ -555,7 +555,7 @@ function TicketDialog({
                   <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span>
                       <span className="font-medium">{S.company.tickets.blockedReason}:</span>{" "}
-                      <PathText text={detail.blocked ?? ""} scope={{ projectId }} />
+                      <PathText text={detail.blocked ?? ""} scope={{ projectId, orgId }} />
                     </span>
                     {detail.blockedBy !== undefined && (
                       <span className="inline-flex items-center gap-1.5">
@@ -741,7 +741,7 @@ function TicketDialog({
                   <ul className="md-body md-compact list-disc pl-5 text-sm text-gray-800 marker:text-gray-400 dark:text-gray-100 dark:marker:text-gray-500">
                     {detail.progress.map((p, i) => (
                       <li key={`${i}-${p}`}>
-                        <PathMarkdown text={p} scope={{ projectId }} />
+                        <PathMarkdown text={p} scope={{ projectId, orgId }} />
                       </li>
                     ))}
                   </ul>

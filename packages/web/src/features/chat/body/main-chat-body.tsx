@@ -165,6 +165,7 @@ export function renderMainChatBody(scope: MainChatView) {
                                     ? projectId
                                     : null
                                 }
+                                orgId={selected?.orgId ?? null}
                               >
                                 <MessageStream
                                   items={allItems}

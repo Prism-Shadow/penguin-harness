@@ -391,6 +391,59 @@ describe("an organization's conversation", () => {
       expect(html).toContain(`href="/chat/${sid2}"`);
     }
   });
+
+  it("matches ticket ids in inline code and prose and links them to the organization's ticket board", () => {
+    const tid = "ticket-2026-11-23-rework-review-findings";
+    const md = `Filed \`${tid}\` and ${tid}.`;
+    for (const pid of ["default_project", null]) {
+      const html = renderToStaticMarkup(
+        createElement(PathCapsulesProvider, {
+          projectId: pid,
+          orgId: "co_lab",
+          children: createElement(Md, { text: md }),
+        }),
+      );
+      const href = `/org/${pid}/co_lab/tickets?ticket=${tid}`;
+      // Both occurrences (the inline-code and the prose one) link the same board path.
+      expect(html.split(attr(href)).length - 1).toBe(2);
+    }
+  });
+
+  it("leaves a ticket id as text when no organization is known", () => {
+    const tid = "ticket-2026-11-23-rework-review-findings";
+    const html = renderToStaticMarkup(
+      createElement(PathCapsulesProvider, {
+        projectId: "default_project",
+        children: createElement(Md, { text: `Filed ${tid}.` }),
+      }),
+    );
+    expect(html).not.toContain("/tickets?ticket=");
+    expect(html).toContain(tid);
+  });
+
+  it("leaves a legacy bare date-slug ticket id as text, and the bounds of a match where they belong", () => {
+    const renderWith = (text: string) =>
+      renderToStaticMarkup(
+        createElement(PathCapsulesProvider, {
+          projectId: "default_project",
+          orgId: "co_lab",
+          children: createElement(Md, { text }),
+        }),
+      );
+    // The legacy format (no `ticket-` prefix) is prose, not an id.
+    const legacy = renderWith("Refit 2026-09-01-legacy-launch today.");
+    expect(legacy).not.toContain("/tickets?ticket=");
+    expect(legacy).toContain("2026-09-01-legacy-launch");
+    // `myticket-…` and a trailing `.md` are words, not ids.
+    expect(renderWith("Read myticket-2026-11-23-notes.md")).not.toContain("/tickets?ticket=");
+    expect(renderWith("Run ticket-2026-11-23-notes.sh")).not.toContain("/tickets?ticket=");
+    // The id matches inside a sentence's punctuation.
+    const html = renderWith("见 ticket-2026-11-23-rework，然后。");
+    expect(html).toContain(
+      `href="${attr("/org/default_project/co_lab/tickets?ticket=ticket-2026-11-23-rework")}"`,
+    );
+    expect(html).toContain("，然后。");
+  });
 });
 
 describe("plain text with capsules", () => {
@@ -401,5 +454,23 @@ describe("plain text with capsules", () => {
     expect(html).toContain("等待 ");
     expect(html).toContain(">gpu.lock</span></button>");
     expect(html).toContain(" 释放");
+  });
+
+  it("links a ticket id when the organization is known and keeps it as text otherwise", () => {
+    const text = "堵在 ticket-2026-11-23-rework-review-findings 上";
+    const linked = renderToStaticMarkup(
+      createElement(PathText, {
+        text,
+        scope: { projectId: "default_project", orgId: "co_lab" },
+      }),
+    );
+    expect(linked).toContain(
+      `href="/org/default_project/co_lab/tickets?ticket=ticket-2026-11-23-rework-review-findings"`,
+    );
+    const plain = renderToStaticMarkup(
+      createElement(PathText, { text, scope: { projectId: "default_project" } }),
+    );
+    expect(plain).not.toContain("/tickets?ticket=");
+    expect(plain).toContain("ticket-2026-11-23-rework-review-findings");
   });
 });
