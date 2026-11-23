@@ -67,7 +67,9 @@ test("names keep their own line and plugin counts lead to the right Agent invent
     const layout = await card.evaluate((el, id) => {
       const title = el.querySelector("a").getBoundingClientRect();
       const row = el.querySelector("a").parentElement.getBoundingClientRect();
-      const meta = el.querySelector(`span[data-tooltip="${CSS.escape(id)}"]`).getBoundingClientRect();
+      const meta = el
+        .querySelector(`span[data-tooltip="${CSS.escape(id)}"]`)
+        .getBoundingClientRect();
       return {
         nameBottom: title.bottom,
         secondaryTop: meta.top,
