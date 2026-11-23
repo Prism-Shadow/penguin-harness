@@ -1,23 +1,23 @@
 /**
  * Protocol auto-detection: which wire protocol a typed base URL speaks.
  *
- * - A probe's answer is classified by what it proves: 404/405 is a missing route by status
- *   alone; a 4xx in an API-error shape (auth failures included, a FastAPI `detail` only when it
- *   carries a message) is a served route; HTML, non-JSON, a 2xx without protocol markers and
- *   shapeless 4xx JSON are junk; a 5xx proves nothing.
+ * - A probe treats 404/405 as a missing route. Messages requires the Anthropic envelope on
+ *   errors. OpenAI auth errors require a structured API error, while validation errors may
+ *   use FastAPI's `detail`. HTML, non-JSON and a 2xx without protocol markers are junk.
+ * - A Google endpoint is detected from its model list, even when its router returns JSON
+ *   errors on other paths. A Google relay without the listing yields no detection.
  * - A typed URL expands to candidates covering one `/v1` too many, one too few and a whole
  *   endpoint URL pasted in (the longest endpoint path stripped, repeats collapsed, the rest kept
  *   exactly as typed), joined to protocol paths the way the wrapped SDKs do.
- * - Probes run openai-responses → ant-messages → openai-chat, candidate by candidate, stop at the
+ * - Probes run Responses → Messages → Chat Completions → Google GenAI, candidate by candidate, stop at the
  *   first served protocol and report the base URL it was served on; a probe that fails or
- *   floods (abandoned at the body cap) does not stop the sequence. The protocols the dialogs
- *   offer by hand only, Google GenAI and MMSP, are never probed: an MMSP server detects nothing.
+ *   floods (abandoned at the body cap) does not stop the sequence. MMSP is selected manually.
  * - Auth headers mirror MMSP's clients (Bearer for the OpenAI protocols; x-api-key, Bearer
- *   and anthropic-version for ant-messages); a keyless probe sends no credential; the key never
+ *   and anthropic-version for ant-messages; x-goog-api-key for Google GenAI); the key never
  *   reaches a URL or the reported probes.
  * - With no key typed or stored, each probe takes what MMSP's client for its protocol reads at
- *   the probed URL: the protocol's variable (ANTHROPIC_* for ant-messages, OPENAI_* for the
- *   others) only for that client's own default endpoint, never for any other URL, one
+ *   the probed URL: the protocol's variable only for that client's own default endpoint,
+ *   never for any other URL, one
  *   `*_BASE_URL` names included; unset and blank are absent, and a typed key wins.
  * - POST /api/projects/:p/models/detect validates the URL, falls back to the stored key of the
  *   paired reference unless clearApiKey says not to — the model's own key, else its group's —
@@ -57,6 +57,9 @@ const ANTHROPIC_ERROR = JSON.stringify({
   type: "error",
   error: { type: "invalid_request_error", message: "messages: Field required" },
 });
+const GOOGLE_MODELS = JSON.stringify({
+  models: [{ name: "models/gemini-3.5-flash" }],
+});
 
 describe("classifyProbeResponse", () => {
   it("404/405 mean route-missing by status alone — even in protocol-shaped JSON (OpenAI wraps unknown paths in its error shape; the {} probe carries no model id, so 404 can never mean model-not-found)", () => {
@@ -89,6 +92,24 @@ describe("classifyProbeResponse", () => {
     expect(classifyProbeResponse("openai-responses", 400, '{"error":"missing model"}')).toBe(
       "served",
     );
+  });
+
+  it("a generic or OpenAI error does not identify a Messages route", () => {
+    expect(classifyProbeResponse("ant-messages", 401, '{"error":"Invalid relay API key"}')).toBe(
+      "junk",
+    );
+    expect(classifyProbeResponse("ant-messages", 400, OPENAI_ERROR)).toBe("junk");
+    expect(classifyProbeResponse("ant-messages", 403, '{"type":"error","error":{}}')).toBe("junk");
+  });
+
+  it("a Google probe needs a successful model list with Google resource names", () => {
+    expect(classifyProbeResponse("google-genai", 200, GOOGLE_MODELS)).toBe("served");
+    expect(classifyProbeResponse("google-genai", 200, '{"models":[]}')).toBe("served");
+    expect(classifyProbeResponse("google-genai", 200, '{"models":[{"id":"other"}]}')).toBe("junk");
+    expect(classifyProbeResponse("google-genai", 200, '{"models":[{"name":"other"}]}')).toBe(
+      "junk",
+    );
+    expect(classifyProbeResponse("google-genai", 403, OPENAI_ERROR)).toBe("junk");
   });
 
   it("HTML and non-JSON bodies are junk regardless of status (edge/login walls are not the protocol route)", () => {
@@ -239,6 +260,7 @@ describe("candidateBaseUrls", () => {
 
 interface SeenCall {
   url: string;
+  method: string;
   headers: Record<string, string>;
   body: string;
 }
@@ -253,7 +275,12 @@ function gateway(
   seen?: SeenCall[],
 ): typeof fetch {
   return fakeFetch((call) => {
-    seen?.push({ url: call.url, headers: Object.fromEntries(call.headers), body: call.body });
+    seen?.push({
+      url: call.url,
+      method: call.method,
+      headers: Object.fromEntries(call.headers),
+      body: call.body,
+    });
     const route = routes[new URL(call.url).pathname];
     return new Response(route?.body ?? OPENAI_ERROR, {
       status: route?.status ?? 404,
@@ -302,7 +329,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     expect(res.probes[1]!.status).toBe(401);
   });
 
-  it("openai-chat is the last resort", async () => {
+  it("detects Chat Completions after Responses and Messages miss", async () => {
     const res = await detectModelProtocol({
       baseUrl: BASE,
       fetchImpl: gateway({
@@ -313,26 +340,73 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     expect(res.probes.map((p) => p.outcome)).toEqual(["route_missing", "route_missing", "served"]);
   });
 
+  it("finds Google GenAI behind a relay that returns a generic error on the Messages path", async () => {
+    const baseUrl = "https://go.penguin.ooo/api/google";
+    const seen: SeenCall[] = [];
+    const res = await detectModelProtocol({
+      baseUrl: `${baseUrl}/v1beta/models`,
+      apiKey: "relay-key",
+      fetchImpl: gateway(
+        {
+          "/api/google/v1/messages": { status: 403, body: '{"error":"Model is not available"}' },
+          "/api/google/v1beta/models": { status: 200, body: GOOGLE_MODELS },
+        },
+        seen,
+      ),
+    });
+    expect(res.detected).toBe("google-genai");
+    expect(res.baseUrl).toBe(baseUrl);
+    expect(res.probes.find((probe) => probe.clientType === "ant-messages")?.outcome).toBe("junk");
+    expect(seen.at(-1)).toMatchObject({
+      url: `${baseUrl}/v1beta/models?pageSize=1`,
+      method: "GET",
+      headers: { "x-goog-api-key": "relay-key" },
+      body: "",
+    });
+    expect(JSON.stringify(res)).not.toContain("relay-key");
+  });
+
+  it.each([401, 403])(
+    "a Google relay without a list stays undetected when it returns %i on any versioned path",
+    async (status) => {
+      const baseUrl = "https://go.penguin.ooo/api/google";
+      const fetcher = fakeFetch((call) =>
+        new URL(call.url).pathname.startsWith("/api/google/v1")
+          ? Response.json(
+              { error: status === 401 ? "Invalid relay API key" : "Model is not available" },
+              { status },
+            )
+          : Response.json({ error: "API route not found" }, { status: 404 }),
+      );
+      const res = await detectModelProtocol({ baseUrl, env: {}, fetchImpl: fetcher.fetch });
+      expect(res.detected).toBeUndefined();
+      expect(res.baseUrl).toBeUndefined();
+      expect(res.probes.find((probe) => probe.clientType === "google-genai")?.status).toBe(status);
+    },
+  );
+
   it("nothing matches: no detected protocol, no base URL, and every candidate's probes reported", async () => {
     const res = await detectModelProtocol({ baseUrl: BASE, fetchImpl: gateway({}) });
     expect(res.detected).toBeUndefined();
     expect(res.baseUrl).toBeUndefined();
-    expect(res.probes).toHaveLength(candidateBaseUrls(BASE).length * 3);
+    expect(res.probes).toHaveLength(candidateBaseUrls(BASE).length * 4);
     expect(res.probes.every((p) => p.outcome === "route_missing")).toBe(true);
     // The whole first candidate is exhausted before the second one is tried.
     expect(res.probes.map((p) => p.url)).toEqual([
       "https://gw.example.com/v1/responses",
       "https://gw.example.com/v1/v1/messages",
       "https://gw.example.com/v1/chat/completions",
+      "https://gw.example.com/v1/v1beta/models?pageSize=1",
       "https://gw.example.com/responses",
       "https://gw.example.com/v1/messages",
       "https://gw.example.com/chat/completions",
+      "https://gw.example.com/v1beta/models?pageSize=1",
     ]);
   });
 
-  it("an MMSP server is never detected: Google GenAI and MMSP are picked by hand, not probed", async () => {
+  it("an MMSP server is not detected through the other protocols", async () => {
     // An MMSP server answers its /v1/stream like any API (a JSON 400 for the {} probe) and 404s
-    // every other route; detection still tries only the three protocols and finds nothing.
+    // other routes, or answers with an unrelated error.
     const seen: SeenCall[] = [];
     const res = await detectModelProtocol({
       baseUrl: "http://127.0.0.1:25752/v1",
@@ -352,9 +426,11 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
       "/v1/responses",
       "/v1/v1/messages",
       "/v1/chat/completions",
+      "/v1/v1beta/models",
       "/responses",
       "/v1/messages",
       "/chat/completions",
+      "/v1beta/models",
     ]);
   });
 
@@ -384,9 +460,10 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
       "route_missing",
       "route_missing",
       "route_missing",
+      "route_missing",
       "served",
     ]);
-    expect(res.probes[3]!.url).toBe("https://gw.example.com/v1/responses");
+    expect(res.probes.at(-1)?.url).toBe("https://gw.example.com/v1/responses");
   });
 
   it("probe failures do not stop the sequence: a timeout on /responses still finds chat completions", async () => {
@@ -451,7 +528,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     expect(pushed).toBeLessThanOrEqual(MAX_PROBE_BODY_BYTES * 2);
   });
 
-  it("auth headers mirror the MMSP clients: Bearer for the OpenAI protocols; x-api-key + Bearer + anthropic-version for ant-messages; the {} body and key-free URLs everywhere", async () => {
+  it("sends credentials in each protocol's headers and only the POST probes send a body", async () => {
     const seen: SeenCall[] = [];
     await detectModelProtocol({
       baseUrl: `${BASE}/`, // trailing slash must not double up
@@ -459,21 +536,23 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
       fetchImpl: gateway({}, seen),
     });
     // Nothing serves, so both candidates are probed; the header shapes are asserted on the
-    // first candidate's three calls.
-    expect(seen).toHaveLength(6);
-    const [responses, messages, chat] = seen as [SeenCall, SeenCall, SeenCall];
+    // first candidate's four calls.
+    expect(seen).toHaveLength(8);
+    const [responses, messages, chat, google] = seen as [SeenCall, SeenCall, SeenCall, SeenCall];
     expect(responses.url).toBe("https://gw.example.com/v1/responses");
     expect(messages.url).toBe("https://gw.example.com/v1/v1/messages");
     expect(chat.url).toBe("https://gw.example.com/v1/chat/completions");
-    for (const call of seen) {
+    for (const call of seen.filter((call) => call.method === "POST")) {
       expect(call.body).toBe("{}");
-      expect(call.url).not.toContain("sk-secret-key");
       expect(call.headers.authorization).toBe("Bearer sk-secret-key");
     }
+    for (const call of seen) expect(call.url).not.toContain("sk-secret-key");
     expect(responses.headers["x-api-key"]).toBeUndefined();
     expect(chat.headers["x-api-key"]).toBeUndefined();
     expect(messages.headers["x-api-key"]).toBe("sk-secret-key");
     expect(messages.headers["anthropic-version"]).toBe("2023-06-01");
+    expect(google.headers["x-goog-api-key"]).toBe("sk-secret-key");
+    expect(google.headers.authorization).toBeUndefined();
   });
 
   it("keyless probes send no credential headers (anthropic-version stays), so a 401 in protocol shape still detects", async () => {
@@ -500,11 +579,18 @@ describe("envApiKeyForProtocol", () => {
   const ANTHROPIC = "https://api.anthropic.com";
 
   it("maps each protocol to the variable its MMSP client actually reads, for the vendor's own endpoint", () => {
-    const env = { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" };
+    const env = {
+      OPENAI_API_KEY: "sk-openai",
+      ANTHROPIC_API_KEY: "sk-anthropic",
+      GEMINI_API_KEY: "sk-gemini",
+    };
     expect(envApiKeyForProtocol("openai-responses", OPENAI, env)).toBe("sk-openai");
     expect(envApiKeyForProtocol("openai-chat", OPENAI, env)).toBe("sk-openai");
     // The whole point of resolving per protocol: this one is NOT an OPENAI_* reader.
     expect(envApiKeyForProtocol("ant-messages", ANTHROPIC, env)).toBe("sk-anthropic");
+    expect(
+      envApiKeyForProtocol("google-genai", "https://generativelanguage.googleapis.com", env),
+    ).toBe("sk-gemini");
   });
 
   it("lends nothing to a URL that is not the vendor's own, even one OPENAI_BASE_URL names", () => {
@@ -544,13 +630,15 @@ describe("detectModelProtocol env fallback", () => {
         OPENAI_API_KEY: "sk-openai",
         OPENAI_BASE_URL: BASE,
         ANTHROPIC_API_KEY: "sk-anthropic",
+        GEMINI_API_KEY: "sk-gemini",
       },
-      fetchImpl: gateway({}, seen), // every path 404s, so both candidates run all three probes
+      fetchImpl: gateway({}, seen), // every path 404s, so both candidates run all probes
     });
-    expect(seen).toHaveLength(6);
+    expect(seen).toHaveLength(8);
     for (const call of seen) {
       expect(call.headers.authorization).toBeUndefined();
       expect(call.headers["x-api-key"]).toBeUndefined();
+      expect(call.headers["x-goog-api-key"]).toBeUndefined();
     }
   });
 
@@ -559,9 +647,9 @@ describe("detectModelProtocol env fallback", () => {
     await detectModelProtocol({
       baseUrl: "https://api.openai.com/v1",
       env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
-      fetchImpl: gateway({}, seen), // every path 404s, so both candidates run all three probes
+      fetchImpl: gateway({}, seen),
     });
-    expect(seen).toHaveLength(6);
+    expect(seen).toHaveLength(8);
     const [responses, messages, chat] = seen as [SeenCall, SeenCall, SeenCall];
     expect(responses.headers.authorization).toBe("Bearer sk-openai");
     expect(chat.headers.authorization).toBe("Bearer sk-openai");
@@ -569,7 +657,7 @@ describe("detectModelProtocol env fallback", () => {
     expect(messages.headers.authorization).toBeUndefined();
     expect(messages.headers["x-api-key"]).toBeUndefined();
     // The neighbouring /v1-less candidate is not the official endpoint either.
-    const [responses2, messages2, chat2] = seen.slice(3) as [SeenCall, SeenCall, SeenCall];
+    const [responses2, messages2, chat2] = seen.slice(4) as [SeenCall, SeenCall, SeenCall];
     expect(responses2.headers.authorization).toBeUndefined();
     expect(messages2.headers["x-api-key"]).toBeUndefined();
     expect(chat2.headers.authorization).toBeUndefined();
@@ -588,8 +676,11 @@ describe("detectModelProtocol env fallback", () => {
       env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
       fetchImpl: gateway({}, seen),
     });
-    for (const call of seen) expect(call.headers.authorization).toBe("Bearer sk-typed");
+    for (const call of seen.filter((call) => call.method === "POST")) {
+      expect(call.headers.authorization).toBe("Bearer sk-typed");
+    }
     expect((seen[1] as SeenCall).headers["x-api-key"]).toBe("sk-typed");
+    expect((seen[3] as SeenCall).headers["x-goog-api-key"]).toBe("sk-typed");
   });
 
   it("falls back per protocol, so a half-configured environment still authenticates its own probe", async () => {
