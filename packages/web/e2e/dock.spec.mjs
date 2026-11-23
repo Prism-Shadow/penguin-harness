@@ -156,7 +156,10 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
   await expect.poll(() => screenText(page), { timeout: 15000 }).toContain("DOCK_KEEPS_RUNNING");
 
   // Hide via the dock's ×: the surface goes away, the tab and the shell do not.
-  await dockAt(page, "right").locator('[data-testid="dock-tab"][data-tab-id^=":app:session-tool/terminal"]').getByTestId("dock-tab-close").click();
+  await dockAt(page, "right")
+    .locator('[data-testid="dock-tab"][data-tab-id^=":app:session-tool/terminal"]')
+    .getByTestId("dock-tab-close")
+    .click();
   await expect(anyDock(page)).toHaveCount(0);
   await expect
     .poll(async () => {
@@ -477,7 +480,9 @@ test("each conversation manages its own tabs: nothing leaks, and each side survi
   await page.getByPlaceholder(/输入消息/).waitFor();
   await openViaPicker(page, "right", "workspace");
   await page.keyboard.press("Control+Backquote");
-  await expect(dockAt(page, "right").locator('[data-tab-id^=":app:session-tool/terminal"]')).toBeVisible();
+  await expect(
+    dockAt(page, "right").locator('[data-tab-id^=":app:session-tool/terminal"]'),
+  ).toBeVisible();
   await expect(shellTabs(page)).toHaveCount(0);
   await page.getByTestId("terminal-new-tab").click();
   await waitForShell(page, "SCOPED_SHELL");
