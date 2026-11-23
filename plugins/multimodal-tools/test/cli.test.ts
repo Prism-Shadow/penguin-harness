@@ -18,6 +18,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { EmptyResponseError, UpstreamError } from "@prismshadow/mmsp";
 import { Tools } from "../src/tools.js";
 import {
   answer,
@@ -146,6 +147,51 @@ describe("penguin tools", () => {
       expect(JSON.parse(result.stdout)).toMatchObject({ operation: "s2t", status: "completed" });
     },
   );
+
+  it("accepts a completed empty ASR response locally or through an MMSP server", async () => {
+    const usage = {
+      cached_tokens: null,
+      prompt_tokens: 1,
+      thoughts_tokens: null,
+      response_tokens: 0,
+    };
+    const client = "OpenaiTranscriptionClient";
+    const wire = {
+      type: "EmptyResponseError",
+      client,
+      finish_reason: "stop",
+      usage_metadata: usage,
+    };
+    const empty = (client: string, finishReason: string) =>
+      new EmptyResponseError({ client, finishReason, usageMetadata: usage });
+    const gateway = (status: number | null) =>
+      new UpstreamError({
+        client: "MmspClient",
+        status,
+        errorType: wire.type,
+        message: "No transcript",
+        error: wire,
+      });
+    for (const [error, completed] of [
+      [empty(client, "stop"), true],
+      [gateway(null), true],
+      [empty(client, "length"), false],
+      [empty("GoogleOfficialClient", "stop"), false],
+      [gateway(503), false],
+    ] as const) {
+      const { tools } = await setup(
+        () => {
+          throw error;
+        },
+        { s2t: ASR },
+      );
+      const run = await runCli(tools, ["tools", "s2t", "--audio", "quiet.wav", "--json"], agent, {
+        "quiet.wav": { name: "quiet.wav", data: WAV },
+      });
+      expect(run.exitCode).toBe(completed ? 0 : 1);
+      if (completed) expect(JSON.parse(run.stdout)).toMatchObject({ status: "completed", usage });
+    }
+  });
 
   it("transcribes the recording the terminal sent, and turns away a container DeepSeek refuses before sending", async () => {
     const { model, tools } = await setup(

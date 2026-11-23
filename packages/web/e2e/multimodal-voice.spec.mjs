@@ -8,8 +8,10 @@
  * - Reading a reply aloud plays the audio the plugin answers with, and stops on a second press.
  *
  * Nothing reaches a model provider: the chat model is the mock LLM, and the plugin's speech
- * routes are answered here.
+ * routes either receive controlled browser responses or call the local ASR fixture.
  */
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { test, expect } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
@@ -79,7 +81,7 @@ function toneWav() {
  * The admin's Project (only an admin turns a server plugin on) with the multimodal tools plugin
  * on, its table plus the mock chat model, and DeepSeek's speech models keyed.
  */
-async function seed(page) {
+async function seed(page, asrEndpoint) {
   await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
   await setAccountPrefs(page.request, { lang: "en" });
   const { projects } = await (await page.request.get(`${BASE}/api/projects`)).json();
@@ -100,6 +102,9 @@ async function seed(page) {
   for (const ref of [ASR, TTS])
     if (!rows.some((r) => r.provider === ref.provider && r.modelId === ref.modelId))
       rows.push({ ...ref, apiKey: "sk-local-test" });
+  if (asrEndpoint)
+    rows.find((r) => r.provider === ASR.provider && r.modelId === ASR.modelId).baseUrl =
+      asrEndpoint;
   // An earlier test of the run may have added it already: the table holds one row per pair.
   const chat = rows.findIndex((r) => r.provider === CHAT.provider && r.modelId === CHAT.modelId);
   const chatRow = { ...CHAT, apiKey: "sk-mock", baseUrl: MOCK, contextWindow: 200000 };
@@ -292,56 +297,96 @@ test("cancellation ignores a late transcript and a real recognition failure stay
   page,
 }) => {
   await microphoneSignal(page, 0.1);
-  const { api } = await seed(page);
-  await bind(page, api, "s2t", ASR);
   let finish;
   let attempts = 0;
   const held = new Promise((resolve) => {
     finish = resolve;
   });
-  await page.route("**/multimodal-tools/s2t/run", async (route) => {
-    attempts++;
-    if (attempts === 1) {
-      await held;
-      await route.fulfill({ json: { text: "Late transcript" } }).catch(() => {});
-    } else if (attempts === 2) {
-      await route.fulfill({ json: { text: "   " } });
-    } else {
-      await route.fulfill({
-        status: 502,
-        json: { error: { code: "run_failed", message: "The model provider returned HTTP 503." } },
-      });
+  const provider = createServer(async (req, res) => {
+    if (req.method !== "POST" || req.url !== "/v1/tools/asr") {
+      res.writeHead(404).end();
+      return;
     }
+    for await (const _chunk of req) {
+      /* consume the multipart WAV */
+    }
+    const attempt = ++attempts;
+    if (attempt === 1) await held;
+    const answers = [
+      { text: "Late transcript" },
+      { text: "" },
+      { text: "  " },
+      {},
+      { error: { message: "Unavailable" } },
+    ];
+    res.writeHead(attempt === 5 ? 503 : 200, {
+      "content-type": "application/json",
+      "x-should-retry": "false",
+    });
+    res.end(JSON.stringify({ duration_ms: 250, ...answers[attempt - 1] }));
   });
-  await page.goto(BASE + "/chat/new");
-  const draft = page.locator('[data-slot="composer"] textarea');
-  await draft.fill("Keep my words");
-  const dictate = page.getByRole("button", { name: "Dictate", exact: true });
-  const record = async (twice = false) => {
-    await dictate.click();
-    await page.getByRole("meter").first().waitFor();
-    await page.waitForTimeout(180);
-    const finish = page.getByRole("button", { name: "Finish recording", exact: true });
-    if (twice) await finish.dblclick();
-    else await finish.click();
-  };
+  provider.listen(0, "127.0.0.1");
+  await once(provider, "listening");
   try {
-    await record(true);
-    await expect.poll(() => attempts).toBe(1);
-    await page.keyboard.press("Escape");
-    await expect(dictate).toBeEnabled();
+    const { api } = await seed(page, "http://127.0.0.1:" + provider.address().port);
+    await bind(page, api, "s2t", ASR);
+    await page.goto(BASE + "/chat/new");
+    const draft = page.locator('[data-slot="composer"] textarea');
+    await draft.fill("Keep my words");
+    const dictate = page.getByRole("button", { name: "Dictate", exact: true });
+    const record = async (twice = false) => {
+      await dictate.click();
+      await page.getByRole("meter").first().waitFor();
+      await page.waitForTimeout(180);
+      const finish = page.getByRole("button", { name: "Finish recording", exact: true });
+      if (twice) await finish.dblclick();
+      else await finish.click();
+    };
+    try {
+      await record(true);
+      await expect.poll(() => attempts).toBe(1);
+      await page.keyboard.press("Escape");
+      await expect(dictate).toBeEnabled();
+    } finally {
+      finish();
+    }
+    const reply = async () => {
+      const response = page.waitForResponse((res) =>
+        res.url().endsWith("/multimodal-tools/s2t/run"),
+      );
+      await record();
+      return await response;
+    };
+    for (const text of ["", "  "]) {
+      const response = await reply();
+      expect(response.ok(), await response.text()).toBe(true);
+      const run = await response.json();
+      expect(run).toMatchObject({ status: "completed", usage: { prompt_tokens: 1 } });
+      expect(run.text ?? "").toBe(text);
+      await expect(
+        page.getByText("No speech was recognized.", { exact: true }).last(),
+      ).toBeVisible();
+      await expect(draft).toHaveValue("Keep my words");
+    }
+    const malformed = await reply();
+    expect(malformed.status()).toBe(502);
+    await expect(
+      page.getByText("The model request failed. Check the selected model and its endpoint.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    const unavailable = await reply();
+    expect(unavailable.status()).toBe(502);
+    await expect(
+      page.getByText("The model provider returned HTTP 503.", { exact: true }),
+    ).toBeVisible();
+    await expect(draft).toHaveValue("Keep my words");
+    expect(attempts).toBe(5);
   } finally {
     finish();
+    provider.closeAllConnections();
+    await new Promise((resolve) => provider.close(resolve));
   }
-  await record();
-  await expect(page.getByText("No speech was recognized.", { exact: true })).toBeVisible();
-  await expect(draft).toHaveValue("Keep my words");
-  await record();
-  await expect(
-    page.getByText("The model provider returned HTTP 503.", { exact: true }),
-  ).toBeVisible();
-  await expect(draft).toHaveValue("Keep my words");
-  expect(attempts).toBe(3);
 });
 
 test("a reply plays the audio the plugin answers with, and stops on a second press", async ({
