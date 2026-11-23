@@ -22,7 +22,7 @@ Var PHPathErrorText
   StrCmp $LANGUAGE ${PH_LANG_ZH_CN} 0 +2
   StrCpy $PHPathErrorText "程序目录无效或位于磁盘或网络共享的根目录。安装已停止，原文件已保留。"
   MessageBox MB_OK|MB_ICONSTOP "$PHPathErrorText" /SD IDOK
-  !insertmacro PHFixtureLog "path error; old=$0; program=$INSTDIR; oldUninstaller=$PHOldUninstaller"
+  !insertmacro PHFixtureLog "path error; previous=$0; program=$INSTDIR"
   SetErrorLevel 21
   Quit
 !macroend
