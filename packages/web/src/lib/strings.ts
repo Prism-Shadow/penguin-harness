@@ -23,6 +23,11 @@ import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";
 export const zh = {
   appName: "PenguinHarness",
   firstWorkbench: {
+    updateNeeded: "此智能体安装的是旧版引导。更新后即可使用对话回复生成清单。",
+    update: "更新此智能体的引导",
+    updateWarning:
+      "用库中的版本替换此智能体的引导代码？本地编辑过的引导代码将被覆盖。引导进度和清单数据会保留。",
+    updateUnavailable: "此服务端的插件库还没有新版引导。",
     title: "我的第一个工作台",
     help: "用自己的对话生成清单，安装后测试。",
     resume: "开始或继续引导",

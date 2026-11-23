@@ -83,6 +83,47 @@ test("builds and installs a checklist beside the actual conversation", async ({ 
   expect((await zip.body()).subarray(0, 2).toString()).toBe("PK");
   await tour.getByRole("button", { name: "Dismiss" }).click();
   await expect(tour).toHaveCount(0);
+  await page
+    .getByRole("complementary")
+    .getByRole("button", { name: /^newguidetour/ })
+    .last()
+    .click();
+  await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await settings.getByText("General", { exact: true }).first().click();
+  await settings.getByRole("button", { name: "Start or resume guide" }).click();
+  await expect(settings).toHaveCount(0);
+  await expect(tour.getByRole("status")).toContainText("Test passed");
+  await tour.getByRole("button", { name: "Dismiss" }).click();
   await page.goto(BASE + "/apps?" + new URLSearchParams({ app: agent + "/" + guideId }));
   await expect(tour.getByRole("status")).toContainText("Test passed");
+});
+
+test.describe("on a small touch screen", () => {
+  test.use({ viewport: { width: 320, height: 620 }, hasTouch: true });
+  test("keeps setup and the composer reachable before a model is configured", async ({ page }) => {
+    await provisionAndLogin(page.request, "touchguidetour", "password123");
+    await setAccountPrefs(page.request, { lang: "en", initialPasswordBannerDismissed: true });
+    await page.goto(BASE + "/");
+    const intro = page.getByRole("dialog", { name: "Connect a model provider first" });
+    await intro.getByRole("button", { name: title }).tap();
+    const tour = page.getByRole("region", { name: title });
+    await tour.getByRole("button", { name: "Go to chat" }).tap();
+    const input = page.locator('[data-slot="composer"]:visible textarea').first();
+    await input.tap();
+    await input.fill("Keep this draft");
+    const frame = await tour.boundingBox(),
+      composer = await input.boundingBox();
+    expect(frame.x).toBeGreaterThanOrEqual(0);
+    expect(frame.x + frame.width).toBeLessThanOrEqual(320);
+    expect(frame.y + frame.height).toBeLessThanOrEqual(composer.y);
+    await tour.getByRole("button", { name: "Dismiss" }).tap();
+    await expect(input).toHaveValue("Keep this draft");
+    await expect(tour).toHaveCount(0);
+    const { projects } = await (await page.request.get(BASE + "/api/projects")).json();
+    const base = BASE + "/api/projects/" + projects[0].projectId;
+    const sessionList = await page.request.get(base + "/agents/default_agent/sessions");
+    expect(sessionList.ok()).toBe(true);
+    expect((await sessionList.json()).sessions).toEqual([]);
+  });
 });

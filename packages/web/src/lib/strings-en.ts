@@ -15,6 +15,12 @@ import type { Strings } from "./strings";
 export const en: Strings = {
   appName: "PenguinHarness",
   firstWorkbench: {
+    updateNeeded:
+      "This agent has an earlier guide. Update it to generate a checklist from a chat reply.",
+    update: "Update guide on this agent",
+    updateWarning:
+      "Replace this agent’s guide code with the library version? Local edits to the guide code will be overwritten. Your progress and checklist data will stay available.",
+    updateUnavailable: "This server’s library does not yet have the updated guide.",
     title: "Your first workbench",
     help: "Build and test a checklist from one of your conversations.",
     resume: "Start or resume guide",

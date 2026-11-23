@@ -56,6 +56,8 @@ export default {
           api: {
             main: {
               async handle(req): Promise<WorkbenchResponse> {
+                if (req.path === "/capabilities" && req.method === "GET")
+                  return { body: { fromConversation: true } };
                 const route = /^\/guides\/([a-f0-9]{32})(?:\/(plugin\.zip|installation))?$/.exec(
                   req.path,
                 );

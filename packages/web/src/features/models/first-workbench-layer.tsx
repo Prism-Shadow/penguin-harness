@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { Button } from "@prismshadow/penguin-ui";
+import { Button, ConfirmModal } from "@prismshadow/penguin-ui";
 import type { PageAgent } from "../../lib/page-agent";
 import { GUIDE_START, useFirstWorkbench } from "../../lib/first-workbench-entry";
 import {
@@ -11,6 +11,7 @@ import {
   installGuideBoard,
   readGuide,
   verifyGuideBoard,
+  supportsConversation,
   type Guide,
   type GuideProgress,
 } from "../../lib/first-workbench-tour";
@@ -19,6 +20,8 @@ import { appWindowPath, locatedAppKey } from "../../lib/app-center-path";
 import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
+import { installWithModules } from "../../lib/agent-plugin-install";
+import { useGuideAnchor } from "./guide-anchor";
 import { useLocale } from "../../state/locale";
 
 export function FirstWorkbenchLayer() {
@@ -103,6 +106,8 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
   const [guide, setGuide] = useState<Guide | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const [canGenerate, setCanGenerate] = useState(false);
+  const [confirmUpdate, setConfirmUpdate] = useState(false);
   const [reload, setReload] = useState(0);
   const [discussion, setDiscussion] =
     useState<Awaited<ReturnType<typeof conversationForGuide>>>(null);
@@ -124,9 +129,12 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
     let live = true;
     setBusy(true);
     setError("");
-    void refresh()
-      .then((g) => {
-        if (live) setGuide(g);
+    void Promise.all([refresh(), supportsConversation(loc)])
+      .then(([g, supported]) => {
+        if (live) {
+          setGuide(g);
+          setCanGenerate(supported);
+        }
       })
       .catch((err: Error) => {
         if (live) setError(err.message);
@@ -137,7 +145,7 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
     return () => {
       live = false;
     };
-  }, [refresh, reload]);
+  }, [refresh, reload, loc]);
   useEffect(() => {
     if (guide?.phase !== "chatting" && guide?.phase !== "generating") return;
     let live = true;
@@ -171,6 +179,13 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
   const waiting = guide?.phase === "chatting" || guide?.phase === "generating";
   const design = guide?.design;
   const inChat = location.pathname === "/" || location.pathname.startsWith("/chat");
+  const position = useGuideAnchor(
+    location.pathname === "/models"
+      ? '[data-guide-anchor="model-settings"]'
+      : inChat
+        ? '[data-slot="composer"]'
+        : 'iframe[src*="/workbenches/' + encodeURIComponent(guide?.boardId ?? "") + '/ui/"]',
+  );
   const chat = () => {
     save({ tourChat: true });
     if (saved.tourSession) void navigate("/chat/" + encodeURIComponent(saved.tourSession));
@@ -203,6 +218,7 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
   const answer = discussion?.answer ?? guide?.answer;
   return (
     <aside
+      style={position}
       role="region"
       aria-label={w.title}
       className="fixed end-3 top-[calc(var(--window-band-height,0px)+3rem)] z-dock w-[min(21rem,calc(100vw-1.5rem))] max-h-[48dvh] overflow-y-auto rounded-panel border border-line bg-surface p-3 text-sm text-fg shadow-panel"
@@ -291,7 +307,7 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
                 {w.retryChat}
               </Button>
             )}
-            {answer && (
+            {answer && (guide || canGenerate) && (
               <Button size="sm" variant="primary" onClick={() => void generate()}>
                 {w.generate}
               </Button>
@@ -364,6 +380,32 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
           </div>
         </>
       )}
+      {!guide && !busy && !canGenerate && !error && (
+        <div className="mt-2">
+          <p>{w.updateNeeded}</p>
+          <Button size="sm" onClick={() => setConfirmUpdate(true)}>
+            {w.update}
+          </Button>
+        </div>
+      )}
+      <ConfirmModal
+        open={confirmUpdate}
+        title={w.update}
+        cancelLabel={S.common.cancel}
+        confirmLabel={w.update}
+        onClose={() => setConfirmUpdate(false)}
+        onConfirm={() => {
+          setConfirmUpdate(false);
+          void run(async () => {
+            await installWithModules(scope, ["first-workbench-guide"]);
+            const supported = await supportsConversation(loc);
+            if (!supported) throw Error(w.updateUnavailable);
+            setCanGenerate(true);
+          });
+        }}
+      >
+        <p>{w.updateWarning}</p>
+      </ConfirmModal>
     </aside>
   );
 }

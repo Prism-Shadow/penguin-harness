@@ -54,6 +54,18 @@ function call<T>(loc: GuideLocation, path: string, body?: unknown) {
     ...(body === undefined ? {} : { method: "POST", body }),
   });
 }
+/** Older installed copies can finish a guide they already started. */
+export async function supportsConversation(loc: GuideLocation) {
+  try {
+    return (
+      (await call<{ fromConversation: boolean }>(loc, GUIDE_ID + "/api/capabilities"))
+        .fromConversation === true
+    );
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return false;
+    throw error;
+  }
+}
 export function readGuide(loc: GuideLocation, key: string, body?: unknown) {
   return call<Guide | null>(loc, GUIDE_ID + "/api/guides/" + key, body);
 }
@@ -73,7 +85,7 @@ export async function conversationForGuide(
   )
     return null;
   const { messages } = await apiFetch<MessagesResponse>(
-    "/api/sessions/" + encodeURIComponent(id) + "/messages?tailLimit=100",
+    "/api/sessions/" + encodeURIComponent(id) + "/messages?tailLimit=1",
     { server: machine },
   );
   let request = "",
