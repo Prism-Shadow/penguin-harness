@@ -122,7 +122,16 @@ if (params.autoplay === "evolution") {
       if (!event.isTrusted || !(event.target instanceof Element)) return;
       const control = event.target.closest(controls);
       if (!control || control.matches(':disabled,[aria-disabled="true"]')) return;
-      if (event instanceof KeyboardEvent && !["Enter", " ", "Escape"].includes(event.key)) return;
+      if (event instanceof KeyboardEvent && !["Enter", " ", "Escape"].includes(event.key)) {
+        const editor =
+          control instanceof HTMLTextAreaElement ||
+          (control instanceof HTMLInputElement &&
+            ["text", "search", "email", "url", "tel", "password"].includes(control.type)) ||
+          (control instanceof HTMLElement && control.isContentEditable);
+        const movesCaret = /^(Arrow(Up|Down|Left|Right)|Home|End|PageUp|PageDown)$/.test(event.key);
+        const selectAll = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a";
+        if (!editor || !(movesCaret || selectAll)) return;
+      }
       if (event.type === "auxclick" && !(event instanceof MouseEvent && event.button === 1)) return;
       cleanup();
       dispose();

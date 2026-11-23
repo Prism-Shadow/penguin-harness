@@ -147,6 +147,31 @@ test("keeps the visitor's draft on keyboard takeover and replays only on request
   await expect(draft).not.toHaveValue("");
 });
 
+test("selecting the scripted draft from the keyboard preserves the visitor's selection", async ({
+  page,
+}) => {
+  const { frame } = await openHero(page, "en");
+  const draft = frame.locator(composer);
+  await expect(draft).not.toHaveValue("");
+  await frame.getByRole("heading", { name: "PenguinHarness", exact: true }).click();
+  await draft.focus();
+  await page.keyboard.press("Control");
+  await expect(page.getByRole("button", { name: "Stop demo", exact: true })).toBeVisible();
+  await draft.press("ControlOrMeta+a");
+  const selection = () =>
+    draft.evaluate((field) => ({
+      text: field.value,
+      start: field.selectionStart,
+      end: field.selectionEnd,
+    }));
+  const selected = await selection();
+  expect(selected.text.length).toBeGreaterThan(0);
+  expect(selected).toMatchObject({ start: 0, end: selected.text.length });
+  await expect(page.getByRole("button", { name: "Play demo", exact: true })).toBeVisible();
+  await page.clock.fastForward(60_000);
+  expect(await selection()).toEqual(selected);
+});
+
 test("a keyboard-activated navigation link keeps its destination while the scripted reply stops", async ({
   page,
 }) => {
