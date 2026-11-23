@@ -13,7 +13,8 @@ jobs:
       CI: true
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
+      - id: setup
+        uses: ./.github/actions/setup
         with:
           build: "@prismshadow/penguin-server...,@prismshadow/penguin-web...,@prismshadow/penguin-desktop..."
           alongside: pnpm --filter @prismshadow/penguin-web exec playwright install chromium
@@ -22,10 +23,26 @@ jobs:
         run: |
           node -p 'JSON.stringify({ platform:process.platform, arch:process.arch, node:process.version })'
           git config --get core.autocrlf || true
-          SKIP_BUILD=1 bash packages/web/e2e/run.sh bento-templates.spec.mjs
+          SKIP_BUILD=1 bash packages/web/e2e/run.sh bento-workbench-open.spec.mjs --grep "the Slides window and full page"
+      - name: Keep browser evidence
+        if: always()
+        shell: bash
+        run: cp -R packages/web/test-results "$RUNNER_TEMP/web-results" || true
+      - name: Native Electron BrowserWindow and embedded server
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        env:
+          BENTO_DESKTOP: "1"
+        run: |
+          cd packages/desktop
+          node scripts/preflight.mjs || exit 1
+          cd ../web
+          pnpm exec playwright test -c e2e/playwright.config.mjs bento-workbench-open.spec.mjs --grep "source desktop"
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
-          name: windows-bento-browser-failure
-          path: packages/web/test-results/
+          name: windows-bento-rendering
+          path: |
+            packages/web/test-results/
+            ${{ runner.temp }}/web-results/
           retention-days: 7
