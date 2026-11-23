@@ -59,10 +59,13 @@ import {
   HttpError,
   badRequest,
   errorBody,
+  closeSessionResources,
+  countSessionResources,
+  type AppEnv,
+  type SessionResourceAccess,
   publicOriginOf,
   requireHuman,
 } from "@prismshadow/penguin-server/plugin";
-import type { AppEnv } from "@prismshadow/penguin-server/plugin";
 import { isPenguinExtensionOrigin } from "./extension-origin.js";
 import type { ExtensionPairing } from "./extension-pairing.js";
 import { BrowserUnavailableError } from "./service.js";
@@ -137,11 +140,19 @@ function sessionIdQuery(c: Context<AppEnv>): string | undefined {
   return id === undefined || id === "" ? undefined : id.slice(0, 200);
 }
 
+/** The dock scopes drafts to their Project until the first send creates a Session. */
+function draftProject(sessionId: string): string | undefined {
+  return (
+    /^~project:(.+)$/.exec(sessionId)?.[1] ?? /^(.+):(?:new|draft-[^:]+)$/.exec(sessionId)?.[1]
+  );
+}
+
 const STORAGES = new Set(["cookies", "cache", "storage"]);
 const BACKENDS: readonly BrowserBackend[] = ["builtin", "chrome"];
 
 /** What the routes need beside the browser. */
 export interface BrowserRouteDeps {
+  resourceAccess?: SessionResourceAccess;
   /** The human an agent's session acts for (runtime/session-drivers.ts); null when nobody is known. */
   driverOf?(sessionId: string): Actor | null;
   /** The extension pairing; absent, the server offers no chrome and the extension routes 404. */
@@ -173,8 +184,17 @@ export function builtinBrowserRoutes(
    */
   const actorOf = (c: Context<AppEnv>, sessionId: string | undefined): Actor => {
     const own = { userId: c.var.user.userId, isAdmin: c.var.user.isAdmin };
-    if (c.var.sessionVia !== "token" || sessionId === undefined) return own;
-    return deps.driverOf?.(sessionId) ?? own;
+    const actor =
+      c.var.sessionVia === "token" && sessionId !== undefined
+        ? (deps.driverOf?.(sessionId) ?? own)
+        : own;
+    if (sessionId !== undefined && deps.resourceAccess) {
+      const project =
+        deps.resourceAccess.sessions.findById(sessionId)?.projectId ?? draftProject(sessionId);
+      if (!project) throw new HttpError(404, "session_not_found", "Session is unavailable.");
+      deps.resourceAccess.access.requireProjectAccess(actor.userId, project);
+    }
+    return actor;
   };
   const queryActor = (c: Context<AppEnv>) => actorOf(c, sessionIdQuery(c));
   const bodyActor = (c: Context<AppEnv>, body: Body) =>
@@ -234,6 +254,34 @@ export function builtinBrowserRoutes(
     return c.body(null, 204);
   });
 
+  const management = deps.resourceAccess;
+  if (management) {
+    const path = "/projects/:projectId/session-resources";
+    app.get(path, (c) => {
+      requireHuman(c);
+      const actor = actorOf(c, undefined);
+      return c.json(
+        countSessionResources(management, actor.userId, c.req.param("projectId"), () =>
+          browser.managedTabs(actor),
+        ),
+      );
+    });
+    app.post(path + "/close", async (c) => {
+      requireHuman(c);
+      const actor = actorOf(c, undefined);
+      const body = await jsonBody(c);
+      return c.json(
+        await closeSessionResources(
+          management,
+          actor.userId,
+          c.req.param("projectId")!,
+          body.sessionIds,
+          () => browser.managedTabs(actor),
+          (id, sessionId) => browser.closeManagedTab(actor, id, sessionId),
+        ),
+      );
+    });
+  }
   app.get("/tabs", async (c) => c.json(await browser.listTabs(queryActor(c), sessionIdQuery(c))));
 
   app.post("/tabs", async (c) => {
@@ -242,7 +290,18 @@ export function builtinBrowserRoutes(
     const activate = optBool(body, "activate");
     const sessionId = sessionIdOf(body);
     const projectId = c.var.sessionVia === "token" ? undefined : optString(body, "projectId");
-    const tab = await browser.openTab(bodyActor(c, body), {
+    const actor = bodyActor(c, body);
+    if (projectId !== undefined && management) {
+      management.access.requireProjectAccess(actor.userId, projectId);
+      if (
+        sessionId !== undefined &&
+        (management.sessions.findById(sessionId)?.projectId ?? draftProject(sessionId)) !==
+          projectId
+      ) {
+        throw new HttpError(404, "session_not_found", "Session is unavailable.");
+      }
+    }
+    const tab = await browser.openTab(actor, {
       ...(projectId !== undefined ? { projectId } : {}),
       ...(url !== undefined ? { url } : {}),
       ...(activate !== undefined ? { activate } : {}),
@@ -256,7 +315,15 @@ export function builtinBrowserRoutes(
     const body = await jsonBody(c);
     const fromSessionId = requiredString(body, "fromSessionId").slice(0, 200);
     const sessionId = requiredString(body, "sessionId").slice(0, 200);
-    browser.adoptSession(actorOf(c, undefined), fromSessionId, sessionId);
+    const actor = actorOf(c, sessionId);
+    if (management) {
+      const target = management.sessions.findById(sessionId);
+      const sourceProject =
+        management.sessions.findById(fromSessionId)?.projectId ?? draftProject(fromSessionId);
+      if (!target || target.projectId !== sourceProject)
+        throw new HttpError(404, "session_not_found", "Session is unavailable.");
+    }
+    browser.adoptSession(actor, fromSessionId, sessionId);
     return c.body(null, 204);
   });
 

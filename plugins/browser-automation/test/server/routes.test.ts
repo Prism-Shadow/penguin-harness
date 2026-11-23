@@ -15,7 +15,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   BuiltinBrowserExecResult,
   BuiltinBrowserImportResult,
@@ -76,6 +76,7 @@ function mount(
     shell?: FakeShell | null;
     admin?: boolean;
     human?: boolean;
+    resourceAccess?: import("@prismshadow/penguin-server/plugin").SessionResourceAccess;
     projectOf?: (sessionId: string) => string | null;
     importer?: Importer;
     now?: () => number;
@@ -114,7 +115,13 @@ function mount(
     c.set("sessionVia", opts.human ? "desktop" : "token");
     await next();
   });
-  app.route("/api/builtin-browser", builtinBrowserRoutes(browser));
+  app.route(
+    "/api/builtin-browser",
+    builtinBrowserRoutes(
+      browser,
+      opts.resourceAccess ? { resourceAccess: opts.resourceAccess } : {},
+    ),
+  );
   return {
     shell: shell ?? new FakeShell(),
     browser,
@@ -1339,6 +1346,43 @@ describe("Session and Project isolation", () => {
     expect(response.status).toBe(200);
     expect(result.tabId).toBe(11);
     expect(result.newTabs).toBeUndefined();
+  });
+
+  it("keeps child pages in their own group and closes only the selected group's guests", async () => {
+    const row = (id: string) =>
+      id === "parent" || id === "child" ? { sessionId: id, projectId: "project" } : null;
+    const h = mount({
+      human: true,
+      resourceAccess: {
+        access: { requireProjectAccess: vi.fn() },
+        sessions: {
+          findById: (id) =>
+            row(id) as ReturnType<
+              import("@prismshadow/penguin-server/plugin").SessionIndex["findById"]
+            >,
+        },
+      },
+    });
+    const path = "/projects/project/session-resources";
+    expect(await (await h.call("GET", path)).json()).toEqual({ counts: {} });
+    await openOwned(h, 1, "parent");
+    await openOwned(h, 2, "child");
+    h.shell.show(tab(3)); // A guest without a Session never enters a managed group.
+    expect(await (await h.call("GET", path)).json()).toEqual({ counts: { parent: 1, child: 1 } });
+    const closing = h.call("POST", path + "/close", { sessionIds: ["child", "unknown"] });
+    await until(() => h.events.some((e) => e.type === "builtin_browser_close"), "close request");
+    expect(h.events.filter((e) => e.type === "builtin_browser_close")).toEqual([
+      { type: "builtin_browser_close", tabId: 2 },
+    ]);
+    h.shell.close(2);
+    expect(await (await closing).json()).toEqual({
+      results: [
+        { sessionId: "child", closed: 1 },
+        { sessionId: "unknown", closed: 0, error: "session_not_found" },
+      ],
+    });
+    expect(await (await h.call("GET", path)).json()).toEqual({ counts: { parent: 1 } });
+    expect(h.browser.tabs.list().map((t) => t.id)).toEqual([1, 3]);
   });
 
   it("navigates a fresh page for an empty Session while another Session has tabs", async () => {
