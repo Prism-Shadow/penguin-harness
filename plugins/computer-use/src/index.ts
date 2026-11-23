@@ -157,7 +157,7 @@ const probes = new Map<string, Probe>();
               "Commands that act on the desktop are refused (user_active) while the person at this computer is using the keyboard or mouse — their last input under 3 seconds ago — so an Agent never works the same window at the same time. Where the input idle time cannot be read (Wayland, a machine without the readers) nothing pauses, and the card says so.",
             descriptionZh:
               "当使用这台电脑的人正在用键盘或鼠标时（最近一次输入不到 3 秒），作用于桌面的命令一律被拒绝（user_active），Agent 因此不会与人同时操作同一个窗口。读不到输入空闲时间的地方（Wayland、缺少读取工具的机器）不会暂停，卡片上会注明。",
-            default: true,
+            default: false,
           },
           clipboardRead: {
             type: "boolean",

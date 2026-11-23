@@ -41,7 +41,7 @@ export interface ComputerUseSettings extends PolicySettings {
   binaryPath: string;
   /**
    * Input commands pause — refused with `user_active` — while the person at this computer is
-   * using the keyboard or mouse (their last input under USER_ACTIVE_SECONDS ago). On by default.
+   * using the keyboard or mouse (their last input under USER_ACTIVE_SECONDS ago). Off by default.
    */
   pauseWhileUserActive: boolean;
 }
@@ -56,7 +56,7 @@ export function settingsOf(doc: Record<string, unknown>): ComputerUseSettings {
     clipboardRead: bool("clipboardRead", false),
     notificationRead: bool("notificationRead", false),
     binaryPath: typeof doc.binaryPath === "string" ? doc.binaryPath.trim() : "",
-    pauseWhileUserActive: bool("pauseWhileUserActive", true),
+    pauseWhileUserActive: bool("pauseWhileUserActive", false),
   };
 }
 

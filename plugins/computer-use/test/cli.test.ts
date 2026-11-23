@@ -301,12 +301,31 @@ describe("penguin computer", () => {
     expect(typeof run.json!.data.penguin.plugin).toBe("string");
   });
 
+  it.each([undefined, false, true])(
+    "reads the saved user activity setting %s on each start",
+    async (value) => {
+      const fake = await fakeAgentDesktop();
+      const settings = value === undefined ? {} : { pauseWhileUserActive: value };
+      for (let start = 0; start < 2; start++) {
+        const t = await testService({ program: fake.program, settings, idleSeconds: 0.2 });
+        expect(t.service.settings().pauseWhileUserActive).toBe(value === true);
+        const result = await runComputer(t, ["click", "@s1:e2"]);
+        if (value === true) expect(result.stderr).toContain("error: user_active:");
+        else expect(result.exitCode).toBe(0);
+      }
+    },
+  );
+
   it("pauses commands that change the desktop while the user is active, observation aside", async () => {
     const fake = await fakeAgentDesktop({
       "list-apps": { stdout: ok("list-apps", { apps: [{ name: "Gedit", pid: 800 }] }) },
     });
     let idle: number | null = 1.2;
-    const t = await testService({ program: fake.program, idleSeconds: () => idle });
+    const t = await testService({
+      program: fake.program,
+      settings: { pauseWhileUserActive: true },
+      idleSeconds: () => idle,
+    });
     const click = await runComputer(t, ["click", "@s1:e2"]);
     expect(click.exitCode).toBe(1);
     expect(click.stderr).toMatch(
@@ -331,7 +350,11 @@ describe("penguin computer", () => {
       },
     });
     let idle = 30;
-    const t = await testService({ program: fake.program, idleSeconds: () => idle });
+    const t = await testService({
+      program: fake.program,
+      settings: { pauseWhileUserActive: true },
+      idleSeconds: () => idle,
+    });
     expect((await runComputer(t, ["press", "ctrl+s", "--app", "Gedit"])).exitCode).toBe(0);
     // The press reset the system's idle time just now: the next command is not paused for it.
     idle = 0.2;
@@ -406,7 +429,7 @@ describe("penguin computer", () => {
       userActive: false,
       idleSource: "XScreenSaver",
     });
-    expect(penguin.settings.pauseWhileUserActive).toBe(true);
+    expect(penguin.settings.pauseWhileUserActive).toBe(false);
   });
 
   it("answers status with exit code 1 and the reason when Computer Use is off", async () => {
