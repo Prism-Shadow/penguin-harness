@@ -233,6 +233,13 @@ test.describe("starting the demo on a touchscreen", () => {
     const draft = frame.locator(composer);
     await expect(draft).toBeVisible();
     await iframe.scrollIntoViewIfNeeded();
+    await page.clock.pauseAt(await page.evaluate(() => new Date(Date.now() + 50).toISOString()));
+    const scrollEnd = page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          document.addEventListener("scrollend", () => resolve(), { capture: true, once: true }),
+        ),
+    );
     const box = await iframe.boundingBox();
     const touch = await page.context().newCDPSession(page);
     const x = Math.round(box.x + box.width / 2);
@@ -244,8 +251,36 @@ test.describe("starting the demo on a touchscreen", () => {
     });
     await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await touch.detach();
+    await scrollEnd;
     await expect(stop).toBeVisible();
-    await draft.tap();
+    // A swipe can leave the scaled input behind the site's sticky header. Tap a point that
+    // actually hits the composer in the guest and its iframe in the outer page.
+    const composerPoint = () =>
+      iframe.evaluate((guest, selector) => {
+        const doc = guest.contentDocument;
+        const input = doc.querySelector(selector);
+        const field = input.getBoundingClientRect();
+        const insideX = field.left + field.width / 2;
+        const insideY = field.top + field.height / 2;
+        const frame = guest.getBoundingClientRect();
+        const x = frame.left + (insideX * frame.width) / guest.clientWidth;
+        const y = frame.top + (insideY * frame.height) / guest.clientHeight;
+        return {
+          x,
+          y,
+          visible:
+            document.elementFromPoint(x, y) === guest &&
+            doc.elementFromPoint(insideX, insideY) === input,
+        };
+      }, composer);
+    const target = await composerPoint();
+    await page.evaluate(
+      (y) => scrollBy({ top: y - innerHeight / 2, behavior: "instant" }),
+      target.y,
+    );
+    await expect.poll(async () => (await composerPoint()).visible).toBe(true);
+    const { x: tapX, y: tapY } = await composerPoint();
+    await page.touchscreen.tap(tapX, tapY);
     // Chromium delivers the compatibility click after the touch sequence.
     await page.clock.runFor(500);
     await expect(page.getByRole("button", { name: "Play demo", exact: true })).toBeVisible();
