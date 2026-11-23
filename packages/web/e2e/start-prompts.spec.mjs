@@ -44,7 +44,9 @@ test("saved prompts survive a shuffle and can be managed from a phone", async ({
   const setup = page.getByRole("dialog");
   await setup.getByRole("button", { name: "Later" }).click();
   const shortcuts = page.getByRole("group", { name: "Examples and shortcuts" });
-  await expect(page.getByText("Create your first Agent OS", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Create your first self-evolving agent OS.", { exact: true }),
+  ).toBeVisible();
   await expect(page.locator('[data-slot="count"]')).toHaveCount(0);
   await fit(shortcuts);
   const draft = page.locator('[data-slot="composer"] textarea').first();

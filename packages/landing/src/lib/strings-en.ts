@@ -52,16 +52,16 @@ export const en: Strings = {
 
   hero: {
     positioning: {
-      growthLead: "Software that ",
-      growth: "keeps growing",
-      growthEnd: ".",
+      growthLead: "From ",
+      growth: "Vibe-Coding",
       separator: " ",
-      reachLead: "Evolution ",
-      reach: "within reach",
-      reachEnd: ".",
+      reachLead: "to ",
+      reach: "Vibe-Evolving",
     },
-    subtitle: "Out-of-the-Box RSI Framework",
+    subtitle: "Open Foundation for Self-Evolving Enterprise AI.",
     downloadCta: "Download desktop",
+    productHuntBadge: "PenguinHarness on Product Hunt",
+    watchaBadge: "PenguinHarness Watcha badge",
     cliInstall: "Command-line install",
     stats: [
       { value: "Cross-platform", label: "Linux, Windows, macOS" },
@@ -182,6 +182,10 @@ export const en: Strings = {
   },
 
   selfImprove: {
+    toolkit:
+      "An RSI toolkit changes your agent’s harness (its prompts and Skills) while the model stays fixed, and measures every change on a Benchmark.",
+    evaluate: "Evaluate",
+    optimize: "Optimize",
     title: "A multi-agent self-evolution framework",
     subtitle:
       "By default the General Agent runs the optimization Skill. Each round it makes one change to the tested agent. Evaluator subagents running the evaluation Skill score the changed agent on every case of the Benchmark.",
@@ -265,9 +269,11 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cases: {
+    os: "Create your first self-evolving agent OS.",
+    apps: ["Document Q&A", "Investment Analyst", "Legal Assistant"],
     title: "A2APP: one sentence and $0.10 build a legal agent app",
     a2app:
-      "A2APP is the agent's own small app, a tab beside the chat; the app calls the agent to do the work. One sentence in chat, and the agent changes it; it reloads at once and keeps earlier versions.",
+      "Every agent can have a workbench of its own. The agent builds it from what you ask and changes it the same way. It opens beside the chat and reloads as the agent edits it.",
     subtitle:
       "Describe what you need in one request. PenguinHarness builds a legal agent app that takes contract uploads, identifies risks and produces review reports to download.",
     prompt:

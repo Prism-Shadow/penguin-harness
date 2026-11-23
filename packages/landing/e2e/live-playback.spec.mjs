@@ -83,7 +83,9 @@ for (const [lang, play, stop] of [
 test("the live homepage preview uses the new chat header and shortcut strip", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const { frame } = await openHero(page, "en");
-  await expect(frame.getByText("Create your first Agent OS", { exact: true })).toBeVisible();
+  await expect(
+    frame.getByText("Create your first self-evolving agent OS.", { exact: true }),
+  ).toBeVisible();
   await expect(frame.locator('[data-slot="counts"]')).toHaveCount(0);
   await expect(frame.locator('[data-slot="examples"]')).toBeVisible();
   await expect(frame.locator('[data-slot="version"]')).toContainText(
