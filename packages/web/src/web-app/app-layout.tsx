@@ -14,7 +14,6 @@ import { backgroundStyle, useBackground } from "../state/background";
 import { useEffect, useState } from "react";
 import type { Location } from "react-router";
 import type { ReactNode } from "react";
-import { useProject } from "../state/project";
 import { PageWorkspace } from "../lib/page-workspace";
 import { PageArea } from "../features/page-workspace";
 import { AppShell, Drawer, MobileTopBar, Notice, UpdateDot } from "@prismshadow/penguin-ui";
@@ -49,10 +48,8 @@ interface LayoutProps {
   renderRoute: (location: string | Location) => ReactNode;
 }
 export function AppLayout(props: LayoutProps) {
-  const { user } = useAuth();
-  const { currentProject } = useProject();
   return (
-    <PageWorkspace key={JSON.stringify([user?.userId, currentProject?.projectId])}>
+    <PageWorkspace>
       <ShellLayout {...props} />
     </PageWorkspace>
   );

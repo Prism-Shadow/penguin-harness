@@ -14,6 +14,8 @@ import { useSystemApps } from "./system-apps";
 import { localizedText } from "./skill-use";
 import { S } from "./strings";
 import { useLocale } from "../state/locale";
+import { useAuth } from "../state/auth";
+import { useProject } from "../state/project";
 import { useSessions } from "../state/sessions";
 import {
   closePage,
@@ -26,6 +28,8 @@ import {
 } from "./page-layout";
 
 interface Workspace {
+  scope: number;
+  accountScope: number;
   layout: PageLayout;
   current: OpenPage | null;
   focus(page: OpenPage): void;
@@ -42,6 +46,8 @@ const Context = createContext<Workspace | null>(null);
 export const usePageWorkspace = () => useContext(Context);
 
 export function PageWorkspace({ children }: { children: ReactNode }) {
+  const userId = useAuth().user?.userId ?? null;
+  const projectId = useProject().currentProject?.projectId ?? null;
   const location = useLocation();
   const navigate = useNavigate();
   const { sessions } = useSessions();
@@ -111,6 +117,24 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
     null,
   );
   const ticket = useRef(0);
+  // Reset the page records when identity changes without remounting the application shell.
+  // Shell dialogs and non-workspace routes own their focus and Project-scoped URL filters.
+  const [lifetime, setLifetime] = useState({ userId, projectId, scope: 0, accountScope: 0 });
+  if (lifetime.userId !== userId || lifetime.projectId !== projectId) {
+    const accountChanged = lifetime.userId !== null && lifetime.userId !== userId;
+    const changed =
+      accountChanged || (lifetime.projectId !== null && lifetime.projectId !== projectId);
+    setLifetime({
+      userId,
+      projectId,
+      scope: lifetime.scope + Number(changed),
+      accountScope: lifetime.accountScope + Number(accountChanged),
+    });
+    if (changed) {
+      pending.current = null;
+      setLayout(current ? visitPage(emptyLayout, current) : emptyLayout);
+    }
+  }
   const currentId = current?.id;
   const title = current?.title;
   useLayoutEffect(() => {
@@ -211,6 +235,8 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
     <Context.Provider
       value={{
         layout,
+        scope: lifetime.scope,
+        accountScope: lifetime.accountScope,
         current,
         focus,
         place,

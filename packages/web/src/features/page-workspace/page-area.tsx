@@ -154,7 +154,13 @@ export function PageArea({
         </ErrorBoundary>
       )}
       {pages.map((page) => (
-        <PageSlot key={page.id} id={page.id}>
+        <PageSlot
+          key={JSON.stringify([
+            page.kind === "system" ? workspace.accountScope : workspace.scope,
+            page.id,
+          ])}
+          id={page.id}
+        >
           <ErrorBoundary fallback={(error) => <RescuePanel error={error} />}>
             {page.kind === "workbenches" ? (
               <WorkbenchDirectory path={page.path} />
