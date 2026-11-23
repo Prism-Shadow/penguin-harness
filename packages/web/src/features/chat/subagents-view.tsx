@@ -144,7 +144,8 @@ export function SubagentsView({
     ...liveStates.keys(),
     taskRunning,
   ]);
-  const history = useChildSessions(session.sessionId, change, connection, anchor);
+  const machine = machineForSession(session.sessionId);
+  const history = useChildSessions(session.sessionId, machine, change, connection, anchor);
   const index = anchor
     ? history.turns.findIndex((turn) => turn.some((child) => child.sessionId === anchor))
     : 0;
@@ -241,15 +242,12 @@ export function SubagentsView({
       node.depth === 0
         ? session.agentId
         : (node.agentId ?? sessions.find((s) => s.sessionId === node.sessionId)?.agentId);
-    return agentId === undefined
-      ? undefined
-      : avatarSrc(agentId, machineForSession(node.sessionId));
+    return agentId === undefined ? undefined : avatarSrc(agentId, machine);
   };
 
   const isRoot = active !== null && active.origin.length === 0;
   const activeNode = active ? (nodes.find((n) => n.sessionId === active.sessionId) ?? null) : null;
   const embedded = active && !isRoot ? modelAtOrigin(model, active.origin) : null;
-  const machine = machineForSession(session.sessionId);
   const childRead = useChildTranscript(
     active && !isRoot && !embedded ? active.sessionId : null,
     machine,
@@ -491,9 +489,13 @@ function SubagentComposer({
   const [turnLevel, setTurnLevel] = useState("");
   const pinChildLevel = (level: string): void => {
     setTurnLevel(level);
-    void patchSession(childSessionId, {
-      thinkingLevel: level as SessionPatchRequest["thinkingLevel"],
-    }).catch((err: unknown) => toastApiError(err));
+    void patchSession(
+      childSessionId,
+      {
+        thinkingLevel: level as SessionPatchRequest["thinkingLevel"],
+      },
+      machineForSession(sessionId),
+    ).catch((err: unknown) => toastApiError(err));
   };
 
   const modelRef = meta ? { provider: meta.provider, modelId: meta.modelId } : null;

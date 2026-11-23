@@ -29,6 +29,7 @@ function AgentsPanelBody() {
     parentThinkingLevel,
   } = useChatDock();
   if (!selected) return draftPlaceholder("agents");
+  if (stream.sessionId !== selected.sessionId) return null;
   return (
     <SubagentsView
       key={JSON.stringify([

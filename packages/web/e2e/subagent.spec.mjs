@@ -420,20 +420,42 @@ test("previous and next turns retain the original child through another send and
   await expect(identity).not.toHaveAttribute("data-tooltip", firstId);
   await expect(identity).not.toHaveAttribute("data-tooltip", secondId);
 
+  // Push all three delegations outside the parent's initial twenty-turn transcript.
+  for (let i = 0; i < 21; i += 1) {
+    const sent = await page.request.post(`${BASE}/api/sessions/${sessionId}/tasks`, {
+      data: { input: [{ type: "text", text: `Plain follow-up ${i}` }] },
+    });
+    await expect(sent).toBeOK();
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${BASE}/api/sessions/${sessionId}`);
+        return (await response.json()).session.status;
+      })
+      .toBe("idle");
+  }
+
   const cold = await context.newPage();
   await page.close();
   await cold.goto(`${BASE}/chat/${sessionId}`);
   const previousCold = cold.getByRole("button", { name: "上一轮", exact: true });
-  if (!(await cold.getByRole("group", { name: "调用关系" }).isVisible())) {
-    await cold.getByTestId("dock-toggle-right").click();
-    const pick = cold.getByTestId("dock-pick-agents");
-    if (await pick.isVisible()) await pick.click();
-  }
+  await cold
+    .locator(`[data-workspace-page="chat:${sessionId}"]`)
+    .locator('[data-slot="composer"] textarea')
+    .first()
+    .waitFor();
+  const toggle = cold.getByTestId("dock-toggle-right");
+  await expect(toggle).toHaveAttribute("aria-expanded", /true|false/);
+  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+  const pick = cold.getByTestId("dock-pick-agents");
+  if (await pick.isVisible()) await pick.click();
+  await expect(agentsTabActive(cold)).toBeVisible();
   await previousCold.click();
   await previousCold.click();
   await expect(
     cold.locator('[data-testid="dock"]').locator(`span[data-tooltip="${firstId}"]`),
   ).toBeVisible();
+  await expect(cold.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toBeVisible();
+  await expect(cold.getByTestId("dock").getByText(CHILD_PROMPT)).toBeVisible();
   await cold.getByTestId("subagent-open-session").click();
   await expect(cold).toHaveURL(new RegExp(`/chat/${firstId}$`));
 });

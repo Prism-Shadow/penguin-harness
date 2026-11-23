@@ -34,7 +34,7 @@ export interface ChatDockState {
   /** The stream's repaint signal, its run state and the runtime's live subagent children. */
   stream: Pick<
     SessionStreamState,
-    "version" | "taskState" | "subagents" | "subscriptionGeneration"
+    "sessionId" | "version" | "taskState" | "subagents" | "subscriptionGeneration"
   >;
   /** The main conversation's render context (origin []); a child conversation derives its own. */
   ctx: StreamRenderContext;

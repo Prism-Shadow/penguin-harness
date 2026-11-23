@@ -1184,10 +1184,15 @@ export const getSession = (sessionId: string, machineId?: string | null) =>
     machineId === undefined ? {} : { server: machineId },
   );
 
-export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
+export const patchSession = (
+  sessionId: string,
+  body: SessionPatchRequest,
+  machineId?: string | null,
+) =>
   apiFetch<SessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
     method: "PATCH",
     body,
+    ...(machineId !== undefined && { server: machineId }),
   });
 
 export const deleteSession = (sessionId: string) =>
@@ -1523,10 +1528,10 @@ export interface ChildSessionEntry {
   title: string | null;
 }
 
-export const getChildSessions = (sessionId: string, before?: string) =>
+export const getChildSessions = (sessionId: string, before?: string, machineId?: string | null) =>
   apiFetch<{ items: ChildSessionEntry[]; nextCursor: string | null }>(
     `/api/sessions/${encodeURIComponent(sessionId)}/subagents`,
-    { query: { before, limit: 32 } },
+    { query: { before, limit: 32 }, ...(machineId !== undefined && { server: machineId }) },
   );
 
 /** Panel message to one subagent child (#272) — a user input on the child, whatever its state: steered mid-run, started on an idle child, resumed when the released session was revived (the child runs at its own Session's thinking level; pin it with patchSession). 404 subagent_gone when nothing can be revived, 409 subagent_busy when the child cannot take it right now. */

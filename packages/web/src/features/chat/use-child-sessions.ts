@@ -15,13 +15,14 @@ import { ChildSessionHistory } from "./child-session-history";
 /** Scoped by the keyed parent panel. Only one read may extend its cursor chain at a time. */
 export function useChildSessions(
   sessionId: string,
+  machineId: string | null,
   change: string,
   connection: number,
   anchor: string | null,
 ) {
   const index = useMemo(
-    () => new ChildSessionHistory((before) => getChildSessions(sessionId, before)),
-    [sessionId],
+    () => new ChildSessionHistory((before) => getChildSessions(sessionId, before, machineId)),
+    [sessionId, machineId],
   );
   const queue = useRef(Promise.resolve());
   const [error, setError] = useState<string | null>(null);
