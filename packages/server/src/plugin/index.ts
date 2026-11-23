@@ -134,6 +134,6 @@ export {
   MAX_TOTAL_BYTES,
   assertSafeEntryPath,
   unzipBounded,
-} from "../services/skill-import-limits.js";
-export type { UnzipLimits } from "../services/skill-import-limits.js";
-export { CONTROL_CHARACTER, assertDistinctPaths, specialEntries } from "../services/zip-entries.js";
+} from "@prismshadow/penguin-library-http/skill-import-limits";
+export type { UnzipLimits } from "@prismshadow/penguin-library-http/skill-import-limits";
+export { CONTROL_CHARACTER, assertDistinctPaths, specialEntries } from "@prismshadow/penguin-library-http/zip-entries";
