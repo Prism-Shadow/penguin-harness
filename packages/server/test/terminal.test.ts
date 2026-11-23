@@ -4,6 +4,9 @@
  *
  * The restore tests are where the value is — they encode the promise that a reattaching
  * client can rebuild the exact screen, which is what a browser refresh depends on.
+ * Wrapped URLs must still reflow separately from the next command, even when a wide glyph
+ * starts a continuation or a TUI erased some of the cells. At the right margin the next
+ * live byte must wrap exactly as it would on the original terminal.
  *
  * The control plane also promises that each shell is filed under the conversation that
  * opened it (`sessionId`, null for none), which only its own user can change, through PATCH:
@@ -75,6 +78,64 @@ describe("restore rendering", () => {
     expect(restored[0]).toBe("first line");
     expect(restored[2]).toBe("$ ");
   });
+
+  it("reflows a restored URL across soft wraps and keeps the next command on its own line", async () => {
+    const url = "https://example.com/projects/terminal/pull/42";
+    const source = terminalWith(url + "\r\n$ pwd", 12);
+    await flush(source);
+    const target = terminalWith(renderRestoreAnsi(source), 12);
+    await flush(target);
+
+    target.resize(64, 6);
+    expect(captureLines(target).lines.slice(0, 2)).toEqual([url, "$ pwd"]);
+  });
+
+  it("preserves an early wrap before a wide character without appending spaces", async () => {
+    const source = terminalWith("1234567\x1b[34m界x\x1b[0m", 8);
+    await flush(source);
+    const target = terminalWith(renderRestoreAnsi(source), 8);
+    await flush(target);
+
+    expect(target.buffer.active.getLine(1)?.isWrapped).toBe(true);
+    expect(captureLines(target).lines.slice(0, 2)).toEqual(["1234567", "界x"]);
+  });
+
+  it("keeps edited and empty continuation rows in place on a resync with autowrap disabled", async () => {
+    // A TUI clears one continuation, erases the tail of the next, then disables autowrap.
+    const source = terminalWith(
+      "12345678abcdefghABCDEFGHij\x1b[2;1H\x1b[8X\x1b[3;5H\x1b[K\x1b[4;3H\x1b[?7l",
+      8,
+    );
+    await flush(source);
+    const target = terminalWith(
+      "\x1b[?7l" + renderRestoreAnsi(source, { inputModePreamble: "\x1b[?7l" }),
+      8,
+    );
+    await flush(target);
+
+    expect(captureLines(target).lines.slice(0, 4)).toEqual(["12345678", "", "ABCD", "ij"]);
+    expect([1, 2, 3].map((y) => target.buffer.active.getLine(y)?.isWrapped)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(target.modes.wraparoundMode).toBe(false);
+  });
+
+  it.each(["12345678", "123456界"])(
+    "wraps subsequent live output after an exact-width line (%s)",
+    async (line) => {
+      const source = terminalWith(line, 8);
+      await flush(source);
+      const target = terminalWith(renderRestoreAnsi(source), 8);
+      await flush(target);
+
+      target.write("!");
+      await flush(target);
+      expect(captureLines(target).lines.slice(0, 2)).toEqual([line, "!"]);
+      expect(target.buffer.active.getLine(1)?.isWrapped).toBe(true);
+    },
+  );
 
   it("keeps colours and attributes", async () => {
     const source = terminalWith("\x1b[1;32mgreen bold\x1b[0m plain \x1b[41mred bg\x1b[0m");
