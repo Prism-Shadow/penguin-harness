@@ -15,7 +15,7 @@ import {
   KEYBINDINGS_ID_MAX,
   KEYBINDINGS_SECTION_MAX,
   validateKeybindings,
-} from "../src/services/keybindings.js";
+} from "@prismshadow/penguin-library-setting/keybindings";
 import { HttpError } from "../src/http/errors.js";
 
 const rejects = (value: unknown, pattern: RegExp): void => {

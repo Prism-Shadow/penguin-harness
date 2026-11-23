@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../../lib/strings";
+import { PageIdentity, usePaneFocus } from "../../../lib/page-focus";
 import { useDocumentTitle } from "../../../lib/use-document-title";
 import type { MemoryLocateTarget } from "../../../lib/amsp/memory-changes";
 import { DRAFT_SESSION_ID, parkedDraftIdOf } from "../draft-sessions";
@@ -14,13 +15,22 @@ import { machineForSession } from "../../../lib/session-machines";
 import { useMachineModels } from "../../../lib/machine-models";
 import { setDockConversation, dockVersion, openPanel, panelDock, subscribeDock } from "../../dock";
 import { terminalApiSupported, subscribeTerminals } from "../../terminal";
+import { usePageWorkspace } from "../../../lib/page-workspace";
+import { sessionAppPair } from "../../../lib/session-app-dock";
 import type { useMainChatInputs } from "./main-chat-inputs";
 
 /** Exact consecutive main ChatPage statements 26..61; called once, in original order. */
 export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) {
   const { location, params, projectId, agentId, sessions, isSessionDeleted } = scope;
 
+  const paneFocused = usePaneFocus();
   const routeSessionId = params.sessionId ?? null;
+  const workspace = usePageWorkspace();
+  const slot = useContext(PageIdentity);
+  const scopedHost = slot?.sessionHost;
+  const hostsAppPanel =
+    !!workspace?.current &&
+    sessionAppPair(workspace.layout)?.session.id === (slot?.id ?? "chat:" + routeSessionId);
   // The docks' arrangement lives in the dock store (features/dock) — tabs, active tab,
   // sizes, all global and persisted. This page re-renders on any dock change and owns only
   // the stream-driven JUMP COMMANDS the panel bodies consume: each is a fresh object per
@@ -135,7 +145,8 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
   const listed =
     draft || (routeSessionId !== null && isSessionDeleted(routeSessionId))
       ? null
-      : resolveRoutedSession(routeSessionId, sessions, fetchedSession, projectId);
+      : (scopedHost?.session ??
+        resolveRoutedSession(routeSessionId, sessions, fetchedSession, projectId));
   /**
    * The routed Session, held across a refetch that momentarily does not list it.
    *
@@ -151,6 +162,11 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
    * deleted still probes, still fails, and still redirects — one tick later than before.
    */
   const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
+  const [offlineOwner, setOfflineOwner] = useState<{
+    key: string;
+    machineId: string;
+    alias: string;
+  } | null>(null);
   const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
   /** The probe that failed did so with a 404: the server has no such Session for this user. */
   const [probeMissingKey, setProbeMissingKey] = useState<string | null>(null);
@@ -199,7 +215,9 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
     ? (resolvedDraftOwner?.machineId ?? null)
     : selected === null
       ? null
-      : machineForSession(selected.sessionId);
+      : scopedHost
+        ? scopedHost.machineId
+        : machineForSession(selected.sessionId);
   /**
    * The models this page offers and prices by: those of the server it acts on. A draft whose
    * workspace is on a machine creates its Session over there, and a conversation on a machine
@@ -213,13 +231,18 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
   // publishes the draft's Workspace instead (a child effect runs before this one, so this must
   // yield rather than clobber it).
   useEffect(() => {
-    if (draft) return;
+    if (draft || !paneFocused) return;
     setDockConversation({
       sessionId: selected?.sessionId ?? null,
       workspace: selected?.workspace ?? null,
-      machineId: selected === null ? null : machineForSession(selected.sessionId),
+      machineId:
+        selected === null
+          ? null
+          : scopedHost
+            ? scopedHost.machineId
+            : machineForSession(selected.sessionId),
     });
-  }, [draft, selected]);
+  }, [draft, selected, paneFocused]);
 
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
   const activeModelRef = selected
@@ -230,6 +253,9 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
   useDocumentTitle(routed ? (routed.title ?? S.chat.defaultSessionTitle) : S.nav.chat);
   return {
     ...scope,
+    paneFocused,
+    hostsAppPanel,
+    scopedHost,
     routeSessionId,
     fileOpenRequest,
     setFileOpenRequest,
@@ -255,6 +281,8 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
     setFetchedSession,
     listed,
     probeKey,
+    offlineOwner: offlineOwner?.key === probeKey ? offlineOwner : null,
+    setOfflineOwner,
     probeFailedKey,
     setProbeFailedKey,
     probeMissingKey,

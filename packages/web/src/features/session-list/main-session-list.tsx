@@ -1,3 +1,4 @@
+import { Fold } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 
 import type { MainSidebarState } from "./main-sidebar-controller";
@@ -73,36 +74,37 @@ export function renderMainSessionList(scope: MainSidebarState) {
               No ruled separator at this boundary — the nav toggle above is the seam. The label
               names the grouping: workspaces, agents, or the recent ones by time. */}
       {renderMainListHeader(scope)}
-
-      {/* Parked draft conversations (unsent new chats, newest first): pinned above both
+      <Fold open={!scope.listFolded || searchOpen}>
+        {/* Parked draft conversations (unsent new chats, newest first): pinned above both
           grouping modes — they belong to no Agent or Workspace until sent. Hidden
           entirely while there are none; the search filter applies to their titles too. */}
-      {renderMainListDrafts(scope)}
+        {renderMainListDrafts(scope)}
 
-      {/* The grouped list, one piece per grouping: a switch of the grouping remounts it, and
+        {/* The grouped list, one piece per grouping: a switch of the grouping remounts it, and
               the regrouped list surfaces as a whole under the theme's reveal. */}
-      <div key={groupMode} {...(regrouped ? { "data-reveal": true } : {})}>
-        {renderMainGroupByAgent(scope)}
-        {groupMode === "agent" ? groupPagerRow() : null}
-        {renderMainGroupByWorkspace(scope)}
-        {groupMode === "workspace" ? groupPagerRow() : null}
+        <div key={groupMode} {...(regrouped ? { "data-reveal": true } : {})}>
+          {renderMainGroupByAgent(scope)}
+          {groupMode === "agent" ? groupPagerRow() : null}
+          {renderMainGroupByWorkspace(scope)}
+          {groupMode === "workspace" ? groupPagerRow() : null}
 
-        {/* Time mode: last day / last month / earlier, bucketed on each conversation's last
+          {/* Time mode: last day / last month / earlier, bucketed on each conversation's last
           activity — the same stamp the rows' compact timestamps and the recency sort read,
           so a row can never sit under a bucket its own timestamp contradicts. Empty buckets
           are dropped, and there are at most three, so this mode never paginates its groups.
           The buckets span every Agent and every Workspace: a bucket's "More" only reveals
           further rows already shown in it, while fetching the next page happens once for the
           whole Project, below. */}
-        {renderMainGroupByTime(scope)}
-      </div>
+          {renderMainGroupByTime(scope)}
+        </div>
 
-      {/* Quiet no-match line: the search is live and nothing — drafts included — hit. */}
-      {searching && !hasSearchMatches && (
-        <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
-          {S.chat.searchNoMatches}
-        </p>
-      )}
+        {/* Quiet no-match line: the search is live and nothing — drafts included — hit. */}
+        {searching && !hasSearchMatches && (
+          <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
+            {S.chat.searchNoMatches}
+          </p>
+        )}
+      </Fold>
     </>
   );
 }

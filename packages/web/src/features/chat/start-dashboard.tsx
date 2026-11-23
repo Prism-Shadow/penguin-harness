@@ -1,111 +1,20 @@
-/**
- * The start page (/chat/new) as a dashboard that fits one screen: the brand with three counts
- * beside it, the composer, and the examples block. The draft view owns every piece of draft
- * state — the Agent, the Workspace, the composer — and hands this module the composer as a slot
- * and a way to fill it; the counts are read here (use-start-dashboard.ts).
- *
- * - **Brand and counts.** The logo, the product's name (the page's one h1, which the e2e suite
- *   finds the page by) over the slogan, and the version line under them at every width; at the
- *   far end of the same row, one small panel of three counts — this Project's agents, the
- *   self-evolution toolkits of the library's `rsi` category, this Project's Benchmarks on this
- *   server — each opening the page that lists them. Each is read again whenever the page mounts,
- *   so a plugin installed or a Benchmark imported elsewhere shows on coming back; a count that
- *   has not arrived reads "—". After them, in their order, come the counts server modules
- *   contribute (lib/start-metrics.ts): fixed numbers, each opening the system app it names (in
- *   its window, when it opens in one) or nothing; safe mode has none. Where the column is too
- *   narrow for both (a phone), the panel sits under the version line, and so it does at every
- *   width when there are contributed counts, which would otherwise squeeze the name.
- * - **Examples and shortcuts.** The example folders and the user's own shortcuts, one folder
- *   open at a time (example-tasks.ts, shortcuts-folder.tsx): the folders down one column and the
- *   open folder's rows beside them, so switching folders moves nothing; stacked on a phone. Every
- *   row is led by a glyph of its own and closed by a chevron at its right edge, so the rows read
- *   as things to press — each takes its prompt into the composer — rather than as a list of
- *   titles.
- *
- * Nothing moves while it loads and nothing scrolls inside the page — the draft view's column is
- * the one scroll container, and at a laptop viewport the page needs none. The examples block's
- * breakpoint is a container query on the column rather than a viewport one: the sidebar and the
- * dock take their width from it, so the viewport cannot say how much room the block has. The
- * block is its own query container and the composer is not, so the composer's panels never sit
- * inside a container's containment.
- *
- * Colours, lines, radii and type come from the tokens and the package's components, so the three
- * themes restyle the page through them: the counts' `Card` is squared and unfilled in Console and
- * softened in Frost, the section title is the theme's eyebrow, the h1 is its display title.
- *
- * The page carries the `ui-start` hook, so a theme may also dress it as a whole: the brand block
- * (`brand`: the logo, the `title`, `tagline` and `version`, and beside them the `counts` panel
- * with each `count`), the `composer` (the composer card's own slot), and the `examples` block
- * with its `folders` grid, each `folder` row (example-folder-row.tsx), the open folder's `rows`
- * and each `row`. The wrapper is a plain block, so the page lays out exactly as its parts did.
- */
 import { Fragment, useState } from "react";
 import type { ReactNode } from "react";
 
-import { Link } from "react-router";
-import {
-  Card,
-  GlyphIcon,
-  Heading,
-  ICONS,
-  ICON_GAP,
-  ICON_SIZE,
-  PenguinLogo,
-  RuledSection,
-  Text,
-} from "@prismshadow/penguin-ui";
+import { Heading, ICONS, PenguinLogo } from "@prismshadow/penguin-ui";
 import { VersionStamp } from "../../components/account/version-stamp";
 import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
 import { S } from "../../lib/strings";
-import { NAV_ICONS, glyphOf } from "../../lib/nav-icons";
-import { formatMonthDay } from "../../lib/format";
 
-import { windowAddress } from "../../lib/app-window-address";
-import { localizedText } from "../../lib/skill-use";
-import { systemAppKey, useSystemApps } from "../../lib/system-apps";
 import { versionBadgeFor } from "../../lib/update-flow";
-import type { StartMetric } from "../../lib/start-metrics";
-import { useStartMetrics } from "../../lib/web-app-pages";
 import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { EXAMPLE_FOLDERS, type ExampleFolderId, type ExampleTaskId } from "./example-tasks";
-
-import {
-  ExampleFolderRow,
-  ExampleRowGlyph,
-  ExampleRowGo,
-  ExampleSelectionMark,
-  exampleGridClass,
-  examplePanelClass,
-  exampleRowClass,
-} from "./example-folder-row";
-import { SHORTCUTS_FOLDER_ID, ShortcutsFolder } from "./shortcuts-folder";
-import { useProjectBenchmarks, useRsiToolkits } from "./use-start-dashboard";
-
-/** Where the counts sit: beside the brand from `@2xl` up, or on their own row at every width. */
-type BrandLayout = "beside" | "below";
-
-const BRAND_GRID: Record<BrandLayout, string> = {
-  beside:
-    "grid grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)] items-center gap-x-3 @2xl:grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)_auto]",
-  below: "grid grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)] items-center gap-x-3",
-};
-
-const COUNTS_PLACE: Record<BrandLayout, string> = {
-  beside:
-    "col-span-2 row-start-3 mt-4 justify-self-start @2xl:col-span-1 @2xl:col-start-3 @2xl:row-start-1 @2xl:mt-0 @2xl:ml-3",
-  below: "col-span-2 row-start-3 mt-4 justify-self-start",
-};
-
-const VERSION_PLACE: Record<BrandLayout, string> = {
-  beside: "col-start-2 row-start-2 mt-1.5 text-xs tabular-nums text-fg-subtle @2xl:col-end-4",
-  below: "col-start-2 row-start-2 mt-1.5 text-xs tabular-nums text-fg-subtle",
-};
+import { pickExamples, type ExampleTaskId } from "./example-tasks";
+import { PromptActionRow, type PromptAction } from "./prompt-action-row";
+import { SavedPrompts } from "./saved-prompts";
 
 export interface StartDashboardProps {
-  projectId: string;
   /** The composer and the pills under it: set between the brand and the examples. */
   composer: ReactNode;
   /** Whether the Agent's Skills have been read: until then nothing knows what a fill would pin. */
@@ -119,64 +28,32 @@ export interface StartDashboardProps {
 }
 
 export function StartDashboard({
-  projectId,
   composer,
   skillsLoaded,
   exampleText = null,
   fill,
   readComposerText,
 }: StartDashboardProps) {
-  const { agents, agentsLoading } = useProject();
-  const toolkits = useRsiToolkits();
-  const benchmarks = useProjectBenchmarks(projectId);
-  const metrics = useStartMetrics();
-  // Beside the brand there is room for the page's own three counts only: a longer strip would
-  // squeeze the name, so with contributed counts it takes its own row at every width.
-  const layout = metrics.length === 0 ? "beside" : "below";
-
   return (
-    <div className="ui-start">
-      {/* The logo spans the name, slogan and version line. The version starts at the name's
-          left edge and reaches under the counts at `@2xl`; below that, or with contributed
-          counts, the counts take their own third row. */}
-      <div data-slot="brand" className="@container mb-10">
-        <div className={BRAND_GRID[layout]}>
-          <StartBrand />
-          <VersionLine layout={layout} />
-          <Card data-slot="counts" padding="none" className={COUNTS_PLACE[layout]}>
-            {/* The hairlines between the counts are the list's own dividers. Equal columns, one
-                per count, each as wide as the widest count needs, so the panel reads as one even
-                strip. */}
-            <ul
-              className="grid divide-x divide-line-muted"
-              style={{ gridTemplateColumns: `repeat(${3 + metrics.length}, minmax(0, 1fr))` }}
+    <div className="ui-start anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3 md:px-4">
+      <div className="mx-auto my-auto w-full min-w-0 max-w-3xl shrink-0 py-4">
+        <div data-slot="brand" className="mb-5 flex flex-col items-center gap-1 text-center">
+          <div className="flex max-w-full items-center justify-center gap-3">
+            <div data-slot="brand-mark" className="size-12 shrink-0">
+              <PenguinLogo src={PENGUIN_LOGO_URL} className="h-full w-full rounded-[24%]" />
+            </div>
+            <Heading
+              level={1}
+              display
+              data-slot="title"
+              className="min-w-0 [overflow-wrap:anywhere]"
             >
-              <StatCount
-                glyph={glyphOf("robot")}
-                label={S.chat.start.metrics.agents}
-                to="/agents"
-                value={agentsLoading ? null : agents.length}
-              />
-              <StatCount
-                // The loop every self-evolution toolkit runs; the library holds the toolkits.
-                glyph={ICONS.refresh}
-                label={S.chat.start.metrics.toolkits}
-                to="/plugins"
-                value={toolkits.value?.length ?? null}
-              />
-              <StatCount
-                glyph={glyphOf("trophy")}
-                label={S.chat.start.metrics.benchmarks}
-                to="/benchmark"
-                value={benchmarks.benchmarks?.length ?? null}
-              />
-              {metrics.length > 0 && <ContributedCounts metrics={metrics} />}
-            </ul>
-          </Card>
+              <AppName />
+            </Heading>
+          </div>
+          <p className="text-sm text-fg-muted">{S.chat.start.tagline}</p>
         </div>
-      </div>
-      {composer}
-      <div data-slot="examples" className="@container mt-10">
+        {composer}
         <ExamplesSection
           ready={skillsLoaded}
           fill={fill}
@@ -184,44 +61,8 @@ export function StartDashboard({
           readComposerText={readComposerText}
         />
       </div>
+      <StartVersionLine />
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Brand
-// ---------------------------------------------------------------------------
-
-/**
- * The logo spans both brand rows, matching the name, slogan and version line together. Its
- * square wrapper takes its height from the text; the image contributes no intrinsic size.
- * Reserve its maximum width so wrapped text cannot enlarge the square into its own column.
- */
-function StartBrand() {
-  return (
-    <>
-      {/* Square asset on a white tile of its own; the hairline keeps the tile's edge on a light
-          page, where white meets white. Its corner is the asset's own (the drawing clips at 24% of
-          the side), not the theme's radius scale, which would make it a circle in Frost and a
-          square in Console: the mark keeps one shape everywhere. */}
-      <div
-        data-slot="brand-mark"
-        className="relative col-start-1 row-span-2 row-start-1 aspect-square max-h-24 justify-self-start self-stretch"
-      >
-        <PenguinLogo
-          src={PENGUIN_LOGO_URL}
-          className="absolute inset-0 h-full w-full rounded-[24%] ring-1 ring-line-muted"
-        />
-      </div>
-      <div className="col-start-2 row-start-1 min-w-0">
-        <Heading level={1} display data-slot="title">
-          <AppName />
-        </Heading>
-        <Text data-slot="tagline" className="mt-1 text-balance text-fg-muted">
-          {S.chat.draftSubtitle}
-        </Text>
-      </div>
-    </>
   );
 }
 
@@ -250,19 +91,15 @@ function AppName() {
 const versionBadgeClass =
   "inline-block whitespace-nowrap align-super text-xs leading-4 text-fg-subtle hover:underline";
 
-/**
- * The header grid's second row: `vX.Y.Z · Last updated Jul 26` under the slogan, at the name's
- * left edge, with the update hint when something waits. Its phrases never break inside, and the
- * row reaches under the counts, so beside them the whole line always fits; only a phone column
- * too narrow for it wraps it — between the phrases, the hint moving down whole first. The
- * version is cached for the whole app, so this is usually instant; until it is, the row holds an
- * empty line of the same height, so its arrival moves nothing on the page.
- */
-function VersionLine({ layout }: { layout: BrandLayout }) {
+/** The release footer uses the same build date and update action as the account menu. */
+function StartVersionLine() {
   const { locale } = useLocale();
   const { version } = useVersionInfo(true);
   return (
-    <p data-slot="version" className={VERSION_PLACE[layout]}>
+    <p
+      data-slot="version"
+      className="shrink-0 pb-1 pt-3 text-center text-xs tabular-nums text-fg-subtle"
+    >
       {version === null ? (
         "\u00a0"
       ) : (
@@ -315,101 +152,9 @@ function VersionBadge() {
 }
 
 // ---------------------------------------------------------------------------
-// The counts
-// ---------------------------------------------------------------------------
-
-/** The counts server modules contribute, after the page's own, each opening the app it names. */
-function ContributedCounts({ metrics }: { metrics: readonly StartMetric[] }) {
-  const { locale } = useLocale();
-  const systemApps = useSystemApps();
-  /** Where a count leads: the system app it names, in its window when it opens in one. */
-  const addressOf = (key: string | undefined): string | undefined => {
-    const app = key === undefined ? undefined : systemApps.find((one) => one.key === key);
-    if (app === undefined) return undefined;
-    return app.frame !== undefined ? windowAddress(systemAppKey(app.key)) : app.path;
-  };
-  return (
-    <>
-      {metrics.map((metric) => (
-        <StatCount
-          key={metric.id}
-          glyph={glyphOf(metric.icon)}
-          label={localizedText(locale, metric.title, metric.titleZh)}
-          to={addressOf(metric.app)}
-          value={metric.value}
-        />
-      ))}
-    </>
-  );
-}
-
-/**
- * One count: the glyph and the label over the number, all one link to the page that lists what
- * it counts, when there is one. The label keeps to one line, so the counts are one height
- * whatever the language.
- */
-function StatCount({
-  glyph,
-  label,
-  to,
-  value,
-}: {
-  glyph: string;
-  label: string;
-  /** The page it opens; absent: the count opens nothing. */
-  to?: string | undefined;
-  /** The count; null while it has not arrived. */
-  value: number | null;
-}) {
-  const body = (
-    <>
-      <span className={`flex items-center ${ICON_GAP.row} whitespace-nowrap text-xs text-fg-muted`}>
-        <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
-        {label}
-      </span>
-      <span data-slot="figure" className="text-xl font-semibold leading-7 tabular-nums text-fg">
-        {value === null ? "—" : value}
-      </span>
-    </>
-  );
-  return (
-    <li data-slot="count" data-clip-surface="" className="min-w-0">
-      {to === undefined ? (
-        <div className="flex min-w-0 flex-col px-3 py-1.5">{body}</div>
-      ) : (
-        <Link
-          to={to}
-          className="flex min-w-0 flex-col rounded-[inherit] px-3 py-1.5 transition-colors duration-150 hover:bg-control-hover focus-visible:-outline-offset-2"
-        >
-          {body}
-        </Link>
-      )}
-    </li>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Examples and shortcuts
 // ---------------------------------------------------------------------------
 
-/**
- * One glyph per example folder: what the eye scans to pick a category. apps: sparkles — an app
- * conjured from one sentence. webapps: a browser window. evolve: the two arcs chasing each other
- * round a circle, the loop of measuring, changing and measuring again. schedules: a clock face,
- * distinct from the hourglass that already means a Session is waiting.
- */
-const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
-  apps: ICONS.sparkles,
-  webapps: ICONS.appWindow,
-  evolve: ICONS.refresh,
-  schedules: ICONS.clock,
-};
-
-/**
- * One glyph per example, leading its row: what the example makes or does, so a row reads as a
- * thing to press and the rows of one folder tell apart at a glance. Drawn from the shared
- * registry, so a theme that redraws the set redraws these.
- */
 const TASK_GLYPHS: Record<ExampleTaskId, string> = {
   ragDocsExpert: ICONS.bookOpen,
   investmentCopilot: ICONS.barChart,
@@ -426,19 +171,6 @@ const TASK_GLYPHS: Record<ExampleTaskId, string> = {
   memoryReview: ICONS.brain,
 };
 
-/**
- * Canned one-sentence requests in bookmark-style folders, ALWAYS exactly one open — selecting
- * another closes the previous, and the open one cannot be collapsed — then the user's own saved
- * prompts. The folders stand in one column and the open folder's rows beside them, so the
- * block's height is the folder rows' and switching folders moves nothing below; on a phone the
- * open folder's rows sit under its row, as an accordion. Every folder is within a row of the
- * others (shortcuts-folder.tsx caps the user's), so no folder's rows outgrow the folder column
- * and no folder needs a scroll container. A click fills the composer and sends nothing; each
- * example is its glyph and a single-line title, its one-sentence description in the row's
- * tooltip. Rows wait
- * for the Agent's installed Skills — without them the fill would silently drop the example's
- * Skills (a saved shortcut pins none, so it never waits).
- */
 function ExamplesSection({
   ready,
   exampleText,
@@ -450,62 +182,36 @@ function ExamplesSection({
   fill: (prompt: string, skills: readonly string[]) => void;
   readComposerText: () => string;
 }) {
-  const [openFolder, setOpenFolder] = useState<ExampleFolderId | typeof SHORTCUTS_FOLDER_ID>(
-    EXAMPLE_FOLDERS[0].id,
-  );
+  const { locale } = useLocale();
+  const [examples, setExamples] = useState(() => pickExamples());
+  const actions: PromptAction[] = examples.map((task) => {
+    const copy = S.chat.exampleTasks[task.id];
+    const current = copy.prompt === exampleText;
+    return {
+      id: task.id,
+      label: copy.label,
+      hint: copy.desc,
+      slot: "suggestion",
+      current,
+      disabled: !ready,
+      glyph: current ? ICONS.check : TASK_GLYPHS[task.id],
+      run: () => fill(copy.prompt, task.skills),
+    };
+  });
+  actions.push({
+    id: "shuffle",
+    label: S.chat.start.shuffle,
+    glyph: ICONS.refresh,
+    iconOnly: true,
+    run: () => setExamples((shown) => pickExamples(shown)),
+  });
   return (
-    <RuledSection title={S.chat.start.examplesTitle} info={S.chat.exampleFillHint}>
-      <div data-slot="folders" className={exampleGridClass}>
-        {EXAMPLE_FOLDERS.map((folder) => {
-          const open = folder.id === openFolder;
-          return (
-            <Fragment key={folder.id}>
-              <ExampleFolderRow
-                open={open}
-                glyph={FOLDER_GLYPHS[folder.id]}
-                label={S.chat.exampleFolders[folder.id]}
-                count={folder.tasks.length}
-                onOpen={() => setOpenFolder(folder.id)}
-              />
-              {open && (
-                <ul data-slot="rows" className={`space-y-1.5 ${examplePanelClass}`}>
-                  {folder.tasks.map((task) => {
-                    const copy = S.chat.exampleTasks[task.id];
-                    return (
-                      <li key={task.id}>
-                        <button
-                          type="button"
-                          data-slot="row"
-                          aria-current={copy.prompt === exampleText || undefined}
-                          data-tooltip={`${copy.desc}\n${S.chat.exampleFillHint}`}
-                          data-tooltip-extra
-                          disabled={!ready}
-                          // S is a live binding swapped on a locale change: the prompt is read
-                          // at click time, not at render.
-                          onClick={() => fill(S.chat.exampleTasks[task.id].prompt, task.skills)}
-                          className={`flex w-full items-center ${ICON_GAP.menu} ${exampleRowClass}`}
-                        >
-                          <ExampleRowGlyph glyph={TASK_GLYPHS[task.id]} />
-                          <span className="min-w-0 flex-1 truncate">{copy.label}</span>
-                          {copy.prompt === exampleText && <ExampleSelectionMark />}
-                          <ExampleRowGo />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Fragment>
-          );
-        })}
-        <ShortcutsFolder
-          open={openFolder === SHORTCUTS_FOLDER_ID}
-          onOpen={() => setOpenFolder(SHORTCUTS_FOLDER_ID)}
-          readComposerText={readComposerText}
-          exampleText={exampleText}
-          onFill={(prompt) => fill(prompt, [])}
-        />
-      </div>
-    </RuledSection>
+    <SavedPrompts
+      locale={locale}
+      exampleText={exampleText}
+      readComposerText={readComposerText}
+      onFill={(prompt) => fill(prompt, [])}
+      renderActions={(saved) => <PromptActionRow actions={[...actions, ...saved]} />}
+    />
   );
 }

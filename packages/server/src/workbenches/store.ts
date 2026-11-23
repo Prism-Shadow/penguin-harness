@@ -97,11 +97,6 @@ export interface WorkbenchFolder {
 
 export { workbenchesDir } from "@prismshadow/penguin-core";
 
-/** A workbench id is one path segment of the folder's own name; nothing else is accepted. */
-export function isWorkbenchId(id: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id) && id !== "." && id !== "..";
-}
-
 export function isSafeRelPath(rel: string): boolean {
   if (rel === "" || rel.startsWith("/") || rel.includes("\\")) return false;
   return rel.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");
@@ -255,7 +250,11 @@ export async function readState(dir: string): Promise<unknown> {
  * from truncating each other's staging file and renaming a half-written document into place.
  */
 export const TMP_SUFFIX = ".penguin-tmp";
-export const isTempName = (name: string): boolean => name.includes(TMP_SUFFIX);
+// The temp-suffix and workbench-id conventions are shared with the agent domain's State paths
+// (its vocabulary module owns the predicates); imported for this module's own checks and
+// re-exported for the workbench store's consumers.
+import { isTempName, isWorkbenchId } from "@prismshadow/penguin-library-agent/agent-vocab";
+export { isTempName, isWorkbenchId };
 const tempPath = (file: string) => `${file}${TMP_SUFFIX}${randomBytes(6).toString("hex")}`;
 
 export async function writeState(dir: string, state: unknown): Promise<void> {

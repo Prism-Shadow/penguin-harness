@@ -18,6 +18,7 @@
  *   taken, and asks before Esc drops a typed name.
  * - Its import holds Detect and Fetch while the base URL is blank and says the URL is required
  *   under the field, whose placeholder asks for one, like every required base URL.
+ * - Import uses the detected Google GenAI protocol and normalized URL to fetch the list.
  * - Its import fetches the endpoint's list first, each model once and every one ticked; only the
  *   models left ticked are written, under the new group, beside the rows already there, with
  *   the group's connection written once; the result counts the repeats it left out as skipped,
@@ -49,6 +50,7 @@ import type {
   EndpointModelListRequest,
   EndpointModelListResponse,
   ModelInfo,
+  ModelProtocolDetectResponse,
   ModelsResponse,
   ModelsUpdateRequest,
   ProjectSummary,
@@ -148,7 +150,11 @@ function modelsServer(
   const lists: EndpointModelListRequest[] = [];
   /** While set, a listing's answer waits for it. */
   let listGate: Promise<void> | null = null;
+  let detection: ModelProtocolDetectResponse = { probes: [] };
   stubFetch((req) => {
+    if (req.path === "/api/projects/p1/models/detect" && req.method === "POST") {
+      return json(detection);
+    }
     if (req.path === "/api/projects/p1/models/list" && req.method === "POST") {
       lists.push(req.body as EndpointModelListRequest);
       const answer = json(Array.isArray(listing) ? { ok: true, models: listing } : listing);
@@ -217,6 +223,9 @@ function modelsServer(
     patches,
     tests,
     lists,
+    respondToDetection: (response: ModelProtocolDetectResponse) => {
+      detection = response;
+    },
     refuseNext: () => {
       refuse = true;
     },
@@ -616,6 +625,22 @@ describe("the model config dialog", () => {
     expect(button(en.models.groupImportFetch).disabled).toBe(false);
     expect(button(en.models.detectProtocol).disabled).toBe(false);
     expect(document.body.textContent).not.toContain(en.models.baseUrlRequired);
+  });
+
+  it("uses the detected Google GenAI protocol and normalized base URL to fetch models", async () => {
+    const server = await openModelsPage(undefined, ["gemini-test"]);
+    const baseUrl = "https://acme.example/api/google";
+    server.respondToDetection({ detected: "google-genai", baseUrl, probes: [] });
+    await type(searchBox(), "");
+    await click(button(`＋ ${en.models.addGroup}`));
+    await type(field(en.models.groupNameLabel), "acme");
+    await click(button(en.models.groupModeImport));
+    await type(field(en.models.apiKey), "sk-acme");
+    await type(field(en.models.baseUrl), `${baseUrl}/v1beta/models`);
+    await click(button(en.models.detectProtocol));
+    await waitFor(() => field(en.models.baseUrl).value === baseUrl);
+    await fetchList("gemini-test");
+    expect(server.lists).toEqual([{ baseUrl, clientType: "google-genai", apiKey: "sk-acme" }]);
   });
 
   it("imports only the models left ticked, under the new group, with its connection once", async () => {

@@ -35,6 +35,20 @@ const shortcut = {
   path: "/app/default_project/default_agent/desk",
 };
 
+const machine = (id, alias) => ({
+  id: "ssh:" + alias,
+  alias,
+  member: true,
+  local: false,
+  machineId: id,
+  installed: { version: "1", at: "2026-01-01" },
+  connection: { pid: 21 },
+  socket: null,
+  api: null,
+  status: null,
+  root: "/tmp",
+});
+
 test("a slow, offline or returning machine only affects its own App Center tiles", async ({
   page,
 }) => {
@@ -42,19 +56,6 @@ test("a slow, offline or returning machine only affects its own App Center tiles
   await setAccountPrefs(page.request, { lang: "en" });
   const frame = await watchSocket(page);
   const agentList = await (await page.request.get(agents)).json();
-  const machine = (id, alias) => ({
-    id: "ssh:" + alias,
-    alias,
-    member: true,
-    local: false,
-    machineId: id,
-    installed: { version: "1", at: "2026-01-01" },
-    connection: { pid: 21 },
-    socket: null,
-    api: null,
-    status: null,
-    root: "/tmp",
-  });
   const fast = machine("fast", "Office");
   const slow = machine("slow", "Laptop");
   const machines = [fast, slow];
@@ -273,4 +274,69 @@ test("the market writes a machine's server modules into this server's Project ta
   await expect.poll(() => listedFor("@example/office-tool")).toEqual([office]);
   expect(writes()).toEqual(["DELETE " + tables, "POST " + tables]);
   expect(sent[1]?.body).toEqual({ specifier: "@example/office-tool@1.0.0", machineId: office });
+});
+
+test("two machines can open and close the same workbench independently in Apps", async ({
+  page,
+}) => {
+  await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const wire = await watchSocket(page);
+  const agentList = await (await page.request.get(agents)).json();
+  const workbenches = agents + "/default_agent/workbenches";
+  const installed = await (await page.request.get(workbenches)).json();
+  const template = installed.workbenches.find((item) => item.tabs?.length && !item.error);
+  expect(template).toBeTruthy();
+  const { workbenchId, title } = shortcut;
+  const uiPath = workbenches + "/" + workbenchId + "/ui/main.html";
+  const tab = {
+    id: workbenchId + ".main",
+    key: "main",
+    title,
+    renderer: { iframe: { src: uiPath } },
+  };
+  const app = { ...template, id: workbenchId, name: workbenchId, tabs: [tab] };
+  const machines = [machine("fast", "Office"), machine("slow", "Studio")];
+  wire.answer("GET", machinesPath, ok({ machines, imageVersion: "1", job: null, jobs: [] }));
+  for (const { machineId, alias } of machines) {
+    const remote = "/server/" + machineId;
+    wire.answer("GET", remote + apps, ok({ shortcuts: [shortcut], layout: null }));
+    wire.answer("GET", remote + agents, ok(agentList));
+    wire.answer(
+      "GET",
+      remote + workbenches + "?id=" + workbenchId,
+      ok({ ...installed, workbenches: [app] }),
+    );
+    await page.route("**" + remote + uiPath + "*", (route) =>
+      route.fulfill({ contentType: "text/html", body: "<h1>" + alias + "</h1>" }),
+    );
+  }
+  const group = page.getByRole("navigation", { name: "Apps", exact: true });
+  const key = (machineId) => machineId + ":default_agent/" + workbenchId;
+  const tile = (machineId) => page.locator(`[data-app="${key(machineId)}"] > button`).first();
+  const row = (machineId) => group.locator(`[data-app-row="${key(machineId)}"]`);
+  const frame = (machineId) => page.frameLocator(`iframe[src*="/server/${machineId}${uiPath}"]`);
+
+  await page.goto("/apps");
+  for (const { machineId } of machines) {
+    await expect(tile(machineId)).toBeEnabled();
+    await expect(row(machineId)).toHaveCount(0);
+  }
+  await tile("fast").click();
+  await expect(frame("fast").getByRole("heading", { name: "Office" })).toBeVisible();
+  await page.getByRole("link", { name: /^App Center(?: ·|$)/ }).click();
+  await tile("slow").click();
+  await expect(frame("slow").getByRole("heading", { name: "Studio" })).toBeVisible();
+  for (const { machineId, alias } of machines) {
+    await expect(row(machineId)).toHaveAccessibleName(new RegExp(alias));
+  }
+  const office = group
+    .getByRole("listitem")
+    .filter({ has: page.locator(`[data-app-row="${key("fast")}"]`) });
+  await office.hover();
+  await office.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Close", exact: true }).click();
+  await expect(row("fast")).toHaveCount(0);
+  await expect(row("slow")).toHaveCount(1);
+  await expect(page.locator(`iframe[src*="/server/fast${uiPath}"]`)).toHaveCount(0);
 });

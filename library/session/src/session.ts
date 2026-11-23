@@ -14,6 +14,7 @@ import type {
   SessionTitleResult,
   StopReason,
   SubagentMessageOptions,
+  SubagentResolver,
   SubagentMessageOutcome,
   ThinkingLevelName,
   ToolCallPayload,
@@ -314,6 +315,8 @@ export interface SessionBackgroundTasks {
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
 export interface RuntimeSession {
   readonly sessionId: string;
+  /** Core's current context header, available even when a CLI attaches after its first Task. */
+  readonly metaMessage?: AmspRecord;
   run(newMessages: AmspRecord[], opts: RunOpts): AsyncGenerator<AmspRecord>;
   compact(opts: RunOpts): AsyncGenerator<AmspRecord>;
   /**
@@ -324,6 +327,8 @@ export interface RuntimeSession {
    */
   readonly provider?: string;
   readonly modelId?: string;
+  /** Checks current Project configuration and credentials without starting a switch. */
+  validateSwitchTarget?(ref: { provider: string; modelId: string }): Promise<void>;
   /**
    * Switches the Session's model in place (core `Session.switchModel`): closes the running
    * context on the model it ran on, then opens the next one on the target. A completed switch
@@ -412,6 +417,7 @@ export interface RuntimeSession {
   /** Whether a background subagent is mid-round (core `Session.hasRunningBackgroundSubagents`); pins the entry against idle eviction. Optional, like listBackgroundCommands. */
   hasRunningBackgroundSubagents?(): boolean;
   /** All live subagent child sessions of the Session's environment (core `Session.listBackgroundSubagents`). Optional, like listBackgroundCommands. */
+  setSubagentResolver?(resolve: SubagentResolver): void;
   listBackgroundSubagents?(): BackgroundSubagentInfo[];
   /** Host message to one child session — steering mid-run, a follow-up run when idle, a revival when released (core `Session.sendToBackgroundSubagent`). Optional. */
   sendToBackgroundSubagent?(
@@ -502,6 +508,10 @@ export interface RuntimeEntry {
   provider: string;
   modelId: string;
   session: RuntimeSession;
+  /** A confirmed choice waiting behind the inputs already queued when it was made. */
+  queuedModel?: { target: { provider: string; modelId: string }; after: Set<string> };
+  /** The target of the handoff already in progress. */
+  switchingModel?: { provider: string; modelId: string };
   /**
    * The ordinary load's refusal, while this runtime — loaded for a model switch alone, because
    * the ordinary load refused it (see `SessionLoader.load`'s `switchTo`) — is still on the model

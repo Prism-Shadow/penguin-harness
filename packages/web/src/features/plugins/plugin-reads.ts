@@ -21,7 +21,9 @@ import type {
   PluginLibraryResponse,
   PluginMarketResponse,
 } from "@prismshadow/penguin-server/api";
-import { createReadStore, readKey } from "../../lib/read-store";
+import { useEffect } from "react";
+import { getPluginIndex } from "../../api/endpoints";
+import { createReadStore, readKey, useRead } from "../../lib/read-store";
 
 export const pluginLibrary = createReadStore<PluginLibraryResponse>({
   what: "the plugin library could not be read",
@@ -39,4 +41,20 @@ export const installedPlugins = createReadStore<InstalledPluginsResponse>();
 /** The key of a server's module plugins for a Project: this server's (`machineId` null) or a machine's. */
 export function installedPluginsKey(projectId: string, machineId: string | null): string {
   return readKey(projectId, machineId, "installed-plugins");
+}
+
+export const INDEX_RECHECK_MS = 3_000;
+
+/** The index may initially answer from its embedded source while the published releases load. */
+export function useLocalPluginIndex(enabled: boolean) {
+  const registry = useRead(pluginIndex, enabled ? INDEX_KEY : null, () => getPluginIndex(), {
+    minAgeMs: 0,
+  });
+  const pending = registry.error === null ? (registry.value?.pending?.length ?? 0) : 0;
+  useEffect(() => {
+    if (!enabled || registry.reading || pending === 0) return;
+    const timer = setTimeout(() => pluginIndex.invalidate(INDEX_KEY), INDEX_RECHECK_MS);
+    return () => clearTimeout(timer);
+  }, [enabled, registry.reading, pending]);
+  return registry;
 }

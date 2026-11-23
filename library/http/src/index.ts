@@ -53,3 +53,15 @@ export {
 } from "./public-origin.js";
 export type { ForwardedHeaders, OriginRule } from "./public-origin.js";
 export { WEB_APP_CSP } from "./page-csp.js";
+export {
+  MAX_ARCHIVE_BYTES,
+  MAX_ARCHIVE_FILES,
+  MAX_FILE_BYTES,
+  MAX_TOTAL_BYTES,
+  MAX_BENCHMARK_ARCHIVE_FILES,
+  assertSafeEntryPath,
+  unzipBounded,
+  skillTooLarge,
+} from "./skill-import-limits.js";
+export type { UnzipLimits } from "./skill-import-limits.js";
+export { CONTROL_CHARACTER, specialEntries, assertDistinctPaths } from "./zip-entries.js";

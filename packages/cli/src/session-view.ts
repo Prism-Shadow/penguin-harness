@@ -128,6 +128,11 @@ export class SessionView {
     return this.state !== "idle";
   }
 
+  /** Only running Tasks receive steering; a compaction queues the message for later. */
+  get acceptsSteering(): boolean {
+    return this.state === "running";
+  }
+
   /** How many runs this view has followed to their end: pass it to untilIdle. */
   get runsEnded(): number {
     return this.ended;

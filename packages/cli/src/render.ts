@@ -215,6 +215,8 @@ export interface RenderOptions {
    * Off for `penguin run`, whose input is its argument.
    */
   echoInput?: boolean;
+  /** Vacate an editable line before an approval or task completion takes the screen. */
+  hideInput?: () => (() => void) | undefined;
 }
 
 /**
@@ -354,6 +356,7 @@ export class StreamRenderer {
   private collapseToolOutput: boolean;
   /** Print a run's input (see RenderOptions.echoInput). */
   private readonly echoInput: boolean;
+  private readonly hideInput?: () => (() => void) | undefined;
   /** The message this screen just sent, whose echoed input is not printed again (expectInput). */
   private expectedInput: string | null = null;
   /** Per-stream collapse state (keyed by tool_call_id), created lazily on the first output delta; settled and dropped at the stream's stop (endTask settles leftovers of aborted streams). */
@@ -386,6 +389,7 @@ export class StreamRenderer {
   }> = [];
   /** Reentrancy guard for drain. */
   private draining = false;
+  private notices: string[] = [];
   /**
    * Keys (origin chain + tool_call_id) of call lines already **rendered in place** from
    * a complete message: rendered ahead of the streaming copy at approval time, so any
@@ -449,6 +453,7 @@ export class StreamRenderer {
    */
   private subagentTotal = 0;
   /** Current context (= input+output = total of the most recent request), the context at the end of the previous task, and cumulative Session elapsed time (ms). */
+  private contextWindow: number | undefined;
   private contextNow = 0;
   private contextAtTaskStart = 0;
   private sessionElapsedMs = 0;
@@ -502,6 +507,7 @@ export class StreamRenderer {
     this.c = paletteFor(out);
     this.collapseToolOutput = opts.collapseToolOutput === true;
     this.echoInput = opts.echoInput === true;
+    this.hideInput = opts.hideInput;
   }
 
   /**
@@ -532,7 +538,14 @@ export class StreamRenderer {
    * the next message — a chat that resumed a Session and has sent nothing yet has seen none.
    */
   followSession(sessionId: string): void {
+    if (this.sessionId !== sessionId) this.contextWindow = undefined;
     this.sessionId = sessionId;
+  }
+
+  /** Adopt the effective window of the parent context, including a move to an unknown model. */
+  setContextWindow(raw: number | string): void {
+    const window = typeof raw === "number" ? raw : Number(raw);
+    this.contextWindow = Number.isFinite(window) && window > 0 ? window : undefined;
   }
 
   /**
@@ -544,6 +557,7 @@ export class StreamRenderer {
    * for both the main Agent and subagents.
    */
   beginUserPrompt(toolCall?: AmspRecord<ToolCallPayload>): void {
+    this.hideInput?.();
     if (toolCall) this.ensureAdjacentCallLine(toolCall);
     this.finishLine();
     // File-tool approvals: the one-line preview shows only the (shortened) path, but the
@@ -589,10 +603,12 @@ export class StreamRenderer {
     }
     if (this.renderedDecisions.has(key)) return;
     this.renderedDecisions.add(key);
+    const redraw = this.hideInput?.();
     this.ensureAdjacentCallLine(toolCall);
     this.finishLine();
     this.out.write(`${dim(this.t.approvalDecision(decision), this.c)}\n`);
     this.lastLineKey = null;
+    redraw?.();
   }
 
   /** Call-line dedup key: origin chain + tool_call_id (parent/child session ids may collide, so the chain is needed to disambiguate). */
@@ -645,7 +661,8 @@ export class StreamRenderer {
   setInputHold(active: boolean): void {
     if (this.inputHold === active) return;
     this.inputHold = active;
-    if (!active) this.drain();
+    if (active) this.finishLine();
+    else this.drain();
   }
 
   /**
@@ -658,6 +675,20 @@ export class StreamRenderer {
     this.finishLine();
     this.out.write(`${text}\n`);
     this.lastLineKey = null;
+  }
+
+  /** An asynchronous submission result waits for the current draft or approval to finish. */
+  printSubmissionResult(text: string): void {
+    this.notices.push(text);
+    this.drain();
+  }
+
+  /** A goal round can finish while the same draft is still being edited. */
+  printGoalRound(text: string, previousRoundElapsed?: number): void {
+    const redraw = this.hideInput?.();
+    if (previousRoundElapsed !== undefined) this.endTask(previousRoundElapsed);
+    this.printLine(text);
+    redraw?.();
   }
 
   /** User interaction ends: unlocks the screen, first renders approval results deferred during the lock, then drains the queue. */
@@ -705,6 +736,9 @@ export class StreamRenderer {
     if (this.draining) return;
     this.draining = true;
     try {
+      if (!this.promptActive && !this.inputHold) {
+        for (const notice of this.notices.splice(0)) this.printLine(notice);
+      }
       while (!this.promptActive && !this.inputHold && this.pending.length > 0) {
         if (this.holder === null) {
           const msg = this.pending.shift()!;
@@ -761,7 +795,9 @@ export class StreamRenderer {
       if (Number.isFinite(ms)) this.taskFirstTsMs = ms;
     }
     if (msg.type === "session_meta") {
-      this.sessionId = (msg.payload as SessionMetaPayload).session_id;
+      const meta = msg.payload as SessionMetaPayload;
+      this.sessionId = meta.session_id;
+      this.setContextWindow(meta.model_context_window);
     }
     if (isModelMessage(msg)) {
       const payload = msg.payload;
@@ -1352,6 +1388,7 @@ export class StreamRenderer {
    * reset.
    */
   endTask(elapsedMs = 0): void {
+    this.hideInput?.();
     this.promptActive = false;
     this.promptKey = null;
     this.inputHold = false;
@@ -1382,6 +1419,10 @@ export class StreamRenderer {
           this.t.taskStats({
             context: humanizeTokens(this.contextNow),
             contextDelta: signedDelta(humanizeTokens(contextDelta)),
+            contextPercent:
+              this.contextWindow === undefined
+                ? undefined
+                : Math.round((this.contextNow / this.contextWindow) * 100),
             tokens: humanizeTokens(this.sessionTotal + this.subagentTotal),
             tokensDelta: signedDelta(humanizeTokens(this.taskTokens)),
             elapsed: humanizeDuration(this.sessionElapsedMs),

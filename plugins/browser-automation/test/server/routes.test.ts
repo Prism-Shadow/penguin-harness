@@ -15,7 +15,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   BuiltinBrowserExecResult,
   BuiltinBrowserImportResult,
@@ -74,8 +74,10 @@ interface Harness {
 function mount(
   opts: {
     shell?: FakeShell | null;
+    maxOpen?: () => number;
     admin?: boolean;
     human?: boolean;
+    resourceAccess?: import("@prismshadow/penguin-server/plugin").SessionResourceAccess;
     projectOf?: (sessionId: string) => string | null;
     importer?: Importer;
     now?: () => number;
@@ -90,6 +92,7 @@ function mount(
   const browser = new BuiltinBrowser({
     port: shell?.port ?? null,
     root,
+    ...(opts.maxOpen ? { maxOpen: opts.maxOpen } : {}),
     publish: (event) => {
       events.push(event);
       if (event.type === "builtin_browser_open") {
@@ -114,7 +117,13 @@ function mount(
     c.set("sessionVia", opts.human ? "desktop" : "token");
     await next();
   });
-  app.route("/api/builtin-browser", builtinBrowserRoutes(browser));
+  app.route(
+    "/api/builtin-browser",
+    builtinBrowserRoutes(
+      browser,
+      opts.resourceAccess ? { resourceAccess: opts.resourceAccess } : {},
+    ),
+  );
   return {
     shell: shell ?? new FakeShell(),
     browser,
@@ -318,8 +327,8 @@ describe("tabs", () => {
     });
   });
 
-  it("answers no_window when no window claims the tab", async () => {
-    const h = mount();
+  it("releases the slot and rejects the late guest when no window claims the tab", async () => {
+    const h = mount({ maxOpen: () => 1 });
     const res = await h.call("POST", "/tabs", {});
     expect(res.status).toBe(503);
     expect((await errorOf(res)).error).toMatchObject({
@@ -328,8 +337,9 @@ describe("tabs", () => {
     });
     const open = h.events.find((e) => e.type === "builtin_browser_open");
     expect(open).toMatchObject({ url: "about:blank" });
-    const late = await h.call("POST", "/tabs/claim", { requestId: "gone", tabId: 3 });
+    const late = await h.call("POST", "/tabs/claim", { requestId: open!.requestId, tabId: 3 });
     expect((await errorOf(late)).error.code).toBe("unknown_request");
+    expect((await openOwned(h, 4, "retry")).sessionId).toBe("retry");
   });
 
   it("refuses a page the browser cannot open", async () => {
@@ -1341,6 +1351,43 @@ describe("Session and Project isolation", () => {
     expect(result.newTabs).toBeUndefined();
   });
 
+  it("keeps child pages in their own group and closes only the selected group's guests", async () => {
+    const row = (id: string) =>
+      id === "parent" || id === "child" ? { sessionId: id, projectId: "project" } : null;
+    const h = mount({
+      human: true,
+      resourceAccess: {
+        access: { requireProjectAccess: vi.fn() },
+        sessions: {
+          findById: (id) =>
+            row(id) as ReturnType<
+              import("@prismshadow/penguin-server/plugin").SessionIndex["findById"]
+            >,
+        },
+      },
+    });
+    const path = "/projects/project/session-resources";
+    expect(await (await h.call("GET", path)).json()).toEqual({ counts: {} });
+    await openOwned(h, 1, "parent");
+    await openOwned(h, 2, "child");
+    h.shell.show(tab(3)); // A guest without a Session never enters a managed group.
+    expect(await (await h.call("GET", path)).json()).toEqual({ counts: { parent: 1, child: 1 } });
+    const closing = h.call("POST", path + "/close", { sessionIds: ["child", "unknown"] });
+    await until(() => h.events.some((e) => e.type === "builtin_browser_close"), "close request");
+    expect(h.events.filter((e) => e.type === "builtin_browser_close")).toEqual([
+      { type: "builtin_browser_close", tabId: 2 },
+    ]);
+    h.shell.close(2);
+    expect(await (await closing).json()).toEqual({
+      results: [
+        { sessionId: "child", closed: 1 },
+        { sessionId: "unknown", closed: 0, error: "session_not_found" },
+      ],
+    });
+    expect(await (await h.call("GET", path)).json()).toEqual({ counts: { parent: 1 } });
+    expect(h.browser.tabs.list().map((t) => t.id)).toEqual([1, 3]);
+  });
+
   it("navigates a fresh page for an empty Session while another Session has tabs", async () => {
     const h = mount();
     await openOwned(h, 11, "session-a");
@@ -1381,6 +1428,44 @@ describe("Session and Project isolation", () => {
         (tab) => tab.id,
       ),
     ).toEqual([11, 14]);
+  });
+
+  it("reserves a managed page before the native window claims it and frees the slot on close", async () => {
+    let limit = 1;
+    const h = mount({ maxOpen: () => limit });
+    const opening = h.nextOpen();
+    const first = h.call("POST", "/tabs", { sessionId: "parent" });
+    const request = await opening;
+    expect((await h.call("POST", "/tabs", { sessionId: "child" })).status).toBe(409);
+    // The renderer's claim and the desktop's first tab event arrive on independent transports.
+    const claim = h.call("POST", "/tabs/claim", { requestId: request.requestId, tabId: 11 });
+    await until(() => h.browser.tabs.openRequest(request.requestId)?.claimedTabId === 11, "claim");
+    expect((await h.call("POST", "/tabs", { sessionId: "child" })).status).toBe(409);
+    h.shell.show(tab(11));
+    await claim;
+    expect((await first).ok).toBe(true);
+    limit = 2;
+    await openOwned(h, 12, "child");
+    limit = 1;
+    expect((await h.call("POST", "/tabs", { sessionId: "child" })).status).toBe(409);
+    h.shell.close(12);
+    expect((await h.call("POST", "/tabs", { sessionId: "child" })).status).toBe(409);
+    h.shell.close(11);
+    expect((await openOwned(h, 13, "child")).sessionId).toBe("child");
+  });
+
+  it("releases a guest claimed before it closes without joining the tab list", async () => {
+    const h = mount({ maxOpen: () => 1 });
+    const announced = h.nextOpen();
+    const first = h.call("POST", "/tabs", { sessionId: "first" });
+    const { requestId } = await announced;
+    const claim = h.call("POST", "/tabs/claim", { requestId, tabId: 11 });
+    await until(() => h.browser.tabs.openRequest(requestId)?.claimedTabId === 11, "claim");
+    expect((await h.call("POST", "/tabs", { sessionId: "another" })).status).toBe(409);
+    h.shell.event({ kind: "tab-closed", tabId: 11 });
+    expect((await first).status).toBe(503);
+    await claim;
+    expect((await openOwned(h, 12, "another")).sessionId).toBe("another");
   });
 
   it("adopts a draft and its pending popup without moving its storage", async () => {

@@ -51,6 +51,10 @@ export default defineConfig({
   plugins: [socketStandInPlugin],
   test: {
     environment: "node",
+    // The scroll-driven component tests simulate a run of animation frames over a tall trace;
+    // under a loaded CI runner (the import pass alone can take minutes) the default 5 s has let
+    // a passing test time out. A larger deadline changes nothing for passing tests.
+    testTimeout: 15_000,
     include: ["test/**/*.test.ts", "src/features/*/test/**/*.test.ts"],
     // Every vi.stubGlobal (fetch, localStorage, …) is undone before the next test starts.
     unstubGlobals: true,

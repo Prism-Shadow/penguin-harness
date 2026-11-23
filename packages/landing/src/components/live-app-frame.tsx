@@ -9,21 +9,22 @@
  * - **A guest.** The frame is embedded, so it takes no focus and hands the wheel to the page until
  *   the reader clicks into it (the gallery's guest-frame.ts).
  * - **Phones and touch.** Below `sm` the frame is the gallery's phone window, which the app lays
- *   out as on a phone; a 1280-wide window scaled to a phone would be unreadable. Without a fine
- *   pointer the frame is a picture only (inert): a finger dragging over a full-width frame would
+ *   out as on a phone; a 1280-wide window scaled to a phone would be unreadable. The homepage demo accepts touch. The other frames
+ *   stay pictures without a fine pointer: a finger dragging over a full-width frame would
  *   scroll the app's lists instead of the page. The link in the window bar opens the same surface
  *   in the gallery, full size, for anyone who wants to use it.
  * - **The site's language and mode.** A switch of either points the frame at a new document.
  */
 import { useEffect, useRef, useState } from "react";
 import type { SyntheticEvent } from "react";
+import { DEMO_TAKEN_OVER } from "../../../ui-gallery/src/app/frame";
 import { S } from "../lib/strings";
+import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { frameSize, gallerySurfaceUrl, liveFrameSrc } from "../lib/live-frame";
 import type { SurfaceId } from "../lib/live-frame";
-import { useSiteLocale, useSiteTheme } from "@prismshadow/penguin-ui/site";
+import { SiteGlyph, useSiteLocale, useSiteTheme } from "@prismshadow/penguin-ui/site";
 import { BrowserFrame } from "./browser-frame";
 import { ArrowUpRightIcon } from "./icons";
-import { LivePlaybackControl } from "./live-playback-control";
 
 /** A short lead-in loads the app when its window is about to enter view. */
 const LOAD_AHEAD = "200px 0px";
@@ -82,11 +83,38 @@ export function LiveAppFrame({
   const { dark } = useSiteTheme();
   const phone = useMedia("(max-width: 639.98px)");
   const fine = useMedia("(hover: hover) and (pointer: fine)");
-  const reduced = useMedia("(prefers-reduced-motion: reduce)");
+  const reducedMotion = usePrefersReducedMotion();
+  const [playbackChoice, setPlaybackChoice] = useState<boolean | null>(null);
+  const playing = playbackChoice ?? (!!autoplay && !reducedMotion);
   const size = frameSize(phone);
-  const src = liveFrameSrc(surface, locale, dark, autoplay);
+  const runningSrc = liveFrameSrc(surface, locale, dark, autoplay, !!autoplay);
+  const [retainedFrame, setRetainedFrame] = useState<string | null>(null);
+  const [round, setRound] = useState(0);
+  const src =
+    playing || retainedFrame === runningSrc
+      ? runningSrc
+      : liveFrameSrc(surface, locale, dark, undefined, !!autoplay);
+  useEffect(() => {
+    if (retainedFrame && retainedFrame !== runningSrc) setRetainedFrame(null);
+  }, [runningSrc, retainedFrame]);
+  const iframe = useRef<HTMLIFrameElement | null>(null);
+  const interactive = fine || !!autoplay;
+  useEffect(() => {
+    if (!autoplay || !playing) return;
+    const takeOver = (event: MessageEvent) => {
+      if (
+        event.origin !== new URL(runningSrc, window.location.href).origin ||
+        event.source !== iframe.current?.contentWindow ||
+        event.data !== DEMO_TAKEN_OVER
+      )
+        return;
+      setRetainedFrame(runningSrc);
+      setPlaybackChoice(false);
+    };
+    window.addEventListener("message", takeOver);
+    return () => window.removeEventListener("message", takeOver);
+  }, [autoplay, playing, runningSrc]);
   const box = useRef<HTMLDivElement | null>(null);
-  const frame = useRef<HTMLIFrameElement | null>(null);
   const [near, setNear] = useState(false);
   const [width, setWidth] = useState(0);
   const [readySrc, setReadySrc] = useState<string | null>(null);
@@ -150,6 +178,20 @@ export function LiveAppFrame({
     };
   };
 
+  const togglePlayback = (button: HTMLButtonElement) => {
+    if (!playing && box.current) {
+      const rect = box.current.getBoundingClientRect();
+      const visibleHeight = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+      if (visibleHeight < Math.min(rect.height, window.innerHeight) / 2) {
+        button.scrollIntoView({ block: "start", behavior: reducedMotion ? "instant" : "smooth" });
+      }
+    }
+    if (!playing) setRound((current) => current + 1);
+    setRetainedFrame(null);
+    setReadySrc(null);
+    setPlaybackChoice(!playing);
+  };
+
   const ready = readySrc === src;
   const scale = width > 0 ? width / size.width : 0;
   const open = gallerySurfaceUrl(surface, locale, dark, phone);
@@ -166,7 +208,16 @@ export function LiveAppFrame({
             {S.live.open}
             <ArrowUpRightIcon className="h-3 w-3" />
           </a>
-          {autoplay && !reduced && <LivePlaybackControl key={src} frame={frame} src={src} />}
+          {autoplay && (
+            <button
+              type="button"
+              className="site-playback-button section-anchor"
+              onClick={(event) => togglePlayback(event.currentTarget)}
+            >
+              <SiteGlyph name={playing ? "square" : "play"} />
+              <span>{playing ? S.live.stopDemo : S.live.playDemo}</span>
+            </button>
+          )}
         </div>
       }
     >
@@ -179,16 +230,16 @@ export function LiveAppFrame({
         {!ready && <span className="sr-only">{S.live.loading}</span>}
         {near && scale > 0 && (
           <iframe
-            ref={frame}
-            key={src}
+            key={`${round}:${src}`}
+            ref={iframe}
             src={src}
             title={title}
             width={size.width}
             height={size.height}
             onLoad={onLoad}
-            inert={!fine}
-            tabIndex={fine ? undefined : -1}
-            className={`absolute top-0 left-0 origin-top-left border-0 transition-opacity duration-300 ${ready ? "opacity-100" : "opacity-0"} ${fine ? "" : "pointer-events-none"}`}
+            inert={!interactive}
+            tabIndex={interactive ? undefined : -1}
+            className={`absolute top-0 left-0 origin-top-left border-0 transition-opacity duration-300 ${ready ? "opacity-100" : "opacity-0"} ${interactive ? "" : "pointer-events-none"}`}
             style={{ transform: `scale(${scale})` }}
           />
         )}

@@ -31,7 +31,6 @@ export function shortcutOfWorkbench(
     ...(tab !== undefined ? { tab } : {}),
     build: workbench.error !== null ? "failed" : "ready",
     ...(workbench.error !== null ? { error: workbench.error } : {}),
-    ...(workbench.showInSidebar !== undefined ? { showInSidebar: workbench.showInSidebar } : {}),
     ...(machineId !== null ? { machineId } : {}),
   };
 }

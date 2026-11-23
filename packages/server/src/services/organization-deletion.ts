@@ -27,7 +27,6 @@
  * employee: its desk and ticket rows went with the organization, and its Sessions go with its
  * Agent.
  */
-import { BUILTIN_AGENT_IDS } from "@prismshadow/penguin-core";
 import type { OrganizationDeleteResponse } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
@@ -93,7 +92,7 @@ export async function deleteOrganizationWithAgents(
   const candidates: string[] = [];
   for (const agentId of employees) {
     if (!(await deps.agentConfigService.exists(projectId, agentId))) continue;
-    if (BUILTIN_AGENT_IDS.includes(agentId)) {
+    if (await deps.agentConfigService.isBuiltinAgent(projectId, agentId)) {
       report.keptAgents.push({ agentId, reason: "builtin" });
     } else if (
       Object.hasOwn(after.employments, agentId) &&

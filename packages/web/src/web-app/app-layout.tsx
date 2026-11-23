@@ -12,15 +12,17 @@ import { backgroundStyle, useBackground } from "../state/background";
  * own.
  */
 import { useEffect, useState } from "react";
-import { Outlet, useLocation } from "react-router";
+import type { Location } from "react-router";
+import type { ReactNode } from "react";
+import { PageWorkspace, usePageWorkspace } from "../lib/page-workspace";
+import * as dock from "../features/dock";
+import { PageArea } from "../features/page-workspace";
 import { AppShell, Drawer, MobileTopBar, Notice, UpdateDot } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { nagsAboutInitialPassword } from "../lib/account-menu";
 import { useSidebarWidth } from "../lib/sidebar-width";
 import { S } from "../lib/strings";
 import { onCommand } from "../lib/shortcuts/dispatcher";
-import { ErrorBoundary } from "../rescue/error-boundary";
-import { RescuePanel } from "../rescue/rescue-panel";
 import { useWebAppLayers } from "./index";
 import { webAppDeps } from "./deps";
 import { useAuth } from "../state/auth";
@@ -43,10 +45,20 @@ function pinnedSidebarOnScreen(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
 }
 
-export function AppLayout() {
+interface LayoutProps {
+  renderRoute: (location: string | Location) => ReactNode;
+}
+export function AppLayout(props: LayoutProps) {
+  return (
+    <PageWorkspace dock={dock}>
+      <ShellLayout {...props} />
+    </PageWorkspace>
+  );
+}
+function ShellLayout({ renderRoute }: LayoutProps) {
+  const fullScreen = !!usePageWorkspace()?.exitFullScreen;
   const background = useBackground();
   const { user, desktopMode, sessionVia } = useAuth();
-  const { pathname } = useLocation();
   const { sidebar, drafts } = webAppDeps.useDeps();
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
@@ -154,6 +166,7 @@ export function AppLayout() {
       band={
         band ? <TitleBand sidebarCollapsed={collapsed} onToggleSidebar={foldSidebar} /> : undefined
       }
+      navHidden={fullScreen}
       nav={
         collapsed ? (
           <sidebar.Rail {...(band ? {} : { onExpand: foldSidebar })} />
@@ -194,14 +207,16 @@ export function AppLayout() {
           the combined one — naming one of two updates would point at the wrong trail. Both
           trails continue inside the drawer's sidebar (the Agents entry, the user row's App info
           entry). */}
-      <MobileTopBar
-        title={S.appName}
-        menuLabel={column.menuNote !== null ? `${drawerName} · ${column.menuNote}` : drawerName}
-        {...(column.menuNote !== null
-          ? { menuHint: column.menuNote, menuBadge: <UpdateDot /> }
-          : {})}
-        onMenu={() => setDrawerOpen(true)}
-      />
+      {!fullScreen && (
+        <MobileTopBar
+          title={S.appName}
+          menuLabel={column.menuNote !== null ? `${drawerName} · ${column.menuNote}` : drawerName}
+          {...(column.menuNote !== null
+            ? { menuHint: column.menuNote, menuBadge: <UpdateDot /> }
+            : {})}
+          onMenu={() => setDrawerOpen(true)}
+        />
+      )}
 
       {/* Initial-password notice banner (seed/admin-set password): disappears once passwordIsInitial clears after a successful change.
           Hidden in desktop mode — the seed password there is random and never shown, so "change it" is meaningless nagging.
@@ -220,20 +235,10 @@ export function AppLayout() {
         </Notice>
       )}
 
-      {/* relative: the page area is the box a page-area layer's surfaces cover. At z-index auto
-          it makes no stacking context, so the stacking in styles.css's header holds. */}
-      <main data-page-viewport className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-        {/* A page that crashes says so here, and leaves the sidebar working: going to another
-            page gives the body another chance. The recovery panel (error details, safe reload,
-            harness history) stands in for the bare crash notice — the same fallback the shell
-            root uses, so a broken server contribution is recoverable in place. */}
-        <ErrorBoundary key={pathname} fallback={(error) => <RescuePanel error={error} />}>
-          <Outlet />
-        </ErrorBoundary>
-        {/* The page-area layers: after the page, so what they show paints over it, and outside
-            its boundary, so a route change neither remounts nor re-parents them. */}
-        {layers.map(({ id, Component, area }) => area === "page" && <Component key={id} />)}
-      </main>
+      <PageArea
+        renderRoute={renderRoute}
+        layers={layers.map(({ id, Component, area }) => area === "page" && <Component key={id} />)}
+      />
       {/* The layers modules contributed (WebAppModule.layers): overlays and headless runtimes,
           mounted once here, outside every page, so navigating never remounts or re-parents
           one — a terminal would reconnect, a built-in browser's webview would reload. */}

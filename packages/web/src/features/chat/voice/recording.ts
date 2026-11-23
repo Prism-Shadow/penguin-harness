@@ -8,6 +8,77 @@ function recordsPcm(): boolean {
   return typeof AudioContext !== "undefined" && typeof AudioWorkletNode !== "undefined";
 }
 
+/** A lossy encoder can add noise to digital silence. Inspect overlapping windows of
+ * the original channels. If sampling is unavailable or misses a window, keep the recording. */
+function watchSilence(stream: MediaStream) {
+  const tracks = stream.getAudioTracks();
+  const channels = tracks[0]?.getSettings().channelCount;
+  if (typeof AudioContext === "undefined" || tracks.length !== 1 || !channels) return;
+  let context: AudioContext | undefined;
+  try {
+    const audio = new AudioContext();
+    context = audio;
+    const source = audio.createMediaStreamSource(stream);
+    const split = audio.createChannelSplitter(channels);
+    source.connect(split);
+    const meters = Array.from({ length: channels }, (_, channel) => {
+      const meter = audio.createAnalyser();
+      meter.fftSize = 32768;
+      split.connect(meter, channel);
+      return meter;
+    });
+    const samples = new Float32Array(meters[0]!.fftSize);
+    const windowMs = (samples.length * 1000) / audio.sampleRate;
+    let lastRead = performance.now();
+    let previousTime = audio.currentTime;
+    let observed = false;
+    let possible = audio.state === "running";
+    // A suspended context cannot account for samples captured by the independent recorder.
+    audio.onstatechange = () => {
+      if (audio.state !== "running") possible = false;
+    };
+    const read = () => {
+      if (!possible) {
+        window.clearInterval(timer);
+        return;
+      }
+      const now = performance.now();
+      const time = audio.currentTime;
+      if (
+        audio.state !== "running" ||
+        now - lastRead >= windowMs ||
+        (time - previousTime) * 1000 >= windowMs
+      ) {
+        possible = false;
+      } else {
+        observed ||= time > previousTime;
+        possible = meters.every((meter) => {
+          meter.getFloatTimeDomainData(samples);
+          return samples.every((value) => value === 0);
+        });
+      }
+      lastRead = now;
+      previousTime = time;
+      if (!possible) window.clearInterval(timer);
+    };
+    const timer = window.setInterval(read, windowMs / 2);
+    return {
+      context: audio,
+      silent: () => {
+        read();
+        return possible && observed;
+      },
+      close: () => {
+        window.clearInterval(timer);
+        void audio.close().catch(() => {});
+      },
+    };
+  } catch {
+    void context?.close().catch(() => {});
+    return;
+  }
+}
+
 /** This page can record speech at all: a microphone API and a way to encode what it hears. */
 export function canRecordSpeech(): boolean {
   return (
@@ -30,11 +101,13 @@ export async function captureSpeech(
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const release = () => stream.getTracks().forEach((track) => track.stop());
   signal.addEventListener("abort", release, { once: true });
+  let monitor: ReturnType<typeof watchSilence>;
   try {
     signal.throwIfAborted();
     if (recordsPcm()) return await capturePcm(stream, signal, MAX_BYTES, started);
     const mimeType = preferred.find((type) => MediaRecorder.isTypeSupported(type));
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+    monitor = watchSilence(stream);
     return await new Promise<Blob>((resolve, reject) => {
       const chunks: BlobPart[] = [];
       let size = 0;
@@ -64,17 +137,22 @@ export async function captureSpeech(
       };
       recorder.onstop = () => {
         detach();
-        resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" }));
+        resolve(
+          new Blob(monitor?.silent() ? [] : chunks, {
+            type: recorder.mimeType || mimeType || "audio/webm",
+          }),
+        );
       };
       try {
         recorder.start(1000);
-        started(stop, stream);
+        started(stop, stream, monitor?.context);
       } catch (e) {
         detach();
         reject(e);
       }
     });
   } finally {
+    monitor?.close();
     signal.removeEventListener("abort", release);
     release();
   }

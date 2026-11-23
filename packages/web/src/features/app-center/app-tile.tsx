@@ -13,8 +13,8 @@
  *   trail's sentence: the App Center's nav entry carries the same dot, and the page clears it
  *   (lib/system-app-notes.ts). A folder holding such an app wears the dot too, with the
  *   sentences of the apps inside, so the trail never ends at a closed folder.
- * - An app that is running behind the grid (its window minimized) has a short bar under its
- *   icon, as a taskbar marks a running app, and its name and hint say so; a click brings its
+ * - An app that is running behind the grid (its window minimized) keeps its running state in its
+ *   accessible name and hint; a click brings its
  *   window back, even while it builds. A folder holding one has the same bar, and says how many.
  *   A system app runs like any app when it opens in a window (a server module's iframe page);
  *   one that opens as its own page never runs.
@@ -36,6 +36,7 @@ import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import {
   APP_ICON_PX,
+  AgentAvatar,
   AppIconShape,
   ContextMenu,
   GlyphAppIcon,
@@ -47,7 +48,7 @@ import {
   UpdateDot,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { toneDot, toneInk } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { skillTileColor } from "../skills";
 import type { GridApp, GridFolder, LocatedShortcut, Side } from "./arrangement";
 
@@ -84,8 +85,15 @@ export interface TileDragProps {
  * at its size, so a small icon is the same outline as a full one. A system app wears its page's
  * glyph on the same shape (the UI package's `GlyphAppIcon`).
  */
+interface TileOwner {
+  id: string;
+  name: string;
+  src: string | undefined;
+}
+
 export function TileIcon({
   shortcut,
+  owner,
   title,
   size = ICON_PX,
 }: {
@@ -93,8 +101,10 @@ export function TileIcon({
   shortcut: Pick<LocatedShortcut, "workbenchId" | "icon" | "system">;
   title: string;
   size?: number;
+  owner?: TileOwner | undefined;
 }) {
-  if (shortcut.system !== undefined) return <GlyphAppIcon d={shortcut.system.glyph} size={size} />;
+  if (shortcut.system !== undefined)
+    return <GlyphAppIcon appKey={shortcut.workbenchId} d={shortcut.system.glyph} size={size} />;
   const letter = (
     <span
       aria-hidden
@@ -105,10 +115,24 @@ export function TileIcon({
       {[...title][0]?.toUpperCase() ?? "?"}
     </span>
   );
-  return (
+  const icon = (
     <AppIconShape aria-hidden size={size}>
       <ImageIcon icon={shortcut.icon ?? null} size={size} fallback={letter} />
     </AppIconShape>
+  );
+  if (!owner) return icon;
+  const badgeSize = size === ICON_PX ? 19 : 9;
+  return (
+    <span className="relative block" style={{ width: size, height: size }}>
+      {icon}
+      <span
+        aria-hidden
+        data-workbench-owner={owner.id}
+        className="pointer-events-none absolute top-0 left-0 flex rounded-sm bg-canvas ring-1 ring-canvas"
+      >
+        <AgentAvatar id={owner.id} src={owner.src} fallbackName={owner.name} size={badgeSize} />
+      </span>
+    </span>
   );
 }
 
@@ -120,17 +144,6 @@ function DropLine({ side }: { side: Side }) {
       className={`pointer-events-none absolute inset-y-2 z-raised w-0.5 rounded-full bg-accent ${
         side === "before" ? "-left-2" : "-right-2"
       }`}
-    />
-  );
-}
-
-/** The bar under an icon whose app (or one of whose apps) is running; the tile says it in words. */
-function RunningMark() {
-  return (
-    <span
-      aria-hidden
-      data-running=""
-      className={`pointer-events-none absolute -bottom-2 left-1/2 h-[3px] w-3.5 -translate-x-1/2 rounded-full ${toneDot.busy}`}
     />
   );
 }
@@ -178,6 +191,7 @@ export const appTriggerId = (id: string) => `app-center-app-${id}`;
 export function AppTile({
   app,
   inFolder,
+  owner: tileOwner,
   title,
   drag,
   mark,
@@ -188,6 +202,7 @@ export function AppTile({
   note = null,
 }: {
   app: GridApp;
+  owner?: TileOwner | undefined;
   /** In an open folder, where its icon travels from the folder's preview of it. */
   inFolder: boolean;
   /** The title in the reader's language. */
@@ -274,7 +289,7 @@ export function AppTile({
               className={`relative ${mark === "into" ? DROP_OUTLINE : ""}`}
             >
               <span className={`block ${building ? "opacity-50" : ""}`}>
-                <TileIcon shortcut={shortcut} title={title} />
+                <TileIcon shortcut={shortcut} title={title} owner={tileOwner} />
               </span>
               {building && (
                 <InstallRing
@@ -291,7 +306,6 @@ export function AppTile({
                 </span>
               )}
               {note !== null && <TileDot />}
-              {running && <RunningMark />}
             </AppIconShape>
             <TileName fade={inFolder}>{title}</TileName>
             {shortcut.machineLabel && (
@@ -316,6 +330,7 @@ export function FolderTile({
   folder,
   expanded,
   titleOf,
+  ownerOf,
   drag,
   mark,
   lifted,
@@ -325,6 +340,7 @@ export function FolderTile({
   notes = [],
 }: {
   folder: GridFolder;
+  ownerOf?: (app: GridApp) => TileOwner | undefined;
   expanded: boolean;
   /** An app's title in the reader's language. */
   titleOf: (shortcut: AppCenterShortcut) => string;
@@ -366,7 +382,7 @@ export function FolderTile({
             }}
             className={`${TILE_BUTTON} ${lifted ? "opacity-40" : ""}`}
           >
-            {/* The dot and the running bar sit outside the folder's square, which clips its previews. */}
+            {/* The update dot sits outside the folder's square, which clips its previews. */}
             <span className="relative block">
               {/* The open folder unfolds from this square, its apps from their previews in it. */}
               <AppIconShape
@@ -380,12 +396,12 @@ export function FolderTile({
                       shortcut={app.shortcut}
                       title={titleOf(app.shortcut)}
                       size={MINI_PX}
+                      owner={ownerOf?.(app)}
                     />
                   </span>
                 ))}
               </AppIconShape>
               {notes.length > 0 && <TileDot />}
-              {running > 0 && <RunningMark />}
             </span>
             <TileName>{folder.name}</TileName>
           </button>

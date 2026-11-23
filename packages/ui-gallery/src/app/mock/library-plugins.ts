@@ -28,6 +28,8 @@ import openskillIcon from "../../../../../plugins/openskill-rsi-toolkit/icon.svg
 import openskillPkg from "../../../../../plugins/openskill-rsi-toolkit/package.json";
 import oproIcon from "../../../../../plugins/opro-rsi-toolkit/icon.svg?raw";
 import oproPkg from "../../../../../plugins/opro-rsi-toolkit/package.json";
+import rrsiIcon from "../../../../../plugins/rrsi-rsi-toolkit/icon.svg?raw";
+import rrsiPkg from "../../../../../plugins/rrsi-rsi-toolkit/package.json";
 import skilladamIcon from "../../../../../plugins/skilladam-rsi-toolkit/icon.svg?raw";
 import skilladamPkg from "../../../../../plugins/skilladam-rsi-toolkit/package.json";
 import skilloptIcon from "../../../../../plugins/skillopt-rsi-toolkit/icon.svg?raw";
@@ -491,6 +493,14 @@ export function rsiToolkitPlugins(): PluginItem[] {
         "Reproduce OPRO (Large Language Models as Optimizers, Yang et al. 2023) on an agent and a frozen Benchmark, or on the precise-summary demo task shipped with this Skill: propose instructions from the scored history, measure each one, keep the best.",
         "2026.11.05.1",
       ),
+    ]),
+    libraryPlugin(rrsiPkg, rrsiIcon, [
+      {
+        name: "rrsi-rsi-toolkit",
+        description:
+          "Organize an RRSI (Regularized Recursive Self-Improvement of Agent Harnesses, Xia et al. 2026) experiment with a dedicated optimization Session: an annealed edit budget bounds each proposal, a leakage Critic screens it before any measurement, a Pruner deletes machinery that stopped earning its place, and a noise-adjusted floor plus a token-cost rule select the next harness.",
+        version: "2026.11.12.2",
+      },
     ]),
     libraryPlugin(skilladamPkg, skilladamIcon, [
       skill(

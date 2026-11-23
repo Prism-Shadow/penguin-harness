@@ -1,0 +1,260 @@
+/**
+ * Shell↔server message-port relay (desktop mode only): client updates, the tray icon, the
+ * Workspace picker's macOS folder access, and the command palette's New Window.
+ *
+ * Under the desktop shell this server runs as an Electron utilityProcess, which injects
+ * `process.parentPort` — an EventEmitter-ish port to the shell. The shell pushes its
+ * updater snapshot and its tray state through it, and the routes forward the page's
+ * check/download/install commands and its tray switch back. Folder access is the one
+ * request that is answered: the shell reads the folder and replies under the request's id.
+ * Under a plain `penguin server|web` run the port does not exist and this module wires
+ * nothing; those routes then answer 503 `shell_unreachable`.
+ *
+ * The same port carries the host commands the page's command palette offers: one
+ * `host-commands` push saying what this host can do, and `host-command` frames back.
+ *
+ * Wire shapes live in ./types.ts (the updater, tray and folder-access messages, and
+ * HostCommandsMessage / HostCommandMessage); the shell imports them through the server
+ * API's re-exports (@prismshadow/penguin-server/api).
+ */
+import { randomUUID } from "node:crypto";
+import type {
+  DesktopFolderAccessMessage,
+  DesktopFolderAccessResult,
+  DesktopFolderAccessResultMessage,
+  DesktopOpenPrivacySettingsMessage,
+  DesktopOpenWindowMessage,
+  DesktopTrayCommandMessage,
+  DesktopTrayStatus,
+  DesktopTrayStatusMessage,
+  DesktopUpdateStatus,
+  DesktopUpdaterCommandMessage,
+  DesktopUpdaterStatusMessage,
+  HostCommandMessage,
+  HostCommandOffer,
+  HostCommandsMessage,
+} from "./types.js";
+import type { DesktopService } from "./desktop-service.js";
+
+/**
+ * How long the shell may take to answer a folder-access request. Generous: its read holds
+ * until the user has answered the macOS prompt, and nothing hurries them.
+ */
+export const FOLDER_ACCESS_TIMEOUT_MS = 120_000;
+
+/** The slice of Electron's ParentPort this relay uses (structural: the server must not depend on Electron types). */
+export interface ShellPort {
+  on(event: "message", listener: (e: { data: unknown }) => void): void;
+  postMessage(message: unknown): void;
+}
+
+/**
+ * Where the server keeps the shell's raw frames while its platform decides what they mean
+ * (the server's hmr/capabilities.ts holds the real one — the same shape, declared here so
+ * the relay needs no import from the server).
+ */
+export interface ShellFrames {
+  /** The last `host-commands` frame, exactly as the shell sent it. Unparsed on purpose. */
+  hostCommands: unknown;
+  /** Sends one frame to the shell; null when this process has no shell port. */
+  post: ((frame: unknown) => void) | null;
+}
+
+const UPDATE_STATES: ReadonlySet<string> = new Set([
+  "idle",
+  "checking",
+  "up-to-date",
+  "available",
+  "downloading",
+  "downloaded",
+  "error",
+  "unsupported",
+]);
+
+/** Validates one shell push. Strict on the discriminators, tolerant of extra fields — the two sides ship together, but a malformed frame must not poison the stored snapshot. */
+export function parseUpdaterStatusMessage(data: unknown): DesktopUpdateStatus | null {
+  if (typeof data !== "object" || data === null) return null;
+  const msg = data as Partial<DesktopUpdaterStatusMessage>;
+  if (msg.type !== "desktop-updater-status") return null;
+  const status = msg.status as Partial<DesktopUpdateStatus> | undefined;
+  if (typeof status !== "object" || status === null) return null;
+  if (typeof status.appVersion !== "string") return null;
+  if (typeof status.state !== "string" || !UPDATE_STATES.has(status.state)) return null;
+  if (status.seq !== undefined && typeof status.seq !== "number") return null;
+  return status as DesktopUpdateStatus;
+}
+
+/** What a host may announce at once, and how long an id and a label may be. Bounds, not policy: the frame comes from the process that spawned this one. */
+const MAX_OFFERS = 32;
+const MAX_ID = 64;
+const MAX_LABEL = 120;
+
+/**
+ * Validates the shell's once-per-wiring push of what it offers.
+ *
+ * Nothing is checked against a list of known commands: the host decides what it can do, and
+ * a server that dropped what it had not heard of would make a newer shell's commands
+ * unreachable through an older server — which is the whole reason the words travel with the
+ * command now. What is checked is the shape and some bounds.
+ *
+ * A bare string is accepted as an id with no words: that is what a shell older than
+ * `HostCommandOffer` sends, and the page has its own words for everything such a shell can
+ * offer.
+ */
+export function parseHostCommandsMessage(data: unknown): HostCommandOffer[] | null {
+  if (typeof data !== "object" || data === null) return null;
+  const msg = data as Partial<HostCommandsMessage>;
+  if (msg.type !== "host-commands" || !Array.isArray(msg.commands)) return null;
+  const offers: HostCommandOffer[] = [];
+  for (const entry of (msg.commands as unknown[]).slice(0, MAX_OFFERS)) {
+    if (typeof entry === "string") {
+      if (entry !== "" && entry.length <= MAX_ID) {
+        offers.push({ command: entry, label: "", labelZh: "" });
+      }
+      continue;
+    }
+    if (typeof entry !== "object" || entry === null) continue;
+    const offer = entry as Partial<HostCommandOffer>;
+    if (typeof offer.command !== "string" || offer.command === "") continue;
+    if (offer.command.length > MAX_ID) continue;
+    const label = typeof offer.label === "string" ? offer.label.slice(0, MAX_LABEL) : "";
+    const labelZh = typeof offer.labelZh === "string" ? offer.labelZh.slice(0, MAX_LABEL) : "";
+    offers.push({ command: offer.command, label, labelZh });
+  }
+  return offers;
+}
+
+/** Reads Electron's injected port off `process`, absent under plain Node. */
+export function shellPortOf(proc: NodeJS.Process): ShellPort | null {
+  const port = (proc as NodeJS.Process & { parentPort?: ShellPort }).parentPort;
+  return port && typeof port.on === "function" && typeof port.postMessage === "function"
+    ? port
+    : null;
+}
+
+/** Validates one shell tray push. Same rule as the updater's: strict on the discriminator, strict on every field it carries. */
+export function parseTrayStatusMessage(data: unknown): DesktopTrayStatus | null {
+  if (typeof data !== "object" || data === null) return null;
+  const msg = data as Partial<DesktopTrayStatusMessage>;
+  if (msg.type !== "desktop-tray-status") return null;
+  const status = msg.status as Partial<DesktopTrayStatus> | undefined;
+  if (typeof status !== "object" || status === null) return null;
+  if (typeof status.showTrayIcon !== "boolean") return null;
+  // An older shell against a newer server pushes no locale. Reading it as English rather
+  // than rejecting the whole push keeps the icon switch working across that pairing.
+  const locale = status.locale === "zh" || status.locale === "en" ? status.locale : "en";
+  return { showTrayIcon: status.showTrayIcon, locale };
+}
+
+/** Validates one shell reply to a folder-access request; null when the frame is not one. */
+export function parseFolderAccessResultMessage(
+  data: unknown,
+): DesktopFolderAccessResultMessage | null {
+  if (typeof data !== "object" || data === null) return null;
+  const msg = data as Partial<DesktopFolderAccessResultMessage>;
+  if (msg.type !== "desktop-folder-access-result" || typeof msg.id !== "string") return null;
+  if (typeof msg.granted !== "boolean" || typeof msg.packaged !== "boolean") return null;
+  return {
+    type: "desktop-folder-access-result",
+    id: msg.id,
+    granted: msg.granted,
+    ...(typeof msg.code === "string" ? { code: msg.code } : {}),
+    packaged: msg.packaged,
+  };
+}
+
+/**
+ * Connects the port to the service: stores validated status pushes, registers the command
+ * senders, pairs each folder-access reply with the request it answers, and keeps the host's
+ * raw frames where the PLATFORM can read them. A frame that fails to apply is logged and
+ * dropped: an exception escaping a port listener is uncaught, and an uncaught exception ends
+ * the server (index.ts).
+ *
+ * The frames holder is the whole point of the split. What a `host-commands` frame means is
+ * policy — which commands exist, what they are called, who may run one — and policy ships by
+ * push, so this function stores the frame unread and the platform interprets it (see
+ * http/routes/command.ts). Parsing it here as well is a shim for platforms older than the
+ * holder, which still ask the service for a parsed list; it goes when they do.
+ */
+export function wireShellUpdatePort(
+  desktop: DesktopService,
+  port: ShellPort,
+  frames: ShellFrames | null = null,
+): void {
+  if (frames !== null) frames.post = (frame) => port.postMessage(frame);
+  /** Folder-access requests still waiting for the shell, by id. */
+  const awaiting = new Map<string, (reply: DesktopFolderAccessResultMessage) => void>();
+  port.on("message", (e) => {
+    try {
+      const status = parseUpdaterStatusMessage(e.data);
+      if (status !== null) {
+        desktop.setUpdateStatus(status);
+        return;
+      }
+      const tray = parseTrayStatusMessage(e.data);
+      if (tray !== null) {
+        desktop.setTrayStatus(tray);
+        return;
+      }
+      // A reply nobody waits for any more (its request timed out) is dropped.
+      const access = parseFolderAccessResultMessage(e.data);
+      if (access !== null) {
+        awaiting.get(access.id)?.(access);
+        return;
+      }
+      const offers = parseHostCommandsMessage(e.data);
+      if (offers !== null) {
+        if (frames !== null) frames.hostCommands = e.data;
+        desktop.setCommands(offers);
+      }
+    } catch (err) {
+      console.error(`[server] dropped a frame from the desktop shell: ${String(err)}`);
+    }
+  });
+  desktop.onUpdateCommand((action) => {
+    port.postMessage({
+      type: "desktop-updater-command",
+      action,
+    } satisfies DesktopUpdaterCommandMessage);
+  });
+  desktop.onTrayCommand((patch) => {
+    port.postMessage({
+      type: "desktop-tray-command",
+      ...patch,
+    } satisfies DesktopTrayCommandMessage);
+  });
+  desktop.onFolderAccessRequest(
+    (path) =>
+      new Promise<DesktopFolderAccessResult | null>((resolve) => {
+        const id = randomUUID();
+        // Posted before anything is registered: a port that refuses the frame rejects this
+        // promise and leaves nothing waiting behind it.
+        port.postMessage({
+          type: "desktop-folder-access",
+          id,
+          path,
+        } satisfies DesktopFolderAccessMessage);
+        const timer = setTimeout(() => {
+          awaiting.delete(id);
+          resolve(null);
+        }, FOLDER_ACCESS_TIMEOUT_MS);
+        awaiting.set(id, ({ granted, code, packaged }) => {
+          clearTimeout(timer);
+          awaiting.delete(id);
+          resolve({ granted, ...(code !== undefined ? { code } : {}), packaged });
+        });
+      }),
+  );
+  desktop.onPrivacySettingsCommand((pane) => {
+    port.postMessage({
+      type: "desktop-open-privacy-settings",
+      pane,
+    } satisfies DesktopOpenPrivacySettingsMessage);
+  });
+  desktop.onCommand((command) => {
+    port.postMessage({ type: "host-command", command } satisfies HostCommandMessage);
+  });
+  desktop.onOpenWindowCommand(() => {
+    port.postMessage({ type: "desktop-open-window" } satisfies DesktopOpenWindowMessage);
+  });
+}

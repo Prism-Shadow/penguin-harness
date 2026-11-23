@@ -4,11 +4,15 @@
  *
  * The restore tests are where the value is — they encode the promise that a reattaching
  * client can rebuild the exact screen, which is what a browser refresh depends on.
+ * Wrapped URLs must still reflow separately from the next command, even when a wide glyph
+ * starts a continuation or a TUI erased some of the cells. At the right margin the next
+ * live byte must wrap exactly as it would on the original terminal.
  *
  * The control plane also promises that each shell is filed under the conversation that
  * opened it (`sessionId`, null for none), which only its own user can change, through PATCH:
  * that label is what keeps one conversation's terminals out of another's dock.
  */
+import { sessionRow } from "./fixtures/session.js";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
@@ -75,6 +79,64 @@ describe("restore rendering", () => {
     expect(restored[0]).toBe("first line");
     expect(restored[2]).toBe("$ ");
   });
+
+  it("reflows a restored URL across soft wraps and keeps the next command on its own line", async () => {
+    const url = "https://example.com/projects/terminal/pull/42";
+    const source = terminalWith(url + "\r\n$ pwd", 12);
+    await flush(source);
+    const target = terminalWith(renderRestoreAnsi(source), 12);
+    await flush(target);
+
+    target.resize(64, 6);
+    expect(captureLines(target).lines.slice(0, 2)).toEqual([url, "$ pwd"]);
+  });
+
+  it("preserves an early wrap before a wide character without appending spaces", async () => {
+    const source = terminalWith("1234567\x1b[34m界x\x1b[0m", 8);
+    await flush(source);
+    const target = terminalWith(renderRestoreAnsi(source), 8);
+    await flush(target);
+
+    expect(target.buffer.active.getLine(1)?.isWrapped).toBe(true);
+    expect(captureLines(target).lines.slice(0, 2)).toEqual(["1234567", "界x"]);
+  });
+
+  it("keeps edited and empty continuation rows in place on a resync with autowrap disabled", async () => {
+    // A TUI clears one continuation, erases the tail of the next, then disables autowrap.
+    const source = terminalWith(
+      "12345678abcdefghABCDEFGHij\x1b[2;1H\x1b[8X\x1b[3;5H\x1b[K\x1b[4;3H\x1b[?7l",
+      8,
+    );
+    await flush(source);
+    const target = terminalWith(
+      "\x1b[?7l" + renderRestoreAnsi(source, { inputModePreamble: "\x1b[?7l" }),
+      8,
+    );
+    await flush(target);
+
+    expect(captureLines(target).lines.slice(0, 4)).toEqual(["12345678", "", "ABCD", "ij"]);
+    expect([1, 2, 3].map((y) => target.buffer.active.getLine(y)?.isWrapped)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(target.modes.wraparoundMode).toBe(false);
+  });
+
+  it.each(["12345678", "123456界"])(
+    "wraps subsequent live output after an exact-width line (%s)",
+    async (line) => {
+      const source = terminalWith(line, 8);
+      await flush(source);
+      const target = terminalWith(renderRestoreAnsi(source), 8);
+      await flush(target);
+
+      target.write("!");
+      await flush(target);
+      expect(captureLines(target).lines.slice(0, 2)).toEqual([line, "!"]);
+      expect(target.buffer.active.getLine(1)?.isWrapped).toBe(true);
+    },
+  );
 
   it("keeps colours and attributes", async () => {
     const source = terminalWith("\x1b[1;32mgreen bold\x1b[0m plain \x1b[41mred bg\x1b[0m");
@@ -475,12 +537,118 @@ describePty("terminal API", () => {
     }
   });
 
+  it("counts and closes only the selected child Session's live PTYs", async () => {
+    const t = await createTestApp();
+    try {
+      const admin = await loginAdmin(t.app);
+      const api = apiClient(t.app, admin.cookie);
+      const project = "default_project";
+      const parent = "test-resource-parent";
+      const child = "test-resource-child";
+      t.deps.sessionsRepo.insert(sessionRow(parent));
+      t.deps.sessionsRepo.insert(sessionRow(child));
+      t.deps.sessionsRepo.setListing([child], "archived", new Date().toISOString());
+      t.deps.sessionSources.set(child, "subagent");
+      const path = `/api/terminals/projects/${project}/session-resources`;
+      expect(await (await api.get(path)).json()).toEqual({ counts: {} });
+      const start = async (sessionId: string) => {
+        const result = await api.post("/api/terminals", { sessionId, cwd: t.root });
+        expect(result.status).toBe(201);
+        return ((await result.json()) as { id: string }).id;
+      };
+      const kept = await start(parent);
+      await start(child);
+      expect(await (await api.get(path)).json()).toEqual({ counts: { [parent]: 1, [child]: 1 } });
+      expect(
+        await (
+          await api.post(path + "/close", { sessionIds: [child, child, "not-a-session"] })
+        ).json(),
+      ).toEqual({
+        results: [
+          { sessionId: child, closed: 1 },
+          { sessionId: "not-a-session", closed: 0, error: "session_not_found" },
+        ],
+      });
+      expect(await (await api.get(path)).json()).toEqual({ counts: { [parent]: 1 } });
+      expect(await (await api.post(path + "/close", { sessionIds: [child] })).json()).toEqual({
+        results: [{ sessionId: child, closed: 0 }],
+      });
+      expect((await api.get(`/api/terminals/${kept}`)).status).toBe(200);
+      expect(t.deps.sessionsRepo.findById(child)?.archivedAt).toBeTruthy();
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("requires Project membership and only manages the caller's shells within shared Sessions", async () => {
+    const t = await createTestApp();
+    try {
+      const { provisionUser } = await import("./helpers.js");
+      const owner = apiClient(t.app, (await provisionUser(t.app, "pty_owner")).cookie);
+      const member = apiClient(t.app, (await provisionUser(t.app, "pty_member")).cookie);
+      const projectId = "pty_owner-shared";
+      expect((await owner.post("/api/projects", { projectId, name: "Shared" })).status).toBe(201);
+      const sessionId = "shared-shell-room";
+      t.deps.sessionsRepo.insert(sessionRow(sessionId, { projectId }));
+      const path = `/api/terminals/projects/${projectId}/session-resources`;
+      const options = { sessionId, cwd: t.root };
+      expect((await owner.post("/api/terminals", options)).status).toBe(201);
+      expect((await member.get(path)).status).toBe(404);
+      expect((await member.post("/api/terminals", options)).status).toBe(404);
+      expect((await member.post(path + "/close", { sessionIds: [sessionId] })).status).toBe(404);
+      expect(
+        (await owner.post(`/api/projects/${projectId}/members`, { userId: "pty_member" })).ok,
+      ).toBe(true);
+      expect(await (await member.get(path)).json()).toEqual({ counts: {} });
+      expect((await member.post("/api/terminals", options)).status).toBe(201);
+      expect(
+        await (await member.post(path + "/close", { sessionIds: [sessionId] })).json(),
+      ).toEqual({ results: [{ sessionId, closed: 1 }] });
+      expect(await (await owner.get(path)).json()).toEqual({ counts: { [sessionId]: 1 } });
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("counts concurrent shell creation per user, keeps live shells after lowering the cap and releases the slot on exit", async () => {
+    const t = await createTestApp();
+    try {
+      const api = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+      expect((await api.put("/api/admin/settings", { terminalMaxOpen: 2 })).status).toBe(200);
+      const start = () => api.post("/api/terminals", { cwd: t.root });
+      const attempts = await Promise.all([start(), start(), start()]);
+      expect(attempts.map((r) => r.status).sort()).toEqual([201, 201, 429]);
+      const ids = await Promise.all(
+        attempts
+          .filter((r) => r.status === 201)
+          .map(async (r) => ((await r.json()) as { id: string }).id),
+      );
+      expect((await api.put("/api/admin/settings", { terminalMaxOpen: 1 })).status).toBe(200);
+      const alive = async () =>
+        (
+          (await (await api.get("/api/terminals")).json()) as { terminals: { alive: boolean }[] }
+        ).terminals.filter((pty) => pty.alive).length;
+      expect(await alive()).toBe(2);
+      expect((await start()).status).toBe(429);
+      const { provisionUser } = await import("./helpers.js");
+      const other = apiClient(t.app, (await provisionUser(t.app, "other_pty")).cookie);
+      expect((await other.post("/api/terminals", { cwd: t.root })).status).toBe(201);
+      for (const id of ids) expect((await api.delete(`/api/terminals/${id}`)).status).toBe(204);
+      await vi.waitFor(async () => expect(await alive()).toBe(0), { timeout: 10_000 });
+      expect((await start()).status).toBe(201);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
   it("files a shell under the conversation that opened it, and only its user can refile it", async () => {
     const t = await createTestApp();
     try {
       const admin = await loginAdmin(t.app);
       const api = apiClient(t.app, admin.cookie);
       type Info = { id: string; sessionId: string | null };
+      for (const id of ["session-a", "session-b"]) t.deps.sessionsRepo.insert(sessionRow(id));
+      expect((await api.post("/api/terminals", { sessionId: "missing" })).status).toBe(404);
 
       const owned = (await (
         await api.post("/api/terminals", { cwd: "~", sessionId: "session-a" })

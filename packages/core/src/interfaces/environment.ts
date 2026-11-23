@@ -481,6 +481,11 @@ export interface BackgroundSubagentInfo {
  * live child and no way to resume (resume not requested/available, or the session's record
  * is unrecoverable).
  */
+/** Look up an issued handle in the restored parent Session's own durable records. */
+export type SubagentResolver = (
+  handle: string,
+) => Promise<{ sessionId: string; agentId: string | null; alias: string } | null>;
+
 export type SubagentMessageOutcome = "steered" | "started" | "resumed" | "busy" | "gone";
 
 /** Options of a host-initiated subagent message (see EnvironmentInterface.sendToBackgroundSubagent). */
@@ -491,7 +496,7 @@ export interface SubagentMessageOptions {
    * re-managed, and the text starts its next round. `agentId` names the Agent that owns the
    * child session (the host reads it from its session registry).
    */
-  resume?: { agentId: string };
+  resume?: { agentId: string; subagentId?: string };
 }
 
 /**
@@ -582,6 +587,7 @@ export interface EnvironmentInterface {
    * Window sinks and standing sinks keep precedence while present. Optional: hosts that
    * never attach one (e.g. the CLI) keep the poll-window-only approval semantics.
    */
+  setSubagentResolver?(resolve: SubagentResolver): void;
   setSubagentApprovalFallback?(approve: ApproveFn): void;
   /**
    * Refreshes the listen-port probe behind `BackgroundCommandInfo.serviceUrl` for running

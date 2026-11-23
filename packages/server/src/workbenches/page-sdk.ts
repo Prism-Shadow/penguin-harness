@@ -7,8 +7,8 @@
  *   `HttpTransport` and the rest of `@prismshadow/amsp`, one ES module with nothing to resolve.
  * - `workbench.js` re-exports it and adds the signed-in reader's door already pointed at this
  *   server: `apiBase`, `transport`, `followSession(id, { tailLimit? })`, `abortSession(id)`; and
- *   two questions for the app the page is framed in, `chooseChatModel(current?)` (the app's model
- *   picker) and `getChatModel(current?)` (a model's name), asked with `postMessage` on an id.
+ *   the host's chat model picker, model names and native model settings, requested with
+ *   `postMessage` on an id.
  *
  * The browser build reaches this module as an import, never as a file read beside a package:
  * the desktop app and a hot-pushed build run the server as one bundled file with no
@@ -81,6 +81,16 @@ export function getChatModel(current = null) {
   return askChatModel("get", current);
 }
 
+/** This Agent's effective thinking level and the localized choices offered in chat. */
+export function getChatThinkingOptions() {
+  return askChatModel("thinking", null);
+}
+
+/** Opens this Project's native Models page. The provider configuration stays in the host. */
+export function openModelSettings() {
+  return askChatModel("settings", null);
+}
+
 // The app answers a request on its id, as the page's parent: the app acknowledges it at once, so
 // a page with no app above it, or one that does not know the request, is told within a few seconds.
 const CHAT_MODEL_ACK_MS = 3000;
@@ -89,7 +99,7 @@ let chatModelAsks = 0;
 function askChatModel(op, current) {
   return new Promise((resolve, reject) => {
     const unavailable = () => {
-      const error = new Error("Open this workbench in PenguinHarness to choose a model.");
+      const error = new Error("Open this workbench in PenguinHarness to access its model controls.");
       error.name = "WorkbenchHostUnavailable";
       return error;
     };
@@ -116,10 +126,13 @@ function askChatModel(op, current) {
       }
       stop();
       if (typeof data.error === "string") reject(new Error(data.error));
+      else if (op === "settings") resolve();
+      else if (op === "thinking") resolve(data.thinking || null);
       else resolve(data.model || null);
     }
     window.addEventListener("message", onReply);
-    window.parent.postMessage({ type: "penguin:chat-model", id, op, current }, "*");
+    const type = op === "settings" ? "penguin:open-model-settings" : "penguin:chat-model";
+    window.parent.postMessage({ type, id, op, current }, "*");
   });
 }
 

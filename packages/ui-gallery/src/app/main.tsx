@@ -20,10 +20,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../../../web/src/app";
 import { bootWeb } from "../../../web/src/web-root";
+import { dismissOnboarding } from "../../../web/src/lib/model-onboarding";
 import { requestSettings, requestSettingsPage } from "../../../web/src/lib/settings-request";
 import type { HostSettingsSectionKey } from "../../../web/src/lib/settings-sections";
 import "./app.css";
-import { parseFrameParams } from "./frame";
+import { DEMO_TAKEN_OVER, parseFrameParams } from "./frame";
 import { installGuestFrame } from "./guest-frame";
 import { installFetchShim } from "./mock/fetch-shim";
 import { getStore } from "./mock/store";
@@ -55,8 +56,11 @@ const store = getStore({
   signedIn: !params.signedOut,
   notices: params.notices === true,
   embedded: params.embedded === true,
+  freshProject: params.freshProject === true,
   evolutionDemo: params.autoplay === "evolution",
 });
+// Each homepage frame has its own storage. A stopped run returns to a usable new chat.
+if (params.freshProject) dismissOnboarding(store.f.project.projectId);
 installFetchShim();
 
 // Framed, a focus must not scroll the page around the frame: the chat composer focuses itself
@@ -105,6 +109,37 @@ if (params.autoplay === "evolution") {
     rsiPrompt(params.lang),
     store.evolutionPlayback,
     () => store.clearEvolutionRounds(),
+    params.freshProject === true,
   );
+  if (params.freshProject && params.embedded) {
+    const controls =
+      'a[href],button,input,textarea,select,summary,label,[contenteditable="true"],[tabindex="0"],[role="button"],[role="menuitem"],[role="tab"],[role="option"],[role="link"]';
+    const events = ["click", "auxclick", "keydown", "beforeinput", "input", "change"];
+    const cleanup = () => {
+      for (const type of events) document.removeEventListener(type, activate, true);
+    };
+    const activate = (event: Event) => {
+      if (!event.isTrusted || !(event.target instanceof Element)) return;
+      const control = event.target.closest(controls);
+      if (!control || control.matches(':disabled,[aria-disabled="true"]')) return;
+      if (event instanceof KeyboardEvent && !["Enter", " ", "Escape"].includes(event.key)) {
+        const editor =
+          control instanceof HTMLTextAreaElement ||
+          (control instanceof HTMLInputElement &&
+            ["text", "search", "email", "url", "tel", "password"].includes(control.type)) ||
+          (control instanceof HTMLElement && control.isContentEditable);
+        const movesCaret = /^(Arrow(Up|Down|Left|Right)|Home|End|PageUp|PageDown)$/.test(event.key);
+        const selectAll = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a";
+        if (!editor || !(movesCaret || selectAll)) return;
+      }
+      if (event.type === "auxclick" && !(event instanceof MouseEvent && event.button === 1)) return;
+      cleanup();
+      dispose();
+      store.takeOverEvolution();
+      window.parent.postMessage(DEMO_TAKEN_OVER, window.location.origin);
+    };
+    for (const type of events) document.addEventListener(type, activate, true);
+    import.meta.hot?.dispose(cleanup);
+  }
   import.meta.hot?.dispose(dispose);
 }

@@ -182,10 +182,26 @@ export class StorageUsageService {
    * measures every unit in scope again (joining any under way). Answers at once — `measuring`
    * says whether more is coming.
    */
-  async usage(caller: StorageCaller, opts: { refresh?: boolean } = {}): Promise<StorageFigures> {
+  async usage(
+    caller: StorageCaller,
+    opts: { refresh?: boolean; wait?: boolean } = {},
+  ): Promise<StorageFigures> {
     const scope = await this.scope(caller);
-    // Fire and forget: a unit's measurement records its own failure and never rejects.
-    this.start(scope.projectIds, scope.server, opts.refresh === true);
+    const runs = this.start(scope.projectIds, scope.server, opts.refresh === true);
+    if (opts.wait && runs.length > 0) {
+      // A slow filesystem need not hold the HTTP request open. The shared measurement continues.
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          Promise.all(runs),
+          new Promise<void>((resolve) => {
+            timeout = setTimeout(resolve, 1500);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
     return this.view(caller, scope);
   }
 

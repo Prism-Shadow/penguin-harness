@@ -25,6 +25,7 @@ import type { AppCenterLayout, AppCenterShortcut } from "@prismshadow/penguin-se
 import * as api from "../../api/endpoints";
 import { appAwaited, type LocatedShortcut } from "./arrangement";
 import { createCatalogStore } from "../../lib/catalog-storage";
+import { createReadStore } from "../../lib/read-store";
 import { useMachineCatalogs } from "../../lib/machine-catalogs";
 import { useMachines } from "../../state/machines";
 import { toastApiError } from "../../lib/toast-api-error";
@@ -43,21 +44,28 @@ const NEWS_SETTLE_MS = 120;
 const remoteApps = createCatalogStore<AppCenterShortcut[]>(
   "apps.v1",
   (shortcuts) =>
-    shortcuts.map(({ agentId, agentName, workbenchId, title, titleZh, tab, build }) => ({
-      agentId,
-      agentName,
-      workbenchId,
-      title,
-      titleZh,
-      tab,
-      build,
-      path: "",
-    })),
+    shortcuts.map(
+      ({ agentId, agentName, workbenchId, packageName, plugin, title, titleZh, tab, build }) => ({
+        agentId,
+        agentName,
+        workbenchId,
+        ...(packageName ? { packageName } : {}),
+        ...(plugin ? { plugin } : {}),
+        title,
+        titleZh,
+        tab,
+        build,
+        path: "",
+      }),
+    ),
   Array.isArray,
 );
 
 const loadRemoteApps = (projectId: string, machineId: string) =>
   api.getAppCenter(projectId, machineId).then((r) => r.shortcuts);
+
+const loadRemoteHidden = (projectId: string, machineId: string) =>
+  api.getAppCenter(projectId, machineId, true).then((r) => r.shortcuts);
 
 export interface AppCenterData {
   /**
@@ -82,7 +90,11 @@ export interface AppCenterData {
   saveLayout: (layout: AppCenterLayout | null) => void;
 }
 
-export function useAppCenter(projectId: string | null, agentIds: string): AppCenterData {
+export function useAppCenter(
+  projectId: string | null,
+  agentIds: string,
+  hidden = false,
+): AppCenterData {
   /** The newest answer, with the Project it is about: another Project's tiles are never shown. */
   const [loaded, setLoaded] = useState<{
     projectId: string;
@@ -97,7 +109,7 @@ export function useAppCenter(projectId: string | null, agentIds: string): AppCen
     if (projectId === null) return;
     const ask = ++asked.current;
     try {
-      const { shortcuts, layout } = await api.getAppCenter(projectId);
+      const { shortcuts, layout } = await api.getAppCenter(projectId, null, hidden);
       if (ask !== asked.current) return;
       setLoaded({ projectId, shortcuts, layout });
       setError(null);
@@ -106,14 +118,20 @@ export function useAppCenter(projectId: string | null, agentIds: string): AppCen
         setError(failureNode(err, { what: "the App Center could not be read" }));
       }
     }
-  }, [projectId]);
+  }, [projectId, hidden]);
 
   // An Agent added or removed adds or removes its tiles.
   useEffect(() => {
     void load();
   }, [load, agentIds]);
 
-  const remotes = useMachineCatalogs(remoteApps, projectId, loadRemoteApps);
+  // The restore dialog reads hidden apps afresh. Its results never enter the tile cache.
+  const [hiddenApps] = useState(() => (hidden ? createReadStore<AppCenterShortcut[]>() : null));
+  const remotes = useMachineCatalogs(
+    hiddenApps ?? remoteApps,
+    projectId,
+    hidden ? loadRemoteHidden : loadRemoteApps,
+  );
   const { state: machineList, settled: machinesSettled } = useMachines();
   const catalogs = useRef(remotes);
   catalogs.current = remotes;

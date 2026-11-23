@@ -12,6 +12,7 @@
  * - Export downloads the workbench's archive from the machine the Agent lives on, under the name
  *   the server gives it; one the server refuses says why.
  */
+import { rowOf } from "./helpers/agent-plugins";
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
@@ -175,6 +176,7 @@ describe("a workbench's archives on the Workbenches sub-page", () => {
     ) {
       saved.push(this.download);
     });
+    await click(rowOf("Support").querySelector("button")!);
     await click(button(`${en.workbenches.more} Support`));
     await click(menuItem(en.workbenches.exportWorkbench));
     await waitFor(() => saved.length === 1);
@@ -188,6 +190,7 @@ describe("a workbench's archives on the Workbenches sub-page", () => {
   it("says why the server refused an export, and saves nothing", async () => {
     await openTab({ archiveRefusal: { status: 413, code: "workbench_too_large" } });
     const click_ = vi.spyOn(HTMLAnchorElement.prototype, "click");
+    await click(rowOf("Support").querySelector("button")!);
     await click(button(`${en.workbenches.more} Support`));
     await click(menuItem(en.workbenches.exportWorkbench));
     await waitFor(() => toasts("error").length === 1);

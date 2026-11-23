@@ -304,11 +304,11 @@ export abstract class Workbenches {
   ): Promise<void>;
   /**
    * The App Center of a Project: a shortcut for every workbench of its Agents on this server
-   * whose manifest asks to be shown, in Agent list order and by title within an Agent. Read from
+   * whose manifest asks to be shown (or explicitly hidden when requested), in Agent list order and by title within an Agent. Read from
    * the manifests, each one's last load status and the loads under way — nothing is loaded or
    * compiled. From then on the Agents' folders are watched, so an edit loads and is announced.
    */
-  abstract appCenter(projectId: string): Promise<AppCenterShortcut[]>;
+  abstract appCenter(projectId: string, hidden?: boolean): Promise<AppCenterShortcut[]>;
   /**
    * The icon a workbench's App Center declaration names, read and checked again; null when the
    * workbench is unknown, its declaration does not hold up, or it names no icon.

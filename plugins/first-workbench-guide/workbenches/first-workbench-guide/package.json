@@ -1,0 +1,43 @@
+{
+  "name": "first-workbench-guide",
+  "version": "1.0.0",
+  "type": "module",
+  "penguin": {
+    "version": "2026.11.22.1",
+    "appCenter": {
+      "show": true,
+      "title": "Your first workbench",
+      "titleZh": "我的第一个工作台",
+      "icon": "ui/icon.svg"
+    },
+    "modules": [
+      {
+        "name": "Workbench",
+        "requires": {
+          "host": {
+            "iface": "@prismshadow/penguin-server#WorkbenchHost",
+            "from": "Host"
+          }
+        },
+        "provides": {
+          "main": "@prismshadow/penguin-server#WorkbenchMain"
+        },
+        "contributes": {
+          "WebModule.sessionTabs": [
+            {
+              "id": "first-workbench-guide.main",
+              "key": "main",
+              "title": "Your first workbench",
+              "titleZh": "我的第一个工作台",
+              "renderer": {
+                "iframe": {
+                  "src": "ui/index.html"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

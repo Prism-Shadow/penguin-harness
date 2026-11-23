@@ -664,6 +664,7 @@ export const zh = {
     /** The fan of entries the launcher opens (its accessible group name). */
     launcherPanels: "快捷方式",
     /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
+    openAppCenter: "打开应用中心",
     launcherHide: "隐藏悬浮球",
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
     /** The dock header's fullscreen toggle while the dock is at its usual size. */
@@ -912,6 +913,14 @@ export const zh = {
       `在${machine === null ? "本机" : ` ${machine} `}上执行「${action}」？它会立即在那台机器上运行，具体做什么由插件决定。`,
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "必须是数字",
+    resourceLimits: {
+      title: "终端与浏览器上限",
+      info: "降低上限后，已经打开的终端和浏览器页面可继续使用。",
+      terminalMaxOpen: "每位用户运行的终端数上限",
+      browserMaxOpen: "每个内置浏览器后端的页数上限",
+      restore: "恢复默认",
+      invalid: "请输入大于零的安全整数。",
+    },
     uploadLimitsTitle: "上传限制",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
@@ -1059,7 +1068,7 @@ export const zh = {
     toolAliases: "工具短名",
     activityDisplayMode: "思考显示方式",
     activityDisplayModeInfo:
-      "标准列出每一步，点开可看详情。展开直接显示思考和工具调用的内容。紧凑跟随当前步骤，可前后翻页。",
+      "标准列出每一步，点开可看详情。展开直接显示思考和工具调用的内容。紧凑显示当前活动、步数和耗时，点开可查看全部步骤。",
     activityDisplayStandard: "标准",
     activityDisplayExpanded: "展开",
     activityDisplayCompact: "紧凑",
@@ -1168,6 +1177,8 @@ export const zh = {
     hint: (mod: string): string => `←→ 切换分组与列表 · ${mod}1–9 跳到分组`,
   },
   workbenches: {
+    configureOnMachine: "请在运行这个工作台的机器上配置模型。",
+    openBeforeConfiguring: "请先打开工作台，再配置模型。",
     title: "工作台",
     count: (n: number) => `${n} 个工作台`,
     open: "打开工作台",
@@ -1253,13 +1264,6 @@ export const zh = {
     importOverwriteAction: "覆盖导入",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
-    /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
-    showInAppCenter: "展示到应用中心",
-    /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
-    showInAppCenterHint:
-      "打开后，这个工作台会作为一个应用出现在「应用中心」页面：Project 的每个成员都能在那里看到它的图标，点一下即可打开使用，不必先进入对话。关闭只是把入口从应用中心撤下，工作台本身、它的数据与历史版本都不受影响。拨动开关会改写工作台 package.json 中的 penguin.appCenter.show，并记为一个版本。",
-    /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
-    showInSidebar: "展示到侧边栏",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "打开",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1270,13 +1274,33 @@ export const zh = {
     exitToAppCenter: "退出全页模式（回到应用中心）",
   },
   /** The sidebar's app list, under the nav and above the conversations (main-sidebar-apps.tsx). */
+  pageWorkspace: {
+    leftPane: "左侧页面",
+    rightPane: "右侧页面",
+    restore: "恢复",
+    workbenches: "工作台",
+    left: "在左侧打开",
+    right: "在右侧打开",
+    whole: "整页显示",
+    swap: "交换两侧",
+    separate: "在新窗口打开",
+    actions: "分栏操作",
+    closeView: "关闭视图",
+    resize: "调整页面宽度",
+    empty: "此 Agent 没有可打开的工作台。",
+  },
   sidebarApps: {
+    moveUp: "上移",
+    moveDown: "下移",
+    search: "搜索应用",
+    sort: "应用排序",
+    noMatches: "没有匹配的应用",
+    order: { default: "页面顺序", name: "按名称", recent: "最近使用" },
     title: "应用",
     /** The group header's action: the Agent's Workbenches sub-page. */
     manage: "管理应用",
     /** A row's menu. */
     open: "打开",
-    removeFromSidebar: "从侧边栏移除",
     viewInSettings: "在 Agent 设置中查看",
     /**
      * A row's accessible name, and its hint when that says more than the name: the title, the
@@ -1322,6 +1346,9 @@ export const zh = {
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "新建分组",
     /** The page header's button that opens the new-folder dialog. */
+    hiddenWorkbenches: "已隐藏的工作台",
+    noHiddenWorkbenches: "没有隐藏的工作台。",
+    restoreWorkbench: "恢复显示",
     newFolderAction: "新建分组",
     menu: {
       open: "打开",
@@ -1332,8 +1359,6 @@ export const zh = {
       removeFromFolder: "移出分组",
       removeFromAppCenter: "从应用中心移除",
       viewInSettings: "在 Agent 设置中查看",
-      /** Checkable: the installation's sidebar setting, the row's 「展示到侧边栏」. */
-      showInSidebar: "在侧边栏显示",
       showError: "查看错误",
       rename: "重命名",
       dissolve: "解散分组",
@@ -2293,6 +2318,8 @@ export const zh = {
     systemAppsEmpty: "还没有系统应用。",
     /** A system app's row there: its tag, and the system Agent's card's count of them. */
     systemAppTag: "系统应用",
+    systemInventoryHint: "系统智能体的已装内容可供查看。",
+    pluginCountUnknown: "该来源未提供插件数量",
     systemAppCount: (n: number) => `${n} 个系统应用`,
     /** The Agents page's notice to the owner: an Agent of theirs holds the id reserved for the system Agent. */
     systemIdHeld: (name: string): string =>
@@ -2696,7 +2723,7 @@ export const zh = {
     detectFellBack: "未检测到协议，已按 OpenAI Chat Completions 保存",
     /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
     addProtocolHintDetect:
-      "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions / Google GenAI / MMSP），也可点“检测协议”探测端点是否为前三种之一；未选协议时保存会先自动检测",
+      "在 base URL 输入框右端选择协议。「检测协议」支持 OpenAI Responses、Anthropic Messages、OpenAI Chat Completions 和 Google GenAI。请手动选择 MMSP。未选协议时，保存会先运行检测。",
     /** Switch label only — the dialog carries no explanation text for it (per owner). */
     vision: "支持视觉",
     /** Detect action beside the vision switch. */
@@ -3399,6 +3426,8 @@ export const zh = {
       installAgent: "安装到 Agent",
       /** The install flow: the server first, then the Agents. */
       flowTitle: (name: string) => `安装 ${name}`,
+      backToServer: "返回服务端步骤",
+      toAgents: "继续选择 Agent",
       stepServer: "安装到服务端",
       stepAgents: "安装到 Agent",
       stepOf: (step: number, steps: number) => `第 ${step} 步，共 ${steps} 步`,
@@ -3486,6 +3515,8 @@ export const zh = {
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} 加载失败：${reason}`,
     /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    packageUpdateFailed: (name: string, reason: string) => `${name} 更新失败。${reason}`,
+    packageUpdated: (name: string, version: string) => `已将插件库中的 ${name} 更新到 v${version}`,
     updatePackageTo: (version: string) => `更新到 v${version}`,
     applyConfirmInstall: (name: string) => `安装 ${name}`,
     applyConfirmRemove: (name: string) => `移除 ${name}`,
@@ -4276,36 +4307,17 @@ export const zh = {
     /** The same mark on its own, for a row that is attributed to a machine rather than named after one. */
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
-    draftSubtitle: "最全面的 Agent 自进化平台",
     /** The start page's dashboard (features/chat/start-dashboard.tsx): three counts beside the brand, and the examples block under the composer. */
     start: {
-      /** What each count counts; the label and the number open the page that lists it. Short: the three share the brand's line. */
-      metrics: {
-        agents: "智能体",
-        toolkits: "自进化算法",
-        benchmarks: "评估集",
-      },
+      tagline: "创建你的第一个 Agent OS",
+      shuffle: "换一组示例",
+      moreExamples: "更多示例",
       examplesTitle: "示例与快捷指令",
     },
-    /** Collapsed group names for the start page's examples (bookmark style; only one open at a time). */
-    exampleFolders: {
-      apps: "一句话生成 AI 应用",
-      webapps: "网页与小游戏",
-      evolve: "评测与优化智能体",
-      schedules: "定时任务",
-    },
-    /** Second tooltip line on an example row: the click fills the composer, it does not send. */
-    exampleFillHint: "点击填入输入框，可修改后自行发送",
-    /** The examples block's last folder: prompts the user wrote and saved, stored per user on the server. */
     shortcuts: {
-      folder: "我的快捷指令",
+      retry: "重新加载我的快捷指令",
+      manage: "管理快捷指令",
       new: "新建快捷指令",
-      /**
-       * Tooltip on the new-shortcut row. Unconditional, and worded to hold either way: the
-       * editor opens on whatever the composer holds, which is a blank draft when it holds
-       * nothing — saving what was just typed is the path this folder exists to shorten.
-       */
-      newFromComposer: "以输入框中的内容作为起点",
       createTitle: "新建快捷指令",
       editTitle: "编辑快捷指令",
       titleLabel: "名称",
@@ -4320,116 +4332,69 @@ export const zh = {
       deleteTitle: "删除快捷指令",
       deleteConfirm: (title: string) => `确定删除「${title}」？该快捷指令会从你的所有设备上消失。`,
     },
-    /**
-     * Example task cards on the draft screen: one click fills the composer with the canned
-     * prompt, which the user reads, edits and sends. That is why a prompt is SHORT — a short
-     * paragraph, around 100 Chinese characters, carrying what to build plus the constraints the
-     * result would be wrong without. File layouts, field lists, step-by-step headings and
-     * self-test instructions are what the Agent works out or asks about, so they stay out; the
-     * older briefs below are still far longer and are being trimmed to match.
-     */
+    /** Choosing an example fills the editable composer. */
     exampleTasks: {
       game: {
-        label: "企鹅滑雪大冒险小游戏",
+        label: "企鹅滑雪",
         desc: "滑雪大冒险式的 2D 小游戏：企鹅踩着滑雪板冲下陡坡，飞过坡顶在空中翻滚得分，摔倒了爬起来接着滑",
-        prompt:
-          "做一个类似《滑雪大冒险》（Ski Safari）的 2D 小游戏：一只可爱的南极企鹅踩着醒目的滑雪板往山下滑。" +
-          "地形整体向下，有陡坡也有起伏，下坡越滑越快，冲过坡顶就腾空；" +
-          "空中按住空格键翻滚，落地摆正就加分，翻得越多分越高。" +
-          "摔倒不会结束游戏，企鹅爬起来接着滑，只丢一点速度。" +
-          "注重可玩性：开局简单，地形多变，速度平滑上升。" +
-          "2D 横版卡通画风，纯前端单个 HTML 文件，界面遵循 web-design 技能。" +
-          "完成后在浏览器里自测一次，并告诉我怎么打开和怎么玩。",
+        prompt: `做一个能离线打开的单文件 2D 滑雪游戏。企鹅踩着醒目的滑雪板，玩家能提前看清前方坡面。下坡加速，越过坡顶时带着原速度腾空；在空中按住空格或按住画面翻转。第一次跳跃要容易上手。平稳落地后显示完成的动作和得分，摔倒损失速度，企鹅爬起来接着滑。起跳、落地和摔倒有各自的动作与音效，可静音。不刷新页面就能暂停、继续和重开。
+
+用现有工具分别走查键盘和触屏操作，试一次翻转落地、一次摔倒恢复，再重开一局。交付时说明打开方式、玩法及实际验证的动作。`,
       },
       gamecenter: {
-        label: "多智能体搭建小游戏中心",
-        desc: "并行产出 10 个玩法互不重复的纯前端小游戏，配一个统一风格的索引首页",
-        prompt: `用多智能体并行搭建一个网页小游戏中心：10 个玩法互不重复的纯前端小游戏，外加一个索引首页。
+        label: "迷你游戏厅",
+        desc: "十款玩法各异的离线小游戏，支持键盘和触屏，统一从游戏大厅进入",
+        prompt: `做一个离线迷你游戏厅，包含十个玩法不同的游戏，例如贪吃蛇、数字合并、下落方块、打砖块、扫雷、记忆翻牌、推箱子、太空射击、跳跃平台和节奏点击。每款都有独立可玩的页面，统一从大厅进入。开局说清目标和操作；输入立即影响游戏，根据各自规则显示分数或剩余步数、胜负结算和一键重开。
 
-## 分工方式
-- 先规划这 10 个游戏（例如贪吃蛇、2048、俄罗斯方块、打砖块、扫雷、记忆翻牌、推箱子、太空射击、跳跃平台、节奏点击），确认玩法确实互不重复，并定好统一的目录结构、配色与交互规范。
-- 再把 10 个游戏分派给多个子智能体并行实现，每个子智能体只负责自己的那一个游戏，严格按既定规范产出，互不改动他人的文件。
-
-## 每个游戏
-- 独立的 \`games/<slug>/index.html\`，纯前端单文件、file:// 直接打开即可运行，不依赖后端与任何 CDN 资源。
-- 具备开始 / 重新开始、实时计分或计时、失败或通关结算，并同时支持键盘与触摸操作，页面内写明玩法说明。
-- 提供返回索引首页的入口。
-
-## 索引首页
-- 根目录 \`index.html\`：卡片网格列出全部 10 个游戏（名称 + 一句话玩法 + 操作方式），点击进入对应游戏。
-- 与所有游戏共用一套设计语言，遵循 web-design 技能。
-
-## 收尾
-- 统一验收：10 个游戏玩法确实不重复、风格一致，索引页的链接全部可达。
-- 在浏览器里逐个自测，确认都能开始、能结束、能重开，然后告诉我怎么打开。`,
+支持键盘和触屏，棋盘里的滑动与点击不会误滚页面，返回大厅始终可达，只有当前游戏继续计时或发声。资源随页面提供，断网也能打开。逐款从大厅进入，试其核心动作、结算、重开；在手机尺寸下返回大厅再换一款。交付启动文件并说明实际走查的结果。`,
       },
       lol: {
-        label: "英雄联盟音乐播放器",
+        label: "英雄联盟音乐",
         desc: "用 SoundCloud Widget API 播放历届 Worlds 主题曲，单文件即开即用",
-        prompt: `用 SoundCloud Widget API（见 https://developers.soundcloud.com/docs/api/html5-widget）做一个英雄联盟 Worlds 主题曲播放器，单文件 index.html，file:// 打开即用。
+        prompt: `用可见的 SoundCloud 官方播放器和 Widget API（https://developers.soundcloud.com/docs/api/html5-widget）做一个单文件 Worlds 主题曲播放器，保留以下八首官方链接：
+- Warriors (S4) — https://soundcloud.com/leagueoflegends/warriors
+- Worlds Collide (S5) — https://soundcloud.com/leagueoflegends/worlds-collide
+- Legends Never Die (S7) — https://soundcloud.com/leagueoflegends/legends-never-die
+- Phoenix (S9) — https://soundcloud.com/leagueoflegends/phoenix
+- Burn It All Down (S11) — https://soundcloud.com/leagueoflegends/burn-it-all-down
+- GODS (S13) — https://soundcloud.com/leagueoflegends/gods
+- Heavy Is The Crown (S14) — https://soundcloud.com/linkinpark/heavy-is-the-crown
+- Sacrifice (S15) — https://soundcloud.com/leagueoflegends/sacrifice
 
-## 技术约束
-- 使用 SC.Widget JS API（widget.load / widget.toggle / widget.setVolume / widget.seekTo），引入 https://w.soundcloud.com/player/api.js
-- iframe 必须可见（180px 高），visual=true color=f0b90b single_active=true
-- 仅包含以下 8 首已确认可播曲目（oEmbed 验证通过），不要添加未经 oEmbed 验证的曲目：
-  - Warriors (S4) — soundcloud.com/leagueoflegends/warriors
-  - Worlds Collide (S5) — soundcloud.com/leagueoflegends/worlds-collide
-  - Legends Never Die (S7) — soundcloud.com/leagueoflegends/legends-never-die
-  - Phoenix (S9) — soundcloud.com/leagueoflegends/phoenix
-  - Burn It All Down (S11) — soundcloud.com/leagueoflegends/burn-it-all-down
-  - GODS (S13) — soundcloud.com/leagueoflegends/gods
-  - Heavy Is The Crown (S14) — soundcloud.com/linkinpark/heavy-is-the-crown
-  - Sacrifice (S15) — soundcloud.com/leagueoflegends/sacrifice
+手机与桌面都能选曲、播放暂停、拖进度、切歌、静音和调节音量。显示当前曲目、已播时间和总时长；键盘控制不影响正在操作的按钮或滑杆。读取 Widget 的 READY、PLAY、PAUSE、PLAY_PROGRESS、FINISH 和错误事件，确认真实播放后再切按钮状态和更新进度。嵌入加载慢、被拦或离线时显示当前状态、重试和所选曲目的官方链接；SDK 加载失败仍能浏览歌单。
 
-## 布局
-- 左侧 260px 粘性侧边栏：曲目列表（S4/S5/… 标签 + emoji + 曲名 + 年份），点击高亮金色边框，SC.Widget.load() 切歌 + auto_play
-- 右侧主区域：Hero 标题 + 桌面时钟（80px 等宽金色 HH:MM:SS，每秒刷新，冒号闪烁）+ 心情标签
-- 播放器卡片：SoundCloud iframe + 自定义控制栏（⏮ ▶/⏸ ⏭ + 曲目信息 + 音量滑块，点击喇叭图标静音切换）
-- 心情波动区：15 根金色动画柱，切歌时重新随机生成
-- 键盘快捷键：空格播放暂停、← → 切歌、↑ ↓ 调音量
-
-## 设计
-Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边栏变为顶部横向滚动。
-
-完成后在浏览器打开 index.html 自测一次。`,
+实际点击播放一首，确认官方上报的位置在增加，再试暂停、跳到指定位置和换歌；也测试阻断嵌入时去官方页面的入口。说明在当前网络下验证了哪些结果。`,
       },
       rhythmRunner: {
-        label: "企鹅音乐节奏跑酷小游戏",
+        label: "节奏跑酷",
         desc: "喵斯快跑式的节奏跑酷：接上方音符时企鹅飞起来，接下方音符时趴上雪橇贴地滑行",
-        prompt:
-          "做一个喵斯快跑（Muse Dash）式的音乐节奏跑酷小游戏：主角是一只企鹅，自动向前跑；" +
-          "音符画成音符图标，分上下两路踩着节拍飞来，玩家按键击打。接上方音符时企鹅展翅飞起来，" +
-          "接下方音符时趴上雪橇贴地滑行。判定显示 Perfect / Great / Miss 三档，连击计分。" +
-          "难度尽量简单：音符稀疏、判定宽松，漏接不会直接结束。配乐建议用纯音乐。" +
-          "纯前端单文件，file:// 直接打开即玩。",
+        prompt: `做一个单文件离线企鹅节奏跑酷。制作一段原创、确实能听到的器乐和对应谱面。玩家点开始后，音乐播放与两路音符判定使用同一个音频时钟。按上路立即展翅起飞，按下路立即趴上雪橇；准备两个按键和两块易点的触区。先用稀疏音符教会两路操作，再逐渐组合。Perfect、Great、Miss 有不同反馈，连击能累积也会中断，漏接仍能听完。支持静音、暂停、同步续播、结算与重玩。
+
+实际走完一首，确认音乐有声，两路都能命中，故意早按或晚按有对应判定，暂停后节拍对得上，第二局从头计分。交付文件、操作方式和验证结果。`,
       },
       ragDocsExpert: {
-        label: "一句话生成 RAG 文档专家",
+        label: "文档问答",
         desc: "新建文档专家智能体，在专属工作台检索文档、提问并查看来源引用",
-        prompt:
-          "用 PenguinHarness 的 Plugin 能力新建 Claude Code 文档专家智能体，并给它做一个 Agent Workbench 标签页：" +
-          "收集 https://github.com/ericbuess/claude-code-docs 文档，提供带来源引用的 RAG 问答；" +
-          "完成后告诉我如何进入该智能体、新建对话并打开工作台使用。",
+        prompt: `新建 Claude Code 文档专家 Agent，交付可安装的 PenguinHarness 工作台。索引 https://github.com/ericbuess/claude-code-docs，记录取得的版本与日期。支持检索、提问并从回答引用跳到支撑结论的具体标题或段落。无匹配要说明，下载失败可重试；离线仍可读上次成功的索引，显示其日期。首次取不到来源时可导入本地副本。
+
+在已有权限范围安装并打开工作台。用真实段落可回答的问题检索、追问并打开引用，再问一个缺乏依据的问题。走查键盘与手机导航，说明怎样进入 Agent 和工作台，以及实际验证的结果。`,
       },
       investmentCopilot: {
-        label: "一句话生成投资分析助理",
+        label: "投资分析",
         desc: "新建投资分析智能体，在专属工作台看行情、查公司并追问市场因素",
-        prompt:
-          "用 PenguinHarness 的 Plugin 能力新建投资分析智能体，并给它做一个 Agent Workbench 标签页：" +
-          "每 5 分钟更新行情，列出近期走势较好的股票和板块，解释政策、行业、财报等市场因素并标注来源与时间；" +
-          "支持按公司名查股和追问，查不到或未上市就直说，不要编，只做分析不是投资建议。" +
-          "完成后告诉我如何进入该智能体、新建对话并打开工作台使用。",
+        prompt: `新建投资研究 Agent，交付可安装的 PenguinHarness 工作台。能按名称找上市公司，按相同区间与币种比较涨跌，从板块表现追到新闻或财报来源。使用已获授权的行情源，显示时间、币种、延迟情况，每五分钟或按需刷新。没有数据服务时允许导入用户提供的带时间样本，并明确标为样本。行情过期、缺失或公司未上市要说明；刷新失败保留上次结果，可重试。解释需能打开引用，把推断与事实区分开。
+
+安装工作台，用有出处的行情或用户样本实际比较一次，查一家找不到的公司，试失败重试，在窄屏与键盘下打开来源。说明入口及使用的数据。`,
       },
       legalDesk: {
-        label: "一句话构建法务智能体应用",
+        label: "法务助手",
         desc: "新建法务智能体，在专属工作台上传合同、查看处理状态并下载审阅报告",
-        prompt:
-          "用 PenguinHarness 的 Plugin 能力新建法务智能体，并给它做一个 Agent Workbench 标签页：" +
-          "上传合同或协议后由它在后台审阅，列出风险条款、理由和修改建议；工作台只显示上传、文件处理状态与报告下载，" +
-          "适配明暗主题。完成后告诉我如何进入该智能体、新建对话并打开工作台使用。",
+        prompt: `新建合同审阅 Agent，交付可安装的 PenguinHarness 工作台。能上传合同、查看每份文件的处理状态、重新打开结果并下载报告。每条意见引用原文，定位到页码、章节或段落，解释风险并给出供审阅的修改建议。不同文件的发现分别保存；不支持的格式或读不出的文件说明原因，可以替换或重试。只处理用户提供的文档，示例合同需注明。
+
+实际安装，用一份短样本走查上传、找到原文、下载报告并核对引文，再试无法读取的文件，重新打开第一份结果。明暗主题下均可用键盘和触屏上传及取回报告。说明入口与实际测试结果。`,
       },
       agentBenchmarkBuild: {
-        label: "构建通用决策智能体和评测基准",
+        label: "决策评测",
         desc: "创建一个通用决策 Agent，并用足球、售后和投资任务检验它",
         prompt: `请依次使用 \`agent-initialization\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
 
@@ -4450,7 +4415,7 @@ Benchmark：
 3. 根据投资策略、历史市场与当前指标选择投资动作。`,
       },
       agentOptimization: {
-        label: "优化决策智能体",
+        label: "优化智能体",
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
@@ -4462,7 +4427,7 @@ Benchmark：
 - candidate_round_limit：\`5\``,
       },
       benchmarkImport: {
-        label: "导入 GDPEVO Essential 服务工单处理评测集",
+        label: "导入工单评测",
         desc: "导入 GDPEVO Essential 服务工单处理场景的训练集与测试集：在训练集上优化 Agent，再到没见过的测试题上检验提升",
         prompt:
           "用 `benchmark-design` 导入训练集及配对测试集：" +
@@ -4470,7 +4435,7 @@ Benchmark：
           "本项目已有则告知，不要覆盖。",
       },
       dailyPlan: {
-        label: "每天早 9 点的计划对话",
+        label: "每日计划",
         desc: "每天 09:00 在同一个会话里聊当天计划，并回顾昨天的进展",
         prompt:
           "建一个定时任务：每天早上 9 点在这个会话里和我聊今天的计划。" +
@@ -4478,14 +4443,14 @@ Benchmark：
           "我确认后写成清单。",
       },
       githubDigest: {
-        label: "每天汇总 GitHub 项目状态",
+        label: "GitHub简报",
         desc: "定时跑一遍仓库的 Issue、PR 与 CI，日报结尾给出按优先级排序的建议",
         prompt:
           "建一个定时任务：每天早上用 gh 汇总一个 GitHub 仓库的 Issue、PR 与 CI 状态，" +
           "挑出停滞的、待评审的和挂掉的，结尾给出按优先级排序的建议，每条说清为什么排在这个位置。",
       },
       memoryReview: {
-        label: "每周五晚回顾并记录 Memory",
+        label: "每周记忆回顾",
         desc: "周五傍晚一起过一遍这周值得长期记住的事，确认后由你写进 Memory",
         prompt:
           "建一个定时任务：每周五傍晚在这个会话里和我过一遍这周值得长期记住的事。" +
@@ -4606,6 +4571,7 @@ Benchmark：
     /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */
     outlineAnswering: "回答生成中…",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，可粘贴图片",
+    resizeDraft: "按 Alt+Shift+上方向键调低输入框，按 Alt+Shift+下方向键调高。",
     inputPlaceholderShort: "输入消息…",
     /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
     steerPlaceholder: "给运行中的 Agent 留言，随下一轮对话送达",
@@ -4823,6 +4789,14 @@ Benchmark：
     statParenClose: "）",
     noSessions: "还没有 Session",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    offlineHistory: {
+      disconnected: (alias: string) => `${alias} 未连接。`,
+      cached: "正在显示上次同步的对话记录。",
+      miss: "本地没有这段对话的缓存。连接恢复后会自动打开。",
+      empty: "上次同步时还没有消息。",
+      refreshing: (alias: string) => `${alias} 已连接，正在更新对话记录。`,
+      failed: "暂时无法读取本地对话记录。",
+    },
     sessionOnOfflineMachine: (machine: string) => `这个对话在 ${machine} 上，当前没有连接。`,
     /** The routed conversation's machine is connected and did not answer in time. */
     sessionOnQuietMachine: (machine: string) =>
@@ -5158,14 +5132,7 @@ Benchmark：
     workFailed: "运行失败",
     workStopped: "已停止",
     workRetryStep: (n: number) => `第 ${n} 次重试`,
-    previousWorkStep: "上一步",
-    nextWorkStep: "下一步",
-    latestWorkStep: "最新步骤",
-    waitingWorkStep: "查看待处理步骤",
     workElapsed: "总耗时",
-    /** The words around the step number in Compact's pager; the number between them is a field. */
-    workStepWords: ["第 ", " 步"] as readonly [before: string, after: string],
-    workStepJump: "跳转到步骤",
     workGroupSteps: (n: number) => `${n} 步`,
     approvalWaiting: "待审批",
     copyCode: "复制代码",
@@ -5760,9 +5727,12 @@ Benchmark：
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
+    previousTurn: "上一轮",
+    nextTurn: "下一轮",
+    latestTurn: "最新一轮",
     topologyLabel: "调用关系",
     mainSessionNote: "主会话请在对话区查看",
-    empty: "本次任务尚未派生子智能体",
+    empty: "这个会话还没有子智能体",
     nodeRunning: "运行中",
     nodeDone: "已完成",
     /** Identity-strip jump: opens the selected subagent's own Session in the chat area. */
@@ -7429,6 +7399,7 @@ Benchmark：
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
       invalid_proxy_url: "代理地址无效：应为 http(s):// 或 socks5:// 代理 URL，或 主机[:端口]。",
+      invalid_resource_limit: "请填写大于零的整数。",
       invalid_attachment_limit: "上传限制无效：请填写允许范围内的整数 MB，且合计不低于单个上限。",
       invalid_trace: "该文件不是有效的 Trace 文件。",
       trace_not_found: "该 Trace 文件已不存在。",

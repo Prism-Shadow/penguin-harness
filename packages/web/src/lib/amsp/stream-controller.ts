@@ -76,6 +76,7 @@ import {
   notifyTaskIdle,
   pushMessage,
   pushMessages,
+  seedHistoryWindow,
   registerLocalDecision,
   type BodyLoad,
   type ChatItem,
@@ -83,7 +84,6 @@ import {
   type ThinkingItem,
   type ToolCallItem,
 } from "./stream-model";
-import { seedPriorStats } from "./task-stats";
 
 /** A single pending approval (keyed by approvalKey(origin, toolCallId)). */
 export interface PendingApproval {
@@ -828,20 +828,6 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     return [...pre, ...seeds, ...post];
   };
 
-  /**
-   * Seeds a model with what came before the window it is about to take: the stats accrued
-   * ahead of it, so header chips and per-turn cumulative rows equal a full load (see
-   * seedPriorStats), the model its first context runs on, and the Agent State directory for
-   * memory-change detection. Their `session_meta` may fall before the window.
-   */
-  const seedWindow = (target: StreamModel, page: MessagesPageInfo): void => {
-    seedPriorStats(target.stats, page.prior);
-    if (page.contextModel !== undefined) {
-      target.contextModel = { sessionId: deps.sessionId, ...page.contextModel };
-    }
-    if (page.agentState !== undefined) target.agentState = page.agentState;
-  };
-
   const load = async (
     currentEpoch: number,
     freshModel: StreamModel | undefined,
@@ -890,7 +876,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       const target = model;
       // The children a replay is about to make are this model's to log, from scratch.
       liveOnlyChildren.clear();
-      if (res.page !== undefined) seedWindow(target, res.page);
+      if (res.page !== undefined) seedHistoryWindow(target, res.page, deps.sessionId);
       pushMessages(target, messages, now(), serverNowMs ?? null);
       const dedup = buildDedupIndex(messages, 100);
       // Replay the buffer (events that arrived while fetching history), with dedup; while a
@@ -938,7 +924,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     prependCount += 1;
     const m = createStreamModel(localDecisions);
     m.nextItemId = -prependCount * PREPEND_ID_SPAN;
-    seedWindow(m, page);
+    seedHistoryWindow(m, page, deps.sessionId);
     pushMessages(m, w.messages, now(), null);
     finalizeHistory(m);
     return m;

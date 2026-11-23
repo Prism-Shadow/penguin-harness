@@ -25,7 +25,8 @@ import type {
  * What the data root holds by category, as last measured: the caller's Projects, and for an
  * admin the whole root. The first read of a unit never measured starts its measurement.
  */
-export const getStorageUsage = () => apiFetch<StorageUsage>("/api/me/storage");
+export const getStorageUsage = (wait = false) =>
+  apiFetch<StorageUsage>("/api/me/storage", wait ? { query: { wait: 1 } } : {});
 
 /** Measures the caller's units again (one already under way is reused); answers like getStorageUsage. */
 export const refreshStorageUsage = () =>

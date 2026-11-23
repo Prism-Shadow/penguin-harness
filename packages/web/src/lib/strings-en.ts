@@ -566,6 +566,7 @@ export const en: Strings = {
     launcherClose: "Close",
     launcherPending: "a subagent awaits approval",
     launcherPanels: "Shortcuts",
+    openAppCenter: "Open App Center",
     launcherHide: "Hide launcher",
     launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
     fullscreen: "Full screen",
@@ -807,6 +808,14 @@ export const en: Strings = {
       `Run "${action}" on ${machine ?? "this server"}? It runs on that machine right away; what it does is up to the plugin.`,
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "Must be a number",
+    resourceLimits: {
+      title: "Terminal and browser limits",
+      info: "Lowering a limit leaves existing terminals and browser pages available.",
+      terminalMaxOpen: "Maximum active terminals per user",
+      browserMaxOpen: "Maximum pages per built-in browser backend",
+      restore: "Restore defaults",
+      invalid: "Enter a positive whole number within the safe integer range.",
+    },
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
@@ -958,7 +967,7 @@ export const en: Strings = {
     toolAliases: "Tool short names",
     activityDisplayMode: "Reasoning display",
     activityDisplayModeInfo:
-      "Standard lists each step. Select one to see its details. Expanded shows all thoughts and tool details. Compact follows the current step and lets you page through the others.",
+      "Standard lists each step. Select one to see its details. Expanded shows all thoughts and tool details. Compact shows the current activity, step count and elapsed time. Select it to see all steps.",
     activityDisplayStandard: "Standard",
     activityDisplayExpanded: "Expanded",
     activityDisplayCompact: "Compact",
@@ -1060,6 +1069,8 @@ export const en: Strings = {
     hint: (mod: string): string => `←→ groups / models · ${mod}1–9 jump to a group`,
   },
   workbenches: {
+    configureOnMachine: "Configure models on the machine running this workbench.",
+    openBeforeConfiguring: "Open the workbench before configuring models.",
     title: "Workbenches",
     count: (n: number) => `${n} ${n === 1 ? "workbench" : "workbenches"}`,
     open: "Open workbench",
@@ -1152,13 +1163,6 @@ export const en: Strings = {
     importOverwriteAction: "Overwrite",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
-    /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
-    showInAppCenter: "Show in the App Center",
-    /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
-    showInAppCenterHint:
-      "When on, this workbench appears as an app on the App Center page: every member of the Project sees its icon there and opens it with one click, without starting a chat first. Turning it off only takes the shortcut off the App Center; the workbench, its data and its versions are untouched. Flipping the switch rewrites penguin.appCenter.show in the workbench's package.json and is recorded as a version.",
-    /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
-    showInSidebar: "Show in the sidebar",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1168,11 +1172,31 @@ export const en: Strings = {
     /** The full page's way out when it was opened from the App Center. */
     exitToAppCenter: "Exit full page (back to the App Center)",
   },
+  pageWorkspace: {
+    leftPane: "Left pane",
+    rightPane: "Right pane",
+    restore: "Restore",
+    workbenches: "Workbenches",
+    left: "Open on the left",
+    right: "Open on the right",
+    whole: "Show full page",
+    swap: "Swap panes",
+    separate: "Open in a new window",
+    actions: "Pane actions",
+    closeView: "Close view",
+    resize: "Resize panes",
+    empty: "This Agent has no workbenches to open.",
+  },
   sidebarApps: {
+    moveUp: "Move up",
+    moveDown: "Move down",
+    search: "Search apps",
+    sort: "Sort apps",
+    noMatches: "No matching apps",
+    order: { default: "Page order", name: "Name", recent: "Recently used" },
     title: "Apps",
     manage: "Manage apps",
     open: "Open",
-    removeFromSidebar: "Remove from sidebar",
     viewInSettings: "View in agent settings",
     rowName: (title: string, agent: string | null, state: string | null) =>
       [title, agent === null ? null : `from ${agent}`, state].filter((s) => s !== null).join(", "),
@@ -1213,6 +1237,9 @@ export const en: Strings = {
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "New folder",
     /** The page header's button that opens the new-folder dialog. */
+    hiddenWorkbenches: "Hidden workbenches",
+    noHiddenWorkbenches: "No hidden workbenches.",
+    restoreWorkbench: "Show in App Center",
     newFolderAction: "New folder",
     menu: {
       open: "Open",
@@ -1223,7 +1250,6 @@ export const en: Strings = {
       removeFromFolder: "Remove from folder",
       removeFromAppCenter: "Remove from the App Center",
       viewInSettings: "View in agent settings",
-      showInSidebar: "Show in the sidebar",
       showError: "Show error",
       rename: "Rename",
       dissolve: "Ungroup",
@@ -2176,6 +2202,8 @@ export const en: Strings = {
       "The system apps this agent owns. They come with the platform and open from the App Center.",
     systemAppsEmpty: "No system apps yet.",
     systemAppTag: "System app",
+    systemInventoryHint: "Installed components on the system Agent are read-only.",
+    pluginCountUnknown: "Plugin count unavailable from this server",
     systemAppCount: (n: number) => `${n} ${n === 1 ? "system app" : "system apps"}`,
     systemIdHeld: (name: string): string =>
       `Agent "${name}" holds the id reserved for the system agent. Export it, import it under another id, then delete it; the system agent is added the next time the agents load.`,
@@ -2537,7 +2565,7 @@ export const en: Strings = {
     /** Save-time detection came back empty: the save proceeds on the compatible client. */
     detectFellBack: "Protocol not detected; saved as OpenAI Chat Completions",
     addProtocolHintDetect:
-      "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions / Google GenAI / MMSP), or press Detect to probe the endpoint for one of the first three — saving without one detects it first",
+      "Choose a protocol from the base URL field's suffix. Detect checks OpenAI Responses, Anthropic Messages, OpenAI Chat Completions, and Google GenAI. Select MMSP manually. Saving without a protocol runs detection first.",
     vision: "Vision support",
     /** Detect action beside the vision switch. */
     detectVision: "Detect",
@@ -3199,6 +3227,8 @@ export const en: Strings = {
       adminOnly: "Only an admin can change the server",
       installAgent: "Install on Agent",
       flowTitle: (name: string) => `Install ${name}`,
+      backToServer: "Back to server",
+      toAgents: "Continue to Agents",
       stepServer: "Install on server",
       stepAgents: "Install on Agents",
       stepOf: (step: number, steps: number) => `Step ${step} of ${steps}`,
@@ -3290,6 +3320,9 @@ export const en: Strings = {
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} failed to load: ${reason}`,
     /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    packageUpdateFailed: (name: string, reason: string) => `Couldn’t update ${name}. ${reason}`,
+    packageUpdated: (name: string, version: string) =>
+      `Updated ${name} to v${version} in the plugin library`,
     updatePackageTo: (version: string) => `Update to v${version}`,
     applyConfirmInstall: (name: string) => `Install ${name}`,
     applyConfirmRemove: (name: string) => `Remove ${name}`,
@@ -4078,28 +4111,16 @@ export const en: Strings = {
     onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
-    draftSubtitle: "The most comprehensive agent self-evolution platform",
     start: {
-      metrics: {
-        agents: "Agents",
-        toolkits: "RSI algorithms",
-        benchmarks: "Benchmarks",
-      },
+      tagline: "Create your first Agent OS",
+      shuffle: "Shuffle suggestions",
+      moreExamples: "More examples",
       examplesTitle: "Examples and shortcuts",
     },
-    /** Folder names for the start page's collapsible examples (bookmark-style: exactly one open at a time). */
-    exampleFolders: {
-      apps: "Build an AI app from one sentence",
-      webapps: "Web pages and mini games",
-      evolve: "Evaluate and optimize agents",
-      schedules: "Scheduled tasks",
-    },
-    /** Second tooltip line on an example row: the click fills the composer, it does not send. */
-    exampleFillHint: "Click to fill the composer — edit it if you like, then send",
     shortcuts: {
-      folder: "My shortcuts",
+      retry: "Reload my shortcuts",
+      manage: "Manage shortcuts",
       new: "New shortcut",
-      newFromComposer: "Starts from whatever is in the composer",
       createTitle: "New shortcut",
       editTitle: "Edit shortcut",
       titleLabel: "Name",
@@ -4116,111 +4137,66 @@ export const en: Strings = {
     },
     exampleTasks: {
       game: {
-        label: "Penguin ski safari mini game",
+        label: "Penguin Skiing",
         desc: "A Ski Safari-style 2D game: a penguin on skis rides steep slopes downhill, flips in the air off the crests for points and gets back up after a crash",
-        prompt:
-          "Build a 2D game like Ski Safari: a cute Antarctic penguin on bold, clearly visible skis " +
-          "heads down a mountain. The terrain trends downhill, with steep slopes and rolling crests; the " +
-          "penguin speeds up going down, and cresting a hill launches it into the air. Hold Space in the " +
-          "air to flip; landing upright scores, more flips score more. A crash never ends the run: the " +
-          "penguin gets back up and skis on, minus some speed. Make it fun: start easy, vary the terrain, " +
-          "ramp the speed up smoothly. A 2D cartoon side-scroller, pure frontend in a single HTML file, " +
-          "styled per the web-design skill. " +
-          "When done, test it in a browser once and tell me how to open it and how to play.",
+        prompt: `Build a self-contained 2D downhill skiing game starring a penguin on visible skis. Make the slope readable ahead of the player. Speed should build on descents and carry over a crest into a jump. Holding Space or touching the playfield rotates the penguin in the air. Reward a clean landing, show which trick scored, and let a crash cost speed before the penguin gets back up. Ease players in with a forgiving first jump. Give takeoff, landing and falling distinct sound and movement, with a mute control. Pause, resume and restart must work without a page reload.
+
+Ship one HTML file that plays offline. With the tools available, try a short run by keyboard and by touch, land a flip, crash and recover, then restart. Tell me where to open the game, how to play, and which interactions you checked.`,
       },
       gamecenter: {
-        label: "A mini-game center built by multiple agents",
-        desc: "Ten pure-frontend games with no repeated mechanics, built in parallel behind one index page",
-        prompt: `Build a web mini-game center with multiple agents working in parallel: 10 pure-frontend games with no two sharing the same mechanic, plus an index page.
+        label: "Mini Arcade",
+        desc: "Ten offline games with distinct mechanics, keyboard and touch controls, and a shared lobby",
+        prompt: `Build an offline mini arcade with ten genuinely different games: for example snake, a sliding-number puzzle, falling blocks, breakout, minesweeper, memory pairs, sokoban, a space shooter, a platform jumper and rhythm tap. Give each a separate playable page and a place in the same lobby. Before a round, show its goal and controls. Each action should change the game immediately; score or remaining moves, a clear win or loss, and a one-tap retry should follow each game's own rules.
 
-## How to split the work
-- First plan the 10 games (say snake, 2048, tetris, breakout, minesweeper, memory match, sokoban, space shooter, platform jumper, rhythm tap), confirm no two mechanics repeat, and fix a shared directory layout, palette and interaction spec.
-- Then hand the 10 games to several subagents to implement in parallel — each subagent owns exactly one game, follows the agreed spec, and never edits another's files.
-
-## Each game
-- Its own \`games/<slug>/index.html\`: pure frontend, a single file that runs straight from file://, with no backend and no CDN assets.
-- Start / restart, live score or timer, a lose-or-clear summary, both keyboard and touch controls, and the rules written on the page.
-- A way back to the index page.
-
-## Index page
-- \`index.html\` at the root: a card grid listing all 10 games (name + one-line mechanic + controls), each card opening its game.
-- One design language shared with every game, following the web-design skill.
-
-## Wrap-up
-- Review as a whole: the 10 mechanics really are distinct, the styling is consistent, and every index link resolves.
-- Self-test each game in a browser — it starts, it ends, it restarts — then tell me how to open it.`,
+Support keyboard and touch. Keep swipes and taps inside the playfield from scrolling the page, leave the back button reachable, and keep only the active game running or playing sound. Use local assets so the lobby and games open offline. Test entering every game, performing its signature move, finishing a round and restarting cleanly. Return to the lobby and open another game on a phone-sized screen. Give me the launch file and the results of the checks you could run.`,
       },
       lol: {
-        label: "League of Legends music player",
+        label: "Worlds Anthems",
         desc: "Worlds anthems on the SoundCloud Widget API — a single file that opens from file://",
-        prompt: `Build a League of Legends Worlds anthem player with the SoundCloud Widget API (see https://developers.soundcloud.com/docs/api/html5-widget): a single index.html that works when opened from file://.
+        prompt: `Build a single-file Worlds anthem player using the visible official SoundCloud widget and its API (https://developers.soundcloud.com/docs/api/html5-widget). Offer these eight original links:
+- Warriors (S4) — https://soundcloud.com/leagueoflegends/warriors
+- Worlds Collide (S5) — https://soundcloud.com/leagueoflegends/worlds-collide
+- Legends Never Die (S7) — https://soundcloud.com/leagueoflegends/legends-never-die
+- Phoenix (S9) — https://soundcloud.com/leagueoflegends/phoenix
+- Burn It All Down (S11) — https://soundcloud.com/leagueoflegends/burn-it-all-down
+- GODS (S13) — https://soundcloud.com/leagueoflegends/gods
+- Heavy Is The Crown (S14) — https://soundcloud.com/linkinpark/heavy-is-the-crown
+- Sacrifice (S15) — https://soundcloud.com/leagueoflegends/sacrifice
 
-## Technical constraints
-- Use the SC.Widget JS API (widget.load / widget.toggle / widget.setVolume / widget.seekTo), loading https://w.soundcloud.com/player/api.js
-- The iframe must stay visible (180px tall), with visual=true color=f0b90b single_active=true
-- Include ONLY these 8 tracks confirmed playable (oEmbed-verified); do not add tracks that are not oEmbed-verified:
-  - Warriors (S4) — soundcloud.com/leagueoflegends/warriors
-  - Worlds Collide (S5) — soundcloud.com/leagueoflegends/worlds-collide
-  - Legends Never Die (S7) — soundcloud.com/leagueoflegends/legends-never-die
-  - Phoenix (S9) — soundcloud.com/leagueoflegends/phoenix
-  - Burn It All Down (S11) — soundcloud.com/leagueoflegends/burn-it-all-down
-  - GODS (S13) — soundcloud.com/leagueoflegends/gods
-  - Heavy Is The Crown (S14) — soundcloud.com/linkinpark/heavy-is-the-crown
-  - Sacrifice (S15) — soundcloud.com/leagueoflegends/sacrifice
+Select a track on a phone or desktop, play or pause it, seek, switch tracks, mute and adjust volume. Make the current track, elapsed time and duration easy to read. Support keyboard transport controls without interfering with focused sliders or buttons. Use the widget’s READY, PLAY, PAUSE, PLAY_PROGRESS, FINISH and error signals. Wait for the widget to confirm playback before changing the play button or advancing elapsed time. When embeds are slow, blocked or offline, show the state, a retry and the selected track’s official link. Keep the playlist usable without the SDK.
 
-## Layout
-- Left 260px sticky sidebar: the track list (S4/S5/… badge + emoji + title + year); clicking highlights with a gold border and switches tracks via SC.Widget.load() with auto_play
-- Right main area: hero title + a desktop clock (80px monospace gold HH:MM:SS, refreshed every second, blinking colons) + a mood tag
-- Player card: the SoundCloud iframe + a custom control bar (⏮ ▶/⏸ ⏭ + track info + a volume slider; clicking the speaker icon toggles mute)
-- Mood-wave section: 15 gold animated bars, re-randomized on every track switch
-- Keyboard shortcuts: Space play/pause, ← → previous/next, ↑ ↓ volume
-
-## Design
-Penguin visual style (see the web-design skill), dark by default. On phones the sidebar becomes a horizontally scrolling top bar.
-
-When done, open index.html in a browser and self-test once.`,
+Test a real track after a user gesture, see its reported position advance, pause it, seek and switch songs. Also try a blocked widget and the official-link fallback. Report which checks actually worked with the available connection.`,
       },
       rhythmRunner: {
-        label: "Penguin rhythm runner mini game",
+        label: "Rhythm Runner",
         desc: "A Muse Dash-style rhythm runner: high notes send the penguin flying, low notes put it on a sled along the ground",
-        prompt:
-          "Build a Muse Dash-style rhythm runner: a penguin runs forward on its own, and notes, " +
-          "drawn as music-note icons, fly in on a high and a low lane locked to the beat for me " +
-          "to hit. Catching a high note makes the penguin spread its wings and fly; catching a " +
-          "low note drops it onto a sled gliding along the ground. Show Perfect / Great / Miss " +
-          "for each hit and score combos. Keep it easy: sparse notes, generous timing, and a " +
-          "missed note never ends the run. Instrumental music is a good fit. Pure front end, one " +
-          "file, playable straight from file://.",
+        prompt: `Build a single-file offline rhythm runner. Give the penguin an original, audible instrumental course with a beat map. After the player presses Start, schedule the music and judge high and low notes against the same audio clock. A high input should launch the penguin immediately; a low one should duck onto its sled. Offer two keys and two generous touch targets. Introduce the lanes with a few spaced notes, give distinct Perfect, Great and Miss feedback, and show the combo as it builds or breaks. Let misses continue to the end of the song. Include mute, pause and resume without losing synchronization, an end score and replay.
+
+Play a complete course and verify audible output, a deliberate early or late input, a successful hit in both lanes, pause/resume and a fresh second run with keyboard or touch. Share the file, controls and the checks you actually made.`,
       },
       ragDocsExpert: {
-        label: "A RAG docs expert from one sentence",
+        label: "Document Q&A",
         desc: "Create a docs expert with its own workbench to search, ask questions and inspect sources",
-        prompt:
-          "Use PenguinHarness Plugins to create a Claude Code docs expert agent with its own Agent Workbench tab: " +
-          "collect https://github.com/ericbuess/claude-code-docs and provide RAG answers citing its sources. " +
-          "When ready, tell me how to open the agent, start a new conversation and use its workbench.",
+        prompt: `Create a Claude Code documentation expert Agent and an installable PenguinHarness workbench. Index https://github.com/ericbuess/claude-code-docs with the retrieved revision and date. Let me search the indexed documents, ask a question, and open a citation at the exact heading or passage behind the answer. Handle no matches, failed downloads and retry. Keep the most recent successful index available offline and label it with its date. If the source is unavailable on the first run, show how to import a local copy.
+
+Install and open the workbench with the available permissions. Ask one question answered by a real passage, follow its citation, and try a question with no supporting text. Check keyboard and phone navigation. Tell me how to open the Agent and workbench and what you verified.`,
       },
       investmentCopilot: {
-        label: "An investment analyst from one sentence",
+        label: "Investment Analyst",
         desc: "Create an investment agent with its own workbench for quotes, company lookup and market questions",
-        prompt:
-          "Use PenguinHarness Plugins to create an investment analyst agent with its own Agent Workbench tab: " +
-          "refresh quotes every 5 minutes, list stocks trending strongest and compare sectors, explaining market factors " +
-          "such as policy, industry news and earnings with sources and timestamps. Support company name lookup and " +
-          "follow-up questions; say when a company is not listed or cannot be found. Analysis, not investment advice. " +
-          "When ready, tell me how to open the agent, start a new conversation and use its workbench.",
+        prompt: `Create an investment research Agent and an installable PenguinHarness workbench. Let me find a listed company, compare price changes over the same interval and currency, and inspect sources for sector moves, news or filings. Use a permitted market-data source, show its timestamp, currency and any delay, and refresh available quotes every five minutes or on request. If service access is unavailable, accept a user-supplied timestamped sample and label it as such. Indicate stale, missing or unlisted data, keep the last successful result and allow retry. Ground explanations in linked records, and distinguish an inference from a fact.
+
+Install and try the workbench with a sourced quote or a supplied sample. Look up an unknown company, retry a failed refresh, and open a cited source from a narrow screen and the keyboard. Tell me how to open it and which data you actually used.`,
       },
       legalDesk: {
-        label: "A legal agent app from one sentence",
+        label: "Legal Assistant",
         desc: "Create a legal agent with its own workbench for contract uploads, review status and report downloads",
-        prompt:
-          "Use PenguinHarness Plugins to create a legal agent with its own Agent Workbench tab: " +
-          "upload contracts or agreements for background review, identifying risky clauses, reasons and suggested revisions. " +
-          "The workbench shows only uploads, file processing status and report downloads, and follows light and dark themes. " +
-          "When ready, tell me how to open the agent, start a new conversation and use its workbench.",
+        prompt: `Create a contract review Agent and an installable PenguinHarness workbench. Let me upload a contract, see the processing status for that file, reopen its findings, and download the report. Each finding should quote the exact clause and identify its page, section or paragraph, explain the concern and offer a revision for review. Keep separate uploads and their findings distinct. For an unsupported or unreadable file show the reason and allow a replacement or retry. Use only documents the user supplies; label any example contract clearly.
+
+Install and try the workbench with a short sample. Compare a quoted clause with the original, check that the report includes it, and then try an unreadable file and reopen the first result. Make upload and retrieval usable with keyboard or touch in both themes. Tell me how to open it and what was tested.`,
       },
       agentBenchmarkBuild: {
-        label: "Build a decision agent and its benchmark",
+        label: "Decision Benchmark",
         desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
         prompt: `Use \`agent-initialization\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
@@ -4241,7 +4217,7 @@ Scenarios:
 3. Choose investment actions from a strategy, historical markets, and current indicators.`,
       },
       agentOptimization: {
-        label: "Optimize the decision agent",
+        label: "Tune an Agent",
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
@@ -4253,7 +4229,7 @@ Scenarios:
 - candidate_round_limit: \`5\``,
       },
       benchmarkImport: {
-        label: "Import GDPEVO Essential-Service Ticket Resolution",
+        label: "Ticket Benchmark",
         desc: "Import GDPEVO Essential-Service Ticket Resolution's train and test sets: optimize an agent on the train tasks, then check the gain on test tasks it has not seen",
         prompt:
           "Use the `benchmark-design` Skill to import the GDPEVO Essential-Service Ticket Resolution benchmark: " +
@@ -4262,7 +4238,7 @@ Scenarios:
           "and leave them as they are.",
       },
       dailyPlan: {
-        label: "A 9am daily planning check-in",
+        label: "Daily Planner",
         desc: "09:00 every day: talk through the day's plan in this same chat, and review yesterday's progress",
         prompt:
           "Set up a scheduled task: every day at 9am, in this same conversation, plan today's work " +
@@ -4271,7 +4247,7 @@ Scenarios:
           "and write up what I confirm as a checklist.",
       },
       githubDigest: {
-        label: "Daily GitHub project digest",
+        label: "GitHub Digest",
         desc: "A daily pass over one repo's issues, PRs and CI, ending in prioritized recommendations",
         prompt:
           "Set up a scheduled task: every morning, use gh to digest one GitHub repo's issues, PRs " +
@@ -4279,7 +4255,7 @@ Scenarios:
           "end with recommendations ranked by priority, each saying why it sits where it does.",
       },
       memoryReview: {
-        label: "Friday memory review",
+        label: "Weekly Memory",
         desc: "Friday evening: go through what is worth remembering from the week and write it into Memory",
         prompt:
           "Set up a scheduled task: every Friday evening, in this same conversation, go through " +
@@ -4411,6 +4387,7 @@ Scenarios:
     /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */
     outlineAnswering: "Answering…",
     inputPlaceholder: "Type a message. Enter to send, Shift+Enter for newline, paste images",
+    resizeDraft: "Alt+Shift+Up shortens the input. Alt+Shift+Down makes it taller.",
     inputPlaceholderShort: "Type a message…",
     /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
     steerPlaceholder: "Message the running agent — delivered with the next turn",
@@ -4603,6 +4580,14 @@ Scenarios:
     statParenClose: ")",
     noSessions: "No Sessions yet",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    offlineHistory: {
+      disconnected: (alias: string) => `${alias} is not connected.`,
+      cached: "Showing the conversation from the last sync.",
+      miss: "No cached history is available. The conversation will open when the machine reconnects.",
+      empty: "There were no messages at the last sync.",
+      refreshing: (alias: string) => `${alias} is connected. Updating the conversation.`,
+      failed: "The cached conversation could not be read.",
+    },
     sessionOnOfflineMachine: (machine: string) =>
       `This conversation is on ${machine}, which is not connected right now.`,
     sessionOnQuietMachine: (machine: string) =>
@@ -4921,13 +4906,7 @@ Scenarios:
     workFailed: "Run failed",
     workStopped: "Stopped",
     workRetryStep: (n: number) => `Retry #${n}`,
-    previousWorkStep: "Previous step",
-    nextWorkStep: "Next step",
-    latestWorkStep: "Latest step",
-    waitingWorkStep: "Review pending step",
     workElapsed: "Total time",
-    workStepWords: ["Step ", ""],
-    workStepJump: "Go to step",
     workGroupSteps: (n: number) => `${n} ${n === 1 ? "step" : "steps"}`,
     approvalWaiting: "awaiting approval",
     copyCode: "Copy code",
@@ -5502,9 +5481,12 @@ Scenarios:
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
+    previousTurn: "Previous turn",
+    nextTurn: "Next turn",
+    latestTurn: "Latest turn",
     topologyLabel: "Call graph",
     mainSessionNote: "The main conversation stays in the chat area",
-    empty: "No subagents in the current task yet",
+    empty: "No subagents in this conversation yet",
     nodeRunning: "running",
     nodeDone: "done",
     openAsSession: "Jump to this session",
@@ -7169,6 +7151,7 @@ Scenarios:
       invalid_title: "The title is invalid.",
       invalid_proxy_url:
         "Invalid proxy address — use an http(s):// or socks5:// proxy URL, or host[:port].",
+      invalid_resource_limit: "Enter a positive whole number.",
       invalid_attachment_limit:
         "Invalid upload limit — use a whole number of MB inside the allowed range, with the total no lower than the per-file limit.",
       invalid_trace: "This file is not a valid Trace file.",

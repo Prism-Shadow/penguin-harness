@@ -1008,6 +1008,17 @@ export class Session {
     if (hooks) this.adoptHooks(hooks);
   }
 
+  /** Validates the configured target without creating a context or sending a request. */
+  async validateSwitchTarget(ref: { provider: string; modelId: string }): Promise<void> {
+    if (!this.modelSwitch) {
+      throw new ModelSwitchRefusedError(
+        "model_unavailable",
+        "Switching the model is not available for this Session.",
+      );
+    }
+    await this.modelSwitch.validate({ provider: ref.provider, model_id: ref.modelId });
+  }
+
   /**
    * Switches the model this Session runs on, in place: the running context is closed on the
    * model it ran on, and the next one opens on the target. A context with completed turns is
@@ -1362,6 +1373,10 @@ export class Session {
   /** Whether a background subagent of this Session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */
   hasRunningBackgroundSubagents(): boolean {
     return this.environment.hasRunningBackgroundSubagents?.() ?? false;
+  }
+
+  setSubagentResolver(resolve: import("./interfaces/index.js").SubagentResolver): void {
+    this.environment.setSubagentResolver?.(resolve);
   }
 
   /** All live subagent child sessions of this Session's Environment, for a host UI's subagents panel (see EnvironmentInterface.listBackgroundSubagents). */

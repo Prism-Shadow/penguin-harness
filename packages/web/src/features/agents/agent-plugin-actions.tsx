@@ -40,6 +40,8 @@ import {
   type AgentInstalls,
   type AgentPluginGroup,
   type AgentTarget,
+  PackageUpdateDialog,
+  type PackageUpdate,
 } from "../plugins";
 import { toastFailure } from "../../lib/toast-api-error";
 import { toldFailure } from "../../lib/failure";
@@ -62,6 +64,7 @@ const partLines = (entry: AgentPluginGroup) => [
 export interface AgentPluginActions {
   /** The plugin a write is running on; null when idle. */
   running: string | null;
+  releaseFor: (entry: AgentPluginGroup) => PackageUpdate | null;
   install: (entry: AgentPluginGroup) => void;
   update: (entry: AgentPluginGroup) => void;
   uninstall: (entry: AgentPluginGroup) => void;
@@ -78,7 +81,9 @@ export function useAgentPluginActions({
   installs,
   locale,
   onChanged,
+  releaseFor,
 }: {
+  releaseFor: AgentPluginActions["releaseFor"];
   target: AgentTarget;
   /** As toasts and confirmations name the Agent. */
   agentName: string;
@@ -90,6 +95,10 @@ export function useAgentPluginActions({
   /** Reads the lists again after a write. */
   onChanged: () => Promise<void>;
 }): AgentPluginActions {
+  const [packageChoice, setPackageChoice] = useState<{
+    title: string;
+    release: PackageUpdate;
+  } | null>(null);
   const [running, setRunning] = useState<string | null>(null);
   /** The write waiting for its confirmation. */
   const [pending, setPending] = useState<{
@@ -162,7 +171,9 @@ export function useAgentPluginActions({
   };
   const update = (entry: AgentPluginGroup) => {
     if (running !== null || entry.plugin === null) return;
-    setPending({ entry, verb: "update" });
+    const release = releaseFor(entry);
+    if (release) setPackageChoice({ title: agentPluginTitle(entry, locale), release });
+    else setPending({ entry, verb: "update" });
   };
   const uninstall = (entry: AgentPluginGroup) => {
     if (running !== null) return;
@@ -182,6 +193,14 @@ export function useAgentPluginActions({
 
   const modals = (
     <>
+      {packageChoice && target.machineId === null && (
+        <PackageUpdateDialog
+          projectId={target.projectId}
+          title={packageChoice.title}
+          release={packageChoice.release}
+          onClose={() => setPackageChoice(null)}
+        />
+      )}
       {pending?.verb === "install" && plugin !== null && (
         <ConfirmModal
           open
@@ -253,5 +272,5 @@ export function useAgentPluginActions({
     </>
   );
 
-  return { running, install, update, uninstall, askModule, modals };
+  return { releaseFor, running, install, update, uninstall, askModule, modals };
 }

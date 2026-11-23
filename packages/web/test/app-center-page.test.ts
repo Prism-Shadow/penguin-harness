@@ -19,8 +19,6 @@
  *   server says the workbench loaded; the news that a load started turns a tile to building.
  * - A failed tile still opens, and its menu shows the recorded error.
  * - "View in agent settings" opens the Agent's settings on the Workbenches sub-page.
- * - A tile's checkable "Show in the sidebar" is the installation's sidebar setting, the row's
- *   "Show in the sidebar": checked as the server says, a pick writes it, and the tile stays.
  * - Dragging a tile beside another reorders the grid, onto another makes a folder; the menu's
  *   forward and backward move one too. Each arrangement is stored as the viewer's layout, and a
  *   write the server refuses puts the grid back to what is stored.
@@ -39,7 +37,7 @@ import { act, createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { AppCenterLayout, WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
-import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
+import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
 import { useRestoreApp, useRunningApps } from "../src/lib/running-apps";
 import { useProject } from "../src/state/project";
 import { setActiveStrings, zh } from "../src/lib/strings";
@@ -127,7 +125,7 @@ async function open(
     ],
     // The App Center's windows live in the shell's layer over the page area, beside every page.
     layers: [
-      h(ThemeProvider, null, h(AppCenterWindows)),
+      h(ThemeProvider, null, h(WorkspaceWindows)),
       h(RunningList),
       ...(options.otherProject === true ? [h(SwitchProject)] : []),
     ],
@@ -300,7 +298,7 @@ it("opens an app windowed over the grid, and its close returns to the grid", asy
   // The grid stays mounted underneath, out of reach.
   expect(grid()?.closest("[data-window]")?.hasAttribute("inert")).toBe(true);
 
-  await click(button(en.appCenter.windowClose));
+  await pageAction("Board", en.appCenter.windowClose);
   expect(whereIs(router)).toBe("/apps");
   expect(grid()?.closest("[data-window]")?.hasAttribute("inert")).toBe(false);
   expect(document.activeElement).toBe(tileButton(key("board")));
@@ -312,7 +310,7 @@ it("minimizes an app to its tile, still running, and its tile brings back the sa
   await until(() => frameOf("Board") !== null);
   const frame = frameOf("Board")!;
 
-  await click(buttonIn(windowOf("Board")!, en.appCenter.windowMinimize));
+  await pageAction("Board", en.appCenter.windowMinimize);
   expect(whereIs(router)).toBe("/apps");
   expect(reachable(grid()!)).toBe(true);
   // The app keeps running: its frame is the same element, mounted but out of sight and reach.
@@ -344,7 +342,7 @@ it("closing an app ends it: the frame goes, the tile is plain, and opening it st
   await until(() => frameOf("Board") !== null);
   const frame = frameOf("Board")!;
 
-  await click(buttonIn(windowOf("Board")!, en.appCenter.windowClose));
+  await pageAction("Board", en.appCenter.windowClose);
   expect(frame.isConnected).toBe(false);
   expect(windowOf("Board")).toBeNull();
   expect(tileNamed("board")).toBe(en.appCenter.tileName("Board", "Helper", null));
@@ -360,11 +358,11 @@ it("keeps several apps running at once, and through a visit to another page", as
   await click(tileButton(key("board")));
   await until(() => frameOf("Board") !== null);
   const board = frameOf("Board")!;
-  await click(buttonIn(windowOf("Board")!, en.appCenter.windowMinimize));
+  await pageAction("Board", en.appCenter.windowMinimize);
   await click(tileButton(key("notes")));
   await until(() => frameOf("Notes") !== null);
   const notes = frameOf("Notes")!;
-  await click(buttonIn(windowOf("Notes")!, en.appCenter.windowMinimize));
+  await pageAction("Notes", en.appCenter.windowMinimize);
   expect(tileNamed("board")).toBe(en.appCenter.tileName("Board", "Helper", en.appCenter.running));
   expect(tileNamed("notes")).toBe(en.appCenter.tileName("Notes", "Helper", en.appCenter.running));
 
@@ -389,7 +387,7 @@ it("lists the running apps outside the App Center and brings one back over the p
   await until(() => frameOf("Board") !== null);
   const frame = frameOf("Board")!;
   expect(listed()).toEqual(["Board (in front)"]);
-  await click(buttonIn(windowOf("Board")!, en.appCenter.windowMinimize));
+  await pageAction("Board", en.appCenter.windowMinimize);
   await click([...document.querySelectorAll("a")].find((a) => a.textContent === "Sidebar chat")!);
   expect(listed()).toEqual(["Board"]);
 
@@ -399,7 +397,7 @@ it("lists the running apps outside the App Center and brings one back over the p
   expect(reachable(frame)).toBe(true);
   expect(listed()).toEqual(["Board (in front)"]);
 
-  await click(buttonIn(windowOf("Board")!, en.appCenter.windowMinimize));
+  await pageAction("Board", en.appCenter.windowMinimize);
   expect(whereIs(router)).toBe("/chat");
   expect(frame.isConnected).toBe(true);
   expect(listed()).toEqual(["Board"]);
@@ -417,7 +415,7 @@ it("says how many apps of a folder are running, on the folder's tile", async () 
   await click(folderButton("Work"));
   await click(tileButton(key("board")));
   await until(() => frameOf("Board") !== null);
-  await click(buttonIn(windowOf("Board")!, en.appCenter.windowMinimize));
+  await pageAction("Board", en.appCenter.windowMinimize);
   expect(folderButton("Work").getAttribute("aria-label")).toBe(
     en.appCenter.folderName("Work", 2, 1),
   );
@@ -428,7 +426,7 @@ it("ends the apps of a Project when the viewer switches to another", async () =>
   await click(tileButton(key("board")));
   await until(() => frameOf("Board") !== null);
   const frame = frameOf("Board")!;
-  await click(buttonIn(windowOf("Board")!, en.appCenter.windowMinimize));
+  await pageAction("Board", en.appCenter.windowMinimize);
   expect(frame.isConnected).toBe(true);
 
   await click(button("Switch Project"));
@@ -450,23 +448,12 @@ it("opens the Agent's Workbenches sub-page from a tile's View in agent settings"
   expect(whereIs(router)).toBe(`/agents/${AGENT_ID}?tab=workbenches`);
 });
 
-it("shows and hides a workbench in the sidebar from its tile's menu, and the tile stays", async () => {
-  const { server } = await open([workbench("board")]);
-  const sidebarItem = () =>
-    [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find(
-      (row) => spoken(row) === en.appCenter.menu.showInSidebar,
-    )!;
+it("keeps the App Center visibility action without a pin-to-sidebar setting", async () => {
+  const { server } = await open([workbench("board", { showInSidebar: true })]);
   await rightClick(tileButton(key("board")));
-  expect(sidebarItem().getAttribute("aria-checked")).toBe("true");
-
-  await click(sidebarItem());
-  await until(() => server.writes().some((w) => w.path.endsWith("/board/sidebar")));
-  expect(server.writes().find((w) => w.path.endsWith("/board/sidebar"))?.body).toEqual({
-    show: false,
-  });
-  await rightClick(tileButton(key("board")));
-  await until(() => sidebarItem().getAttribute("aria-checked") === "false");
-  expect(order()).toEqual([key("board")]);
+  expect(menuItem(en.appCenter.menu.removeFromAppCenter)).toBeTruthy();
+  expect(() => menuItem("Show in the sidebar")).toThrow();
+  expect(server.writes().filter((write) => write.path.endsWith("/sidebar"))).toEqual([]);
 });
 
 it("does not open a building app, and turns it live when the server says it loaded", async () => {
@@ -601,7 +588,7 @@ it("returns a windowed app to its folder and closes the folder back to its trigg
   const trigger = folderButton("Study");
   await click(trigger);
   await click(tileButton(key("notes")));
-  await click(button(en.appCenter.windowClose));
+  await pageAction("Notes", en.appCenter.windowClose);
   expect(whereIs(router)).toBe("/apps?folder=study");
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
 

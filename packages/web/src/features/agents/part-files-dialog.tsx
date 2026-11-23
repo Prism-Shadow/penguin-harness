@@ -7,6 +7,7 @@
  * Preview and Download only. A part changes through a chat or an import: a removed SKILL.md or
  * hooks.json breaks the part, and an edit to a workbench reloads it and records a version.
  */
+import type { ReactNode } from "react";
 import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
 import { Modal } from "@prismshadow/penguin-ui";
 import { DirBrowser } from "../workspace";
@@ -21,6 +22,7 @@ export function PartFilesDialog({
   machineId,
   stateDir,
   part,
+  actions,
   onClose,
 }: {
   projectId: string;
@@ -29,10 +31,11 @@ export function PartFilesDialog({
   /** The Agent State's absolute path on that server, as the Agent's config read answered it. */
   stateDir: string;
   part: PartRef;
+  actions?: ReactNode;
   onClose: () => void;
 }) {
   return (
-    <Modal open title={part.title} onClose={onClose} widthClass="sm:max-w-4xl">
+    <Modal open title={part.title} onClose={onClose} widthClass="sm:max-w-4xl" footer={actions}>
       <DirBrowser
         scope={{ kind: "workspace", projectId, workspace: partDir(stateDir, part), machineId }}
         headerFallback={part.name}

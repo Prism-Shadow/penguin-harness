@@ -50,7 +50,7 @@ import {
   assertSafeEntryPath,
   skillTooLarge,
   unzipBounded,
-} from "../../services/skill-import-limits.js";
+} from "@prismshadow/penguin-library-http/skill-import-limits";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfig } from "../../mechanisms/agents.js";

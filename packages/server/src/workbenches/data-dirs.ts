@@ -20,7 +20,6 @@
  */
 import { createHash } from "node:crypto";
 import fsSync from "node:fs";
-import fs from "node:fs/promises";
 import path from "node:path";
 import {
   agentAppDir,
@@ -44,31 +43,17 @@ import type { WorkbenchDataLevel, WorkbenchDataPaths } from "../mechanisms/workb
  */
 export const MAX_SOCKET_PATH_BYTES = 103;
 
-export class WorkbenchDirError extends Error {}
+// The link-safety helpers live in the agent domain library beside their package consumer (the
+// agent domain's agent-app-data); re-exported here for this module's consumers.
+export {
+  realDirs,
+  removeBelow,
+  WorkbenchDirError,
+} from "@prismshadow/penguin-library-agent/workbench-dirs";
+import { WorkbenchDirError } from "@prismshadow/penguin-library-agent/workbench-dirs";
 
 /** `dir`'s levels below `base`. */
 const levels = (base: string, dir: string): string[] => path.relative(base, dir).split(path.sep);
-
-/**
- * Whether every directory from `base` down through `segments` is there, each a real directory:
- * false when one is simply missing; a link or a file on the way throws. `base` itself is trusted.
- */
-export async function realDirs(
-  base: string,
-  segments: readonly string[],
-  call: string,
-): Promise<boolean> {
-  let at = base;
-  for (const segment of segments) {
-    at = path.join(at, segment);
-    const stat = await fs.lstat(at).catch(() => null);
-    if (stat === null) return false;
-    if (!stat.isDirectory()) {
-      throw new WorkbenchDirError(`${call}: ${at} is a link or a file, not a directory`);
-    }
-  }
-  return true;
-}
 
 /**
  * Makes `dir` (below the trusted `base`) when it is missing, one level at a time, each a real
@@ -87,16 +72,6 @@ export function ensureDir(base: string, dir: string, call: string): void {
       throw new WorkbenchDirError(`${call}: ${at} is a link or a file, not a directory`);
     }
   }
-}
-
-/**
- * Removes `dir` and everything in it, `dir` lying below the trusted `base`. A link on the way
- * to it throws and nothing is removed; `dir` itself as a link goes as a link, and `rm` removes a
- * link inside without following it.
- */
-export async function removeBelow(base: string, dir: string): Promise<void> {
-  if (!(await realDirs(base, levels(base, dir).slice(0, -1), "remove"))) return;
-  await fs.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
 /**

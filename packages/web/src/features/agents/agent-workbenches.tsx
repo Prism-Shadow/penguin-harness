@@ -4,29 +4,15 @@
  * and the "Import workbench" dialog. The files are the truth, so the tab reads its lists again
  * after every action.
  *
- * A row says what its controls do (workbench-row.tsx): its two switches carry their words
- * ("Enable", "Show in the App Center"), "Open" is a text button and the way into the app, and the
- * rest — the App Center setting again as a checkable row, reload, version history, export,
- * remove — are the rows of its "More" menu. The title, and a click anywhere else on the row that
+ * A row offers Enable and Open. The title, and a click anywhere else on the row that
  * is not one of its controls, opens the workbench's own files read-only (part-files-dialog.tsx).
- * A workbench a plugin installed carries the puzzle mark after its title, naming the plugin and
+ * A workbench a plugin installed shows the puzzle mark in its file details, naming the plugin and
  * pointing at its row on the Plugins sub-page, and its removal says which plugin installed it.
  *
  * - The Enable switch is the Project owner's and commits at once; while the Agent-wide "Enable
  *   workbenches" is off every row's switch is greyed at its own value, and a server older than
  *   the switches gets none. A workbench that does not run (its own switch or the Agent-wide one
  *   is off) has nothing to open or reload; its history, restore, export and removal stay.
- * - The App Center setting commits at once too, from the switch or from the menu's row — one
- *   setting, two controls: it rewrites `penguin.appCenter.show` in the workbench's package.json,
- *   and the reload that follows (none while it does not run) records the edit as a version. A
- *   refused write puts both back where the file says. A machine's Agent has it as well, written
- *   on that machine: the App Center lists a machine's apps for an administrator, and its "Remove
- *   from App Center" is this same setting, so this row is where such an app comes back.
- * - The sidebar setting is the menu's checkable "Show in the sidebar", on every row whose server
- *   reports it (`showInSidebar`). It commits at once and writes the installation's
- *   `.hidden-from-sidebar` marker, never the package.json: no reload and no version, and a plugin
- *   update keeps it, where it resets the App Center's. Every member sees the same sidebar list.
- *   A refused write puts it back.
  * - "Open" opens the app's window over the main area, the one the App Center and the sidebar's
  *   list open (lib/running-apps.ts): the same live window when the app runs, and closing or
  *   minimizing it comes back here.
@@ -72,14 +58,7 @@ import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildWorkbenchImportPrompt } from "./workbench-import";
 import { cardBodyClick } from "../../lib/card-open";
 import type { PartRef, PartSource } from "./plugins-subpages";
-import {
-  AppCenterToggle,
-  LabelledSwitch,
-  WorkbenchMark,
-  WorkbenchRowMenu,
-  type AppCenterControl,
-  type SettingControl,
-} from "./workbench-row";
+import { LabelledSwitch, WorkbenchMark, WorkbenchRowMenu } from "./workbench-row";
 
 /** The row of the newest version holding the workbench's current files; -1 when none does. */
 function currentVersionAt(history: { workbench: WorkbenchInfo; versions: WorkbenchVersion[] }) {
@@ -148,80 +127,6 @@ function WorkbenchSwitch({
 }
 
 /**
- * One workbench's App Center setting: `penguin.appCenter.show` in its package.json, written at
- * once and adopted from the answer, rolled back with a toast when refused. The row draws it twice
- * — its switch and its More menu's row — so it hands the one setting to `children`, and both
- * controls share one write, one optimistic value and one rollback.
- */
-function WorkbenchAppCenter({
-  workbench,
-  options,
-  children,
-}: {
-  workbench: WorkbenchInfo;
-  options: WorkbenchRowsOptions;
-  children: (appCenter: AppCenterControl) => ReactNode;
-}) {
-  const { currentProject } = useProject();
-  const projectId = currentProject?.projectId ?? null;
-  /** The machine the Agent lives on, whose copy of the workbench is written; null for this server. */
-  const machineId = useAgentLocation();
-  const setting = useInstantSetting(workbench.appCenter?.show === true, async (show: boolean) => {
-    if (!projectId) return;
-    const res = await api.setWorkbenchAppCenter(
-      projectId,
-      options.agentId,
-      workbench.id,
-      show,
-      machineId,
-    );
-    options.onSwitched(res.workbench);
-  });
-  return children({
-    checked: setting.value,
-    disabled: setting.busy,
-    onChange: (show) => void setting.set(show),
-  });
-}
-
-/**
- * One workbench's sidebar setting: its `.hidden-from-sidebar` marker, written at once on the
- * server the Agent lives on and adopted from the answer, rolled back with a toast when refused.
- * Absent (`children(undefined)`) when that server does not report the setting.
- */
-function WorkbenchSidebar({
-  workbench,
-  options,
-  children,
-}: {
-  workbench: WorkbenchInfo;
-  options: WorkbenchRowsOptions;
-  children: (sidebar: SettingControl | undefined) => ReactNode;
-}) {
-  const { currentProject } = useProject();
-  const projectId = currentProject?.projectId ?? null;
-  /** The machine the Agent lives on, whose copy of the workbench carries the marker. */
-  const machineId = useAgentLocation();
-  const setting = useInstantSetting(workbench.showInSidebar !== false, async (show: boolean) => {
-    if (!projectId) return;
-    const res = await api.setWorkbenchSidebar(
-      projectId,
-      options.agentId,
-      workbench.id,
-      show,
-      machineId,
-    );
-    options.onSwitched(res.workbench);
-  });
-  if (workbench.showInSidebar === undefined) return children(undefined);
-  return children({
-    checked: setting.value,
-    disabled: setting.busy,
-    onChange: (show) => void setting.set(show),
-  });
-}
-
-/**
  * What a row says under its title: the load error when its files do not load; for a workbench
  * without a page, which has no window to say it in, the first thing its load noticed (every one
  * in the hint); else its id.
@@ -249,6 +154,7 @@ function loadNotice(workbench: WorkbenchInfo): ReactNode {
  */
 export function useWorkbenchRows(options: WorkbenchRowsOptions): {
   row: (workbench: WorkbenchInfo) => ReactNode;
+  detailActions: (workbench: WorkbenchInfo, title: string) => ReactNode;
   modals: ReactNode;
 } {
   const { agentId, onChanged, sourceOf, onOpenFiles, onShowPlugin } = options;
@@ -301,13 +207,11 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
     const source = sourceOf(workbench.id);
     // The body opens the workbench's files; "Open" stays the way into the app.
     const open = () => onOpenFiles({ kind: "workbench", name: workbench.id, title });
-    /** The row's controls, the App Center setting among them, and the sidebar's when it has one. */
-    const controls = (appCenter: AppCenterControl, sidebar: SettingControl | undefined) => (
+    const controls = (
       <>
         {enabled !== undefined && (
           <WorkbenchSwitch workbench={{ ...workbench, enabled }} title={title} options={options} />
         )}
-        <AppCenterToggle title={title} {...appCenter} />
         {first && running && projectId && (
           <Button
             size="sm"
@@ -322,11 +226,38 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
             {S.workbenches.openAction}
           </Button>
         )}
+      </>
+    );
+    return (
+      <ListRow
+        key={`workbench:${workbench.id}`}
+        as="li"
+        leading={<WorkbenchMark workbench={workbench} pluginIcon={source?.icon} />}
+        title={title}
+        onClick={open}
+        onBodyClick={cardBodyClick(open)}
+        description={loadNotice(workbench)}
+        meta={workbench.version ? `v${workbench.version}` : undefined}
+        trailing={controls}
+      />
+    );
+  };
+
+  const detailActions = (workbench: WorkbenchInfo, title: string) => {
+    const source = sourceOf(workbench.id);
+    const running = options.allEnabled !== false && workbench.enabled !== false;
+    return (
+      <>
+        {source && (
+          <GlyphAction
+            glyph={ICONS.puzzle}
+            label={S.agentPlugins.partSource(source.title)}
+            onClick={() => onShowPlugin(source.name)}
+          />
+        )}
         <WorkbenchRowMenu
           title={title}
           disabled={busy}
-          appCenter={appCenter}
-          sidebar={sidebar}
           onReload={
             running
               ? () =>
@@ -347,36 +278,6 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
           onRemove={() => setConfirm({ workbench })}
         />
       </>
-    );
-    return (
-      <ListRow
-        key={`workbench:${workbench.id}`}
-        as="li"
-        leading={<WorkbenchMark workbench={workbench} pluginIcon={source?.icon} />}
-        title={title}
-        onClick={open}
-        onBodyClick={cardBodyClick(open)}
-        titleTrail={
-          source !== undefined && (
-            <GlyphAction
-              glyph={ICONS.puzzle}
-              label={S.agentPlugins.partSource(source.title)}
-              onClick={() => onShowPlugin(source.name)}
-            />
-          )
-        }
-        description={loadNotice(workbench)}
-        meta={workbench.version ? `v${workbench.version}` : undefined}
-        trailing={
-          <WorkbenchSidebar workbench={workbench} options={options}>
-            {(sidebar) => (
-              <WorkbenchAppCenter workbench={workbench} options={options}>
-                {(appCenter) => controls(appCenter, sidebar)}
-              </WorkbenchAppCenter>
-            )}
-          </WorkbenchSidebar>
-        }
-      />
     );
   };
 
@@ -460,7 +361,7 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
     </>
   );
 
-  return { row, modals };
+  return { row, detailActions, modals };
 }
 
 /**

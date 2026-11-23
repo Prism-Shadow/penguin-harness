@@ -26,8 +26,6 @@ cycle: features/schedules -> features/ai-create
 cycle: features/schedules -> features/models
 cycle: features/terminal -> features/dock
 cycle: features/traces -> features/chat
-features/chat/history-load-failed.tsx -> features/machines/machine-card.tsx
-features/chat/history-loading.tsx -> features/machines/machine-card.tsx
 features/chat/machine-away.ts -> features/machines/machines-view.ts
 features/chat/model-switch.ts -> features/models/connection.ts
 features/models/models-page.tsx -> features/chat/draft-cache.ts

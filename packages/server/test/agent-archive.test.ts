@@ -46,7 +46,7 @@ import type {
   ProjectCreateResponse,
   SessionsResponse,
 } from "../src/api/types.js";
-import { MAX_PACKAGE_BYTES } from "../src/services/agent-zip.js";
+import { MAX_PACKAGE_BYTES } from "@prismshadow/penguin-library-agent/agent-zip";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

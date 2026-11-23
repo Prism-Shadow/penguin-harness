@@ -46,6 +46,8 @@ import {
   type AgentPluginGroups,
   type AgentTarget,
   type PluginRow,
+  packageUpdate,
+  useLocalPluginIndex,
 } from "../plugins";
 import { agentPluginTitle, useAgentPluginActions } from "./agent-plugin-actions";
 import { AgentPluginRow, type AgentModule } from "./agent-plugin-row";
@@ -56,6 +58,7 @@ import type { PluginsSubPage } from "./plugins-subpages";
 type Section = "installed" | "available";
 
 export function AgentPluginsPage({
+  readOnly = false,
   target,
   agentName,
   machineLabel,
@@ -74,6 +77,7 @@ export function AgentPluginsPage({
   onChanged,
   onReload,
 }: {
+  readOnly?: boolean;
   target: AgentTarget;
   agentName: string;
   /** The ssh alias of the machine the Agent lives on; undefined on this server. */
@@ -105,7 +109,13 @@ export function AgentPluginsPage({
 }) {
   const [folded, setFolded] = useState<ReadonlySet<Section>>(new Set());
   const installs = installed === null ? undefined : installsOf(installed);
+  const registry = useLocalPluginIndex(isAdmin && target.machineId === null);
+  const releaseFor = (entry: AgentPluginGroup) =>
+    entry.plugin && entry.status !== "available" && isAdmin && target.machineId === null
+      ? packageUpdate(registry.value?.plugins.find((item) => item.name === entry.plugin!.package))
+      : null;
   const actions = useAgentPluginActions({
+    releaseFor,
     target,
     agentName,
     machineLabel,
@@ -140,14 +150,15 @@ export function AgentPluginsPage({
     {
       id: "available",
       title: S.agentPlugins.availableSection,
-      entries: catalog.available.filter(matches),
+      entries: readOnly ? [] : catalog.available.filter(matches),
     },
   ];
   const shown = sections.filter((section) => section.entries.length > 0);
 
   /** The server module of a plugin the Agent carries, when the plugin ships one and the server says. */
   const moduleOf = (entry: AgentPluginGroup): AgentModule | undefined => {
-    if (entry.plugin?.modules !== true || entry.status === "available") return undefined;
+    if (readOnly || entry.plugin?.modules !== true || entry.status === "available")
+      return undefined;
     const status = installed?.modules?.find((m) => m.plugin === entry.name);
     if (status === undefined) return undefined;
     const onMachine = target.machineId !== null;
@@ -164,7 +175,7 @@ export function AgentPluginsPage({
       locale={locale}
       installs={installs}
       isOwner={isOwner}
-      actions={actions}
+      actions={readOnly ? undefined : actions}
       module={moduleOf(entry)}
       marked={entry.name === marked}
       onOpen={() => onOpen(entry.name)}
@@ -175,10 +186,14 @@ export function AgentPluginsPage({
   const open =
     openName === null
       ? undefined
-      : [...catalog.groups, ...catalog.available].find((entry) => entry.name === openName);
+      : (readOnly ? catalog.groups : [...catalog.groups, ...catalog.available]).find(
+          (entry) => entry.name === openName,
+        );
 
   let body: ReactNode;
-  if (catalog.groups.length === 0 && catalog.available.length === 0) {
+  if (readOnly && catalog.groups.length === 0) {
+    body = <SettingsEmpty>{S.agentPlugins.installedEmpty}</SettingsEmpty>;
+  } else if (catalog.groups.length === 0 && catalog.available.length === 0) {
     body = <SettingsEmpty>{S.agentPlugins.libraryEmpty}</SettingsEmpty>;
   } else if (shown.length === 0) {
     body = <p className="px-1 text-sm text-fg-subtle">{S.plugins.noMatch}</p>;
@@ -223,10 +238,10 @@ export function AgentPluginsPage({
           agentName={agentName}
           isOwner={isOwner}
           locale={locale}
-          actions={actions}
+          actions={readOnly ? undefined : actions}
           module={moduleOf(open)}
           onClose={onClose}
-          onManage={onManage}
+          onManage={readOnly ? undefined : onManage}
           onReload={onReload}
         />
       )}

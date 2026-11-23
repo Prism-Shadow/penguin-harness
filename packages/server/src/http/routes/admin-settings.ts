@@ -20,6 +20,12 @@
  * would request; POST .../proxy-probe/:provider measures one of them — unauthenticated, see
  * services/proxy-probe.ts.
  */
+import {
+  readResourceLimit,
+  writeResourceLimit,
+  type ResourceLimit,
+  type Settings,
+} from "@prismshadow/penguin-library-setting";
 import { Hono } from "hono";
 import type {
   ProxyProbeResponse,
@@ -47,7 +53,6 @@ import {
   probeProxyReachabilityOf,
   proxyProbeTarget,
 } from "../../services/proxy-probe.js";
-import type { Settings } from "@prismshadow/penguin-library-setting";
 
 /**
  * proxyUrl update value -> stored value: null and empty/whitespace-only clear the
@@ -85,6 +90,18 @@ function parseAttachmentMb(value: unknown, field: string): number {
   );
 }
 
+function optionalResourceLimit(
+  body: Record<string, unknown>,
+  key: ResourceLimit,
+): number | undefined {
+  const value = body[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
+    throw new HttpError(400, "invalid_resource_limit", `${key} must be a positive whole number.`);
+  }
+  return value;
+}
+
 export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
@@ -101,6 +118,8 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
       proxyForAgent: deps.serverSettingsRepo.getProxyForAgent(),
       proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
       ...deps.serverSettingsRepo.getAttachmentLimitsMb(),
+      terminalMaxOpen: readResourceLimit(deps.serverSettingsRepo, "terminalMaxOpen"),
+      browserMaxOpen: readResourceLimit(deps.serverSettingsRepo, "browserMaxOpen"),
       companyMode: deps.serverSettingsRepo.getCompanyMode(),
       browserExtensionsEnabled: deps.serverSettingsRepo.getBrowserExtensionsEnabled(),
       agentApiEnabled: deps.serverSettingsRepo.getAgentApiEnabled(),
@@ -122,6 +141,8 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     const companyMode = optionalBoolean(body, "companyMode");
     const browserExtensionsEnabled = optionalBoolean(body, "browserExtensionsEnabled");
     const agentApiEnabled = optionalBoolean(body, "agentApiEnabled");
+    const terminalLimit = optionalResourceLimit(body, "terminalMaxOpen");
+    const browserLimit = optionalResourceLimit(body, "browserMaxOpen");
     const proxyUrlProvided = body.proxyUrl !== undefined;
     const proxyUrl = proxyUrlProvided ? parseProxyUrl(body.proxyUrl) : null;
     const attachmentMaxMb =
@@ -148,6 +169,10 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     }
     // Read per tick by the organization scheduler and per request by the organization routes, so
     // flipping it needs no restart: off holds every automatic trigger and 404s the routes.
+    if (terminalLimit !== undefined)
+      writeResourceLimit(deps.serverSettingsRepo, "terminalMaxOpen", terminalLimit);
+    if (browserLimit !== undefined)
+      writeResourceLimit(deps.serverSettingsRepo, "browserMaxOpen", browserLimit);
     if (companyMode !== undefined) deps.serverSettingsRepo.setCompanyMode(companyMode);
     // The browser module watches this key: off closes every connected Chrome extension (4009)
     // at once and refuses new ones; on lets them reconnect.

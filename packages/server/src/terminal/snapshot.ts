@@ -69,11 +69,11 @@ function isUntouched(cell: IBufferCell): boolean {
   return cell.getChars() === "" && cell.isAttributeDefault();
 }
 
-function renderLine(line: IBufferLine, cols: number, scratch: IBufferCell): string {
+function renderLine(line: IBufferLine, cols: number, scratch: IBufferCell, start = 0): string {
   // The never-written tail carries no information; dropping it keeps a restore of a
   // mostly-empty screen small (and avoids painting a background colour the user never set).
   let lastMeaningful = -1;
-  for (let x = 0; x < cols; x += 1) {
+  for (let x = start; x < cols; x += 1) {
     const cell = line.getCell(x, scratch);
     if (cell && !isUntouched(cell)) lastMeaningful = x;
   }
@@ -81,7 +81,7 @@ function renderLine(line: IBufferLine, cols: number, scratch: IBufferCell): stri
 
   let out = "";
   let currentStyle = "";
-  for (let x = 0; x <= lastMeaningful; x += 1) {
+  for (let x = start; x <= lastMeaningful; x += 1) {
     const cell = line.getCell(x, scratch);
     if (!cell) continue;
     const width = cell.getWidth();
@@ -132,15 +132,47 @@ export function renderRestoreAnsi(terminal: Terminal, options: RenderRestoreOpti
   parts.push("\x1b[0m\x1b[?1049l\x1b[H\x1b[2J\x1b[3J");
   if (isAlternate) parts.push("\x1b[?1049h\x1b[H");
 
+  // A resync may start with autowrap disabled by a TUI. The input mode preamble below
+  // restores the program's choice after painting.
+  parts.push("\x1b[?7h");
+  let emptyMarginStyle: string | undefined;
   for (let y = firstLine; y <= lastLine; y += 1) {
-    if (y > firstLine) parts.push("\r\n");
     const line = buffer.getLine(y);
-    if (line) parts.push(renderLine(line, cols, scratch));
+    const content = line ? renderLine(line, cols, scratch) : "";
+    if (y > firstLine) {
+      if (!line?.isWrapped) {
+        parts.push("\r\n");
+      } else if (emptyMarginStyle !== undefined) {
+        // A wide glyph wrapped early, or the program erased the previous row's tail.
+        // A double-width space printed in the last column wraps without filling that tail.
+        // Erase it on the new row before rendering the actual continuation.
+        parts.push(`\x1b[${cols}G`);
+        if (emptyMarginStyle) parts.push(`\x1b[0;${emptyMarginStyle}m`);
+        parts.push("\u3000\r");
+        if (emptyMarginStyle) parts.push("\x1b[0m");
+        parts.push("\x1b[2X");
+      } else if (!content) {
+        // Even an erased continuation needs a printable cell to trigger the pending wrap.
+        parts.push(" \r\x1b[X");
+      }
+    }
+    parts.push(content);
+    const edge = line?.getCell(cols - 1, scratch);
+    emptyMarginStyle = edge?.getWidth() === 1 && edge.getChars() === "" ? styleOf(edge) : undefined;
   }
 
-  // Viewport-relative: after writing exactly `rows` viewport lines, the client's viewport is
-  // the server's viewport, so cursorY/cursorX map straight onto it.
-  parts.push(`\x1b[${buffer.cursorY + 1};${buffer.cursorX + 1}H`);
+  // CUP can address the last column, but cannot leave a wrap pending just beyond it.
+  // Reprint the rightmost glyph when the next live byte should start a continuation.
+  let cursorColumn = buffer.cursorX;
+  let cursorGlyph = "";
+  if (cursorColumn === cols) {
+    const line = buffer.getLine(buffer.baseY + buffer.cursorY);
+    if (line) {
+      cursorColumn = line.getCell(cols - 1, scratch)?.getWidth() === 0 ? cols - 2 : cols - 1;
+      cursorGlyph = renderLine(line, cols, scratch, cursorColumn);
+    }
+  }
+  parts.push(`\x1b[${buffer.cursorY + 1};${cursorColumn + 1}H`, cursorGlyph);
   if (options.inputModePreamble) parts.push(options.inputModePreamble);
   return parts.join("");
 }

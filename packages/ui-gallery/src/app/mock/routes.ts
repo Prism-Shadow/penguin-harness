@@ -158,6 +158,7 @@ import type {
 import { isThemeId } from "@prismshadow/penguin-ui";
 // The catalog decides which groups publish a balance, as it does on the server.
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
+import { agentPluginGroups } from "../../../../web/src/features/plugins/agent-plugin-groups";
 import { declaredServerModules } from "../../../../web/src/lib/module-gate";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
@@ -896,8 +897,25 @@ router
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get("/api/projects/:projectId/agents", ({ store }): AgentsResponse => ({
-    agents: store.f.agents,
+  .get("/api/projects/:projectId/agents", (ctx): AgentsResponse => ({
+    agents: ctx.store.f.agents.map((agent) => {
+      const installed = ctx.store.f.installed[agent.agentId];
+      const groups = agentPluginGroups(
+        ctx.store.f.library.groups,
+        {
+          skills: installed?.skills ?? [],
+          hooks: installed?.hooks ?? [],
+          mcpServers: ctx.store.f.agentConfigs[agent.agentId]
+            ? mcpServerItems({ ...ctx, params: { ...ctx.params, agentId: agent.agentId } })
+            : [],
+          workbenches: installed?.pluginWorkbenches ?? [],
+          modules: [],
+        },
+        installed?.workbenches ?? [],
+        [],
+      );
+      return { ...agent, pluginCount: groups.groups.length };
+    }),
   }))
   .post("/api/projects/:projectId/agents", ({ store, body }): unknown => {
     const { agentId, name, description } = record(body);
@@ -918,6 +936,7 @@ router
       vaultKeyCount: 0,
       scheduleCount: 0,
       workbenchCount: 0,
+      pluginCount: 0,
       skillCount: 0,
       hookCount: 0,
       pluginUpdates: [],
@@ -1654,6 +1673,47 @@ router
     const row = store.session(params.sessionId!);
     if (!row || row.status === "idle") fail(409, "not_running", "No Task is running.");
     return empty(202);
+  })
+  .get("/api/sessions/:sessionId/subagents", (ctx) => {
+    const history = transcriptOf(ctx).history;
+    const children = new Map<
+      string,
+      {
+        sessionId: string;
+        agentId: string | null;
+        spawnedAt: string;
+        title: string | null;
+        turnKey: string;
+        position: string;
+      }
+    >();
+    let turn: string | undefined;
+    history.forEach((entry, i) => {
+      if (!entry.origin?.length && payloadOf(entry)?.type === "task_begin") turn = String(i);
+      if (entry.type !== "session_meta" || entry.origin?.length !== 1) return;
+      const id = entry.origin[0]!;
+      if (children.has(id)) return;
+      const row = ctx.store.session(id);
+      turn ??= String(i);
+      children.set(id, {
+        sessionId: id,
+        agentId: row?.agentId ?? null,
+        title: row?.title ?? null,
+        spawnedAt: entry.timestamp,
+        turnKey: turn,
+        position: String(i),
+      });
+    });
+    const ordered = [...children.values()].reverse();
+    const before = ctx.query.get("before");
+    const start = before === null ? 0 : ordered.findIndex((child) => child.position === before) + 1;
+    if (before !== null && start === 0) fail(400, "bad_request", "Unknown cursor");
+    const limit = Math.max(1, Number(ctx.query.get("limit")) || 32);
+    const page = ordered.slice(start, start + limit);
+    return {
+      items: page.map(({ position: _, ...item }) => item),
+      nextCursor: start + page.length < ordered.length ? page.at(-1)!.position : null,
+    };
   })
   .post(
     "/api/sessions/:sessionId/subagents/:childSessionId/message",
@@ -3102,13 +3162,14 @@ const sidebarApps = (ctx: Ctx): AppCenterShortcut[] => {
   return (installed.workbenches ?? []).flatMap((w): AppCenterShortcut[] => {
     const first = w.tabs[0];
     if (first === undefined || w.enabled === false || w.showInSidebar === false) return [];
+    const titleZh = w.appCenter?.titleZh ?? first.titleZh;
     return [
       {
         agentId: agent.agentId,
         agentName: agent.name ?? agent.agentId,
         workbenchId: w.id,
         title: w.appCenter?.title ?? first.title,
-        ...(first.titleZh !== undefined ? { titleZh: first.titleZh } : {}),
+        ...(titleZh !== undefined ? { titleZh } : {}),
         ...(w.icon !== undefined ? { icon: w.icon } : {}),
         path: `/app/${ctx.params.projectId!}/${agent.agentId}/${w.id}`,
         tab: first.key,
@@ -3118,6 +3179,16 @@ const sidebarApps = (ctx: Ctx): AppCenterShortcut[] => {
     ];
   });
 };
+
+const appCenterListing = ({ store }: Ctx, hidden: boolean): AppCenterResponse => ({
+  layout: store.f.appCenter.layout,
+  shortcuts: store.f.appCenter.shortcuts.filter((app) => {
+    const source = store.f.installed[app.agentId]?.workbenches?.find(
+      (w) => w.id === app.workbenchId,
+    );
+    return (source?.appCenter?.show === false) === hidden;
+  }),
+});
 
 router
   .get(
@@ -3180,12 +3251,28 @@ router
     });
     return { workbench };
   })
-  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", () =>
-    notFound("Workbench"),
-  )
+  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", (ctx) => {
+    const show = record(ctx.body).show;
+    if (typeof show !== "boolean") fail(400, "bad_request", "show must be true or false");
+    const installed = installedOf(ctx);
+    const current = installed.workbenches?.find((item) => item.id === ctx.params.workbenchId);
+    if (!current) notFound("Workbench");
+    const workbench = { ...current, appCenter: { ...current.appCenter, show } };
+    installed.workbenches = installed.workbenches!.map((item) =>
+      item.id === current.id ? workbench : item,
+    );
+    ctx.store.userChannel.event({
+      type: "workbench_updated",
+      projectId: ctx.params.projectId!,
+      agentId: ctx.params.agentId!,
+      workbench,
+    });
+    return { workbench };
+  })
   // The App Center lists shortcuts in every build state under a stored arrangement; the demo's
   // Agents keep no workbench files, so a tile opened in a window finds no page to show.
-  .get("/api/projects/:projectId/app-center", ({ store }): AppCenterResponse => store.f.appCenter)
+  .get("/api/projects/:projectId/app-center", (ctx) => appCenterListing(ctx, false))
+  .get("/api/projects/:projectId/app-center/hidden", (ctx) => appCenterListing(ctx, true))
   .put("/api/projects/:projectId/app-center/layout", ({ store, body }): AppCenterLayoutResponse => {
     const layout = (record(body).layout ?? null) as AppCenterLayout | null;
     store.f.appCenter = { ...store.f.appCenter, layout };

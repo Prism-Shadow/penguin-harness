@@ -515,6 +515,9 @@ export function WorkspaceBrowser({
   /** Error from the lazy source fetch of an isolated HTML preview: scoped to the source
    *  view — the rendered iframe keeps working no matter what happens to this fetch. */
   const [sourceError, setSourceError] = useState<ReactNode>(null);
+  const [htmlDocument, setHtmlDocument] = useState<
+    { nonce: number; html: string } | { nonce: number; error: ReactNode } | null
+  >(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
   /** A save the server refused because the file had changed (non-null shows the conflict dialog). */
@@ -866,6 +869,42 @@ export function WorkspaceBrowser({
       cancelled = true;
     };
   }, [preview, richView, previewIsolated, files]);
+
+  // The source and editor keep the bounded prefix. Only the active rendered view needs
+  // another read when that prefix ends before the document's scripts or embedded assets.
+  const requestedHtml =
+    preview?.kind === "html" &&
+    preview.truncated &&
+    !previewIsolated &&
+    richView === "rendered" &&
+    !editor
+      ? preview
+      : null;
+  useEffect(() => {
+    setHtmlDocument(null);
+    if (requestedHtml === null) return;
+    const { path, nonce } = requestedHtml;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(files.fileUrl(path), {
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(String(response.status));
+        const html = await response.text();
+        if (!controller.signal.aborted) setHtmlDocument({ nonce, html });
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setHtmlDocument({
+            nonce,
+            error: failureNode(err, { text: S.files.loadFailed, ...privacyRef.current }),
+          });
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [requestedHtml, files]);
 
   // -------------------------------------------------------------- navigation and guards
 
@@ -2274,10 +2313,10 @@ export function WorkspaceBrowser({
           ),
         };
       }
-      // Only reachable without content when previewIsolated flipped to false after an
-      // isolated preview mounted without it: the lazy source effect is already fetching it,
-      // and the srcDoc fallback renders once it lands.
-      if (p.content === undefined) return pendingSource();
+      const full = htmlDocument?.nonce === p.nonce ? htmlDocument : null;
+      if (full && "error" in full) return { kind: "error", message: full.error };
+      const html = p.truncated ? full?.html : p.content;
+      if (html === undefined) return p.truncated ? { kind: "loading" } : pendingSource();
       return {
         kind: "embed",
         node: (
@@ -2289,7 +2328,7 @@ export function WorkspaceBrowser({
           // base URL, so relative subresources cannot resolve here — that's what the
           // isolated branch above fixes.
           <iframe
-            srcDoc={withStorageShim(p.content)}
+            srcDoc={withStorageShim(html)}
             title={p.name}
             sandbox="allow-scripts"
             className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"

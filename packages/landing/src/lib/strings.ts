@@ -178,6 +178,8 @@ export const zh = {
     /** The link to the same screen in the component gallery (Theme Packs), full size. */
     open: "在主题包中打开",
     loading: "正在载入实时演示…",
+    playDemo: "播放演示",
+    stopDemo: "停止演示",
     evolutionFrame: "一轮自进化的对话（实时演示）",
   },
 
@@ -437,6 +439,8 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     plugins: {
       title: "插件",
       description: "PenguinHarness 的插件库：自进化工具包、Skills、Hooks 与工作台。",
+      directoryUnavailable: "插件目录未能载入。",
+      retryDirectory: "重试",
       facetCategory: "分类",
       facetContents: "内容",
       facetAuthor: "作者",

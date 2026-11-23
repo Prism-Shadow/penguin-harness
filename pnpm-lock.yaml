@@ -54,6 +54,34 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  library/agent:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: link:../http
+      '@prismshadow/penguin-library-session':
+        specifier: workspace:*
+        version: link:../session
+      '@prismshadow/penguin-library-trace':
+        specifier: workspace:*
+        version: link:../trace
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+      yaml:
+        specifier: ^2.5.0
+        version: 2.9.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.13.3
+      tsup:
+        specifier: ^8
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+
   library/agent-api:
     dependencies:
       '@prismshadow/penguin-core':
@@ -95,6 +123,34 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  library/benchmark:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: link:../http
+      '@prismshadow/penguin-library-workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+      smol-toml:
+        specifier: ^1.9.1
+        version: 1.9.1
+      yaml:
+        specifier: ^2.5.0
+        version: 2.9.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.13.3
+      tsup:
+        specifier: ^8
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+
   library/cli:
     dependencies:
       '@prismshadow/penguin-core':
@@ -135,6 +191,9 @@ importers:
       '@prismshadow/penguin-library-auth':
         specifier: workspace:*
         version: link:../auth
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       hono:
         specifier: ^4.13.11
         version: 4.13.13
@@ -338,7 +397,16 @@ importers:
       '@prismshadow/penguin-library-db':
         specifier: workspace:*
         version: link:../db
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: link:../http
+      '@prismshadow/penguin-theme-pack':
+        specifier: workspace:*
+        version: link:../../packages/theme-pack
     devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.13.3
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -397,6 +465,22 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/workspace:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: link:../http
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.13.3
+      tsup:
+        specifier: ^8
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
 
   packages/amsp:
     devDependencies:
@@ -524,6 +608,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide':
+        specifier: workspace:*
+        version: link:../../plugins/first-workbench-guide
       '@penguinharness/fridge-keeper':
         specifier: workspace:*
         version: link:../../plugins/fridge-keeper
@@ -736,6 +823,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide':
+        specifier: workspace:*
+        version: link:../../plugins/first-workbench-guide
       '@penguinharness/fridge-keeper':
         specifier: workspace:*
         version: link:../../plugins/fridge-keeper
@@ -965,6 +1055,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide':
+        specifier: workspace:*
+        version: link:../../plugins/first-workbench-guide
       '@penguinharness/fridge-keeper':
         specifier: workspace:*
         version: link:../../plugins/fridge-keeper
@@ -1136,6 +1229,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide':
+        specifier: workspace:*
+        version: link:../../plugins/first-workbench-guide
       '@penguinharness/fridge-keeper':
         specifier: workspace:*
         version: link:../../plugins/fridge-keeper
@@ -1284,12 +1380,18 @@ importers:
       '@prismshadow/penguin-hmr':
         specifier: workspace:*
         version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-agent':
+        specifier: workspace:*
+        version: file:library/agent(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-agent-api':
         specifier: workspace:*
         version: file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-auth':
         specifier: workspace:*
         version: file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-benchmark':
+        specifier: workspace:*
+        version: file:library/benchmark(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-cli':
         specifier: workspace:*
         version: file:library/cli(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -1329,6 +1431,9 @@ importers:
       '@prismshadow/penguin-library-workbench':
         specifier: workspace:*
         version: link:../../library/workbench
+      '@prismshadow/penguin-library-workspace':
+        specifier: workspace:*
+        version: file:library/workspace(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-theme-pack':
         specifier: workspace:*
         version: file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -1609,6 +1714,9 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-setting':
+        specifier: workspace:*
+        version: link:../../library/setting
       '@prismshadow/penguin-ui':
         specifier: workspace:*
         version: link:../ui
@@ -1621,9 +1729,6 @@ importers:
       '@xterm/addon-fit':
         specifier: ^0.10.0
         version: 0.10.0(@xterm/xterm@5.5.0)
-      '@xterm/addon-web-links':
-        specifier: ^0.11.0
-        version: 0.11.0(@xterm/xterm@5.5.0)
       '@xterm/xterm':
         specifier: ^5.5.0
         version: 5.5.0
@@ -1898,6 +2003,24 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
+
+  plugins/first-workbench-guide:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+      jsdom:
+        specifier: ^30.1.2
+        version: 30.1.2(@noble/hashes@1.8.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/fridge-keeper:
     devDependencies:
@@ -3223,6 +3346,9 @@ packages:
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit':
     resolution: {directory: plugins/default-rsi-toolkit, type: directory}
 
+  '@penguinharness/first-workbench-guide@file:plugins/first-workbench-guide':
+    resolution: {directory: plugins/first-workbench-guide, type: directory}
+
   '@penguinharness/fridge-keeper@file:plugins/fridge-keeper':
     resolution: {directory: plugins/fridge-keeper, type: directory}
 
@@ -3330,10 +3456,14 @@ packages:
   '@prismshadow/penguin-library-agent-api@file:library/agent-api':
     resolution: {directory: library/agent-api, type: directory}
     engines: {node: '>=24'}
+  '@prismshadow/penguin-library-agent@file:library/agent':
+    resolution: {directory: library/agent, type: directory}
 
   '@prismshadow/penguin-library-auth@file:library/auth':
     resolution: {directory: library/auth, type: directory}
     engines: {node: '>=24'}
+  '@prismshadow/penguin-library-benchmark@file:library/benchmark':
+    resolution: {directory: library/benchmark, type: directory}
 
   '@prismshadow/penguin-library-cli@file:library/cli':
     resolution: {directory: library/cli, type: directory}
@@ -3386,10 +3516,11 @@ packages:
   '@prismshadow/penguin-library-workbench@file:library/workbench':
     resolution: {directory: library/workbench, type: directory}
     engines: {node: '>=24'}
-
   '@prismshadow/penguin-server@file:packages/server':
     resolution: {directory: packages/server, type: directory}
     engines: {node: '>=24'}
+  '@prismshadow/penguin-library-workspace@file:library/workspace':
+    resolution: {directory: library/workspace, type: directory}
 
   '@prismshadow/penguin-theme-pack@file:packages/theme-pack':
     resolution: {directory: packages/theme-pack, type: directory}
@@ -4111,11 +4242,6 @@ packages:
 
   '@xterm/addon-fit@0.10.0':
     resolution: {integrity: sha512-UFYkDm4HUahf2lnEyHvio51TNGiLK66mqP2JoATy7hRZeXaGMRDr00JiSF7m63vR5WKATF605yEggJKsw0JpMQ==}
-    peerDependencies:
-      '@xterm/xterm': ^5.0.0
-
-  '@xterm/addon-web-links@0.11.0':
-    resolution: {integrity: sha512-nIHQ38pQI+a5kXnRaTgwqSHnX7KE6+4SVoceompgHL26unAxdfP6IPqUTSYPQgSwM56hsElfoNrrW5V7BUED/Q==}
     peerDependencies:
       '@xterm/xterm': ^5.0.0
 
@@ -8093,6 +8219,8 @@ snapshots:
 
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit': {}
 
+  '@penguinharness/first-workbench-guide@file:plugins/first-workbench-guide': {}
+
   '@penguinharness/fridge-keeper@file:plugins/fridge-keeper': {}
 
   '@penguinharness/goal@file:plugins/goal': {}
@@ -8240,6 +8368,7 @@ snapshots:
       '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
@@ -8299,6 +8428,7 @@ snapshots:
       '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
@@ -8426,6 +8556,22 @@ snapshots:
       - utf-8-validate
       - ws
       - zod
+  '@prismshadow/penguin-library-agent@file:library/agent(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-trace': file:library/trace(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      fflate: 0.8.3
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
 
   '@prismshadow/penguin-library-auth@file:library/auth(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
@@ -8450,6 +8596,22 @@ snapshots:
       - utf-8-validate
       - ws
       - zod
+  '@prismshadow/penguin-library-benchmark@file:library/benchmark(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-workspace': file:library/workspace(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      fflate: 0.8.3
+      smol-toml: 1.9.1
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
 
   '@prismshadow/penguin-library-cli@file:library/cli(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
@@ -8499,6 +8661,21 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)
+      fflate: 0.8.3
+      hono: 4.13.13
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-http@file:library/http(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)
+      fflate: 0.8.3
       hono: 4.13.13
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -8512,6 +8689,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      fflate: 0.8.3
       hono: 4.13.13
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -8666,6 +8844,8 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-theme-pack': file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -8678,6 +8858,8 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-theme-pack': file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -8701,6 +8883,19 @@ snapshots:
 
   '@prismshadow/penguin-library-workbench@file:library/workbench': {}
 
+  '@prismshadow/penguin-library-workspace@file:library/workspace(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+
   '@prismshadow/penguin-server@file:packages/server':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
@@ -8718,6 +8913,7 @@ snapshots:
       '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
@@ -8793,6 +8989,7 @@ snapshots:
       '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
@@ -8868,6 +9065,7 @@ snapshots:
       '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
@@ -8924,6 +9122,19 @@ snapshots:
       - micromark-util-types
       - supports-color
       - utf-8-validate
+      - zod
+
+  '@prismshadow/penguin-theme-pack@file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      css-tree: 3.2.1
+      fflate: 0.8.3
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
       - zod
 
   '@prismshadow/penguin-theme-pack@file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
@@ -9695,10 +9906,6 @@ snapshots:
       js-base64: 3.9.3
 
   '@xterm/addon-fit@0.10.0(@xterm/xterm@5.5.0)':
-    dependencies:
-      '@xterm/xterm': 5.5.0
-
-  '@xterm/addon-web-links@0.11.0(@xterm/xterm@5.5.0)':
     dependencies:
       '@xterm/xterm': 5.5.0
 

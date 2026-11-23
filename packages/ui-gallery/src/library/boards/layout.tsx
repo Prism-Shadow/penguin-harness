@@ -300,16 +300,10 @@ export function LayoutBoard() {
                       build={app.build}
                       menuActions={[
                         {
-                          id: "open",
-                          label: t.appsOpen,
-                          glyph: ICONS.appWindow,
-                          onSelect: () => setFrontApp(app.key),
-                        },
-                        {
-                          id: "remove",
-                          label: t.appsRemove,
-                          glyph: ICONS.eyeOff,
-                          onSelect: () => {},
+                          id: frontApp === app.key ? "minimize" : "restore",
+                          label: frontApp === app.key ? t.appsMinimize : t.appsRestore,
+                          glyph: frontApp === app.key ? ICONS.minus : ICONS.appWindow,
+                          onSelect: () => setFrontApp(frontApp === app.key ? null : app.key),
                         },
                         {
                           id: "settings",

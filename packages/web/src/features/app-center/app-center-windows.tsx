@@ -1,20 +1,10 @@
 /**
- * The App Center's windows, one per running app (lib/running-apps.ts), hosted in a layer over the
- * page area (a `WebAppModule.layers` contribution with `area: "page"`) rather than inside the App
- * Center page. The page unmounts when the viewer goes to another one; this layer does not, so an
- * app minimized there keeps running meanwhile and is the same live window when it comes back.
- *
- * A window is in front only on the App Center, while `?app=` names it. Every other one is
- * minimized: mounted and laid out at the area's size, but neither painted nor reachable
- * (`AppWindow`), so what runs in its frame — its state, timers, sound and connections — carries
- * on. Minimize and Back leave a window alike, back to the page it was opened or brought back from
- * (lib/app-window-address.ts); Close ends the app and unmounts its frame. An app whose workbench is
- * gone ends too, as its window learns it; one a list no longer shows does not (lib/running-apps.ts).
- * Switching Project ends the previous Project's apps, and leaving the app shell (the full page,
- * signing out, a reload) unmounts this layer and ends them all, so nothing is ever listed as
- * running with nothing behind it.
+ * Each running app keeps one live window in the shell across route changes, including when
+ * minimized or moved between panes. Closing its page ends the app and removes its frame;
+ * closing a Session page beside it leaves it running. Switching Project or leaving the shell
+ * releases these windows.
  */
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { AppWindow } from "@prismshadow/penguin-ui";
 import { APP_CENTER_PATH } from "../../lib/app-center-path";
@@ -31,15 +21,30 @@ import { localizedText } from "../../lib/skill-use";
 import { systemAppFullPage } from "../../lib/system-apps";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
+import { PageSlot } from "../../lib/page-slot";
+import { usePageWorkspace } from "../../lib/page-workspace";
+import { appTriggerId } from "./app-tile";
 import { AppCenterWindow } from "./app-center-window";
 
 export function AppCenterWindows() {
+  const workspace = usePageWorkspace();
   const apps = useRunningAppRecords();
   const projectId = useProject().currentProject?.projectId ?? null;
   const { locale } = useLocale();
   const location = useLocation();
   const navigate = useNavigate();
   const front = windowInFront(location);
+  const previousFront = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const previous = previousFront.current;
+    previousFront.current = front;
+    if (previous !== null && front === null && location.pathname === APP_CENTER_PATH) {
+      const ticket = requestAnimationFrame(() =>
+        document.getElementById(appTriggerId(previous))?.focus({ preventScroll: true }),
+      );
+      return () => cancelAnimationFrame(ticket);
+    }
+  }, [front, location.pathname]);
 
   useEffect(() => {
     if (projectId !== null) keepProjectApps(projectId);
@@ -56,33 +61,37 @@ export function AppCenterWindows() {
     <>
       {apps.map((app) =>
         app.projectId !== projectId ? null : (
-          <AppWindow key={app.key} shown={app.key === front}>
-            <AppCenterWindow
-              appKey={app.key}
-              projectId={app.projectId}
-              shortcut={app.shortcut}
-              title={localizedText(locale, app.shortcut.title, app.shortcut.titleZh)}
-              onMinimize={leave}
-              onFullScreen={(path) =>
-                openFullPage(
-                  navigate,
-                  app.shortcut.system?.frame !== undefined ? fullPageOf(app) : path,
-                  `${APP_CENTER_PATH}${location.search}`,
-                  {
-                    fromWindow: true,
-                  },
-                )
+          <PageSlot key={app.key} id={"app:" + app.key} keepRunning>
+            <AppWindow
+              shown={
+                workspace
+                  ? !!workspace.current && workspace.layout.visible.includes("app:" + app.key)
+                  : app.key === front
               }
-              onClose={() => {
-                closeApp(app.key);
-                leave();
-              }}
-              onGone={() => {
-                closeApp(app.key);
-                if (app.key === front) leave();
-              }}
-            />
-          </AppWindow>
+            >
+              <AppCenterWindow
+                appKey={app.key}
+                projectId={app.projectId}
+                shortcut={app.shortcut}
+                title={localizedText(locale, app.shortcut.title, app.shortcut.titleZh)}
+                onFullScreen={(path) =>
+                  openFullPage(
+                    navigate,
+                    app.shortcut.system?.frame !== undefined ? fullPageOf(app) : path,
+                    `${APP_CENTER_PATH}${location.search}`,
+                    {
+                      fromWindow: true,
+                    },
+                  )
+                }
+                onGone={() => {
+                  closeApp(app.key);
+                  if (workspace) workspace.close("app:" + app.key);
+                  else if (app.key === front) leave();
+                }}
+              />
+            </AppWindow>
+          </PageSlot>
         ),
       )}
     </>

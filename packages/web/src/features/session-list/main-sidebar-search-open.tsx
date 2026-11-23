@@ -29,6 +29,7 @@ export function useMainSidebarSearchOpen(scope: ReturnType<typeof useMainSidebar
       }),
     [searchOpen, inCompany],
   );
+  const [listFolded, setListFolded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   /** Header list-settings dropdown (grouping + sort radios). */
   const [listSettingsOpen, setListSettingsOpen] = useState(false);
@@ -36,6 +37,8 @@ export function useMainSidebarSearchOpen(scope: ReturnType<typeof useMainSidebar
     ...scope,
     searchOpen,
     setSearchOpen,
+    listFolded,
+    setListFolded,
     searchInputRef,
     rootRef,
     searchTitle,

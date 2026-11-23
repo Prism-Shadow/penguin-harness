@@ -1,5 +1,5 @@
 /** Route-local render failures and the one app-wide palette on both full-page entry paths: a
- * direct link, and an app's window (opened from the sidebar's app list) gone full screen.
+ * direct link, and an app's window (opened from the App Center) gone full screen.
  * Only the workbench API/iframe are fixtures; the real router, app root and palette mount.
  * A malformed page address is read by WorkbenchFrame BELOW RouterProvider, unlike
  * rescue.spec.mjs's malformed contributions (which fail above RouterProvider).
@@ -41,19 +41,22 @@ async function fixture(page) {
       },
     ],
   };
+  const detail = path + "?id=rescue-board";
   socket.onCall((call) => {
-    if (call.path === path) {
+    if (call.path === path || call.path === detail) {
       state.requests++;
       workbench.tabs[0].renderer.iframe.src = state.broken
         ? { routeRenderFailure: true }
         : "/rescue-board.html";
     }
   });
-  socket.answer("GET", path, { status: 200, body: { workbenches: [workbench] } });
-  socket.answer("GET", `${path}?view=sidebar`, {
+  for (const address of [path, detail])
+    socket.answer("GET", address, { status: 200, body: { workbenches: [workbench] } });
+  socket.answer("GET", `/api/projects/${project}/app-center`, {
     status: 200,
     body: {
-      apps: [
+      layout: null,
+      shortcuts: [
         {
           agentId: "default_agent",
           agentName: "General Agent",
@@ -62,7 +65,6 @@ async function fixture(page) {
           path: `/app/${project}/default_agent/rescue-board`,
           tab: "main",
           build: "ready",
-          showInSidebar: true,
         },
       ],
     },
@@ -112,12 +114,13 @@ for (const entry of ["direct", "window"]) {
         },
       });
       expect(response.ok()).toBeTruthy();
-      await page.goto(`${BASE}/chat/new`);
-      await page.locator('[data-app-row="default_agent/rescue-board"]').click();
-      await page
-        .getByRole("region", { name: "Rescue board" })
-        .getByRole("button", { name: "全屏打开", exact: true })
-        .click();
+      await page.goto(`${BASE}/apps`);
+      await page.locator('li[data-app="default_agent/rescue-board"] > button').first().click();
+      const group = page.getByRole("navigation", { name: "应用", exact: true });
+      const row = group.locator('[data-app-row="default_agent/rescue-board"]');
+      await row.hover();
+      await row.locator("xpath=ancestor::li").getByRole("button", { name: "更多操作" }).click();
+      await page.getByRole("menuitem", { name: "全屏打开", exact: true }).click();
       await expect(page).toHaveURL(`${BASE}${path}`);
     }
     await expect(

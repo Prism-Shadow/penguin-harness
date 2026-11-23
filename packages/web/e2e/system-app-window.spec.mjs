@@ -15,7 +15,6 @@
  *   page as a message, with no reload.
  * - `penguin:navigate` goes to the Agents page with the window minimized; Back brings it back.
  * - Full screen draws the same page at its place; the exit ball returns to the window there.
- * - The start page's contributed count opens the window.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -154,7 +153,11 @@ test("the tile opens the window, the page's place is in the address, and minimiz
   await app.getByRole("button", { name: "Count" }).click();
   await app.getByRole("button", { name: "Count" }).click();
 
-  await windowOf(page).getByRole("button", { name: "Minimize" }).click();
+  await page
+    .getByRole("navigation", { name: "Apps", exact: true })
+    .locator('[data-app-row="system_agent/reports"]')
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Minimize", exact: true }).click();
   await expect(page).toHaveURL(/\/apps$/);
   await expect(tileOf(page)).toHaveAccessibleName("Reports, system app, Running");
 
@@ -205,7 +208,11 @@ test("full screen draws the same page at its place, and its exit returns to the 
   await frameOf(page).getByText("Report r2").click();
   await expect(page).toHaveURL(atUrl("/r2"));
 
-  await windowOf(page).getByRole("button", { name: "Open full screen" }).click();
+  await page
+    .getByRole("navigation", { name: "Apps", exact: true })
+    .locator('[data-app-row="system_agent/reports"]')
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Open full screen", exact: true }).click();
   await expect(page).toHaveURL(/\/app\/[^/]+\/system_agent\/reports\?at=%2Fr2$/);
   const full = page.frameLocator('iframe[title="Reports"]');
   await expect(full.locator("#where")).toHaveText("At /r2");
@@ -217,22 +224,46 @@ test("full screen draws the same page at its place, and its exit returns to the 
   await expect(frameOf(page).locator("#where")).toHaveText("At /r1?tab=a");
 });
 
-test("the start page's contributed count opens the window", async ({ page }) => {
+test("a new chat omits project counts even when a module contributes a metric", async ({
+  page,
+}) => {
   await page.goto(`${BASE}/chat/new`);
-  const count = page.locator('[data-slot="count"]', { hasText: "Reports" });
-  await expect(count).toBeVisible();
-  // A fresh account has no model credential: the start page asks for one first, a moment later.
-  const dialog = page.getByRole("dialog");
-  if (
-    await dialog.waitFor({ timeout: 5000 }).then(
-      () => true,
-      () => false,
-    )
-  )
-    await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
-  await expect(count).toContainText("7");
-  await count.getByRole("link").click();
-  await expect(page).toHaveURL(atUrl());
-  await expect(frameOf(page).locator("#where")).toHaveText("At /");
+  await expect(page.locator("[data-slot=brand]")).toBeVisible();
+  await expect(page.locator("[data-slot=count]")).toHaveCount(0);
+});
+
+test("the Apps directory restores a contributed system frame and removes its row on close", async ({
+  page,
+}) => {
+  await page.goto("/apps");
+  const apps = page
+    .getByRole("navigation", { name: "Apps", exact: true })
+    .getByRole("list", { name: "Apps", exact: true });
+  const row = apps.locator('[data-app-row="system_agent/reports"]');
+  await expect(row).toHaveCount(0);
+  await tileOf(page).click();
+  await expect(row).toHaveCount(1);
+  await frameOf(page).getByRole("button", { name: "Count" }).click();
+  await row.hover();
+  await apps
+    .getByRole("listitem")
+    .filter({ has: page.locator('[data-app-row="system_agent/reports"]') })
+    .getByRole("button", { name: "More actions", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Minimize", exact: true }).click();
+  await expect(row).toHaveCount(1);
+  await row.click();
+  await expect(frameOf(page).locator("#clicks")).toHaveText("1");
+  const item = row.locator("xpath=ancestor::li[1]");
+  await row.focus();
+  for (const name of ["More actions", "Open full screen", "Close"]) {
+    await page.keyboard.press("Tab");
+    await expect(item.getByRole("button", { name, exact: true })).toBeFocused();
+  }
+  await item.getByRole("button", { name: "Open full screen", exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/[^/]+\/system_agent\/reports/);
+  await page.getByRole("button", { name: "Exit full screen" }).click();
+  await item.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(row).toHaveCount(0);
+  await expect(tileOf(page)).toBeVisible();
 });

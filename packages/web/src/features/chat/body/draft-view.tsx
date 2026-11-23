@@ -1,8 +1,8 @@
 /**
  * Draft view (/chat/new): the pre-persistence form of a new
  * conversation, before any Session exists. The page around the input card is the start
- * dashboard (start-dashboard.tsx: the brand and its counts above the card, the examples and
- * shortcuts below it); this module keeps the draft itself. Before sending,
+ * dashboard (start-dashboard.tsx: the brand above the card, examples and shortcuts
+ * below it); this module keeps the draft itself. Before sending,
  * this is where Agent / Workspace / approval mode / Model are all
  * chosen in one place — two small buttons sit right below the card: the Agent dialog and Workspace
  * directory selection (the menu browses server-side directories, and the current
@@ -38,6 +38,7 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
+import { draftUploads } from "../../../lib/draft-uploads";
 import { handOverSession } from "../session-handover";
 import {
   useCallback,
@@ -90,6 +91,7 @@ import {
 } from "../prompt-modes";
 import { discardUnstartedSession } from "../unstarted-session";
 import { APPROVAL_MODES } from "../approval-mode";
+import { usePaneFocus } from "../../../lib/page-focus";
 import { adoptDockScope, currentDockScope, setDockConversation } from "../../dock";
 import { StartDashboard } from "../start-dashboard";
 import { clearDraft, draftKey, loadDraft, saveDraft, type DraftCache } from "../draft-cache";
@@ -171,6 +173,7 @@ export function DraftView({
   /** The resolved draft owner, including the machine whose Agent list was used. */
   onAgentChange?: (agentId: string | null, machineId: string | null) => void;
 }) {
+  const paneFocused = usePaneFocus();
   const navigate = useNavigate();
   const location = useLocation();
   const { agents: localAgents, setCurrentAgentId, currentProject } = useProject();
@@ -195,6 +198,7 @@ export function DraftView({
   // the corresponding content; switching accounts always goes through logout (clearing
   // the user unmounts the whole route tree), so logging back in is likewise a fresh
   // mount. A parked draft reads its own entry instead of the active slot.
+  const [uploads] = useState(() => (userId ? draftUploads(userId, projectId, draftId) : undefined));
   const [parkedMissing] = useState(
     () =>
       draftId !== undefined && (!userId || getDraftSession(userId, projectId, draftId) === null),
@@ -243,13 +247,14 @@ export function DraftView({
   // chosen here is still theirs (the Files panel, the sidebar's "browse files"). "" is the
   // temporary Workspace, whose directory the server only creates with the Session.
   useEffect(() => {
+    if (!paneFocused) return;
     setDockConversation({
       sessionId: null,
       workspace: workspace || null,
       machineId: workspaceMachine,
     });
     onWorkspaceChange?.(workspace, workspaceMachine);
-  }, [workspace, workspaceMachine, onWorkspaceChange]);
+  }, [paneFocused, workspace, workspaceMachine, onWorkspaceChange]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
     cached.approvalMode ?? "allow-all",
   );
@@ -746,9 +751,13 @@ export function DraftView({
       removeDraftSession(userId, projectId, draftId);
       return;
     }
+    if (uploads) {
+      uploads.images = [];
+      uploads.files = [];
+    }
     if (modelRef) saveDraft(draftKey(userId, projectId), { modelRef });
     else clearDraft(draftKey(userId, projectId));
-  }, [cancelPendingSave, userId, projectId, draftId, modelRef]);
+  }, [cancelPendingSave, userId, projectId, draftId, modelRef, uploads]);
 
   const selectAgent = (a: AgentSummary) => {
     setAgentId(a.agentId);
@@ -978,6 +987,8 @@ export function DraftView({
         </Notice>
       )}
       <ChatInput
+        {...(uploads ? { draftUploads: uploads } : {})}
+        resizableDraft
         status="idle"
         controlRef={composerRef}
         onSend={onSend}
@@ -1041,33 +1052,12 @@ export function DraftView({
   );
 
   return (
-    <div className="anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-6 md:px-4">
-      {/*
-       * Vertical layout: everything visible — the dashboard's brand and tiles, the input card,
-       * the ownership pills, the dashboard's examples — lives in ONE block between two empty flex-1
-       * spacers, so the block is centred and the free space above and below it is exactly equal.
-       * The header deliberately sits inside that block rather than in the upper spacer: keeping
-       * the brand in the spacer made the upper gap shorter than the lower one by the brand's own
-       * height, which pushed the card up the viewport. When the viewport is too short the spacers
-       * collapse to nothing, the container's own py-6 keeps the content off the edges, and the
-       * page falls back to natural scrolling; the composer's upward menus measure the room above
-       * the card (chat-input.tsx) rather than assume it.
-       */}
-      <div className="flex-1" />
-
-      <div className="mx-auto w-full max-w-3xl">
-        <StartDashboard
-          projectId={projectId}
-          composer={composer}
-          skillsLoaded={skillsLoaded}
-          fill={fillComposer}
-          exampleText={exampleText}
-          readComposerText={readComposerText}
-        />
-      </div>
-
-      {/* Lower symmetric space — empty, so it matches the upper one exactly */}
-      <div className="flex-1" />
-    </div>
+    <StartDashboard
+      composer={composer}
+      skillsLoaded={skillsLoaded}
+      fill={fillComposer}
+      exampleText={exampleText}
+      readComposerText={readComposerText}
+    />
   );
 }

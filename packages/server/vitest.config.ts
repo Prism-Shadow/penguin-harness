@@ -77,6 +77,20 @@ export default defineConfig({
     },
   },
   test: {
+    server: {
+      deps: {
+        // The setting domain library (an externalized node_modules package) imports the
+        // theme-pack and the UI package's pack rules, whose package exports are TypeScript
+        // sources; left external, the run's Node loader reaches them and refuses the
+        // extension. Inlining the libraries lets vite transform the chain the way it
+        // transforms this package's own imports.
+        inline: [
+          /@prismshadow\/penguin-library-setting/,
+          /@prismshadow\/penguin-theme-pack/,
+          /@prismshadow\/penguin-ui/,
+        ],
+      },
+    },
     environment: "node",
     maxWorkers: WORKERS,
     sequence: { sequencer: WeightedShards },

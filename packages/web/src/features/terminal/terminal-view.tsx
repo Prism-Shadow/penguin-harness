@@ -23,6 +23,7 @@ import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, encodeFrame, encodeResize } from "./terminal-frames";
 import { TerminalConnection } from "./terminal-connection";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
+import { terminalUrlProvider } from "./terminal-url-provider";
 import { writeClipboard } from "../../lib/clipboard";
 import { TerminalKeyBar, type TerminalControl } from "./terminal-keybar";
 import { NO_MODIFIERS, applyModifiers, hasModifier, type TerminalModifiers } from "./terminal-keys";
@@ -34,7 +35,9 @@ import { keymap } from "../../lib/shortcuts/store";
 import { terminalClipboardAction } from "../../lib/shortcuts/terminal-clipboard";
 import { terminalKeyAction } from "../../lib/shortcuts/terminal-keys";
 import { useAuth } from "../../state/auth";
-import { machineForTerminal, terminalUrl } from "../../lib/terminal-machines";
+import { machineForTerminal } from "../../lib/terminal-machines";
+import { probeJson } from "../../lib/terminal-http";
+export { fetchJson, probeJson, HttpStatusError } from "../../lib/terminal-http";
 
 /**
  * xterm and its addons load lazily, on the first actual terminal render: their UMD
@@ -47,7 +50,6 @@ function loadXterm() {
   return Promise.all([
     import("@xterm/xterm"),
     import("@xterm/addon-fit"),
-    import("@xterm/addon-web-links"),
     import("@xterm/addon-clipboard"),
   ]);
 }
@@ -149,73 +151,6 @@ export function terminalTheme(dark: boolean): ITheme {
 }
 
 /**
- * Every terminal round-trip goes through here, and so is addressed to the machine that holds
- * the terminal it names (lib/terminal-machines.ts). `server` is for the one call with no id
- * to route by: creating a terminal names its machine before the terminal exists.
- */
-async function request(
-  path: string,
-  init?: RequestInit,
-  server?: string | null,
-): Promise<Response> {
-  return fetch(terminalUrl(path, server), {
-    credentials: "same-origin",
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-  });
-}
-
-/**
- * A failure the user can act on: the method, the path and the server's own words. A bare
- * "Server did not return a terminal" was the opposite — it hid a 404 (a server without the
- * terminal API, e.g. an older build the desktop shell attached to) behind wording that
- * suggested the terminal itself failed to start.
- */
-export class HttpStatusError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = "HttpStatusError";
-  }
-}
-
-function httpError(
-  path: string,
-  init: RequestInit | undefined,
-  res: Response,
-  body: string,
-): HttpStatusError {
-  const method = init?.method ?? "GET";
-  const detail = body.trim() === "" ? res.statusText : body.trim();
-  return new HttpStatusError(res.status, `${method} ${path} → ${res.status} ${detail}`);
-}
-
-/** Any non-ok status is an error, 404 included — use probeJson where absence is expected. */
-export async function fetchJson<T>(
-  path: string,
-  init?: RequestInit,
-  server?: string | null,
-): Promise<T> {
-  const res = await request(path, init, server);
-  if (!res.ok) throw httpError(path, init, res, await res.text());
-  return (await res.json()) as T;
-}
-
-/** Existence probe: 404 means "not there" and answers null; every other failure throws. */
-export async function probeJson<T>(
-  path: string,
-  init?: RequestInit,
-  server?: string | null,
-): Promise<T | null> {
-  const res = await request(path, init, server);
-  if (res.status === 404) return null;
-  if (!res.ok) throw httpError(path, init, res, await res.text());
-  return (await res.json()) as T;
-}
-
-/**
  * Always THIS server's stream. A pty on a machine is named in the id instead of the path —
  * `<terminalId>@<machineId>@<userId>` — and this server's platform relays the socket through
  * the connection it holds (server: machines/terminal-relay.ts). The user id is what the
@@ -310,7 +245,7 @@ export function TerminalView({
     };
 
     async function startTerminal(container: HTMLDivElement): Promise<() => void> {
-      const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { ClipboardAddon }] = await loadXterm();
+      const [{ Terminal }, { FitAddon }, { ClipboardAddon }] = await loadXterm();
       let disposed = false;
       let exited = false;
 
@@ -343,15 +278,7 @@ export function TerminalView({
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
-      // Same arrangement for URLs found in the output: the addon reports, the tracker
-      // decides. Its built-in handler would also have opened a blank window first, which
-      // the desktop shell reads as a link to about:blank.
-      term.loadAddon(
-        new WebLinksAddon(() => {}, {
-          hover: (_event, text, range) => links.hover(text, range),
-          leave: () => links.leave(),
-        }),
-      );
+      term.registerLinkProvider(terminalUrlProvider(term, links));
       // OSC 52: a program's own copy reaches the system clipboard — what tmux's copy mode
       // does on every copy, and what makes a selection inside tmux land where a person
       // expects it. WRITE only. The addon's default provider also answers a program's

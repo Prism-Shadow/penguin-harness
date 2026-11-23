@@ -80,6 +80,9 @@ describe("admin server settings", () => {
     expect((await api.get("/api/admin/settings")).status).toBe(403);
     expect((await api.put("/api/admin/settings", { proxyForApp: false })).status).toBe(403);
     expect((await api.put("/api/admin/settings", { attachmentMaxMb: 1 })).status).toBe(403);
+    expect(
+      (await api.put("/api/admin/settings", { terminalMaxOpen: 3, browserMaxOpen: 4 })).status,
+    ).toBe(403);
     // The probe reaches the network on the server's behalf, so it sits behind the same gate,
     // and so does the list of what it would reach.
     expect((await api.get("/api/admin/settings/proxy-probe")).status).toBe(403);
@@ -89,11 +92,26 @@ describe("admin server settings", () => {
     expect(settings.attachmentMaxMb).toBe(DEFAULT_ATTACHMENT_MAX_MB);
   });
 
+  it("persists each resource limit independently and validates the whole update before writing", async () => {
+    expect((await put({ terminalMaxOpen: 8 })).status).toBe(200);
+    expect(await getSettings()).toMatchObject({ terminalMaxOpen: 8, browserMaxOpen: 20 });
+    for (const invalid of [null, 0, -1, 1.5, "9", Number.MAX_SAFE_INTEGER + 1]) {
+      const rejected = await put({ terminalMaxOpen: 2, browserMaxOpen: invalid });
+      expect(rejected.status).toBe(400);
+      expect(await errorCode(rejected)).toBe("invalid_resource_limit");
+      expect(await getSettings()).toMatchObject({ terminalMaxOpen: 8, browserMaxOpen: 20 });
+    }
+    expect((await put({ browserMaxOpen: 7 })).status).toBe(200);
+    expect(await getSettings()).toMatchObject({ terminalMaxOpen: 8, browserMaxOpen: 7 });
+  });
+
   it("with no stored rows, the settings read as their defaults", async () => {
     expect(await getSettings()).toMatchObject({
       proxyForApp: true,
       proxyForAgent: true,
       proxyUrl: null,
+      terminalMaxOpen: 12,
+      browserMaxOpen: 20,
       // Company mode is the one switch that starts off: an admin opts the server into it.
       companyMode: false,
       attachmentMaxMb: DEFAULT_ATTACHMENT_MAX_MB,

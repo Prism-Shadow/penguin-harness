@@ -88,6 +88,7 @@ import { downloadArchive } from "../agents/archive-download";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
 import { SkillTile } from "../skills";
+import { packageUpdate } from "./plugin-package-update";
 import { MarketPluginCard } from "./plugin-market-card";
 import type { InstallStage } from "../../api/endpoints";
 import {
@@ -418,28 +419,30 @@ export function PluginCard(props: PluginCardProps) {
     }
     // The one install control: the flow, on the server's step while the plugin is not there. A
     // member's, for a plugin of server modules alone, is held, saying why.
-    const installWords = agentContent
-      ? S.plugins.installModel.installAgent
-      : serverStep === "enable"
-        ? S.plugins.installModel.enableModule
-        : S.plugins.installModel.installServer;
+    const installWords =
+      !agentContent && serverStep === "done"
+        ? S.plugins.marketServerInstalled
+        : agentContent
+          ? S.plugins.installModel.installAgent
+          : serverStep === "enable"
+            ? S.plugins.installModel.enableModule
+            : S.plugins.installModel.installServer;
     const held = !agentContent && serverStep === "held";
-    const manage =
-      !agentContent && serverStep === "done" ? null : (
-        <EntityCardAction
-          key="manage"
-          {...(where === "hero" && firstOpen === undefined ? { variant: "primary" as const } : {})}
-          glyph={INSTALL_ICON}
-          label={props.busy ? installStepWords(props.progress, props.stage) : installWords}
-          name={`${installWords} ${row.name}`}
-          // Under way, the step is said in words at every width: a spinner alone says nothing.
-          words={props.busy ? "always" : words}
-          busy={props.busy}
-          disabled={props.blocked || held}
-          {...(held ? { hint: S.plugins.installModel.adminOnly } : {})}
-          onClick={() => setInstallOpen(true)}
-        />
-      );
+    const manage = (
+      <EntityCardAction
+        key="manage"
+        {...(where === "hero" && firstOpen === undefined ? { variant: "primary" as const } : {})}
+        glyph={INSTALL_ICON}
+        label={props.busy ? installStepWords(props.progress, props.stage) : installWords}
+        name={`${installWords} ${row.name}`}
+        // Under way, the step is said in words at every width: a spinner alone says nothing.
+        words={props.busy ? "always" : words}
+        busy={props.busy}
+        disabled={props.blocked || held}
+        {...(held ? { hint: S.plugins.installModel.adminOnly } : {})}
+        onClick={() => setInstallOpen(true)}
+      />
+    );
     if (where === "hero") {
       if (firstOpen !== undefined && plugin !== undefined) {
         out.push(
@@ -454,7 +457,7 @@ export function PluginCard(props: PluginCardProps) {
             onClick={firstOpen}
           />,
         );
-      } else if (manage !== null) out.push(manage);
+      } else out.push(manage);
     }
     if (plugin !== undefined && behind.length > 0) {
       // Light (secondary): an update nudge, not the card's primary action. The last stop on the
@@ -487,15 +490,15 @@ export function PluginCard(props: PluginCardProps) {
       );
     }
     // In the hero it leads unless "Open" does.
-    if (manage !== null && (where === "card" || firstOpen !== undefined)) out.push(manage);
+    if (where === "card" || firstOpen !== undefined) out.push(manage);
     const mod = row.module;
     // What changes the server itself is the detail's, an admin's: the package update, a shipped
     // module's enable and disable for this Project, and the uninstall from the server.
     if (where === "hero" && mod !== undefined && props.isAdmin) {
       const localInstall = props.showPackageUpdates ? mod.entry?.localInstall : undefined;
-      const update = localInstall?.updateAvailable ? mod.entry : undefined;
-      if (update !== undefined) {
-        const label = S.plugins.updatePackageTo(update.version);
+      const update = localInstall ? packageUpdate(mod.entry) : null;
+      if (update !== null) {
+        const label = S.plugins.updatePackageTo(update.to);
         out.push(
           <EntityCardAction
             key="package-update"
@@ -506,7 +509,7 @@ export function PluginCard(props: PluginCardProps) {
             words={words}
             busy={props.busy}
             disabled={props.blocked}
-            onClick={() => props.onModuleApply(true, update.version)}
+            onClick={() => props.onModuleApply(true, update.to)}
           />,
         );
       }
@@ -529,21 +532,6 @@ export function PluginCard(props: PluginCardProps) {
           />,
         );
       }
-    }
-    if (where === "hero" && onServer && props.isAdmin && props.onServerUninstall !== undefined) {
-      const label = S.plugins.installModel.uninstallServer;
-      out.push(
-        <EntityCardAction
-          key="server-uninstall"
-          glyph={ICONS.trash}
-          label={label}
-          name={`${label} ${row.name}`}
-          words={words}
-          busy={props.busy}
-          disabled={props.blocked}
-          onClick={props.onServerUninstall}
-        />,
-      );
     }
     if (props.onRepair != null && row.module?.unsatisfied !== undefined) {
       out.push(
@@ -650,6 +638,10 @@ export function PluginCard(props: PluginCardProps) {
           title={title}
           steps={agentContent ? 2 : 1}
           server={serverStep}
+          {...(row.origin?.label ? { machineLabel: row.origin.label } : {})}
+          {...(onServer && props.isAdmin && props.onServerUninstall
+            ? { onRemoveServer: props.onServerUninstall }
+            : {})}
           busy={props.busy}
           blocked={props.blocked}
           progress={props.progress ?? null}
@@ -825,11 +817,10 @@ export function PluginCard(props: PluginCardProps) {
   if (props.marketCard) {
     const mod = row.module;
     const local = props.showPackageUpdates ? mod?.entry?.localInstall : undefined;
-    const release = mod?.entry?.version;
-    const downloadUpdate =
-      Boolean(local?.updateAvailable) && release !== undefined && props.isAdmin;
+    const release = local ? packageUpdate(mod?.entry) : null;
+    const downloadUpdate = release !== null && props.isAdmin;
     const agentPackage = plugin !== undefined && agentInstallable(plugin);
-    const updateAgent = currentId !== undefined && behind.includes(currentId);
+    const updateAgents = behind.filter((key) => !usage?.lastSeen?.includes(key));
     const download = !agentPackage && mod?.state === "none" && !local?.libraryOnly;
     // How many Agents carry it, across the Project: the install action's one state. Installed
     // anywhere, it is that count; installed nowhere, it is Install. Either opens the install
@@ -844,8 +835,8 @@ export function PluginCard(props: PluginCardProps) {
     const installLabel = () => {
       if (props.busy) return installStepWords(props.progress, props.stage, true);
       // The badge keeps the local version. Name the destination only when it differs.
-      if (downloadUpdate && release !== undefined) return S.plugins.updatePackageTo(release);
-      if (updateAgent) return S.skills.updateAction;
+      if (downloadUpdate) return S.plugins.updatePackageTo(release.to);
+      if (updateAgents.length > 0) return S.skills.updateAction;
       if (agentPackage) return count > 0 ? S.plugins.marketAgentInstalls(count) : S.skills.install;
       if (serverInstalled) return S.plugins.marketServerInstalled;
       if (mod && mod.state !== "none" && !agentPackage) return S.plugins.status[status];
@@ -854,8 +845,6 @@ export function PluginCard(props: PluginCardProps) {
     const action = installLabel();
     /** A member cannot act on the server: a package update, or a server module not here yet. */
     const memberHeld = !props.isAdmin && (downloadUpdate || (download && serverStep === "held"));
-    /** What the control opens: the flow, while there is a step left to take in it. */
-    const flows = agentContent || serverStep !== "done";
     const needAgent =
       !props.canQuickStart || (currentId !== undefined && props.unknown?.has(currentId));
     return (
@@ -885,10 +874,9 @@ export function PluginCard(props: PluginCardProps) {
             disabled: props.pending === true || (props.blocked && !props.busy) || memberHeld,
             ...(memberHeld ? { hint: S.plugins.installModel.adminOnly } : {}),
             onClick: () => {
-              if (downloadUpdate) props.onModuleApply(true, release);
-              else if (updateAgent && !props.busy) setPendingUpdate([currentId!]);
-              else if (flows) setInstallOpen(true);
-              else setDetailOpen(true);
+              if (downloadUpdate) props.onModuleApply(true, release.to);
+              else if (updateAgents.length > 0 && !props.busy) setPendingUpdate(updateAgents);
+              else setInstallOpen(true);
             },
           }}
           quick={{
@@ -1009,9 +997,7 @@ export interface RowHold {
 
 /**
  * One Agent row in the install flow's Agent step: an Agent without the plugin shows "Install";
- * one with it shows "Installed", switching to "Uninstall" on hover for the Project owner (the
- * same button carries the uninstall, which the server takes from the owner alone) and a plain
- * label for anyone else; a copy the server lists as behind additionally shows "Update" (reinstall =
+ * an installed copy shows its status and a separate removal action for the Project owner; a copy the server lists as behind additionally shows "Update" (reinstall =
  * update). Install and uninstall go through the page's optimistic updates, rolling back on
  * failure. Where the Agent carries the plugin's MCP servers, marks beside its name say what
  * they wait for — vault values, a sign-in — and a Project owner gets Set up for the values. A
@@ -1061,7 +1047,7 @@ export function InstallRow({
       : { disabled: true, title: held.reason, "data-tooltip-extra": true as const };
   return (
     <div
-      className={`flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60 ${held?.off === true ? "opacity-60" : ""}`}
+      className={`flex flex-wrap items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60 ${held?.off === true ? "opacity-60" : ""}`}
     >
       <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" src={avatarSrc} />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -1110,27 +1096,19 @@ export function InstallRow({
           {S.skills.updateAction}
         </Button>
       )}
-      {installed && !isOwner ? (
-        <Pill tone="success">{S.skills.installed}</Pill>
-      ) : installed ? (
-        // group: on hover the button's copy switches "Installed" → "Uninstall" (the same button
-        // carries the uninstall action) — not on a held row, whose button does nothing.
+      {installed && <Pill tone="success">{S.skills.installed}</Pill>}
+      {installed && isOwner ? (
         <Button
           size="sm"
           variant="ghost"
-          className={`shrink-0 ${held === null ? "group" : ""}`}
+          className="shrink-0"
           aria-label={`${S.skills.uninstall} ${who}`}
           onClick={() => onToggle(false)}
           {...hold}
         >
-          <span className="group-hover:hidden">{S.skills.installed}</span>
-          {held === null && (
-            <span className="hidden text-red-600 group-hover:inline dark:text-red-400">
-              {S.skills.uninstall}
-            </span>
-          )}
+          {S.skills.uninstall}
         </Button>
-      ) : (
+      ) : !installed ? (
         <Button
           size="sm"
           className="shrink-0"
@@ -1141,7 +1119,7 @@ export function InstallRow({
         >
           {S.skills.install}
         </Button>
-      )}
+      ) : null}
     </div>
   );
 }

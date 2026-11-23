@@ -42,7 +42,11 @@ export function renderMainListHeader(scope: MainSidebarState) {
     onNavigate,
   } = scope;
   return (
-    <SidebarListHeader label={S.chat.sessionListByMode[groupMode]} searching={searchOpen}>
+    <SidebarListHeader
+      label={S.chat.sessionListByMode[groupMode]}
+      searching={searchOpen}
+      fold={{ open: !scope.listFolded, toggle: () => scope.setListFolded(!scope.listFolded) }}
+    >
       {searchOpen ? (
         /* Expanded field: the magnifier, the input and the clear ×, one bordered
              box filling the row (its width rides the column tween). Esc and × both

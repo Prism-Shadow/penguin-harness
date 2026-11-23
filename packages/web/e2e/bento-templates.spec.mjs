@@ -41,8 +41,16 @@ test("preview a template, create a named copy and reopen it from Recent", async 
   await editor.locator(".ed-title").press("Control+s");
   await expect.poll(async () => (await read()).title).toBe(changed);
   await app.locator("#show-decks").click();
+  // A UTF-8 deck written by Windows PowerShell carries a leading byte order mark.
+  const url = decks + "/" + opened.id;
+  const saved = await (await page.request.get(url)).json();
+  const marked = "\uFEFF" + saved.text;
+  await expect(await page.request.put(url, { data: { text: marked, base: saved.rev } })).toBeOK();
+  await page.reload();
   await app.locator("[data-open-deck]").filter({ hasText: changed }).click();
   await expect(editor.locator(".ed-thumb")).toHaveCount(4);
+  await expect(editor.locator(".ed-title")).toHaveValue(changed);
+  expect((await (await page.request.get(url)).json()).text).toBe(marked);
   await app.locator("#file-button").click();
   const exporting = page.waitForEvent("download");
   await app.locator("#pptx").click();

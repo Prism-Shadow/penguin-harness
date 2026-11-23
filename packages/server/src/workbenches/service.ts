@@ -603,7 +603,7 @@ export class WorkbenchService implements Workbenches {
     const current = this.loading.has(k)
       ? this.loadingRevision.get(k)
       : (this.loaded.get(k)?.folder.revision ?? (await readLoadStatus(folder.dir))?.revision);
-    if (current === folder.revision) return;
+    if (current === folder.revision || this.disposed) return;
     await this.load(projectId, agentId, folder);
   }
 
@@ -762,7 +762,7 @@ export class WorkbenchService implements Workbenches {
     this.forget(projectId, agentId, workbenchId);
   }
 
-  async appCenter(projectId: string): Promise<AppCenterShortcut[]> {
+  async appCenter(projectId: string, hidden = false): Promise<AppCenterShortcut[]> {
     const out: AppCenterShortcut[] = [];
     // The index's order is the Agents list's (created, then id); a row whose folder is no longer
     // an Agent is not one the list shows either.
@@ -780,13 +780,14 @@ export class WorkbenchService implements Workbenches {
       this.watch(projectId, agentId);
       const base = workbenchesDir(this.paths.root, projectId, agentId);
       // With the Agent-wide switch off none of its workbenches runs, so none has a tile.
-      if (await isSwitchedOff(base)) continue;
+      if (!hidden && (await isSwitchedOff(base))) continue;
       const agentName = (await this.agentConfig.readCardMeta(projectId, agentId)).name ?? agentId;
       const shortcuts = await agentShortcuts(
         projectId,
         { agentId, agentName },
         base,
         (workbenchId) => this.building(key(projectId, agentId, workbenchId)),
+        hidden ? "hidden" : "appCenter",
       );
       // The plugin that installed each, from its receipt; receipts that will not read name none,
       // and the tiles still list.
@@ -1569,7 +1570,7 @@ export class WorkbenchService implements Workbenches {
 
   private schedule(projectId: string, agentId: string, workbenchId: string): void {
     const k = key(projectId, agentId, workbenchId);
-    if (this.removing.has(k)) return;
+    if (this.disposed || this.removing.has(k)) return;
     const t = this.pending.get(k);
     if (t) clearTimeout(t);
     this.pending.set(
@@ -1577,6 +1578,8 @@ export class WorkbenchService implements Workbenches {
       setTimeout(() => {
         this.pending.delete(k);
         void this.reloadIfChanged(projectId, agentId, workbenchId).catch((err) => {
+          // A folder read already in flight can settle after shutdown closed the Project database.
+          if (this.disposed) return;
           if (err instanceof WorkbenchNotFound) {
             this.forget(projectId, agentId, workbenchId);
             return;

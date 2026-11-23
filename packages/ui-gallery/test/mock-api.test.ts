@@ -102,6 +102,19 @@ describe("the mocked API", () => {
     expect(crashes, "handlers that threw something other than an ApiError").toEqual([]);
   });
 
+  it("restores the same installed workbench from the App Center hidden list", async () => {
+    resetStore({ lang: "en", signedIn: true, freshProject: true });
+    const all = await api.getAppCenter(IDS.project);
+    const app = all.shortcuts.find((item) => item.workbenchId === "slides")!;
+    expect(app).toBeDefined();
+    await api.setWorkbenchAppCenter(IDS.project, app.agentId, app.workbenchId, false, null);
+    expect((await api.getAppCenter(IDS.project)).shortcuts).not.toContainEqual(app);
+    expect((await api.getAppCenter(IDS.project, null, true)).shortcuts).toContainEqual(app);
+    await api.setWorkbenchAppCenter(IDS.project, app.agentId, app.workbenchId, true, null);
+    expect(await api.getAppCenter(IDS.project)).toEqual(all);
+    expect((await api.getAppCenter(IDS.project, null, true)).shortcuts).toEqual([]);
+  });
+
   it("answers the real ids with the fixtures, and unknown ids with 404", async () => {
     const store = resetStore({ lang: "zh", signedIn: true });
     expect(await api.getContributions()).toEqual({
@@ -123,6 +136,7 @@ describe("the mocked API", () => {
       IDS.agents.notes,
       IDS.agents.general,
     ]);
+    expect(agents.agents.every((agent) => Number.isInteger(agent.pluginCount))).toBe(true);
     const projectId = store.f.project.projectId;
     const agentId = IDS.agents.docs;
     expect(await api.getAgentPlugins(projectId, agentId, null)).toEqual({
@@ -190,7 +204,7 @@ describe("the mocked API", () => {
     ).rejects.toMatchObject({ status: 404, code: "unknown_request" });
   });
 
-  it("lists an installed workbench in its Agent's sidebar until it is hidden there, keeping its pages and App Center tile", async () => {
+  it("keeps the legacy installation sidebar flag independent from an app's pages and App Center tile", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
     const shortcut = store.f.appCenter.shortcuts[0]!;

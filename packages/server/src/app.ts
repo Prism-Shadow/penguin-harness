@@ -27,7 +27,7 @@ import {
   bodyLimitBytes,
   toAttachmentLimits,
 } from "@prismshadow/penguin-library-setting/attachment-limits";
-import { isAgentImport, MAX_PACKAGE_BYTES } from "./services/agent-zip.js";
+import { isAgentImport, MAX_PACKAGE_BYTES } from "@prismshadow/penguin-library-agent/agent-zip";
 import type { DatabaseSync } from "node:sqlite";
 import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "./config.js";
@@ -114,10 +114,7 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { AgentConfigService } from "./services/agent-config-service.js";
-import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
-import { BenchmarkService } from "./services/benchmark-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ProjectService } from "./services/project-service.js";
@@ -127,7 +124,6 @@ import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
 import { UsageService } from "./services/usage-service.js";
-import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { HmrHost, hmrControl } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";

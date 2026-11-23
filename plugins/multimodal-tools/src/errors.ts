@@ -1,3 +1,5 @@
+import type { EmptyResponseError, UpstreamError, UsageMetadata } from "@prismshadow/mmsp";
+
 /**
  * A refusal or failure this plugin reports: an HTTP status and a stable code, the shape the host's
  * own errors have (`{ error: { code, message } }`). The CLI prints the message; the routes answer
@@ -36,6 +38,33 @@ export function errorFields(err: unknown): { status: number; code: string; messa
     return { status: e.status, code: e.code, message: e.message };
   }
   return { status: 500, code: "internal", message: "The multimodal tools failed unexpectedly." };
+}
+
+/** Dedicated transcription clients report a completed, empty string as MMSP's EmptyResponseError.
+ * The host owns the client, so the plugin reads its public error fields across the module boundary. */
+export function emptyTranscriptUsage(err: unknown): UsageMetadata | null | undefined {
+  if (!(err instanceof Error)) return;
+  const local = err as EmptyResponseError;
+  const remote = err as UpstreamError;
+  const result =
+    err.name === "EmptyResponseError"
+      ? {
+          client: local.client,
+          finish_reason: local.finishReason,
+          usage_metadata: local.usageMetadata,
+        }
+      : err.name === "UpstreamError" &&
+          remote.status === null &&
+          remote.errorType === "EmptyResponseError"
+        ? remote.error
+        : undefined;
+  if (
+    result?.finish_reason !== "stop" ||
+    (result.client !== "DeepSeekTranscriptionClient" &&
+      result.client !== "OpenaiTranscriptionClient")
+  )
+    return;
+  return (result.usage_metadata as UsageMetadata | null) ?? null;
 }
 
 /** A failure in words a person can act on; the provider's own message is not shown. */

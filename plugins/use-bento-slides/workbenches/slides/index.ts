@@ -21,7 +21,7 @@
  *   GET    /events               server-sent events: `decks` whenever a deck file changed
  *   GET    /ask?deck=:id         the deck's Session and whether it is running
  *   POST   /ask                  { deck, text, slide?, selection? } runs one request of the Agent on the deck
- *   POST   /ask/session          { deck, model } opens the deck's conversation on the chosen model, or returns its existing Session
+ *   POST   /ask/session          { deck, model? } opens the deck's conversation on the chosen model, or returns its existing Session
  *   POST   /ask/reset            { deck } forgets the deck's Session; the next request opens a new one
  *   POST   /export?name=…        keeps a file the page built in the cache folder; answers the link that downloads it
  *   GET    /export/:token
@@ -173,7 +173,10 @@ export default {
           let title = file.id;
           let slides = 0;
           try {
-            const doc = JSON.parse((await readDeck(file.id)) ?? "null") as {
+            const bytes = await readPlain(await decksDir(), file.name);
+            if (!bytes) return { stamp, title, slides };
+            // A UTF-8 BOM belongs to the encoding, not the title or the JSON grammar.
+            const doc = JSON.parse(new TextDecoder().decode(bytes)) as {
               title?: unknown;
               slides?: unknown;
             } | null;
@@ -566,6 +569,9 @@ export default {
 
                 if (route === "/ask" && method === "GET") {
                   const id = String(req.query.deck ?? "");
+                  // A prompt is visible in the rail before host.run has admitted its Task.
+                  // Wait for the submission so an idle snapshot cannot claim its predecessor's result.
+                  await queues.get(id);
                   const sessionId = sessions()[id] ?? null;
                   const status = sessionId === null ? null : statusOf(sessionId);
                   // The answer of a request that has ended is taken up here, once: the page
@@ -613,8 +619,7 @@ export default {
                   const model = candidate as { provider: string; modelId: string } | undefined;
                   if (route === "/ask/session") {
                     const id = String(body.deck ?? "");
-                    if (!DECK_ID.test(id) || !model)
-                      return json({ error: "deck and model are required" }, 400);
+                    if (!DECK_ID.test(id)) return json({ error: "deck is required" }, 400);
                     const sessionId = await ensureSession(id, model);
                     return sessionId ? json({ sessionId }) : json({ error: "no such deck" }, 404);
                   }
@@ -626,11 +631,6 @@ export default {
                   if (text.length > 20_000) return json({ error: "text is too long" }, 400);
                   const sessionId = await ensureSession(id, model);
                   if (!sessionId) return json({ error: "no such deck" }, 404);
-                  if (statusOf(sessionId) === "compacting")
-                    return json(
-                      { error: "The Session is switching context. Try again when it finishes." },
-                      409,
-                    );
                   const slide = (body.slide ?? null) as { id?: unknown; number?: unknown } | null;
                   const selection = Array.isArray(body.selection)
                     ? body.selection.filter((s): s is string => typeof s === "string").slice(0, 40)
@@ -652,16 +652,18 @@ export default {
                   ]
                     .filter((line) => line !== "")
                     .join("\n");
-                  await say(id, "user", text);
-                  const at = talkOf(id).at(-1)!.at;
-                  try {
-                    const run = await host.run(sessionId, [{ text: prompt }]);
-                    return json({ sessionId, queued: run.queued });
-                  } catch (err) {
-                    const error = err instanceof Error ? err.message : String(err);
-                    await say(id, "error", error, { sessionId, at });
-                    return json({ error }, 503);
-                  }
+                  return locked(id, async () => {
+                    await say(id, "user", text);
+                    const at = talkOf(id).at(-1)!.at;
+                    try {
+                      const run = await host.run(sessionId, [{ text: prompt }]);
+                      return json({ sessionId, queued: run.queued });
+                    } catch (err) {
+                      const error = err instanceof Error ? err.message : String(err);
+                      await say(id, "error", error, { sessionId, at });
+                      return json({ error }, 503);
+                    }
+                  });
                 }
 
                 return json({ error: `no such route: ${method} ${route}` }, 404);

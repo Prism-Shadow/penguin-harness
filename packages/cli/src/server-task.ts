@@ -32,6 +32,7 @@ import { dim } from "./render.js";
 interface ServerEventFrame {
   type: string;
   state?: "idle" | "running" | "compacting";
+  contextWindow?: number | string;
   toolCall?: AmspRecord<ToolCallPayload>;
   origin?: string[];
 }
@@ -282,7 +283,10 @@ export async function watchTask(
     if (frame === null) break;
     if (frame.event === "server_event") {
       const ev = JSON.parse(frame.data) as ServerEventFrame;
-      if (ev.type === "task_state" && ev.state === "idle") break;
+      if (ev.type === "task_state") {
+        if (ev.contextWindow !== undefined) renderer?.setContextWindow(ev.contextWindow);
+        if (ev.state === "idle") break;
+      }
       if (ev.type === "approval_request") answerApproval(ev);
       if (ev.type === "goal_finished") {
         const finished = ev as unknown as GoalFinishedEvent;
@@ -306,10 +310,12 @@ export async function watchTask(
       if (isHookContinue(msg)) continued = true;
       if (isHookInput(msg) && (round === 0 || continued)) {
         continued = false;
-        if (round > 0) renderer?.endTask(Date.now() - segmentStartedAt);
-        round++;
-        segmentStartedAt = Date.now();
-        opts.goal.out.write(`${dim(t.goalRound(round))}\n`);
+        const now = Date.now();
+        const elapsed = round > 0 ? now - segmentStartedAt : undefined;
+        const label = dim(t.goalRound(++round));
+        segmentStartedAt = now;
+        if (renderer) renderer.printGoalRound(label, elapsed);
+        else opts.goal.out.write(`${label}\n`);
       }
     }
     if (opts.onAssistantText && (msg.origin?.length ?? 0) === 0 && isModelMessage(msg)) {

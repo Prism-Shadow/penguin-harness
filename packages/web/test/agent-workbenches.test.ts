@@ -12,21 +12,18 @@
  *   Version history lists the versions and a restore asks first, and Remove asks first — a
  *   cancel writes nothing, a confirmation removes only that workbench and refreshes the list,
  *   which then says the Agent has no workbench.
- * - The row's switches carry their words. The App Center switch commits on click, from the switch
- *   or from its words; a refused write leaves it where the file says.
- * - The More menu's first row is the same App Center setting, checkable: picking it writes at once
- *   and the row's switch follows.
- * - A machine's Agent has the App Center switch too, and it writes on that machine: the App
- *   Center lists a machine's apps, and this is where one taken off it comes back.
+ * - Hide and Unhide write the owning machine's App Center setting once, roll back on failure,
+ *   and keep the sidebar setting independent.
  * - The row leads with the workbench's own App Center icon when it has one, else no image.
  * - The More menu's sidebar row is checked by default; picking it writes the sidebar setting at
  *   once and nothing of the App Center's, and a refused write puts it back.
  */
+import { rowOf } from "./helpers/agent-plugins";
 import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
-import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
+import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
 import { ThemeProvider } from "../src/state/theme";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -86,10 +83,11 @@ afterEach(async () => {
 });
 /** Picks a row of the workbench's More menu. */
 async function more(item: string) {
+  if (!hasButton(`${en.workbenches.more} Support`))
+    await click(rowOf("Support").querySelector("button")!);
   await click(button(`${en.workbenches.more} Support`));
   await click(menuItem(item));
 }
-const appCenterSwitch = () => switchNamed(`${en.workbenches.showInAppCenter} Support`);
 /** The settings page with the shell's windows beside it, as the app mounts them. */
 async function openWithWindows(over: Partial<WorkbenchInfo> = {}) {
   setActiveStrings(en);
@@ -100,7 +98,7 @@ async function openWithWindows(over: Partial<WorkbenchInfo> = {}) {
   const router = await mountAgentApp(h(AgentSettingsPage), {
     at: `/agents/${AGENT_ID}?tab=workbenches`,
     extra: [{ path: "/apps", element: h("p", null, "App Center") }],
-    layers: [h(ThemeProvider, null, h(AppCenterWindows))],
+    layers: [h(ThemeProvider, null, h(WorkspaceWindows))],
   });
   await waitFor(() => hasButton(`${en.workbenches.open} Support`));
   return router;
@@ -113,7 +111,7 @@ it("opens the app's window over the main area, and its Close comes back to the r
   await waitFor(() => appWindow()?.querySelector("iframe") != null);
   expect(appWindow()!.querySelector("iframe")!.getAttribute("title")).toBe("Support");
 
-  await click(buttonIn(appWindow()!, en.appCenter.windowClose));
+  await pageAction("Support", en.appCenter.windowClose);
   expect(whereIs(router)).toBe(`/agents/${AGENT_ID}?tab=workbenches`);
   expect(appWindow()).toBeNull();
 });
@@ -151,71 +149,20 @@ it("asks before removing from the More menu: a cancel deletes nothing, a confirm
   await waitFor(() => !hasButton(`${en.workbenches.more} Support`));
   expect(document.body.textContent).toContain(en.agentPlugins.workbenchesEmpty);
 });
-it("names both switches beside them, and flips the App Center one from its words; a refused write leaves it where the file says", async () => {
-  const { server } = await open();
-  const words = () => appCenterSwitch().closest("label")!;
-  expect(words().textContent).toBe(en.workbenches.showInAppCenter);
-  expect(switchNamed(en.workbenches.enableOne("Support")).closest("label")?.textContent).toBe(
-    en.workbenches.enableLabel,
+it("offers Enable and Open but makes no visibility changes for a hidden workbench", async () => {
+  const title = "Support";
+  const { server } = await open(
+    [{ id: "support.main", key: "main", title, renderer: { iframe: { src: "/support" } } }],
+    { enabled: true, appCenter: { show: false } },
   );
-  expect(appCenterSwitch().getAttribute("aria-checked")).toBe("false");
-
-  server.refuseNext(409, "workbench_manifest_invalid", "package.json is not valid JSON");
-  await click(appCenterSwitch());
-  await waitFor(() => !appCenterSwitch().disabled);
-  expect(appCenterSwitch().getAttribute("aria-checked")).toBe("false");
-
-  // The words beside the switch flip it as well.
-  await click(words());
-  await waitFor(() => appCenterSwitch().getAttribute("aria-checked") === "true");
-  await waitFor(() => !appCenterSwitch().disabled);
-  await click(words());
-  await waitFor(() => appCenterSwitch().getAttribute("aria-checked") === "false");
-  expect(
-    server
-      .writes()
-      .filter((request) => request.path.endsWith("/app-center"))
-      .map((request) => request.body),
-  ).toEqual([{ show: true }, { show: true }, { show: false }]);
+  const row = rowOf(title);
+  expect(row.querySelectorAll("button")).toHaveLength(3); // Name, Enable, Open.
+  expect(switchNamed(en.workbenches.enableOne(title))).toBeTruthy();
+  expect(hasButton(`${en.workbenches.open} ${title}`)).toBe(true);
+  expect(hasButton(`${en.workbenches.more} ${title}`)).toBe(false);
+  expect(server.writes().filter((r) => r.path.endsWith("/app-center"))).toHaveLength(0);
 });
-it("shows the workbench in the App Center from the More menu's checkable row, and the row's switch follows", async () => {
-  const { server } = await open();
-  const menuRow = async () => {
-    await click(button(`${en.workbenches.more} Support`));
-    return menuItem(en.workbenches.showInAppCenter);
-  };
-  expect((await menuRow()).getAttribute("aria-checked")).toBe("false");
-  await click(menuItem(en.workbenches.showInAppCenter));
-  await waitFor(() => appCenterSwitch().getAttribute("aria-checked") === "true");
-  await waitFor(() => !appCenterSwitch().disabled);
-  expect(
-    server
-      .writes()
-      .filter((request) => request.path.endsWith("/app-center"))
-      .map((request) => [request.method, request.body]),
-  ).toEqual([["PATCH", { show: true }]]);
-  expect((await menuRow()).getAttribute("aria-checked")).toBe("true");
-});
-it("offers a machine's Agent the App Center switch too, and writes it on that machine", async () => {
-  setActiveStrings(en);
-  const server = agentServer(undefined, {
-    workbenches: [info([])],
-    machines: [{ machineId: "gpu1", alias: "gpu-box", agents: [AGENT_ID] }],
-  });
-  await mountAgentApp(h(AgentSettingsPage), {
-    at: `/agents/${AGENT_ID}?machine=gpu1&tab=workbenches`,
-  });
-  await waitFor(() => document.body.textContent?.includes("Support") === true);
-  await click(appCenterSwitch());
-  await waitFor(() => appCenterSwitch().getAttribute("aria-checked") === "true");
-  expect(
-    server
-      .writes()
-      .filter((request) => request.path.endsWith("/app-center"))
-      .map((request) => [request.machine, request.body]),
-  ).toEqual([["gpu1", { show: true }]]);
-});
-const row = () => appCenterSwitch().closest("li")!;
+const row = () => rowOf("Support");
 it("leads the row with the workbench's own App Center icon", async () => {
   await open([], { icon: { url: "/api/icons/support.png?rev=1", tint: false } });
   expect(row().querySelector("img")?.getAttribute("src")).toBe("/api/icons/support.png?rev=1");
@@ -223,34 +170,6 @@ it("leads the row with the workbench's own App Center icon", async () => {
 it("leads the row with the anvil tile when the workbench names no icon", async () => {
   await open();
   expect(row().querySelector("img")).toBeNull();
-});
-/** The More menu's sidebar row, the menu opened for it. */
-async function sidebarRow() {
-  await click(button(`${en.workbenches.more} Support`));
-  return menuItem(en.workbenches.showInSidebar);
-}
-it("takes the workbench off the sidebar from the More menu, writing nothing of the App Center; a refused write puts it back", async () => {
-  const { server } = await open();
-  const sidebarWrites = () =>
-    server.writes().filter((request) => request.path.endsWith("/sidebar"));
-  expect((await sidebarRow()).getAttribute("aria-checked")).toBe("true");
-  server.refuseNext(500, "internal_error", "Disk full");
-  await click(menuItem(en.workbenches.showInSidebar));
-  await waitFor(() => sidebarWrites().length === 1);
-  const refused = await sidebarRow();
-  await waitFor(() => refused.getAttribute("aria-disabled") !== "true");
-  expect(refused.getAttribute("aria-checked")).toBe("true");
-
-  await click(refused);
-  await waitFor(() => sidebarWrites().length === 2);
-  const written = await sidebarRow();
-  await waitFor(() => written.getAttribute("aria-checked") === "false");
-  expect(sidebarWrites().map((request) => [request.method, request.body])).toEqual([
-    ["PATCH", { show: false }],
-    ["PATCH", { show: false }],
-  ]);
-  expect(server.writes().filter((request) => request.path.endsWith("/app-center"))).toEqual([]);
-  expect(appCenterSwitch().getAttribute("aria-checked")).toBe("false");
 });
 it("opens a workbench hidden from the sidebar and the App Center in its window all the same", async () => {
   const router = await openWithWindows({ showInSidebar: false, appCenter: { show: false } });

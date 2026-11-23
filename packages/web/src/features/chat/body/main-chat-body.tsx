@@ -1,3 +1,4 @@
+import { Activity } from "react";
 import { WallpaperSurface, Button, EmptyState, Skeleton } from "@prismshadow/penguin-ui";
 import { S } from "../../../lib/strings";
 import { MessageStream } from "../message-stream";
@@ -5,11 +6,13 @@ import { ChatDropRegion } from "../drop-zone";
 import { ConversationOutline } from "../conversation-outline";
 import { DraftView } from "./draft-view";
 import { GoalStatusBanner } from "../goal-banner";
+import { RouteOfflineNotice } from "../route-offline-notice";
+import { OfflineSessionHistory } from "../offline-session-history";
 import { HistoryLoadFailed } from "../history-load-failed";
 import { HistoryLoading } from "../history-loading";
 import { RequestFailureDialog } from "../request-failure-dialog";
 import { MachineRestartNotice } from "../machine-restart-notice";
-import { DockPanel, DockLauncher, measureComposer } from "../../dock";
+import { ChatDockArea, DockPanel, DockLauncher, measureComposer } from "../../dock";
 import { ChatDockProvider } from "../session/main-dock-context";
 import { ReplyFilesProvider } from "../reply-files-provider";
 import { PathCapsulesProvider } from "../../company";
@@ -47,6 +50,7 @@ export function renderMainChatBody(scope: MainChatView) {
     routeSessionOwner,
     routeSessionPending,
     routeSessionOffline,
+    offlineHistory,
     routeOutcome,
     composerRef,
     addComposerReference,
@@ -59,6 +63,7 @@ export function renderMainChatBody(scope: MainChatView) {
     emptyChat,
     input,
   } = scope;
+  const showDocks = scope.hostsAppPanel || (scope.paneFocused && archivedRow === null);
   return (
     <>
       <ChatDockProvider value={chatDock}>
@@ -70,7 +75,10 @@ export function renderMainChatBody(scope: MainChatView) {
             (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
             dock covers the row alone. Layout-neutral: it takes the column's remaining height
             exactly as the row and the dock did when they sat in the column themselves. */}
-          <div data-dock-area className="flex min-h-0 flex-1 flex-col">
+          <ChatDockArea
+            mounts={showDocks ? [rightMount, bottomMount] : null}
+            sessionId={scope.draft ? null : scope.routeSessionId}
+          >
             {/* Body: chat column + the right dock on this row (below the toolbar — a dock
               beside the whole page would squeeze the header), with the bottom dock after the
               row spanning the full page width. data-dock-row is what the drag preview
@@ -119,33 +127,36 @@ export function renderMainChatBody(scope: MainChatView) {
                           navigate("/chat");
                         }}
                       />
+                    ) : offlineHistory && (selected || routeSessionPending) ? (
+                      <OfflineSessionHistory {...offlineHistory} />
                     ) : selected ? (
-                      stream.error ? (
-                        // History failed to load: say why and offer the way on, instead of staying on
-                        // a misleading empty state — for a conversation on a machine out of reach,
-                        // the machine's state rather than the transport's error.
-                        <HistoryLoadFailed
-                          projectId={projectId}
-                          sessionId={selected.sessionId}
-                          error={stream.error}
-                          cause={stream.errorCause}
-                          onRetry={stream.retry}
-                        />
-                      ) : stream.loading ? (
-                        // The skeleton, and past a second, for a conversation on a machine, how far
-                        // its newest messages have come over and how the link stands.
-                        <HistoryLoading
-                          projectId={projectId}
-                          sessionId={selected.sessionId}
-                          progress={stream.transfer.window}
-                          onRetryNow={stream.retryNow}
-                        />
-                      ) : (
-                        // The empty state shares the same structure as the message stream (message
-                        // area + bottom input area): only the message area's content differs, and
-                        // ChatInput always mounts in the same JSX slot, so it isn't unmounted and
-                        // recreated when the first message arrives (preserving draft/focus).
-                        <>
+                      <>
+                        {stream.error ? (
+                          // History failed to load: say why and offer the way on, instead of staying on
+                          // a misleading empty state — for a conversation on a machine out of reach,
+                          // the machine's state rather than the transport's error.
+                          <HistoryLoadFailed
+                            projectId={projectId}
+                            sessionId={selected.sessionId}
+                            error={stream.error}
+                            cause={stream.errorCause}
+                            onRetry={stream.retry}
+                          />
+                        ) : stream.loading ? (
+                          // The skeleton, and past a second, for a conversation on a machine, how far
+                          // its newest messages have come over and how the link stands.
+                          <HistoryLoading
+                            projectId={projectId}
+                            sessionId={selected.sessionId}
+                            progress={stream.transfer.window}
+                            onRetryNow={stream.retryNow}
+                          />
+                        ) : null}
+                        {/* A resumed pane reopens its stream. Keep the composer mounted while
+                          history loads so its unsent text, files and selection survive. */}
+                        <Activity mode={stream.loading || stream.error ? "hidden" : "visible"}>
+                          {/* The empty state shares the same structure as the message stream (message
+                           area + bottom input area). The first message leaves the composer in place. */}
                           {/* `relative`: the floating dock launcher below anchors to this body —
                             the region between the toolbar and the composer — so clamping to
                             it keeps the launcher off both. On a phone the ball rides over the
@@ -205,7 +216,9 @@ export function renderMainChatBody(scope: MainChatView) {
                             )}
                             {/* The right dock's floating launcher: rides this body's right edge
                               while that dock is hidden, and opens its panels in one click. */}
-                            <DockLauncher agentsPending={anySubagentPending} />
+                            {scope.paneFocused && (
+                              <DockLauncher agentsPending={anySubagentPending} />
+                            )}
                             <RequestFailureDialog
                               failure={failureShown}
                               sessionId={selected?.sessionId ?? null}
@@ -235,18 +248,14 @@ export function renderMainChatBody(scope: MainChatView) {
                               {input}
                             </div>
                           </WallpaperSurface>
-                        </>
-                      )
+                        </Activity>
+                      </>
                     ) : routeSessionOffline ? (
-                      <EmptyState
-                        title={
-                          routeSessionOwner === null
-                            ? S.chat.sessionOnOfflineMachineUnknown
-                            : S.chat.sessionOnOfflineMachine(
-                                machineLabels.get(routeSessionOwner) ?? routeSessionOwner,
-                              )
-                        }
-                        description={S.chat.sessionOfflineHint}
+                      <RouteOfflineNotice
+                        owner={routeSessionOwner}
+                        offline={scope.offlineMachineIds}
+                        disconnected={scope.disconnectedMachineIds}
+                        labels={machineLabels}
                       />
                     ) : !sessionsLoading && routeOutcome === "notFound" ? (
                       // A dead link: said in place, with the one way on that fits the mode —
@@ -278,7 +287,7 @@ export function renderMainChatBody(scope: MainChatView) {
                 )}
               </ChatDropRegion>
 
-              {archivedRow === null && rightMount.view && (
+              {showDocks && rightMount.view && (
                 <DockPanel
                   view={rightMount.view}
                   open={rightMount.open}
@@ -288,7 +297,7 @@ export function renderMainChatBody(scope: MainChatView) {
               )}
             </div>
 
-            {archivedRow === null && bottomMount.view && (
+            {showDocks && bottomMount.view && (
               <DockPanel
                 view={bottomMount.view}
                 open={bottomMount.open}
@@ -296,7 +305,7 @@ export function renderMainChatBody(scope: MainChatView) {
                 panelBadges={{ agents: anySubagentPending }}
               />
             )}
-          </div>
+          </ChatDockArea>
         </ReplyFilesProvider>
       </ChatDockProvider>
     </>

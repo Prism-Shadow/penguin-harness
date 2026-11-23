@@ -77,7 +77,11 @@ async function fakeHost({ withFolders = true } = {}) {
       return now;
     },
     sessionTitle: () => null,
-    async sessionResult() {
+    async sessionResult(): Promise<{
+      status: "completed" | "failed";
+      text: string;
+      error: string | null;
+    }> {
       return { status: "completed", text: "The chart on slide 3 now shows Q1 to Q4.", error: null };
     },
     subscribe: () => () => undefined,
@@ -158,15 +162,21 @@ describe("saving a deck the Agent edits too", () => {
     const { call } = mount(host);
     const created = await call("POST", "/decks", { id: "q4", text: deckText("Q4") });
     expect(created.status).toBe(201);
-    await agentWrites("decks/q4.bento.json", deckText("Q4, as the Agent wrote it"));
+    // Windows PowerShell can mark a UTF-8 file with a BOM. Index it by title, while keeping
+    // its exact contents in conflict responses and revision history.
+    const agentVersion = "\uFEFF" + deckText("Q4, as the Agent wrote it");
+    await agentWrites("decks/q4.bento.json", agentVersion);
+    expect((await call("GET", "/decks")).body.decks).toEqual([
+      expect.objectContaining({ title: "Q4, as the Agent wrote it" }),
+    ]);
 
     const stale = await call("PUT", "/decks/q4", {
       text: deckText("Q4, by hand"),
       base: created.body.rev,
     });
     expect(stale.status).toBe(409);
-    expect(stale.body.text).toBe(deckText("Q4, as the Agent wrote it"));
-    expect(await text("decks/q4.bento.json")).toBe(deckText("Q4, as the Agent wrote it"));
+    expect(stale.body.text).toBe(agentVersion);
+    expect(await text("decks/q4.bento.json")).toBe(agentVersion);
 
     const merged = await call("PUT", "/decks/q4", {
       text: deckText("Q4, both"),
@@ -178,7 +188,7 @@ describe("saving a deck the Agent edits too", () => {
     const { versions } = (await call("GET", "/decks/q4/history")).body;
     expect(versions.map((version: { by: string }) => version.by)).toEqual(["agent"]);
     const kept = await call("GET", `/decks/q4/history/${versions[0].name}`);
-    expect(kept.body.text).toBe(deckText("Q4, as the Agent wrote it"));
+    expect(kept.body.text).toBe(agentVersion);
   });
 
   it("keeps the newest twenty replaced versions, newest first", async () => {
@@ -243,6 +253,52 @@ describe("a page listening for changes", () => {
 });
 
 describe("asking the Agent", () => {
+  it("does not attach the previous abort to a retry while the host is admitting it", async () => {
+    const { host, status } = await fakeHost();
+    const { call } = mount(host);
+    await call("POST", "/decks", { id: "draft", text: deckText("draft") });
+    await call("POST", "/ask", { deck: "draft", text: "First edit" });
+    status.set("session-1", "idle");
+    const result = vi.spyOn(host, "sessionResult").mockResolvedValue({
+      status: "failed",
+      text: "",
+      error: "Task aborted",
+    });
+    expect((await call("GET", "/ask", null, { deck: "draft" })).body.messages.at(-1).text).toBe(
+      "Task aborted",
+    );
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const run = host.run.bind(host);
+    vi.spyOn(host, "run").mockImplementationOnce(async (...args) => {
+      entered.resolve();
+      await release.promise;
+      return run(...args);
+    });
+    const retry = call("POST", "/ask", { deck: "draft", text: "Try again" });
+    await entered.promise;
+    const snapshot = call("GET", "/ask", null, { deck: "draft" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    release.resolve();
+    expect((await retry).status).toBe(200);
+    expect((await snapshot).body.messages.at(-1)).toMatchObject({
+      role: "user",
+      text: "Try again",
+    });
+    status.set("session-1", "idle");
+    result.mockResolvedValue({ status: "completed", text: "Deck updated.", error: null });
+    expect((await call("GET", "/ask", null, { deck: "draft" })).body).toMatchObject({
+      sessionId: "session-1",
+      status: "idle",
+      messages: [
+        { role: "user", text: "First edit" },
+        { role: "error", text: "Task aborted" },
+        { role: "user", text: "Try again" },
+        { role: "assistant", text: "Deck updated." },
+      ],
+    });
+  });
+
   it("keeps the chosen provider and model per deck across simultaneous opens, runs and a reload", async () => {
     const { host, picked, runs } = await fakeHost();
     const { call } = mount(host);
@@ -271,6 +327,19 @@ describe("asking the Agent", () => {
     });
     expect(picked.get(other.body.sessionId)).toEqual({ ...chosen, provider: "second" });
     expect(picked.size).toBe(2);
+  });
+
+  it("opens a default conversation for a thinking pin and submits to the same queue during handoff", async () => {
+    const { host, runs, status } = await fakeHost();
+    const { call } = mount(host);
+    await call("POST", "/decks", { id: "document", text: deckText("Document") });
+    const opened = await call("POST", "/ask/session", { deck: "document" });
+    expect(opened.status).toBe(200);
+    expect(runs).toHaveLength(0);
+    status.set(opened.body.sessionId, "compacting");
+    const queued = await call("POST", "/ask", { deck: "document", text: "Review the cover" });
+    expect(queued.body.sessionId).toBe(opened.body.sessionId);
+    expect(runs.map((run) => run.sessionId)).toEqual([opened.body.sessionId]);
   });
 
   it("opens one Session per deck and names the deck's file, the slide and the selection", async () => {

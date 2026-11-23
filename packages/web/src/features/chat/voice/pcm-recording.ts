@@ -52,6 +52,7 @@ export async function capturePcm(
     return await new Promise<Blob>((resolve, reject) => {
       const chunks: ArrayBuffer[] = [];
       let bytes = 0;
+      let hasSignal = false;
       const abort = () => reject(signal.reason);
       signal.addEventListener("abort", abort, { once: true });
       const fail = () => {
@@ -62,11 +63,13 @@ export async function capturePcm(
       node.port.onmessage = ({ data }: MessageEvent<ArrayBuffer | null>) => {
         if (data === null) {
           signal.removeEventListener("abort", abort);
-          resolve(new Blob(bytes ? [waveHeader(bytes), ...chunks] : [], { type: "audio/wav" }));
+          resolve(new Blob(hasSignal ? [waveHeader(bytes), ...chunks] : [], { type: "audio/wav" }));
         } else if ((bytes += data.byteLength) + 44 > maxBytes) {
           signal.removeEventListener("abort", abort);
           reject(new RangeError("audio_size"));
         } else {
+          // Every nonzero PCM sample counts, including a brief or very quiet sound.
+          hasSignal ||= new Uint8Array(data).some((byte) => byte !== 0);
           chunks.push(data);
         }
       };

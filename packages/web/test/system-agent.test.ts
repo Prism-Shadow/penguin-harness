@@ -5,7 +5,7 @@
  *
  * - Given the Project's system Agent, the Agents page shows its card under the dictionary's name
  *   (not its file's), tagged System, with Settings and the built-in Agents' disabled delete only:
- *   no New chat, no Usage, no Export, and no stats row. Its one count is the system apps the
+ *   no New chat, no Usage, no Export, and no runtime statistics. Alongside Skills and Plugins it counts system apps the
  *   viewer sees, which opens its settings' list of them. Opening it keeps the Agent the user
  *   talks to current.
  * - Its card is pinned above the list whichever way the list is grouped, in no author group and
@@ -43,7 +43,12 @@ import { button, click, hasButton, unmountAll, waitFor } from "./helpers/dom";
 import { SYSTEM_APP_PAGES } from "./helpers/system-app-pages";
 
 /** This server's system Agent, its file naming it otherwise than the dictionary does. */
-const SYSTEM = { agentId: "system_agent", name: "Platform owner", system: true as const };
+const SYSTEM = {
+  agentId: "system_agent",
+  name: "Platform owner",
+  system: true as const,
+  pluginCount: 0,
+};
 
 const GPU: FakeMachine = {
   machineId: "gpu1",
@@ -95,7 +100,11 @@ describe("the system Agent on the Agents page", () => {
       expect(cardHas(card, gone)).toBe(false);
     }
     expect(card.querySelector(`[aria-label="${en.agent.builtinUndeletable}"]`)).not.toBeNull();
-    expect(cardHas(card, en.skills.skillCount(0))).toBe(false);
+    const plugins = card.querySelector(`button[aria-label="${en.plugins.pluginCount(0)}"]`);
+    const skills = card.querySelector(`button[aria-label="${en.skills.skillCount(0)}"]`);
+    expect(plugins).not.toBeNull();
+    expect(plugins?.nextElementSibling).toBe(skills);
+    expect(skills).not.toBeNull();
     expect(card.querySelector(`[data-tooltip="${en.agent.sessionCount(0)}"]`)).toBeNull();
   });
 
@@ -236,7 +245,7 @@ describe("the system Agent's settings page", () => {
       "Plugins",
       "Machines",
       "Cost Center",
-      "Evaluation Center",
+      "Self-Evolution Workbench",
     ]);
     expect(hasButton(en.workbenches.importTitle)).toBe(false);
     expect(document.querySelector('[role="switch"], input[type="checkbox"]')).toBeNull();
@@ -247,7 +256,7 @@ describe("the system Agent's settings page", () => {
   it("lists a member the system apps they can open, without Machines", async () => {
     await openSystemPage("workbenches", { serverAdmin: false });
     await waitFor(() => appRows().length > 0);
-    expect(appRows()).toEqual(["Models", "Plugins", "Cost Center", "Evaluation Center"]);
+    expect(appRows()).toEqual(["Models", "Plugins", "Cost Center", "Self-Evolution Workbench"]);
   });
 });
 

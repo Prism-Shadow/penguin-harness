@@ -86,7 +86,7 @@
     "name": "@penguinharness/computer-use",
     "title": "Computer Use",
     "titleZh": "电脑操作",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Computer use for PenguinHarness: Agents see and operate desktop apps on macOS, Windows and Linux through their accessibility trees, with agent-desktop.",
     "descriptionZh": "让 Agent 用 penguin computer 看见并操作这台电脑上的桌面应用：经各操作系统的无障碍树（macOS、Windows 与 Linux）读取窗口、点击、输入、选择与等待，底层是 vercel-labs 的 agent-desktop。缺省只放行观察与语义操作；物理输入、剪贴板与通知读取由管理员开启，从不操作 PenguinHarness 自身。",
     "shortDescription": "See and operate desktop apps through their accessibility trees.",

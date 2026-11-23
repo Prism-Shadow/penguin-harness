@@ -1,14 +1,37 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useNavigate } from "react-router";
+import { useWindowShown } from "@prismshadow/penguin-ui";
 import type { ModelRefDto, ModelsResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { CHAT_MODEL_MESSAGE, CHAT_MODEL_REPLY } from "../../lib/workbench-tabs";
+import {
+  CHAT_MODEL_MESSAGE,
+  CHAT_MODEL_REPLY,
+  OPEN_MODEL_SETTINGS_MESSAGE,
+} from "../../lib/workbench-tabs";
 import { sameModelRef } from "../../lib/model-grouping";
+import { rememberProject } from "../../state/project";
 import { S } from "../../lib/strings";
-import { ModelPickerModal, modelLabel } from "../model-picker";
+import {
+  effectiveThinkingLevel,
+  ModelPickerModal,
+  modelLabel,
+  SELECTABLE_THINKING_LEVELS,
+} from "../model-picker";
 
 type Choice = ModelRefDto & { label: string };
 type Request = { id: string; op: "choose" | "get"; current: ModelRefDto | null };
-type Answer = { accepted: true } | { model: Choice | null } | { error: string };
+type ThinkingOptions = {
+  defaultLevel: string;
+  title: string;
+  names: Readonly<Record<string, string>>;
+  options: Array<{ value: string; label: string }>;
+};
+type Answer =
+  | { thinking: ThinkingOptions }
+  | { opened: true }
+  | { accepted: true }
+  | { model: Choice | null }
+  | { error: string };
 
 const choiceOf = (row: ModelRefDto & Parameters<typeof modelLabel>[0]): Choice => ({
   provider: row.provider,
@@ -32,13 +55,17 @@ function modelRefOf(value: unknown): ModelRefDto | null {
  */
 export function WorkbenchModelPicker({
   frame,
+  agentId,
   projectId,
   machineId,
 }: {
   frame: RefObject<HTMLIFrameElement | null>;
+  agentId: string;
   projectId: string;
   machineId: string | null;
 }) {
+  const navigate = useNavigate();
+  const shown = useWindowShown();
   const open = useRef<Request | null>(null);
   const [picker, setPicker] = useState<{ catalog: ModelsResponse; request: Request } | null>(null);
   const answer = useCallback(
@@ -70,7 +97,52 @@ export function WorkbenchModelPicker({
     const onMessage = (event: MessageEvent) => {
       if (event.source === null || event.source !== iframe.contentWindow) return;
       const data = event.data as { type?: unknown; id?: unknown; op?: unknown; current?: unknown };
-      if (data?.type !== CHAT_MODEL_MESSAGE || typeof data.id !== "string") return;
+      if (typeof data?.id !== "string") return;
+      if (data.type === OPEN_MODEL_SETTINGS_MESSAGE) {
+        if (event.origin !== window.location.origin) return;
+        if (!shown || machineId !== null) {
+          answer(data.id, {
+            error:
+              machineId !== null
+                ? S.workbenches.configureOnMachine
+                : S.workbenches.openBeforeConfiguring,
+          });
+          return;
+        }
+        rememberProject(projectId);
+        answer(data.id, { opened: true });
+        void navigate("/models");
+        return;
+      }
+      if (data.type !== CHAT_MODEL_MESSAGE) return;
+      if (data.op === "thinking") {
+        const id = data.id;
+        answer(id, { accepted: true });
+        void Promise.all([
+          api.getAgentConfig(projectId, agentId, machineId),
+          api.getChatDefaults(projectId, machineId),
+        ]).then(
+          ([agent, defaults]) => {
+            const names = S.chat.thinkingLevelNames;
+            answer(id, {
+              thinking: {
+                defaultLevel: effectiveThinkingLevel(
+                  agent.config.model?.thinkingLevel ?? "",
+                  defaults.thinkingLevel,
+                ),
+                title: S.chat.thinkingLevel,
+                names,
+                options: SELECTABLE_THINKING_LEVELS.map((value) => ({
+                  value,
+                  label: S.chat.thinkingLevelMenuName(names[value] ?? value, value),
+                })),
+              },
+            });
+          },
+          (error: Error) => answer(id, { error: error.message }),
+        );
+        return;
+      }
       const request: Request = {
         id: data.id,
         op: data.op === "choose" ? "choose" : "get",
@@ -106,7 +178,7 @@ export function WorkbenchModelPicker({
       iframe.removeEventListener("load", dismiss);
       dismiss();
     };
-  }, [frame, projectId, machineId, answer]);
+  }, [frame, agentId, projectId, machineId, answer, navigate, shown]);
   if (!picker) return null;
   const { catalog, request } = picker;
   const finish = (choice: Choice | null) => {

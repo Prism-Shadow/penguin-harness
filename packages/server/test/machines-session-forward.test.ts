@@ -182,6 +182,17 @@ const errorOf = async (res: Response) =>
   ((await res.json()) as { error: { code: string; details?: Record<string, string> } }).error;
 
 describe("a Session-level request for a machine's Session", () => {
+  it("returns an offline miss without asking the fleet to locate an unknown Session", async () => {
+    const calls = seen.length;
+    const frames = socketCalls.length;
+    const res = await apiClient(t.app, admin).get(
+      "/api/sessions/no-saved-location/history?cached=1",
+    );
+    expect(await res.text()).toContain('"code":"history_cache_miss"');
+    expect(seen).toHaveLength(calls);
+    expect(socketCalls).toHaveLength(frames);
+  });
+
   it("is answered here when this server holds the Session, even if a machine holds the same id", async () => {
     const res = await apiClient(t.app, admin).get(`/api/sessions/${LOCAL}`);
     expect(res.status).toBe(200);

@@ -54,6 +54,7 @@ export class TabRegistry {
   /** A tab activated before the shell reported it. */
   private pendingActive: number | null = null;
   private readonly opens = new Map<string, OpenState>();
+  private readonly claimedBeforeTab = new Set<number>();
   private readonly closeWaiters = new Map<number, Set<() => void>>();
   private readonly firstPageWaiters = new Map<number, Set<(started: boolean) => void>>();
   private readonly timers = new Set<NodeJS.Timeout>();
@@ -145,6 +146,7 @@ export class TabRegistry {
   /** Applies one `tab` event; returns the tab as it was before (undefined for a new one). */
   upsert(tab: BuiltinBrowserTab): BuiltinBrowserTab | undefined {
     const previous = this.tabs.get(tab.id);
+    this.claimedBeforeTab.delete(tab.id);
     this.tabs.set(tab.id, this.owned(tab));
     if (this.pendingActive === tab.id) {
       this.active = tab.id;
@@ -169,6 +171,7 @@ export class TabRegistry {
 
   /** Applies a `tab-closed` event; true when the tab was known. */
   remove(id: number): boolean {
+    this.claimedBeforeTab.delete(id);
     const known = this.tabs.delete(id);
     this.forgetOwner(id);
     if (this.active === id) this.active = null;
@@ -194,6 +197,7 @@ export class TabRegistry {
       [...next].some(([id, tab]) => JSON.stringify(this.tabs.get(id)) !== JSON.stringify(tab));
     const gone = [...this.tabs.keys()].filter((id) => !next.has(id));
     this.tabs = next;
+    for (const id of this.claimedBeforeTab) if (next.has(id)) this.claimedBeforeTab.delete(id);
     if (this.pendingActive !== null && next.has(this.pendingActive)) {
       this.active = this.pendingActive;
       this.rememberActive(this.pendingActive);
@@ -294,6 +298,7 @@ export class TabRegistry {
     if (state === undefined) return "unknown";
     if (state.claimedTabId !== null) return state.claimedTabId === tabId ? "claimed" : "duplicate";
     state.claimedTabId = tabId;
+    if (!this.tabs.has(tabId)) this.claimedBeforeTab.add(tabId);
     if (state.partition !== undefined) this.partitions.set(tabId, state.partition);
     if (state.sessionId !== undefined) {
       this.owners.set(tabId, state.sessionId);
@@ -324,10 +329,19 @@ export class TabRegistry {
     });
   }
 
-  /** The open requests no window has claimed yet: tabs on their way. */
+  /** Release a failed explicit open; a late guest is rejected by the normal claim protocol. */
+  cancelUnclaimed(requestId: string): void {
+    const state = this.opens.get(requestId);
+    if (!state || state.claimedTabId !== null) return;
+    this.opens.delete(requestId);
+    for (const waiter of state.waiters) waiter(null);
+    state.waiters.clear();
+  }
+
+  /** Slots reserved until the native registry lists the guest or reports its closure. */
   pendingOpens(): number {
     this.prune();
-    let pending = 0;
+    let pending = this.claimedBeforeTab.size;
     for (const state of this.opens.values()) if (state.claimedTabId === null) pending += 1;
     return pending;
   }
@@ -382,7 +396,10 @@ export class TabRegistry {
   private prune(): void {
     const cutoff = this.now() - OPEN_REQUEST_TTL_MS;
     for (const [id, state] of this.opens) {
-      if (state.createdAt < cutoff && state.waiters.size === 0) this.opens.delete(id);
+      if (state.createdAt < cutoff && state.waiters.size === 0) {
+        if (state.claimedTabId !== null) this.claimedBeforeTab.delete(state.claimedTabId);
+        this.opens.delete(id);
+      }
     }
   }
 

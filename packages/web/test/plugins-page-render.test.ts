@@ -350,6 +350,19 @@ describe("the market’s versioned actions", () => {
     expect(html).toContain('class="showcase-card-version">v1.0.0</span>');
     expect(html).toContain(en.plugins.quickStartAfterInstall);
   });
+  it("offers to update a reachable Agent other than the current one", () => {
+    for (const layout of ["cover", "row"] as const) {
+      const usage = { usedBy: ["bob"], behind: ["bob"] };
+      expect(buttonWords(card(libraryRow, true, { ...current, layout, usage })).at(-2)).toBe(
+        en.skills.updateAction,
+      );
+      expect(
+        buttonWords(
+          card(libraryRow, true, { ...current, layout, usage: { ...usage, lastSeen: ["bob"] } }),
+        ).at(-2),
+      ).toBe(en.plugins.marketAgentInstalls(1));
+    }
+  });
   it("only enables a demo on the Agent that carries it", () => {
     const installed = new Map([
       [

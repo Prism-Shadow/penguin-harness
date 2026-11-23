@@ -534,6 +534,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
       {
         agentId: AGENT,
         agentName: expect.any(String),
+        packageName: "demo",
         workbenchId: "crm",
         title: "Accounts",
         titleZh: "客户",
@@ -545,6 +546,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
       {
         agentId: AGENT,
         agentName: expect.any(String),
+        packageName: "demo",
         workbenchId: "board",
         title: "Board",
         titleZh: "看板",
@@ -557,6 +559,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
       {
         agentId: AGENT,
         agentName: expect.any(String),
+        packageName: "headless-pkg",
         workbenchId: "headless",
         title: "headless-pkg",
         path: `/app/${PROJECT}/${AGENT}/headless`,
@@ -567,6 +570,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
       {
         agentId: AGENT,
         agentName: expect.any(String),
+        packageName: "demo",
         workbenchId: "plain",
         title: "Main",
         path: `/app/${PROJECT}/${AGENT}/plain`,
@@ -578,6 +582,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
       {
         agentId: AGENT,
         agentName: expect.any(String),
+        packageName: "demo",
         workbenchId: "titled",
         title: "Titled",
         path: `/app/${PROJECT}/${AGENT}/titled`,
@@ -588,6 +593,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
       {
         agentId: LATER,
         agentName: "Aardvark",
+        packageName: "demo",
         workbenchId: "notes",
         title: "Notes",
         path: `/app/${PROJECT}/${LATER}/notes`,
@@ -599,6 +605,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
       {
         agentId: LATER,
         agentName: "Aardvark",
+        packageName: "demo",
         workbenchId: "stalled",
         title: "Stalled",
         path: `/app/${PROJECT}/${LATER}/stalled`,
@@ -655,6 +662,29 @@ describe("the App Center", { timeout: 30_000 }, () => {
     expect(await ids()).not.toContain(`${DEFAULTED}/quiet`);
   });
 
+  it("lists explicitly hidden workbenches separately, including disabled ones, without showing or enabling them", async () => {
+    const base = `/api/projects/${PROJECT}/agents/${AGENT}/workbenches/hidden`;
+    const hidden = async () => {
+      const res = await member.get(`/api/projects/${PROJECT}/app-center/hidden`);
+      expect(res.status).toBe(200);
+      return ((await res.json()) as AppCenterResponse).shortcuts.map(
+        (x) => `${x.agentId}/${x.workbenchId}`,
+      );
+    };
+    expect(await hidden()).toContain(`${AGENT}/hidden`);
+    expect(await hidden()).not.toContain(`${DEFAULTED}/plain`);
+    const off = await owner.put(base + "/enabled", { enabled: false });
+    expect(off.status).toBe(200);
+    try {
+      expect(await hidden()).toContain(`${AGENT}/hidden`);
+      expect((await member.patch(base + "/app-center", { show: true })).status).toBe(200);
+      expect(await hidden()).not.toContain(`${AGENT}/hidden`);
+      expect(await ids()).not.toContain(`${AGENT}/hidden`);
+    } finally {
+      await owner.patch(base + "/app-center", { show: false });
+      await owner.put(base + "/enabled", { enabled: true });
+    }
+  });
   it.each(MALFORMED.map(([id]) => id))(
     "gives a workbench whose declaration does not hold up (%s) no shortcut",
     async (id) => {

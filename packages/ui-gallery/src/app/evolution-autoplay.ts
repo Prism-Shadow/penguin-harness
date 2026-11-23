@@ -2,16 +2,22 @@
 import { S } from "../../../web/src/lib/strings";
 import { IDS } from "./mock/ids";
 import type { EvolutionClock } from "./evolution-clock";
-import { EVOLUTION_CONTROL, EVOLUTION_STATE } from "./evolution-messages";
 
 export function installEvolutionAutoplay(
   win: Window & typeof globalThis,
   prompt: string,
   playback: EvolutionClock,
   clearPreviousRound: () => void,
+  playOnce = false,
 ): () => void {
-  if (win.matchMedia("(prefers-reduced-motion: reduce)").matches) return () => undefined;
+  if (!playOnce && win.matchMedia("(prefers-reduced-motion: reduce)").matches)
+    return () => undefined;
   const doc = win.document;
+  // A suspended workspace tab retains its DOM while another page is on screen.
+  const shown = <T extends Element>(selector: string, matches?: (element: T) => boolean) =>
+    [...doc.querySelectorAll<T>(selector)].find(
+      (element) => element.getClientRects().length > 0 && (!matches || matches(element)),
+    );
   const letters = Array.from(prompt);
   const setValue = Object.getOwnPropertyDescriptor(
     win.HTMLTextAreaElement.prototype,
@@ -19,8 +25,8 @@ export function installEvolutionAutoplay(
   )!.set!;
   let visible = false;
   let stopped = false;
-  let paused = false;
   let sent = false;
+  let resultSessionId: string | undefined;
   let destination: "result" | "center" | "detail" | "chart" | "replay" | "restart" = "result";
   let index = 0;
   let timer: (() => void) | undefined;
@@ -39,19 +45,7 @@ export function installEvolutionAutoplay(
     doc.removeEventListener("keydown", takeOver, true);
     doc.removeEventListener("input", takeOver, true);
     win.removeEventListener("pagehide", stop);
-    win.removeEventListener("message", control);
     playback.setPaused(false);
-    win.parent.postMessage({ type: EVOLUTION_STATE, state: "finished" }, win.location.origin);
-  };
-  const control = (event: MessageEvent) => {
-    if (event.source !== win.parent || event.origin !== win.location.origin) return;
-    if (event.data?.type !== EVOLUTION_CONTROL || typeof event.data.paused !== "boolean") return;
-    paused = event.data.paused;
-    sync();
-    win.parent.postMessage(
-      { type: EVOLUTION_STATE, state: event.data.paused ? "paused" : "playing" },
-      win.location.origin,
-    );
   };
   const takeOver = (event: Event) => {
     if (event.isTrusted) stop();
@@ -59,7 +53,7 @@ export function installEvolutionAutoplay(
   const tick = () => {
     timer = undefined;
     if (stopped || !visible || doc.hidden) return;
-    const input = doc.querySelector<HTMLTextAreaElement>('[data-slot="composer"] textarea');
+    const input = shown<HTMLTextAreaElement>('[data-slot="composer"] textarea');
     if (!input || input.disabled) return;
     if (input.value !== letters.slice(0, index).join("")) {
       stop();
@@ -105,21 +99,20 @@ export function installEvolutionAutoplay(
     timer = undefined;
     if (stopped || !visible || doc.hidden) return;
     if (destination === "result") {
-      const running = [...doc.querySelectorAll('[data-slot="composer"] button')].some(
+      const running = shown(
+        '[data-slot="composer"] button',
         (button) => button.getAttribute("aria-label") === S.chat.stop,
       );
-      if (!running && doc.querySelector("main table")) {
+      if (!running && shown("main table")) {
+        resultSessionId = shown<HTMLElement>('[data-session-id][aria-current="page"]')?.dataset
+          .sessionId;
         // The app opens its Agents panel during parallel evaluation; return the space to the result.
-        doc.querySelector<HTMLButtonElement>('[data-testid="dock-tab-close"]')?.click();
+        shown<HTMLButtonElement>('[data-testid="dock-tab-close"]')?.click();
         destination = "center";
         timer = playback.schedule(advance, 1300);
       }
     } else if (destination === "center") {
       // The Evaluation Center is a system app: its tile in the App Center opens it.
-      const shown = <T extends Element>(selector: string) =>
-        [...doc.querySelectorAll<T>(selector)].find(
-          (candidate) => candidate.getClientRects().length > 0,
-        );
       const tile = shown<HTMLButtonElement>('li[data-app="system_agent/benchmark"] > button');
       const appCenter = shown<HTMLAnchorElement>('a[href="/apps"]');
       if (tile) {
@@ -137,17 +130,56 @@ export function installEvolutionAutoplay(
         timer = playback.schedule(advance, 400);
       }
     } else if (destination === "detail") {
-      const card = [...doc.querySelectorAll<HTMLButtonElement>("main button")].find((candidate) =>
-        candidate.textContent?.includes(IDS.benchmarks.docs),
+      const card = shown<HTMLButtonElement>("main button", (candidate) =>
+        Boolean(candidate.textContent?.includes(IDS.benchmarks.docs)),
       );
       if (card) {
         destination = "chart";
         card.click();
       }
     } else if (destination === "chart") {
-      const chart = doc.querySelector("main svg.ui-chart");
+      const chart = shown("main svg.ui-chart");
       if (chart) {
         revealChart(chart);
+        if (playOnce) {
+          // Drag this round's conversation from its workspace group beside its chart.
+          const session = shown<HTMLElement>(
+            "[data-session-id]",
+            (row) => row.dataset.sessionId === resultSessionId,
+          )?.closest<HTMLElement>('[draggable="true"]');
+          const pane = chart.closest<HTMLElement>('[data-workspace-page][data-pane="full"]');
+          if (
+            pane &&
+            session?.getBoundingClientRect().width &&
+            typeof win.DataTransfer === "function"
+          ) {
+            const dataTransfer = new win.DataTransfer();
+            const drag = (type: string) =>
+              new win.DragEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                dataTransfer,
+                clientX: pane.getBoundingClientRect().left + 1,
+              });
+            session.dispatchEvent(drag("dragstart"));
+            pane.dispatchEvent(drag("dragover"));
+            const cancelDrop = playback.schedule(() => {
+              timer = undefined;
+              pane.dispatchEvent(drag("drop"));
+              session.dispatchEvent(drag("dragend"));
+              revealChart(chart);
+              stop();
+            }, 100);
+            timer = () => {
+              cancelDrop();
+              pane.dispatchEvent(drag("dragleave"));
+              session.dispatchEvent(drag("dragend"));
+            };
+          } else {
+            stop();
+          }
+          return;
+        }
         destination = "replay";
         timer = playback.schedule(advance, 4000);
       }
@@ -169,7 +201,7 @@ export function installEvolutionAutoplay(
         timer = playback.schedule(advance, 400);
       }
     } else {
-      const input = doc.querySelector<HTMLTextAreaElement>('[data-slot="composer"] textarea');
+      const input = shown<HTMLTextAreaElement>('[data-slot="composer"] textarea');
       if (!input || input.disabled) return;
       if (input.value !== "") {
         stop();
@@ -183,7 +215,7 @@ export function installEvolutionAutoplay(
     }
   };
   function sync() {
-    playback.setPaused(paused || !visible || doc.hidden);
+    playback.setPaused(!visible || doc.hidden);
     queue();
   }
   function queue() {
@@ -207,11 +239,12 @@ export function installEvolutionAutoplay(
   playback.setPaused(true);
   visibility.observe(doc.documentElement);
   doc.addEventListener("visibilitychange", sync);
-  doc.addEventListener("pointerdown", takeOver, true);
-  doc.addEventListener("keydown", takeOver, true);
-  doc.addEventListener("input", takeOver, true);
+  // The homepage handles real control activation separately, including after its final scene.
+  if (!playOnce) {
+    doc.addEventListener("pointerdown", takeOver, true);
+    doc.addEventListener("keydown", takeOver, true);
+    doc.addEventListener("input", takeOver, true);
+  }
   win.addEventListener("pagehide", stop, { once: true });
-  win.addEventListener("message", control);
-  win.parent.postMessage({ type: EVOLUTION_STATE, state: "ready" }, win.location.origin);
   return stop;
 }

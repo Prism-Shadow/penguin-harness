@@ -16,10 +16,8 @@
  * expands.
  *
  * Work groups take one of three display modes. Standard lists the steps closed; Expanded opens
- * every step; Compact pages through the steps behind one sticky line, with a terminal page for
- * the turn's outcome when the host knows it (separately from a group settling between
- * messages). The group holds each step's disclosure (`DisclosureControlContext`) so a page change
- * or a mode change keeps the reader's folds, and tells a step whether the reader opened it or the
+ * every step; Compact keeps the current step, count and elapsed time in a single disclosure.
+ * The group holds each step's disclosure (`DisclosureControlContext`) and tells a step whether the reader opened it or the
  * mode did: a folded value is fetched only for a step the reader asked for. A step waiting on an
  * approval or a retry opens the group in every mode, so its actions are on screen. A search
  * temporarily exposes all loaded rows without changing the reader's page or disclosures.
@@ -102,20 +100,20 @@ export interface ActivityGroupRow {
   summary?: ActivityStepSummary | (() => ActivityStepSummary | undefined);
   /** An approval or a retry is waiting on this step. */
   needsAction?: boolean;
+  /** This step is still executing or waiting for input. */
+  active?: boolean;
 }
 
 export interface ActivityStepNavigation {
-  previous: string;
-  next: string;
-  latest: string;
-  waiting: string;
-  /**
-   * The words before and after the step number in the pager's readout (「第 」「 步」,
-   * "Step " and nothing); the number between them is a field the reader can type a step into.
-   */
-  stepWords: readonly [before: string, after: string];
-  /** The step number field's name: what typing a number and pressing Enter does. */
-  jump: string;
+  /** Localized number of real rows in this group. */
+  count?: string;
+  /** Older callers may still supply the former pager labels. */
+  previous?: string;
+  next?: string;
+  latest?: string;
+  waiting?: string;
+  stepWords?: readonly [string, string];
+  jump?: string;
   /** The total time's name, as its tooltip and to a screen reader; the line shows the time alone. */
   elapsed: string;
   /** Expose every step to a search of this transcript, preserving the reading position. */
@@ -218,12 +216,11 @@ export interface ActivityGroupProps {
 interface ReadingState {
   mode: ActivityDisplayMode;
   open: boolean | null;
-  pageKey: Key | null;
   disclosures: ReadonlyMap<Key, boolean>;
 }
 
 function initialReadingState(mode: ActivityDisplayMode): ReadingState {
-  return { mode, open: null, pageKey: null, disclosures: new Map() };
+  return { mode, open: null, disclosures: new Map() };
 }
 
 export function ActivityGroup({
@@ -265,22 +262,19 @@ export function ActivityGroup({
 
   const compact = displayMode === "compact";
   const finding = !!stepNavigation?.revealAll;
-  const stepCount = rows?.length ?? 0;
-  const total = stepCount + (terminal ? 1 : 0);
-  const selected =
-    view.pageKey === null ? -1 : (rows?.findIndex((row) => row.key === view.pageKey) ?? -1);
-  const page = selected >= 0 ? selected : total - 1;
-  const pageRow = rows?.[page];
-  const terminalPage = !!terminal && page === stepCount;
-  const pageSummary = compact && !finding ? pageRow?.summary : undefined;
-  const summary: ActivityStepSummary = (terminalPage
-    ? terminal
-    : typeof pageSummary === "function"
-      ? pageSummary()
-      : pageSummary) ?? {
-    label: title,
-    state,
-  };
+  const currentRow =
+    compact && !finding ? (rows?.findLast((row) => row.active) ?? rows?.at(-1)) : undefined;
+  const rawSummary = currentRow?.summary;
+  const stepSummary = typeof rawSummary === "function" ? rawSummary() : rawSummary;
+  const summary: ActivityStepSummary =
+    terminal && terminal.state !== "done"
+      ? terminal
+      : stepSummary
+        ? {
+            ...stepSummary,
+            ...(terminal ? { state: terminal.state, stateLabel: terminal.label } : {}),
+          }
+        : { label: title, state };
   const shown =
     expandable &&
     (finding ||
@@ -291,17 +285,6 @@ export function ActivityGroup({
     landOnClose.current = shown && !finding && (compact || !pending);
     setView((prior) => ({ ...prior, open: !shown }));
   }
-  function goTo(index: number) {
-    // The newest page has no pinned id, so it continues to follow new arrivals.
-    const pageKey = index === total - 1 ? null : (rows?.[index]?.key ?? null);
-    setView((prior) => ({ ...prior, pageKey }));
-  }
-  // Cycle through simultaneous approvals, including the selected one when the group is shut.
-  const nextWaiting = rows?.findIndex((row, index) => row.needsAction && index > page) ?? -1;
-  const waiting =
-    nextWaiting >= 0
-      ? nextWaiting
-      : (rows?.findIndex((row, index) => row.needsAction && (index !== page || !shown)) ?? -1);
   function renderRows() {
     if (!stepNavigation) return rows ?? [];
     return (rows ?? []).map((row) => {
@@ -393,39 +376,30 @@ export function ActivityGroup({
       className={`ui-frame ${DISCLOSURE_CARD_CLASS}`}
       data-step-view={stepNavigation ? (finding ? "find" : displayMode) : undefined}
     >
-      {compact && stepNavigation && !finding && total > 0 ? (
-        <div
+      {compact && stepNavigation && !finding && (rows?.length ?? 0) > 0 ? (
+        <button
+          type="button"
           data-slot="head"
+          data-group-header
           data-step-head=""
           data-kind={summary.kind ?? kind}
           data-state={activityState(summary.state)}
-          data-step-terminal={terminalPage || undefined}
-          // A host that floats a control over the transcript's right edge on a phone sets
-          // --activity-head-reserve, so the pager at the line's end stays reachable.
-          className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} flex min-w-0 items-center bg-surface-muted py-0.5 pe-[var(--activity-head-reserve,0.25rem)] sm:pe-1`}
+          data-step-terminal={terminal ? true : undefined}
+          aria-expanded={shown}
+          onClick={toggle}
+          className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} ${DISCLOSURE_HEADER_ROW_CLASS} min-w-0 max-sm:gap-1 max-sm:pe-[var(--activity-head-reserve,0.75rem)]`}
         >
           <WallpaperBackdrop />
           <CompactStepHeader
             summary={summary}
-            navigation={stepNavigation}
-            page={page}
-            total={total}
+            count={stepNavigation.count ?? count}
+            elapsed={stepNavigation.elapsed}
+            open={shown}
             totalStartMs={runTiming?.startMs ?? startMs}
             totalDurationMs={runTiming?.durationMs ?? terminal?.durationMs ?? durationMs}
             totalRunning={runTiming ? runTiming.durationMs === undefined : running && !terminal}
-            open={shown}
-            toggle={toggle}
-            goTo={goTo}
-            showAction={
-              waiting < 0
-                ? undefined
-                : () => {
-                    goTo(waiting);
-                    setView((prior) => ({ ...prior, open: true }));
-                  }
-            }
           />
-        </div>
+        </button>
       ) : expandable ? (
         <button
           type="button"

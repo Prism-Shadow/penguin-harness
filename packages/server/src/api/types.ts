@@ -37,6 +37,8 @@ import type {
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
 import type { AppCenterShortcut, WorkbenchInfo } from "@prismshadow/penguin-library-workbench";
+// Vocabulary this file's own DTOs reference and the setting domain library owns (re-exported below).
+import type { StoredKeybindings } from "@prismshadow/penguin-library-setting/types";
 // The vocabulary whose ownership moved to the domain libraries (the contracts name it):
 // the server's own API DTOs reference these, and the Web App reads them through this
 // module's exports, so each is imported and re-exported — the server→library direction
@@ -331,6 +333,8 @@ export interface AdminPasswordResetRequest {
  * no restart.
  */
 export interface ServerSettings {
+  terminalMaxOpen: number;
+  browserMaxOpen: number;
   /**
    * "Application uses the proxy" (default on): the server's own outbound traffic (LLM
    * requests, the update check, image fetches). On with `proxyUrl` set = that address
@@ -392,6 +396,8 @@ export interface ServerSettingsResponse {
 
 /** PUT body: every field optional, omitted fields keep their current value (mirrors prefs). */
 export interface ServerSettingsUpdateRequest {
+  terminalMaxOpen?: number;
+  browserMaxOpen?: number;
   proxyForApp?: boolean;
   proxyForAgent?: boolean;
   /** Company mode master switch; see `ServerSettings.companyMode`. */
@@ -491,18 +497,6 @@ export interface DraftShortcut {
 }
 
 /**
- * The account's keyboard shortcut overrides, one section per platform (the Web App's `Mod` token
- * is ⌘ on macOS and Ctrl elsewhere, so a deliberate macOS-only binding must not leak to Windows).
- * Each section maps a command id to a chord string ("Mod+Shift+KeyW") or null (explicitly
- * unbound); only rows that differ from the Web App's default are present. Bounded on write by
- * services/keybindings.ts.
- */
-export interface StoredKeybindings {
-  v: 1;
-  mac?: Record<string, string | null>;
-  windows?: Record<string, string | null>;
-  linux?: Record<string, string | null>;
-}
 
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
 export interface UiPrefs {
@@ -534,7 +528,7 @@ export interface UiPrefs {
    * known key holding user-authored text rather than a flag or an id.
    */
   draftShortcuts?: DraftShortcut[];
-  /** Keyboard shortcut overrides, replaced whole on every write and validated by services/keybindings.ts. */
+  /** Keyboard shortcut overrides, replaced whole on every write and validated by the keybindings validator (the setting domain library). */
   keybindings?: StoredKeybindings;
   /** Personal company-mode switch (default on): off only hides this user's mode switch; organizations keep running. */
   companyMode?: boolean;
@@ -620,7 +614,6 @@ export const BACKGROUND_IMAGE_MAX_CHARS = 1024 * 1024;
  * re-encodes against, so the browser and the server cannot disagree about what "too large"
  * means.
  */
-export const AVATAR_MAX_CHARS = 131072;
 
 /** GET /api/me/background-image. */
 export interface BackgroundImageResponse {
@@ -1085,32 +1078,73 @@ export interface CommandPolicyRuleDto {
 // Vault environment variables (Agent-level: agent_state/.vault.toml)
 // ---------------------------------------------------------------------------
 
-/** Read-only vault entry display: key name + masked value; plaintext is never sent. */
-export interface VaultEntryInfo {
-  key: string;
-  valueMasked: string;
-}
-
-export interface VaultResponse {
-  entries: VaultEntryInfo[];
-}
-
-/** A single entry under PUT full-table replace semantics: omitting value = keep the existing value (required for new keys). */
-export interface VaultEntryUpdate {
-  /** Shell environment variable name rule: starts with a letter or underscore, followed by letters/digits/underscores only. */
-  key: string;
-  /** Non-empty string; omitted keeps the existing value. */
-  value?: string;
-}
-
-/** PUT full-table replace semantics (same as models): keys not present in the body are deleted. */
-export interface VaultUpdateRequest {
-  entries: VaultEntryUpdate[];
-}
-
-// ---------------------------------------------------------------------------
-// Agent and its config (system_config.yaml + AGENTS.md)
-// ---------------------------------------------------------------------------
+// The vault, agent-config and memory vocabulary moved to the agent domain library
+// (services+http+cli restack S3); these re-exports keep the API's export surface whole.
+export type {
+  StoredKeybindings,
+  ThemePackMode,
+  ThemePackBase,
+  ThemePackSwatch,
+  ThemePackAccentPreset,
+  ThemePackDto,
+  ThemePacksResponse,
+  ThemePackImportResponse,
+  ThemePackErrorCode,
+  ThemeInvalidDetails,
+  DesktopUpdateStatus,
+  DesktopUpdateStatusResponse,
+  DesktopUpdaterStatusMessage,
+  DesktopUpdaterCommandMessage,
+  DesktopTrayLocale,
+  DesktopTrayStatus,
+  DesktopTrayPatch,
+  DesktopTrayStatusResponse,
+  DesktopTrayStatusMessage,
+  DesktopTrayCommandMessage,
+  DesktopFolderAccessResult,
+  DesktopFolderAccessMessage,
+  DesktopFolderAccessResultMessage,
+  DirAccessResponse,
+  DesktopPrivacyPane,
+  DesktopOpenPrivacySettingsMessage,
+  DesktopOpenWindowMessage,
+  HostCommand,
+  HostCommandOffer,
+  HostCommandsMessage,
+  HostCommandsResponse,
+  HostCommandMessage,
+} from "@prismshadow/penguin-library-setting/types";
+export { HOST_COMMANDS, LEGACY_HOST_COMMANDS } from "@prismshadow/penguin-library-setting/types";
+export type {
+  AgentArchiveQuery,
+  AgentCompactionConfigDto,
+  AgentConfigDto,
+  AgentConfigResponse,
+  AgentConfigUpdateRequest,
+  AgentHooksConfigDto,
+  AgentKernelUpdateResponse,
+  AgentMemoryConfigDto,
+  AgentModelConfigDto,
+  AgentSchedulesConfigDto,
+  AgentSkillsConfigDto,
+  AgentVaultConfigDto,
+  MemoryFileInfo,
+  MemoryFileResponse,
+  MemoryFilesResponse,
+  MemoryFolderFile,
+  MemoryImportMode,
+  MemoryImportRequest,
+  MemoryImportResponse,
+  MemoryOverviewResponse,
+  MemoryScopeExport,
+  MemoryScopeInfo,
+  MemoryTransferFile,
+  VaultEntryInfo,
+  VaultEntryUpdate,
+  VaultResponse,
+  VaultUpdateRequest,
+} from "@prismshadow/penguin-library-agent/types";
+export { AVATAR_MAX_CHARS } from "@prismshadow/penguin-library-agent/types";
 
 /** One library plugin an Agent's installed copy is behind on — one of its skills or its hook package carries an older dated version than the library's same part (see {@link AgentSummary.pluginUpdates}). */
 export interface PluginUpdateRef {
@@ -1164,6 +1198,8 @@ export interface AgentSummary {
   scheduleCount: number;
   /** Workbench folders with a manifest, including ones with a load error. */
   workbenchCount: number;
+  /** Distinct installed plugin packages on this Agent. Older servers and unreadable configurations omit it. */
+  pluginCount?: number;
   /** Installed Skill count (number of agent_state/skills/<name>/ directories with a SKILL.md). */
   skillCount: number;
   /** Installed hook-package count (number of agent_state/hooks/<name>/ directories with a hooks.json). */
@@ -1300,140 +1336,6 @@ export interface AgentDeletionResponse {
   deletion: AgentDeletionInfo;
 }
 
-export interface AgentModelConfigDto {
-  maxTokens?: number;
-  thinkingLevel?: ThinkingLevelName;
-  timeoutMs?: number;
-}
-
-export interface AgentCompactionConfigDto {
-  maxContextLength?: number;
-  maxSessionTurns?: number;
-  mode?: "summarize" | "discard";
-  prompt?: string;
-  /**
-   * Tool rounds a summarize compaction may take before the summary (`max_rounds`); `<= 0` allows
-   * none. Reported as the effective value: a file without the key reads as the built-in default,
-   * as core reads it. Written as an integer of 0 or more. Absent only from an older server.
-   */
-  maxRounds?: number;
-  /** The line sent after each tool round (`reminder`); effective value like `maxRounds`. A blank one sends none. */
-  reminder?: string;
-  /** The note a context opens with when no summary could be had (`handoff_note`); effective value like `maxRounds`. A blank one gives the quoted data alone. */
-  handoffNote?: string;
-}
-
-/** Memory config. All fields report effective values (a config with no `memory` section reads as enabled with the built-in prompts, matching core); the prompts are edited on the Memory tab. */
-export interface AgentMemoryConfigDto {
-  enabled: boolean;
-  /** The always-injected half of the `{{MEMORY}}` block (carries `{{USER_MEMORY_INDEX}}`; the User directory is literal text). */
-  prompt: string;
-  /** Appended only in a persistent Workspace (carries `{{WORKSPACE_MEMORY_INDEX}}` and the rendered `{{WORKSPACE_MEMORY_DIR}}` directory). */
-  workspacePrompt: string;
-}
-
-/**
- * Vault prompt-injection config, edited on the Vault tab. `enabled` / `prompt` report
- * effective values (a config with no `vault` section reads as enabled with the built-in
- * prompt, matching core); the last two are read-only facts computed from the stored template.
- */
-export interface AgentVaultConfigDto {
-  /** Whether the Vault section enters the model context (values are injected into subprocesses regardless). */
-  enabled: boolean;
-  /** The `{{VAULT}}` block (carries `{{VAULT_KEYS}}`). */
-  prompt: string;
-  /** Whether the stored template carries `{{VAULT}}`; POST …/vault/template-placeholder inserts (or migrates to) it explicitly. */
-  templateHasPlaceholder: boolean;
-  /** Whether the stored template still carries the legacy hardcoded # Vault section verbatim (a pre-`{{VAULT}}` Agent) — the migration case of the insert endpoint. */
-  legacySectionPresent: boolean;
-}
-
-/** Skills prompt-injection config, edited on the Skills tab; same field semantics as AgentVaultConfigDto, for `{{SKILLS}}` / `{{SKILL_METADATA}}` and the legacy # Skills section. */
-export interface AgentSkillsConfigDto {
-  /** Whether the Skills section enters the model context (installed skills remain explicitly invocable regardless). */
-  enabled: boolean;
-  /** The `{{SKILLS}}` block (carries `{{SKILL_METADATA}}`). */
-  prompt: string;
-  /** Whether the stored template carries `{{SKILLS}}`; POST …/skills/template-placeholder inserts (or migrates to) it explicitly. */
-  templateHasPlaceholder: boolean;
-  /** Whether the stored template still carries the legacy hardcoded # Skills section verbatim — the migration case of the insert endpoint. */
-  legacySectionPresent: boolean;
-}
-
-/** Schedules prompt-injection config, edited on the Schedules tab. No legacy field: Schedules never had a hardcoded template section. */
-export interface AgentSchedulesConfigDto {
-  /** Whether the Scheduled Tasks section enters the model context (the server fires configured tasks regardless). */
-  enabled: boolean;
-  /** The `{{SCHEDULES}}` block (carries `{{SCHEDULE_LIST}}`). */
-  prompt: string;
-  /** Whether the stored template carries `{{SCHEDULES}}`; POST …/schedules/template-placeholder inserts it explicitly. */
-  templateHasPlaceholder: boolean;
-}
-
-/**
- * Hook config, edited on the Hooks tab. One Agent-level switch and no prompt: hook packages
- * are scripts run at the loop's hook points, not text injected into the context. `enabled`
- * reports the effective value (a config with no `hooks` section reads as enabled, matching
- * core).
- */
-export interface AgentHooksConfigDto {
-  /** Whether a Session created from now on runs the installed hook packages (they stay installed either way). */
-  enabled: boolean;
-}
-
-/** Structured view of system_config.yaml (for the edit form). */
-export interface AgentConfigDto {
-  name?: string;
-  description?: string;
-  /** The effective author: the stored value, `user` when the field is missing or unknown. This server always sends it; absent (a machine on an older server) reads as `user`. */
-  author?: AgentAuthor;
-  /** Present on the system Agent only (see AgentSummary.system): its settings page shows only the read-only overview and its system apps. */
-  system?: true;
-  /** Agent State version number (treated as 1 if missing; shown in the settings page overview). */
-  version: number;
-  /** The stored kernel stamp (`kernel_version`): which defaults generation the config is based on; null when the config predates the kernel-version mechanism. */
-  kernelVersion: string | null;
-  /** The current defaults generation (core's KERNEL_VERSION) — what a kernel update would stamp. */
-  kernelLatest: string;
-  /** Whether the stamp is behind kernelLatest (a missing stamp counts as outdated). */
-  kernelOutdated: boolean;
-  systemPrompt: string;
-  maxTurns?: number;
-  model?: AgentModelConfigDto;
-  compaction?: AgentCompactionConfigDto;
-  memory: AgentMemoryConfigDto;
-  vault: AgentVaultConfigDto;
-  skills: AgentSkillsConfigDto;
-  schedules: AgentSchedulesConfigDto;
-  hooks: AgentHooksConfigDto;
-  toolsBuiltin: ToolDefinitionConfig[];
-  mcpServers: MCPServerConfig[];
-}
-
-export interface AgentConfigResponse {
-  agentsMd: string;
-  /** Raw system_config.yaml text (read-only display / diagnostics). */
-  systemConfigYaml: string;
-  config: AgentConfigDto;
-  /** Agent State absolute path. */
-  stateDir: string;
-  activeSessionCount: number;
-}
-
-/**
- * POST …/config/kernel-update result: the smart merge's outcome (core's applyKernelUpdate).
- * The entries are Agent settings **tabs** (`prompt`, `runtime`, `tools`, `skills`, `memory`,
- * `vault`, `schedules`) in the settings page's tab order; the client maps them to tab labels.
- */
-export interface AgentKernelUpdateResponse {
-  /** Tabs advanced to the current defaults (previously absent, or an untouched old default). */
-  advanced: string[];
-  /** Tabs kept whole because they match no recorded default (customized, kept conservatively). */
-  kept: string[];
-  /** The kernel stamp written (the current defaults generation). */
-  kernelVersion: string;
-}
-
 /**
  * POST …/config/mcp-test result: reachability of one MCP Server entry. Its `${KEY}` references
  * are filled in from the Agent's vault only when the entry is saved on the Agent exactly as
@@ -1452,45 +1354,6 @@ export interface McpServerTestResponse {
   latencyMs?: number;
 }
 
-/** PUT any subset: only provided keys are updated (remaining YAML content and comments preserved); agentsMd overwrites the whole file. */
-export interface AgentConfigUpdateRequest {
-  agentsMd?: string;
-  config?: {
-    name?: string;
-    description?: string;
-    author?: AgentAuthor;
-    systemPrompt?: string;
-    maxTurns?: number;
-    model?: AgentModelConfigDto;
-    compaction?: AgentCompactionConfigDto;
-    memory?: Partial<AgentMemoryConfigDto>;
-    /** Only the writable half of the DTO — the template facts (templateHasPlaceholder / legacySectionPresent) are computed, never written. */
-    vault?: { enabled?: boolean; prompt?: string };
-    skills?: { enabled?: boolean; prompt?: string };
-    schedules?: { enabled?: boolean; prompt?: string };
-    /** The Agent-level hook switch; it has no prompt half. */
-    hooks?: { enabled?: boolean };
-    toolsBuiltin?: ToolDefinitionConfig[];
-    mcpServers?: MCPServerConfig[];
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Agent API (/api/projects/:projectId/agents/:agentId/api; the stream itself is AMSP,
-// /api/amsp/v1, whose snake_case wire types live in @prismshadow/amsp)
-// ---------------------------------------------------------------------------
-
-// AgentApiKeyInfo (the list view of one API key) lives with the AgentApi contract in
-// library/agent-api — imported and re-exported at the top of this file's Agent API block.
-
-/**
- * One Agent's public API settings — this server's, kept in web.db, never in the Agent State or
- * the Project file, so the Agent cannot expose itself or loosen its own approvals. An Agent
- * never configured reads as disabled, keyed, allow-all, with no keys.
- */
-
-// The vocabulary above lives with its contracts in the domain libraries; these
-// re-exports keep the module's export surface whole for the API's consumers.
 export type {
   AgentApiKeyInfo,
   AgentApiSettings,
@@ -1609,6 +1472,11 @@ export type {
   CredentialInfo,
 };
 
+// ---------------------------------------------------------------------------
+// Agent API (/api/projects/:projectId/agents/:agentId/api; the stream itself is AMSP,
+// /api/amsp/v1, whose snake_case wire types live in @prismshadow/amsp)
+// ---------------------------------------------------------------------------
+
 export interface AgentApiResponse {
   api: AgentApiSettings;
   /**
@@ -1636,160 +1504,6 @@ export interface AgentApiKeyCreateResponse {
 // Memory
 // ---------------------------------------------------------------------------
 
-/** One Memory scope directory: `agent_state/memory/user/` or `agent_state/memory/<workspaceKey>/`. */
-export interface MemoryScopeInfo {
-  /** Directory name under `memory/`: `user`, or a Workspace's `<safe-basename>-<hash>` key. */
-  scopeKey: string;
-  /** `user` — the scope every Session reads, temporary Workspaces included; `workspace` — one Workspace's scope. */
-  kind: "user" | "workspace";
-  /** Workspace path the key was derived from, read from the directory's `.workspace` marker; unset on the user scope (it stands for no path) and for a directory edited by hand. */
-  workspacePath?: string;
-  /** Number of Markdown topic files in the directory (the `MEMORY.md` index not counted; the files a topic keeps are part of that topic). */
-  fileCount: number;
-  /** Whether the directory holds a `MEMORY.md` index, so an import confirmation can say whether one would be replaced. */
-  hasIndex: boolean;
-  /** Most recent mtime among the directory's topic files and the files they keep (ISO 8601); unset when it holds no topic file. */
-  updatedAt?: string;
-}
-
-/**
- * One file kept in a folder of a scope: a topic's folder — named after its file without the
- * `.md`, beside it (`csv-tools/` for `csv-tools.md`) — or a folder that belongs to no topic.
- * Any regular file, in any language, at any depth under the folder.
- */
-export interface MemoryFolderFile {
-  /** Its place in the scope directory, folder first: `csv-tools/dedupe.py`, `csv-tools/lib/io.py`. The file routes address it by this path. */
-  path: string;
-  /** File size in bytes. */
-  size: number;
-  /** File mtime (ISO 8601). */
-  modifiedAt: string;
-}
-
-/** One memory topic file, as listed (frontmatter only — the body is fetched per file). */
-export interface MemoryFileInfo {
-  /** File name inside the scope directory, e.g. `prefers-pnpm.md`. */
-  name: string;
-  /** Frontmatter `name`; falls back to the file name. */
-  title: string;
-  /** Frontmatter `description`; empty when the file declares none. */
-  description: string;
-  /** Frontmatter `updated_at`, verbatim. */
-  updatedAt?: string;
-  /** File size in bytes. */
-  size: number;
-  /** File mtime (ISO 8601). */
-  modifiedAt: string;
-  /** The files the topic keeps in its folder, at every depth, in path order; empty when it keeps none. */
-  files: MemoryFolderFile[];
-}
-
-/** GET …/memory — the tab's landing payload: the switch and every scope group, user scope first. */
-export interface MemoryOverviewResponse {
-  /** Whether Memory reaches the model context (the Agent-level switch). */
-  enabled: boolean;
-  /** Whether the prompt template carries the `{{MEMORY}}` placeholder. An Agent created before Memory has none and injects nothing; POST …/memory/template-placeholder inserts it explicitly. */
-  templateHasMemory: boolean;
-  /** Absolute path of `agent_state/memory/`. */
-  memoryDir: string;
-  scopes: MemoryScopeInfo[];
-}
-
-/** GET …/memory/scopes/:key/files */
-export interface MemoryFilesResponse {
-  scopeKey: string;
-  files: MemoryFileInfo[];
-  /** Files in folders with no topic of their name beside them (`notes/` without `notes.md`). They belong to no memory, and are listed so that none is hidden. */
-  orphanFiles: MemoryFolderFile[];
-}
-
-/**
- * GET …/memory/scopes/:key/files/:path — one memory file by its path in the scope: a topic
- * (`prefers-pnpm.md`) with the files it keeps, or a kept file (`csv-tools/dedupe.py`). For a kept
- * file `file` describes that file: its path as `name` and `title`, no description, no `files`;
- * its text is handed out up to 512 KB of UTF-8 (413 `memory_file_too_large`, 415
- * `memory_file_not_text` otherwise).
- */
-export interface MemoryFileResponse {
-  scopeKey: string;
-  file: MemoryFileInfo;
-  content: string;
-}
-
-/** One topic file inside a version 1 transfer document: the name it had in its scope, and its whole text. */
-export interface MemoryTransferFile {
-  /** File name inside the scope directory, e.g. `prefers-pnpm.md` — a name, never a path. */
-  name: string;
-  /** The file's full Markdown text, frontmatter included. */
-  content: string;
-}
-
-/**
- * The JSON document GET …/export answered with up to 0.2.x: the topic files and the scope's
- * `MEMORY.md`. The export is a zip now; an import still reads this document (`payload`).
- */
-export interface MemoryScopeExport {
-  /** Format marker, so a foreign JSON file is refused with a clear reason rather than half-imported. */
-  format: "penguin-memory-scope";
-  /** Document version. Only version 1 was ever written. */
-  version: 1;
-  /** The scope this was exported from. Informational: an import writes into the scope its URL names. */
-  scopeKey: string;
-  kind: MemoryScopeInfo["kind"];
-  /** The Workspace the source scope stood for, when it had a `.workspace` marker. */
-  workspacePath?: string;
-  /** When the document was produced (ISO 8601). */
-  exportedAt: string;
-  /** The scope's `MEMORY.md`, or null when the scope has none. Only the index reaches the model's context. */
-  index: string | null;
-  files: MemoryTransferFile[];
-}
-
-/**
- * What an import does with a memory the target scope already holds. A memory is a topic file and
- * the folder of its name (`csv-tools.md`, `csv-tools/`), and each mode acts on the two together; a
- * folder with no topic beside it is a memory of its own, named `<folder>/`:
- *   - `skip` — keep what is on disk, write only memories the scope does not have (destroys nothing);
- *   - `overwrite` — a memory the import carries replaces the one here, topic and folder;
- *   - `replace` — additionally delete every memory the import does not carry.
- * The two destructive modes require `confirm`.
- */
-export type MemoryImportMode = "skip" | "overwrite" | "replace";
-
-/**
- * POST …/memory/scopes/:key/import — exactly one of `dataBase64` and `payload`.
- *
- * Without `confirm`, an import that would overwrite or delete is refused with 409
- * `memory_import_confirm_required`, whose `details` name what is at stake: `overwritten` and
- * `removed` as JSON arrays of memory names, `replacesIndex` as `"true"` or `"false"`.
- */
-export interface MemoryImportRequest {
-  /** Defaults to `skip`. */
-  mode?: MemoryImportMode;
-  /** Required by an `overwrite` or `replace` that would destroy something. */
-  confirm?: boolean;
-  /** A zip of the scope folder as GET …/export answers it, base64: `MEMORY.md`, `<name>.md` and `<name>/…` at its root. */
-  dataBase64?: string;
-  /** A version 1 JSON document, exported before the zip. */
-  payload?: MemoryScopeExport;
-}
-
-/** What one import did, memory by memory (a topic's name, or `<folder>/` for a folder with no topic), so the UI can report it rather than claim success. */
-export interface MemoryImportResponse {
-  scopeKey: string;
-  mode: MemoryImportMode;
-  /** Memories written that the scope did not have. */
-  added: string[];
-  /** Memories whose topic and folder were replaced, named as the scope held them. */
-  overwritten: string[];
-  /** Memories left untouched because the scope already had them (`skip` only), named as the scope holds them. */
-  skipped: string[];
-  /** Memories deleted, topic and folder, because `replace` dropped what the import did not carry. */
-  removed: string[];
-  /** Whether the scope's `MEMORY.md` was written or extended. */
-  indexWritten: boolean;
-}
-
 export interface SessionInfo {
   sessionId: string;
   projectId: string;
@@ -1799,6 +1513,8 @@ export interface SessionInfo {
    * reference). It moves with each in-session switch (`POST /api/sessions/:id/switch-model`).
    */
   provider: string;
+  /** Last confirmed target while it waits for, or is carrying out, a model handoff. */
+  pendingModel?: ModelRefDto;
   /** Upstream model_id of the session's current model (the request id sent to MMSP). */
   modelId: string;
   workspace: string;
@@ -2536,6 +2252,8 @@ export interface HistoryStub {
 
 /** The machine leg's first event, `window`. */
 export interface HistoryLinesWindow {
+  /** The Session's owning Project, for the hub's offline access check. Older machines omit it. */
+  projectId?: string;
   /** What `/messages` answers beside the records, captured before any file is read. */
   envelope: {
     page?: MessagesPageInfo;
@@ -2781,6 +2499,8 @@ export interface SessionSwitchModelRequest {
   provider: string;
   /** Upstream model_id of the target model. */
   modelId: string;
+  /** Wait for an idle boundary if busy. A later confirmed pick replaces the waiting target. */
+  whenIdle?: boolean;
 }
 
 export interface TaskCreateResponse {
@@ -3548,106 +3268,19 @@ export interface SessionContextResponse extends SessionContextParts {
 
 /** Duration span of a single tool call (complete tool_call message → paired tool_call_output). */
 
-/** Workspace file entry (Files tab). */
-export interface WorkspaceFileEntry {
-  name: string;
-  kind: "dir" | "file";
-  sizeBytes: number;
-  mtime: string;
-}
-
-export interface WorkspaceFilesResponse {
-  /** Requested relative path ("" = Workspace root). */
-  path: string;
-  entries: WorkspaceFileEntry[];
-}
-
-/**
- * Write one Workspace file whole (the Upload button, a drop, and the Files panel's editor). A
- * write answers 204 with the written file's version in `ETag` — the marker the next conditional
- * write of the same file carries, so an editor can keep editing after a save.
- */
-export interface FilesWriteRequest {
-  /** The entire file, base64-encoded (≤14MB decoded). */
-  dataBase64: string;
-  /**
-   * Write precondition: the version marker the caller read off this file's `ETag` on
-   * `GET files/content`. The server compares it against the file's state immediately
-   * before writing and answers 409 `file_changed` — having written nothing — when they
-   * differ, which is what stops the editor's save from quietly dropping what the Agent
-   * wrote during the turn. Omitted by a caller that read no version (an upload creates or
-   * replaces unconditionally); that absence, not a sentinel value, is what says there was
-   * no prior version to match.
-   */
-  ifVersion?: string;
-}
-
-/** Move or rename one Workspace file or folder (the Files panel's context menu). */
-export interface FilesMoveRequest {
-  /** Source path, relative to the Workspace root. */
-  from: string;
-  /** Destination path, relative to the Workspace root. Its parent directory is created when missing. */
-  to: string;
-  /**
-   * Move precondition, read exactly like {@link FilesWriteRequest.ifVersion}: the marker the
-   * caller got from this file's `ETag` on `GET files/content`, which the file must still
-   * carry. It differs on only one point — the marker guards the **source**. The destination
-   * has none, because the caller never read it, which is why an occupied destination is
-   * refused with 409 `target_exists` rather than overwritten.
-   *
-   * A directory `from` takes none, and one sent with it is a 400: a directory carries no
-   * single version marker, so no precondition can be stated for it. A folder moves whole and
-   * unconditionally — nothing is lost that way, since whatever the Agent wrote into it meanwhile
-   * moves with it — and is refused only when the destination is occupied or lies inside it.
-   */
-  ifVersion?: string;
-}
-
-/**
- * Create one empty text file or one folder in a Workspace (the Files panel's New menu). Missing
- * parent directories are created as a write creates them. Anything already at `path` — a file,
- * a folder or a link — is refused with 409 `target_exists` and nothing is written.
- */
-export interface FilesCreateRequest {
-  /** The new entry's path, relative to the Workspace root. */
-  path: string;
-  kind: "file" | "dir";
-}
-
-/**
- * One Workspace search match. `kind`, `sizeBytes` and `mtime` are named and typed exactly as
- * {@link WorkspaceFileEntry} names them: a hit is drawn by the same row renderer as a tree
- * entry, and it can only render identically if it carries the same fields.
- */
-export interface WorkspaceSearchHit {
-  /** Workspace-relative, "/"-separated, with no leading "./" (a tree entry's `name` is only its last segment). */
-  path: string;
-  kind: "dir" | "file";
-  sizeBytes: number;
-  mtime: string;
-}
-
-export interface WorkspaceSearchResponse {
-  /** Shallowest first, then directories before files, then by name — the order the breadth-first walk produced. */
-  hits: WorkspaceSearchHit[];
-  /**
-   * A cap stopped the walk (200 hits, or 20000 directory entries visited), so this is a
-   * partial list. Breadth-first is what makes that degrade well: the hits that survive
-   * truncation are the shallowest ones, not the ones that happened to be enumerated first.
-   */
-  truncated: boolean;
-}
-
-/** Batch file existence check (message file cards only list files that actually exist). */
-export interface FilesStatRequest {
-  /** Paths relative to the Workspace root (≤100 items, each ≤512 characters). */
-  paths: string[];
-}
-
-export interface FilesStatResponse {
-  /** Confirmed existing paths (regular files within bounds), preserving request order and deduplicated; out-of-bounds and resolution failures count as non-existent. */
-  existing: string[];
-}
+// The workspace files vocabulary moved to the workspace domain library
+// (services+http+cli restack S4); these re-exports keep the API's export surface whole.
+export type {
+  FilesCreateRequest,
+  FilesMoveRequest,
+  FilesStatRequest,
+  FilesStatResponse,
+  FilesWriteRequest,
+  WorkspaceFileEntry,
+  WorkspaceFilesResponse,
+  WorkspaceSearchHit,
+  WorkspaceSearchResponse,
+} from "@prismshadow/penguin-library-workspace/types";
 
 /**
  * Model serial segments (autoregressive decoding): Trace records completion times, so each
@@ -3862,27 +3495,6 @@ export interface ScheduleUpsertRequest {
 //        `application/octet-stream` → 201 AgentArchiveImportResponse (any member creates;
 //        a taken id is 409 `agent_exists` with `details.agentId`; overwrite is the owner's)
 
-/**
- * The archive route's query. Each part is `1` (carried) or `0` (left out); an absent part takes
- * its default: all carried but `schedules`, since an imported task runs on its schedule.
- * `workbenchData` is each workbench's `state.json` and its data folder (`app/data/<id>/`), and
- * means nothing without `workbenches`.
- */
-export interface AgentArchiveQuery {
-  skills?: "0" | "1";
-  hooks?: "0" | "1";
-  memory?: "0" | "1";
-  workbenches?: "0" | "1";
-  workbenchData?: "0" | "1";
-  schedules?: "0" | "1";
-  /**
-   * Which Sessions' Traces travel, every file of each: none (the default); the last N by
-   * activity, 1–500, a subagent Session following its parent; or those whose date directory
-   * lies in the range, both ends included.
-   */
-  traces?: "none" | `last:${number}` | `${string}..${string}`;
-}
-
 export interface AgentArchiveImportResponse {
   agent: Pick<AgentSummary, "agentId" | "name" | "description">;
   mode: "created" | "overwritten";
@@ -3913,251 +3525,31 @@ export interface AgentAvatarResponse {
 // Benchmark scoring (display), manual creation and deletion
 // ---------------------------------------------------------------------------
 
-/** Raw result of a single run (a scoreboard per-case runs[] entry). */
-export interface BenchmarkRunScore {
-  score: number;
-  /** Run cost, or null when unavailable. */
-  cost: number | null;
-  durationMs: number;
-  /** Id of the Session under test in this run (links to Trace). */
-  sessionId: string;
-}
-
-export interface BenchmarkCaseScore {
-  case: string;
-  /** Model-written average of this Case's Run scores, on the fixed 0..100 scale. */
-  score: number;
-  /** Model-written average of known Run costs; null when every Run cost is unknown. */
-  cost: number | null;
-  /** Model-written average of Run durations, rounded to an integer. */
-  durationMs: number;
-  /** Raw results per Run. */
-  runs: BenchmarkRunScore[];
-}
-
-export interface BenchmarkEvaluation {
-  /** Evaluation timestamp (ISO 8601). */
-  time: string;
-  /**
-   * Agent under test in this round (the `agent_id` field), part of the record's label; `null`
-   * when the record carries none, as a Benchmark evaluates whichever Agents it is pointed at.
-   */
-  agentId: string | null;
-  /** Evaluation summary title (a one-line conclusion; shown separately from the body summary; required when generating, tolerated as unset when displaying). */
-  summaryTitle?: string;
-  /** Evaluation summary body: how the score was derived, what optimizations were made to the Agent this round (required when generating, tolerated as unset when displaying). */
-  summary?: string;
-  /** Model actually used for this evaluation round (upstream id, paired with provider; the chart series is split by model). */
-  modelId: string;
-  /** Provider group for `modelId`. */
-  provider: string;
-  /** Thinking level read from the unchanged Target Agent configuration. */
-  thinkingLevel: string;
-  /** Agent State version under test: a build number, or a version label such as a semver string. */
-  version: number | string;
-  /** Model-written average of Case scores, on the fixed 0..100 scale. */
-  score: number;
-  /** Model-written average of known Case costs; null when every Case cost is unknown. */
-  cost: number | null;
-  /** Model-written average of Case durations, rounded to an integer. */
-  durationMs: number;
-  cases: BenchmarkCaseScore[];
-}
-
-/**
- * Whether the Skill that builds a Benchmark is done with it, and how it ended; see
- * `BenchmarkSummary.status`.
- */
-export type BenchmarkStatus = "draft" | "published" | "failed";
-
-/**
- * Where a Benchmark's copy came from: `builtin` (seeded when the Project was created), `manual`
- * (the create form), `agent` (the benchmark-design Skill wrote it), `git` (an Agent imported a
- * repository folder), `zip` (an uploaded package).
- */
-export type BenchmarkOriginKind = "builtin" | "manual" | "agent" | "git" | "zip";
-
-/**
- * Why a Benchmark's manifest cannot be read: the code of core's `BenchmarkManifestError`
- * (`benchmark_id_mismatch` for an `id` that is not the directory's, `benchmark_manifest_invalid`
- * for a file that is not TOML or a `version` or `[origin]` out of shape) and its message, which
- * names the key or the file.
- */
-export interface BenchmarkManifestProblem {
-  code: string;
-  message: string;
-}
-
-/** The `[origin]` table of a Benchmark's benchmark_config.toml. */
-export interface BenchmarkOrigin {
-  kind: BenchmarkOriginKind;
-  /** git: the folder link as the user gave it (a GitHub tree URL). Always an http(s) URL. */
-  url?: string;
-  /** git: the 40-hex commit the import resolved the link to. */
-  ref?: string;
-  /** git: the folder inside the repository. */
-  path?: string;
-  /** git / zip: when this copy was written (ISO 8601; `imported_at` in the file). */
-  importedAt?: string;
-}
-
-export interface BenchmarkSummary {
-  /** Directory name is the identifier (semantic naming, e.g. swe-bench-v1). */
-  id: string;
-  /**
-   * The Benchmark's absolute folder on the server that answered, which the Evaluation Center's
-   * prompts name (`BENCHMARK_DIR`) so an Agent never derives it. Absent from a server that
-   * predates it, where the folder is `benchmarks/<id>/` under the Project's App Data Dir.
-   */
-  dir?: string;
-  /** Title from benchmark_config.toml; the directory name when it gives none or the manifest cannot be read. */
-  title: string;
-  description?: string;
-  /** The description in Chinese (`description_zh` in benchmark_config.toml), when the manifest gives one. */
-  descriptionZh?: string;
-  /** Number of runs per case (the `runs` key in benchmark_config.toml, an integer ≥ 1); absent when it gives none or the manifest cannot be read, which reads as 1. */
-  runs?: number;
-  /**
-   * `draft` while the Skill that builds the Benchmark is still writing its cases and
-   * calibrating their difficulty — the Web App masks such a Benchmark; `published` once the
-   * Benchmark is frozen and its Formal Baseline recorded; `failed` when calibration ended
-   * without a Pilot result that could be frozen, which leaves the Benchmark unusable — the Web
-   * App masks it too and says it has to be deleted and created again. benchmark_config.toml is
-   * read literally: only `draft` is a draft and only `failed` is a failure, so a missing key, or
-   * any other value, reads as published. A Benchmark whose manifest cannot be read lists as
-   * failed, with `manifestError`.
-   */
-  status: BenchmarkStatus;
-  /**
-   * The manifest's date version, `YYYY.MM.DD.N`: the revision of the Benchmark's content. Absent
-   * when the manifest has none (one written before versions is unversioned), when it cannot be
-   * read, and from a machine whose server predates versions.
-   */
-  version?: string;
-  /**
-   * Where this copy came from, the manifest's `[origin]`. Absent when the manifest has none (where
-   * a copy written before origins came from is unknown), when it cannot be read, and from a
-   * machine whose server predates origins.
-   */
-  origin?: BenchmarkOrigin;
-  /**
-   * Set when the manifest cannot be read. Such a Benchmark lists under its directory name, as
-   * `failed`, with no version or origin, and nothing may use or export it until the file is
-   * fixed; the Web App masks it with this reason.
-   */
-  manifestError?: BenchmarkManifestProblem;
-  /** Case count (number of case subfolders). */
-  caseCount: number;
-  /** Time-ordered evaluation records (the evaluations[] in scoreboard.yaml). */
-  evaluations: BenchmarkEvaluation[];
-  /**
-   * Agents this Benchmark has evaluated: the distinct non-null `agentId`s of `evaluations`, in
-   * first-seen order. Empty while nothing has been evaluated — a Benchmark names no Agent of its
-   * own.
-   */
-  agentIds: string[];
-}
-
-export interface BenchmarksResponse {
-  benchmarks: BenchmarkSummary[];
-  /**
-   * The absolute folder the Project's Benchmarks are in on this server — the Evaluation Center's
-   * data folder, `<root>/projects/<p>/agents/system_agent/app/data/benchmark` — for the prompts
-   * that make a new one. Absent from a server that predates it.
-   */
-  dir?: string;
-}
-
-export type CaseMaterial = "statement" | "rubric";
-
-/** Public Benchmark Case metadata. Rubric and Gold content are never included. */
-export interface BenchmarkCaseSummary {
-  id: string;
-  /** First Markdown heading with an optional leading "Case N:" removed; falls back to id. */
-  title: string;
-}
-
-export interface BenchmarkCasesResponse {
-  cases: BenchmarkCaseSummary[];
-}
-
-/**
- * POST /api/projects/:p/benchmarks (owner only): create a Benchmark by hand. The
- * server writes the on-disk layout the evaluation Skills read — `benchmark_config.toml`
- * (published, the day's first version, origin `manual`), a `scoreboard.yaml` holding
- * `evaluations: []`, and one `<case id>/` per case with `statement/README.md` and
- * `rubric/README.md`. 409 `benchmark_exists` when the directory is already there; nothing is
- * merged into an existing Benchmark.
- */
-export interface BenchmarkCreateRequest {
-  /** Directory name, which is the identifier: letters, digits, `_` and `-` only. */
-  id: string;
-  title: string;
-  description?: string;
-  /** Runs per case for the optimization loop (integer ≥ 1; default 1). */
-  runs?: number;
-  /** At least one case; ids must be unique within the request. */
-  cases: BenchmarkCreateCase[];
-}
-
-export interface BenchmarkCreateCase {
-  /** Case directory name: `CASE-` followed by letters, digits, `_` and `-` (for example `CASE-001-excel-task`). */
-  id: string;
-  /** Written as the statement README's first heading, which the case list reads back as the case title. */
-  title: string;
-  /** Statement body (Markdown), written after that heading; the Target Agent sees only this side. */
-  statement: string;
-  /** Scoring rubric (Markdown, items totalling 100 points), written verbatim as `rubric/README.md`. */
-  rubric: string;
-}
-
-export interface BenchmarkCreateResponse {
-  benchmark: BenchmarkSummary;
-}
-
-/**
- * POST /api/projects/:p/benchmarks/archive (any Project member): import a Benchmark package from
- * a zip. The zip holds `benchmark_config.toml` and the `CASE-*` directories, at its root (where the
- * manifest must name its `id`) or inside exactly one top-level directory named by the Benchmark's
- * id — the shape `GET …/benchmarks/:benchmarkId/archive` exports. A zip carrying
- * `scoreboard.yaml`, `.jobs/` or anything else at its top level, a link, a manifest past the
- * create form's limits, a package that is not `published` or a case without both READMEs is
- * refused (400); so is a zip past the caps (413 `benchmark_too_large`: 14MB
- * zipped, 1000 files, 5MB a file, 20MB inflated). The copy is written with origin `zip` and an
- * empty scoreboard — or origin `git`, when the request says the package is a repository folder
- * fetched at a commit. An id already taken is 409 `benchmark_exists` (`details.benchmarkId` names
- * it) unless `overwrite`.
- */
-export interface BenchmarkArchiveImportRequest {
-  /** The zip, base64-encoded. */
-  dataBase64: string;
-  /**
-   * Replace the Benchmark of the same id whole — its evaluation records and `.jobs/` included.
-   * Refused with 409 `benchmark_busy` while an evaluation of it is still running a trial there.
-   */
-  overwrite?: boolean;
-  /**
-   * The repository folder the package was fetched from, pinned to one commit. The copy's origin
-   * is then `git` with these fields and the import time, instead of `zip`.
-   */
-  origin?: BenchmarkArchiveGitOrigin;
-}
-
-/** Where a package fetched from a git repository came from. */
-export interface BenchmarkArchiveGitOrigin {
-  kind: "git";
-  /** The folder link as the user gave it: an http(s) URL, at most 2048 characters. */
-  url: string;
-  /** The 40-character commit the link was resolved to. */
-  ref: string;
-  /** The folder inside the repository, at most 1024 characters. */
-  path: string;
-}
-
-export interface BenchmarkArchiveImportResponse {
-  /** The imported Benchmark, as the list now reads it. */
-  benchmark: BenchmarkSummary;
-}
+// ---------------------------------------------------------------------------
+// The benchmark domain's vocabulary moved to the benchmark domain package
+// (@prismshadow/penguin-library-benchmark/types, services+http+cli restack S2); re-exported
+// here so the API contract keeps spelling them.
+// ---------------------------------------------------------------------------
+export type {
+  BenchmarkArchiveGitOrigin,
+  BenchmarkCaseScore,
+  BenchmarkCaseSummary,
+  BenchmarkCasesResponse,
+  BenchmarkCreateCase,
+  BenchmarkCreateRequest,
+  BenchmarkCreateResponse,
+  BenchmarkEvaluation,
+  BenchmarkManifestProblem,
+  BenchmarkOrigin,
+  BenchmarkOriginKind,
+  BenchmarkRunScore,
+  BenchmarkStatus,
+  BenchmarkSummary,
+  BenchmarksResponse,
+  BenchmarkArchiveImportRequest,
+  BenchmarkArchiveImportResponse,
+  CaseMaterial,
+} from "@prismshadow/penguin-library-benchmark/types";
 
 // ---------------------------------------------------------------------------
 // Plugin library, and an Agent's installed skills and hooks
@@ -4891,115 +4283,6 @@ export interface LanguageIndexResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Theme packs (per server: an admin imports, every account picks; PRFC-0026)
-// ---------------------------------------------------------------------------
-//   GET    /api/themes                  → ThemePacksResponse (any user): the imported packs
-//                                         only, in the order they were installed; the client
-//                                         ships its built-in packs itself
-//   GET    /api/themes/:id/files/<path> → one file the pack serves (any user): its `index.css`,
-//                                         a font or a drawing; 404 for anything else
-//   POST   /api/themes[?replace=1]      → 201 ThemePackImportResponse (admin). The body is the
-//                                         raw zip sent as `application/octet-stream`. Refusals:
-//                                         400 `theme_invalid` (details: ThemeInvalidDetails),
-//                                         400 `theme_id_reserved`, 409 `theme_exists` (details:
-//                                         `themeId`) unless `replace=1`, 413 `theme_too_large`,
-//                                         422 `theme_api_unsupported`, 503 `themes_unavailable`
-//   DELETE /api/themes/:id              → 204 (admin); 400 `theme_builtin`, 404 `theme_not_found`
-//   GET    /api/themes/:id/export       → the pack as a zip attachment (any user), built-in or
-//                                         imported; 404 `theme_not_found`
-// Every write tells every signed-in tab with `themes_changed` on the user event stream.
-
-/** A theme mode, as a manifest names it. */
-export type ThemePackMode = "light" | "dark";
-
-/**
- * What a pack builds on: `modern`, Frost's token values and its hook recipes (the root carries
- * `data-theme-base="modern"`); `foundation`, Frost's values only, as the fallback for a name the
- * pack leaves out.
- */
-export type ThemePackBase = "modern" | "foundation";
-
-/** The three colours a picker draws for a pack in one mode, as hex. */
-export interface ThemePackSwatch {
-  canvas: string;
-  ink: string;
-  accent: string;
-}
-
-/** One accent preset a pack offers: the `data-accent` id its `accents.css` declares, and its dot. */
-export interface ThemePackAccentPreset {
-  id: string;
-  swatch: string;
-}
-
-/**
- * An imported pack as the picker and the pre-paint cache read it: its normalised manifest
- * (`pack.json`), plus where its stylesheet is served and at which version. `v` is a digest of
- * the pack's content and of the cascade layer order the served Web App build puts in front of its
- * stylesheet, so it changes when a replace changes anything, or a new build changes that order,
- * and a cached stylesheet misses; `href` is `/api/themes/<id>/files/index.css?v=<v>`, which the
- * browser builds from `id` and `v` itself before the first paint.
- */
-export interface ThemePackDto {
-  /** `^[a-z][a-z0-9-]{1,31}$`, never a built-in pack's id. */
-  id: string;
-  names: { zh: string; en: string };
-  /** The pack's own semver. */
-  version: string;
-  /** The theme API the pack targets; a build implementing a lower one lists it and never loads it. */
-  api: number;
-  base: ThemePackBase;
-  /** The modes the pack declares; a mode it leaves out renders from the base. */
-  modes: ThemePackMode[];
-  swatches: Record<ThemePackMode, ThemePackSwatch>;
-  accent: {
-    /** The theme's own accent per mode: what `neutral` paints. */
-    own: Record<ThemePackMode, string>;
-    /** The presets, in the picker's order. */
-    presets: ThemePackAccentPreset[];
-  };
-  /** The family each stack puts first. */
-  fonts: { sans: string; ui: string; mono: string; cjk: string; display: string };
-  /** The built-in Agent-avatar variant the pack shows, when it shows its own. */
-  avatar?: string;
-  href: string;
-  /** Hex, 8–64 characters. */
-  v: string;
-}
-
-/** GET /api/themes. */
-export interface ThemePacksResponse {
-  themes: ThemePackDto[];
-}
-
-/** POST /api/themes: the pack as it is now installed. */
-export interface ThemePackImportResponse {
-  theme: ThemePackDto;
-}
-
-/** The codes the theme-pack routes refuse with, beside the shared `admin_required`. */
-export type ThemePackErrorCode =
-  | "theme_invalid"
-  | "theme_id_reserved"
-  | "theme_exists"
-  | "theme_too_large"
-  | "theme_api_unsupported"
-  | "theme_builtin"
-  | "theme_not_found"
-  | "themes_unavailable";
-
-/**
- * `details` of a 400 `theme_invalid`: the first thing the validator refused, so a designer can go
- * to it. `file` is the entry's path inside the pack (`recipes.css`, `fonts/hand.woff2`, the
- * entry a zip may not hold); `line` and `column` (1-based, decimal strings) are present when the
- * refusal points into a stylesheet or the manifest.
- */
-export interface ThemeInvalidDetails {
-  file: string;
-  reason: string;
-  line?: string;
-  column?: string;
-}
 
 // ---------------------------------------------------------------------------
 // Version and self-update
@@ -5064,133 +4347,6 @@ export interface UpdateCheckResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Desktop client update (desktop mode only)
-// ---------------------------------------------------------------------------
-
-/**
- * The desktop shell's updater snapshot, pushed to the embedded server over the
- * utilityProcess message channel and served at GET /api/desktop/update. `state` is the
- * discriminator; the optional fields belong to the states named on them.
- *
- * The shell never downloads on its own: a check ends in `available`, and the download
- * starts only on the page's (or the native dialog's) say-so — the `download` command. A
- * `downloaded` build stays the reported state until it is installed: a later periodic
- * check (or its failure) must not hide the actionable "restart to install" step.
- */
-export interface DesktopUpdateStatus {
-  /** Installed shell version (Electron app.getVersion()). */
-  appVersion: string;
-  /**
-   * Bumped by the shell on every updater event it folds, whether or not the visible
-   * state changed. A row-initiated check settles when the seq has moved past its
-   * at-click value and the state is no longer `checking` — snapshot equality can't
-   * carry that signal (a check that ends where it started is byte-identical).
-   */
-  seq?: number;
-  state:
-    | "idle"
-    | "checking"
-    | "up-to-date"
-    | "available"
-    | "downloading"
-    | "downloaded"
-    | "error"
-    | "unsupported";
-  /** The newer release: offered (`available`), being fetched (`downloading`) or ready to install (`downloaded`). */
-  version?: string;
-  /** Download progress 0–100 (`downloading`). */
-  percent?: number;
-  /** Updater failure text (`error`). */
-  message?: string;
-  /** Why this install form cannot update itself (`unsupported`): dev run, or a Linux install that is not an AppImage (e.g. .deb — the system package manager owns it). */
-  reason?: "dev" | "linux-not-appimage";
-}
-
-/**
- * GET /api/desktop/update (desktop-shell sessions only): the latest shell snapshot.
- * `status` is null until the shell's first push lands (a beat after server start).
- */
-export interface DesktopUpdateStatusResponse {
-  status: DesktopUpdateStatus | null;
-}
-
-/** Shell → server push over the utilityProcess message channel. */
-export interface DesktopUpdaterStatusMessage {
-  type: "desktop-updater-status";
-  status: DesktopUpdateStatus;
-}
-
-/**
- * Server → shell command over the utilityProcess message channel (relayed from
- * POST /api/desktop/update/check|download|install): look for a release, fetch the one
- * offered, or restart into the one downloaded.
- */
-export interface DesktopUpdaterCommandMessage {
-  type: "desktop-updater-command";
-  action: "check" | "download" | "install";
-}
-
-// Desktop tray icon (desktop mode only)
-//
-// The shell keeps an icon in the system tray for as long as the app runs, and Settings ›
-// Appearance is where it is turned off and on. The switch rides the same utilityProcess
-// message channel as the client updater above: the shell pushes what it currently shows,
-// the page reads it at GET /api/desktop/tray and writes through PUT, which is relayed
-// back. The window stays a plain browser — no renderer IPC bridge.
-//
-// The page reports its UI language over the same route, so the tray menu reads in the
-// language the window does. The shell cannot see that preference itself: it lives in the
-// browser's localStorage, on the other side of a boundary this design keeps one-way.
-
-/** The two languages the Web App has; the shell's tray menu follows whichever is in use. */
-export type DesktopTrayLocale = "zh" | "en";
-
-/** What the shell is currently doing about its tray icon. */
-export interface DesktopTrayStatus {
-  /** Whether an icon is shown in the system tray while the app runs. */
-  showTrayIcon: boolean;
-  /**
-   * The language the tray menu is drawn in. Until a page reports one the shell uses the
-   * device language, so this can differ from the Web App's until the first report lands.
-   */
-  locale: DesktopTrayLocale;
-}
-
-/**
- * What one PUT asks the shell to change. Every field is optional and a request must carry at
- * least one: the switch and the language reach this route from different parts of the page.
- */
-export interface DesktopTrayPatch {
-  showTrayIcon?: boolean;
-  locale?: DesktopTrayLocale;
-}
-
-/**
- * GET / PUT /api/desktop/tray (desktop-shell sessions only): the tray preference.
- * `status` is null until the shell's first push lands (a beat after server start); a
- * client that finds null reads it as on, which is the shell's own default.
- */
-export interface DesktopTrayStatusResponse {
-  status: DesktopTrayStatus | null;
-}
-
-/** Shell → server push over the utilityProcess message channel. */
-export interface DesktopTrayStatusMessage {
-  type: "desktop-tray-status";
-  status: DesktopTrayStatus;
-}
-
-/**
- * Server → shell command over the utilityProcess message channel (relayed from PUT
- * /api/desktop/tray). A patch, not a snapshot: the switch and the language are written by
- * different parts of the page at different moments, and neither should have to restate the
- * other's value to change its own.
- */
-export interface DesktopTrayCommandMessage {
-  type: "desktop-tray-command";
-  showTrayIcon?: boolean;
-  locale?: DesktopTrayLocale;
-}
 
 /**
  * Route id for a draft chat (`/chat/new`): the Session hasn't been persisted yet — the user may
@@ -5237,141 +4393,6 @@ export function sessionKindPath(pathname: string): boolean {
 /** The API socket's address. No id is involved: the handshake's cookie names the user. */
 export function apiSocketPath(): string {
   return API_SOCKET_PATH;
-}
-
-// Desktop folder access (desktop mode, macOS)
-//
-// macOS privacy protection (TCC) guards Desktop, Documents, Downloads and removable and network
-// volumes. It asks the user only on behalf of an app it holds responsible for a read, and lists
-// under Files and Folders only the apps it has asked about; any other read gets a silent EPERM.
-// The Workspace picker's "Allow access" therefore goes to the shell, over the same
-// utilityProcess message channel as the updater and tray above: its main process reads the
-// folder once in the app's own name and says whether it could, and once the app is allowed its
-// children (this server, the agents' shells) read too. The page can also have the shell open
-// the Privacy & Security pane to change it. What either outcome means for the user is the
-// page's to say; the shell only reports.
-
-/** What the shell's read of one folder came to. */
-export interface DesktopFolderAccessResult {
-  /** The folder could be read. Always true off macOS, where the shell reads nothing. */
-  granted: boolean;
-  /** The failed read's errno code (`EPERM`, `EACCES`, `ENOENT`, …); `EINVAL` for a path that is not absolute. */
-  code?: string;
-  /**
-   * Whether the app is a packaged build (Electron's `app.isPackaged`). An unpackaged one is a
-   * development instance started from a terminal, and macOS holds that terminal responsible
-   * for its reads rather than the app.
-   */
-  packaged: boolean;
-}
-
-/** Server → shell request over the utilityProcess message channel (relayed from POST /api/projects/:projectId/dirs/access). */
-export interface DesktopFolderAccessMessage {
-  type: "desktop-folder-access";
-  /** Pairs the reply with its request. */
-  id: string;
-  /** The folder to read, as an absolute path. */
-  path: string;
-}
-
-/** Shell → server reply to one {@link DesktopFolderAccessMessage}, carrying its `id`. */
-export interface DesktopFolderAccessResultMessage extends DesktopFolderAccessResult {
-  type: "desktop-folder-access-result";
-  id: string;
-}
-
-/** POST /api/projects/:projectId/dirs/access: the shell's answer, for the picker to act on. */
-export interface DirAccessResponse {
-  granted: boolean;
-  packaged: boolean;
-}
-
-/** The Privacy & Security panes the page may open: Files and Folders, and Full Disk Access. */
-export type DesktopPrivacyPane = "files" | "fullDisk";
-
-/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/privacy-settings). No reply. */
-export interface DesktopOpenPrivacySettingsMessage {
-  type: "desktop-open-privacy-settings";
-  pane: DesktopPrivacyPane;
-}
-
-/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/window). No reply. */
-export interface DesktopOpenWindowMessage {
-  type: "desktop-open-window";
-}
-
-/**
- * A native action the host process can run on the page's behalf — what the desktop shell's
- * application menu used to offer, reached from the command palette instead (the menu bar
- * stays hidden so a lone Alt no longer takes the keyboard). A plain server offers none.
- *
- * `open-devtools` is the same story one step further: the shell's View menu toggles DevTools
- * and the shell binds F12 to it, but neither is visible with the menu bar hidden — so
- * someone reading a console error has to be told a key. Naming it here makes it findable.
- * It stays a HOST command, run by the shell on its own window: the page is a plain browser
- * environment with no bridge of its own, and adding one for this was rejected
- * (packages/desktop/src/main.ts).
- *
- * This list is NOT the set of runnable commands — {@link HostCommandOffer} is, and the host
- * writes it. What this list holds is the ids this build has its OWN words for, so the page
- * can show a better label than the host sent (translated, with search terms). An id absent
- * here is still offered, still runnable, and shown in the host's words.
- */
-export const HOST_COMMANDS = ["install-cli", "check-updates", "open-devtools"] as const;
-export type HostCommand = (typeof HOST_COMMANDS)[number];
-
-/**
- * The ids the legacy `commands` field of `GET /api/command` may carry — the set the page
- * that predates `offers` knows. That page looks every id up in a table of its own and
- * throws on a miss, so this set is PINNED: an id added to {@link HOST_COMMANDS} travels
- * only in `offers` (whose words ride along) until the old page is gone. Filtering by the
- * build's own `HOST_COMMANDS` here would leak each new id to a page that cannot say it.
- */
-export const LEGACY_HOST_COMMANDS = ["install-cli", "check-updates"] as const;
-
-/**
- * One command the host offers, carrying the words to show for it.
- *
- * The words travel WITH the command because the three programs involved ship apart: the
- * shell reaches users through an installer, the server and the page through a hot push. A
- * page that could only render commands it already had words for made the offer list pointless
- * — a host could never offer anything new — and reading words it did not have blanked it.
- *
- * `command` is opaque to both server and page: the host decides what it means and the host
- * runs it. Neither side validates it against a list of its own; the only question either asks
- * is whether the host offered it.
- */
-export interface HostCommandOffer {
-  command: string;
-  label: string;
-  /** The same words in Chinese. A host with only one language sends it in both. */
-  labelZh: string;
-}
-
-/** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
-export interface HostCommandsMessage {
-  type: "host-commands";
-  commands: HostCommandOffer[];
-}
-
-/** `GET /api/command` (admin): what the host offers — empty under a plain server, or before the shell's push. */
-export interface HostCommandsResponse {
-  /**
-   * The offered ids this build also has words for, and nothing else.
-   *
-   * For pages older than `offers`, which look up every id in a table of their own: an id
-   * they have never heard of throws while they build the palette, and a throw there blanks
-   * the App. So this field stays conservative and the new field carries everything.
-   */
-  commands: HostCommand[];
-  /** Everything the host offers, in the host's words. What a current page renders. */
-  offers: HostCommandOffer[];
-}
-
-/** Server → shell: run one. `POST /api/command/:command` sends it. */
-export interface HostCommandMessage {
-  type: "host-command";
-  command: string;
 }
 
 /**

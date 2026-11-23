@@ -212,7 +212,7 @@ describe("penguin config model add without --model-id: the group's connection", 
     expect(set.code).toBe(0);
     expect((await readConfig()).providers?.["opencode-go"]?.client_type).toBe("openai-chat");
     // The OpenCode Go presets store their own protocol, which the group's does not override.
-    const messages = await listLine("opencode-go", "qwen3.8-max");
+    const messages = await listLine("opencode-go", "qwen4-max");
     expect(messages).toContain("client_type=ant-messages");
     expect(messages).not.toContain("client_type=ant-messages (provider)");
   });

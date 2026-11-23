@@ -77,8 +77,10 @@ export function RowHoverActions({
   actions,
   moreLabel,
   onMore,
+  moreFirst = false,
 }: {
   actions: readonly RowActionItem[];
+  moreFirst?: boolean;
   /** The "more" button's name and hint. */
   moreLabel: string;
   /** Opens the row's menu anchored at the "more" button's own box. */
@@ -88,8 +90,23 @@ export function RowHoverActions({
     const r = e.currentTarget.getBoundingClientRect();
     onMore({ top: r.top, bottom: r.bottom, left: r.left, right: r.right });
   };
+  const more = (
+    <button
+      type="button"
+      data-tooltip={moreLabel}
+      aria-label={moreLabel}
+      aria-haspopup="menu"
+      onClick={openMore}
+      className={`${ROW_HOVER_BUTTON} hover:text-fg`}
+    >
+      {/* Hairline-stroke dots vanish at this size, so the ellipsis is drawn filled: the stroke
+            rides on top of the fill, landing the dots at the other glyphs' weight. */}
+      <GlyphIcon d={ICONS.ellipsis} size={ROW_ACTION_GLYPH} filled />
+    </button>
+  );
   return (
     <>
+      {moreFirst && more}
       {actions.map((action) => (
         <button
           key={action.id}
@@ -104,18 +121,7 @@ export function RowHoverActions({
           <GlyphIcon d={action.glyph} size={ROW_ACTION_GLYPH} />
         </button>
       ))}
-      <button
-        type="button"
-        data-tooltip={moreLabel}
-        aria-label={moreLabel}
-        aria-haspopup="menu"
-        onClick={openMore}
-        className={`${ROW_HOVER_BUTTON} hover:text-fg`}
-      >
-        {/* Hairline-stroke dots vanish at this size, so the ellipsis is drawn filled: the stroke
-            rides on top of the fill, landing the dots at the other glyphs' weight. */}
-        <GlyphIcon d={ICONS.ellipsis} size={ROW_ACTION_GLYPH} filled />
-      </button>
+      {!moreFirst && more}
     </>
   );
 }

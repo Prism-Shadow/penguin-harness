@@ -56,7 +56,7 @@ description: 让 Agent 用 penguin computer 查看并操作电脑桌面上的应
 
 Agent 和你在同一块屏幕上工作，插件因此让它不妨碍你：
 
-- **你在用电脑时它会暂停。** 你最近一次键盘或鼠标输入不到 3 秒时，作用于桌面的命令一律被拒绝（`user_active`），并提示 Agent 先问你；读取屏幕仍然可以。可在卡片上关闭 **用户操作时暂停**。它需要读取你的输入空闲时间：macOS 与 Windows 上总能读取；Linux 上 X11 可以（借助 `xprintidle`，或大多数桌面都带的 Python 与 libXss），Wayland 不行——这时卡片会说明无法暂停，也不会暂停。
+- **用户操作时暂停（默认关闭）。** 开启后，你最近一次键盘或鼠标输入不到 3 秒时，作用于桌面的命令一律被拒绝（`user_active`），并提示 Agent 先问你；读取屏幕仍然可以。可在卡片上开启 **用户操作时暂停**。它需要读取你的输入空闲时间：macOS 与 Windows 上总能读取；Linux 上 X11 可以（借助 `xprintidle`，或大多数桌面都带的 Python 与 libXss），Wayland 不行——这时卡片会说明无法暂停，也不会暂停。
 - **按键只发往当前激活的窗口。** `press` 的按键总是发往拥有焦点的窗口，因此 Agent 指明的窗口不是焦点窗口时会被拒绝（`window_not_focused`），并告诉 Agent 先征得你同意，再用 `focus-window` 把哪个窗口调到前面。它从不悄悄抢焦点。
 - `penguin computer status` 会告诉 Agent 当前的焦点窗口、各显示器及其位置，以及你已空闲多久，让它知道你何时在操作。
 

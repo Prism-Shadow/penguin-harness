@@ -41,6 +41,7 @@
     "@penguinharness/daily-draw": "workspace:*",
     "@penguinharness/data-analysis": "workspace:*",
     "@penguinharness/default-rsi-toolkit": "workspace:*",
+    "@penguinharness/first-workbench-guide": "workspace:*",
     "@penguinharness/fridge-keeper": "workspace:*",
     "@penguinharness/goal": "workspace:*",
     "@penguinharness/plan": "workspace:*",

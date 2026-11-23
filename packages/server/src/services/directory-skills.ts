@@ -9,7 +9,7 @@
  * compatibility alias.
  *
  * A directory the user points at is untrusted input in exactly the way an uploaded archive is, so
- * this reuses the archive import's caps (skill-import-limits.ts) and its walk discipline: **every**
+ * this reuses the archive import's caps (@prismshadow/penguin-library-http/skill-import-limits) and its walk discipline: **every**
  * file is read only after an `lstat`/`Dirent` says it is a regular file within the cap, so a
  * symlink cannot pull in a file outside the Skill directory, a FIFO or device node cannot block
  * the read forever, and an oversized file is refused before it is in memory rather than after.
@@ -37,7 +37,7 @@ import {
   MAX_FILE_BYTES,
   MAX_TOTAL_BYTES,
   skillTooLarge,
-} from "./skill-import-limits.js";
+} from "@prismshadow/penguin-library-http/skill-import-limits";
 
 /** The two layouts a coding agent writes, in precedence order: `.agents` wins a name collision. */
 export const SKILL_SOURCE_DIRS = [".agents/skills", ".claude/skills"] as const;
