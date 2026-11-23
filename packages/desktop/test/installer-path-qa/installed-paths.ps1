@@ -44,6 +44,17 @@ try {
   & "$PSScriptRoot\wizard.ps1" -Installer $Installer -Drive $drive -Apps $apps -MatchingFolder $sameName -DataDrive $other
   Run-Installer $OldInstaller "/S /currentuser /D=$program" $true
   Check ([IO.File]::Exists((Join-Path $program 'PenguinHarness.exe'))) 'real release installed at the explicit program location'
+  $mixed = Join-Path $program 'personal-legacy-document.txt'
+  [IO.File]::WriteAllText($mixed,'belongs to the installer fixture user')
+  $oldExecutable = Get-FileHash -Algorithm SHA256 (Join-Path $program 'PenguinHarness.exe')
+  Run-Installer $Installer "/S /currentuser /D=$program" $false
+  Check ([IO.File]::ReadAllText($mixed) -ceq 'belongs to the installer fixture user') 'legacy folder with extra personal content survives'
+  Check ((Get-FileHash -Algorithm SHA256 (Join-Path $program 'PenguinHarness.exe')).Hash -ceq $oldExecutable.Hash) 'refusal leaves original installer executable intact'
+  # Back up the mixed directory as shown to the user. Install the same stock release at the registered path.
+  $legacyBackup = Join-Path $apps 'Previous installation kept by user'
+  Move-Item -LiteralPath $program -Destination $legacyBackup
+  Run-Installer $OldInstaller "/S /currentuser /D=$program" $true
+  Check ([IO.File]::ReadAllText((Join-Path $legacyBackup 'personal-legacy-document.txt')) -ceq 'belongs to the installer fixture user') 'explicit legacy backup kept intact'
   Run-Profile 'seed' $program $defaultProfile $defaultData
   $db = Join-Path $defaultData 'web.db'
   Check ([IO.File]::Exists($db)) 'old installation produced a real database'
