@@ -6,4 +6,7 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
 
 /** Where the harness root is. The server's `Paths` capability satisfies this structurally. */
-export abstract class AgentPaths extends Interface<{ readonly root: string }>() {}
+@Interface()
+export abstract class AgentPaths {
+  abstract root: string;
+}
