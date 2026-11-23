@@ -4,8 +4,8 @@
  * default of new Projects keeps for its usage after a Project drops its row.
  * Given a new Project, GPT-6 Luna sends a Responses tool request through core's GenerativeModel
  * and the installed MMSP, through OpenAI, OpenRouter and OpenCode Go.
- * Given OpenCode Go's group key, Gemini 4 Argon Contributor streams a tool call through
- * Go's generateContent endpoint with the group key and conversation header, never Google's API.
+ * Given OpenCode Go's group key, Gemini 4 Argon streams a tool call through
+ * Go's Interactions endpoint with the group key and conversation header, never Google's API.
  * Given a Nano Banana preset, asking for an image reaches its provider's image-capable
  * endpoint and returns the original image bytes through MMSP.
  */
@@ -239,25 +239,89 @@ describe("model-catalog", () => {
     },
   );
 
-  it("Go's Gemini preset streams tool calls with the group key and session through generateContent", async () => {
-    const chunk = {
-      usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 4, totalTokenCount: 16 },
-      candidates: [
-        {
-          content: { role: "model", parts: [{ functionCall: { name: "get_number", args: {} } }] },
-          finishReason: "STOP",
-        },
-      ],
-    };
+  it.each([
+    [
+      "glm-5.3-flash",
+      "openai-chat",
+      "/openai/v1/chat/completions",
+      "authorization",
+      "Bearer go-group",
+    ],
+    ["gpt-6-luna", "openai-responses", "/openai/v1/responses", "authorization", "Bearer go-group"],
+    ["claude-haiku-5-5", "ant-messages", "/anthropic/v1/messages", "x-api-key", "go-group"],
+  ])(
+    "sends Go %s to its native gateway endpoint",
+    async (id, protocol, path, authHeader, authValue) => {
+      const entry = presetModelEntries().find(
+        (row) => row.provider === "opencode-go" && row.model_id === id,
+      )!;
+      const providers = presetProviderTable();
+      providers["opencode-go"]!.api_key = "go-group";
+      const connection = storedConnection(entry, providers);
+      expect(connection.clientType).toBe(protocol);
+      const fake = stubFetch(() =>
+        Response.json(
+          { error: { type: "permission_error", message: "Unavailable for this workspace" } },
+          { status: 403 },
+        ),
+      );
+      try {
+        await runOnce(
+          new GenerativeModel({
+            modelId: id,
+            apiKey: connection.apiKey!,
+            baseUrl: connection.baseUrl!,
+            clientType: connection.clientType!,
+            tools: [GET_NUMBER],
+            sessionId: "go-session",
+          }),
+        );
+        expect(fake.calls).toHaveLength(1);
+        const request = fake.calls[0]!;
+        const url = new URL(request.url);
+        expect(url.origin + url.pathname).toBe("https://opencode.ai/inference/go" + path);
+        expect(request.headers.get(authHeader!)).toBe(authValue);
+        expect(request.headers.get("user-agent")).toMatch(/^penguinharness\//);
+        expect(request.headers.get("x-opencode-session")).toBe("go-session");
+        expect(JSON.parse(request.body)).toMatchObject({
+          model: id,
+          stream: true,
+          tools: [expect.any(Object)],
+        });
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it("streams a Go Gemini Interactions tool call with the group key and Session", async () => {
+    const events = [
+      {
+        event_type: "step.start",
+        index: 0,
+        step: { type: "function_call", id: "call_one", name: "get_number", arguments: {} },
+      },
+      {
+        event_type: "step.delta",
+        index: 0,
+        delta: { type: "arguments_delta", arguments: '{"n":' },
+      },
+      { event_type: "step.delta", index: 0, delta: { type: "arguments_delta", arguments: "1}" } },
+      { event_type: "step.stop", index: 0 },
+      { event_type: "interaction.completed", interaction: { status: "requires_action" } },
+    ];
     const fake = stubFetch(
       () =>
-        new Response(`data: ${JSON.stringify(chunk)}\n\n`, {
-          headers: { "content-type": "text/event-stream" },
-        }),
+        new Response(
+          events
+            .map((event) => `event: ${event.event_type}\ndata: ${JSON.stringify(event)}\n\n`)
+            .join(""),
+          { headers: { "content-type": "text/event-stream" } },
+        ),
     );
     try {
       const entry = presetModelEntries().find(
-        (row) => row.provider === "opencode-go" && row.model_id === "gemini-4-argon-contributor",
+        (row) => row.provider === "opencode-go" && row.model_id === "gemini-4-argon",
       )!;
       expect(entry).toBeDefined();
       const table = presetProviderTable();
@@ -278,16 +342,20 @@ describe("model-catalog", () => {
       }
       expect(fake.calls).toHaveLength(1);
       const call = fake.calls[0]!;
-      expect(call.url).toBe(
-        "https://opencode.ai/inference/go/google/v1beta/models/gemini-4-argon-contributor:streamGenerateContent?alt=sse",
-      );
+      expect(call.url).toBe("https://opencode.ai/inference/go/google/v1beta/interactions");
       expect(call.headers.get("x-goog-api-key")).toBe("sk-go-group");
       expect(call.headers.get("x-opencode-session")).toBe("go-gemini-session");
       expect(JSON.parse(call.body)).toMatchObject({
-        tools: [{ functionDeclarations: [{ name: "get_number" }] }],
+        model: "gemini-4-argon",
+        tools: [expect.objectContaining({ type: "function", name: "get_number" })],
       });
       expect(produced.map((m) => m.payload)).toContainEqual(
-        expect.objectContaining({ type: "tool_call", name: "get_number" }),
+        expect.objectContaining({
+          type: "tool_call",
+          name: "get_number",
+          tool_call_id: "call_one",
+          arguments: '{"n":1}',
+        }),
       );
     } finally {
       vi.unstubAllGlobals();
@@ -830,7 +898,10 @@ describe("MMSP's clients as the catalog reads them", () => {
         expect(env!.envBaseUrlKey, m.modelId).toBe("DEEPSEEK_BASE_URL");
         continue;
       }
-      if (m.provider === "opencode-go" && m.clientType === "google-genai") {
+      if (
+        m.provider === "opencode-go" &&
+        (m.clientType === "google-genai" || m.clientType === "google-official")
+      ) {
         expect(env!.envKey, m.modelId).toBe("GEMINI_API_KEY");
         expect(env!.envBaseUrlKey, m.modelId).toBe("GEMINI_BASE_URL");
         continue;

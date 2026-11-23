@@ -196,7 +196,7 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 | `client_type` | 模型条目 → 分组 → 无：按 `model_id` 路由 |
 | `api_key` | 模型条目 → 分组（以能借给该模型为限）→ 无：客户端自己的环境变量，仅限不带 `base_url` 或为客户端缺省端点时（见[供应商凭证变量](#供应商凭证变量)） |
 
-这些值的唯一来源是这个文件。内置模型目录只是参考：新建 Project 时，以及模型库页面的**同步新增模型**与**恢复默认**会把目录写进文件，构建请求时从不读目录。key 属于签发它的端点：分组密钥只借给没有自己 `base_url` 的模型，或自己的 `base_url` 与分组 `base_url` 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 条目位于 `https://opencode.ai/zen/go`，与分组的 `https://opencode.ai/zen/go/v1` 同 origin，能借到；custom 里自带端点的 Atria Dawn 借不到。
+这些值的唯一来源是这个文件。内置模型目录只是参考：新建 Project 时，以及模型库页面的**同步新增模型**与**恢复默认**会把目录写进文件，构建请求时从不读目录。key 属于签发它的端点：分组密钥只借给没有自己 `base_url` 的模型，或自己的 `base_url` 与分组 `base_url` 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 条目位于 `https://opencode.ai/inference/go/anthropic`，与分组的 `https://opencode.ai/inference/go/openai/v1` 同 origin，能借到；custom 里自带端点的 Atria Dawn 借不到。
 
 ### 新对话默认值
 

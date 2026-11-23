@@ -35,6 +35,8 @@ export const STORED_SETTINGS: ServerSettings = {
   proxyUrl: "http://proxy.local:8080",
   attachmentMaxMb: 100,
   attachmentTotalMb: 120,
+  terminalMaxOpen: 12,
+  browserMaxOpen: 20,
   companyMode: true,
   browserExtensionsEnabled: true,
   agentApiEnabled: true,

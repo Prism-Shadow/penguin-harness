@@ -68,9 +68,13 @@ export function AgentTopologyView({
             <button
               key={node.sessionId}
               type="button"
-              aria-label={`${label} · ${stateLabel}`}
+              aria-label={
+                node.depth === 0
+                  ? `${label} · ${stateLabel}`
+                  : `${label} · ${stateLabel} · ${node.sessionId}`
+              }
               aria-pressed={selected}
-              data-tooltip={tooltip}
+              data-tooltip={node.depth === 0 ? tooltip : `${tooltip}\n${node.sessionId}`}
               onClick={() => onSelect(node)}
               style={{ left: rem(x), top: rem(y), width: rem(NODE_W), height: rem(NODE_H) }}
               className={`absolute flex flex-col justify-center gap-px rounded-md border bg-white px-2 text-left transition-colors duration-150 dark:bg-gray-900 ${

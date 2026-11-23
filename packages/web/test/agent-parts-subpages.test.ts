@@ -155,7 +155,7 @@ describe("the kind sub-pages of the Plugins tab", () => {
     {
       kind: "workbench",
       tab: "workbenches",
-      ready: `${en.workbenches.more} Board`,
+      ready: `${en.workbenches.open} Board`,
       row: "Board",
       body: "board",
       folder: "workbenches/board",
@@ -225,7 +225,7 @@ describe("the kind sub-pages of the Plugins tab", () => {
     await waitFor(() => hasButton(`${en.hooks.exportHook} charts`));
     await greyed(en.hooks.injection.enable);
     await click(subPageButton(en.agentPlugins.subPages.workbenches));
-    await waitFor(() => hasButton(`${en.workbenches.more} Board`));
+    await waitFor(() => hasButton(`${en.workbenches.open} Board`));
     await greyed(en.workbenches.enableAll);
     await greyed(en.workbenches.enableOne("Board"));
     expect(server.writes()).toEqual([]);
@@ -239,14 +239,14 @@ describe("the kind sub-pages of the Plugins tab", () => {
     });
     await click(subPageButton(en.agentPlugins.subPages.workbenches));
     expect(whereIs(router)).toBe(`${PAGE}?machine=gpu1&tab=workbenches`);
-    await waitFor(() => hasButton(`${en.workbenches.more} Board`));
-    await click(button(`${en.workbenches.appCenterVisibility(false)} Board`));
-    await waitFor(() => server.writes().some((write) => write.path.endsWith("/app-center")));
+    await waitFor(() => hasButton(`${en.workbenches.open} Board`));
+    await click(switchNamed(en.workbenches.enableOne("Board")));
+    await waitFor(() => server.writes().some((write) => write.path.endsWith("/enabled")));
     expect(server.writes().at(-1)).toMatchObject({
       machine: "gpu1",
-      method: "PATCH",
-      path: `${AGENT_PATH}/workbenches/board/app-center`,
-      body: { show: true },
+      method: "PUT",
+      path: `${AGENT_PATH}/workbenches/board/enabled`,
+      body: { enabled: false },
     });
   });
 
@@ -268,7 +268,7 @@ describe("the kind sub-pages of the Plugins tab", () => {
       at: `${PAGE}?tab=workbenches`,
       ready: () => hasButton(`${en.workbenches.open} Board`),
     });
-    expect(markOf(rowOf("Board"))).not.toBeNull();
+    expect(markOf(rowOf("Board"))).toBeNull();
     expect(markOf(rowOf("Todo"))).toBeNull();
     await click(switchNamed(en.workbenches.enableOne("Board")));
     await waitFor(() => !hasButton(`${en.workbenches.open} Board`));
@@ -294,10 +294,11 @@ describe("the kind sub-pages of the Plugins tab", () => {
       machines: [GPU],
       older: true,
       at: `${PAGE}?machine=gpu1&tab=workbenches`,
-      ready: () => hasButton(`${en.workbenches.more} Board`),
+      ready: () => hasButton(`${en.workbenches.open} Board`),
     });
     expect(() => switchNamed(en.workbenches.enableAll)).toThrow();
     expect(() => switchNamed(en.workbenches.enableOne("Board"))).toThrow();
+    await click(rowOf("Board").querySelector("button")!);
     await click(button(`${en.workbenches.more} Board`));
     expect(menuItem(en.workbenches.reload)).toBeDefined();
     expect(() => menuItem("Show in the sidebar")).toThrow();

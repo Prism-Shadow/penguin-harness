@@ -51,6 +51,7 @@ export type HostSettingsSectionKey =
   | "account"
   | "proxy"
   | "uploads"
+  | "resourceLimits"
   | "company"
   | "agentApi"
   | "plugins"
@@ -101,6 +102,7 @@ const SECTION_RULES: readonly SectionRule[] = [
   { key: "account", group: "personal", order: 60, visible: (v) => offersChangePassword(v) },
   { key: "proxy", group: "server", order: 110, visible: (v) => v.isAdmin },
   { key: "uploads", group: "server", order: 120, visible: (v) => v.isAdmin },
+  { key: "resourceLimits", group: "server", order: 125, visible: (v) => v.isAdmin },
   // The company-mode master switch: server-global like the proxy and upload limits.
   { key: "company", group: "server", order: 130, visible: (v) => v.isAdmin },
   // Whether any Agent's public API answers at all: server-global, like company mode.

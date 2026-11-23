@@ -89,7 +89,7 @@
  *   (VLLM_CLIENT_TYPE);
  * - `ant-messages` for the OpenCode Go rows its endpoint table serves on the Anthropic
  *   Messages API;
- * - `google-genai` for OpenCode Go's Gemini row. The group pins row by row across four
+ * - `google-official` (Interactions) for OpenCode Go's Gemini row. The group pins row by row across four
  *   protocols; its other rows use `openai-chat` and `openai-responses` — see its block comment.
  * ModelScope's rows all pin `openai-responses`: ModelScope serves every preset through its
  * OpenAI Responses endpoint, and the explicit pin keeps a Qwen or DeepSeek id from auto-routing
@@ -371,10 +371,10 @@ const RUNCRATE_BASE_URL = "https://api.runcrate.ai/v1";
 export const PENGUIN_GO_BASE_URL = "https://go.penguin.ooo/api/v1";
 
 /** OpenCode Go's OpenAI-protocol base: the clients append /chat/completions or /responses. */
-const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
+const OPENCODE_GO_BASE_URL = "https://opencode.ai/inference/go/openai/v1";
 /** OpenCode Go's Anthropic Messages base: the SDK appends /v1/messages itself, so no /v1 here. */
-const OPENCODE_GO_MESSAGES_BASE_URL = "https://opencode.ai/zen/go";
-/** Go's generateContent base: the Google SDK appends /v1beta/models/<id>:streamGenerateContent. */
+const OPENCODE_GO_MESSAGES_BASE_URL = "https://opencode.ai/inference/go/anthropic";
+/** Go's Google base: the Interactions client appends /v1beta/interactions. */
 const OPENCODE_GO_GOOGLE_BASE_URL = "https://opencode.ai/inference/go/google";
 
 /** Provider id for the preconfigured Penguin Go relay group. */
@@ -499,8 +499,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     label: "OpenCode Go",
     envKey: "OPENAI_API_KEY",
     envBaseUrlKey: "OPENAI_BASE_URL",
-    apiKeyUrl: "https://opencode.ai/v2/docs/console/api/inference/#authentication",
-    modelsUrl: "https://opencode.ai/v2/docs/console/go/",
+    apiKeyUrl: "https://opencode.ai/docs/console/api/inference/#authentication",
+    modelsUrl: "https://opencode.ai/inference/go/v1/models",
     gatewayBaseUrl: OPENCODE_GO_BASE_URL,
   },
   {
@@ -2717,12 +2717,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "mmsp",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
-  // -- OpenCode Go. Latest generation of each model tier from opencode.ai/v2/docs/console/go/
-  // (2026-10-14); context and vision from OpenCode's models.dev registry. The Code, Pro,
-  // Flash, Max and Plus tiers are independent: a newer Flash does not replace a Pro.
-  // Generic clients pin the documented wire protocol. The /zen/go aliases remain live;
-  // keeping them avoids changing existing group endpoints. Requests name their conversation
-  // through the x-opencode-session header core's GenerativeModel attaches.
+  // -- OpenCode Go. Each current model uses the native API recommended by
+  // https://opencode.ai/inference/go/v1/models (2026-11-23). Select the latest
+  // generation per tier; a Flash model does not replace Code, Pro, Plus or Max.
   // Prices measure subscription allowance consumed, not the monthly fee. Cache writes use
   // the input price when no write premium is published. GPT Luna (>272K), Haiku (>100K),
   // Grok (>200K) and Qwen Plus (>256K) store the base tier. DeepSeek stores its peak rates
@@ -2736,6 +2733,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0, 0, 0),
     supportsVision: false,
+    retired: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2796,12 +2794,23 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENCODE_GO_BASE_URL,
   },
   {
+    modelId: "gemini-4-argon",
+    displayName: "Gemini 4 Argon",
+    provider: "opencode-go",
+    contextWindow: 1048576,
+    pricing: usd(0.2, 4, 20),
+    supportsVision: true,
+    clientType: "google-official",
+    baseUrl: OPENCODE_GO_GOOGLE_BASE_URL,
+  },
+  {
     modelId: "gemini-4-argon-contributor",
     displayName: "Gemini 4 Argon Contributor",
     provider: "opencode-go",
     contextWindow: 1048576,
     pricing: usd(0.2, 4, 20),
     supportsVision: true,
+    retired: true,
     clientType: "google-genai",
     baseUrl: OPENCODE_GO_GOOGLE_BASE_URL,
   },
@@ -2890,12 +2899,33 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENCODE_GO_BASE_URL,
   },
   {
+    modelId: "hy4-flash-free",
+    displayName: "Hy4 flash Free",
+    provider: "opencode-go",
+    contextWindow: 983040,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "hy4",
+    displayName: "Hy4",
+    provider: "opencode-go",
+    contextWindow: 983010,
+    pricing: usd(0.042, 0.834, 2.501),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
     modelId: "hy4-preview",
     displayName: "Hy4 preview",
     provider: "opencode-go",
     contextWindow: 1024000,
     pricing: usd(0.042, 0.834, 2.501),
     supportsVision: false,
+    retired: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2910,6 +2940,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.035, 0.14, 0.58),
     supportsVision: false,
     retired: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "kimi-k3.1-pro",
+    displayName: "Kimi K3.1 Pro",
+    provider: "opencode-go",
+    contextWindow: 1048576,
+    pricing: usd(0.2, 2, 10),
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2945,12 +2985,23 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENCODE_GO_BASE_URL,
   },
   {
+    modelId: "longcat-2.5",
+    displayName: "LongCat-2.5",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.006, 0.3, 1.2),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
     modelId: "longcat-2.5-preview-free",
     displayName: "LongCat 2.5 Preview Free",
     provider: "opencode-go",
     contextWindow: 1000000,
     pricing: usd(0, 0, 0),
     supportsVision: true,
+    retired: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -3008,6 +3059,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENCODE_GO_BASE_URL,
   },
   {
+    modelId: "minimax-m3.1-flash",
+    displayName: "MiniMax M3.1 Flash",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.015, 0.15, 0.6),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
     modelId: "minimax-m3",
     displayName: "MiniMax M3",
     provider: "opencode-go",
@@ -3050,6 +3111,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENCODE_GO_BASE_URL,
   },
   {
+    modelId: "qwen4-max",
+    displayName: "Qwen4 Max",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.075, 1.5, 4.5),
+    supportsVision: true,
+    clientType: "ant-messages",
+    baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
+  },
+  {
     modelId: "qwen3.8-flash",
     displayName: "Qwen 3.8 Flash",
     provider: "opencode-go",
@@ -3066,6 +3137,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.25, 2.5, 6),
     supportsVision: true,
+    retired: true,
     clientType: "ant-messages",
     baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
   },
@@ -3109,6 +3181,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 524288,
     pricing: usd(0.03, 0.15, 0.6),
     supportsVision: true,
+    retired: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "step-5-preview",
+    displayName: "Step 5 Preview",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.1, 1, 2.7),
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -3119,6 +3202,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0, 0, 0),
     supportsVision: true,
+    retired: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "beam-free",
+    displayName: "Beam Free",
+    provider: "opencode-go",
+    contextWindow: 1048576,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "iceman-contributor-free",
+    displayName: "Iceman Contributor Free",
+    provider: "opencode-go",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
