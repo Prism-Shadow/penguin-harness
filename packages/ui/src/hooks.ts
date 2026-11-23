@@ -78,7 +78,7 @@
  * |                    | `FormPickerTrigger`, `Checkbox`, `CheckboxBox`, `Radio`, |                                                       |
  * |                    | `RadioDisc`, `Switch`, `MessageBubble`, `AgentSelect`,   |                                                       |
  * |                    | `WorkspaceSelect`                                        |                                                       |
- * | `ui-start`         | the start page (/chat/new) as a whole; host:             | descendants carry `data-slot="brand" \| "title" \| "version" \| "counts" \| "count" \| "composer" \| "examples" \| "suggestion" \| "saved-prompt"`, a count's number `"figure"`; a chosen prompt uses `aria-current="true"` |
+ * | `ui-start`         | the start page (/chat/new) as a whole; host:             | descendants carry `data-slot="brand" \| "title" \| "version" \| "composer" \| "examples" \| "suggestion" \| "saved-prompt"`; a chosen prompt uses `aria-current="true"` |
  * |                    | `StartDashboard`                                         |                                                       |
  * | `ui-library`       | the model library's groups and their model cards; host:  | descendants carry `data-slot="group" \| "head" \| "cards" \| "card" \| "name" \| "count" \| "tags" \| "meta" \| "price" \| "state"` (a group's head holds its `name` and `count`, a card its `name`), the bar folding the rest of the groups away `"fold"` and Add group `"add"`; a pinned group `data-pinned="true"` |
  * |                    | `ModelsPage`                                             |                                                       |

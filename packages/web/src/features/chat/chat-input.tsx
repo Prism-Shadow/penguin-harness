@@ -134,7 +134,7 @@ import { S } from "../../lib/strings";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { formatBytes, humanizeTokens } from "../../lib/format";
 import { useDictation } from "./voice/dictation";
-import { DraftHeightHandle } from "./draft-height-handle";
+import { useDraftHeight } from "./use-draft-height";
 import { fitTextarea } from "../../lib/textarea-fit";
 import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
@@ -1935,7 +1935,9 @@ export function ChatInput({
     },
   });
 
+  const resizeFromKeyboard = useDraftHeight(textareaRef, text, resizableDraft);
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (resizeFromKeyboard(e)) return;
     if (dictation.active && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       return;
@@ -2485,7 +2487,6 @@ export function ChatInput({
           container breakpoints) — the card's width changes with the viewport and with the Files
           panel squeezing it, so viewport breakpoints wouldn't judge it accurately. */}
       <ComposerCard
-        resizeHandle={resizableDraft && <DraftHeightHandle textarea={textareaRef} text={text} />}
         banner={banner}
         attachments={
           // The staged images, then the staged files, as one row of tiles at the top of the
@@ -2582,6 +2583,13 @@ export function ChatInput({
           ) : undefined
         }
         textarea={{
+          ...(resizableDraft
+            ? {
+                style: { maxHeight: "none" },
+                "aria-keyshortcuts": "Alt+Shift+ArrowUp Alt+Shift+ArrowDown",
+                "aria-description": S.chat.resizeDraft,
+              }
+            : {}),
           ref: textareaRef,
           value: text,
           autoFocus,
