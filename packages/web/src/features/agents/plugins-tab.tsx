@@ -30,6 +30,7 @@
  * lists on screen stay until the new ones land. The answers are handed to the Plugins page's
  * stores too (agent-installs.ts, plugin-reads.ts), so that page shows the same thing next.
  */
+import { SystemAgentApps } from "./system-agent-settings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -114,12 +115,14 @@ interface Sources {
 const NO_SOURCES: Sources = { skills: new Map(), hooks: new Map(), workbenches: new Map() };
 
 export function PluginsTab({
+  system = false,
   agentId,
   subPage,
   onSubPage,
   onConfigChanged,
 }: {
   agentId: string;
+  system?: boolean;
   /** The sub-page the address names. */
   subPage: PluginsSubPage;
   /** Writes the sub-page (or the Tools tab) into `?tab=`: the settings page's tab switch. */
@@ -132,7 +135,7 @@ export function PluginsTab({
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentProject, reloadAgents, setCurrentAgentId } = useProject();
   const projectId = currentProject?.projectId ?? null;
-  const isOwner = currentProject?.role === "owner";
+  const isOwner = !system && currentProject?.role === "owner";
   const isAdmin = useAuth().user?.isAdmin === true;
   /** The machine the Agent lives on (null: this server), and the Agents that server runs. */
   const machineId = useAgentLocation();
@@ -320,6 +323,7 @@ export function PluginsTab({
   };
 
   const skillRows = useSkillRows({
+    readOnly: system,
     agentId,
     agentName,
     onChanged: changed,
@@ -397,7 +401,7 @@ export function PluginsTab({
           size="sm"
           onClick={() => {
             // The Plugins page's current Agent is one of this server's; a machine's never is.
-            if (machineId === null) setCurrentAgentId(agentId);
+            if (machineId === null && !system) setCurrentAgentId(agentId);
             void navigate("/plugins");
           }}
         >
@@ -418,6 +422,7 @@ export function PluginsTab({
         target={{ projectId, agentId, machineId }}
         agentName={agentName}
         machineLabel={machineLabel}
+        readOnly={system}
         isOwner={isOwner}
         isAdmin={isAdmin}
         locale={locale}
@@ -436,8 +441,8 @@ export function PluginsTab({
     ),
     skills: () => (
       <>
-        {skillsSwitch.toggleCard}
-        {skillsSwitch.alertStrip}
+        {!system && skillsSwitch.toggleCard}
+        {!system && skillsSwitch.alertStrip}
         <SettingsList
           label={S.agentPlugins.subPages.skills}
           loading={loading}
@@ -445,7 +450,7 @@ export function PluginsTab({
         >
           {lists?.installed.skills.map(skillRows.row)}
         </SettingsList>
-        {skillsSwitch.promptSection}
+        {!system && skillsSwitch.promptSection}
       </>
     ),
     hooks: () => (
@@ -460,28 +465,31 @@ export function PluginsTab({
         </SettingsList>
       </>
     ),
-    workbenches: () => (
-      <>
-        {/* A server older than the switches says nothing about them, and gets none. */}
-        {allEnabled !== undefined && (
-          <ToggleRow
-            variant="card"
-            label={S.workbenches.enableAll}
-            info={S.workbenches.enableAllHint}
-            checked={workbenchesSwitch.value}
-            disabled={workbenchesSwitch.busy || !isOwner}
-            onChange={(next) => void workbenchesSwitch.set(next)}
-          />
-        )}
-        <SettingsList
-          label={S.agentPlugins.subPages.workbenches}
-          loading={loading}
-          empty={S.agentPlugins.workbenchesEmpty}
-        >
-          {lists?.workbenches.workbenches.map(workbenchRows.row)}
-        </SettingsList>
-      </>
-    ),
+    workbenches: () =>
+      system ? (
+        <SystemAgentApps />
+      ) : (
+        <>
+          {/* A server older than the switches says nothing about them, and gets none. */}
+          {allEnabled !== undefined && (
+            <ToggleRow
+              variant="card"
+              label={S.workbenches.enableAll}
+              info={S.workbenches.enableAllHint}
+              checked={workbenchesSwitch.value}
+              disabled={workbenchesSwitch.busy || !isOwner}
+              onChange={(next) => void workbenchesSwitch.set(next)}
+            />
+          )}
+          <SettingsList
+            label={S.agentPlugins.subPages.workbenches}
+            loading={loading}
+            empty={S.agentPlugins.workbenchesEmpty}
+          >
+            {lists?.workbenches.workbenches.map(workbenchRows.row)}
+          </SettingsList>
+        </>
+      ),
   };
 
   const openWorkbench =
@@ -492,17 +500,26 @@ export function PluginsTab({
     <div className="space-y-4">
       <SubPageBar
         label={S.agentPlugins.subNav}
-        items={PLUGINS_SUBPAGES.map((key) => ({ key, label: S.agentPlugins.subPages[key] }))}
+        items={PLUGINS_SUBPAGES.filter((key) => !system || key !== "hooks").map((key) => ({
+          key,
+          label: S.agentPlugins.subPages[key],
+        }))}
         active={subPage}
         onChange={(next) => {
           if (next !== subPage) onSubPage(next);
         }}
-        actions={barActions[subPage]}
+        actions={!system || subPage === "plugins" ? barActions[subPage] : undefined}
       />
       {/* The sub-page's description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
       <HelpFold label={S.agentPlugins.subPages[subPage]}>
-        {S.agentPlugins.desc[subPage]}
-        {!isOwner && <span className="mt-1.5 block">{S.agentPlugins.readOnly[subPage]}</span>}
+        {system
+          ? subPage === "workbenches"
+            ? S.agent.systemAppsDesc
+            : S.agent.systemInventoryHint
+          : S.agentPlugins.desc[subPage]}
+        {!isOwner && !system && (
+          <span className="mt-1.5 block">{S.agentPlugins.readOnly[subPage]}</span>
+        )}
       </HelpFold>
 
       {lists === null && error !== null && (
