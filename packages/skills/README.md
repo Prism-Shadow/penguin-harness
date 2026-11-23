@@ -9,7 +9,7 @@ Checks that a skill directory's `SKILL.md` parses. The parser is vendored from
 ```ts
 import { validateSkillDir } from "@prismshadow/skills";
 
-const violations = await validateSkillDir("plugins/humanizer/skills/humanizer");
+const violations = await validateSkillDir("path/to/plugin/skills/humanizer");
 // [] when the parser accepts SKILL.md; otherwise ["<skill>/SKILL.md: <reason>"]
 ```
 

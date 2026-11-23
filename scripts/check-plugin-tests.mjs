@@ -3,9 +3,7 @@
  * Every `plugins/<name>/test/*.test.mjs` suite in the tree must run, and must pass. A suite no
  * job invokes is a file rather than a measurement: it never reports a regression and it silently
  * rots, which is exactly what happened to the goal plugin's hook suite until this gate. The tree's
- * hooks keep their primary measurement in core (`packages/core/test/goal-hooks.test.ts` and
- * `continual-learning-hook.test.ts`, both run as subprocesses in CI's `core` shard); what this adds
- * is the in-tree supplement that nothing ran.
+ * goal hooks also run as subprocesses in the core suite. This gate covers the plugin-local tests.
  *
  *   Usage: node scripts/check-plugin-tests.mjs [root]     root defaults to `plugins`
  *

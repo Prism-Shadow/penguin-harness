@@ -5,6 +5,8 @@
  * bundle, the market's curation picks and dresses plugins), split into the list pages' summaries
  * and one record per detail page (src/lib/hub/types.ts).
  */
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { indexPlugins } from "./index-rows.mjs";
@@ -15,6 +17,26 @@ import { benchmarkRepo, dataFiles } from "./source.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const PLUGINS_DIR = join(HERE, "..", "..", "..", "..", "plugins");
+
+/** Release-pinned library packages carry the same card, icon and Skill files as local packages. */
+function publishedLibraryPackages() {
+  const require = createRequire(new URL("../../package.json", import.meta.url));
+  const { devDependencies } = require("./package.json");
+  return Object.entries(devDependencies).flatMap(([name, pin]) => {
+    if (!name.startsWith("@penguinharness/") || !pin.startsWith("https://github.com/")) return [];
+    const release =
+      /^(https:\/\/github\.com\/[^/]+\/[^/]+)\/releases\/download\/([^/]+)\/[^/]+\.tgz$/.exec(pin);
+    if (!release) return [];
+    const manifest = require.resolve(`${name}/package.json`);
+    const pkg = JSON.parse(readFileSync(manifest, "utf8"));
+    return [
+      {
+        dir: dirname(manifest),
+        sourceUrl: `${release[1]}/tree/${release[2]}/${pkg.repository.directory}`,
+      },
+    ];
+  });
+}
 
 const link = ({ id, title, titleZh }) => (titleZh ? { id, title, titleZh } : { id, title });
 
@@ -29,7 +51,10 @@ export function loadHub({
   pluginsDir = PLUGINS_DIR,
   published = readPublished(),
 } = {}) {
-  const library = readPlugins(pluginsDir);
+  const library = readPlugins(
+    pluginsDir,
+    pluginsDir === PLUGINS_DIR ? publishedLibraryPackages() : [],
+  );
   const listed = [...library, ...indexPlugins(published.index ?? [], library)];
   const { market, artOf, popularityOf } = marketFor(published.market, listed);
   const selected = new Set(market.selected);

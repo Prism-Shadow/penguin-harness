@@ -1,6 +1,6 @@
 /**
  * The scripts the `plugin-porting` skill runs on a plugin it ports
- * (plugins/skill-porting/skills/plugin-porting/scripts/), run as the Agent runs them: Node on a
+ * (the installed plugin-porting Skill’s scripts directory), run as the Agent runs them: Node on a
  * directory.
  *
  * normalize-skills.mjs, on the package being built:
@@ -42,15 +42,18 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { LibraryPlugin } from "../src/index.js";
 import { parseSkillFrontmatter, readLibraryPackage } from "../src/index.js";
 
-const SCRIPT = path.resolve(
-  import.meta.dirname,
-  "../../../plugins/skill-porting/skills/plugin-porting/scripts/normalize-skills.mjs",
+const portingRoot = path.dirname(
+  createRequire(new URL("../../server/package.json", import.meta.url)).resolve(
+    "@penguinharness/skill-porting/package.json",
+  ),
 );
+const SCRIPT = path.resolve(portingRoot, "skills/plugin-porting/scripts/normalize-skills.mjs");
 
 let pkg: string | null = null;
 afterEach(async () => {
@@ -83,10 +86,7 @@ const normalize = (dir: string) => {
 
 const read = (rel: string) => fs.readFile(path.join(pkg!, rel), "utf8");
 
-const PORT_MCP = path.resolve(
-  import.meta.dirname,
-  "../../../plugins/skill-porting/skills/plugin-porting/scripts/port-mcp.mjs",
-);
+const PORT_MCP = path.resolve(portingRoot, "skills/plugin-porting/scripts/port-mcp.mjs");
 
 /** An upstream plugin folder made of `files`; the scripts read it, nothing writes it. */
 async function upstream(files: Record<string, string>): Promise<string> {
@@ -480,10 +480,7 @@ describe("port-mcp.mjs", () => {
   });
 });
 
-const WRITE_MODULE = path.resolve(
-  import.meta.dirname,
-  "../../../plugins/skill-porting/skills/plugin-porting/scripts/write-module.mjs",
-);
+const WRITE_MODULE = path.resolve(portingRoot, "skills/plugin-porting/scripts/write-module.mjs");
 /** The package's build line, `penguin-gen-ifaces --project tsconfig.json --out ifaces.json`. */
 const GENERATOR = path.resolve(import.meta.dirname, "../bin/gen-ifaces.mjs");
 /** A hook's budget for one generator run: a cold runner's first node spawn plus loading typescript. */

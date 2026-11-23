@@ -21,15 +21,15 @@ import ragZhDark from "../../../../../assets/readme/rag-app-zh-dark.webp";
 import ragZhLight from "../../../../../assets/readme/rag-app-zh-light.webp";
 import legalEn from "../../../../landing/src/assets/shots/legal-app-en.webp";
 import legalZh from "../../../../landing/src/assets/shots/legal-app-zh.webp";
-import a2uiIcon from "../../../../../plugins/a2ui/icon.svg?raw";
+import a2uiIcon from "@penguinharness/a2ui/icon.svg?raw";
 import companyIcon from "../../../../../plugins/agent-company/icon.svg?raw";
 import browserIcon from "../../../../../plugins/browser-automation/icon.svg?raw";
 import dataIcon from "../../../../../plugins/data-analysis/icon.svg?raw";
 import goalIcon from "../../../../../plugins/goal/icon.svg?raw";
-import humanizerIcon from "../../../../../plugins/humanizer/icon.svg?raw";
+import humanizerIcon from "@penguinharness/humanizer/icon.svg?raw";
 import supportIcon from "../../../../../plugins/penguin-support/icon.svg?raw";
 import bentoIcon from "../../../../../plugins/use-bento-slides/icon.svg?raw";
-import firecrawlIcon from "../../../../../plugins/use-firecrawl/icon.svg?raw";
+import firecrawlIcon from "@penguinharness/use-firecrawl/icon.svg?raw";
 import type { GalleryStrings } from "../../strings";
 
 export const LOGO = `${import.meta.env.BASE_URL}penguin-logo.svg`;
