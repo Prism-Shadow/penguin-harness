@@ -7,8 +7,7 @@
  *   not written its file; approving it executes the command and completes the reply.
  * - Given a completed conversation, when it reloads and receives a follow-up, history appears
  *   once and the new turn completes instead of becoming stranded (the #89 regression).
- * - Given earlier work in Compact, the step number stays separate from the latest-step shortcut.
- *   That shortcut follows Next in visual and keyboard order, including at phone widths.
+ * - Work displays share the count and elapsed time, including after a completed turn is reopened.
  * - Given a Compact run waiting on an approval, its line opens by itself with Allow and Deny.
  */
 import { test, expect } from "@playwright/test";
@@ -157,7 +156,7 @@ test("the account's display setting changes saved history and survives a differe
   await openSteps(group);
   await expect(rows).toHaveCount(4);
   await expectFoldedBodies(group);
-  await expect(group.locator("[data-step-count]")).toHaveCount(0);
+  await expect(group.locator("[data-step-count]")).toHaveText("4 步");
   await changeActivityDisplay(page, userId, "展开");
   await openSteps(group);
   await expect(rows).toHaveCount(4);
@@ -227,8 +226,47 @@ test("compact activity follows two approvals while preserving the first reader's
   await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
   await expect(count).toHaveText("4 步");
   await expect(rows).toHaveCount(0);
-  await expect(reviewing.locator("[data-step-terminal]")).toBeVisible();
+  await expect(reviewing.locator("[data-step-terminal] [data-slot=label]")).toHaveText("已完成");
   await reviewer.close();
+});
+
+test("the current step leaves room for the same count and clock in each display mode", async ({
+  page,
+}) => {
+  const sessionId = await createSession(page, "smokeliveworkalignment", "always-ask", "modern");
+  await send(page, "ten-step work history");
+  const group = activityRoot(page),
+    header = group.locator("[data-group-header]");
+  for (const lang of ["en", "zh"]) {
+    const first = new Map();
+    for (const activityDisplayMode of ["standard", "expanded", "compact"]) {
+      await setAccountPrefs(page.request, { lang, activityDisplayMode, toolAliases: false });
+      await page.reload();
+      await expect(group).toHaveAttribute("data-step-view", activityDisplayMode);
+      await expect(header.locator("[data-step-count]")).toHaveText(
+        lang === "zh" ? "2 步" : "2 steps",
+      );
+      await expect(header).not.toHaveAttribute("data-step-terminal", "true");
+      if (activityDisplayMode === "compact") await expect(header).toContainText("起草评审记录");
+      for (const width of [1280, 320]) {
+        await page.setViewportSize({ width, height: 800 });
+        const [box, count, clock] = await Promise.all(
+          [header, header.locator("[data-step-count]"), header.locator("[data-step-elapsed]")].map(
+            (part) => part.boundingBox(),
+          ),
+        );
+        const positions = [count.x - box.x, clock.x - box.x, count.y - box.y, clock.y - box.y];
+        if (!first.has(width)) first.set(width, positions);
+        for (const [i, pos] of positions.entries())
+          expect(Math.abs(pos - first.get(width)[i])).toBeLessThanOrEqual(1);
+        expect(clock.x + clock.width).toBeLessThanOrEqual(width);
+      }
+    }
+  }
+  await expect(await page.request.post(`/api/sessions/${sessionId}/abort`, { data: {} })).toBeOK();
+  await expect(header.locator('[data-slot="label"]')).toHaveText("已停止");
+  await page.reload();
+  await expect(header.locator('[data-slot="label"]')).toHaveText("已停止");
 });
 
 test("reopened ten-step history keeps its compact header together on desktop and narrow screens", async ({
@@ -249,30 +287,43 @@ test("reopened ten-step history keeps its compact header together on desktop and
     ["zh", "10 步"],
     ["en", "10 steps"],
   ]) {
-    await setAccountPrefs(page.request, { lang });
-    await page.reload();
-    await expect(head).toHaveAttribute("data-step-terminal", "true");
-    await expect(head).toContainText("read_file");
-    await expect(head).toContainText("核对本周评审记录");
-    await expect(head).toContainText("…/每周 总结/评审 记录.md");
-    await expect(count).toHaveText(n);
-    await expect(rows).toHaveCount(0);
-    const time = await elapsed.locator(".font-mono").innerText();
-    for (const width of [1280, 390, 320]) {
-      await page.setViewportSize({ width, height: 800 });
-      const [box, title, tally, clock, toggle] = await Promise.all(
-        [head, head.locator('[data-slot="label"]'), count, elapsed, arrow].map((el) =>
-          el.boundingBox(),
-        ),
+    const positions = new Map();
+    let time;
+    for (const activityDisplayMode of ["standard", "expanded", "compact"]) {
+      await setAccountPrefs(page.request, { lang, activityDisplayMode });
+      await page.reload();
+      await expect(group).toHaveAttribute("data-step-view", activityDisplayMode);
+      await expect(head).toHaveAttribute("data-step-terminal", "true");
+      await expect(head.locator('[data-slot="label"]')).toHaveText(
+        lang === "zh" ? "已完成" : "Done",
       );
-      for (const part of [tally, clock, toggle]) {
-        expect(part.x).toBeGreaterThanOrEqual(box.x);
-        expect(part.x + part.width).toBeLessThanOrEqual(Math.min(width, box.x + box.width) + 1);
-        expect(Math.abs(part.y + part.height / 2 - (title.y + title.height / 2))).toBeLessThan(5);
+      await expect(head).not.toContainText("read_file");
+      await expect(count).toHaveText(n);
+      await expect(rows).toHaveCount(activityDisplayMode === "expanded" ? 10 : 0);
+      time ??= await elapsed.locator(".font-mono").innerText();
+      await expect(elapsed.locator(".font-mono")).toHaveText(time);
+      for (const width of [1280, 390, 320]) {
+        await page.setViewportSize({ width, height: 800 });
+        const [box, title, tally, clock, toggle] = await Promise.all(
+          [head, head.locator('[data-slot="label"]'), count, elapsed, arrow].map((el) =>
+            el.boundingBox(),
+          ),
+        );
+        const offsets = [tally.x - box.x, clock.x - box.x, tally.y - box.y, clock.y - box.y];
+        const reference = positions.get(width) ?? offsets;
+        positions.set(width, reference);
+        for (const [i, value] of offsets.entries()) {
+          expect(Math.abs(value - reference[i])).toBeLessThanOrEqual(1);
+        }
+        for (const part of [tally, clock, toggle]) {
+          expect(part.x).toBeGreaterThanOrEqual(box.x);
+          expect(part.x + part.width).toBeLessThanOrEqual(Math.min(width, box.x + box.width) + 1);
+          expect(Math.abs(part.y + part.height / 2 - (title.y + title.height / 2))).toBeLessThan(5);
+        }
+        expect(clock.x - tally.x - tally.width).toBeLessThan(18);
+        expect(toggle.x - clock.x - clock.width).toBeLessThan(18);
+        await expect(head.locator("button,input")).toHaveCount(0);
       }
-      expect(clock.x - tally.x - tally.width).toBeLessThan(18);
-      expect(toggle.x - clock.x - clock.width).toBeLessThan(18);
-      await expect(head.locator("button,input")).toHaveCount(0);
     }
     await head.focus();
     await page.keyboard.press("Enter");
