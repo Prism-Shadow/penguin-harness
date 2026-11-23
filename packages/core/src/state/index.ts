@@ -4,6 +4,7 @@
  * Directory layout, default config, Project config read/write, Agent State load/init.
  */
 export * from "./paths.js";
+export { installedWindowsDataLocation } from "./windows-data-location.js";
 export * from "./project-dirs.js";
 export * from "./benchmark-dirs.js";
 // The data root's one-time layout migration (PRFC-0034), until 1.0.
