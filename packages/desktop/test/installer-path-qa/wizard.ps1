@@ -18,10 +18,16 @@ function Spin([scriptblock]$read,[string]$description) {
     try { $result=& $read; if ($null -ne $result) {return $result} } catch [System.Windows.Automation.ElementNotAvailableException] {}
     Start-Sleep -Milliseconds 150
   } while ([DateTime]::UtcNow -lt $until)
+  foreach ($w in @(Items $top $children | Where-Object {$_.Current.Name -like '*PenguinHarness*'})) {
+    Write-Host "Setup dialog '$($w.Current.Name)' class=$($w.Current.ClassName)"
+    foreach ($control in @(Items $w $deep | Where-Object {$_.Current.Name} | Select-Object -First 32)) {
+      Write-Host "$($control.Current.ControlType.ProgrammaticName) '$($control.Current.Name)' ID=$($control.Current.AutomationId) enabled=$($control.Current.IsEnabled) offscreen=$($control.Current.IsOffscreen)"
+    }
+  }
   throw "Could not locate $description"
 }
 function Match-Node($window,[string]$kind,[string]$pattern) {
-  Items $window $deep | Where-Object { $_.Current.ControlType.ProgrammaticName -eq "ControlType.$kind" -and $_.Current.Name -match $pattern -and !$_.Current.IsOffscreen } | Select-Object -First 1
+  Items $window $deep | Where-Object { $_.Current.ControlType.ProgrammaticName -eq "ControlType.$kind" -and ($_.Current.Name -replace '&','') -match $pattern -and !$_.Current.IsOffscreen } | Select-Object -First 1
 }
 function Click($node) {
   if (!$node -or !$node.Current.IsEnabled) { throw 'A requested native control is disabled or missing.' }
@@ -30,10 +36,15 @@ function Click($node) {
   else {$node.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()}
 }
 $q=Start-Process $Installer -ArgumentList '/currentuser' -PassThru
-$wizard=Spin { Items $top $children | Where-Object {$_.Current.Name -like '*PenguinHarness*Setup*' -and !$_.Current.IsOffscreen} | Select-Object -First 1 } 'installer wizard'
+function Ready-SetupDialog {
+  foreach ($candidate in @(Items $top $children | Where-Object {$_.Current.Name -like '*PenguinHarness*Setup*'})) {
+    if ((Match-Node $candidate 'Text' '^Program folder$') -or (Match-Node $candidate 'Button' '^(Next|I Agree|Continue)\b')) { return $candidate }
+  }
+}
 for ($step=0;$step -lt 6;$step++) {
+  $wizard=Spin {Ready-SetupDialog} 'interactive setup page with a program folder or next control'
   if (Match-Node $wizard 'Text' '^Program folder$') {break}
-  $next=Spin { Match-Node $wizard 'Button' '^(Next|I Agree|Continue)\b' } 'next wizard page'
+  $next=Match-Node $wizard 'Button' '^(Next|I Agree|Continue)\b'
   Click $next
   Start-Sleep -Milliseconds 350
 }

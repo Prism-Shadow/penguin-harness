@@ -8,10 +8,15 @@ permissions:
   actions: read
 jobs:
   acceptance:
+    strategy:
+      fail-fast: false
+      matrix:
+        path_test: [wizard, upgrade]
     runs-on: windows-latest
     timeout-minutes: 75
     env:
       PH_DISPOSABLE_WINDOWS: "yes"
+      PH_WINDOWS_PATH_TEST: ${{ matrix.path_test }}
       PACKAGE_RUN: "45234861839"
     steps:
       - uses: actions/checkout@v5
