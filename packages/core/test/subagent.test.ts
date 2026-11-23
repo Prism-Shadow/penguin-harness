@@ -1096,6 +1096,7 @@ describe("subagent steering and per-run abort", () => {
         sessionId,
         async *run() {
           yield assistantText("ready");
+          return null;
         },
         dispose() {},
       });
