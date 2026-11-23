@@ -40,6 +40,7 @@ import {
   skillsDir,
   systemConfigPath,
   comparePluginVersions,
+  groupPlugins,
   parseSkillFrontmatter,
   pluginContentVersion,
   listInstalledWorkbenches,
@@ -137,6 +138,26 @@ export async function refuseBuiltinDeletion(
   }
 }
 
+/** Index the shared library once per listing. The Agent Plugins tab gives a Skill to
+ * the first library plugin that contributes it in category order. */
+function indexAgentPlugins(library: readonly LibraryPlugin[]) {
+  const skillOwners = new Map<string, string>();
+  for (const group of groupPlugins([...library])) {
+    for (const plugin of group.plugins) {
+      for (const skill of plugin.skills) {
+        if (!skillOwners.has(skill.name)) skillOwners.set(skill.name, plugin.name);
+      }
+    }
+  }
+  return {
+    skillOwners,
+    byPlugin: new Map(library.map((p) => [p.name, p] as const)),
+    bySkill: new Map(
+      library.flatMap((p) => p.skills.map((s) => [s.name, { plugin: p, skill: s }] as const)),
+    ),
+  };
+}
+
 export interface AgentListItem {
   agentId: string;
   name?: string;
@@ -158,6 +179,8 @@ export interface AgentListItem {
   scheduleCount: number;
   /** Workbench folders with a manifest, including ones with a load error. */
   workbenchCount: number;
+  /** Distinct packages with at least one installed Agent part. */
+  pluginCount?: number;
   /** Number of installed Skills (count of skills/<name>/ directories that contain a SKILL.md). */
   skillCount: number;
   /** Number of installed hook packages (hooks/<name>/ directories with a hooks.json). */
@@ -262,7 +285,7 @@ export class AgentService implements AgentLifecycle {
     // The plugin library is read once for the whole list (every Agent is checked against the
     // same files). Meta reads and mtime stats for each Agent run in parallel (Promise.all
     // preserves the sorted order).
-    const library = this.library.list();
+    const library = indexAgentPlugins(this.library.list());
     // An index row is listed only while its folder is an Agent by the routes' own rule: a row
     // whose folder has lost its system_config.yaml would be a card that neither opens nor deletes.
     const present = await Promise.all(
@@ -294,9 +317,13 @@ export class AgentService implements AgentLifecycle {
             this.memoryCount(projectId, row.agentId),
             agentAvatarRev(this.root, projectId, row.agentId).catch(() => undefined),
           ]);
+        const { mcpPluginNames, ...cardMeta } = meta;
         return {
           agentId: row.agentId,
-          ...meta,
+          ...cardMeta,
+          ...(mcpPluginNames
+            ? { pluginCount: new Set([...installed.pluginNames, ...mcpPluginNames]).size }
+            : {}),
           createdAt: row.createdAt,
           ...(updatedAt !== undefined ? { updatedAt } : {}),
           vaultKeyCount,
@@ -432,8 +459,13 @@ export class AgentService implements AgentLifecycle {
   private async installedPlugins(
     projectId: string,
     agentId: string,
-    library: readonly LibraryPlugin[],
-  ): Promise<{ skillCount: number; hookCount: number; updates: PluginUpdateRef[] }> {
+    library: ReturnType<typeof indexAgentPlugins>,
+  ): Promise<{
+    skillCount: number;
+    hookCount: number;
+    pluginNames: Set<string>;
+    updates: PluginUpdateRef[];
+  }> {
     const base = skillsDir(this.root, projectId, agentId);
     let dirents: Dirent[] = [];
     try {
@@ -455,16 +487,16 @@ export class AgentService implements AgentLifecycle {
         }),
     );
     const hooks = await listInstalledHooks(this.root, projectId, agentId);
-    const byPlugin = new Map(library.map((p) => [p.name, p] as const));
-    const bySkill = new Map(
-      library.flatMap((p) => p.skills.map((s) => [s.name, { plugin: p, skill: s }] as const)),
-    );
+    const { byPlugin, bySkill, skillOwners } = library;
+    const pluginNames = new Set<string>();
     // Part by part: an installed skill against the library's same skill, an installed hook
     // package against the library plugin's hook package. The plugin's own (npm) version says
     // nothing about what an Agent carries.
     const updates = new Map<string, string>();
     for (const skill of skills) {
       if (skill === null) continue;
+      const owner = skillOwners.get(skill.name);
+      if (owner !== undefined) pluginNames.add(owner);
       const shipped = bySkill.get(skill.name);
       if (shipped && comparePluginVersions(shipped.skill.version, skill.version) > 0) {
         updates.set(shipped.plugin.name, pluginContentVersion(shipped.plugin));
@@ -472,17 +504,20 @@ export class AgentService implements AgentLifecycle {
     }
     for (const hook of hooks) {
       const plugin = byPlugin.get(hook.name);
+      if (plugin) pluginNames.add(hook.name);
       if (plugin?.hooks && comparePluginVersions(plugin.hooks.manifest.version, hook.version) > 0) {
         updates.set(plugin.name, pluginContentVersion(plugin));
       }
     }
     for (const installed of await listInstalledWorkbenches(this.root, projectId, agentId)) {
+      pluginNames.add(installed.plugin);
       const plugin = byPlugin.get(installed.plugin);
       const workbench = plugin?.workbenches?.find((w) => w.name === installed.name);
       if (plugin && workbench && comparePluginVersions(workbench.version, installed.version) > 0)
         updates.set(plugin.name, pluginContentVersion(plugin));
     }
     return {
+      pluginNames,
       skillCount: skills.filter((s) => s !== null).length,
       hookCount: hooks.length,
       updates: [...updates].map(([name, version]) => ({ name, version })),
@@ -866,7 +901,11 @@ export class AgentService implements AgentLifecycle {
     const meta = await this.agentConfig.readCardMeta(projectId, agentId);
     const cardName = archive !== undefined ? (meta.name ?? agentId) : displayName;
     const cardDescription = archive !== undefined ? meta.description : description;
-    const installed = await this.installedPlugins(projectId, agentId, this.library.list());
+    const installed = await this.installedPlugins(
+      projectId,
+      agentId,
+      indexAgentPlugins(this.library.list()),
+    );
     const avatarRev = await agentAvatarRev(this.root, projectId, agentId).catch(() => undefined);
     const item: AgentListItem = {
       agentId,
@@ -883,6 +922,9 @@ export class AgentService implements AgentLifecycle {
       vaultKeyCount: 0,
       scheduleCount: await this.scheduleCount(projectId, agentId),
       workbenchCount: await this.workbenchCount(projectId, agentId),
+      ...(meta.mcpPluginNames
+        ? { pluginCount: new Set([...installed.pluginNames, ...meta.mcpPluginNames]).size }
+        : {}),
       skillCount: installed.skillCount,
       hookCount: installed.hookCount,
       pluginUpdates: installed.updates,

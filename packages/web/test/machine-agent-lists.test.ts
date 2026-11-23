@@ -74,6 +74,19 @@ describe("mixAgents", () => {
     expect(read(rows)).toEqual(["a@zeta", "b", "b@alpha", "b@zeta"]);
   });
 
+  it("retains each host's plugin count for the same Agent id, including an unreported older host", () => {
+    const same = agent("default_agent");
+    const rows = mixAgents(
+      [{ ...same, pluginCount: 0 }],
+      [machine("alpha", [{ ...same, pluginCount: 2 }]), machine("beta", [same])],
+    );
+    expect(rows.map(({ agent, on }) => [on?.machine.label ?? "local", agent.pluginCount])).toEqual([
+      ["local", 0],
+      ["alpha", 2],
+      ["beta", undefined],
+    ]);
+  });
+
   it("puts an Agent with no creation time last", () => {
     const rows = mixAgents(
       [agent("dated", "2026-10-01T00:00:00Z")],
