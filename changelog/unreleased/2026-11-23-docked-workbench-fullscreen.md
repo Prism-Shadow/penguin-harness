@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1756](https://github.com/Prism-Shadow/penguin-harness/pull/1756)
 
 [中文版](2026-11-23-docked-workbench-fullscreen.zh.md)
 
