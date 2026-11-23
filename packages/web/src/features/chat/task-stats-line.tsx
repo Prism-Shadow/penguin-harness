@@ -61,6 +61,7 @@ export interface ForkTarget {
 export function TaskStatsLine({
   stats,
   assistantText,
+  readAloudText,
   cost,
   atMs,
   forkPosition,
@@ -70,6 +71,7 @@ export function TaskStatsLine({
   stats: TaskStats | null;
   /** This turn's assistant text (the copy target); falls back to the stats when empty. */
   assistantText?: string;
+  readAloudText?: string;
   /** This turn's cost (USD); null = no pricing configured, cost isn't shown. */
   cost?: number | null;
   /** Timestamp of this turn's AI reply (this line is that reply's footer). */
@@ -159,7 +161,7 @@ export function TaskStatsLine({
         )}
       </span>
       {/* Pinned at the row's end, outside the scrollable stats span. */}
-      {assistantText && <ReadReply text={assistantText} />}
+      {readAloudText && <ReadReply text={readAloudText} />}
       <CopyButton text={copyText} label={S.chat.copyReply} size="sm" className="shrink-0" />
       {/* Fork sits to the RIGHT of copy (review request): copy is the frequent action and
           keeps its accustomed spot; the click only opens the confirmation below — the fork
