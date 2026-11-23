@@ -138,7 +138,8 @@ Project's catalog instead of its default. To let the user choose it, a page call
 \`chooseChatModel(current?)\`: the app shows its own model picker and the call resolves
 \`{ provider, modelId, label }\`, or null when the user closes it. \`getChatModel(current?)\` names
 a model, the Project default when none is given. Both reject with \`WorkbenchHostUnavailable\` when
-the page is not shown in the app.
+the page is not shown in the app. From a visible workbench on the local server,
+\`openModelSettings()\` opens the host's Models page for the workbench's Project. Users enter keys there.
 
 ## Your folders
 

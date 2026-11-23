@@ -1060,6 +1060,8 @@ export const en: Strings = {
     hint: (mod: string): string => `←→ groups / models · ${mod}1–9 jump to a group`,
   },
   workbenches: {
+    configureOnMachine: "Configure models on the machine running this workbench.",
+    openBeforeConfiguring: "Open the workbench before configuring models.",
     title: "Workbenches",
     count: (n: number) => `${n} ${n === 1 ? "workbench" : "workbenches"}`,
     open: "Open workbench",
