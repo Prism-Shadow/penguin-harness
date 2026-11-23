@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** feat
 - **Scope:** Web plugin marketplace
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1729
 
 [English](2026-11-23-plugin-install-steps.md)
 
