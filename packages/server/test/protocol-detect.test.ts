@@ -6,6 +6,12 @@
  *   use FastAPI's `detail`. HTML, non-JSON and a 2xx without protocol markers are junk.
  * - A Google endpoint is detected from its model list, even when its router returns JSON
  *   errors on other paths. A Google relay without the listing yields no detection.
+ * - The Google listing follows a limited number of same-origin redirects. A redirect to
+ *   another origin never receives a request from the probe.
+ * - Service account JSON is never sent as a header by any probe, whether it is supplied
+ *   explicitly or read from the Gemini credential environment variable.
+ * - A Chat Completions validation reply can have a numeric error code. A Google RPC error
+ *   with a numeric code and status does not identify either OpenAI protocol.
  * - A typed URL expands to candidates covering one `/v1` too many, one too few and a whole
  *   endpoint URL pasted in (the longest endpoint path stripped, repeats collapsed, the rest kept
  *   exactly as typed), joined to protocol paths the way the wrapped SDKs do.
@@ -60,6 +66,10 @@ const ANTHROPIC_ERROR = JSON.stringify({
 const GOOGLE_MODELS = JSON.stringify({
   models: [{ name: "models/gemini-3.5-flash" }],
 });
+const GOOGLE_SERVICE_ACCOUNT = JSON.stringify({
+  type: "service_account",
+  private_key: "fixture-signing-material",
+});
 
 describe("classifyProbeResponse", () => {
   it("404/405 mean route-missing by status alone — even in protocol-shaped JSON (OpenAI wraps unknown paths in its error shape; the {} probe carries no model id, so 404 can never mean model-not-found)", () => {
@@ -100,6 +110,23 @@ describe("classifyProbeResponse", () => {
     );
     expect(classifyProbeResponse("ant-messages", 400, OPENAI_ERROR)).toBe("junk");
     expect(classifyProbeResponse("ant-messages", 403, '{"type":"error","error":{}}')).toBe("junk");
+  });
+
+  it("accepts numeric OpenAI-compatible error codes and rejects Google's RPC error envelope", () => {
+    expect(
+      classifyProbeResponse(
+        "openai-chat",
+        400,
+        '{"error":{"code":400,"message":"Model is required"}}',
+      ),
+    ).toBe("served");
+    expect(
+      classifyProbeResponse(
+        "openai-responses",
+        400,
+        '{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"Model is required"}}',
+      ),
+    ).toBe("junk");
   });
 
   it("a Google probe needs a successful model list with Google resource names", () => {
@@ -366,6 +393,67 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     expect(JSON.stringify(res)).not.toContain("relay-key");
   });
 
+  it("detects the Google catalog after a same-origin redirect, using the original base URL", async () => {
+    const baseUrl = "https://relay.example/api/google";
+    const fetcher = fakeFetch((call) => {
+      const { pathname } = new URL(call.url);
+      if (pathname === "/api/google/v1beta/models") {
+        return new Response(null, { status: 308, headers: { location: "models/?pageSize=1" } });
+      }
+      if (pathname === "/api/google/v1beta/models/") {
+        return new Response(GOOGLE_MODELS);
+      }
+      return new Response(null, { status: 404 });
+    });
+    const res = await detectModelProtocol({
+      baseUrl,
+      apiKey: "relay-key",
+      fetchImpl: fetcher.fetch,
+    });
+    expect(res).toMatchObject({ detected: "google-genai", baseUrl });
+    const getCalls = fetcher.calls.filter((call) => call.method === "GET");
+    expect(getCalls.map((call) => call.url)).toEqual([
+      `${baseUrl}/v1beta/models?pageSize=1`,
+      `${baseUrl}/v1beta/models/?pageSize=1`,
+    ]);
+    expect(getCalls.every((call) => call.headers.get("x-goog-api-key") === "relay-key")).toBe(true);
+    expect(getCalls.every((call) => call.init?.redirect === "manual")).toBe(true);
+    expect(getCalls[1]?.init?.signal).toBe(getCalls[0]?.init?.signal);
+  });
+
+  it("does not send a Google probe to a redirected origin", async () => {
+    const fetcher = fakeFetch((call) =>
+      call.method === "GET"
+        ? new Response(null, { status: 307, headers: { location: "https://other.example/models" } })
+        : new Response(null, { status: 404 }),
+    );
+    const res = await detectModelProtocol({
+      baseUrl: "https://relay.example",
+      apiKey: "relay-key",
+      fetchImpl: fetcher.fetch,
+    });
+    expect(res.detected).toBeUndefined();
+    expect(
+      fetcher.calls.every((call) => new URL(call.url).origin === "https://relay.example"),
+    ).toBe(true);
+  });
+
+  it("stops following a circular Google list redirect", async () => {
+    const fetcher = fakeFetch((call) =>
+      call.method === "GET"
+        ? new Response(null, { status: 302, headers: { location: call.url } })
+        : new Response(null, { status: 404 }),
+    );
+    const res = await detectModelProtocol({
+      baseUrl: "https://relay.example",
+      fetchImpl: fetcher.fetch,
+      env: {},
+    });
+    expect(res.detected).toBeUndefined();
+    const gets = fetcher.calls.filter((call) => call.method === "GET");
+    expect(gets).toHaveLength(8);
+  });
+
   it.each([401, 403])(
     "a Google relay without a list stays undetected when it returns %i on any versioned path",
     async (status) => {
@@ -619,6 +707,31 @@ describe("envApiKeyForProtocol", () => {
 
 describe("detectModelProtocol env fallback", () => {
   const BASE = "https://gw.example.com/v1";
+
+  it("does not send requests when given an explicit service account credential", async () => {
+    const seen: SeenCall[] = [];
+    const res = await detectModelProtocol({
+      baseUrl: BASE,
+      apiKey: GOOGLE_SERVICE_ACCOUNT,
+      fetchImpl: gateway({}, seen),
+    });
+    expect(res.detected).toBeUndefined();
+    expect(res.probes).toHaveLength(0);
+    expect(seen).toHaveLength(0);
+  });
+
+  it("skips Google's catalog probe when its environment credential is a service account", async () => {
+    const seen: SeenCall[] = [];
+    const official = "https://generativelanguage.googleapis.com";
+    const res = await detectModelProtocol({
+      baseUrl: official,
+      env: { GEMINI_API_KEY: GOOGLE_SERVICE_ACCOUNT },
+      fetchImpl: gateway({}, seen),
+    });
+    expect(res.detected).toBeUndefined();
+    expect(seen.some((call) => call.url === `${official}/v1beta/models?pageSize=1`)).toBe(false);
+    expect(JSON.stringify(seen)).not.toContain("fixture-signing-material");
+  });
 
   it("probes a URL that is not a vendor's own anonymously, whatever vendor keys are set", async () => {
     const seen: SeenCall[] = [];

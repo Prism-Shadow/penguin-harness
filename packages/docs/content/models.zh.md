@@ -167,11 +167,14 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 
 **Custom** 分组和你自己创建的分组里的模型，使用的都是 MMSP 的某一种通用协议，弹窗可以检测出一个 base URL 到底支持哪一种。新建的自定义模型一开始没有选择协议：base URL 输入框右端的后缀显示为**选择协议**。
 
-要检测协议，点击 base URL 输入框右上角的**检测协议**。这个按钮始终可用，也不需要 API key。服务端会按下面的顺序向 URL 发出三个轻量请求，并采用端点支持的第一个协议：
+要检测协议，点击 base URL 输入框右上角的**检测协议**。服务端会按下面的顺序探测，并采用检测到的第一个协议。
 
 1. `openai-responses`：`POST {base}/responses`（OpenAI Responses API）
 2. `ant-messages`：`POST {base}/v1/messages`（Anthropic Messages API）
 3. `openai-chat`：`POST {base}/chat/completions`
+4. `google-genai`：`GET {base}/v1beta/models?pageSize=1`
+
+检测 Google GenAI 需要成功读取模型列表。如果端点要求鉴权，请填入 API key。使用 Google 服务账号时，请手动选择 Google GenAI。
 
 检测到协议时会出现一条消息，例如「检测到 {name} 协议，已应用」。检测结果只体现在后缀里，后缀显示的就是协议路径。
 
@@ -179,13 +182,13 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 
 - 多写了一个 `/v1`（`https://host/v1/v1`）；
 - 少写了一个 `/v1`（API 实际在 `https://host/v1` 下，却只填了 `https://host`）；
-- 直接粘贴了供应商文档里的完整端点 URL（`/chat/completions`、`/responses`、`/messages`）。
+- 直接粘贴了供应商文档里的完整端点 URL（`/chat/completions`、`/responses`、`/messages`、`/v1beta/models`）。
 
-检测会先探测清理后的 base，再探测它的相邻形式：URL 末尾有 `/v1` 就去掉，没有就加上。每种形式依次尝试三种协议，最多发出六个短探测。base URL 输入框随后会改写为应答的那个形式，并提示「已检测为 {protocol}，base URL 已整理为 {url}」。
+检测会先探测清理后的 base，再探测它的相邻形式：URL 末尾有 `/v1` 就去掉，没有就加上。每种形式依次尝试四种协议。base URL 输入框随后会改写为应答的那个形式，并提示「已检测为 {protocol}，base URL 已整理为 {url}」。
 
-要手动设置协议，点击这个后缀。菜单里列出 **OpenAI Responses**（`/responses`）、**Anthropic Messages**（`/v1/messages`）、**OpenAI Chat Completions**（`/chat/completions`）、**Google GenAI (generateContent)**（`/v1beta/models`）和 **MMSP**（`/stream`，即 MMSP 服务器），每一项都标注了客户端会追加到你 URL 末尾的路径。检测不会选出后两种，需要在这里手动选择。手动选择的协议优先于检测，已经知道端点协议时，根本不必探测。
+要手动设置协议，点击这个后缀。菜单里列出 **OpenAI Responses**（`/responses`）、**Anthropic Messages**（`/v1/messages`）、**OpenAI Chat Completions**（`/chat/completions`）、**Google GenAI (generateContent)**（`/v1beta/models`）和 **MMSP**（`/stream`，即 MMSP 服务器），每一项都标注了客户端会追加到你 URL 末尾的路径。MMSP 需要手动选择。手动选择的协议优先于检测，已经知道端点协议时，可以直接选择。
 
-如果检测不出结果，后缀会变成琥珀色，并提示「无法检测接口协议，请检查 API Key 与 base URL。」原因可能是端点不可访问、请求超时、返回的内容不是 API，或者三个路径都不支持。端点仍会报告每次探测的结果，方便调试。
+如果检测不出结果，后缀会变成琥珀色，并提示「无法检测接口协议，请检查 API Key 与 base URL。」端点会报告每次探测的结果，方便调试。
 
 检测从不阻塞保存。模型和分组都没有设置协议时点击**确认**，会先执行检测，按钮显示**检测中…**。检测到协议就直接保存，不再提示。检测不到时模型照样保存，协议定为 OpenAI Chat Completions，并提示「未检测到协议，已按 OpenAI Chat Completions 保存」。
 
@@ -625,7 +628,7 @@ Google 分组以 `gemini-4-neon`、OpenRouter 分组以 `google/gemini-4-neon` �
 | `model_id` | 上游请求 id |
 | `context_window` | 上下文窗口（Token）。不只是展示，而是实际参与运算：每个请求的有效输出上限和压缩阈值都由它推导，因此请求要求的输出永远不会超过窗口的剩余空间。未设置（或数值小得不合理，低于 4096）时，输出限制关闭，压缩按假定的 128000 计算；窗口较小的模型请填写真实值。在 Web 弹窗中，模型不在模型目录里且这个字段留空时，会写入 1,000,000（手动添加的条目按已知模型处理，而不是当作窗口未知）；如果端点实际支持的窗口更小，就把它调小。`penguin config model add` 省略 `--context-window` 时不写任何默认值 |
 | `max_tokens` | 可选的单模型输出上限（每次请求最多输出的 Token 数）。设置后会覆盖 Agent 的 `model.max_tokens`；未设置就继承这个值。这个上限只是封顶值，不是实际发出的数值：每个请求实际发送 `min(max_tokens, context_window − estimated input − safety margin)`，所以小窗口模型不用手动调整也能正常工作。在 Web 端整表保存时省略这个字段会把它清空 |
-| `client_type` | MMSP 客户端类型：通用协议客户端（`openai-chat` 对应 Chat Completions，`openai-responses` 对应 Responses API，`ant-messages` 对应 Anthropic Messages 等），或厂商的官方客户端（`deepseek-official`、`anthropic-official` 等）。省略时，模型跟随分组的协议；两者都没有时，MMSP 按模型 id 开头的厂商系列（`gpt-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）路由。自定义端点使用 Web 弹窗提供的通用协议客户端之一：上述三种、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）；弹窗可以检测一个 base URL 对应前三种中的哪一种。`openai` 是 0.4.2 之前的旧写法，已弃用，读取配置时会归一化为 `openai-chat` |
+| `client_type` | MMSP 客户端类型：通用协议客户端（`openai-chat` 对应 Chat Completions，`openai-responses` 对应 Responses API，`ant-messages` 对应 Anthropic Messages 等），或厂商的官方客户端（`deepseek-official`、`anthropic-official` 等）。省略时，模型跟随分组的协议；两者都没有时，MMSP 按模型 id 开头的厂商系列（`gpt-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）路由。自定义端点使用 Web 弹窗提供的通用协议客户端之一：上述三种、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）。弹窗可以检测两种 OpenAI 协议、Anthropic Messages 和 Google GenAI。`openai` 是 0.4.2 之前的旧写法，已弃用，读取配置时会归一化为 `openai-chat` |
 | `display_name` | 展示名称 |
 | `vision` | 是否支持图像输入，默认 true |
 | `fast_mode` | 可选的快速模式（默认关闭）：开启后，这个模型的 Session 请求会改走供应商更快的服务层级，价格更高。持久化保存的值只有 `true`；在 Web 端整表保存时省略这个字段会把它清空。没有快速层级的模型会拒绝携带这个设置的请求（参见[快速模式](#快速模式)） |

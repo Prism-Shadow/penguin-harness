@@ -25,6 +25,7 @@
  *
  * Probes run sequentially in the order above and stop at the first `served` hit. The API
  * key is only ever placed in request headers — never in URLs, results, or logs.
+ * Google service account JSON is used by the SDK for OAuth and is never sent by the probes.
  *
  * The typed URL is not taken literally: it is normalized and paired with its neighbouring
  * `/v1` form (see candidateBaseUrls), and every candidate gets the full protocol sequence
@@ -59,6 +60,8 @@ export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
 
 /** Per-probe timeout: cheap probes against live endpoints answer well under this; a hung gateway must not stall the dialog. */
 export const PROBE_TIMEOUT_MS = 5_000;
+const GOOGLE_PROBE_REDIRECT_LIMIT = 3;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 /** One probe target: the protocol's client type, request path, and auth header shape. */
 interface ProbeSpec {
@@ -124,6 +127,11 @@ export function envApiKeyForProtocol(
 ): string | undefined {
   const name = clientEnvKey(clientType, baseUrl);
   return name !== undefined ? env[name]?.trim() || undefined : undefined;
+}
+
+/** MMSP treats a Google credential beginning with a JSON object as a service account. */
+function isJsonCredential(apiKey: string | undefined): boolean {
+  return apiKey?.trimStart().startsWith("{") ?? false;
 }
 
 /** Whether a string is an absolute http(s) URL (the only base URLs worth probing). */
@@ -212,14 +220,12 @@ function isProtocolError(
     );
   }
   if (body.type === "error") return false;
-  if (
-    err !== null &&
-    typeof err === "object" &&
-    "message" in err &&
-    hasMessage(err.message) &&
-    (("type" in err && hasMessage(err.type)) || ("code" in err && hasMessage(err.code)))
-  ) {
-    return true;
+  if (err !== null && typeof err === "object" && "message" in err && hasMessage(err.message)) {
+    if ("type" in err && hasMessage(err.type)) return true;
+    const code = "code" in err ? err.code : undefined;
+    // Google RPC errors have a numeric code and a named status.
+    const hasRpcStatus = "status" in err && hasMessage(err.status);
+    if (hasMessage(code) || (typeof code === "number" && !hasRpcStatus)) return true;
   }
   if (body.object === "error" && hasMessage(body.message)) return true;
   // A gateway can reject authorization before it knows whether the route exists.
@@ -329,6 +335,30 @@ async function readCappedBody(res: Response): Promise<{ text: string; truncated:
   return { text: truncated ? "" : Buffer.concat(chunks).toString("utf8"), truncated };
 }
 
+/** A custom API key header must stay on the origin where the user entered it. */
+async function fetchGoogleProbe(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  const origin = new URL(url).origin;
+  for (let hops = 0; ; hops++) {
+    const response = await fetchImpl(url, { ...init, redirect: "manual" });
+    const location = response.headers.get("location");
+    if (
+      !REDIRECT_STATUSES.has(response.status) ||
+      !location ||
+      hops === GOOGLE_PROBE_REDIRECT_LIMIT
+    ) {
+      return response;
+    }
+    const target = URL.parse(location, url);
+    if (!target || target.origin !== origin || target.username || target.password) return response;
+    await response.body?.cancel().catch(() => {});
+    url = target.href;
+  }
+}
+
 async function runProbe(
   spec: ProbeSpec,
   baseUrl: string,
@@ -338,13 +368,15 @@ async function runProbe(
 ): Promise<ModelProtocolProbeDto> {
   const url = probeUrl(baseUrl, spec.path);
   try {
-    const res = await fetchImpl(url, {
+    const init: RequestInit = {
       method: spec.method,
       headers: { ...spec.headers(apiKey), "user-agent": userAgent() },
-      // Keep the Google API key header on the origin the user configured.
-      ...(spec.method === "GET" ? { redirect: "error" } : { body: "{}" }),
       signal: AbortSignal.timeout(timeoutMs),
-    });
+    };
+    const res =
+      spec.clientType === "google-genai"
+        ? await fetchGoogleProbe(fetchImpl, url, init)
+        : await fetchImpl(url, { ...init, body: "{}" });
     // The same timeout signal covers the body read (a junk endpoint may stream forever);
     // the byte cap covers the other direction (an endpoint that streams a lot, fast).
     const { text, truncated } = await readCappedBody(res);
@@ -392,9 +424,13 @@ export async function detectModelProtocol(options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? PROBE_TIMEOUT_MS;
   const probes: ModelProtocolProbeDto[] = [];
+  // The detector tries other protocols too, so suppress an explicit OAuth credential before
+  // any probe can use it as an API key.
+  if (isJsonCredential(options.apiKey)) return { probes };
   for (const baseUrl of candidateBaseUrls(options.baseUrl)) {
     for (const spec of PROTOCOL_PROBES) {
       const apiKey = options.apiKey ?? envApiKeyForProtocol(spec.clientType, baseUrl, options.env);
+      if (isJsonCredential(apiKey)) continue;
       const probe = await runProbe(spec, baseUrl, apiKey, fetchImpl, timeoutMs);
       probes.push(probe);
       if (probe.outcome === "served") return { detected: spec.clientType, baseUrl, probes };
