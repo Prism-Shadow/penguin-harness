@@ -5,6 +5,8 @@ Add-Type @'
 using System; using System.Runtime.InteropServices; using System.Text;
 public static class FixtureNativeButton {
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint message, IntPtr w, IntPtr l);
+ [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint message, IntPtr w, IntPtr l);
+ [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr h, StringBuilder text, int max);
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr SendMessage(IntPtr h, uint message, IntPtr w, StringBuilder value);
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr SendMessage(IntPtr h, uint message, IntPtr w, string value);
@@ -46,6 +48,18 @@ function Click($node) {
   else {$node.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()}
 }
 $q=Start-Process $Installer -ArgumentList '/currentuser' -PassThru
+function Accept-Folder($dialog) {
+  $handle=[IntPtr]$dialog.Current.NativeWindowHandle
+  $button=Spin {
+    $child=Match-Node $dialog 'Button' '^OK$'
+    $tree=Items $dialog $deep | Where-Object {$_.Current.ClassName -eq 'SysTreeView32'} | Select-Object -First 1
+    # Wait for the native shell picker to select a tree item. It populates asynchronously.
+    if ($child -and $child.Current.IsEnabled -and $tree -and [FixtureNativeButton]::SendMessage([IntPtr]$tree.Current.NativeWindowHandle,0x110a,[IntPtr]9,[IntPtr]::Zero) -ne [IntPtr]::Zero) {$child}
+  } 'selected folder and enabled OK button'
+  $ok=[IntPtr]$button.Current.NativeWindowHandle
+  if (![FixtureNativeButton]::PostMessage($handle,0x0111,[IntPtr]1,$ok)) {throw 'Could not activate the native folder picker OK button.'}
+  Spin {if (![FixtureNativeButton]::IsWindow($handle)) {$true}} 'accepted folder picker' | Out-Null
+}
 function Ready-SetupDialog {
   foreach ($candidate in @(Items $top $children | Where-Object {$_.Current.Name -like '*PenguinHarness*Setup*'})) {
     if ((Match-Node $candidate 'Text' '^Program folder$') -or (Match-Node $candidate 'Button' '^(Next|I Agree|Continue)\b')) { return $candidate }
@@ -68,7 +82,7 @@ foreach ($selected in @($Drive,$Apps,$MatchingFolder)) {
     $options | Where-Object {$_.Current.ClassName -eq '#32770' -and $_.Current.NativeWindowHandle -ne $wizard.Current.NativeWindowHandle -and (Match-Node $_ 'Button' '^OK$')} | Select-Object -First 1
   } 'native folder picker'
   # Browse opens at the typed path. Accept the actual selection with the shell dialog button.
-  Click (Match-Node $dialog 'Button' '^OK$')
+  Accept-Folder $dialog
   $want=if ([IO.Path]::GetFileName($selected.TrimEnd('\')) -ieq 'penguinharness') {$selected} else {Join-Path $selected 'penguinharness'}
   Spin { if ([FixtureNativeButton]::Read($edit.Current.NativeWindowHandle).TrimEnd('\') -ieq $want.TrimEnd('\') -and (Match-Node $wizard 'Text' ([regex]::Escape($want)))) {$true} } 'computed install target' | Out-Null
   Write-Output "Verified Browse selection $selected -> $want"
@@ -83,7 +97,7 @@ $picker=Spin {
   $choices=@(Items $top $children) + @(Items $wizard $children)
   $choices | Where-Object {$_.Current.ClassName -eq '#32770' -and $_.Current.NativeWindowHandle -ne $wizard.Current.NativeWindowHandle -and (Match-Node $_ 'Button' '^OK$')} | Select-Object -First 1
 } 'native data directory picker'
-Click (Match-Node $picker 'Button' '^OK$')
+Accept-Folder $picker
 Spin { if ([FixtureNativeButton]::Read($dataEdit.Current.NativeWindowHandle) -ieq (Join-Path $DataDrive 'PenguinHarnessData')) {$true} } 'safe folder for data on a different volume' | Out-Null
 Click (Match-Node $wizard 'Button' '^Cancel$')
 Start-Sleep -Milliseconds 300
