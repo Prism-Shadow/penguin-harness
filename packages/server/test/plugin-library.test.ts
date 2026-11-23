@@ -22,6 +22,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 import {
@@ -40,9 +41,21 @@ const repo = path.resolve(import.meta.dirname, "../../..");
 const pluginsRoot = path.join(repo, "plugins");
 const serverPackage = JSON.parse(
   readFileSync(path.join(repo, "packages", "server", "package.json"), "utf8"),
-) as { dependencies: Record<string, string> };
+) as { dependencies: Record<string, string>; devDependencies: Record<string, string> };
 /** The plugin packages the server ships: its `@penguinharness/*` dependencies. */
-const shipped = Object.keys(serverPackage.dependencies)
+const releases = Object.keys(serverPackage.devDependencies).filter(
+  (name) =>
+    name.startsWith("@penguinharness/") &&
+    serverPackage.devDependencies[name]!.startsWith("https://github.com/"),
+);
+const hostRequire = createRequire(path.join(repo, "packages", "server", "package.json"));
+function sourceFor(name: string) {
+  const pkg = "@penguinharness/" + name;
+  return releases.includes(pkg)
+    ? path.dirname(hostRequire.resolve(pkg + "/package.json"))
+    : path.join(pluginsRoot, name);
+}
+const shipped = [...Object.keys(serverPackage.dependencies), ...releases]
   .filter((name) => name.startsWith("@penguinharness/"))
   .sort();
 
@@ -52,7 +65,7 @@ describe("the shipped library", () => {
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
     for (const plugin of plugins) {
       const pkg = JSON.parse(
-        await fs.readFile(path.join(pluginsRoot, plugin.name, "package.json"), "utf8"),
+        await fs.readFile(path.join(sourceFor(plugin.name), "package.json"), "utf8"),
       ) as { version: string };
       expect(plugin.version, plugin.name).toBe(pkg.version);
       for (const skill of plugin.skills) {
@@ -85,7 +98,7 @@ describe("the shipped library", () => {
     expect(shipped.length).toBeGreaterThan(0);
     for (const packageName of shipped) {
       const dir = packageName.slice("@penguinharness/".length);
-      const file = path.join(pluginsRoot, dir, "package.json");
+      const file = path.join(sourceFor(dir), "package.json");
       const text = await fs.readFile(file, "utf8");
       // Chinese in a manifest is written as real characters, not \uXXXX escapes.
       expect(text, `${dir} package.json escapes`).not.toMatch(/\\u[0-9a-fA-F]{4}/);
@@ -94,8 +107,8 @@ describe("the shipped library", () => {
       expect(warnings, dir).toEqual([]);
       expect(manifest.pluginName, dir).toBe(dir);
       expect(manifest.description, dir).not.toBe("");
-      expect(readPluginTable(path.join(pluginsRoot, dir)), `${dir}: build it`).not.toBeNull();
-      const { card, icon } = readPackageCard(path.join(pluginsRoot, dir));
+      expect(readPluginTable(sourceFor(dir)), `${dir}: build it`).not.toBeNull();
+      const { card, icon } = readPackageCard(sourceFor(dir));
       expect(card.shortDescription, dir).toBeDefined();
       expect(card.shortDescriptionZh, dir).toBeDefined();
       expect(
@@ -105,7 +118,7 @@ describe("the shipped library", () => {
       expect(icon, `${dir} icon`).toMatchObject({ format: "svg", tint: true });
       expect(raw.files ?? [], dir).toContain("ifaces.json");
       expect(raw.files ?? [], dir).not.toContain("plugin.json");
-      expect(existsSync(path.join(pluginsRoot, dir, "plugin.json")), dir).toBe(false);
+      expect(existsSync(path.join(sourceFor(dir), "plugin.json")), dir).toBe(false);
     }
   });
 
@@ -129,7 +142,7 @@ describe("the shipped library", () => {
       // Every built-in plugin ships an icon.
       expect(plugin.icon, `${plugin.name} icon`).toBeDefined();
       for (const skill of plugin.skills) {
-        const dir = path.join(pluginsRoot, plugin.name, "skills", skill.name);
+        const dir = path.join(sourceFor(plugin.name), "skills", skill.name);
         const file = await fs.readFile(path.join(dir, "SKILL.md"), "utf8");
         // The library file carries name, description and the skill's own dated version; the
         // short descriptions are the card's, stamped in by the loader.
@@ -207,9 +220,16 @@ describe("the shipped library", () => {
     }
   });
 
-  it("reads this checkout's plugins/ directories, not copies under node_modules", () => {
+  it("reads local plugin sources and the corresponding verified release package for an external plugin", () => {
     for (const plugin of loadLibraryPlugins()) {
-      expect(libraryPluginPackage(plugin.name)?.dir).toBe(path.join(pluginsRoot, plugin.name));
+      const dir = libraryPluginPackage(plugin.name)!.dir;
+      if (releases.includes("@penguinharness/" + plugin.name)) {
+        for (const file of ["package.json", "ifaces.json", "icon.svg"]) {
+          expect(readFileSync(path.join(dir, file))).toEqual(
+            readFileSync(path.join(sourceFor(plugin.name), file)),
+          );
+        }
+      } else expect(dir).toBe(path.join(pluginsRoot, plugin.name));
     }
   });
 });
