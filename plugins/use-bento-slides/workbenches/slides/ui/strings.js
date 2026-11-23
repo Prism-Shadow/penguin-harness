@@ -42,7 +42,7 @@ const en = {
   choiceCancel: "Cancel",
   choiceApply: "Switch",
   pendingModel: (active, target) => `Using ${active}. Queued switch to ${target}.`,
-  effortNext: "A thinking-level change applies to the next model request.",
+  effortNext: "The next request uses the thinking level the model supports.",
   effortCost:
     "Changing the thinking level can invalidate the cached conversation prefix and increase input costs.",
   modelCost: (target) =>
@@ -129,7 +129,7 @@ const zh = {
   choiceCancel: "取消",
   choiceApply: "切换",
   pendingModel: (active, target) => `当前使用 ${active}。已排队切换为 ${target}。`,
-  effortNext: "思考等级从下一次模型请求生效。",
+  effortNext: "下次请求按模型支持的思考等级执行。",
   effortCost: "切换思考等级可能使已有对话的前缀缓存失效，增加输入费用。",
   modelCost: (target) => `切换这段对话到 ${target}？交接时可能使用原模型生成对话摘要。`,
   choiceFailed: (reason) => `未能更新对话设置。${reason}`,

@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** feat
 - **Scope:** `use-bento-slides`, workbench page SDK
+- **PR:** [#1722](https://github.com/Prism-Shadow/penguin-harness/pull/1722)
 
 [中文版](2026-11-23-slides-conversation-settings.zh.md)
 
