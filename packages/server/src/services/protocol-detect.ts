@@ -25,6 +25,7 @@
  *
  * Probes run sequentially in the order above and stop at the first `served` hit. The API
  * key is only ever placed in request headers — never in URLs, results, or logs.
+ * Probes with custom API key headers follow redirects only within the original origin.
  * Google service account JSON is used by the SDK for OAuth and is never sent by the probes.
  *
  * The typed URL is not taken literally: it is normalized and paired with its neighbouring
@@ -61,7 +62,9 @@ export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
 /** Per-probe timeout: cheap probes against live endpoints answer well under this; a hung gateway must not stall the dialog. */
 export const PROBE_TIMEOUT_MS = 5_000;
 const GOOGLE_PROBE_REDIRECT_LIMIT = 3;
+const FETCH_REDIRECT_LIMIT = 20;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const POST_TO_GET_REDIRECT_STATUSES = new Set([301, 302, 303]);
 
 /** One probe target: the protocol's client type, request path, and auth header shape. */
 interface ProbeSpec {
@@ -335,26 +338,38 @@ async function readCappedBody(res: Response): Promise<{ text: string; truncated:
   return { text: truncated ? "" : Buffer.concat(chunks).toString("utf8"), truncated };
 }
 
-/** A custom API key header must stay on the origin where the user entered it. */
-async function fetchGoogleProbe(
+/** Fetch follows redirects without stripping custom auth headers. Keep those probes on-origin. */
+async function fetchSameOriginProbe(
   fetchImpl: typeof fetch,
   url: string,
   init: RequestInit,
+  maxRedirects: number,
 ): Promise<Response> {
-  const origin = new URL(url).origin;
+  const original = new URL(url);
+  let request: RequestInit = { ...init, redirect: "manual" };
   for (let hops = 0; ; hops++) {
-    const response = await fetchImpl(url, { ...init, redirect: "manual" });
+    const response = await fetchImpl(url, request);
     const location = response.headers.get("location");
-    if (
-      !REDIRECT_STATUSES.has(response.status) ||
-      !location ||
-      hops === GOOGLE_PROBE_REDIRECT_LIMIT
-    ) {
+    if (!REDIRECT_STATUSES.has(response.status) || !location || hops === maxRedirects) {
       return response;
     }
     const target = URL.parse(location, url);
-    if (!target || target.origin !== origin || target.username || target.password) return response;
+    if (
+      !target ||
+      target.protocol !== original.protocol ||
+      target.origin !== original.origin ||
+      target.username ||
+      target.password
+    ) {
+      return response;
+    }
     await response.body?.cancel().catch(() => {});
+    // Match Fetch's POST rewrite. Content-Type is the only body header the probe sets.
+    if (request.method === "POST" && POST_TO_GET_REDIRECT_STATUSES.has(response.status)) {
+      const headers = new Headers(request.headers);
+      headers.delete("content-type");
+      request = { ...request, method: "GET", body: null, headers };
+    }
     url = target.href;
   }
 }
@@ -368,15 +383,23 @@ async function runProbe(
 ): Promise<ModelProtocolProbeDto> {
   const url = probeUrl(baseUrl, spec.path);
   try {
+    const headers = { ...spec.headers(apiKey), "user-agent": userAgent() };
     const init: RequestInit = {
       method: spec.method,
-      headers: { ...spec.headers(apiKey), "user-agent": userAgent() },
+      headers,
+      ...(spec.method === "POST" ? { body: "{}" } : {}),
       signal: AbortSignal.timeout(timeoutMs),
     };
+    const google = spec.clientType === "google-genai";
     const res =
-      spec.clientType === "google-genai"
-        ? await fetchGoogleProbe(fetchImpl, url, init)
-        : await fetchImpl(url, { ...init, body: "{}" });
+      google || "x-api-key" in headers
+        ? await fetchSameOriginProbe(
+            fetchImpl,
+            url,
+            init,
+            google ? GOOGLE_PROBE_REDIRECT_LIMIT : FETCH_REDIRECT_LIMIT,
+          )
+        : await fetchImpl(url, init);
     // The same timeout signal covers the body read (a junk endpoint may stream forever);
     // the byte cap covers the other direction (an endpoint that streams a lot, fast).
     const { text, truncated } = await readCappedBody(res);

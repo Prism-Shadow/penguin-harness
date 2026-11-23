@@ -8,6 +8,9 @@
  *   errors on other paths. A Google relay without the listing yields no detection.
  * - The Google listing follows a limited number of same-origin redirects. A redirect to
  *   another origin never receives a request from the probe.
+ * - A credentialed Messages probe follows the Fetch method and body rules for same-origin
+ *   redirects. A cross-origin Messages redirect cannot intercept a Google key or prevent
+ *   the detector from recognizing the Google model list.
  * - Service account JSON is never sent as a header by any probe, whether it is supplied
  *   explicitly or read from the Gemini credential environment variable.
  * - A Chat Completions validation reply can have a numeric error code. A Google RPC error
@@ -436,6 +439,38 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     expect(
       fetcher.calls.every((call) => new URL(call.url).origin === "https://relay.example"),
     ).toBe(true);
+  });
+
+  it.each([
+    { status: 301, method: "GET", body: "" },
+    { status: 302, method: "GET", body: "" },
+    { status: 303, method: "GET", body: "" },
+    { status: 307, method: "POST", body: "{}" },
+    { status: 308, method: "POST", body: "{}" },
+  ])("follows a same-origin Messages $status redirect with $method semantics", async (scenario) => {
+    const baseUrl = "https://relay.example";
+    const fetcher = fakeFetch((call) => {
+      const { pathname } = new URL(call.url);
+      if (pathname === "/v1/messages") {
+        return new Response(null, { status: scenario.status, headers: { location: "messages/" } });
+      }
+      if (pathname === "/v1/messages/") return new Response(ANTHROPIC_ERROR, { status: 401 });
+      return new Response(null, { status: 404 });
+    });
+    const result = await detectModelProtocol({
+      baseUrl,
+      apiKey: "relay-key",
+      fetchImpl: fetcher.fetch,
+    });
+    expect(result).toMatchObject({ detected: "ant-messages", baseUrl });
+    const redirected = fetcher.calls.find((call) => call.url === `${baseUrl}/v1/messages/`);
+    expect(redirected).toMatchObject({ method: scenario.method, body: scenario.body });
+    expect(redirected?.headers.get("x-api-key")).toBe("relay-key");
+    expect(redirected?.headers.get("authorization")).toBe("Bearer relay-key");
+    expect(redirected?.headers.get("anthropic-version")).toBe("2023-06-01");
+    expect(redirected?.headers.get("content-type")).toBe(
+      scenario.method === "POST" ? "application/json" : null,
+    );
   });
 
   it("stops following a circular Google list redirect", async () => {
@@ -881,6 +916,53 @@ describe("POST /api/projects/:p/models/detect", () => {
     expect((await api.post(detectUrl(), {})).status).toBe(400);
     expect((await api.post(detectUrl(), { baseUrl: "ftp://example.com" })).status).toBe(400);
     expect((await api.post(detectUrl(), { baseUrl: "not a url" })).status).toBe(400);
+  });
+
+  it("protects an entered Google key from a cross-origin Messages redirect and still detects Google", async () => {
+    const apiKey = "local-google-test-key";
+    let otherOriginRequests = 0;
+    const other = createServer((_req, res) => {
+      otherOriginRequests++;
+      res.writeHead(401, { "content-type": "application/json" }).end(ANTHROPIC_ERROR);
+    });
+    await new Promise<void>((resolve) => other.listen(0, "127.0.0.1", resolve));
+    const otherOrigin = `http://127.0.0.1:${(other.address() as AddressInfo).port}`;
+    let sentMessagesKey: string | string[] | undefined;
+    const relay = createServer((req, res) => {
+      if (req.url === "/v1/messages") {
+        sentMessagesKey = req.headers["x-api-key"];
+        res.writeHead(307, { location: `${otherOrigin}/v1/messages` }).end();
+      } else if (
+        req.url === "/v1beta/models?pageSize=1" &&
+        req.method === "GET" &&
+        req.headers["x-goog-api-key"] === apiKey
+      ) {
+        res.writeHead(200, { "content-type": "application/json" }).end(GOOGLE_MODELS);
+      } else {
+        res.writeHead(404).end();
+      }
+    });
+    try {
+      await new Promise<void>((resolve) => relay.listen(0, "127.0.0.1", resolve));
+      const baseUrl = `http://127.0.0.1:${(relay.address() as AddressInfo).port}`;
+      const res = await api.post(detectUrl(), { baseUrl, apiKey });
+      expect(res.status).toBe(200);
+      const result = (await res.json()) as ModelProtocolDetectResponse;
+      expect(result.detected).toBe("google-genai");
+      expect(result.probes.find((probe) => probe.clientType === "ant-messages")).toMatchObject({
+        outcome: "junk",
+        status: 307,
+      });
+      expect(sentMessagesKey).toBe(apiKey);
+      expect(otherOriginRequests).toBe(0);
+      expect(JSON.stringify(result)).not.toContain(apiKey);
+    } finally {
+      await Promise.all(
+        [relay, other].map(
+          (server) => new Promise<void>((resolve) => server.close(() => resolve())),
+        ),
+      );
+    }
   });
 
   it("detects ant-messages on a live endpoint (404 on /responses, protocol-shaped 401 on /v1/messages) and never echoes the key", async () => {
