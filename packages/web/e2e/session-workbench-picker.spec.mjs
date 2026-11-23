@@ -101,16 +101,49 @@ test("an App Center workbench lists archived Sessions and closes only their sele
   await expect(search).toBeVisible();
   const old = page.getByRole("button", { name: /Prior terminal/ });
   await expect(old).toContainText("Archived");
-  await expect(old).toContainText("Open resources · 2");
-  await expect(page.getByRole("checkbox", { name: /Select Session · No terminal/ })).toBeDisabled();
+  await expect(old).toContainText("2 open terminals");
+  await expect(page.getByRole("checkbox", { name: /Select Session No terminal/ })).toBeDisabled();
   const childRow = page.getByRole("button").filter({ hasText: child.sessionId });
   await expect(childRow).toContainText("Subagent");
-  await expect(childRow).toContainText("Open resources · 1");
+  await expect(childRow).toContainText("1 open terminal");
+  // Archived parents and subagents are first-class resource owners. Inspecting either
+  // group leaves its archive state and the other Session's live terminals intact.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  for (const [row, owner, expectedCount] of [
+    [old, first, 2],
+    [childRow, child, 1],
+  ]) {
+    const readOwner = async () =>
+      (await (await page.request.get("/api/sessions/" + owner.sessionId)).json()).session;
+    const original = await readOwner();
+    expect(original.archived).toBe(owner === first);
+    await row.click();
+    const activeGroup = page.locator('[data-testid="terminal-panel"]:visible');
+    await expect(activeGroup.getByTestId("terminal-tab")).toHaveCount(expectedCount);
+    const owned = (await (await page.request.get("/api/terminals")).json()).terminals.filter(
+      (t) => t.alive && t.sessionId === owner.sessionId,
+    );
+    expect(
+      (
+        await activeGroup
+          .getByTestId("terminal-tab")
+          .evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute("data-tab-id")))
+      ).sort(),
+    ).toEqual(owned.map((t) => t.id).sort());
+    expect(await readOwner()).toMatchObject({
+      sessionId: original.sessionId,
+      source: original.source,
+      archived: original.archived,
+    });
+    await page.goto("/apps");
+    await terminalTile.click();
+  }
+  await page.setViewportSize({ width: 375, height: 750 });
   const hasWrites = [];
   page.on("request", (r) => {
     if (r.method() === "POST" && r.url().includes("terminals")) hasWrites.push(r.url());
   });
-  await page.getByRole("checkbox", { name: /Select Session · Prior terminal/ }).check();
+  await page.getByRole("checkbox", { name: /Select Session Prior terminal/ }).check();
   await page.getByRole("button", { name: /Close selected resources/ }).click();
   const confirm = page.getByRole("dialog");
   await expect(confirm).toContainText("Prior terminal");
@@ -122,14 +155,14 @@ test("an App Center workbench lists archived Sessions and closes only their sele
   await expect(page.getByRole("dialog")).toContainText(child.title || child.sessionId);
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
   await expect.poll(counts).toEqual({ [second.sessionId]: 1 });
-  await expect(old).toContainText("Open resources · 0");
+  await expect(old).toContainText("0 open terminals");
   await search.fill("Working terminal");
   await expect(old).toHaveCount(0);
   await page.setViewportSize({ width: 1280, height: 800 });
   const match = page
     .getByRole("region", { name: "Terminal", exact: true })
     .getByRole("button", { name: /Working terminal/ });
-  await expect(match).toContainText("Open resources · 1");
+  await expect(match).toContainText("1 open terminal");
   await match.focus();
   await page.keyboard.press("Enter");
   const attached = page.locator(
@@ -162,5 +195,112 @@ test("an App Center workbench lists archived Sessions and closes only their sele
     await tab.getByTestId("dock-tab-close").click();
     await expect(composer).toHaveValue("Keep my draft while browsing");
   }
-  expect(none.sessionId).not.toBe(second.sessionId);
+  // Opening an empty group lists its shells. Only the explicit New action starts one.
+  await page.goto("/apps");
+  await terminalTile.click();
+  await page
+    .getByRole("region", { name: "Terminal", exact: true })
+    .getByRole("button", { name: /No terminal/ })
+    .click();
+  const group = page.locator('[data-testid="terminal-panel"]:visible');
+  await expect(group.getByTestId("terminal-new-tab")).toBeEnabled();
+  await expect(group.getByTestId("terminal-tab")).toHaveCount(0);
+  expect(await counts()).toEqual({ [second.sessionId]: 1 });
+  await group.getByTestId("terminal-new-tab").click();
+  await expect.poll(counts).toEqual({ [second.sessionId]: 1, [none.sessionId]: 1 });
+  const shell = await group.getByTestId("terminal-tab").getAttribute("data-tab-id");
+  await page
+    .locator('[data-testid="dock-tab"][data-tab-id^=":app:session-tool/terminal"]:visible')
+    .getByTestId("dock-tab-close")
+    .click();
+  await expect(page).toHaveURL(new RegExp("/chat/" + none.sessionId));
+  await page.goto("/apps");
+  await terminalTile.click();
+  await page
+    .getByRole("region", { name: "Terminal", exact: true })
+    .getByRole("button", { name: /No terminal/ })
+    .click();
+  await expect(group.getByTestId("terminal-tab")).toHaveAttribute("data-tab-id", shell);
+  expect(await counts()).toEqual({ [second.sessionId]: 1, [none.sessionId]: 1 });
+  await page
+    .locator('[data-testid="dock-tab"][data-tab-id^=":app:session-tool/terminal"]:visible')
+    .getByTestId("dock-tab-close")
+    .click();
+
+  // Previous layouts store physical panel IDs. Opening the same scoped app should use its
+  // existing tab and leave the user's dormant layout in place after closing the app.
+  await page.evaluate((sid) => {
+    const key = "penguin.dock.layout";
+    const layout = JSON.parse(localStorage.getItem(key) || '{"scopes":{}}');
+    layout.scopes[sid] = {
+      right: { open: false, active: "memory", tabs: ["memory"] },
+      bottom: { open: false, active: null, tabs: [] },
+      focus: "right",
+      shell: null,
+    };
+    localStorage.setItem(key, JSON.stringify(layout));
+  }, none.sessionId);
+  await page.goto("/chat/" + none.sessionId);
+  await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await page.getByTestId("dock-launcher-open-memory").click();
+  const memory = page.locator('[data-testid="dock"]:visible').getByRole("tab", {
+    name: "Memory",
+    exact: true,
+  });
+  await expect(memory).toHaveCount(1);
+  expect(new URL(page.url()).searchParams.get("session")).toBe(none.sessionId);
+  await memory.locator("..").getByTestId("dock-tab-close").click();
+  await expect(page).toHaveURL(new RegExp("/chat/" + none.sessionId));
+  expect(
+    await page.evaluate(
+      (sid) => JSON.parse(localStorage.getItem("penguin.dock.layout")).scopes[sid].right,
+      none.sessionId,
+    ),
+  ).toMatchObject({ open: false, active: "memory", tabs: ["memory"] });
+
+  const leaf = "panel-draft.txt";
+  await expect(
+    await page.request.put("/api/sessions/" + none.sessionId + "/files/content?path=" + leaf, {
+      data: { dataBase64: Buffer.from("Saved on disk").toString("base64") },
+    }),
+  ).toBeOK();
+  await page.evaluate((sid) => {
+    const key = "penguin.dock.layout";
+    const layout = JSON.parse(localStorage.getItem(key));
+    layout.scopes[sid].bottom = { open: true, active: "workspace", tabs: ["workspace"] };
+    layout.scopes[sid].focus = "bottom";
+    localStorage.setItem(key, JSON.stringify(layout));
+  }, none.sessionId);
+  await page.reload();
+  const bottom = page.locator('[data-testid="dock"][data-position="bottom"]');
+  const right = page.locator('[data-testid="dock"][data-position="right"]');
+  await bottom.getByText(leaf, { exact: true }).first().click();
+  await bottom.getByRole("button", { name: "Edit", exact: true }).click();
+  const editorName = { name: "Editing " + leaf, exact: true };
+  const original = bottom.getByRole("textbox", editorName);
+  await original.fill("Draft in my original Files tab");
+  const originalNode = await original.elementHandle();
+  await bottom.getByTestId("dock-close").click();
+  await expect(bottom).toBeHidden();
+  await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await page.getByTestId("dock-launcher-open-workspace").focus();
+  await page.keyboard.press("Enter");
+  const moved = right.getByRole("textbox", editorName);
+  await expect(moved).toHaveValue("Draft in my original Files tab");
+  expect(await moved.evaluate((node, original) => node === original, originalNode)).toBe(true);
+  await right.getByRole("button", { name: "Close panel: Files", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp("/chat/" + none.sessionId));
+  expect(
+    await originalNode.evaluate(
+      (node) =>
+        node.isConnected && node.closest('[data-testid="dock"]')?.getAttribute("data-position"),
+    ),
+  ).toBe("bottom");
+  expect(await originalNode.inputValue()).toBe("Draft in my original Files tab");
+  expect(
+    await page.evaluate(
+      (sid) => JSON.parse(localStorage.getItem("penguin.dock.layout")).scopes[sid].bottom,
+      none.sessionId,
+    ),
+  ).toMatchObject({ open: false, active: "workspace", tabs: ["workspace"] });
 });

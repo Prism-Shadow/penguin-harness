@@ -1780,8 +1780,15 @@ export const getAgentDeletion = (projectId: string, deletionId: string, machineI
     { server: machineId },
   );
 
-export const listWorkspaceFiles = (sessionId: string, path: string) =>
-  apiFetch<WorkspaceFilesResponse>(`/api/sessions/${sessionId}/files`, { query: { path } });
+export const listWorkspaceFiles = (
+  sessionId: string,
+  path: string,
+  machineId: string | null = machineForSession(sessionId),
+) =>
+  apiFetch<WorkspaceFilesResponse>(`/api/sessions/${sessionId}/files`, {
+    server: machineId,
+    query: { path },
+  });
 
 /** File content URL (inline preview / download=1 triggers download; usable directly in <a>/<img>/fetch). */
 /**
@@ -1795,10 +1802,15 @@ export const listWorkspaceFiles = (sessionId: string, path: string) =>
  * resulting failure as "preview not supported for this type", since a file it cannot read
  * is indistinguishable from one it cannot render.
  */
-export const workspaceFileUrl = (sessionId: string, path: string, download = false): string =>
+export const workspaceFileUrl = (
+  sessionId: string,
+  path: string,
+  download = false,
+  machineId: string | null = machineForSession(sessionId),
+): string =>
   apiUrl(
     `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`,
-    machineForSession(sessionId),
+    machineId,
   );
 
 /**
@@ -1814,8 +1826,17 @@ export const workspaceFileUrl = (sessionId: string, path: string, download = fal
  * Falls back server-side to the sandboxed same-origin preview when the deployment has no
  * usable preview origin; `previewIsolated` from /api/me says so in advance.
  */
-export const workspaceFilePreviewUrl = (sessionId: string, path: string): string =>
-  `/api/sessions/${sessionId}/files/preview-redirect?path=${encodeURIComponent(path)}`;
+export const workspaceFilePreviewUrl = (
+  sessionId: string,
+  path: string,
+  machineId: string | null = machineForSession(sessionId),
+): string =>
+  machineId === null
+    ? `/api/sessions/${sessionId}/files/preview-redirect?path=${encodeURIComponent(path)}`
+    : apiUrl(
+        `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}&preview=1`,
+        machineId,
+      );
 
 /**
  * Opens the file's directory in the machine's own file manager, selecting the file where the
@@ -1823,8 +1844,16 @@ export const workspaceFilePreviewUrl = (sessionId: string, path: string): string
  * was not spawned by a shell and 403 `desktop_shell_only` for a browser session beside one,
  * since it cannot tell that browser from a remote one (see lib/account-menu.ts).
  */
-export const revealWorkspaceFile = (sessionId: string, path: string) =>
-  apiFetch<void>(`/api/sessions/${sessionId}/files/reveal`, { method: "POST", query: { path } });
+export const revealWorkspaceFile = (
+  sessionId: string,
+  path: string,
+  machineId: string | null = machineForSession(sessionId),
+) =>
+  apiFetch<void>(`/api/sessions/${sessionId}/files/reveal`, {
+    server: machineId,
+    method: "POST",
+    query: { path },
+  });
 
 /**
  * Writes a Workspace file whole. `ifVersion` is the marker a previous read returned in its
@@ -1840,8 +1869,10 @@ export const uploadWorkspaceFile = (
   path: string,
   dataBase64: string,
   ifVersion?: string,
+  machineId: string | null = machineForSession(sessionId),
 ): Promise<string | null> =>
   apiFetchWithMeta<void>(`/api/sessions/${sessionId}/files/content`, {
+    server: machineId,
     method: "PUT",
     body: { dataBase64, ifVersion } satisfies FilesWriteRequest,
     query: { path },
@@ -1851,8 +1882,16 @@ export const uploadWorkspaceFile = (
  * Creates one empty text file or one folder. Missing parent directories are made; anything
  * already at the path is refused with 409 `target_exists` and nothing is written.
  */
-export const createWorkspaceEntry = (sessionId: string, body: FilesCreateRequest) =>
-  apiFetch<void>(`/api/sessions/${sessionId}/files/create`, { method: "POST", body });
+export const createWorkspaceEntry = (
+  sessionId: string,
+  body: FilesCreateRequest,
+  machineId: string | null = machineForSession(sessionId),
+) =>
+  apiFetch<void>(`/api/sessions/${sessionId}/files/create`, {
+    server: machineId,
+    method: "POST",
+    body,
+  });
 
 /**
  * Moves or renames a Workspace file or folder. `ifVersion` (see {@link uploadWorkspaceFile})
@@ -1862,16 +1901,30 @@ export const createWorkspaceEntry = (sessionId: string, body: FilesCreateRequest
  * an overwrite, and a folder cannot move into itself. `to`'s parent directory is created when it
  * is missing.
  */
-export const moveWorkspaceFile = (sessionId: string, body: FilesMoveRequest) =>
-  apiFetch<void>(`/api/sessions/${sessionId}/files/move`, { method: "POST", body });
+export const moveWorkspaceFile = (
+  sessionId: string,
+  body: FilesMoveRequest,
+  machineId: string | null = machineForSession(sessionId),
+) =>
+  apiFetch<void>(`/api/sessions/${sessionId}/files/move`, {
+    server: machineId,
+    method: "POST",
+    body,
+  });
 
 /**
  * Deletes a Workspace file. `ifVersion` is the same marker a write carries: with it, a file
  * the Agent rewrote since the panel read it is refused with 409 `file_changed` instead of
  * being removed. Files only — a directory is a 400.
  */
-export const deleteWorkspaceFile = (sessionId: string, path: string, ifVersion?: string) =>
+export const deleteWorkspaceFile = (
+  sessionId: string,
+  path: string,
+  ifVersion?: string,
+  machineId: string | null = machineForSession(sessionId),
+) =>
   apiFetch<void>(`/api/sessions/${sessionId}/files/content`, {
+    server: machineId,
     method: "DELETE",
     query: { path, ifVersion },
   });
@@ -1882,8 +1935,15 @@ export const deleteWorkspaceFile = (sessionId: string, path: string, ifVersion?:
  * hits are then the most relevant ones rather than all of them. An empty query is a 400 — the
  * caller decides what an empty search box shows, and it is never "every file".
  */
-export const searchWorkspaceFiles = (sessionId: string, q: string) =>
-  apiFetch<WorkspaceSearchResponse>(`/api/sessions/${sessionId}/files/search`, { query: { q } });
+export const searchWorkspaceFiles = (
+  sessionId: string,
+  q: string,
+  machineId: string | null = machineForSession(sessionId),
+) =>
+  apiFetch<WorkspaceSearchResponse>(`/api/sessions/${sessionId}/files/search`, {
+    server: machineId,
+    query: { q },
+  });
 
 // Workspace files by directory ----------------------------------------------------------------
 
