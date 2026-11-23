@@ -9,6 +9,7 @@ import { ApiError } from "./errors";
 import { isApiUrl, splitUrl } from "./router";
 import type { Method } from "./router";
 import { router } from "./routes";
+import { workbenchAnswer } from "./workbench-api";
 import { getStore } from "./store";
 
 function urlOf(input: RequestInfo | URL): string {
@@ -62,7 +63,9 @@ export function installFetchShim(): void {
     const method = (
       init?.method ?? (input instanceof Request ? input.method : "GET")
     ).toUpperCase() as Method;
-    return answerAsResponse(method, splitUrl(url).path + urlQuery(url), bodyOf(init));
+    const body = bodyOf(init);
+    const preview = workbenchAnswer(getStore(), url, method, body);
+    return preview ? Promise.resolve(preview) : answerAsResponse(method, splitUrl(url).path + urlQuery(url), body);
   };
 }
 

@@ -22,6 +22,7 @@ const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 /** Real module (absolute path, no extension) → the mock that stands in for it. */
 export const SWAPPED_MODULES: Readonly<Record<string, string>> = {
   [here("../../../../web/src/api/client")]: here("./client.ts"),
+  [here("../../../../web/src/lib/workbench-tabs")]: here("./workbench-tabs.ts"),
   [here("../../../../web/src/api/sse")]: here("./sse.ts"),
   [here("../../../../web/src/features/workbenches/workbench-frame")]: here("./workbench-frame.tsx"),
 };
