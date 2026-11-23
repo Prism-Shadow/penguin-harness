@@ -584,6 +584,7 @@ export const en: Strings = {
     launcherPending: "a subagent awaits approval",
     launcherPanels: "Shortcuts",
     openAppCenter: "Open App Center",
+    launcherShow: "Show launcher",
     launcherHide: "Hide launcher",
     launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
     fullscreen: "Full screen",
