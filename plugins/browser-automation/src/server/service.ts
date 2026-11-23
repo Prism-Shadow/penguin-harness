@@ -354,6 +354,15 @@ export class BuiltinBrowser {
 
   // --- tabs and the agent's actions, on the actor's backend -----------------------
 
+  /** The Project manager only operates on the built-in guests, regardless of the selected backend. */
+  managedTabs(actor: Actor): BuiltinBrowserTab[] {
+    return this.builtinRuntime(actor).tabs.list();
+  }
+
+  closeManagedTab(actor: Actor, tabId: number, sessionId: string): Promise<void> {
+    return this.builtinRuntime(actor).close(String(tabId), sessionId);
+  }
+
   /** GET /tabs. */
   listTabs(actor: Actor, sessionId?: string): Promise<BuiltinBrowserTabsResponse> {
     return this.runtime(actor).listTabs(sessionId);

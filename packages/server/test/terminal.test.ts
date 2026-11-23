@@ -12,6 +12,7 @@
  * opened it (`sessionId`, null for none), which only its own user can change, through PATCH:
  * that label is what keeps one conversation's terminals out of another's dock.
  */
+import { sessionRow } from "./fixtures/session.js";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
@@ -536,12 +537,57 @@ describePty("terminal API", () => {
     }
   });
 
+  it("counts and closes only the selected child Session's live PTYs", async () => {
+    const t = await createTestApp();
+    try {
+      const admin = await loginAdmin(t.app);
+      const api = apiClient(t.app, admin.cookie);
+      const project = "default_project";
+      const parent = "test-resource-parent";
+      const child = "test-resource-child";
+      t.deps.sessionsRepo.insert(sessionRow(parent));
+      t.deps.sessionsRepo.insert(sessionRow(child));
+      t.deps.sessionsRepo.setListing([child], "archived", new Date().toISOString());
+      t.deps.sessionSources.set(child, "subagent");
+      const path = `/api/terminals/projects/${project}/session-resources`;
+      expect(await (await api.get(path)).json()).toEqual({ counts: {} });
+      const start = async (sessionId: string) => {
+        const result = await api.post("/api/terminals", { sessionId, cwd: t.root });
+        expect(result.status).toBe(201);
+        return (await result.json()).id as string;
+      };
+      const kept = await start(parent);
+      await start(child);
+      expect(await (await api.get(path)).json()).toEqual({ counts: { [parent]: 1, [child]: 1 } });
+      expect(
+        await (
+          await api.post(path + "/close", { sessionIds: [child, child, "not-a-session"] })
+        ).json(),
+      ).toEqual({
+        results: [
+          { sessionId: child, closed: 1 },
+          { sessionId: "not-a-session", closed: 0, error: "session_not_found" },
+        ],
+      });
+      expect(await (await api.get(path)).json()).toEqual({ counts: { [parent]: 1 } });
+      expect(await (await api.post(path + "/close", { sessionIds: [child] })).json()).toEqual({
+        results: [{ sessionId: child, closed: 0 }],
+      });
+      expect((await api.get(`/api/terminals/${kept}`)).status).toBe(200);
+      expect(t.deps.sessionsRepo.findById(child)?.archivedAt).toBeTruthy();
+    } finally {
+      await t.cleanup();
+    }
+  });
+
   it("files a shell under the conversation that opened it, and only its user can refile it", async () => {
     const t = await createTestApp();
     try {
       const admin = await loginAdmin(t.app);
       const api = apiClient(t.app, admin.cookie);
       type Info = { id: string; sessionId: string | null };
+      for (const id of ["session-a", "session-b"]) t.deps.sessionsRepo.insert(sessionRow(id));
+      expect((await api.post("/api/terminals", { sessionId: "missing" })).status).toBe(404);
 
       const owned = (await (
         await api.post("/api/terminals", { cwd: "~", sessionId: "session-a" })
