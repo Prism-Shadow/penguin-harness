@@ -1137,7 +1137,10 @@ export class SessionManager {
         });
         return { sessionId: entry.sessionId, queued: true };
       }
-      if (entry.status !== "idle" && (opts?.queueIfBusy || opts?.steerIfBusy)) {
+      if (
+        (entry.status !== "idle" || entry.queuedModel) &&
+        (opts?.queueIfBusy || opts?.steerIfBusy)
+      ) {
         this.assertQueueRoom(entry);
         entry.followUps.push({
           id: randomUUID(),
@@ -2270,7 +2273,7 @@ export class SessionManager {
     if (entry.status === "running") {
       throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
     }
-    if (entry.status === "compacting") {
+    if (entry.status === "compacting" || entry.queuedModel) {
       throw new HttpError(
         409,
         "compacting",

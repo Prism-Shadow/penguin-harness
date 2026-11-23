@@ -1048,16 +1048,19 @@ describe("POST /switch-model", () => {
       },
     );
 
-    it("a Session that left no Trace is rebuilt on the target, though the model it was created on is gone: 200", async () => {
-      index();
-      await removeA();
+    it.each([false, true])(
+      "a Session that left no Trace retains its id on the target after its original model is removed (whenIdle=%s)",
+      async (whenIdle) => {
+        index();
+        await removeA();
 
-      const res = await api.post(url, B);
-      expect(res.status).toBe(200);
-      const { session } = (await res.json()) as SessionResponse;
-      expect(session).toMatchObject({ sessionId: SID, ...B });
-      expect(row()).toMatchObject(B);
-    });
+        const res = await api.post(url, { ...B, whenIdle });
+        expect(res.status).toBe(200);
+        const { session } = (await res.json()) as SessionResponse;
+        expect(session).toMatchObject({ sessionId: SID, ...B });
+        expect(row()).toMatchObject(B);
+      },
+    );
   });
 });
 
