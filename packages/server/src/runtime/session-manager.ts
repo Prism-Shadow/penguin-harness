@@ -763,7 +763,31 @@ export class SessionManager {
    * running marks from this instead of parsing tool-output text.
    */
   subagentsOf(sessionId: string): BackgroundSubagentInfo[] {
-    return this.entries.get(sessionId)?.session.listBackgroundSubagents?.() ?? [];
+    const entry = this.entries.get(sessionId);
+    if (!entry) return [];
+    const children = entry.session.listBackgroundSubagents?.() ?? [];
+    for (const old of entry.retired?.keys() ?? []) {
+      for (const child of old.listBackgroundSubagents?.() ?? []) {
+        if (child.running && !children.some((item) => item.sessionId === child.sessionId)) {
+          children.push(child);
+        }
+      }
+    }
+    return children;
+  }
+
+  private childOwner(entry: RuntimeEntry, childId: string): RuntimeSession | undefined {
+    for (const old of entry.retired?.keys() ?? []) {
+      if (
+        old
+          .listBackgroundSubagents?.()
+          .some((child) => child.sessionId === childId && child.running)
+      )
+        return old;
+    }
+    if (entry.session.listBackgroundSubagents?.().some((child) => child.sessionId === childId))
+      return entry.session;
+    return undefined;
   }
 
   /**
@@ -786,6 +810,9 @@ export class SessionManager {
     entry.lastActivityMs = Date.now();
     const parent = this.deps.sessions.findById(sessionId);
     let resume: { agentId: string; subagentId?: string } | undefined;
+    const managed = this.childOwner(entry, childSessionId);
+    if (managed && this.statusOf(childSessionId) === "idle")
+      return (await managed.sendToBackgroundSubagent?.(childSessionId, messages)) ?? "gone";
     if (parent && this.entries.has(childSessionId)) {
       const owned = await this.deps.traces?.ownedSubagents(parent);
       if (owned?.some((child) => child.sessionId === childSessionId)) {
@@ -832,7 +859,11 @@ export class SessionManager {
   /** Only a verified direct child can be stopped from its parent's panel. */
   async abortSubagentRun(sessionId: string, childSessionId: string): Promise<boolean> {
     const entry = this.entries.get(sessionId);
-    if (entry?.session.abortBackgroundSubagentRun?.(childSessionId)) return true;
+    if (
+      entry &&
+      this.childOwner(entry, childSessionId)?.abortBackgroundSubagentRun?.(childSessionId)
+    )
+      return true;
     if (this.statusOf(childSessionId) === "idle") return false;
     const parent = this.deps.sessions.findById(sessionId);
     if (
@@ -1042,12 +1073,12 @@ export class SessionManager {
     if (targets.length > 1)
       throw new Error("Ambiguous Session suffix. Supply more characters or the full Session ID.");
     const target = targets[0];
-    const local =
-      target && this.subagentsOf(callerId).some((child) => child.sessionId === target.sessionId);
     if (!target)
       throw new Error(
         `unknown subagent_id ${address} (no accessible subagent Session has this ID or suffix)`,
       );
+    const callerEntry = this.entries.get(callerId);
+    const local = callerEntry && this.childOwner(callerEntry, target.sessionId);
     const own =
       !local &&
       (await this.deps.traces?.ownedSubagents(caller))?.some(
@@ -1058,7 +1089,12 @@ export class SessionManager {
       agentId: target.agentId,
       alias: target.sessionId.slice(-8),
     };
-    if ((local || own) && !this.entries.has(target.sessionId)) return result;
+    if (
+      (!local || local === callerEntry?.session) &&
+      (local || own) &&
+      !this.entries.has(target.sessionId)
+    )
+      return result;
     if (!allowed() || target.sessionId === callerId)
       throw new Error("No accessible subagent Session matches this address.");
     const hosted: HostedSubagentAccess = {
@@ -1079,20 +1115,22 @@ export class SessionManager {
   ) {
     const id = target.sessionId;
     this.assertSessionNotDeleting(id);
-    const owner = [...this.entries.values()].find(
-      (entry) =>
-        entry.projectId === target.projectId &&
-        entry.session.listBackgroundSubagents?.().some((child) => child.sessionId === id),
-    );
-    const managed = owner?.session;
+    let ownerId: string | undefined;
+    let managed: RuntimeSession | undefined;
+    for (const entry of this.entries.values()) {
+      if (entry.projectId !== target.projectId) continue;
+      managed = this.childOwner(entry, id);
+      if (managed) {
+        ownerId = entry.sessionId;
+        break;
+      }
+    }
     const running = () =>
       this.statusOf(id) !== "idle" ||
       managed
         ?.listBackgroundSubagents?.()
         .some((child) => child.sessionId === id && child.running) === true;
-    const channel = this.deps.channels.get(
-      this.statusOf(id) !== "idle" ? id : (owner?.sessionId ?? id),
-    );
+    const channel = this.deps.channels.get(this.statusOf(id) !== "idle" ? id : (ownerId ?? id));
     const wait = (timeout: number) =>
       new Promise<void>((resolve) => {
         const done = () => {

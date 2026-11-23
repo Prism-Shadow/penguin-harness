@@ -28,7 +28,7 @@ it("addresses and stops original child Sessions by true ID across authorized par
     const last = request.messages.at(-1);
     const texts = last?.content_items.map((item) => item.text ?? "").join(" ") ?? "";
     if (texts.trim() === "MUST_NOT_RECREATE_THE_CHILD") deletedInputs++;
-    if (texts.trim().startsWith("HOLD_UNTIL_ABORT")) return { hang: true };
+    if (/^HOLD_UNTIL_ABORT_[A-Z0-9_]+$/.test(texts.trim())) return { hang: true };
     for (const [key, tool] of pending) {
       if (texts.trim() !== key || !request.config.tools) continue;
       pending.delete(key);
@@ -179,6 +179,11 @@ it("addresses and stops original child Sessions by true ID across authorized par
         .filter((item) => item.running)
         .map((item) => item.sessionId)
         .sort();
+    expect(managed()).toEqual([...ids].sort());
+    // A credential change replaces the parent's runtime while its two live child requests
+    // remain with the original owner. Both the tool and the panel must still target it.
+    host.deps.manager.invalidateProjectRuntimes(project);
+    await host.deps.manager.preload(parent);
     expect(managed()).toEqual([...ids].sort());
     await task(
       "STOP_FROM_OTHER_PARENT",
