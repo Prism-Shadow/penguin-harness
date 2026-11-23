@@ -1,0 +1,78 @@
+body {
+  margin: 0;
+  color: var(--ui-fg, CanvasText);
+  background: var(--ui-canvas, Canvas);
+  font:
+    1rem/1.5 var(--wb-font, system-ui),
+    sans-serif;
+}
+main {
+  max-width: 42rem;
+  margin: auto;
+  padding: clamp(1rem, 4vw, 2.5rem);
+}
+h1 {
+  margin: 0;
+  font-size: clamp(1.7rem, 4vw, 2.2rem);
+  line-height: 1.15;
+}
+h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.6rem;
+}
+h3 {
+  font-size: 1rem;
+  margin: 1rem 0 0.3rem;
+}
+p {
+  margin: 0.5rem 0 0.9rem;
+}
+section {
+  border-top: 1px solid var(--ui-line, GrayText);
+  padding: 1.2rem 0;
+}
+button,
+a {
+  font: inherit;
+  cursor: pointer;
+}
+button {
+  color: inherit;
+  padding: 0.4rem 0.75rem;
+  min-height: 2.2rem;
+}
+button:disabled {
+  cursor: default;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+textarea {
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0.45rem 0;
+  resize: vertical;
+}
+textarea:disabled {
+  opacity: 0.8;
+}
+#answer,
+#status {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#preview li {
+  margin-bottom: 0.5rem;
+}
+#preview small {
+  display: block;
+  color: var(--ui-fg-muted, GrayText);
+}
+[hidden] {
+  display: none !important;
+}

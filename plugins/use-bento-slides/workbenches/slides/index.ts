@@ -566,6 +566,9 @@ export default {
 
                 if (route === "/ask" && method === "GET") {
                   const id = String(req.query.deck ?? "");
+                  // A prompt is visible in the rail before host.run has admitted its Task.
+                  // Wait for the submission so an idle snapshot cannot claim its predecessor's result.
+                  await queues.get(id);
                   const sessionId = sessions()[id] ?? null;
                   const status = sessionId === null ? null : statusOf(sessionId);
                   // The answer of a request that has ended is taken up here, once: the page
@@ -652,16 +655,18 @@ export default {
                   ]
                     .filter((line) => line !== "")
                     .join("\n");
-                  await say(id, "user", text);
-                  const at = talkOf(id).at(-1)!.at;
-                  try {
-                    const run = await host.run(sessionId, [{ text: prompt }]);
-                    return json({ sessionId, queued: run.queued });
-                  } catch (err) {
-                    const error = err instanceof Error ? err.message : String(err);
-                    await say(id, "error", error, { sessionId, at });
-                    return json({ error }, 503);
-                  }
+                  return locked(id, async () => {
+                    await say(id, "user", text);
+                    const at = talkOf(id).at(-1)!.at;
+                    try {
+                      const run = await host.run(sessionId, [{ text: prompt }]);
+                      return json({ sessionId, queued: run.queued });
+                    } catch (err) {
+                      const error = err instanceof Error ? err.message : String(err);
+                      await say(id, "error", error, { sessionId, at });
+                      return json({ error }, 503);
+                    }
+                  });
                 }
 
                 return json({ error: `no such route: ${method} ${route}` }, 404);

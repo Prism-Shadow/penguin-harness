@@ -8,7 +8,7 @@
  */
 import { test, expect } from "@playwright/test";
 
-const composer = '[data-slot="composer"] textarea';
+const composer = '[data-slot="composer"] textarea:visible';
 const query = (lang = "en", autoplay = true) =>
   `app.html?route=%2Fchat%2Fnew&theme=modern&mode=light&lang=${lang}&embed=1${autoplay ? "&autoplay=evolution" : ""}`;
 
@@ -20,7 +20,13 @@ async function advanceToCurve(page, frame = page, lang = "en") {
   for (let step = 0; step < 16 && (await heading.count()) === 0; step++)
     await page.clock.runFor(2000);
   await expect(heading).toBeVisible();
-  await expect(frame.locator('main svg.ui-chart [data-part="series"]').first()).toBeVisible();
+  await expect(
+    frame
+      .getByText(lang === "zh" ? "分数随时间变化" : "Score over time", { exact: true })
+      .locator("..")
+      .locator('svg.ui-chart [data-part="series"]')
+      .first(),
+  ).toBeVisible();
 }
 
 test.beforeEach(async ({ page }) => {
@@ -42,14 +48,13 @@ for (const lang of ["en", "zh"]) {
     const result = page.getByRole("table").last();
     await expect(result).toContainText("81");
     await expect(result).toContainText("88.5");
-    await expect(page.locator('main svg.ui-chart [data-part="series"]').first()).toBeVisible();
     await expect(
       page.getByRole("heading", {
         name: lang === "zh" ? "文档问答 v1" : "Docs QA v1",
         exact: true,
       }),
     ).toBeVisible();
-    await expect(page.getByTestId("dock")).toHaveCount(0);
+    await expect(page.getByTestId("dock").filter({ visible: true })).toHaveCount(0);
     await expect(page.locator(composer)).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText(/mock data|模拟数据/i);
     let reloads = 0;
@@ -89,7 +94,6 @@ test("waits below the fold and leaves the host page in place", async ({ page, ba
   await page.locator("#host").evaluate((button) => button.focus({ preventScroll: true }));
   await advanceToCurve(page, frame);
   await expect(frame.getByRole("table").last()).toContainText("88.5");
-  await expect(frame.locator('main svg.ui-chart [data-part="series"]').first()).toBeVisible();
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("host");
   expect(await page.evaluate(() => scrollY)).toBe(scroll);
 });
