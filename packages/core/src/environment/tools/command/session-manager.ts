@@ -20,7 +20,7 @@ const MAX_SESSIONS = 64;
 
 /**
  * Hardening overrides applied to the child process environment: suppresses editor/credential
- * prompts/pagers/color etc. that could interact, avoiding a command hanging while waiting for
+ * prompts and pagers that could interact, avoiding a command hanging while waiting for
  * input. `GIT_EDITOR=true` prevents `git commit`/`rebase -i` from popping an editor;
  * `GIT_TERMINAL_PROMPT=0` prevents git from interactively asking for credentials; in pipe mode,
  * git and similar tools already auto-disable the pager, so the `PAGER` entries are just an extra
@@ -30,7 +30,6 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
   GIT_EDITOR: "true",
   GIT_TERMINAL_PROMPT: "0",
   TERM: "dumb",
-  NO_COLOR: "1",
   PAGER: "cat",
   GIT_PAGER: "cat",
 };
@@ -59,9 +58,8 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
  * PenguinHarness server would otherwise serve the deployment's assets instead of the ones it just
  * built in the workspace, silently and with no error to read.
  *
- * `FORCE_COLOR` / `CLICOLOR_FORCE` are color-forcing overrides that Node (and the chalk-family
- * libraries) deliberately let defeat `NO_COLOR`, so an inherited value would cancel the
- * `NO_COLOR=1` + `TERM=dumb` hardening above and leak ANSI escapes into tool output (#102).
+ * `FORCE_COLOR` / `CLICOLOR_FORCE` can force ANSI escapes into piped command output (#102).
+ * Children inherit a user-supplied `NO_COLOR` like any ordinary environment preference.
  * Removal, not blanking, matters here too: Node reads an *empty* `FORCE_COLOR` as "force 16
  * colors on". The vault still wins, so a user who genuinely wants forced color in commands can
  * set it there.

@@ -6,7 +6,7 @@
   "description": "PenguinHarness desktop app: Electron shell running @prismshadow/penguin-server as a utilityProcess, window on http://localhost (same-origin HTTP/SSE; the only IPC is the window-controls bridge).",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsup && node scripts/build-assets.mjs",
+    "build": "tsup && node scripts/build-assets.mjs && node ../../scripts/stage-release-library.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "start": "node scripts/preflight.mjs && electron .",

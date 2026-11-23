@@ -187,10 +187,19 @@ function switchRefusal(err: unknown, ref: ModelRefDto): HttpError {
   return new HttpError(409, err.reason, message);
 }
 
-/** A stream whose head was already pulled, whole again: `head`, then the rest of `rest`. */
-async function* resumeFrom<T>(head: T, rest: AsyncGenerator<T, unknown>): AsyncGenerator<T> {
+/** Finish the accepted switch's stream and retain its outcome before the driver announces idle. */
+async function* resumeSwitch(
+  head: AmspRecord,
+  rest: AsyncGenerator<AmspRecord, StopReason>,
+  failed: () => void,
+): AsyncGenerator<AmspRecord> {
   yield head;
-  yield* rest;
+  try {
+    if ((yield* rest) === "fatal") failed();
+  } catch (error) {
+    failed();
+    throw error;
+  }
 }
 
 // The runtime-state shapes moved to @prismshadow/penguin-library-session (the AgentState
@@ -622,6 +631,11 @@ export class SessionManager {
   private readonly keptLoaded = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes when a Project's credentials change. */
   private readonly agentGenerations: Map<string, number>;
+  /** Ephemeral feedback dies with the Session's event channel, including for a stranded runtime. */
+  private readonly modelSwitchFailures = new WeakMap<
+    ReturnType<ChannelHub["get"]>,
+    ModelRefDto & { id: string }
+  >();
   /** Each Project's model config as last seen (see noticeModelConfigEdit). */
   private readonly modelConfigSeen = new Map<string, { table: unknown; models: string }>();
   /** Open streaming fragments and the current run's records (fed by drive, served to GET /messages; see live-tail.ts). */
@@ -669,6 +683,24 @@ export class SessionManager {
   pendingModel(sessionId: string): ModelRefDto | undefined {
     const entry = this.entries.get(sessionId);
     return entry?.queuedModel?.target ?? entry?.switchingModel;
+  }
+
+  modelSwitchFailure(sessionId: string): (ModelRefDto & { id: string }) | undefined {
+    const channel = this.deps.channels.peek(sessionId);
+    return channel && this.modelSwitchFailures.get(channel);
+  }
+
+  private clearModelSwitchFailure(sessionId: string): void {
+    const channel = this.deps.channels.peek(sessionId);
+    if (channel) this.modelSwitchFailures.delete(channel);
+  }
+
+  private recordModelSwitchFailure(entry: RuntimeEntry, target: ModelRefDto): void {
+    if (entry.queuedModel) return; // A newer accepted choice already superseded this switch.
+    this.modelSwitchFailures.set(this.deps.channels.get(entry.sessionId), {
+      ...target,
+      id: randomUUID(),
+    });
   }
 
   /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start. */
@@ -1472,6 +1504,7 @@ export class SessionManager {
             const result = await this.switchUnderLock(entry, waiting.target);
             if (!result.switched) return; // The handoff will resume this same drain.
           } catch (err) {
+            this.recordModelSwitchFailure(entry, waiting.target);
             this.deps.errors?.record({
               source: "session",
               code: "session_switch_failed",
@@ -1596,6 +1629,7 @@ export class SessionManager {
             after: active.queuedModel?.after ?? new Set(active.followUps.map((item) => item.id)),
           };
         }
+        this.clearModelSwitchFailure(sessionId);
         this.publishState(active, active.status);
         // The active run can finish while the target's credentials are being checked.
         if (active.status === "idle" && active.queuedModel) {
@@ -1605,7 +1639,10 @@ export class SessionManager {
       }
       const held = active ?? this.deps.sessions.findById(sessionId);
       if (held && matchesModel(held, ref)) {
-        if (whenIdle) return { sessionId, switched: true };
+        if (whenIdle) {
+          this.clearModelSwitchFailure(sessionId);
+          return { sessionId, switched: true };
+        }
         throw new HttpError(
           409,
           "same_model",
@@ -1625,6 +1662,7 @@ export class SessionManager {
     const from = { provider: entry.provider, modelId: entry.modelId };
     if (from.provider === ref.provider && from.modelId === ref.modelId) {
       // The load rebuilt a Session that left no Trace on the target: switched already.
+      this.clearModelSwitchFailure(entry.sessionId);
       return { sessionId: entry.sessionId, switched: true };
     }
     if (!entry.session.switchModel) {
@@ -1658,10 +1696,16 @@ export class SessionManager {
     entry.abort = ac;
     entry.switchingModel = ref;
     entry.running = head.then((first) => {
+      this.clearModelSwitchFailure(entry.sessionId);
       if (first.done) return settled();
       entry.status = "compacting";
       this.publishState(entry, "compacting");
-      return this.drive(entry, resumeFrom(first.value, gen)).then(dropUnmoved);
+      const stream = resumeSwitch(first.value, gen, () => {
+        if (!ac.signal.aborted && !matchesModel(entry, ref)) {
+          this.recordModelSwitchFailure(entry, ref);
+        }
+      });
+      return this.drive(entry, stream).then(dropUnmoved);
     }, settled);
     let first: IteratorResult<AmspRecord, StopReason>;
     try {
@@ -2852,8 +2896,10 @@ export class SessionManager {
     // mirror, and the live subagent children, so subscribers can render all three hints
     // without a dedicated event type.
     const subagents = entry.session.listBackgroundSubagents?.() ?? [];
+    const meta = entry.session.metaMessage;
     this.publishEvent(entry, {
       type: "task_state",
+      ...(meta && isSessionMeta(meta) ? { contextWindow: meta.payload.model_context_window } : {}),
       state,
       queued: entry.followUps.length,
       ...(entry.pendingSteering.length > 0

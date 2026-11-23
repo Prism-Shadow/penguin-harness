@@ -1198,6 +1198,8 @@ export interface AgentSummary {
   scheduleCount: number;
   /** Workbench folders with a manifest, including ones with a load error. */
   workbenchCount: number;
+  /** Distinct installed plugin packages on this Agent. Older servers and unreadable configurations omit it. */
+  pluginCount?: number;
   /** Installed Skill count (number of agent_state/skills/<name>/ directories with a SKILL.md). */
   skillCount: number;
   /** Installed hook-package count (number of agent_state/hooks/<name>/ directories with a hooks.json). */
@@ -1513,6 +1515,8 @@ export interface SessionInfo {
   provider: string;
   /** Last confirmed target while it waits for, or is carrying out, a model handoff. */
   pendingModel?: ModelRefDto;
+  /** Single-Session GET: the latest accepted switch that later failed, while its live channel exists. */
+  modelSwitchFailure?: ModelRefDto & { id: string };
   /** Upstream model_id of the session's current model (the request id sent to MMSP). */
   modelId: string;
   workspace: string;

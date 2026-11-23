@@ -1,7 +1,7 @@
 /**
  * ANSI escape stripping for raw command/tool output display.
  *
- * The command tools harden the child environment against color (`NO_COLOR=1`, `TERM=dumb`,
+ * The command tools harden the child environment against color (`TERM=dumb`,
  * inherited `FORCE_COLOR` removed — see core's command session-manager), but traces recorded
  * before that fix and programs that force color unconditionally can still carry escape
  * sequences (#102). The chat surface therefore strips them defensively at RENDER time only —

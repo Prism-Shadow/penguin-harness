@@ -46,7 +46,7 @@ Agent 用 `exec_command` 运行的命令继承宿主环境，但有以下改动�
 - **代理：** 在服务器运行的 Session 中，由[设置](/settings#代理选项)里的 **Agent 环境使用代理** 开关决定代理变量。关闭时移除 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY`；开启时注入已配置的代理地址，没有配置地址时透传宿主的变量。
 - **密钥保险柜：** 之后再叠加 Agent 的[密钥保险柜](#vault)，所以在保险柜里设置的 `PORT` 或 `PENGUIN_*` 变量确实能传给命令。
 - **控制变量：** 由服务器驱动的 Session 随后注入 `PENGUIN_API_URL`、`PENGUIN_API_TOKEN`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID`（公司模式下还有 `PENGUIN_ORG_ID`），Agent 自己发起的 `penguin` 调用因此能到达运行它的服务器。这些变量会覆盖密钥保险柜里的同名条目。见 [CLI 参考](/cli)。
-- **强制：** `GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`NO_COLOR`、`PAGER` 和 `GIT_PAGER` 始终取固定值，命令不会因为等待编辑器、凭证提示或分页器而卡住。任何来源都无法覆盖它们，密钥保险柜也不例外。
+- **强制：** `GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`PAGER` 和 `GIT_PAGER` 始终取固定值，命令不会因为等待编辑器、凭证提示或分页器而卡住。任何来源都无法覆盖它们，密钥保险柜也不例外。 命令继承已设置的 `NO_COLOR`。
 
 ### PATH 启动脚本
 
@@ -132,7 +132,7 @@ client_type = "openai-image"
 
 字段说明：
 
-- `client_type`：自定义端点使用通用协议客户端：`openai-responses`、`ant-messages`、`openai-chat`、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）。Web 对话框能根据 base URL 识别前三种中的哪一种；后两种需手动选择。0.4.2 之前的写法 `openai` 是 `openai-chat` 的废弃别名，读取时会规范化。MMSP 的其他客户端类型同样可用：厂商的官方客户端（`openai-official`、`anthropic-official`、`google-official`、`zai-official`、`moonshot-official`、`deepseek-official`、`minimax-official`），以及其余通用客户端（`openai-chat-vllm-adapter`、`openai-embedding`）。`gemini-official` 是 MMSP 0.5.2 之前 `google-official` 的名称，仍然可用，并按原样保留。不设置时，模型 id 路由到它开头的厂商系列（`gpt-`、`text-embedding-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）的官方客户端；其他系列的 id 必须设置 `client_type`。
+- `client_type`：自定义端点使用通用协议客户端：`openai-responses`、`ant-messages`、`openai-chat`、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）。Web 对话框能根据 base URL 检测前四种协议。MMSP 需要手动选择。0.4.2 之前的写法 `openai` 是 `openai-chat` 的废弃别名，读取时会规范化。MMSP 的其他客户端类型同样可用：厂商的官方客户端（`openai-official`、`anthropic-official`、`google-official`、`zai-official`、`moonshot-official`、`deepseek-official`、`minimax-official`），以及其余通用客户端（`openai-chat-vllm-adapter`、`openai-embedding`）。`gemini-official` 是 MMSP 0.5.2 之前 `google-official` 的名称，仍然可用，并按原样保留。不设置时，模型 id 路由到它开头的厂商系列（`gpt-`、`text-embedding-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）的官方客户端；其他系列的 id 必须设置 `client_type`。
 - `fast_mode`：只持久化 `true`。只有 MMSP 客户端能支持快速模式的模型才会提供这个选项，其他模型会拒绝携带它的请求。见[模型](/models#快速模式)。
 - `pricing`：这里记的是牌价。正在进行的促销不写入这个文件：服务端把它保存在 `web.db` 里，计算成本时再从牌价中扣除。见[价格与促销](/models#价格与促销)。
 - `base_url`：新建 Project 时，各网关的端点存在其分组上；预置条目只在与分组不同时才存自己的（OpenCode Go 的 Anthropic Messages 条目、custom 里的 Atria Dawn）。使用模型时不会补上缺少的值：直连厂商的条目没有 base URL，请求发往厂商的缺省端点，或它的 `*_BASE_URL` 变量。

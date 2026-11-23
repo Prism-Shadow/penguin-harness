@@ -746,6 +746,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       await deps.sessionService.listSessions(projectId, agentId, {
         ...(paging ? { paging } : {}),
         order,
+        ...(c.req.query("search") ? { search: c.req.query("search")! } : {}),
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
         ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
@@ -838,8 +839,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // call — too costly for list rows). The web's /model switch hands it to the new session's
     // [model_switch_from] block so the model can read the source history itself.
     const tracePath = hasTrace ? await deps.sessionService.latestTracePath(row) : undefined;
+    const modelSwitchFailure = deps.manager.modelSwitchFailure(row.sessionId);
     return c.json({
-      session: { ...info, ...(tracePath !== undefined ? { tracePath } : {}) },
+      session: {
+        ...info,
+        ...(tracePath !== undefined ? { tracePath } : {}),
+        ...(modelSwitchFailure ? { modelSwitchFailure } : {}),
+      },
     } satisfies SessionResponse);
   });
 
@@ -1103,11 +1109,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   // records and the beat, none of the server events `/stream` adds (amsp/session-stream.ts).
   app.get("/:sessionId/amsp", (c) => {
     const row = resolveSession(c);
-    return amspSessionStream(
-      c,
-      deps.channels.get(row.sessionId),
-      streamRevocation(c, c.var.user, deps),
-    );
+    return amspSessionStream(c, deps.channels.get(row.sessionId), {
+      revocation: streamRevocation(c, c.var.user, deps),
+      authorize: () => {
+        resolveSession(c);
+      },
+    });
   });
 
   // The calls waiting on a decision, `?wait=` holding the answer until there is one: the Agent
@@ -1151,6 +1158,9 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     return sseEndpoint(c, channel, {
       initialEvents,
       revocation: streamRevocation(c, c.var.user, deps),
+      authorize: () => {
+        resolveSession(c);
+      },
     });
   });
 

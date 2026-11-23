@@ -658,9 +658,10 @@ describePty("terminal stream attach", () => {
         // Wait for the shell to reach a prompt first: `sh -l` sources a profile, and under
         // load that output can land AFTER our command — resetting the very mode this test
         // then expects to survive.
-        await runAndWait(first, "echo shell-ready-marker", "shell-ready-marker");
+        // Assemble markers in the shell, so the PTY echo of our input cannot satisfy the wait.
+        await runAndWait(first, "printf 'shell-ready-%s\\n' marker", "shell-ready-marker");
         // Hide the cursor (DECTCSM reset) — a mode a reattached view must reproduce.
-        await runAndWait(first, "printf '\\033[?25l'; echo mode-set-marker", "mode-set-marker");
+        await runAndWait(first, "printf '\\033[?25lmode-set-%s\\n' marker", "mode-set-marker");
       } finally {
         await first.close();
       }

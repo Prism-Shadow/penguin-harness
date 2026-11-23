@@ -524,6 +524,7 @@ export function MessageItem({
           <TaskStatsLine
             stats={item.stats}
             assistantText={item.assistantText}
+            readAloudText={item.readAloudText}
             cost={item.stats ? (ctx.taskCost?.(item.stats, item.model) ?? null) : null}
             {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
             {...(ctx.origin.length === 0 && item.forkable && ctx.onFork

@@ -77,9 +77,11 @@ import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { AiCreateButtons, AiCreateModal } from "../ai-create";
 import type { AiExample } from "../ai-create";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { appTriggerId, AppTile, FolderTile, MENU_PX, type TileMark } from "./app-tile";
 import {
   arrange,
+  duplicateWorkbenchOwners,
   dissolveFolder,
   findItem,
   groupApps,
@@ -367,10 +369,21 @@ export function AppCenterPage() {
           restoreDefault: () => setRestoring(true),
         };
 
+  const avatarSrc = useAgentAvatarSrc();
+  const duplicateOwners = useMemo(() => duplicateWorkbenchOwners(shortcuts ?? []), [shortcuts]);
+  const ownerOf = ({ id, shortcut }: GridApp) =>
+    duplicateOwners.has(id)
+      ? {
+          id: shortcut.agentId,
+          src: avatarSrc(shortcut.agentId, shortcut.machineId),
+        }
+      : undefined;
+
   const appTile = (app: GridApp, from: string | null) => (
     <AppTile
       key={app.id}
       app={app}
+      owner={ownerOf(app)}
       inFolder={from !== null}
       title={titleOf(app.shortcut)}
       drag={drag.tileProps({ id: app.id, folder: false, from, canTakeInto: from === null })}
@@ -464,6 +477,7 @@ export function AppCenterPage() {
                             folder={item}
                             expanded={openFolderId === item.id}
                             titleOf={titleOf}
+                            ownerOf={ownerOf}
                             drag={drag.tileProps({
                               id: item.id,
                               folder: true,

@@ -424,8 +424,7 @@ export interface ModelProtocolDetectRequest {
 }
 
 /**
- * One probe's outcome: `served` = the route answered in an API shape (including auth
- * failures — 401/403 with a protocol-shaped body proves the route exists);
+ * One probe's outcome: `served` = the route gave evidence for the probed protocol;
  * `route_missing` = 404/405; `server_error` = 5xx (proves nothing about the path);
  * `junk` = HTML / non-JSON / JSON matching no API shape; `timeout` / `network_error` =
  * the request itself failed.
@@ -435,7 +434,7 @@ export type ProtocolProbeOutcome =
 
 /** One probe, for debugging display: the probed URL derives from baseUrl only (never contains the key). */
 export interface ModelProtocolProbeDto {
-  /** MMSP client type this probe stands for (`openai-responses` / `ant-messages` / `openai-chat`). */
+  /** MMSP client type this probe stands for. */
   clientType: string;
   /** Full URL probed (base URL + the protocol's path). */
   url: string;
@@ -445,7 +444,7 @@ export interface ModelProtocolProbeDto {
 }
 
 export interface ModelProtocolDetectResponse {
-  /** The first protocol an endpoint serves (an MMSP client type); absent when none of the three matched. */
+  /** The first protocol an endpoint serves (an MMSP client type); absent when none matched. */
   detected?: string;
   /**
    * The base URL the detected protocol answered at — the typed URL normalized (endpoint

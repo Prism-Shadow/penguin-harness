@@ -115,7 +115,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
       {
         id: "fullscreen",
         label: S.appCenter.windowFullScreen,
-        glyph: ICONS.square,
+        glyph: ICONS.cornersOut,
         onSelect: act(() => workspace.fullScreen(page)),
       },
       {

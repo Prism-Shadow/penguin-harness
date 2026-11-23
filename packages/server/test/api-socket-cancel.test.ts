@@ -37,6 +37,7 @@ describe("a cancel frame for a one-shot call", () => {
     const ws = new StandInSocket();
     const requests: Request[] = [];
     serveApiSocket(ws as unknown as WebSocket, {
+      sessionIsLive: () => true,
       fetch: (request) => {
         requests.push(request);
         return new Promise<Response>((resolve) => {
