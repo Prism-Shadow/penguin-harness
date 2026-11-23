@@ -161,12 +161,18 @@ export function installEvolutionAutoplay(
               });
             session.dispatchEvent(drag("dragstart"));
             pane.dispatchEvent(drag("dragover"));
-            timer = playback.schedule(() => {
+            const cancelDrop = playback.schedule(() => {
+              timer = undefined;
               pane.dispatchEvent(drag("drop"));
               session.dispatchEvent(drag("dragend"));
               revealChart(chart);
               stop();
             }, 100);
+            timer = () => {
+              cancelDrop();
+              pane.dispatchEvent(drag("dragleave"));
+              session.dispatchEvent(drag("dragend"));
+            };
           } else {
             stop();
           }

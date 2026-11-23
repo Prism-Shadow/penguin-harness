@@ -204,6 +204,25 @@ test("a keyboard-activated navigation link keeps its destination while the scrip
   await expect(frame.getByRole("heading", { name: "Docs QA v1", exact: true })).toHaveCount(0);
 });
 
+test("taking over the split preview releases the scripted drag", async ({ page }) => {
+  const { frame } = await openHero(page, "en");
+  await page.clock.pauseAt(await page.evaluate(() => new Date(Date.now() + 250).toISOString()));
+  const tile = frame.locator('li[data-app="system_agent/benchmark"] > button:visible');
+  for (let step = 0; step < 140 && !(await tile.isVisible()); step++) await page.clock.runFor(450);
+  await expect(tile).toBeVisible();
+  const preview = frame.locator("[data-pane=full] .z-drag-preview");
+  for (let step = 0; step < 150 && !(await preview.isVisible()); step++)
+    await page.clock.runFor(30);
+  await expect(preview).toBeVisible();
+  const apps = frame.locator('a[href="/apps"]:visible').first();
+  await apps.click();
+  await expect(page.getByRole("button", { name: "Play demo", exact: true })).toBeVisible();
+  await page.clock.fastForward(1500);
+  await expect(tile).toBeVisible();
+  await expect(frame.locator("[data-page-viewport]")).not.toHaveClass(/pointer-events-none/);
+  await expect(frame.locator(".z-drag-preview")).toHaveCount(0);
+});
+
 test.describe("starting the demo on a touchscreen", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   test("a swipe leaves playback alone and tapping the composer keeps the same page", async ({
