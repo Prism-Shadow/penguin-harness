@@ -55,12 +55,14 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await appWindow.locator("iframe").evaluate((frame) => {
     frame.dataset.e2eKept = "yes";
   });
-  await appWindow.getByRole("button", { name: "Minimize" }).click();
+  await page.getByRole("button", { name: "Page actions · Support", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Minimize", exact: true }).click();
   await expect(page).toHaveURL(`${BASE}/apps`);
   await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toBeVisible();
   await tile.click();
   await expect(appWindow.locator('iframe[data-e2e-kept="yes"]')).toBeVisible();
-  await appWindow.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Page actions · Support", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Close", exact: true }).click();
   await expect(page).toHaveURL(`${BASE}/apps`);
   await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toHaveCount(0);
 

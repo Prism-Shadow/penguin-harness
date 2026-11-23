@@ -44,6 +44,8 @@ export interface RunningAppRecord {
   /** The Project it was opened in. */
   projectId: string;
   shortcut: RunningShortcut;
+  /** The full-page route of the subpage selected in a multi-page workbench. */
+  selectedPath?: string;
 }
 
 /** One running app as a surface outside the App Center lists it. */
@@ -145,7 +147,15 @@ export function launchApp(record: RunningAppRecord): void {
   const at = records.findIndex((running) => running.key === record.key);
   if (at === -1) publish([...records, record]);
   else if (records[at]!.shortcut !== record.shortcut || records[at]!.projectId !== record.projectId)
-    publish(records.map((running, i) => (i === at ? record : running)));
+    publish(records.map((running, i) => (i === at ? { ...running, ...record } : running)));
+}
+
+/** Keep full-screen navigation on the same subpage as the embedded workbench. */
+export function setSelectedAppPath(key: string, selectedPath: string): void {
+  const record = records.find((item) => item.key === key);
+  if (record && record.selectedPath !== selectedPath) {
+    publish(records.map((item) => (item === record ? { ...item, selectedPath } : item)));
+  }
 }
 
 /** Ends the app: its window unmounts, and what ran in it stops. */

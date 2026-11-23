@@ -74,7 +74,6 @@ export function AppCenterWindows() {
                 projectId={app.projectId}
                 shortcut={app.shortcut}
                 title={localizedText(locale, app.shortcut.title, app.shortcut.titleZh)}
-                onMinimize={() => (workspace ? workspace.minimize("app:" + app.key) : leave())}
                 onFullScreen={(path) =>
                   openFullPage(
                     navigate,
@@ -85,13 +84,6 @@ export function AppCenterWindows() {
                     },
                   )
                 }
-                onClose={() => {
-                  if (workspace) workspace.close("app:" + app.key);
-                  else {
-                    closeApp(app.key);
-                    leave();
-                  }
-                }}
                 onGone={() => {
                   closeApp(app.key);
                   if (workspace) workspace.close("app:" + app.key);

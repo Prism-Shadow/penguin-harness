@@ -26,7 +26,7 @@ import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
-import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
+import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
 import { ThemeProvider } from "../src/state/theme";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -100,7 +100,7 @@ async function openWithWindows(over: Partial<WorkbenchInfo> = {}) {
   const router = await mountAgentApp(h(AgentSettingsPage), {
     at: `/agents/${AGENT_ID}?tab=workbenches`,
     extra: [{ path: "/apps", element: h("p", null, "App Center") }],
-    layers: [h(ThemeProvider, null, h(AppCenterWindows))],
+    layers: [h(ThemeProvider, null, h(WorkspaceWindows))],
   });
   await waitFor(() => hasButton(`${en.workbenches.open} Support`));
   return router;
@@ -113,7 +113,7 @@ it("opens the app's window over the main area, and its Close comes back to the r
   await waitFor(() => appWindow()?.querySelector("iframe") != null);
   expect(appWindow()!.querySelector("iframe")!.getAttribute("title")).toBe("Support");
 
-  await click(buttonIn(appWindow()!, en.appCenter.windowClose));
+  await pageAction("Support", en.appCenter.windowClose);
   expect(whereIs(router)).toBe(`/agents/${AGENT_ID}?tab=workbenches`);
   expect(appWindow()).toBeNull();
 });

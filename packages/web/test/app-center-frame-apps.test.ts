@@ -25,7 +25,7 @@ import { act, createElement as h } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
-import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
+import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
 import { SystemAppPage } from "../src/features/app-center/system-app-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -104,7 +104,7 @@ async function open(at = "/apps") {
       // Every other page of the table, as the shell mounts them: the redirect lives there.
       { path: "*", element: h(ThemeProvider, null, h(ShellRoutes)) },
     ],
-    layers: [h(ThemeProvider, null, h(AppCenterWindows)), h(SwitchLanguage)],
+    layers: [h(ThemeProvider, null, h(WorkspaceWindows)), h(SwitchLanguage)],
   });
   await until(() => tile() !== null || windowOf() !== null);
   return router;
@@ -169,7 +169,7 @@ it("opens the app's window from its tile, and minimize keeps the same frame runn
   expect(reachable(app)).toBe(true);
   expect(reachable(grid()!)).toBe(false);
 
-  await click(buttonIn(windowOf()!, en.appCenter.windowMinimize));
+  await pageAction("Reports", en.appCenter.windowMinimize);
   expect(whereIs(router)).toBe("/apps");
   expect(app.isConnected).toBe(true);
   expect(reachable(app)).toBe(false);
@@ -182,7 +182,7 @@ it("opens the app's window from its tile, and minimize keeps the same frame runn
   expect(frame()).toBe(app);
   expect(reachable(app)).toBe(true);
 
-  await click(buttonIn(windowOf()!, en.appCenter.windowClose));
+  await pageAction("Reports", en.appCenter.windowClose);
   expect(app.isConnected).toBe(false);
 });
 
@@ -204,7 +204,7 @@ it("leads the page's address and every address under it into the window, replaci
   expect(frame()).toBe(app);
 
   // Once the app has ended, the same address opens it anew, at its start.
-  await click(buttonIn(windowOf()!, en.appCenter.windowClose));
+  await pageAction("Reports", en.appCenter.windowClose);
   await run(() => router.navigate("/reports"));
   await until(() => frame() !== null);
   expect(whereIs(router)).toBe(windowAt());
@@ -230,7 +230,7 @@ it("keeps the page's moves in the address, and sends the address's own moves to 
   expect(app.getAttribute("src")).toBe(SRC);
 
   // Minimized and brought back by its tile, the window is where its page is, and says so.
-  await click(buttonIn(windowOf()!, en.appCenter.windowMinimize));
+  await pageAction("Reports", en.appCenter.windowMinimize);
   await post(app, { type: "penguin:location", at: "/r3" });
   expect(whereIs(router)).not.toContain("r3");
   send.mockClear();
@@ -276,7 +276,7 @@ it("opens full screen as the same document with no window, at the page's place, 
   const app = await openWindow();
   await post(app, { type: "penguin:location", at: "/r1?tab=a" });
 
-  await click(buttonIn(windowOf()!, en.appCenter.windowFullScreen));
+  await pageAction("Reports", en.appCenter.windowFullScreen);
   const fullPage = `/app/${PROJECT_ID}/system_agent/reports?${new URLSearchParams({ at: "/r1?tab=a" })}`;
   expect(whereIs(router)).toBe(fullPage);
   await until(() => bareFrame() !== null);

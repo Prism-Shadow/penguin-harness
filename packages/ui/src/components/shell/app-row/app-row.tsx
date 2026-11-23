@@ -44,6 +44,8 @@ export interface AppRowProps {
   icon: ReactNode;
   /** The app's name in the reader's language. */
   name: string;
+  /** A visible pane marker, with its accessible wording in label. */
+  suffix?: ReactNode;
   /** The row's accessible name, when it says more than the name (its state, its Agent). */
   label?: string;
   /** What the hint says beyond the visible name; none when it would only repeat it. */
@@ -66,6 +68,7 @@ export function AppRow({
   drag,
   icon,
   name,
+  suffix,
   label,
   hint,
   active = false,
@@ -141,6 +144,11 @@ export function AppRow({
           >
             {name}
           </span>
+          {suffix && (
+            <span aria-hidden className="shrink-0 text-fg-muted">
+              {suffix}
+            </span>
+          )}
         </button>
         <div className="invisible flex h-6 shrink-0 items-center group-hover:visible group-focus-within:visible [&_button]:pointer-events-auto [&_button]:opacity-100">
           <RowHoverActions actions={[]} moreLabel={moreLabel} onMore={ctx.openAt} />

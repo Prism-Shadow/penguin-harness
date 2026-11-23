@@ -8,9 +8,9 @@ import {
   type ReactNode,
 } from "react";
 import { matchPath, useLocation, useNavigate } from "react-router";
-import { leaveWindow, windowInFront } from "./app-window-address";
+import { leaveWindow, windowAt, windowInFront } from "./app-window-address";
 import { closeApp, useRunningAppRecords } from "./running-apps";
-import { useSystemApps } from "./system-apps";
+import { useSystemApps, systemAppFullPage } from "./system-apps";
 import { localizedText } from "./skill-use";
 import { S } from "./strings";
 import { useLocale } from "../state/locale";
@@ -25,6 +25,8 @@ import {
   type PageLayout,
 } from "./page-layout";
 
+import { openFullPage } from "./host-history";
+
 interface Workspace {
   layout: PageLayout;
   current: OpenPage | null;
@@ -33,6 +35,7 @@ interface Workspace {
   close(id: string): void;
   minimize(id: string): void;
   whole(page: OpenPage): void;
+  fullScreen(page: OpenPage): void;
   swap(): void;
   reorder(id: string, before: string): void;
   browse(sessionId: string, agentId: string, machineId: string | null): void;
@@ -149,7 +152,13 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
     const closed = !keepOpen && page.kind === "window" ? id.slice(4) : undefined;
     const removed = closePage(before, id);
     const next = keepOpen
-      ? { ...removed, pages: before.pages, right: removed.visible.length === 2 ? before.right : [] }
+      ? {
+          ...removed,
+          pages: before.pages,
+          recent: before.recent,
+          minimized: [...before.minimized, id],
+          right: removed.visible.length === 2 ? before.right : [],
+        }
       : removed;
     if (
       currentId === id &&
@@ -172,6 +181,20 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
       publish(next);
     }
   };
+  function fullScreen(page: OpenPage) {
+    const record = apps.find((entry) => "app:" + entry.key === page.id);
+    if (!record) return;
+    const { shortcut, projectId, selectedPath } = record;
+    const target =
+      shortcut.system?.frame !== undefined
+        ? systemAppFullPage(
+            projectId,
+            shortcut.workbenchId,
+            windowAt(new URL(page.path, window.location.origin)),
+          )
+        : (selectedPath ?? shortcut.path);
+    openFullPage(navigate, target, page.path, { fromWindow: currentId === page.id });
+  }
   const close = (id: string) => dismiss(id, false);
   const minimize = (id: string) => dismiss(id, true);
   const whole = (page: OpenPage) =>
@@ -217,6 +240,7 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
         whole,
         close,
         minimize,
+        fullScreen,
         swap,
         reorder,
         browse,
