@@ -388,6 +388,7 @@ export function ActivityGroup({
             summary={summary}
             live={running && !terminal}
             progress={inFlight && !terminal}
+            settledHere={settledHere}
             titleInk={TITLE_INK[activityState(summary.state)]}
             count={stepNavigation.count ?? count}
             elapsed={stepNavigation.elapsed}

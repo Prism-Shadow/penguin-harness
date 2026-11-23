@@ -17,6 +17,7 @@ interface WorkStepHeaderProps {
   totalRunning: boolean;
   live: boolean;
   progress: boolean;
+  settledHere: boolean;
   titleInk: string;
   open: boolean;
 }
@@ -31,6 +32,7 @@ export function WorkStepHeader({
   totalRunning,
   live,
   progress,
+  settledHere,
   titleInk,
   open,
 }: WorkStepHeaderProps) {
@@ -41,6 +43,8 @@ export function WorkStepHeader({
         className={`flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap sm:gap-2 ${live ? "w-56 max-w-[50%]" : ""}`}
       >
         <span
+          key={summary.state}
+          data-reveal={settledHere || undefined}
           data-slot="label"
           className={`max-w-full shrink-0 truncate text-xs font-semibold ${titleInk}`}
           data-tooltip={summary.label}

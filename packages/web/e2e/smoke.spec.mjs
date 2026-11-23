@@ -230,6 +230,45 @@ test("compact activity follows two approvals while preserving the first reader's
   await reviewer.close();
 });
 
+test("the current step leaves room for the same count and clock in each display mode", async ({
+  page,
+}) => {
+  const sessionId = await createSession(page, "smokeliveworkalignment", "always-ask", "modern");
+  await send(page, "ten-step work history");
+  const group = activityRoot(page),
+    header = group.locator("[data-group-header]");
+  for (const lang of ["en", "zh"]) {
+    const first = new Map();
+    for (const activityDisplayMode of ["standard", "expanded", "compact"]) {
+      await setAccountPrefs(page.request, { lang, activityDisplayMode, toolAliases: false });
+      await page.reload();
+      await expect(group).toHaveAttribute("data-step-view", activityDisplayMode);
+      await expect(header.locator("[data-step-count]")).toHaveText(
+        lang === "zh" ? "2 步" : "2 steps",
+      );
+      await expect(header).not.toHaveAttribute("data-step-terminal", "true");
+      if (activityDisplayMode === "compact") await expect(header).toContainText("起草评审记录");
+      for (const width of [1280, 320]) {
+        await page.setViewportSize({ width, height: 800 });
+        const [box, count, clock] = await Promise.all(
+          [header, header.locator("[data-step-count]"), header.locator("[data-step-elapsed]")].map(
+            (part) => part.boundingBox(),
+          ),
+        );
+        const positions = [count.x - box.x, clock.x - box.x, count.y - box.y, clock.y - box.y];
+        if (!first.has(width)) first.set(width, positions);
+        for (const [i, pos] of positions.entries())
+          expect(Math.abs(pos - first.get(width)[i])).toBeLessThanOrEqual(1);
+        expect(clock.x + clock.width).toBeLessThanOrEqual(width);
+      }
+    }
+  }
+  await expect(await page.request.post(`/api/sessions/${sessionId}/abort`, { data: {} })).toBeOK();
+  await expect(header.locator('[data-slot="label"]')).toHaveText("已停止");
+  await page.reload();
+  await expect(header.locator('[data-slot="label"]')).toHaveText("已停止");
+});
+
 test("reopened ten-step history keeps its compact header together on desktop and narrow screens", async ({
   page,
 }) => {
