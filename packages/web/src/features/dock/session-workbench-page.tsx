@@ -203,7 +203,7 @@ function SessionPicker({
               }
             }),
           );
-          if (!current || needle || !counts) return;
+          if (!current || !counts) return;
           // The resource index covers the whole authorized Project, including archived children
           // below the ordinary Session page. Resolve the leading active IDs in bounded batches.
           const leaders = Object.entries(counts)
@@ -218,7 +218,15 @@ function SessionPicker({
             await Promise.all(
               absent.slice(start, start + 6).map(async ([sid]) => {
                 try {
-                  add((await getSession(sid, machineId)).session);
+                  const { session } = await getSession(sid, machineId);
+                  const query = needle.toLowerCase();
+                  if (
+                    !query ||
+                    [session.title, session.sessionId, session.workspace, session.agentId].some(
+                      (value) => value?.toLowerCase().includes(query),
+                    )
+                  )
+                    add(session);
                 } catch (e) {
                   problems.push(host + " · " + messageOf(e));
                 }
@@ -304,7 +312,10 @@ function SessionPicker({
     setRefresh((i) => i + 1);
   }
   return (
-    <section className="mx-auto flex h-full w-full max-w-3xl flex-col gap-3 overflow-y-auto p-4">
+    <section
+      aria-label={title}
+      className="mx-auto flex h-full w-full max-w-3xl flex-col gap-3 overflow-y-auto p-4"
+    >
       <h1 className="text-lg font-semibold">{title}</h1>
       <label className="flex flex-col gap-1">
         {S.dock.chooseSession}

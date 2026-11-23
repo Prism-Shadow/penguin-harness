@@ -1,3 +1,5 @@
+import { useContext } from "react";
+import { PageIdentity } from "../../lib/page-focus";
 import { useChatSession } from "../../lib/chat-session";
 import type { OpenPage } from "../../lib/page-layout";
 import { machineForSession } from "../../lib/session-machines";
@@ -17,6 +19,7 @@ export function SessionWorkbenchBody({
 }) {
   const ref = parseSessionWorkbenchPage(page);
   const { selected, projectId } = useChatSession();
+  const host = useContext(PageIdentity)?.sessionHost;
   const panels = useSessionWorkbenchPanels();
   const definition = panels.find((item) => item.id === ref?.kind);
   if (
@@ -26,7 +29,8 @@ export function SessionWorkbenchBody({
     selected.sessionId !== sessionId ||
     ref.address.sessionId !== sessionId ||
     ref.address.projectId !== projectId ||
-    ref.address.machineId !== machineForSession(sessionId)
+    (host && (host.session.sessionId !== sessionId || host.session.projectId !== projectId)) ||
+    ref.address.machineId !== (host ? host.machineId : machineForSession(sessionId))
   ) {
     return (
       <p role="status" className="p-4 text-sm text-fg-muted">

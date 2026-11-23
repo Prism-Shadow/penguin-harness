@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** feat
 - **Scope:** Web Session workbenches
+- **PR:** [#1736](https://github.com/Prism-Shadow/penguin-harness/pull/1736)
 
 [English](2026-11-23-session-shortcut-workbenches.md)
 
