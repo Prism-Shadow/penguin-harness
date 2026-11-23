@@ -61,11 +61,11 @@ import {
   errorBody,
   closeSessionResources,
   countSessionResources,
+  type AppEnv,
   type SessionResourceAccess,
   publicOriginOf,
   requireHuman,
 } from "@prismshadow/penguin-server/plugin";
-import type { AppEnv } from "@prismshadow/penguin-server/plugin";
 import { isPenguinExtensionOrigin } from "./extension-origin.js";
 import type { ExtensionPairing } from "./extension-pairing.js";
 import { BrowserUnavailableError } from "./service.js";
