@@ -263,7 +263,6 @@ export interface FakeOrganization {
 }
 
 /** The Agents the server provisions with every Project and never deletes. */
-const BUILTIN_AGENTS = new Set(["default_agent", "penguin_support"]);
 
 export interface AgentServer {
   fetch: FakeFetch;
@@ -950,7 +949,10 @@ export function agentServer(
             .filter((o) => o.chartUnreadable === true)
             .map((o) => ({ orgId: o.orgId, orgName: o.name }));
           for (const { agentId, busy } of org.employees) {
-            if (BUILTIN_AGENTS.has(agentId)) {
+            if (
+              agentId === "default_agent" ||
+              options.moreAgents?.some((a) => a.agentId === agentId && a.system === true)
+            ) {
               report.keptAgents.push({ agentId, reason: "builtin" });
             } else if (employmentsOf(agentId).length > 0) {
               report.keptAgents.push({ agentId, reason: "employed_elsewhere" });
