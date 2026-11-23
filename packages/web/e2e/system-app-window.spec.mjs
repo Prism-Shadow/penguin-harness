@@ -246,3 +246,36 @@ test("the start page's contributed count opens the window", async ({ page }) => 
   await expect(page).toHaveURL(atUrl());
   await expect(frameOf(page).locator("#where")).toHaveText("At /");
 });
+
+test("the Apps directory restores a contributed system frame and removes its row on close", async ({
+  page,
+}) => {
+  await page.goto("/apps");
+  const apps = page
+    .getByRole("navigation", { name: "Apps", exact: true })
+    .getByRole("list", { name: "Apps", exact: true });
+  const row = apps.locator('[data-app-row="system_agent/reports"]');
+  await expect(row).toHaveCount(0);
+  await tileOf(page).click();
+  await expect(row).toHaveCount(1);
+  await frameOf(page).getByRole("button", { name: "Count" }).click();
+  await row.hover();
+  await apps
+    .getByRole("listitem")
+    .filter({ has: page.locator('[data-app-row="system_agent/reports"]') })
+    .getByRole("button", { name: "More actions", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Minimize", exact: true }).click();
+  await expect(row).toHaveCount(1);
+  await row.click();
+  await expect(frameOf(page).locator("#clicks")).toHaveText("1");
+  await row.hover();
+  await apps
+    .getByRole("listitem")
+    .filter({ has: page.locator('[data-app-row="system_agent/reports"]') })
+    .getByRole("button", { name: "More actions", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Close", exact: true }).click();
+  await expect(row).toHaveCount(0);
+  await expect(tileOf(page)).toBeVisible();
+});
