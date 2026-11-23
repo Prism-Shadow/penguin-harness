@@ -116,14 +116,12 @@ export function Hero() {
           <span className="hero-positioning-clause">
             {S.hero.positioning.growthLead}
             <HeroWord text={S.hero.positioning.growth} variant="growth" />
-            {S.hero.positioning.growthEnd}
           </span>
           {S.hero.positioning.separator}
           <wbr />
           <span className="hero-positioning-clause">
             {S.hero.positioning.reachLead}
             <HeroWord text={S.hero.positioning.reach} variant="reach" />
-            {S.hero.positioning.reachEnd}
           </span>
         </p>
 
@@ -156,6 +154,35 @@ export function Hero() {
             {S.hero.cliInstall}
           </Link>
         </div>
+
+        <ExternalLinkScope>
+          <div className="mx-auto mt-4 flex max-w-[360px] items-center justify-center gap-2">
+            <ExternalLink
+              href="https://www.producthunt.com/products/penguinharness"
+              className="flex min-h-11 min-w-0 flex-1 items-center justify-center"
+            >
+              <img
+                alt={S.hero.productHuntBadge}
+                width="250"
+                height="54"
+                className="h-auto w-full"
+                src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&theme=light&t=1784804711946"
+              />
+            </ExternalLink>
+            <ExternalLink
+              href="https://watcha.cn/products/penguinharness"
+              className="flex min-h-11 min-w-0 flex-1 items-center justify-center"
+            >
+              <img
+                alt={S.hero.watchaBadge}
+                width="250"
+                height="54"
+                className="h-auto w-full"
+                src="https://watcha.cn/api/v2/products/penguinharness/badge?style=1&dark=false"
+              />
+            </ExternalLink>
+          </div>
+        </ExternalLinkScope>
 
         <dl
           className="anim-rise mx-auto mt-10 grid max-w-5xl grid-cols-3 gap-x-3 sm:mt-12 sm:gap-x-6"

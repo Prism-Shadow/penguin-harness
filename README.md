@@ -38,6 +38,7 @@
 
 <p align="center">
   <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
+  <a href="https://watcha.cn/products/penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness Watcha badge" width="250" src="https://watcha.cn/api/v2/products/penguinharness/badge?style=1&amp;dark=false" /></a>
 </p>
 
 <p align="center">English | <a href="README.zh.md">简体中文</a></p>
