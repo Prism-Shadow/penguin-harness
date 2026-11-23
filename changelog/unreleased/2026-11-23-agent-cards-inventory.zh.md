@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1742](https://github.com/Prism-Shadow/penguin-harness/pull/1742)
 
 [English](2026-11-23-agent-cards-inventory.md)
 
