@@ -18,6 +18,8 @@ function Run-Installer([string]$Exe,[string]$Arguments,[bool]$Success) {
   $q = Start-Process -FilePath $Exe -ArgumentList $Arguments -PassThru
   if (!$q.WaitForExit(240000)) { throw 'Executable did not exit within four minutes.' }
   $q.Refresh()
+  $diagnostics = Join-Path $env:TEMP "ph-path-diagnostics.txt"
+  if (Test-Path -LiteralPath $diagnostics) { Get-Content -LiteralPath $diagnostics | Select-Object -Last 6 | Out-Host }
   Check (($q.ExitCode -eq 0) -eq $Success) "installer outcome $($q.ExitCode), expected success=$Success"
 }
 function Run-Profile([string]$Mode,[string]$Program,[string]$Profile,[string]$Data) {
