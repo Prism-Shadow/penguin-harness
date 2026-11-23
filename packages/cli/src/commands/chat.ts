@@ -39,7 +39,7 @@
  * -> deny; running -> abort the current turn; empty buffer -> y/N exit confirmation.
  * Docs: /docs/cli § "penguin chat".
  */
-import { clearLine, createInterface, cursorTo, type Interface } from "node:readline";
+import { clearLine, createInterface, cursorTo, type Interface, type Key } from "node:readline";
 import type { Command } from "commander";
 import type {
   ApprovalDecision,
@@ -270,7 +270,11 @@ export function registerChatCommand(chat: Command, t: Messages): void {
 
       // The chat follows runs it did not start, whose input nobody typed here: echo it.
       const newRenderer = (): StreamRenderer =>
-        new StreamRenderer(out, t, { collapseToolOutput: !verbose, echoInput: true });
+        new StreamRenderer(out, t, {
+          collapseToolOutput: !verbose,
+          echoInput: true,
+          hideInput: () => hideSteeringPrompt(),
+        });
       let renderer = newRenderer();
 
       /**
@@ -349,11 +353,56 @@ export function registerChatCommand(chat: Command, t: Messages): void {
           state === "running" && (rli.line.length > 0 || composer.hasPending()),
         );
       };
+      let state: ChatState = "idle";
+      let steeringVisible = false;
+      const showSteeringPrompt = (): void => {
+        if (
+          steeringVisible ||
+          state !== "running" ||
+          !view?.acceptsSteering ||
+          !isTTY ||
+          !out.isTTY
+        )
+          return;
+        renderer.setInputHold(true);
+        steeringVisible = true;
+        rl.setPrompt(t.steerPrompt());
+        rl.prompt(true);
+      };
+      // Let readline erase its own wrapped rows. The draft and its cursor survive a
+      // run ending or an approval temporarily taking the terminal.
+      const hideSteeringPrompt = (): (() => void) | undefined => {
+        if (!steeringVisible) return;
+        steeringVisible = false;
+        const { line, cursor } = rli;
+        rli.line = "";
+        rli.cursor = 0;
+        rl.setPrompt("");
+        rl.prompt(true);
+        rli.line = line;
+        rli.cursor = cursor;
+        return showSteeringPrompt;
+      };
       if (isTTY) {
-        inputStream.on("data", () => setImmediate(syncInputHold));
+        // Readline echoes a printable key immediately, including keys followed by Enter
+        // in the same stdin chunk. Establish the prompt before its keypress listener.
+        inputStream.prependListener("keypress", (text: string | undefined, key: Key) => {
+          if (
+            (text && !key.ctrl && !key.meta && text >= " ") ||
+            key.name === "up" ||
+            key.name === "down" ||
+            key.name === "tab" ||
+            (key.ctrl && (key.name === "p" || key.name === "n" || key.name === "y"))
+          ) {
+            showSteeringPrompt();
+          }
+        });
+        inputStream.on("keypress", () => {
+          if (rli.line.length === 0 && !composer.hasPending()) hideSteeringPrompt();
+          syncInputHold();
+        });
       }
 
-      let state: ChatState = "idle";
       let closed = false;
       // The marks are output: a TTY stdin is not enough when stdout is redirected to a file or
       // a pipe, or the terminal is a dumb one.
@@ -425,7 +474,9 @@ export function registerChatCommand(chat: Command, t: Messages): void {
           if (state === "running") {
             // Through the renderer, which finishes an open streamed line first; the hold then
             // keeps further output off the pasted text until it is sent.
-            renderer.printLine(normalized);
+            showSteeringPrompt();
+            if (steeringVisible) out.write(`${normalized}\n`);
+            else renderer.printLine(normalized);
             syncInputHold();
           } else {
             out.write(`${normalized}\n`);
@@ -452,9 +503,9 @@ export function registerChatCommand(chat: Command, t: Messages): void {
           );
           if (response.steered === true) {
             renderer.expectInput(null);
-            renderer.printLine(dim(t.steerQueued(text)));
+            renderer.printSubmissionResult(dim(t.steerQueued(text)));
           } else if (response.queued === true) {
-            renderer.printLine(dim(t.messageQueued(text)));
+            renderer.printSubmissionResult(dim(t.messageQueued(text)));
           }
           return response;
         } catch (err) {
@@ -480,7 +531,7 @@ export function registerChatCommand(chat: Command, t: Messages): void {
       // Typed while a run is followed: sent the same way, never awaited by the prompt.
       const steer = (text: string): void => {
         postMessage(text).catch((err: unknown) => {
-          for (const line of errorLines(err)) renderer.printLine(line);
+          for (const line of errorLines(err)) renderer.printSubmissionResult(line);
         });
       };
 
@@ -500,6 +551,7 @@ export function registerChatCommand(chat: Command, t: Messages): void {
             out.write("\n");
           }
         }
+        if (rli.line.length > 0 || composer.hasPending()) showSteeringPrompt();
         syncInputHold();
         const resolve = pendingLine;
         pendingLine = null;
@@ -542,10 +594,15 @@ export function registerChatCommand(chat: Command, t: Messages): void {
         // running: a non-empty message becomes a steering message for the running Task, a
         // paste waiting in the composer included (this Enter sends it whole).
         if (state === "running") {
+          // Readline has committed this line and moved the cursor to the next row.
+          steeringVisible = false;
           const { message } = composer.pushTypedLine(line);
           if (message === undefined) {
-            rl.setPrompt(CONT_PROMPT);
-            rl.prompt();
+            if (isTTY && out.isTTY && view?.acceptsSteering) showSteeringPrompt();
+            else {
+              rl.setPrompt(CONT_PROMPT);
+              rl.prompt();
+            }
             return;
           }
           const text = message.trim();
@@ -632,12 +689,10 @@ export function registerChatCommand(chat: Command, t: Messages): void {
             return;
           }
           composer.reset();
-          rli.line = "";
-          rli.cursor = 0;
           out.write("\n");
           mark("A");
           rl.setPrompt(MAIN_PROMPT);
-          rl.prompt();
+          rl.prompt(true);
           mark("B");
           if (kept !== null && isTTY) {
             const message = kept;
@@ -650,13 +705,19 @@ export function registerChatCommand(chat: Command, t: Messages): void {
       // already rendered above via streaming, so it is not re-rendered here.
       const interactivePrompt = (_tc: AmspRecord<ToolCallPayload>): Promise<ApprovalDecision> =>
         new Promise((resolve) => {
+          const { line, cursor } = rli;
+          rli.line = "";
+          rli.cursor = 0;
           state = "approving";
           pendingApproval = (decision) => {
             state = "running";
+            rli.line = line;
+            rli.cursor = cursor;
             // A paste still waiting for Enter holds output again before the screen unlocks
             // and drains what queued during the question.
             syncInputHold();
             resolve(decision);
+            if (line.length > 0 || composer.hasPending()) queueMicrotask(showSteeringPrompt);
           };
           rl.setPrompt(t.approvePrompt());
           rl.prompt();
