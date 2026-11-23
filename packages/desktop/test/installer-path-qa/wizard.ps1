@@ -52,7 +52,7 @@ function Accept-Folder($dialog) {
   $handle=[IntPtr]$dialog.Current.NativeWindowHandle
   $button=Spin {
     $child=Match-Node $dialog 'Button' '^OK$'
-    $tree=Items $dialog $deep | Where-Object {$_.Current.ClassName -eq 'SysTreeView32'} | Select-Object -First 1
+    $tree=Items $dialog $deep | Where-Object {[FixtureNativeButton]::Class($_.Current.NativeWindowHandle) -eq 'SysTreeView32'} | Select-Object -First 1
     # Wait for the native shell picker to select a tree item. It populates asynchronously.
     if ($child -and $child.Current.IsEnabled -and $tree -and [FixtureNativeButton]::SendMessage([IntPtr]$tree.Current.NativeWindowHandle,0x110a,[IntPtr]9,[IntPtr]::Zero) -ne [IntPtr]::Zero) {$child}
   } 'selected folder and enabled OK button'
