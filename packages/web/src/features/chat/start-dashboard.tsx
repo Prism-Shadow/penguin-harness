@@ -1,15 +1,7 @@
 import { Fragment, useState } from "react";
 import type { ReactNode } from "react";
 
-import {
-  Button,
-  GlyphIcon,
-  Heading,
-  ICONS,
-  ICON_SIZE,
-  PenguinLogo,
-  IconButton,
-} from "@prismshadow/penguin-ui";
+import { Heading, ICONS, PenguinLogo } from "@prismshadow/penguin-ui";
 import { VersionStamp } from "../../components/account/version-stamp";
 import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
 import { S } from "../../lib/strings";
@@ -19,6 +11,7 @@ import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { useLocale } from "../../state/locale";
 import { pickExamples, type ExampleTaskId } from "./example-tasks";
+import { PromptActionRow, type PromptAction } from "./prompt-action-row";
 import { SavedPrompts } from "./saved-prompts";
 
 export interface StartDashboardProps {
@@ -184,50 +177,36 @@ function ExamplesSection({
   fill: (prompt: string, skills: readonly string[]) => void;
   readComposerText: () => string;
 }) {
+  const { locale } = useLocale();
   const [examples, setExamples] = useState(() => pickExamples());
+  const actions: PromptAction[] = examples.map((task) => {
+    const copy = S.chat.exampleTasks[task.id];
+    const current = copy.prompt === exampleText;
+    return {
+      id: task.id,
+      label: copy.label,
+      hint: copy.desc,
+      slot: "suggestion",
+      current,
+      disabled: !ready,
+      glyph: current ? ICONS.check : TASK_GLYPHS[task.id],
+      run: () => fill(copy.prompt, task.skills),
+    };
+  });
+  actions.push({
+    id: "shuffle",
+    label: S.chat.start.shuffle,
+    glyph: ICONS.refresh,
+    iconOnly: true,
+    run: () => setExamples((shown) => pickExamples(shown)),
+  });
   return (
-    <div
-      data-slot="examples"
-      role="group"
-      aria-label={S.chat.start.examplesTitle}
-      className="mt-4 flex min-w-0 max-w-full flex-nowrap items-center justify-start gap-2 overflow-x-auto overscroll-x-contain px-1 py-1 sm:justify-center-safe [&>button]:shrink-0"
-    >
-      {examples.map((task) => {
-        const copy = S.chat.exampleTasks[task.id];
-        const selected = copy.prompt === exampleText;
-        return (
-          <Button
-            key={task.id}
-            data-slot="suggestion"
-            size="sm"
-            aria-current={selected || undefined}
-            disabled={!ready}
-            title={copy.desc}
-            leading={
-              <GlyphIcon
-                d={selected ? ICONS.check : TASK_GLYPHS[task.id]}
-                size={ICON_SIZE.inlineGlyph}
-              />
-            }
-            onClick={() => fill(copy.prompt, task.skills)}
-            className="min-h-9 max-w-full whitespace-nowrap"
-          >
-            <span className="min-w-0 truncate">{copy.label}</span>
-          </Button>
-        );
-      })}
-      <IconButton
-        label={S.chat.start.shuffle}
-        variant="ghost"
-        onClick={() => setExamples((shown) => pickExamples(shown))}
-      >
-        <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.rowLead} />
-      </IconButton>
-      <SavedPrompts
-        exampleText={exampleText}
-        readComposerText={readComposerText}
-        onFill={(prompt) => fill(prompt, [])}
-      />
-    </div>
+    <SavedPrompts
+      locale={locale}
+      exampleText={exampleText}
+      readComposerText={readComposerText}
+      onFill={(prompt) => fill(prompt, [])}
+      renderActions={(saved) => <PromptActionRow actions={[...actions, ...saved]} />}
+    />
   );
 }

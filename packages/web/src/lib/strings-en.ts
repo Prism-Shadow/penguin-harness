@@ -4108,6 +4108,7 @@ export const en: Strings = {
     start: {
       tagline: "Create your first Agent OS",
       shuffle: "Shuffle suggestions",
+      moreExamples: "More examples",
       examplesTitle: "Examples and shortcuts",
     },
     shortcuts: {
@@ -4130,7 +4131,7 @@ export const en: Strings = {
     },
     exampleTasks: {
       game: {
-        label: "Penguin ski safari mini game",
+        label: "Penguin Skiing",
         desc: "A Ski Safari-style 2D game: a penguin on skis rides steep slopes downhill, flips in the air off the crests for points and gets back up after a crash",
         prompt:
           "Build a 2D game like Ski Safari: a cute Antarctic penguin on bold, clearly visible skis " +
@@ -4143,7 +4144,7 @@ export const en: Strings = {
           "When done, test it in a browser once and tell me how to open it and how to play.",
       },
       gamecenter: {
-        label: "A mini-game center built by multiple agents",
+        label: "Mini Arcade",
         desc: "Ten pure-frontend games with no repeated mechanics, built in parallel behind one index page",
         prompt: `Build a web mini-game center with multiple agents working in parallel: 10 pure-frontend games with no two sharing the same mechanic, plus an index page.
 
@@ -4165,7 +4166,7 @@ export const en: Strings = {
 - Self-test each game in a browser — it starts, it ends, it restarts — then tell me how to open it.`,
       },
       lol: {
-        label: "League of Legends music player",
+        label: "Worlds Anthems",
         desc: "Worlds anthems on the SoundCloud Widget API — a single file that opens from file://",
         prompt: `Build a League of Legends Worlds anthem player with the SoundCloud Widget API (see https://developers.soundcloud.com/docs/api/html5-widget): a single index.html that works when opened from file://.
 
@@ -4195,7 +4196,7 @@ Penguin visual style (see the web-design skill), dark by default. On phones the 
 When done, open index.html in a browser and self-test once.`,
       },
       rhythmRunner: {
-        label: "Penguin rhythm runner mini game",
+        label: "Rhythm Runner",
         desc: "A Muse Dash-style rhythm runner: high notes send the penguin flying, low notes put it on a sled along the ground",
         prompt:
           "Build a Muse Dash-style rhythm runner: a penguin runs forward on its own, and notes, " +
@@ -4207,7 +4208,7 @@ When done, open index.html in a browser and self-test once.`,
           "file, playable straight from file://.",
       },
       ragDocsExpert: {
-        label: "A RAG docs expert from one sentence",
+        label: "Document Q&A",
         desc: "Create a docs expert with its own workbench to search, ask questions and inspect sources",
         prompt:
           "Use PenguinHarness Plugins to create a Claude Code docs expert agent with its own Agent Workbench tab: " +
@@ -4215,7 +4216,7 @@ When done, open index.html in a browser and self-test once.`,
           "When ready, tell me how to open the agent, start a new conversation and use its workbench.",
       },
       investmentCopilot: {
-        label: "An investment analyst from one sentence",
+        label: "Investment Analyst",
         desc: "Create an investment agent with its own workbench for quotes, company lookup and market questions",
         prompt:
           "Use PenguinHarness Plugins to create an investment analyst agent with its own Agent Workbench tab: " +
@@ -4225,7 +4226,7 @@ When done, open index.html in a browser and self-test once.`,
           "When ready, tell me how to open the agent, start a new conversation and use its workbench.",
       },
       legalDesk: {
-        label: "A legal agent app from one sentence",
+        label: "Legal Assistant",
         desc: "Create a legal agent with its own workbench for contract uploads, review status and report downloads",
         prompt:
           "Use PenguinHarness Plugins to create a legal agent with its own Agent Workbench tab: " +
@@ -4234,7 +4235,7 @@ When done, open index.html in a browser and self-test once.`,
           "When ready, tell me how to open the agent, start a new conversation and use its workbench.",
       },
       agentBenchmarkBuild: {
-        label: "Build a decision agent and its benchmark",
+        label: "Decision Benchmark",
         desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
         prompt: `Use \`agent-initialization\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
@@ -4255,7 +4256,7 @@ Scenarios:
 3. Choose investment actions from a strategy, historical markets, and current indicators.`,
       },
       agentOptimization: {
-        label: "Optimize the decision agent",
+        label: "Tune an Agent",
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
@@ -4267,7 +4268,7 @@ Scenarios:
 - candidate_round_limit: \`5\``,
       },
       benchmarkImport: {
-        label: "Import GDPEVO Essential-Service Ticket Resolution",
+        label: "Ticket Benchmark",
         desc: "Import GDPEVO Essential-Service Ticket Resolution's train and test sets: optimize an agent on the train tasks, then check the gain on test tasks it has not seen",
         prompt:
           "Use the `benchmark-design` Skill to import the GDPEVO Essential-Service Ticket Resolution benchmark: " +
@@ -4276,7 +4277,7 @@ Scenarios:
           "and leave them as they are.",
       },
       dailyPlan: {
-        label: "A 9am daily planning check-in",
+        label: "Daily Planner",
         desc: "09:00 every day: talk through the day's plan in this same chat, and review yesterday's progress",
         prompt:
           "Set up a scheduled task: every day at 9am, in this same conversation, plan today's work " +
@@ -4285,7 +4286,7 @@ Scenarios:
           "and write up what I confirm as a checklist.",
       },
       githubDigest: {
-        label: "Daily GitHub project digest",
+        label: "GitHub Digest",
         desc: "A daily pass over one repo's issues, PRs and CI, ending in prioritized recommendations",
         prompt:
           "Set up a scheduled task: every morning, use gh to digest one GitHub repo's issues, PRs " +
@@ -4293,7 +4294,7 @@ Scenarios:
           "end with recommendations ranked by priority, each saying why it sits where it does.",
       },
       memoryReview: {
-        label: "Friday memory review",
+        label: "Weekly Memory",
         desc: "Friday evening: go through what is worth remembering from the week and write it into Memory",
         prompt:
           "Set up a scheduled task: every Friday evening, in this same conversation, go through " +
