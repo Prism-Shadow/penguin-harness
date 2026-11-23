@@ -807,6 +807,14 @@ export const en: Strings = {
       `Run "${action}" on ${machine ?? "this server"}? It runs on that machine right away; what it does is up to the plugin.`,
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "Must be a number",
+    resourceLimits: {
+      title: "Terminal and browser limits",
+      info: "Lowering a limit leaves existing terminals and browser pages available.",
+      terminalMaxOpen: "Maximum active terminals",
+      browserMaxOpen: "Maximum built-in browser pages",
+      restore: "Restore defaults",
+      invalid: "Enter a positive whole number within the safe integer range.",
+    },
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
@@ -7184,6 +7192,7 @@ Scenarios:
       invalid_title: "The title is invalid.",
       invalid_proxy_url:
         "Invalid proxy address — use an http(s):// or socks5:// proxy URL, or host[:port].",
+      invalid_resource_limit: "Enter a positive whole number.",
       invalid_attachment_limit:
         "Invalid upload limit — use a whole number of MB inside the allowed range, with the total no lower than the per-file limit.",
       invalid_trace: "This file is not a valid Trace file.",

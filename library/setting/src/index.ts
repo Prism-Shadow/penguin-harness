@@ -85,4 +85,10 @@ export type {
   HostCommandMessage,
 } from "./types.js";
 
-export { DEFAULT_BROWSER_LIMIT, DEFAULT_TERMINAL_LIMIT, readResourceLimit, writeResourceLimit, type ResourceLimit } from "./resource-limits.js";
+export {
+  DEFAULT_BROWSER_LIMIT,
+  DEFAULT_TERMINAL_LIMIT,
+  readResourceLimit,
+  writeResourceLimit,
+  type ResourceLimit,
+} from "./resource-limits.js";

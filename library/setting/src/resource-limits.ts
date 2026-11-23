@@ -16,6 +16,10 @@ export function readResourceLimit(settings: Pick<Settings, "get">, limit: Resour
   return Number.isSafeInteger(value) && value > 0 ? value : fallback;
 }
 
-export function writeResourceLimit(settings: Pick<Settings, "set">, limit: ResourceLimit, value: number): void {
+export function writeResourceLimit(
+  settings: Pick<Settings, "set">,
+  limit: ResourceLimit,
+  value: number,
+): void {
   settings.set(limits[limit].key, String(value));
 }

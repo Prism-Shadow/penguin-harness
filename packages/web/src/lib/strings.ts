@@ -912,6 +912,14 @@ export const zh = {
       `在${machine === null ? "本机" : ` ${machine} `}上执行「${action}」？它会立即在那台机器上运行，具体做什么由插件决定。`,
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "必须是数字",
+    resourceLimits: {
+      title: "终端与浏览器上限",
+      info: "降低上限后，已经打开的终端和浏览器页面可继续使用。",
+      terminalMaxOpen: "运行中的终端数上限",
+      browserMaxOpen: "内置浏览器页数上限",
+      restore: "恢复默认",
+      invalid: "请输入大于零的安全整数。",
+    },
     uploadLimitsTitle: "上传限制",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
@@ -7434,6 +7442,7 @@ Benchmark：
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
       invalid_proxy_url: "代理地址无效：应为 http(s):// 或 socks5:// 代理 URL，或 主机[:端口]。",
+      invalid_resource_limit: "请填写大于零的整数。",
       invalid_attachment_limit: "上传限制无效：请填写允许范围内的整数 MB，且合计不低于单个上限。",
       invalid_trace: "该文件不是有效的 Trace 文件。",
       trace_not_found: "该 Trace 文件已不存在。",
