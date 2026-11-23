@@ -2143,6 +2143,8 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
       proxyUrl: null,
       attachmentMaxMb: 100,
       attachmentTotalMb: 120,
+      terminalMaxOpen: 12,
+      browserMaxOpen: 20,
       companyMode: false,
       browserExtensionsEnabled: true,
       agentApiEnabled: true,
