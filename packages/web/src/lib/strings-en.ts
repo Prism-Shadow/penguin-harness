@@ -554,7 +554,8 @@ export const en: Strings = {
     searchSessions: "Search all Sessions",
     searchActiveSessions: "Search Sessions with open terminals",
     noOpenTerminals: "No open terminals",
-    startSessionTerminal: "To start a terminal, open a conversation and choose Terminal from its shortcuts.",
+    startSessionTerminal:
+      "To start a terminal, open a conversation and choose Terminal from its shortcuts.",
     emptySessions: "No matching Sessions.",
     openTerminals: (count: number) => `${count} open ${count === 1 ? "terminal" : "terminals"}`,
     openBrowserPages: (count: number) => `${count} open ${count === 1 ? "page" : "pages"}`,
