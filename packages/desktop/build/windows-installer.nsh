@@ -75,96 +75,8 @@ Var PHPathErrorText
   Var PHProgramPreview
   Var PHInvalidText
 
-  ; electron-builder defines its registry keys inside the standard installer
-  ; body, after this include. Emit their consumers once that header is ready.
-  !macro customHeader
-  Function PHCheckRegisteredTargets
-    Push $0
-    Push $1
-    Push $2
-    !insertmacro PHCheckOldTarget HKCU
-    !insertmacro PHCheckOldTarget HKLM
-    Pop $2
-    Pop $1
-    Pop $0
-  FunctionEnd
-
-  ; A new target can be created or reused when empty. A populated directory
-  ; belongs to this install only when its registered location agrees.
-  Function PHProgramTargetAvailable
-    Push $0
-    Push $1
-    Push $2
-    ReadRegStr $0 SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" InstallLocation
-    Push $0
-    Call PHNormalizePath
-    Pop $0
-    ${If} $0 == $INSTDIR
-      Goto accepted
-    ${EndIf}
-    FindFirst $1 $2 "$INSTDIR\*"
-    ${DoWhile} $2 != ""
-      ${If} $2 != "."
-      ${AndIf} $2 != ".."
-        FindClose $1
-        StrCpy $0 "This folder already contains files. Choose an empty program folder."
-        StrCmp $LANGUAGE ${PH_LANG_ZH_CN} 0 +2
-        StrCpy $0 "这个文件夹已有文件，请选择一个空的程序文件夹。"
-        MessageBox MB_OK|MB_ICONEXCLAMATION "$0" /SD IDOK
-        Pop $2
-        Pop $1
-        Pop $0
-        SetErrors
-        Return
-      ${EndIf}
-      FindNext $1 $2
-    ${Loop}
-    FindClose $1
-accepted:
-    Pop $2
-    Pop $1
-    Pop $0
-    ClearErrors
-  FunctionEnd
-
-  !macroend
-
-  !macro customInit
-    Call PHCheckRegisteredTargets
-    ${If} ${Silent}
-      Push $INSTDIR
-      Call PHNormalizePath
-      Pop $INSTDIR
-      Push $INSTDIR
-      Call PHIsRoot
-      Pop $0
-      ${If} $INSTDIR == ""
-      ${OrIf} $0 != 0
-        !insertmacro PHPathError
-      ${EndIf}
-      Call PHProgramTargetAvailable
-      IfErrors 0 +3
-      SetErrorLevel 2
-      Quit
-      !ifmacrodef PHCheckExistingDataLocation
-        !insertmacro PHCheckExistingDataLocation
-      !endif
-    ${EndIf}
-  !macroend
-
-  !macro customPageAfterChangeDir
-    Page custom PHProgramPage PHProgramLeave
-    !ifmacrodef PHDataPage
-      !insertmacro PHDataPage
-    !endif
-  !macroend
-
-  !macro customInstall
-    !ifmacrodef PHCommitDataDirectory
-      !insertmacro PHCommitDataDirectory
-    !endif
-  !macroend
-
+  ; The builder's assisted-installer header supplies MUI and its plugins.
+  !macro PHProgramPages
   Function PHProgramPage
     ${If} ${isUpdated}
       !ifmacrodef PHCheckExistingDataLocation
@@ -258,6 +170,99 @@ accepted:
       !insertmacro PHCheckExistingDataLocation
     !endif
   FunctionEnd
+  !macroend
+
+  ; electron-builder defines its registry keys inside the standard installer
+  ; body, after this include. Emit their consumers once that header is ready.
+  !macro customHeader
+    !insertmacro PHProgramPages
+  Function PHCheckRegisteredTargets
+    Push $0
+    Push $1
+    Push $2
+    !insertmacro PHCheckOldTarget HKCU
+    !insertmacro PHCheckOldTarget HKLM
+    Pop $2
+    Pop $1
+    Pop $0
+  FunctionEnd
+
+  ; A new target can be created or reused when empty. A populated directory
+  ; belongs to this install only when its registered location agrees.
+  Function PHProgramTargetAvailable
+    Push $0
+    Push $1
+    Push $2
+    ReadRegStr $0 SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" InstallLocation
+    Push $0
+    Call PHNormalizePath
+    Pop $0
+    ${If} $0 == $INSTDIR
+      Goto accepted
+    ${EndIf}
+    FindFirst $1 $2 "$INSTDIR\*"
+    ${DoWhile} $2 != ""
+      ${If} $2 != "."
+      ${AndIf} $2 != ".."
+        FindClose $1
+        StrCpy $0 "This folder already contains files. Choose an empty program folder."
+        StrCmp $LANGUAGE ${PH_LANG_ZH_CN} 0 +2
+        StrCpy $0 "这个文件夹已有文件，请选择一个空的程序文件夹。"
+        MessageBox MB_OK|MB_ICONEXCLAMATION "$0" /SD IDOK
+        Pop $2
+        Pop $1
+        Pop $0
+        SetErrors
+        Return
+      ${EndIf}
+      FindNext $1 $2
+    ${Loop}
+    FindClose $1
+accepted:
+    Pop $2
+    Pop $1
+    Pop $0
+    ClearErrors
+  FunctionEnd
+
+  !macroend
+
+  !macro customInit
+    Call PHCheckRegisteredTargets
+    ${If} ${Silent}
+      Push $INSTDIR
+      Call PHNormalizePath
+      Pop $INSTDIR
+      Push $INSTDIR
+      Call PHIsRoot
+      Pop $0
+      ${If} $INSTDIR == ""
+      ${OrIf} $0 != 0
+        !insertmacro PHPathError
+      ${EndIf}
+      Call PHProgramTargetAvailable
+      IfErrors 0 +3
+      SetErrorLevel 2
+      Quit
+      !ifmacrodef PHCheckExistingDataLocation
+        !insertmacro PHCheckExistingDataLocation
+      !endif
+    ${EndIf}
+  !macroend
+
+  !macro customPageAfterChangeDir
+    Page custom PHProgramPage PHProgramLeave
+    !ifmacrodef PHDataPage
+      !insertmacro PHDataPage
+    !endif
+  !macroend
+
+  !macro customInstall
+    !ifmacrodef PHCommitDataDirectory
+      !insertmacro PHCommitDataDirectory
+    !endif
+  !macroend
+
 !else
   !macro PHCheckUninstallTarget
     Push $0
