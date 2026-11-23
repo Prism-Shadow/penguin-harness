@@ -19,20 +19,25 @@ import type {
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
 import * as api from "./endpoints";
+import { machineForSession } from "../lib/session-machines";
 import type { WorkspaceDir } from "./endpoints";
 
 /** What the Files panel browses. */
 export type FilesScope =
-  { kind: "session"; sessionId: string } | ({ kind: "workspace" } & WorkspaceDir);
+  | { kind: "session"; sessionId: string; machineId?: string | null }
+  | ({ kind: "workspace" } & WorkspaceDir);
 
 /**
  * One string per scope, equal for equal scopes: what the panel starts over on when it changes,
  * and what its unsaved drafts are filed under. A directory's machine is part of its identity.
  */
 export function filesScopeKey(scope: FilesScope): string {
-  return scope.kind === "session"
-    ? `session:${scope.sessionId}`
-    : `workspace:${scope.machineId ?? ""}\0${scope.workspace}`;
+  if (scope.kind === "workspace") return `workspace:${scope.machineId ?? ""}\0${scope.workspace}`;
+  return JSON.stringify([
+    "session",
+    scope.machineId === undefined ? machineForSession(scope.sessionId) : scope.machineId,
+    scope.sessionId,
+  ]);
 }
 
 /** The panel's operations over one scope. */
@@ -57,17 +62,18 @@ export interface FilesApi {
 export function filesApi(scope: FilesScope): FilesApi {
   if (scope.kind === "session") {
     const id = scope.sessionId;
+    const machine = scope.machineId === undefined ? machineForSession(id) : scope.machineId;
     return {
-      list: (path) => api.listWorkspaceFiles(id, path),
-      fileUrl: (path, download) => api.workspaceFileUrl(id, path, download),
-      previewUrl: (path) => api.workspaceFilePreviewUrl(id, path),
-      isolatablePreviews: true,
-      write: (path, data, ifVersion) => api.uploadWorkspaceFile(id, path, data, ifVersion),
-      create: (body) => api.createWorkspaceEntry(id, body),
-      move: (body) => api.moveWorkspaceFile(id, body),
-      remove: (path, ifVersion) => api.deleteWorkspaceFile(id, path, ifVersion),
-      search: (q) => api.searchWorkspaceFiles(id, q),
-      reveal: (path) => api.revealWorkspaceFile(id, path),
+      list: (path) => api.listWorkspaceFiles(id, path, machine),
+      fileUrl: (path, download) => api.workspaceFileUrl(id, path, download, machine),
+      previewUrl: (path) => api.workspaceFilePreviewUrl(id, path, machine),
+      isolatablePreviews: machine === null,
+      write: (path, data, ifVersion) => api.uploadWorkspaceFile(id, path, data, ifVersion, machine),
+      create: (body) => api.createWorkspaceEntry(id, body, machine),
+      move: (body) => api.moveWorkspaceFile(id, body, machine),
+      remove: (path, ifVersion) => api.deleteWorkspaceFile(id, path, ifVersion, machine),
+      search: (q) => api.searchWorkspaceFiles(id, q, machine),
+      reveal: (path) => api.revealWorkspaceFile(id, path, machine),
     };
   }
   const dir: WorkspaceDir = {

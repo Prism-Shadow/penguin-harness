@@ -76,6 +76,10 @@ export async function fetchFromGithubChannel(pin, url) {
   if (typeof channel !== "string") {
     throw new Error(`the plugin index lists no github channel for ${pin.name}@${pin.version}`);
   }
+  return fetchReleaseAsset(channel);
+}
+
+export async function fetchReleaseAsset(channel) {
   const res = await fetch(channel, { signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (!res.ok) throw new Error(`${channel} answered ${res.status}`);
   return { bytes: Buffer.from(await res.arrayBuffer()), source: channel };

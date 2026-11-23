@@ -26,9 +26,7 @@
  * setting as this window last read or saved it, and the metrics are the built-in browser's load
  * with the server's verdict on it (`builtin_browser_metrics`, about every 10 s).
  *
- * The built-in browser keeps a tab while its panel is on screen: with none open and none on its
- * way, the window opens the new-tab page by itself (`wantsNewTabPage`), the homepage or a blank
- * page. Chrome does not: a tab opened there would take the user's own browser to the front.
+ * A visible empty group offers an explicit first tab. Opening the panel allocates no page.
  */
 import type {
   BrowserBackend,
@@ -609,18 +607,10 @@ export function addressOf(state: BrowserState, tab: BuiltinBrowserTab): string {
 }
 
 /**
- * Whether this window should open the new-tab page by itself: the docks on screen are this
- * conversation's and its own arrangement shows the browser panel, the browser can be used, and the
- * conversation has no tab, none open and none on its way. A tab on its way is a page this window
- * is creating or has created and the registry does not list yet (from any window's, the agent's or
- * a page's request), or a request of its own not yet answered, whose page this window has not been
- * asked for yet.
- *
- * Another conversation's arrangement showing the browser counts for nothing here: during a switch
- * the outgoing panel is still mounted for a render, and a page opened for the incoming
- * conversation would bring the browser panel up there too (shouldReveal).
+ * The displayed group can offer a first tab once it has no live guest or outstanding open.
+ * A panel still mounted during a conversation switch must follow the displayed Session.
  */
-export function wantsNewTabPage(
+export function canOfferFirstTab(
   state: BrowserState,
   onScreen: { conversation: string; browserShown: boolean },
 ): boolean {

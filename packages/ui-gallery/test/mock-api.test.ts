@@ -102,6 +102,22 @@ describe("the mocked API", () => {
     expect(crashes, "handlers that threw something other than an ApiError").toEqual([]);
   });
 
+  it("reports the unavailable desktop backend for a managed Session page", async () => {
+    resetStore({ lang: "en", signedIn: true });
+    const group = { machineId: null, projectId: IDS.project, sessionId: IDS.sessions.archived };
+    for (const send of [
+      () => browserApi.listManagedPages(group),
+      () => browserApi.openManagedPage(group),
+      () => browserApi.activateManagedPage(group, 1),
+      () => browserApi.closeManagedPage(group, 1),
+    ]) {
+      await expect(send()).rejects.toMatchObject({ status: 503, code: "browser_unavailable" });
+    }
+    await expect(
+      browserApi.listManagedPages({ ...group, projectId: "elsewhere" }),
+    ).rejects.toMatchObject({ status: 404, code: "session_not_found" });
+  });
+
   it("restores the same installed workbench from the App Center hidden list", async () => {
     resetStore({ lang: "en", signedIn: true, freshProject: true });
     const all = await api.getAppCenter(IDS.project);

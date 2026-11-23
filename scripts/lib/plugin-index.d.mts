@@ -13,3 +13,6 @@ export declare function fetchFromGithubChannel(
   pin: ExternalPin,
   url: string,
 ): Promise<{ bytes: Buffer; source: string }>;
+export declare function fetchReleaseAsset(
+  channel: string,
+): Promise<{ bytes: Buffer; source: string }>;
