@@ -10,10 +10,11 @@
  */
 import type { ServerEvent, SessionInfo } from "@prismshadow/penguin-server/api";
 import type { VoicePolishSettings } from "../../../../web/src/api/tool-types";
-import { buildFixtures, DEFAULT_MODEL } from "./fixtures";
+import { buildFixtures, DEFAULT_MODEL, effectiveOf } from "./fixtures";
 import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
 import { IDS } from "./ids";
+import { seedFreshProject } from "./fresh-project";
 import { raiseNotices } from "./notices";
 import {
   rsiEvaluatorTranscript,
@@ -138,6 +139,27 @@ export class DemoStore {
     this.lang = lang;
     this.signedIn = signedIn;
     this.f = buildFixtures(lang, now, embedded);
+    if (init.freshProject) {
+      const f = this.f;
+      // Only the evaluator and test sessions belong to the example. They are hidden from the sidebar.
+      const children = new Set<string>([...IDS.sessions.evaluators, ...IDS.sessions.tests]);
+      f.sessions = evolutionDemo ? f.sessions.filter((s) => children.has(s.sessionId)) : [];
+      seedFreshProject(f, evolutionDemo === true);
+      f.schedules = [];
+      f.usage = [];
+      if (!evolutionDemo) {
+        delete f.models.defaultModel;
+        delete f.models.visionModel;
+        for (const provider of Object.values(f.models.providers ?? {}))
+          delete provider.apiKeyMasked;
+        for (const model of f.models.models) {
+          model.isDefault = false;
+          delete model.envKeyMasked;
+          if (model.credential) delete model.credential.apiKeyMasked;
+          model.effective = effectiveOf(model, f.models.providers ?? {});
+        }
+      }
+    }
     if (evolutionDemo) {
       this.f.chatDefaults.agentId = IDS.agents.general;
       this.f.chatDefaults.workspace = RSI_WORKSPACE;
@@ -586,6 +608,7 @@ interface StoreInit {
   /** The public site embeds a working Project. Gallery boards also exercise maintenance states. */
   embedded?: boolean;
   evolutionDemo?: boolean;
+  freshProject?: boolean;
 }
 
 /** The store the frame's language and sign-in state ask for; created once per document. */

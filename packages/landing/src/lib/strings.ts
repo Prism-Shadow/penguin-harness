@@ -178,6 +178,8 @@ export const zh = {
     /** The link to the same screen in the component gallery (Theme Packs), full size. */
     open: "在主题包中打开",
     loading: "正在载入实时演示…",
+    playDemo: "播放演示",
+    stopDemo: "停止演示",
     evolutionFrame: "一轮自进化的对话（实时演示）",
   },
 

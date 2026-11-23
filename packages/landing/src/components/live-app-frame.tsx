@@ -18,12 +18,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { SyntheticEvent } from "react";
 import { S } from "../lib/strings";
+import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { frameSize, gallerySurfaceUrl, liveFrameSrc } from "../lib/live-frame";
 import type { SurfaceId } from "../lib/live-frame";
-import { useSiteLocale, useSiteTheme } from "@prismshadow/penguin-ui/site";
+import { SiteGlyph, useSiteLocale, useSiteTheme } from "@prismshadow/penguin-ui/site";
 import { BrowserFrame } from "./browser-frame";
 import { ArrowUpRightIcon } from "./icons";
-import { LivePlaybackControl } from "./live-playback-control";
 
 /** A short lead-in loads the app when its window is about to enter view. */
 const LOAD_AHEAD = "200px 0px";
@@ -82,11 +82,12 @@ export function LiveAppFrame({
   const { dark } = useSiteTheme();
   const phone = useMedia("(max-width: 639.98px)");
   const fine = useMedia("(hover: hover) and (pointer: fine)");
-  const reduced = useMedia("(prefers-reduced-motion: reduce)");
+  const reducedMotion = usePrefersReducedMotion();
+  const [playbackChoice, setPlaybackChoice] = useState<boolean | null>(null);
+  const playing = playbackChoice ?? (!!autoplay && !reducedMotion);
   const size = frameSize(phone);
-  const src = liveFrameSrc(surface, locale, dark, autoplay);
+  const src = liveFrameSrc(surface, locale, dark, playing ? autoplay : undefined, !!autoplay);
   const box = useRef<HTMLDivElement | null>(null);
-  const frame = useRef<HTMLIFrameElement | null>(null);
   const [near, setNear] = useState(false);
   const [width, setWidth] = useState(0);
   const [readySrc, setReadySrc] = useState<string | null>(null);
@@ -150,6 +151,17 @@ export function LiveAppFrame({
     };
   };
 
+  const togglePlayback = (button: HTMLButtonElement) => {
+    if (!playing && box.current) {
+      const rect = box.current.getBoundingClientRect();
+      const visibleHeight = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+      if (visibleHeight < Math.min(rect.height, window.innerHeight) / 2) {
+        button.scrollIntoView({ block: "start", behavior: reducedMotion ? "instant" : "smooth" });
+      }
+    }
+    setPlaybackChoice(!playing);
+  };
+
   const ready = readySrc === src;
   const scale = width > 0 ? width / size.width : 0;
   const open = gallerySurfaceUrl(surface, locale, dark, phone);
@@ -166,7 +178,16 @@ export function LiveAppFrame({
             {S.live.open}
             <ArrowUpRightIcon className="h-3 w-3" />
           </a>
-          {autoplay && !reduced && <LivePlaybackControl key={src} frame={frame} src={src} />}
+          {autoplay && (
+            <button
+              type="button"
+              className="site-playback-button section-anchor"
+              onClick={(event) => togglePlayback(event.currentTarget)}
+            >
+              <SiteGlyph name={playing ? "square" : "play"} />
+              <span>{playing ? S.live.stopDemo : S.live.playDemo}</span>
+            </button>
+          )}
         </div>
       }
     >
@@ -179,7 +200,6 @@ export function LiveAppFrame({
         {!ready && <span className="sr-only">{S.live.loading}</span>}
         {near && scale > 0 && (
           <iframe
-            ref={frame}
             key={src}
             src={src}
             title={title}
