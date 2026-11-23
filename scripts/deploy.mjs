@@ -305,10 +305,17 @@ async function compileEntry(entry, outfile) {
     // list) carry their own table, and a copy here would stand in for theirs.
     const sources =
       pkg === "cli"
-        ? [["cli", "src"], ["cli", "test"], ["server", "src"], ["server", "test"]]
-        : [["server", "src"], ["server", "test"]];
-    for (const [p, dir] of sources)
-      args.push("--sources", path.join(ROOT, "packages", p, dir));
+        ? [
+            ["cli", "src"],
+            ["cli", "test"],
+            ["server", "src"],
+            ["server", "test"],
+          ]
+        : [
+            ["server", "src"],
+            ["server", "test"],
+          ];
+    for (const [p, dir] of sources) args.push("--sources", path.join(ROOT, "packages", p, dir));
     args.push("--sources", path.join(ROOT, "library"));
     args.push("--out", path.join(ROOT, "packages", pkg, "src", "ifaces.json"));
     if (pkg === "cli")

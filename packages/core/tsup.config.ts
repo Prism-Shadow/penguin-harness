@@ -4,8 +4,6 @@ import { buildBenchmarks, stageBenchmarks } from "../../scripts/build-benchmarks
 // core's dist is what the server imports at run time, and a shipped bundle has no path back to the checkout it came from.
 import { buildGitDefine } from "../../scripts/build-git-stamp.mjs";
 
-const jsOnly = process.env.PENGUIN_BUILD_JS_ONLY === "1";
-
 export default defineConfig({
   entry: [
     "src/index.ts",
@@ -39,10 +37,11 @@ export default defineConfig({
   // static export of core; it has no dependency of its own and holds no state, so the copy in
   // core's dist and the one a host imports beside it are the same pure functions.
   noExternal: ["@prismshadow/amsp", "@prismshadow/skills"],
-  // Runtime builds do not consume declarations. Full builds still produce the SDK's
-  // bundled public types; keep existing declarations during a JavaScript-only rebuild.
-  dts: !jsOnly,
-  clean: jsOnly ? ["!**/*.d.ts"] : true,
+  // Declarations stay on in every build: the packages built after core in a runtime build
+  // (hmr, the CLI, the library) bundle against them from its dist, and a fresh checkout has
+  // no earlier declarations to fall back on.
+  dts: true,
+  clean: true,
   sourcemap: true,
   define: buildGitDefine(),
   onSuccess: async () => {
