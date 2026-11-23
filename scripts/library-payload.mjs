@@ -22,6 +22,7 @@
  * dependency — has no directory here to build: it is carried as npm published it, from where pnpm
  * installed it for the server, with the `ifaces.json` its own build wrote before it was published.
  */
+import { releaseDependencies } from "./lib/external-plugins.mjs";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -109,10 +110,11 @@ function installedPackageDir(serverManifest, dep) {
 export async function libraryPayload(repoRoot) {
   const serverManifest = path.join(repoRoot, "packages", "server", "package.json");
   const server = JSON.parse(await fsp.readFile(serverManifest, "utf8"));
-  const deps = Object.keys(server.dependencies ?? {})
+  const ranges = { ...server.dependencies, ...releaseDependencies(server) };
+  const deps = Object.keys(ranges)
     .filter((dep) => dep.startsWith(PREFIX))
     .sort();
-  const workspace = (dep) => String(server.dependencies[dep]).startsWith("workspace:");
+  const workspace = (dep) => String(ranges[dep]).startsWith("workspace:");
   const dirs = deps.map((dep) =>
     workspace(dep)
       ? path.join(repoRoot, "plugins", dep.slice(PREFIX.length))

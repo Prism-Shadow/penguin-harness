@@ -5,6 +5,7 @@ export interface ExternalPin {
   name: string;
   version: string;
   integrity: string;
+  asset?: string;
 }
 export declare const HOST_PACKAGES: string[];
 export declare function externalPins(root: string, lock: PnpmLock): ExternalPin[];

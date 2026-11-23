@@ -43,9 +43,13 @@ export async function refreshBrowserSettings(): Promise<void> {
  * the request is on its way the store counts it, so the panel does not open the new-tab page
  * beside it.
  */
-export function openBrowserTab(url?: string): Promise<BuiltinBrowserTab | null> {
-  const scope = browserState().scope;
-  const request = openInScope(scope, browserState().projectId, url);
+export function openBrowserTab(
+  url?: string,
+  target: Pick<ReturnType<typeof browserState>, "scope" | "projectId"> = browserState(),
+  group?: api.ManagedBrowserGroup,
+): Promise<BuiltinBrowserTab | null> {
+  const scope = target.scope;
+  const request = openInScope(scope, target.projectId, url, group);
   opening.set(request, scope);
   void request.finally(() => opening.delete(request));
   return request;
@@ -55,15 +59,18 @@ async function openInScope(
   scope: string,
   projectId: string | null,
   url?: string,
+  group?: api.ManagedBrowserGroup,
 ): Promise<BuiltinBrowserTab | null> {
   dispatchBrowser({ type: "opening", delta: 1, scope });
   try {
-    const { tab } = await api.openBuiltinBrowserTab({
-      activate: true,
-      ...(projectId === null ? {} : { projectId }),
-      ...(url === undefined ? {} : { url }),
-      ...(scope === NO_BROWSER_SCOPE ? {} : { sessionId: scope }),
-    });
+    const { tab } = group
+      ? await api.openManagedPage(group, url)
+      : await api.openBuiltinBrowserTab({
+          activate: true,
+          ...(projectId === null ? {} : { projectId }),
+          ...(url === undefined ? {} : { url }),
+          ...(scope === NO_BROWSER_SCOPE ? {} : { sessionId: scope }),
+        });
     return tab;
   } catch (err) {
     toastApiError(err, { text: S.builtinBrowser.openFailed(apiErrorText(err)) });
@@ -114,9 +121,15 @@ export function openLinkInBrowser(url: string): void {
  * Brings a tab to the front here at once; the server's next registry snapshot confirms it. A
  * tab of the user's Chrome comes to the front in Chrome too.
  */
-export function activateBrowserTab(tabId: number, backend: BrowserBackend = "builtin"): void {
+export function activateBrowserTab(
+  tabId: number,
+  backend: BrowserBackend = "builtin",
+  group?: api.ManagedBrowserGroup,
+): void {
   dispatchBrowser({ type: "activated", tabId, backend });
-  void api.activateBuiltinBrowserTab(tabId).catch(() => undefined);
+  void (group ? api.activateManagedPage(group, tabId) : api.activateBuiltinBrowserTab(tabId)).catch(
+    () => undefined,
+  );
 }
 
 /**
@@ -169,7 +182,11 @@ export async function switchBrowserBackend(backend: BrowserBackend): Promise<boo
  * and the shell reports that to the server itself — so the request only tells the server
  * (and any other window) sooner; a 404 means the server had already dropped it.
  */
-export function closeBrowserTab(tabId: number): void {
+export function closeBrowserTab(tabId: number, group?: api.ManagedBrowserGroup): void {
+  if (group) {
+    void api.closeManagedPage(group, tabId).catch((err) => toastApiError(err));
+    return;
+  }
   dispatchBrowser({ type: "closed", tabId });
   void api.closeBuiltinBrowserTab(tabId).catch(() => undefined);
 }

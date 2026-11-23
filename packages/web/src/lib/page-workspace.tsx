@@ -37,7 +37,7 @@ import {
   dockPageId,
 } from "./session-app-dock";
 import { confirmClose } from "./dock-close-guard";
-import { openFullPage } from "./host-history";
+import { openFullPage, returnToHostEntry } from "./host-history";
 
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { getSession } from "../api/endpoints";
@@ -64,7 +64,7 @@ export interface Workspace {
   minimize(id: string): void;
   whole(page: OpenPage): void;
   fullScreen(page: OpenPage): void;
-  /** A native system page occupying the shell, with its original component still mounted. */
+  /** The page occupying the full shell, with its original component still mounted. */
   exitFullScreen?: () => void;
   swap(): void;
   reorder(id: string, before: string): void;
@@ -586,6 +586,8 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
   };
   const nativeFullScreen =
     current?.kind === "system" && location.state?.nativeAppFullScreen === current.id;
+  const dockedFullScreen =
+    current?.kind === "window" && location.state?.dockedFullScreen === current.id;
   function fullScreen(page: OpenPage) {
     if (page.kind === "system") {
       void navigate(page.path, { state: { nativeAppFullScreen: page.id } });
@@ -602,9 +604,16 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
             windowAt(new URL(page.path, window.location.origin)),
           )
         : (selectedPath ?? shortcut.path);
-    openFullPage(navigate, target, pair?.app.id === page.id ? path : page.path, {
-      fromWindow: currentId === page.id,
-    });
+    if (pair?.app.id === page.id) {
+      // Keep both live panes; the address bar and a separately opened link still use
+      // the workbench's standalone route.
+      void navigate(currentId === page.id ? path : page.path, {
+        mask: target,
+        state: { dockedFullScreen: page.id, returnTo: path },
+      });
+      return;
+    }
+    openFullPage(navigate, target, page.path, { fromWindow: currentId === page.id });
   }
   // A conversation row still owns its draft, including files staged only in its composer.
   // Closing its view takes it out of the pane while the row can reopen that same composer.
@@ -663,10 +672,11 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
         close,
         minimize,
         fullScreen,
-        ...(nativeFullScreen
+        ...(dockedFullScreen || nativeFullScreen
           ? {
               exitFullScreen: () => {
-                void navigate(path, { replace: true });
+                if (dockedFullScreen) returnToHostEntry(navigate, location.state.returnTo);
+                else void navigate(path, { replace: true });
               },
             }
           : {}),

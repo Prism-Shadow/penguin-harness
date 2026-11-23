@@ -35,6 +35,7 @@ class StandInSocket extends EventEmitter {
 function served(): StandInSocket {
   const ws = new StandInSocket();
   serveApiSocket(ws as unknown as WebSocket, {
+    sessionIsLive: () => true,
     fetch: async () => Response.json({}),
     fetchStream: async () => new Response(null),
     origin: "http://localhost:7364",

@@ -6,12 +6,9 @@
  * - Given a conversation with live shells, the strip lists exactly its own, numbered and titled,
  *   marks the shown one and shows its screen; another Session's shell is not there.
  * - Given "+", another shell starts for the conversation and is the one shown.
- * - Given a shell's ×, it asks first; confirming ends the shell, and ending the last one closes
- *   the panel without starting another.
- * - Given the panel on screen with no shell, it starts one, once.
- * - Given the last listed shell ends by itself, the panel closes once a complete list says so —
- *   a machine missing one round is not the shell's end — and starts nothing.
- * - Given its first shell fails to start, the panel closes; shown again, it tries again.
+ * - A shell's × asks for confirmation. The last shell leaving keeps the empty group open.
+ * - Viewing an empty group performs no write; only an explicit new-shell action creates one.
+ * - A failed start is retryable in the same group.
  */
 import { createElement as h } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -178,68 +175,79 @@ describe("the terminal panel", () => {
     expect(tabs().map((tab) => tab.getAttribute("data-tab-id"))).toEqual(["a", "created-1"]);
   });
 
-  it("asks before a ×, and ending the last shell closes the panel without starting another", async () => {
+  it("confirms the last shell's close and keeps its empty group open", async () => {
     const fake = stubFetch(answer);
     await conversationWith([{ id: "a", seq: 1 }]);
     const { close } = await renderPanel();
-
     await click(button(`${S.terminal.killShell}: 1: sh-a`));
-    expect(writes(fake)).toEqual([]); // nothing ends before the confirm
+    expect(writes(fake)).toEqual([]);
     await click(button(S.terminal.killShell));
-    await settle();
-
+    await waitFor(() => tabs().length === 0);
     expect(writes(fake)).toEqual(["DELETE"]);
-    expect(close).toHaveBeenCalledTimes(1);
-    expect(dock.panelDock(terminal.TERMINAL_PANEL)).toBeNull();
+    expect(close).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="terminal-new-tab"]')).not.toBeNull();
   });
 
-  it("on screen with no shell, starts one, once", async () => {
+  it("reads shells opened by another client when the group becomes visible again", async () => {
+    const fake = stubFetch(answer);
+    const id = await conversationWith([]);
+    const { show } = await renderPanel();
+    await show(false);
+    held.set(null, [
+      { id: "other-client", seq: 1, sessionId: id },
+      { id: "other-session", seq: 2, sessionId: "another-session" },
+    ]);
+    await show(true);
+    await waitFor(() => screenId() === "other-client");
+    expect(tabs()).toHaveLength(1);
+    expect(writes(fake)).toEqual([]);
+  });
+
+  it("opens an empty group without starting a shell, including after hiding and showing", async () => {
     const fake = stubFetch(answer);
     await conversationWith([]);
-    await renderPanel();
-
-    await waitFor(() => tabs().length === 1);
-    await settle();
-
+    const { show } = await renderPanel();
+    await show(false);
+    await show(true);
+    expect(writes(fake)).toEqual([]);
+    expect(tabs()).toHaveLength(0);
+    await click(document.querySelector<HTMLButtonElement>('[data-testid="terminal-new-tab"]')!);
+    await waitFor(() => screenId() === "created-1");
     expect(writes(fake)).toEqual(["POST"]);
-    expect(screenId()).toBe("created-1");
   });
 
-  it("closes when its last shell ends by itself, once a complete list says so", async () => {
+  it("keeps the group available after its last shell exits, including a partial list refresh", async () => {
     const fake = stubFetch(answer);
     machines.setTerminalMachines(["M"]);
     await conversationWith([{ id: "only", seq: 1 }]);
     const { close } = await renderPanel();
-
-    // `exit`, while a machine misses this round: the shell is gone, but the list is short.
     held.set(null, []);
     silent.add("M");
     await run(() => list.refreshTerminals());
     expect(close).not.toHaveBeenCalled();
-
     silent.clear();
     await run(() => list.refreshTerminals());
-    expect(close).toHaveBeenCalledTimes(1);
+    expect(tabs()).toHaveLength(0);
+    expect(close).not.toHaveBeenCalled();
     expect(writes(fake)).toEqual([]);
   });
 
-  it("closes when its first shell fails to start, and tries again when shown again", async () => {
+  it("retries a failed explicit start in the same group", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const fake = stubFetch(answer);
     await conversationWith([]);
     spawnFails = true;
-    const { close, show } = await renderPanel();
-    await waitFor(() => close.mock.calls.length === 1);
+    const { close } = await renderPanel();
+    const newShell = () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="terminal-new-tab"]')!;
+    await click(newShell());
+    await settle();
+    expect(writes(fake)).toEqual(["POST"]);
     expect(tabs()).toHaveLength(0);
-
-    // The dock animates away with the body still mounted; Ctrl+` brings the panel back.
     spawnFails = false;
-    await show(false);
-    terminal.openTerminalPanel();
-    await show(true);
-    await waitFor(() => tabs().length === 1);
-
+    await click(newShell());
+    await waitFor(() => screenId() === "created-1");
     expect(writes(fake)).toEqual(["POST", "POST"]);
-    expect(close).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
   });
 });

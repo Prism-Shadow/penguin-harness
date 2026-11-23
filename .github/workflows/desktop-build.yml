@@ -80,6 +80,7 @@ on:
         default: false
 
 env:
+  PENGUIN_RELEASE_TAG: ${{ inputs.tag }}
   # Whether signing is required, decided once for every event: release.yml and a dispatch
   # say so through the inputs, a push to a release branch always requires it. Steps read
   # these instead of `inputs.*`, which is empty on a push.

@@ -18,6 +18,7 @@ export const zh = {
   /** The agent browser — the built-in one (desktop app) or the user's own Chrome: its dock panel, toolbar and dialogs. */
   builtinBrowser: {
     panelTitle: "浏览器",
+    machinePages: "这些页面在此会话所属机器的桌面浏览器中打开。",
     /** The browser's own tab strip (its accessible name). */
     tabs: "标签页",
     newTab: "新建标签页",
@@ -356,6 +357,7 @@ export type BrowserStrings = typeof zh;
 export const en: BrowserStrings = {
   builtinBrowser: {
     panelTitle: "Browser",
+    machinePages: "Pages open in the desktop browser on the machine running this session.",
     tabs: "Tabs",
     newTab: "New tab",
     closeTab: "Close tab",

@@ -338,7 +338,21 @@ test("machine-qualified chats read their own session and leave an existing same-
     await expect(editor).toBeVisible();
     await expect(editor).toHaveValue("");
     expect(socket.calls.slice(calls).some((call) => call.path === path)).toBe(true);
-    await editor.fill(name + " new draft");
+    const text = name + " new draft";
+    await editor.fill(text);
+    await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
+    await page.getByRole("button", { name: "Open App Center", exact: true }).click();
+    await page.locator('li[data-app="default_agent/slides"] > button').first().click();
+    await expect(slot(page, "app:default_agent/slides")).toHaveAttribute("data-pane", "right");
+    await apps(page)
+      .locator('[data-app-row="default_agent/slides"]')
+      .locator("xpath=ancestor::li[1]")
+      .getByRole("button", { name: "Open full screen", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/app\/[^/]+\/default_agent\/slides/);
+    await page.getByRole("button", { name: "Exit full screen", exact: true }).click();
+    await expect(editor).toHaveValue(text);
+    await expect(page.getByRole("heading", { name: name + " session", exact: true })).toBeVisible();
     await page.goto("/chat/" + id);
     await expect(slot(page, localKey).locator(composer)).toHaveValue(localText);
   }

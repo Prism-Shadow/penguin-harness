@@ -1,5 +1,5 @@
 /**
- * What the live suites share: the Git the global setup fetched, this plugin's engine over it, and
+ * What the live suites share: the local Git payload the global setup staged, this plugin's engine over it, and
  * the server's own Agent State repository and built-in engine, imported by path (this package
  * depends on core alone) to compare against.
  */
