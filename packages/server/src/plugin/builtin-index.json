@@ -77,7 +77,7 @@
     "shortDescription": "Record workbench versions with native Git.",
     "shortDescriptionZh": "以原生 Git 记录 Workbench 版本。",
     "authors": ["Prism Shadow"],
-    "license": "Apache-2.0",
+    "license": "SEE LICENSE IN THIRD-PARTY-NOTICES.md",
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["git", "dugite", "agent-state", "workbench-history"],
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <circle cx=\"6\" cy=\"5.5\" r=\"2\" />\n  <circle cx=\"6\" cy=\"18.5\" r=\"2\" />\n  <circle cx=\"18\" cy=\"9\" r=\"2\" />\n  <path d=\"M6 7.5v9\" />\n  <path d=\"M18 11c0 3.5-4 4.5-10.3 6.3\" />\n</svg>\n"

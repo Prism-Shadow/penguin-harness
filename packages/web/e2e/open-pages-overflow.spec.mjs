@@ -169,18 +169,43 @@ test("sidebar minimize restores the same workbench and close ends its frame", as
   expect(original.isDetached()).toBe(true);
   await expect(page.locator(`button[data-session-id="${notes.id}"]`)).toHaveCount(1);
   await expect(chat.locator(composer)).toHaveValue("Keep this triage note");
-  await chat.getByRole("button", { name: "Shortcuts", exact: true }).click();
-  await chat.getByRole("button", { name: "Open App Center", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "App Center", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await page
     .getByRole("list", { name: "App Center", exact: true })
     .locator('li[data-app="penguin_support/support"] > button')
     .first()
     .click();
+  await chat.locator('input[type="file"]:not([accept])').setInputFiles({
+    name: "triage.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Attach these notes"),
+  });
+  const attachment = chat.getByText("triage.txt", { exact: true });
+  await expect(attachment).toBeVisible();
+  const reopened = await iframe.elementHandle();
+  const liveFrame = await reopened.contentFrame();
+  await liveFrame.evaluate(() => {
+    globalThis.triageWindow = "original";
+  });
   await fromRow(page, target, "Open full screen");
   const fullPath = /\/app\/default_project\/penguin_support\/support(?:\/support)?$/;
   await expect(page).toHaveURL(fullPath);
+  await expect(page).toHaveTitle(/Support/);
+  const manifest = page.locator('link[rel="manifest"]');
+  await expect(manifest).toHaveAttribute(
+    "href",
+    /workbenches\/support\/tabs\/support\/manifest\.webmanifest$/,
+  );
   await page.getByRole("button", { name: "Exit full screen" }).click();
   await expect(page).not.toHaveURL(fullPath);
+  await expect(manifest).toHaveAttribute("href", "/manifest.webmanifest");
+  await expect(app).toHaveAttribute("data-pane", "right");
+  await expect(chat.locator(composer)).toHaveValue("Keep this triage note");
+  await expect(attachment).toBeVisible();
+  expect(await liveFrame.evaluate(() => globalThis.triageWindow)).toBe("original");
   await page.goto("/app/default_project/penguin_support/support");
   await expect(page.locator("iframe:visible").first()).toBeVisible();
   await page.getByRole("button", { name: "Exit full screen" }).click();

@@ -54,7 +54,7 @@ import {
   shownActiveTab,
   shownTabs,
   tabBusy,
-  wantsNewTabPage,
+  canOfferFirstTab,
   type BrowserAction,
   type BrowserState,
 } from "../../../plugins/browser-automation/src/web/browser-state";
@@ -441,39 +441,39 @@ describe("the new-tab page", () => {
     });
 
   it("is opened for a panel on screen with no tab: the first time, or after a restart", () => {
-    expect(wantsNewTabPage(READY, SHOWN)).toBe(true);
+    expect(canOfferFirstTab(READY, SHOWN)).toBe(true);
   });
 
   it("is not opened out of sight, or where the browser cannot be used", () => {
-    expect(wantsNewTabPage(READY, HIDDEN)).toBe(false);
-    expect(wantsNewTabPage(INITIAL_BROWSER_STATE, SHOWN)).toBe(false);
-    expect(wantsNewTabPage(reduceBrowser(READY, { type: "unreachable" }), SHOWN)).toBe(false);
+    expect(canOfferFirstTab(READY, HIDDEN)).toBe(false);
+    expect(canOfferFirstTab(INITIAL_BROWSER_STATE, SHOWN)).toBe(false);
+    expect(canOfferFirstTab(reduceBrowser(READY, { type: "unreachable" }), SHOWN)).toBe(false);
   });
 
   it("is opened only for the conversation whose own docks show the browser", () => {
     const incoming = run(READY, { type: "scope", scope: "b" });
     // Switching away from a conversation that showed it: its panel is still mounted for a
     // render, but the docks on screen are the incoming one's, and they do not show the browser.
-    expect(wantsNewTabPage(incoming, docks("b", false))).toBe(false);
-    expect(wantsNewTabPage(incoming, docks("a"))).toBe(false);
-    expect(wantsNewTabPage(incoming, docks("b"))).toBe(true);
+    expect(canOfferFirstTab(incoming, docks("b", false))).toBe(false);
+    expect(canOfferFirstTab(incoming, docks("a"))).toBe(false);
+    expect(canOfferFirstTab(incoming, docks("b"))).toBe(true);
   });
 
   it("is not opened beside a tab that is open", () => {
-    expect(wantsNewTabPage(run(READY, listed(tab(1))), SHOWN)).toBe(false);
+    expect(canOfferFirstTab(run(READY, listed(tab(1))), SHOWN)).toBe(false);
   });
 
   it("is not opened beside a tab on its way", () => {
     // Asked for by any window, the agent or a page: the page is being created here.
     const creating = run(READY, open("r1"));
-    expect(wantsNewTabPage(creating, SHOWN)).toBe(false);
+    expect(canOfferFirstTab(creating, SHOWN)).toBe(false);
     // Claimed, not yet in the registry.
     const claimed = run(creating, { type: "attached", key: guestKey("r1"), tabId: 4 });
-    expect(wantsNewTabPage(claimed, SHOWN)).toBe(false);
+    expect(canOfferFirstTab(claimed, SHOWN)).toBe(false);
     // This window's own request, before the server has asked it for the page.
     const asking = reduceBrowser(READY, { type: "opening", delta: 1 });
-    expect(wantsNewTabPage(asking, SHOWN)).toBe(false);
-    expect(wantsNewTabPage(reduceBrowser(asking, { type: "opening", delta: -1 }), SHOWN)).toBe(
+    expect(canOfferFirstTab(asking, SHOWN)).toBe(false);
+    expect(canOfferFirstTab(reduceBrowser(asking, { type: "opening", delta: -1 }), SHOWN)).toBe(
       true,
     );
   });
@@ -485,13 +485,13 @@ describe("the new-tab page", () => {
       { type: "attached", key: guestKey("r1"), tabId: 4 },
       listed(tab(4)),
     );
-    expect(wantsNewTabPage(one, SHOWN)).toBe(false);
+    expect(canOfferFirstTab(one, SHOWN)).toBe(false);
     // Its × here, or the agent's close through the server.
-    expect(wantsNewTabPage(reduceBrowser(one, { type: "closed", tabId: 4 }), SHOWN)).toBe(true);
+    expect(canOfferFirstTab(reduceBrowser(one, { type: "closed", tabId: 4 }), SHOWN)).toBe(true);
     const byAgent = run(one, event({ type: "builtin_browser_close", tabId: 4 }));
-    expect(wantsNewTabPage(byAgent, SHOWN)).toBe(true);
+    expect(canOfferFirstTab(byAgent, SHOWN)).toBe(true);
     // Closed while the panel was out of sight: nothing until it is shown again.
-    expect(wantsNewTabPage(byAgent, HIDDEN)).toBe(false);
+    expect(canOfferFirstTab(byAgent, HIDDEN)).toBe(false);
   });
 
   it("counts this window's requests on their way, and never below none", () => {
@@ -741,8 +741,8 @@ describe("switching backends", () => {
       { ...READY, backends: [{ backend: "builtin", available: true }, chromeEntry()] },
       event({ type: "builtin_browser_backend", backend: "chrome" }),
     );
-    expect(wantsNewTabPage(desktopOnChrome, SHOWN)).toBe(false);
-    expect(wantsNewTabPage(WEB_CONNECTED, SHOWN)).toBe(false);
+    expect(canOfferFirstTab(desktopOnChrome, SHOWN)).toBe(false);
+    expect(canOfferFirstTab(WEB_CONNECTED, SHOWN)).toBe(false);
   });
 });
 
@@ -858,7 +858,7 @@ describe("conversation browser scopes", () => {
     state = run(state, { type: "closed", tabId: 2 });
     expect(activeTab(state)).toBeNull();
     expect(shownTabs(state).tabs).toEqual([]);
-    expect(wantsNewTabPage(state, docks(state.scope))).toBe(true);
+    expect(canOfferFirstTab(state, docks(state.scope))).toBe(true);
   });
 
   it("counts outstanding opens in the scope that requested them", () => {
@@ -867,9 +867,9 @@ describe("conversation browser scopes", () => {
       { type: "scope", scope: "a" },
       { type: "opening", delta: 1, scope: "a" },
     );
-    expect(wantsNewTabPage(state, docks(state.scope))).toBe(false);
+    expect(canOfferFirstTab(state, docks(state.scope))).toBe(false);
     state = run(state, { type: "scope", scope: "b" });
-    expect(wantsNewTabPage(state, docks(state.scope))).toBe(true);
+    expect(canOfferFirstTab(state, docks(state.scope))).toBe(true);
     state = run(
       state,
       event({
@@ -880,9 +880,9 @@ describe("conversation browser scopes", () => {
         url: "https://a.test",
       }),
     );
-    expect(wantsNewTabPage(state, docks(state.scope))).toBe(true);
+    expect(canOfferFirstTab(state, docks(state.scope))).toBe(true);
     state = run(state, { type: "opening", delta: -1, scope: "a" }, { type: "scope", scope: "a" });
-    expect(wantsNewTabPage(state, docks(state.scope))).toBe(false);
+    expect(canOfferFirstTab(state, docks(state.scope))).toBe(false);
   });
 
   it("adopts draft pages and a pending popup without replacing elements or storage", () => {
@@ -920,6 +920,6 @@ describe("conversation browser scopes", () => {
     );
     expect(state.guests.every((guest) => guest.scope === "saved")).toBe(true);
     state = run(state, { type: "scope", scope: "draft" });
-    expect(wantsNewTabPage(state, docks(state.scope))).toBe(true);
+    expect(canOfferFirstTab(state, docks(state.scope))).toBe(true);
   });
 });
