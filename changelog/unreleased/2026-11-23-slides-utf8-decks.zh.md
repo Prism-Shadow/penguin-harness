@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** fix
 - **Scope:** `use-bento-slides`
+- **PR:** [#1719](https://github.com/Prism-Shadow/penguin-harness/pull/1719)
 
 [English](2026-11-23-slides-utf8-decks.md)
 
