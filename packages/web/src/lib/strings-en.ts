@@ -4411,6 +4411,7 @@ Scenarios:
     /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */
     outlineAnswering: "Answering…",
     inputPlaceholder: "Type a message. Enter to send, Shift+Enter for newline, paste images",
+    resizeDraft: "Resize draft input",
     inputPlaceholderShort: "Type a message…",
     /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
     steerPlaceholder: "Message the running agent — delivered with the next turn",
