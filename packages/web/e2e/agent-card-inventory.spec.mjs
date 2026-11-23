@@ -64,10 +64,10 @@ test("names keep their own line and plugin counts lead to the right Agent invent
   await expect(card).toBeVisible();
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 820 });
-    const layout = await card.evaluate((el) => {
+    const layout = await card.evaluate((el, id) => {
       const title = el.querySelector("a").getBoundingClientRect();
       const row = el.querySelector("a").parentElement.getBoundingClientRect();
-      const meta = el.querySelector("span[title]").getBoundingClientRect();
+      const meta = el.querySelector(`span[data-tooltip="${CSS.escape(id)}"]`).getBoundingClientRect();
       return {
         nameBottom: title.bottom,
         secondaryTop: meta.top,
@@ -77,7 +77,7 @@ test("names keep their own line and plugin counts lead to the right Agent invent
         viewport: innerWidth,
         overflow: document.documentElement.scrollWidth > innerWidth,
       };
-    });
+    }, agentId);
     expect(layout.secondaryTop).toBeGreaterThanOrEqual(layout.nameBottom);
     expect(layout.nameWidth).toBeGreaterThan(Math.min(layout.rowWidth - 32, 190));
     expect(layout.right).toBeLessThanOrEqual(layout.viewport);
