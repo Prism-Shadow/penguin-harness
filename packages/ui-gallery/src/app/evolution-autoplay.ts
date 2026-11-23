@@ -133,11 +133,43 @@ export function installEvolutionAutoplay(
         card.click();
       }
     } else if (destination === "chart") {
-      const chart = doc.querySelector("main svg.ui-chart");
+      const chart = [...doc.querySelectorAll("main svg.ui-chart")].find(
+        (candidate) => candidate.getClientRects().length > 0,
+      );
       if (chart) {
         revealChart(chart);
         if (playOnce) {
-          stop();
+          // In the desktop workspace, drag the conversation from Open pages beside its chart.
+          const session = doc
+            .querySelector<HTMLElement>(
+              'nav [data-app-row^="chat:"]:not([data-app-row="chat:new"])',
+            )
+            ?.closest<HTMLElement>('[draggable="true"]');
+          const pane = chart.closest<HTMLElement>('[data-workspace-page][data-pane="full"]');
+          if (
+            pane &&
+            session?.getBoundingClientRect().width &&
+            typeof win.DataTransfer === "function"
+          ) {
+            const dataTransfer = new win.DataTransfer();
+            const drag = (type: string) =>
+              new win.DragEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                dataTransfer,
+                clientX: pane.getBoundingClientRect().left + 1,
+              });
+            session.dispatchEvent(drag("dragstart"));
+            pane.dispatchEvent(drag("dragover"));
+            timer = playback.schedule(() => {
+              pane.dispatchEvent(drag("drop"));
+              session.dispatchEvent(drag("dragend"));
+              revealChart(chart);
+              stop();
+            }, 100);
+          } else {
+            stop();
+          }
           return;
         }
         destination = "replay";
