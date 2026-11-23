@@ -1,0 +1,36 @@
+name: Windows installer path acceptance build
+on:
+  push:
+    branches: [test/windows-installer-paths]
+    paths: [.github/workflows/windows-installer-paths-qa.yml, packages/desktop/build/**, packages/desktop/electron-builder.yml, library/**]
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      - name: Bundle the release MinGit archive
+        shell: bash
+        run: |
+          curl -fLsS --retry 3 -o "$RUNNER_TEMP/mingit.zip" https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/MinGit-2.55.0.3-64-bit.zip
+          unzip -qo "$RUNNER_TEMP/mingit.zip" -d packages/desktop/build/minigit
+      - run: node packages/desktop/scripts/preflight.mjs
+      - run: pnpm --dir packages/desktop run image
+      - run: pnpm --dir packages/desktop exec electron-builder --win --publish never
+        env:
+          EVSIGN_REQUIRE: "false"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: disposable-installer
+          path: packages/desktop/out/penguin-desktop-win32-x64.exe
+          if-no-files-found: error
+          retention-days: 3
