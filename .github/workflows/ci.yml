@@ -520,6 +520,11 @@ jobs:
       # every route runs <app>/bin/penguin against <app>/dist/penguin.js
       # inside this tree. Nothing else in the build fails if those stop being packed, so the
       # tree gets checked here, on all three platforms, where it already exists.
+      - name: Windows desktop program directory contract
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./packages/desktop/test/windows-program-directory.ps1
+
       - name: Bundled CLI runs from the packed app
         run: node packages/desktop/scripts/verify-packed-cli.mjs
 
