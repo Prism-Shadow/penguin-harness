@@ -11,6 +11,8 @@ jobs:
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: 0a614ec72865454877a0621478005c96bca940d2
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v5
         with:
