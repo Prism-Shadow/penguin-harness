@@ -38,11 +38,16 @@ export function StartDashboard({
     <div className="ui-start anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3 md:px-4">
       <div className="mx-auto my-auto w-full min-w-0 max-w-3xl shrink-0 py-4">
         <div data-slot="brand" className="mb-5 flex flex-col items-center gap-1 text-center">
-          <div className="flex items-center justify-center gap-3">
+          <div className="flex max-w-full items-center justify-center gap-3">
             <div data-slot="brand-mark" className="size-12 shrink-0">
               <PenguinLogo src={PENGUIN_LOGO_URL} className="h-full w-full rounded-[24%]" />
             </div>
-            <Heading level={1} display data-slot="title" className="min-w-0">
+            <Heading
+              level={1}
+              display
+              data-slot="title"
+              className="min-w-0 [overflow-wrap:anywhere]"
+            >
               <AppName />
             </Heading>
           </div>

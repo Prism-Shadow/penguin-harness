@@ -70,6 +70,7 @@ export function PromptActionRow({ actions }: { actions: PromptAction[] }) {
       const total = widths.reduce((sum, w, i) => sum + w + (i ? gap : 0), 0);
       if (total <= width) {
         setVisible(widths.length);
+        setOpen(false);
         return;
       }
       let used = more.getBoundingClientRect().width;

@@ -22,7 +22,7 @@ async function fit(group) {
       group.evaluate((row) => {
         const over = [];
         for (let el = row; el; el = el.parentElement)
-          if (el.scrollWidth > el.clientWidth + 1)
+          if (el.scrollWidth > el.clientWidth)
             over.push([el.tagName, el.clientWidth, el.scrollWidth]);
         return over;
       }),
@@ -140,6 +140,16 @@ for (const lang of ["zh", "en"]) {
       .click();
     const row = page.locator('[data-slot="examples"]');
     await expect(row.locator('[data-slot="saved-prompt"]')).toHaveCount(2);
+    const { chat } =
+      lang === "en"
+        ? (await import("../src/lib/strings-en.ts")).en
+        : (await import("../src/lib/strings.ts")).zh;
+    const label = await row.locator('[data-slot="suggestion"]').first().getAttribute("aria-label");
+    const expected = Object.values(chat.exampleTasks).find((option) => option.label === label);
+    await (await action(page, row, label)).click();
+    await expect(page.locator('[data-slot="composer"] textarea').first()).toHaveValue(
+      expected.prompt,
+    );
     for (const width of [320, 375, 768, 1440]) {
       await page.setViewportSize({ width, height: 800 });
       await fit(row);
