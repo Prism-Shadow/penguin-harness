@@ -22,7 +22,9 @@
       "@prismshadow/penguin-library-agent/agent-config-service": [
         "../../library/agent/src/agent-config-service.ts"
       ],
-      "@prismshadow/penguin-library-agent/system-agent": ["../../library/agent/src/system-agent.ts"],
+      "@prismshadow/penguin-library-agent/system-agent": [
+        "../../library/agent/src/system-agent.ts"
+      ],
       "@prismshadow/penguin-library-agent/agent-app-data": [
         "../../library/agent/src/agent-app-data.ts"
       ],

@@ -136,4 +136,8 @@ export {
   unzipBounded,
 } from "@prismshadow/penguin-library-http/skill-import-limits";
 export type { UnzipLimits } from "@prismshadow/penguin-library-http/skill-import-limits";
-export { CONTROL_CHARACTER, assertDistinctPaths, specialEntries } from "@prismshadow/penguin-library-http/zip-entries";
+export {
+  CONTROL_CHARACTER,
+  assertDistinctPaths,
+  specialEntries,
+} from "@prismshadow/penguin-library-http/zip-entries";
