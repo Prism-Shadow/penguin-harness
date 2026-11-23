@@ -2,7 +2,7 @@
  * External built-in plugins (PRFC-0036): `@penguinharness/*` packages published from their own
  * repositories and shipped preinstalled like the `plugins/*` packages of this one.
  *
- * Each is pinned to one exact version in the `dependencies` of the three host packages —
+ * Each is pinned to one exact npm version (dependencies) or release asset (devDependencies) in each host —
  * packages/server (the plugin library and the built-in prefix), packages/cli (the npm CLI's
  * library) and packages/desktop — and pnpm-lock.yaml records the sha512 of the tarball that
  * version is: the one lock. A plugin of this repository is a `workspace:` dependency of the
@@ -41,11 +41,23 @@ const SCOPE = "@penguinharness/";
 /** One exact semver version: what a pin is. */
 const EXACT = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
+/** Release-only content is a direct build input. Published host packages carry it in dist. */
+export function releaseDependencies(pkg) {
+  return Object.fromEntries(
+    Object.entries(pkg.devDependencies ?? {}).filter(
+      ([name, source]) =>
+        name.startsWith(SCOPE) &&
+        typeof source === "string" &&
+        source.startsWith("https://github.com/"),
+    ),
+  );
+}
+
 /** The external `@penguinharness/*` dependencies a host's package.json names: name → range. */
 function externalRanges(root, host) {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, host, "package.json"), "utf8"));
   return new Map(
-    Object.entries(pkg.dependencies ?? {}).filter(
+    Object.entries({ ...pkg.dependencies, ...releaseDependencies(pkg) }).filter(
       ([name, range]) => name.startsWith(SCOPE) && !String(range).startsWith("workspace:"),
     ),
   );
@@ -54,7 +66,10 @@ function externalRanges(root, host) {
 /** What pnpm-lock.yaml resolves `name` to for `host`: its version and that version's integrity. */
 function lockedFor(lock, host, name) {
   // `0.1.0(<peers>)` → `0.1.0`, as scripts/lib/locked-prefix.mjs reads a ref.
-  const ref = lock.importers?.[host]?.dependencies?.[name]?.version?.replace(/\(.*$/, "");
+  const importer = lock.importers?.[host];
+  const ref = (
+    importer?.dependencies?.[name] ?? importer?.devDependencies?.[name]
+  )?.version?.replace(/\(.*$/, "");
   const entry = lock.packages?.[`${name}@${ref}`];
   return {
     ref,

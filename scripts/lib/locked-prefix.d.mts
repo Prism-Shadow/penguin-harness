@@ -1,6 +1,12 @@
 /** Types for locked-prefix.mjs, which the server's typechecked tests import. */
 export interface PnpmLock {
-  importers?: Record<string, { dependencies?: Record<string, { version: string }> }>;
+  importers?: Record<
+    string,
+    {
+      dependencies?: Record<string, { version: string }>;
+      devDependencies?: Record<string, { version: string }>;
+    }
+  >;
   packages?: Record<
     string,
     {
