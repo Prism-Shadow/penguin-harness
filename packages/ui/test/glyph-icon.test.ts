@@ -8,6 +8,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { GlyphIcon } from "../src/components/icons/glyph-icon/glyph-icon";
+import { GlyphAppIcon } from "../src/components/icons/glyph-app-icon/glyph-app-icon";
 import { ICONS } from "../src/components/icons/icons";
 import {
   ICON_TINTS,
@@ -135,5 +136,23 @@ describe("ICONS", () => {
   it("builds the open and the struck-through eye from one outline", () => {
     const outline = ICONS.eyeOff.replace("M3 3l18 18", "");
     expect(ICONS.eye.startsWith(outline)).toBe(true);
+  });
+});
+
+describe("session tool app marks", () => {
+  it.each([16, 20, 32, 48])("keeps each native drawing on the shared %ipx app mask", (size) => {
+    const marks = [
+      "session-tools-terminal",
+      "session-tools-workspace",
+      "session-tools-builtin-browser",
+    ].map((appKey) => {
+      const html = renderStatic(createElement(GlyphAppIcon, { appKey, size, d: ICONS.puzzle }));
+      expect(html).toContain(`data-system-app-icon="${appKey}"`);
+      expect(html).toContain(`width:${size}px;height:${size}px`);
+      expect(html).toContain('aria-hidden="true"');
+      expect(html).toContain('viewBox="0 0 32 32"');
+      return html.slice(html.indexOf("<svg"));
+    });
+    expect(new Set(marks).size).toBe(3);
   });
 });

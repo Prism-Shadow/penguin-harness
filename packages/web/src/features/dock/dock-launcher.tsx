@@ -56,6 +56,7 @@ import {
   type SpringDriver,
 } from "@prismshadow/penguin-ui";
 
+import { panelGlyph } from "./panel-meta";
 import { useSessionPanelOpener } from "./session-panel-opener";
 import { ChatSessionContext } from "../../lib/chat-session";
 import { PageIdentity } from "../../lib/page-focus";
@@ -411,7 +412,7 @@ function FloatingLauncher({
   const entries: FanEntry[] = panels.map((definition) => ({
     key: definition.id,
     label: definition.label(),
-    glyphAt: (size) => <GlyphIcon d={definition.glyph} size={size} />,
+    glyphAt: (size) => panelGlyph(definition.id, size),
     badge: definition.id === "agents" && agentsPending,
     testId: `dock-launcher-open-${definition.id}`,
     // The dock becomes visible with the tab, and the launcher unmounts with it.

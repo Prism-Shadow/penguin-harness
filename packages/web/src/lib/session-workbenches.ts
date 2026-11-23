@@ -21,6 +21,11 @@ export function isSessionWorkbenchKind(id: string): id is SessionWorkbenchKind {
   return Object.hasOwn(sessionWorkbenchEntries, id);
 }
 
+/** The app mark belongs to the tool, shared by all its Session-specific instances. */
+export function sessionWorkbenchAppKey(kind: SessionWorkbenchKind): string {
+  return "session-tools-" + kind;
+}
+
 export function sessionWorkbenchPath(kind: SessionWorkbenchKind): string {
   return "/session-tools/" + kind;
 }
@@ -46,12 +51,17 @@ export function sessionWorkbenchPage(
   };
 }
 
+export function sessionWorkbenchKindAt(path: string): SessionWorkbenchKind | null {
+  const kind = path.split("?", 1)[0]?.match(/^\/session-tools\/([^/]+)$/)?.[1];
+  return kind && isSessionWorkbenchKind(kind) ? kind : null;
+}
+
 export function parseSessionWorkbenchPage(
   page: Pick<OpenPage, "path">,
 ): { kind: SessionWorkbenchKind; address: SessionAddress } | null {
-  const [pathname, search] = page.path.split("?", 2);
-  const kind = pathname?.match(/^\/session-tools\/([^/]+)$/)?.[1];
-  if (!kind || !isSessionWorkbenchKind(kind) || !search) return null;
+  const kind = sessionWorkbenchKindAt(page.path);
+  const search = page.path.split("?", 2)[1];
+  if (!kind || !search) return null;
   const params = new URLSearchParams(search);
   const projectId = params.get("project"),
     sessionId = params.get("session");

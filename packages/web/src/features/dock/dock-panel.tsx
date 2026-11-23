@@ -97,6 +97,7 @@ import {
   type PanelBodyProps,
 } from "./dock-panel-bodies";
 import type { ComponentProps } from "react";
+import { sessionWorkbenchKindAt } from "../../lib/session-workbenches";
 import { panelGlyph, panelLabel } from "./panel-meta";
 import {
   dockPanelDefinition,
@@ -639,13 +640,17 @@ export function DockPanel({
 
   // The strip's items: panel tabs by their panel's name and mark (the registry's, or the id and
   // the puzzle piece while no definition is registered).
-  const stripTabs: DockTabItem[] = tabs.map((tab) => ({
-    key: tabKey(tab),
-    label: pageOf(tab.panel)?.title ?? panelLabel(tab.panel),
-    glyph: panelGlyph(tab.panel, ICON_SIZE.inlineGlyph),
-    badge: panelBadges?.[tab.panel] === true,
-    closeLabel: S.dock.closeTab,
-  }));
+  const stripTabs: DockTabItem[] = tabs.map((tab) => {
+    const page = pageOf(tab.panel);
+    const panel = (page && sessionWorkbenchKindAt(page.path)) ?? tab.panel;
+    return {
+      key: tabKey(tab),
+      label: page?.title ?? panelLabel(tab.panel),
+      glyph: panelGlyph(panel, ICON_SIZE.inlineGlyph),
+      badge: panelBadges?.[tab.panel] === true,
+      closeLabel: S.dock.closeTab,
+    };
+  });
   const closeByKey = (key: string): void => {
     const tab = tabs.find((t) => tabKey(t) === key);
     if (tab) closeTab(tab);
