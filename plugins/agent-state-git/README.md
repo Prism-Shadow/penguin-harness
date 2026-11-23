@@ -37,33 +37,17 @@ itself: the member who asked for it, else the server's Git identity.
 
 ## The Git it runs
 
-GitHub Desktop's build of Git, as [dugite](https://github.com/desktop/dugite) pins it: dugite's
-`embedded-git.json` names one archive of
-[dugite-native](https://github.com/desktop/dugite-native) per platform, with its sha256. The
-first time the plugin runs on a host, it downloads that archive (24–65 MiB), verifies it, keeps
-only the `git` program (on Windows also the DLLs it loads) under
-`<data root>/cache/agent-state-git.engine/`, and deletes the archive. The kept copy is 3.4–7.1
-MiB. Until it is in place, and on any host where it cannot be, the built-in engine records
-versions; the server log says which engine is in use and why.
+The plugin includes Git for macOS (Intel and Apple silicon), glibc Linux (x86, x64,
+ARM and ARM64) and Windows (x86, x64 and ARM64). Installation and activation work offline.
+An administrator can still set `LOCAL_GIT_DIRECTORY` to a Git in dugite’s directory layout;
+otherwise the plugin extracts its own platform payload into the Agent State engine cache.
+The server checks `git version` before choosing the native engine. Unsupported platforms and
+unusable programs retain the built-in engine.
 
-Nothing is downloaded when the harness is built or installed: `pnpm install` does not run dugite's
-own postinstall (`pnpm-workspace.yaml`), and the packaged plugin carries no binary.
-
-| Platform | Download | Kept |
-| --- | --- | --- |
-| Linux x64 / arm64 / arm / x86 (glibc 2.34 or later, with zlib; the amd64 and arm64 Docker images included) | 64.4 / 24.1 / 27.0 / 26.5 MiB | 4.1 / 4.0 / 3.6 / 4.9 MiB |
-| macOS x64 / arm64 | 64.3 / 60.6 MiB | 3.7 / 3.4 MiB |
-| Windows x64 / arm64 / x86 | 44.8 / 42.3 / 45.8 MiB | 6.4 / 5.9 / 7.1 MiB |
-| Linux on musl (Alpine), other architectures, the BSDs | none: the built-in engine records versions | |
-
-Two of dugite's own knobs apply:
-
-- `LOCAL_GIT_DIRECTORY` names a Git in dugite's layout to use as it is, with nothing downloaded.
-- `DUGITE_CACHE_DIR` names a directory that may already hold the verified archive, for a host with
-  no route to GitHub.
-
-Git is GPL-2.0; it is downloaded from dugite-native's releases on the host that runs it, and this
-package redistributes none of it.
+When packing the plugin, the build verifies GitHub Desktop’s archives against the SHA-256
+digests in the locked dugite package. `DUGITE_CACHE_DIR` can supply verified archives to the
+packaging machine. See [Third-party notices](THIRD-PARTY-NOTICES.md) for the Git sources
+and redistribution information.
 
 ## Install
 
@@ -79,7 +63,7 @@ the App re-assembles itself, no restart. Written by hand, it is a row of a Proje
 ## Development
 
 ```bash
-pnpm --filter @penguinharness/agent-state-git test    # fetches the Git into node_modules/.cache once
+pnpm --filter @penguinharness/agent-state-git test    # stages the current platform for the live suites
 pnpm --filter @penguinharness/agent-state-git bench   # the two engines, step by step
 ```
 
@@ -89,4 +73,4 @@ very commits the built-in engine writes. Where the host cannot get the Git they 
 
 ## License
 
-Apache-2.0.
+The plugin adapter is Apache-2.0. The bundled Git program and libraries retain their own licenses.
