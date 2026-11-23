@@ -126,6 +126,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
     void deps.hmr
       .ensure()
       .then((platform) => {
+        if (!sessionIsLive()) return refuse(socket, 401, "Unauthorized");
         if (apiSocket) {
           // No terminal lookup: the socket carries the whole API as the cookie's user.
           const ref = apiSocketRef(userId, sessionIsLive);

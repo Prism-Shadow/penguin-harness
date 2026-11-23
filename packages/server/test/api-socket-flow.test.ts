@@ -67,9 +67,10 @@ const streamCall = (id: number, path: string, flow: boolean) => ({
 /** A socket whose `/api/bulk` route sends `count` events of `event`, each after `writable`. */
 function bulkSocket(count: number, event: string = EVENT, beatMs?: number) {
   const ws = new StandInSocket();
+  const sessionIsLive = vi.fn(() => true);
   const route = { released: false, waits: 0, answer: null as StreamAnswer | null };
   serveApiSocket(ws as unknown as WebSocket, {
-    sessionIsLive: () => true,
+    sessionIsLive,
     fetch: async () => Response.json({ ok: true }),
     fetchStream: async (_request, answer) => {
       route.answer = answer;
@@ -94,7 +95,7 @@ function bulkSocket(count: number, event: string = EVENT, beatMs?: number) {
     origin: "http://localhost:7364",
     log: () => undefined,
   });
-  return { ws, route };
+  return { ws, route, sessionIsLive };
 }
 
 describe("acknowledged flow on the API socket", () => {
@@ -207,11 +208,12 @@ describe("acknowledged flow on the API socket", () => {
   });
 
   it("a stream without the header sends every event at once, as before", async () => {
-    const { ws, route } = bulkSocket(40);
+    const { ws, route, sessionIsLive } = bulkSocket(40);
     ws.frame(streamCall(1, "/api/bulk", false));
     await flush();
     const start = ws.sent.find((f) => f.id === 1 && "stream" in f) as { headers: object };
     expect(start.headers).not.toHaveProperty("x-flow");
+    expect(sessionIsLive).toHaveBeenCalledTimes(2); // Incoming call and response start, regardless of event count.
     expect(ws.events(1)).toHaveLength(40);
     expect(ws.sent.find((f) => f.id === 1 && "end" in f)).toBeDefined();
     expect(route.released).toBe(true);
@@ -246,35 +248,40 @@ describe("acknowledged flow on the API socket", () => {
     ws.close();
   });
 
-  it("a one-shot call cancelled while its body is read gets no answer frame", async () => {
-    const ws = new StandInSocket();
-    let finish: () => void = () => {};
-    serveApiSocket(ws as unknown as WebSocket, {
-      sessionIsLive: () => true,
-      fetch: async () =>
-        new Response(
-          new ReadableStream({
-            start(controller) {
-              finish = () => {
-                controller.enqueue(new TextEncoder().encode('{"messages":[]}'));
-                controller.close();
-              };
-            },
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-      fetchStream: () => {
-        throw new Error("no stream call is made here");
-      },
-      origin: "http://localhost:7364",
-      log: () => undefined,
-    });
-    ws.frame({ id: 7, call: { method: "GET", path: "/server/m1/api/sessions/s/messages" } });
-    await flush();
-    ws.frame({ id: 7, cancel: true });
-    finish();
-    await flush();
-    expect(ws.sent.filter((f) => f.id === 7)).toEqual([]);
-    ws.close();
-  });
+  it.each(["cancel", "revoke"] as const)(
+    "a %s while a one-shot body is read sends no answer frame",
+    async (action) => {
+      const ws = new StandInSocket();
+      let finish: () => void = () => {};
+      let live = true;
+      serveApiSocket(ws as unknown as WebSocket, {
+        sessionIsLive: () => live,
+        fetch: async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                finish = () => {
+                  controller.enqueue(new TextEncoder().encode('{"messages":[]}'));
+                  controller.close();
+                };
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        fetchStream: () => {
+          throw new Error("no stream call is made here");
+        },
+        origin: "http://localhost:7364",
+        log: () => undefined,
+      });
+      ws.frame({ id: 7, call: { method: "GET", path: "/server/m1/api/sessions/s/messages" } });
+      await flush();
+      if (action === "cancel") ws.frame({ id: 7, cancel: true });
+      else live = false;
+      finish();
+      await flush();
+      expect(ws.sent.filter((f) => f.id === 7)).toEqual([]);
+      ws.close();
+    },
+  );
 });

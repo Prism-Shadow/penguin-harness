@@ -66,6 +66,7 @@ async function open(
   });
   const queue: Frame[] = [];
   const waiters: ((f: Frame) => void)[] = [];
+  const timers = new Set<ReturnType<typeof setTimeout>>();
   let closedWith: { code: number; reason: string } | null = null;
   const closeWaiters: ((c: { code: number; reason: string }) => void)[] = [];
   ws.on("message", (data) => {
@@ -75,6 +76,8 @@ async function open(
     else queue.push(frame);
   });
   ws.on("close", (code, reason) => {
+    for (const timer of timers) clearTimeout(timer);
+    timers.clear();
     closedWith = { code, reason: reason.toString() };
     for (const w of closeWaiters.splice(0)) w(closedWith);
   });
@@ -94,8 +97,10 @@ async function open(
         const q = queue.shift();
         if (q) return resolve(q);
         const timer = setTimeout(() => reject(new Error("no frame within 5s")), 5000);
+        timers.add(timer);
         waiters.push((f) => {
           clearTimeout(timer);
+          timers.delete(timer);
           resolve(f);
         });
       }),
@@ -273,6 +278,75 @@ describe("a revoked login", () => {
 });
 
 describe("streams", () => {
+  it("closes an expired login's live socket on the heartbeat without renewing it", async () => {
+    const userId = "expired_heartbeat";
+    const login = await provisionUser(t.app, userId);
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const s = await open({ cookie: login.cookie });
+    if (!("ws" in s)) throw new Error("handshake refused");
+    try {
+      send(s.ws, {
+        id: 1,
+        call: { method: "GET", path: "/api/events", headers: { accept: "text/event-stream" } },
+      });
+      expect(await s.next()).toMatchObject({ stream: true, status: 200 });
+      expect((await s.next()).event).toBe("server_event");
+      t.deps.db
+        .prepare("UPDATE auth_sessions SET expires_at = ? WHERE user_id = ?")
+        .run("2000-01-01T00:00:00.000Z", userId);
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+      expect((await s.closed()).code).toBe(1008);
+      expect(t.deps.channels.get(`user:${userId}`).subscriberCount).toBe(0);
+      expect((await apiClient(t.app, login.cookie).get("/api/me")).status).toBe(401);
+    } finally {
+      vi.useRealTimers();
+      s.ws.close();
+    }
+  });
+
+  it.each(["call", "subscribe"] as const)(
+    "rejects a fresh %s on an old socket after an admin password reset",
+    async (action) => {
+      const userId = `revoked_stream_${action}`;
+      const old = await provisionUser(t.app, userId);
+      const s = await open({ cookie: old.cookie });
+      if (!("ws" in s)) throw new Error("handshake refused");
+      try {
+        send(s.ws, { id: 1, call: { method: "GET", path: "/api/me" } });
+        expect(await s.next()).toMatchObject({ id: 1, status: 200 });
+        expect(
+          (
+            await apiClient(t.app, cookie).post(`/api/admin/users/${userId}/password`, {
+              password: "new-password-456",
+            })
+          ).status,
+        ).toBe(204);
+        expect((await apiClient(t.app, old.cookie).get("/api/me")).status).toBe(401);
+        send(s.ws, {
+          id: 2,
+          call: {
+            method: "GET",
+            path: action === "call" ? "/api/me" : "/api/events",
+            ...(action === "subscribe" ? { headers: { accept: "text/event-stream" } } : {}),
+          },
+        });
+        const answer = await Promise.race([
+          s.next().then((frame) => ({ status: frame.status })),
+          s.closed().then((close) => ({ status: close.code === 1008 ? 401 : close.code })),
+        ]);
+        expect(answer.status).toBe(401);
+        const fresh = await loginUser(t.app, userId, "new-password-456");
+        const replacement = await open({ cookie: fresh.cookie });
+        if (!("ws" in replacement)) throw new Error("fresh login refused");
+        send(replacement.ws, { id: 1, call: { method: "GET", path: "/api/me" } });
+        expect(await replacement.next()).toMatchObject({ status: 200 });
+        replacement.ws.close();
+      } finally {
+        s.ws.close();
+      }
+    },
+  );
+
   it("frames a text/event-stream endpoint per event and ends on cancel", async () => {
     const s = await open({ cookie });
     if (!("ws" in s)) throw new Error("handshake refused");
