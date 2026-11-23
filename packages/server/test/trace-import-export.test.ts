@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AmspRecord, SessionMetaPayload } from "@prismshadow/penguin-core";
 import type {
   AgentTracesResponse,
-  ProjectCreateResponse,
+  ProjectsResponse,
   SessionsResponse,
   TraceEventsResponse,
   TraceImportResponse,
@@ -78,26 +78,29 @@ async function errorCode(res: Response): Promise<string> {
 describe("trace-import-export", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
-  let member: ReturnType<typeof apiClient>;
-  let outsider: ReturnType<typeof apiClient>;
   let projectId: string;
   const base = () => `/api/projects/${projectId}/agents/default_agent/traces`;
+
+  async function provisionMember() {
+    const { cookie } = await provisionUser(t.app, "member_b");
+    expect(
+      (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
+    ).toBe(201);
+    return apiClient(t.app, cookie);
+  }
+
+  async function provisionOutsider() {
+    const { cookie } = await provisionUser(t.app, "outsider");
+    return apiClient(t.app, cookie);
+  }
 
   beforeEach(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner");
-    const b = await provisionUser(t.app, "member_b");
-    const c = await provisionUser(t.app, "outsider");
     owner = apiClient(t.app, a.cookie);
-    member = apiClient(t.app, b.cookie);
-    outsider = apiClient(t.app, c.cookie);
-    const created = (await (
-      await owner.post("/api/projects", { projectId: "owner-trace_io", name: "Trace IO" })
-    ).json()) as ProjectCreateResponse;
-    projectId = created.project.projectId;
-    expect(
-      (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
-    ).toBe(201);
+    const { projects } = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
+    expect(projects).toHaveLength(1);
+    projectId = projects[0]!.projectId;
   });
   afterEach(async () => {
     await t.cleanup();
@@ -114,6 +117,7 @@ describe("trace-import-export", () => {
     );
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(await res.text()).toBe(toContent(messages));
+    const member = await provisionMember();
     // A plain member can export too (same rule as the snapshot export).
     expect((await member.get(`${base()}/${SID}/1/download`)).status).toBe(200);
   });
@@ -131,6 +135,7 @@ describe("trace-import-export", () => {
     const missing = await owner.get(`${base()}/${SID}/9/download`);
     expect(missing.status).toBe(404);
     expect(await errorCode(missing)).toBe("trace_not_found");
+    const outsider = await provisionOutsider();
     // No Project access → uniform 404 (requireProjectAccess does not leak existence).
     expect((await outsider.get(`${base()}/${SID}/1/download`)).status).toBe(404);
   });
@@ -277,6 +282,8 @@ describe("trace-import-export", () => {
 
   it("import: owner only — member 403, outsider 404, unknown agent 404", async () => {
     const body = { dataBase64: b64(toContent(sampleTrace(SID))) };
+    const member = await provisionMember();
+    const outsider = await provisionOutsider();
     expect((await member.post(`${base()}/import`, body)).status).toBe(403);
     expect((await outsider.post(`${base()}/import`, body)).status).toBe(404);
     expect(
