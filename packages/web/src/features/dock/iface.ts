@@ -13,11 +13,11 @@
  * what the dock's surfaces read (module.ts). The data and code types are the plugin face's
  * (`@prismshadow/penguin-web-plugin`), so a plugin's web half and the boot check judge one shape.
  */
-import type { ComponentType } from "react";
 import { Interface, type Slot } from "@prismshadow/penguin-core/kernel";
 import type {
   DockLayoutListener,
   DockPanelData,
+  DockPanelBody,
   DockScopeListener,
   Ordered,
 } from "@prismshadow/penguin-web-plugin";
@@ -33,7 +33,7 @@ export abstract class Dock {}
  * only in some places (the built-in browser) carries the registry's live question on itself as
  * `PanelOffering`, which the dock registers with it (module.ts).
  */
-export type DockPanel = ComponentType<{ active: boolean }>;
+export type DockPanel = DockPanelBody;
 
 /** Where a panel is offered, when not everywhere: a live answer and the feed of its changes. */
 export interface PanelOffering {

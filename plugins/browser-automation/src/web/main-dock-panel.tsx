@@ -9,6 +9,7 @@ export const mainPanelDefinition = {
   glyph: ICONS.globe,
   order: 70,
   lead: true,
+  availableFromAppCenter: ({ isAdmin }: { isAdmin: boolean }) => isAdmin,
   offered: isBrowserOffered,
   subscribeOffered: subscribeBrowser,
   Body: BuiltinBrowserPanel,

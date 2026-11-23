@@ -23,20 +23,20 @@ Var PHPathErrorText
 ; UninstallString. Check both registry views the assisted installer can remove.
 !macro PHCheckOldTarget root
   ReadRegStr $0 ${root} "${INSTALL_REGISTRY_KEY}" InstallLocation
-  ${If} $0 == ""
-    ReadRegStr $1 ${root} "${UNINSTALL_REGISTRY_KEY}" UninstallString
-    !ifdef UNINSTALL_REGISTRY_KEY_2
-      ${If} $1 == ""
-        ReadRegStr $1 ${root} "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
-      ${EndIf}
-    !endif
-    ${If} $1 != ""
-      StrCpy $2 $1 1
-      ${If} $2 == '$\"'
-        StrCpy $1 $1 "" 1
-        ${WordFind} "$1" '$\"' "+1" $1
-      ${EndIf}
-      ${GetParent} "$1" $0
+  ReadRegStr $PHOldUninstaller ${root} "${UNINSTALL_REGISTRY_KEY}" UninstallString
+  !ifdef UNINSTALL_REGISTRY_KEY_2
+    ${If} $PHOldUninstaller == ""
+      ReadRegStr $PHOldUninstaller ${root} "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
+    ${EndIf}
+  !endif
+  ${If} $PHOldUninstaller != ""
+    StrCpy $1 $PHOldUninstaller 1
+    ${If} $1 == '$\"'
+      StrCpy $PHOldUninstaller $PHOldUninstaller "" 1
+      ${WordFind} "$PHOldUninstaller" '$\"' "+1" $PHOldUninstaller
+    ${EndIf}
+    ${If} $0 == ""
+      ${GetParent} "$PHOldUninstaller" $0
       ${If} $0 == ""
         !insertmacro PHPathError
       ${EndIf}
@@ -65,12 +65,40 @@ Var PHPathErrorText
     ${OrIf} $0 == "$TEMP"
       !insertmacro PHPathError
     ${EndIf}
+    ; Inventory-based uninstallers protect personal files themselves. A legacy
+    ; uninstaller may clear an entire custom path, even for a different destination.
+    ReadRegDWORD $1 ${root} "${INSTALL_REGISTRY_KEY}" ProgramFileInventory
+    ${If} $1 != 1
+    ${AndIf} $PHOldUninstaller != ""
+    ${AndIf} ${FileExists} "$PHOldUninstaller"
+    ${AndIf} $0 != "$LOCALAPPDATA\Programs\${APP_FILENAME}"
+    ${AndIf} $0 != "$PROGRAMFILES\${APP_FILENAME}"
+    ${AndIf} $0 != "$PROGRAMFILES64\${APP_FILENAME}"
+      InitPluginsDir
+      SetOutPath "$PLUGINSDIR"
+      File /oname=check-old-program.ps1 "${BUILD_RESOURCES_DIR}\windows-legacy-program.ps1"
+      File /oname=program-files.txt "${BUILD_RESOURCES_DIR}\generated\program-files.txt"
+      ReadRegStr $1 ${root} "${UNINSTALL_REGISTRY_KEY}" DisplayVersion
+      StrCmp $1 "0.2.18" +2
+      StrCpy $1 "unknown"
+      nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\check-old-program.ps1" -ProgramDirectory "$0" -Inventory "$PLUGINSDIR\program-files.txt" -Uninstaller "${UNINSTALL_FILENAME}" -Version "$1"'
+      Pop $1
+      ${If} $1 != "0"
+        StrCpy $PHPathErrorText "Setup kept the old program folder at $0. Its uninstaller could remove other files. Close PenguinHarness, rename the old folder to keep it as a backup, then run Setup again and choose an empty program folder."
+        StrCmp $LANGUAGE ${PH_LANG_ZH_CN} 0 +2
+        StrCpy $PHPathErrorText "旧程序文件夹 $0 已保留。旧卸载器可能删除其中的其他文件。请关闭 PenguinHarness，将旧文件夹改名留作备份，再次运行安装程序并选择空的程序文件夹。"
+        MessageBox MB_OK|MB_ICONSTOP "$PHPathErrorText" /SD IDOK
+        SetErrorLevel 2
+        Quit
+      ${EndIf}
+    ${EndIf}
   ${EndIf}
 !macroend
 
 !ifndef BUILD_UNINSTALLER
   !include "WordFunc.nsh"
 
+  Var PHOldUninstaller
   Var PHProgramEdit
   Var PHProgramPreview
   Var PHInvalidText
@@ -79,6 +107,7 @@ Var PHPathErrorText
   !macro PHProgramPages
   Function PHProgramPage
     ${If} ${isUpdated}
+      Call PHCheckRegisteredTargets
       !ifmacrodef PHCheckExistingDataLocation
         !insertmacro PHCheckExistingDataLocation
       !endif
@@ -163,6 +192,7 @@ Var PHPathErrorText
       Abort
     ${EndIf}
     StrCpy $INSTDIR $0
+    Call PHCheckRegisteredTargets
     Call PHProgramTargetAvailable
     IfErrors 0 +2
     Abort
@@ -176,12 +206,17 @@ Var PHPathErrorText
   ; body, after this include. Emit their consumers once that header is ready.
   !macro customHeader
     !insertmacro PHProgramPages
+    !ifmacrodef PHDataPageFunctions
+      !insertmacro PHDataPageFunctions
+    !endif
   Function PHCheckRegisteredTargets
     Push $0
     Push $1
     Push $2
-    !insertmacro PHCheckOldTarget HKCU
-    !insertmacro PHCheckOldTarget HKLM
+    !insertmacro PHCheckOldTarget SHELL_CONTEXT
+    ${If} $installMode == "all"
+      !insertmacro PHCheckOldTarget HKCU
+    ${EndIf}
     Pop $2
     Pop $1
     Pop $0
@@ -228,8 +263,8 @@ accepted:
   !macroend
 
   !macro customInit
-    Call PHCheckRegisteredTargets
     ${If} ${Silent}
+      Call PHCheckRegisteredTargets
       Push $INSTDIR
       Call PHNormalizePath
       Pop $INSTDIR
@@ -258,6 +293,7 @@ accepted:
   !macroend
 
   !macro customInstall
+    WriteRegDWORD SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" ProgramFileInventory 1
     !ifmacrodef PHCommitDataDirectory
       !insertmacro PHCommitDataDirectory
     !endif

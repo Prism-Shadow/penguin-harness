@@ -29,6 +29,22 @@ try {
         (Get-Content -LiteralPath "$temp/neighbor.txt") -ne 'neighbor') {
         throw 'Removing the inventoried file changed an unrelated file.'
     }
+    $legacy = Join-Path $temp 'custom legacy'
+    $null = New-Item -Type Directory -Path "$legacy/resources" -Force
+    Set-Content -LiteralPath "$legacy/resources/installed.txt" -Value 'program'
+    Set-Content -LiteralPath "$legacy/Uninstall PenguinHarness.exe" -Value 'test fixture'
+    $powershell = "$env:SystemRoot/System32/WindowsPowerShell/v1.0/powershell.exe"
+    $check = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
+        "$build/windows-legacy-program.ps1", '-ProgramDirectory', $legacy,
+        '-Inventory', "$temp/inventory.txt", '-Uninstaller', 'Uninstall PenguinHarness.exe')
+    & $powershell @check
+    if ($LASTEXITCODE -ne 0) { throw 'The dedicated legacy folder was rejected.' }
+    Set-Content -LiteralPath "$legacy/resources/notes.txt" -Value 'private note'
+    & $powershell @check
+    if ($LASTEXITCODE -ne 2 -or (Get-Content -LiteralPath "$legacy/resources/notes.txt") -ne 'private note') {
+        throw 'The old recursive uninstaller would be allowed to touch an extra file.'
+    }
+    $global:LASTEXITCODE = 0
 } finally {
     Remove-Item -LiteralPath $temp -Recurse -Force
 }

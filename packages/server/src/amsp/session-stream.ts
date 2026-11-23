@@ -16,12 +16,12 @@
  */
 import type { Context } from "hono";
 import { sseEndpoint } from "../http/sse.js";
-import type { SseRevocation, StreamedChannel } from "../http/sse.js";
+import type { SseEndpointOptions, StreamedChannel } from "../http/sse.js";
 
 export function amspSessionStream(
   c: Context,
   channel: StreamedChannel,
-  revocation?: SseRevocation,
+  access: Pick<SseEndpointOptions, "revocation" | "authorize"> = {},
 ): Response {
-  return sseEndpoint(c, channel, { amsp: true, ...(revocation ? { revocation } : {}) });
+  return sseEndpoint(c, channel, { amsp: true, ...access });
 }

@@ -1515,6 +1515,8 @@ export interface SessionInfo {
   provider: string;
   /** Last confirmed target while it waits for, or is carrying out, a model handoff. */
   pendingModel?: ModelRefDto;
+  /** Single-Session GET: the latest accepted switch that later failed, while its live channel exists. */
+  modelSwitchFailure?: ModelRefDto & { id: string };
   /** Upstream model_id of the session's current model (the request id sent to MMSP). */
   modelId: string;
   workspace: string;

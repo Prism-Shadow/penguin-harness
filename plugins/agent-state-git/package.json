@@ -11,7 +11,7 @@
     "agent-state",
     "workbench-history"
   ],
-  "license": "Apache-2.0",
+  "license": "SEE LICENSE IN THIRD-PARTY-NOTICES.md",
   "author": {
     "name": "Prism-Shadow",
     "url": "https://github.com/Prism-Shadow"
@@ -37,7 +37,9 @@
     "README.md",
     "icon.svg",
     "ifaces.json",
-    "LICENSE"
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md",
+    "licenses"
   ],
   "publishConfig": {
     "access": "public"
@@ -46,7 +48,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "bench": "vitest run --config vitest.bench.config.ts",
-    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup && node src/pack/stage.mjs --host",
+    "prepack": "node src/pack/stage.mjs"
   },
   "devDependencies": {
     "@prismshadow/penguin-core": "workspace:*",

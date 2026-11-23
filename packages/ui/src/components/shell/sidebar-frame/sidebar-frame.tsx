@@ -29,6 +29,7 @@ import type { ReactNode, Ref } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
+import { Chevron } from "../../icons/chevron/chevron";
 import { ChevronDown } from "../../icons/marks/marks";
 import { Text } from "../../content/typography/typography";
 import { NAV_FILL, NavRow } from "../../navigation/nav-list/nav-list";
@@ -186,7 +187,11 @@ export function SidebarListHeader({
     <div
       data-layout-motion
       className={`mt-3 grid items-center px-1 pt-2 ${
-        searching ? "grid-cols-[0fr_1fr]" : "grid-cols-[1fr_1fr]"
+        searching
+          ? "grid-cols-[0fr_1fr]"
+          : fold
+            ? "grid-cols-[minmax(0,1fr)_auto]"
+            : "grid-cols-[1fr_1fr]"
       }`}
     >
       {fold ? (
@@ -198,12 +203,10 @@ export function SidebarListHeader({
           disabled={searching}
           className={`flex min-w-0 items-center gap-1 overflow-hidden px-1 text-left ${searching ? "invisible" : ""}`}
         >
-          <span className={`shrink-0 ${fold.open ? "" : "-rotate-90"}`}>
-            <ChevronDown />
-          </span>
-          <Text as="span" variant="eyebrow" className="truncate">
+          <Text as="span" variant="eyebrow" className="min-w-0 flex-1 truncate">
             {label}
           </Text>
+          <Chevron open={fold.open} size={ICON_SIZE.chevronDense} className="text-fg-subtle" />
         </button>
       ) : (
         <Text

@@ -1,11 +1,18 @@
-# 已有 Windows 数据目录
+# 存量安装兼容性
 
 - **Date:** 2026-11-23
-- **Type:** feature
-- **Scope:** desktop, core, cli, server
-- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1759
+- **Type:** change
+- **Scope:** `desktop`
 
 [English](2026-11-23-backward-compatibility.md)
+
+## Windows 桌面升级
+
+旧安装器可能将自定义程序文件夹登记为递归卸载目录。安装程序能识别 Windows 0.2.18 正式版的文件清单，以及内容与安装包一致的程序目录。若无法确认目录内容，整个文件夹原样保留。请先关闭 PenguinHarness，将旧文件夹改名留作备份，再次运行安装程序并选择空的程序文件夹。
+
+新版安装器会登记按程序文件清单卸载的能力。停止支持从递归卸载的旧版升级时，可以移除此项旧版检查。
+
+## 既有 Windows 数据目录
 
 升级沿用现有服务数据和 Electron 配置目录。主动改选目录时，安装器复制这两部分数据，校验文件后才记录当前 Windows 用户的新位置。取消或失败后仍使用原位置。迁移前请退出桌面应用并停止服务端。显式指定的根目录和环境变量仍按原有顺序生效。
 

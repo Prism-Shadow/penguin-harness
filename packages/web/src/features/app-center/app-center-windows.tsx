@@ -22,6 +22,7 @@ import { systemAppFullPage } from "../../lib/system-apps";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { PageSlot } from "../../lib/page-slot";
+import { sessionAppPair } from "../../lib/session-app-dock";
 import { usePageWorkspace } from "../../lib/page-workspace";
 import { appTriggerId } from "./app-tile";
 import { AppCenterWindow } from "./app-center-window";
@@ -52,6 +53,7 @@ export function AppCenterWindows() {
   useEffect(() => closeAllApps, []);
 
   const leave = () => leaveWindow(navigate, location);
+  const docked = workspace && sessionAppPair(workspace.layout)?.app;
   /** The app's full page: a system app drawn in an iframe opens there where its window was. */
   const fullPageOf = ({ projectId: project, shortcut }: RunningAppRecord) =>
     shortcut.system?.frame !== undefined
@@ -74,7 +76,14 @@ export function AppCenterWindows() {
                 projectId={app.projectId}
                 shortcut={app.shortcut}
                 title={localizedText(locale, app.shortcut.title, app.shortcut.titleZh)}
-                onFullScreen={(path) =>
+                exitFullScreen={
+                  workspace?.current?.id === "app:" + app.key ? workspace.exitFullScreen : undefined
+                }
+                onFullScreen={(path) => {
+                  if (docked?.id === "app:" + app.key) {
+                    if (!workspace?.exitFullScreen) workspace?.fullScreen(docked);
+                    return;
+                  }
                   openFullPage(
                     navigate,
                     app.shortcut.system?.frame !== undefined ? fullPageOf(app) : path,
@@ -82,8 +91,8 @@ export function AppCenterWindows() {
                     {
                       fromWindow: true,
                     },
-                  )
-                }
+                  );
+                }}
                 onGone={() => {
                   closeApp(app.key);
                   if (workspace) workspace.close("app:" + app.key);
