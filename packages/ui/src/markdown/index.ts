@@ -1,5 +1,5 @@
 /**
- * `@prismshadow/chat-markdown`: the Markdown dialect a reply is read in, wherever it is read —
+ * `@prismshadow/penguin-ui/chat-markdown`: the Markdown dialect a reply is read in, wherever it is read —
  * the Web App's transcript (packages/ui's REMARK_PLUGINS) and the chat channels a reply is
  * relayed to (packages/server's messaging parser). One plugin, so the two cannot disagree about
  * what the model wrote: which characters are a link and which are bold.
@@ -18,7 +18,7 @@
  *
  * Strikethrough is still parsed: each host shows its tildes as written, in a pass of its own.
  *
- * Browser-safe: the server imports it as a dependency, and packages/ui bundles it into its
+ * Browser-safe: the server inlines this entry, and the UI build includes it in its
  * published modules. remark-parse is the host's; this only registers extensions on it.
  */
 import { gfmFootnote } from "micromark-extension-gfm-footnote";
