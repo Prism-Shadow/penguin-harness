@@ -124,7 +124,6 @@ import {
   SlashMenu,
   SlashPicker,
   noAutofill,
-  toastError,
   toastInfo,
   type MenuSelectOption,
   type TagInputChip,
@@ -179,6 +178,7 @@ import { isStopAction, midRunAction } from "./composer-send";
 import { composerNotice } from "./composer-notice";
 import { RefusedHandoffNotice } from "./refused-handoff-notice";
 import { FileDropZone } from "./drop-zone";
+import { AttachmentRejectionNotice } from "./attachment-rejection-notice";
 import { ContextGauge } from "./context-gauge";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { isLongPaste, longPasteFileName } from "../../lib/long-paste";
@@ -938,6 +938,13 @@ export function ChatInput({
       draftUploads.files = attachments;
     }
   }, [images, attachments, draftUploads]);
+  /**
+   * The oversize picks the limits just refused, one sentence per file (see
+   * AttachmentRejectionNotice). A pick event clears this first and the intakes append, so a
+   * drop that refuses an image and a file says both while a later pick starts from an empty
+   * slate; a successful send clears it with the rest of the draft.
+   */
+  const [rejectNotice, setRejectNotice] = useState<string[]>([]);
   /**
    * Quotations staged from the Files panel. Held here rather than in the draft cache, exactly
    * like attachments: what they quote is a file on disk that may have moved on by the time a
@@ -1832,6 +1839,7 @@ export function ChatInput({
         setTarget(null);
         setPendingModel(null);
         setSelectedSkills([]);
+        setRejectNotice([]);
       }
     } finally {
       setBusy(false);
@@ -1877,6 +1885,7 @@ export function ChatInput({
           setImages([]);
           setAttachments([]);
           setReferences([]);
+          setRejectNotice([]);
         }
       } finally {
         setBusy(false);
@@ -2022,8 +2031,13 @@ export function ChatInput({
     const imageFiles: File[] = [];
     for (const file of files) if (file.type.startsWith("image/")) imageFiles.push(file);
     const { accepted, rejected } = splitBySize(imageFiles, uploadLimits.imageMaxMb);
-    for (const file of rejected) {
-      toastError(S.chat.attachmentTooLarge(file.name, uploadLimits.imageMaxMb));
+    if (rejected.length > 0) {
+      // Said on screen, not as a toast: a toast leaves on its own, and the refusal is silent
+      // again by the time anyone looks (see AttachmentRejectionNotice).
+      setRejectNotice((prev) => [
+        ...prev,
+        ...rejected.map((file) => S.chat.attachmentTooLarge(file.name, uploadLimits.imageMaxMb)),
+      ]);
     }
     for (const file of accepted) {
       const reader = new FileReader();
@@ -2049,6 +2063,9 @@ export function ChatInput({
     }
     if (files.length > 0) {
       e.preventDefault();
+      // Every intake event starts from an empty slate, so a refusal line can never outstay
+      // the pick it explains (see rejectNotice).
+      setRejectNotice([]);
       addFiles(files);
       return;
     }
@@ -2058,6 +2075,7 @@ export function ChatInput({
     const text = e.clipboardData.getData("text/plain");
     if (!goalOn && isLongPaste(text)) {
       e.preventDefault();
+      setRejectNotice([]);
       const name = longPasteFileName(new Date());
       addAttachments([new File([text], name, { type: "text/plain" })]);
       toastInfo(S.chat.longPasteAttached(name));
@@ -2065,6 +2083,7 @@ export function ChatInput({
   };
 
   const onPickFiles = (e: ChangeEvent<HTMLInputElement>) => {
+    setRejectNotice([]);
     if (e.target.files) addFiles(e.target.files);
     e.target.value = "";
   };
@@ -2085,8 +2104,14 @@ export function ChatInput({
   const addAttachments = (files: Iterable<File>) => {
     if (goalOn) return; // a goal takes no file attachments: the server refuses them
     const { accepted: picked, rejected } = splitBySize(files, uploadLimits.attachmentMaxMb);
-    for (const file of rejected) {
-      toastError(S.chat.attachmentTooLarge(file.name, uploadLimits.attachmentMaxMb));
+    if (rejected.length > 0) {
+      // Same as the image intake above: the refusal stays on screen, one sentence per file.
+      setRejectNotice((prev) => [
+        ...prev,
+        ...rejected.map((file) =>
+          S.chat.attachmentTooLarge(file.name, uploadLimits.attachmentMaxMb),
+        ),
+      ]);
     }
     if (picked.length === 0) return;
     void Promise.all(picked.map(readDataUrl)).then((urls) => {
@@ -2098,6 +2123,7 @@ export function ChatInput({
   };
 
   const onPickAttachments = (e: ChangeEvent<HTMLInputElement>) => {
+    setRejectNotice([]);
     if (e.target.files) addAttachments(e.target.files);
     e.target.value = "";
   };
@@ -2113,6 +2139,7 @@ export function ChatInput({
    */
   const addDroppedFiles = (dropped: File[]) => {
     if (variant !== "session") return; // Text-only surface: drops have nowhere to go.
+    setRejectNotice([]);
     const batch = splitDroppedFiles(dropped);
     if (batch.images.length > 0) addFiles(batch.images);
     if (batch.files.length > 0) {
@@ -2468,6 +2495,14 @@ export function ChatInput({
             {S.chat.followUpQueuedChip(queuedFollowUps)}
           </p>
         )
+      )}
+
+      {/* The oversize picks the limits refused, one sentence per file: kept on screen — a
+          toast that leaves on its own is what made the refusal silent in the first place, and
+          the Files panel keeps its wording up too (see AttachmentRejectionNotice). The next
+          pick at either entry, a successful send, or the cross clears it. */}
+      {rejectNotice.length > 0 && (
+        <AttachmentRejectionNotice lines={rejectNotice} onClear={() => setRejectNotice([])} />
       )}
 
       {/* The hidden inputs behind the "+" menu's upload entries: kept mounted here (outside the
