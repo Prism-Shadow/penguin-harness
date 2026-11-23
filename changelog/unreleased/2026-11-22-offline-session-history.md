@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#1700](https://github.com/Prism-Shadow/penguin-harness/pull/1700)
 
 [中文版](2026-11-22-offline-session-history.zh.md)
 
