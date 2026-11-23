@@ -6,6 +6,15 @@
  *   `chat --resume` comes to it, then the chat shows the history, the run so far and the rest of
  *   it, and gives the prompt back once the run ends; nothing is refused.
  * - Given a resumed running Task, when a line is typed, then it steers the Task.
+ * - Given a narrow terminal, editing a steering message shows its localized prompt before
+ *   submission, preserves cursor edits, and keeps streamed output out of the draft.
+ * - Given an unfinished steering draft, an approval answer and more typing in the same input
+ *   chunk leave the draft editable after the decision.
+ * - Given a draft across goal rounds, the round announcement redraws it before more input.
+ * - Given a previous entry in readline history, Ctrl-P recalls it under the steering prompt.
+ * - Given a second draft already being edited, the first submission’s confirmation waits for the edit.
+ * - Given an unfinished steering draft, ending the run relabels it as ordinary input and
+ *   Enter submits the draft as the next Task.
  * - Given a resumed running Task, when Ctrl-C is pressed, then the Task is stopped.
  * - Given a resumed running Task, when `/exit` is typed, then the chat leaves and the Task goes
  *   on.
@@ -30,6 +39,7 @@ import {
   assistantText,
   compactionBegin,
   compactionEnd,
+  hookEvent,
   partialText,
   taskBegin,
   taskEnd,
@@ -68,12 +78,15 @@ interface Chat {
 }
 
 /** Starts `penguin chat` with `argv`; on a terminal (raw mode, keystrokes) when `tty` is set, else over a pipe. */
-function startChat(argv: string[], tty = false): Chat {
+function startChat(argv: string[], tty = false, language: "en" | "zh" = "en"): Chat {
   const stdin = new PassThrough() as PassThrough & {
     isTTY?: boolean;
     setRawMode?: (mode: boolean) => unknown;
   };
+  const outputProps = Object.getOwnPropertyDescriptors(process.stdout);
   if (tty) {
+    Object.defineProperty(process.stdout, "columns", { value: 12, configurable: true });
+    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
     stdin.isTTY = true;
     stdin.setRawMode = () => stdin;
   }
@@ -86,9 +99,15 @@ function startChat(argv: string[], tty = false): Chat {
   });
   const program = new Command();
   program.exitOverride();
-  registerChatCommand(program.command("chat"), t);
+  registerChatCommand(program.command("chat"), getMessages(language));
   const done = program.parseAsync(["node", "penguin", "chat", ...argv]).finally(() => {
     Object.defineProperty(process, "stdin", { value: realStdin, configurable: true });
+    if (tty) {
+      for (const key of ["columns", "isTTY"] as const) {
+        if (outputProps[key]) Object.defineProperty(process.stdout, key, outputProps[key]);
+        else Reflect.deleteProperty(process.stdout, key);
+      }
+    }
   });
   return {
     type: (text) => stdin.write(text),
@@ -176,6 +195,117 @@ describe("chat --resume on a Session that is still running", () => {
     await vi.waitFor(() => expect(chat.printed()).toContain(t.steerQueued("also check the docs")));
     await endAndExit(chat, session);
     expect(session.tasks).toEqual([]);
+  });
+
+  it.each([
+    ["en", "> Steer "],
+    ["zh", "> 插话 "],
+  ] as const)(
+    "labels the editable steering line in %s and sends cursor edits without its label",
+    async (lang, prompt) => {
+      const session = runningSession([partialText("start", "Checking the source")]);
+      const chat = startChat(["--resume", "cec67b17"], true, lang);
+      await vi.waitFor(() => expect(chat.printed()).toContain("Checking the source"));
+      expect(chat.printed()).not.toContain(prompt);
+      chat.type("also check doc");
+      expect(chat.printed()).toContain(prompt);
+      server.emit(SESSION_ID, partialText("delta", " before release"));
+      chat.type("\x1b[D\x1b[D\x1b[Dthe \x05s\r"); // three Lefts, insert, End, append and submit
+      await vi.waitFor(() => expect(steerTexts(session)).toEqual(["also check the docs"]));
+      server.emit(SESSION_ID, partialText("stop"));
+      await vi.waitFor(() => expect(chat.printed()).toContain(" before release"));
+      await endAndExit(chat, session, "\r");
+      expect(session.tasks).toEqual([]);
+    },
+  );
+
+  it("restores an active draft after an approval submitted in the same chunk as more typing", async () => {
+    const session = runningSession();
+    const chat = await resumeRunning(true);
+    chat.type("unfinished");
+    const question = chat.next(t.approvePrompt());
+    server.emitServerEvent(SESSION_ID, {
+      type: "approval_request",
+      toolCall: toolCall({
+        name: "exec_command",
+        arguments: '{"cmd":"ls"}',
+        toolCallId: "approval",
+      }),
+    });
+    await question();
+    chat.type("n\r draft");
+    await vi.waitFor(() => expect(chat.printed()).toContain("[denied]"));
+    expect(chat.printed().slice(chat.printed().lastIndexOf("[denied]"))).toContain(
+      "> Steer unfinished draft",
+    );
+    chat.type("\r");
+    await vi.waitFor(() => expect(steerTexts(session)).toEqual(["unfinished draft"]));
+    await endAndExit(chat, session, "\r");
+  });
+
+  it("redraws the unfinished draft after a goal moves to its next round", async () => {
+    server.hangTasks = true;
+    server.onTask = () => [userText("first round", "harness")];
+    const chat = startChat([], true);
+    await vi.waitFor(() => expect(chat.printed()).toContain("> "));
+    chat.type("/goal check the docs\r");
+    await vi.waitFor(() => expect(chat.printed()).toContain(t.goalRound(1)));
+    const [session] = server.sessions.values();
+    chat.type("next edit");
+    server.emit(
+      session!.sessionId,
+      hookEvent({ hook: "stop", name: "goal", decision: "continue" }),
+    );
+    server.emit(session!.sessionId, userText("next round", "harness"));
+    await vi.waitFor(() => expect(chat.printed()).toContain(t.goalRound(2)));
+    expect(chat.printed().slice(chat.printed().lastIndexOf(t.goalRound(2)))).toContain(
+      "> Steer next edit",
+    );
+    chat.type("\r");
+    await vi.waitFor(() => expect(steerTexts(session!)).toEqual(["next edit"]));
+    chat.type("/exit\r");
+    await chat.done;
+  });
+
+  it("shows the steering prompt when Ctrl-P recalls a message to edit", async () => {
+    const session = runningSession();
+    const chat = await resumeRunning(true);
+    chat.type("check\r");
+    await vi.waitFor(() => expect(chat.printed()).toContain(t.steerQueued("check")));
+    const recalled = chat.next("> Steer check");
+    chat.type("\x10");
+    await recalled();
+    chat.type(" again\r");
+    await vi.waitFor(() => expect(steerTexts(session)).toEqual(["check", "check again"]));
+    await endAndExit(chat, session, "\r");
+  });
+
+  it("keeps the previous submission’s confirmation out of a new steering draft", async () => {
+    const session = runningSession();
+    const chat = await resumeRunning(true);
+    chat.type("first\rnext");
+    await vi.waitFor(() => expect(steerTexts(session)).toEqual(["first"]));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(chat.printed()).not.toContain(t.steerQueued("first"));
+    chat.type(" draft\r");
+    await vi.waitFor(() => expect(chat.printed()).toContain(t.steerQueued("first")));
+    await vi.waitFor(() => expect(steerTexts(session)).toEqual(["first", "next draft"]));
+    await endAndExit(chat, session, "\r");
+  });
+
+  it("keeps an unfinished steering draft and its cursor at the next idle prompt", async () => {
+    const session = runningSession();
+    const chat = await resumeRunning(true);
+    chat.type("nextdraft\x1b[D\x1b[D\x1b[D\x1b[D\x1b[D");
+    expect(chat.printed()).toContain("> Steer ");
+    const idle = chat.next("> nextdraft");
+    endRun(session);
+    await idle();
+    chat.type(" \r");
+    await vi.waitFor(() => expect(taskTexts(session)).toEqual(["next draft"]));
+    expect(session.steers).toEqual([]);
+    chat.type("/exit\r");
+    await chat.done;
   });
 
   it("stops the Task on Ctrl-C", async () => {
