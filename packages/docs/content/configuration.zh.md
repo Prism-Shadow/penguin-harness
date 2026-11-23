@@ -46,7 +46,7 @@ Agent 用 `exec_command` 运行的命令继承宿主环境，但有以下改动�
 - **代理：** 在服务器运行的 Session 中，由[设置](/settings#代理选项)里的 **Agent 环境使用代理** 开关决定代理变量。关闭时移除 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY`；开启时注入已配置的代理地址，没有配置地址时透传宿主的变量。
 - **密钥保险柜：** 之后再叠加 Agent 的[密钥保险柜](#vault)，所以在保险柜里设置的 `PORT` 或 `PENGUIN_*` 变量确实能传给命令。
 - **控制变量：** 由服务器驱动的 Session 随后注入 `PENGUIN_API_URL`、`PENGUIN_API_TOKEN`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID`（公司模式下还有 `PENGUIN_ORG_ID`），Agent 自己发起的 `penguin` 调用因此能到达运行它的服务器。这些变量会覆盖密钥保险柜里的同名条目。见 [CLI 参考](/cli)。
-- **强制：** `GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`NO_COLOR`、`PAGER` 和 `GIT_PAGER` 始终取固定值，命令不会因为等待编辑器、凭证提示或分页器而卡住。任何来源都无法覆盖它们，密钥保险柜也不例外。
+- **强制：** `GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`PAGER` 和 `GIT_PAGER` 始终取固定值，命令不会因为等待编辑器、凭证提示或分页器而卡住。任何来源都无法覆盖它们，密钥保险柜也不例外。 命令继承已设置的 `NO_COLOR`。
 
 ### PATH 启动脚本
 
