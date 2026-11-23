@@ -282,3 +282,46 @@ test("reopened ten-step history keeps its compact header together on desktop and
     await expect(elapsed.locator(".font-mono")).toHaveText(time);
   }
 });
+
+test("the reply form stays inside the conversation and fills the composer from the keyboard", async ({
+  page,
+}) => {
+  await createSession(page, "smokea2uireview", "allow-all");
+  await send(page, "prepare the A2UI review card");
+  const card = page.locator('[data-a2ui="form"]');
+  for (const [width, themeId, themeMode] of [
+    [1280, "modern", "dark"],
+    [320, "doodle", "light"],
+  ]) {
+    await setAccountPrefs(page.request, { themeId, themeMode });
+    await page.setViewportSize({ width, height: 800 });
+    await page.reload();
+    await expect(
+      page.getByText("Review the changes before scheduling the release.", { exact: true }),
+    ).toBeVisible();
+    await expect(card.getByText("Review request", { exact: true })).toBeVisible();
+    const surface = await card.evaluate((el) => ({
+      border: getComputedStyle(el).borderTopWidth,
+      inset: getComputedStyle(el).paddingInlineStart,
+      fill: getComputedStyle(el).backgroundColor,
+      width: el.clientWidth,
+      content: el.scrollWidth,
+      right: el.getBoundingClientRect().right,
+    }));
+    expect(parseFloat(surface.border)).toBeGreaterThan(0);
+    expect(parseFloat(surface.inset)).toBeGreaterThanOrEqual(8);
+    expect(surface.fill).not.toEqual("rgba(0, 0, 0, 0)");
+    expect(surface.content).toBeLessThanOrEqual(surface.width + 1);
+    expect(surface.right).toBeLessThanOrEqual(width);
+    await expect(card.getByRole("button", { name: "Use answers" })).toBeDisabled();
+  }
+  const reviewer = card.getByRole("textbox", { name: /Reviewer/ });
+  await reviewer.fill("Morgan");
+  await reviewer.press("Enter");
+  await expect(page.locator('[data-slot="composer"] textarea:visible')).toHaveValue(
+    /Reviewer.*Morgan/,
+  );
+  await expect(
+    page.getByText("Send the review when you are ready.", { exact: true }),
+  ).toBeVisible();
+});

@@ -222,7 +222,7 @@ try {
     ...result.extra.map((d) => say(d)),
   ];
 
-  const declarations = ["dist/index.d.ts", "dist/highlighter.d.ts"].map((file) =>
+  const declarations = ["dist/index.d.ts", "dist/a2ui.d.ts", "dist/highlighter.d.ts"].map((file) =>
     join(installed, file),
   );
   const npmResult = compile(
@@ -253,6 +253,14 @@ try {
         .filter((name) => text.includes(name))
         .map((name) => `${relative(installed, file)} names ${name}`);
     }),
+  ]);
+
+  const mainUi = await import(pathToFileURL(join(installed, "dist/index.js")).href);
+  const a2ui = await import(pathToFileURL(join(installed, "dist/a2ui.js")).href);
+  check("4a", "the A2UI entry shares the renderer, registry and action provider", [
+    ...["A2uiBlock", "registerA2uiRenderer", "A2uiActionsProvider"].filter(
+      (name) => typeof a2ui[name] !== "function" || a2ui[name] !== mainUi[name],
+    ),
   ]);
 
   // --- rendered classes --------------------------------------------------------------------

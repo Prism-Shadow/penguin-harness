@@ -271,6 +271,30 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    if (flat.includes("prepare the A2UI review card")) {
+      const spec = {
+        type: "form",
+        title: "Review request",
+        fields: [
+          { id: "owner", label: "Reviewer", kind: "text", required: true },
+          { id: "notes", label: "Release notes", kind: "textarea" },
+        ],
+        submitLabel: "Use answers",
+      };
+      const reply = [
+        "Review the changes before scheduling the release.",
+        "",
+        "```a2ui",
+        JSON.stringify(spec),
+        "```",
+        "",
+        "Send the review when you are ready.",
+      ].join("\n");
+      block(res, 0, { type: "text", text: "" }, [{ type: "text_delta", text: reply }]);
+      messageStop(res, "end_turn", 80);
+      return;
+    }
+
     // Find-bar fixture (find.spec): one settled reply whose body repeats a token nobody else in
     // the app writes, so the hit count is exact without depending on the app's own copy.
     if (flat.includes("find marker test")) {
