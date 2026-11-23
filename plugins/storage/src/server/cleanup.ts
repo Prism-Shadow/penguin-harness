@@ -120,11 +120,26 @@ export function parseIdleDays(raw: unknown): number {
 function realpathSyncOrAncestor(abs: string): string | null {
   let current = abs;
   const tail: string[] = [];
+  const links = new Set<string>();
   for (;;) {
     try {
       const real = fs.realpathSync(current);
       return tail.length === 0 ? real : path.join(real, ...tail.reverse());
     } catch {
+      // A dangling link can still name a missing child of an existing Workspace. Resolve
+      // its stored target before climbing further, retaining any suffix already stripped.
+      let target: string | undefined;
+      try {
+        target = fs.readlinkSync(current);
+      } catch {
+        // Ordinary missing components have no link target.
+      }
+      if (target !== undefined) {
+        if (links.has(current)) return null;
+        links.add(current);
+        current = path.resolve(path.dirname(current), target);
+        continue;
+      }
       const parent = path.dirname(current);
       if (parent === current) return null;
       tail.push(path.basename(current));

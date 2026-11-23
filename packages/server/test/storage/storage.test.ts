@@ -467,6 +467,47 @@ describe("the Storage page", () => {
     expect(await exists(path.join(sibling, "orphan.txt"))).toBe(true);
   });
 
+  it("keeps the Workspace named by a dangling link to its missing child", async () => {
+    const client = await admin();
+    const aliases = path.join(t.root, "workspace-aliases");
+    await fs.mkdir(aliases);
+    const held = ["tmp-relative", "tmp-absolute"];
+    const orphan = "tmp-unrelated";
+    for (const name of [...held, orphan]) {
+      const dir = path.join(workspaces(), name);
+      await put(path.join(dir, "kept.txt"), 16);
+      await backdate(dir, 90);
+    }
+    const linkType = process.platform === "win32" ? "junction" : "dir";
+    for (const name of held) {
+      const target = path.join(workspaces(), name, "removed-folder");
+      const alias = path.join(aliases, name);
+      // Windows junction targets are absolute; the relative spelling exercises POSIX links.
+      await fs.symlink(
+        name === "tmp-relative" && process.platform !== "win32"
+          ? path.relative(aliases, target)
+          : target,
+        alias,
+        linkType,
+      );
+      await seed({ workspace: path.join(alias, "leaf"), daysAgo: 90 });
+    }
+    const one = path.join(aliases, "cycle-one"),
+      two = path.join(aliases, "cycle-two");
+    await fs.symlink(two, one, linkType);
+    await fs.symlink(one, two, linkType);
+    await seed({ workspace: one, daysAgo: 90 });
+
+    const offered = (await review(client)).items.filter((i) => i.kind === "workspace");
+    expect(offered.map((i) => i.name)).toEqual([orphan]);
+    const ids = [...held, orphan].map((name) => `workspace/${P}/${A}/${name}`);
+    const result = await clean(client, ids);
+    expect(result.skipped).toEqual(ids.slice(0, 2).map((id) => ({ id, reason: "in_use" })));
+    for (const name of held)
+      expect(await exists(path.join(workspaces(), name, "kept.txt"))).toBe(true);
+    expect(await exists(path.join(workspaces(), orphan, "kept.txt"))).toBe(false);
+  });
+
   it("lets a member clean their own Projects only, and never a server cache", async () => {
     const client = await admin();
     const owner = await member("st_owner");
