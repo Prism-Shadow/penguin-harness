@@ -45,14 +45,14 @@ test("the source desktop previews the same large export in both workspace contex
       "Desktop host",
       await shell.evaluate(() => ({ os: process.platform, version: process.versions.electron })),
     );
-    await verifyExport(page, base);
+    await verifyExport(page, base, shell);
   } finally {
     await shell.close();
     await fs.rm(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
 
-async function verifyExport(page, base) {
+async function verifyExport(page, base, shell) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "bento-export-"));
   try {
     const dir = path.join(root, "设计 meeting");
@@ -117,12 +117,33 @@ async function verifyExport(page, base) {
     await app.locator("[data-open-deck]").filter({ hasText: sample.title }).click();
     await expect(app.frameLocator("#editor").locator(".ed-thumb")).toHaveCount(4);
     await app.locator("#file-button").click();
-    const [down] = await Promise.all([
-      page.waitForEvent("download"),
-      app.locator("#export").click(),
-    ]);
-    const name = down.suggestedFilename();
-    await down.saveAs(path.join(dir, name));
+    const name = sample.title + ".bento.html";
+    if (shell) {
+      // Save the bytes prepared by the real Export action. Electron owns the native save dialog.
+      await shell.evaluate(
+        ({ session }) =>
+          session.defaultSession.once("will-download", (event) => event.preventDefault()) &&
+          undefined,
+      );
+      const [prepared] = await Promise.all([
+        page.waitForResponse(
+          (r) =>
+            r.request().method() === "POST" && new URL(r.url()).pathname.endsWith("/api/export"),
+        ),
+        app.locator("#export").click(),
+      ]);
+      const { href } = await prepared.json();
+      const exported = await page.request.get(api + "/" + href);
+      expect(exported.ok()).toBe(true);
+      await fs.writeFile(path.join(dir, name), await exported.body());
+    } else {
+      const [down] = await Promise.all([
+        page.waitForEvent("download"),
+        app.locator("#export").click(),
+      ]);
+      expect(down.suggestedFilename()).toBe(name);
+      await down.saveAs(path.join(dir, name));
+    }
     const bytes = (await fs.stat(path.join(dir, name))).size;
     expect(bytes).toBeGreaterThan(1048576);
     const sid = (
