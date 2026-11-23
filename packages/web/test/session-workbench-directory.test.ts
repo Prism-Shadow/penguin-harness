@@ -90,12 +90,12 @@ it("keeps same-ID local and remote resource groups distinct, reports a failed ta
   );
   const checkbox = (host: string) =>
     document.querySelector<HTMLInputElement>(
-      'input[aria-label="Select Session · Notes · ' + host + '"]',
+      'input[aria-label="Select Session Notes (' + host + ')"]',
     )!;
   await waitFor(() => checkbox("Studio") !== null);
   expect(checkbox("Workshop").disabled).toBe(true);
-  expect(document.body.textContent).toContain("Away · Unavailable");
-  expect(document.body.textContent).toContain("Workshop · Not permitted");
+  expect(document.body.textContent).toContain("Away (Unavailable)");
+  expect(document.body.textContent).toContain("Workshop: Not permitted");
   const activateRow = checkbox("Studio").closest("li")!.querySelector("button")!;
   await click(activateRow);
   expect(fixture.open).toHaveBeenCalledWith(
@@ -108,11 +108,11 @@ it("keeps same-ID local and remote resource groups distinct, reports a failed ta
   await click(checkbox("Studio"));
   await click(button("Close selected resources (2)"));
   const confirm = () => document.querySelector<HTMLElement>('[role="dialog"]')!;
-  expect(confirm().textContent).toContain("This server · Notes · 1");
-  expect(confirm().textContent).toContain("Studio · Notes · 2");
+  expect(confirm().textContent).toContain("Notes (This server) 1 open terminal");
+  expect(confirm().textContent).toContain("Notes (Studio) 2 open terminals");
   await click(button("Close"));
   await waitFor(
-    () => document.body.textContent?.includes("Studio · shared · close_failed") === true,
+    () => document.body.textContent?.includes("Studio (shared): close_failed") === true,
   );
   expect(checkbox("This server").checked).toBe(false);
   expect(checkbox("Studio").checked).toBe(true);

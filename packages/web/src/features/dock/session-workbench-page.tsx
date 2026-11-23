@@ -158,7 +158,7 @@ function SessionPicker({
             try {
               counts = await listSessionResourceCounts(resource, project, machineId);
             } catch (e) {
-              problems.push(host + " · " + messageOf(e));
+              problems.push(host + ": " + messageOf(e));
             }
           if (!current) return;
           const localAgents = sources.filter(
@@ -199,7 +199,7 @@ function SessionPicker({
                   if (index === pages - 1) hasMore = true;
                 }
               } catch (e) {
-                problems.push(host + " · " + agent.agentId + " · " + messageOf(e));
+                problems.push(host + " (" + agent.agentId + "): " + messageOf(e));
               }
             }),
           );
@@ -228,7 +228,7 @@ function SessionPicker({
                   )
                     add(session);
                 } catch (e) {
-                  problems.push(host + " · " + messageOf(e));
+                  problems.push(host + ": " + messageOf(e));
                 }
               }),
             );
@@ -256,6 +256,7 @@ function SessionPicker({
       clearTimeout(timer);
     };
   }, [sources, resource, project, needle, pages, refresh]);
+  const countLabel = kind === "terminal" ? S.dock.openTerminals : S.dock.openBrowserPages;
   const chosen = rows.filter((row) => selected.includes(idOf(row)) && (row.count ?? 0) > 0);
   function open(row: Row) {
     workspace?.openBesideSession(
@@ -291,16 +292,16 @@ function SessionPicker({
               unresolved.push(idOf(row));
               failures.push(
                 row.host +
-                  " · " +
+                  " (" +
                   row.session.sessionId +
-                  " · " +
+                  "): " +
                   (outcome?.error ?? S.dock.toolUnavailable),
               );
             }
           }
         } catch (e) {
           for (const row of batch) unresolved.push(idOf(row));
-          failures.push(batch[0]!.host + " · " + messageOf(e));
+          failures.push(batch[0]!.host + ": " + messageOf(e));
         }
       }),
     );
@@ -342,7 +343,7 @@ function SessionPicker({
         .filter((l) => !l.live)
         .map((l) => (
           <p key={l.machine.machineId} role="status">
-            {l.machine.label} · {S.dock.unavailableMachine}
+            {l.machine.label} ({S.dock.unavailableMachine})
           </p>
         ))}
       {closed !== null && <p role="status">{S.dock.closedResources(closed)}</p>}
@@ -362,7 +363,7 @@ function SessionPicker({
             <li key={idOf(row)} className="flex min-w-0 items-center gap-3 py-2">
               {resource && (
                 <Checkbox
-                  aria-label={S.dock.selectSession + " · " + name + " · " + row.host}
+                  aria-label={S.dock.selectSession(name, row.host)}
                   disabled={!count || busy}
                   checked={selected.includes(idOf(row))}
                   onChange={(checked) =>
@@ -380,7 +381,7 @@ function SessionPicker({
                 onClick={() => open(row)}
               >
                 <span className="block font-medium">{name}</span>
-                <span className="block text-sm text-fg-muted">
+                <span className="flex flex-wrap gap-x-2 text-sm text-fg-muted">
                   {[
                     row.host,
                     session.agentId,
@@ -388,12 +389,14 @@ function SessionPicker({
                     session.source === "subagent" ? S.dock.childSession : null,
                     session.source === "subagent" && session.title ? session.sessionId : null,
                   ]
-                    .filter(Boolean)
-                    .join(" · ")}
+                    .filter((label): label is string => Boolean(label))
+                    .map((label, index) => (
+                      <span key={index}>{label}</span>
+                    ))}
                 </span>
                 {resource && (
                   <span className="text-sm">
-                    {S.dock.resourceCount} · {count ?? S.dock.unavailableMachine}
+                    {count === null ? S.dock.unavailableMachine : countLabel(count)}
                   </span>
                 )}
               </button>
@@ -424,7 +427,7 @@ function SessionPicker({
         <ul>
           {confirm?.map((r) => (
             <li key={idOf(r)}>
-              {r.host} · {r.session.title || r.session.sessionId} · {r.count}
+              {r.session.title || r.session.sessionId} ({r.host}) {countLabel(r.count ?? 0)}
             </li>
           ))}
         </ul>
