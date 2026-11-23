@@ -8,6 +8,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
+import { watchSocket } from "./api-socket.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
 const composer = '[data-slot="composer"] textarea';
@@ -126,6 +127,10 @@ test("a workbench shares the session viewport and its iframe survives changing p
   const app = slot(page, "app:penguin_support/support");
   await expect(chat).toHaveAttribute("data-pane", "left");
   await expect(app).toHaveAttribute("data-pane", "right");
+  await expect(page.getByRole("group", { name: "Left pane", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Right pane", exact: true })).toHaveCount(0);
+  const dockTab = page.getByRole("tab", { name: /Support/ });
+  await expect(dockTab).toBeVisible();
   const frame = app.locator("iframe").first();
   await expect(frame).toBeVisible();
   const node = await frame.elementHandle();
@@ -225,4 +230,80 @@ test("a fresh sidebar gains its first conversation only after sending", async ({
   );
   await expect(generic).toHaveCount(0);
   await expect(apps(page)).toHaveCount(0);
+});
+
+test("an archived Session’s native app deep link uses its own dock and leaves its archive state intact", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1360, height: 820 });
+  const [key] = await start(page, "archivedappdock");
+  const id = key.slice(5);
+  await expect(
+    await page.request.patch("/api/sessions/" + id, { data: { archived: true } }),
+  ).toBeOK();
+  await page.goto("/apps");
+  await page.goto("/models?beside=" + encodeURIComponent(id));
+  const chat = slot(page, key);
+  await expect(chat.getByText(/This chat is archived/)).toBeVisible();
+  const dock = chat.getByTestId("dock");
+  await expect(dock.getByRole("tab", { name: /Models|Model Library/ })).toBeVisible();
+  await expect(slot(page, "app:system_agent/models")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Right pane", exact: true })).toHaveCount(0);
+  const stored = await (await page.request.get("/api/sessions/" + id)).json();
+  expect(stored.session?.archived ?? stored.archived).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(chat.locator('[data-testid="dock"][data-position="bottom"]')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/apps$/);
+  await expect(page.getByRole("list", { name: "App Center" })).toBeVisible();
+  await page.setViewportSize({ width: 1360, height: 820 });
+  await page.goForward();
+  await expect(dock.getByRole("tab", { name: /Models|Model Library/ })).toBeVisible();
+  await page
+    .locator("aside")
+    .first()
+    .getByRole("link", { name: /^App Center/ })
+    .click();
+  await expect(page).toHaveURL(/\/apps$/);
+  await expect(slot(page, "catalog")).toHaveAttribute("data-pane", "full");
+  await expect(page.getByRole("list", { name: "App Center" })).toBeVisible();
+});
+
+test("machine-qualified chats read their own session and leave an existing same-ID draft alone", async ({
+  page,
+}) => {
+  const socket = await watchSocket(page, {
+    // Both loopback machine routes serve real authenticated history and events.
+    forwardPath: (path) => path.replace(/^\/server\/(office|studio)\/api\//, "/api/"),
+  });
+  const [localKey] = await start(page, "qualifieddraft");
+  const id = localKey.slice(5);
+  const local = await (await page.request.get("/api/sessions/" + id)).json();
+  const draftKey = "penguin.chatDraft.session.qualifieddraft." + id;
+  const localText = "Draft for the original machine";
+  await slot(page, localKey).locator(composer).fill(localText);
+  await expect
+    .poll(() => page.evaluate((key) => localStorage.getItem(key), draftKey))
+    .toContain(localText);
+  for (const name of ["Office", "Studio"]) {
+    const machine = name.toLowerCase();
+    const path = "/server/" + machine + "/api/sessions/" + id;
+    socket.answer("GET", path, {
+      status: 200,
+      body: { ...local, session: { ...local.session, title: name + " session" } },
+    });
+    const calls = socket.calls.length;
+    await page.goto(
+      "/chat/" + id + "?" + new URLSearchParams({ project: local.session.projectId, machine }),
+    );
+    const editor = page.locator('[data-workspace-page^="scoped-chat:"]:visible').locator(composer);
+    await expect(page.getByRole("heading", { name: name + " session", exact: true })).toBeVisible();
+    await expect(editor).toBeVisible();
+    await expect(editor).toHaveValue("");
+    expect(socket.calls.slice(calls).some((call) => call.path === path)).toBe(true);
+    await editor.fill(name + " new draft");
+    await page.goto("/chat/" + id);
+    await expect(slot(page, localKey).locator(composer)).toHaveValue(localText);
+  }
 });

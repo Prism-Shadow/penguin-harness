@@ -99,9 +99,9 @@ test("many visited conversations and repeated launches use only their own sideba
   await expect(apps(page).getByRole("listitem")).toHaveCount(1);
   const workspace = (id) => page.locator(`button[data-session-id="${id}"]:visible`);
   await expect(side.locator("button[data-session-id]")).toHaveCount(sessions.length);
-  await fromRow(page, workspace(first.id), "Open on the right");
-  await expect(slot(page, first.key)).toHaveAttribute("data-pane", "right");
-  await expect(slot(page, "app:system_agent/models")).toHaveAttribute("data-pane", "left");
+  await fromRow(page, workspace(first.id), "Open on the left");
+  await expect(slot(page, first.key)).toHaveAttribute("data-pane", "left");
+  await expect(slot(page, "app:system_agent/models")).toHaveAttribute("data-pane", "right");
   await expect(slot(page, first.key).locator(composer)).toHaveValue("A draft from the first page");
   const nativeRow = models.locator("xpath=ancestor::li[1]");
   await nativeRow.getByRole("button", { name: "Open full screen", exact: true }).click();
@@ -110,14 +110,17 @@ test("many visited conversations and repeated launches use only their own sideba
   await expect(slot(page, first.key)).not.toBeVisible();
   await page.getByRole("button", { name: "Exit full screen", exact: true }).click();
   await expect(side).toBeVisible();
-  await expect(slot(page, "app:system_agent/models")).toHaveAttribute("data-pane", "left");
-  await expect(slot(page, first.key)).toHaveAttribute("data-pane", "right");
+  await expect(slot(page, "app:system_agent/models")).toHaveAttribute("data-pane", "right");
+  await expect(slot(page, first.key)).toHaveAttribute("data-pane", "left");
   await slot(page, first.key).locator(composer).click();
   await expect(slot(page, first.key).locator(composer)).toHaveValue("A draft from the first page");
   await page.setViewportSize({ width: 390, height: 844 });
   const drawer = page.getByRole("banner").getByRole("button", { name: /^Sessions/ });
   await expect(slot(page, first.key)).toBeVisible();
-  await expect(slot(page, "app:system_agent/models")).not.toBeVisible();
+  await expect(
+    slot(page, first.key).locator('[data-testid="dock"][data-position="bottom"]'),
+  ).toBeVisible();
+  await expect(slot(page, "app:system_agent/models")).toBeVisible();
   await drawer.click();
   await models.click();
   await expect(slot(page, "app:system_agent/models")).toBeVisible();

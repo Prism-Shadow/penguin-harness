@@ -41,10 +41,13 @@ import {
   readResourceLimit,
 } from "@prismshadow/penguin-library-setting/resource-limits";
 import type { Auth } from "@prismshadow/penguin-library-auth";
+import type { Access } from "@prismshadow/penguin-library-project";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { RemoteTerminals } from "../machines/terminal-relay.js";
 
 /** How long an exited session stays listable/attachable before it is disposed. */
 export const EXITED_SESSION_GRACE_MS = 5 * 60 * 1000;
+const KILL_GRACE_MS = 2000;
 /** Cap per user; a runaway UI loop would otherwise fork shells until the box gives up. */
 export const MAX_TERMINALS_PER_USER = DEFAULT_TERMINAL_LIMIT;
 
@@ -276,7 +279,30 @@ export class TerminalManager {
   kill(id: string, userId: string): void {
     const session = this.require(id, userId);
     session.kill();
-    this.scheduleReap(id, 2000);
+    this.scheduleReap(id, KILL_GRACE_MS);
+  }
+
+  /** Closing from the manager waits until the live slot is released, including a shell ignoring HUP. */
+  async closeInSession(id: string, userId: string, sessionId: string): Promise<boolean> {
+    const session = this.require(id, userId);
+    if (!session.alive || session.info().sessionId !== sessionId) return false;
+    this.kill(id, userId);
+    if (session.alive) {
+      await new Promise<void>((resolve, reject) => {
+        const unsubscribe = session.onExit(() => {
+          clearTimeout(timer);
+          unsubscribe();
+          resolve();
+        });
+        const timer = setTimeout(() => {
+          unsubscribe();
+          if (session.alive) reject(new Error("The terminal is still closing."));
+          else resolve();
+        }, KILL_GRACE_MS);
+        timer.unref?.();
+      });
+    }
+    return true;
   }
 
   /** Drops the session once nothing can usefully be read from it any more. */
@@ -377,6 +403,8 @@ export class TerminalModule {
   @Use() private readonly sessionEnv!: SessionEnv;
   @Use() private readonly resourceGroups!: ResourceGroups;
   @Use() private readonly auth!: Auth;
+  @Use() private readonly access!: Access;
+  @Use() private readonly sessions!: SessionIndex;
   @Use() private readonly settings!: Settings;
   /** Answers `get` for a pty on a machine (machines/terminal-relay.ts). */
   @Use() private readonly remote!: RemoteTerminals;
@@ -407,7 +435,10 @@ export class TerminalModule {
     // outliving a swap is the whole point. Only the reap timers stop with this App.
     effect(() => terminals.quiesce());
     this.terminals = terminals;
-    this.routes = terminalRoutes(terminals, identityFrom(this.auth));
+    this.routes = terminalRoutes(terminals, identityFrom(this.auth), {
+      access: this.access,
+      sessions: this.sessions,
+    });
   }
 
   park(): Json {

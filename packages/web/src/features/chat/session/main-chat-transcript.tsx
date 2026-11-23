@@ -19,9 +19,11 @@ export function useMainChatTranscript(scope: ReturnType<typeof useMainChatRoutin
 
   const sessionId = selected?.sessionId ?? null;
   const scopeKey = JSON.stringify([projectId, scope.user?.userId, sessionId]);
-  const owner = sessionId
-    ? (machineForSession(sessionId) ?? (sessionKnownHere(sessionId) ? null : undefined))
-    : undefined;
+  const owner = scope.scopedHost
+    ? scope.scopedHost.machineId
+    : sessionId
+      ? (machineForSession(sessionId) ?? (sessionKnownHere(sessionId) ? null : undefined))
+      : undefined;
   // A deep link can already be reading the right Session through the hub before
   // the machine list supplies its owner. Keep that stream and its mounted composer.
   // An actual move between two confirmed owners gets fresh history and subscriptions.
@@ -56,7 +58,7 @@ export function useMainChatTranscript(scope: ReturnType<typeof useMainChatRoutin
     onPendingModelChange: onDraftPendingModelChange,
     onSkillsChange: onDraftSkillsChange,
     discard: discardSessionDraft,
-  } = useSessionDraft(selected?.sessionId ?? null);
+  } = useSessionDraft(scope.scopedHost?.isolatedDraft ? null : (selected?.sessionId ?? null));
 
   // The rendered transcript: backfilled older windows (frozen items, negative ids) ahead
   // of the live tail model's items. Keyed on the prefix's identity as well as the stream

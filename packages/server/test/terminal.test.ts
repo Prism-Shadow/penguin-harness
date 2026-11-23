@@ -12,6 +12,7 @@
  * opened it (`sessionId`, null for none), which only its own user can change, through PATCH:
  * that label is what keeps one conversation's terminals out of another's dock.
  */
+import { sessionRow } from "./fixtures/session.js";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
@@ -536,6 +537,79 @@ describePty("terminal API", () => {
     }
   });
 
+  it("counts and closes only the selected child Session's live PTYs", async () => {
+    const t = await createTestApp();
+    try {
+      const admin = await loginAdmin(t.app);
+      const api = apiClient(t.app, admin.cookie);
+      const project = "default_project";
+      const parent = "test-resource-parent";
+      const child = "test-resource-child";
+      t.deps.sessionsRepo.insert(sessionRow(parent));
+      t.deps.sessionsRepo.insert(sessionRow(child));
+      t.deps.sessionsRepo.setListing([child], "archived", new Date().toISOString());
+      t.deps.sessionSources.set(child, "subagent");
+      const path = `/api/terminals/projects/${project}/session-resources`;
+      expect(await (await api.get(path)).json()).toEqual({ counts: {} });
+      const start = async (sessionId: string) => {
+        const result = await api.post("/api/terminals", { sessionId, cwd: t.root });
+        expect(result.status).toBe(201);
+        return ((await result.json()) as { id: string }).id;
+      };
+      const kept = await start(parent);
+      await start(child);
+      expect(await (await api.get(path)).json()).toEqual({ counts: { [parent]: 1, [child]: 1 } });
+      expect(
+        await (
+          await api.post(path + "/close", { sessionIds: [child, child, "not-a-session"] })
+        ).json(),
+      ).toEqual({
+        results: [
+          { sessionId: child, closed: 1 },
+          { sessionId: "not-a-session", closed: 0, error: "session_not_found" },
+        ],
+      });
+      expect(await (await api.get(path)).json()).toEqual({ counts: { [parent]: 1 } });
+      expect(await (await api.post(path + "/close", { sessionIds: [child] })).json()).toEqual({
+        results: [{ sessionId: child, closed: 0 }],
+      });
+      expect((await api.get(`/api/terminals/${kept}`)).status).toBe(200);
+      expect(t.deps.sessionsRepo.findById(child)?.archivedAt).toBeTruthy();
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("requires Project membership and only manages the caller's shells within shared Sessions", async () => {
+    const t = await createTestApp();
+    try {
+      const { provisionUser } = await import("./helpers.js");
+      const owner = apiClient(t.app, (await provisionUser(t.app, "pty_owner")).cookie);
+      const member = apiClient(t.app, (await provisionUser(t.app, "pty_member")).cookie);
+      const projectId = "pty_owner-shared";
+      expect((await owner.post("/api/projects", { projectId, name: "Shared" })).status).toBe(201);
+      const sessionId = "shared-shell-room";
+      t.deps.sessionsRepo.insert(sessionRow(sessionId, { projectId }));
+      const path = `/api/terminals/projects/${projectId}/session-resources`;
+      const options = { sessionId, cwd: t.root };
+      expect((await owner.post("/api/terminals", options)).status).toBe(201);
+      expect((await member.get(path)).status).toBe(404);
+      expect((await member.post("/api/terminals", options)).status).toBe(404);
+      expect((await member.post(path + "/close", { sessionIds: [sessionId] })).status).toBe(404);
+      expect(
+        (await owner.post(`/api/projects/${projectId}/members`, { userId: "pty_member" })).ok,
+      ).toBe(true);
+      expect(await (await member.get(path)).json()).toEqual({ counts: {} });
+      expect((await member.post("/api/terminals", options)).status).toBe(201);
+      expect(
+        await (await member.post(path + "/close", { sessionIds: [sessionId] })).json(),
+      ).toEqual({ results: [{ sessionId, closed: 1 }] });
+      expect(await (await owner.get(path)).json()).toEqual({ counts: { [sessionId]: 1 } });
+    } finally {
+      await t.cleanup();
+    }
+  });
+
   it("counts concurrent shell creation per user, keeps live shells after lowering the cap and releases the slot on exit", async () => {
     const t = await createTestApp();
     try {
@@ -573,6 +647,8 @@ describePty("terminal API", () => {
       const admin = await loginAdmin(t.app);
       const api = apiClient(t.app, admin.cookie);
       type Info = { id: string; sessionId: string | null };
+      for (const id of ["session-a", "session-b"]) t.deps.sessionsRepo.insert(sessionRow(id));
+      expect((await api.post("/api/terminals", { sessionId: "missing" })).status).toBe(404);
 
       const owned = (await (
         await api.post("/api/terminals", { cwd: "~", sessionId: "session-a" })

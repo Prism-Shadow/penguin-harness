@@ -38,6 +38,7 @@ import { readResourceLimit } from "@prismshadow/penguin-library-setting/resource
 import { BROWSER_EXTENSIONS_KEY } from "@prismshadow/penguin-library-setting/repos/server-settings";
 import { ensureInstallId, shellPortOf, userChannelKey } from "@prismshadow/penguin-server/plugin";
 import type {
+  Access,
   AppEnv,
   Channels,
   Clock,
@@ -174,6 +175,7 @@ export class BuiltinBrowserRoutes {
   @Use() private readonly prefs!: UiPrefsStore;
   @Use() private readonly drivers!: SessionDrivers;
   @Use() private readonly sessions!: SessionIndex;
+  @Use() private readonly access!: Access;
   @Use() private readonly config!: Config;
   @Provide() gate!: BrowserExtensionGate;
   @Bind("BuiltinBrowserRoutes.routes") routes!: Hono<AppEnv>;
@@ -231,6 +233,7 @@ export class BuiltinBrowserRoutes {
       now: () => clock.now().getTime(),
     });
     this.routes = builtinBrowserRoutes(browser, {
+      resourceAccess: { access: this.access, sessions: this.sessions },
       // The human an agent's session acts for, as the browser knows people: by id and role.
       driverOf: (sessionId) => {
         const userId = drivers.driverOf(sessionId);

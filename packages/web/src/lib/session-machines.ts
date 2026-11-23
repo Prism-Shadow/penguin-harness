@@ -26,6 +26,16 @@ const owners = new Map<string, string>();
  * whatever machine of the Project is out of reach (features/chat/route-reach.ts).
  */
 const knownHere = new Set<string>();
+let foreground: { sessionId: string; machineId: string | null } | null = null;
+
+/** A machine-qualified foreground Session cannot be redirected by a same-ID sidebar row. */
+export function focusSessionMachine(sessionId: string, machineId: string | null) {
+  const binding = { sessionId, machineId };
+  foreground = binding;
+  return () => {
+    if (foreground === binding) foreground = null;
+  };
+}
 
 /** Records where a Session lives. `null` (this machine) is stored as absence, not as a value. */
 export function rememberSessionMachine(sessionId: string, machineId: string | null): void {
@@ -40,16 +50,19 @@ export function rememberSessionMachine(sessionId: string, machineId: string | nu
 
 /** Whether the Session is known to live on this server (not merely not known elsewhere). */
 export function sessionKnownHere(sessionId: string): boolean {
+  if (foreground?.sessionId === sessionId) return foreground.machineId === null;
   return knownHere.has(sessionId);
 }
 
 /** The machine a Session lives on, or null for this one. */
 export function machineForSession(sessionId: string): string | null {
+  if (foreground?.sessionId === sessionId) return foreground.machineId;
   return owners.get(sessionId) ?? null;
 }
 
 /** Forgets everything — for a project switch, where the whole list is about to be rebuilt. */
 export function forgetSessionMachines(): void {
+  foreground = null;
   owners.clear();
   knownHere.clear();
 }
