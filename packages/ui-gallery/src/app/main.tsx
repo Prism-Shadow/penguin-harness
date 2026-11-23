@@ -24,7 +24,7 @@ import { dismissOnboarding } from "../../../web/src/lib/model-onboarding";
 import { requestSettings, requestSettingsPage } from "../../../web/src/lib/settings-request";
 import type { HostSettingsSectionKey } from "../../../web/src/lib/settings-sections";
 import "./app.css";
-import { parseFrameParams } from "./frame";
+import { DEMO_TAKEN_OVER, parseFrameParams } from "./frame";
 import { installGuestFrame } from "./guest-frame";
 import { installFetchShim } from "./mock/fetch-shim";
 import { getStore } from "./mock/store";
@@ -111,5 +111,26 @@ if (params.autoplay === "evolution") {
     () => store.clearEvolutionRounds(),
     params.freshProject === true,
   );
+  if (params.freshProject && params.embedded) {
+    const controls =
+      'a[href],button,input,textarea,select,summary,label,[contenteditable="true"],[tabindex="0"],[role="button"],[role="menuitem"],[role="tab"],[role="option"],[role="link"]';
+    const events = ["click", "auxclick", "keydown", "beforeinput", "input", "change"];
+    const cleanup = () => {
+      for (const type of events) document.removeEventListener(type, activate, true);
+    };
+    const activate = (event: Event) => {
+      if (!event.isTrusted || !(event.target instanceof Element)) return;
+      const control = event.target.closest(controls);
+      if (!control || control.matches(':disabled,[aria-disabled="true"]')) return;
+      if (event instanceof KeyboardEvent && !["Enter", " ", "Escape"].includes(event.key)) return;
+      if (event.type === "auxclick" && !(event instanceof MouseEvent && event.button === 1)) return;
+      cleanup();
+      dispose();
+      store.takeOverEvolution();
+      window.parent.postMessage(DEMO_TAKEN_OVER, window.location.origin);
+    };
+    for (const type of events) document.addEventListener(type, activate, true);
+    import.meta.hot?.dispose(cleanup);
+  }
   import.meta.hot?.dispose(dispose);
 }

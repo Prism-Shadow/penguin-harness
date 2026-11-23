@@ -199,9 +199,12 @@ export function installEvolutionAutoplay(
   playback.setPaused(true);
   visibility.observe(doc.documentElement);
   doc.addEventListener("visibilitychange", sync);
-  doc.addEventListener("pointerdown", takeOver, true);
-  doc.addEventListener("keydown", takeOver, true);
-  doc.addEventListener("input", takeOver, true);
+  // The homepage handles real control activation separately, including after its final scene.
+  if (!playOnce) {
+    doc.addEventListener("pointerdown", takeOver, true);
+    doc.addEventListener("keydown", takeOver, true);
+    doc.addEventListener("input", takeOver, true);
+  }
   win.addEventListener("pagehide", stop, { once: true });
   return stop;
 }

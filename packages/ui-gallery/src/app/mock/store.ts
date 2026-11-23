@@ -128,6 +128,7 @@ export class DemoStore {
   signedIn: boolean;
   readonly userChannel = new Channel();
   readonly evolutionPlayback = new EvolutionClock();
+  private demoTakenOver = false;
   private readonly live = new Map<string, Live>();
   private created = 0;
 
@@ -286,6 +287,15 @@ export class DemoStore {
     this.f.sessions.splice(index, 1);
     this.live.delete(sessionId);
     return true;
+  }
+
+  /** Stop the scripted reply, leaving its Session and all manual controls available. */
+  takeOverEvolution(): void {
+    this.demoTakenOver = true;
+    for (const [sessionId, live] of this.live) {
+      if (live.evolution) this.abort(sessionId);
+    }
+    this.evolutionPlayback.dispose();
   }
 
   /** Discard only the completed automatic round before the walkthrough starts its next one. */
@@ -460,6 +470,7 @@ export class DemoStore {
     const firstTurn = live.transcript.history.length === 0;
     live.evolution =
       this.init.evolutionDemo &&
+      !this.demoTakenOver &&
       firstTurn &&
       row.agentId === IDS.agents.general &&
       text === rsiPrompt(this.lang);
