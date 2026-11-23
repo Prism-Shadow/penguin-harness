@@ -24,7 +24,7 @@ const bundledCovers = import.meta.glob<string>(
   {
     eager: true,
     import: "default",
-    query: "?url",
+    query: "?url&no-inline",
   },
 );
 function coverUrl(path: string): string {

@@ -23,32 +23,31 @@ import {
 } from "react-router";
 import { useRouteScroll, useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { DOCS_URL, GALLERY_URL } from "./lib/links";
-import { getPost, loadPostBody } from "./lib/blog";
 import { useListReturn } from "./lib/hub/back";
 import { AnnouncementBar } from "./components/announcement-bar";
 import { Nav } from "./components/nav";
 import { Footer } from "./components/footer";
 import { NeonBackground } from "./components/neon-bg";
 import { PostPending } from "./components/post-pending";
-import { HomePage } from "./pages/home";
-import { BlogListPage } from "./pages/blog-list";
-import { DownloadPage } from "./pages/download";
 
 const AmspPage = lazy(() =>
   import("./pages/amsp").then((module) => ({ default: module.AmspPage })),
 );
 
 /** The hub pages: each list page and each detail page is a chunk of its own. */
-const hubPage = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) =>
+const routePage = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) =>
   lazy(() => load().then((module) => ({ default: module[name] })));
-const PluginsPage = hubPage(() => import("./pages/hub/plugins"), "PluginsPage");
-const PluginPage = hubPage(() => import("./pages/hub/plugin"), "PluginPage");
-const BenchmarksPage = hubPage(() => import("./pages/hub/benchmarks"), "BenchmarksPage");
-const BenchmarkPage = hubPage(() => import("./pages/hub/benchmark"), "BenchmarkPage");
-const LeaderboardsPage = hubPage(() => import("./pages/hub/leaderboards"), "LeaderboardsPage");
-const LeaderboardPage = hubPage(() => import("./pages/hub/leaderboard"), "LeaderboardPage");
-const RfcsPage = hubPage(() => import("./pages/rfcs"), "RfcsPage");
-const RfcDocPage = hubPage(() => import("./pages/rfc-doc"), "RfcDocPage");
+const HomePage = routePage(() => import("./pages/home"), "HomePage");
+const BlogListPage = routePage(() => import("./pages/blog-list"), "BlogListPage");
+const DownloadPage = routePage(() => import("./pages/download"), "DownloadPage");
+const PluginsPage = routePage(() => import("./pages/hub/plugins"), "PluginsPage");
+const PluginPage = routePage(() => import("./pages/hub/plugin"), "PluginPage");
+const BenchmarksPage = routePage(() => import("./pages/hub/benchmarks"), "BenchmarksPage");
+const BenchmarkPage = routePage(() => import("./pages/hub/benchmark"), "BenchmarkPage");
+const LeaderboardsPage = routePage(() => import("./pages/hub/leaderboards"), "LeaderboardsPage");
+const LeaderboardPage = routePage(() => import("./pages/hub/leaderboard"), "LeaderboardPage");
+const RfcsPage = routePage(() => import("./pages/rfcs"), "RfcsPage");
+const RfcDocPage = routePage(() => import("./pages/rfc-doc"), "RfcDocPage");
 
 const BlogPostPage = lazy(() =>
   import("./pages/blog-post").then((page) => ({ default: page.BlogPostPage })),
@@ -62,11 +61,15 @@ const BlogPostPage = lazy(() =>
 function BlogPostRoute() {
   const { slug = "" } = useParams();
   const { locale } = useSiteLocale();
-  const post = getPost(slug, locale);
   useEffect(() => {
     // A chunk that fails to load reloads the page (main.tsx): nothing to handle here.
-    if (post) void loadPostBody(post).catch(() => undefined);
-  }, [post]);
+    void import("./lib/blog")
+      .then(({ getPost, loadPostBody }) => {
+        const post = getPost(slug, locale);
+        if (post) return loadPostBody(post);
+      })
+      .catch(() => undefined);
+  }, [slug, locale]);
   return (
     <Suspense fallback={<PostPending />}>
       <BlogPostPage />
@@ -115,12 +118,19 @@ export function AppRouter() {
     <BrowserRouter basename={basename}>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<HomePage />} />
-          <Route path="/blog" element={<BlogListPage />} />
+          <Route
+            index
+            element={
+              <Suspense fallback={<PostPending />}>
+                <HomePage />
+              </Suspense>
+            }
+          />
           <Route path="/blog/:slug" element={<BlogPostRoute />} />
-          <Route path="/download" element={<DownloadPage />} />
           {(
             [
+              ["/blog", BlogListPage],
+              ["/download", DownloadPage],
               ["/plugins", PluginsPage],
               ["/plugins/:id", PluginPage],
               ["/benchmarks", BenchmarksPage],
