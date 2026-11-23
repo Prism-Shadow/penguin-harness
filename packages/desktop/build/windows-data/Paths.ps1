@@ -1,5 +1,12 @@
 # Windows PowerShell 5.1. Compare actual volumes, including a second drive letter
 # for the same directory. GetFullPath alone cannot detect that case.
+# The NSIS plugin directory also contains a native System.dll. Compile against the
+# current PowerShell process's .NET Framework assemblies in their own directory.
+$framework = [Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()
+$savedDirectory = [Environment]::CurrentDirectory
+Push-Location -LiteralPath $framework
+try {
+[Environment]::CurrentDirectory = $framework
 Add-Type -TypeDefinition @'
 using System;
 using System.IO;
@@ -37,6 +44,10 @@ public static class PenguinVolume {
   }
 }
 '@
+} finally {
+  [Environment]::CurrentDirectory = $savedDirectory
+  Pop-Location
+}
 
 function Full-Directory([string]$Path) {
   if ($Path -notmatch '^[A-Za-z]:[\\/]' -or $Path.Substring(2) -match '[:*?"<>|\x00-\x1f]') {
