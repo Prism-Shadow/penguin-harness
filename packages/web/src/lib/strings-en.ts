@@ -1158,8 +1158,6 @@ export const en: Strings = {
       shown ? "Hide from App Center" : "Unhide in App Center",
     appCenterVisibilityHint:
       "Changes the App Center shortcut for everyone in this Project. The workbench keeps its data and version history.",
-    /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
-    showInSidebar: "Show in the sidebar",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1196,11 +1194,10 @@ export const en: Strings = {
     search: "Search apps",
     sort: "Sort apps",
     noMatches: "No matching apps",
-    order: { default: "Directory order", name: "Name", running: "Running first" },
+    order: { default: "Page order", name: "Name", recent: "Recently used" },
     title: "Apps",
     manage: "Manage apps",
     open: "Open",
-    removeFromSidebar: "Remove from sidebar",
     viewInSettings: "View in agent settings",
     rowName: (title: string, agent: string | null, state: string | null) =>
       [title, agent === null ? null : `from ${agent}`, state].filter((s) => s !== null).join(", "),
@@ -1251,7 +1248,6 @@ export const en: Strings = {
       removeFromFolder: "Remove from folder",
       removeFromAppCenter: "Remove from the App Center",
       viewInSettings: "View in agent settings",
-      showInSidebar: "Show in the sidebar",
       showError: "Show error",
       rename: "Rename",
       dissolve: "Ungroup",

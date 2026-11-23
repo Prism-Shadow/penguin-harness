@@ -154,6 +154,23 @@ export default {
 } satisfies WorkbenchPackage;
 `;
 
+async function importApp(request, base, title) {
+  const id = title.toLowerCase();
+  const imported = await request.post(`${base}/archive`, {
+    data: {
+      overwrite: true,
+      dataBase64: zip({
+        [`${id}/package.json`]: JSON.stringify(manifest(title)),
+        [`${id}/index.ts`]: INDEX,
+        [`${id}/ui/index.html`]: `<!doctype html><html><body><h1>${title}</h1>
+            <a href="#read">Read</a><a href="#review">Review</a><a href="#saved">Saved</a>
+            </body></html>`,
+      }).toString("base64"),
+    },
+  });
+  expect(imported.ok(), await imported.text()).toBeTruthy();
+}
+
 test.beforeAll(async ({ browser }) => {
   const seed = await browser.newPage();
   await provisionAndLogin(seed.request, U, P);
@@ -174,22 +191,7 @@ test.beforeAll(async ({ browser }) => {
     expect(hidden.ok(), await hidden.text()).toBeTruthy();
   }
   const base = `${project}/agents/default_agent/workbenches`;
-  for (const title of APPS) {
-    const id = title.toLowerCase();
-    const imported = await seed.request.post(`${base}/archive`, {
-      data: {
-        overwrite: true,
-        dataBase64: zip({
-          [`${id}/package.json`]: JSON.stringify(manifest(title)),
-          [`${id}/index.ts`]: INDEX,
-          [`${id}/ui/index.html`]: `<!doctype html><html><body><h1>${title}</h1>
-            <a href="#read">Read</a><a href="#review">Review</a><a href="#saved">Saved</a>
-            </body></html>`,
-        }).toString("base64"),
-      },
-    });
-    expect(imported.ok(), await imported.text()).toBeTruthy();
-  }
+  for (const title of APPS) await importApp(seed.request, base, title);
   await seed.close();
 });
 
@@ -436,9 +438,11 @@ test("a system app's tile opens its page, where the App Center stays lit", async
 test("searching, sorting and folding sidebar directories keeps the open page and its draft", async ({
   page,
 }) => {
-  await provisionAndLogin(page.request, U, P);
+  await provisionAndLogin(page.request, "sidebarsearch", P);
   await setAccountPrefs(page.request, { lang: "en" });
   const { projects } = await (await page.request.get("/api/projects")).json();
+  const base = `/api/projects/${projects[0].projectId}/agents/default_agent/workbenches`;
+  for (const title of ["Gamma", "Alpha"]) await importApp(page.request, base, title);
   const model = { provider: "custom", modelId: "sidebar-test" };
   const configured = await page.request.put(`/api/projects/${projects[0].projectId}/models`, {
     data: {
@@ -453,9 +457,26 @@ test("searching, sorting and folding sidebar directories keeps the open page and
   const side = page.getByRole("complementary");
   const apps = side.getByRole("list", { name: "Apps", exact: true });
   const rows = apps.getByRole("listitem");
-  await expect.poll(() => rows.count()).toBeGreaterThan(1);
+  await expect(rows).toHaveCount(0);
   const editor = page.getByRole("main").locator("textarea").first();
   await editor.fill("Keep this draft while looking for an app");
+  const catalog = side.getByRole("link", { name: /^App Center(?: ·|$)/ });
+  for (const title of ["Gamma", "Alpha"]) {
+    await catalog.click();
+    const tile = page
+      .getByRole("list", { name: "App Center", exact: true })
+      .locator(`li[data-app="default_agent/${title.toLowerCase()}"] > button`)
+      .first();
+    await tile.click();
+    await expect(
+      apps.locator(`[data-app-row="default_agent/${title.toLowerCase()}"]`),
+    ).toBeVisible();
+  }
+  await side
+    .getByRole("navigation", { name: "Open pages" })
+    .locator('[data-app-row="chat:new"]')
+    .click();
+  await expect(rows).toHaveCount(2);
   const open = side.getByRole("navigation", { name: "Open pages" });
   const count = await open.getByRole("listitem").count();
   await side.getByRole("button", { name: "Search apps", exact: true }).click();
@@ -472,6 +493,15 @@ test("searching, sorting and folding sidebar directories keeps the open page and
   const names = await rows.locator("button[data-app-row] > .truncate").allTextContents();
   expect(names.length).toBeGreaterThan(1);
   expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+
+  await side.getByRole("button", { name: "Sort apps", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Recently used" }).click();
+  await expect(rows.first()).toContainText("Alpha");
+  await apps.locator('[data-app-row="default_agent/gamma"]').click();
+  await expect(rows.first()).toContainText("Gamma");
+  await expect(rows.last()).toContainText("Alpha");
+  await open.locator('[data-app-row="chat:new"]').click();
+
   const foldApps = side.getByRole("button", { name: "Apps", exact: true });
   const foldWorkspaces = side.getByRole("button", { name: "Workspaces", exact: true });
   await foldApps.click();
@@ -483,6 +513,81 @@ test("searching, sorting and folding sidebar directories keeps the open page and
   await expect(open.getByRole("listitem")).toHaveCount(count);
   await expect(editor).toHaveValue("Keep this draft while looking for an app");
   await expect(page).toHaveURL(/\/chat\/new$/);
+});
+
+test("many open apps scroll inside Apps while the workspace and directory search remain reachable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await provisionAndLogin(page.request, "sidebarlonglist", P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const { projects } = await (await page.request.get("/api/projects")).json();
+  const base = `/api/projects/${projects[0].projectId}/agents/default_agent/workbenches`;
+  const titles = Array.from(
+    { length: 30 },
+    (_, index) => "Notebook-" + String(index + 1).padStart(2, "0"),
+  );
+  for (const title of titles) await importApp(page.request, base, title);
+  await page.goto("/apps");
+  const group = page.getByRole("navigation", { name: "Apps", exact: true });
+  const list = group.getByRole("list", { name: "Apps", exact: true });
+  await expect(list).toHaveCount(0);
+  for (const title of titles) {
+    await page
+      .getByRole("complementary")
+      .getByRole("link", { name: /^App Center(?: ·|$)/ })
+      .click();
+    await page
+      .getByRole("list", { name: "App Center", exact: true })
+      .locator(`li[data-app="default_agent/${title.toLowerCase()}"] > button`)
+      .first()
+      .click();
+    const row = list.locator(`[data-app-row="default_agent/${title.toLowerCase()}"]`);
+    await expect(row).toBeEnabled();
+    await expect(row).toHaveAttribute("aria-current", "page");
+  }
+  const count = await list.getByRole("listitem").count();
+  expect(count).toBeGreaterThanOrEqual(30);
+  const bounds = () =>
+    list.evaluate((el) => ({
+      height: el.clientHeight,
+      content: el.scrollHeight,
+      offset: el.scrollTop,
+    }));
+  const desktop = await bounds();
+  expect(desktop.content).toBeGreaterThan(desktop.height * 3);
+  expect(desktop.offset).toBeGreaterThan(0);
+  const workspaces = page.getByRole("button", { name: "Workspaces", exact: true });
+  await expect(workspaces).toBeInViewport();
+  await page.setViewportSize({ width: 390, height: 700 });
+  await page
+    .getByRole("banner")
+    .getByRole("button", { name: /^Sessions/ })
+    .click();
+  expect((await bounds()).height).toBeLessThan(desktop.height);
+  // In a short drawer, reaching the next group takes at most a few rows of outer scrolling,
+  // regardless of how many apps are running. The rest of the app list scrolls independently.
+  const gap = await workspaces.evaluate((button) => {
+    const scroll = button.closest(".overflow-y-auto");
+    const distance = Math.max(
+      0,
+      button.getBoundingClientRect().bottom - scroll.getBoundingClientRect().bottom,
+    );
+    const row = document.querySelectorAll('nav[aria-label="Apps"] li > div');
+    const height = [...row].find((node) => node.clientHeight > 0).clientHeight;
+    scroll.scrollBy(0, distance + 1);
+    return distance / height;
+  });
+  expect(gap).toBeLessThanOrEqual(3);
+  await expect(workspaces).toBeInViewport();
+  await group.getByRole("button", { name: "Search apps" }).click();
+  const search = group.getByRole("searchbox", { name: "Search apps" });
+  await search.fill("Notebook-01");
+  await expect(list.getByRole("listitem")).toHaveCount(1);
+  await expect(list.getByRole("button", { name: /Notebook-01/ })).toBeVisible();
+  await expect(page).toHaveURL(/notebook-30/);
+  await search.press("Escape");
+  await expect(list.getByRole("listitem")).toHaveCount(count);
 });
 
 test("a multi-page workbench keeps its own selector above the active document", async ({
@@ -529,4 +634,114 @@ test("a multi-page workbench keeps its own selector above the active document", 
   const document = await app.locator("iframe").boundingBox();
   expect(control.y + control.height).toBeLessThanOrEqual(document.y + 1);
   await expect(app.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
+});
+
+test("only open workbenches appear across the App Center, Session directory and Project changes", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await provisionAndLogin(page.request, "directoryreader", P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const { projects } = await (await page.request.get("/api/projects")).json();
+  const current = projects[0];
+  const base = `/api/projects/${current.projectId}`;
+  const projectName = "Cabinet collection";
+  await expect(await page.request.patch(base, { data: { name: projectName } })).toBeOK();
+  const alternate = "other_reader";
+  const otherProject = "directoryreader-empty";
+  await expect(
+    await page.request.post(`${base}/agents`, {
+      data: { agentId: alternate, name: "Second reader" },
+    }),
+  ).toBeOK();
+  await expect(
+    await page.request.post("/api/projects", {
+      data: { projectId: otherProject, name: "Empty scope" },
+    }),
+  ).toBeOK();
+  const model = { provider: "custom", modelId: "claude-4-8" };
+  for (const projectId of [current.projectId, otherProject]) {
+    await expect(
+      await page.request.put(`/api/projects/${projectId}/models`, {
+        data: {
+          defaultModel: model,
+          models: [
+            { ...model, apiKey: "sk-mock", baseUrl: process.env.MOCK_URL, contextWindow: 200000 },
+          ],
+        },
+      }),
+    ).toBeOK();
+  }
+  for (let index = 1; index <= 30; index++) {
+    await importApp(
+      page.request,
+      `${base}/agents/default_agent/workbenches`,
+      `Cabinet${String(index).padStart(2, "0")}`,
+    );
+  }
+  await importApp(page.request, `${base}/agents/${alternate}/workbenches`, "UnopenedAtlas");
+  for (const [agent, title] of [
+    ["default_agent", "Directory inspection"],
+    [alternate, "Other reader notes"],
+  ]) {
+    const response = await page.request.post(`${base}/agents/${agent}/sessions`, { data: {} });
+    await expect(response).toBeOK();
+    const { session } = await response.json();
+    await expect(
+      await page.request.patch(`/api/sessions/${session.sessionId}`, { data: { title } }),
+    ).toBeOK();
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/apps");
+  const grid = page.getByRole("list", { name: "App Center" });
+  const group = page.getByRole("navigation", { name: "Apps", exact: true });
+  const rows = group.getByRole("listitem");
+  const row = (id) => group.locator(`[data-app-row="default_agent/${id}"]`);
+  async function actOnLastApp(label) {
+    const item = rows.filter({ has: page.locator('[data-app-row="default_agent/cabinet30"]') });
+    await item.hover();
+    await item.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("menuitem", { name: label, exact: true }).click();
+  }
+  await expect(grid.getByRole("button", { name: /^Cabinet/ })).toHaveCount(30);
+  await expect(group).toHaveCount(0);
+  await grid.getByRole("button", { name: /^Cabinet01,/ }).click();
+  await expect(row("cabinet01")).toBeVisible();
+  await expect(rows).toHaveCount(1);
+
+  await page.getByText("Directory inspection", { exact: true }).first().click();
+  await page.getByRole("button", { name: "Browse workbenches" }).click();
+  const directory = page.getByRole("region", { name: "Workbenches" });
+  const secondApp = directory.getByRole("button", { name: "Cabinet30", exact: true });
+  await expect(secondApp).toBeVisible();
+  await expect(rows).toHaveCount(1);
+  await secondApp.click();
+  await expect(row("cabinet30")).toBeVisible();
+  await expect(rows).toHaveCount(2);
+  await actOnLastApp("Minimize");
+  await expect(rows).toHaveCount(2);
+  await actOnLastApp("Restore");
+  await actOnLastApp("Close");
+  await expect(rows).toHaveCount(1);
+  await expect(row("cabinet01")).toBeVisible();
+
+  await page.getByText("Other reader notes", { exact: true }).first().click();
+  await expect(rows).toHaveCount(1);
+  await expect(group.getByText("UnopenedAtlas", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: projectName, exact: true }).click();
+  await page
+    .getByRole("button", { name: /^Empty scope/ })
+    .first()
+    .click();
+  const emptyProject = page.getByRole("button", { name: "Empty scope", exact: true });
+  await expect(emptyProject).toBeVisible();
+  await expect(group).toHaveCount(0);
+  await emptyProject.click();
+  await page
+    .getByRole("button", { name: /^Cabinet collection/ })
+    .first()
+    .click();
+  await page.getByRole("link", { name: /^App Center(?: ·|$)/ }).click();
+  await expect(grid.getByRole("button", { name: /^Cabinet/ })).toHaveCount(30);
+  await expect(group).toHaveCount(0);
 });

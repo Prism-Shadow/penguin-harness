@@ -6,8 +6,7 @@
  * - The mark is the workbench's own App Center icon when its manifest names one that reads clean
  *   (an image the server serves; a monochrome one drawn in the tile's ink), else its plugin's
  *   icon on the tile, else the anvil tile.
- * - The Enable label toggles its switch. "More" offers the separate sidebar setting,
- *   reload, version history, export and removal.
+ * - The Enable label toggles its switch. "More" offers reload, version history, export and removal.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -86,7 +85,6 @@ export interface SettingControl {
 export function WorkbenchRowMenu({
   title,
   disabled,
-  sidebar,
   onReload,
   onHistory,
   onExport,
@@ -95,8 +93,6 @@ export function WorkbenchRowMenu({
   /** The row's title, for the button's and the menu's accessible name. */
   title: string;
   disabled: boolean;
-  /** The installation's sidebar setting, checkable; absent when the Agent's server predates it. */
-  sidebar?: SettingControl | undefined;
   /** Absent while the workbench does not run: there is nothing to reload. */
   onReload?: (() => void) | undefined;
   onHistory: () => void;
@@ -133,16 +129,6 @@ export function WorkbenchRowMenu({
       }
     >
       <Menu label={label} density="sm" className="py-1">
-        {sidebar !== undefined && (
-          <MenuItem
-            glyph={ICONS.panelLeft}
-            label={S.workbenches.showInSidebar}
-            checked={sidebar.checked}
-            disabled={sidebar.disabled}
-            onSelect={pick(() => sidebar.onChange(!sidebar.checked))}
-          />
-        )}
-        {sidebar !== undefined && <MenuSeparator />}
         {onReload !== undefined && (
           <MenuItem glyph={ICONS.refresh} label={S.workbenches.reload} onSelect={pick(onReload)} />
         )}

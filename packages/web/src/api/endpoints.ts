@@ -3188,7 +3188,7 @@ export const removeWorkbench = (
     server: machineId,
   });
 /**
- * The sidebar setting (any member): `false` writes the installation's `.hidden-from-sidebar`
+ * The legacy installation setting (any member): `false` writes its `.hidden-from-sidebar`
  * marker, `true` removes it. Nothing reloads and no version is recorded.
  */
 export const setWorkbenchSidebar = (

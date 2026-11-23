@@ -105,12 +105,17 @@ for (const [lang, name, instruction, download] of [
       exact: true,
     });
     await expect(frame.getByRole("dialog")).toHaveCount(0);
-    const row = frame.locator('[data-app-row="default_agent/first-workbench-guide"]:visible');
+    await frame
+      .getByRole("link", { name: lang === "en" ? /^App Center(?: ·|$)/ : /^应用中心(?: ·|$)/ })
+      .click();
+    const tile = frame
+      .locator('li[data-app="default_agent/first-workbench-guide"] > button')
+      .first();
     if (!("@penguinharness/first-workbench-guide" in serverPackage.dependencies)) {
-      await expect(row).toHaveCount(0);
+      await expect(tile).toHaveCount(0);
       return;
     }
-    await row.click();
+    await tile.click();
     const guide = frame.getByRole("region", { name, exact: true });
     await expect(guide.getByText(instruction)).toBeVisible();
     const link = guide.getByRole("link", { name: download });

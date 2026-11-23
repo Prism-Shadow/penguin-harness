@@ -2073,8 +2073,8 @@ export const en: GalleryStrings = {
       appsRunning: "Running",
       appsBuilding: "Building",
       appsFailed: "Failed to load",
-      appsOpen: "Open",
-      appsRemove: "Remove from sidebar",
+      appsRestore: "Restore",
+      appsMinimize: "Minimize",
       appsSettings: "View in agent settings",
     },
     data: {

@@ -1259,8 +1259,6 @@ export const zh = {
       shown ? "从应用中心隐藏" : "在应用中心取消隐藏",
     appCenterVisibilityHint:
       "更改所有 Project 成员看到的应用中心入口。工作台的数据和历史版本会保留。",
-    /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
-    showInSidebar: "展示到侧边栏",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "打开",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1298,13 +1296,12 @@ export const zh = {
     search: "搜索应用",
     sort: "应用排序",
     noMatches: "没有匹配的应用",
-    order: { default: "目录顺序", name: "按名称", running: "运行中的优先" },
+    order: { default: "页面顺序", name: "按名称", recent: "最近使用" },
     title: "应用",
     /** The group header's action: the Agent's Workbenches sub-page. */
     manage: "管理应用",
     /** A row's menu. */
     open: "打开",
-    removeFromSidebar: "从侧边栏移除",
     viewInSettings: "在 Agent 设置中查看",
     /**
      * A row's accessible name, and its hint when that says more than the name: the title, the
@@ -1360,8 +1357,6 @@ export const zh = {
       removeFromFolder: "移出分组",
       removeFromAppCenter: "从应用中心移除",
       viewInSettings: "在 Agent 设置中查看",
-      /** Checkable: the installation's sidebar setting, the row's 「展示到侧边栏」. */
-      showInSidebar: "在侧边栏显示",
       showError: "查看错误",
       rename: "重命名",
       dissolve: "解散分组",

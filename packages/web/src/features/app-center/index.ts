@@ -1,2 +1,3 @@
-/** The App Center's face for other features: the app icon its tiles draw, for a row of the same app. */
+/** App Center shortcuts and their icons as used by other surfaces that show the same apps. */
 export { TileIcon } from "./app-tile";
+export { systemShortcutsOf } from "./system-tiles";

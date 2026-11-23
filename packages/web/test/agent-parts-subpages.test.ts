@@ -240,14 +240,13 @@ describe("the kind sub-pages of the Plugins tab", () => {
     await click(subPageButton(en.agentPlugins.subPages.workbenches));
     expect(whereIs(router)).toBe(`${PAGE}?machine=gpu1&tab=workbenches`);
     await waitFor(() => hasButton(`${en.workbenches.more} Board`));
-    await click(button(`${en.workbenches.more} Board`));
-    await click(menuItem(en.workbenches.showInSidebar));
-    await waitFor(() => server.writes().some((write) => write.path.endsWith("/sidebar")));
+    await click(button(`${en.workbenches.appCenterVisibility(false)} Board`));
+    await waitFor(() => server.writes().some((write) => write.path.endsWith("/app-center")));
     expect(server.writes().at(-1)).toMatchObject({
       machine: "gpu1",
       method: "PATCH",
-      path: `${AGENT_PATH}/workbenches/board/sidebar`,
-      body: { show: false },
+      path: `${AGENT_PATH}/workbenches/board/app-center`,
+      body: { show: true },
     });
   });
 
@@ -301,7 +300,7 @@ describe("the kind sub-pages of the Plugins tab", () => {
     expect(() => switchNamed(en.workbenches.enableOne("Board"))).toThrow();
     await click(button(`${en.workbenches.more} Board`));
     expect(menuItem(en.workbenches.reload)).toBeDefined();
-    expect(() => menuItem(en.workbenches.showInSidebar)).toThrow();
+    expect(() => menuItem("Show in the sidebar")).toThrow();
   });
 
   it("says an Agent has no hook package, and keeps Import hook", async () => {

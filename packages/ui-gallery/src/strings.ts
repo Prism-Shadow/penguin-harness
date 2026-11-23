@@ -2025,8 +2025,8 @@ export const zh = {
       appsRunning: "运行中",
       appsBuilding: "构建中",
       appsFailed: "加载失败",
-      appsOpen: "打开",
-      appsRemove: "从侧边栏移除",
+      appsRestore: "恢复",
+      appsMinimize: "最小化",
       appsSettings: "在 Agent 设置中查看",
     },
     data: {

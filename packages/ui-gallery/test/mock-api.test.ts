@@ -190,7 +190,7 @@ describe("the mocked API", () => {
     ).rejects.toMatchObject({ status: 404, code: "unknown_request" });
   });
 
-  it("lists an installed workbench in its Agent's sidebar until it is hidden there, keeping its pages and App Center tile", async () => {
+  it("keeps the legacy installation sidebar flag independent from an app's pages and App Center tile", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
     const shortcut = store.f.appCenter.shortcuts[0]!;
