@@ -54,6 +54,7 @@ import type { PartRef, PartSource } from "./plugins-subpages";
  * uninstall; `sourceOf` names the plugin a Skill came from, which `onShowPlugin` points at.
  */
 export function useSkillRows({
+  readOnly = false,
   agentId,
   agentName,
   onChanged,
@@ -61,6 +62,7 @@ export function useSkillRows({
   onOpenFiles,
   onShowPlugin,
 }: {
+  readOnly?: boolean;
   agentId: string;
   agentName: string;
   onChanged: () => Promise<void>;
@@ -144,25 +146,27 @@ export function useSkillRows({
         // library card's.
         meta={skill.version || undefined}
         trailing={
-          <>
-            <IconButton
-              label={`${S.skills.exportSkill} ${skill.name}`}
-              title={S.skills.exportSkill}
-              disabled={busy}
-              onClick={() => void exportSkill(skill.name)}
-            >
-              <DownloadIcon size={ICON_SIZE.iconButton} />
-            </IconButton>
-            <IconButton
-              variant="danger"
-              label={`${S.skills.uninstall} ${skill.name}`}
-              title={S.skills.uninstall}
-              disabled={busy}
-              onClick={() => setRemoving(skill.name)}
-            >
-              <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
-            </IconButton>
-          </>
+          !readOnly && (
+            <>
+              <IconButton
+                label={`${S.skills.exportSkill} ${skill.name}`}
+                title={S.skills.exportSkill}
+                disabled={busy}
+                onClick={() => void exportSkill(skill.name)}
+              >
+                <DownloadIcon size={ICON_SIZE.iconButton} />
+              </IconButton>
+              <IconButton
+                variant="danger"
+                label={`${S.skills.uninstall} ${skill.name}`}
+                title={S.skills.uninstall}
+                disabled={busy}
+                onClick={() => setRemoving(skill.name)}
+              >
+                <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+              </IconButton>
+            </>
+          )
         }
       />
     );
