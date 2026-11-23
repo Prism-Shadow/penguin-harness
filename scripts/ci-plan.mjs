@@ -183,34 +183,23 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
   // that does not bundle the web leaves the UI package out.
   const web = `${prefix}web`;
   const ui = `${prefix}ui`;
-  const selections = new Map();
-  /** `filters`, minus the web's bundle and the UI package's build where they would select them. */
-  const withoutUnread = (filters) => {
-    const key = filters.join(",");
-    if (!selections.has(key)) {
-      selections.set(
-        key,
-        new Set(list(filters.flatMap((f) => ["--filter", f])).map((p) => p.name)),
-      );
-    }
-    const selected = selections.get(key);
-    return [
-      ...filters,
-      ...[web, ui].filter((name) => selected.has(name)).map((name) => `!${name}`),
-    ];
-  };
+  // pnpm applies exclusions to the positive selection. Passing them to the build directly
+  // avoids resolving each shard's dependency set once here and again on its runner.
+  const testBuildExclusions = [web, ui]
+    .filter((name) => byName.has(name))
+    .map((name) => `!${name}`);
   const build = (names) => {
     if (names.length === 0) return "";
     const builds = new Set(names.map((name) => (name === web ? `${name}^...` : `${name}...`)));
-    return withoutUnread([...builds]).join(",");
+    return [...builds, ...testBuildExclusions].join(",");
   };
   const typecheckBuild = (names) =>
     names.length === 0
       ? ""
-      : withoutUnread([
+      : [
           ...names.map((name) => `${name}^...`),
-          ...projects.filter((p) => isBundle(p.name)).map((p) => `!${p.name}`),
-        ]).join(",");
+          ...projects.filter((p) => isBundle(p.name) || p.name === ui).map((p) => `!${p.name}`),
+        ].join(",");
   /** `split` ("1/2") runs half of every package's test files: vitest's `--shard`. */
   const testTask = (split) => (split ? `test --shard=${split}` : "test");
   const shard = (name, names, extra = {}) => ({

@@ -34,6 +34,7 @@ const PLAN = {
   skills: [],
   hooks: ["user_prompt"],
   composerMode: true,
+  composerCommand: "plan",
   mcpServers: [],
 } satisfies PluginItem;
 
@@ -73,6 +74,39 @@ describe("a composer mode the Agent lacks", () => {
     await click(button(S.chat.send));
     await waitFor(() => world.tasks().length === 1, 40);
     expect(world.tasks()[0]!.body).toMatchObject({ promptHooks: ["plan"] });
+  });
+
+  it("selects its installed slash command without sending, then preserves the text of a pasted command", async () => {
+    const world = draftWorld({ plugins: { library: [PLAN], hooks: ["plan"] } });
+    await mountDraft();
+    await waitFor(() => composer() !== null);
+    await type(composer(), "/plan");
+    const command = () =>
+      [...document.querySelectorAll("button")].find((b) => b.textContent?.startsWith("/plan"));
+    await waitFor(() => command() !== undefined, 40);
+    await click(command()!);
+    await waitFor(() => hasButton(planChip()), 40);
+    expect(composer().value).toBe("");
+    expect(world.tasks()).toEqual([]);
+    await type(composer(), "/plan draft the migration");
+    expect(composer().value).toBe("draft the migration");
+    await click(button(S.chat.send));
+    await waitFor(() => world.tasks().length === 1, 40);
+    expect(world.tasks()[0]!.body).toMatchObject({
+      promptHooks: ["plan"],
+      input: [{ type: "text", text: "draft the migration" }],
+    });
+  });
+
+  it("keeps a slash prefix as ordinary draft text when the Agent has no matching mode", async () => {
+    const world = draftWorld({ plugins: { library: [PLAN], hooks: [] } });
+    await openPlusMenu();
+    await waitFor(() => planRow() !== undefined, 40);
+    await click(button(S.chat.plusMenu));
+    await type(composer(), "/plan draft the migration");
+    expect(composer().value).toBe("/plan draft the migration");
+    expect(hasButton(planChip())).toBe(false);
+    expect(world.installs()).toEqual([]);
   });
 
   it("is a plain switch on an Agent that has it, with nothing to install", async () => {

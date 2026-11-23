@@ -406,6 +406,7 @@ function PlusMenu({
 interface SlashCommand {
   cmd: string;
   desc: string;
+  modeName?: string;
   run: () => void;
 }
 
@@ -1422,7 +1423,7 @@ export function ChatInput({
       setText(next);
       onTextChange?.(next);
     };
-    return [
+    const items: SlashCommand[] = [
       ...(onCompact
         ? [
             {
@@ -1492,7 +1493,35 @@ export function ChatInput({
         },
       })),
     ];
+    if (!running && !goalOn && switches && variant !== "subagent") {
+      // An installed mode cannot take over a built-in command or an Agent's skill.
+      const taken = new Set([
+        "/compact",
+        "/goal",
+        "/model",
+        "/agent",
+        ...items.map((item) => item.cmd),
+      ]);
+      for (const mode of switches.modes) {
+        if (!mode.composerCommand) continue;
+        const cmd = "/" + mode.composerCommand;
+        if (taken.has(cmd)) continue;
+        taken.add(cmd);
+        items.push({
+          cmd,
+          desc: mode.description || mode.title,
+          modeName: mode.name,
+          run: () => {
+            clearInput();
+            switches.onChange(toggled(switches.on, mode.name));
+          },
+        });
+      }
+    }
+    return items;
   }, [
+    running,
+    switches,
     variant,
     onCompact,
     onSwitchModel,
@@ -1892,6 +1921,11 @@ export function ChatInput({
       return;
     }
     if (!canSend) return;
+    const mode = commands.find((item) => item.modeName && item.cmd === text.trim());
+    if (mode) {
+      mode.run();
+      return;
+    }
     await sendNormal();
   };
 
@@ -2603,8 +2637,17 @@ export function ChatInput({
           value: text,
           autoFocus,
           onChange: (e) => {
-            const value = e.target.value;
-            const caretNow = e.target.selectionStart ?? value.length;
+            let value = e.target.value;
+            let caretNow = e.target.selectionStart ?? value.length;
+            // Typing the separator or pasting a complete command selects the mode and leaves
+            // its body editable. Other slash commands and running-task steering keep their input.
+            const prefix = /^(\/[a-z][a-z0-9-]*)(\s+)/.exec(value);
+            const mode = prefix && commands.find((item) => item.cmd === prefix[1])?.modeName;
+            if (mode && switches && prefix) {
+              if (!switches.on.includes(mode)) switches.onChange([...switches.on, mode]);
+              value = value.slice(prefix[0].length);
+              caretNow = Math.max(0, caretNow - prefix[0].length);
+            }
             setText(value);
             onTextChange?.(value);
             setCaret(caretNow);

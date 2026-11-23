@@ -4,7 +4,7 @@
  * run-state snapshot and every pending approval first, as the server does on connect, and a
  * running Session's script then streams on it. A history read is the demo's `/messages` answer
  * for the same query, sent as the history stream sends a window: its page, its records, done —
- * every demo Session is on this server, so there is no progress to report and nothing to fill.
+ * the demo holds the complete history in memory, so no background history transfer is needed.
  */
 import type { StreamHandlers as AppStreamHandlers } from "./types";
 import type {
@@ -15,6 +15,8 @@ import type {
   MessagesResponse,
   ServerEvent,
 } from "@prismshadow/penguin-server/api";
+import { apiUrl } from "../../../../web/src/lib/server-context";
+import { machineForSession } from "../../../../web/src/lib/session-machines";
 import { ApiError } from "./errors";
 import { router } from "./routes";
 import { getStore } from "./store";
@@ -38,7 +40,7 @@ export interface MachineStreamHandlers {
 
 /** Subscribes to a Session's output stream (GET /api/sessions/:sessionId/stream). */
 export function openSessionStream(sessionId: string, handlers: StreamHandlers): StreamConnection {
-  const store = getStore();
+  const store = getStore().sessionsOn(machineForSession(sessionId));
   const channel = store.channel(sessionId);
   if (!channel) {
     setTimeout(() => handlers.onError?.(true), 0);
@@ -64,8 +66,7 @@ export function openUserEvents(
   handlers: StreamHandlers,
   machineId: string | null = null,
 ): StreamConnection {
-  void machineId;
-  const store = getStore();
+  const store = getStore().sessionsOn(machineId);
   const unsubscribe = store.userChannel.subscribe(handlers);
   let open = true;
   setTimeout(() => {
@@ -82,14 +83,22 @@ export function openUserEvents(
 }
 /**
  * Subscribes to the Project's machines aggregate (GET /api/projects/:projectId/machines/events).
- * The demo has no remote machine to stream from: the stream opens and says hello, as the hub
- * does on a fresh subscribe, and stays quiet.
+ * Like the hub, forward each remote event with its source machine.
  */
 export function openMachineEvents(
   projectId: string,
   handlers: MachineStreamHandlers,
 ): StreamConnection {
-  void projectId;
+  const store = getStore();
+  const machines = store.f.project.projectId === projectId ? store.f.machines.machines : [];
+  const subscriptions = machines.flatMap((machine) => {
+    const id = machine.machineId;
+    if (machine.local || !id || !machine.api) return [];
+    return store.sessionsOn(id).userChannel.subscribe({
+      onRecord: () => undefined,
+      onServerEvent: (event, cursor) => handlers.onMachineEvent(id, event, cursor),
+    });
+  });
   let open = true;
   setTimeout(() => {
     if (!open) return;
@@ -99,6 +108,7 @@ export function openMachineEvents(
   return {
     close: () => {
       open = false;
+      for (const unsubscribe of subscriptions) unsubscribe();
     },
   };
 }
@@ -139,6 +149,7 @@ export function openHistoryStream(
   sessionId: string,
   query: HistoryStreamQuery,
   handlers: HistoryStreamHandlers,
+  machineId = machineForSession(sessionId),
 ): StreamConnection {
   let open = true;
   void (async () => {
@@ -151,7 +162,7 @@ export function openHistoryStream(
     let answer: MessagesResponse;
     try {
       const path = `/api/sessions/${encodeURIComponent(sessionId)}/messages${messagesQuery(query)}`;
-      const result = await router.dispatch(getStore(), "GET", path, undefined);
+      const result = await router.dispatch(getStore(), "GET", apiUrl(path, machineId), undefined);
       answer = (result.kind === "json" ? result.body : { messages: [] }) as MessagesResponse;
     } catch (error) {
       if (!open) return;
