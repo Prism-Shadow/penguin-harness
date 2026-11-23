@@ -3020,6 +3020,16 @@ function browserUnavailable(): never {
   );
 }
 
+const managedSessionTabs =
+  "/api/builtin-browser/projects/:projectId/session-resources/:sessionId/tabs";
+
+function managedBrowserUnavailable({ store, params }: Ctx): never {
+  if (store.session(params.sessionId!)?.projectId !== params.projectId) {
+    return fail(404, "session_not_found", "Session is unavailable.");
+  }
+  return fail(503, "browser_unavailable", "The built-in browser requires the desktop app.");
+}
+
 /** A pairing code's shape: 43 base64url characters. */
 const DEMO_PAIRING_CODE = "demo-pairing-code-for-the-gallery-0123456789";
 
@@ -3047,6 +3057,10 @@ router
     enabled: true,
   }))
   .delete("/api/builtin-browser/extension/:id", () => notFound("Paired Chrome"))
+  .get(managedSessionTabs, managedBrowserUnavailable)
+  .post(managedSessionTabs, managedBrowserUnavailable)
+  .post(managedSessionTabs + "/:tab/activate", managedBrowserUnavailable)
+  .delete(managedSessionTabs + "/:tab", managedBrowserUnavailable)
   .post("/api/builtin-browser/tabs/:tab/navigate", browserUnavailable)
   .post("/api/builtin-browser/tabs", browserUnavailable)
   .post("/api/builtin-browser/tabs/session", browserUnavailable)
