@@ -13,6 +13,7 @@
  *   GET    /voice-polish/settings             transcript editing in this Project
  *   PATCH  /voice-polish/settings             { enabled?, prompt? } (owner)
  *   POST   /voice-polish                      { text, sessionId? } → { text, model }
+ *   POST   /t2s/audio                          { text, voice? } → playable audio without a Session
  *   POST   /read-aloud                        { text, sessionId } → the reply's audio (read-aloud.ts)
  *   GET    /sessions/:sessionId/read-aloud/:name   that audio, streamed
  *
@@ -153,6 +154,41 @@ export function toolRoutes(deps: RouteDeps): Hono<RouteEnv> {
       throw new ToolError(502, "run_failed", finished.record.error ?? "The run failed.");
     }
     return c.json(finished.record);
+  });
+
+  app.post("/t2s/audio", async (c) => {
+    const projectId = projectOf(c, deps);
+    const input = await body(c);
+    const tools = deps.tools();
+    const { record, done } = await tools.start(projectId, undefined, "t2s", {
+      text: optionalString(input, "text"),
+      voice: optionalString(input, "voice"),
+    });
+    const signal = c.req.raw.signal;
+    const stop = () => {
+      void tools.runs.cancel(projectId, record.id);
+    };
+    signal.addEventListener("abort", stop, { once: true });
+    if (signal.aborted) stop();
+    try {
+      const result = await done;
+      if (result.record.status === "cancelled")
+        throw new ToolError(409, "run_cancelled", "The run was cancelled.");
+      if (result.record.status === "failed")
+        throw new ToolError(502, "run_failed", result.record.error ?? "Speech synthesis failed.");
+      const audio = result.files[0];
+      if (!audio) throw new ToolError(502, "missing_media", "The speech model returned no audio.");
+      return new Response(Readable.toWeb(Readable.from([audio.data])) as ReadableStream, {
+        headers: {
+          "Content-Type": audio.mimeType,
+          "Content-Length": String(audio.data.byteLength),
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    } finally {
+      signal.removeEventListener("abort", stop);
+    }
   });
 
   app.get("/runs/:runId", async (c) => {
