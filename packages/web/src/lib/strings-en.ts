@@ -2202,6 +2202,8 @@ export const en: Strings = {
       "The system apps this agent owns. They come with the platform and open from the App Center.",
     systemAppsEmpty: "No system apps yet.",
     systemAppTag: "System app",
+    systemInventoryHint: "Installed components on the system Agent are read-only.",
+    pluginCountUnknown: "Plugin count unavailable from this server",
     systemAppCount: (n: number) => `${n} ${n === 1 ? "system app" : "system apps"}`,
     systemIdHeld: (name: string): string =>
       `Agent "${name}" holds the id reserved for the system agent. Export it, import it under another id, then delete it; the system agent is added the next time the agents load.`,

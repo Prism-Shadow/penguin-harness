@@ -2318,6 +2318,8 @@ export const zh = {
     systemAppsEmpty: "还没有系统应用。",
     /** A system app's row there: its tag, and the system Agent's card's count of them. */
     systemAppTag: "系统应用",
+    systemInventoryHint: "系统智能体的已装内容可供查看。",
+    pluginCountUnknown: "该来源未提供插件数量",
     systemAppCount: (n: number) => `${n} 个系统应用`,
     /** The Agents page's notice to the owner: an Agent of theirs holds the id reserved for the system Agent. */
     systemIdHeld: (name: string): string =>
