@@ -33,7 +33,7 @@ Options of penguin computer itself:
 
 Name apps exactly as list-apps prints them. By default only administrators (and Agents
 working for one) may use this; an administrator can allow members.
-While the user is using the keyboard or mouse, commands that change the desktop pause
+When "Pause while the user is active" is on, commands that change the desktop pause during user input
 (user_active): stop and ask them.
 Off unless an administrator allows it (Settings → Plugins → Computer Use): physical input
 (--headed, mouse-*, hover, drag, double-click, focus, scroll), clipboard-get, list-notifications.
@@ -69,7 +69,7 @@ penguin computer 自己的参数：
 
 按 list-apps 打印的名称逐字指明应用。缺省只有管理员（及为其工作的 Agent）可以使用，
 管理员可以允许成员使用。
-用户正在用键盘或鼠标时，作用于桌面的命令会暂停（user_active）：停下来问用户。
+开启「用户操作时暂停」后，用户正在用键盘或鼠标时，作用于桌面的命令会暂停（user_active）：停下来问用户。
 需管理员允许才可用（设置 › 插件 › Computer Use）：物理输入（--headed、mouse-*、hover、
 drag、double-click、focus、scroll）、clipboard-get、list-notifications。
 一律不在此运行：sandbox、mcp、cursor-overlay、session、trace、通知操作、
