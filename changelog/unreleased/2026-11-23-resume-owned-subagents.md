@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** fix
 - **Scope:** Session runtime and subagent history
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1735
 
 [中文版](2026-11-23-resume-owned-subagents.zh.md)
 

@@ -533,12 +533,21 @@ export class TraceService implements Traces {
       }
       while (index < events.length) accept(events[index++]!);
     }
+    const ordered = [...children.values()];
+    function firstAfter(order: number) {
+      let low = 0,
+        high = ordered.length;
+      while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        if (pointerOrder.get(ordered[mid]!.sessionId)! <= order) low = mid + 1;
+        else high = mid;
+      }
+      return low;
+    }
     const resolved = new Map<string, OwnedSubagent | null>();
     for (const handle of handles) {
-      const candidates = [...children.values()].filter((child) => {
-        const at = pointerOrder.get(child.sessionId)!;
-        return at > handle.start && at < handle.end;
-      });
+      // Match only the direct pointers written while this particular run_subagent call was open.
+      const candidates = ordered.slice(firstAfter(handle.start), firstAfter(handle.end - 1));
       const matches =
         candidates.length <= 1
           ? candidates
@@ -549,7 +558,7 @@ export class TraceService implements Traces {
       }
     }
     for (const [alias, child] of resolved) if (child) child.alias = alias;
-    return [...children.values()];
+    return ordered;
   }
 
   /** Deletes all of this Session's Trace files (called when the Session is deleted); the index rows go with them. */

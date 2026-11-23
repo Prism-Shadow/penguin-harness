@@ -57,7 +57,7 @@ import { lazyToolFs, localFsPort } from "./tools/fs-port.js";
 import type { ToolFs } from "./tools/fs-port.js";
 import { McpToolProvider } from "./mcp/provider.js";
 import { CommandSessionManager } from "./tools/command/index.js";
-import { ManagedSubagentSession, SubagentSessionManager } from "./tools/subagent/index.js";
+import { SubagentSessionManager } from "./tools/subagent/index.js";
 import {
   TRUNCATED_TOOL_OUTPUT_FILE_LIMIT_BYTES,
   TruncatedToolOutputArchive,
@@ -471,7 +471,7 @@ export class Environment implements EnvironmentInterface {
     // Same admission rule as a spawn: never evict a running child to make room.
     if (!this.subagentSessions.makeRoom()) return "busy";
     const session = await this.subagentSessions
-      .restore({ sessionId: childSessionId, agentId }, runner)
+      .restore({ sessionId: childSessionId, agentId }, runner, opts?.resume?.subagentId)
       .catch(() => null);
     if (!session) return "gone";
     if (session.steer(messages)) return "steered";

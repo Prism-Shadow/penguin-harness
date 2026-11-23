@@ -484,7 +484,7 @@ export interface BackgroundSubagentInfo {
 /** Look up an issued handle in the restored parent Session's own durable records. */
 export type SubagentResolver = (
   handle: string,
-) => Promise<{ sessionId: string; agentId: string | null } | null>;
+) => Promise<{ sessionId: string; agentId: string | null; alias: string } | null>;
 
 export type SubagentMessageOutcome = "steered" | "started" | "resumed" | "busy" | "gone";
 
@@ -496,7 +496,7 @@ export interface SubagentMessageOptions {
    * re-managed, and the text starts its next round. `agentId` names the Agent that owns the
    * child session (the host reads it from its session registry).
    */
-  resume?: { agentId: string };
+  resume?: { agentId: string; subagentId?: string };
 }
 
 /**

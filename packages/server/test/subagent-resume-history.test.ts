@@ -109,7 +109,7 @@ it("keeps prior children addressable by their issued handles after reconnect and
     async function deliver(step: string, index: number) {
       const marker = "DELIVERY_" + step;
       await task("PARENT_" + step, "input_subagent", {
-        subagent_id: handles[index],
+        subagent_id: step === "FULL_ID" ? ids[index] : handles[index],
         prompt: marker,
         yield_time_ms: 1000,
       });
@@ -130,6 +130,7 @@ it("keeps prior children addressable by their issued handles after reconnect and
     expect(await roster()).toEqual(initial);
     await deliver("AFTER_RESTART", 0);
     await deliver("SECOND_CHILD", 1);
+    await deliver("FULL_ID", 0);
     expect(await roster()).toEqual(initial);
   } finally {
     await host.cleanup();

@@ -1024,6 +1024,46 @@ describe("subagent steering and per-run abort", () => {
     }
   });
 
+  it("a panel and a restored model handle share one revival and keep the originally issued alias", async () => {
+    const manager = new SubagentSessionManager();
+    let resumeCalls = 0;
+    let release!: () => void;
+    const wait = new Promise<void>((ok) => {
+      release = ok;
+    });
+    const runner: SubagentRunner = {
+      async spawn() {
+        throw new Error("this fixture only resumes");
+      },
+      async resume({ sessionId }) {
+        resumeCalls++;
+        await wait;
+        return {
+          sessionId,
+          async *run() {
+            yield withOrigin(assistantText("ready"), sessionId);
+            return null;
+          },
+          dispose() {},
+        };
+      },
+    };
+    try {
+      const clue = { sessionId: HOP, agentId: "owner_agent" };
+      const one = manager.restore(clue, runner, "subagent-ffff0123");
+      const two = manager.restore(clue, runner, "subagent-ffff0123");
+      release();
+      const [panel, model] = await Promise.all([one, two]);
+      expect(resumeCalls).toBe(1);
+      expect(panel).toBe(model);
+      expect(manager.listLive()).toEqual([
+        { sessionId: HOP, subagentId: "subagent-ffff0123", running: false },
+      ]);
+    } finally {
+      await manager.dispose();
+    }
+  });
+
   it("input_subagent revives a released id through the runner (a subagent is never destroyed)", async () => {
     const prompts: string[] = [];
     const resumes: { agentId?: string; sessionId: string }[] = [];

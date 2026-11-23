@@ -97,7 +97,7 @@ export function createInputSubagentTool(
                   ...(clue.agentId !== undefined ? { agentId: clue.agentId } : {}),
                 },
                 runner,
-                subagentId,
+                "alias" in clue && typeof clue.alias === "string" ? clue.alias : subagentId,
               )) ?? undefined;
             if (session) yield delta(`[subagent ${subagentId} resumed]\n`);
           }

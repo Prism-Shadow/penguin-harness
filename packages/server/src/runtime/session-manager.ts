@@ -727,14 +727,15 @@ export class SessionManager {
     const entry = await this.withLock(sessionId, () => this.ensureEntry(sessionId));
     entry.lastActivityMs = Date.now();
     const parent = this.deps.sessions.findById(sessionId);
-    let resume: { agentId: string } | undefined;
+    let resume: { agentId: string; subagentId?: string } | undefined;
     if (
       parent &&
       !entry.session.listBackgroundSubagents?.().some((child) => child.sessionId === childSessionId)
     ) {
       const owned = await this.deps.traces?.ownedSubagents(parent);
       const child = owned?.find((row) => row.sessionId === childSessionId);
-      if (child?.agentId) resume = { agentId: child.agentId };
+      if (child?.agentId)
+        resume = { agentId: child.agentId, ...(child.alias ? { subagentId: child.alias } : {}) };
     }
     return (
       (await entry.session.sendToBackgroundSubagent?.(childSessionId, messages, {
@@ -908,8 +909,12 @@ export class SessionManager {
       const parent = this.deps.sessions.findById(sessionId);
       if (!parent) return null;
       const children = await this.deps.traces?.ownedSubagents(parent);
-      const owned = children?.find((child) => child.alias === handle);
-      return owned ? { sessionId: owned.sessionId, agentId: owned.agentId } : null;
+      const owned = children?.find(
+        (child) => child.alias === handle || (child.sessionId === handle && child.alias !== null),
+      );
+      return owned?.alias
+        ? { sessionId: owned.sessionId, agentId: owned.agentId, alias: owned.alias }
+        : null;
     });
     session.onBackgroundNotice?.(
       () => void this.state.current?.startBackgroundNoticeTask(sessionId),

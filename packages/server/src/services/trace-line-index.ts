@@ -79,8 +79,19 @@ function recordAt(buf: Buffer, from: number, to: number): unknown {
 
 /** The child Session a `subagent` pointer record names, or null for any other record. */
 function pointerOf(record: unknown): { sessionId: string; timestamp: string } | null {
-  const r = record as { type?: unknown; timestamp?: unknown; payload?: unknown } | null;
-  if (r === null || typeof r !== "object" || r.type !== "event_msg") return null;
+  const r = record as {
+    type?: unknown;
+    timestamp?: unknown;
+    payload?: unknown;
+    origin?: unknown;
+  } | null;
+  if (
+    r === null ||
+    typeof r !== "object" ||
+    r.type !== "event_msg" ||
+    (Array.isArray(r.origin) && r.origin.length > 0)
+  )
+    return null;
   const p = r.payload as { type?: unknown; session_id?: unknown } | null;
   if (p === null || typeof p !== "object" || p.type !== "subagent") return null;
   if (typeof p.session_id !== "string" || p.session_id === "") return null;

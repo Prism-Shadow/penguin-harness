@@ -147,9 +147,15 @@ export class SubagentSessionManager {
     // completed, idle ones); if still no room, register anyway, tolerating a brief overshoot
     // (see MAX_SESSIONS).
     this.registry.makeRoom(false);
+    const previous =
+      alias ?? [...this.registered].find(([, prior]) => prior.sessionId === session.sessionId)?.[0];
     const id = this.registry.register(
       session,
-      alias?.slice("subagent-".length) ?? session.sessionId.slice(-8),
+      previous?.slice("subagent-".length) ?? session.sessionId.slice(-8),
+      (candidate) => {
+        const prior = this.registered.get(candidate);
+        return prior !== undefined && prior.sessionId !== session.sessionId;
+      },
     );
     // Tombstone for the revival path: a subagent session is never destroyed the way a process
     // is — releasing it (idle eviction) only frees the slot, and this record lets a later
