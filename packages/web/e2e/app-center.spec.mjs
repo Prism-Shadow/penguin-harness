@@ -493,6 +493,15 @@ test("searching, sorting and folding sidebar directories keeps the open page and
   const names = await rows.locator("button[data-app-row] > .truncate").allTextContents();
   expect(names.length).toBeGreaterThan(1);
   expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+
+  await side.getByRole("button", { name: "Sort apps", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Recently used" }).click();
+  await expect(rows.first()).toContainText("Alpha");
+  await apps.locator('[data-app-row="default_agent/gamma"]').click();
+  await expect(rows.first()).toContainText("Gamma");
+  await expect(rows.last()).toContainText("Alpha");
+  await open.locator('[data-app-row="chat:new"]').click();
+
   const foldApps = side.getByRole("button", { name: "Apps", exact: true });
   const foldWorkspaces = side.getByRole("button", { name: "Workspaces", exact: true });
   await foldApps.click();
