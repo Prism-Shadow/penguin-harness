@@ -32,10 +32,16 @@ function startsValue(prev: string | undefined): boolean {
   return prev === undefined || !/[A-Za-z0-9_.~/\\-]/.test(prev);
 }
 
+/** A drive or UNC share identifies its own volume. A leading slash alone does not. */
+function hasWindowsVolume(value: string): boolean {
+  return path.win32.isAbsolute(value) && path.win32.parse(value).root.length > 1;
+}
+
 /** `value` moved by the first move whose `from` it lies under, or null when none applies. */
 export function movedPath(value: string, moves: readonly PathMove[]): string | null {
   for (const { from, to } of moves) {
-    if (process.platform === "win32" && path.win32.isAbsolute(value)) {
+    if (process.platform === "win32" && hasWindowsVolume(from)) {
+      if (!hasWindowsVolume(value)) continue;
       const relative = path.win32.relative(from, value);
       if (relative === "") return to;
       if (relative !== ".." && !relative.startsWith("..\\") && !path.win32.isAbsolute(relative)) {

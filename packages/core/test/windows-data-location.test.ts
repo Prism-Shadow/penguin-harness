@@ -11,6 +11,7 @@ import {
 } from "../src/index.js";
 import { seedProject } from "./seeded-project.js";
 import { stubProviderKeys } from "./provider-keys.js";
+import { movedPath } from "../src/state/layout-migration/rewrite.js";
 import { resolveRoot } from "../src/state/paths.js";
 import { installedWindowsDataLocation } from "../src/state/windows-data-location.js";
 
@@ -32,6 +33,22 @@ describe.skipIf(process.platform !== "win32")("the installed Windows data locati
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
     fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("moves only paths on the named Windows volume and preserves slash-only records", () => {
+    const drive = [{ from: "C:/Penguin/Data", to: "D:\\Moved\\Data" }];
+    expect(movedPath("c:/PENGUIN/data/agents/one", drive)).toBe("D:\\Moved\\Data\\agents\\one");
+    expect(movedPath("/Penguin/Data/agents/one", drive)).toBeNull();
+    expect(movedPath("C:/Penguin/Data2/work", drive)).toBeNull();
+    expect(movedPath("E:/Penguin/Data/work", drive)).toBeNull();
+
+    const share = [{ from: "\\\\host\\share\\Data", to: "D:\\Moved" }];
+    expect(movedPath("//HOST/share/data/notes", share)).toBe("D:\\Moved\\notes");
+    expect(movedPath("//host/other/data/notes", share)).toBeNull();
+
+    expect(movedPath("/data/acme/notes", [{ from: "/data/acme", to: "/new/acme" }])).toBe(
+      "/new/acme/notes",
+    );
   });
 
   it("keeps the standard location until Setup commits both halves of a custom installation", () => {
