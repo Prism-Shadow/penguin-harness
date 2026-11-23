@@ -86,7 +86,7 @@ async function revealChip(page) {
 
 /** The agents dock tab, shown (its dock visible, the tab active). */
 const agentsTabActive = (page) =>
-  page.locator('[data-testid="dock-tab"][data-tab-id="agents"][data-active="true"]');
+  page.getByRole("tab", { name: "智能体面板", exact: true, selected: true });
 
 /**
  * Click the chip and wait for the agents tab to come up shown. The reveal + click runs as
@@ -102,6 +102,7 @@ async function openPanelViaChip(page) {
     }
     await chip.click({ timeout: 2000 });
   }).toPass({ timeout: 15_000 });
+  await expect(page.getByRole("tab", { name: "智能体面板", exact: true })).toHaveCount(1);
   await expect(agentsTabActive(page)).toBeVisible();
 }
 
@@ -131,7 +132,7 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
   await openPanelViaChip(page);
   // The child conversation streams inside the panel (this text renders nowhere else while the
   // run_subagent tool card stays collapsed).
-  await expect(page.getByText("Subagent report: 3 TODOs")).toBeVisible();
+  await expect(page.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toBeVisible();
 
   // Parent's final answer: the whole turn has ended; assertions below are deterministic.
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
@@ -145,18 +146,18 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
   await graph.getByRole("button").first().click();
   await expect(page.getByText("主会话请在对话区查看")).toBeVisible();
   await graph.getByRole("button").nth(1).click();
-  await expect(page.getByText("Subagent report: 3 TODOs")).toBeVisible();
+  await expect(page.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toBeVisible();
 
   // --- After-completion reload: chip reopens the panel, graph and conversation intact
   // (the finished turn's group is collapsed now — revealChip expands it first). ---
   await page.reload();
   await revealChip(page);
   await openPanelViaChip(page);
-  await expect(page.getByText("Subagent report: 3 TODOs")).toBeVisible();
+  await expect(page.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toBeVisible();
   // The child conversation keeps its USER side across a reload (child-Trace expansion carries
   // the child's own user messages; live streaming forwards the same message — both paths must
   // render the user bubble).
-  await expect(page.getByText(CHILD_PROMPT)).toBeVisible();
+  await expect(page.getByTestId("dock").getByText(CHILD_PROMPT)).toBeVisible();
   await expect(
     page.getByRole("group", { name: "调用关系" }).getByRole("button", { name: /General Agent/ }),
   ).toHaveCount(2);
@@ -176,17 +177,25 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
   await expect(agentsTabActive(page)).toBeVisible(); // shown from the chip click above
   await rightDock.getByTestId("dock-add").click();
   await page.getByTestId("dock-add-workspace").click(); // workspace up -> agents covered, not closed
-  await expect(rightDock.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
-  await expect(rightDock.locator('[data-tab-id="agents"][data-active="false"]')).toBeVisible();
-  await rightDock.locator('[data-tab-id="agents"]').click(); // and back: agents up front, workspace stays tabbed
-  await expect(rightDock.locator('[data-tab-id="agents"][data-active="true"]')).toBeVisible();
-  await expect(rightDock.locator('[data-tab-id="workspace"][data-active="false"]')).toBeVisible();
+  await expect(
+    rightDock.getByRole("tab", { name: "文件浏览", exact: true, selected: true }),
+  ).toBeVisible();
+  await expect(
+    rightDock.getByRole("tab", { name: "智能体面板", exact: true, selected: false }),
+  ).toBeVisible();
+  await rightDock.getByRole("tab", { name: "智能体面板", exact: true }).click(); // and back: agents up front, workspace stays tabbed
+  await expect(
+    rightDock.getByRole("tab", { name: "智能体面板", exact: true, selected: true }),
+  ).toBeVisible();
+  await expect(
+    rightDock.getByRole("tab", { name: "文件浏览", exact: true, selected: false }),
+  ).toBeVisible();
   // The covered tab's body renders nothing on screen (display:none, not a stray strip).
   await expect(page.getByText("根目录")).toBeHidden();
   // Put the workspace tab away for the blocks below via its always-visible ×; the dock
   // stays on the agents tab.
-  await rightDock.locator('[data-tab-id="workspace"]').getByTestId("dock-tab-close").click();
-  await expect(rightDock.locator('[data-tab-id="workspace"]')).toHaveCount(0);
+  await rightDock.getByRole("button", { name: /关闭面板.*文件浏览/ }).click();
+  await expect(rightDock.getByRole("tab", { name: "文件浏览", exact: true })).toHaveCount(0);
   await expect(agentsTabActive(page)).toBeVisible();
 
   // --- Historical topology: a plain follow-up Task makes the first turn's graph historical
@@ -211,11 +220,11 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
     "aria-pressed",
     "true",
   );
-  await expect(page.getByText("Subagent report: 3 TODOs")).toBeVisible();
+  await expect(page.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toBeVisible();
   // Close the tab (its × — the last tab, so the dock goes away with it, dropping the
   // pinned scope), then reopen through the toolbar toggle and the picker -> back to the
   // DEFAULT latest-Task scope.
-  await rightDock.locator('[data-tab-id="agents"]').getByTestId("dock-tab-close").click();
+  await rightDock.getByRole("button", { name: /关闭面板.*智能体面板/ }).click();
   await expect(rightDock).toHaveCount(0);
   await page.getByTestId("dock-toggle-right").click();
   await page.getByTestId("dock-pick-agents").click();
@@ -234,7 +243,6 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
     .poll(async () => (await childOf())?.title ?? null, { timeout: 10000 })
     .toBe("Subagent TODO summary");
   const child = await childOf();
-
   // --- The child's OWN Trace session_meta records source=subagent: written by core's spawn
   // site, the single source of truth (the server's registration fallback cannot mask this —
   // it never writes the child Trace), and what the derived list source ultimately rests on. ---
@@ -255,7 +263,51 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
   await expect(sidebar.getByText("Subagent TODO summary")).toHaveCount(0);
   await expect(sidebar.getByRole("button", { name: /^后台会话|^已归档/ })).toHaveCount(0);
   await openPanelViaChip(page);
-  await expect(page.getByText("Subagent report: 3 TODOs")).toBeVisible();
+  await expect(page.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toBeVisible();
+});
+
+test("the chip, shortcuts and right dock reuse the Agent panel in its own conversation", async ({
+  page,
+}) => {
+  const { sessionId, projectId, agentId } = await provisionSession(page, "oneagentpanel");
+  const other = await page.request.post(
+    BASE + "/api/projects/" + projectId + "/agents/" + agentId + "/sessions",
+    {
+      data: { provider: "custom", modelId: "claude-4-8" },
+    },
+  );
+  expect(other.ok()).toBe(true);
+  const otherId = (await other.json()).session.sessionId;
+  const tab = page.getByRole("tab", { name: "智能体面板", exact: true });
+  async function fromMenus() {
+    const toggle = page.getByTestId("dock-toggle-right");
+    if ((await toggle.getAttribute("aria-expanded")) === "true") await toggle.click();
+    await page.getByRole("button", { name: "快捷方式", exact: true }).click();
+    await page.getByTestId("dock-launcher-open-agents").click();
+    await expect(tab).toHaveCount(1);
+    await page.getByTestId("dock-add").click();
+    await page.getByTestId("dock-add-agents").click();
+    await expect(tab).toHaveCount(1);
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+  }
+  await page.goto(BASE + "/chat/" + sessionId);
+  const composer = page.locator('[data-slot="composer"]:not([data-testid="dock"] *)').first();
+  await composer.locator("textarea").fill("run a subagent");
+  await composer.getByRole("button", { name: "发送", exact: true }).click();
+  await revealChip(page);
+  await openPanelViaChip(page);
+  await fromMenus();
+  await page.reload();
+  await revealChip(page);
+  await openPanelViaChip(page);
+  await expect(page.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toBeVisible();
+  await page.goto(BASE + "/chat/" + otherId);
+  await fromMenus();
+  await expect(page.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toHaveCount(0);
+  await page.goto(BASE + "/chat/" + sessionId);
+  await revealChip(page);
+  await openPanelViaChip(page);
+  await expect(page.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toBeVisible();
 });
 
 test("auto-open lifecycle: spawn opens the tab, a plain task keeps it, manual close is respected per task", async ({
@@ -268,8 +320,7 @@ test("auto-open lifecycle: spawn opens the tab, a plain task keeps it, manual cl
   await page.goto(`${BASE}/chat/${sessionId}`);
   const ta = page.locator('[data-slot="composer"]:not([data-testid="dock"] *) textarea').first();
   await ta.waitFor();
-  const closeAgentsTab = () =>
-    page.locator('[data-tab-id="agents"]').getByTestId("dock-tab-close").click();
+  const closeAgentsTab = () => page.getByRole("button", { name: /关闭面板.*智能体面板/ }).click();
 
   // Task 1 spawns: the tab comes up ITSELF once the spawn goes live (no clicks).
   await ta.fill("run a subagent");
@@ -336,12 +387,14 @@ test("an approval inside the subagent stays discoverable via the chip badge and 
 
   // Open the panel from the chip and approve the child's tool call from inside it.
   await pendingChip.click();
-  await expect(page.locator('[data-tab-id="agents"][data-active="true"]')).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "智能体面板", exact: true, selected: true }),
+  ).toBeVisible();
   await expect(page.getByText("执行命令").first()).toBeVisible();
   await page.getByRole("button", { name: "允许" }).click();
 
   // The child completes inside the panel, and the parent's turn then runs to completion.
-  await expect(page.getByText("Subagent report: 3 TODOs")).toBeVisible();
+  await expect(page.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toBeVisible();
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
   // The pending badge is gone once the approval is decided (asserted on the always-visible
   // toolbar toggle — the chip itself collapses with its group when the turn ends).
@@ -386,19 +439,21 @@ test("draft flow: the panel auto-opens on the first live spawn and the child con
   // The panel auto-opens as soon as the spawn goes live — no clicks (the child's exec_command
   // sleeps ~1s, so the Task reliably outlives the draft navigation and the client attaches
   // while the spawn is still running).
-  await expect(page.locator('[data-tab-id="agents"][data-active="true"]')).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "智能体面板", exact: true, selected: true }),
+  ).toBeVisible();
   // The child conversation INCLUDES its user side while LIVE: run_subagent forwards the child's
   // input message itself (origin-tagged), not just the model's output.
-  await expect(page.getByText(CHILD_PROMPT)).toBeVisible();
-  await expect(page.getByText("Subagent report: 3 TODOs")).toBeVisible();
+  await expect(page.getByTestId("dock").getByText(CHILD_PROMPT)).toBeVisible();
+  await expect(page.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toBeVisible();
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
 
   // After a reload the same user message comes back from the child-Trace expansion.
   await page.reload();
   await revealChip(page);
   await openPanelViaChip(page);
-  await expect(page.getByText(CHILD_PROMPT)).toBeVisible();
-  await expect(page.getByText("Subagent report: 3 TODOs")).toBeVisible();
+  await expect(page.getByTestId("dock").getByText(CHILD_PROMPT)).toBeVisible();
+  await expect(page.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toBeVisible();
 });
 
 test("previous and next turns retain the original child through another send and a cold reopen", async ({
