@@ -1,7 +1,7 @@
 ---
 name: computer-use
 description: "Operate the desktop apps on the user's computer from the shell with `penguin computer`: read an app's window as an accessibility tree, click, type, select, toggle and wait through each element's accessibility API, take window screenshots, and launch or quit apps, on macOS, Windows and Linux. Use it for any task in a desktop app (not a website) that the user asks you to do on their computer, such as working a calculator, filling a native form, or reading a value from a settings window."
-version: 2026.11.20.4
+version: 2026.11.23.1
 ---
 
 # Computer use
