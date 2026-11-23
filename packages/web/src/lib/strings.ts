@@ -1271,7 +1271,27 @@ export const zh = {
     exitToAppCenter: "退出全页模式（回到应用中心）",
   },
   /** The sidebar's app list, under the nav and above the conversations (main-sidebar-apps.tsx). */
+  pageWorkspace: {
+    open: "打开的页面",
+    browse: "浏览工作台",
+    workbenches: "工作台",
+    left: "在左侧打开",
+    right: "在右侧打开",
+    whole: "整页显示",
+    swap: "交换两侧",
+    separate: "在新窗口打开",
+    actions: "页面操作",
+    up: "向上移动",
+    down: "向下移动",
+    resize: "调整页面宽度",
+    empty: "此 Agent 没有可打开的工作台。",
+    panePages: "此侧的页面",
+  },
   sidebarApps: {
+    search: "搜索应用",
+    sort: "应用排序",
+    noMatches: "没有匹配的应用",
+    order: { default: "目录顺序", name: "按名称", running: "运行中的优先" },
     title: "应用",
     /** The group header's action: the Agent's Workbenches sub-page. */
     manage: "管理应用",
@@ -4281,12 +4301,7 @@ export const zh = {
     newSessionInWorkspace: "在此工作区新建对话",
     /** The start page's dashboard (features/chat/start-dashboard.tsx): three counts beside the brand, and the examples block under the composer. */
     start: {
-      /** What each count counts; the label and the number open the page that lists it. Short: the three share the brand's line. */
-      metrics: {
-        agents: "智能体",
-        toolkits: "自进化算法",
-        benchmarks: "评估集",
-      },
+      tagline: "创建你的第一个 Agent OS",
       shuffle: "换一组示例",
       examplesTitle: "示例与快捷指令",
     },
@@ -4594,7 +4609,7 @@ Benchmark：
     /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */
     outlineAnswering: "回答生成中…",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，可粘贴图片",
-    resizeDraft: "调整草稿输入框高度",
+    resizeDraft: "按 Alt+Shift+上方向键调低输入框，按 Alt+Shift+下方向键调高。",
     inputPlaceholderShort: "输入消息…",
     /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
     steerPlaceholder: "给运行中的 Agent 留言，随下一轮对话送达",

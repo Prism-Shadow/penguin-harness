@@ -42,6 +42,7 @@ export function useSessionDraft(sessionId: string | null): {
   const key = userId && sessionId ? sessionDraftKey(userId, sessionId) : null;
   const initial = useMemo<DraftCache>(() => (key ? loadDraft(key) : {}), [key]);
 
+  const seededKey = useRef(key);
   const textRef = useRef(initial.text ?? "");
   const handoffRef = useRef<string | null>(initial.handoffAgentId ?? null);
   const switchModelRef = useRef<ModelRefDto | null>(initial.switchModelRef ?? null);
@@ -77,10 +78,13 @@ export function useSessionDraft(sessionId: string | null): {
   // (persistNow's closure still holds the old key), then setup resets the refs to the new
   // session's initial values.
   useEffect(() => {
-    textRef.current = initial.text ?? "";
-    handoffRef.current = initial.handoffAgentId ?? null;
-    switchModelRef.current = initial.switchModelRef ?? null;
-    skillsRef.current = initial.skills ?? [];
+    if (seededKey.current !== key) {
+      seededKey.current = key;
+      textRef.current = initial.text ?? "";
+      handoffRef.current = initial.handoffAgentId ?? null;
+      switchModelRef.current = initial.switchModelRef ?? null;
+      skillsRef.current = initial.skills ?? [];
+    }
     return () => {
       if (timer.current !== null) {
         window.clearTimeout(timer.current);
@@ -88,7 +92,7 @@ export function useSessionDraft(sessionId: string | null): {
         persistNow();
       }
     };
-  }, [initial, persistNow]);
+  }, [key, initial, persistNow]);
 
   const onTextChange = useCallback(
     (text: string) => {

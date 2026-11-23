@@ -1169,7 +1169,27 @@ export const en: Strings = {
     /** The full page's way out when it was opened from the App Center. */
     exitToAppCenter: "Exit full page (back to the App Center)",
   },
+  pageWorkspace: {
+    open: "Open pages",
+    browse: "Browse workbenches",
+    workbenches: "Workbenches",
+    left: "Open on the left",
+    right: "Open on the right",
+    whole: "Show full page",
+    swap: "Swap panes",
+    separate: "Open in a new window",
+    actions: "Page actions",
+    up: "Move up",
+    down: "Move down",
+    resize: "Resize panes",
+    empty: "This Agent has no workbenches to open.",
+    panePages: "Pages in this pane",
+  },
   sidebarApps: {
+    search: "Search apps",
+    sort: "Sort apps",
+    noMatches: "No matching apps",
+    order: { default: "Directory order", name: "Name", running: "Running first" },
     title: "Apps",
     manage: "Manage apps",
     open: "Open",
@@ -4083,11 +4103,7 @@ export const en: Strings = {
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
     start: {
-      metrics: {
-        agents: "Agents",
-        toolkits: "RSI algorithms",
-        benchmarks: "Benchmarks",
-      },
+      tagline: "Create your first Agent OS",
       shuffle: "Shuffle suggestions",
       examplesTitle: "Examples and shortcuts",
     },
@@ -4406,7 +4422,7 @@ Scenarios:
     /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */
     outlineAnswering: "Answering…",
     inputPlaceholder: "Type a message. Enter to send, Shift+Enter for newline, paste images",
-    resizeDraft: "Resize draft input",
+    resizeDraft: "Alt+Shift+Up shortens the input. Alt+Shift+Down makes it taller.",
     inputPlaceholderShort: "Type a message…",
     /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
     steerPlaceholder: "Message the running agent — delivered with the next turn",

@@ -20,15 +20,18 @@ import {
   APP_ROW_ICON_PX,
   AppRow,
   Fold,
-  GroupHeader,
+  SidebarListHeader,
+  SidebarControl,
+  SearchInput,
+  Dropdown,
+  Menu,
+  MenuRadioItem,
   ICONS,
   ICON_SIZE,
   type RowActionItem,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { Icon } from "../../components/ui/group-list";
 import { agentSettingsPath } from "../../lib/agent-location";
-import { GROUP_ACTION_CLASS } from "../../lib/main-sidebar-persistence";
 import { useRestoreApp } from "../../lib/running-apps";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
@@ -68,7 +71,20 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
   const restore = useRestoreApp();
   const navigate = useNavigate();
   const [folded, setFolded] = useState(readFolded);
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState("");
+  const [sorting, setSorting] = useState(false);
+  const [sort, setSort] = useState<"default" | "name" | "running">("default");
   if (agent === null || rows.length === 0) return null;
+  const visible = rows.filter((row) =>
+    row.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+  );
+  if (sort === "name") visible.sort((a, b) => a.title.localeCompare(b.title));
+  if (sort === "running") visible.sort((a, b) => Number(b.running) - Number(a.running));
+  const endSearch = () => {
+    setQuery("");
+    setSearching(false);
+  };
 
   const go = (to: string) => {
     void navigate(to);
@@ -105,30 +121,78 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="pt-2.5">
-      <GroupHeader
-        open={!folded}
-        onToggle={() => {
-          writeFolded(!folded);
-          setFolded(!folded);
-        }}
-        glyph={ICONS.tiles}
+      <SidebarListHeader
         label={S.sidebarApps.title}
-        uppercase
-        actions={
-          <button
-            type="button"
-            data-tooltip={S.sidebarApps.manage}
-            aria-label={S.sidebarApps.manage}
-            onClick={() => go(agentSettingsPath(agent.agentId, agent.machineId, "workbenches"))}
-            className={GROUP_ACTION_CLASS}
-          >
-            <Icon d={ICONS.gear} size={ICON_SIZE.groupHeaderAction} />
-          </button>
-        }
-      />
-      <Fold open={!folded}>
+        searching={searching}
+        fold={{
+          open: !folded,
+          toggle: () => {
+            writeFolded(!folded);
+            setFolded(!folded);
+          },
+        }}
+      >
+        {searching ? (
+          <SearchInput
+            icon
+            alwaysClearable
+            autoFocus
+            className="min-w-0 flex-1"
+            aria-label={S.sidebarApps.search}
+            placeholder={S.sidebarApps.search}
+            clearLabel={S.chat.searchClear}
+            value={query}
+            onChange={setQuery}
+            onClear={endSearch}
+          />
+        ) : (
+          <SidebarControl
+            glyph={ICONS.search}
+            label={S.sidebarApps.search}
+            onClick={() => setSearching(true)}
+          />
+        )}
+        <Dropdown
+          open={sorting}
+          setOpen={setSorting}
+          portal={{ direction: "down", align: "right" }}
+          menuClass="w-44"
+          button={
+            <SidebarControl
+              glyph={ICONS.slidersHorizontal}
+              label={S.sidebarApps.sort}
+              aria-haspopup="menu"
+              aria-expanded={sorting}
+              onClick={() => setSorting(!sorting)}
+            />
+          }
+        >
+          <Menu label={S.sidebarApps.sort}>
+            {(["default", "name", "running"] as const).map((value) => (
+              <MenuRadioItem
+                key={value}
+                label={S.sidebarApps.order[value]}
+                checked={sort === value}
+                onSelect={() => {
+                  setSort(value);
+                  setSorting(false);
+                }}
+              />
+            ))}
+          </Menu>
+        </Dropdown>
+        <SidebarControl
+          glyph={ICONS.gear}
+          label={S.sidebarApps.manage}
+          onClick={() => go(agentSettingsPath(agent.agentId, agent.machineId, "workbenches"))}
+        />
+      </SidebarListHeader>
+      <Fold open={!folded || searching}>
+        {visible.length === 0 && (
+          <p className="px-2.5 pt-2 text-xs text-fg-muted">{S.sidebarApps.noMatches}</p>
+        )}
         <ul aria-label={S.sidebarApps.title} className="space-y-px">
-          {rows.map((row) => {
+          {visible.map((row) => {
             const state = stateOf(row);
             const name = S.sidebarApps.rowName(row.title, row.agentName, state);
             return (

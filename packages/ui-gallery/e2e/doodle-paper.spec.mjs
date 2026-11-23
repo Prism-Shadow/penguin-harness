@@ -177,6 +177,8 @@ for (const [lang, mode, width] of [
     const box = page.locator('.ui-start [data-slot="examples"]');
     const examples = box.locator('[data-slot="suggestion"]');
     const first = examples.first();
+    // Suggestions accept keyboard focus after the Agent’s Skills have loaded.
+    await expect(first).toBeEnabled();
     await first.focus();
     await page.keyboard.press("Enter");
     await expect(first).toHaveAttribute("aria-current", "true");

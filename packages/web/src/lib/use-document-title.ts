@@ -8,8 +8,12 @@
 import { useEffect } from "react";
 import { S } from "./strings";
 
+import { usePaneFocus } from "./page-focus";
+
 export function useDocumentTitle(title: string | null | undefined): void {
+  const focused = usePaneFocus();
   useEffect(() => {
+    if (!focused) return;
     document.title = title ? `${title} · ${S.appName}` : S.appName;
-  }, [title]);
+  }, [title, focused]);
 }

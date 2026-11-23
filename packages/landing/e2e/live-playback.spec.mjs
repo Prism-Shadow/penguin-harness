@@ -15,6 +15,9 @@ async function openHero(page, lang = "zh") {
   }, lang);
   await page.clock.install({ time: new Date("2026-10-28T00:00:00Z") });
   await page.goto("/");
+  await page
+    .getByRole("button", { name: /^(Play demo|Stop demo|播放演示|停止演示)$/ })
+    .scrollIntoViewIfNeeded();
   const iframe = page.locator('iframe[src*="fresh=1"]');
   await iframe.scrollIntoViewIfNeeded();
   const frame = iframe.contentFrame();
@@ -49,12 +52,21 @@ for (const [lang, play, stop] of [
     await expect(frame.locator(composer)).not.toHaveValue("");
     await expect(guide).toHaveCount(0);
     await expect(passwordNotice).toHaveCount(0);
-    const chart = frame.locator("main svg.ui-chart").first();
-    for (let step = 0; step < 40 && !(await chart.isVisible()); step++) {
+    const chart = frame.locator("main svg.ui-chart:visible").first();
+    const evaluation = frame.getByRole("heading", {
+      name: lang === "en" ? "Docs QA v1" : "文档问答 v1",
+      exact: true,
+    });
+    for (let step = 0; step < 65 && !(await evaluation.isVisible()); step++) {
       await page.clock.runFor(1500);
     }
-    await expect(chart).toBeVisible();
+    await expect(evaluation).toBeVisible();
+    await page.clock.runFor(600);
     await page.clock.fastForward(15_000);
+    if (lang === "en" && (await frame.locator("[data-workspace-page]").count())) {
+      await expect(frame.locator('[data-pane="left"] [data-slot="composer"]')).toBeVisible();
+      await expect(frame.locator('[data-pane="right"] svg.ui-chart').first()).toBeVisible();
+    }
     await expect(chart).toBeVisible();
     await page.getByRole("button", { name: stop, exact: true }).click();
     await expect(frame.locator(composer)).toHaveValue("");
@@ -64,6 +76,18 @@ for (const [lang, play, stop] of [
     await expect(frame.locator(composer)).not.toHaveValue("");
   });
 }
+
+test("the live homepage preview uses the new chat header and shortcut strip", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const { frame } = await openHero(page, "en");
+  await expect(frame.getByText("Create your first Agent OS", { exact: true })).toBeVisible();
+  await expect(frame.locator('[data-slot="counts"]')).toHaveCount(0);
+  await expect(frame.locator('[data-slot="examples"]')).toBeVisible();
+  await expect(frame.locator('[data-slot="version"]')).toContainText(
+    /v[\d.]+ · Last updated \w+ \d+/,
+  );
+  expect(await frame.locator(composer).evaluate((el) => getComputedStyle(el).resize)).toBe("none");
+});
 
 for (const [lang, name, instruction, download] of [
   [

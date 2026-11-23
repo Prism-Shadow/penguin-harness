@@ -1,24 +1,24 @@
-import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { ResizeHandle } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { useCallback, useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from "react";
+import { chordEquals, chordOf, parseChord } from "../../lib/shortcuts/chord";
+import { currentPlatform } from "../../lib/shortcuts/platform";
 import { fitTextarea } from "../../lib/textarea-fit";
+
+const taller = parseChord("Alt+Shift+ArrowDown");
+const shorter = parseChord("Alt+Shift+ArrowUp");
 
 /** The start page leaves room for the toolbar and the on-screen keyboard. A manual height is
  * local to this draft and gives way to automatic sizing when a long draft is cleared or shortened. */
-export function DraftHeightHandle({
-  textarea,
-  text,
-}: {
-  textarea: RefObject<HTMLTextAreaElement | null>;
-  text: string;
-}) {
+export function useDraftHeight(
+  textarea: RefObject<HTMLTextAreaElement | null>,
+  text: string,
+  enabled: boolean,
+) {
   const manual = useRef<number | null>(null);
   const last = useRef({ text: "", natural: 0 });
-  const drag = useRef({ y: 0, height: 0 });
-  const [range, setRange] = useState({ min: 0, max: 0, height: 0 });
+  const range = useRef({ min: 0, max: 0, height: 0 });
   const measure = useCallback(() => {
     const box = textarea.current;
-    if (!box) return;
+    if (!box || !enabled) return;
     const min = parseFloat(getComputedStyle(box).minHeight);
     const viewport = window.visualViewport?.height ?? window.innerHeight;
     const max = Math.max(min, Math.floor(viewport * 0.58));
@@ -36,15 +36,13 @@ export function DraftHeightHandle({
       height = Math.max(min, Math.min(max, manual.current ?? auto));
       return height;
     });
-    setRange((prev) =>
-      prev.min === min && prev.max === max && prev.height === height ? prev : { min, max, height },
-    );
-  }, [textarea]);
+    range.current = { min, max, height };
+  }, [enabled, textarea]);
 
   useLayoutEffect(measure, [text, measure]);
   useLayoutEffect(() => {
     const box = textarea.current;
-    if (!box) return;
+    if (!box || !enabled) return;
     let width = box.clientWidth;
     const observer = new ResizeObserver(() => {
       if (width === box.clientWidth) return;
@@ -60,27 +58,21 @@ export function DraftHeightHandle({
       window.removeEventListener("resize", measure);
       viewport?.removeEventListener("resize", measure);
     };
-  }, [measure, textarea]);
+  }, [enabled, measure, textarea]);
 
-  function resize(height: number | null) {
-    manual.current = height === null ? null : Math.min(range.max, Math.max(range.min, height));
+  return (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      !enabled ||
+      event.nativeEvent.isComposing ||
+      (event.key !== "ArrowDown" && event.key !== "ArrowUp")
+    )
+      return false;
+    const chord = chordOf(event.nativeEvent, currentPlatform());
+    if (!chordEquals(chord, event.key === "ArrowDown" ? taller : shorter)) return false;
+    event.preventDefault();
+    const { min, max, height } = range.current;
+    manual.current = Math.max(min, Math.min(max, height + (event.key === "ArrowDown" ? 16 : -16)));
     measure();
-  }
-
-  return (
-    <ResizeHandle
-      axis="y"
-      label={S.chat.resizeDraft}
-      min={range.min}
-      max={range.max}
-      value={range.height}
-      onPointerDownCapture={(e) => {
-        drag.current = { y: e.clientY, height: range.height };
-      }}
-      onResize={(e) => resize(drag.current.height + e.clientY - drag.current.y)}
-      onStep={(delta) => resize(range.height + delta)}
-      onReset={() => resize(null)}
-      className="relative mx-auto h-5 w-12 touch-none rounded-control after:absolute after:inset-x-2 after:top-1/2 after:h-0.5 after:rounded-full after:bg-fg-subtle"
-    />
-  );
+    return true;
+  };
 }

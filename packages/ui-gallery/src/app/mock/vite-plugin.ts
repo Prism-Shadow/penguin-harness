@@ -12,6 +12,8 @@
  * files, and nothing else), so the plugin needs no plugin context and fits both configs'
  * plugin types structurally.
  */
+import { readFileSync } from "node:fs";
+import { version } from "../../../../web/package.json";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,10 +39,17 @@ export function swappedModuleFor(source: string, importer: string | undefined): 
 export function mockWebNetwork(): {
   name: string;
   enforce: "pre";
+  config: () => { define: Record<string, string> };
   resolveId: (source: string, importer: string | undefined) => string | null;
 } {
+  // The public frame depicts a released app. Resolve its release date at build time so
+  // the browser receives the date for its version without shipping the changelog.
+  const releases = readFileSync(here("../../../../../CHANGELOG.md"), "utf8");
+  const release = releases.split("\n").find((line) => line.startsWith(`- **${version}** — `));
+  const date = release?.match(/ — (\d{4}-\d{2}-\d{2})\./)?.[1] ?? null;
   return {
     name: "penguin:gallery-mock-web-network",
+    config: () => ({ define: { "import.meta.env.GALLERY_RELEASE_DATE": JSON.stringify(date) } }),
     enforce: "pre",
     resolveId: (source, importer) => swappedModuleFor(source, importer),
   };
