@@ -18,15 +18,7 @@
  * The usage and its polling live in storage-state.ts; this renders it.
  */
 import { useEffect, useState } from "react";
-import {
-  Button,
-  SettingRow,
-  SettingsEmpty,
-  SettingsGroup,
-  Spinner,
-  UsageBar,
-  Waiting,
-} from "@prismshadow/penguin-ui";
+import { Button, SettingRow, SettingsGroup, Spinner, UsageBar } from "@prismshadow/penguin-ui";
 import {
   formatDateTime,
   formatRelativeLong,
@@ -60,29 +52,43 @@ export function StorageSection({ openPage }: SettingsPageProps) {
   }, [store]);
 
   const usage = state.usage;
+  const load = () => void store.getState().load();
+  const refresh = () => void store.getState().refresh();
   if (usage === null) {
-    return state.loadError !== null ? (
-      <SettingsEmpty>{S.storage.loadFailed(state.loadError)}</SettingsEmpty>
-    ) : (
-      <Waiting rows={4} />
+    return (
+      <FirstMeasurement
+        error={state.loadError && S.storage.loadFailed(state.loadError)}
+        onRetry={load}
+      />
     );
   }
 
   return (
     <div className="space-y-6">
-      <UsageOverview
-        usage={usage}
-        refreshing={state.refreshing}
-        onRefresh={() => void store.getState().refresh()}
-      />
-      <ProjectBreakdown usage={usage} />
-      <FolderBreakdown
-        usage={usage}
-        // The file manager opens on the machine the window is on: the server says whether this
-        // caller's window is the desktop shell's own.
-        canReveal={usage.reveal}
-        onReveal={(body) => void store.getState().reveal(body)}
-      />
+      {usage.measuredAt === null ? (
+        <FirstMeasurement
+          error={
+            state.loadError
+              ? S.storage.loadFailed(state.loadError)
+              : usage.measuring || state.refreshing
+                ? null
+                : usage.error
+                  ? S.storage.measureFailed(usage.error)
+                  : S.storage.unavailable
+          }
+          onRetry={usage.measuring ? load : refresh}
+        />
+      ) : (
+        <>
+          <UsageOverview usage={usage} refreshing={state.refreshing} onRefresh={refresh} />
+          <ProjectBreakdown usage={usage} />
+          <FolderBreakdown
+            usage={usage}
+            canReveal={usage.reveal}
+            onReveal={(body) => void store.getState().reveal(body)}
+          />
+        </>
+      )}
       <SettingsGroup title={S.storage.cleanup}>
         <SettingRow title={S.storage.cleanTemp} description={S.storage.cleanTempHint}>
           <Button size="sm" onClick={() => setDialog("temp")}>
@@ -126,6 +132,29 @@ export function StorageSection({ openPage }: SettingsPageProps) {
   );
 }
 
+/** Keep unmeasured totals, folders and charts out of both the screen and its accessibility tree. */
+function FirstMeasurement({ error, onRetry }: { error: string | null; onRetry: () => void }) {
+  return (
+    <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-md border border-line bg-surface px-4 py-8 text-center">
+      {error === null ? (
+        <div className="flex items-center gap-2 text-sm font-medium text-fg">
+          <Spinner size="sm" label={S.storage.firstMeasurement} />
+          <span aria-hidden>{S.storage.firstMeasurement}</span>
+        </div>
+      ) : (
+        <>
+          <p role="alert" className="text-sm text-fg-muted">
+            {error}
+          </p>
+          <Button size="sm" onClick={onRetry}>
+            {S.storage.refresh}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** The first section: the space used, when it was measured, Refresh, and the bar by category. */
 function UsageOverview({
   usage,
@@ -139,14 +168,12 @@ function UsageOverview({
   const server = usage.server;
   const bytes = server?.bytes ?? usage.bytes;
   const categories = server?.categories ?? usage.categories;
-  // Nothing measured yet: a zero would read as an empty disk.
-  const unknown = usage.measuredAt === null && bytes === 0;
   return (
     <SettingsGroup title={server !== undefined ? S.storage.thisServer : S.storage.myProjects}>
       <div className="space-y-3 pb-1">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <p className="min-w-0 flex-1 text-lg font-semibold tabular-nums">
-            {S.storage.used(unknown ? S.storage.notMeasured : formatSize(bytes))}
+            {S.storage.used(formatSize(bytes))}
           </p>
           <div className="flex shrink-0 items-center gap-3">
             <MeasureStatus usage={usage} />

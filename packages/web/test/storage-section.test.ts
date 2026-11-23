@@ -89,6 +89,45 @@ const text = (container: HTMLElement) => container.textContent ?? "";
 afterEach(unmountAll);
 
 describe("the Storage page", () => {
+  it("labels the first measurement and only shows totals after a completed result", async () => {
+    const initial = Promise.withResolvers<Response>();
+    fetch = stubFetch(() => initial.promise);
+    const { container } = await mount(
+      h(LocaleProvider, null, h(StorageSection, { openPage: () => undefined })),
+    );
+    const status = () => container.querySelector('[role="status"]')?.getAttribute("aria-label");
+    expect(status()).toBe(S.storage.firstMeasurement);
+    expect(text(container)).not.toContain(S.storage.used("0 B"));
+    initial.resolve(
+      json({ ...MEMBER, measuredAt: null, measuring: true, bytes: 0, categories: ZERO }),
+    );
+    await waitFor(() => headings(container).includes(S.storage.cleanup));
+    expect(status()).toBe(S.storage.firstMeasurement);
+    expect(headings(container)).not.toContain(S.storage.byProject);
+    await unmountAll();
+    const zero = await open({ ...MEMBER, measuring: true, bytes: 0, categories: ZERO });
+    expect(text(zero.container)).toContain(S.storage.used("0 B"));
+    expect(headings(zero.container)).toContain(S.storage.byProject);
+    expect(text(zero.container)).not.toContain(S.storage.firstMeasurement);
+  });
+
+  it("lets a failed first read retry in the panel", async () => {
+    const retry = Promise.withResolvers<Response>();
+    let calls = 0;
+    fetch = stubFetch(() => (++calls === 1 ? apiError(500, "first_read_failed") : retry.promise));
+    const { container } = await mount(
+      h(LocaleProvider, null, h(StorageSection, { openPage: () => undefined })),
+    );
+    await waitFor(() => container.querySelector('[role="alert"]') !== null);
+    await click(button(S.storage.refresh));
+    expect(container.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
+      S.storage.firstMeasurement,
+    );
+    retry.resolve(json(MEMBER));
+    await waitFor(() => headings(container).includes(S.storage.byProject));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it("shows an admin the whole data root, and other users' Projects as one row", async () => {
     const { container } = await open(ADMIN);
     expect(headings(container)[0]).toBe(S.storage.thisServer);
