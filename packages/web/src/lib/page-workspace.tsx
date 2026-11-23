@@ -187,9 +187,12 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
           right: removed.visible.length === 2 ? before.right : [],
         }
       : removed;
+    // A workspace restore owns its return layout. Only an App Center launch or direct
+    // window address should traverse the launcher's host history when dismissed.
     if (
       currentId === id &&
       page.kind === "window" &&
+      location.state?.workspaceRequest == null &&
       before.visible.length === 1 &&
       (keepOpen ||
         !next.focus ||

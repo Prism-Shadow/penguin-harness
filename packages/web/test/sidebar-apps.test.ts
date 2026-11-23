@@ -240,6 +240,23 @@ it("minimizes to the conversation with the app running, and its row brings back 
   expect(reachable(frame)).toBe(true);
 });
 
+it("minimizes a restored workspace window back to its remaining conversation", async () => {
+  const { router } = await open([workbench("board")]);
+  await until(() => row(key("board")) !== null);
+  await click(row(key("board"))!);
+  await until(() => frameOf("Board") !== null);
+  const frame = frameOf("Board");
+  await pageAction("Board", en.appCenter.windowMinimize);
+  await pageAction("Board", en.pageWorkspace.restore);
+  await pageAction("Board", en.appCenter.windowMinimize);
+  expect(whereIs(router)).toBe(HERE);
+  expect(frame?.isConnected).toBe(true);
+  await pageAction("Board", en.pageWorkspace.restore);
+  await pageAction("Board", en.common.close);
+  expect(whereIs(router)).toBe(HERE);
+  expect(frame?.isConnected).toBe(false);
+});
+
 it("lists another Agent's running app after the Agent's own, says whose it is, with nothing to remove", async () => {
   const { router } = await open([workbench("board")], { second: [workbench("notes")] });
   await until(() => row(key("board")) !== null);
