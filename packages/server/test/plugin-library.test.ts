@@ -28,6 +28,8 @@ import { parse as parseYaml } from "yaml";
 import {
   PLUGIN_CATEGORIES,
   PLUGIN_VERSION_PATTERN,
+  isLibraryPackage,
+  libraryParts,
   libraryPlugin,
   libraryPluginPackage,
   loadLibraryPlugins,
@@ -88,6 +90,7 @@ describe("the shipped library", () => {
       expect(
         plugin.skills.length > 0 ||
           plugin.hooks !== undefined ||
+          plugin.mcpServers.length > 0 ||
           (plugin.workbenches ?? []).length > 0,
         plugin.name,
       ).toBe(true);
@@ -111,10 +114,15 @@ describe("the shipped library", () => {
       const { card, icon } = readPackageCard(sourceFor(dir));
       expect(card.shortDescription, dir).toBeDefined();
       expect(card.shortDescriptionZh, dir).toBeDefined();
-      expect(
-        PLUGIN_CATEGORIES.map((c) => c.id),
-        dir,
-      ).toContain(card.category);
+      if (isLibraryPackage(sourceFor(dir))) {
+        expect(
+          PLUGIN_CATEGORIES.map((c) => c.id),
+          dir,
+        ).toContain(card.category);
+      } else {
+        expect(libraryParts(sourceFor(dir)).modules, dir).toBe(true);
+        expect(libraryPlugin(dir), dir).toBeUndefined();
+      }
       expect(icon, `${dir} icon`).toMatchObject({ format: "svg", tint: true });
       expect(raw.files ?? [], dir).toContain("ifaces.json");
       expect(raw.files ?? [], dir).not.toContain("plugin.json");

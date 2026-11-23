@@ -105,13 +105,12 @@ describe("built-in Agent provisioning", () => {
     expect(list.agents.find((a) => a.agentId === "default_agent")?.name).toBe("General Agent");
 
     const preinstalled = loadPreinstalledPlugins();
-    const productBaseline = [
+    const agentBaseline = [
       "a2ui",
       "skill-porting",
       "agent-company",
       "agent-development",
       "agent-evaluation",
-      "agent-state-git",
       "browser-automation",
       "computer-use",
       "continual-learning",
@@ -128,8 +127,9 @@ describe("built-in Agent provisioning", () => {
       "use-bento-slides",
     ];
     expect(preinstalled.map((plugin) => plugin.name)).toEqual(
-      expect.arrayContaining(productBaseline),
+      expect.arrayContaining(agentBaseline),
     );
+    expect(preinstalled.map((plugin) => plugin.name)).not.toContain("agent-state-git");
     const installedWorkbenches = path.join(
       t.root,
       "projects",

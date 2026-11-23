@@ -44,6 +44,11 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
   const library = await (await page.request.get(`${BASE}/api/plugins`)).json();
   const libraryNames = library.groups.flatMap((g) => g.plugins.map((p) => p.name));
   expect(libraryNames.length).toBeGreaterThan(2);
+  const catalog = await (await page.request.get(`${BASE}/api/plugins/registry`)).json();
+  expect(catalog.plugins).toContainEqual(
+    expect.objectContaining({ name: "@penguinharness/agent-state-git" }),
+  );
+  expect(libraryNames).not.toContain("agent-state-git");
 
   await page.goto(`${BASE}/agents`);
   await page.getByRole("button", { name: "手动创建", exact: true }).first().click();
@@ -58,6 +63,7 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
   await picker.click();
 
   // Every library plugin has a row, and the bulk row reports an empty selection.
+  await expect(row(page, "agent-state-git")).toHaveCount(0);
   for (const name of libraryNames) {
     await expect(row(page, name)).toBeVisible();
   }

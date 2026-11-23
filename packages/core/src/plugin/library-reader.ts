@@ -34,7 +34,7 @@ import { formatFrontmatter } from "@prismshadow/skills";
 import { collectVaultRefs, resolveMCPServer } from "../environment/mcp/config.js";
 import type { HookCommand, QuickStart } from "./library.js";
 import { libraryContributions } from "./contributions.js";
-import { shipsServerModules } from "./kinds.js";
+import { isLibraryPackage, shipsServerModules } from "./kinds.js";
 import type { LibraryContributions, PluginMcpServer } from "./contributions.js";
 import { readPluginIcon } from "./icon.js";
 import type { IconImage } from "./icon.js";
@@ -153,15 +153,23 @@ export interface LibraryPlugin {
 
 /** Reads one root: a shipped plugin that will not read throws; an installed one is left out (null) with a warning. */
 function readRoot(name: string, root: LibraryRoot): LibraryPlugin | null {
-  if (!root.installed) return readPluginDir(name, root);
+  let plugin: LibraryPlugin;
   try {
-    return readPluginDir(name, root);
+    plugin = readPluginDir(name, root);
   } catch (err) {
+    if (!root.installed) throw err;
     warnOnce(
       `[plugins] ${root.packageName} is installed but not listed: ${err instanceof Error ? err.message : String(err)}`,
     );
     return null;
   }
+  // Hosts also ship standalone server modules. Only Agent contributions belong in this library.
+  return plugin.skills.length ||
+    plugin.hooks ||
+    plugin.mcpServers.length ||
+    plugin.workbenches?.length
+    ? plugin
+    : null;
 }
 
 /**
@@ -537,7 +545,7 @@ export function libraryPluginPackage(
   name: string,
 ): { dir: string; packageName: string; version: string } | undefined {
   const root = libraryRoots().get(name);
-  if (root === undefined) return undefined;
+  if (root === undefined || !isLibraryPackage(root.dir)) return undefined;
   const { version } = readPackageJson(root.dir).manifest;
   return { dir: root.dir, packageName: root.packageName, version };
 }
@@ -567,7 +575,7 @@ export function readLibraryPackage(dir: string): LibraryPlugin {
  */
 export function libraryPluginReadme(name: string): string | null | undefined {
   const root = libraryRoots().get(name);
-  if (root === undefined) return undefined;
+  if (root === undefined || !isLibraryPackage(root.dir)) return undefined;
   try {
     return fs.readFileSync(path.join(root.dir, "README.md"), "utf8");
   } catch {
