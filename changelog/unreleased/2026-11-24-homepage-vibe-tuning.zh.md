@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `landing`
+- **PR:** [#1824](https://github.com/Prism-Shadow/penguin-harness/pull/1824)
 
 [English](2026-11-24-homepage-vibe-tuning.md)
 
