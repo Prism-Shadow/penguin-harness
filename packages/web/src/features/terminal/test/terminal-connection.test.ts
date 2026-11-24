@@ -9,6 +9,8 @@
  *   keys typed during lookup, during the upgrade and after the socket opens.
  * - Closing a view during attach discards its input, even if the same terminal reopens.
  * - An open socket holds keys and paste operations in order until its Restore is parsed.
+ * - Clipboard reads reserve input in gesture order; a denied read releases later keys,
+ *   and a read from a lost connection cannot deliver its text to a reattached shell.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -128,6 +130,33 @@ function deferred<T>(): Deferred<T> {
 afterEach(() => vi.useRealTimers());
 
 describe("terminal connection", () => {
+  it("releases the next paste and keys when the earlier clipboard read is denied", async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    h.connection.start();
+    await settle();
+    const denied = h.connection.reserveInput();
+    const read = h.connection.reserveInput();
+    const send = (text: string) => h.connection.send(encodeFrame(TerminalOpcode.Input, text));
+    send("!");
+    read(() => send("pasted"));
+    const socket = h.sockets[0]!;
+    socket.open();
+    expect(socket.inputText()).toBe("");
+    denied();
+    expect(socket.inputText()).toBe("pasted!");
+
+    const stale = h.connection.reserveInput();
+    send("old");
+    socket.drop();
+    h.connection.wake();
+    await settle();
+    h.sockets[1]!.open();
+    stale(() => send("old paste"));
+    send("new");
+    expect(h.sockets[1]!.inputText()).toBe("new");
+  });
+
   it("delivers each opening view's complete input to its own terminal", async () => {
     vi.useFakeTimers();
     const a = harness({ first: async () => "a" });
