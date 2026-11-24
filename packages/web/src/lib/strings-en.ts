@@ -15,6 +15,7 @@ import type { Strings } from "./strings";
 export const en: Strings = {
   appName: "PenguinHarness",
   firstWorkbench: {
+    askOwner: "Ask the project owner to connect a model provider, then refresh.",
     remoteModels: (machine: string) => `Set up a model on ${machine}, then refresh.`,
     newChecklist: "Start a new checklist",
     choose: "Choose a chat model beside the message box.",

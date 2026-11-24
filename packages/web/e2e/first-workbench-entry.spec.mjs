@@ -107,6 +107,9 @@ test("builds and installs a checklist beside the actual conversation", async ({ 
   await expect(page).toHaveURL(/\/chat\/new$/);
   await expect(tour.getByRole("status")).toContainText("Test passed");
   await tour.getByRole("button", { name: "Dismiss" }).click();
+  await page.reload();
+  await expect(page.locator('[data-slot="composer"]:visible textarea')).toBeVisible();
+  await expect(tour).toHaveCount(0);
   await page.goto(BASE + "/apps?" + new URLSearchParams({ app: agent + "/" + guideId }));
   await expect(tour.getByRole("status")).toContainText("Test passed");
 });
@@ -193,7 +196,9 @@ for (const defaultModel of [false, true]) {
     await expect(tour).toHaveCount(0);
   });
 }
-test("only an installed agent and its project owner can start the guide", async ({ page }) => {
+test("a new agent opts in, and members can use a configured model without opening owner settings", async ({
+  page,
+}) => {
   const owner = "guidescopeowner",
     member = "guidescopeguest";
   await provisionAndLogin(page.request, owner, "password123");
@@ -214,7 +219,27 @@ test("only an installed agent and its project owner can start the guide", async 
   await page.goto(BASE + "/app/" + project + "/default_agent/" + guideId);
   await expect(page).toHaveURL(/\/chat\/new$/);
   await expect(page.locator('[data-slot="composer"]:visible textarea')).toBeVisible();
-  await expect(page.getByRole("region", { name: title })).toHaveCount(0);
+  const tour = page.getByRole("region", { name: title });
+  await expect(tour).toContainText("Ask the project owner");
+  await expect(tour.getByRole("button", { name: "Open Models" })).toHaveCount(0);
+  await page.goto(BASE + "/chat/new");
+  await expect(page.locator('[data-slot="composer"]:visible textarea')).toBeVisible();
+  await expect(tour).toHaveCount(0);
+  await login(page.request, owner, "password123");
+  const model = { provider: "custom", modelId: "claude-guide-checklist" };
+  await expect(
+    await page.request.put(base + "/models", {
+      data: {
+        models: [
+          { ...model, apiKey: "fixture-key", baseUrl: process.env.MOCK_URL, contextWindow: 120000 },
+        ],
+        defaultModel: model,
+      },
+    }),
+  ).toBeOK();
+  await login(page.request, member, "password123");
+  await page.reload();
+  await expect(tour).toContainText("3 / 6");
 });
 
 test("saving a key in Models advances the guide without a page reload", async ({ page }) => {
@@ -247,9 +272,12 @@ test("saving a key in Models advances the guide without a page reload", async ({
   await page.getByRole("menuitem", { name: "Group settings…" }).click();
   const dialog = page.getByRole("dialog");
   await expect(guide).toBeHidden();
+  await dialog.getByLabel("Custom base URL", { exact: true }).fill(process.env.MOCK_URL);
   await dialog.getByLabel("API key", { exact: true }).fill("fixture-only-key");
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
+  await expect(dialog.getByLabel("API key", { exact: true })).toHaveCount(0);
+  // The model library may offer to make this provider the project default.
+  if (await dialog.isVisible()) await page.keyboard.press("Escape");
   await expect(guide).toContainText("2 / 6");
   await guide.getByRole("button", { name: "Go to chat" }).click();
   await expect(page.locator('[data-slot="composer"]:visible textarea')).toBeVisible();

@@ -27,7 +27,7 @@ export function GuideCallout({
           aria-hidden="true"
           data-guide-highlight=""
           style={highlight}
-          className="pointer-events-none fixed z-dock rounded-control border-2 border-accent"
+          className="pointer-events-none fixed z-dock rounded-md border-2 border-accent"
         />
       )}
       <aside
@@ -35,7 +35,7 @@ export function GuideCallout({
         data-guide-callout=""
         aria-labelledby={titleId}
         style={panel}
-        className="fixed end-3 top-[calc(var(--window-band-height,0px)+3rem)] z-dock max-h-[48dvh] w-[min(21rem,calc(100vw-1.5rem))] overflow-y-auto rounded-panel border border-line bg-surface p-3 text-sm text-fg shadow-lg"
+        className="fixed end-3 top-[calc(var(--window-band-height,0px)+3rem)] z-dock max-h-[48dvh] w-[min(21rem,calc(100vw-1.5rem))] overflow-y-auto rounded-lg border border-line bg-surface p-3 text-sm text-fg shadow-lg"
         onKeyDown={(event) => {
           if (event.key === "Escape" && !event.defaultPrevented) {
             event.stopPropagation();

@@ -61,7 +61,7 @@ export function DefaultModelsLayer() {
   const human = sessionVia !== "token";
   const activeAgent =
     published?.live && published.agent.projectId === projectId ? published.agent : null;
-  const guideScope = onChat && owner && human ? activeAgent : null;
+  const guideScope = onChat && human ? activeAgent : null;
   const guide = useFirstWorkbench(guideScope);
   const offered = useRef<string | null>(null);
   const viewer = user?.userId;
@@ -71,7 +71,7 @@ export function DefaultModelsLayer() {
     const key = guideStorage(viewer, guideLocation(projectId, agentId, machineId).pathname);
     if (offered.current === key || guideClosed(key)) return;
     offered.current = key;
-    startFirstWorkbench(guideScope);
+    startFirstWorkbench(guideScope, true);
   }, [guide, viewer, guideScope]);
   /** The dialog was opened by the onboarding: its sentence says why. */
   const [fromOnboarding, setFromOnboarding] = useState(false);

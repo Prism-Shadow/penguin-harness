@@ -14,8 +14,6 @@ export interface GuideProgress {
   installed?: boolean;
   verified?: boolean;
   tourSession?: string;
-  tourChat?: boolean;
-  visitedSettings?: boolean;
 }
 export type Guide = {
   sessionId: string;
@@ -51,7 +49,7 @@ export function persistGuideProgress(storage: string, saved: GuideProgress) {
   } catch {
     /* Tab storage is optional. */
   }
-  const { key, model, tourChat, tourSession, visitedSettings, installed, verified } = saved;
+  const { key, model, tourSession, installed, verified } = saved;
   const modelRef = model && { provider: model.provider, modelId: model.modelId };
   try {
     localStorage.setItem(
@@ -59,9 +57,7 @@ export function persistGuideProgress(storage: string, saved: GuideProgress) {
       JSON.stringify({
         key,
         model: modelRef,
-        tourChat,
         tourSession,
-        visitedSettings,
         installed,
         verified,
       }),

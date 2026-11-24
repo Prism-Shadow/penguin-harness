@@ -23,6 +23,7 @@ import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";
 export const zh = {
   appName: "PenguinHarness",
   firstWorkbench: {
+    askOwner: "请联系项目所有者连接模型服务商，然后重新读取。",
     remoteModels: (machine: string) => `请在 ${machine} 上配置模型，然后重新读取。`,
     newChecklist: "新建清单",
     choose: "在消息输入框旁选择聊天模型。",

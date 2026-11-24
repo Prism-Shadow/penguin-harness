@@ -42,15 +42,29 @@ export function FirstWorkbenchLayer() {
   const { currentProject } = useProject();
   const { state, pathname, search } = useLocation();
   const navigate = useNavigate();
-  const [request, setRequest] = useState<{ scope: PageAgent; user: string } | null>(null);
+  const [request, setRequest] = useState<{
+    scope: PageAgent;
+    user: string;
+    automatic: boolean;
+  } | null>(null);
   const project = currentProject?.projectId,
     viewer = user?.userId;
   useEffect(() => {
     setRequest(null);
-    const handle = (scope: PageAgent) => {
-      if (viewer && scope.projectId === project) setRequest({ scope, user: viewer });
+    const open = (event: Event) => {
+      const { scope, automatic } = (event as CustomEvent<{ scope: PageAgent; automatic: boolean }>)
+        .detail;
+      if (!viewer || scope.projectId !== project) return;
+      setRequest((previous) =>
+        automatic &&
+        previous?.user === viewer &&
+        previous.scope.projectId === project &&
+        previous.scope.agentId === scope.agentId &&
+        previous.scope.machineId === scope.machineId
+          ? previous
+          : { scope, user: viewer, automatic },
+      );
     };
-    const open = (e: Event) => handle((e as CustomEvent<PageAgent>).detail);
     window.addEventListener(GUIDE_START, open);
     return () => window.removeEventListener(GUIDE_START, open);
   }, [viewer, project]);
@@ -81,14 +95,16 @@ export function FirstWorkbenchLayer() {
   }, [oldGuide, project, linkedAgent, linkedMachine, navigate]);
   const linked = (state as { firstWorkbench?: PageAgent } | null)?.firstWorkbench;
   useEffect(() => {
-    if (linked && viewer && linked.projectId === project)
-      setRequest({ scope: linked, user: viewer });
-  }, [linked, viewer, project]);
+    if (!linked || !viewer || linked.projectId !== project) return;
+    setRequest({ scope: linked, user: viewer, automatic: false });
+    // A bookmark requests the guide once. Reloading the resulting chat honors dismissal.
+    void navigate(pathname + search, {
+      replace: true,
+      state: { ...state, firstWorkbench: undefined },
+    });
+  }, [linked, viewer, project, navigate, pathname, search, state]);
   const scope =
-    sessionVia !== "token" &&
-    currentProject?.role === "owner" &&
-    request?.user === viewer &&
-    request?.scope.projectId === project
+    sessionVia !== "token" && request?.user === viewer && request?.scope.projectId === project
       ? (request?.scope ?? null)
       : null;
   const onChat = pathname === "/" || pathname === "/chat" || pathname.startsWith("/chat/");
@@ -102,6 +118,8 @@ export function FirstWorkbenchLayer() {
       key={JSON.stringify([viewer, scope])}
       user={viewer}
       scope={scope}
+      canConfigure={currentProject?.role === "owner"}
+      automatic={request?.automatic === true}
       close={() => {
         closeGuide(
           guideStorage(
@@ -115,7 +133,19 @@ export function FirstWorkbenchLayer() {
   ) : null;
 }
 
-function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: () => void }) {
+function Tour({
+  user,
+  scope,
+  close,
+  canConfigure,
+  automatic,
+}: {
+  user: string;
+  scope: PageAgent;
+  close: () => void;
+  canConfigure: boolean;
+  automatic: boolean;
+}) {
   const w = S.firstWorkbench;
   const { locale } = useLocale();
   const navigate = useNavigate(),
@@ -159,7 +189,7 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
         detail.agentId === agentId &&
         detail.machineId === machineId
       )
-        setSaved((previous) => ({ ...previous, model: detail.model, tourChat: true }));
+        setSaved((previous) => ({ ...previous, model: detail.model }));
     };
     window.addEventListener("focus", read);
     window.addEventListener(GUIDE_MODEL_SELECTED, picked);
@@ -257,9 +287,9 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
   const design = guide?.design;
   const inChat = location.pathname === "/" || location.pathname.startsWith("/chat");
   const usable = models !== null && usableChatModel(models.models);
+  const configured = models?.models.filter(hasConfiguredKey) ?? [];
   const chosen =
-    models &&
-    defaultChatModel(models.models.filter(hasConfiguredKey), saved.model ?? models.defaultModel);
+    defaultChatModel(configured, saved.model) ?? defaultChatModel(configured, models?.defaultModel);
   const step = saved.verified
     ? 6
     : design
@@ -283,15 +313,23 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
   const anchor =
     onModels && step === 1
       ? '[data-guide-anchor="connect-provider"]'
-      : inChat && step === 2
-        ? '[data-slot="composer"] button[aria-label="' + CSS.escape(S.chat.chooseModel) + '"]'
-        : inChat
-          ? '[data-slot="composer"] textarea'
-          : onBoard
-            ? 'iframe[src*="/workbenches/' + encodeURIComponent(guide!.boardId) + '/ui/"]'
-            : null;
+      : inChat && step === 1
+        ? '[data-slot="composer"] [data-slot="banner"]'
+        : inChat && step === 2
+          ? '[data-slot="composer"] button[aria-label="' + CSS.escape(S.chat.chooseModel) + '"]'
+          : inChat
+            ? '[data-slot="composer"] textarea'
+            : onBoard
+              ? 'iframe[src*="/workbenches/' + encodeURIComponent(guide!.boardId) + '/ui/"]'
+              : null;
+  const setupHint = !canConfigure
+    ? w.askOwner
+    : machineId
+      ? w.remoteModels(machineId)
+      : onModels
+        ? w.connect
+        : w.models;
   const chat = () => {
-    save({ tourChat: true });
     if (saved.tourSession) void navigate("/chat/" + encodeURIComponent(saved.tourSession));
     else if (!inChat)
       void navigate("/chat/new", {
@@ -307,7 +345,7 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
       const next = await conversationForGuide(projectId, agentId, currentSession, machineId);
       if (!next) throw Error(w.waitReply);
       setDiscussion(next);
-      save({ tourSession: currentSession, tourChat: true });
+      save({ tourSession: currentSession });
     });
   const generate = () =>
     run(async () => {
@@ -323,6 +361,7 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
     });
   const ask = discussion?.request ?? guide?.request ?? saved.request;
   const answer = discussion?.answer ?? guide?.answer;
+  if (!canConfigure && automatic && !usable && !guide) return null;
   return (
     <GuideCallout
       anchorSelector={anchor}
@@ -358,19 +397,7 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
       {waiting && <p role="status">{guide.phase === "generating" ? w.generating : w.waitReply}</p>}
       {models && !busy && !waiting && !design && (
         <>
-          {!answer && (
-            <p>
-              {step === 1
-                ? machineId
-                  ? w.remoteModels(machineId)
-                  : onModels
-                    ? w.connect
-                    : w.models
-                : step === 2
-                  ? w.choose
-                  : w.chat}
-            </p>
-          )}
+          {!answer && <p>{step === 1 ? setupHint : step === 2 ? w.choose : w.chat}</p>}
           {ask && <p className="mt-2 whitespace-pre-wrap break-words">{ask}</p>}
           {saved.model && !guide && <p>{saved.model.modelId}</p>}
           {answer && (
@@ -397,19 +424,18 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
           <div className="mt-2 flex flex-wrap gap-2">
             {!guide && !discussion && (
               <>
-                {step === 1 && !onModels && !machineId && (
+                {step === 1 && canConfigure && !onModels && !machineId && (
                   <Button
                     variant="primary"
                     size="sm"
                     onClick={() => {
-                      save({ visitedSettings: true });
                       void navigate("/models");
                     }}
                   >
                     {w.modelSettings}
                   </Button>
                 )}
-                {step === 1 && machineId && (
+                {step === 1 && (machineId || !canConfigure) && (
                   <Button size="sm" onClick={() => setReload((n) => n + 1)}>
                     {w.refresh}
                   </Button>

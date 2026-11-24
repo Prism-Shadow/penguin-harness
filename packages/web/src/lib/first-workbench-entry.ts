@@ -7,8 +7,8 @@ import { runningWorkbenches, workbenchesBase } from "./workbench-tabs";
 export const GUIDE_ID = "first-workbench-guide";
 export const GUIDE_MODEL_SELECTED = "penguin:composer-model-selected";
 export const GUIDE_START = "penguin:start-first-workbench";
-export function startFirstWorkbench(scope: PageAgent) {
-  window.dispatchEvent(new CustomEvent(GUIDE_START, { detail: scope }));
+export function startFirstWorkbench(scope: PageAgent, automatic = false) {
+  window.dispatchEvent(new CustomEvent(GUIDE_START, { detail: { scope, automatic } }));
 }
 
 /** The Agent's installed plugin owns the guide. Its background handler has no application tab. */

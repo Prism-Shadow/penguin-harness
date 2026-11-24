@@ -61,12 +61,18 @@ export function useGuidePlacement(selector: string | null): Placement {
       const above = rect.top - top;
       const below = bottom - rect.bottom;
       // A large preview may fill the pane. Sitting to its side leaves it usable.
+      const panelHeight =
+        document.querySelector<HTMLElement>("[data-guide-callout]")?.offsetHeight ?? 0;
+      const needed = Math.min(panelHeight, height * 0.48) + margin + gap;
+      const aboveFits = above >= needed;
       const atSide =
-        rect.right + gap + panelWidth <= width - margin
-          ? rect.right + gap
-          : rect.left - gap - panelWidth >= margin
-            ? rect.left - gap - panelWidth
-            : undefined;
+        aboveFits || below >= needed
+          ? undefined
+          : rect.right + gap + panelWidth <= width - margin
+            ? rect.right + gap
+            : rect.left - gap - panelWidth >= margin
+              ? rect.left - gap - panelWidth
+              : undefined;
       const available = Math.max(above, below);
       const highlight = {
         left: rect.left - 2,
@@ -89,7 +95,7 @@ export function useGuidePlacement(selector: string | null): Placement {
       };
       if (atSide !== undefined)
         panel.top = Math.min(Math.max(top + margin, rect.top), bottom - height * 0.48 - margin);
-      else if (above > below) {
+      else if (aboveFits || above > below) {
         panel.top = "auto";
         panel.bottom = window.innerHeight - rect.top + gap;
       } else panel.top = rect.bottom + gap;

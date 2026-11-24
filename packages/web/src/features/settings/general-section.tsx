@@ -53,9 +53,7 @@ export function GeneralSection({ onOpenGuide }: { onOpenGuide?: () => void }) {
         ? { projectId: currentProject.projectId, agentId: currentAgent.agentId, machineId: null }
         : null;
   const { sessionVia } = useAuth();
-  const available = useFirstWorkbench(
-    currentProject?.role === "owner" && sessionVia !== "token" ? scope : null,
-  );
+  const available = useFirstWorkbench(sessionVia !== "token" ? scope : null);
 
   const { lang, locale, setLang } = useLocale();
   const { currency, setCurrency } = useTheme();
