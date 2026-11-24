@@ -77,9 +77,9 @@ describe("a command-policy ask hit in a real conversation", { timeout: 30_000 },
   let projectId: string;
 
   beforeAll(async () => {
-    // The model asks to merge once, then answers in text.
+    // The model asks to merge once per task (one task per test here), then answers in text.
     mock = await startMockLLM((n) =>
-      n === 1
+      n % 2 === 1
         ? {
             toolUse: {
               id: "toolu_merge",
