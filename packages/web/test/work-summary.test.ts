@@ -8,7 +8,23 @@
  * the header ticks from while the group is still running.
  */
 import { describe, expect, it } from "vitest";
-import type { ChatItem } from "../src/lib/amsp/stream-model";
+import {
+  partialThinking,
+  partialToolCall,
+  partialToolCallOutput,
+  assistantText,
+  thinkingMessage,
+  toolCall,
+  toolCallOutput,
+} from "@prismshadow/amsp";
+import {
+  buildDedupIndex,
+  createStreamModel,
+  discardFragmentFor,
+  isDuplicate,
+  pushMessage,
+  type ChatItem,
+} from "../src/lib/amsp/stream-model";
 import { summarizeWork } from "../src/features/chat/work-summary";
 
 let nextId = 1;
@@ -42,6 +58,58 @@ const tool = (
 });
 
 describe("summarizeWork", () => {
+  it("counts each call across fragments, complete messages, repeated delivery and history", () => {
+    const id = "tool-1";
+    const complete = toolCall({ name: "read_file", arguments: "{}", toolCallId: id });
+    const result = toolCallOutput({ output: "contents", toolCallId: id, status: "completed" });
+    const model = createStreamModel();
+    for (const record of [
+      partialThinking("start"),
+      partialThinking("stop"),
+      thinkingMessage("Review"),
+      assistantText("Working"),
+    ]) {
+      pushMessage(model, record);
+      expect(summarizeWork(model.items).steps).toBe(0);
+    }
+    for (const record of [
+      partialToolCall({ eventType: "start", name: "", toolCallId: id }),
+      partialToolCall({ eventType: "delta", name: "read_file", arguments: "{}", toolCallId: id }),
+      partialToolCall({ eventType: "stop", name: "", toolCallId: id }),
+      complete,
+      partialToolCallOutput({ eventType: "start", toolCallId: id }),
+      partialToolCallOutput({ eventType: "delta", toolCallId: id, output: "part" }),
+      result,
+      result,
+    ]) {
+      pushMessage(model, record);
+      expect(summarizeWork(model.items).steps).toBe(1);
+    }
+    const history = createStreamModel();
+    for (const record of [complete, result]) pushMessage(history, record);
+    const overlap = buildDedupIndex([complete, result]);
+    for (const record of [complete, result]) {
+      expect(isDuplicate(overlap, record)).toBe(true);
+      discardFragmentFor(history, record);
+    }
+    expect(summarizeWork(history.items).steps).toBe(1);
+  });
+
+  it("keeps an output-only history card outside the count until its call arrives", () => {
+    const model = createStreamModel();
+    const id = "tool-1";
+    pushMessage(model, toolCallOutput({ output: "contents", toolCallId: id, status: "completed" }));
+    expect(summarizeWork(model.items).steps).toBe(0);
+    pushMessage(model, toolCall({ name: "read_file", arguments: "{}", toolCallId: id }));
+    expect(summarizeWork(model.items).steps).toBe(1);
+    // A later invocation may legitimately reuse the ID of a completed earlier invocation.
+    pushMessage(
+      model,
+      toolCall({ name: "read_file", arguments: '{"file_path":"second"}', toolCallId: id }),
+    );
+    expect(summarizeWork(model.items).steps).toBe(2);
+  });
+
   it("parallel work counts once: 15-way parallel over 9 minutes reports 9 minutes", () => {
     const nine = 9 * 60_000;
     const items = Array.from({ length: 15 }, () => tool({ start: 0, durationMs: nine }));

@@ -558,7 +558,7 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Five thinking/tool pairs make a saved, two-digit history with real file arguments.
+    // Ten tool calls interleaved with thinking exercise a saved two-digit tool count.
     if (flat.includes("ten-step work history") && !isTitle) {
       const path = "资料/每周 总结/评审 记录.md";
       const calls = [
@@ -574,7 +574,10 @@ const server = http.createServer((req, res) => {
           },
         ],
         ["exec_command", { cmd: "pwd", description: "确认工作目录" }],
-        ["read_file", { file_path: path, description: "核对本周评审记录" }],
+        ...Array.from({ length: 6 }, () => [
+          "read_file",
+          { file_path: path, description: "核对本周评审记录" },
+        ]),
       ];
       const completed = [...flat.matchAll(/toolu_work_history_(\d+)/g)].reduce(
         (n, match) => Math.max(n, Number(match[1])),
