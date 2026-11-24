@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `web`, `desktop`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1806
 
 [中文版](2026-11-24-default-navigation-shortcuts.zh.md)
 

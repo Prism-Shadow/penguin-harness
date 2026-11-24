@@ -13,7 +13,7 @@
 import { matchShortcut } from "./match";
 import { currentPlatform } from "./platform";
 import { commandById } from "./registry";
-import { keymap } from "./store";
+import { isOverridden, keymap } from "./store";
 import type { CommandId } from "./types";
 
 /** Returning false declines the command so an earlier-registered handler may take it; anything else handles it. */
@@ -71,7 +71,7 @@ export function setShortcutBlocker(fn: (() => boolean) | null): void {
  */
 export function handleShortcutKeydown(event: KeyboardEvent): void {
   if (event.defaultPrevented) return;
-  const id = matchShortcut(event, keymap(), ["global"], currentPlatform());
+  const id = matchShortcut(event, keymap(), ["global"], currentPlatform(), isOverridden);
   if (id === null) return;
   if (
     id === "sidebar.toggle" &&

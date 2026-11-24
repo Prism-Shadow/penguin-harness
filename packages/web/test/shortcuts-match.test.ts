@@ -113,6 +113,16 @@ describe("resolution", () => {
     expect(matchShortcut(e, keymap, ["global"], "linux")).toBe("palette.toggle");
   });
 
+  it("keeps a saved global binding when a later release adds a matching default", () => {
+    const keymap = new Map(defaults("linux"));
+    keymap.set("terminal.toggle", parseChord("Mod+KeyB"));
+    const press = key({ code: "KeyB", key: "b", ctrlKey: true });
+    expect(
+      matchShortcut(press, keymap, ["global"], "linux", (id) => id === "terminal.toggle"),
+    ).toBe("terminal.toggle");
+    expect(matchShortcut(press, keymap, ["global"], "linux", () => false)).toBe("sidebar.toggle");
+  });
+
   it("never matches an unbound command", () => {
     const keymap: Keymap = new Map<CommandId, Chord | null>([["terminal.close", null]]);
     expect(matchShortcut(key({ code: "KeyW", ctrlKey: true }), keymap, ALL, "linux")).toBeNull();
