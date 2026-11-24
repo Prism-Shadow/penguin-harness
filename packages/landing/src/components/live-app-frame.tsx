@@ -19,7 +19,6 @@ import { useEffect, useRef, useState } from "react";
 import type { SyntheticEvent } from "react";
 import { DEMO_TAKEN_OVER } from "../../../ui-gallery/src/app/frame";
 import { S } from "../lib/strings";
-import { PHONE_VIEWPORT, useMedia } from "../lib/use-media";
 import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { frameSize, gallerySurfaceUrl, liveFrameSrc } from "../lib/live-frame";
 import type { SurfaceId } from "../lib/live-frame";
@@ -31,6 +30,19 @@ import { ArrowUpRightIcon } from "./icons";
 const LOAD_AHEAD = "200px 0px";
 /** How long a frame may take to say it is ready before it is shown anyway. */
 const READY_FALLBACK_MS = 8000;
+
+/** A media query's live answer; false until mounted. */
+function useMedia(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia(query);
+    const onChange = () => setMatches(list.matches);
+    onChange();
+    list.addEventListener("change", onChange);
+    return () => list.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
 
 /** The app's outline in flat blocks: the sidebar column and a few lines, no motion. */
 function Placeholder({ phone }: { phone: boolean }) {
@@ -69,7 +81,7 @@ export function LiveAppFrame({
 }) {
   const { locale } = useSiteLocale();
   const { dark } = useSiteTheme();
-  const phone = useMedia(PHONE_VIEWPORT);
+  const phone = useMedia("(max-width: 639.98px)");
   const fine = useMedia("(hover: hover) and (pointer: fine)");
   const reducedMotion = usePrefersReducedMotion();
   const [playbackChoice, setPlaybackChoice] = useState<boolean | null>(null);

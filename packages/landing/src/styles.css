@@ -25,21 +25,10 @@
   }
 }
 
-/* Hero backdrop: a faint dot grid fading out downwards — subtle, no gradients on content. */
-.hero-dots {
-  background-image: radial-gradient(rgb(26 115 232 / 0.14) 1px, transparent 1px);
-  background-size: 22px 22px;
-  mask-image: linear-gradient(to bottom, black 0%, transparent 78%);
-  -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 78%);
-}
-.dark .hero-dots {
-  background-image: radial-gradient(rgb(138 180 248 / 0.16) 1px, transparent 1px);
-}
-
 /* Keep the hero hierarchy consistent across languages and let narrow screens wrap naturally. */
 .hero-positioning {
-  font-size: clamp(1.875rem, 5.4vw, 4.3rem);
-  line-height: 1.35;
+  font-size: clamp(1.125rem, 3.6vw, 2.125rem);
+  line-height: 1.4;
 }
 .hero-positioning-clause {
   display: inline-block;
@@ -695,22 +684,4 @@ html.dark .post-tree-harm {
 /* Release the entry animation's stacking context so diagrams can blend with the page. */
 .anim-rise:has(.prose-figure-diagram) {
   animation-fill-mode: backwards;
-}
-
-@layer components {
-  .story-action a {
-    @apply inline-flex min-h-11 items-center rounded-sm underline decoration-brand-300 underline-offset-4 hover:decoration-current focus-visible:outline-2 focus-visible:outline-offset-4;
-  }
-  .story-evidence {
-    @apply mt-8 grid items-start gap-5 sm:mt-12 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:gap-12;
-  }
-  .story-evidence h3 {
-    @apply max-w-prose text-xl leading-snug font-semibold tracking-tight text-pretty sm:text-2xl;
-  }
-  .story-evidence p {
-    @apply mt-3 max-w-prose text-base leading-7 text-gray-700 dark:text-gray-300;
-  }
-  .story-evidence figcaption {
-    @apply mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400;
-  }
 }

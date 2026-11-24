@@ -217,6 +217,8 @@ test("an App Center workbench lists archived Sessions and closes only their sele
     );
     await expect(tab).toBeVisible();
     await expect(page).toHaveURL(new RegExp("/session-tools/" + kind + "\\?"));
+    const sidebar = page.getByRole("navigation", { name: "Apps", exact: true });
+    await expect(sidebar.locator('[data-app-row^="session-tool/' + kind + '/"]')).toHaveCount(0);
     expect(new URL(page.url()).searchParams.get("session")).toBe(second.sessionId);
     await tab.getByTestId("dock-tab-close").click();
     await expect(composer).toHaveValue("Keep my draft while browsing");

@@ -1229,18 +1229,9 @@ export const en: Strings = {
     exitToAppCenter: "Exit full page (back to the App Center)",
   },
   pageWorkspace: {
-    leftPane: "Left pane",
-    rightPane: "Right pane",
     restore: "Restore",
     workbenches: "Workbenches",
-    left: "Open on the left",
-    right: "Open on the right",
-    whole: "Show full page",
-    swap: "Swap panes",
     separate: "Open in a new window",
-    actions: "Pane actions",
-    closeView: "Close view",
-    resize: "Resize panes",
     empty: "This Agent has no workbenches to open.",
   },
   sidebarApps: {
@@ -3247,12 +3238,6 @@ export const en: Strings = {
       n === 1
         ? "This build cannot fully run 1 installed plugin. Its row says why."
         : `This build cannot fully run ${n} installed plugins. Their rows say why.`,
-    /** The notice's action: filters the list down to those rows. */
-    unsatisfiedShow: "Show",
-    /** Page notice while the filter beside the search narrows the list to the incompatible plugins. */
-    incompatibleOnlyNotice: "Only incompatible plugins are shown.",
-    /** That notice's action: turns the filter off. */
-    incompatibleOnlyShowAll: "Show all",
     /** The admin's notice while members' requests to run a plugin's server module wait. */
     moduleRequestsNotice: (n: number) =>
       n === 1
@@ -3409,12 +3394,6 @@ export const en: Strings = {
     openSettings: "Settings",
     pageDesc:
       "Every plugin, by category. Plugins of skills and/or a hook package ship with this build and are installed on agents; server-module plugins, such as the Agent Sandbox backends, are installed on the whole server by an admin.",
-    /**
-     * The filter beside the search: a toggle that narrows the list to the plugins this build cannot
-     * fully run, remembered in this browser; the group's accessible name, and the toggle's words.
-     */
-    filterLabel: "Filter plugins",
-    incompatibleOnlyFilter: "Incompatible only",
     /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "Group by",
     groupBy: {

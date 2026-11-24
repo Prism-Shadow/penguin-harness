@@ -35,7 +35,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { ThemePackDto } from "@prismshadow/penguin-server/api";
-import type { ActivityDisplayMode, ThemeId } from "@prismshadow/penguin-ui";
+import {
+  DEFAULT_ACTIVITY_DISPLAY_MODE,
+  type ActivityDisplayMode,
+  type ThemeId,
+} from "@prismshadow/penguin-ui";
 import { applyThemeAttributes, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
 import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
 import {
@@ -147,7 +151,10 @@ function initialToolAliases(): boolean {
 }
 
 function initialActivityDisplayMode(): ActivityDisplayMode {
-  return activityDisplayModeValue(localStorage.getItem(ACTIVITY_DISPLAY_MODE_KEY)) ?? "standard";
+  return (
+    activityDisplayModeValue(localStorage.getItem(ACTIVITY_DISPLAY_MODE_KEY)) ??
+    DEFAULT_ACTIVITY_DISPLAY_MODE
+  );
 }
 
 function initialCurrency(): Currency {

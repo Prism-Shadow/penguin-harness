@@ -449,7 +449,7 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
       memoryCount: 0,
       apiEnabled: false,
     },
-    // The Project's built-in Agent, with the self-evolution toolkits installed: it ran the round.
+    // The Project's built-in Agent, with the Default RSI Toolkit it used for the round.
     {
       agentId: IDS.agents.general,
       name: L("通用智能体", "General Agent"),
@@ -1102,10 +1102,14 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
       ],
       hooks: [],
     },
-    // Every toolkit and the evaluator, each Skill wearing its plugin's icon, as an install writes
+    // The default toolkit and evaluator, each Skill wearing its plugin's icon, as an install writes
     // it; and the Q&A assistant, whose support workbench is on the App Center.
     [IDS.agents.general]: {
-      skills: [...toolkits, evaluationPlugin, supportPlugin].flatMap((plugin) =>
+      skills: [
+        ...toolkits.filter((p) => p.name === "default-rsi-toolkit"),
+        evaluationPlugin,
+        supportPlugin,
+      ].flatMap((plugin) =>
         plugin.skills.map((s) => ({ ...s, ...(plugin.icon ? { icon: plugin.icon } : {}) })),
       ),
       hooks: [],

@@ -294,7 +294,6 @@ it("keeps the open app when changing Agents and leaves the next Agent's unopened
   await openMenu(key("board"));
   expect(menuLabels()).toEqual([
     en.pageWorkspace.restore,
-    en.pageWorkspace.right,
     en.pageWorkspace.separate,
     en.appCenter.windowFullScreen,
     en.common.close,

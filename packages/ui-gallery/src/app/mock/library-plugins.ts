@@ -523,7 +523,9 @@ export function rsiToolkitPlugins(): PluginItem[] {
         "2026.10.29.4",
       ),
     ]),
-  ];
+  ].map((plugin) =>
+    plugin.package === defaultPkg.name ? plugin : { ...plugin, source: "installed" as const },
+  );
 }
 
 /** The Agent Evaluation plugin: the evaluator every toolkit measures through, and Benchmark design. */

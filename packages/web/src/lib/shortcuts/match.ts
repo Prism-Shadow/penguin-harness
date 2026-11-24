@@ -9,14 +9,15 @@ import type { Chord, CommandId, KeyLike, Keymap, Platform, ShortcutScope } from 
 
 /**
  * The command the event runs among the commands whose scope is in `scopes`: a focus scope
- * (terminal, editor) beats global, and among equals the registry order decides. Deterministic,
- * which is what lets a conflicting user binding be a warning rather than an error.
+ * (terminal, editor) beats global. Among competing global bindings, an explicit user choice
+ * takes precedence over a host default. Remaining ties follow registry order.
  */
 export function matchShortcut(
   e: KeyLike,
   keymap: Keymap,
   scopes: readonly ShortcutScope[],
   platform: Platform,
+  isOverride?: (id: CommandId) => boolean,
 ): CommandId | null {
   const chord = chordOf(e, platform);
   if (chord === null) return null;
@@ -25,7 +26,7 @@ export function matchShortcut(
     if (!scopes.includes(cmd.scope)) continue;
     if (!chordEquals(keymap.get(cmd.id) ?? null, chord)) continue;
     if (cmd.scope !== "global") return cmd.id;
-    global ??= cmd.id;
+    if (global === null || (isOverride?.(cmd.id) && !isOverride(global))) global = cmd.id;
   }
   return global;
 }

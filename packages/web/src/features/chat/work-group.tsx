@@ -17,6 +17,7 @@
 import { useContext } from "react";
 import {
   ActivityGroup,
+  DEFAULT_ACTIVITY_DISPLAY_MODE,
   type ActivityGroupProps,
   type ActivityStepSummary,
 } from "@prismshadow/penguin-ui";
@@ -150,13 +151,11 @@ function useWorkGroupState(
     kind: items.some((it) => it.kind === "tool_call") ? "tool" : "thinking",
     // The title doubles as status: "Running" while in progress, "Done" when finished.
     title,
-    // A pure-thinking group (no tool calls) doesn't show "0 steps".
-    ...(steps > 0 ? { count: S.chat.workGroupSteps(steps) } : {}),
+    count: S.chat.workGroupSteps(steps),
     ...(startMs !== undefined ? { startMs } : {}),
     durationMs,
     pending: items.some((item) => needsAction(item, ctx)) || revealedForFind,
     stepNavigation: {
-      count: S.chat.workGroupSteps(items.length),
       elapsed: S.chat.workElapsed,
       revealAll: revealedForFind,
     },
@@ -178,7 +177,7 @@ export function SessionWorkGroup({
     items,
     ctx,
     isLast,
-    appearance?.activityDisplayMode ?? "standard",
+    appearance?.activityDisplayMode ?? DEFAULT_ACTIVITY_DISPLAY_MODE,
   );
   return (
     <ActivityGroup

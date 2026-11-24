@@ -156,6 +156,14 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
   await page.keyboard.type("echo FOCUSED_''TERMINAL");
   await page.keyboard.press("Enter");
   await expect.poll(() => screenText(page)).toContain("FOCUSED_TERMINAL");
+  // A real foreground program should receive Ctrl+B (0x02), including when it is the sidebar shortcut.
+  await runInTerminal(
+    page,
+    `node -e "process.stdin.setRawMode(true);console.log('KEY_'+'READY');process.stdin.once('data',b=>{console.log('BYTE_'+b[0]);process.exit()})"`,
+  );
+  await expect.poll(() => screenText(page)).toContain("KEY_READY");
+  await page.keyboard.press("Control+b");
+  await expect.poll(() => screenText(page)).toContain("BYTE_2");
   await runInTerminal(page, "echo DOCK_KEEPS_RUNNING");
   await expect.poll(() => screenText(page), { timeout: 15000 }).toContain("DOCK_KEEPS_RUNNING");
 
@@ -567,7 +575,7 @@ test("the terminal panel's + starts another shell and shows it; ending the last 
   const sessionId = await createSession(page.request, projectId);
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
-  await page.keyboard.press("Control+Backquote");
+  await openViaPicker(page, "right", "terminal");
   await expect(shellTabs(page)).toHaveCount(1, { timeout: 20000 });
   await waitForShell(page, "FIRST_SHELL");
 
