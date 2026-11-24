@@ -123,6 +123,8 @@ export interface TicketMigrationFacts {
  * about to happen, the risk it carries, and the backup advice. What it did, and where the
  * originals are, is the completion line's to say — this one claims no backup and no result,
  * because a warning that fires before the work cannot know either.
+ * compat(0.3.0): both migration notices (and their kinds in the library, Web App and CLI
+ * dictionaries) go with the migration itself.
  */
 export function ticketIdsMigrating(f: { count: number }): SystemLine {
   return {

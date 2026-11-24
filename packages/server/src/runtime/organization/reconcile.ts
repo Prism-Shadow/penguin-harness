@@ -122,7 +122,9 @@ function activeCopies(files: readonly TicketFile[]): Map<string, TicketFile> {
  * reconcile pass — always under the organization's lock, so it never interleaves with a
  * write — and only once every ticket session has stopped: a session mid-run is prompted to
  * stop (once) and the migration waits for a later pass, because ticket files must not move
- * under a session that is writing tickets.
+ * under a session that is writing tickets. compat(0.3.0): this whole function, its
+ * ticket-session gate, and the migration notices go at the 0.3.0 release preparation — the
+ * migration runs once per organization, so by then there is nothing left for it to do.
  *
  * When it runs, it moves in one pass: every original is copied to a backup directory under
  * `tickets/`, each migrated id's newest copy is rewritten under its prefixed id (a taken id

@@ -553,7 +553,10 @@ export const TICKET_ID_PATTERN = /^ticket-\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*$/
 
 /**
  * The legacy form, `yyyy-mm-dd-slug` without the prefix. Not a valid id any more — only the
- * one-time migration matches it, to rename the files that carry it.
+ * one-time migration matches it, to rename the files that carry it. compat(0.3.0): with the
+ * migration gone, this pattern and every branch that reads it go too — by then every
+ * organization's files have long carried the prefixed form, and an unprefixed name is just
+ * an invalid file the board reports.
  */
 export const LEGACY_TICKET_ID_PATTERN = /^\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*$/;
 
