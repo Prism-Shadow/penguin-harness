@@ -16,6 +16,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         shortDescription: "Product questions, sourced answers and a support workbench.",
         shortDescriptionZh: "产品问答、来源引用与客服工作台。",
         category: "office-productivity",
+        preinstall: false,
         icon: "icon.svg",
         quickStart: {
           prompt:

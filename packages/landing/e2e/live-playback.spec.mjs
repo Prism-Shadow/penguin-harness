@@ -257,7 +257,7 @@ test("a keyboard-activated navigation link keeps its destination while the scrip
   await apps.focus();
   await apps.press("Enter");
   await expect(page.getByRole("button", { name: "Play demo", exact: true })).toBeVisible();
-  const tile = frame.locator('li[data-app="system_agent/benchmark"] > button');
+  const tile = frame.locator('li[data-app="default_agent/benchmark"] > button');
   await expect(tile).toBeVisible();
   await page.clock.fastForward(60_000);
   await expect(tile).toBeVisible();
@@ -271,7 +271,7 @@ test("taking over the split preview releases the scripted drag", async ({ page }
   for (let step = 0; step < 140 && !(await results.isVisible()); step++)
     await page.clock.runFor(450);
   await expect(results).toBeVisible();
-  const tile = frame.locator('li[data-app="system_agent/benchmark"] > button:visible');
+  const tile = frame.locator('li[data-app="default_agent/benchmark"] > button:visible');
   for (let step = 0; step < 150 && !(await tile.isVisible()); step++) await page.clock.runFor(30);
   await expect(tile).toBeVisible();
   const preview = frame.locator("[data-pane=full] .z-drag-preview");

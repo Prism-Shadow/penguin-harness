@@ -274,6 +274,24 @@ const card = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardPro
     ...overrides,
   });
 
+describe("a removable workbench plugin", () => {
+  it("does not identify bundled or manually installed workbenches as built in", () => {
+    for (const source of ["builtin", "installed"] as const) {
+      const html = card(
+        {
+          ...libraryRow,
+          library: { ...LIBRARY, source, workbenches: [{ name: "sample", version: "1.0.0" }] },
+        },
+        true,
+      );
+      expect(html).not.toContain(en.plugins.builtin);
+    }
+    expect(card({ ...libraryRow, library: { ...LIBRARY, source: "builtin" } }, true)).toContain(
+      en.plugins.builtin,
+    );
+  });
+});
+
 describe("a server module's card", () => {
   const words = en.plugins.installModel;
   it("offers an admin Install on server for a market package, and leaves uninstalling to the detail", () => {

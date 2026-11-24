@@ -164,9 +164,12 @@ export function BenchmarkHeaderFacts({
   );
 }
 
-export function BenchmarkDetailPage() {
+export function BenchmarkDetailPage({
+  selectedId,
+  onBack,
+}: { selectedId?: string; onBack?: () => void } = {}) {
   const params = useParams<{ benchmarkId: string }>();
-  const benchmarkId = params.benchmarkId ?? "";
+  const benchmarkId = selectedId ?? params.benchmarkId ?? "";
   const navigate = useNavigate();
   const { currentProject, agents } = useProject();
   const { machineIds, machineLabels } = useSessions();
@@ -283,7 +286,7 @@ export function BenchmarkDetailPage() {
           resolves has no directory to name and nothing to use: the title and the way back are
           all the header keeps. */}
       <PageHeader
-        back={{ label: S.benchmark.backToList, onClick: () => navigate("/benchmark") }}
+        back={{ label: S.benchmark.backToList, onClick: onBack ?? (() => navigate("/benchmark")) }}
         title={
           <span className="min-w-0 truncate">
             {benchmark === null

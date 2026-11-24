@@ -119,7 +119,6 @@ describe("built-in Agent provisioning", () => {
       "goal",
       "model-development",
       "multimodal-tools",
-      "penguin-support",
       "plan",
       "software-development",
       "storage",
@@ -130,6 +129,7 @@ describe("built-in Agent provisioning", () => {
       expect.arrayContaining(agentBaseline),
     );
     expect(preinstalled.map((plugin) => plugin.name)).not.toContain("agent-state-git");
+    expect(preinstalled.map((plugin) => plugin.name)).not.toContain("penguin-support");
     const installedWorkbenches = path.join(
       t.root,
       "projects",
@@ -139,6 +139,12 @@ describe("built-in Agent provisioning", () => {
       "agent_state",
       "workbenches",
     );
+    await expect(fs.access(path.join(installedWorkbenches, "support"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      fs.access(path.join(installedWorkbenches, "benchmark", "package.json")),
+    ).resolves.toBeUndefined();
     for (const plugin of preinstalled) {
       for (const workbench of plugin.workbenches ?? []) {
         const manifest = await fs.readFile(

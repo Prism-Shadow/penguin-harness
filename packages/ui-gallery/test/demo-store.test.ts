@@ -93,6 +93,7 @@ describe("the fixtures", () => {
         "system_agent",
       ]);
       expect(f.appCenter.shortcuts.map((app) => app.workbenchId)).toEqual([
+        "benchmark",
         "slides",
         "images",
         "support",
@@ -100,6 +101,7 @@ describe("the fixtures", () => {
       const sidebar = await getSidebarApps(IDS.project, IDS.agents.general, null);
       expect(sidebar).toMatchObject({
         apps: [
+          { workbenchId: "benchmark", titleZh: "自进化工作台" },
           { workbenchId: "slides", titleZh: "AI PPT" },
           { workbenchId: "images", titleZh: "图像工作室" },
         ],

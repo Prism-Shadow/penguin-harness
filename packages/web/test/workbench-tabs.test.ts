@@ -47,6 +47,23 @@ describe("workbench pages", () => {
     expect(tabs[2]!.error).toBe("module tree rejected");
   });
 
+  it("recognizes the evaluation workbench only when an installed tab declares its renderer", () => {
+    const tabs = workbenchTabsOf([
+      info({
+        id: "benchmark",
+        tabs: [
+          {
+            id: "benchmark.main",
+            key: "main",
+            title: "Self-Evolution Workbench",
+            renderer: { builtin: "SelfEvolutionWorkbench" },
+          },
+        ],
+      }),
+    ]);
+    expect(tabs[0]).toMatchObject({ workbenchId: "benchmark", builtin: "SelfEvolutionWorkbench" });
+  });
+
   it("serves the page of a machine's workbench through that machine, and says which", () => {
     // A Session on a machine runs a copy of the Agent there, and the workbenches it built live in
     // that copy: the page is fetched through the machine's connection, and every later call

@@ -212,6 +212,7 @@ describe("the mocked API", () => {
       IDS.agents.docs,
       IDS.agents.notes,
       IDS.agents.general,
+      "penguin_support",
     ]);
     expect(agents.agents.every((agent) => Number.isInteger(agent.pluginCount))).toBe(true);
     const projectId = store.f.project.projectId;

@@ -85,9 +85,10 @@ export interface GridFolder {
 
 export type GridItem = GridApp | GridFolder;
 
-const defaultSystemKeys = ["models", "plugins", "machines", "usage", "benchmark"].map((key) =>
+const defaultSystemKeys = ["models", "plugins", "machines", "usage"].map((key) =>
   locatedAppKey(SYSTEM_AGENT_ID, key),
 );
+const evaluationWorkbench = locatedAppKey("default_agent", "benchmark");
 
 /** The grid the viewer sees: the stored layout over the live shortcuts. */
 export function arrange(
@@ -113,6 +114,7 @@ export function arrange(
     out.push(...folded(item.id, item.name, apps));
   }
   const first = defaultSystemKeys.filter((key) => live.get(key)?.system !== undefined);
+  if (live.get(evaluationWorkbench)?.plugin === "agent-evaluation") first.push(evaluationWorkbench);
   for (const key of [...first, ...live.keys()]) {
     const app = take(key);
     if (app !== null) out.push(app);

@@ -15,7 +15,7 @@ import { buildFixtures, DEFAULT_MODEL, effectiveOf } from "./fixtures";
 import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
 import { IDS } from "./ids";
-import { seedFreshProject } from "./fresh-project";
+import { seedFreshProject, seedPresetWorkbenches } from "./fresh-project";
 import { raiseNotices } from "./notices";
 import {
   rsiEvaluatorTranscript,
@@ -168,6 +168,7 @@ export class DemoStore {
         }
       }
     }
+    seedPresetWorkbenches(this.f, init.freshProject === true);
     if (evolutionDemo) {
       this.f.chatDefaults.agentId = IDS.agents.general;
       this.f.chatDefaults.workspace = RSI_WORKSPACE;
