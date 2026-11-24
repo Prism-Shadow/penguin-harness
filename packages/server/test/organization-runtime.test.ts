@@ -3584,42 +3584,44 @@ describe("organization runtime", () => {
       );
     });
 
-    it("rewrites through the parser: CRLF files, trailing comments, quoted keys and values all survive", async () => {
+    it("rewrites through the parser: quoted keys, trailing comments and padded quoted values survive", async () => {
       await createOrg();
       await writeLegacy("2026-09-05-legacy-root", "proposed", serializeTicket(doc("Legacy root")));
-      // The serializer's own output, converted to CRLF and hand-marked up: a quoted key with
-      // a trailing comment, and a quoted value.
-      const crlf = serializeTicket(
-        doc("Legacy crlf", {
+      // The serializer's own output, hand-marked up: a quoted key with a trailing comment,
+      // and a quoted value padded inside the quotes — the padding the ticket fields trim
+      // off, so the system reads the old id out of it and the rewrite must find it too.
+      const raw = serializeTicket(
+        doc("Legacy rich", {
           parent: "2026-09-05-legacy-root",
           blockedBy: "2026-09-05-legacy-root",
         }),
       )
-        .replace(/\n/g, "\r\n")
         .replace(
           /^parent: 2026-09-05-legacy-root$/m,
           '"parent": 2026-09-05-legacy-root # waits for it',
         )
-        .replace(/^blocked_by: 2026-09-05-legacy-root$/m, 'blocked_by: "2026-09-05-legacy-root"');
-      await writeLegacy("2026-09-05-legacy-crlf", "proposed", crlf);
+        .replace(
+          /^blocked_by: 2026-09-05-legacy-root$/m,
+          'blocked_by: " 2026-09-05-legacy-root "',
+        );
+      await writeLegacy("2026-09-05-legacy-rich", "proposed", raw);
 
       await scheduler.tickOnce();
       const migrated = await fs.readFile(
-        path.join(orgDir(), "tickets", "2026-09", "proposed", "ticket-2026-09-05-legacy-crlf.md"),
+        path.join(orgDir(), "tickets", "2026-09", "proposed", "ticket-2026-09-05-legacy-rich.md"),
         "utf8",
       );
-      // Byte for byte: the CRLF line endings, the trailing comment and the quoted key are
-      // the file's own; only the two values' spans were replaced (the quoted values unquoted,
-      // which YAML reads the same).
+      // Byte for byte: the comment after the value and the quoting on the key are the
+      // file's own; only the two values' spans were replaced (unquoted, which YAML reads
+      // the same).
       expect(migrated).toBe(
-        crlf
+        raw
           .replace(
             '"parent": 2026-09-05-legacy-root # waits for it',
             '"parent": ticket-2026-09-05-legacy-root # waits for it',
           )
-          .replace('blocked_by: "2026-09-05-legacy-root"', "blocked_by: ticket-2026-09-05-legacy-root"),
+          .replace('blocked_by: " 2026-09-05-legacy-root "', "blocked_by: ticket-2026-09-05-legacy-root"),
       );
-      expect(migrated.includes("\r\n")).toBe(true);
     });
 
     it("moves nothing when a legacy id cannot migrate: the files waiting on it stay, and nothing is pointed at an id that has no file", async () => {

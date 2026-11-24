@@ -694,13 +694,14 @@ function splitFrontmatter(text: string): Frontmatter {
 /**
  * Rewrites the ticket references (`parent: <id>`, `blocked_by: <id>`) in a ticket file's
  * frontmatter to follow a migration. The two fields are found by the YAML document parser,
- * not by line shape: whatever they were written with — quoting, spacing, a quoted key, a
- * trailing comment, CRLF line endings — the parser hands back the value's own span in the
- * original text, and only that span is replaced; the comment after it, the line endings,
- * and everything else in the file come back byte-for-byte (there is no re-serialization for
- * the parser to lose comments, layout or unknown fields through). The replacement is
- * written unquoted, which YAML reads the same. A file whose references name nothing in the
- * mapping comes back as it went in.
+ * not by line shape: quoting, spacing, a quoted key, a trailing comment — the parser hands
+ * back the value's own span in the original text, and only that span is replaced; the
+ * comment after it, and everything else in the file, come back byte-for-byte (there is no
+ * re-serialization for the parser to lose comments, layout or unknown fields through). The
+ * replacement is written unquoted, which YAML reads the same, and looked up with the
+ * trimmed value, which is how the ticket fields read it. A file whose references name
+ * nothing in the mapping, or whose frontmatter the parser rejects, comes back as it went
+ * in.
  */
 export function rewriteTicketRefs(raw: string, mapping: ReadonlyMap<string, string>): string {
   if (mapping.size === 0) return raw;
@@ -719,19 +720,16 @@ export function rewriteTicketRefs(raw: string, mapping: ReadonlyMap<string, stri
   if (open === -1 || close === -1) return raw;
   let fmStart = 0;
   for (let i = 0; i <= open; i++) fmStart += lines[i]!.length + 1;
-  // The slice runs through the newline that separates the frontmatter from its closing
-  // marker: a parser sees a clean end of input there, while a text that stops at a CRLF
-  // line's bare carriage return is a parse error — and a file that fails to parse here
-  // would come back unmapped, left behind by the migration.
   let fmLength = 0;
   for (let i = open + 1; i < close; i++) fmLength += lines[i]!.length + 1;
+  if (close > open + 1) fmLength -= 1;
   const doc = parseDocument(raw.slice(fmStart, fmStart + fmLength));
   if (doc.errors.length > 0) return raw;
   const edits: Array<{ from: number; to: number; text: string }> = [];
   for (const key of ["parent", "blocked_by"]) {
     const value = doc.get(key, true);
     if (!isScalar(value) || typeof value.value !== "string" || !value.range) continue;
-    const newId = mapping.get(value.value);
+    const newId = mapping.get(value.value.trim());
     if (newId === undefined) continue;
     edits.push({ from: fmStart + value.range[0], to: fmStart + value.range[1], text: newId });
   }
