@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** Web App
+- **PR:** [#1817](https://github.com/Prism-Shadow/penguin-harness/pull/1817)
 
 [中文版](2026-11-24-session-dock-entrance.zh.md)
 
