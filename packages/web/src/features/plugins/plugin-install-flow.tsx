@@ -1,26 +1,15 @@
-/**
- * Installing a plugin, as one dialog of up to two steps: the server first, then the Agents. A
- * plugin's Agent content (Skills, hooks, MCP servers, workbenches) comes from its package on the
- * server, so a plugin that is not there yet goes there first, and the dialog says where the
- * install stands: a bar across the top, 1/2 while the server installs it and 2/2 once the Agents
- * are picked, with the server step's own progress in words under it (checking the plugin source,
- * downloading N%, installing from the offline archive, loading the module).
- *
- * - Step 1, the server. Already there (an admin installed it, or the build ships it): done, and
- *   the dialog opens on step 2. Not there: an admin installs it, the dialog saying what that
- *   does (every Project shares it; the server reloads its plugins, runs in progress carry on);
- *   a member asks an admin to, and the dialog ends there. A server module the build ships but
- *   this Project does not run yet is enabled instead. A failure stays on the step with its next
- *   steps (Plugin Sources, Import from file).
- * - Step 2, the Agents: the caller's list, each Agent with its own Install / Installed / Update.
- *
- * A plugin of server modules alone has one step. The flow moves to step 2 by itself when the
- * server step completes: the card stays mounted while its market row becomes a library row, so
- * the dialog does too.
- */
+/** Preparing the plugin and choosing which Agents use it share a single market sheet. */
 import { useEffect, useState, type ReactNode } from "react";
 
-import { Button, GlyphIcon, ICON_SIZE, ICONS, Modal, ProgressBar } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  CloseButton,
+  GlyphIcon,
+  ICON_SIZE,
+  ICONS,
+  Modal,
+  ProgressBar,
+} from "@prismshadow/penguin-ui";
 import type { InstallStage } from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -66,6 +55,7 @@ export function installStepWords(
 export interface InstallFlowProps {
   /** The plugin's display name. */
   title: string;
+  icon: ReactNode;
   /** Two steps for a plugin with Agent content, one for server modules alone. */
   steps: 1 | 2;
   server: ServerStep;
@@ -109,7 +99,7 @@ export function InstallFlow(props: InstallFlowProps) {
   useEffect(() => {
     if (serverDone && props.steps === 2) setStep(2);
   }, [serverDone, props.steps]);
-  const stepLabels = [words.stepServer, words.stepAgents];
+
   const ask = async () => {
     setAsking(true);
     try {
@@ -127,75 +117,50 @@ export function InstallFlow(props: InstallFlowProps) {
       ? (props.progress.received / props.progress.total) * 100
       : undefined;
   return (
-    <Modal open title={words.flowTitle(props.title)} onClose={props.onClose}>
+    <Modal open headerless title={words.flowTitle(props.title)} onClose={props.onClose}>
       <div className="space-y-4">
-        {/* Where the install stands, for a plugin with two steps: each step's name, and the bar
-            across them filled to the step on show (1/2, then 2/2). */}
-        {props.steps === 2 && (
-          <div className="space-y-2" data-testid="install-flow-progress">
-            <ol className="flex items-center gap-3 text-xs">
-              {stepLabels.map((label, i) => {
-                const n = i + 1;
-                const done = n === 1 && serverDone;
-                return (
-                  <li
-                    key={label}
-                    aria-current={n === step ? "step" : undefined}
-                    className={`flex min-w-0 items-center gap-1.5 ${
-                      n === step ? "font-medium text-fg" : "text-fg-muted"
-                    }`}
-                  >
-                    {done ? (
-                      <GlyphIcon
-                        d={ICONS.checkCircle}
-                        size={ICON_SIZE.inlineGlyph}
-                        className={`shrink-0 ${toneInk.success}`}
-                        aria-label={words.stepDone}
-                      />
-                    ) : (
-                      <span aria-hidden className="shrink-0 tabular-nums">
-                        {n}.
-                      </span>
-                    )}
-                    <span className="truncate">{label}</span>
-                  </li>
-                );
-              })}
-              <li className="ml-auto shrink-0 tabular-nums text-fg-muted" aria-hidden>
-                {step}/{props.steps}
-              </li>
-            </ol>
-            <ProgressBar
-              size="xs"
-              value={step}
-              max={props.steps}
-              label={words.stepOf(step, props.steps)}
-            />
+        <div className="flex items-start gap-3">
+          {props.icon}
+          <div className="min-w-0 flex-1 self-center">
+            <h2 className="break-words text-base font-semibold text-fg">{props.title}</h2>
+            {props.machineLabel && (
+              <p className="break-words text-xs text-fg-muted">
+                {S.chat.machineTag(props.machineLabel)}
+              </p>
+            )}
           </div>
-        )}
-
-        {props.machineLabel && (
-          <p className="text-xs text-fg-muted">{S.chat.machineTag(props.machineLabel)}</p>
-        )}
+          <CloseButton onClose={props.onClose} />
+        </div>
         {step === 1 ? (
-          <div className="space-y-3 text-sm">
-            {props.server === "install" && (
-              <>
-                <p>{S.plugins.applyConfirmInstallBody(props.title)}</p>
-                <p className="text-xs text-fg-muted">{S.plugins.applyConfirmWarning(true)}</p>
-              </>
-            )}
-            {props.server === "enable" && (
-              <>
-                <p>{words.enableBody(props.title)}</p>
-                <p className="text-xs text-fg-muted">{S.plugins.applyConfirmWarning(true)}</p>
-              </>
-            )}
-            {props.server === "ask" && <p>{asked ? words.asked : words.askBody}</p>}
-            {props.server === "held" && <p>{words.adminOnly}</p>}
-            {props.server === "unavailable" && <p role="status">{props.moduleStatus}</p>}
-            {serverDone && <p>{words.serverDone(props.title)}</p>}
+          <section className="space-y-3 text-sm">
+            <div className="space-y-1">
+              <h3 className="font-semibold text-fg">
+                {serverDone
+                  ? words.ready
+                  : props.server === "enable"
+                    ? words.projectService
+                    : words.prepare}
+              </h3>
+              <p className="text-fg-muted">
+                {props.server === "install" &&
+                  (props.steps === 2 ? words.prepareForAgents : words.prepareService)}
+                {props.server === "enable" && words.projectServiceHelp}
+                {props.server === "ask" && (asked ? words.asked : words.askBody)}
+                {props.server === "held" && words.adminOnly}
+                {props.server === "unavailable" && props.moduleStatus}
+                {serverDone &&
+                  (props.agentPackageAvailable
+                    ? words.projectReady
+                    : words.serverDone(props.title))}
+              </p>
+            </div>
 
+            {(props.server === "install" || props.server === "enable") && (
+              <details className="text-xs text-fg-muted">
+                <summary className="cursor-pointer">{words.installDetails}</summary>
+                <p className="mt-1">{S.plugins.applyConfirmWarning(true)}</p>
+              </details>
+            )}
             {props.busy && (
               <div className="space-y-1.5" role="status">
                 <p className="text-xs text-fg-muted">{running}</p>
@@ -243,27 +208,37 @@ export function InstallFlow(props: InstallFlowProps) {
                 </Button>
               )}
               {canInstallAgents && (
-                <Button size="sm" onClick={() => setStep(2)}>
+                <Button
+                  size="sm"
+                  variant={serverDone ? "primary" : "ghost"}
+                  onClick={() => setStep(2)}
+                >
                   {words.toAgents}
                 </Button>
               )}
-              {((serverDone && props.steps === 1) || asked || props.server === "held") && (
-                <Button size="sm" onClick={props.onClose}>
+              {((serverDone && props.steps === 1) ||
+                asked ||
+                (!canInstallAgents && props.server === "held")) && (
+                <Button size="sm" variant="primary" onClick={props.onClose}>
                   {words.finish}
                 </Button>
               )}
             </div>
-          </div>
+          </section>
         ) : (
-          <div className="space-y-2">
+          <section className="space-y-3">
+            <div className="space-y-1 text-sm">
+              <h3 className="font-semibold text-fg">{words.chooseAgent}</h3>
+              <p className="text-fg-muted">{words.chooseAgentHelp}</p>
+            </div>
             {!serverDone && props.moduleStatus && (
               <p className="text-xs text-fg-muted">{props.moduleStatus}</p>
             )}
             {props.agents ?? <p className="py-1.5 text-xs text-fg-muted">{S.common.loading}</p>}
-            <Button size="sm" onClick={() => setStep(1)}>
+            <Button size="sm" variant="link" onClick={() => setStep(1)}>
               {words.backToServer}
             </Button>
-          </div>
+          </section>
         )}
       </div>
     </Modal>

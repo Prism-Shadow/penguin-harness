@@ -81,8 +81,13 @@ describe("the market card's install action", () => {
       expect(singleStates(seen.texts())).toBe(true);
 
       await click(action()!);
-      expect(topDialog().textContent).toContain(en.plugins.installModel.flowTitle("Charts"));
-      expect(button(`${en.skills.install} ${AGENT_ID}`).disabled).toBe(false);
+      expect(topDialog().getAttribute("aria-label")).toBe(
+        en.plugins.installModel.flowTitle("Charts"),
+      );
+      expect(button(en.plugins.installModel.addToAgent("Helper")).disabled).toBe(false);
+      await click(
+        topDialog().querySelector<HTMLInputElement>('input[value="gpu1/' + AGENT_ID + '"]')!,
+      );
       expect(
         button(`${en.skills.uninstall} ${AGENT_ID} ${en.chat.machineTag("gpu-box")}`),
       ).toBeDefined();
@@ -97,7 +102,7 @@ describe("the market card's install action", () => {
     const seen = watchText(ACTION);
 
     await click(action()!);
-    await click(button(`${en.skills.install} ${AGENT_ID}`));
+    await click(button(en.plugins.installModel.addToAgent("Helper")));
     await waitFor(() => action()?.textContent === ON_ONE, 40);
     expect(oneLine(action()!)).toBe(true);
     expect(seen.texts()).toEqual([INSTALL, ON_ONE]);

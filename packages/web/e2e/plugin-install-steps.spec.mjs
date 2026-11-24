@@ -60,7 +60,13 @@ test("a server install and two Agent installs can be managed independently from 
   expect(await holders()).toEqual([]);
   await forward.click();
   for (const id of [helper, "default_agent"]) {
-    await flow.getByRole("button", { name: "Install " + id, exact: true }).click();
+    await flow.locator('input[type="radio"][value="' + id + '"]').check();
+    await flow
+      .getByRole("button", {
+        name: id === helper ? "Add to Step helper" : "Add to General Agent",
+        exact: true,
+      })
+      .click();
     await expect(flow.getByRole("button", { name: "Uninstall " + id, exact: true })).toBeVisible();
   }
   await expect.poll(holders).toEqual(["default_agent", helper]);
@@ -104,6 +110,7 @@ test("a server install and two Agent installs can be managed independently from 
   await page.getByRole("button", { name: "List view", exact: true }).click();
   await card.locator(".showcase-card-open").click();
   await page.getByRole("button", { name: "Install on Agent " + name, exact: true }).click();
+  await flow.locator('input[type="radio"][value="' + helper + '"]').check();
   await flow.getByRole("button", { name: "Uninstall " + helper, exact: true }).click();
   const confirmAgent = page.getByRole("dialog", { name: "Uninstall " + title, exact: true });
   await confirmAgent.getByRole("button", { name: "Cancel", exact: true }).click();

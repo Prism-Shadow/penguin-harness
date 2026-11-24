@@ -3285,10 +3285,21 @@ export const en: Strings = {
       flowTitle: (name: string) => `Install ${name}`,
       backToServer: "Back to server",
       toAgents: "Continue to Agents",
-      stepServer: "Install on server",
-      stepAgents: "Install on Agents",
-      stepOf: (step: number, steps: number) => `Step ${step} of ${steps}`,
-      stepDone: "Done",
+      prepare: "Prepare plugin",
+      projectService: "Enable the service for this project",
+      ready: "Ready on this server",
+      installDetails: "How this affects the server",
+      chooseAgent: "Choose an agent",
+      chooseAgentHelp: "Choose who will use this plugin. You can add it to more than one agent.",
+      prepareForAgents: "Install one copy on this server. Then choose which agents can use it.",
+      prepareService:
+        "Install this service on the server. This plugin works without adding it to an agent.",
+      projectServiceOff: "This project’s service is off. You can still add the plugin to an agent.",
+      projectReady: "The plugin’s service is enabled for this project.",
+      projectServiceHelp:
+        "The plugin is already on this server. Enable its service for this project.",
+      addToAgent: (name: string) => `Add to ${name}`,
+      addedToAgent: "Added",
       serverDone: (name: string) => `${name} is on the server, shared by every Project.`,
       askBody:
         "It is not on the server yet: ask an admin to install it there; once it is, install it on your Agents.",
@@ -3296,7 +3307,6 @@ export const en: Strings = {
       asked:
         "An admin has been asked to install it. Once it is on the server, come back here to install it on your Agents.",
       finish: "Done",
-      onServer: "Uninstalling it from the server uninstalls it from every Agent.",
       checking: "Checking the plugin source…",
       installing: "Installing…",
       fromOffline: "Installing from the offline archive…",

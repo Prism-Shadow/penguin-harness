@@ -10,9 +10,7 @@
  *   button hands the install to the page; while it runs the step shows its words and a bar; a
  *   failure stays on the step with the next steps (Plugin Sources, a zip import, dismiss).
  * - Given the same plugin, a member's flow ends at step 1: it asks an admin and says it did.
- * - Given a plugin on the server, the flow opens on step 2 of 2, the Agents, saying that
- *   uninstalling from the server uninstalls from every Agent; Install on an Agent hands it to the
- *   page. Uninstalling from the server is the detail's, an admin's.
+ * - A prepared plugin opens at agent selection. Only the chosen copy is added or removed.
  * - Given a module the build ships that another Project's shared table lists, the detail's
  *   Disable server module is held and described by the shared tag and its hint.
  */
@@ -122,12 +120,12 @@ describe("the install control under way", () => {
 });
 
 describe("the flow of a plugin not on the server", () => {
-  it("opens an admin's on step 1 of 2, and hands the server install to the page", async () => {
+  it("explains the shared server copy before starting an install", async () => {
     const onInstallServer = vi.fn();
     await show(props({ onInstallServer }));
     await click(installControl(en.skills.install)!);
-    expect(dialog()!.textContent).toContain("1/2");
-    expect(dialog()!.textContent).toContain(en.plugins.applyConfirmInstallBody("computer-use"));
+    expect(dialog()!.querySelector('[role="progressbar"]')).toBeNull();
+    expect(dialog()!.textContent).toContain(words.prepareForAgents);
     await click(buttonWithText(words.installServer)!);
     expect(onInstallServer).toHaveBeenCalledOnce();
   });
@@ -170,13 +168,13 @@ describe("the flow of a plugin not on the server", () => {
 });
 
 describe("a plugin on the server", () => {
-  it("opens the flow on its Agents, step 2 of 2", async () => {
+  it("opens on its agents and only adds the selected copy", async () => {
     const p = props({ row: installedRow, status: "installed", usage: { usedBy: [], behind: [] } });
     await show(p);
     await click(installControl(en.skills.install)!);
-    expect(dialog()!.textContent).toContain("2/2");
-    expect(dialog()!.textContent).toContain(words.onServer);
-    await click(buttonNamed(`${en.skills.install} helper`)!);
+    expect(dialog()!.textContent).toContain(words.chooseAgentHelp);
+    expect(dialog()!.querySelector('input[value="helper"]:checked')).not.toBeNull();
+    await click(buttonNamed(words.addToAgent("helper"))!);
     expect(p.onToggleInstall).toHaveBeenCalledWith("helper", LIBRARY, true);
   });
 
@@ -197,7 +195,7 @@ describe("a plugin on the server", () => {
       expect(buttonWithText(words.uninstallServer)).toBeDefined();
       expect(onServerUninstall).not.toHaveBeenCalled();
       await click(buttonWithText(words.toAgents)!);
-      expect(buttonNamed(`${en.skills.install} helper`)).toBeDefined();
+      expect(buttonNamed(words.addToAgent("helper"))).toBeDefined();
       expect(p.onToggleInstall).not.toHaveBeenCalled();
       await click(buttonWithText(words.backToServer)!);
       await click(buttonWithText(words.uninstallServer)!);
@@ -235,15 +233,15 @@ describe("a shipped Skill with a Project server module", () => {
       }),
     );
     await click(installControl(en.skills.install)!);
-    expect(dialog()!.textContent).toContain("1/2");
+    expect(dialog()!.querySelector('[role="progressbar"]')).toBeNull();
     await click(buttonWithText(words.enableModule, dialog()!)!);
     expect(apply).toHaveBeenCalledOnce();
   });
   it("keeps the member's Agent install and shows that the Project module is off", async () => {
     await show(props({ row: row("none"), isAdmin: false }));
     await click(installControl(en.skills.install)!);
-    expect(dialog()!.textContent).toContain(en.plugins.statusHint.moduleAvailable);
-    expect(buttonNamed(en.skills.install + " helper")).toBeDefined();
+    expect(dialog()!.textContent).toContain(words.projectServiceOff);
+    expect(buttonNamed(words.addToAgent("helper"))).toBeDefined();
     await click(buttonWithText(words.backToServer)!);
     expect(buttonWithText(words.enableModule)).toBeUndefined();
   });
@@ -253,7 +251,7 @@ describe("a shipped Skill with a Project server module", () => {
     await show(props({ row: failed, status: "failed" }));
     await click(installControl(en.plugins.status.failed)!);
     expect(dialog()!.textContent).toContain("The module did not load.");
-    expect(dialog()!.textContent).toContain("1/2");
+    expect(dialog()!.querySelector('[role="progressbar"]')).toBeNull();
   });
 });
 

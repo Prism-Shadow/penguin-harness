@@ -75,7 +75,6 @@ import {
   EntityCardAction,
   ICONS,
   MetaLine,
-  Pill,
   Skeleton,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -285,8 +284,14 @@ export function PluginCard(props: PluginCardProps) {
   };
   // The install flow: the server first when the plugin is not there, then the Agents.
   const [installOpen, setInstallOpen] = useState(false);
+  const [selectedTargetKey, setSelectedTargetKey] = useState<string | null>(null);
   // The Create agent dialog over the flow's Agent list, opened by its first row.
   const [blankOpen, setBlankOpen] = useState(false);
+  const closeInstall = () => {
+    setInstallOpen(false);
+    setSelectedTargetKey(null);
+    setBlankOpen(false);
+  };
   // Agents pending an update confirmation (null = none): an update is an overwriting reinstall,
   // so it is confirmed against the list of parts it rewrites before it runs.
   const [pendingUpdate, setPendingUpdate] = useState<string[] | null>(null);
@@ -320,6 +325,10 @@ export function PluginCard(props: PluginCardProps) {
   const title = rowTitle(row, locale);
   const behind = usage?.behind ?? [];
   const currentId = props.currentAgentId;
+  const selectedTarget =
+    targets.find((target) => target.key === selectedTargetKey) ??
+    targets.find((target) => target.key === currentId) ??
+    targets[0];
   const onAgent =
     currentId !== undefined &&
     plugin !== undefined &&
@@ -639,9 +648,24 @@ export function PluginCard(props: PluginCardProps) {
       {installOpen && (
         <InstallFlow
           title={title}
+          icon={
+            <SkillTile
+              icon={rowIcon(row)}
+              name={row.name}
+              fallback={ICONS.puzzle}
+              size={44}
+              glyph={24}
+            />
+          }
           steps={agentContent ? 2 : 1}
           server={serverStep}
-          {...(shippedHybrid ? { agentPackageAvailable: true, moduleStatus: hint } : {})}
+          {...(shippedHybrid
+            ? {
+                agentPackageAvailable: true,
+                moduleStatus:
+                  row.module?.state === "none" ? S.plugins.installModel.projectServiceOff : hint,
+              }
+            : {})}
           {...(row.origin?.label ? { machineLabel: row.origin.label } : {})}
           {...(onServer && props.isAdmin && props.onServerUninstall
             ? { onRemoveServer: props.onServerUninstall }
@@ -663,17 +687,17 @@ export function PluginCard(props: PluginCardProps) {
           agents={
             plugin === undefined ? null : (
               <>
-                {/* How the Agents' copies relate to the server, said before any click. */}
-                {!builtIn && (
-                  <p className="text-xs text-fg-muted">{S.plugins.installModel.onServer}</p>
+                {props.blankAgent != null && (
+                  <BlankAgentRow
+                    disabled={props.projectId === null}
+                    onOpen={() => setBlankOpen(true)}
+                  />
                 )}
-                <div className="space-y-1">
-                  {props.blankAgent != null && (
-                    <BlankAgentRow
-                      disabled={props.projectId === null}
-                      onOpen={() => setBlankOpen(true)}
-                    />
-                  )}
+                <div
+                  role="radiogroup"
+                  aria-label={S.plugins.installModel.chooseAgent}
+                  className="divide-y divide-line rounded-lg border border-line"
+                >
                   {targets.length === 0 && (
                     <p className="py-1.5 text-xs text-gray-400">{S.common.loading}</p>
                   )}
@@ -681,6 +705,11 @@ export function PluginCard(props: PluginCardProps) {
                     <InstallRow
                       key={t.key}
                       agentId={t.agent.agentId}
+                      radioGroup={sharedId}
+                      targetKey={t.key}
+                      selected={selectedTarget?.key === t.key}
+                      onSelect={() => setSelectedTargetKey(t.key)}
+                      onDone={closeInstall}
                       name={agentDisplayName(t.agent)}
                       avatarSrc={avatarSrc(t.agent.agentId, t.machine?.machineId ?? null)}
                       machine={t.machine?.label ?? null}
@@ -706,10 +735,7 @@ export function PluginCard(props: PluginCardProps) {
               </>
             )
           }
-          onClose={() => {
-            setInstallOpen(false);
-            setBlankOpen(false);
-          }}
+          onClose={closeInstall}
         />
       )}
       {/* A sibling of the list's dialog rather than inside it, so the list's panel never handles
@@ -1014,6 +1040,11 @@ export interface RowHold {
  * Install, held, until they are answered — never "not installed" on the strength of no answer.
  */
 export function InstallRow({
+  targetKey,
+  radioGroup,
+  selected,
+  onSelect,
+  onDone,
   agentId,
   name,
   avatarSrc,
@@ -1027,6 +1058,11 @@ export function InstallRow({
   onUpdate,
   onSetUp,
 }: {
+  targetKey: string;
+  radioGroup: string;
+  selected: boolean;
+  onSelect: () => void;
+  onDone: () => void;
   agentId: string;
   name: string;
   /** The Agent's own picture, when it has one (lib/agent-avatar.ts). */
@@ -1052,80 +1088,94 @@ export function InstallRow({
       ? {}
       : { disabled: true, title: held.reason, "data-tooltip-extra": true as const };
   return (
-    <div
-      className={`flex flex-wrap items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60 ${held?.off === true ? "opacity-60" : ""}`}
-    >
-      <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" src={avatarSrc} />
-      <span className="flex min-w-0 flex-1 items-center gap-1.5">
-        <span
-          className="min-w-0 truncate text-sm"
-          data-tooltip={agentId}
-          data-tooltip-extra
-          data-tooltip-content="text"
-        >
-          {name}
-        </span>
+    <div className={held?.off ? "opacity-60" : undefined}>
+      <label className="flex cursor-pointer items-center gap-2 px-3 py-2.5 text-sm text-fg hover:bg-surface-2">
+        <input
+          type="radio"
+          name={radioGroup}
+          value={targetKey}
+          checked={selected}
+          onChange={onSelect}
+          className="shrink-0 accent-current"
+        />
+        <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" src={avatarSrc} />
+        <span className="min-w-0 flex-1 break-words">{name}</span>
         {machine !== null && (
-          <span className="shrink-0 font-mono text-xs text-gray-400 dark:text-gray-500">
+          <span className="max-w-[35%] break-words text-xs text-fg-muted">
             {S.chat.machineTag(machine)}
           </span>
         )}
-      </span>
-      {mcp !== null && (
-        <McpServerMarks
-          keys={mcp.missingKeys}
-          where={isOwner ? S.plugins.mcpSetUpWhere : S.plugins.mcpSetUpByOwner}
-          signIn={mcp.signIn}
-        />
+        {installed && (
+          <span className="text-xs text-fg-muted">{S.plugins.installModel.addedToAgent}</span>
+        )}
+      </label>
+      {selected && (
+        <div className="flex flex-wrap items-center justify-end gap-2 px-3 pb-2.5">
+          {held && <span className="mr-auto text-xs text-fg-muted">{held.reason}</span>}
+          {mcp !== null && (
+            <McpServerMarks
+              keys={mcp.missingKeys}
+              where={isOwner ? S.plugins.mcpSetUpWhere : S.plugins.mcpSetUpByOwner}
+              signIn={mcp.signIn}
+            />
+          )}
+          {mcp !== null && isOwner && mcp.missingKeys.length > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0"
+              aria-label={`${S.plugins.setUp} ${who}`}
+              onClick={onSetUp}
+              {...hold}
+            >
+              {S.plugins.setUp}
+            </Button>
+          )}
+          {installed && outdated && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="shrink-0"
+              aria-label={`${S.skills.updateAction} ${who}`}
+              onClick={onUpdate}
+              {...hold}
+            >
+              {S.skills.updateAction}
+            </Button>
+          )}
+          {installed && isOwner ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0"
+              aria-label={`${S.skills.uninstall} ${who}`}
+              onClick={() => onToggle(false)}
+              {...hold}
+            >
+              {S.skills.uninstall}
+            </Button>
+          ) : !installed ? (
+            <Button
+              size="sm"
+              variant="primary"
+              className="shrink-0"
+              aria-label={S.plugins.installModel.addToAgent(
+                machine === null ? name : `${name} ${S.chat.machineTag(machine)}`,
+              )}
+              onClick={() => onToggle(true)}
+              {...hold}
+              {...(held?.busy === true ? { "aria-busy": true } : {})}
+            >
+              {S.plugins.installModel.addToAgent(name)}
+            </Button>
+          ) : null}
+          {installed && (
+            <Button variant="primary" size="sm" onClick={onDone}>
+              {S.plugins.installModel.finish}
+            </Button>
+          )}
+        </div>
       )}
-      {mcp !== null && isOwner && mcp.missingKeys.length > 0 && (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="shrink-0"
-          aria-label={`${S.plugins.setUp} ${who}`}
-          onClick={onSetUp}
-          {...hold}
-        >
-          {S.plugins.setUp}
-        </Button>
-      )}
-      {installed && outdated && (
-        <Button
-          size="sm"
-          variant="secondary"
-          className="shrink-0"
-          aria-label={`${S.skills.updateAction} ${who}`}
-          onClick={onUpdate}
-          {...hold}
-        >
-          {S.skills.updateAction}
-        </Button>
-      )}
-      {installed && <Pill tone="success">{S.skills.installed}</Pill>}
-      {installed && isOwner ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="shrink-0"
-          aria-label={`${S.skills.uninstall} ${who}`}
-          onClick={() => onToggle(false)}
-          {...hold}
-        >
-          {S.skills.uninstall}
-        </Button>
-      ) : !installed ? (
-        <Button
-          size="sm"
-          className="shrink-0"
-          aria-label={`${S.skills.install} ${who}`}
-          onClick={() => onToggle(true)}
-          {...hold}
-          {...(held?.busy === true ? { "aria-busy": true } : {})}
-        >
-          {S.skills.install}
-        </Button>
-      ) : null}
     </div>
   );
 }
