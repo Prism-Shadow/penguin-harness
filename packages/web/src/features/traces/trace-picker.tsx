@@ -145,7 +145,7 @@ export function TracePicker<K extends string | number>({
         </Button>
       }
     >
-      <div role="dialog" aria-label={title}>
+      <div role="dialog" aria-label={title} className="bg-overlay">
         <div className="flex items-center gap-2 border-b border-line-muted px-3 pb-1.5">
           <span className="text-xs font-semibold whitespace-nowrap">{title}</span>
           <span className="truncate text-xs text-fg-muted">{count}</span>
