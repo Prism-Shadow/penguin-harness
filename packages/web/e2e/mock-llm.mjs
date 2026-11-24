@@ -558,6 +558,67 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    if (flat.includes("activity clock fixture") && !isTitle) {
+      const scenario = flat.includes("activity clock fixture tool")
+        ? "tool"
+        : flat.includes("activity clock fixture thinking")
+          ? "thinking"
+          : "text";
+      const answer = (index) => {
+        const chunk = (text) =>
+          sse(res, "content_block_delta", {
+            type: "content_block_delta",
+            index,
+            delta: { type: "text_delta", text },
+          });
+        sse(res, "content_block_start", {
+          type: "content_block_start",
+          index,
+          content_block: { type: "text", text: "" },
+        });
+        let n = 0;
+        const next = () => {
+          chunk(`answer-part-${++n} `);
+          if (n < 16) setTimeout(next, 180);
+          else {
+            sse(res, "content_block_stop", { type: "content_block_stop", index });
+            messageStop(res, "end_turn", 24);
+          }
+        };
+        next();
+      };
+      if (scenario === "text" || hasToolResult) {
+        answer(0);
+      } else {
+        sse(res, "content_block_start", {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "thinking", thinking: "" },
+        });
+        sse(res, "content_block_delta", {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "thinking_delta", thinking: "Reviewing the notes." },
+        });
+        setTimeout(() => {
+          sse(res, "content_block_delta", {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "signature_delta", signature: "sig_activity_clock" },
+          });
+          sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });
+          if (scenario === "thinking") answer(1);
+          else {
+            block(res, 1, { type: "tool_use", id: "clock_tool", name: "exec_command", input: {} }, [
+              { type: "input_json_delta", partial_json: '{"cmd":"pwd"}' },
+            ]);
+            messageStop(res, "tool_use", 12);
+          }
+        }, 700);
+      }
+      return;
+    }
+
     // Ten tool calls interleaved with thinking exercise a saved two-digit tool count.
     if (flat.includes("ten-step work history") && !isTitle) {
       const path = "资料/每周 总结/评审 记录.md";

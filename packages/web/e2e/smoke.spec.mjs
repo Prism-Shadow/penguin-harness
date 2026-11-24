@@ -201,13 +201,14 @@ test("compact activity follows two approvals while preserving the first reader's
   await expect(rows.first()).not.toContainText("I will check");
 
   const total = group.locator("[data-step-elapsed] .font-mono");
-  const runningTime = await total.innerText();
-  await expect(total).not.toHaveText(runningTime);
+  const waitingTime = await total.innerText();
   const reviewer = await context.newPage();
   await reviewer.goto(`/chat/${sessionId}`);
   const reviewing = activityRoot(reviewer);
   await rows.locator("button[aria-expanded]").first().click();
   await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
+
+  await expect(total).toHaveText(waitingTime);
 
   // The second reader approves the same Session while the first keeps the original thinking open.
   await openSteps(reviewing);
@@ -226,9 +227,59 @@ test("compact activity follows two approvals while preserving the first reader's
   await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
   await expect(count).toHaveText("2 步");
   await expect(rows).toHaveCount(0);
-  await expect(reviewing.locator("[data-step-terminal] [data-slot=label]")).toHaveText("已完成");
+  await expect(reviewing.locator("[data-step-terminal] [data-slot=label]")).toHaveText("运行完毕");
   await reviewer.close();
 });
+
+for (const mode of ["standard", "expanded", "compact"]) {
+  for (const scenario of ["text", "thinking", "tool"]) {
+    test(`${mode}: ${scenario} work time during a long final answer and after reload`, async ({
+      page,
+    }) => {
+      await createSession(page, `clock${mode}${scenario}`, "allow-all");
+      await setAccountPrefs(page.request, { activityDisplayMode: mode });
+      await page.reload();
+      await send(page, `activity clock fixture ${scenario}`);
+      const group = activityRoot(page);
+      const header = group.locator("[data-group-header]");
+      const clock = header.locator("[data-step-elapsed] [data-slot=detail]");
+      const count = header.locator("[data-step-count]");
+      if (scenario !== "text") {
+        await expect(header).toBeVisible();
+        await expect(header.locator("[data-slot=label]")).toHaveText(
+          mode === "compact" ? "思考" : "运行中",
+        );
+        await expect(count).toHaveCount(0);
+      }
+      const reply = page
+        .locator(".ui-stream.md-body")
+        .filter({ hasText: /answer-part-1 / })
+        .first();
+      await expect(reply).toContainText("answer-part-2 ");
+      await expect(reply).not.toContainText("answer-part-16");
+      if (scenario === "text") {
+        await expect(group).toHaveCount(0);
+      } else if (scenario === "tool") {
+        await expect(count).toHaveText("1 步");
+      } else {
+        await expect(count).toHaveCount(0);
+      }
+      const frozen = scenario === "text" ? null : await clock.innerText();
+      await expect(reply).toContainText("answer-part-10 ");
+      if (frozen !== null) await expect(clock).toHaveText(frozen);
+      await expect(reply).toContainText("answer-part-16");
+      if (frozen !== null) await expect(header.locator("[data-slot=label]")).toHaveText("运行完毕");
+      await page.reload();
+      await expect(reply).toContainText("answer-part-16");
+      if (frozen === null) await expect(group).toHaveCount(0);
+      else {
+        await expect(clock).toHaveText(frozen);
+        await expect(header.locator("[data-slot=label]")).toHaveText("运行完毕");
+        await expect(count).toHaveCount(scenario === "tool" ? 1 : 0);
+      }
+    });
+  }
+}
 
 test("the live tool count and clock follow the caption in each display mode", async ({ page }) => {
   const sessionId = await createSession(page, "smokeliveworkalignment", "always-ask", "modern");
@@ -315,7 +366,7 @@ test("reopened ten-step history keeps its compact header together on desktop and
       await expect(group).toHaveAttribute("data-step-view", activityDisplayMode);
       await expect(head).toHaveAttribute("data-step-terminal", "true");
       await expect(head.locator('[data-slot="label"]')).toHaveText(
-        lang === "zh" ? "已完成" : "Done",
+        lang === "zh" ? "运行完毕" : "Done",
       );
       await expect(head).not.toContainText("read_file");
       await expect(count).toHaveText(n);

@@ -1,12 +1,3 @@
-/**
- * work-summary.ts unit tests: the group header duration is the group's real wall-clock
- * span — earliest segment start → latest segment end — including approval waits and the
- * gaps between steps (the header answers "how long did this group take"; per-item cards
- * keep the fine-grained settled durations). Parallel work counts once by construction.
- * Items missing a start point fall back to direct accumulation on top of the span; the
- * returned startMs is the earliest start stamp of ANY item (settled or not) — the anchor
- * the header ticks from while the group is still running.
- */
 import { describe, expect, it } from "vitest";
 import {
   partialThinking,
@@ -113,7 +104,7 @@ describe("summarizeWork", () => {
   it("parallel work counts once: 15-way parallel over 9 minutes reports 9 minutes", () => {
     const nine = 9 * 60_000;
     const items = Array.from({ length: 15 }, () => tool({ start: 0, durationMs: nine }));
-    expect(summarizeWork(items)).toEqual({ steps: 15, durationMs: nine, startMs: 0 });
+    expect(summarizeWork(items)).toEqual({ steps: 15, durationMs: nine });
   });
 
   it("staggered parallel tools span first start → last end", () => {
@@ -122,31 +113,30 @@ describe("summarizeWork", () => {
       tool({ start: 10_000, durationMs: 60_000 }),
       tool({ start: 20_000, durationMs: 70_000 }),
     ];
-    expect(summarizeWork(items)).toEqual({ steps: 3, durationMs: 90_000, startMs: 0 });
+    expect(summarizeWork(items)).toEqual({ steps: 3, durationMs: 90_000 });
   });
 
-  it("gaps between sequential steps count toward the span", () => {
+  it("skips gaps between sequential steps", () => {
     const items = [
       tool({ start: 0, durationMs: 10_000 }),
       tool({ start: 15_000, durationMs: 10_000 }),
     ];
-    // [0,10s] then a 5s gap then [15s,25s]: the group took 25s of wall time.
-    expect(summarizeWork(items)).toEqual({ steps: 2, durationMs: 25_000, startMs: 0 });
+    // [0,10s] and [15s,25s] cover 20s of work.
+    expect(summarizeWork(items)).toEqual({ steps: 2, durationMs: 20_000 });
   });
 
   it("thinking and tools share the same axis; thinking does not count as a step", () => {
     const items = [thinking(0, 5_000), tool({ start: 5_000, durationMs: 10_000 })];
-    expect(summarizeWork(items)).toEqual({ steps: 1, durationMs: 15_000, startMs: 0 });
+    expect(summarizeWork(items)).toEqual({ steps: 1, durationMs: 15_000 });
   });
 
-  it("approval waits are included: the span runs from the call start, not the approval", () => {
+  it("excludes the approval wait and merges the overlapping executions", () => {
     const items = [
       // Call ready at 0, human approves at 100s, execution 100-105s.
       tool({ start: 0, approvalAt: 100_000, durationMs: 5_000 }),
       tool({ start: 102_000, durationMs: 8_000 }),
     ];
-    // Span 0 → 110s: the 100s spent waiting for the human is part of how long the group took.
-    expect(summarizeWork(items)).toEqual({ steps: 2, durationMs: 110_000, startMs: 0 });
+    expect(summarizeWork(items)).toEqual({ steps: 2, durationMs: 10_000 });
   });
 
   it("argument generation anchors the start; execution end anchors the end", () => {
@@ -156,19 +146,34 @@ describe("summarizeWork", () => {
       // B: execution 110-120s.
       tool({ start: 110_000, durationMs: 10_000 }),
     ];
-    expect(summarizeWork(items)).toEqual({ steps: 2, durationMs: 120_000, startMs: 0 });
+    expect(summarizeWork(items)).toEqual({ steps: 2, durationMs: 30_000 });
   });
 
-  it("items missing a start point fall back to direct accumulation; items without a duration only count as steps", () => {
-    const items = [tool({ start: 0, durationMs: 10_000 }), tool({ durationMs: 7_000 }), tool()];
-    expect(summarizeWork(items)).toEqual({ steps: 3, durationMs: 17_000, startMs: 0 });
+  it("uses only the observed union before the earliest active parallel interval", () => {
+    const active = {
+      ...tool({ start: 8000, approvalAt: 8500 }),
+      decision: "allow",
+      outputComplete: false,
+    } as ChatItem;
+    const thought = { ...thinking(9000), streaming: true } as ChatItem;
+    expect(summarizeWork([thinking(1000, 1000), thinking(8000, 1200), active, thought])).toEqual({
+      steps: 1,
+      startMs: 7000,
+    });
   });
 
-  it("a still-streaming first item already anchors startMs (live tick before anything settles)", () => {
-    expect(summarizeWork([thinking(1_000)])).toEqual({ steps: 0, durationMs: 0, startMs: 1_000 });
+  it("freezes completed argument generation while approval is pending", () => {
+    const pending = { ...tool({ argStart: 1000, start: 2500 }), outputComplete: false };
+    expect(summarizeWork([pending])).toEqual({ steps: 1, durationMs: 1500 });
   });
 
-  it("no timestamps at all: no startMs key", () => {
-    expect(summarizeWork([tool({ durationMs: 7_000 })])).toEqual({ steps: 1, durationMs: 7_000 });
+  it("does not time an output-only fragment, an undated thought, or a pure answer", () => {
+    const model = createStreamModel();
+    pushMessage(model, assistantText("Answer only"));
+    pushMessage(
+      model,
+      toolCallOutput({ output: "orphan", toolCallId: "lost", status: "completed" }),
+    );
+    expect(summarizeWork([...model.items, thinking()])).toEqual({ steps: 0 });
   });
 });

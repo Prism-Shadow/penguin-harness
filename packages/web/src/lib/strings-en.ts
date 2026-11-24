@@ -4950,7 +4950,7 @@ Scenarios:
     workFailed: "Run failed",
     workStopped: "Stopped",
     workRetryStep: (n: number) => `Retry #${n}`,
-    workElapsed: "Total time",
+    workElapsed: "Activity time",
     workGroupSteps: (n: number) => `${n} ${n === 1 ? "step" : "steps"}`,
     approvalWaiting: "awaiting approval",
     copyCode: "Copy code",

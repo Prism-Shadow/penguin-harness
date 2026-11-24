@@ -411,6 +411,7 @@ describe("translateEvents", () => {
 
     // The complete tool call carries the original argument text.
     const tc = messages.find((m) => typeOf(m) === "tool_call")!.payload as ToolCallPayload;
+    expect(tc.started_at).toBe(messages[0]!.timestamp);
     expect(tc.name).toBe("exec_command");
     expect(tc.tool_call_id).toBe("c1");
     expect(tc.arguments).toBe('{"cmd":"ls -la"}');
@@ -558,8 +559,10 @@ describe("translateEvents", () => {
     expect(types.indexOf("thinking")).toBeLessThan(types.indexOf("partial_text"));
     expect(types.indexOf("text")).toBeLessThan(types.indexOf("partial_tool_call"));
     const think = messages.find((m) => typeOf(m) === "thinking")!.payload as ThinkingPayload;
+    expect(think.started_at).toBe(messages[0]!.timestamp);
     expect(think.thinking).toBe("I should run ls");
     const txt = messages.find((m) => typeOf(m) === "text")!.payload as TextPayload;
+    expect(txt).not.toHaveProperty("started_at");
     expect(txt.text).toBe("Running it.");
   });
 
@@ -637,6 +640,7 @@ describe("translateEvents", () => {
       ...text(["answer"]),
       stop(),
     ]);
+    expect(messages[0]!.payload).not.toHaveProperty("started_at");
     expect(messages.map(typeOf)).toEqual([
       "thinking",
       "partial_text",
@@ -745,6 +749,7 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
       "thinking",
     ]);
     const complete = out.find((m) => typeOf(m) === "thinking")!.payload as ThinkingPayload;
+    expect(complete.started_at).toBe(out[0]!.timestamp);
     expect(complete.thinking).toBe("half a thought");
   });
 

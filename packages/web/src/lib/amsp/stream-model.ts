@@ -212,16 +212,9 @@ export interface BodyLoad {
   cause?: unknown;
 }
 
-/** One clock per Task; its work groups share the live anchor and the settled trace span. */
-interface WorkTiming {
-  startMs: number;
-  durationMs?: number;
-}
-
 interface WorkStep {
-  workTiming?: WorkTiming;
-  /** Only the final work step of a settled Task carries its outcome and trace duration. */
-  workOutcome?: { state: "done" | "failed" | "stopped"; durationMs: number };
+  /** Only the final work step of a settled Task carries its outcome. */
+  workOutcome?: { state: "done" | "failed" | "stopped" };
 }
 
 export interface ThinkingItem extends WorkStep {
@@ -229,7 +222,7 @@ export interface ThinkingItem extends WorkStep {
   id: number;
   thinking: string;
   streaming: boolean;
-  /** Start timestamp in milliseconds (the partial start's message time; approximated by the previous message's time when history has no fragments). */
+  /** Start timestamp in milliseconds (the first fragment's timestamp, also carried by the complete record when known). */
   startedAtMs?: number;
   /** Thinking duration (settled when the complete message arrives: message time - start time). */
   durationMs?: number;
@@ -288,7 +281,7 @@ export interface ToolCallItem extends WorkStep {
   /**
    * Argument generation start (the partial_tool_call start's message time):
    * the rolling timing baseline during streamed argument generation.
-   * Approximated by the previous message's time when history rebuild has no fragments (same convention as thinking).
+   * The complete call carries this start when the provider streamed its arguments.
    */
   argStartedAtMs?: number;
   /** Total tool duration (settled when the tool_call_output complete message arrives) = the argument-generation segment + the execution segment, excluding the approval wait (see settleToolDuration). */
@@ -674,7 +667,7 @@ export interface StreamModel {
   pendingDecisions: Map<string, ApprovalDecision>;
   /** Approval timestamps that arrived before their tool card (backfilled into approvalAtMs when the card is created, used to deduct the approval duration). */
   pendingDecisionTs: Map<string, number>;
-  /** Timestamp of the most recent message (used to approximate the start time when history's thinking has no fragments). */
+  /** Timestamp of the most recent complete message or event (used by compaction history). */
   lastTsMs: number;
   /**
    * The millisecond time of the main session's currently unclosed Request's
@@ -720,8 +713,7 @@ export interface StreamModel {
    * from the server's own clock rather than the Trace's tail so that an event
    * still in flight is counted too.
    */
-  readonly taskStartLocalMs: number;
-  taskClock: WorkTiming;
+  taskStartLocalMs: number;
   /** The Task's first message timestamp, in SERVER time: both the settled duration and the back-dated live anchor measure from it. */
   taskFirstTsMs: number;
   /**
@@ -812,10 +804,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     taskOpen: false,
     taskFirstItemId: 1,
     taskOutcome: null,
-    taskClock: { startMs: 0 },
-    get taskStartLocalMs() {
-      return this.taskClock.startMs;
-    },
+    taskStartLocalMs: 0,
     taskFirstTsMs: 0,
     taskLastTsMs: 0,
     taskLastReqEndMs: null,
@@ -889,7 +878,7 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
       const p = msg.payload as { type?: string; role?: string; text?: string; thinking?: string };
       // History rebuild has no fragments: the previous message's time approximates the
       // section's start (the ThinkingItem convention), this message's own time settles it.
-      // Read before advanceLastTs below, exactly as the ordinary complete path reads it.
+      // Read before advanceLastTs below.
       const startMs = model.lastTsMs > 0 ? model.lastTsMs : undefined;
       if (p.type === "text" && p.role === "assistant" && p.text) {
         appendCompactionSummaryText(model, p.text, startMs);
@@ -902,9 +891,7 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
     if (isPartialPayload(msg.payload)) {
       touchTask(model, msg.timestamp);
       handlePartial(model, msg.payload, tsOf(msg.timestamp));
-      // lastTsMs only advances from complete messages/events: an orphan
-      // delta during a mid-stream join shouldn't push "the previous
-      // message's time" up to just before a complete thinking message, or the approximated historical duration would collapse to ~0ms.
+      // Only complete records and events advance the history cursor.
       return;
     }
     handleComplete(
@@ -1062,7 +1049,8 @@ export function hasPendingWithinOrigin(
 }
 
 /** ISO timestamp → milliseconds (returns undefined if invalid). */
-function tsOf(timestamp: string): number | undefined {
+function tsOf(timestamp: string | undefined): number | undefined {
+  if (!timestamp) return undefined;
   const ms = Date.parse(timestamp);
   return Number.isFinite(ms) ? ms : undefined;
 }
@@ -1120,7 +1108,7 @@ export function pushMessages(
   if (model.taskOpen) {
     const tracedSpan = model.taskLastTsMs - model.taskFirstTsMs;
     const serverSpan = serverNowMs === null ? 0 : serverNowMs - model.taskFirstTsMs;
-    model.taskClock.startMs = nowMs - Math.max(0, tracedSpan, serverSpan);
+    model.taskStartLocalMs = nowMs - Math.max(0, tracedSpan, serverSpan);
   }
 }
 
@@ -1214,7 +1202,7 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
     provider: model.contextModel.provider,
     modelId: model.contextModel.modelId,
   };
-  model.taskClock = { startMs: nowMs };
+  model.taskStartLocalMs = nowMs;
   const ts = Date.parse(timestamp);
   model.taskFirstTsMs = Number.isFinite(ts) ? ts : nowMs;
   model.taskLastTsMs = model.taskFirstTsMs;
@@ -1248,7 +1236,6 @@ function finalizeOpenTask(model: StreamModel): void {
   // latency folded into it.
   const endMs = model.taskLastReqEndMs ?? model.taskLastTsMs;
   const elapsed = Math.max(0, endMs - model.taskFirstTsMs);
-  model.taskClock.durationMs = elapsed;
   if (model.taskOutcome) {
     for (let i = model.items.length - 1; i >= 0; i--) {
       const item = model.items[i]!;
@@ -1258,7 +1245,7 @@ function finalizeOpenTask(model: StreamModel): void {
         item.kind === "tool_call" ||
         (item.kind === "reconnect" && !item.gaveUp)
       ) {
-        item.workOutcome = { state: model.taskOutcome, durationMs: elapsed };
+        item.workOutcome = { state: model.taskOutcome };
         break;
       }
     }
@@ -1415,7 +1402,6 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
         const item: ThinkingItem = {
           kind: "thinking",
           id: nextId(model),
-          ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
           thinking: p.thinking ?? "",
           streaming: true,
         };
@@ -1688,6 +1674,8 @@ function handleComplete(
         target.streaming = false;
         if (elided !== undefined) target.elided = elided;
         else delete target.elided;
+        const started = tsOf(p.started_at);
+        if (started !== undefined) target.startedAtMs = started;
         settleThinkingDuration(target, tsMs);
         if (target === model.openThinking) model.openThinking = null;
         model.pendingThinking = null;
@@ -1699,13 +1687,12 @@ function handleComplete(
       const item: ThinkingItem = {
         kind: "thinking",
         id: nextId(model),
-        ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
         thinking: p.thinking,
         streaming: false,
         ...(elided !== undefined ? { elided } : {}),
       };
-      // History rebuild (no fragment): approximate the thinking start with the previous message's time.
-      if (model.lastTsMs > 0) item.startedAtMs = model.lastTsMs;
+      const started = tsOf(p.started_at);
+      if (started !== undefined) item.startedAtMs = started;
       settleThinkingDuration(item, tsMs);
       model.items.push(item);
       return;
@@ -1728,6 +1715,8 @@ function handleComplete(
         else delete card.elidedCall;
         card.callStreaming = false;
         card.callComplete = true;
+        const started = tsOf(p.started_at);
+        if (started !== undefined) card.argStartedAtMs = started;
         if (tsMs !== undefined) card.callStartedAtMs = tsMs;
         noteApprovalWait(model, card); // Approval arrived first (mid-stream join): only here do both timestamps come together
         return;
@@ -1750,11 +1739,8 @@ function handleComplete(
       if (elided !== undefined) created.elidedCall = elided;
       if (tsMs !== undefined) created.callStartedAtMs = tsMs;
       noteApprovalWait(model, created); // createToolCard may have already backfilled a pending approval timestamp
-      // History rebuild (no partial_tool_call start): approximate "argument
-      // generation started" with the previous message's time, same
-      // convention as thinking. Otherwise the tool duration would lose its
-      // argument-generation segment (often the bulk of it) after a refresh, for no reason.
-      if (model.lastTsMs > 0) created.argStartedAtMs = model.lastTsMs;
+      const started = tsOf(p.started_at);
+      if (started !== undefined) created.argStartedAtMs = started;
       return;
     }
     case "tool_call_output": {
@@ -1917,7 +1903,6 @@ function createToolCard(
   const item: ToolCallItem = {
     kind: "tool_call",
     id: nextId(model),
-    ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
     toolCallId: init.toolCallId,
     name: init.name,
     argumentsText: init.argumentsText,
@@ -2237,7 +2222,6 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         const item: ReconnectItem = {
           kind: "reconnect",
           id: nextId(model),
-          ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
           status: p.status,
           // The core stamps the authoritative ordinal on every retryable request_end; only
           // Traces written before the field existed lack it (rendered as attempt 1).

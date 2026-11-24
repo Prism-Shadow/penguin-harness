@@ -12,7 +12,7 @@
  * - A pending approval anywhere in the group forces it open: the approval buttons live inside.
  * - So does a search of the region the group is in (lib/find-expand.ts): its rows are unmounted
  *   while it is closed, and a match inside them would otherwise read as no match.
- * - The duration is `summarizeWork`'s span; it ticks only while an item is in flight.
+ * - The group clock runs only while thinking, generating tool arguments or executing a tool.
  */
 import { useContext } from "react";
 import {
@@ -115,8 +115,7 @@ function useWorkGroupState(
   isLast: boolean,
   displayMode: ActivityGroupProps["displayMode"],
 ): Omit<ActivityGroupProps, "rows" | "children"> {
-  // Whether any item is in flight right now — also the only window in which the group's span is
-  // still growing, which the duration display depends on.
+  // A pending approval still needs the activity indicator, even though its clock is paused.
   const stepRunning = items.some((it) => itemActive(it, ctx));
   const waitingRetry = hasWaitingRetry(items);
   // Last segment + Task running = the model might still call another tool → Running, even with
@@ -143,7 +142,6 @@ function useWorkGroupState(
           : S.chat.workDone;
   return {
     displayMode,
-    runTiming: work?.workTiming,
     terminal: outcome && { ...outcome, label: title },
     state: outcome?.state ?? (running ? "running" : "done"),
     stepRunning,
@@ -151,7 +149,7 @@ function useWorkGroupState(
     kind: items.some((it) => it.kind === "tool_call") ? "tool" : "thinking",
     // The title doubles as status: "Running" while in progress, "Done" when finished.
     title,
-    count: S.chat.workGroupSteps(steps),
+    count: steps ? S.chat.workGroupSteps(steps) : undefined,
     ...(startMs !== undefined ? { startMs } : {}),
     durationMs,
     pending: items.some((item) => needsAction(item, ctx)) || revealedForFind,

@@ -12,3 +12,7 @@
 A ticket filed as `2026-09-02-launch-the-site` keeps that exact ID and Markdown filename. Existing board bookmarks, parent and blocker links, channel references and Sessions continue to use the recorded ID. New and existing tickets can reference each other. No migration or user action is required.
 
 The server and clients keep reading date-first IDs for as long as existing files and external references use them. Maintainers can retire this support only through a separately agreed migration that covers those references.
+
+## Existing traces
+
+The activity header reads existing conversations directly. When a thinking block or tool call has no recorded starting fragment, its generation time is unknown. A recorded tool execution still contributes its measured time. No migration or user action is required. The optional start time must remain supported while clients can open traces that omit it.
