@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `web`, `ui-gallery`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1802
 
 [中文版](2026-11-24-terminal-first-dock-and-gallery.zh.md)
 
