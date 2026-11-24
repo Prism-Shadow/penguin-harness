@@ -9,6 +9,9 @@
  * `GenerativeModel` whose provider stream is scripted, and diagnoses each consecutive pair of
  * requests on the wire shape the client would have sent.
  *
+ * Restoring the same thinking and tool calls with UI timing must preserve both the provider
+ * messages and the output budget on the first request.
+ *
  * These are assertions about bytes. Whether a prefix that could hit actually did — cache
  * lifetime, breakpoint lookback, minimum cacheable size — is `prompt-cache-lifecycle.test.ts`,
  * which puts the same kind of recording through the simulator.
@@ -17,7 +20,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { sessionMeta, userText } from "@prismshadow/amsp/records";
+import {
+  sessionMeta,
+  thinkingMessage,
+  toolCall,
+  toolCallOutput,
+  userText,
+} from "@prismshadow/amsp/records";
 import type { ApproveFn } from "../src/interfaces/index.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
@@ -86,6 +95,45 @@ describe("prompt-cache invariants of request assembly", () => {
 
   afterEach(async () => {
     await rm(traces, { recursive: true, force: true });
+  });
+
+  it("restores identical provider input and output budget with or without work timestamps", async () => {
+    const timestamp = "2026-11-24T17:42:30.123Z";
+    const args = JSON.stringify({ started_at: "keep this argument" });
+    const work = [
+      ...Array.from({ length: 200 }, () => thinkingMessage("reasoning")),
+      toolCall({ name: "read_file", arguments: args, toolCallId: "read" }),
+    ];
+    async function resume(timed: boolean) {
+      const history = [
+        userText("Read the file"),
+        ...work.map((record) => ({
+          ...record,
+          payload: { ...record.payload, ...(timed ? { started_at: timestamp } : {}) },
+        })),
+        toolCallOutput({ toolCallId: "read", output: "the contents", status: "completed" }),
+      ];
+      const original = structuredClone(history);
+      const { model, requests } = recordingModel(
+        {
+          modelId: "claude-sonnet-4-6",
+          apiKey: "test",
+          tools: [],
+          contextWindow: 16_000,
+          maxTokens: 16_000,
+        },
+        [{ text: "Done" }],
+      );
+      model.setHistory(history);
+      await collect(model.streamGenerate({ newMessages: [userText("continue")] }));
+      expect(history).toEqual(original);
+      return requests[0]!;
+    }
+    const plain = await resume(false);
+    const timed = await resume(true);
+    expect(JSON.stringify(timed.wire)).toContain("keep this argument");
+    expect(timed.wire).toEqual(plain.wire);
+    expect(timed.wireConfig.max_tokens).toBe(plain.wireConfig.max_tokens);
   });
 
   it("sends a stable cache routing key across tool results, retry and resume", async () => {

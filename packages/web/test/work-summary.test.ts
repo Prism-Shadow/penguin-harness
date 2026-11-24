@@ -1,5 +1,12 @@
+/**
+ * Live intervals use the browser clock for display and the Trace clock for overlap.
+ * A mid-run history snapshot carries the elapsed time of an already executing tool,
+ * including overlapping finished work. With no snapshot clock the records give a floor.
+ */
 import { describe, expect, it } from "vitest";
 import {
+  type AmspRecord,
+  userText,
   partialThinking,
   partialToolCall,
   partialToolCallOutput,
@@ -14,6 +21,7 @@ import {
   discardFragmentFor,
   isDuplicate,
   pushMessage,
+  pushMessages,
   type ChatItem,
 } from "../src/lib/amsp/stream-model";
 import { summarizeWork } from "../src/features/chat/work-summary";
@@ -99,6 +107,32 @@ describe("summarizeWork", () => {
       toolCall({ name: "read_file", arguments: '{"file_path":"second"}', toolCallId: id }),
     );
     expect(summarizeWork(model.items).steps).toBe(2);
+  });
+
+  it.each([300_000, -300_000])("resumes the live union with %i ms of browser skew", (skew) => {
+    const at = (ms: number) => new Date(ms).toISOString();
+    const timed = (record: AmspRecord, ms: number) => ({ ...record, timestamp: at(ms) });
+    const call = toolCall({ name: "read_file", arguments: "{}", toolCallId: "read" });
+    const thought = thinkingMessage("checked");
+    thought.payload.started_at = at(3000);
+    const records = [timed(userText("go"), 1000), timed(call, 4000), timed(thought, 5000)];
+    // The snapshot arrives while the tool is running. Its first output is replayed
+    // with the original server timestamp after history, as the live-tail controller does.
+    for (const snapshotTime of [10_000, null]) {
+      const model = createStreamModel();
+      const localNow = 10_000 + skew;
+      pushMessages(model, records, localNow, snapshotTime);
+      pushMessage(
+        model,
+        {
+          ...partialToolCallOutput({ toolCallId: "read", eventType: "start" }),
+          timestamp: at(5000),
+        },
+        localNow,
+      );
+      const { startMs } = summarizeWork(model.items);
+      expect(localNow + 2000 - startMs!).toBe(snapshotTime === null ? 4000 : 9000);
+    }
   });
 
   it("parallel work counts once: 15-way parallel over 9 minutes reports 9 minutes", () => {

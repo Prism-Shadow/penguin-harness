@@ -8,6 +8,7 @@
  * - Given a completed conversation, when it reloads and receives a follow-up, history appears
  *   once and the new turn completes instead of becoming stranded (the #89 regression).
  * - Work displays share the count and elapsed time, including after a completed turn is reopened.
+ * - A skewed browser clock measures live thinking and resumes it across a mid-thought reload.
  * - Given a Compact run waiting on an approval, its line opens by itself with Allow and Deny.
  */
 import { test, expect } from "@playwright/test";
@@ -236,10 +237,14 @@ for (const mode of ["standard", "expanded", "compact"]) {
     test(`${mode}: ${scenario} work time during a long final answer and after reload`, async ({
       page,
     }) => {
+      const skew =
+        scenario === "thinking" ? { standard: 300_000, expanded: -300_000, compact: 0 }[mode] : 0;
+      const reloadThinking = skew < 0;
       await createSession(page, `clock${mode}${scenario}`, "allow-all");
       await setAccountPrefs(page.request, { activityDisplayMode: mode });
       await page.reload();
-      await send(page, `activity clock fixture ${scenario}`);
+      if (skew) await page.clock.setSystemTime(Date.now() + skew);
+      await send(page, `activity clock fixture ${scenario}${reloadThinking ? " reload" : ""}`);
       const group = activityRoot(page);
       const header = group.locator("[data-group-header]");
       const clock = header.locator("[data-step-elapsed] [data-slot=detail]");
@@ -250,6 +255,12 @@ for (const mode of ["standard", "expanded", "compact"]) {
           mode === "compact" ? "思考" : "运行中",
         );
         await expect(count).toHaveCount(0);
+      }
+      if (skew > 0) await expect(clock).toHaveText("0s", { timeout: 650 });
+      if (reloadThinking) {
+        await expect(clock).toHaveText("2s", { timeout: 3500 });
+        await page.reload();
+        await expect(clock).toHaveText(/^[2-4]s$/, { timeout: 1500 });
       }
       const reply = page
         .locator(".ui-stream.md-body")

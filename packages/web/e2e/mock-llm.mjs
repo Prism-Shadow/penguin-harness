@@ -600,6 +600,7 @@ const server = http.createServer((req, res) => {
           index: 0,
           delta: { type: "thinking_delta", thinking: "Reviewing the notes." },
         });
+        const thinkingMs = flat.includes("thinking reload") ? 4500 : 700;
         setTimeout(() => {
           sse(res, "content_block_delta", {
             type: "content_block_delta",
@@ -614,7 +615,7 @@ const server = http.createServer((req, res) => {
             ]);
             messageStop(res, "tool_use", 12);
           }
-        }, 700);
+        }, thinkingMs);
       }
       return;
     }

@@ -212,9 +212,27 @@ export interface BodyLoad {
   cause?: unknown;
 }
 
+/** Server-to-browser offset shared by a Session's work items, including its nested streams. */
+interface WorkClock {
+  offsetMs?: number;
+}
+
+function observeServerTime(clock: WorkClock, serverMs: number, localMs: number): void {
+  // Delivery can lag the timestamp, especially when replaying history. The closest
+  // observation gives the smallest offset in either direction of wall-clock skew.
+  const offset = localMs - serverMs;
+  clock.offsetMs = Math.min(clock.offsetMs ?? offset, offset);
+}
+
 interface WorkStep {
+  workClock?: WorkClock;
   /** Only the final work step of a settled Task carries its outcome. */
   workOutcome?: { state: "done" | "failed" | "stopped" };
+}
+
+/** Convert the start of a live work interval for a ticker driven by the browser's clock. */
+export function localWorkTime(item: WorkStep, timestamp: number | undefined): number | undefined {
+  return timestamp === undefined ? undefined : timestamp + (item.workClock?.offsetMs ?? 0);
 }
 
 export interface ThinkingItem extends WorkStep {
@@ -599,6 +617,7 @@ export interface NestedSessionMeta {
 }
 
 export interface StreamModel {
+  workClock: WorkClock;
   items: ChatItem[];
   /** A nested sub-session model (produces no stats row; its stats count toward the parent). */
   nested: boolean;
@@ -776,9 +795,14 @@ export interface StreamModel {
   nextItemId: number;
 }
 
-function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
+function newModel(
+  nested: boolean,
+  localDecisions: Set<string>,
+  workClock: WorkClock = {},
+): StreamModel {
   return {
     items: [],
+    workClock,
     nested,
     meta: null,
     agentState: null,
@@ -833,6 +857,8 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
   // Task records: no item, no Task change, no timestamp — checked before the origin routing so a
   // child's own pair leaves the parent's timing alone too.
   if (isTaskRecord(msg)) return;
+  const tsMs = tsOf(msg.timestamp);
+  if (!model.nested && tsMs !== undefined) observeServerTime(model.workClock, tsMs, nowMs);
   if (msg.origin && msg.origin.length > 0) {
     routeNested(model, msg, nowMs);
     return;
@@ -858,7 +884,6 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
     const type = (msg.payload as { type?: string }).type ?? "";
     if (model.stats.compactionActive && !/^(partial_)?tool_call(_output)?$/.test(type)) {
       touchTask(model, msg.timestamp);
-      const tsMs = tsOf(msg.timestamp);
       if (isPartialPayload(msg.payload)) {
         const p = msg.payload as {
           type?: string;
@@ -890,7 +915,7 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
     }
     if (isPartialPayload(msg.payload)) {
       touchTask(model, msg.timestamp);
-      handlePartial(model, msg.payload, tsOf(msg.timestamp));
+      handlePartial(model, msg.payload, tsMs);
       // Only complete records and events advance the history cursor.
       return;
     }
@@ -930,7 +955,7 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
     // cut-short one — the same point a Prompt opens its own (see StreamModel.runEnded).
     if (startsRetryRun(model, msg)) startTask(model, msg.timestamp, nowMs);
     touchTask(model, msg.timestamp);
-    handleEvent(model, msg.payload as EventPayload, tsOf(msg.timestamp), nowMs);
+    handleEvent(model, msg.payload as EventPayload, tsMs, nowMs);
     advanceLastTs(model, msg.timestamp);
     return;
   }
@@ -1082,6 +1107,7 @@ export function pushMessages(
   serverNowMs: number | null = null,
 ): void {
   for (const msg of messages) pushMessage(model, msg, nowMs);
+  if (serverNowMs !== null) observeServerTime(model.workClock, serverNowMs, nowMs);
   // Re-anchor a Task still open at the end of the replay. Every message in a
   // rebuild is fed the same `nowMs`, so startTask stamped taskStartLocalMs
   // with the instant the page loaded — and the header's live elapsed, which
@@ -1204,6 +1230,9 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   };
   model.taskStartLocalMs = nowMs;
   const ts = Date.parse(timestamp);
+  // A new live Task supplies a fresh pair even when the browser clock moved between
+  // turns. During replay the snapshot observation follows the records and refines it.
+  if (!model.nested && Number.isFinite(ts)) model.workClock.offsetMs = nowMs - ts;
   model.taskFirstTsMs = Number.isFinite(ts) ? ts : nowMs;
   model.taskLastTsMs = model.taskFirstTsMs;
   model.taskLastReqEndMs = null;
@@ -1401,6 +1430,7 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
         model.pendingThinking = null;
         const item: ThinkingItem = {
           kind: "thinking",
+          workClock: model.workClock,
           id: nextId(model),
           thinking: p.thinking ?? "",
           streaming: true,
@@ -1902,6 +1932,7 @@ function createToolCard(
 ): ToolCallItem {
   const item: ToolCallItem = {
     kind: "tool_call",
+    workClock: model.workClock,
     id: nextId(model),
     toolCallId: init.toolCallId,
     name: init.name,
@@ -2426,7 +2457,7 @@ function routeNested(model: StreamModel, msg: AmspRecord, nowMs: number): void {
 
   let sub = model.subagents.get(head);
   if (!sub) {
-    sub = newModel(true, model.localDecisions);
+    sub = newModel(true, model.localDecisions, model.workClock);
     sub.firstSeenLocalMs = nowMs;
     model.subagents.set(head, sub);
     bindSubagent(model, head, sub);
