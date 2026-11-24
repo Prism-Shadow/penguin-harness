@@ -329,7 +329,6 @@ const REFUSED: Array<[string, Record<string, unknown>, string]> = [
     { layout: { v: 1, items: [folder("tools", "n".repeat(41), ["a/b"])] } },
     "items[0].name",
   ],
-  ["an empty folder", { layout: { v: 1, items: [folder("tools", "Tools", [])] } }, "items[0].apps"],
   [
     "a folder of more than 500 apps",
     { layout: { v: 1, items: [folder("tools", "Tools", appKeys(501))] } },
@@ -839,6 +838,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
     const off = await owner.put(`${base}/badge/enabled`, { enabled: false });
     expect(off.status, await off.clone().text()).toBe(200);
     expect(await ids()).not.toContain(`${ICON_ROW}/badge`);
+    expect((await appCenter()).unavailable?.apps).toContain(`${ICON_ROW}/badge`);
     const listed = (await (await owner.get(base)).json()) as { workbenches: WorkbenchInfo[] };
     expect(listed.workbenches.find((w) => w.id === "badge")).toMatchObject({
       enabled: false,
@@ -858,6 +858,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
     // The Agent-wide switch takes every tile of the Agent off.
     expect((await owner.put(`${base}/enabled`, { enabled: false })).status).toBe(200);
     expect(await ids()).not.toContain(`${ICON_ROW}/badge`);
+    expect((await appCenter()).unavailable?.agents).toContain(ICON_ROW);
   });
 
   it("finds no icon for a workbench without one or an unknown workbench, and refuses a user outside the Project", async () => {
@@ -877,6 +878,24 @@ describe("the App Center", { timeout: 30_000 }, () => {
       expect(((await res.json()) as AppCenterLayoutResponse).layout).toEqual(STORED);
       expect((await appCenter()).layout).toEqual(STORED);
       expect((await appCenter(member)).layout).toBeNull();
+    });
+
+    it("promotes an existing singleton in place and drops an empty folder on the next write", async () => {
+      const old = {
+        v: 1,
+        items: [
+          app("agent/first"),
+          folder("only", "Only", ["agent/last"]),
+          folder("empty", "Empty", []),
+        ],
+      };
+      const expected = { v: 1, items: [app("agent/first"), app("agent/last")] };
+      t.deps.prefsRepo.set("owner", JSON.stringify({ appCenterLayouts: { [PROJECT]: old } }));
+      expect((await appCenter()).layout).toEqual(expected);
+      expect(await (await owner.put(layoutRoute, { layout: old })).json()).toEqual({
+        layout: expected,
+      });
+      expect((await storedPrefs()).appCenterLayouts?.[PROJECT]).toEqual(expected);
     });
 
     it.each(REFUSED)("refuses %s, naming the rule, and stores nothing", async (_, body, rule) => {
