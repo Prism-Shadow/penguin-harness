@@ -396,6 +396,7 @@ export function DockPanel({
   const resizeTo = (event: PointerEvent): void => {
     const pane = rootRef.current?.getBoundingClientRect();
     if (!pane || fullscreen) return;
+    setResizing(true);
     if (horizontal) {
       if (column.host === 0) return;
       const max = bottomDockMaxHeight({ ...column, composer: composerHeight() });
@@ -620,7 +621,6 @@ export function DockPanel({
       axis={horizontal ? "y" : "x"}
       edge={horizontal ? "start" : undefined}
       label={S.dock.resize}
-      onResizeStart={() => setResizing(true)}
       onResize={resizeTo}
       onResizeEnd={resizeEnd}
       onReset={onResizerDoubleClick}
