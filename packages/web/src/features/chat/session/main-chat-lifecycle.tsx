@@ -34,7 +34,11 @@ import { advancePanelTaskScope, createPanelTaskScope } from "../panel-task-scope
 import { exitedProcessIds, reportableProcessFailure } from "../process-list";
 import { PROCESS_POLL_MS, STAT_PATHS_PER_REQUEST } from "./main-chat-helpers";
 import { orgKey } from "../../../lib/company-nav";
-import { deskRows, openTempSession } from "../../company";
+import {
+  createTempEntryGate,
+  deskSessionIdsWhenLoaded,
+  openTempSession,
+} from "../../company";
 import type { useMainChatTranscript } from "./main-chat-transcript";
 
 /** Exact consecutive main ChatPage statements 76..128; called once, in original order. */
@@ -143,30 +147,60 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
 
   const selectedOrgId = selected?.orgId ?? null;
   const selectedTitle = selected?.title ?? "";
+  // A deep-linked organization session joins the sidebar's Temporary group through the visit
+  // gate (temp-session.ts): once per VISIT, and only once the session's OWN organization has
+  // a roster to tell a desk from a ticket session. The gate's visit is the conversation
+  // entered — the roster and title caches refreshing while the reader stays are not visits,
+  // so an entry the reader dismissed is not written back by the next refresh. The chart is
+  // the open organization's alone, so it counts only when it is the session's organization's;
+  // the sessions snapshot is read per organization. The registration's title is the one the
+  // visit arrived with: the sidebar names the row from the organization's own sessions route
+  // once that route has read the session, so a later rename needs no re-entry.
+  const routedGateRef = useRef(createTempEntryGate());
   useEffect(() => {
-    if (!projectId || !selectedSessionId || !selectedAgentId || !selectedOrgId) return;
-    const desks = deskRows(
-      company.orgChart,
-      company.orgSessions.get(orgKey(projectId, selectedOrgId)),
-    );
-    openTempSession(
-      user?.userId ?? null,
-      projectId,
-      selectedOrgId,
+    if (!projectId || !selectedSessionId || !selectedAgentId || !selectedOrgId) {
+      routedGateRef.current.enter(null, null);
+      return;
+    }
+    routedGateRef.current.enter(
+      `${user?.userId ?? ""}|${projectId}|${selectedOrgId}|${selectedSessionId}`,
       {
+        userId: user?.userId ?? null,
+        projectId,
+        orgId: selectedOrgId,
         sessionId: selectedSessionId,
         agentId: selectedAgentId,
         title: selectedTitle,
       },
-      desks.map((d) => d.sessionId),
     );
+    const org = orgKey(projectId, selectedOrgId);
+    const desks = deskSessionIdsWhenLoaded(
+      company.currentOrgKey === org ? company.orgChart : null,
+      company.orgSessions.get(org),
+    );
+    const action = routedGateRef.current.settle(desks);
+    if (action.kind === "open")
+      openTempSession(
+        action.entry.userId,
+        action.entry.projectId,
+        action.entry.orgId,
+        {
+          sessionId: action.entry.sessionId,
+          agentId: action.entry.agentId,
+          title: action.entry.title,
+        },
+        desks ?? [],
+      );
+    // The visit is the conversation entered; the roster caches are read only to settle a
+    // pending entry, and selectedTitle is the one the visit arrived with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    user?.userId,
     projectId,
     selectedSessionId,
     selectedAgentId,
     selectedOrgId,
-    selectedTitle,
-    user?.userId,
+    company.currentOrgKey,
     company.orgChart,
     company.orgSessions,
   ]);

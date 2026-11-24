@@ -7,6 +7,8 @@
  *   "Close all" every entry of that organization, telling subscribers once; nothing else
  *   removes any: going elsewhere only moves the on-screen mark.
  * - A missing or malformed stored value reads as an empty list.
+ * - A deep-linked session joins through the visit gate: once per visit, and only once the
+ *   organization's roster can tell a desk from a ticket session.
  * - A reload reads the list back from storage, and the stored key goes once the last entry does.
  * - Each user, Project and organization has its own list.
  * - Subscribers hear of changes and nothing else, and the same array is handed out until one.
@@ -15,12 +17,14 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  createTempEntryGate,
   createTempSessionStore,
   parseTempSessions,
   tempSessionRows,
   tempSessionsKey,
   withDismissed,
   withOpened,
+  type RoutedTempEntry,
   type TempSessionEntry,
 } from "../src/features/company/temp-session";
 
@@ -240,5 +244,61 @@ describe("temporary session store", () => {
     expect(blocked.list(KEY)).toEqual([]);
     blocked.open(KEY, entry("a"));
     expect(blocked.list(KEY)).toEqual([entry("a")]);
+  });
+});
+
+describe("the deep-link visit gate", () => {
+  const routed = (sessionId: string, over: Partial<RoutedTempEntry> = {}): RoutedTempEntry => ({
+    userId: "admin",
+    projectId: "proj",
+    orgId: "acme",
+    sessionId,
+    agentId: "acme_dev",
+    title: `Ticket session ${sessionId}`,
+    ...over,
+  });
+  const desks: readonly (string | null)[] = ["sess_desk", null];
+
+  it("opens a session once per visit, and never again while the reader stays", () => {
+    const gate = createTempEntryGate();
+    gate.enter("admin|proj|acme|sess_1", routed("sess_1"));
+    expect(gate.settle(desks)).toEqual({ kind: "open", entry: routed("sess_1") });
+    // The roster and title caches refreshing are not visits: nothing is decided again, so an
+    // entry the reader dismissed while staying is not written back.
+    gate.enter("admin|proj|acme|sess_1", routed("sess_1", { title: "Renamed" }));
+    expect(gate.settle(desks)).toEqual({ kind: "hold" });
+  });
+
+  it("holds a visit until the organization's roster is there, then decides once", () => {
+    const gate = createTempEntryGate();
+    gate.enter("admin|proj|acme|sess_1", routed("sess_1"));
+    expect(gate.settle(undefined)).toEqual({ kind: "hold" });
+    // A roster refresh that still answers nothing keeps holding; the first answer settles.
+    expect(gate.settle(undefined)).toEqual({ kind: "hold" });
+    expect(gate.settle(desks)).toEqual({ kind: "open", entry: routed("sess_1") });
+    expect(gate.settle(desks)).toEqual({ kind: "hold" });
+  });
+
+  it("skips a desk session, which has its desk row, without keeping it pending", () => {
+    const gate = createTempEntryGate();
+    gate.enter("admin|proj|acme|sess_desk", routed("sess_desk"));
+    expect(gate.settle(desks)).toEqual({ kind: "skip" });
+    expect(gate.settle(desks)).toEqual({ kind: "hold" });
+  });
+
+  it("ends a visit when the reader leaves, so coming back enters again", () => {
+    const gate = createTempEntryGate();
+    gate.enter("admin|proj|acme|sess_1", routed("sess_1"));
+    expect(gate.settle([])).toEqual({ kind: "open", entry: routed("sess_1") });
+    gate.enter(null, null);
+    gate.enter("admin|proj|acme|sess_1", routed("sess_1"));
+    expect(gate.settle([])).toEqual({ kind: "open", entry: routed("sess_1") });
+  });
+
+  it("treats another conversation as a new visit, and keeps the pending entry of the last one", () => {
+    const gate = createTempEntryGate();
+    gate.enter("admin|proj|acme|sess_1", routed("sess_1"));
+    gate.enter("admin|proj|acme|sess_2", routed("sess_2"));
+    expect(gate.settle([])).toEqual({ kind: "open", entry: routed("sess_2") });
   });
 });
