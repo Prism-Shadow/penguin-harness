@@ -491,8 +491,8 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
 
     // The host is never asked: that is what makes the policy outrank every approval mode.
     expect(asked).toBe(0);
-    // "forbidden" is the whole answer; the engine renders the fixed denial line from it.
-    expect(outcome).toBe("forbidden");
+    // The answer names the rule; the engine renders the denial line from it.
+    expect(outcome).toEqual({ decision: "forbidden", rule: "no-rm-rf" });
   });
 
   it("passes everything else straight through, decision included", async () => {
@@ -521,7 +521,10 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
         toolCallId: "c2",
       });
 
-    expect(await guarded(typed("rm -rf /\n") as never)).toBe("forbidden");
+    expect(await guarded(typed("rm -rf /\n") as never)).toEqual({
+      decision: "forbidden",
+      rule: "no-rm-rf",
+    });
     expect(asked).toBe(0);
     expect(await guarded(typed("make build\n") as never)).toBe("allow");
     expect(asked).toBe(1);
@@ -545,7 +548,10 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
     );
     expect(await guarded(call("rm -rf /") as never)).toBe("allow");
     policy = DENY_RM;
-    expect(await guarded(call("rm -rf /") as never)).toBe("forbidden");
+    expect(await guarded(call("rm -rf /") as never)).toEqual({
+      decision: "forbidden",
+      rule: "no-rm-rf",
+    });
   });
 
   it("with no project policy, a destructive command goes to a person instead of being refused", async () => {
@@ -687,11 +693,13 @@ describe("Session applies the policy at the approval boundary", () => {
     )!;
     // The decision value itself separates a policy veto from a human denial in the Trace.
     expect((decision.payload as { decision?: string }).decision).toBe("forbidden");
-    // The denial is the fixed line: "by policy" (not "by user") is what tells the model to
-    // change course instead of treating it as a person's cancellation; both read `aborted`.
+    // The denial names the rule that refused the command (not "by user": no person saw
+    // this), so the model changes course instead of treating it as a cancellation.
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
     expect((output.payload as { status?: string }).status).toBe("aborted");
-    expect((output.payload as { output: string }).output).toBe("Tool call denied by policy.");
+    expect((output.payload as { output: string }).output).toBe(
+      "Tool call denied by rule `no-rm-rf`.",
+    );
     // The denial is fed back to the model, so the next turn can route around it.
     expect(
       (secondInput as AmspRecord[] | null)?.some(

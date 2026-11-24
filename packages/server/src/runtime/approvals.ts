@@ -32,6 +32,7 @@ import type {
   ApprovalDecision,
   ApproveFn,
   AmspRecord,
+  PolicyDenial,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
 
@@ -145,7 +146,8 @@ export class ApprovalRegistry implements Approvals {
  * in which case that one route answers deny immediately. A call core hands over with a
  * policy reason (a command-policy `ask` rule matched it) takes the manual route under every
  * mode — allow-all and read-only included — except deny-all, which still denies; the reason
- * rides on the request.
+ * rides on the request. The unattended deny answers with the rule named (see PolicyDenial),
+ * so the model reads which rule refused the call rather than a person who never saw it.
  */
 export function makeApprove(args: {
   getMode: () => ApprovalMode;
@@ -161,7 +163,7 @@ export function makeApprove(args: {
    * is pushed. The automatic answers (allow-all, deny-all, read-only's read tools) and the
    * command policy's veto are untouched — they never asked anyone in the first place. A
    * command-policy `ask` hit takes the manual route too, so an unattended Session denies it
-   * at once: nobody is there to give the go-ahead.
+   * at once, naming the rule (see PolicyDenial): nobody is there to give the go-ahead.
    * Absent (development mode) keeps the suspending behaviour.
    */
   unattended?: () => boolean;
@@ -170,8 +172,12 @@ export function makeApprove(args: {
   const manual = (
     toolCall: AmspRecord<ToolCallPayload>,
     reason?: ApprovalReason,
-  ): Promise<ApprovalDecision> => {
-    if (unattended?.() === true) return Promise.resolve<ApprovalDecision>("deny");
+  ): Promise<ApprovalDecision | PolicyDenial> => {
+    if (unattended?.() === true) {
+      return Promise.resolve<ApprovalDecision | PolicyDenial>(
+        reason !== undefined ? { decision: "deny", rule: reason.rule } : "deny",
+      );
+    }
     const promise = registry.wait(toolCall, reason);
     publishRequest({
       toolCall,

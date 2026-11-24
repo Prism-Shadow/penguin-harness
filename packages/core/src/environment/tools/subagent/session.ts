@@ -37,6 +37,7 @@ import type { AmspRecord, ApprovalDecision, ToolCallPayload } from "@prismshadow
 import type {
   ApprovalContext,
   ApproveFn,
+  PolicyDenial,
   RunCutoff,
   SubagentHandle,
   ThinkingLevelName,
@@ -64,7 +65,7 @@ interface PendingApproval {
   toolCall: AmspRecord<ToolCallPayload>;
   context?: ApprovalContext;
   settled: boolean;
-  resolve: (decision: ApprovalDecision) => void;
+  resolve: (decision: ApprovalDecision | PolicyDenial) => void;
 }
 
 export class ManagedSubagentSession {
@@ -472,7 +473,7 @@ export class ManagedSubagentSession {
   /** Approval callback handed to the child Session: the request is queued and waits for some parent tool call to consult Human and give a decision. */
   private readonly childApprove: ApproveFn = (toolCall, context) => {
     if (this.killed) return Promise.resolve("deny");
-    return new Promise<ApprovalDecision>((resolve) => {
+    return new Promise<ApprovalDecision | PolicyDenial>((resolve) => {
       this.approvals.push({
         toolCall,
         ...(context !== undefined ? { context } : {}),
@@ -485,7 +486,7 @@ export class ManagedSubagentSession {
   };
 
   /** Settles an approval decision: first to arrive wins, late/duplicate decisions are ignored. */
-  private settle(req: PendingApproval, decision: ApprovalDecision): void {
+  private settle(req: PendingApproval, decision: ApprovalDecision | PolicyDenial): void {
     if (req.settled) return;
     req.settled = true;
     const idx = this.approvals.indexOf(req);

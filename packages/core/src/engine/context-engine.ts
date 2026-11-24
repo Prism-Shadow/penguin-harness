@@ -1579,8 +1579,9 @@ export class ContextEngine {
    * allow), else the approval callback's, any throw of which collapses to deny so it never
    * escapes the engine and leaves a committed tool_use unanswered — recorded as an
    * `approval_decision` on the stream and in the Trace. A denied call gets an aborted output at
-   * once, one fixed line naming the decider ("forbidden" is the command policy's answer; a hook
-   * deny names the hook and its reason); an allowed one runs through `executeOne`
+   * once, one fixed line naming the decider (a policy denial names the rule it matched, see
+   * {@link PolicyDenial}; a bare "forbidden" reads "denied by policy"; a hook deny names the
+   * hook and its reason); an allowed one runs through `executeOne`
    * concurrently. Nothing is recorded once `signal` fired during the decision.
    */
   private async decideAndRun(
@@ -1593,11 +1594,21 @@ export class ContextEngine {
   ): Promise<void> {
     const toolCallId = tc.payload.tool_call_id;
     let decision: ApprovalDecision;
+    // Set when the decision came back naming the rule that caused it (see PolicyDenial):
+    // the command policy's answers — a `deny` rule's "forbidden", and the deny a host that
+    // cannot ask a person (an unattended Session) answers a policy-reasoned call with.
+    let denialRule: string | undefined;
     if (hooked?.decision === "deny" || hooked?.decision === "allow") {
       decision = hooked.decision;
     } else {
       try {
-        decision = await approve(tc);
+        const answer = await approve(tc);
+        if (typeof answer === "string") {
+          decision = answer;
+        } else {
+          decision = answer.decision;
+          denialRule = answer.rule;
+        }
       } catch (err) {
         process.stderr.write(`[penguin] approve callback threw: ${messageOf(err)}; denying.\n`);
         decision = "deny";
@@ -1618,9 +1629,11 @@ export class ContextEngine {
       output:
         hooked?.decision === "deny"
           ? `Tool call denied by the ${hooked.name ?? "pre_tool_use"} hook${hooked.reason ? `: ${hooked.reason}` : ""}.`
-          : decision === "forbidden"
-            ? "Tool call denied by policy."
-            : "Tool call denied by user.",
+          : denialRule !== undefined
+            ? `Tool call denied by rule \`${denialRule}\`.`
+            : decision === "forbidden"
+              ? "Tool call denied by policy."
+              : "Tool call denied by user.",
       toolCallId,
       status: "aborted",
     });

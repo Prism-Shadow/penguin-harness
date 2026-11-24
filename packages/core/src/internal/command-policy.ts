@@ -205,11 +205,11 @@ export type CommandPolicySource = () => CommandPolicyConfig | undefined;
 
 /**
  * Wraps an approval callback with the policy. A call a `deny` rule matches answers
- * `"forbidden"` here and `approve` is never reached, so no approval mode — and no Human
- * implementation — can let it through. `"forbidden"` is the decision's own third value: the
- * engine renders it as the fixed aborted line "Tool call denied by policy." (a person's denial
- * reads "by user."), and the `approval_decision` event carries it — the model's text and the
- * Trace both name the decider. A call an `ask` rule matches goes to `approve` with
+ * `"forbidden"` here — naming the rule (see {@link PolicyDenial}) — and `approve` is never
+ * reached, so no approval mode — and no Human implementation — can let it through. The engine
+ * renders that denial as ``Tool call denied by rule `<rule>`.`` and the `approval_decision`
+ * event still carries `"forbidden"` — the model's text and the Trace both name the decider.
+ * A call an `ask` rule matches goes to `approve` with
  * `{ reason: { kind: "policy", rule } }`, which tells the host the mode alone may not answer
  * it (allow-all would wave it through); a host callback that reads no second argument decides
  * it as for any call. Any other call goes to `approve` with the context it came with, so a
@@ -227,7 +227,7 @@ export function withCommandPolicy(approve: ApproveFn, source?: CommandPolicySour
       policy = undefined;
     }
     const veto = vetoForToolCall(toolCall.payload.name, toolCall.payload.arguments, policy);
-    if (veto?.action === "deny") return "forbidden";
+    if (veto?.action === "deny") return { decision: "forbidden", rule: veto.rule };
     if (veto?.action === "ask") {
       return approve(toolCall, { reason: { kind: "policy", rule: veto.rule } });
     }
