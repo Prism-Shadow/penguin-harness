@@ -1229,18 +1229,9 @@ export const en: Strings = {
     exitToAppCenter: "Exit full page (back to the App Center)",
   },
   pageWorkspace: {
-    leftPane: "Left pane",
-    rightPane: "Right pane",
     restore: "Restore",
     workbenches: "Workbenches",
-    left: "Open on the left",
-    right: "Open on the right",
-    whole: "Show full page",
-    swap: "Swap panes",
     separate: "Open in a new window",
-    actions: "Pane actions",
-    closeView: "Close view",
-    resize: "Resize panes",
     empty: "This Agent has no workbenches to open.",
   },
   sidebarApps: {

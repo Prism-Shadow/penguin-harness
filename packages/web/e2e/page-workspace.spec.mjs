@@ -1,6 +1,6 @@
 /**
- * - Two Workspace conversations keep their own text across split, swap and closing a view.
- * - A conversation and a running app share the screen; pane actions preserve the actual iframe.
+ * - Workspace conversations keep their own drafts and staged files while switching full pages.
+ * - A conversation and a running app share the screen; dock actions preserve the actual iframe.
  * - A phone selects the other conversation from the Workspace in its drawer.
  * - Returning to an unsent conversation restores its staged upload and text.
  * - Account settings and repeated New chat shortcuts leave a fresh sidebar empty; sending
@@ -67,50 +67,117 @@ async function start(page, user) {
   return ids.map((id) => "chat:" + id);
 }
 
-test("two sessions keep their own drafts through split, swap and close", async ({ page }) => {
+test("two Sessions keep their own drafts and attachments without splitting the page", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  const [first, second] = await start(page, "splitdrafts");
-  const firstSlot = slot(page, first);
-  const secondSlot = slot(page, second);
-  await firstSlot.locator(composer).fill("First pane draft");
-  await page.getByText("Release checklist", { exact: true }).first().click();
-  await secondSlot.locator(composer).fill("Second pane draft");
-  await firstSlot.locator(composer).waitFor({ state: "hidden" });
-  await action(page, first, "Open on the right");
-  await expect(firstSlot).toHaveAttribute("data-pane", "right");
-  await expect(secondSlot).toHaveAttribute("data-pane", "left");
-  await expect(firstSlot.locator(composer)).toHaveValue("First pane draft");
-  await firstSlot.locator('input[type="file"]:not([accept])').setInputFiles({
+  const [first, second] = await start(page, "switchdrafts");
+  const one = slot(page, first),
+    two = slot(page, second);
+  await one.locator(composer).fill("First conversation draft");
+  await one.locator('input[type="file"]:not([accept])').setInputFiles({
     name: "workspace-notes.txt",
     mimeType: "text/plain",
     buffer: Buffer.from("Keep this upload"),
   });
-  await expect(firstSlot.getByText("workspace-notes.txt", { exact: true })).toBeVisible();
-  await expect(secondSlot.locator(composer)).toHaveValue("Second pane draft");
-  await secondSlot.locator(composer).fill("Updated on left");
-  await expect(firstSlot.locator(composer)).toHaveValue("First pane draft");
-  const leftHeader = page.getByRole("group", { name: "Left pane", exact: true });
-  const rightHeader = page.getByRole("group", { name: "Right pane", exact: true });
-  await expect(
-    leftHeader.getByRole("button", { name: "Release checklist", exact: true }),
-  ).toBeVisible();
-  await expect(
-    rightHeader.getByRole("button", { name: "Workspace notes", exact: true }),
-  ).toBeVisible();
-  await leftHeader.getByRole("button", { name: "Pane actions · Release checklist" }).click();
-  await page.getByRole("menuitem", { name: "Swap panes", exact: true }).click();
-  await expect(secondSlot).toHaveAttribute("data-pane", "right");
-  const left = await firstSlot.boundingBox(),
-    right = await secondSlot.boundingBox();
-  expect(left.x + left.width).toBeLessThanOrEqual(right.x + 1);
-  await action(page, first, "Close view");
-  await expect(firstSlot).not.toBeVisible();
-  await expect(sessionRow(page, first)).toHaveCount(1);
-  await expect(secondSlot).toHaveAttribute("data-pane", "full");
-  await expect(secondSlot.locator(composer)).toHaveValue("Updated on left");
+  await sessionRow(page, second).click();
+  await expect(two).toHaveAttribute("data-pane", "full");
+  await expect(one).not.toBeVisible();
+  await two.locator(composer).fill("Second conversation draft");
   await sessionRow(page, first).click();
-  await expect(firstSlot.locator(composer)).toHaveValue("First pane draft");
-  await expect(firstSlot.getByText("workspace-notes.txt", { exact: true })).toBeVisible();
+  await expect(one.locator(composer)).toHaveValue("First conversation draft");
+  await expect(one.getByText("workspace-notes.txt", { exact: true })).toBeVisible();
+  const row = sessionRow(page, first).locator("xpath=ancestor::li[1]");
+  await row.getByRole("button", { name: "More actions", exact: true }).click();
+  await expect(
+    page.getByText(/^(Swap panes|Show full page|Close view|Open on the (left|right))$/),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.goBack();
+  await expect(two.locator(composer)).toHaveValue("Second conversation draft");
+});
+
+for (const width of [1280, 375]) {
+  test(`switches from a Session panel to running apps and back at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 820 });
+    const [owner] = await start(page, "switch_app_" + width);
+    const chat = slot(page, owner);
+    const draft = chat.locator(composer);
+    await draft.fill("Return to this conversation");
+    const drawer = page.getByRole("banner").getByRole("button", { name: /^Sessions/ });
+    async function showSidebar() {
+      if (width < 768) await drawer.click();
+    }
+    async function catalogApp(key) {
+      await showSidebar();
+      await page
+        .getByRole("link", { name: /^App Center/ })
+        .first()
+        .click();
+      await page
+        .locator('li[data-app="' + key + '"] > button')
+        .first()
+        .click();
+      await expect(slot(page, "app:" + key)).toHaveAttribute("data-pane", "full");
+    }
+    const models = "system_agent/models",
+      slides = "default_agent/slides";
+    await catalogApp(models);
+    await catalogApp(slides);
+    await showSidebar();
+    await sessionRow(page, owner).click();
+    await chat.getByRole("button", { name: "Shortcuts", exact: true }).click();
+    await chat.getByTestId("dock-launcher-open-agents").click();
+    const original = new URL(page.url());
+    const sessionsPath =
+      "/api/projects/" + original.searchParams.get("project") + "/agents/default_agent/sessions";
+    const sessionIds = async () =>
+      (await (await page.request.get(sessionsPath)).json()).sessions.map((s) => s.sessionId).sort();
+    const initialSessions = await sessionIds();
+    expect(original.pathname).toBe("/session-tools/agents");
+    expect(original.searchParams.get("session")).toBe(owner.slice(5));
+    for (const key of [models, slides, models]) {
+      await showSidebar();
+      await apps(page)
+        .locator('[data-app-row="' + key + '"]')
+        .click();
+      await expect(slot(page, "app:" + key)).toHaveAttribute("data-pane", "full");
+      await expect(chat).not.toBeVisible();
+      expect(new URL(page.url()).searchParams.has("beside")).toBe(false);
+    }
+    await page.goBack();
+    await expect(slot(page, "app:" + slides)).toHaveAttribute("data-pane", "full");
+    await page.goForward();
+    await expect(slot(page, "app:" + models)).toHaveAttribute("data-pane", "full");
+    for (let i = 0; i < 3; i++) await page.goBack();
+    await expect(chat.locator('[data-testid="dock"]:visible')).toHaveCount(1);
+    await expect(draft).toHaveValue("Return to this conversation");
+    await page.reload();
+    await expect(page.locator('[data-pane="left"] [data-testid="dock"]:visible')).toHaveCount(1);
+    expect(new URL(page.url()).searchParams.get("session")).toBe(owner.slice(5));
+    expect(await sessionIds()).toEqual(initialSessions);
+  });
+}
+
+test("a bound terminal row expands the owner's dock and Back restores the source", async ({
+  page,
+}) => {
+  const [owner] = await start(page, "tool_maximize");
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const chat = slot(page, owner);
+  await chat.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await chat.getByTestId("dock-launcher-open-terminal").click();
+  const source = new URL(page.url());
+  const row = apps(page)
+    .locator('[data-app-row^="session-tool/terminal/"]')
+    .locator("xpath=ancestor::li[1]");
+  await row.getByRole("button", { name: "Open full screen", exact: true }).click();
+  const dock = page.getByTestId("dock").filter({ visible: true });
+  await expect(dock).toHaveAttribute("data-fullscreen", "full");
+  expect(new URL(page.url()).searchParams.get("session")).toBe(owner.slice(5));
+  await page.goBack();
+  await expect(page).toHaveURL(source.href);
+  await expect(dock).not.toHaveAttribute("data-fullscreen");
 });
 
 test("a workbench shares the session viewport and its iframe survives changing pages", async ({
@@ -141,9 +208,11 @@ test("a workbench shares the session viewport and its iframe survives changing p
   const node = await frame.elementHandle();
   const original = await node.contentFrame();
   await original.evaluate(() => (window.workspaceContinuity = "initial frame"));
-  await action(page, id, "Show full page");
-  await expect(frame).not.toBeVisible();
-  await action(page, "app:penguin_support/support", "Open on the right");
+  await apps(page).locator('[data-app-row="penguin_support/support"]').click();
+  await expect(app).toHaveAttribute("data-pane", "full");
+  await expect(chat).not.toBeVisible();
+  await page.goBack();
+  await expect(app).toHaveAttribute("data-pane", "right");
   await expect(frame).toBeVisible();
   expect(await original.evaluate(() => window.workspaceContinuity)).toBe("initial frame");
   await expect(chat.locator(composer)).toHaveValue("Keep the support conversation");
@@ -163,7 +232,7 @@ test("dragging a running app previews the right dock that receives it", async ({
   await expect(frame).toBeVisible();
   const document = await (await frame.elementHandle()).contentFrame();
   await document.evaluate(() => (window.dropContinuity = "running"));
-  await action(page, id, "Show full page");
+  await action(page, "app:penguin_support/support", "Minimize");
   const row = apps(page).locator('[data-app-row="penguin_support/support"]');
   const source = await row.boundingBox();
   const host = chat.locator("[data-dock-row]");
@@ -236,11 +305,11 @@ test.describe("on a touch phone", () => {
   });
 });
 
-test("a phone chooses one of the two open pages", async ({ page }) => {
+test("a phone switches between full conversations in the drawer", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const [first, second] = await start(page, "splitphone");
   await page.getByText("Release checklist", { exact: true }).first().click();
-  await action(page, first, "Open on the right");
+  await sessionRow(page, first).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(slot(page, first)).toBeVisible();
   await expect(slot(page, second)).not.toBeVisible();

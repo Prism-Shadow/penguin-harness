@@ -11,9 +11,8 @@ import {
   type SessionRowAction,
 } from "../../components/ui/session-row-menu";
 
-import { layoutActions } from "../../lib/page-layout-actions";
 import { usePageWorkspace } from "../../lib/page-workspace";
-import { PAGE_DRAG_TYPE, type OpenPage } from "../../lib/page-layout";
+import { type OpenPage } from "../../lib/page-layout";
 import { ICONS, SessionRow, toastSuccess } from "@prismshadow/penguin-ui";
 import { Truncated } from "../../components/ui/truncated";
 import { writeClipboard } from "../../lib/clipboard";
@@ -122,18 +121,15 @@ export function SidebarSessionRow({
       title: s.title ?? S.chat.defaultSessionTitle,
       path: "/chat/" + encodeURIComponent(s.sessionId),
     };
-    const actions = layoutActions(workspace, page, onNavigate);
-    if (workspace.layout.visible.includes(id))
-      actions.push({
-        id: "close-view",
-        label: S.pageWorkspace.closeView,
-        glyph: ICONS.cross,
-        onSelect: () => {
-          workspace.close(id);
-          onNavigate?.();
-        },
-      });
-    menu.unshift(...actions);
+    menu.unshift({
+      id: "separate",
+      label: S.pageWorkspace.separate,
+      glyph: ICONS.externalLink,
+      onSelect: () => {
+        workspace.separate(page);
+        onNavigate?.();
+      },
+    });
   }
   return (
     <>
@@ -183,15 +179,9 @@ export function SidebarSessionRow({
         menuActions={menu}
         moreLabel={S.chat.moreActions}
         onOpen={() => onOpen(s)}
-        draggable={!!workspace || draggable}
+        draggable={draggable}
         dropEdge={dropEdge}
-        onDragStart={(event) => {
-          if (workspace) {
-            event.dataTransfer.setData(PAGE_DRAG_TYPE, "chat:" + s.sessionId);
-            event.dataTransfer.effectAllowed = "move";
-          }
-          onDragStart?.(event);
-        }}
+        {...(onDragStart ? { onDragStart } : {})}
         {...(onDragEnd ? { onDragEnd } : {})}
         {...(onDragOver ? { onDragOver } : {})}
         {...(onDragLeave ? { onDragLeave } : {})}
