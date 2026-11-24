@@ -4,9 +4,10 @@
  * leg. Each takes its deps as plain shapes — the module that builds the routes binds them to
  * its own capabilities — and contributes its Hono group; the assembly lives in the server.
  *
- * The Session rule every group resolves by lives here too: a Session that does not exist is
- * 404 `session_not_found`, one the caller may not read is 404 as well (existence is not
- * revealed), and an admin is told 403 `session_forbidden`.
+ * The Session rule every group resolves by is the sessions library's `readableSession` (the
+ * server re-exports it as its own): a Session that does not exist is 404 `session_not_found`,
+ * one the caller may not read is 404 as well (existence is not revealed), and an admin is told
+ * 403 `session_forbidden`.
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -30,6 +31,7 @@ import type { EventSink } from "@prismshadow/penguin-library-http/event-stream";
 import { FRAME_TEXT_BUDGET } from "@prismshadow/penguin-library-http/socket-line-frames";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
+import { readableSession } from "@prismshadow/penguin-library-session/access";
 import type {
   HistoryProgress,
   HistoryRecords,
@@ -68,35 +70,6 @@ export interface TraceAccess {
 /** The agent-config surface the import route checks (server `AgentConfig`). */
 export interface TraceAgentConfig {
   requireExists(projectId: string, agentId: string): Promise<void>;
-}
-
-/** The path's Session, for a caller who may read it: 404 without leaking existence. */
-function resolveReadingSession(
-  deps: { sessions: Pick<SessionIndex, "findById">; access: TraceAccess },
-  sessionId: string | undefined,
-  user: { userId: string; isAdmin: boolean },
-): SessionRow {
-  const row = sessionId ? deps.sessions.findById(sessionId) : null;
-  if (row === null) {
-    throw new HttpError(
-      404,
-      "session_not_found",
-      "Session does not exist or you do not have access.",
-    );
-  }
-  try {
-    deps.access.requireProjectAccess(user.userId, row.projectId);
-  } catch {
-    if (user.isAdmin === true) {
-      throw new HttpError(403, "session_forbidden", "This account may not read this Session.");
-    }
-    throw new HttpError(
-      404,
-      "session_not_found",
-      "Session does not exist or you do not have access.",
-    );
-  }
-  return row;
 }
 
 /**
@@ -281,7 +254,7 @@ async function serveHistory(
 
 export interface HistoryRouteDeps {
   sessions: Pick<SessionIndex, "findById">;
-  access: TraceAccess;
+  access: Pick<TraceAccess, "requireProjectAccess">;
   traces: Pick<Traces, "readHistoryWindow">;
   manager: SessionHistoryDeps["manager"];
   channels: SessionHistoryDeps["channels"];
@@ -309,7 +282,11 @@ export function historyRoutes(deps: HistoryRouteDeps): Hono<AppEnv> {
       try {
         // The rule every Session route resolves by: a refused admin is told so (403
         // `session_forbidden`), anyone else finds nothing.
-        const row = resolveReadingSession(deps, c.req.param("sessionId"), c.var.user);
+        const row = readableSession(
+          deps.sessions.findById(c.req.param("sessionId")),
+          c.var.user,
+          deps.access,
+        );
         const query = parseHistoryQuery((name) => c.req.query(name));
         await serveHistory(out, deps, windows, row, query, lastEventId, c.var.user.userId);
       } catch (err) {
@@ -337,7 +314,7 @@ async function readLine(path: string, start: number, end: number): Promise<Buffe
 
 export interface HistoryLinesRouteDeps extends HistoryLinesDeps {
   sessions: Pick<SessionIndex, "findById">;
-  access: TraceAccess;
+  access: Pick<TraceAccess, "requireProjectAccess">;
   log?: (line: string) => void;
 }
 
@@ -378,9 +355,12 @@ export function historyLinesRoutes(deps: HistoryLinesRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const log = deps.log ?? (() => undefined);
 
-  /** The path's Session, for a caller who may read it (http/session-access.ts). */
-  const resolveSession = (c: Context<AppEnv>): SessionRow =>
-    resolveReadingSession(deps, c.req.param("sessionId"), c.var.user);
+  /** The path's Session, for a caller who may read it (the sessions library's one rule). */
+  const resolveSession = (c: Context<AppEnv>): SessionRow => {
+    const sessionId = c.req.param("sessionId");
+    const row = sessionId ? deps.sessions.findById(sessionId) : null;
+    return readableSession(row, c.var.user, deps.access);
+  };
 
   app.get("/:sessionId/history-lines", (c) => {
     const row = resolveSession(c);

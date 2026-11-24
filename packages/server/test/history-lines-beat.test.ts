@@ -36,10 +36,7 @@ describe("history-lines while it plans", () => {
         historyTraceFiles: async () => [],
       },
       sessions: { findById: (id) => (id === "s1" ? row : null) },
-      access: {
-        requireProjectAccess: () => ({}) as never,
-        requireProjectOwner: () => ({}) as never,
-      },
+      access: { requireProjectAccess: () => ({}) as never },
       manager: {
         statusOf: () => "idle",
         liveFragments: () => [],

@@ -28,6 +28,10 @@
       "types": "./dist/session.d.ts",
       "import": "./dist/session.js"
     },
+    "./access": {
+      "types": "./dist/access.d.ts",
+      "import": "./dist/access.js"
+    },
     "./repos/schedules": {
       "types": "./dist/repos/schedules.d.ts",
       "import": "./dist/repos/schedules.js"

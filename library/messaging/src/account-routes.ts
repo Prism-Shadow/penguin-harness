@@ -30,7 +30,7 @@ import type { MessagingMachineApi } from "./ports.js";
 import { HttpError } from "@prismshadow/penguin-library-http";
 import { badRequest, requireValidId } from "@prismshadow/penguin-library-http/validate";
 
-/** What these route groups reach — bound by their module (accounts-module.ts). */
+/** What these route groups reach — bound by their module (server runtime/messaging). */
 export interface MessagingAccountsRouteDeps {
   messagingRepo: Pick<MessagingBindings, "listAll">;
   sessionsRepo: Pick<SessionIndex, "findById">;
