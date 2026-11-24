@@ -68,17 +68,6 @@ export function AppProof() {
         </div>
         <div className="proof-illustration">
           <ApplicationFigure lang={locale} selected={selected} onSelect={pick} />
-          <div
-            className="proof-pick proof-switch"
-            role="group"
-            aria-label={zh ? "选择应用" : "Choose an application"}
-          >
-            {titles.map((name, i) => (
-              <button key={i} type="button" aria-pressed={selected === i} onClick={() => pick(i)}>
-                {name}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
       {open && selected === 0 && (

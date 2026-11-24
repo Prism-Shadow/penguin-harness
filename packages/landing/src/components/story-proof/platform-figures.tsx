@@ -1,74 +1,114 @@
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
-function Deck({ word }: { word: string }) {
+const mobileQuery = "(max-width: 640px)";
+function observeWidth(notify: () => void) {
+  const media = window.matchMedia(mobileQuery);
+  media.addEventListener("change", notify);
+  return () => media.removeEventListener("change", notify);
+}
+
+function Diagram({ name, children }: { name: string; children: (mobile: boolean) => ReactNode }) {
+  const mobile = useSyncExternalStore(
+    observeWidth,
+    () => window.matchMedia(mobileQuery).matches,
+    () => false,
+  );
+  const root = useRef<SVGSVGElement>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const element = root.current;
+    if (!element) return;
+    const watcher = new IntersectionObserver(
+      ([entry]) => setVisible(entry?.isIntersecting === true),
+      { threshold: 0.15 },
+    );
+    watcher.observe(element);
+    return () => watcher.disconnect();
+  }, []);
   return (
-    <g aria-hidden="true">
-      <ellipse cx="279" cy="256" rx="193" ry="31" fill="#315c4f" opacity=".10" />
-      <path
-        d="m43 199 292-64 186 39v18c0 9-6 12-14 14l-263 71c-10 3-18 3-28 0L55 231c-7-2-12-7-12-14Z"
-        fill="#243b39"
-      />
-      <path
-        d="m43 199 284-75c5-2 11-2 17 0l165 39c17 4 18 13 3 18l-274 75c-7 2-13 2-21 0L56 215c-15-4-18-12-13-16Z"
-        fill="#d1e9da"
-        stroke="#396554"
-        strokeWidth="2"
-      />
-      <path d="m53 219 163 43q10 3 22 0l270-73" fill="none" stroke="#90d3b2" strokeWidth="2" />
-      <path d="m89 197 237-62 147 34-238 64Z" fill="#afcfbd" opacity=".75" />
-      <text
-        x="268"
-        y="252"
-        transform="rotate(-15 268 252)"
-        fill="#e2eee6"
-        fontSize="10"
-        fontWeight="650"
-        letterSpacing="1.2"
-      >
-        {word}
-      </text>
-      <circle cx="69" cy="224" r="2.4" fill="#82e6b8" />
-      <circle cx="78" cy="227" r="2.4" fill="#82e6b8" />
-    </g>
+    <svg
+      ref={root}
+      className="proof-diagram"
+      viewBox={mobile ? "0 0 280 275" : "0 0 600 258"}
+      data-visible={visible}
+      role="group"
+      aria-label={name}
+    >
+      {children(mobile)}
+    </svg>
   );
 }
 
-function Window({
+function Choice({
   x,
   y,
-  color,
+  active,
+  title,
+  onClick,
   children,
 }: {
   x: number;
   y: number;
-  color: string;
+  active: boolean;
+  title: string;
+  onClick: () => void;
   children: ReactNode;
 }) {
   return (
-    <g transform={`translate(${x} ${y}) skewY(-12)`}>
-      <path d="M6 3 12 0h116q5 0 5 5v86l-6 4Z" fill="#39574b" stroke="#39574b" strokeWidth="2" />
-      <rect
-        x="4"
-        y="4"
-        width="124"
-        height="91"
-        rx="6"
-        fill="#fffef9"
-        stroke="#39574b"
-        strokeWidth="2"
-      />
-      <path d="M10 5h111q6 0 6 6v9H5V11q0-6 5-6Z" fill={color} />
-      <circle cx="13" cy="12" r="2" fill="#38574e" />
-      <circle cx="20" cy="12" r="2" fill="#38574e" />
+    <g
+      transform={`translate(${x} ${y})`}
+      className="diagram-choice"
+      data-active={active}
+      role="button"
+      tabIndex={0}
+      aria-label={title}
+      aria-pressed={active}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+    >
+      <title>{title}</title>
       {children}
     </g>
   );
 }
 
-const names = {
-  en: ["Release checklist", "Run scores", "Document questions"],
+function Output({ kind }: { kind: number }) {
+  if (kind === 0)
+    return (
+      <g>
+        <path d="M-15 -15h32v31h-32z" className="sample-paper" />
+        <path d="m-11 -6 2.5 2.5 4-5M0 -6h11M0 2h9M0 10h6" />
+        <path d="M-11 0h5v5h-5zm0 8h5v5h-5z" strokeWidth="1.2" />
+      </g>
+    );
+  if (kind === 1)
+    return (
+      <g>
+        <path d="M-17 -14v29h36" />
+        <path d="M-12 12V5h6v7m4 0V-2h6v14m4 0V-9h6v21" className="sample-fill" />
+        <path d="m-13 -3 9-8 7 4 11-11" />
+      </g>
+    );
+  return (
+    <g>
+      <path d="M-16 -16H5l6 6v13M-16 -16v32H3M5 -16v7h6M-11 -5h14m-14 6h9m-9 6h7" />
+      <circle cx="8" cy="7" r="7" className="sample-paper" />
+      <path d="m13 12 7 7" />
+    </g>
+  );
+}
+
+const appNames = {
+  en: ["Launch checklist", "Run scores", "Document questions"],
   zh: ["上线清单", "评估结果", "文档问答"],
 } as const;
+
 export function ApplicationFigure({
   selected,
   onSelect,
@@ -78,87 +118,134 @@ export function ApplicationFigure({
   onSelect: (i: number) => void;
   lang: "en" | "zh";
 }) {
-  const choose = (i: number) => ({
-    role: "button",
-    tabIndex: 0,
-    "aria-label": names[lang][i],
-    "aria-pressed": i === selected,
-    onClick: () => onSelect(i),
-    onKeyDown: (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        onSelect(i);
-      }
-    },
-  });
+  const zh = lang === "zh";
   return (
-    <svg
-      className="proof-object"
-      viewBox="0 0 560 295"
-      role="group"
-      aria-label={
-        lang === "zh" ? "一个操作系统里的三个应用" : "Three applications on one operating system"
+    <Diagram
+      name={
+        zh
+          ? "从需求到同一操作系统里的应用"
+          : "From a request to applications on one operating system"
       }
     >
-      <Deck word="PenguinHarness OS" />
-      <path d="m90 197 70-18 53 15 68-18 63 16 84-22" stroke="#fff" strokeWidth="3" fill="none" />
-      <g {...choose(1)} className="object-choice" data-selected={selected === 1}>
-        <title>{names[lang][1]}</title>
-        <ellipse cx="158" cy="181" rx="64" ry="10" fill="#668977" opacity=".24" />
-        <Window x={85} y={82} color="#e9d49d">
-          <path d="M20 75h91" stroke="#989a85" />
-          {[15, 29, 21, 39, 46].map((h, i) => (
-            <rect
-              key={h}
-              x={23 + i * 17}
-              y={74 - h}
-              width="11"
-              height={h}
-              rx="2"
-              fill={i === 4 ? "#ae7838" : "#d8bc77"}
-            />
-          ))}
-        </Window>
-      </g>
-      <g {...choose(2)} className="object-choice" data-selected={selected === 2}>
-        <title>{names[lang][2]}</title>
-        <ellipse cx="393" cy="153" rx="61" ry="9" fill="#668977" opacity=".24" />
-        <Window x={321} y={52} color="#c7b6dd">
-          <path d="M21 31h48l16 15v35H21Z" fill="#f4f0f8" stroke="#9074a6" strokeWidth="2" />
-          <path d="M69 31v15h16m-53 9h33m-33 8h25" fill="none" stroke="#94819e" strokeWidth="2.6" />
-          <circle cx="91" cy="57" r="13" fill="#f7f3fc" stroke="#795594" strokeWidth="4" />
-          <path d="m100 68 12 12" stroke="#795594" strokeWidth="5" strokeLinecap="round" />
-        </Window>
-      </g>
-      <g {...choose(0)} className="object-choice" data-selected={selected === 0}>
-        <title>{names[lang][0]}</title>
-        <ellipse cx="281" cy="206" rx="72" ry="12" fill="#5e8977" opacity=".3" />
-        <Window x={208} y={116} color="#8bccad">
-          {[32, 51, 70].map((y, i) => (
-            <g key={y}>
-              <rect
-                x="17"
-                y={y}
-                width="10"
-                height="10"
-                rx="2"
-                fill={i === 0 ? "#269770" : "#f3faf5"}
-                stroke="#508c72"
-              />
-              {i === 0 && (
-                <path d={`m19 ${y + 5} 2 2 4-5`} stroke="white" fill="none" strokeWidth="1.4" />
-              )}
+      {(mobile) => {
+        const x = mobile ? 114 : 361;
+        const ys = mobile ? [60, 140, 220] : [50, 129, 208];
+        const inputY = mobile ? 140 : 129;
+        const fork = mobile ? 45 : 167;
+        const radius = mobile ? 15 : 30;
+        return (
+          <>
+            <g className="diagram-label">
+              <text x={mobile ? 2 : 22} y={mobile ? 115 : inputY - 23}>
+                {zh ? "需求" : "Input"}
+              </text>
               <path
-                d={`M36 ${y + 3}h${62 - i * 9}M36 ${y + 8}h${36 - i * 3}`}
-                stroke="#708b7c"
-                strokeWidth="2.3"
-                strokeLinecap="round"
+                d={`M${mobile ? 6 : 25} ${inputY - 5}l5 5-5 5m10 0h7`}
+                className="diagram-prompt-mark"
               />
             </g>
-          ))}
-        </Window>
-      </g>
-    </svg>
+            <path className="diagram-rail" d={`M${mobile ? 34 : 66} ${inputY}H${fork}`} />
+            {ys.map((y, i) => {
+              const d =
+                y === inputY
+                  ? `M${fork} ${y}H${x - 24}`
+                  : `M${fork} ${inputY}Q${fork + radius} ${inputY} ${fork + radius} ${inputY + Math.sign(y - inputY) * radius}V${y - Math.sign(y - inputY) * radius}Q${fork + radius} ${y} ${fork + 2 * radius} ${y}H${x - 24}`;
+              const name = appNames[lang][i]!;
+              return (
+                <g
+                  key={i}
+                  className="output-route"
+                  data-current={selected === i}
+                  style={{ "--order": i } as React.CSSProperties}
+                >
+                  <path d={d} className="diagram-rail" />
+                  <path key={selected} d={d} pathLength={1} className="diagram-signal" />
+                  <Choice
+                    x={x}
+                    y={y}
+                    active={i === selected}
+                    title={name}
+                    onClick={() => onSelect(i)}
+                  >
+                    <rect
+                      className="choice-hit"
+                      x={-24}
+                      y={-28}
+                      width={mobile ? 185 : 220}
+                      height={56}
+                      rx={3}
+                    />
+                    <g className="output-symbol">
+                      <Output kind={i} />
+                    </g>
+                    <text className="diagram-name" x={mobile ? 28 : 34} y={4}>
+                      {name}
+                    </text>
+                  </Choice>
+                </g>
+              );
+            })}
+            <circle cx={fork} cy={inputY} r="3.5" className="diagram-junction" />
+            <text x={mobile ? 2 : 67} y={mobile ? 265 : 228} className="diagram-caption">
+              PenguinHarness OS
+            </text>
+          </>
+        );
+      }}
+    </Diagram>
+  );
+}
+
+type Task = "coverage" | "filing";
+function AgentMark({ id }: { id: Task }) {
+  return id === "coverage" ? (
+    <g className="agent-symbol">
+      <path d="m0 -12 11 4v8c0 5-6 10-11 13-5-3-11-8-11-13v-8Z" />
+      <path d="m-5 0 3 3 7-7" />
+    </g>
+  ) : (
+    <g className="agent-symbol">
+      <path d="M-13 -7h10l3 4h12v13h-25zM-10 -8v-4H4l5 5v4" />
+      <path d="M-6 2h11" />
+    </g>
+  );
+}
+
+function Stage({
+  x,
+  y,
+  i,
+  name,
+  mobile,
+}: {
+  x: number;
+  y: number;
+  i: number;
+  name: string;
+  mobile: boolean;
+}) {
+  return (
+    <g transform={`translate(${x} ${y})`} className="flow-stage">
+      <circle r={14} />
+      {i === 1 ? (
+        <path d="m-5 5 1-4 6-6 3 3-6 6z" />
+      ) : i === 2 ? (
+        <path d="m-6 0 4 4 8-9" />
+      ) : (
+        <g>
+          <path d="m-6 3 4-5 3 3 5-7" />
+          <path d="M-6 7h12" />
+        </g>
+      )}
+      <text
+        className="diagram-step"
+        x={mobile ? 23 : 0}
+        y={mobile ? 4 : 34}
+        textAnchor={mobile ? "start" : "middle"}
+      >
+        {name}
+      </text>
+    </g>
   );
 }
 
@@ -168,146 +255,117 @@ export function EvolutionFigure({
   lang,
   decision,
 }: {
-  selected: "coverage" | "filing";
-  onSelect: (id: "coverage" | "filing") => void;
+  selected: Task;
+  onSelect: (id: Task) => void;
   lang: "en" | "zh";
   decision: "baseline" | "candidate" | null;
 }) {
   const zh = lang === "zh";
-  const center = (id: "coverage" | "filing") => ({
-    role: "button",
-    tabIndex: 0,
-    "aria-label":
-      id === "coverage"
-        ? zh
-          ? "核赔 Agent"
-          : "Coverage agent"
-        : zh
-          ? "归档 Agent"
-          : "Filing agent",
-    "aria-pressed": selected === id,
-    onClick: () => onSelect(id),
-    onKeyDown: (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        onSelect(id);
-      }
-    },
-  });
+  const ids: Task[] = ["coverage", "filing"];
+  const labels = zh ? ["核赔 Agent", "归档 Agent"] : ["Coverage agent", "Filing agent"];
+  const stages = zh ? ["评估", "改进", "复测"] : ["Evaluate", "Improve", "Retest"];
   return (
-    <svg
-      className="proof-object"
-      viewBox="0 0 560 295"
-      role="group"
-      aria-label={
+    <Diagram
+      name={
         zh
-          ? "两个 Agent 回到共用的评估与复测平台"
-          : "Two agents return to the same evaluation and retest platform"
+          ? "两个 Agent 在同一平台评估并返回各自版本"
+          : "Two agents evaluate on one platform and return to their own versions"
       }
     >
-      <defs>
-        {["#208366", "#84639c"].map((color, i) => (
-          <marker
-            key={color}
-            id={"proof-loop-" + i}
-            markerWidth="5"
-            markerHeight="5"
-            refX="4"
-            refY="2.5"
-            orient="auto"
+      {(mobile) => (
+        <>
+          {ids.map((id, i) => {
+            const active = id === selected,
+              x = mobile ? [68, 212][i]! : 65,
+              y = mobile ? 36 : [57, 203][i]!;
+            const incoming = mobile
+              ? i === 0
+                ? "M68 64v9q0 14 14 14h39q19 0 19 20"
+                : "M212 64v9q0 14-14 14h-39q-19 0-19 20"
+              : i === 0
+                ? "M84 57h62q22 0 22 22v24q0 22 25 22h18"
+                : "M84 203h62q22 0 22-22v-31q0-25 25-25h18";
+            const returning = mobile
+              ? i === 0
+                ? "M140 216v18q0 19-18 19H32q-18 0-18-18V55q0-19 20-19h12"
+                : "M140 216v18q0 19 18 19h90q18 0 18-18V55q0-19-20-19h-12"
+              : i === 0
+                ? "M446 125h24q26 0 26-25V48q0-25-25-25H83q-18 0-18 16"
+                : "M446 125h24q26 0 26 25v62q0 25-25 25H83q-18 0-18-16";
+            return (
+              <g key={id} className="agent-route" data-current={active} data-agent={id}>
+                <path className="route-out" d={returning} />
+                <path className="route-in" d={incoming} />
+                <path
+                  className="route-arrow"
+                  d={
+                    mobile
+                      ? i === 0
+                        ? "m41 33 5 3-5 3"
+                        : "m239 33-5 3 5 3"
+                      : i === 0
+                        ? "m62 34 3 5 3-5"
+                        : "m62 226 3-5 3 5"
+                  }
+                />
+                <Choice x={x} y={y} active={active} title={labels[i]!} onClick={() => onSelect(id)}>
+                  <rect
+                    className="choice-hit"
+                    x={mobile ? -43 : -25}
+                    y="-20"
+                    width={mobile ? 86 : 170}
+                    height={mobile ? 47 : 42}
+                    rx="4"
+                  />
+                  <AgentMark id={id} />
+                  <text
+                    className="diagram-name"
+                    x={mobile ? 0 : 21}
+                    y={mobile ? 24 : -10}
+                    textAnchor={mobile ? "middle" : "start"}
+                  >
+                    {labels[i]}
+                  </text>
+                </Choice>
+              </g>
+            );
+          })}
+          <g className="common-run" key={selected}>
+            <path d={mobile ? "M140 108v105" : "M201 125h252"} className="common-line" />
+            <path
+              d={mobile ? "M140 108v105" : "M201 125h252"}
+              className="diagram-signal"
+              pathLength={1}
+            />
+            {stages.map((s, i) => (
+              <Stage
+                key={s}
+                i={i}
+                name={s}
+                x={mobile ? 140 : [223, 326, 430][i]!}
+                y={mobile ? [111, 161, 212][i]! : 125}
+                mobile={mobile}
+              />
+            ))}
+          </g>
+          <text
+            x={mobile ? 140 : 326}
+            y={mobile ? 273 : 85}
+            textAnchor="middle"
+            className="diagram-caption"
           >
-            <path d="m0 0 5 2.5L0 5Z" fill={color} />
-          </marker>
-        ))}
-      </defs>
-      <Deck word="PenguinHarness RSI" />
-      <g
-        className="proof-loop"
-        data-current={selected === "coverage"}
-        fill="none"
-        stroke="#208366"
-        strokeWidth="4"
-        strokeLinecap="round"
-      >
-        <path d="M232 170C140 193 72 151 99 97" markerEnd="url(#proof-loop-0)" />
-        <path d="M144 84C204 62 248 80 258 128" markerEnd="url(#proof-loop-0)" />
-      </g>
-      <g
-        className="proof-loop"
-        data-current={selected === "filing"}
-        fill="none"
-        stroke="#84639c"
-        strokeWidth="4"
-        strokeLinecap="round"
-      >
-        <path d="M319 157C385 172 469 131 447 80" markerEnd="url(#proof-loop-1)" />
-        <path d="M406 71C354 52 313 79 302 124" markerEnd="url(#proof-loop-1)" />
-      </g>
-      <g {...center("coverage")} className="object-choice" data-selected={selected === "coverage"}>
-        <title>{zh ? "核赔 Agent" : "Coverage agent"}</title>
-        <g transform="translate(77 46) skewY(-10)">
-          <path
-            d="M6 29 43 9l38 7v35q0 28-38 48Q6 84 6 59Z"
-            fill="#498e76"
-            stroke="#315d51"
-            strokeWidth="2"
-          />
-          <path
-            d="m6 25 35-16 31 7v33q0 25-31 41Q6 79 6 54Z"
-            fill="#addec7"
-            stroke="#315d51"
-            strokeWidth="2"
-          />
-          <path
-            d="m24 50 12 10 21-25"
-            fill="none"
-            stroke="#336552"
-            strokeWidth="5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </g>
-      </g>
-      <g {...center("filing")} className="object-choice" data-selected={selected === "filing"}>
-        <title>{zh ? "归档 Agent" : "Filing agent"}</title>
-        <g transform="translate(385 32) skewY(-10)">
-          <path
-            d="M2 31V17q0-4 5-4h25l8 8h41v54L9 89Z"
-            fill="#b8a4c9"
-            stroke="#6f597d"
-            strokeWidth="2"
-          />
-          <path d="M14 23h48v43H14Z" fill="#fffdf8" stroke="#8b7a91" />
-          <path d="M24 33h25m-25 8h19" stroke="#aa9caa" strokeWidth="2" />
-          <path d="m4 44 77-11-7 48-64 12Z" fill="#d7cae3" stroke="#745e84" strokeWidth="2" />
-          <path d="m23 56 31-4" stroke="#9a85ab" strokeWidth="3" />
-        </g>
-      </g>
-      <g aria-hidden="true">
-        <ellipse cx="281" cy="179" rx="68" ry="22" fill="#3e7462" />
-        <path d="M213 164v15c0 12 30 22 68 22s68-10 68-22v-15" fill="#38594f" />
-        <ellipse
-          cx="281"
-          cy="164"
-          rx="68"
-          ry="23"
-          fill="#93c5ae"
-          stroke="#3d6b57"
-          strokeWidth="2"
-        />
-        <ellipse cx="281" cy="162" rx="48" ry="14" fill="none" stroke="#d7f1df" strokeWidth="3" />
-        <g transform="translate(265 110) skewY(-12)">
-          <path d="M0 1h37l11 10v42H0Z" fill="#fffdf5" stroke="#466b58" strokeWidth="2" />
-          <path d="M37 1v11h11m-37 9h24m-24 7h18" fill="none" stroke="#86a591" strokeWidth="2" />
-          <path
-            d={decision === "baseline" ? "m17 39-5 3 5 4m-4-4h12" : "m14 41 4 4 9-11"}
-            stroke="#287b59"
-            strokeWidth="3"
-            fill="none"
-            strokeLinecap="round"
-          />
-        </g>
-      </g>
-    </svg>
+            {decision
+              ? decision === "candidate"
+                ? zh
+                  ? "已保留候选版本"
+                  : "Candidate kept"
+                : zh
+                  ? "已恢复基线版本"
+                  : "Baseline restored"
+              : "PenguinHarness RSI"}
+          </text>
+        </>
+      )}
+    </Diagram>
   );
 }

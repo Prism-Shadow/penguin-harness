@@ -52,17 +52,6 @@ export function RoundProof() {
         </div>
         <div className="proof-illustration">
           <EvolutionFigure lang={locale} selected={key} onSelect={choose} decision={decision} />
-          <div
-            className="proof-pick proof-switch"
-            role="group"
-            aria-label={zh ? "选择 Agent 的工作" : "Select the agent’s work"}
-          >
-            {(Object.keys(trials) as (keyof typeof trials)[]).map((id) => (
-              <button key={id} type="button" aria-pressed={key === id} onClick={() => choose(id)}>
-                {trials[id][locale].task}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
       {expanded && (

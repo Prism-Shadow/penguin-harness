@@ -75,46 +75,12 @@
   text-underline-offset: 0.22em;
   color: var(--accent);
 }
-.proof-scene {
-  position: relative;
-  isolation: isolate;
-  padding: 1.75rem 1.25rem 0.75rem 1.65rem;
-  min-width: 0;
-}
-.proof-sheets {
-  position: absolute;
-  z-index: -1;
-  inset: -5% -2%;
-  width: 104%;
-  height: 110%;
-  overflow: visible;
-  transition: transform 0.38s ease;
-}
-.proof-scene[data-state="request"] .proof-sheets {
-  transform: translate(-0.55rem, 0.3rem) rotate(-3deg);
-}
-.sheet-back {
-  fill: var(--tint);
-  stroke: var(--accent);
-  stroke-width: 1;
-}
-.sheet-mid {
-  fill: var(--quiet);
-  stroke: var(--line);
-  stroke-width: 1.4;
-}
-.sheet-edge {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 1.5;
-}
 .proof-sheet,
 .proof-trace {
   position: relative;
   border: 1px solid var(--line);
   border-radius: 0.72rem;
   background: var(--paper);
-  box-shadow: 0 0.5rem 1.5rem #173d2614;
 }
 .proof-sheet {
   min-height: 14.3rem;
@@ -369,40 +335,6 @@
 .proof-illustration {
   min-width: 0;
 }
-.proof-object {
-  display: block;
-  width: 100%;
-  overflow: visible;
-}
-.object-choice {
-  cursor: pointer;
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: transform 0.22s ease;
-}
-.object-choice:hover,
-.object-choice:focus-visible {
-  outline: none;
-  transform: translateY(-5px);
-}
-.object-choice:focus-visible {
-  filter: drop-shadow(0 0 3px #4485c4);
-}
-.object-choice[data-selected="true"] {
-  transform: translateY(-6px);
-}
-.proof-loop {
-  opacity: 0.54;
-  transition: opacity 0.2s ease;
-}
-.proof-loop[data-current="true"] {
-  opacity: 1;
-  stroke-width: 5.5;
-}
-.proof-switch {
-  justify-content: center;
-  gap: 0.4rem 1.2rem;
-}
 .proof-detail {
   margin-top: 0.85rem;
 }
@@ -422,20 +354,184 @@
   .proof-platform-copy p {
     margin: 0.35rem 0 0.5rem;
   }
-  .proof-object {
-    margin: 0.1rem auto;
-    max-width: 31rem;
-  }
-  .proof-switch {
-    gap: 0.15rem 0.7rem;
-  }
   .proof-pick button {
     font-size: 0.79rem;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .object-choice,
-  .proof-loop {
-    transition: none;
+.proof-diagram {
+  --graph-ink: var(--ink);
+  --graph-route: color-mix(in srgb, var(--muted) 62%, transparent);
+  --graph-fill: color-mix(in srgb, var(--accent) 16%, var(--paper));
+  display: block;
+  width: 100%;
+  overflow: visible;
+  isolation: isolate;
+}
+.proof-diagram text {
+  fill: var(--graph-ink);
+  font-family: inherit;
+  stroke: none;
+}
+.proof-diagram :is(path, line, circle) {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.diagram-label text,
+.proof-diagram .diagram-caption {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  fill: var(--muted);
+  letter-spacing: 0.025em;
+}
+.diagram-name {
+  font-size: 15px;
+  font-weight: 560;
+}
+.diagram-step {
+  font-size: 12.5px;
+}
+.diagram-prompt-mark {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.2;
+}
+.diagram-rail,
+.route-in,
+.route-out,
+.common-line,
+.route-arrow,
+.diagram-signal {
+  fill: none;
+  stroke-width: 1.65;
+}
+.diagram-rail {
+  stroke: var(--graph-route);
+}
+.diagram-signal {
+  stroke: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+}
+.output-route[data-current="true"] .diagram-rail {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.diagram-junction {
+  fill: var(--accent);
+  stroke: var(--paper);
+  stroke-width: 1.5;
+}
+.diagram-choice {
+  cursor: pointer;
+  outline: none;
+}
+.choice-hit {
+  pointer-events: all;
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 1.6;
+}
+.diagram-choice:focus-visible .choice-hit {
+  pointer-events: all;
+  stroke: var(--accent);
+}
+.diagram-choice:hover .diagram-name,
+.diagram-choice:focus-visible .diagram-name {
+  text-decoration: underline;
+}
+.output-symbol,
+.agent-symbol {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.8;
+}
+.diagram-choice[data-active="true"] :is(.output-symbol, .agent-symbol) {
+  stroke: var(--accent);
+}
+.output-symbol .sample-paper {
+  fill: var(--paper);
+}
+.output-symbol .sample-fill {
+  fill: var(--graph-fill);
+}
+.agent-symbol > path:first-child {
+  fill: var(--paper);
+}
+.agent-route .route-in {
+  stroke: var(--graph-route);
+}
+.agent-route .route-out,
+.agent-route .route-arrow {
+  stroke: var(--graph-route);
+}
+.agent-route[data-agent="filing"] .route-out {
+  stroke-dasharray: 4 4;
+}
+.agent-route[data-current="true"] .route-in,
+.agent-route[data-current="true"] .route-out,
+.agent-route[data-current="true"] .route-arrow {
+  stroke: var(--accent);
+}
+.common-line {
+  stroke: var(--ink);
+}
+.flow-stage > circle {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+.flow-stage path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.55;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .proof-diagram[data-visible="true"] .output-route[data-current="true"] .diagram-signal,
+  .proof-diagram[data-visible="true"] .common-run .diagram-signal {
+    animation: proof-transmit 0.85s ease-out backwards;
+  }
+  .proof-diagram[data-visible="true"] .output-route .output-symbol {
+    animation: proof-appear 0.32s ease-out backwards;
+    animation-delay: calc(var(--order) * 110ms);
+  }
+  @keyframes proof-appear {
+    from {
+      opacity: 0.15;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes proof-transmit {
+    0% {
+      stroke-dasharray: 0 1;
+      opacity: 1;
+    }
+    78% {
+      stroke-dasharray: 1 1;
+      opacity: 1;
+    }
+    100% {
+      stroke-dasharray: 1 1;
+      opacity: 0;
+    }
+  }
+}
+@media (max-width: 640px) {
+  .proof-diagram {
+    max-width: 25rem;
+    margin: auto;
+  }
+  .diagram-name {
+    font-size: 13px;
+  }
+  .agent-route .diagram-name {
+    font-size: 11.5px;
+  }
+  .proof-platform {
+    padding-bottom: 1.2rem;
+  }
+  .proof-platform-copy p {
+    max-width: 30ch;
   }
 }
