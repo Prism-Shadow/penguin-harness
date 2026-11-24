@@ -13,6 +13,7 @@ import type {
   ApprovalDecision,
   ErrorCode,
   AmspRecord,
+  PolicyDenial,
   ToolCallPayload,
 } from "@prismshadow/amsp/records";
 
@@ -64,16 +65,12 @@ export interface ApprovalContext {
 }
 
 /**
- * A denial that names the rule that caused it: the command policy's own answers — a `deny`
- * rule's `"forbidden"`, and the `"deny"` a host that cannot ask a person (an unattended
- * Session) answers a policy-reasoned call with. The engine renders it as
+ * A denial that names the rule that caused it (see {@link PolicyDenial} — defined with the
+ * records): the command policy's own answers, rendered by the engine as
  * ``Tool call denied by rule `<rule>`.`` so the model reads which rule refused the call
  * rather than a person who never saw it.
  */
-export interface PolicyDenial {
-  decision: "deny" | "forbidden";
-  rule: string;
-}
+export type { PolicyDenial };
 
 /**
  * Per-tool approval callback: the Human boundary gives allow/deny for each complete `tool_call`.

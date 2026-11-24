@@ -105,6 +105,18 @@ export type MessageOrigin = string;
  */
 export type ApprovalDecision = "allow" | "deny" | "forbidden";
 
+/**
+ * A denial that names the rule that caused it: the command policy's own answers — a `deny`
+ * rule's `"forbidden"`, and the `"deny"` a host that cannot ask a person (an unattended
+ * Session) answers a policy-reasoned call with. The engine renders it as
+ * ``Tool call denied by rule `<rule>`.``; the `approval_decision` event still carries the
+ * plain decision string (an {@link approvalDecision} builder normalizes it).
+ */
+export interface PolicyDenial {
+  decision: "deny" | "forbidden";
+  rule: string;
+}
+
 /** Token counts (input/output/cache/total). */
 export interface TokenCounts {
   cache_read: number;

@@ -18,6 +18,7 @@ import type {
   HookPayload,
   ImageUrlPayload,
   InlineDataPayload,
+  PolicyDenial,
   InlineThinkingPayload,
   McpConnectBeginPayload,
   McpConnectEndPayload,
@@ -226,10 +227,16 @@ export function partialToolCallOutput(args: {
 // event_msg -------------------------------------------------------------------
 
 export function approvalDecision(
-  decision: ApprovalDecision,
+  decision: ApprovalDecision | PolicyDenial,
   toolCallId: string,
 ): AmspRecord<ApprovalDecisionPayload> {
-  return event({ type: "approval_decision", decision, tool_call_id: toolCallId });
+  // A denial that names its rule (PolicyDenial) rides the event as the plain decision: the
+  // rule itself is named where the model reads it, in the denied tool_call_output's text.
+  return event({
+    type: "approval_decision",
+    decision: typeof decision === "string" ? decision : decision.decision,
+    tool_call_id: toolCallId,
+  });
 }
 
 /** abort event: a user interruption (its three codes), or the Task stopped at its turn cap (`max_turns`, with a line naming the cap). */
