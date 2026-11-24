@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { shellFor } from "../scripts/route-shell.mjs";
 
 const heading = (page) => page.getByRole("heading", { level: 1 });
 
@@ -65,3 +66,38 @@ for (const path of ["/plugins", "/benchmarks", "/blog"]) {
     );
   });
 }
+
+test("leaving a direct share before the lazy page mounts restores the homepage title", async ({
+  page,
+}) => {
+  const home = "PenguinHarness - Open RSI Framework for Enterprise AI Apps";
+  await page.route("**/amsp/", async (route) => {
+    const response = await route.fetch();
+    const body = shellFor(await response.text(), "https://penguin.ooo/amsp/", {
+      title: "AMSP: Agent Message Stream Protocol",
+      description: "The agent stream protocol",
+      image: "https://penguin.ooo/og-amsp.png",
+      imageAlt: "AMSP",
+    });
+    await route.fulfill({ response, body });
+  });
+  let release;
+  const hold = new Promise((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/pages/amsp.tsx*", async (route) => {
+    await hold;
+    await route.continue();
+  });
+  try {
+    await page.goto("/amsp/", { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveTitle("AMSP: Agent Message Stream Protocol");
+    await page.locator('nav a[href="/"]:visible').first().click();
+    await expect(heading(page)).toBeVisible();
+    await expect(page).toHaveTitle(home);
+    for (const selector of ['meta[property="og:title"]', 'meta[name="twitter:title"]'])
+      await expect(page.locator(selector)).toHaveAttribute("content", home);
+  } finally {
+    release();
+  }
+});
