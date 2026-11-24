@@ -2,8 +2,7 @@
  * What the App Center's context menus hold: an app tile's, a folder tile's, and the grid's own
  * for its empty space. Every arrangement the pointer makes by dragging is here too, so the
  * keyboard (Shift+F10, the ContextMenu key) and touch (press and hold) reach all of it: "Move
- * to…" opens the new-folder dialog with the app picked, puts it into a folder or makes a new
- * folder with another app, and forward / backward step an item through the grid or its folder.
+ * to…" opens the new-folder dialog with the app picked, or puts it into an existing folder, and forward / backward step an item through the grid or its folder.
  * The empty space's menu opens the new-folder dialog too. A workbench's menu also carries the
  * App Center visibility action. System tiles can be opened and arranged. An iframe system app also offers full screen.
  *
@@ -21,28 +20,23 @@ import {
   MenuLabel,
   MenuSeparator,
 } from "@prismshadow/penguin-ui";
-import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import {
   canStep,
   folderOf,
-  makeFolder,
   moveIntoFolder,
-  newFolderId,
   stepItem,
   takeOutOfFolder,
   type GridApp,
   type GridFolder,
   type GridItem,
 } from "./arrangement";
-import { TileIcon } from "./app-tile";
 
 /** What the menus act through: the grid as shown, and the page's own actions. */
 export interface GridActions {
   grid: readonly GridItem[];
   /** The viewer has an arrangement of their own, so restoring the default does something. */
   customized: boolean;
-  titleOf: (shortcut: AppCenterShortcut) => string;
   /** Shows a new arrangement and stores it. */
   arrange: (next: GridItem[]) => void;
   open: (app: GridApp) => void;
@@ -134,9 +128,6 @@ export function AppMenu({
     const folders = grid.filter(
       (item): item is GridFolder => item.type === "folder" && item.id !== holder?.id,
     );
-    const partners = grid.filter(
-      (item): item is GridApp => item.type === "app" && item.id !== app.id,
-    );
     return (
       <div ref={box} className="contents">
         <MenuItem
@@ -159,25 +150,6 @@ export function AppMenu({
             onSelect={act(close, () => actions.arrange(moveIntoFolder(grid, app.id, folder.id)))}
           />
         ))}
-        {partners.length > 0 && <MenuLabel>{S.appCenter.menu.newFolderWith}</MenuLabel>}
-        {partners.map((partner) => {
-          const title = actions.titleOf(partner.shortcut);
-          return (
-            <MenuItem
-              key={partner.id}
-              glyph={<TileIcon shortcut={partner.shortcut} title={title} size={ICON_SIZE.navRow} />}
-              label={title}
-              onSelect={act(close, () =>
-                actions.arrange(
-                  makeFolder(grid, app.id, partner.id, {
-                    id: newFolderId(grid),
-                    name: S.appCenter.newFolder,
-                  }),
-                ),
-              )}
-            />
-          );
-        })}
       </div>
     );
   }

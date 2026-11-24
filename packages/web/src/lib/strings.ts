@@ -1423,7 +1423,6 @@ export const zh = {
       back: "返回",
       /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
       toFolders: "移入分组",
-      newFolderWith: "与其组成新分组",
     },
     restoreTitle: "恢复默认排列",
     restoreBody: "应用中心将回到默认顺序：你的排序与分组都会清除，应用本身不受影响。",

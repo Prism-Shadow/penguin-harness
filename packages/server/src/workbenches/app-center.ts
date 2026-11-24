@@ -29,6 +29,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { iconImage, MAX_ICON_BYTES } from "@prismshadow/penguin-core";
+import type { AppCenterUnavailable } from "../api/types.js";
 import type { IconImage } from "@prismshadow/penguin-core";
 import type { IconRef } from "../api/types.js";
 import { iconRev } from "../http/icon-response.js";
@@ -330,15 +331,25 @@ export async function agentShortcuts(
   building: (workbenchId: string) => boolean,
   /** Which filter: the App Center's, or the sidebar's ({@link inView}); the reading is the same. */
   view: ShortcutView = "appCenter",
+  unavailable?: AppCenterUnavailable,
 ): Promise<AppCenterShortcut[]> {
-  const entries = await fs.readdir(base, { withFileTypes: true }).catch(() => []);
+  const entries = await fs
+    .readdir(base, { withFileTypes: true })
+    .catch((err: NodeJS.ErrnoException) => {
+      if (err.code !== "ENOENT") unavailable?.agents.push(agent.agentId);
+      return [];
+    });
   const out: AppCenterShortcut[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || !isWorkbenchId(entry.name)) continue;
     const dir = path.join(base, entry.name);
     const manifest = await readAppCenterManifest(dir, entry.name);
-    if (!(await inView(view, dir, manifest)) || (view !== "hidden" && (await isSwitchedOff(dir))))
+    if (!(await inView(view, dir, manifest)) || (view !== "hidden" && (await isSwitchedOff(dir)))) {
+      if (view === "appCenter" && manifest.appCenter?.show !== false) {
+        unavailable?.apps.push(`${agent.agentId}/${entry.name}`);
+      }
       continue;
+    }
     const build = await buildOf(dir, building(entry.name));
     // The sidebar lists only what is shown there; a tile carries the setting for its menu.
     const showInSidebar = view === "sidebar" || !(await isSwitchedOff(dir, HIDDEN_FROM_SIDEBAR));
