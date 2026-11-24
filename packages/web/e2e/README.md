@@ -53,7 +53,7 @@ With no arguments the runner executes every browser spec. `SKIP_BUILD=1` require
 server/web build and their workspace dependencies; the default runner builds them in dependency
 order. It uses a temporary data root and stops its server and mock on exit.
 
-The first run requires `pnpm --filter @prismshadow/penguin-web exec playwright install chromium`
+The first run requires `pnpm --filter @prismshadow/penguin-web exec playwright install chromium webkit`
 (add `--with-deps` on Linux CI). No provider credentials or external LLM service are needed.
 Failed tests retain a trace and screenshot under `packages/web/test-results/`. Server and mock
 logs are written to `packages/web/e2e-logs/` (override with `E2E_LOG_DIR`) and their tails are
