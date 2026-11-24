@@ -110,3 +110,26 @@ export function budgetPaused(f: BudgetFacts): SystemLine {
     notice: { kind: "budget_paused", params: budgetParams(f) },
   };
 }
+
+export interface TicketMigrationFacts {
+  /** How many ticket files carry a legacy id. */
+  count: number;
+  /** Where the originals were backed up, relative to the organization's directory. */
+  backup: string;
+}
+
+/**
+ * The one-time legacy-id migration: what it did, where the originals are, and the risk it
+ * carries. The id format requires the `ticket-` prefix; tickets filed before it existed are
+ * renamed, and moving and rewriting ticket files risks losing ticket data, so the line asks
+ * for a backup.
+ */
+export function ticketIdsMigrated(f: TicketMigrationFacts): SystemLine {
+  return {
+    text: `One-time migration: ${f.count} ticket(s) with legacy ids were migrated to the ticket- prefixed format (originals backed up at ${f.backup}). Migration moves and rewrites ticket files, which risks losing ticket data — for data safety, keep a backup.`,
+    notice: {
+      kind: "ticket_ids_migrated",
+      params: { count: String(f.count), backup: f.backup },
+    },
+  };
+}

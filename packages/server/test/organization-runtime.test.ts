@@ -27,7 +27,8 @@ import { ProjectsRepo } from "@prismshadow/penguin-library-project/repos/project
 import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
 import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
 import { OrgStore } from "../src/organization/store.js";
-import { parseChannelConfig, serializeCalendarEvent } from "../src/organization/files.js";
+import { parseChannelConfig, serializeCalendarEvent, serializeTicket } from "../src/organization/files.js";
+import type { TicketDoc } from "../src/organization/files.js";
 import { DEFAULT_CHANNEL_ID, ticketMonth, ticketPath } from "../src/organization/paths.js";
 import { zonedDate } from "../src/organization/zoned.js";
 import type { ErrorRecordArgs } from "@prismshadow/penguin-library-observability";
@@ -2120,7 +2121,9 @@ describe("organization runtime", () => {
         { userId: "alice" },
       );
       const headedId = "2026-09-01-legacy-launch";
-      const headedPath = ticketPath(orgDir(), headedId, "in_progress");
+      // A legacy file sits under its own date's month directory, built literally —
+      // ticketPath reads the month out of a prefixed id and is not for legacy names.
+      const headedPath = path.join(orgDir(), "tickets", "2026-09", "in_progress", `${headedId}.md`);
       const headed = [
         "# Ticket: Legacy launch",
         "",
@@ -2152,14 +2155,16 @@ describe("organization runtime", () => {
       ]);
       // The overview counts it in no column either.
       expect((await service.detail(P, ORG, "alice")).board.in_progress).toBe(0);
-      // Not a ticket to read, and a write asks for a repair instead of converting the file.
+      // Not a ticket to read, and no longer a ticket to write either: the id format takes the
+      // prefixed form only, so a legacy name resolves to nothing (the migration renames the
+      // file, and until then no id lookup can reach it).
       await expect(service.ticket(P, ORG, headedId)).rejects.toMatchObject({
         status: 404,
         code: "ticket_not_found",
       });
       await expect(
         service.progressTicket(P, ORG, headedId, "half done", { userId: "alice" }),
-      ).rejects.toMatchObject({ status: 409, code: "ticket_invalid" });
+      ).rejects.toMatchObject({ status: 404, code: "ticket_not_found" });
       // A new ticket gets the new prefixed id format, which never collides
       // with the legacy file even when the date and slug match.
       const next = await service.createTicket(
@@ -3300,6 +3305,141 @@ describe("organization runtime", () => {
       expect(names.filter((n) => n.includes(t.ticketId)).map((n) => path.basename(n))).toEqual([
         `${t.ticketId}.md`,
       ]);
+    });
+  });
+
+  describe("legacy ticket id migration", () => {
+    const doc = (title: string, extra: Partial<TicketDoc> = {}): TicketDoc => ({
+      title,
+      status: "proposed",
+      owner: `agent:${CEO}`,
+      notify: [`agent:${CEO}`],
+      priority: "P2",
+      sessions: [],
+      history: [],
+      goal: "",
+      acceptanceCriteria: "",
+      progress: [],
+      result: "",
+      extra: {},
+      extraSections: [],
+      ...extra,
+    });
+    /** Writes a ticket file under its legacy id: the month is the id's own first seven characters. */
+    const writeLegacy = async (id: string, column: string, raw: string): Promise<void> => {
+      const dir = path.join(orgDir(), "tickets", id.slice(0, 7), column);
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, `${id}.md`), raw, "utf8");
+    };
+
+    it("migrates once: backup, prefixed rename, references rewritten, and a warning that names the risk", async () => {
+      await createOrg();
+      const parentRaw = serializeTicket(doc("Legacy parent"));
+      await writeLegacy("2026-09-05-legacy-parent", "proposed", parentRaw);
+      await writeLegacy(
+        "2026-09-05-legacy-child",
+        "proposed",
+        serializeTicket(doc("Legacy child", { blockedBy: "2026-09-05-legacy-parent" })),
+      );
+      const modern = path.join(
+        orgDir(),
+        "tickets",
+        "2026-09",
+        "proposed",
+        "ticket-2026-09-06-modern.md",
+      );
+      await fs.mkdir(path.dirname(modern), { recursive: true });
+      await fs.writeFile(
+        modern,
+        serializeTicket(doc("Modern child", { parent: "2026-09-05-legacy-parent" })),
+        "utf8",
+      );
+      errors.length = 0;
+
+      const board = await service.tickets(P, ORG);
+      expect(board.columns.proposed.map((x) => x.ticketId).sort()).toEqual([
+        "ticket-2026-09-05-legacy-child",
+        "ticket-2026-09-05-legacy-parent",
+        "ticket-2026-09-06-modern",
+      ]);
+      // The legacy files are gone, and the originals sit in the backup under their own paths.
+      await expect(
+        fs.access(path.join(orgDir(), "tickets", "2026-09", "proposed", "2026-09-05-legacy-parent.md")),
+      ).rejects.toThrow();
+      const ticketsDir = path.join(orgDir(), "tickets");
+      const backups = (await fs.readdir(ticketsDir)).filter((n) => n.startsWith(".legacy-backup-"));
+      expect(backups).toHaveLength(1);
+      expect(
+        await fs.readFile(
+          path.join(ticketsDir, backups[0]!, "2026-09", "proposed", "2026-09-05-legacy-parent.md"),
+          "utf8",
+        ),
+      ).toBe(parentRaw);
+      // The references followed the migration, in both a legacy and a modern file.
+      expect(
+        await fs.readFile(
+          path.join(ticketsDir, "2026-09", "proposed", "ticket-2026-09-05-legacy-child.md"),
+          "utf8",
+        ),
+      ).toContain("blocked_by: ticket-2026-09-05-legacy-parent");
+      expect(await fs.readFile(modern, "utf8")).toContain(
+        "parent: ticket-2026-09-05-legacy-parent",
+      );
+      // The warning: the all-hands channel learns what happened, the risk, and the backup advice.
+      const allHands = await service.channelMessages(
+        P,
+        ORG,
+        { userId: "alice" },
+        DEFAULT_CHANNEL_ID,
+        {},
+      );
+      const notices = allHands.messages.filter(
+        (m) => m.sender === "system" && m.notice?.kind === "ticket_ids_migrated",
+      );
+      expect(notices).toHaveLength(1);
+      expect(notices[0]!.notice!.params.count).toBe("2");
+      expect(notices[0]!.notice!.params.backup).toContain(".legacy-backup-");
+      expect(notices[0]!.text).toContain("risks losing ticket data");
+      expect(notices[0]!.text).toContain("keep a backup");
+      // The ops log carries the same warning, once.
+      expect(errors.filter((e) => e.code === "org_ticket_legacy_migration")).toHaveLength(1);
+      // One-time means once: a second listing migrates nothing.
+      errors.length = 0;
+      await service.tickets(P, ORG);
+      expect(errors.filter((e) => e.code === "org_ticket_legacy_migration")).toHaveLength(0);
+      expect((await fs.readdir(ticketsDir)).filter((n) => n.startsWith(".legacy-backup-"))).toHaveLength(1);
+    });
+
+    it("pushes a migrated id past a new-format id that took its date and slug", async () => {
+      await createOrg();
+      const colDir = path.join(orgDir(), "tickets", "2026-09", "proposed");
+      await fs.mkdir(colDir, { recursive: true });
+      await fs.writeFile(
+        path.join(colDir, "ticket-2026-09-05-legacy-task.md"),
+        serializeTicket(doc("Taken")),
+        "utf8",
+      );
+      await writeLegacy("2026-09-05-legacy-task", "proposed", serializeTicket(doc("Legacy task")));
+      const board = await service.tickets(P, ORG);
+      expect(board.columns.proposed.map((x) => x.ticketId).sort()).toEqual([
+        "ticket-2026-09-05-legacy-task",
+        "ticket-2026-09-05-legacy-task-b",
+      ]);
+    });
+
+    it("leaves a legacy file that does not parse alone", async () => {
+      await createOrg();
+      const headedId = "2026-09-05-legacy-launch";
+      const headedPath = path.join(orgDir(), "tickets", "2026-09", "proposed", `${headedId}.md`);
+      await fs.mkdir(path.dirname(headedPath), { recursive: true });
+      const headed = "# Ticket: Legacy launch\n\nStatus: proposed\n";
+      await fs.writeFile(headedPath, headed, "utf8");
+      errors.length = 0;
+      await service.tickets(P, ORG);
+      expect(await fs.readFile(headedPath, "utf8")).toBe(headed);
+      expect((await fs.readdir(path.join(orgDir(), "tickets"))).filter((n) => n.startsWith(".legacy-backup-"))).toHaveLength(0);
+      // The invalid file is still reported, migration or not.
+      expect(errors.some((e) => e.code === "org_ticket_invalid")).toBe(true);
     });
   });
 });

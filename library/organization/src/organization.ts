@@ -39,6 +39,7 @@ export type OrgChannelNoticeKind =
   | "channel_removed"
   | "budget_warned"
   | "budget_paused"
+  | "ticket_ids_migrated"
   /**
    * Legacy, read-only: ticket changes no longer write into a channel — the board is read from
    * the board and the overview's inbox. These three kinds stay so the lines already in an

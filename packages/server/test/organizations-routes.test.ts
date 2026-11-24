@@ -228,7 +228,7 @@ describe("organization routes", () => {
       (await owner.post(`${base}/acme/tickets/not-an-id/move`, { status: "done" })).status,
     ).toBe(400);
     expect(
-      (await owner.post(`${base}/acme/tickets/2026-09-01-site/move`, { status: "flying" })).status,
+      (await owner.post(`${base}/acme/tickets/ticket-2026-09-01-site/move`, { status: "flying" })).status,
     ).toBe(400);
     expect((await owner.post(`${base}/acme/employees`, { title: "HR" })).status).toBe(400); // reportsTo missing
     // A calendar name the store would not list back is refused here, not written and then lost.
@@ -320,7 +320,7 @@ describe("organization routes", () => {
     ).toBe(400);
     expect(calls).toEqual([]);
     // An owner cannot be cleared: a ticket always has one, so `null` is refused as a shape.
-    expect((await owner.put(`${base}/tickets/2026-09-01-site`, { owner: null })).status).toBe(400);
+    expect((await owner.put(`${base}/tickets/ticket-2026-09-01-site`, { owner: null })).status).toBe(400);
   });
 
   it("routes handbook documents by their relative path and keeps the index", async () => {
@@ -471,7 +471,7 @@ describe("organization routes", () => {
   });
 
   it("passes the calling session through write bodies so the file records the employee", async () => {
-    const base = `/api/projects/${ownerProject}/organizations/acme/tickets/2026-09-01-site`;
+    const base = `/api/projects/${ownerProject}/organizations/acme/tickets/ticket-2026-09-01-site`;
     const res = await fromSession(t, `${base}/progress`, {
       text: "half done",
       sessionId: "session-desk",
@@ -483,7 +483,7 @@ describe("organization routes", () => {
       args: [
         ownerProject,
         "acme",
-        "2026-09-01-site",
+        "ticket-2026-09-01-site",
         "half done",
         { userId: "admin", sessionId: "session-desk", agentId: "acme_dev" },
       ],
@@ -497,7 +497,7 @@ describe("organization routes", () => {
       args: [
         ownerProject,
         "acme",
-        "2026-09-01-site",
+        "ticket-2026-09-01-site",
         { agentId: "acme_dev", message: "go" },
         { userId: "olivia" },
       ],
@@ -514,7 +514,7 @@ describe("organization routes", () => {
       args: [
         ownerProject,
         "acme",
-        "2026-09-01-site",
+        "ticket-2026-09-01-site",
         { agentId: "acme_mkt" },
         { userId: "admin", sessionId: "session-desk" },
       ],
@@ -526,7 +526,7 @@ describe("organization routes", () => {
       args: [
         ownerProject,
         "acme",
-        "2026-09-01-site",
+        "ticket-2026-09-01-site",
         "waiting",
         "user:olivia",
         { userId: "olivia" },
@@ -559,7 +559,7 @@ describe("organization routes", () => {
       { text: "ship it" },
     ]);
 
-    const progress = await memberApi.post(`${base}/tickets/2026-09-01-site/progress`, {
+    const progress = await memberApi.post(`${base}/tickets/ticket-2026-09-01-site/progress`, {
       text: "done",
       sessionId: "session-ceo-desk",
       agentId: "acme_ceo",
@@ -569,14 +569,14 @@ describe("organization routes", () => {
 
     // `attach` takes the Session to attach in the same field: it still arrives, as an argument
     // rather than an identity — this is the Web App's attach button.
-    const attach = await memberApi.post(`${base}/tickets/2026-09-01-site/attach`, {
+    const attach = await memberApi.post(`${base}/tickets/ticket-2026-09-01-site/attach`, {
       sessionId: "session-dev",
     });
     expect(attach.status).toBe(200);
     expect(calls.at(-1)?.args).toEqual([
       ownerProject,
       "acme",
-      "2026-09-01-site",
+      "ticket-2026-09-01-site",
       "session-dev",
       { userId: "mallory" },
     ]);
@@ -707,7 +707,7 @@ describe("organization sessions route over the real service", () => {
           previous: [],
         },
       });
-      await store.writeTicket(dir, "2026-09-02-site", "in_progress", {
+      await store.writeTicket(dir, "ticket-2026-09-02-site", "in_progress", {
         title: "Launch the site",
         status: "in_progress",
         owner: `agent:${agentId}`,

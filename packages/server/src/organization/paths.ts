@@ -95,11 +95,12 @@ export function ticketPath(dir: string, ticketId: string, column: OrgTicketStatu
 }
 
 /**
- * The `yyyy-mm` a ticket id belongs to: the seven characters after the `ticket-` prefix when
- * it carries one, else the id's first seven characters (a legacy id).
+ * The `yyyy-mm` a ticket id belongs to: the date that follows the `ticket-` prefix. Ids carry
+ * the prefix since the format required it; the legacy files the one-time migration renames
+ * are located by the migration itself, not through here.
  */
 export function ticketMonth(ticketId: string): string {
-  return ticketId.startsWith("ticket-") ? ticketId.slice(7, 14) : ticketId.slice(0, 7);
+  return ticketId.slice(7, 14);
 }
 
 /**

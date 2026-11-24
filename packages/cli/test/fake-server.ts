@@ -153,8 +153,8 @@ const DEFAULT_CEO_BUDGET = 100;
 const ORG_PERIOD = "2026-09";
 const TICKET_COLUMNS = ["proposed", "in_progress", "review", "done", "rejected"] as const;
 const OPEN_COLUMNS: readonly string[] = ["proposed", "in_progress", "review"];
-/** The server's TICKET_ID_PATTERN: an optional `ticket-` prefix, then a date and a letters-only slug. */
-const TICKET_ID_RE = /^(?:ticket-)?\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*$/;
+/** The server's TICKET_ID_PATTERN: the `ticket-` prefixed form only; legacy ids are migrated. */
+const TICKET_ID_RE = /^ticket-\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*$/;
 /** The server's TICKET_SLUG_PATTERN. */
 const TICKET_SLUG_RE = /^[a-z]+(?:-[a-z]+)*$/;
 /** The server's CHANNEL_ID_PATTERN. */
@@ -1766,7 +1766,7 @@ export class FakeServer {
         "pass --slug: lowercase English words joined by hyphens",
       );
     }
-    const ticketId = `${ORG_TODAY}-${slug}`;
+    const ticketId = `ticket-${ORG_TODAY}-${slug}`;
     if (org.tickets.has(ticketId))
       return this.error(409, "ticket_exists", `Ticket already exists: ${ticketId}`);
     // One owner: `--owner` when it is given, the caller otherwise.

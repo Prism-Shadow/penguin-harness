@@ -201,7 +201,7 @@ describe("tickets", () => {
     title: "Launch the site",
     status: "in_progress",
     owner: "agent:acme_dev",
-    parent: "2026-09-01-marketplace",
+    parent: "ticket-2026-09-01-marketplace",
     notify: ["agent:acme_ceo", "user:alice"],
     priority: "P1",
     due: "2026-09-15",
@@ -304,13 +304,8 @@ describe("tickets", () => {
     expect(slugSuffix(2)).toBe("b");
     expect(slugSuffix(26)).toBe("z");
     expect(slugSuffix(27)).toBe("aa");
-    expect(ticketMonth("2026-09-02-site")).toBe("2026-09");
-    // The new prefixed format derives the same month from its date.
     expect(ticketMonth("ticket-2026-09-02-site")).toBe("2026-09");
     // Joined the way the store joins it, so the assertion holds on Windows too.
-    expect(ticketPath("/org", "2026-09-02-site", "review")).toBe(
-      path.join("/org", "tickets", "2026-09", "review", "2026-09-02-site.md"),
-    );
     expect(ticketPath("/org", "ticket-2026-09-02-site", "review")).toBe(
       path.join("/org", "tickets", "2026-09", "review", "ticket-2026-09-02-site.md"),
     );
