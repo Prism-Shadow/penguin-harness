@@ -3932,17 +3932,6 @@ export abstract class SessionServiceIface {
    * source history itself when it needs it.
    */
   abstract latestTracePath(row: SessionRow): Promise<string | undefined>;
-  /**
-   * Startup adoption sweep: walks the whole trace tree once per boot and adopts every
-   * unmanaged Session (a Trace with no index row — legacy CLI-direct runs) as a
-   * `client: "cli"` row, so lists stay pure-SQLite afterwards. Enumerates
-   * `<root>/<project>/agents/<agent>/` directories directly — legacy Traces can live
-   * under Projects the DB has never seen — and reuses the existing discovery/adoption
-   * path per Agent (mtime-gated TraceIndexService reconcile, then registration-time
-   * facts; adoption reads no file itself). Idempotent (insertOrIgnore), so re-running —
-   * e.g. after a hot swap re-assembles the business surface — only costs the gated
-   * reconcile. Returns the number of rows adopted.
-   */
 }
 
 /** The per-spawn policies every Session's command environment is built with. */

@@ -12,6 +12,9 @@
  * and no entry with a `.git` path segment is extracted (a planted repository's config runs code
  * when git is run there); the current vault must be readable (a missing one is simply absent).
  * A `system_config.yaml` without `system_prompt` is laid over the template's (partial-config.ts).
+ * The workbenches' data folders beside the State follow their workbenches (the agent domain
+ * library's agent-app-data):
+ * the backup also holds each one the import replaces or removes.
  * Docs: /docs/self-improvement § "Snapshots and versions".
  */
 import { randomBytes } from "node:crypto";
