@@ -39,15 +39,14 @@ import type {
   TextPayload,
   ToolCallPayload,
 } from "@prismshadow/amsp/records";
+import type { ApprovalDecision, PolicyDenial } from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
-  ApprovalDecision,
   BackgroundTaskDoneEvent,
   EnvironmentInterface,
   GenerativeModelParameters,
   LLMInterface,
   LLMOutcome,
-  PolicyDenial,
   SubagentHandle,
   SubagentRunner,
   ToolConfig,
