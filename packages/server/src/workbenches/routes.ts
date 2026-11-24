@@ -56,6 +56,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type {
   AppCenterLayoutResponse,
   AppCenterResponse,
+  AppCenterUnavailable,
   WorkbenchAppCenterResponse,
   WorkbenchArchiveInstallResponse,
   WorkbenchesResponse,
@@ -782,8 +783,10 @@ export function appCenterRoutes(deps: AppCenterRouteDeps) {
     const projectId = requireValidId(c, "projectId");
     const { userId } = c.var.user;
     deps.access.requireProjectAccess(userId, projectId);
+    const unavailable: AppCenterUnavailable = { agents: [], apps: [] };
     return c.json({
-      shortcuts: await deps.workbenches.appCenter(projectId, hidden),
+      shortcuts: await deps.workbenches.appCenter(projectId, hidden, unavailable),
+      unavailable,
       layout: readAppCenterLayout(deps.prefs, userId, projectId),
     } satisfies AppCenterResponse);
   };

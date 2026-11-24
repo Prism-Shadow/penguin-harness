@@ -64,7 +64,13 @@ export const zh = {
     watcha: "观猹",
     watchaBadge: "PenguinHarness 观猹徽章",
     cliInstall: "命令行安装",
+    stats: [
+      { value: "跨平台部署", label: "Linux、Windows、macOS" },
+      { value: "100% 开源", label: "Apache 2.0 协议" },
+      { value: "首个自进化 Harness", label: "原生 Agent 自进化引擎" },
+    ],
     supportedModelsLabel: "支持模型",
+    supportedModelsMore: "以及更多",
     algorithmsLabel: "自进化算法",
     benchmarksLabel: "评估集",
     /** The kind each BENCHMARKS entry is shown by, keyed by its `kind`. */
@@ -177,7 +183,7 @@ export const zh = {
       "RSI 工具包改的是 Agent 的 Harness，也就是它的提示词和 Skill，模型保持不动，每一处改动都在 Benchmark 上度量效果。",
     evaluate: "评估",
     optimize: "优化",
-    title: "任意 Agent 都可以自进化的统一平台",
+    title: "任意 Agent 的统一自进化平台",
     subtitle:
       "默认由 General Agent 运行优化 Skill，每一轮只改被测 Agent 的一处；Evaluator 子 Agent 运行评估 Skill，在 Benchmark 的每个题目上给修改后的 Agent 打分。",
     nodeOptimizer: "Optimizer",
@@ -190,6 +196,7 @@ export const zh = {
     noteOld: "修改前先保存快照",
     noteNew: "只有分数更高才保留",
     /** Index-aligned with TRENDS in sections/self-improve.tsx. */
+    sampleTrends: "示例趋势",
     trends: [
       { label: "分数", hint: "满分 100" },
       { label: "成本", hint: "每次运行" },
@@ -249,7 +256,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cases: {
-    os: "构建你的第一个自进化 Agent OS",
+    os: "亲手构建你的第一个自进化 Agent OS",
     apps: ["文档问答", "投资分析", "法务助手"],
     title: "A2APP：一句话 + 0.6 元构建法务应用",
     /** The subtitle's first line, saying what A2APP is; `subtitle` is its second. */

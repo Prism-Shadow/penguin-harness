@@ -25,10 +25,21 @@
   }
 }
 
+/* Hero backdrop: a faint dot grid fading out downwards — subtle, no gradients on content. */
+.hero-dots {
+  background-image: radial-gradient(rgb(26 115 232 / 0.14) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: linear-gradient(to bottom, black 0%, transparent 78%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 78%);
+}
+.dark .hero-dots {
+  background-image: radial-gradient(rgb(138 180 248 / 0.16) 1px, transparent 1px);
+}
+
 /* Keep the hero hierarchy consistent across languages and let narrow screens wrap naturally. */
 .hero-positioning {
-  font-size: clamp(1.125rem, 3.6vw, 2.125rem);
-  line-height: 1.4;
+  font-size: clamp(1.5rem, 4vw, 2.6rem);
+  line-height: 1.5;
 }
 .hero-positioning-clause {
   display: inline-block;
