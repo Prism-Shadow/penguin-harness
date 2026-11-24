@@ -36,7 +36,12 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+  RefObject,
+} from "react";
 import {
   FOCUSABLE_SELECTOR,
   isTopEscLayer,
@@ -67,6 +72,7 @@ export function Dropdown({
   className,
   portal,
   anchorRect,
+  anchorElement,
   anchorOwner,
   returnFocus,
   onEscape,
@@ -95,6 +101,8 @@ export function Dropdown({
    * panel rather than re-placing it — see `anchorOwner` for which scrolls those are.
    */
   anchorRect?: AnchorRect | null;
+  /** A live trigger outside the wrapper, such as a textarea whose slash token opens the menu. */
+  anchorElement?: RefObject<HTMLElement | null>;
   /**
    * The element the `anchorRect` was measured from. A scroll then dismisses the panel only
    * when this element moved with it, which is what keeps a context menu in the sidebar
@@ -203,7 +211,7 @@ export function Dropdown({
     if (!open) return;
     const onClick = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (ref.current?.contains(target)) return;
+      if (ref.current?.contains(target) || anchorElement?.current?.contains(target)) return;
       if (panelRef.current?.contains(target)) return;
       setOpenRef.current(false);
     };
@@ -212,7 +220,7 @@ export function Dropdown({
     // panel that just unmounted.
     const layer = pushEscLayer();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || !isTopEscLayer(layer)) return;
+      if (e.key !== "Escape" || e.isComposing || !isTopEscLayer(layer)) return;
       triggerButton()?.focus();
       const esc = onEscapeRef.current;
       if (esc) esc();
@@ -236,9 +244,11 @@ export function Dropdown({
       setPos(null);
       return;
     }
-    // A virtual anchor (context menu) is already in viewport coordinates; otherwise the
-    // container's own box is the trigger.
-    const rect = anchorRect ?? ref.current.getBoundingClientRect();
+    // Follow a live trigger as it moves. Context menus supply the pointer's viewport box.
+    const rect = anchorRect ?? (anchorElement?.current ?? ref.current).getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const visibleTop = viewport?.offsetTop ?? 0;
+    const visibleBottom = visibleTop + (viewport?.height ?? window.innerHeight);
     // offsetWidth/offsetHeight, not the bounding rect: the panel plays a pop-in scale
     // animation, and a mid-animation rect reports a smaller box — which would under-clamp the
     // left edge and let the settled panel overrun the viewport. The offset box is untransformed.
@@ -253,8 +263,8 @@ export function Dropdown({
     // Flip when the requested side can't hold the panel and the other side has more room, then
     // cap the height to whatever that side actually offers: the panel scrolls internally rather
     // than running off the top or bottom of the screen, so every row stays reachable.
-    const roomBelow = window.innerHeight - rect.bottom - PANEL_GAP - VIEWPORT_MARGIN;
-    const roomAbove = rect.top - PANEL_GAP - VIEWPORT_MARGIN;
+    const roomBelow = visibleBottom - rect.bottom - PANEL_GAP - VIEWPORT_MARGIN;
+    const roomAbove = rect.top - visibleTop - PANEL_GAP - VIEWPORT_MARGIN;
     const wantUp = portal.direction === "up";
     const fits = wantUp ? panelHeight <= roomAbove : panelHeight <= roomBelow;
     const up = fits ? wantUp : roomAbove > roomBelow;
@@ -271,6 +281,7 @@ export function Dropdown({
     portal?.direction,
     portal?.align,
     children,
+    anchorElement,
     anchorRect?.top,
     anchorRect?.left,
     anchorRect?.bottom,
@@ -307,9 +318,13 @@ export function Dropdown({
     };
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("scroll", onResize);
     return () => {
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("scroll", onResize);
     };
   }, [open, portal, place, anchorRect]);
 

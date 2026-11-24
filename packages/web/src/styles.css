@@ -361,8 +361,15 @@
 
 /* The input stays at the visible end. A swipe reaches notices and queued messages above it. */
 .dock-composer-scroll {
+  max-height: var(--dock-composer-max-height);
   display: flex;
   flex-direction: column-reverse;
   overflow-y: auto;
   overscroll-behavior-y: contain;
+}
+
+/* Let the textarea scroll its own caret into view when the whole draft cannot fit. */
+.dock-composer-scroll [data-slot="composer"] textarea {
+  max-height: var(--dock-composer-max-height);
+  min-height: min(60px, var(--dock-composer-max-height));
 }

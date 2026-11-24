@@ -5,6 +5,8 @@
  * opens its tab there; drilling into a directory and opening a Markdown file renders the
  * preview; the dock's × puts the whole surface away.
  * A short phone with a composer notice can still open a panel, reach its actions, and return to its draft.
+ * Slash rows remain tappable, and the focused text and Close stay visible when a keyboard reduces
+ * the layout viewport or only the visual viewport.
  * Upload uses a nested path (notes/demo.md): also covers the server's sandbox
  * auto-creating a missing parent directory.
  */
@@ -118,3 +120,92 @@ test.describe("short touch viewport", () => {
     await expect(notice).toBeVisible();
   });
 });
+
+for (const browserName of ["webkit", "chromium"]) {
+  const phoneTest = test.extend({
+    browserName: [browserName, { scope: "worker", option: true }],
+    permissions: [],
+    isMobile: true,
+    hasTouch: true,
+  });
+  phoneTest(
+    browserName + ": slash choices, the focused draft and Close stay reachable above the keyboard",
+    async ({ page, browser }) => {
+      expect(browser.browserType().name()).toBe(browserName);
+      await page.setViewportSize({ width: 320, height: 568 });
+      await openSessionWithNotes(page, "phonekeyboard" + browserName);
+      const field = page.locator('[data-slot="composer"] textarea').first();
+      const dock = page.locator('[data-testid="dock"][data-position="bottom"][data-open="true"]');
+      await page.getByTestId("dock-toggle-bottom").tap();
+      await field.tap();
+      await field.fill("/agent");
+      await field.press("Enter");
+      const agentSearch = page.getByPlaceholder(/Search agents/);
+      await expect(agentSearch).toBeFocused();
+      await agentSearch.dispatchEvent("keydown", { key: "Escape", isComposing: true });
+      await expect(agentSearch).toBeFocused();
+      await agentSearch.press("Escape");
+      await expect(field).toBeFocused();
+      await field.fill("/");
+      await page.getByRole("button", { name: /^\/goal\b/ }).tap();
+      await expect(field).toHaveValue("");
+      await field.fill("Keep editing");
+      await field.tap();
+      // Safari keeps its layout viewport at the page height when its keyboard covers the bottom.
+      // Chromium can resize the layout itself. The visible editing and close targets must agree.
+      if (browserName === "webkit") {
+        await page.evaluate(() => {
+          Object.defineProperty(window.visualViewport, "height", {
+            configurable: true,
+            get: () => 360,
+          });
+          window.visualViewport.dispatchEvent(new Event("resize"));
+        });
+      } else {
+        await page.setViewportSize({ width: 320, height: 360 });
+      }
+      const hit = (locator) =>
+        locator.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const x = r.left + r.width / 2;
+          const y = r.top + r.height / 2;
+          return (
+            y >= 0 &&
+            y < window.visualViewport.height &&
+            el.contains(document.elementFromPoint(x, y))
+          );
+        });
+      await expect.poll(() => hit(field)).toBe(true);
+      await expect.poll(() => hit(dock.getByTestId("dock-close"))).toBe(true);
+      await expect(field).toBeFocused();
+      await field.press("End");
+      await page.keyboard.type(" on this phone");
+      await expect(field).toHaveValue("Keep editing on this phone");
+      const longDraft = Array.from({ length: 12 }, (_, i) => `Draft line ${i + 1}`).join("\n");
+      await field.fill(longDraft);
+      await field.press("Control+End");
+      await page.keyboard.type(" done");
+      await expect
+        .poll(() =>
+          field.evaluate((el) => {
+            const field = el.getBoundingClientRect();
+            const composer = el.closest(".dock-composer-scroll").getBoundingClientRect();
+            // Chromium leaves the bottom padding and some line leading below the caret.
+            const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
+            return (
+              field.top >= composer.top - 1 &&
+              field.bottom <= composer.bottom + 1 &&
+              el.selectionEnd === el.value.length &&
+              el.scrollHeight - el.scrollTop - el.clientHeight < lineHeight / 2
+            );
+          }),
+        )
+        .toBe(true);
+      await dock.getByTestId("dock-pick-workspace").tap();
+      await expect(dock.getByRole("tab", { name: /Files/ })).toBeInViewport();
+      await dock.getByTestId("dock-close").tap();
+      await expect(dock).toHaveCount(0);
+      await expect(field).toHaveValue(longDraft + " done");
+    },
+  );
+}

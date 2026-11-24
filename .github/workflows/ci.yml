@@ -560,14 +560,14 @@ jobs:
         with:
           ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
-      # Chromium downloads while the server and the Web App build: one waits on the network, the
+      # The browsers download while the server and the Web App build: one waits on the network, the
       # other on the CPU, so neither has to wait for the other.
-      - name: Build, with Chromium installing alongside
+      - name: Build, with browsers installing alongside
         run: |
-          pnpm --filter @prismshadow/penguin-web exec playwright install --with-deps chromium >"$RUNNER_TEMP/chromium.log" 2>&1 &
-          chromium=$!
+          pnpm --filter @prismshadow/penguin-web exec playwright install --with-deps chromium webkit >"$RUNNER_TEMP/browsers.log" 2>&1 &
+          browsers=$!
           pnpm --config.verify-deps-before-run=false --filter '@prismshadow/penguin-server...' --filter '@prismshadow/penguin-web...' --if-present build
-          wait "$chromium" || { cat "$RUNNER_TEMP/chromium.log"; exit 1; }
+          wait "$browsers" || { cat "$RUNNER_TEMP/browsers.log"; exit 1; }
       # project-switch.spec.mjs holds the Project-isolation line: two Projects with distinct
       # Agents, switched quickly under a throttled CPU and seeded API latency, must never pair
       # one Project with the other's Agents. It costs about half a minute. sticky-rows.spec.mjs

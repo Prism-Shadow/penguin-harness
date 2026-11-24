@@ -58,25 +58,53 @@ export function measureMergedComposer(element: HTMLElement | null): (() => void)
   const content = element.firstElementChild;
   const chat = element.parentElement;
   const area = element.closest<HTMLElement>("[data-dock-area]");
-  if (!(content instanceof HTMLElement) || !chat || !area) return measureComposer(element);
+  const host = element.closest<HTMLElement>("[data-dock-host]");
+  const editor = element.querySelector<HTMLTextAreaElement>('[data-slot="composer"] textarea');
+  if (!(content instanceof HTMLElement) || !chat || !area || !host || !editor)
+    return measureComposer(element);
 
+  const showEditor = () => {
+    if (!element.classList.contains("dock-composer-scroll")) return;
+    const box = element.getBoundingClientRect();
+    const field = editor.getBoundingClientRect();
+    if (field.top < box.top) element.scrollTop += field.top - box.top;
+    else if (field.bottom > box.bottom) element.scrollTop += field.bottom - box.bottom;
+  };
+  const viewport = window.visualViewport;
   const fit = () => {
+    // Safari can raise the keyboard without resizing the layout viewport. Leave pinch zoom alone.
+    const keyboard = viewport && viewport.scale === 1 && viewport.height < window.innerHeight;
+    host.style.maxHeight = keyboard
+      ? `${Math.max(0, viewport.offsetTop + viewport.height - host.getBoundingClientRect().top)}px`
+      : "";
     const available = area.getBoundingClientRect().bottom - chat.getBoundingClientRect().top;
     if (available <= 0) return;
-    // Even in landscape the composer keeps a scrollable share below its notices.
-    const limit = Math.max(available - DOCK_MIN_HEIGHT_PX, available / 4);
+    // Give the field room to edit even when that means a shorter dock. In a very short window
+    // both regions can still scroll; the user's stored dock ratio does not change.
+    const editingRoom = Math.min(Math.max(editor.offsetHeight, editor.scrollHeight), available / 2);
+    const limit = Math.max(available - DOCK_MIN_HEIGHT_PX, editingRoom);
     const scroll = content.getBoundingClientRect().height > limit;
+    const maxHeight = scroll ? `${Math.floor(limit)}px` : "";
+    const resized = element.style.getPropertyValue("--dock-composer-max-height") !== maxHeight;
     element.classList.toggle("dock-composer-scroll", scroll);
-    element.style.maxHeight = scroll ? `${Math.floor(limit)}px` : "";
+    element.style.setProperty("--dock-composer-max-height", maxHeight);
+    if (resized || document.activeElement === editor) showEditor();
   };
   fit();
   const observer = new ResizeObserver(fit);
-  for (const node of [area, chat, content]) observer.observe(node);
+  for (const node of [area, chat, content, editor]) observer.observe(node);
+  viewport?.addEventListener("resize", fit);
+  viewport?.addEventListener("scroll", fit);
+  editor.addEventListener("focus", showEditor);
   const stopMeasuring = measureComposer(element);
   return () => {
     observer.disconnect();
+    viewport?.removeEventListener("resize", fit);
+    viewport?.removeEventListener("scroll", fit);
+    editor.removeEventListener("focus", showEditor);
     stopMeasuring?.();
     element.classList.remove("dock-composer-scroll");
-    element.style.maxHeight = "";
+    element.style.removeProperty("--dock-composer-max-height");
+    host.style.maxHeight = "";
   };
 }
