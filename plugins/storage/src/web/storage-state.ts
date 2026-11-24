@@ -48,6 +48,7 @@ export function createStorageStore(
 ) {
   /** Invalidates the answers of requests a newer one replaced. */
   let gen = 0;
+  let canStartFirstMeasurement = true;
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   const stopPolling = () => {
@@ -75,8 +76,21 @@ export function createStorageStore(
       stopPolling();
       if (!polling) set({ loadError: null });
       try {
-        const usage = await request();
+        let usage = await request();
         if (g !== gen) return;
+        // An in-flight first measurement can end without a snapshot when its module is replaced.
+        // Ask the current module once. Further failures stay visible for an explicit retry.
+        if (
+          canStartFirstMeasurement &&
+          usage.measuredAt === null &&
+          !usage.measuring &&
+          !usage.error
+        ) {
+          canStartFirstMeasurement = false;
+          usage = await api.refreshStorageUsage();
+          if (g !== gen) return;
+        }
+        if (usage.measuredAt !== null) canStartFirstMeasurement = false;
         set({ usage, loadError: null });
         // First wait immediately. Space repeated reads if a server answers before the wait expires.
         if (usage.measuring)
@@ -97,6 +111,7 @@ export function createStorageStore(
       load: () => ask(() => api.getStorageUsage(), false),
 
       refresh: async () => {
+        canStartFirstMeasurement = false;
         set({ refreshing: true });
         try {
           await ask(() => api.refreshStorageUsage(), false);
@@ -116,6 +131,7 @@ export function createStorageStore(
       // Not final: a page mounted again (React's development double mount) reads again.
       dispose: () => {
         gen += 1;
+        canStartFirstMeasurement = true;
         stopPolling();
       },
     };

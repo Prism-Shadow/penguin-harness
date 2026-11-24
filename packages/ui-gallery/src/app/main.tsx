@@ -27,6 +27,8 @@ import "./app.css";
 import { DEMO_TAKEN_OVER, parseFrameParams } from "./frame";
 import { installGuestFrame } from "./guest-frame";
 import { installFetchShim } from "./mock/fetch-shim";
+import { setTerminalStreamOpener } from "../../../web/src/features/terminal/terminal-stream";
+import { openDemoTerminal } from "./mock/terminal";
 import { getStore } from "./mock/store";
 import { rsiPrompt } from "./mock/rsi-transcript";
 import { installEvolutionAutoplay } from "./evolution-autoplay";
@@ -62,6 +64,7 @@ const store = getStore({
 // Each homepage frame has its own storage. A stopped run returns to a usable new chat.
 if (params.freshProject) dismissOnboarding(store.f.project.projectId);
 installFetchShim();
+setTerminalStreamOpener(openDemoTerminal);
 
 // Framed, a focus must not scroll the page around the frame: the chat composer focuses itself
 // on mount, and the browser scrolls every ancestor document to centre a newly focused element,

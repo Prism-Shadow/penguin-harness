@@ -48,7 +48,7 @@ export function summarizeWork(items: ChatItem[]): {
       continue;
     }
     if (it.kind !== "tool_call") continue;
-    steps += 1;
+    if (!it.outputOnly) steps += 1;
     seen(it.argStartedAtMs ?? it.callStartedAtMs ?? it.approvalAtMs);
     if (it.durationMs === undefined) continue;
     const genMs =

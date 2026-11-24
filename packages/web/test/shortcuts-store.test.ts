@@ -19,7 +19,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseChord } from "../src/lib/shortcuts/chord";
-import { setPlatformForTests } from "../src/lib/shortcuts/platform";
+import { setHostForTests, setPlatformForTests } from "../src/lib/shortcuts/platform";
 import {
   KEYBINDINGS_KEY,
   bindingOf,
@@ -50,12 +50,35 @@ beforeEach(() => {
 
 afterEach(() => {
   setPlatformForTests(null);
+  setHostForTests(null);
   configureKeybindingsStoreForTests({ storage: null, layout: null });
 });
 
 const stored = (): unknown => JSON.parse(storage.map.get(KEYBINDINGS_KEY) ?? "null");
 
 describe("resolution", () => {
+  it("resolves host defaults while preserving manual overrides and explicit unbinds", () => {
+    for (const platform of ["linux", "windows", "mac"] as const) {
+      setPlatformForTests(platform);
+      setHostForTests("desktop");
+      expect(bindingOf("sidebar.toggle")).toEqual(parseChord("Mod+KeyB"));
+      expect(bindingOf("sessions.search")).toEqual(parseChord("Mod+KeyK"));
+      expect(bindingOf("chat.new")).toEqual(parseChord("Mod+KeyN"));
+      expect(bindingOf("dock.toggleRight")).toEqual(parseChord("Mod+Alt+KeyB"));
+      expect(bindingOf("dock.toggleBottom")).toEqual(parseChord("Mod+KeyJ"));
+      setBinding("sidebar.toggle", parseChord("Mod+Alt+Digit1"));
+      setBinding("chat.new", null);
+      setHostForTests("browser");
+      expect(bindingOf("sessions.search")).toEqual(parseChord("Mod+Alt+KeyS"));
+      expect(bindingOf("sidebar.toggle")).toEqual(parseChord("Mod+Alt+Digit1"));
+      expect(bindingOf("chat.new")).toBeNull();
+      resetBinding("sidebar.toggle");
+      resetBinding("chat.new");
+      expect(bindingOf("sidebar.toggle")).toEqual(parseChord("Mod+KeyB"));
+      expect(bindingOf("chat.new")).toEqual(parseChord("Mod+Alt+KeyN"));
+    }
+  });
+
   it("starts from the registry defaults for the platform", () => {
     expect(bindingOf("terminal.close")).toEqual(parseChord("Mod+Alt+Backquote"));
     expect(bindingOf("terminal.toggle")).toEqual({

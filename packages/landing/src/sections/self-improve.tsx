@@ -1,18 +1,23 @@
-/** The default optimizer and evaluators, followed by a recorded round on a decision agent. */
+/**
+ * One self-evolution round, drawn as the loop it is. The Optimizer (an ordinary agent running the
+ * agent-optimization Skill) dispatches Evaluator subagents (agent-evaluation), which run the
+ * tested agent on each Benchmark case and score it; scores and Traces flow back, and the
+ * Optimizer's change turns version N into N+1, drawn as the bold evolve arrow between the two
+ * versions. Beside it, the three numbers the scoreboard records for every version, each line
+ * growing from the left on a slow loop.
+ *
+ * The chart values are illustrative. Their shapes follow the rules, not a
+ * wish: the score only rises because a version is kept only when it scores higher, while cost and
+ * duration are recorded but never optimised, so they wander. Phones get the same loop as a stacked
+ * reading. Reduced motion: the flow dots stay off and every line is drawn finished.
+ */
 import { AgentEvaluationDiagram } from "../components/application-diagrams";
+import { useEffect, useRef } from "react";
 import { S } from "../lib/strings";
 import { useVisibleActivity } from "../lib/visible-activity";
 import { usePrefersReducedMotion } from "../lib/reduced-motion";
-import { gallerySurfaceUrl } from "../lib/live-frame";
-import { PHONE_VIEWPORT, useMedia } from "../lib/use-media";
-import { StorySection } from "../components/story-section";
-import { DemoVideo } from "../components/demo-video";
-import { demoVideoUrl } from "../lib/community-assets";
-import { useSiteLocale, useSiteTheme } from "@prismshadow/penguin-ui/site";
-import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
-import demoPosterZh from "../assets/shots/decision-evo-zh.webp";
-import demoPosterEn from "../assets/shots/decision-evo-en.webp";
-
+import { useWidth } from "../lib/use-width";
+import { Section } from "../components/section";
 /** Skill names and version marks are identifiers, the same in every language. */
 const OPTIMIZER_SKILL = "agent-optimization";
 const EVALUATOR_SKILL = "agent-evaluation";
@@ -144,6 +149,209 @@ const EDGE_FEEDBACK = "M390,150 L390,73";
 const EDGE_BENCH_OLD = "M300,208 L150,299";
 const EDGE_BENCH_NEW = "M420,208 L570,299";
 const EDGE_EVOLVE = "M226,328 L494,328";
+
+/** Draw-loop timing: grow, hold, fade, repeat. */
+const CYCLE_S = 4.6;
+const DRAW_END = 0.55;
+const HOLD_END = 0.84;
+const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t));
+
+/**
+ * One recorded number across the versions, with hairline axes and ticks. A single rAF clock grows
+ * the line from the left and carries the value on the moving head, so the number changes as the
+ * curve moves. Reduced motion shows the finished line with its last value.
+ */
+function TrendChart({
+  label,
+  hint,
+  points,
+  yTicks,
+  phase,
+  format,
+}: {
+  label: string;
+  hint: string;
+  points: readonly number[];
+  yTicks: readonly number[];
+  /** Seconds this chart runs ahead of the shared cycle (staggers the trio). */
+  phase: number;
+  format: (v: number) => string;
+}) {
+  // Laid out at the width it is shown at, so the ticks and the value keep the page's small size.
+  const { ref: box, width: W } = useWidth<HTMLDivElement>(210);
+  const H = 96;
+  const M = { left: 34, right: 12, top: 16, bottom: 22 };
+  const yMax = Math.max(...yTicks);
+  const yMin = Math.min(...yTicks);
+  const last = points.length - 1;
+  const px = (i: number) => M.left + (i / last) * (W - M.left - M.right);
+  const py = (v: number) => M.top + ((yMax - v) / (yMax - yMin || 1)) * (H - M.top - M.bottom);
+  const path = points.map((v, i) => `${i === 0 ? "M" : "L"}${px(i)},${py(v)}`).join(" ");
+  const xTicks = [0, Math.round(last / 2), last];
+  const axis = "stroke-gray-200 dark:stroke-gray-800";
+  const tickText = "fill-gray-500 text-xs tabular-nums dark:fill-gray-400";
+
+  const { ref, active } = useVisibleActivity<HTMLElement>();
+  const reduced = usePrefersReducedMotion();
+  const fadeRef = useRef<SVGGElement>(null);
+  const pathRef = useRef<SVGPathElement>(null);
+  const headRef = useRef<SVGGElement>(null);
+  const valueRef = useRef<SVGTextElement>(null);
+
+  useEffect(() => {
+    const fade = fadeRef.current;
+    const line = pathRef.current;
+    const head = headRef.current;
+    const value = valueRef.current;
+    if (!fade || !line || !head || !value) return;
+
+    const apply = (p: number, opacity: number) => {
+      line.style.strokeDashoffset = String(1 - p);
+      const f = p * last;
+      const i0 = Math.floor(f);
+      const i1 = Math.min(last, i0 + 1);
+      const v = (points[i0] ?? 0) + ((points[i1] ?? 0) - (points[i0] ?? 0)) * (f - i0);
+      const x = px(f);
+      const y = py(v);
+      head.setAttribute("transform", `translate(${x}, ${y})`);
+      value.textContent = format(v);
+      value.setAttribute("x", String(Math.min(W - M.right - 10, Math.max(M.left + 12, x))));
+      value.setAttribute("y", String(Math.max(12, y - 9)));
+      fade.style.opacity = String(opacity);
+    };
+
+    if (reduced || !active) {
+      apply(1, 1);
+      return;
+    }
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const t = (((now - t0) / 1000 + phase) % CYCLE_S) / CYCLE_S;
+      if (t < DRAW_END) apply(easeInOut(t / DRAW_END), 1);
+      else if (t < HOLD_END) apply(1, 1);
+      else apply(1, 1 - (t - HOLD_END) / (1 - HOLD_END));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // px/py are pure functions of the props and the width below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [points, phase, format, active, reduced, W]);
+
+  return (
+    <figure ref={ref} className="min-w-0">
+      <figcaption className="flex items-baseline justify-between gap-3">
+        <span className="text-sm font-semibold tracking-tight">{label}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">{hint}</span>
+      </figcaption>
+      <div ref={box} className="mt-1">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          width={W}
+          height={H}
+          className="block w-full"
+          aria-hidden="true"
+        >
+          <line
+            x1={M.left}
+            y1={M.top}
+            x2={M.left}
+            y2={H - M.bottom}
+            className={axis}
+            strokeWidth="1"
+          />
+          <line
+            x1={M.left}
+            y1={H - M.bottom}
+            x2={W - M.right}
+            y2={H - M.bottom}
+            className={axis}
+            strokeWidth="1"
+          />
+          {yTicks.map((t) => (
+            <g key={t}>
+              <line
+                x1={M.left - 3}
+                y1={py(t)}
+                x2={M.left}
+                y2={py(t)}
+                className={axis}
+                strokeWidth="1"
+              />
+              <text x={M.left - 6} y={py(t) + 4} textAnchor="end" className={tickText}>
+                {t}
+              </text>
+            </g>
+          ))}
+          {xTicks.map((i) => (
+            <g key={i}>
+              <line
+                x1={px(i)}
+                y1={H - M.bottom}
+                x2={px(i)}
+                y2={H - M.bottom + 3}
+                className={axis}
+                strokeWidth="1"
+              />
+              <text x={px(i)} y={H - M.bottom + 15} textAnchor="middle" className={tickText}>
+                {`v${i + 1}`}
+              </text>
+            </g>
+          ))}
+          <g ref={fadeRef}>
+            <path
+              ref={pathRef}
+              d={path}
+              pathLength={1}
+              fill="none"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="stroke-brand-600 dark:stroke-brand-400"
+              style={{ strokeDasharray: 1, strokeDashoffset: 1 }}
+            />
+            <g ref={headRef}>
+              <circle r={5} className="fill-gray-50 dark:fill-gray-900" />
+              <circle r={3.5} className="fill-brand-600 dark:fill-brand-400" />
+            </g>
+            <text
+              ref={valueRef}
+              textAnchor="middle"
+              className="fill-brand-700 text-xs font-semibold tabular-nums dark:fill-brand-300"
+            />
+          </g>
+        </svg>
+      </div>
+    </figure>
+  );
+}
+
+/**
+ * Illustrative values for seven kept versions, index-aligned with S.selfImprove.trends. The score
+ * strictly rises (a version that does not score higher is never kept); cost and duration wander.
+ */
+const TRENDS: ReadonlyArray<{
+  points: readonly number[];
+  yTicks: readonly number[];
+  format: (v: number) => string;
+}> = [
+  {
+    points: [46, 52, 55, 61, 64, 69, 73],
+    yTicks: [0, 50, 100],
+    format: (v) => v.toFixed(1),
+  },
+  {
+    points: [0.31, 0.35, 0.3, 0.37, 0.33, 0.29, 0.34],
+    yTicks: [0, 0.25, 0.5],
+    format: (v) => `$${v.toFixed(2)}`,
+  },
+  {
+    points: [86, 97, 91, 104, 95, 89, 99],
+    yTicks: [0, 60, 120],
+    format: (v) => `${Math.round(v)}s`,
+  },
+];
 
 function MobileNode({
   label,
@@ -330,45 +538,34 @@ function LoopDiagram() {
   );
 }
 
-/** The recorded demo and its title-frame poster, per language. */
-const DEMO: Record<Locale, { video: string; poster: string }> = {
-  zh: { video: demoVideoUrl("decision_evo_zh"), poster: demoPosterZh },
-  en: { video: demoVideoUrl("decision_evo_en"), poster: demoPosterEn },
-};
-
 export function SelfImprove() {
   const c = S.selfImprove;
-  const { locale } = useSiteLocale();
-  const { dark } = useSiteTheme();
-  const phone = useMedia(PHONE_VIEWPORT);
-  const demo = DEMO[locale];
   return (
-    <StorySection
-      id="self-evolution"
-      title={c.title}
-      intro={c.toolkit}
-      action={<a href={gallerySurfaceUrl("benchmark", locale, dark, phone)}>{c.center}</a>}
-    >
+    <Section id="self-evolution" title={c.title} subtitle={c.subtitle}>
       <AgentEvaluationDiagram />
-      <div className="story-evidence">
-        <div>
-          <h3>{c.framework}</h3>
-          <p>{c.baseline}</p>
-          <p>{c.diagnosis}</p>
-          <p>{c.subtitle}</p>
-          <p>{c.acceptance}</p>
-        </div>
-        <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-900">
+      <div className="rounded-2xl bg-gray-50 p-5 sm:p-8 dark:bg-gray-900">
+        <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-10">
           <MobileEvolutionFlow />
           <LoopDiagram />
+          <div className="grid gap-6 sm:grid-cols-3 lg:grid-cols-1 lg:gap-5">
+            {c.trends.map((t, i) => {
+              const data = TRENDS[i];
+              if (!data) return null;
+              return (
+                <TrendChart
+                  key={t.label}
+                  label={t.label}
+                  hint={t.hint}
+                  points={data.points}
+                  yTicks={data.yTicks}
+                  phase={i * 1.4}
+                  format={data.format}
+                />
+              );
+            })}
+          </div>
         </div>
       </div>
-      <figure className="mx-auto mt-8 max-w-4xl sm:mt-12">
-        <DemoVideo src={demo.video} poster={demo.poster} label={c.demo.caption} />
-        <figcaption className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
-          {c.demo.cost}
-        </figcaption>
-      </figure>
-    </StorySection>
+    </Section>
   );
 }

@@ -156,7 +156,7 @@ test("the account's display setting changes saved history and survives a differe
   await openSteps(group);
   await expect(rows).toHaveCount(4);
   await expectFoldedBodies(group);
-  await expect(group.locator("[data-step-count]")).toHaveText("4 步");
+  await expect(group.locator("[data-step-count]")).toHaveText("2 步");
   await changeActivityDisplay(page, userId, "展开");
   await openSteps(group);
   await expect(rows).toHaveCount(4);
@@ -165,7 +165,7 @@ test("the account's display setting changes saved history and survives a differe
   await changeActivityDisplay(page, userId, "紧凑");
 
   const count = group.locator("[data-step-count]");
-  await expect(count).toHaveText("4 步");
+  await expect(count).toHaveText("2 步");
   await expect(group.locator("[data-step-terminal]")).toBeVisible();
   await expect(rows).toHaveCount(0);
   await expectFoldedBodies(group);
@@ -177,7 +177,7 @@ test("the account's display setting changes saved history and survives a differe
 
   await setAccountPrefs(page.request, { themeId: "github" });
   await page.reload();
-  await expect(count).toHaveText("4 步");
+  await expect(count).toHaveText("2 步");
   await expect(rows).toHaveCount(0);
   await expect(page.getByText("Both tools finished.", { exact: true })).toHaveCount(1);
 });
@@ -193,7 +193,7 @@ test("compact activity follows two approvals while preserving the first reader's
   const group = activityRoot(page),
     count = group.locator("[data-step-count]"),
     rows = activityRows(group);
-  await expect(count).toHaveText("2 步");
+  await expect(count).toHaveText("1 步");
   // The run waits on an approval: the line opens by itself, so Allow and Deny show at once.
   await expect(rows).toHaveCount(2);
   await expect(group.getByRole("button", { name: "允许", exact: true })).toBeVisible();
@@ -215,7 +215,7 @@ test("compact activity follows two approvals while preserving the first reader's
   if (!(await allow.isVisible()))
     await activityRows(reviewing).locator("button[aria-expanded]").first().click();
   await allow.click();
-  await expect(count).toHaveText("4 步");
+  await expect(count).toHaveText("2 步");
   await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
   await group.locator("[data-group-header]").click();
   await expect(rows).toHaveCount(0);
@@ -224,42 +224,62 @@ test("compact activity follows two approvals while preserving the first reader's
     await activityRows(reviewing).locator("button[aria-expanded]").first().click();
   await allow.click();
   await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
-  await expect(count).toHaveText("4 步");
+  await expect(count).toHaveText("2 步");
   await expect(rows).toHaveCount(0);
   await expect(reviewing.locator("[data-step-terminal] [data-slot=label]")).toHaveText("已完成");
   await reviewer.close();
 });
 
-test("the current step leaves room for the same count and clock in each display mode", async ({
-  page,
-}) => {
+test("the live tool count and clock follow the caption in each display mode", async ({ page }) => {
   const sessionId = await createSession(page, "smokeliveworkalignment", "always-ask", "modern");
   await send(page, "ten-step work history");
   const group = activityRoot(page),
     header = group.locator("[data-group-header]");
   for (const lang of ["en", "zh"]) {
-    const first = new Map();
     for (const activityDisplayMode of ["standard", "expanded", "compact"]) {
       await setAccountPrefs(page.request, { lang, activityDisplayMode, toolAliases: false });
       await page.reload();
       await expect(group).toHaveAttribute("data-step-view", activityDisplayMode);
       await expect(header.locator("[data-step-count]")).toHaveText(
-        lang === "zh" ? "2 步" : "2 steps",
+        lang === "zh" ? "1 步" : "1 step",
       );
       await expect(header).not.toHaveAttribute("data-step-terminal", "true");
       if (activityDisplayMode === "compact") await expect(header).toContainText("起草评审记录");
       for (const width of [1280, 320]) {
         await page.setViewportSize({ width, height: 800 });
-        const [box, count, clock] = await Promise.all(
-          [header, header.locator("[data-step-count]"), header.locator("[data-step-elapsed]")].map(
-            (part) => part.boundingBox(),
-          ),
-        );
-        const positions = [count.x - box.x, clock.x - box.x, count.y - box.y, clock.y - box.y];
-        if (!first.has(width)) first.set(width, positions);
-        for (const [i, pos] of positions.entries())
-          expect(Math.abs(pos - first.get(width)[i])).toBeLessThanOrEqual(1);
-        expect(clock.x + clock.width).toBeLessThanOrEqual(width);
+        const geometry = await header.evaluate((el) => {
+          const summary = el.querySelector("[data-step-summary]").getBoundingClientRect();
+          const tally = el.querySelector("[data-step-count]");
+          const timer = el.querySelector("[data-step-elapsed] [data-slot=detail]");
+          const styles = (node) => {
+            const css = getComputedStyle(node);
+            return [
+              css.fontFamily,
+              css.fontSize,
+              css.fontWeight,
+              css.fontVariantNumeric,
+              css.lineHeight,
+            ];
+          };
+          const count = tally.getBoundingClientRect(),
+            clock = timer.getBoundingClientRect();
+          return {
+            afterSummary: count.left - summary.right,
+            afterCount: clock.left - count.right,
+            baseline: Math.abs(count.bottom - clock.bottom),
+            right: clock.right,
+            countStyle: styles(tally),
+            clockStyle: styles(timer),
+          };
+        });
+        expect(geometry.afterSummary).toBeGreaterThanOrEqual(0);
+        expect(geometry.afterSummary).toBeLessThan(18);
+        expect(geometry.afterCount).toBeGreaterThan(0);
+        expect(geometry.afterCount).toBeLessThan(18);
+        expect(geometry.baseline).toBeLessThanOrEqual(1);
+        expect(geometry.countStyle).toEqual(geometry.clockStyle);
+        expect(geometry.countStyle).toContain("tabular-nums");
+        expect(geometry.right).toBeLessThanOrEqual(width);
       }
     }
   }
@@ -299,7 +319,7 @@ test("reopened ten-step history keeps its compact header together on desktop and
       );
       await expect(head).not.toContainText("read_file");
       await expect(count).toHaveText(n);
-      await expect(rows).toHaveCount(activityDisplayMode === "expanded" ? 10 : 0);
+      await expect(rows).toHaveCount(activityDisplayMode === "expanded" ? 20 : 0);
       time ??= await elapsed.locator(".font-mono").innerText();
       await expect(elapsed.locator(".font-mono")).toHaveText(time);
       for (const width of [1280, 390, 320]) {
@@ -327,7 +347,7 @@ test("reopened ten-step history keeps its compact header together on desktop and
     }
     await head.focus();
     await page.keyboard.press("Enter");
-    await expect(rows).toHaveCount(10);
+    await expect(rows).toHaveCount(20);
     await rows.first().locator("button[aria-expanded]").first().click();
     await expect(rows.first()).toContainText("Reviewing item 1.");
     await expect(elapsed.locator(".font-mono")).toHaveText(time);

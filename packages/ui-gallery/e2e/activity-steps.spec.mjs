@@ -20,7 +20,7 @@ test("activity display modes work independently of the gallery theme, even on co
     await expect(plan).toBeHidden();
     await choose("Compact");
     await expect(rows).toHaveCount(0);
-    await expect(group.locator("[data-step-count]")).toHaveText("2 steps");
+    await expect(group.locator("[data-step-count]")).toHaveText("1 step");
     await expect(group.locator("[data-group-header]")).toContainText("Read meeting notes");
     await group.locator("button[data-group-header]").click();
     await expect(rows).toHaveCount(2);

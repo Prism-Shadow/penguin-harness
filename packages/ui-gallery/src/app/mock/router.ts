@@ -127,7 +127,9 @@ export class Router {
     if (!store.signedIn && !this.publicPaths.has(found.route.pattern)) {
       throw new ApiError(401, "unauthorized", "Not signed in.");
     }
-    const machineRoute = /\/(?:sessions|archived-sessions|workbenches)(?:\/|$)/.test(path);
+    const machineRoute =
+      /\/(?:sessions|archived-sessions|workbenches)(?:\/|$)/.test(path) ||
+      /^\/api\/terminals(?:\/|$)/.test(path);
     if (
       machineRoute &&
       found.params.projectId &&

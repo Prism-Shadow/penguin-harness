@@ -57,6 +57,8 @@ const HOME_CWD = "~";
  * consult.
  */
 export interface DockConversation {
+  /** The owning Project for a Session-scoped first open from a native dock. */
+  projectId?: string;
   /** The Session that owns the shells opened here; null while drafting (or none loaded yet). */
   sessionId: string | null;
   /** Its Workspace, where a new shell starts — what the agent has been working in. */
@@ -75,12 +77,13 @@ const conversationListeners = new Set<() => void>();
 export function setDockConversation(next: DockConversation): void {
   const workspace = next.workspace !== null && next.workspace.trim() !== "" ? next.workspace : null;
   if (
+    next.projectId === conversation.projectId &&
     next.sessionId === conversation.sessionId &&
     workspace === conversation.workspace &&
     next.machineId === conversation.machineId
   )
     return;
-  conversation = { sessionId: next.sessionId, workspace, machineId: next.machineId };
+  conversation = { ...next, workspace };
   for (const listener of [...conversationListeners]) listener();
 }
 
@@ -197,14 +200,16 @@ export async function createShell(
   // read, which is the one call in this feature that cannot use it.
   const machine = group ? group.machineId : conversation.machineId;
   const workspace = group ? (group.workspace ?? null) : conversation.workspace;
+  const projectId = group?.projectId ?? conversation.projectId;
+  if (reuseSession && !projectId) return false;
   const create = (cwd: string): Promise<TerminalInfo> =>
     fetchJson<TerminalInfo>(
-      reuseSession && group
-        ? `/api/terminals/projects/${encodeURIComponent(group.projectId)}/session-resources/${encodeURIComponent(group.sessionId)}/open`
+      reuseSession && projectId
+        ? `/api/terminals/projects/${encodeURIComponent(projectId)}/session-resources/${encodeURIComponent(sessionId)}/open`
         : "/api/terminals",
       {
         method: "POST",
-        ...(reuseSession && group ? {} : { body: JSON.stringify({ cwd, sessionId }) }),
+        ...(reuseSession ? {} : { body: JSON.stringify({ cwd, sessionId }) }),
       },
       machine,
     );
@@ -248,7 +253,7 @@ export async function createShell(
 
 /**
  * Puts the terminal panel on screen in `position` (where its tab lives, else the bottom dock).
- * Opening the group only displays it. The New terminal action starts a shell.
+ * The visible panel attaches to or starts its first shell in this Session.
  */
 export function openTerminalPanel(position?: DockPosition): void {
   if (dockSessionId() === null) return;
