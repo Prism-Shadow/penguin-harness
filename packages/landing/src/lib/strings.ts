@@ -52,15 +52,16 @@ export const zh = {
   hero: {
     /** Two clauses keep the emphasized phrases and punctuation in each locale's reading order. */
     positioning: {
-      growthLead: "从",
+      growthLead: "从 ",
       growth: "许愿式编程",
-      separator: "",
-      reachLead: "到",
+      separator: " ",
+      reachLead: "到 ",
       reach: "许愿式调优",
     },
     subtitle: "企业级 AI 应用的统一自进化底座",
     downloadCta: "下载桌面版",
     productHuntBadge: "PenguinHarness Product Hunt 徽章",
+    watcha: "观猹",
     watchaBadge: "PenguinHarness 观猹徽章",
     cliInstall: "命令行安装",
     stats: [
@@ -184,11 +185,18 @@ export const zh = {
 
   /** The self-evolution loop and its three recorded numbers (sections/self-improve.tsx). */
   selfImprove: {
+    center: "打开评估中心",
+    baseline:
+      "AI 为一个 Agent 出题，逐题试测来校准难度，并记录这个 Agent 的第一个分数，也就是基线分。",
+    diagnosis: "根据每道题目的分数和关联的 Trace，诊断能力缺口。",
+    acceptance:
+      "默认方法每次按一个假设改动 Agent，分数严格提高才保留新版本，比较的起点是这个 Agent 在当前 Benchmark 上的基线分。",
     toolkit:
       "RSI 工具包改的是 Agent 的 Harness，也就是它的提示词和 Skill，模型保持不动，每一处改动都在 Benchmark 上度量效果。",
     evaluate: "评估",
     optimize: "优化",
-    title: "多智能体协同的自进化框架",
+    title: "自由创建、评估、进化任意多个 Agent",
+    framework: "多智能体协同的自进化框架",
     subtitle:
       "默认由 General Agent 运行优化 Skill，每一轮只改被测 Agent 的一处；Evaluator 子 Agent 运行评估 Skill，在 Benchmark 的每个题目上给修改后的 Agent 打分。",
     nodeOptimizer: "Optimizer",
@@ -200,12 +208,6 @@ export const zh = {
     edgeImprove: "修改 AGENTS.md、Skill 或配置",
     noteOld: "修改前先保存快照",
     noteNew: "只有分数更高才保留",
-    /** Index-aligned with TRENDS in sections/self-improve.tsx. */
-    trends: [
-      { label: "分数", hint: "满分 100" },
-      { label: "成本", hint: "每次运行" },
-      { label: "耗时", hint: "每次运行" },
-    ],
     demo: {
       caption: "演示：决策智能体经过评测、一次工作方法改进和同模型复测，分数从 84 提升到 100。",
       cost: "被测 Agent 的 6 次运行花费 $0.0373，不含出题、评分和优化的成本。",
@@ -265,6 +267,11 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
 
   cases: {
     os: "创建你的第一个自进化 Agent OS",
+    change: "开口就能改",
+    request: "在工作台上，把每份合同的整体风险显示在状态旁边，并把风险最高的合同排在最前面。",
+    tutorial: "一句话构建法务智能体应用",
+    family:
+      "工作台属于 Agent 自己，所以每个 Agent 的工作台都可以不一样：法务 Agent 是合同工作台，数据 Agent 是仪表盘，客服 Agent 是工单队列。",
     apps: ["文档问答", "投资分析", "法务助手"],
     title: "A2APP：一句话 + 0.6 元构建法务应用",
     /** The subtitle's first line, saying what A2APP is; `subtitle` is its second. */
