@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** Web App
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1814
 
 [中文版](2026-11-24-session-panels-app-menu.zh.md)
 
