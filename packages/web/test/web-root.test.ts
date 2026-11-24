@@ -278,8 +278,8 @@ describe("the booted page table", () => {
       Component: HomeRedirect,
     });
   });
-  it("keeps builtin renderer registration pluggable without restoring a retired owner", () => {
-    expect(pageRenderers).toEqual([]);
+  it("registers the Self-Evolution workbench renderer through its owning module", () => {
+    expect(pageRenderers.map(({ data }) => data.name)).toEqual(["SelfEvolutionWorkbench"]);
   });
 
   it("folds a contributed page in only under a key the app does not own, drawn by its module's renderer", () => {

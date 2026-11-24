@@ -16,7 +16,7 @@ For how evaluation and optimization work behind these pages, see [Self-Improveme
 
 ## Open the Evaluation Center
 
-In the sidebar, select **Evaluation Center**. The page (`/benchmark`) lists every Benchmark of the current Project as a card.
+In **App Center**, select **Self-Evolution Workbench**. The page (`/benchmark`) lists every Benchmark of the current Project as a card.
 
 Under the title, three numbered step cards outline the loop: **Create**, **Evaluate** and **Optimize**. Each says where to do that step: with the create buttons at the top right, or with **Use** on a Benchmark followed by the matching tab; the **Optimize** card adds that another self-evolution algorithm can be picked. The owner gets two create buttons, **Create with AI** and **Create manually**; a member gets **Create with AI** alone, and the first card names only that. Every member also gets **Import benchmark**, to the left of them; see [Import a Benchmark](#import-a-benchmark).
 

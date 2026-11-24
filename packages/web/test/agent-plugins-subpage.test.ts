@@ -191,9 +191,7 @@ describe("the Plugins sub-page of an Agent's settings", () => {
       );
     // The fake library lists every plugin under one category, "All".
     expect(tag("All")).toBeDefined();
-    expect(tag(en.plugins.builtin)?.getAttribute("data-tooltip")).toBe(
-      en.plugins.libraryBuiltinHint,
-    );
+    expect(tag(en.plugins.builtin)).toBeUndefined();
   });
 
   it("lets a member install a plugin, which moves to Installed, and offers a member no Uninstall", async () => {

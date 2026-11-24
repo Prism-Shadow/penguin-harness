@@ -23,7 +23,7 @@ import {
 } from "../../lib/workbench-theme";
 import { FILL_APP_MESSAGE, workbenchUiUrl, type WorkbenchTab } from "../../lib/workbench-tabs";
 import { useTheme } from "../../state/theme";
-import { SelfEvolutionWorkbench } from "../benchmark/self-evolution-workbench";
+import { NativeWorkbenchPage } from "./native-workbench-page";
 import { WorkbenchModelPicker } from "./workbench-model-picker";
 
 /** How long a page that never finishes loading stays hidden before it is shown as it is. */
@@ -38,8 +38,8 @@ interface FrameProps {
 }
 
 export function WorkbenchFrame({ tab, ...props }: FrameProps) {
-  if (tab.builtin === "SelfEvolutionWorkbench")
-    return <SelfEvolutionWorkbench projectId={props.projectId} />;
+  if (tab.builtin !== undefined)
+    return <NativeWorkbenchPage name={tab.builtin} projectId={props.projectId} />;
   return <WorkbenchIframe {...props} tab={tab} />;
 }
 
