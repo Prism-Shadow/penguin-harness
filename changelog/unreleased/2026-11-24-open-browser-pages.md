@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** Web App
+- **PR:** [#1793](https://github.com/Prism-Shadow/penguin-harness/pull/1793)
 
 [中文版](2026-11-24-open-browser-pages.zh.md)
 
