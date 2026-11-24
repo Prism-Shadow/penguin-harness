@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** Browser, Web App
+- **PR:** [#1818](https://github.com/Prism-Shadow/penguin-harness/pull/1818)
 
 [English](2026-11-24-session-chrome-setup.md)
 
