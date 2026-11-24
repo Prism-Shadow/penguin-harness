@@ -6,14 +6,14 @@ for (const [lang, headline, subtitle, apps, steps] of [
     "From Vibe-Coding to Vibe-Evolving",
     "Open Foundation for Self-Evolving Enterprise AI.",
     ["Document Q&A", "Investment Analyst", "Legal Assistant"],
-    ["Evaluate", "Optimize"],
+    ["Evaluate", "Improve", "Retest"],
   ],
   [
     "zh",
     "从 许愿式编程 到 许愿式调优",
     "企业级 AI 应用的统一自进化底座",
     ["文档问答", "投资分析", "法务助手"],
-    ["评估", "优化"],
+    ["评估", "改进", "复测"],
   ],
 ]) {
   for (const width of [320, 1280]) {
@@ -49,27 +49,18 @@ for (const [lang, headline, subtitle, apps, steps] of [
       expect(left.x + left.width).toBeLessThanOrEqual(right.x);
       expect(Math.abs(left.y - right.y)).toBeLessThan(1);
       expect(right.x + right.width).toBeLessThanOrEqual(width);
-      for (const app of apps)
-        await expect(page.locator("#cases figure").getByText(app, { exact: true })).toBeVisible();
-      const loops = page.locator("#self-evolution figure").first();
-      for (const [target, suite, algorithm] of [
-        [apps[0], "rag-bench-essential", "OPRO"],
-        [lang === "en" ? "Software engineering" : "软件工程", "deep-swe", "ACE"],
-      ]) {
-        const agent = loops.locator("dl").filter({ hasText: target });
-        await expect(agent.locator("dd")).toHaveText(target);
-        const lane = agent.locator("+ ol");
-        await expect(lane.getByText(algorithm, { exact: true })).toBeVisible();
-        const labels = lane.getByText(suite, { exact: true });
-        await expect(labels).toHaveCount(2);
-        const size = await labels.first().evaluate((el) => ({
-          font: parseFloat(getComputedStyle(el).fontSize),
-          fits: el.scrollWidth <= el.clientWidth,
-        }));
-        expect(size.font).toBeGreaterThanOrEqual(12);
-        expect(size.fits).toBe(true);
-        await expect(lane.getByText(steps[0], { exact: true })).toHaveCount(2);
-        await expect(lane.getByText(steps[1], { exact: true })).toHaveCount(1);
+      const appsDiagram = page.locator("#cases [data-story-diagram]");
+      const platform = page.locator("#self-evolution [data-story-diagram]");
+      for (const app of apps) {
+        await expect(appsDiagram.getByText(app, { exact: true })).toBeVisible();
+      }
+      for (const stage of steps) {
+        await expect(platform.getByText(stage, { exact: true })).toBeVisible();
+      }
+      await expect(platform.locator("[data-agent-loop]")).toHaveCount(4);
+      await expect(platform.locator("animateMotion")).toHaveCount(0);
+      for (const diagram of [appsDiagram, platform]) {
+        await expect(diagram.locator("a,button,[role=button]")).toHaveCount(0);
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
