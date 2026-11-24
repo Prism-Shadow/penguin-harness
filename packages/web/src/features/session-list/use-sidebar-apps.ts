@@ -1,8 +1,6 @@
 import { useMemo } from "react";
 import type { AppCenterShortcut, IconRef } from "@prismshadow/penguin-server/api";
 import type { OpenPage } from "../../lib/page-layout";
-import { parseSessionWorkbenchPage, sessionWorkbenchAppKey } from "../../lib/session-workbenches";
-import { useSessionWorkbenchPanels } from "../../lib/dock-panel-registry";
 import { SYSTEM_AGENT_ID } from "../../lib/builtin-agents";
 import { systemAppKey, useSystemApps, type SystemShortcut } from "../../lib/system-apps";
 import { systemShortcutsOf } from "../app-center";
@@ -27,7 +25,7 @@ export interface SidebarAppRow {
   build: AppCenterShortcut["build"];
 }
 
-/** Page membership owns the list. A running window or a permitted native app supplies its label. */
+/** An open page gets a row when its identity matches an App Center directory, native app or running window. */
 export function useSidebarApps(pages: readonly OpenPage[] | undefined) {
   const { currentProject, currentAgent, agents } = useProject();
   const projectId = currentProject?.projectId;
@@ -46,7 +44,6 @@ export function useSidebarApps(pages: readonly OpenPage[] | undefined) {
   const { locale } = useLocale();
   const agentId = agent?.agentId;
   const agentMachine = agent?.machineId;
-  const panels = useSessionWorkbenchPanels();
   const rows = useMemo(() => {
     if (!projectId || !pages) return [];
     const labels = new Map(machines?.machines.map((item) => [item.machineId, item.alias]));
@@ -63,28 +60,6 @@ export function useSidebarApps(pages: readonly OpenPage[] | undefined) {
     for (const page of pages) {
       if (page.kind !== "window" && page.kind !== "system") continue;
       const key = page.id.slice(4);
-      const tool = parseSessionWorkbenchPage(page);
-      if (tool && tool.address.projectId === projectId) {
-        const definition = panels.find((p) => p.id === tool.kind);
-        if (!definition) continue;
-        const machineId = tool.address.machineId;
-        rows.push({
-          page,
-          key,
-          agentId: SYSTEM_AGENT_ID,
-          workbenchId: sessionWorkbenchAppKey(tool.kind),
-          machineId,
-          title: nameOnMachine(
-            definition.label(),
-            machineId === null ? null : (labels.get(machineId) ?? machineId),
-          ),
-          icon: null,
-          system: { glyph: definition.glyph },
-          agentName: null,
-          build: "ready",
-        });
-        continue;
-      }
       const shortcut = key.startsWith(SYSTEM_AGENT_ID + "/")
         ? installedSystems.get(key)
         : windows.get(key);
@@ -113,6 +88,6 @@ export function useSidebarApps(pages: readonly OpenPage[] | undefined) {
       });
     }
     return rows;
-  }, [projectId, pages, systems, running, locale, agents, agentId, agentMachine, machines, panels]);
+  }, [projectId, pages, systems, running, locale, agents, agentId, agentMachine, machines]);
   return { agent, rows };
 }

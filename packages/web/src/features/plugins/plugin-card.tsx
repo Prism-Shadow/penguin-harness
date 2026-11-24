@@ -338,19 +338,20 @@ export function PluginCard(props: PluginCardProps) {
     plugin === undefined && !builtIn && row.module?.entry?.offline?.library === true;
   /** It has something for Agents: two steps; a plugin of server modules alone has one. */
   const agentContent = (plugin !== undefined && agentInstallable(plugin)) || preServerAgent;
+  // An Agent can already have a shipped Skill while its Project has yet to list the module.
+  const shippedHybrid = plugin?.modules === true && row.module?.shipped === true;
   /** The flow's server step, for this plugin and this reader. */
-  const serverStep: ServerStep =
-    plugin !== undefined || onServer || (builtIn && row.module?.state !== "none")
-      ? "done"
-      : builtIn
-        ? props.isAdmin
-          ? "enable"
-          : "held"
-        : props.isAdmin
-          ? "install"
-          : agentContent
-            ? "ask"
-            : "held";
+  function installServerStep(): ServerStep {
+    if (shippedHybrid && row.module?.state !== "active") {
+      if (row.module?.state !== "none") return "unavailable";
+      return props.isAdmin ? "enable" : "held";
+    }
+    if (plugin !== undefined || onServer || (builtIn && row.module?.state !== "none"))
+      return "done";
+    if (props.isAdmin) return builtIn ? "enable" : "install";
+    return !builtIn && agentContent ? "ask" : "held";
+  }
+  const serverStep = installServerStep();
 
   const confirmUpdate = async () => {
     if (pendingUpdate === null || plugin === undefined) return;
@@ -420,13 +421,15 @@ export function PluginCard(props: PluginCardProps) {
     // The one install control: the flow, on the server's step while the plugin is not there. A
     // member's, for a plugin of server modules alone, is held, saying why.
     const installWords =
-      !agentContent && serverStep === "done"
-        ? S.plugins.marketServerInstalled
-        : agentContent
-          ? S.plugins.installModel.installAgent
-          : serverStep === "enable"
-            ? S.plugins.installModel.enableModule
-            : S.plugins.installModel.installServer;
+      shippedHybrid && serverStep === "enable"
+        ? S.skills.install
+        : !agentContent && serverStep === "done"
+          ? S.plugins.marketServerInstalled
+          : agentContent
+            ? S.plugins.installModel.installAgent
+            : serverStep === "enable"
+              ? S.plugins.installModel.enableModule
+              : S.plugins.installModel.installServer;
     const held = !agentContent && serverStep === "held";
     const manage = (
       <EntityCardAction
@@ -638,6 +641,7 @@ export function PluginCard(props: PluginCardProps) {
           title={title}
           steps={agentContent ? 2 : 1}
           server={serverStep}
+          {...(shippedHybrid ? { agentPackageAvailable: true, moduleStatus: hint } : {})}
           {...(row.origin?.label ? { machineLabel: row.origin.label } : {})}
           {...(onServer && props.isAdmin && props.onServerUninstall
             ? { onRemoveServer: props.onServerUninstall }
@@ -837,6 +841,8 @@ export function PluginCard(props: PluginCardProps) {
       // The badge keeps the local version. Name the destination only when it differs.
       if (downloadUpdate) return S.plugins.updatePackageTo(release.to);
       if (updateAgents.length > 0) return S.skills.updateAction;
+      if (shippedHybrid && serverStep === "enable") return S.skills.install;
+      if (shippedHybrid && serverStep === "unavailable") return S.plugins.status[status];
       if (agentPackage) return count > 0 ? S.plugins.marketAgentInstalls(count) : S.skills.install;
       if (serverInstalled) return S.plugins.marketServerInstalled;
       if (mod && mod.state !== "none" && !agentPackage) return S.plugins.status[status];

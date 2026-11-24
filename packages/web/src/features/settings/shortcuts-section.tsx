@@ -41,8 +41,8 @@ interface RowHint {
  * browser keeps for itself (dead in every browser tab), then one the host also uses (the binding
  * takes that function over). A conflict shows only from the side that loses: both rows of a
  * same-scope clash, but only the global row of a shadowed one — the focus-scoped command wins
- * there. Bindings are per account and shared by the browser and the desktop app, so the browser's
- * claims show on either host; in the desktop app its own menu's claim is named first.
+ * there. Browser bindings name the browser's own commands. The desktop app names its native menu
+ * shortcuts.
  */
 function rowHint(
   cmd: ShortcutCommand,
@@ -66,12 +66,13 @@ function rowHint(
   }
   if (chord === null) return null;
   const platform = currentPlatform();
+  if (currentHost() === "desktop") {
+    return desktopReserved(chord, platform) === "menu"
+      ? { text: S.shortcuts.desktopMenuReserved }
+      : null;
+  }
   if (browserReserved(chord, platform)) {
     return { text: S.shortcuts.browserReserved, tone: "attention" };
-  }
-  // The shell binds no key before the page today, so only the menu case can arise here.
-  if (currentHost() === "desktop" && desktopReserved(chord, platform) === "menu") {
-    return { text: S.shortcuts.desktopMenuReserved };
   }
   return browserCommon(chord, platform) ? { text: S.shortcuts.browserCommon } : null;
 }

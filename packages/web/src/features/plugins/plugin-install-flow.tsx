@@ -36,7 +36,9 @@ export type ServerStep =
   /** Not on the server, with Agent content: a member asks an admin. */
   | "ask"
   /** Not on the server, server modules alone: a member cannot act. */
-  | "held";
+  | "held"
+  /** Listed, but the selected machine has not reported a running module. */
+  | "unavailable";
 
 /**
  * The words a running server install shows: its download's percent, else the step it reached.
@@ -67,6 +69,9 @@ export interface InstallFlowProps {
   /** Two steps for a plugin with Agent content, one for server modules alone. */
   steps: 1 | 2;
   server: ServerStep;
+  /** A shipped hybrid can install its Agent content under the existing module-request policy. */
+  agentPackageAvailable?: boolean;
+  moduleStatus?: string;
   /** The server step is running here. */
   busy: boolean;
   /** Another plugin's server change is running: one at a time. */
@@ -93,8 +98,11 @@ export interface InstallFlowProps {
 export function InstallFlow(props: InstallFlowProps) {
   const words = S.plugins.installModel;
   const serverDone = props.server === "done";
-  const [selected, setStep] = useState<1 | 2>(serverDone && props.steps === 2 ? 2 : 1);
-  const step = serverDone && props.steps === 2 ? selected : 1;
+  const canInstallAgents = props.steps === 2 && (serverDone || props.agentPackageAvailable);
+  const [selected, setStep] = useState<1 | 2>(
+    canInstallAgents && (serverDone || props.server === "held") ? 2 : 1,
+  );
+  const step = canInstallAgents ? selected : 1;
   const [asked, setAsked] = useState(false);
   const [asking, setAsking] = useState(false);
   // The server step completing moves the flow on by itself.
@@ -185,6 +193,7 @@ export function InstallFlow(props: InstallFlowProps) {
             )}
             {props.server === "ask" && <p>{asked ? words.asked : words.askBody}</p>}
             {props.server === "held" && <p>{words.adminOnly}</p>}
+            {props.server === "unavailable" && <p role="status">{props.moduleStatus}</p>}
             {serverDone && <p>{words.serverDone(props.title)}</p>}
 
             {props.busy && (
@@ -233,7 +242,7 @@ export function InstallFlow(props: InstallFlowProps) {
                   {words.uninstallServer}
                 </Button>
               )}
-              {serverDone && props.steps === 2 && (
+              {canInstallAgents && (
                 <Button size="sm" onClick={() => setStep(2)}>
                   {words.toAgents}
                 </Button>
@@ -247,6 +256,9 @@ export function InstallFlow(props: InstallFlowProps) {
           </div>
         ) : (
           <div className="space-y-2">
+            {!serverDone && props.moduleStatus && (
+              <p className="text-xs text-fg-muted">{props.moduleStatus}</p>
+            )}
             {props.agents ?? <p className="py-1.5 text-xs text-fg-muted">{S.common.loading}</p>}
             <Button size="sm" onClick={() => setStep(1)}>
               {words.backToServer}

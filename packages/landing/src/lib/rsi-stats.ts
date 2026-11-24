@@ -1,11 +1,5 @@
-/**
- * What the hero's three catalogue rows list, and where each entry links: the model providers
- * (their homepages), the self-evolution toolkits (the plugins of the library's `rsi` category,
- * each algorithm linked to its paper) and the benchmarks the built-in Benchmarks are drawn from
- * (each linked to its repository). Toolkit labels are names, the same in every language; a
- * benchmark is shown by its kind, a key into the dictionaries' `hero.benchmarkKinds`.
- *
- * The lists are kept by hand: a new toolkit or built-in Benchmark adds its entry here.
+/** Featured providers, published algorithms and benchmark families in the homepage catalogue.
+ * The accompanying totals are computed from the complete catalogues at build time.
  */
 import type { ModelProvider } from "../components/icons";
 import type { Strings } from "./strings";

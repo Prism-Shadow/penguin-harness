@@ -243,6 +243,8 @@ export interface ToolCallItem extends WorkStep {
   kind: "tool_call";
   id: number;
   toolCallId: string;
+  /** This card holds a result from a partial history window until its call arrives. */
+  outputOnly?: true;
   name: string;
   /** Tool argument JSON (accumulated via streamed deltas, replaced once the complete message arrives). */
   argumentsText: string;
@@ -1440,6 +1442,7 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
       if (p.event_type === "start") {
         if (card) {
           // Duplicate start (out-of-order): reset the argument buffer.
+          delete card.outputOnly;
           card.name = p.name || card.name;
           card.argumentsText = p.arguments ?? "";
           card.callStreaming = true;
@@ -1718,6 +1721,7 @@ function handleComplete(
       const existing = model.toolCards.get(p.tool_call_id);
       const card = existing?.callComplete ? undefined : existing;
       if (card) {
+        delete card.outputOnly;
         card.name = p.name;
         card.argumentsText = p.arguments;
         if (elided !== undefined) card.elidedCall = elided;
@@ -1764,6 +1768,7 @@ function handleComplete(
           argumentsText: "",
           callStreaming: false,
         });
+        card.outputOnly = true;
       }
       card.output = p.output;
       if (elided !== undefined) card.elidedOutput = elided;

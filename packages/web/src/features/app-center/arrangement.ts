@@ -5,8 +5,8 @@
  * - The default grid starts with the standard system apps, then keeps the incoming order.
  * - A stored app that is no longer listed drops out; a listed app the layout does not name is
  *   appended at the end, in default grid order.
- * - A folder keeps its place, with however many apps it holds; one left empty goes. A folder of
- *   one app is kept (the new-folder dialog makes one), and this holds after every move as well.
+ * - A folder needs two members. Its last app takes its place. An unavailable member
+ *   still counts until its catalog confirms removal.
  * - Folders do not nest: a folder dropped beside an app inside a folder lands beside that folder.
  *
  * An item's id is its app key (`<agentId>/<workbenchId>`, which always holds a `/`) or its
@@ -21,6 +21,7 @@ import type {
   AppCenterShortcut,
 } from "@prismshadow/penguin-server/api";
 
+import { sessionWorkbenchAppKey } from "../../lib/session-workbenches";
 import { SYSTEM_AGENT_ID } from "../../lib/builtin-agents";
 import { locatedAppKey } from "../../lib/app-center-path";
 import type { SystemShortcut } from "../../lib/system-apps";
@@ -81,6 +82,8 @@ export interface GridFolder {
   id: string;
   name: string;
   apps: GridApp[];
+  /** Stored members whose catalog cannot establish whether they are still present. */
+  unseen?: number;
 }
 
 export type GridItem = GridApp | GridFolder;
@@ -93,6 +96,7 @@ const defaultSystemKeys = ["models", "plugins", "machines", "usage", "benchmark"
 export function arrange(
   shortcuts: readonly LocatedShortcut[],
   layout: AppCenterLayout | null,
+  awaited: (key: string) => boolean = () => false,
 ): GridItem[] {
   const live = new Map(shortcuts.map((shortcut) => [appKeyOf(shortcut), shortcut] as const));
   const placed = new Set<string>();
@@ -110,7 +114,9 @@ export function arrange(
       continue;
     }
     const apps = item.apps.map(take).filter((app): app is GridApp => app !== null);
-    out.push(...folded(item.id, item.name, apps));
+    if (apps.length === 0) continue;
+    const unseen = item.apps.filter((key) => !live.has(key) && awaited(key)).length;
+    out.push(...folded({ type: "folder", id: item.id, name: item.name, apps, unseen }));
   }
   const first = defaultSystemKeys.filter((key) => live.get(key)?.system !== undefined);
   for (const key of [...first, ...live.keys()]) {
@@ -120,9 +126,28 @@ export function arrange(
   return out;
 }
 
-/** What a folder holding `apps` becomes: itself, or nothing once it is empty. */
-function folded(id: string, name: string, apps: GridApp[]): GridItem[] {
-  return apps.length === 0 ? [] : [{ type: "folder", id, name, apps }];
+/** The survivor takes the folder's slot once the actual membership drops below two. */
+function folded(folder: GridFolder): GridItem[] {
+  // A temporarily unseen survivor needs the original slot until keepUnseenApps restores its key.
+  if ((folder.unseen ?? 0) > 0) return [folder];
+  return folder.apps.length < 2 ? folder.apps : [folder];
+}
+
+/** Persist only confirmed removals inside actual folders; discovery and filtering never reorder the rest. */
+export function pruneFolderMembers(
+  layout: AppCenterLayout,
+  retained: (key: string) => boolean,
+): AppCenterLayout {
+  let changed = false;
+  const items = layout.items.flatMap((item): AppCenterLayoutItem[] => {
+    if (item.type === "app") return [item];
+    const apps = item.apps.filter(retained);
+    if (apps.length === item.apps.length && apps.length >= 2) return [item];
+    changed = true;
+    if (apps.length >= 2) return [{ ...item, apps }];
+    return apps.map((app) => ({ type: "app", app }));
+  });
+  return changed ? { v: 1, items } : layout;
 }
 
 /** The layout that stores this grid. */
@@ -149,6 +174,11 @@ export function appAwaited(
   key: string,
   machines: readonly { machineId: string; answered: boolean }[] | null,
 ): boolean {
+  // Permissions and active modules determine the system tiles this viewer can see.
+  if (key.startsWith(SYSTEM_AGENT_ID + "/")) {
+    // Files is a conversation shortcut, including in builds that can still open its direct URL.
+    return key !== SYSTEM_AGENT_ID + "/" + sessionWorkbenchAppKey("workspace");
+  }
   if (!key.slice(0, key.indexOf("/")).includes(":")) return false;
   if (machines === null) return true;
   return machines.some((m) => !m.answered && key.startsWith(`${m.machineId}:`));
@@ -213,12 +243,18 @@ export function keepUnseenApps(
       }
       return;
     }
+    // A folder with no visible members could not have been explicitly dissolved from the grid.
+    if (missing.length === item.apps.length && missing.length > 1) {
+      items.splice(topAfter(index), 0, { ...item, apps: missing });
+      for (const app of missing) placed.add(app);
+      return;
+    }
     const own = [...item.apps].reverse().find((app) => topIndex(app) >= 0);
     const at = own === undefined ? topAfter(index) : topIndex(own) + 1;
     items.splice(at, 0, ...missing.map((app): AppCenterLayoutItem => ({ type: "app", app })));
     for (const app of missing) placed.add(app);
   });
-  return { v: 1, items };
+  return pruneFolderMembers({ v: 1, items }, () => true);
 }
 
 /** Whether two grids store as the same layout (a move that changed nothing writes nothing). */
@@ -246,11 +282,9 @@ export function findItem(grid: readonly GridItem[], id: string): GridItem | null
   return null;
 }
 
-/** Empty folders go. */
+/** Applies folder cardinality after a move is complete. */
 function normalize(grid: readonly GridItem[]): GridItem[] {
-  return grid.flatMap((item) =>
-    item.type === "folder" ? folded(item.id, item.name, item.apps) : [item],
-  );
+  return grid.flatMap((item) => (item.type === "folder" ? folded(item) : [item]));
 }
 
 /** The grid without the item, and the item; folders are left as they are (normalize after). */
@@ -374,7 +408,7 @@ export function groupApps(
     .flatMap((item) => (item.type === "app" ? [item] : item.apps))
     .filter((app) => picked.has(app.id));
   const first = apps[0];
-  if (first === undefined) return [...grid];
+  if (first === undefined || apps.length < 2) return [...grid];
   const made: GridFolder = { type: "folder", id: folder.id, name: folder.name, apps };
   const out: GridItem[] = [];
   for (const item of grid) {
@@ -384,7 +418,7 @@ export function groupApps(
       continue;
     }
     const kept = item.apps.filter((app) => !picked.has(app.id));
-    if (kept.length > 0) out.push({ ...item, apps: kept });
+    out.push(...folded({ ...item, apps: kept }));
     if (item.apps.some((app) => app.id === first.id)) out.push(made);
   }
   return out;

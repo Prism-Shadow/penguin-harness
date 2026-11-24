@@ -75,6 +75,46 @@ describe("the Storage page's usage", () => {
     expect(sent()).toEqual(["GET /api/me/storage", "GET /api/me/storage", "GET /api/me/storage"]);
   });
 
+  it("restarts a first measurement that ended without a result and accepts a measured zero", async () => {
+    const empty = { ...usage(0, false), measuredAt: null };
+    const answers = [
+      { ...empty, measuring: true },
+      empty,
+      { ...empty, measuring: true },
+      usage(0, false),
+    ];
+    fetch = stubFetch(() => json(answers.shift()!));
+    const store = createStorageStore();
+    await store.getState().load();
+    await vi.advanceTimersByTimeAsync(STORAGE_POLL_MS * 3);
+    expect(store.getState().usage).toEqual(usage(0, false));
+    expect(sent()).toEqual([
+      "GET /api/me/storage",
+      "GET /api/me/storage",
+      "POST /api/me/storage/refresh",
+      "GET /api/me/storage",
+    ]);
+  });
+
+  it("leaves an idle first result available for manual retry after one automatic attempt", async () => {
+    const empty = { ...usage(0, false), measuredAt: null };
+    fetch = stubFetch(() => json(empty));
+    const store = createStorageStore();
+    await store.getState().load();
+    await vi.advanceTimersByTimeAsync(STORAGE_POLL_RETRY_MS * 3);
+    expect(store.getState().usage).toEqual(empty);
+    expect(sent()).toEqual(["GET /api/me/storage", "POST /api/me/storage/refresh"]);
+  });
+
+  it("keeps a measurement error for the reader to retry", async () => {
+    const failed = { ...usage(0, false), measuredAt: null, error: "Storage unavailable" };
+    fetch = stubFetch(() => json(failed));
+    const store = createStorageStore();
+    await store.getState().load();
+    expect(store.getState().usage).toEqual(failed);
+    expect(sent()).toEqual(["GET /api/me/storage"]);
+  });
+
   it("asks nothing more once the page is closed", async () => {
     fetch = stubFetch(() => json(usage(1, true)));
     const store = createStorageStore();

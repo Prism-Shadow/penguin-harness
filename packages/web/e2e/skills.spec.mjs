@@ -63,10 +63,6 @@ const SKILLS = [
   "benchmark-design",
   "agent-evaluation",
   "agent-optimization",
-  "opro-rsi-toolkit",
-  "ape-rsi-toolkit",
-  "ace-rsi-toolkit",
-  "awm-rsi-toolkit",
   "data-analysis",
   "penguin-sdk",
   "penguin-plugin",
@@ -245,11 +241,24 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   await expect(skillsBtn).toBeVisible();
   await expect(skillsBtn).toContainText("1");
 
-  // Open the menu: all listed skills each occupy a row (default_agent has everything preinstalled), with data-analysis shown as selected.
+  // The default Agent receives the bundled skills. Other RSI methods require a separate install.
   const row = (name) => page.getByRole("button", { name: new RegExp(`^${name}`) });
   await skillsBtn.click();
   for (const s of SKILLS) {
     await expect(row(s)).toBeVisible();
+  }
+  for (const method of [
+    "ace",
+    "ape",
+    "awm",
+    "openskill",
+    "opro",
+    "rrsi",
+    "skilladam",
+    "skillopt",
+    "trace",
+  ]) {
+    await expect(row(method + "-rsi-toolkit")).toHaveCount(0);
   }
   await expect(row("data-analysis")).toHaveAttribute("aria-pressed", "true");
 

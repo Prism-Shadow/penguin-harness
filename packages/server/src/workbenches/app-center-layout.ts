@@ -48,8 +48,8 @@ function checkItem(value: unknown, at: string): AppCenterLayoutItem | string {
   if (trimmed === "" || Array.from(trimmed).length > FOLDER_NAME_MAX) {
     return `${at}.name must be a string of 1 to ${FOLDER_NAME_MAX} characters once trimmed.`;
   }
-  if (!Array.isArray(apps) || apps.length === 0 || apps.length > MAX_FOLDER_APPS) {
-    return `${at}.apps must hold 1 to ${MAX_FOLDER_APPS} app keys.`;
+  if (!Array.isArray(apps) || apps.length > MAX_FOLDER_APPS) {
+    return `${at}.apps must hold at most ${MAX_FOLDER_APPS} app keys.`;
   }
   const bad = apps.findIndex((app) => !isAppKey(app));
   if (bad >= 0) return `${at}.apps[${bad}] must be ${APP_KEY_RULE}.`;
@@ -81,7 +81,12 @@ function checkLayout(value: unknown): AppCenterLayout | string {
     }
     count += item.type === "app" ? 1 : item.apps.length;
     if (count > MAX_APPS) return `layout must hold at most ${MAX_APPS} app keys in all.`;
-    out.push(item);
+    if (item.type === "folder" && item.apps.length < 2) {
+      const survivor = item.apps[0];
+      if (survivor !== undefined) out.push({ type: "app", app: survivor });
+    } else {
+      out.push(item);
+    }
   }
   return { v: 1, items: out };
 }

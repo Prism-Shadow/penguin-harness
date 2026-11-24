@@ -6,14 +6,12 @@
  *
  * Defaults are written with `Mod`, which resolves to ⌘ on macOS and Ctrl elsewhere. A literal
  * `Ctrl+` token is reserved for the case where the macOS binding must NOT follow ⌘, and the
- * registry test holds that line. Defaults also stay off the browsers' own shortcuts
- * (reserved.ts), which is why most sit on Mod+Alt — ⌥⌘ on macOS, Ctrl+Alt elsewhere; the registry
- * test holds that line too, and names the defaults that still share a chord with a browser. Two
- * kinds do on purpose: save and find, whose chords every editor and every find bar use.
+ * registry test holds that line. Where the usual desktop shortcut is a browser navigation
+ * command, the browser and desktop hosts each supply their own default.
  * `overDialogs` lets a command through while a dialog or menu is open (see dispatcher.ts).
  */
 import { normalizeChord, parseChord } from "./chord";
-import type { Chord, CommandId, Platform, ShortcutCommand, ShortcutGroup } from "./types";
+import type { Chord, CommandId, HostKind, Platform, ShortcutCommand, ShortcutGroup } from "./types";
 
 export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
   {
@@ -32,6 +30,7 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     group: "general",
     // Mod+K is the browser's web search.
     defaults: { default: "Mod+Alt+KeyS" },
+    desktopDefault: "Mod+KeyK",
   },
   {
     id: "chat.new",
@@ -39,6 +38,7 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     group: "general",
     // Mod+N opens a browser window. On macOS this takes over Chrome's ⌥⌘N (split view).
     defaults: { default: "Mod+Alt+KeyN" },
+    desktopDefault: "Mod+KeyN",
   },
   {
     id: "find.open",
@@ -59,8 +59,8 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     id: "sidebar.toggle",
     scope: "global",
     group: "panels",
-    // Mod+B is Firefox's bookmarks sidebar; the three panel toggles count Mod+Alt+1 to 3.
-    defaults: { default: "Mod+Alt+Digit1" },
+    // Editors and IDEs use Mod+B for the left sidebar. Rich text keeps its bold command.
+    defaults: { default: "Mod+KeyB" },
   },
   {
     id: "dock.toggleRight",
@@ -68,6 +68,7 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     group: "panels",
     // Mod+Alt+B is Chrome's bookmark manager on macOS.
     defaults: { default: "Mod+Alt+Digit2" },
+    desktopDefault: "Mod+Alt+KeyB",
   },
   {
     id: "dock.toggleBottom",
@@ -75,6 +76,7 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     group: "panels",
     // Mod+J opens the browser's downloads.
     defaults: { default: "Mod+Alt+Digit3" },
+    desktopDefault: "Mod+KeyJ",
   },
   {
     id: "terminal.toggle",
@@ -123,8 +125,14 @@ export function commandById(id: CommandId): ShortcutCommand {
 }
 
 /** The platform's own default when the command has one, else the shared default; normalized for the platform. */
-export function defaultChord(cmd: ShortcutCommand, platform: Platform): Chord | null {
-  const text = cmd.defaults[platform] !== undefined ? cmd.defaults[platform] : cmd.defaults.default;
+export function defaultChord(
+  cmd: ShortcutCommand,
+  platform: Platform,
+  host: HostKind = "browser",
+): Chord | null {
+  const platformDefault =
+    cmd.defaults[platform] === undefined ? cmd.defaults.default : cmd.defaults[platform];
+  const text = host === "desktop" ? (cmd.desktopDefault ?? platformDefault) : platformDefault;
   if (text === null || text === undefined) return null;
   const chord = parseChord(text);
   return chord === null ? null : normalizeChord(chord, platform);
