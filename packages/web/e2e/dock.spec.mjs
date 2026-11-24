@@ -567,7 +567,7 @@ test("the terminal panel's + starts another shell and shows it; ending the last 
   const sessionId = await createSession(page.request, projectId);
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
-  await page.keyboard.press("Control+Backquote");
+  await openViaPicker(page, "right", "terminal");
   await expect(shellTabs(page)).toHaveCount(1, { timeout: 20000 });
   await waitForShell(page, "FIRST_SHELL");
 

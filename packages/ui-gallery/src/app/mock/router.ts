@@ -136,7 +136,10 @@ export class Router {
       fail(404, "not_found", "Project not found.");
     }
     const result = await found.route.handler({
-      store: sessionRoute ? store.sessionsOn(machineId) : store,
+      store:
+        sessionRoute || path === "/api/terminals" || path.startsWith("/api/terminals/")
+          ? store.sessionsOn(machineId)
+          : store,
       method,
       path,
       params: found.params,
