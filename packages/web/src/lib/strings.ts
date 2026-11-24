@@ -3445,12 +3445,6 @@ export const zh = {
     runsPartly: (reason: string) => `此构建上有一部分未生效：${reason}`,
     /** Page notice while this build cannot fully run a listed plugin. */
     unsatisfiedNotice: (n: number) => `当前构建无法完整运行 ${n} 个已装插件，原因见各自的条目。`,
-    /** The notice's action: filters the list down to those rows. */
-    unsatisfiedShow: "查看",
-    /** Page notice while the filter beside the search narrows the list to the incompatible plugins. */
-    incompatibleOnlyNotice: "当前只显示不兼容的插件。",
-    /** That notice's action: turns the filter off. */
-    incompatibleOnlyShowAll: "显示全部",
     /** The admin's notice while members' requests to run a plugin's server module wait. */
     moduleRequestsNotice: (n: number) => `${n} 个服务端模块等待启用`,
     /** That notice's action: opens the Settings dialog's module requests page, where they are decided. */
@@ -3599,12 +3593,6 @@ export const zh = {
     openSettings: "设置",
     pageDesc:
       "所有插件按分类列出。只含技能和／或钩子包的插件随本次构建自带，装到 Agent 上使用；服务端模块插件（如 Agent 运行沙箱后端）由管理员安装到整个服务端。",
-    /**
-     * The filter beside the search: a toggle that narrows the list to the plugins this build cannot
-     * fully run, remembered in this browser; the group's accessible name, and the toggle's words.
-     */
-    filterLabel: "筛选插件",
-    incompatibleOnlyFilter: "只看不兼容",
     /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "分组方式",
     groupBy: {
