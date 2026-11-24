@@ -283,7 +283,7 @@ test("the Session toolbar and bottom dock share the middle column; resizing neve
       return minimum;
     };
   });
-  for (const width of [1440, 1280, 1024, 1023]) {
+  for (const width of [1440, 1280, 1025, 1024]) {
     await page.setViewportSize({ width, height: 900 });
     await expect
       .poll(async () => {
