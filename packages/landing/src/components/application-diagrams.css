@@ -53,6 +53,22 @@
   content: "”";
 }
 
+.app-request summary {
+  width: fit-content;
+  margin-top: 0.5rem;
+  padding: 0.65rem 0;
+  color: #c5d7ed;
+  cursor: pointer;
+  font-size: 0.875rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.app-request details p {
+  font-size: 0.975rem;
+  line-height: 1.65;
+}
+
 .app-output {
   min-width: 0;
   padding: 1.55rem clamp(0.75rem, 2.6vw, 2.4rem) 1rem;

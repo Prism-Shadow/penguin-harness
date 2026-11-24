@@ -156,7 +156,11 @@ export function AppGenerationDiagram() {
             />
             {S.siteName}
           </div>
-          <blockquote>{c.prompt}</blockquote>
+          <blockquote>{labels.excerpt}</blockquote>
+          <details>
+            <summary>{labels.fullPrompt}</summary>
+            <p>{c.prompt}</p>
+          </details>
         </div>
         <div className="app-output">
           <ContractPress />
@@ -275,8 +279,8 @@ export function AgentEvaluationDiagram() {
         ))}
       </ol>
       <div className="lineage-key">
-        <span>{c.noteOld}</span>
-        <span>{c.noteNew}</span>
+        <span>{edits.baseline}</span>
+        <span>{edits.decision}</span>
       </div>
     </figure>
   );

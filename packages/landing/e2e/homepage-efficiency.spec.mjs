@@ -46,6 +46,7 @@ test("returns instantly under reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => localStorage.setItem("penguin-site.lang", "zh"));
   await page.goto("/");
+  await expect(page.locator("#home-top")).toBeVisible();
   await page.evaluate(() => scrollTo({ top: 2000, behavior: "instant" }));
   const top = page.getByRole("button", { name: "回到顶部", exact: true });
   await expect(top).toBeVisible();
