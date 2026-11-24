@@ -12,7 +12,13 @@ import { HistoryLoadFailed } from "../history-load-failed";
 import { HistoryLoading } from "../history-loading";
 import { RequestFailureDialog } from "../request-failure-dialog";
 import { MachineRestartNotice } from "../machine-restart-notice";
-import { ChatDockArea, DockPanel, DockLauncher, measureComposer } from "../../dock";
+import {
+  ChatDockArea,
+  DockPanel,
+  DockLauncher,
+  measureComposer,
+  measureMergedComposer,
+} from "../../dock";
 import { ChatDockProvider } from "../session/main-dock-context";
 import { ReplyFilesProvider } from "../reply-files-provider";
 import { PathCapsulesProvider } from "../../company";
@@ -227,28 +233,32 @@ export function renderMainChatBody(scope: MainChatView) {
                               onClose={() => setFailureShown(null)}
                             />
                           </div>
-                          {/* Measured: the bottom dock's docked height stops where this box would
-                            be covered, and gives way as it grows. */}
-                          <WallpaperSurface
-                            ref={measureComposer}
-                            className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800"
+                          <div
+                            ref={
+                              bottomMount.open && bottomMount.view?.merged
+                                ? measureMergedComposer
+                                : measureComposer
+                            }
+                            className="shrink-0"
                           >
-                            <div className="mx-auto max-w-3xl">
-                              {/* Goal banner docked above the composer: an in-flight goal's progress
+                            <WallpaperSurface className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
+                              <div className="mx-auto max-w-3xl">
+                                {/* Goal banner docked above the composer: an in-flight goal's progress
                                 (restored on load while still active), or the terminal state reached
                                 during this page's lifetime. The stop button is the composer's
                                 regular stop (one abort ends the whole goal loop). */}
-                              {/* A conversation on a machine whose server needs a restart: its live
+                                {/* A conversation on a machine whose server needs a restart: its live
                                 updates stay away until then, and this says so instead of the
                                 stream retrying in silence. */}
-                              {!draft && pageMachineId !== null && (
-                                <MachineRestartNotice machineId={pageMachineId} />
-                              )}
-                              {stream.goal && <GoalStatusBanner goal={stream.goal} />}
-                              {scope.paneFocused && <div data-guide-chat />}
-                              {input}
-                            </div>
-                          </WallpaperSurface>
+                                {!draft && pageMachineId !== null && (
+                                  <MachineRestartNotice machineId={pageMachineId} />
+                                )}
+                                {stream.goal && <GoalStatusBanner goal={stream.goal} />}
+                                {scope.paneFocused && <div data-guide-chat />}
+                                {input}
+                              </div>
+                            </WallpaperSurface>
+                          </div>
                         </Activity>
                       </>
                     ) : routeSessionOffline ? (
