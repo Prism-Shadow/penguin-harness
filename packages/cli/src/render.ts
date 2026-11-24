@@ -229,20 +229,44 @@ export function renderHistory(
   messages: AmspRecord[],
   out: NodeJS.WritableStream,
   t: Messages = defaultMessages(),
-  opts: RenderOptions = {},
+  opts: RenderOptions & { tail?: number } = {},
 ): void {
   const c = paletteFor(out);
+  const first = opts.tail === undefined ? 0 : Math.max(0, messages.length - opts.tail);
   // tool_call_id -> tool name (keyed with the origin chain: parent/child ids may collide),
   // so output lines can be labeled with the tool name of their preceding call.
   const toolNames = new Map<string, string>();
-  const nameKey = (msg: AmspRecord, id: string): string => `${msg.origin?.join("/") ?? ""}:${id}`;
-  for (const msg of messages) {
-    if (isEventMessage(msg)) {
-      const p = msg.payload as { type?: string } & AbortPayload;
-      if (p.type === "abort") out.write(`${formatAbort(p, t, c)}\n`);
+  const originKey = (msg: AmspRecord): string => msg.origin?.join("/") ?? "";
+  const nameKey = (msg: AmspRecord, id: string): string => `${originKey(msg)}:${id}`;
+  // A successful summary rotates the Trace. Its new file starts with metadata, bootstrap
+  // events and the generated opening, before the first real input. Read boundaries even
+  // before --tail's display cutoff, so a tail beginning inside a span inherits its state.
+  const compactions = new Map<string, "active" | "rotating" | "opening">();
+  for (const [index, msg] of messages.entries()) {
+    const origin = originKey(msg);
+    if (msg.type === "session_meta") {
+      if (compactions.get(origin) === "rotating") compactions.set(origin, "opening");
+      else compactions.delete(origin);
       continue;
     }
-    if (!isModelMessage(msg)) continue;
+    if (isEventMessage(msg)) {
+      const p = msg.payload;
+      if (p.type === "compaction_begin") compactions.set(origin, "active");
+      else if (p.type === "compaction_end") {
+        if (p.mode === "summarize" && p.status === "completed") compactions.set(origin, "rotating");
+        else compactions.delete(origin);
+      } else if (p.type === "request_begin" && compactions.get(origin) === "rotating") {
+        // A request in the old file reopens that context. An input alone can be left there
+        // by a run stopped during bootstrap, before the pending rotation took place.
+        compactions.delete(origin);
+      } else if (p.type === "abort" && index >= first)
+        out.write(`${formatAbort(p as AbortPayload, t, c)}\n`);
+      continue;
+    }
+    if (!isModelMessage(msg) || compactions.get(origin) === "active") continue;
+    const opening = compactions.get(origin) === "opening";
+    if (opening) compactions.delete(origin);
+    if (index < first) continue;
     const p = msg.payload as {
       type?: string;
       role?: string;
@@ -258,13 +282,20 @@ export function renderHistory(
     switch (p.type) {
       case "text":
         if (p.role === "user") {
+          const text = p.text ?? "";
+          if (
+            opening &&
+            ((text.startsWith("[context_summary]") && text.endsWith("[/context_summary]")) ||
+              (text.startsWith("<context_summary>") && text.endsWith("</context_summary>")))
+          )
+            break;
           // Mid-run steering ([user_steering]-wrapped user text delivered between turns):
           // rendered as distinct user-speech lines instead of a raw marker block or a prompt.
-          const steering = parseUserSteeringText(p.text ?? "");
+          const steering = parseUserSteeringText(text);
           if (steering !== null) {
             writeSteeringLines(out, steering, t, c);
           } else {
-            out.write(`\n> ${p.text ?? ""}\n`);
+            out.write(`\n> ${text}\n`);
           }
         } else {
           // A reply's a2ui blocks print as their text fallback, as they do while streaming.
