@@ -115,7 +115,9 @@ async function open(
     at: options.at ?? HERE,
     pages: SYSTEM_APP_PAGES,
     extra: [
-      ...SYSTEM_APP_PAGES.filter((p) => p.app || p.key === "benchmark-detail").map((p) => ({
+      ...SYSTEM_APP_PAGES.filter(
+        (p) => p.app || p.key === "benchmark" || p.key === "benchmark-detail",
+      ).map((p) => ({
         path: p.path,
         element: h("p", null, p.key),
       })),
@@ -375,22 +377,24 @@ it("switches subpages in a multi-page workbench", async () => {
 it("lists each opened native app once in Apps and restores its last address", async () => {
   const { router } = await open([], { at: "/apps" });
   expect(group()).toBeNull();
-  for (const name of ["models", "plugins", "machines", "usage", "benchmark"]) {
+  for (const name of ["models", "plugins", "machines", "usage"]) {
     await run(() => router.navigate("/" + name));
     expect(
       group()?.querySelector(`[data-app-row="system_agent/${name}"]`)?.getAttribute("aria-current"),
     ).toBe("page");
   }
   await run(() => router.navigate("/benchmark/sample?agentId=helper"));
-  const app = "system_agent/benchmark";
+  expect(row("system_agent/benchmark")).toBeNull();
+  await run(() => router.navigate("/plugins?tab=installed"));
+  const app = "system_agent/plugins";
   expect(group()?.querySelectorAll(`[data-app-row="${app}"]`)).toHaveLength(1);
   await openMenu(app);
   await click(menuItem(en.appCenter.windowMinimize));
-  expect(whereIs(router)).not.toContain("/benchmark");
+  expect(whereIs(router)).not.toContain("/plugins");
   expect(row(app)?.getAttribute("aria-current")).toBeNull();
   await openMenu(app);
   await click(menuItem(en.pageWorkspace.restore));
-  expect(whereIs(router)).toBe("/benchmark/sample?agentId=helper");
+  expect(whereIs(router)).toBe("/plugins?tab=installed");
   await openMenu(app);
   await click(menuItem(en.common.close));
   expect(row(app)).toBeNull();
