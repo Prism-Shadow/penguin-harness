@@ -1,179 +1,233 @@
+import { useEffect, useState } from "react";
+import { ImageIcon, SiteGlyph, type SiteGlyphName } from "@prismshadow/penguin-ui/site";
+import { AppIconShape } from "../../../ui/src/components/icons/app-icon-shape/app-icon-shape";
+import { Spinner } from "../../../ui/src/components/icons/spinner/spinner";
+import { sessionToolArt } from "../../../ui/src/components/icons/glyph-app-icon/session-tool-art";
+import slidesIcon from "../../../../plugins/use-bento-slides/workbenches/slides/ui/icon.svg";
+import imagesIcon from "../../../../plugins/multimodal-tools/workbenches/images/ui/icon.svg";
+import supportIcon from "../../../../plugins/penguin-support/workbenches/support/ui/icon.svg";
+import { usePrefersReducedMotion } from "../lib/reduced-motion";
+import { useVisibleActivity } from "../lib/visible-activity";
 import { S } from "../lib/strings";
+import "./application-diagrams.css";
 
-const PANEL = "rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900";
-const PAPER = "border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-950";
-
-/** Three miniature workbenches, drawn with the visual elements used by their example tasks. */
-function AppPreview({ kind }: { kind: number }) {
+function ScreenBar({
+  icon,
+  title,
+  context,
+  contextIcon,
+}: {
+  icon: SiteGlyphName;
+  title: string;
+  context: string;
+  contextIcon: SiteGlyphName;
+}) {
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 112 50"
-      fill="none"
-      className="w-full text-brand-600 dark:text-brand-300"
-    >
-      {kind === 0 && (
-        <>
-          <path d="M13 8h47v20H31l-7 6v-6H13z" fill="currentColor" opacity=".19" />
-          <path
-            d="M24 16h25m-25 5h17"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-          />
-          <path d="M44 30h55v10H53l-5 4v-4h-4z" fill="currentColor" opacity=".56" />
-        </>
-      )}
-      {kind === 1 && (
-        <>
-          <path d="M12 38h88M12 26h88M12 14h88" stroke="currentColor" opacity=".14" />
-          <path d="m14 35 18-8 14 4 19-14 11 3 20-13v31H14z" fill="currentColor" opacity=".15" />
-          <path
-            d="m14 35 18-8 14 4 19-14 11 3 20-13"
-            stroke="currentColor"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </>
-      )}
-      {kind === 2 && (
-        <>
-          <path d="M28 4h45l10 10v31H28z" fill="currentColor" opacity=".13" />
-          <path
-            d="M73 5v10h9M39 18h22m-22 7h28m-28 8h12"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <circle cx="77" cy="33" r="10" fill="currentColor" />
-          <path
-            d="m72 33 3 3 6-7"
-            fill="none"
-            stroke="var(--color-white)"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-        </>
-      )}
-    </svg>
+    <div className="scene-bar">
+      <span className="scene-title">
+        <SiteGlyph name={icon} width={19} height={19} />
+        {title}
+      </span>
+      <span className="scene-context">
+        <SiteGlyph name={contextIcon} width={15} height={15} />
+        {context}
+      </span>
+    </div>
   );
 }
 
-export function AppGenerationDiagram() {
+// The start dashboard's three builder examples, the shipped workbench art, the gallery's
+// expense log and the session launcher's own illustrations. The combination belongs to this demo project.
+const appTiles = {
+  docs: <SiteGlyph name="bookOpen" />,
+  investment: <SiteGlyph name="barChart" />,
+  legal: <SiteGlyph name="file" />,
+  slides: slidesIcon,
+  images: imagesIcon,
+  support: supportIcon,
+  expenses: null,
+  terminal: sessionToolArt.get("session-tools-terminal"),
+  browser: sessionToolArt.get("session-tools-builtin-browser"),
+};
+
+function AppMark({ app, size = 42 }: { app: keyof typeof appTiles; size?: number }) {
+  const art = appTiles[app];
   return (
-    <figure className={`mx-auto mb-5 max-w-4xl p-3 sm:p-5 ${PANEL}`}>
-      <figcaption className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
-        <img alt="" src={`${import.meta.env.BASE_URL}penguin-logo.svg`} width="24" height="24" />
-        {S.cases.title}
-      </figcaption>
-      <div className="mx-auto flex w-fit max-w-full items-center gap-2 rounded-full border border-brand-200 bg-white px-3 py-1.5 text-xs text-gray-700 dark:border-brand-800 dark:bg-gray-950 dark:text-gray-200">
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 20 20"
-          className="size-4 shrink-0 text-brand-600 dark:text-brand-300"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        >
-          <path d="M3 4.5h14v9H9l-4 3v-3H3zM6 8h8" strokeLinejoin="round" strokeLinecap="round" />
-        </svg>
-        {S.quickstart.desktop.steps[2]}
-      </div>
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 300 24"
-        preserveAspectRatio="none"
-        fill="none"
-        className="h-6 w-full text-brand-400"
-      >
-        <path
-          d="M150 0v24M150 7v1q0 4-5 4H54q-4 0-4 4v8M150 7v1q0 4 5 4h91q4 0 4 4v8"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          vectorEffect="non-scaling-stroke"
+    <AppIconShape size={size} aria-hidden className={`scene-app-mark scene-app-${app}`}>
+      {typeof art === "string" ? (
+        <ImageIcon
+          icon={{ url: art, tint: false }}
+          size={size}
+          fallback={<SiteGlyph name="layoutGrid" />}
         />
-      </svg>
-      <ol className="grid grid-cols-3 gap-1.5 sm:gap-4">
-        {S.cases.apps.map((name, i) => (
-          <li key={name} className={`relative min-w-0 overflow-hidden rounded-lg ${PAPER}`}>
-            <div
-              aria-hidden="true"
-              className="flex h-4 items-center gap-1 border-b border-gray-100 px-2 dark:border-gray-800"
-            >
-              <i className="size-1 rounded-full bg-brand-400" />
-              <i className="h-1 w-6 rounded bg-gray-200 dark:bg-gray-700" />
-            </div>
-            <AppPreview kind={i} />
-            <p className="px-1 pb-2 text-center text-xs leading-tight font-medium sm:text-sm">
-              {name}
-            </p>
-          </li>
-        ))}
-      </ol>
-    </figure>
+      ) : (
+        (art ?? S.cases.workspace.apps[app][0]?.toUpperCase())
+      )}
+    </AppIconShape>
   );
 }
 
-export function AgentEvaluationDiagram() {
-  const c = S.selfImprove;
-  const routes = [
-    { name: S.cases.apps[0], suite: "rag-bench-essential", optimizer: "OPRO" },
-    { name: S.hero.benchmarkKinds.softwareEngineering, suite: "deep-swe", optimizer: "ACE" },
-  ];
+/** The contract desk and its files are from the bilingual 0.2.14 workbench demonstration. */
+export function AppGenerationDiagram() {
+  const c = S.cases.workspace;
+  const { ref, active } = useVisibleActivity<HTMLDivElement>();
   return (
-    <figure className={`mx-auto mb-5 max-w-5xl px-3 py-4 sm:px-6 ${PANEL}`}>
-      <figcaption className="mb-4 text-sm font-medium leading-6 text-gray-700 dark:text-gray-200">
-        {c.toolkit}
-      </figcaption>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {routes.map(({ name, suite, optimizer }) => (
-          <div key={suite} className={`rounded-xl px-3 pt-3 pb-2 ${PAPER}`}>
-            <dl className="flex flex-wrap items-baseline gap-x-2 text-xs sm:text-sm">
-              <dt className="text-gray-600 dark:text-gray-400">{c.nodeTarget}</dt>
-              <dd className="font-semibold">{name}</dd>
-            </dl>
-            <ol className="mt-3 flex items-start justify-between gap-1 text-center">
-              {[
-                [c.evaluate, suite],
-                [c.optimize, optimizer],
-                [c.evaluate, suite],
-              ].map(([action, target], index) => (
-                <li key={index} className="relative min-w-0 flex-1">
-                  <span className="block text-xs font-semibold text-brand-700 dark:text-brand-300">
-                    {action}
-                  </span>
-                  <span className="mt-1 block font-mono text-xs leading-tight break-words text-gray-600 dark:text-gray-400">
-                    {target}
-                  </span>
-                  {index < 2 && (
-                    <span
-                      aria-hidden="true"
-                      className="absolute top-0 right-0 text-xs text-gray-400"
-                    >
-                      →
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ol>
-            <svg
-              aria-hidden="true"
-              className="mx-auto mt-1 h-5 w-2/3 text-brand-400"
-              preserveAspectRatio="none"
-              viewBox="0 0 160 18"
-              fill="none"
-            >
-              <path
-                d="M157 2v4q0 7-8 7H11q-8 0-8-7V3m-2 4 2-4 3 4"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                vectorEffect="non-scaling-stroke"
-              />
-            </svg>
+    <div
+      ref={ref}
+      className="product-scene"
+      data-story-diagram=""
+      data-active={active}
+      role="group"
+      aria-label={c.title}
+    >
+      <ScreenBar icon="layoutGrid" title={c.title} context={c.project} contextIcon="folderOpen" />
+      <div className="scene-workspace">
+        <ul className="scene-launcher" aria-label={c.title}>
+          {(Object.keys(appTiles) as (keyof typeof appTiles)[]).map((app) => (
+            <li key={app} data-selected={app === "legal" || undefined}>
+              <AppMark app={app} />
+              <span>{c.apps[app]}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="scene-desk">
+          <div className="scene-desk-title">
+            <AppMark app="legal" size={32} />
+            <div>
+              <strong>{c.desk}</strong>
+              <div className="scene-address">legal_agent / legal-desk</div>
+            </div>
           </div>
-        ))}
+          <table className="scene-files">
+            <thead>
+              <tr>
+                <th scope="col">{c.file}</th>
+                <th scope="col">{c.status}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {c.files.map((file, i) => {
+                const [title, source] = file.split(" - ");
+                return (
+                  <tr key={file}>
+                    <td>
+                      <div className="scene-filename">
+                        <SiteGlyph name="file" width={16} height={16} />
+                        <span>
+                          {title}
+                          {source && <small>{source}</small>}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="scene-file-state" data-reviewing={i === 0 || undefined}>
+                        {i === 0 ? (
+                          <Spinner className="scene-activity" label={c.analyzing} />
+                        ) : (
+                          <SiteGlyph name="check" />
+                        )}
+                        {i === 0 ? c.analyzing : c.reviewed}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </figure>
+    </div>
+  );
+}
+
+const taskMarks: SiteGlyphName[] = ["shieldCheck", "bubbleLines", "barChart", "folderOpen"];
+
+/** Separate schedules keep a busy run from moving in lockstep with another agent. */
+function AgentRun({ index, running }: { index: number; running: boolean }) {
+  const c = S.selfImprove.workbench;
+  const task = c.tasks[index]!;
+  const [phase, setPhase] = useState(index);
+  useEffect(() => {
+    setPhase(index);
+    if (!running) return;
+    const period = 2850 + index * 190;
+    let timer: number;
+    function advance() {
+      setPhase((current) => (current + 1) % c.stages.length);
+      timer = window.setTimeout(advance, period);
+    }
+    timer = window.setTimeout(advance, 1400 + index * 650);
+    return () => window.clearTimeout(timer);
+  }, [running, index, c.stages.length]);
+  const current = running ? phase : index;
+  return (
+    <tr data-agent-loop={task.name}>
+      <th scope="row">
+        <div className="scene-agent">
+          <span className="scene-agent-icon">
+            <SiteGlyph name={taskMarks[index]!} />
+          </span>
+          <span>
+            <strong>{task.name}</strong>
+            <small>{task.task}</small>
+          </span>
+        </div>
+      </th>
+      {c.stages.map((stage, i) => {
+        const state = current === i ? "active" : current > i ? "done" : "waiting";
+        return (
+          <td key={stage} data-phase={state} aria-current={state === "active" ? "step" : undefined}>
+            <span className="scene-phase">
+              {state === "active" ? (
+                <Spinner className="scene-activity" label={c.activeStages[i]!} />
+              ) : state === "done" ? (
+                <SiteGlyph name="check" />
+              ) : (
+                <span className="scene-wait" />
+              )}
+              <span className="scene-stage-label">
+                {state === "active" ? c.activeStages[i] : stage}
+              </span>
+            </span>
+          </td>
+        );
+      })}
+    </tr>
+  );
+}
+
+/** Independent rounds on four task families from the GDPEVO Essential report. */
+export function AgentEvaluationDiagram() {
+  const c = S.selfImprove.workbench;
+  const { ref, active } = useVisibleActivity<HTMLDivElement>();
+  const reduced = usePrefersReducedMotion();
+  return (
+    <div
+      ref={ref}
+      className="product-scene"
+      data-story-diagram=""
+      data-active={active && !reduced}
+      role="group"
+      aria-label={c.title}
+    >
+      <ScreenBar icon="trophy" title={c.title} context="GDPEVO Essential" contextIcon="bookOpen" />
+      <table className="scene-runs">
+        <thead>
+          <tr>
+            <th scope="col">{c.agents}</th>
+            {c.stages.map((stage) => (
+              <th scope="col" key={stage}>
+                {stage}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {c.tasks.map((task, index) => (
+            <AgentRun key={task.name} index={index} running={active && !reduced} />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
