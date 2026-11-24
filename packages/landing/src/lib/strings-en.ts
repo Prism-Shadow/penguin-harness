@@ -56,7 +56,7 @@ export const en: Strings = {
       growth: "Vibe-Coding",
       separator: " ",
       reachLead: "to ",
-      reach: "Vibe-Evolving",
+      reach: "Vibe-Tuning",
     },
     subtitle: "Open Foundation for Self-Evolving Enterprise AI.",
     downloadCta: "Download desktop",
