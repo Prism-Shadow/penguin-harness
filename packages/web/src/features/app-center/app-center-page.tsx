@@ -349,7 +349,7 @@ export function AppCenterPage() {
           open: launch,
           isRunning: (app) => runningIds.has(app.id),
           openFullScreen: (app) =>
-            openFullPage(navigate, app.shortcut.path, appCenterPath(params), {
+            openFullPage(navigate, app.shortcut.path, workspace?.address ?? appCenterPath(params), {
               fromWindow: false,
             }),
           showError: setErrorOf,

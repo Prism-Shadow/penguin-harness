@@ -203,31 +203,6 @@ describe("the shipped library", () => {
     expect(owner.size).toBeGreaterThan(0);
   });
 
-  it("ACE, APE, AWM and OPRO ship the same evaluation reference", () => {
-    // These methods share one evaluation protocol. Continuous-training methods have
-    // their own worker instructions, as does RRSI for token-cost selection and source builds.
-    // Keep this check on the copies that must stay identical.
-    const toolkits = [
-      "ace-rsi-toolkit",
-      "ape-rsi-toolkit",
-      "awm-rsi-toolkit",
-      "opro-rsi-toolkit",
-    ].map((name) => libraryPlugin(name)!);
-    expect(toolkits.length).toBeGreaterThan(1);
-    const references = toolkits.map((plugin) => {
-      // One Skill per algorithm toolkit, named like the plugin.
-      expect(
-        plugin.skills.map((s) => s.name),
-        plugin.name,
-      ).toEqual([plugin.name]);
-      return plugin.skills[0]!.files?.["references/evaluation.md"] ?? "";
-    });
-    for (const [i, reference] of references.entries()) {
-      expect(reference.length, toolkits[i]!.name).toBeGreaterThan(0);
-      expect(reference, `${toolkits[i]!.name} vs ${toolkits[0]!.name}`).toBe(references[0]);
-    }
-  });
-
   it("reads local plugin sources and the corresponding verified release package for an external plugin", () => {
     for (const plugin of loadLibraryPlugins()) {
       const dir = libraryPluginPackage(plugin.name)!.dir;

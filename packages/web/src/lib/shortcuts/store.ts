@@ -15,11 +15,12 @@
  */
 import { chordEquals, normalizeChord, parseChord, serializeChord } from "./chord";
 import { relocateChord } from "./match";
-import { currentPlatform } from "./platform";
+import { currentHost, currentPlatform } from "./platform";
 import { SHORTCUT_COMMANDS, commandById, defaultChord } from "./registry";
 import type {
   Chord,
   CommandId,
+  HostKind,
   Keymap,
   Platform,
   ShortcutCommand,
@@ -40,7 +41,7 @@ const SECTIONS: readonly Platform[] = ["mac", "windows", "linux"];
 
 let storageOverride: KeybindingsStorage | null = null;
 let layout: ReadonlyMap<string, string> | null = null;
-let cache: { platform: Platform; keymap: Keymap } | null = null;
+let cache: { platform: Platform; host: HostKind; keymap: Keymap } | null = null;
 let version = 0;
 const listeners = new Set<() => void>();
 /** Whether this tab edited the bindings since it loaded: what decides an absent server copy's fate on hydrate. */
@@ -156,7 +157,7 @@ function invalidate(): void {
 
 /** The registry default after the keyboard layout relocation, when a layout is known. */
 function effectiveDefault(cmd: ShortcutCommand, platform: Platform): Chord | null {
-  const chord = defaultChord(cmd, platform);
+  const chord = defaultChord(cmd, platform, currentHost());
   return chord !== null && layout !== null ? relocateChord(chord, layout) : chord;
 }
 
@@ -183,8 +184,9 @@ function resolve(platform: Platform): Keymap {
 /** The keymap for the current platform; cached until a write, a `storage` event or a layout arrives. */
 export function keymap(): Keymap {
   const platform = currentPlatform();
-  if (cache === null || cache.platform !== platform)
-    cache = { platform, keymap: resolve(platform) };
+  const host = currentHost();
+  if (cache === null || cache.platform !== platform || cache.host !== host)
+    cache = { platform, host, keymap: resolve(platform) };
   return cache.keymap;
 }
 

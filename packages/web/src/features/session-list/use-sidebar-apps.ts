@@ -1,7 +1,11 @@
 import { useMemo } from "react";
 import type { AppCenterShortcut, IconRef } from "@prismshadow/penguin-server/api";
 import type { OpenPage } from "../../lib/page-layout";
-import { parseSessionWorkbenchPage, sessionWorkbenchAppKey } from "../../lib/session-workbenches";
+import {
+  isSessionApp,
+  parseSessionWorkbenchPage,
+  sessionWorkbenchAppKey,
+} from "../../lib/session-workbenches";
 import { useSessionWorkbenchPanels } from "../../lib/dock-panel-registry";
 import { SYSTEM_AGENT_ID } from "../../lib/builtin-agents";
 import { systemAppKey, useSystemApps, type SystemShortcut } from "../../lib/system-apps";
@@ -64,7 +68,8 @@ export function useSidebarApps(pages: readonly OpenPage[] | undefined) {
       if (page.kind !== "window" && page.kind !== "system") continue;
       const key = page.id.slice(4);
       const tool = parseSessionWorkbenchPage(page);
-      if (tool && tool.address.projectId === projectId) {
+      if (tool) {
+        if (tool.address.projectId !== projectId || !isSessionApp(tool.kind)) continue;
         const definition = panels.find((p) => p.id === tool.kind);
         if (!definition) continue;
         const machineId = tool.address.machineId;

@@ -39,7 +39,7 @@ Personal preferences apply the moment they are touched. There is no Save button 
 
 Every personal preference is saved to your account: your profile, language, currency, notifications, theme, light or dark, accent, fonts, font size, background image, terminal theme, the shortcuts launcher, tool short names, keyboard shortcuts and your personal Company mode switch. Sign in from another browser or the desktop app and they are all there. Each browser also keeps a copy, so the app opens in your theme straight away. Your unsent drafts follow the account the same way.
 
-What stays in each browser is that screen's own view: panel widths, the dock, sidebar and group folds, where the shortcuts launcher rests, the Plugins page's **Show only incompatible plugins** filter, and the notices you closed there.
+What stays in each browser is that screen's own view: panel widths, the dock, sidebar and group folds, where the shortcuts launcher rests, and the notices you closed there.
 
 The Server pages are admin-only and server-global. A non-admin sees neither those entries nor any hint that they exist: they are left with the Personal pages alone, and the rail draws no group headings at all.
 
