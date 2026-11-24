@@ -50,6 +50,53 @@ export function measureComposer(element: HTMLElement | null): (() => void) | und
   return () => observer.disconnect();
 }
 
+/**
+ * A resized textarea keeps its old scrollTop until the next keypress. Measure the active end
+ * of its selection in a copy of the text with the same wrapping, without touching the native
+ * selection, focus or IME composition. If the user had scrolled away from it, keep their place.
+ */
+function keepEditingLine(editor: HTMLTextAreaElement, oldTop: number, oldHeight: number): void {
+  const style = getComputedStyle(editor);
+  const mirror = document.createElement("div");
+  Object.assign(mirror.style, {
+    position: "fixed",
+    top: "0",
+    left: "0",
+    visibility: "hidden",
+    boxSizing: "border-box",
+    width: `${editor.clientWidth}px`,
+    padding: style.padding,
+    font: style.font,
+    letterSpacing: style.letterSpacing,
+    wordSpacing: style.wordSpacing,
+    tabSize: style.tabSize,
+    whiteSpace: style.whiteSpace,
+    overflowWrap: style.overflowWrap,
+    wordBreak: style.wordBreak,
+    direction: style.direction,
+  });
+  // The extra character gives an empty last line a measurable caret.
+  const text = document.createTextNode(editor.value + "\u200b");
+  mirror.append(text);
+  editor.after(mirror);
+  const caret = document.createRange();
+  caret.setStart(
+    text,
+    editor.selectionDirection === "backward" ? editor.selectionStart : editor.selectionEnd,
+  );
+  caret.collapse(true);
+  const rect = caret.getBoundingClientRect();
+  const lineHeight = parseFloat(style.lineHeight);
+  const center = rect.top + rect.height / 2 - mirror.getBoundingClientRect().top;
+  mirror.remove();
+  if (!rect.height || center < oldTop || center > oldTop + oldHeight) return;
+  const top = center - lineHeight / 2;
+  const bottom = center + lineHeight / 2;
+  if (top < editor.scrollTop) editor.scrollTop = Math.floor(top);
+  else if (bottom > editor.scrollTop + editor.clientHeight)
+    editor.scrollTop = Math.ceil(bottom - editor.clientHeight);
+}
+
 /** Keep the input and its notices reachable when a phone cannot fit them above an open dock.
  * The viewport starts at the input end of the composer. Its content keeps its natural height.
  */
@@ -86,8 +133,12 @@ export function measureMergedComposer(element: HTMLElement | null): (() => void)
     const scroll = content.getBoundingClientRect().height > limit;
     const maxHeight = scroll ? `${Math.floor(limit)}px` : "";
     const resized = element.style.getPropertyValue("--dock-composer-max-height") !== maxHeight;
+    const oldHeight = editor.clientHeight;
+    const oldTop = editor.scrollTop;
     element.classList.toggle("dock-composer-scroll", scroll);
     element.style.setProperty("--dock-composer-max-height", maxHeight);
+    if (resized && document.activeElement === editor && editor.clientHeight < oldHeight)
+      keepEditingLine(editor, oldTop, oldHeight);
     if (resized || document.activeElement === editor) showEditor();
   };
   fit();

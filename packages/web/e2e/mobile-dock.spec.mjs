@@ -121,6 +121,21 @@ test.describe("short touch viewport", () => {
   });
 });
 
+async function setKeyboardHeight(page, browserName, height) {
+  // Safari keeps the layout viewport, while Chromium can resize the layout itself.
+  if (browserName === "webkit") {
+    await page.evaluate((height) => {
+      Object.defineProperty(window.visualViewport, "height", {
+        configurable: true,
+        get: () => height,
+      });
+      window.visualViewport.dispatchEvent(new Event("resize"));
+    }, height);
+  } else {
+    await page.setViewportSize({ width: page.viewportSize().width, height });
+  }
+}
+
 for (const browserName of ["webkit", "chromium"]) {
   const phoneTest = test.extend({
     browserName: [browserName, { scope: "worker", option: true }],
@@ -151,19 +166,7 @@ for (const browserName of ["webkit", "chromium"]) {
       await expect(field).toHaveValue("");
       await field.fill("Keep editing");
       await field.tap();
-      // Safari keeps its layout viewport at the page height when its keyboard covers the bottom.
-      // Chromium can resize the layout itself. The visible editing and close targets must agree.
-      if (browserName === "webkit") {
-        await page.evaluate(() => {
-          Object.defineProperty(window.visualViewport, "height", {
-            configurable: true,
-            get: () => 360,
-          });
-          window.visualViewport.dispatchEvent(new Event("resize"));
-        });
-      } else {
-        await page.setViewportSize({ width: 320, height: 360 });
-      }
+      await setKeyboardHeight(page, browserName, 360);
       const hit = (locator) =>
         locator.evaluate((el) => {
           const r = el.getBoundingClientRect();
@@ -206,6 +209,64 @@ for (const browserName of ["webkit", "chromium"]) {
       await dock.getByTestId("dock-close").tap();
       await expect(dock).toHaveCount(0);
       await expect(field).toHaveValue(longDraft + " done");
+    },
+  );
+
+  phoneTest(
+    browserName + ": shrinking an existing draft keeps the edited line or the reader's place",
+    async ({ page }) => {
+      await page.setViewportSize({ width: 375, height: 667 });
+      await openSessionWithNotes(page, "phonecaret" + browserName);
+      const field = page.locator('[data-slot="composer"] textarea').first();
+      await page.getByTestId("dock-toggle-bottom").tap();
+      await field.tap();
+      for (const position of ["last", "middle", "reading"]) {
+        await setKeyboardHeight(page, browserName, 667);
+        const lines = Array.from({ length: 18 }, (_, index) => `Row ${index + 1}`);
+        // Make the middle caret cross a soft wrap as well as explicit line breaks.
+        if (position === "middle") lines[1] = "wrapped word ".repeat(12);
+        await field.fill(lines.join("\n"));
+        let line = 17;
+        if (position === "middle") {
+          line = 9;
+          await field.press("Control+Home");
+          for (let i = 0; i < line; i++) await field.press("ArrowDown");
+        } else {
+          await field.press("Control+End");
+        }
+        await page.keyboard.type("x");
+        const before = await field.evaluate((el) => ({
+          value: el.value,
+          start: el.selectionStart,
+          end: el.selectionEnd,
+          height: el.clientHeight,
+        }));
+        const lineVisible = () =>
+          field.evaluate((el, line) => {
+            const style = getComputedStyle(el);
+            const h = parseFloat(style.lineHeight);
+            const center = parseFloat(style.paddingTop) + (line + 0.5) * h - el.scrollTop;
+            const halfEm = parseFloat(style.fontSize) / 2;
+            return center >= halfEm && center <= el.clientHeight - halfEm;
+          }, line);
+        await expect.poll(lineVisible).toBe(true);
+        if (position === "reading")
+          await field.evaluate((el) => {
+            el.scrollTop = 0;
+          });
+        await setKeyboardHeight(page, browserName, 360);
+        await expect
+          .poll(() => field.evaluate((el) => el.clientHeight))
+          .toBeLessThan(before.height);
+        // Check before any focus, selection or typing event could reveal the caret itself.
+        if (position === "reading")
+          await expect.poll(() => field.evaluate((el) => el.scrollTop)).toBe(0);
+        else await expect.poll(lineVisible).toBe(true);
+        expect(
+          await field.evaluate((el) => [el.value, el.selectionStart, el.selectionEnd]),
+        ).toEqual([before.value, before.start, before.end]);
+        await expect(field).toBeFocused();
+      }
     },
   );
 }
