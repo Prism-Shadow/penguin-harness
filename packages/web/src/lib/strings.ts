@@ -1329,18 +1329,9 @@ export const zh = {
   },
   /** The sidebar's app list, under the nav and above the conversations (main-sidebar-apps.tsx). */
   pageWorkspace: {
-    leftPane: "左侧页面",
-    rightPane: "右侧页面",
     restore: "恢复",
     workbenches: "工作台",
-    left: "在左侧打开",
-    right: "在右侧打开",
-    whole: "整页显示",
-    swap: "交换两侧",
     separate: "在新窗口打开",
-    actions: "分栏操作",
-    closeView: "关闭视图",
-    resize: "调整页面宽度",
     empty: "此 Agent 没有可打开的工作台。",
   },
   sidebarApps: {
@@ -1423,7 +1414,6 @@ export const zh = {
       back: "返回",
       /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
       toFolders: "移入分组",
-      newFolderWith: "与其组成新分组",
     },
     restoreTitle: "恢复默认排列",
     restoreBody: "应用中心将回到默认顺序：你的排序与分组都会清除，应用本身不受影响。",

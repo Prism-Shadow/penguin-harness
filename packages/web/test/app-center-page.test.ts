@@ -552,9 +552,12 @@ it("makes a folder from the keyboard with Move to…, and opens it as a panel ov
   await open([workbench("board"), workbench("notes")]);
   await press(tileButton(key("notes")), { key: "F10", shiftKey: true });
   await click(menuItem(en.appCenter.menu.moveTo));
-  // The second page of the same menu: back, then the apps it can make a new folder with.
+  // Move to lists folder actions. The full app picker lives in the creation dialog.
   expect(spoken(document.activeElement!)).toBe(en.appCenter.menu.back);
-  await click(menuItem("Board"));
+  expect(menu()?.textContent).not.toContain("Board");
+  await click(menuItem(en.appCenter.menu.newFolder));
+  await click(appBox("Board"));
+  await click(buttonIn(topDialog(), en.appCenter.newFolderCreate));
   expect(order()).toEqual([`folder:${en.appCenter.newFolder}`]);
 
   await click(folderButton(en.appCenter.newFolder));
@@ -570,20 +573,17 @@ it("makes a folder from the keyboard with Move to…, and opens it as a panel ov
     [...panel.querySelectorAll("li[data-app]")].map((li) => (li as HTMLElement).dataset["app"]),
   ).toEqual([key("board"), key("notes")]);
 
-  // Dragged out onto the home grid, an app leaves the folder, which keeps its one app.
   await dragOut(key("notes"));
-  expect(order()).toEqual([`folder:${en.appCenter.newFolder}`, key("notes")]);
-  expect(document.querySelector(".ui-scrim")).toBeNull();
-
-  // The last app out leaves no folder behind.
-  await click(folderButton(en.appCenter.newFolder));
-  await dragOut(key("board"));
   expect(order()).toEqual([key("board"), key("notes")]);
+  expect(document.querySelector(".ui-scrim")).toBeNull();
 });
 
 it("returns a windowed app to its folder and closes the folder back to its trigger", async () => {
-  const { router } = await open([workbench("notes")], {
-    layout: { v: 1, items: [{ type: "folder", id: "study", name: "Study", apps: [key("notes")] }] },
+  const { router } = await open([workbench("notes"), workbench("board")], {
+    layout: {
+      v: 1,
+      items: [{ type: "folder", id: "study", name: "Study", apps: [key("notes"), key("board")] }],
+    },
   });
   const trigger = folderButton("Study");
   await click(trigger);
@@ -603,12 +603,12 @@ it("returns a windowed app to its folder and closes the folder back to its trigg
 });
 
 it("opens a second folder directly and leaves focus in the newly opened group", async () => {
-  await open([workbench("board"), workbench("notes")], {
+  await open([workbench("board"), workbench("notes"), workbench("tasks"), workbench("todo")], {
     layout: {
       v: 1,
       items: [
-        { type: "folder", id: "first", name: "Work", apps: [key("board")] },
-        { type: "folder", id: "second", name: "Study", apps: [key("notes")] },
+        { type: "folder", id: "first", name: "Work", apps: [key("board"), key("tasks")] },
+        { type: "folder", id: "second", name: "Study", apps: [key("notes"), key("todo")] },
       ],
     },
   });
@@ -644,7 +644,7 @@ it("makes a folder of the apps checked in the header's New folder, at the first 
   ]);
 });
 
-it("opens New folder… from a tile's Move to… with that app checked, and keeps a folder of one", async () => {
+it("opens New folder… from a tile's Move to… with one app checked and requires a second member", async () => {
   const layout: AppCenterLayout = {
     v: 1,
     items: [{ type: "folder", id: "fwork", name: "Work", apps: [key("todo"), key("board")] }],
@@ -660,12 +660,14 @@ it("opens New folder… from a tile's Move to… with that app checked, and keep
   expect(appBox("Todo").closest("label")?.textContent).toContain(
     en.appCenter.newFolderInFolder("Work"),
   );
+  expect(buttonIn(topDialog(), en.appCenter.newFolderCreate).disabled).toBe(true);
+  await click(appBox("Todo"));
   await click(buttonIn(topDialog(), en.appCenter.newFolderCreate));
-  expect(order()).toEqual(["folder:Work", `folder:${en.appCenter.newFolder}`]);
+  expect(order()).toEqual([key("board"), `folder:${en.appCenter.newFolder}`]);
   expect(server.appCenterLayout()?.items[1]).toMatchObject({
     type: "folder",
     name: en.appCenter.newFolder,
-    apps: [key("notes")],
+    apps: [key("todo"), key("notes")],
   });
 });
 

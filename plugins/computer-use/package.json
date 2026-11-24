@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/computer-use",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "Computer use for PenguinHarness: Agents see and operate desktop apps on macOS, Windows and Linux through their accessibility trees, with agent-desktop.",
   "keywords": [

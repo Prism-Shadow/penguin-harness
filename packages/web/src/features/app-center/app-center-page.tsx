@@ -11,8 +11,7 @@
  * - The arrangement is the viewer's own: they drag tiles to reorder them and onto one another to
  *   make folders, or make one from the "New folder" dialog (the header's button, the grid's
  *   menu, a tile's "Move to…"), and it is kept with their account, per Project (arrangement.ts).
- *   A new app is appended, one that went away drops out, and a folder goes only once it is
- *   empty. Restoring the default order asks first.
+ *   A new app is appended and a folder’s last member takes its original place. Restoring the default order asks first.
  * - A click (or Enter) opens the app windowed, over the grid (`?app=<agentId>/<workbenchId>`,
  *   `<machineId>:` first for a machine's); the tile's menu also opens it full screen, the full
  *   page whose exit comes back here. The window's minimize (and Back) returns to the grid with
@@ -84,6 +83,7 @@ import type { AiExample } from "../ai-create";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { appTriggerId, AppTile, FolderTile, MENU_PX, type TileMark } from "./app-tile";
 import {
+  appKeyOf,
   arrange,
   duplicateWorkbenchOwners,
   dissolveFolder,
@@ -91,6 +91,7 @@ import {
   groupApps,
   layoutOf,
   keepUnseenApps,
+  pruneFolderMembers,
   makeFolder,
   moveBeside,
   moveIntoFolder,
@@ -229,9 +230,40 @@ export function AppCenterPage() {
     () =>
       shortcuts === null && error === null
         ? null
-        : arrange([...systemShortcuts, ...(shortcuts ?? [])], layout),
-    [shortcuts, error, layout, systemShortcuts],
+        : arrange([...systemShortcuts, ...(shortcuts ?? [])], layout, awaitedApp),
+    [shortcuts, error, layout, systemShortcuts, awaitedApp],
   );
+  const lastPrune = useRef<{ attempt: string; removed: string[] } | null>(null);
+  useEffect(() => {
+    if (!layout || !shortcuts || error || !projectId) return;
+    const present = new Set([...systemShortcuts, ...shortcuts].map(appKeyOf));
+    const next = pruneFolderMembers(layout, (key) => present.has(key) || awaitedApp(key));
+    if (next === layout) {
+      if (lastPrune.current?.removed.some((key) => present.has(key))) lastPrune.current = null;
+      return;
+    }
+    const attempt = JSON.stringify([projectId, layout, next]);
+    if (attempt === lastPrune.current?.attempt) return;
+    lastPrune.current = {
+      attempt,
+      removed: layout.items.flatMap((item) =>
+        item.type === "app" ? [] : item.apps.filter((key) => !present.has(key) && !awaitedApp(key)),
+      ),
+    };
+    saveLayout(next);
+  }, [layout, shortcuts, error, projectId, systemShortcuts, awaitedApp, saveLayout]);
+  useEffect(() => {
+    if (
+      !openFolderId ||
+      !shortcuts ||
+      error ||
+      layout?.items.some((item) => item.type === "folder" && item.id === openFolderId)
+    )
+      return;
+    const next = new URLSearchParams(params);
+    next.delete(FOLDER_PARAM);
+    setParams(next, { replace: true });
+  }, [openFolderId, shortcuts, error, layout, params, setParams]);
   /** Some Agent has an app here: the AI button sits in the header rather than under the grid. */
   const hasWorkbench = shortcuts !== null && shortcuts.length > 0;
   const titleOf = (shortcut: AppCenterShortcut) =>
@@ -344,12 +376,11 @@ export function AppCenterPage() {
       : {
           grid,
           customized: layout !== null,
-          titleOf,
           arrange: commit,
           open: launch,
           isRunning: (app) => runningIds.has(app.id),
           openFullScreen: (app) =>
-            openFullPage(navigate, app.shortcut.path, appCenterPath(params), {
+            openFullPage(navigate, app.shortcut.path, workspace?.address ?? appCenterPath(params), {
               fromWindow: false,
             }),
           showError: setErrorOf,
