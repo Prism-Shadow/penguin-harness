@@ -3,13 +3,10 @@
  * shown tab's body, in a box that opens from an edge of the page — the bottom (a full-width
  * band) or the right (a column beside the conversation).
  *
- * The frame never unmounts to hide: a closed dock stays in the tree at size 0 and inert, so the
- * bodies inside keep their scroll, their drill-down and their unsaved text, and `data-open` says
- * what is on screen. Its size is the caller's, in pixels: `size` is what the box shows (0 while
- * collapsed or before the entrance), `contentSize` the settled size its content lays out at, so
- * while the visible content box passes through intermediate sizes nothing inside reflows — text does not squeeze
- * and a terminal does not refit its grid on every frame. The animation is the theme's layout
- * motion, off while a drag resizes or a flip must land at once.
+ * A closed frame stays mounted at size 0 and inert, preserving scroll, editors and terminals.
+ * An open frame reserves its settled size. The content enters from the edge inside that frame,
+ * following the theme's layout motion without shifting the divider or reflowing the content.
+ * When the dock closes, the frame collapses and frees the space beside the conversation.
  *
  * The border belongs to the open state only: with border-box sizing a collapsed dock would still
  * paint its 1px, leaving a hairline where nothing is. The resize handle is the caller's too, shown
