@@ -32,6 +32,7 @@ import { FRAME_TEXT_BUDGET } from "@prismshadow/penguin-library-http/socket-line
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import { readableSession } from "@prismshadow/penguin-library-session/access";
+import type { AgentConfig } from "@prismshadow/penguin-library-agent/contract";
 import type {
   HistoryProgress,
   HistoryRecords,
@@ -77,15 +78,25 @@ export interface TraceAccessibleProjectRow extends TraceProjectRow {
   role: "owner" | "member";
 }
 
-/** The access check the route groups reach: one call each (server `Access`). */
-export interface TraceAccess {
-  requireProjectAccess(userId: string, projectId: string): TraceAccessibleProjectRow;
-  requireProjectOwner(userId: string, projectId: string): TraceProjectRow;
+/** A Project as the lists carry it (server `ProjectSummary`). */
+export interface TraceProjectSummary {
+  projectId: string;
+  /** Display name (the `name` in project_config.toml); frontend falls back to projectId when unset. */
+  name?: string;
+  /** Current user's role in this Project. */
+  role: "owner" | "member";
+  ownerUserId: string;
+  createdAt: string;
 }
 
-/** The agent-config surface the import route checks (server `AgentConfig`). */
-export interface TraceAgentConfig {
-  requireExists(projectId: string, agentId: string): Promise<void>;
+/** The access check the route groups reach — the server's `Access` contract, whole (server `Access`). */
+export interface TraceAccess {
+  find(userId: string, projectId: string): TraceAccessibleProjectRow | null;
+  requireProjectAccess(userId: string, projectId: string): TraceAccessibleProjectRow;
+  canAccess(userId: string, projectId: string): boolean;
+  requireProjectOwner(userId: string, projectId: string): TraceProjectRow;
+  accessibleProjectIds(userId: string): string[];
+  listProjects(userId: string): Promise<TraceProjectSummary[]>;
 }
 
 /**
@@ -120,7 +131,7 @@ const MAX_TRACE_BYTES = 14 * 1024 * 1024;
 const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "archived"];
 
 export interface AgentTracesRouteDeps {
-  agentConfigService: TraceAgentConfig;
+  agentConfigService: AgentConfig;
   access: TraceAccess;
   traceService: Traces;
 }

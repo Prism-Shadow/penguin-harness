@@ -28,7 +28,6 @@ import {
   requireValidId,
 } from "@prismshadow/penguin-library-http/validate";
 import type { AppEnv } from "@prismshadow/penguin-library-http";
-import type { AgentConfigView } from "@prismshadow/penguin-library-agent/types";
 import type { Schedules, Scheduling } from "./session.js";
 import type { ScheduleStateRow } from "./repos/schedules.js";
 import {
@@ -125,15 +124,8 @@ export interface ScheduleUpsertRequest {
 // Structural ports (the server binds them to its own mechanisms)
 // ---------------------------------------------------------------------------
 
-/** What the routes need of the agent-config surface (the server's `AgentConfig` satisfies this). */
-export interface SchedulesAgentConfig {
-  requireExists(projectId: string, agentId: string): Promise<void>;
-  insertTemplatePlaceholder(
-    projectId: string,
-    agentId: string,
-    feature: "vault" | "skills" | "schedules",
-  ): Promise<AgentConfigView>;
-}
+/** What the routes need of the agent-config surface — the agent domain's `AgentConfig` contract, whole. */
+import type { AgentConfig } from "@prismshadow/penguin-library-agent/contract";
 
 /**
  * The Project row an access check hands back (server `ProjectRow`, the project repos' row): a
@@ -151,10 +143,25 @@ export interface SchedulesAccessibleProjectRow extends SchedulesProjectRow {
   role: "owner" | "member";
 }
 
-/** Who may read and who may write (the server's `Access` satisfies this). */
+/** A Project as the lists carry it (server `ProjectSummary`). */
+export interface SchedulesProjectSummary {
+  projectId: string;
+  /** Display name (the `name` in project_config.toml); frontend falls back to projectId when unset. */
+  name?: string;
+  /** Current user's role in this Project. */
+  role: "owner" | "member";
+  ownerUserId: string;
+  createdAt: string;
+}
+
+/** Who may read and who may write — the server's `Access` contract, whole (the server's `Access` satisfies this). */
 export interface SchedulesAccess {
+  find(userId: string, projectId: string): SchedulesAccessibleProjectRow | null;
   requireProjectAccess(userId: string, projectId: string): SchedulesAccessibleProjectRow;
+  canAccess(userId: string, projectId: string): boolean;
   requireProjectOwner(userId: string, projectId: string): SchedulesProjectRow;
+  accessibleProjectIds(userId: string): string[];
+  listProjects(userId: string): Promise<SchedulesProjectSummary[]>;
 }
 
 /** The data root, as the schedule file paths want it (the server's `Config`/`ServerConfig` satisfies this). */
@@ -164,7 +171,7 @@ export interface SchedulesRoot {
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface SchedulesRouteDeps {
-  agentConfigService: SchedulesAgentConfig;
+  agentConfigService: AgentConfig;
   config: SchedulesRoot;
   projectConfigService: ScheduleConfigSource;
   access: SchedulesAccess;

@@ -3,6 +3,7 @@
   "compilerOptions": {
     "paths": {
       "@prismshadow/penguin-library-agent/types": ["../agent/src/types.ts"],
+      "@prismshadow/penguin-library-agent/contract": ["../agent/src/contract.ts"],
       "@prismshadow/penguin-library-db": ["../db/src/index.ts"],
       "@prismshadow/penguin-library-db/database": ["../db/src/database.ts"],
       "@prismshadow/penguin-library-db/schema": ["../db/src/schema.ts"],
