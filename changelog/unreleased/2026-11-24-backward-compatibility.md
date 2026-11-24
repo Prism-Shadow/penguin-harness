@@ -12,3 +12,7 @@
 A ticket filed as `2026-09-02-launch-the-site` keeps that exact ID and Markdown filename. Existing board bookmarks, parent and blocker links, channel references and Sessions continue to use the recorded ID. New and existing tickets can reference each other. No migration or user action is required.
 
 The server and clients keep reading date-first IDs for as long as existing files and external references use them. Maintainers can retire this support only through a separately agreed migration that covers those references.
+
+## First-workbench guide bookmarks and progress
+
+Existing guide bookmarks reopen the guide in chat for the same agent and machine. The guide reads the progress already saved in the current tab. Checklist workbenches and their contents stay on the agent. No migration is required. Maintainers can retire the bookmark and tab-storage handling only after a separate decision to end support for those links and saved sessions.

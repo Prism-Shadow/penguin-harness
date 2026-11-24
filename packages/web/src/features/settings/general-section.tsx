@@ -38,6 +38,7 @@ import { resolveSystemLocale, useLocale, type LangPref } from "../../state/local
 import { useTheme, type Currency } from "../../state/theme";
 
 import { useFirstWorkbench, startFirstWorkbench } from "../../lib/first-workbench-entry";
+import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { usePageAgent } from "../../lib/page-agent";
 import { TraceImportRow } from "./trace-import-row";
@@ -51,7 +52,10 @@ export function GeneralSection({ onOpenGuide }: { onOpenGuide?: () => void }) {
       : currentAgent && currentProject
         ? { projectId: currentProject.projectId, agentId: currentAgent.agentId, machineId: null }
         : null;
-  const available = useFirstWorkbench(scope);
+  const { sessionVia } = useAuth();
+  const available = useFirstWorkbench(
+    currentProject?.role === "owner" && sessionVia !== "token" ? scope : null,
+  );
 
   const { lang, locale, setLang } = useLocale();
   const { currency, setCurrency } = useTheme();

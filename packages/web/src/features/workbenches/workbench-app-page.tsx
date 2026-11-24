@@ -68,7 +68,11 @@ export function WorkbenchAppPage() {
     rememberSelection(projectId, agentId);
     void navigate("/chat/new", {
       replace: true,
-      state: { firstWorkbench: { projectId, agentId, machineId } },
+      state: {
+        agentId,
+        ...(machineId && { workspace: "", machineId }),
+        firstWorkbench: { projectId, agentId, machineId },
+      },
     });
   }, [tour, projectId, agentId, machineId, navigate]);
   const paletteShortcut = useShortcutLabel("palette.toggle");

@@ -1,7 +1,7 @@
 /** The native tour and the original installed workbench use the same user-and-URL progress key. */
 import type { MessagesResponse, ModelRefDto } from "@prismshadow/penguin-server/api";
 import { ApiError, apiFetch } from "../api/client";
-import { getSession } from "../api/endpoints";
+import { getSession, getWorkbench } from "../api/endpoints";
 import { workbenchesBase } from "./workbench-tabs";
 
 import { GUIDE_ID } from "./first-workbench-entry";
@@ -29,6 +29,68 @@ export type Guide = {
 export function guideStorage(user: string, pathname: string) {
   return "first-workbench-guide:" + JSON.stringify([user, pathname]);
 }
+function progressKey(storage: string, kind: "sessionStorage" | "localStorage") {
+  return kind === "sessionStorage" ? storage : "penguin.firstWorkbench." + storage;
+}
+/** Keep identifiers and real milestones across restarts. Conversation text and provider credentials
+ * belong to their original stores. The existing window's progress remains a source on upgrade. */
+export function loadGuideProgress(storage: string): GuideProgress {
+  for (const kind of ["sessionStorage", "localStorage"] as const) {
+    try {
+      const data = JSON.parse(window[kind].getItem(progressKey(storage, kind)) ?? "null");
+      if (typeof data?.key === "string" && /^[0-9a-f]{32}$/.test(data.key)) return data;
+    } catch {
+      /* Progress can still be kept in memory. */
+    }
+  }
+  return { key: freshGuideKey() };
+}
+export function persistGuideProgress(storage: string, saved: GuideProgress) {
+  try {
+    sessionStorage.setItem(storage, JSON.stringify(saved));
+  } catch {
+    /* Tab storage is optional. */
+  }
+  const { key, model, tourChat, tourSession, visitedSettings, installed, verified } = saved;
+  const modelRef = model && { provider: model.provider, modelId: model.modelId };
+  try {
+    localStorage.setItem(
+      progressKey(storage, "localStorage"),
+      JSON.stringify({
+        key,
+        model: modelRef,
+        tourChat,
+        tourSession,
+        visitedSettings,
+        installed,
+        verified,
+      }),
+    );
+  } catch {
+    /* Continue in this tab if durable storage is unavailable. */
+  }
+}
+export function guideClosed(storage: string): boolean {
+  return (["localStorage", "sessionStorage"] as const).some((kind) => {
+    try {
+      return (
+        window[kind].getItem(progressKey(storage, kind) + ".closed") === "true" ||
+        JSON.parse(window[kind].getItem(progressKey(storage, kind)) ?? "null")?.verified === true
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+export function closeGuide(storage: string) {
+  for (const kind of ["localStorage", "sessionStorage"] as const) {
+    try {
+      window[kind].setItem(progressKey(storage, kind) + ".closed", "true");
+    } catch {
+      /* Storage is optional. */
+    }
+  }
+}
 export function freshGuideKey() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), (n) =>
     n.toString(16).padStart(2, "0"),
@@ -38,6 +100,8 @@ export function guideLocation(project: string, agent: string, machine: string | 
   const base = workbenchesBase(project, agent);
   return {
     base,
+    project,
+    agent,
     machine,
     pathname:
       (machine === null ? "" : "/server/" + encodeURIComponent(machine)) +
@@ -110,19 +174,26 @@ export async function installGuideBoard(loc: GuideLocation, key: string, guide: 
     loc,
     GUIDE_ID + "/api/guides/" + key + "/installation",
   );
+  let loaded;
   try {
     const result = await call<{
       workbench: { id: string; error: string | null; tabs: { key: string }[] };
     }>(loc, "archive", artifact);
-    if (
-      result.workbench.id !== guide.boardId ||
-      result.workbench.error ||
-      !result.workbench.tabs.some((t) => t.key === "main")
-    )
-      throw Error(result.workbench.error || "The workbench did not load.");
+    loaded = result.workbench;
   } catch (error) {
     if (!(error instanceof ApiError && error.status === 409)) throw error;
+    const installed = await getWorkbench(loc.project, loc.agent, guide.boardId, loc.machine);
+    loaded =
+      installed.enabled !== false &&
+      installed.workbenches.find((w) => w.id === guide.boardId && w.enabled !== false);
   }
+  if (
+    !loaded ||
+    loaded.id !== guide.boardId ||
+    loaded.error ||
+    !loaded.tabs.some((t) => t.key === "main")
+  )
+    throw Error((loaded && loaded.error) || "The workbench did not load.");
   await checkedBoard(loc, guide);
 }
 async function checkedBoard(loc: GuideLocation, guide: Guide) {

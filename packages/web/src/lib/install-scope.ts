@@ -339,6 +339,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   // --------------------------------------------------------------- install-scoped state
   {
     kind: "family",
+    key: "penguin.firstWorkbench.",
+    scope: "install",
+    why: "Guide progress names this installation's users, agents, conversations and generated checklists.",
+  },
+  {
+    kind: "family",
     key: "penguin.chatDraft.",
     scope: "install",
     why: "The new-chat and per-Session drafts: Workspace path, Agent id, model ref, Session id in the key. The reported bug.",

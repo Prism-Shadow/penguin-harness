@@ -118,8 +118,3 @@ export function useGuidePlacement(selector: string | null): Placement {
   }, [selector]);
   return placement;
 }
-
-/** Existing guide hosts can consume the panel position alone. */
-export function useGuideAnchor(selector: string): CSSProperties | undefined {
-  return useGuidePlacement(selector).panel;
-}

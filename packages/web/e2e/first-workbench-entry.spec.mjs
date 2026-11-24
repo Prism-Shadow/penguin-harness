@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { setAccountPrefs } from "./account-prefs.mjs";
-import { provisionAndLogin } from "./auth.mjs";
+import { login, provisionAndLogin, provisionUser } from "./auth.mjs";
 
 const BASE = process.env.BASE_URL;
 const guideId = "first-workbench-guide";
@@ -17,11 +17,16 @@ test("builds and installs a checklist beside the actual conversation", async ({ 
   expect(installed.workbenches).toContainEqual(
     expect.objectContaining({ name: guideId, plugin: guideId }),
   );
+  const handler = base + "/agents/" + agent + "/workbenches";
+  const receipt = (await (await page.request.get(handler + "?id=" + guideId)).json()).workbenches;
+  expect(receipt.find((w) => w.id === guideId)?.tabs).toEqual([]);
+  expect(
+    (await (await page.request.get(handler + "/" + guideId + "/api/capabilities")).json())
+      .onboarding,
+  ).toBe("first-workbench");
   const center = await (await page.request.get(base + "/app-center")).json();
   expect(center.shortcuts.some((s) => s.workbenchId === guideId)).toBe(false);
   await page.goto(BASE + "/");
-  const intro = page.getByRole("dialog", { name: "Connect a model provider first" });
-  await intro.getByRole("button", { name: title }).click();
   const tour = page.getByRole("region", { name: title });
   await expect(tour).toBeVisible();
   await tour.getByRole("button", { name: "Open Models" }).click();
@@ -44,12 +49,15 @@ test("builds and installs a checklist beside the actual conversation", async ({ 
     },
   });
   expect(res.ok(), await res.text()).toBe(true);
+  // The provider connect window returns focus to the product after saving its credentials.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await tour.getByRole("button", { name: "Go to chat" }).click();
   const composer = page.locator('[data-slot="composer"]:visible').first();
   await expect(composer.getByText(modelId, { exact: true })).toBeVisible();
   await composer.getByText(modelId, { exact: true }).click();
   const picker = page.getByRole("dialog");
   await expect(picker).toBeVisible();
+  await expect(tour).toBeHidden();
   await picker.getByText(modelId, { exact: true }).last().click();
   const text = "Plan a volunteer seed exchange";
   await composer.locator("textarea").fill(text);
@@ -95,20 +103,31 @@ test("builds and installs a checklist beside the actual conversation", async ({ 
   await expect(settings).toHaveCount(0);
   await expect(tour.getByRole("status")).toContainText("Test passed");
   await tour.getByRole("button", { name: "Dismiss" }).click();
+  await page.goto(handler + "/" + guideId + "/ui/index.html");
+  await expect(page).toHaveURL(/\/chat\/new$/);
+  await expect(tour.getByRole("status")).toContainText("Test passed");
+  await tour.getByRole("button", { name: "Dismiss" }).click();
   await page.goto(BASE + "/apps?" + new URLSearchParams({ app: agent + "/" + guideId }));
   await expect(tour.getByRole("status")).toContainText("Test passed");
 });
 
 test.describe("on a small touch screen", () => {
-  test.use({ viewport: { width: 320, height: 620 }, hasTouch: true });
+  test.use({
+    viewport: { width: 320, height: 620 },
+    hasTouch: true,
+    colorScheme: "dark",
+    reducedMotion: "reduce",
+  });
   test("keeps setup and the composer reachable before a model is configured", async ({ page }) => {
     await provisionAndLogin(page.request, "touchguidetour", "password123");
-    await setAccountPrefs(page.request, { lang: "en", initialPasswordBannerDismissed: true });
+    await setAccountPrefs(page.request, {
+      lang: "zh",
+      themeMode: "dark",
+      initialPasswordBannerDismissed: true,
+    });
     await page.goto(BASE + "/");
-    const intro = page.getByRole("dialog", { name: "Connect a model provider first" });
-    await intro.getByRole("button", { name: title }).tap();
-    const tour = page.getByRole("region", { name: title });
-    await tour.getByRole("button", { name: "Go to chat" }).tap();
+    const tour = page.getByRole("region", { name: "我的第一个工作台" });
+    await expect(tour.getByRole("button", { name: "打开模型库" })).toBeVisible();
     const input = page.locator('[data-slot="composer"]:visible textarea').first();
     await input.tap();
     await input.fill("Keep this draft");
@@ -117,8 +136,11 @@ test.describe("on a small touch screen", () => {
     expect(frame.x).toBeGreaterThanOrEqual(0);
     expect(frame.x + frame.width).toBeLessThanOrEqual(320);
     expect(frame.y + frame.height).toBeLessThanOrEqual(composer.y);
-    await tour.getByRole("button", { name: "Dismiss" }).tap();
+    await tour.getByRole("button", { name: "收起" }).tap();
     await expect(input).toHaveValue("Keep this draft");
+    await expect(tour).toHaveCount(0);
+    await page.reload();
+    await expect(input).toBeVisible();
     await expect(tour).toHaveCount(0);
     const { projects } = await (await page.request.get(BASE + "/api/projects")).json();
     const base = BASE + "/api/projects/" + projects[0].projectId;
@@ -126,4 +148,109 @@ test.describe("on a small touch screen", () => {
     expect(sessionList.ok()).toBe(true);
     expect((await sessionList.json()).sessions).toEqual([]);
   });
+});
+
+for (const defaultModel of [false, true]) {
+  test(`starts at the remaining step with a configured model and default=${defaultModel}`, async ({
+    page,
+  }) => {
+    const user = defaultModel ? "guidewithdefault" : "guidewithprovider";
+    await provisionAndLogin(page.request, user, "password123");
+    await setAccountPrefs(page.request, { lang: "en", initialPasswordBannerDismissed: true });
+    const project = (await (await page.request.get(BASE + "/api/projects")).json()).projects[0]
+      .projectId;
+    const model = { provider: "custom", modelId: "claude-guide-checklist" };
+    await expect(
+      await page.request.put(BASE + "/api/projects/" + project + "/models", {
+        data: {
+          models: [
+            {
+              ...model,
+              apiKey: "fixture-key",
+              baseUrl: process.env.MOCK_URL,
+              contextWindow: 120000,
+            },
+          ],
+          ...(defaultModel && { defaultModel: model }),
+        },
+      }),
+    ).toBeOK();
+    await page.goto(BASE + "/chat/new");
+    const tour = page.getByRole("region", { name: title });
+    await expect(tour).toContainText(defaultModel ? "3 / 6" : "2 / 6");
+    await expect(tour.getByText("Open Models")).toHaveCount(0);
+    if (!defaultModel) {
+      await page
+        .locator('[data-slot="composer"]:visible')
+        .getByRole("button", { name: "Choose model", exact: true })
+        .click();
+      await page.getByRole("dialog").getByText(model.modelId, { exact: true }).last().click();
+      await expect(tour).toContainText("3 / 6");
+    }
+    await tour.getByRole("button", { name: "Dismiss" }).click();
+    await page.reload();
+    await expect(page.locator('[data-slot="composer"]:visible textarea')).toBeVisible();
+    await expect(tour).toHaveCount(0);
+  });
+}
+test("only an installed agent and its project owner can start the guide", async ({ page }) => {
+  const owner = "guidescopeowner",
+    member = "guidescopeguest";
+  await provisionAndLogin(page.request, owner, "password123");
+  const project = (await (await page.request.get(BASE + "/api/projects")).json()).projects[0]
+    .projectId;
+  const base = BASE + "/api/projects/" + project;
+  await expect(
+    await page.request.post(base + "/agents", {
+      data: { agentId: "archivist", name: "Archivist" },
+    }),
+  ).toBeOK();
+  const inventory = await (await page.request.get(base + "/agents/archivist/plugins")).json();
+  expect(inventory.workbenches.some((w) => w.plugin === guideId)).toBe(false);
+  await provisionUser(member, "password123");
+  await expect(await page.request.post(base + "/members", { data: { userId: member } })).toBeOK();
+  await login(page.request, member, "password123");
+  await setAccountPrefs(page.request, { lang: "en", initialPasswordBannerDismissed: true });
+  await page.goto(BASE + "/app/" + project + "/default_agent/" + guideId);
+  await expect(page).toHaveURL(/\/chat\/new$/);
+  await expect(page.locator('[data-slot="composer"]:visible textarea')).toBeVisible();
+  await expect(page.getByRole("region", { name: title })).toHaveCount(0);
+});
+
+test("saving a key in Models advances the guide without a page reload", async ({ page }) => {
+  await provisionAndLogin(page.request, "guidemodelsettings", "password123");
+  await setAccountPrefs(page.request, { lang: "en", initialPasswordBannerDismissed: true });
+  const project = (await (await page.request.get(BASE + "/api/projects")).json()).projects[0]
+    .projectId;
+  const base = BASE + "/api/projects/" + project;
+  await expect(
+    await page.request.put(base + "/models", {
+      data: {
+        models: [
+          {
+            provider: "custom",
+            modelId: "guide-local",
+            modelType: "anthropic",
+            baseUrl: process.env.MOCK_URL,
+            contextWindow: 120000,
+          },
+        ],
+      },
+    }),
+  ).toBeOK();
+  await page.goto(BASE + "/chat/new");
+  const guide = page.getByRole("region", { name: title });
+  await guide.getByRole("button", { name: "Open Models" }).click();
+  await page.getByPlaceholder("Search models: id / name / provider").fill("guide-local");
+  const gear = page.getByRole("button", { name: /^Settings / }).last();
+  await gear.click();
+  await page.getByRole("menuitem", { name: "Group settings…" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(guide).toBeHidden();
+  await dialog.getByLabel("API key", { exact: true }).fill("fixture-only-key");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(guide).toContainText("2 / 6");
+  await guide.getByRole("button", { name: "Go to chat" }).click();
+  await expect(page.locator('[data-slot="composer"]:visible textarea')).toBeVisible();
 });

@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Button, ConfirmModal } from "@prismshadow/penguin-ui";
-import type { PageAgent } from "../../lib/page-agent";
-import { GUIDE_START, useFirstWorkbench } from "../../lib/first-workbench-entry";
+import { usePageAgent, type PageAgent } from "../../lib/page-agent";
+import {
+  GUIDE_MODEL_SELECTED,
+  GUIDE_START,
+  useFirstWorkbench,
+} from "../../lib/first-workbench-entry";
 import {
   conversationForGuide,
-  freshGuideKey,
+  loadGuideProgress,
+  persistGuideProgress,
+  closeGuide,
   guideLocation,
+  freshGuideKey,
   guideStorage,
   installGuideBoard,
   readGuide,
@@ -21,11 +28,17 @@ import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { installWithModules } from "../../lib/agent-plugin-install";
-import { useGuideAnchor } from "./guide-anchor";
+import { GuideCallout } from "./guide-callout";
+import { getModels } from "../../api/endpoints";
+import { ApiError } from "../../api/client";
+import { usableChatModel } from "../../lib/model-onboarding";
+import { onModelsChanged } from "../../lib/default-models-request";
+import { useSessionsIfAny } from "../../state/sessions";
+import { defaultChatModel, hasConfiguredKey } from "../../lib/model-grouping";
 import { useLocale } from "../../state/locale";
 
 export function FirstWorkbenchLayer() {
-  const { user } = useAuth();
+  const { user, sessionVia } = useAuth();
   const { currentProject } = useProject();
   const { state, pathname, search } = useLocation();
   const navigate = useNavigate();
@@ -41,6 +54,7 @@ export function FirstWorkbenchLayer() {
     window.addEventListener(GUIDE_START, open);
     return () => window.removeEventListener(GUIDE_START, open);
   }, [viewer, project]);
+  const published = usePageAgent();
   const old =
     pathname === "/apps"
       ? new URLSearchParams(search)
@@ -59,6 +73,8 @@ export function FirstWorkbenchLayer() {
       void navigate("/chat/new", {
         replace: true,
         state: {
+          agentId: linkedAgent,
+          ...(linkedMachine && { workspace: "", machineId: linkedMachine }),
           firstWorkbench: { projectId: project, agentId: linkedAgent, machineId: linkedMachine },
         },
       });
@@ -69,16 +85,32 @@ export function FirstWorkbenchLayer() {
       setRequest({ scope: linked, user: viewer });
   }, [linked, viewer, project]);
   const scope =
-    request?.user === viewer && request?.scope.projectId === project
+    sessionVia !== "token" &&
+    currentProject?.role === "owner" &&
+    request?.user === viewer &&
+    request?.scope.projectId === project
       ? (request?.scope ?? null)
       : null;
-  const available = useFirstWorkbench(scope);
+  const onChat = pathname === "/" || pathname === "/chat" || pathname.startsWith("/chat/");
+  const otherChat =
+    onChat &&
+    published?.live &&
+    (scope?.agentId !== published.agent.agentId || scope.machineId !== published.agent.machineId);
+  const available = useFirstWorkbench(otherChat ? null : scope);
   return scope && viewer && available ? (
     <Tour
       key={JSON.stringify([viewer, scope])}
       user={viewer}
       scope={scope}
-      close={() => setRequest(null)}
+      close={() => {
+        closeGuide(
+          guideStorage(
+            viewer,
+            guideLocation(scope.projectId, scope.agentId, scope.machineId).pathname,
+          ),
+        );
+        setRequest(null);
+      }}
     />
   ) : null;
 }
@@ -94,32 +126,70 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
     [projectId, agentId, machineId],
   );
   const storage = guideStorage(user, loc.pathname);
-  const [saved, setSaved] = useState<GuideProgress>(() => {
-    try {
-      const data = JSON.parse(sessionStorage.getItem(storage) ?? "null");
-      if (typeof data?.key === "string" && /^[0-9a-f]{32}$/.test(data.key)) return data;
-    } catch {
-      /* A storage-restricted browser can still complete the tour in this window. */
-    }
-    return { key: freshGuideKey() };
-  });
+  const [saved, setSaved] = useState<GuideProgress>(() => loadGuideProgress(storage));
+  const [reload, setReload] = useState(0);
+  const [modelError, setModelError] = useState("");
+  const [models, setModels] = useState<Awaited<ReturnType<typeof getModels>> | null>(null);
+  useEffect(() => {
+    let live = true;
+    let revision = 0;
+    const read = async () => {
+      const request = ++revision;
+      try {
+        const result = await getModels(projectId, machineId);
+        if (live && request === revision) {
+          setModels(result);
+          setModelError("");
+        }
+      } catch (error) {
+        if (live && request === revision)
+          setModelError(error instanceof Error ? error.message : String(error));
+      }
+    };
+    void read();
+    const off = onModelsChanged((changed) => {
+      if (changed === projectId) void read();
+    });
+    const picked = (event: Event) => {
+      const detail = (
+        event as CustomEvent<PageAgent & { model: NonNullable<GuideProgress["model"]> }>
+      ).detail;
+      if (
+        detail.projectId === projectId &&
+        detail.agentId === agentId &&
+        detail.machineId === machineId
+      )
+        setSaved((previous) => ({ ...previous, model: detail.model, tourChat: true }));
+    };
+    window.addEventListener("focus", read);
+    window.addEventListener(GUIDE_MODEL_SELECTED, picked);
+    return () => {
+      live = false;
+      off();
+      window.removeEventListener("focus", read);
+      window.removeEventListener(GUIDE_MODEL_SELECTED, picked);
+    };
+  }, [projectId, agentId, machineId, reload]);
   const [guide, setGuide] = useState<Guide | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const [missingSession, setMissingSession] = useState(false);
   const [canGenerate, setCanGenerate] = useState(false);
   const [confirmUpdate, setConfirmUpdate] = useState(false);
-  const [reload, setReload] = useState(0);
   const [discussion, setDiscussion] =
     useState<Awaited<ReturnType<typeof conversationForGuide>>>(null);
   const session = /^\/chat\/([^/]+)$/.exec(location.pathname)?.[1];
   const currentSession =
     session && session !== "new" && machineForSession(session) === machineId ? session : null;
+  const active = useSessionsIfAny()?.sessions.find(
+    (s) =>
+      s.sessionId === currentSession &&
+      s.projectId === projectId &&
+      s.agentId === agentId &&
+      s.source === "user",
+  );
   useEffect(() => {
-    try {
-      sessionStorage.setItem(storage, JSON.stringify(saved));
-    } catch {
-      /* Keep the in-memory progress. */
-    }
+    persistGuideProgress(storage, saved);
   }, [storage, saved]);
   useEffect(() => {
     setDiscussion(null);
@@ -129,6 +199,7 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
     let live = true;
     setBusy(true);
     setError("");
+    setMissingSession(false);
     void Promise.all([refresh(), supportsConversation(loc)])
       .then(([g, supported]) => {
         if (live) {
@@ -137,7 +208,10 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
         }
       })
       .catch((err: Error) => {
-        if (live) setError(err.message);
+        if (live) {
+          setError(err.message);
+          setMissingSession(err instanceof ApiError && err.status === 404);
+        }
       })
       .finally(() => {
         if (live) setBusy(false);
@@ -155,7 +229,10 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
           if (live) setGuide(g);
         })
         .catch((err: Error) => {
-          if (live) setError(err.message);
+          if (live) {
+            setError(err.message);
+            setMissingSession(err instanceof ApiError && err.status === 404);
+          }
         });
     }, 1400);
     return () => {
@@ -179,17 +256,47 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
   const waiting = guide?.phase === "chatting" || guide?.phase === "generating";
   const design = guide?.design;
   const inChat = location.pathname === "/" || location.pathname.startsWith("/chat");
-  const position = useGuideAnchor(
-    location.pathname === "/models"
-      ? '[data-guide-anchor="model-settings"]'
-      : inChat
-        ? '[data-slot="composer"]'
-        : 'iframe[src*="/workbenches/' + encodeURIComponent(guide?.boardId ?? "") + '/ui/"]',
-  );
+  const usable = models !== null && usableChatModel(models.models);
+  const chosen =
+    models &&
+    defaultChatModel(models.models.filter(hasConfiguredKey), saved.model ?? models.defaultModel);
+  const step = saved.verified
+    ? 6
+    : design
+      ? saved.installed
+        ? 6
+        : 5
+      : discussion || guide
+        ? 4
+        : usable
+          ? chosen || active
+            ? 3
+            : 2
+          : 1;
+  const onModels = location.pathname === "/models";
+  const onBoard =
+    !!guide &&
+    saved.installed &&
+    location.pathname === "/apps" &&
+    new URLSearchParams(location.search).get("app") ===
+      locatedAppKey(agentId, guide.boardId, machineId);
+  const anchor =
+    onModels && step === 1
+      ? '[data-guide-anchor="connect-provider"]'
+      : inChat && step === 2
+        ? '[data-slot="composer"] button[aria-label="' + CSS.escape(S.chat.chooseModel) + '"]'
+        : inChat
+          ? '[data-slot="composer"] textarea'
+          : onBoard
+            ? 'iframe[src*="/workbenches/' + encodeURIComponent(guide!.boardId) + '/ui/"]'
+            : null;
   const chat = () => {
     save({ tourChat: true });
     if (saved.tourSession) void navigate("/chat/" + encodeURIComponent(saved.tourSession));
-    else if (!inChat) void navigate("/chat/new", { state: { agentId, machineId } });
+    else if (!inChat)
+      void navigate("/chat/new", {
+        state: { agentId, ...(machineId && { workspace: "", machineId }) },
+      });
     requestAnimationFrame(() =>
       document.querySelector<HTMLTextAreaElement>('[data-slot="composer"] textarea')?.focus(),
     );
@@ -217,36 +324,57 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
   const ask = discussion?.request ?? guide?.request ?? saved.request;
   const answer = discussion?.answer ?? guide?.answer;
   return (
-    <aside
-      style={position}
-      role="region"
-      aria-label={w.title}
-      className="fixed end-3 top-[calc(var(--window-band-height,0px)+3rem)] z-dock w-[min(21rem,calc(100vw-1.5rem))] max-h-[48dvh] overflow-y-auto rounded-panel border border-line bg-surface p-3 text-sm text-fg"
+    <GuideCallout
+      anchorSelector={anchor}
+      title={w.title}
+      laterLabel={w.later}
+      onLater={close}
+      step={{ current: step, total: 6 }}
     >
-      <header className="mb-2 flex items-start justify-between gap-2">
-        <strong>{w.title}</strong>
-        <Button variant="ghost" size="sm" onClick={close}>
-          {w.later}
-        </Button>
-      </header>
-      {error && (
+      {(error || modelError) && (
         <p role="alert" className="mb-2 text-tone-danger-fg">
-          {error}{" "}
+          {error || modelError}{" "}
           <Button size="sm" onClick={() => setReload((n) => n + 1)}>
             {w.refresh}
           </Button>
+          {missingSession && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setGuide(null);
+                setDiscussion(null);
+                setSaved((previous) => ({
+                  key: freshGuideKey(),
+                  ...(previous.model && { model: previous.model }),
+                }));
+              }}
+            >
+              {w.newChecklist}
+            </Button>
+          )}
         </p>
       )}
-      {busy && <p role="status">{w.loading}</p>}
+      {(busy || (!models && !modelError)) && <p role="status">{w.loading}</p>}
       {waiting && <p role="status">{guide.phase === "generating" ? w.generating : w.waitReply}</p>}
-      {!busy && !waiting && !design && (
+      {models && !busy && !waiting && !design && (
         <>
-          {!saved.tourChat && !guide && !discussion && <p>{w.models}</p>}
-          {(saved.tourChat || guide?.phase === "chat-error") && !answer && <p>{w.chat}</p>}
+          {!answer && (
+            <p>
+              {step === 1
+                ? machineId
+                  ? w.remoteModels(machineId)
+                  : onModels
+                    ? w.connect
+                    : w.models
+                : step === 2
+                  ? w.choose
+                  : w.chat}
+            </p>
+          )}
           {ask && <p className="mt-2 whitespace-pre-wrap break-words">{ask}</p>}
           {saved.model && !guide && <p>{saved.model.modelId}</p>}
           {answer && (
-            <details open>
+            <details>
               <summary>{w.reply}</summary>
               <p className="max-h-28 overflow-auto whitespace-pre-wrap break-words">{answer}</p>
             </details>
@@ -269,25 +397,38 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
           <div className="mt-2 flex flex-wrap gap-2">
             {!guide && !discussion && (
               <>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    save({ visitedSettings: true });
-                    void navigate("/models");
-                  }}
-                >
-                  {w.modelSettings}
-                </Button>
-                <Button size="sm" onClick={chat}>
-                  {w.toChat}
-                </Button>
+                {step === 1 && !onModels && !machineId && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      save({ visitedSettings: true });
+                      void navigate("/models");
+                    }}
+                  >
+                    {w.modelSettings}
+                  </Button>
+                )}
+                {step === 1 && machineId && (
+                  <Button size="sm" onClick={() => setReload((n) => n + 1)}>
+                    {w.refresh}
+                  </Button>
+                )}
+                {!inChat && step > 1 && (
+                  <Button size="sm" variant="primary" onClick={chat}>
+                    {w.toChat}
+                  </Button>
+                )}
               </>
             )}
-            {(!guide || guide.phase === "chat-error") && !discussion && currentSession && (
-              <Button size="sm" variant="primary" onClick={() => void readConversation()}>
-                {w.useReply}
-              </Button>
-            )}
+            {(!guide || guide.phase === "chat-error") &&
+              !discussion &&
+              active?.status === "idle" &&
+              active.hasTrace && (
+                <Button size="sm" variant="primary" onClick={() => void readConversation()}>
+                  {w.useReply}
+                </Button>
+              )}
             {guide?.phase === "chat-error" && saved.model && saved.request && (
               <Button
                 size="sm"
@@ -318,15 +459,17 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
       {design && guide && (
         <>
           <strong>{design.title}</strong>
-          <ul className="my-2 list-disc ps-5">
-            {design.items.map((i, n) => (
-              <li key={n}>
-                <strong>{i.group}</strong>
-                <div>{i.task}</div>
-                <div className="text-fg-muted">{i.doneWhen}</div>
-              </li>
-            ))}
-          </ul>
+          {!saved.installed && (
+            <ul className="my-2 list-disc ps-5">
+              {design.items.map((i, n) => (
+                <li key={n}>
+                  <strong>{i.group}</strong>
+                  <div>{i.task}</div>
+                  <div className="text-fg-muted">{i.doneWhen}</div>
+                </li>
+              ))}
+            </ul>
+          )}
           {saved.verified && <p role="status">{w.verified}</p>}
           <div className="mt-2 flex flex-wrap gap-2">
             {!saved.installed ? (
@@ -345,27 +488,32 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
               </Button>
             ) : (
               <>
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    void navigate(appWindowPath(locatedAppKey(agentId, guide.boardId, machineId)))
-                  }
-                >
-                  {w.open}
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={busy}
-                  variant="primary"
-                  onClick={() =>
-                    void run(async () => {
-                      await verifyGuideBoard(loc, guide, w.testItem);
-                      save({ verified: true });
-                    })
-                  }
-                >
-                  {w.test}
-                </Button>
+                {!onBoard && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() =>
+                      void navigate(appWindowPath(locatedAppKey(agentId, guide.boardId, machineId)))
+                    }
+                  >
+                    {w.open}
+                  </Button>
+                )}
+                {onBoard && !saved.verified && (
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    variant="primary"
+                    onClick={() =>
+                      void run(async () => {
+                        await verifyGuideBoard(loc, guide, w.testItem);
+                        save({ verified: true });
+                      })
+                    }
+                  >
+                    {w.test}
+                  </Button>
+                )}
               </>
             )}
             <a
@@ -407,6 +555,6 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
       >
         <p>{w.updateWarning}</p>
       </ConfirmModal>
-    </aside>
+    </GuideCallout>
   );
 }
