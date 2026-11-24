@@ -201,7 +201,7 @@ test.beforeAll(async ({ browser }) => {
   await seed.close();
 });
 
-test("a saved folder keeps its installed Files app after the built-in Files tile leaves the catalog", async ({
+test("an installed Files app takes its old folder’s slot when the retired built-in tile was its other member", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, "filescatalog", P);
@@ -222,13 +222,15 @@ test("a saved folder keeps its installed Files app after the built-in Files tile
   };
   await expect(await page.request.put(base + "/app-center/layout", { data: { layout } })).toBeOK();
   await page.goto("/apps");
-  await page.locator('[data-folder="tools"] > button').first().click();
+  await expect(page.locator('[data-folder="tools"]')).toHaveCount(0);
   const tile = page.locator(`li[data-app="${installed}"] > button`).first();
   await expect(tile).toBeVisible();
   await expect(page.locator(`li[data-app="${builtin}"]`)).toHaveCount(0);
   await tile.click();
   await expect(page.locator(`[data-workspace-page="app:${installed}"] iframe`)).toBeVisible();
-  expect((await (await page.request.get(base + "/app-center")).json()).layout).toEqual(layout);
+  await expect
+    .poll(async () => (await (await page.request.get(base + "/app-center")).json()).layout)
+    .toEqual({ v: 1, items: [{ type: "app", app: installed }] });
   await page.goto("/session-tools/workspace");
   await expect(
     page.getByRole("region", { name: "Files", exact: true }).getByRole("searchbox"),
@@ -460,6 +462,83 @@ test("the header's New folder makes a folder of the checked apps at the first on
   await expect.poll(names).toEqual(["Alpha", "Pair"]);
 });
 
+for (const width of [1280, 375]) {
+  test(`an App Center folder promotes its last app in place at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 820 });
+    await provisionAndLogin(page.request, U, P);
+    await setAccountPrefs(page.request, { lang: "en" });
+    const projectId = (await (await page.request.get("/api/projects")).json()).projects[0]
+      .projectId;
+    const base = "/api/projects/" + projectId + "/app-center";
+    const keys = APPS.map((name) => "default_agent/" + name.toLowerCase());
+    const items = [{ type: "folder", id: "tasks", name: "Tasks", apps: keys }];
+    await expect(
+      await page.request.put(base + "/layout", { data: { layout: { v: 1, items } } }),
+    ).toBeOK();
+    await page.goto("/apps");
+    const folder = page.locator('[data-folder="tasks"] > button').first();
+    const tile = (id) => page.locator('li[data-app="' + id + '"] > button').first();
+    await folder.click();
+    await tile(keys[2]).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Remove from folder", exact: true }).click();
+    await expect(folder).toHaveAttribute("aria-label", /2 apps/);
+    if ((await folder.getAttribute("aria-expanded")) !== "true") await folder.click();
+    await tile(keys[1]).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Remove from folder", exact: true }).click();
+    await expect(folder).toHaveCount(0);
+    await expect(tile(keys[0])).toBeVisible();
+    await page.reload();
+    await expect(tile(keys[0])).toBeVisible();
+    const retained = (await (await page.request.get(base)).json()).layout;
+    expect(retained.items.slice(0, 3)).toEqual(keys.map((app) => ({ type: "app", app })));
+    await tile(keys[0]).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Move to…", exact: true }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu.getByRole("menuitem")).toHaveCount(2);
+    expect(await menu.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+    await menu.getByRole("menuitem", { name: "New folder…", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "New folder" });
+    await expect(dialog.getByRole("button", { name: "Create" })).toBeDisabled();
+    await dialog.getByRole("checkbox", { name: /Beta/ }).check();
+    await expect(dialog.getByRole("button", { name: "Create" })).toBeEnabled();
+  });
+}
+
+test("disabling an app keeps its folder until the app is uninstalled", async ({ page }) => {
+  await provisionAndLogin(page.request, "folderavailability", P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const { projects } = await (await page.request.get("/api/projects")).json();
+  const base = "/api/projects/" + projects[0].projectId;
+  const workbenches = base + "/agents/default_agent/workbenches";
+  await importApp(page.request, workbenches, "Reader");
+  await importApp(page.request, workbenches, "Planner");
+  const apps = ["default_agent/reader", "default_agent/planner"];
+  const layout = { v: 1, items: [{ type: "folder", id: "desk", name: "Desk", apps }] };
+  await expect(await page.request.put(base + "/app-center/layout", { data: { layout } })).toBeOK();
+  await expect(
+    await page.request.put(workbenches + "/planner/enabled", { data: { enabled: false } }),
+  ).toBeOK();
+  await page.goto("/apps");
+  const folder = page.locator('[data-folder="desk"] > button').first();
+  await folder.click();
+  await expect(page.locator('li[data-app="default_agent/reader"]')).toBeVisible();
+  await expect(page.locator('li[data-app="default_agent/planner"]')).toHaveCount(0);
+  const readLayout = async () =>
+    (await (await page.request.get(base + "/app-center")).json()).layout;
+  expect(await readLayout()).toEqual(layout);
+  await expect(
+    await page.request.put(workbenches + "/planner/enabled", { data: { enabled: true } }),
+  ).toBeOK();
+  await page.reload();
+  if ((await folder.getAttribute("aria-expanded")) !== "true") await folder.click();
+  await expect(page.locator('li[data-app="default_agent/planner"]')).toBeVisible();
+  await expect(await page.request.delete(workbenches + "/planner")).toBeOK();
+  await page.reload();
+  await expect(folder).toHaveCount(0);
+  await expect(page.locator('li[data-app="default_agent/reader"]')).toBeVisible();
+  await expect.poll(readLayout).toEqual({ v: 1, items: [{ type: "app", app: apps[0] }] });
+});
+
 test("a system app's tile opens its page, where the App Center stays lit", async ({ page }) => {
   await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
   await setAccountPrefs(page.request, { lang: "en" });
@@ -564,7 +643,19 @@ test("many open apps scroll inside Apps while the workspace and directory search
     (_, index) => "Notebook-" + String(index + 1).padStart(2, "0"),
   );
   for (const title of titles) await importApp(page.request, base, title);
+  const catalog = `/api/projects/${projects[0].projectId}/app-center`;
   await page.goto("/apps");
+  const notebook = page.locator('li[data-app="default_agent/notebook-01"] > button').first();
+  for (const width of [1440, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    await notebook.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Move to…" }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu.getByRole("menuitem")).toHaveCount(2);
+    expect(await menu.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+    await page.keyboard.press("Escape");
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   const group = page.getByRole("navigation", { name: "Apps", exact: true });
   const list = group.getByRole("list", { name: "Apps", exact: true });
   await expect(list).toHaveCount(0);
@@ -616,11 +707,24 @@ test("many open apps scroll inside Apps while the workspace and directory search
   });
   expect(gap).toBeLessThanOrEqual(3);
   await expect(workspaces).toBeInViewport();
+  const kept = {
+    v: 1,
+    items: [
+      {
+        type: "folder",
+        id: "notes",
+        name: "Notebooks",
+        apps: ["default_agent/notebook-01", "default_agent/notebook-02"],
+      },
+    ],
+  };
+  await expect(await page.request.put(catalog + "/layout", { data: { layout: kept } })).toBeOK();
   await group.getByRole("button", { name: "Search apps" }).click();
   const search = group.getByRole("searchbox", { name: "Search apps" });
   await search.fill("Notebook-01");
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list.getByRole("button", { name: /Notebook-01/ })).toBeVisible();
+  expect((await (await page.request.get(catalog)).json()).layout).toEqual(kept);
   await expect(page).toHaveURL(/notebook-30/);
   await search.press("Escape");
   await expect(list.getByRole("listitem")).toHaveCount(count);

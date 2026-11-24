@@ -3059,12 +3059,20 @@ export interface AppCenterLayout {
 export type AppCenterLayoutItem =
   { type: "app"; app: string } | { type: "folder"; id: string; name: string; apps: string[] };
 
+export interface AppCenterUnavailable {
+  /** The catalog could not read these Agents or their workbench switch is off. */
+  agents: string[];
+  /** Installed workbenches temporarily unable to contribute a tile. */
+  apps: string[];
+}
+
 /**
  * GET /api/projects/:p/app-center: a shortcut for every workbench of the Project's Agents on this
  * server whose manifest asks to be shown, in Agent list order and by title within an Agent. Read
  * from the manifests, load status and the loads under way; nothing is compiled.
  */
 export interface AppCenterResponse {
+  unavailable?: AppCenterUnavailable;
   shortcuts: AppCenterShortcut[];
   /** The viewer's arrangement for this Project; null when they have none (the server's order). */
   layout: AppCenterLayout | null;
@@ -3075,7 +3083,7 @@ export interface AppCenterResponse {
  * Center; `null` restores the server's order. 400 naming the rule a layout breaks, and nothing is
  * stored: at most 500 items and 1000 app keys in all, each app key `<agentId>/<workbenchId>` (at
  * most 200 characters) once, folder ids `[A-Za-z0-9_-]{1,32}` once each, folder names 1–40
- * characters once trimmed (stored trimmed), 1–500 apps per folder.
+ * characters once trimmed (stored trimmed), up to 500 apps per folder. A lone app is promoted; an empty folder is omitted.
  */
 export interface AppCenterLayoutRequest {
   layout: AppCenterLayout | null;
