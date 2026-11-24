@@ -81,15 +81,16 @@ export interface TerminalConnectionDeps {
    */
   recheck(id: string): Promise<boolean>;
   open(id: string, handlers: SocketHandlers): AttachedSocket;
-  /** Everything that is not heartbeat traffic, in arrival order. */
-  onFrame(frame: DecodedFrame): void;
+  /** The first Restore must be parsed by xterm before it can encode input for the shell. */
+  onFrame(frame: DecodedFrame, parsed?: () => void): void;
   onStatus(status: TerminalConnectionStatus, detail: string): void;
 }
 
 export class TerminalConnection {
   private socket: AttachedSocket | null = null;
-  /** This view's keystrokes until its first successful attach. Drained once, or cleared on stop. */
-  private initialInput: Uint8Array[] | null = [];
+  /** A paste must remain text until xterm knows whether the foreground program brackets it. */
+  private initialInput: (() => void)[] | null = [];
+  private restored = false;
   private terminalId: string | null = null;
   private stopped = false;
   private attempt = 0;
@@ -118,6 +119,7 @@ export class TerminalConnection {
   stop(): void {
     this.stopped = true;
     this.initialInput = null;
+    this.restored = false;
     this.clearRetry();
     this.stopHeartbeat();
     this.clearDial();
@@ -130,12 +132,17 @@ export class TerminalConnection {
     return this.socket !== null && this.dialTimer === null;
   }
 
-  /** The focused xterm accepts input before both the terminal lookup and the upgrade finish. */
+  /** Keeps pastes and adjacent keystrokes in order through the first screen restore. */
+  withInputModes(write: () => void): void {
+    if (this.initialInput !== null) this.initialInput.push(write);
+    else if (this.restored) write();
+  }
+
   send(bytes: Uint8Array): void {
-    if (this.connected) {
+    if (bytes[0] === TerminalOpcode.Input) {
+      this.withInputModes(() => this.socket?.send(bytes));
+    } else if (this.connected) {
       this.socket?.send(bytes);
-    } else if (bytes[0] === TerminalOpcode.Input) {
-      this.initialInput?.push(bytes);
     }
   }
 
@@ -212,11 +219,6 @@ export class TerminalConnection {
           this.clearDial();
           this.attempt = 0;
           this.startHeartbeat();
-          if (this.initialInput !== null) {
-            for (const bytes of this.initialInput) socket.send(bytes);
-            this.initialInput = null;
-          }
-          this.deps.onStatus("ready", "");
         },
         onMessage: (data) => {
           if (this.socket !== socket) return;
@@ -230,6 +232,17 @@ export class TerminalConnection {
           }
           if (frame.opcode === TerminalOpcode.Pong) {
             this.answersProbes = true;
+            return;
+          }
+          if (frame.opcode === TerminalOpcode.Restore && !this.restored) {
+            this.deps.onFrame(frame, () => {
+              if (this.socket !== socket || this.restored) return;
+              this.restored = true;
+              const pending = this.initialInput;
+              this.initialInput = null;
+              for (const write of pending ?? []) write();
+              this.deps.onStatus("ready", "");
+            });
             return;
           }
           this.deps.onFrame(frame);
@@ -253,6 +266,7 @@ export class TerminalConnection {
   private drop(socket: AttachedSocket): void {
     if (this.socket !== socket) return;
     this.socket = null;
+    this.restored = false;
     this.stopHeartbeat();
     this.clearDial();
     socket.close();

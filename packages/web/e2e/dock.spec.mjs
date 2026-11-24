@@ -5,7 +5,7 @@
  * - the toolbar has exactly two pull-open buttons; an opened dock with no tabs shows a
  *   picker (choose what to open here), and each dock's own "+" menu adds more tabs;
  * - Ctrl+` focuses the terminal and accepts the first command while attaching; the shell
- *   keeps running while hidden and reattaches on reopen;
+ *   keeps running while hidden, and a multiline paste on reopen stays in its line editor;
  * - the terminal panel holds the conversation's shells as tabs of its own: its "+" starts
  *   another and shows it, a shell tab's × asks and kills the shell, and killing the last one
  *   leaves an empty group ready for the next explicit create;
@@ -116,6 +116,20 @@ async function runInTerminal(page, command) {
   await page.keyboard.press("Enter");
 }
 
+/** Holds the real attach request until the focused xterm has received the test's input. */
+async function holdTerminalLookup(page) {
+  const attach = Promise.withResolvers();
+  await page.route(
+    /\/api\/terminals\/[^/?]+$/,
+    async (route) => {
+      await attach.promise;
+      await route.continue();
+    },
+    { times: 1 },
+  );
+  return attach.resolve;
+}
+
 /**
  * Waits until the shown terminal is really at a prompt (see terminal.spec.mjs). The
  * sentinel is typed quote-split (echo TA''G) so the command's own echo never contains the
@@ -146,17 +160,7 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
   const sessionId = await createSession(page.request, projectId);
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
-  // Keep the real attach request pending while the focused terminal receives the first
-  // keystrokes. The relative speed of the browser and the server varies across machines.
-  const attach = Promise.withResolvers();
-  await page.route(
-    /\/api\/terminals\/[^/?]+$/,
-    async (route) => {
-      await attach.promise;
-      await route.continue();
-    },
-    { times: 1 },
-  );
+  const attach = await holdTerminalLookup(page);
   // Open with the keyboard, like Codex/VS Code.
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "right")).toBeVisible({ timeout: 10000 });
@@ -165,7 +169,7 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
     timeout: 20000,
   });
   await page.keyboard.type("echo FOC");
-  attach.resolve();
+  attach();
   await page.keyboard.type("USED_''TERMINAL");
   await page.keyboard.press("Enter");
   await expect.poll(() => screenText(page)).toContain("FOCUSED_TERMINAL");
@@ -179,6 +183,14 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
   await expect.poll(() => screenText(page)).toContain("BYTE_2");
   await runInTerminal(page, "echo DOCK_KEEPS_RUNNING");
   await expect.poll(() => screenText(page), { timeout: 15000 }).toContain("DOCK_KEEPS_RUNNING");
+  // Enter reports the Bash Readline buffer. The pasted text is only an editing fixture.
+  await runInTerminal(page, "env PS1=PASTE_''FIXTURE bash --noprofile --norc -i");
+  await expect.poll(() => screenText(page)).toContain("PASTE_FIXTURE");
+  await runInTerminal(
+    page,
+    `record_line() { printf "SAVED%s%q\\n" "=" "$READLINE_LINE"; READLINE_LINE=""; READLINE_POINT=0; }; bind 'set enable-bracketed-paste on'; bind -x '"\\C-m":record_line'; printf "EDIT_%s\\n" READY`,
+  );
+  await expect.poll(() => screenText(page)).toContain("EDIT_READY");
 
   // Hide via the dock's ×: the surface goes away, the tab and the shell do not.
   await dockAt(page, "right")
@@ -194,9 +206,20 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
     .toBe(1);
 
   // Ctrl+` restores the same shell — the marker typed before the hide is still on screen.
+  const reattach = await holdTerminalLookup(page);
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "right")).toBeVisible();
+  await expect(terminalBody(page).locator(".xterm-helper-textarea")).toBeFocused();
+  await page.evaluate(() => navigator.clipboard.writeText("alpha\nbeta"));
+  await page.keyboard.type("L");
+  await page.keyboard.press("Control+Shift+V");
+  await page.keyboard.type("R");
+  reattach();
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("DOCK_KEEPS_RUNNING");
+  await expect.poll(() => screenText(page)).toContain("betaR");
+  expect(await screenText(page)).not.toContain("SAVED=");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => screenText(page)).toContain("SAVED=$'Lalpha\\nbetaR'");
 
   // A shell tab's × (always visible) asks first — killing ends the shell for real — and
   // confirming kills it and leaves the empty group available.

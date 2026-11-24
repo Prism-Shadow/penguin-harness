@@ -338,11 +338,24 @@ export function TerminalView({
         void writeClipboard(selection);
         term.clearSelection();
       };
+      const paste = (text: string): void => connection.withInputModes(() => term.paste(text));
+      // Capture the clipboard text before xterm turns it into bytes using its current modes.
+      container.addEventListener(
+        "paste",
+        (event) => {
+          if (!event.clipboardData) return;
+          event.preventDefault();
+          event.stopPropagation();
+          paste(event.clipboardData.getData("text/plain"));
+        },
+        { capture: true, signal: listenerAbort.signal },
+      );
+
       /** Async-clipboard paste (the paths where no native paste event exists). */
       const pasteFromClipboard = (): void => {
         void navigator.clipboard
           ?.readText()
-          .then((text) => text && term.paste(text))
+          .then((text) => text && paste(text))
           .catch(() => {}); // permission denied / insecure context: nothing to paste
       };
 
@@ -557,14 +570,14 @@ export function TerminalView({
           (await probeJson<TerminalInfo>(`/api/terminals/${encodeURIComponent(id)}`)) !== null,
         open: (id, handlers) =>
           openTerminalStream(streamUrl(id, term.cols, term.rows, userId), handlers),
-        onFrame: (frame) => {
+        onFrame: (frame, parsed) => {
           switch (frame.opcode) {
             // The restore stream is self-contained (reset + clear + repaint + cursor), so
             // it is written like any other output; calling term.reset() here would race
             // with xterm's parser instead.
             case TerminalOpcode.Restore:
             case TerminalOpcode.Output:
-              term.write(frame.text);
+              term.write(frame.text, parsed);
               break;
             case TerminalOpcode.Exit: {
               const { exitCode } = JSON.parse(frame.text) as { exitCode: number };
