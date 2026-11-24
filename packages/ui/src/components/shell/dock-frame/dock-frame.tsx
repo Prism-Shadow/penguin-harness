@@ -7,7 +7,7 @@
  * bodies inside keep their scroll, their drill-down and their unsaved text, and `data-open` says
  * what is on screen. Its size is the caller's, in pixels: `size` is what the box shows (0 while
  * collapsed or before the entrance), `contentSize` the settled size its content lays out at, so
- * while the box animates past intermediate sizes nothing inside reflows — text does not squeeze
+ * while the visible content box passes through intermediate sizes nothing inside reflows — text does not squeeze
  * and a terminal does not refit its grid on every frame. The animation is the theme's layout
  * motion, off while a drag resizes or a flip must land at once.
  *
@@ -455,15 +455,9 @@ export function DockFrame({
   const lifted = phase !== "docked";
   const moving = animate && (phase === "entering" || phase === "exiting");
 
-  // Both the settled divider and the moving border can start a drag. Fullscreen has no
-  // divider, but its placeholder still reserves the gap beside the conversation.
   const seat =
     open && !lifted ? (
-      <div
-        ref={attachResizeSeat}
-        data-dock-resize-seat={position}
-        style={{ "--dock-content-size": `${contentSize}px` } as CSSProperties}
-      >
+      <div ref={attachResizeSeat} data-dock-resize-seat={position}>
         {handle}
       </div>
     ) : null;
@@ -481,13 +475,16 @@ export function DockFrame({
           height: box.height,
           zIndex: layer("dock"),
         }
-      : {};
+      : position === "bottom"
+        ? { height: size }
+        : { width: size };
   const boxClass = lifted
     ? "fixed overflow-hidden bg-canvas"
-    : "flex min-h-0 flex-1 flex-col overflow-hidden";
+    : position === "bottom"
+      ? "mt-auto flex max-h-full min-h-0 shrink-0 flex-col overflow-hidden"
+      : "ml-auto flex min-h-0 max-w-full flex-1 flex-col overflow-hidden";
 
-  // Clip the content, leaving the divider accessible outside the animating frame. The
-  // inner box keeps its final size, including while a lifted surface travels to its host.
+  // Keep the inner layout at its settled size while the box reveals it from the edge.
   const insideStyle: CSSProperties =
     lifted && inner !== null
       ? { width: inner.width, height: inner.height }
@@ -504,7 +501,7 @@ export function DockFrame({
     <div
       ref={boxRef}
       data-dock-content
-      data-layout-motion={moving ? "" : undefined}
+      data-layout-motion={(lifted ? moving : animate) ? "" : undefined}
       style={boxStyle}
       className={boxClass}
     >
@@ -524,9 +521,9 @@ export function DockFrame({
         data-position="bottom"
         data-open={open}
         data-wallpaper-surface="canvas"
-        data-layout-motion={animate ? "" : undefined}
+        data-layout-motion={!open && animate ? "" : undefined}
         data-fullscreen={lifted ? phase : undefined}
-        style={{ height: size }}
+        style={{ height: open ? contentSize : 0 }}
         inert={!open}
         className={`relative flex w-full shrink-0 flex-col bg-canvas ${
           open ? "border-t border-line" : ""
@@ -548,9 +545,9 @@ export function DockFrame({
         data-position="right"
         data-open={open}
         data-wallpaper-surface="canvas"
-        data-layout-motion={animate ? "" : undefined}
+        data-layout-motion={!open && animate ? "" : undefined}
         data-fullscreen={lifted ? phase : undefined}
-        style={{ width: size }}
+        style={{ width: open ? contentSize : 0 }}
         inert={!open}
         className={`relative flex min-h-0 min-w-0 flex-col bg-canvas ${
           open ? "border-l border-line" : ""

@@ -15,21 +15,24 @@ for (const [width, reducedMotion] of [
     await page.exposeFunction("recordDockTransition", (property) => transitions.push(property));
     await page.evaluate(() => {
       document.addEventListener("transitionrun", (event) => {
-        if (event.target.matches('[data-testid="dock"]'))
+        if (event.target.matches("[data-dock-content]"))
           window.recordDockTransition(event.propertyName);
       });
     });
     await page.getByTestId("dock-launcher").click();
     await page.getByTestId("dock-launcher-open-agents").click();
     const dock = page.locator('[data-testid="dock"][data-open="true"]');
+    const surface = dock.locator("[data-dock-content]");
     const agent = dock.getByRole("tab", { name: /agent/i, selected: true });
     await expect(agent).toBeVisible();
     const axis = width < 600 ? "height" : "width";
     if (reducedMotion === "reduce") {
-      await expect(dock).toHaveCSS("transition-property", "none");
+      await expect(surface).toHaveCSS("transition-property", "none");
     } else {
       await expect.poll(() => transitions).toEqual([axis]);
-      await dock.evaluate((element) => Promise.all(element.getAnimations().map((a) => a.finished)));
+      await surface.evaluate((element) =>
+        Promise.all(element.getAnimations().map((a) => a.finished)),
+      );
     }
     await dock.getByTestId("dock-add").click();
     await page.getByTestId("dock-add-trace").click();
@@ -41,17 +44,20 @@ for (const [width, reducedMotion] of [
 }
 
 // The pointer targets a separator on one painted frame and presses on a later frame.
-// Both the divider's settled position and the sliding border accept a first drag.
+// The content continues its entrance while the divider stays on the visible frame.
 for (const phone of [false, true]) {
   test.describe(phone ? "phone touch" : "desktop mouse", () => {
     test.use({ viewport: { width: phone ? 390 : 1280, height: 900 }, hasTouch: phone });
     test("a first drag can interrupt the dock entrance", async ({ page }) => {
-      await page.goto("app.html?route=%2Fchat%2Fs-hooks-index&lang=en&theme=modern");
+      await page.goto(
+        `app.html?route=%2Fchat%2Fs-hooks-index&lang=en&theme=${phone ? "modern" : "geek"}`,
+      );
       const dock = page.locator('[data-testid="dock"][data-open="true"]');
+      const surface = dock.locator("[data-dock-content]");
       const handle = page.getByTestId("dock-resizer").filter({ visible: true });
       await page.evaluate(() => {
         document.addEventListener("transitionrun", (event) => {
-          if (!event.target.matches('[data-testid="dock"]')) return;
+          if (!event.target.matches("[data-dock-content]")) return;
           const entry = event.target
             .getAnimations()
             .find((a) => a.transitionProperty === event.propertyName);
@@ -64,27 +70,31 @@ for (const phone of [false, true]) {
       await page.getByTestId("dock-launcher").click();
       await page.getByTestId("dock-launcher-open-agents").click();
       await expect
-        .poll(() => dock.evaluate((el) => el.getAnimations()[0]?.playState))
+        .poll(() => surface.evaluate((el) => el.getAnimations()[0]?.playState))
         .toBe("paused");
       const grip = await handle.boundingBox();
       const x = Math.round(grip.x + grip.width / 2);
       const y = Math.round(grip.y + grip.height / 2);
-      const before = await dock.boundingBox();
-      await dock.evaluate((el) => {
+      const before = await surface.boundingBox();
+      await surface.evaluate((el) => {
         const entry = el.getAnimations()[0];
         entry.currentTime = entry.effect.getTiming().duration * 0.55;
       });
-      const later = await dock.boundingBox();
+      const later = await surface.boundingBox();
       const axis = phone ? "height" : "width";
       expect(later[axis] - before[axis]).toBeGreaterThan(10);
-      const border = phone ? { x, y: later.y + 1 } : { x: later.x - 2, y };
-      expect(
-        await handle.evaluate(
-          (element, point) => document.elementFromPoint(point.x, point.y) === element,
-          border,
-        ),
-      ).toBe(true);
+      const frame = await dock.boundingBox();
+      const separation = phone ? Math.abs(frame.y - y) : Math.abs(frame.x - grip.x - grip.width);
+      expect(separation).toBeLessThan(2);
 
+      if (!phone) {
+        const files = page.getByRole("button", { name: "Show 1 more file" });
+        await files.scrollIntoViewIfNeeded();
+        const button = await files.boundingBox();
+        const clickX = Math.max(button.x + 2, Math.min(x, button.x + button.width - 2));
+        await page.mouse.click(clickX, button.y + button.height / 2);
+        await expect(page.getByRole("button", { name: "Show less" }).first()).toBeVisible();
+      }
       if (phone) {
         const cdp = await page.context().newCDPSession(page);
         await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
