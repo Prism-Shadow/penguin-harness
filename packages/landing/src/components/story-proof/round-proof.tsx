@@ -13,7 +13,6 @@ export function RoundProof() {
   const [version, setVersion] = useState<"before" | "after">("after");
   const trial = trials[key],
     content = trial[locale];
-  const other = trials[key === "coverage" ? "filing" : "coverage"];
   const [decision, setDecision] = useState<"baseline" | "candidate" | null>(null);
   const y = (score: number) => 178 - score * 1.35;
   const latest = version === "after";
@@ -88,10 +87,6 @@ export function RoundProof() {
                 fill="url(#proof-rules)"
               />
               <path className="trace-rule" d="M30 165H331" />
-              <path
-                className="trace-other"
-                d={`M45 ${y(other.before)} C140 ${y(other.before)} 210 ${y(other.after)} 312 ${y(other.after)}`}
-              />
               <g className="trace-version">
                 <path
                   className="trace-shade"

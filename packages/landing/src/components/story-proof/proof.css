@@ -535,3 +535,82 @@
     max-width: 30ch;
   }
 }
+.shared-gate path {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.shared-gate text {
+  fill: var(--muted);
+}
+.running-agent {
+  --lane: var(--accent);
+}
+.running-agent[data-lane="support"] {
+  --lane: light-dark(#386688, #82b3d5);
+}
+.running-agent[data-lane="finance"] {
+  --lane: light-dark(#89642b, #d0ad71);
+}
+.running-agent[data-lane="filing"] {
+  --lane: light-dark(#805d82, #c59dc8);
+}
+.dark .running-agent[data-lane="support"] {
+  --lane: #82b3d5;
+}
+.dark .running-agent[data-lane="finance"] {
+  --lane: #d0ad71;
+}
+.dark .running-agent[data-lane="filing"] {
+  --lane: #c59dc8;
+}
+.shared-circuit {
+  fill: none;
+  stroke: var(--lane);
+  stroke-width: 1.3;
+  opacity: 0.84;
+}
+.return-head,
+.task-mark {
+  fill: none;
+  stroke: var(--lane);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.running-agent[data-active="true"] .diagram-name {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.station-mark {
+  stroke: var(--lane);
+  stroke-width: 1.4;
+  fill: var(--paper);
+}
+.running-pulse {
+  fill: var(--lane);
+  stroke: var(--paper);
+  stroke-width: 1.4;
+  offset-distance: var(--rest);
+  offset-rotate: 0deg;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .running-pulse {
+    animation: proof-cycle var(--period) linear infinite;
+    animation-delay: var(--offset);
+    animation-play-state: paused;
+  }
+  .proof-diagram[data-visible="true"] .running-pulse {
+    animation-play-state: running;
+  }
+  @keyframes proof-cycle {
+    from {
+      offset-distance: 0%;
+    }
+    to {
+      offset-distance: 100%;
+    }
+  }
+}

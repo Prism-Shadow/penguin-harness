@@ -35,6 +35,36 @@ export const trials = {
       material: "基线 Agent 把旧文件和现行保单一起纳入了判断。",
     },
   },
+  support: {
+    before: 48.9,
+    after: 69.95,
+    method: "SkillOpt",
+    en: {
+      task: "Resolve a service ticket",
+      material: "The baseline checks support records with the initial Skill.",
+      change: "Retest the SkillOpt revision on held-out support tickets.",
+    },
+    zh: {
+      task: "核实并解决服务工单",
+      material: "基线使用初始技能核对工单记录。",
+      change: "在留出的服务工单上复测 SkillOpt 修订的技能。",
+    },
+  },
+  finance: {
+    before: 50.97,
+    after: 52.45,
+    method: "OpenSkill",
+    en: {
+      task: "Reconcile financial records",
+      material: "The baseline reconciles accounts with the initial Skill.",
+      change: "Retest the OpenSkill revision on the same held-out finance cases.",
+    },
+    zh: {
+      task: "核对财务账目",
+      material: "基线使用初始技能核对账目。",
+      change: "在同一组留出案例上复测 OpenSkill 修订的技能。",
+    },
+  },
   filing: {
     before: 52.6,
     after: 51.43,

@@ -196,58 +196,37 @@ export function ApplicationFigure({
   );
 }
 
-type Task = "coverage" | "filing";
-function AgentMark({ id }: { id: Task }) {
-  return id === "coverage" ? (
-    <g className="agent-symbol">
-      <path d="m0 -12 11 4v8c0 5-6 10-11 13-5-3-11-8-11-13v-8Z" />
-      <path d="m-5 0 3 3 7-7" />
-    </g>
-  ) : (
-    <g className="agent-symbol">
-      <path d="M-13 -7h10l3 4h12v13h-25zM-10 -8v-4H4l5 5v4" />
-      <path d="M-6 2h11" />
-    </g>
-  );
-}
-
-function Stage({
-  x,
-  y,
-  i,
-  name,
-  mobile,
-}: {
-  x: number;
-  y: number;
-  i: number;
-  name: string;
-  mobile: boolean;
-}) {
-  return (
-    <g transform={`translate(${x} ${y})`} className="flow-stage">
-      <circle r={14} />
-      {i === 1 ? (
-        <path d="m-5 5 1-4 6-6 3 3-6 6z" />
-      ) : i === 2 ? (
-        <path d="m-6 0 4 4 8-9" />
-      ) : (
-        <g>
-          <path d="m-6 3 4-5 3 3 5-7" />
-          <path d="M-6 7h12" />
-        </g>
-      )}
-      <text
-        className="diagram-step"
-        x={mobile ? 23 : 0}
-        y={mobile ? 4 : 34}
-        textAnchor={mobile ? "start" : "middle"}
-      >
-        {name}
-      </text>
-    </g>
-  );
-}
+type Task = "coverage" | "filing" | "support" | "finance";
+const agents = [
+  {
+    id: "coverage",
+    en: "Coverage",
+    zh: "核赔",
+    symbol: "m0-10 9 3v6c0 5-4 8-9 11-5-3-9-6-9-11v-6Zm-4 9 3 3 5-6",
+    phase: 14,
+  },
+  {
+    id: "support",
+    en: "Support",
+    zh: "工单",
+    symbol: "M-10-6h20v12H-2l-5 4V6h-3Zm5 5h9m-9 3h5",
+    phase: 38,
+  },
+  {
+    id: "finance",
+    en: "Finance",
+    zh: "财务",
+    symbol: "M-9-7h18v15H-9Zm0 5H9M-4-1v9m5-6h4m-4 4h4",
+    phase: 64,
+  },
+  {
+    id: "filing",
+    en: "Court filings",
+    zh: "归档",
+    symbol: "M-10-6h8l3 3h9V8h-20Zm2-1v-3H3l4 4v2",
+    phase: 83,
+  },
+] as const;
 
 export function EvolutionFigure({
   selected,
@@ -261,111 +240,105 @@ export function EvolutionFigure({
   decision: "baseline" | "candidate" | null;
 }) {
   const zh = lang === "zh";
-  const ids: Task[] = ["coverage", "filing"];
-  const labels = zh ? ["核赔 Agent", "归档 Agent"] : ["Coverage agent", "Filing agent"];
   const stages = zh ? ["评估", "改进", "复测"] : ["Evaluate", "Improve", "Retest"];
   return (
     <Diagram
       name={
         zh
-          ? "两个 Agent 在同一平台评估并返回各自版本"
-          : "Two agents evaluate on one platform and return to their own versions"
+          ? "四种任务的 Agent 在同一个平台各自循环评估和修订"
+          : "Four task agents independently evaluate and revise on one platform"
       }
     >
-      {(mobile) => (
-        <>
-          {ids.map((id, i) => {
-            const active = id === selected,
-              x = mobile ? [68, 212][i]! : 65,
-              y = mobile ? 36 : [57, 203][i]!;
-            const incoming = mobile
-              ? i === 0
-                ? "M68 64v9q0 14 14 14h39q19 0 19 20"
-                : "M212 64v9q0 14-14 14h-39q-19 0-19 20"
-              : i === 0
-                ? "M84 57h62q22 0 22 22v24q0 22 25 22h18"
-                : "M84 203h62q22 0 22-22v-31q0-25 25-25h18";
-            const returning = mobile
-              ? i === 0
-                ? "M140 216v18q0 19-18 19H32q-18 0-18-18V55q0-19 20-19h12"
-                : "M140 216v18q0 19 18 19h90q18 0 18-18V55q0-19-20-19h-12"
-              : i === 0
-                ? "M446 125h24q26 0 26-25V48q0-25-25-25H83q-18 0-18 16"
-                : "M446 125h24q26 0 26 25v62q0 25-25 25H83q-18 0-18-16";
-            return (
-              <g key={id} className="agent-route" data-current={active} data-agent={id}>
-                <path className="route-out" d={returning} />
-                <path className="route-in" d={incoming} />
-                <path
-                  className="route-arrow"
-                  d={
-                    mobile
-                      ? i === 0
-                        ? "m41 33 5 3-5 3"
-                        : "m239 33-5 3 5 3"
-                      : i === 0
-                        ? "m62 34 3 5 3-5"
-                        : "m62 226 3-5 3 5"
-                  }
-                />
-                <Choice x={x} y={y} active={active} title={labels[i]!} onClick={() => onSelect(id)}>
-                  <rect
-                    className="choice-hit"
-                    x={mobile ? -43 : -25}
-                    y="-20"
-                    width={mobile ? 86 : 170}
-                    height={mobile ? 47 : 42}
-                    rx="4"
-                  />
-                  <AgentMark id={id} />
-                  <text
-                    className="diagram-name"
-                    x={mobile ? 0 : 21}
-                    y={mobile ? 24 : -10}
-                    textAnchor={mobile ? "middle" : "start"}
-                  >
-                    {labels[i]}
-                  </text>
-                </Choice>
+      {(mobile) => {
+        const steps = mobile ? [103, 166, 230] : [246, 350, 455];
+        const rows = mobile ? [66, 120, 174, 228] : [61, 111, 161, 211];
+        const left = mobile ? 25 : 68,
+          right = mobile ? 269 : 543;
+        const returnY = mobile ? 15 : 17;
+        return (
+          <>
+            {stages.map((label, i) => (
+              <g className="shared-gate" key={label}>
+                <path d={`M${steps[i]} 31V${mobile ? 248 : 235}`} />
+                <text x={steps[i]} y="19" textAnchor="middle" className="diagram-step">
+                  {label}
+                </text>
               </g>
-            );
-          })}
-          <g className="common-run" key={selected}>
-            <path d={mobile ? "M140 108v105" : "M201 125h252"} className="common-line" />
-            <path
-              d={mobile ? "M140 108v105" : "M201 125h252"}
-              className="diagram-signal"
-              pathLength={1}
-            />
-            {stages.map((s, i) => (
-              <Stage
-                key={s}
-                i={i}
-                name={s}
-                x={mobile ? 140 : [223, 326, 430][i]!}
-                y={mobile ? [111, 161, 212][i]! : 125}
-                mobile={mobile}
-              />
             ))}
-          </g>
-          <text
-            x={mobile ? 140 : 326}
-            y={mobile ? 273 : 85}
-            textAnchor="middle"
-            className="diagram-caption"
-          >
-            {decision
-              ? decision === "candidate"
-                ? zh
-                  ? "已保留候选版本"
-                  : "Candidate kept"
+            {agents.map((agent, i) => {
+              const y = rows[i]!,
+                x = mobile ? 11 : 50,
+                active = selected === agent.id;
+              const route = `M${left} ${y}H${right - 8}q8 0 8 8t-8 ${returnY - 8}H${left + 14}q-14 0-14 -${returnY}Z`;
+              const accessible = zh ? agent.zh + " Agent" : agent.en + " agent";
+              return (
+                <g
+                  key={agent.id}
+                  className="running-agent"
+                  data-lane={agent.id}
+                  data-active={active}
+                >
+                  <path className="shared-circuit" d={route} />
+                  {steps.map((s) => (
+                    <circle key={s} cx={s} cy={y} r="3.3" className="station-mark" />
+                  ))}
+                  <path className="return-head" d={`m${left + 36} ${y + returnY - 3} -5 3 5 3`} />
+                  <circle
+                    r={mobile ? 3.7 : 4.4}
+                    className="running-pulse"
+                    style={
+                      {
+                        offsetPath: `path("${route}")`,
+                        "--rest": agent.phase + "%",
+                        "--period": 4.9 + i * 0.45 + "s",
+                        "--offset": (-agent.phase / 100) * (4.9 + i * 0.45) + "s",
+                      } as React.CSSProperties
+                    }
+                  />
+                  <Choice
+                    x={x}
+                    y={y}
+                    active={active}
+                    title={accessible}
+                    onClick={() => onSelect(agent.id)}
+                  >
+                    <rect
+                      className="choice-hit"
+                      x={mobile ? -11 : -22}
+                      y={-26}
+                      width={mobile ? 87 : 144}
+                      height={48}
+                      rx={3}
+                    />
+                    <path className="task-mark" d={agent.symbol} />
+                    <text x={mobile ? 16 : 20} y="-8" className="diagram-name">
+                      {agent[lang]}
+                    </text>
+                  </Choice>
+                </g>
+              );
+            })}
+            <text
+              x={mobile ? 146 : 350}
+              y={mobile ? 272 : 252}
+              textAnchor="middle"
+              className="diagram-caption"
+            >
+              {decision
+                ? decision === "candidate"
+                  ? zh
+                    ? "已保留候选版本"
+                    : "Candidate kept"
+                  : zh
+                    ? "已恢复基线版本"
+                    : "Baseline restored"
                 : zh
-                  ? "已恢复基线版本"
-                  : "Baseline restored"
-              : "PenguinHarness RSI"}
-          </text>
-        </>
-      )}
+                  ? "PenguinHarness RSI · 循环示意"
+                  : "PenguinHarness RSI · illustrated loops"}
+            </text>
+          </>
+        );
+      }}
     </Diagram>
   );
 }
