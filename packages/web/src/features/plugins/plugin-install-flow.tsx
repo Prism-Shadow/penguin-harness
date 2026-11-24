@@ -58,6 +58,8 @@ export interface InstallFlowProps {
   icon: ReactNode;
   /** Two steps for a plugin with Agent content, one for server modules alone. */
   steps: 1 | 2;
+  /** A published listing may omit the package contents until its archive is opened. */
+  contentsKnown: boolean;
   server: ServerStep;
   /** A shipped hybrid can install its Agent content under the existing module-request policy. */
   agentPackageAvailable?: boolean;
@@ -143,7 +145,11 @@ export function InstallFlow(props: InstallFlowProps) {
               </h3>
               <p className="text-fg-muted">
                 {props.server === "install" &&
-                  (props.steps === 2 ? words.prepareForAgents : words.prepareService)}
+                  (props.steps === 2
+                    ? words.prepareForAgents
+                    : props.contentsKnown
+                      ? words.prepareService
+                      : words.preparePackage)}
                 {props.server === "enable" && words.projectServiceHelp}
                 {props.server === "ask" && (asked ? words.asked : words.askBody)}
                 {props.server === "held" && words.adminOnly}

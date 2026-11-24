@@ -130,6 +130,21 @@ describe("the flow of a plugin not on the server", () => {
     expect(onInstallServer).toHaveBeenCalledOnce();
   });
 
+  it("distinguishes a confirmed server-only package from a listing with unknown contents", async () => {
+    for (const known of [true, false]) {
+      const { offline: _offline, ...published } = ENTRY;
+      const entry = known
+        ? { ...published, offline: { version: ENTRY.version, library: false, modules: true } }
+        : published;
+      const row = { ...marketRow, module: { ...marketRow.module!, entry } };
+      const page = await show(props({ row }));
+      await click(installControl(en.skills.install)!);
+      expect(dialog()!.textContent).toContain(known ? words.prepareService : words.preparePackage);
+      expect(dialog()!.querySelector("input[type=radio]")).toBeNull();
+      await page.unmount();
+    }
+  });
+
   it("shows the step's words while it runs, and a failure with its next steps", async () => {
     const running = await show(props({ busy: true, stage: { stage: "checking" } }));
     await click(installControl(words.stepShort.checking)!);

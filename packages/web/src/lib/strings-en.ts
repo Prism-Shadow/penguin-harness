@@ -3277,6 +3277,7 @@ export const en: Strings = {
       chooseAgent: "Choose an agent",
       chooseAgentHelp: "Choose who will use this plugin. You can add it to more than one agent.",
       prepareForAgents: "Install one copy on this server. Then choose which agents can use it.",
+      preparePackage: "Install one copy on this server to make the plugin available here.",
       prepareService:
         "Install this service on the server. This plugin works without adding it to an agent.",
       projectServiceOff: "This project’s service is off. You can still add the plugin to an agent.",

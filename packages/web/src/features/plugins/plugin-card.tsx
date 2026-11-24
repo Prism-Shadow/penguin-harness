@@ -658,6 +658,9 @@ export function PluginCard(props: PluginCardProps) {
             />
           }
           steps={agentContent ? 2 : 1}
+          contentsKnown={
+            plugin !== undefined || builtIn || row.module?.entry?.offline !== undefined
+          }
           server={serverStep}
           {...(shippedHybrid
             ? {

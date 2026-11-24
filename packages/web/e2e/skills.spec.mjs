@@ -174,12 +174,13 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
 
   // The shared flow shows each Agent and its available action.
   await installAction.click();
-  const dialog = page.getByRole("dialog").filter({ hasText: "安装到 Agent" });
+  const dialog = page.getByRole("dialog").filter({ hasText: "选择智能体" });
   // The default Agent already carries the plugin. The helper can install it.
   const uninstallDefault = page.getByRole("button", { name: "卸载 default_agent" });
-  const installHelper = page.getByRole("button", { name: "安装 agent_helper" });
+  const installHelper = page.getByRole("button", { name: "添加给 Helper Agent" });
   await expect(uninstallDefault).toBeVisible();
   await expect(uninstallDefault).toContainText("卸载");
+  await dialog.locator('input[value="agent_helper"]').check();
   await expect(installHelper).toBeVisible();
   // Install on the helper, then read the result from the server.
   await installHelper.click();
@@ -201,7 +202,7 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
     .getByRole("dialog", { name: "卸载 数据分析" })
     .getByRole("button", { name: "卸载", exact: true })
     .click();
-  await expect(page.getByRole("button", { name: "安装 agent_helper" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "添加给 Helper Agent" })).toBeVisible();
   // The first row, 「新建空白 Agent」: Create Agent opens over the list with the plugin ticked;
   // once created, it closes and the new Agent is in the still-open list, installed.
   await page.getByRole("button", { name: "新建并安装" }).click();
@@ -210,6 +211,7 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   await createDialog.getByRole("textbox", { name: "Agent id", exact: true }).fill("blank_analyst");
   await createDialog.getByRole("button", { name: "创建", exact: true }).click();
   await expect(createDialog).toHaveCount(0);
+  await dialog.locator('input[value="blank_analyst"]').check();
   await expect(page.getByRole("button", { name: "卸载 blank_analyst" })).toContainText("卸载");
   await expect
     .poll(async () => {

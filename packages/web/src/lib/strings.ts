@@ -3474,6 +3474,7 @@ export const zh = {
       chooseAgent: "选择智能体",
       chooseAgentHelp: "选择要使用这款插件的智能体。你可以依次添加给多个智能体。",
       prepareForAgents: "先在服务端安装一份插件，再选择哪些智能体可以使用它。",
+      preparePackage: "在这台服务端安装一份插件，就能查看它提供的功能。",
       prepareService: "在服务端安装这项服务即可，无需添加给智能体。",
       projectServiceOff: "当前项目尚未启用这项服务。你仍可将插件添加给智能体。",
       projectReady: "当前项目已启用这款插件的服务。",
