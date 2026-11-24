@@ -102,6 +102,10 @@ for (const phone of [false, true]) {
       const after = await dock.boundingBox();
       const boundary = phone ? after.y : after.x;
       expect(Math.abs(boundary - (phone ? y + 45 : x + 90))).toBeLessThan(2);
+      if (phone) {
+        await dock.getByTestId("dock-fullscreen").tap();
+        await expect(dock).toHaveAttribute("data-fullscreen", "full");
+      }
     });
   });
 }
