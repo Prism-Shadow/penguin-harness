@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** fix
 - **Scope:** `desktop`
+- **PR:** [#1789](https://github.com/Prism-Shadow/penguin-harness/pull/1789)
 
 [中文版](2026-11-23-windows-setup-hidden-files.zh.md)
 
