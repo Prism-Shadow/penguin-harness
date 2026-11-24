@@ -22,6 +22,8 @@
  * - A Session that only talks can select its own model and deny-all: that model's tool call is denied
  *   and the model reads the denial, while one opened without the option still runs its calls;
  *   a mode that would wait for a person is refused by name.
+ * - The default Agent serves its preset alongside an authored workbench. Its history only
+ *   accepts revisions belonging to the requested workbench.
  * - Agent counts include installed workbenches and follow removal without a compiler load.
  * - A handler takes any body (a form only from the app's own pages) and sends back any
  *   content type, a stream as it is produced and a redirect relative to its mount, never the
@@ -319,6 +321,13 @@ async function listOf(owner: ReturnType<typeof apiClient>, base = BASE): Promise
   return ((await res.json()) as { workbenches: WorkbenchInfo[] }).workbenches;
 }
 
+/** Read the demo by its installed id; the default Agent also owns its preset workbenches. */
+async function demoOf(owner: ReturnType<typeof apiClient>): Promise<WorkbenchInfo> {
+  const [demo] = await listOf(owner, `${BASE}?id=demo`);
+  expect(demo?.id).toBe("demo");
+  return demo!;
+}
+
 // Most of these run the TypeScript compiler, several times each: on a CI runner a single test
 // can pass 5s, the default POSIX limit, without anything being wrong.
 describe("a loaded workbench", { timeout: 30_000 }, () => {
@@ -332,22 +341,21 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
   // The shared fixture performs the first real compiler load: use the integration budget.
   beforeAll(async () => {
     ({ t, owner, ownerCookie, dir } = await workbenchApp());
-    [wf] = (await listOf(owner)) as [WorkbenchInfo];
+    wf = await demoOf(owner);
   }, 30_000);
   afterAll(async () => {
     await t.cleanup();
   });
 
-  const list = () => listOf(owner);
   /** The count after one more POST: the handler's state as it now stands. */
   const count = async (): Promise<number> =>
     ((await (await owner.post(`${BASE}/demo/api/count`, {})).json()) as { count: number }).count;
 
   it("checks and transpiles the TypeScript, boots the tree, serves its UI and dispatches to its handler", async () => {
     expect(wf).toMatchObject({ id: "demo", name: "Demo", version: "1.0.0", error: null });
-    expect(wf!.uiRev).toMatch(/^[0-9a-f]{12}$/);
+    expect(wf.uiRev).toMatch(/^[0-9a-f]{12}$/);
     // The tab is the contribution, its page path turned into the URL it is served from.
-    expect(wf!.tabs).toEqual([
+    expect(wf.tabs).toEqual([
       {
         ...TAB,
         renderer: { iframe: { src: `${BASE}/demo/ui/index.html` } },
@@ -356,12 +364,12 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     // The emitted code lives in a dot-directory: no part of the revision or the versions.
     // Beside it, what the load came to — the Agent's only view of it is its own files.
     expect((await fs.readdir(path.join(dir, ".build"))).sort()).toEqual(
-      [wf!.revision, "status.json"].sort(),
+      [wf.revision, "status.json"].sort(),
     );
     expect(JSON.parse(await fs.readFile(path.join(dir, ".build", "status.json"), "utf8"))).toEqual({
       ok: true,
-      revision: wf!.revision,
-      checkedAt: wf!.loadedAt,
+      revision: wf.revision,
+      checkedAt: wf.loadedAt,
       error: null,
       tabs: ["board"],
       hints: [],
@@ -400,21 +408,39 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     });
   });
 
+  it("lists both workbenches and scopes each history and rollback to its installed id", async () => {
+    const installed = await listOf(owner);
+    const preset = installed.find((workbench) => workbench.id === "benchmark");
+    expect(preset).toMatchObject({ error: null });
+    expect(installed.find((workbench) => workbench.id === "demo")).toMatchObject({
+      revision: wf.revision,
+      error: null,
+    });
+    for (const workbench of [wf, preset!]) {
+      const history = await owner.get(`${BASE}/${workbench.id}/history`);
+      expect(history.status).toBe(200);
+      expect(await history.json()).toMatchObject({ versions: [{ revision: workbench.revision }] });
+    }
+    const otherRevision = await owner.post(`${BASE}/demo/rollback`, { revision: preset!.revision });
+    expect(otherRevision.status).toBe(404);
+    expect((await demoOf(owner)).revision).toBe(wf.revision);
+  });
+
   it("does not treat its own state write as an edit: the revision holds and nothing is staged", async () => {
-    const [before] = await list();
+    const before = await demoOf(owner);
     // Writing state used to leave a `state.json.tmp` behind, which the watcher read as an
     // edit (recompiling the workbench and tearing down the tree that had just written it) and
     // the revision hash read as content.
     await count();
-    const [after] = await list();
-    expect(after!.revision).toBe(before!.revision);
-    expect(after!.loadedAt).toBe(before!.loadedAt);
+    const after = await demoOf(owner);
+    expect(after.revision).toBe(before.revision);
+    expect(after.loadedAt).toBe(before.loadedAt);
     const left = (await fs.readdir(dir)).filter((n) => n.includes("tmp"));
     expect(left).toEqual([]);
   });
 
   it("has three folders of its own, read and written with Node's fs: the Agent reads what the handler wrote, and neither write is an edit", async () => {
-    const [before] = await list();
+    const before = await demoOf(owner);
     const agent = agentDir(t.root, PROJECT, AGENT);
     const expected = {
       dataDir: path.join(agent, "app", "data", "demo"),
@@ -447,10 +473,10 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
 
     // Past the watcher's settle time, the same load still serves: no reload, no new version.
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    const [after] = await list();
-    expect(after!.revision).toBe(before!.revision);
-    expect(after!.loadedAt).toBe(before!.loadedAt);
-    expect(after!.error).toBeNull();
+    const after = await demoOf(owner);
+    expect(after.revision).toBe(before.revision);
+    expect(after.loadedAt).toBe(before.loadedAt);
+    expect(after.error).toBeNull();
   });
 
   it.skipIf(process.platform === "win32")(
@@ -1406,14 +1432,14 @@ describe("an engine a plugin contributes", { timeout: 30_000 }, () => {
       expect(cacheDir).toBe(path.join(t.root, "cache", "recording.engine"));
       await waitFor(() => logged.some((line) => line.includes("recording records Agent State")));
 
-      const [v1] = await listOf(owner);
+      const demo = await demoOf(owner);
       expect(calls).toEqual(["commit"]);
       await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v2</h1>");
       await owner.post(`${BASE}/demo/reload`);
       expect(
         (await owner.put("/api/me/profile", { displayName: "Ada Lovelace" })).status,
       ).toBeLessThan(300);
-      const back = await owner.post(`${BASE}/demo/rollback`, { revision: v1!.revision });
+      const back = await owner.post(`${BASE}/demo/rollback`, { revision: demo.revision });
       expect(back.status, await back.text()).toBe(200);
 
       expect(calls).toEqual(["commit", "commit", "readBlobs", "commit"]);
@@ -1421,7 +1447,7 @@ describe("an engine a plugin contributes", { timeout: 30_000 }, () => {
       const tip = await git.resolveRef({ fs: nodeFs, gitdir, ref: "HEAD" });
       const { commit } = await git.readCommit({ fs: nodeFs, gitdir, oid: tip });
       expect(commit.author.name).toBe("Ada Lovelace");
-      expect(commit.message).toBe(`workbench demo @${v1!.revision}\n`);
+      expect(commit.message).toBe(`workbench demo @${demo.revision}\n`);
     } finally {
       await t.cleanup();
     }

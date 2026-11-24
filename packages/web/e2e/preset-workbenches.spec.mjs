@@ -42,26 +42,46 @@ test("the default Agent and Support own separately removable workbenches", async
   expect((await page.request.put(base + "/enabled", { data: { enabled: true } })).ok()).toBe(true);
   await page.reload();
   await expect(tile).toBeVisible();
-  expect((await page.request.delete(base)).ok()).toBe(true);
-  await page.reload();
-  await expect(tile).toHaveCount(0);
-  expect(
-    (
-      await page.request.post(agent("default_agent") + "/plugins", {
-        data: { names: ["agent-evaluation"] },
-      })
-    ).ok(),
-  ).toBe(true);
-  await page.reload();
-  await expect(tile).toBeVisible();
-
-  const outsider = await browser.newContext();
+  const member = await browser.newContext();
   try {
-    await provisionAndLogin(outsider.request, "presetoutsider", "password123");
-    expect([403, 404]).toContain(
-      (await outsider.request.get(agent("default_agent") + "/workbenches")).status(),
-    );
+    const userId = "presetteammate";
+    await provisionAndLogin(member.request, userId, "password123");
+    const list = agent("default_agent") + "/workbenches";
+    expect([403, 404]).toContain((await member.request.get(list)).status());
+    const joined = await page.request.post(project + "/members", { data: { userId } });
+    expect(joined.status(), await joined.text()).toBe(201);
+    await setAccountPrefs(member.request, { lang: "en" });
+    const memberPage = await member.newPage();
+    await memberPage.goto("/app/default_project/default_agent/benchmark");
+    await expect(memberPage.getByRole("heading", { name: "Evaluation Center" })).toBeVisible();
+
+    const support = agent("penguin_support") + "/workbenches/support";
+    const supportTile = page.locator('li[data-app="penguin_support/support"] > button');
+    for (const [ownerId, id, plugin, sibling, siblingTile] of [
+      ["default_agent", "benchmark", "agent-evaluation", support, supportTile],
+      ["penguin_support", "support", "penguin-support", base, tile],
+    ]) {
+      const target = agent(ownerId) + "/workbenches/" + id;
+      const history = await member.request.get(target + "/history");
+      expect(history.status()).toBe(200);
+      expect((await history.json()).versions.length).toBeGreaterThan(0);
+      expect((await member.request.delete(target)).status()).toBe(204);
+      expect((await member.request.get(target + "/manifest.webmanifest")).status()).toBe(404);
+      expect((await member.request.get(sibling + "/manifest.webmanifest")).status()).toBe(200);
+      await page.reload();
+      await expect(siblingTile).toBeVisible();
+      const removedTile = page.locator(`li[data-app="${ownerId}/${id}"] > button`);
+      await expect(removedTile).toHaveCount(0);
+
+      const installed = await member.request.post(agent(ownerId) + "/plugins", {
+        data: { names: [plugin] },
+      });
+      expect(installed.status(), await installed.text()).toBe(201);
+      expect((await member.request.get(target + "/manifest.webmanifest")).status()).toBe(200);
+      await page.reload();
+      await expect(removedTile).toBeVisible();
+    }
   } finally {
-    await outsider.close();
+    await member.close();
   }
 });
