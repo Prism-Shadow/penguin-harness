@@ -3446,7 +3446,7 @@ export abstract class Sessions {
    * input for company mode's hop accounting: the turn it resends was counted, or not, when
    * it was first sent.
    */
-  abstract retryTask(sessionId: string): Promise<{ sessionId: string }>;
+  abstract retryTask(sessionId: string, driver?: string): Promise<{ sessionId: string }>;
   /**
    * Start a goal run: like startTask, but the goal plugin composes the input and its stop
    * hook drives every later round inside this one `session.run` call — so the Session
@@ -3510,6 +3510,7 @@ export abstract class Sessions {
   abstract startSwitch(
     sessionId: string,
     ref: ModelRefDto,
+    whenIdle?: boolean,
   ): Promise<{ sessionId: string; switched: boolean }>;
   /**
    * Subscribes to a Session's model moving: an in-session switch completing, or a row brought
@@ -3538,7 +3539,12 @@ export abstract class Sessions {
    * keeps the composer's "steering queued" hint, content included, alive across reloads —
    * and the content itself is what a recall (recallSteering) hands back to the composer.
    */
-  abstract steer(sessionId: string, input: AmspRecord[], recall: RecallStore): void;
+  abstract steer(
+    sessionId: string,
+    input: AmspRecord[],
+    recall: RecallStore,
+    driver?: string,
+  ): void;
   /**
    * Recall an undelivered steering message (#287): withdraw it from core's queue and the
    * display mirror, re-broadcast state, and hand back its original content for the composer

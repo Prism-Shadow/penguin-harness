@@ -34,6 +34,20 @@ export interface OrgTaskRunner {
   ): Promise<{ sessionId: string; queued?: boolean }>;
 }
 
+/**
+ * What company mode needs of the session runtime beyond a Task runner: the runtime eviction a
+ * plugin update performs (the same one the plugins route does), and the subscription to a
+ * Session's model moving (an in-session switch). Declared here, at the consumer, and satisfied
+ * by the wider session manager ({@link OrgRuns} implements it).
+ */
+export interface OrgRunsShape extends OrgTaskRunner {
+  invalidateAgentRuntimes(projectId: string, agentId: string): void;
+  /** Subscribes to a Session's model moving (an in-session switch); returns the unsubscribe. */
+  onModelChanged(
+    listener: (sessionId: string, model: { provider: string; modelId: string }) => void,
+  ): () => void;
+}
+
 /** Session creation (desk and ticket sessions are ordinary sessions of the employee's Agent). */
 export interface OrgSessionCreator {
   createSession(args: {
