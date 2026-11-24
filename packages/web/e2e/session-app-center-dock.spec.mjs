@@ -112,6 +112,56 @@ test("the focused Session shortcut follows the available space", async ({ page }
   await expect(last).toBeHidden();
 });
 
+// With the context-window notice and draft still on screen, the transcript can collapse
+// entirely. A real tap on the last row must work both after rotation and on a fresh open.
+test.describe("Shortcuts in a short Session", () => {
+  test.use({ hasTouch: true });
+  for (const startHeight of [1100, 360]) {
+    test(`a tap chooses the last shortcut after opening at ${startHeight}px`, async ({ page }) => {
+      const session = await seed(page, "touchshortcuts" + startHeight, "en");
+      await setAccountPrefs(page.request, { initialPasswordBannerDismissed: true });
+      await page.setViewportSize({ width: 390, height: startHeight });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/chat/" + session.sessionId);
+      const chat = page.locator('[data-workspace-page="chat:' + session.sessionId + '"]');
+      const notice = chat.getByRole("button", { name: "Open agent settings" });
+      await expect(notice).toBeVisible();
+      const composer = chat.locator('[data-slot="composer"] textarea').first();
+      await composer.fill("Keep this draft");
+      const shortcuts = chat.getByRole("button", { name: "Shortcuts", exact: true });
+      await shortcuts.tap();
+      const last = chat.getByRole("button", { name: "Hide launcher", exact: true });
+      if (startHeight === 360) {
+        const list = chat.getByRole("group", { name: "Shortcuts", exact: true });
+        const box = await list.boundingBox();
+        const x = box.x + box.width / 2;
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send("Input.dispatchTouchEvent", {
+          type: "touchStart",
+          touchPoints: [{ x, y: box.y + box.height * 0.8 }],
+        });
+        await cdp.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [{ x, y: box.y + box.height * 0.2 }],
+        });
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await expect.poll(() => list.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+        await cdp.detach();
+      }
+      await shortcuts.press("End");
+      await page.setViewportSize({ width: 390, height: 360 });
+      await expect(last).toHaveText("Hide launcher");
+      await expect(last).toBeFocused();
+      await expect(last).toBeInViewport({ ratio: 0.99 });
+      const box = await last.boundingBox();
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      await expect(shortcuts).toBeHidden();
+      await expect(notice).toBeVisible();
+      await expect(composer).toHaveValue("Keep this draft");
+    });
+  }
+});
+
 for (const lang of ["en", "zh"]) {
   test(`the right dock and Shortcuts offer the same actions and keep the narrow catalog usable in ${lang}`, async ({
     page,

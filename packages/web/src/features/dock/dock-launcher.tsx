@@ -61,6 +61,7 @@ import { useDockPanels } from "./panel-registry";
 import { dockVersion, isDockVisible, isNarrow, subscribeDock } from "./dock-state";
 import {
   FAN_ENTRY_SIZE,
+  LAUNCHER_BODY_MIN_HEIGHT,
   LAUNCHER_CAPTION_HEIGHT,
   LAUNCHER_SIZE,
   clampLauncherTop,
@@ -110,13 +111,16 @@ export function DockLauncher({ agentsPending }: DockLauncherProps) {
   return <FloatingLauncher agentsPending={agentsPending} narrow={narrow} />;
 }
 
-interface FanState {
-  /** "closing" keeps the entries mounted through their exit animation. */
-  phase: "open" | "closing";
-  /** The ball and the space available for the open shortcuts. */
-  top: number;
+interface LauncherSpace {
   bodyHeight: number;
   bodyWidth: number;
+  listHeight: number;
+}
+
+interface FanState extends LauncherSpace {
+  /** "closing" keeps the entries mounted through their exit animation. */
+  phase: "open" | "closing";
+  top: number;
 }
 
 interface FanEntry {
@@ -150,7 +154,7 @@ function FloatingLauncher({
   const fanRef = useRef<HTMLDivElement | null>(null);
   /** The resting position — the stored preference — as a ratio of the body's height. */
   const ratioRef = useRef(readLauncherRatio());
-  const bodySize = useRef({ height: 0, width: 0 });
+  const space = useRef<LauncherSpace>({ bodyHeight: 0, bodyWidth: 0, listHeight: 0 });
   const draggingRef = useRef(false);
   const [dragging, setDragging] = useState(false);
   /** Set by a completed drag so the click the browser fires on release does not toggle the fan. */
@@ -200,8 +204,7 @@ function FloatingLauncher({
     setFan({
       phase: "open",
       top: drivers.current?.y.value ?? 0,
-      bodyHeight: bodySize.current.height,
-      bodyWidth: bodySize.current.width,
+      ...space.current,
     });
   }, [setFan]);
 
@@ -270,32 +273,48 @@ function FloatingLauncher({
     const body = root?.parentElement;
     const d = drivers.current;
     if (!root || !body || !d) return;
+    // The transcript and composer share this Session column in both chat layouts.
+    const column = body.parentElement;
     const viewport = window.visualViewport;
     const place = () => {
       const bounds = body.getBoundingClientRect();
+      const viewportBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
       const top = Math.max(0, (viewport?.offsetTop ?? 0) - bounds.top);
       const right = viewport ? Math.max(0, bounds.right - viewport.offsetLeft - viewport.width) : 0;
-      const bottom = viewport
-        ? Math.max(0, bounds.bottom - viewport.offsetTop - viewport.height)
-        : 0;
+      const bottom = Math.max(0, bounds.bottom - viewportBottom);
       const left = Math.max(0, (viewport?.offsetLeft ?? 0) - bounds.left);
       const height = Math.max(0, body.clientHeight - top - bottom);
       const width = Math.max(0, body.clientWidth - left - right);
       root.style.top = `${top}px`;
       root.style.right = `${EDGE_INSET + right}px`;
-      if (height === bodySize.current.height && width === bodySize.current.width) return;
-      if (height !== bodySize.current.height && !draggingRef.current) {
+      // When the transcript cannot even hold the ball and caption, allow the open list
+      // to cover the composer down to the visible bottom of this Session column.
+      const listHeight =
+        height < LAUNCHER_BODY_MIN_HEIGHT && column
+          ? Math.max(
+              height,
+              Math.min(column.getBoundingClientRect().bottom, viewportBottom) - bounds.top - top,
+            )
+          : height;
+      const previous = space.current;
+      if (
+        height === previous.bodyHeight &&
+        width === previous.bodyWidth &&
+        listHeight === previous.listHeight
+      )
+        return;
+      if (height !== previous.bodyHeight && !draggingRef.current) {
         d.y.set(launcherTopFromRatio(ratioRef.current, height));
       }
-      bodySize.current = { height, width };
-      const current = fanNow.current;
-      if (current?.phase === "open") {
-        setFan({ phase: "open", top: d.y.value, bodyHeight: height, bodyWidth: width });
+      space.current = { bodyHeight: height, bodyWidth: width, listHeight };
+      if (fanNow.current?.phase === "open") {
+        setFan({ ...space.current, phase: "open", top: d.y.value });
       }
     };
     place();
     const observer = new ResizeObserver(place);
     observer.observe(body);
+    if (column) observer.observe(column);
     viewport?.addEventListener("resize", place);
     viewport?.addEventListener("scroll", place);
     return () => {
@@ -316,7 +335,7 @@ function FloatingLauncher({
     setDragging(false);
     const d = drivers.current;
     if (!d) return;
-    const bodyHeight = bodySize.current.height;
+    const bodyHeight = space.current.bodyHeight;
     let top: number;
     if (persist) {
       top = clampLauncherTop(d.y.value, bodyHeight);
@@ -356,7 +375,7 @@ function FloatingLauncher({
         payload.startTop,
         event.clientX - payload.clientX,
         event.clientY - payload.clientY,
-        bodySize.current.height,
+        space.current.bodyHeight,
       );
       d.x.set(x);
       d.y.set(top);
@@ -468,7 +487,7 @@ function FloatingLauncher({
     if (needsList) {
       fanRef.current?.querySelector<HTMLElement>(":focus")?.scrollIntoView({ block: "nearest" });
     }
-  }, [needsList, fan?.bodyHeight, fan?.bodyWidth]);
+  }, [needsList, fan?.listHeight, fan?.bodyWidth]);
 
   return (
     <div
@@ -487,7 +506,7 @@ function FloatingLauncher({
               ? {
                   top: 4 - fan.top,
                   width: Math.max(0, Math.min(220, listWidth)),
-                  maxHeight: Math.max(0, fan.bodyHeight - 8),
+                  maxHeight: Math.max(0, fan.listHeight - 8),
                 }
               : undefined
           }
