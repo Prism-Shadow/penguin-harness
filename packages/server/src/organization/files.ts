@@ -719,9 +719,12 @@ export function rewriteTicketRefs(raw: string, mapping: ReadonlyMap<string, stri
   if (open === -1 || close === -1) return raw;
   let fmStart = 0;
   for (let i = 0; i <= open; i++) fmStart += lines[i]!.length + 1;
+  // The slice runs through the newline that separates the frontmatter from its closing
+  // marker: a parser sees a clean end of input there, while a text that stops at a CRLF
+  // line's bare carriage return is a parse error — and a file that fails to parse here
+  // would come back unmapped, left behind by the migration.
   let fmLength = 0;
   for (let i = open + 1; i < close; i++) fmLength += lines[i]!.length + 1;
-  if (close > open + 1) fmLength -= 1;
   const doc = parseDocument(raw.slice(fmStart, fmStart + fmLength));
   if (doc.errors.length > 0) return raw;
   const edits: Array<{ from: number; to: number; text: string }> = [];
