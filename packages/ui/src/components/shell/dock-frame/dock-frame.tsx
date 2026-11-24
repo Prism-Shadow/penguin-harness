@@ -14,7 +14,7 @@
  * The border belongs to the open state only: with border-box sizing a collapsed dock would still
  * paint its 1px, leaving a hairline where nothing is. The resize handle is the caller's too, shown
  * only while open and seated by the frame: an overlay straddling the bottom dock's top edge (it
- * costs no height), and the one item of a spacer before the right dock (it must cost real width,
+ * costs no height), and a divider before the right dock with a spacer (it must cost real width,
  * so the conversation measures the same under every surface).
  *
  * A surface can go FULLSCREEN — grown as far as its own edge goes, which is the element the
@@ -376,7 +376,7 @@ export interface DockFrameProps {
   children: ReactNode;
   /**
    * The resize handle (a `ResizeHandle`), rendered only while open. The frame seats it: the right
-   * dock's, given without `edge`, fills the 6px spacer before the box; the bottom dock's, given
+   * dock's, given without `edge`, sits in the 6px gap before the box; the bottom dock's, given
    * with `edge: "start"`, straddles the box's top edge. While the surface is lifted the same
    * element sits on the lifted box's leading edge instead, and the spacer keeps its footprint.
    */
@@ -453,20 +453,9 @@ export function DockFrame({
   const lifted = phase !== "docked";
   const moving = animate && (phase === "entering" || phase === "exiting");
 
-  // The handle's seat. In the flow the seat is `display: contents`, so the handle lays itself out
-  // as the caller placed it: the right dock's as the one item of the spacer before the root — the
-  // spacer, not the handle, is what costs the row its `RESIZE_HANDLE_PX`, so the footprint stays
-  // while the handle is away — and the bottom dock's as the overlay straddling the root's top
-  // edge. Lifted, the seat is a fixed box on the lifted surface's LEADING edge, where a pull back
-  // inward is the way out: a band straddling the right dock's left edge for the handle to fill, a
-  // zero-height line along the bottom dock's top edge for the overlay handle to straddle as it
-  // straddles the root's. It sits on the `dock-handle` layer, above the surface's `dock` (the box
-  // comes later in the tree, so one layer for both would paint it over the handle), and follows
-  // the box's rect, with the box's
-  // layout motion while it moves. The SEAT changes, never the handle: one element through every
-  // phase, so a drag that began on it in the flow goes on when the snap lifts the surface
-  // mid-gesture — a remounted handle would keep the pointer's capture and never report the
-  // release that ends the drag. There is one handle at a time.
+  // The divider stays at the settled size throughout entry. Its second hit area follows
+  // the painted edge, so either point starts the same drag as the dock slides under it.
+  // A lifted divider stays on the cover and keeps its pointer through the fullscreen flip.
   const seatStyle: CSSProperties | undefined =
     lifted && box !== null
       ? position === "right"
@@ -484,11 +473,14 @@ export function DockFrame({
             height: 0,
             zIndex: layer("dock-handle"),
           }
-      : undefined;
-  const seatClass =
-    seatStyle === undefined ? "contents" : position === "right" ? "fixed flex" : "fixed";
+      : ({ "--dock-content-size": `${contentSize}px` } as CSSProperties);
   const seat = open ? (
-    <div data-layout-motion={moving ? "" : undefined} style={seatStyle} className={seatClass}>
+    <div
+      data-dock-resize-seat={lifted ? undefined : position}
+      data-layout-motion={moving ? "" : undefined}
+      style={seatStyle}
+      className={lifted ? (position === "right" ? "fixed flex" : "fixed") : undefined}
+    >
       {handle}
     </div>
   ) : null;
@@ -506,24 +498,24 @@ export function DockFrame({
           height: box.height,
           zIndex: layer("dock"),
         }
+      : {};
+  const boxClass = lifted
+    ? "fixed overflow-hidden bg-canvas"
+    : "flex min-h-0 flex-1 flex-col overflow-hidden";
+
+  // Clip the content, leaving the divider accessible outside the animating frame. The
+  // inner box keeps its final size, including while a lifted surface travels to its host.
+  const insideStyle: CSSProperties =
+    lifted && inner !== null
+      ? { width: inner.width, height: inner.height }
       : position === "bottom"
         ? { height: contentSize }
         : { width: contentSize };
-  const boxClass = lifted
-    ? "fixed overflow-hidden bg-canvas"
+  const insideClass = lifted
+    ? `absolute top-0 ${position === "right" ? "right-0" : "left-0"} flex flex-col`
     : position === "bottom"
       ? "flex min-h-0 shrink-0 flex-col"
       : "flex min-h-0 flex-1 flex-col";
-
-  // The inside: lifted, laid out once at the size the box is heading to and anchored to the
-  // box's top and to the edge the docked and the host rect share — the right dock's right, the
-  // bottom dock's left — so the header rides the top edge and nothing reflows while the box
-  // moves. In the flow, it fills the content box.
-  const insideStyle: CSSProperties | undefined =
-    lifted && inner !== null ? { width: inner.width, height: inner.height } : undefined;
-  const insideClass = lifted
-    ? `absolute top-0 ${position === "right" ? "right-0" : "left-0"} flex flex-col`
-    : "flex min-h-0 flex-1 flex-col";
 
   const content = (
     <div
@@ -553,7 +545,7 @@ export function DockFrame({
         data-fullscreen={lifted ? phase : undefined}
         style={{ height: size }}
         inert={!open}
-        className={`relative flex w-full shrink-0 flex-col overflow-hidden bg-canvas ${
+        className={`relative flex w-full shrink-0 flex-col bg-canvas ${
           open ? "border-t border-line" : ""
         }`}
       >
@@ -566,8 +558,7 @@ export function DockFrame({
 
   return (
     <>
-      {/* The spacer: `w-1.5` is RESIZE_HANDLE_PX, the width the handle costs the row. */}
-      {seat !== null && <div className="flex w-1.5 shrink-0">{seat}</div>}
+      {open && <div aria-hidden className="shrink-0" style={{ width: RESIZE_HANDLE_PX }} />}
       <div
         ref={rootRef}
         data-testid="dock"
@@ -578,10 +569,11 @@ export function DockFrame({
         data-fullscreen={lifted ? phase : undefined}
         style={{ width: size }}
         inert={!open}
-        className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden bg-canvas ${
+        className={`relative flex min-h-0 shrink-0 flex-col bg-canvas ${
           open ? "border-l border-line" : ""
         }`}
       >
+        {seat}
         {content}
         {overlays}
       </div>
