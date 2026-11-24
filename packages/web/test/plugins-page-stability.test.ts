@@ -196,12 +196,17 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     expect(usedBy.texts().filter((value) => value.startsWith("Installed on"))).toEqual([USED_BY_2]);
 
     await click(document.querySelector(COUNT)!);
+    const selectAgent = (key: string) =>
+      click(topDialog().querySelector<HTMLInputElement>(`input[value="${key}"]`)!);
+    await selectAgent(`gpu1/${AGENT_ID}`);
     const machineRow = () => button(`${en.skills.uninstall} ${MACHINE_HELPER}`);
     expect(machineRow().disabled).toBe(true);
     expect(machineRow().getAttribute("data-tooltip")).toContain(
       en.machines.composer.failed("").trim(),
     );
+    await selectAgent(AGENT_ID);
     expect(button(`${en.skills.uninstall} ${AGENT_ID}`).disabled).toBe(false);
+    await selectAgent(`gpu1/${AGENT_ID}`);
     expect(topDialog().textContent).not.toContain(en.common.loading);
 
     const localReads = installsReads(server, null);

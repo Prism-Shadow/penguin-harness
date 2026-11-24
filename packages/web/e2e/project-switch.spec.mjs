@@ -295,7 +295,9 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   await page.getByRole("button", { name: U }).first().click();
   await byName.first().click();
   await manageInstalls();
-  await expect(page.getByRole("button", { name: "安装 default_agent" })).toBeVisible();
+  const selected = page.getByRole("dialog", { name: /安装/ }).last();
+  await expect(selected.locator('input[value="default_agent"]')).toBeChecked();
+  await expect(selected.getByRole("button", { name: /^添加给 / })).toBeVisible();
   await page.keyboard.press("Escape");
 });
 
