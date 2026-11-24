@@ -21,10 +21,11 @@
  * the caller's: these draw the ball and the fan from what they are given.
  */
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode, Ref } from "react";
-import { ICON_SIZE } from "../../../icon-scale";
+import { ICON_GAP, ICON_SIZE } from "../../../icon-scale";
 import { Dot } from "../../icons/dot/dot";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
+import { menuPanelClass, menuRowClass, menuRowTone } from "../../overlays/menu-panel/menu-panel";
 import { CloseIcon } from "../../icons/marks/marks";
 
 /** Gap between the ball and its caption (px); the pill takes the rest of the caption height. */
@@ -147,6 +148,8 @@ export interface LauncherFanProps {
   phase: "open" | "closing";
   /** An entry's diameter (px). */
   entrySize: number;
+  /** Position and available size of the scrollable list when the arc cannot fit. */
+  listBounds?: { top: number; width: number; maxHeight: number } | undefined;
   /** The group's accessible name. */
   label: string;
   /** The pointer or focus arrived on an entry. */
@@ -158,13 +161,14 @@ export interface LauncherFanProps {
 }
 
 /**
- * The arc of entries, on a zero-size anchor at the ball's centre: the entries are placed by their
- * own transforms, so nothing here may size or clip the arc.
+ * An arc around the ball, or a scrollable list when space is tight. Each action keeps the
+ * same button across both layouts so a resize preserves focus and keyboard navigation.
  */
 export function LauncherFan({
   entries,
   phase,
   entrySize,
+  listBounds,
   label,
   onPoint,
   onLeave,
@@ -176,7 +180,12 @@ export function LauncherFan({
       role="group"
       aria-label={label}
       data-testid="dock-launcher-fan"
-      className="absolute left-1/2 top-1/2 h-0 w-0"
+      className={
+        listBounds
+          ? `${menuPanelClass} absolute right-full mr-2 overscroll-contain`
+          : "absolute left-1/2 top-1/2 h-0 w-0"
+      }
+      style={listBounds}
     >
       {entries.map((entry, index) => (
         <button
@@ -189,24 +198,37 @@ export function LauncherFan({
           onMouseLeave={() => onLeave(entry.key)}
           onFocus={() => onPoint(entry.key)}
           onBlur={() => onLeave(entry.key)}
-          className={`ui-glass absolute flex items-center justify-center rounded-full border border-line/80 bg-surface/90 text-fg-muted shadow-sm backdrop-blur-md transition-colors duration-150 hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-            phase === "closing" ? "launcher-fan-out" : "launcher-fan-in"
-          }`}
+          className={
+            listBounds
+              ? `flex items-center ${ICON_GAP.menu} ${menuRowClass} text-sm ${menuRowTone()}`
+              : `ui-glass absolute flex items-center justify-center rounded-full border border-line/80 bg-surface/90 text-fg-muted shadow-sm backdrop-blur-md transition-colors duration-150 hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                  phase === "closing" ? "launcher-fan-out" : "launcher-fan-in"
+                }`
+          }
           style={
-            {
-              width: entrySize,
-              height: entrySize,
-              left: -entrySize / 2,
-              top: -entrySize / 2,
-              transform: "translate(var(--fan-x), var(--fan-y))",
-              animationDelay: phase === "closing" ? "0ms" : `${index * FAN_STAGGER_MS}ms`,
-              "--fan-x": `${entry.x.toFixed(1)}px`,
-              "--fan-y": `${entry.y.toFixed(1)}px`,
-            } as CSSProperties
+            listBounds
+              ? undefined
+              : ({
+                  width: entrySize,
+                  height: entrySize,
+                  left: -entrySize / 2,
+                  top: -entrySize / 2,
+                  transform: "translate(var(--fan-x), var(--fan-y))",
+                  animationDelay: phase === "closing" ? "0ms" : `${index * FAN_STAGGER_MS}ms`,
+                  "--fan-x": `${entry.x.toFixed(1)}px`,
+                  "--fan-y": `${entry.y.toFixed(1)}px`,
+                } as CSSProperties)
           }
         >
-          {entry.glyph}
-          {entry.badge === true && (
+          {listBounds ? (
+            <>
+              <span className="flex shrink-0 items-center">{entry.glyph}</span>
+              <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+            </>
+          ) : (
+            entry.glyph
+          )}
+          {!listBounds && entry.badge === true && (
             <span
               aria-hidden
               className="absolute -right-0.5 -top-0.5 flex rounded-full ring-2 ring-canvas"

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { watchSocket } from "./api-socket.mjs";
 import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
@@ -26,11 +27,21 @@ async function seed(page, user, lang) {
   return session;
 }
 
+// A delayed Agent configuration adds a notice above the composer while Shortcuts is open.
+// The first click must still open the catalog alongside the original draft.
 test("the catalog in a conversation opens a native app beside its original draft and returns", async ({
   page,
 }) => {
   const session = await seed(page, "dockedcatalog", "en");
   await page.setViewportSize({ width: 1280, height: 800 });
+  const socket = await watchSocket(page);
+  const config = Promise.withResolvers();
+  socket.slowDown(async (call) => {
+    if (call.method === "GET" && call.path.endsWith("/agents/default_agent/config")) {
+      await config.promise;
+    }
+    return 0;
+  });
   await page.goto("/chat/" + session.sessionId);
   const chat = page.locator('[data-workspace-page="chat:' + session.sessionId + '"]');
   const composer = chat.locator('[data-slot="composer"] textarea').first();
@@ -41,7 +52,13 @@ test("the catalog in a conversation opens a native app beside its original draft
     buffer: Buffer.from("Keep this attachment"),
   });
   await chat.getByRole("button", { name: "Shortcuts", exact: true }).click();
-  await chat.getByRole("button", { name: "Open App Center", exact: true }).click();
+  const openCatalog = chat.getByRole("button", { name: "Open App Center", exact: true });
+  await expect(openCatalog).toBeVisible();
+  config.resolve();
+  await expect(
+    chat.getByRole("button", { name: "Open agent settings", exact: true }),
+  ).toBeVisible();
+  await openCatalog.click();
   const catalog = page.locator('[data-workspace-page="catalog"]');
   const modelsTile = catalog.locator('li[data-app="system_agent/models"] > button').first();
   await expect(catalog).toHaveAttribute("data-pane", "right");
@@ -64,6 +81,35 @@ test("the catalog in a conversation opens a native app beside its original draft
   await expect(page).toHaveURL(/\/apps$/);
   await modelsTile.click();
   await expect(models).toHaveAttribute("data-pane", "full");
+});
+
+// A shorter viewport can turn the arc into a scrollable list while the keyboard is on
+// its last shortcut. The same action stays focused and visible in both layouts.
+test("the focused Session shortcut follows the available space", async ({ page }) => {
+  const session = await seed(page, "resizedshortcuts", "en");
+  await page.setViewportSize({ width: 390, height: 1100 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/chat/" + session.sessionId);
+  const chat = page.locator('[data-workspace-page="chat:' + session.sessionId + '"]');
+  await expect(chat.getByRole("button", { name: "Open agent settings" })).toBeVisible();
+  const shortcuts = chat.getByRole("button", { name: "Shortcuts", exact: true });
+  await shortcuts.focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("End");
+  const last = chat.getByTestId("dock-launcher-hide");
+  await expect(last).toBeFocused();
+  await expect(last).toBeInViewport({ ratio: 0.99 });
+  await page.setViewportSize({ width: 390, height: 620 });
+  await expect(last).toHaveText("Hide launcher");
+  await expect(last).toBeFocused();
+  await expect(last).toBeInViewport({ ratio: 0.99 });
+  await page.setViewportSize({ width: 844, height: 900 });
+  await expect(last).toHaveText("");
+  await expect(last).toBeFocused();
+  await expect(last).toBeInViewport({ ratio: 0.99 });
+  await page.keyboard.press("Escape");
+  await expect(shortcuts).toBeFocused();
+  await expect(last).toBeHidden();
 });
 
 for (const lang of ["en", "zh"]) {
