@@ -17,6 +17,13 @@ function metaTag(key: string): HTMLMetaElement | null {
 
 export function useRouteCanonical(pathname: string): void {
   useEffect(() => {
+    if (pathname === "/") {
+      // A visitor can leave a directly opened static shell before its lazy page ever mounts.
+      const homeTitle = document.head.querySelector("title")?.dataset.default;
+      if (homeTitle !== undefined) document.title = homeTitle;
+      for (const tag of document.head.querySelectorAll<HTMLMetaElement>("meta[data-default]"))
+        tag.content = tag.dataset.default!;
+    }
     const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
     if (!canonical) return;
     const url = new URL(canonical.href);

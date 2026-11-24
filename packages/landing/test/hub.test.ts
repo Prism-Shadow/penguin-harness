@@ -64,7 +64,8 @@
  *   is shown in that unit (1.0 h, not 60 min; 1.0M, not 1000K).
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -866,4 +867,15 @@ describe("a run's time and tokens", () => {
     expect(formatCompact(999_499)).toBe("999K");
     expect(formatCompact(99_940)).toBe("99.9K");
   });
+});
+
+it("publishes the same evaluation reference for ACE, APE, AWM and OPRO", () => {
+  const catalog = createRequire(import.meta.url);
+  const references = ["ace", "ape", "awm", "opro"].map((method) => {
+    const name = `${method}-rsi-toolkit`;
+    const pkg = catalog.resolve(`@penguinharness/${name}/package.json`);
+    return readFileSync(join(dirname(pkg), "skills", name, "references", "evaluation.md"), "utf8");
+  });
+  expect(references[0]).toBeTruthy();
+  expect(new Set(references).size).toBe(1);
 });

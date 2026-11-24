@@ -14,16 +14,6 @@ const COMMUNITY_ASSETS =
   "https://github.com/Prism-Shadow/penguin-harness-community/raw/refs/heads/main/assets";
 
 /**
- * Demo videos: several megabytes each — committing them here would multiply what every
- * contributor clones. raw.githubusercontent sends
- * `accept-ranges: bytes`, so seeking works. The `application/octet-stream` content type
- * does not block playback — `nosniff` is only enforced for scripts and styles, and
- * `<video>` sniffs the container itself (verified in Chromium).
- * Pair every embed with a poster and `preload="none"`: nothing is fetched until play.
- */
-export const demoVideoUrl = (name: string): string => `${COMMUNITY_ASSETS}/videos/${name}.mp4`;
-
-/**
  * Blog images: a few hundred KB per post, forever, since a published post's screenshots
  * are never deleted — the one asset class whose growth is unbounded in the number of posts
  * written. Hosting them in the community repo keeps that growth out of this history.

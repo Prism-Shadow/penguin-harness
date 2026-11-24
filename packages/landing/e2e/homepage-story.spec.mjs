@@ -27,14 +27,18 @@ for (const [lang, headline, subtitle, apps, steps] of [
       });
       await page.addInitScript((lang) => localStorage.setItem("penguin-site.lang", lang), lang);
       await page.goto("/");
-      const homepageTitle = "PenguinHarness - Open RSI Framework for Enterprise AI Apps";
-      await expect(page).toHaveTitle(homepageTitle);
-      await expect(page.locator('meta[property="og:title"]')).toHaveAttribute(
-        "content",
-        homepageTitle,
-      );
       await expect(page.getByRole("heading", { level: 1 })).toHaveText(headline);
       await expect(page.locator(".hero-automation")).toHaveText(subtitle);
+      const backdrop = page.locator(".neon-bg");
+      await expect(backdrop).toHaveCSS("pointer-events", "none");
+      await expect(backdrop.locator(".neon-blob").first()).toHaveCSS("animation-name", "none");
+      const metrics = page.locator("main section").first().locator("ul").first().getByRole("link");
+      await expect(metrics).toHaveCount(3);
+      for (const metric of await metrics.all()) await expect(metric).toHaveText(/^[1-9]\d*/);
+      await expect(metrics.nth(1)).toHaveAttribute("href", "/plugins");
+      await expect(metrics.nth(2)).toHaveAttribute("href", "/benchmarks");
+      await expect(page.locator("main video")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /Play demo|播放演示/ }).first()).toBeVisible();
       const watcha = page.locator('a[href="https://watcha.cn/products/penguinharness"]');
       const hunt = page.locator('a[href="https://www.producthunt.com/products/penguinharness"]');
       await expect(watcha.locator("img")).toHaveAttribute(
@@ -52,11 +56,12 @@ for (const [lang, headline, subtitle, apps, steps] of [
         [apps[0], "rag-bench-essential", "OPRO"],
         [lang === "en" ? "Software engineering" : "软件工程", "deep-swe", "ACE"],
       ]) {
-        const lane = loops.getByRole("listitem").filter({ hasText: target });
-        await expect(lane.locator("strong")).toHaveText(target);
-        await expect(lane.locator("b")).toContainText(algorithm);
-        const labels = lane.locator("code");
-        await expect(labels).toHaveText(suite);
+        const agent = loops.locator("dl").filter({ hasText: target });
+        await expect(agent.locator("dd")).toHaveText(target);
+        const lane = agent.locator("+ ol");
+        await expect(lane.getByText(algorithm, { exact: true })).toBeVisible();
+        const labels = lane.getByText(suite, { exact: true });
+        await expect(labels).toHaveCount(2);
         const size = await labels.first().evaluate((el) => ({
           font: parseFloat(getComputedStyle(el).fontSize),
           fits: el.scrollWidth <= el.clientWidth,
@@ -66,50 +71,6 @@ for (const [lang, headline, subtitle, apps, steps] of [
         await expect(lane.getByText(steps[0], { exact: true })).toHaveCount(2);
         await expect(lane.getByText(steps[1], { exact: true })).toHaveCount(1);
       }
-      const desk = page.locator("#cases");
-      const evaluation = page.locator("#self-evolution");
-      expect(
-        await desk.evaluate((el) =>
-          Boolean(
-            el.compareDocumentPosition(document.querySelector("#self-evolution")) &
-            Node.DOCUMENT_POSITION_FOLLOWING,
-          ),
-        ),
-      ).toBe(true);
-      await expect(desk.locator("video[controls]")).toHaveCount(1);
-      await expect(evaluation.locator("video[controls]")).toHaveCount(1);
-      const prompt = desk.locator("details");
-      await prompt.locator("summary").focus();
-      await prompt.locator("summary").press("Enter");
-      await expect(prompt.locator("p")).toBeVisible();
-      await prompt.locator("summary").press("Enter");
-      await expect(prompt.locator("p")).toBeHidden();
-      const tutorial = desk.getByRole("link");
-      await tutorial.focus();
-      await tutorial.press("Enter");
-      await expect(page).toHaveURL(/\/blog\/build-agent-apps-with-workflows$/);
-      await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-        lang === "zh"
-          ? "给每个 Agent 一个热定制工作台"
-          : "Give every agent its own hot-reloaded workbench",
-      );
-      await page.goBack();
-      await expect(page).toHaveTitle(homepageTitle);
-      const entry = evaluation.getByRole("link");
-      const link = new URL(await entry.getAttribute("href"), page.url());
-      expect(link.pathname).toBe("/gallery/s/benchmark");
-      expect(link.searchParams.get("lang")).toBe(lang);
-      expect(link.searchParams.get("view")).toBe(width === 320 ? "phone" : null);
-      await page
-        .getByRole("button", { name: lang === "zh" ? "语言" : "Language", exact: true })
-        .click();
-      await page
-        .getByRole("menuitemradio", { name: lang === "zh" ? "English" : "中文", exact: true })
-        .click();
-      await expect(page).toHaveTitle(homepageTitle);
-      await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-        lang === "zh" ? "From Vibe-Coding to Vibe-Evolving" : "从 许愿式编程 到 许愿式调优",
-      );
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

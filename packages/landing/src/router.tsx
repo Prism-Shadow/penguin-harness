@@ -103,7 +103,7 @@ function Layout() {
 
   return (
     <div className="relative flex min-h-full flex-col">
-      {location.pathname !== "/" && !location.pathname.startsWith("/rfcs") && <NeonBackground />}
+      {!location.pathname.startsWith("/rfcs") && <NeonBackground />}
       <AnnouncementBar />
       <Nav />
       <main className="flex-1">
