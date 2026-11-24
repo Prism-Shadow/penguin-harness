@@ -686,6 +686,72 @@ function splitFrontmatter(text: string): Frontmatter {
   return { kind: "unterminated" };
 }
 
+/** A YAML scalar without its surrounding quotes, if it wore any. */
+function unquote(value: string): string {
+  if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+/**
+ * Rewrites the ticket references (`parent: <id>`, `blocked_by: <id>`) in a ticket file's
+ * frontmatter to follow a migration. Only the frontmatter block is touched, only at the top
+ * level, and only values the mapping names: a `parent:` line in the prose, a comment above
+ * the field, and everything else come back byte-for-byte — the rewrite is raw text, not a
+ * parse-and-reserialize, because the parser does not model comments, layout or unknown
+ * fields and must not be given the chance to drop them. A quoted value is accepted and the
+ * replacement written unquoted, which YAML reads the same. A file whose references name
+ * nothing in the mapping comes back as it went in.
+ */
+export function rewriteTicketRefs(raw: string, mapping: ReadonlyMap<string, string>): string {
+  if (mapping.size === 0) return raw;
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  let open = -1;
+  let close = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i]!.trim() === "---") {
+      if (open === -1) open = i;
+      else {
+        close = i;
+        break;
+      }
+    } else if (open === -1 && lines[i]!.trim() !== "") break;
+  }
+  if (open === -1 || close === -1) return raw;
+  let changed = false;
+  const out = lines.map((line, i) => {
+    if (i <= open || i >= close) return line;
+    const m = /^(parent|blocked_by):[ \t]+(.*)$/.exec(line);
+    if (m === null) return line;
+    const newId = mapping.get(unquote(m[2]!.trim()));
+    if (newId === undefined) return line;
+    changed = true;
+    return `${m[1]}: ${newId}`;
+  });
+  return changed ? out.join("\n") : raw;
+}
+
+/**
+ * The `sessions` a ticket file's frontmatter names, read leniently: nothing else is
+ * validated, so a file the strict parser rejects — a legacy id among them — still says
+ * which sessions are its. This is what the migration's gate reads to wait the sessions out.
+ */
+export function ticketSessionIds(raw: string): string[] {
+  const fm = splitFrontmatter(raw.replace(/\r\n/g, "\n"));
+  if (fm.kind !== "ok") return [];
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(fm.yaml);
+  } catch {
+    return [];
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+  const list = (parsed as Record<string, unknown>)["sessions"];
+  if (!Array.isArray(list)) return [];
+  return list.map((s) => String(s).trim()).filter((s) => s !== "");
+}
+
 /**
  * A ticket file: YAML frontmatter followed by the prose sections. The frontmatter carries
  * the fields (the title among them — there is no H1), the prose carries `## Goal`,

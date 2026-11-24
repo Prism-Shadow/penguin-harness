@@ -237,8 +237,10 @@ export const orgEn: OrgText = {
         `Budget warning: ${p.agent} has used ${p.percent}% of its ${p.period} budget (${p.cost} / ${p.budget} USD).`,
       budget_paused: (p) =>
         `Budget pause: ${p.agent} reached ${p.percent}% of its ${p.period} budget (${p.cost} / ${p.budget} USD); its calendar and its subordinates' are paused.`,
+      ticket_ids_migrating: (p) =>
+        `One-time migration: ${p.count} ticket(s) with legacy ids are being migrated to the ticket- prefixed format. Migration moves and rewrites ticket files, which risks losing ticket data — for data safety, keep a backup.`,
       ticket_ids_migrated: (p) =>
-        `One-time migration: ${p.count} ticket(s) with legacy ids were migrated to the ticket- prefixed format (originals backed up at ${p.backup}). Migration moves and rewrites ticket files, which risks losing ticket data — for data safety, keep a backup.`,
+        `One-time migration done: ${p.count} ticket(s) with legacy ids were migrated to the ticket- prefixed format; originals backed up at ${p.backup}.`,
       ticket_blocked: (p) => `Ticket ${p.ticket} (${p.title}) is now blocked.`,
       ticket_done: (p) => `Ticket ${p.ticket} (${p.title}) is now done.`,
       ticket_rejected: (p) => `Ticket ${p.ticket} (${p.title}) is now rejected.`,

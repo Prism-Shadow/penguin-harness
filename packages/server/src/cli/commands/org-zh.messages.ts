@@ -213,8 +213,10 @@ export const orgZh: OrgText = {
         `预算预警：${p.agent} 已用掉 ${p.period} 预算的 ${p.percent}%（${p.cost} / ${p.budget} USD）。`,
       budget_paused: (p) =>
         `预算暂停：${p.agent} 达到 ${p.period} 预算的 ${p.percent}%（${p.cost} / ${p.budget} USD），其本人与下属的日程已暂停。`,
+      ticket_ids_migrating: (p) =>
+        `一次性迁移：发现 ${p.count} 张旧格式工单，正在迁移为带 ticket- 前缀的新 id。迁移会移动并改写工单文件，有遗失工单数据的风险——为数据安全起见，请先备份。`,
       ticket_ids_migrated: (p) =>
-        `一次性迁移：${p.count} 张旧格式工单已迁移为带 ticket- 前缀的新 id（原文件备份在 ${p.backup}）。迁移会移动并改写工单文件，有遗失工单数据的风险——为数据安全起见，请先备份。`,
+        `一次性迁移完成：${p.count} 张旧格式工单已迁移为带 ticket- 前缀的新 id（原文件备份在 ${p.backup}）。`,
       ticket_blocked: (p) => `工单 ${p.ticket}（${p.title}）已被阻塞。`,
       ticket_done: (p) => `工单 ${p.ticket}（${p.title}）已完成。`,
       ticket_rejected: (p) => `工单 ${p.ticket}（${p.title}）已被否决。`,

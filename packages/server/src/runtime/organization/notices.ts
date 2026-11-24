@@ -119,14 +119,25 @@ export interface TicketMigrationFacts {
 }
 
 /**
- * The one-time legacy-id migration: what it did, where the originals are, and the risk it
- * carries. The id format requires the `ticket-` prefix; tickets filed before it existed are
- * renamed, and moving and rewriting ticket files risks losing ticket data, so the line asks
- * for a backup.
+ * The one-time migration's warning, written before the migration touches anything: what is
+ * about to happen, the risk it carries, and the backup advice. What it did, and where the
+ * originals are, is the completion line's to say — this one claims no backup and no result,
+ * because a warning that fires before the work cannot know either.
+ */
+export function ticketIdsMigrating(f: { count: number }): SystemLine {
+  return {
+    text: `One-time migration: ${f.count} ticket(s) with legacy ids are being migrated to the ticket- prefixed format. Migration moves and rewrites ticket files, which risks losing ticket data — for data safety, keep a backup.`,
+    notice: { kind: "ticket_ids_migrating", params: { count: String(f.count) } },
+  };
+}
+
+/**
+ * The one-time migration's completion line: what it did and where the originals are — the
+ * facts, sent after the migration has done them.
  */
 export function ticketIdsMigrated(f: TicketMigrationFacts): SystemLine {
   return {
-    text: `One-time migration: ${f.count} ticket(s) with legacy ids were migrated to the ticket- prefixed format (originals backed up at ${f.backup}). Migration moves and rewrites ticket files, which risks losing ticket data — for data safety, keep a backup.`,
+    text: `One-time migration done: ${f.count} ticket(s) with legacy ids were migrated to the ticket- prefixed format; originals backed up at ${f.backup}.`,
     notice: {
       kind: "ticket_ids_migrated",
       params: { count: String(f.count), backup: f.backup },

@@ -12,7 +12,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { comparePluginVersions } from "@prismshadow/penguin-core";
+import { comparePluginVersions, userText } from "@prismshadow/penguin-core";
 import type {
   OrgCalendarOutcome,
   OrgTicketChange,
@@ -24,8 +24,11 @@ import {
   LEGACY_TICKET_ID_PATTERN,
   parseChannelMessageLine,
   parseTicket,
+  rewriteTicketRefs,
   serializeChannelMessageLine,
   slugSuffix,
+  ticketSessionIds,
+  TICKET_ID_PATTERN,
 } from "../../organization/files.js";
 import { agentPrincipal, parsePrincipal, principalAgentId } from "../../organization/principal.js";
 import { DEFAULT_CHANNEL_ID } from "../../organization/paths.js";
@@ -39,7 +42,13 @@ import type { OrgDeps } from "./deps.js";
 import { deskDigest } from "./digest.js";
 import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
-import { budgetPaused, budgetWarned, systemMessage, ticketIdsMigrated } from "./notices.js";
+import {
+  budgetPaused,
+  budgetWarned,
+  systemMessage,
+  ticketIdsMigrated,
+  ticketIdsMigrating,
+} from "./notices.js";
 import type { SystemLine } from "./notices.js";
 import { dispatchToDesk, ensureDesk, syncDeskCache } from "./triggers.js";
 
@@ -72,98 +81,204 @@ function recordError(
 }
 
 /**
- * The frontmatter lines that name another ticket: `parent: <id>` and `blocked_by: <id>`.
- * The migration rewrites these in the raw text — a file whose reference is still legacy does
- * not parse once the id pattern went strict, so the parsed form is not available to trust.
+ * The prompt a busy ticket session is sent while the one-time migration waits for it: the
+ * migration moves ticket files, so it runs only once every ticket session has stopped.
  */
-function rewriteTicketRefs(raw: string, mapping: ReadonlyMap<string, string>): string {
-  let out = raw;
-  for (const [oldId, newId] of mapping) {
-    const escaped = oldId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    out = out
-      .replace(new RegExp(`^(parent):\\s*${escaped}\\s*$`, "m"), `parent: ${newId}`)
-      .replace(new RegExp(`^(blocked_by):\\s*${escaped}\\s*$`, "m"), `blocked_by: ${newId}`);
+const TICKET_SESSIONS_STOP_PROMPT =
+  "The ticket system found tickets with legacy ids and is about to run its one-time " +
+  "migration, which moves and rewrites ticket files. Finish your current step, stop " +
+  "writing ticket files, and stay idle; the migration runs once every ticket session is " +
+  "stopped.";
+
+/**
+ * The one-time migration's pending state per organization: which ticket sessions have been
+ * told to stop (so the prompt goes out once, not every pass) and whether the migration's
+ * warning has gone out. Cleared when the migration completes or no legacy file remains.
+ */
+const migrationGate = new Map<string, { prompted: Set<string>; warned: boolean }>();
+
+const gateOf = (org: LoadedOrg): { prompted: Set<string>; warned: boolean } => {
+  let gate = migrationGate.get(org.dir);
+  if (gate === undefined) {
+    gate = { prompted: new Set(), warned: false };
+    migrationGate.set(org.dir, gate);
   }
-  return out;
+  return gate;
+};
+
+/** One file per legacy id: its newest copy, the same newest-wins rule the listing keeps. */
+function activeCopies(files: readonly TicketFile[]): Map<string, TicketFile> {
+  const active = new Map<string, TicketFile>();
+  for (const f of files) {
+    const current = active.get(f.ticketId);
+    if (current === undefined || f.mtimeMs >= current.mtimeMs) active.set(f.ticketId, f);
+  }
+  return active;
 }
 
 /**
  * One-time migration of legacy ticket ids. The id format requires the `ticket-` prefix
- * (`TICKET_ID_PATTERN`); files named `yyyy-mm-dd-slug` predate it. The first ticket listing
- * that meets one migrates it, once, in place: every original file is copied to a backup
- * directory under `tickets/`, the ticket is rewritten under its prefixed id (a taken id
- * takes a letter suffix, the way `createTicket` mints one), and every ticket file whose
- * `parent` / `blocked_by` named a migrated id is rewritten to follow. Ticket sessions ride
- * on the doc's own `sessions` field, so they follow the file; nothing else stores a ticket
- * id. An organization whose root files are invalid is read-only and is left alone.
+ * (`TICKET_ID_PATTERN`); files named `yyyy-mm-dd-slug` predate it. Runs only inside a
+ * reconcile pass — always under the organization's lock, so it never interleaves with a
+ * write — and only once every ticket session has stopped: a session mid-run is prompted to
+ * stop (once) and the migration waits for a later pass, because ticket files must not move
+ * under a session that is writing tickets.
+ *
+ * When it runs, it moves in one pass: every original is copied to a backup directory under
+ * `tickets/`, each migrated id's newest copy is rewritten under its prefixed id (a taken id
+ * takes a letter suffix, the way `createTicket` mints one — and a target is checked against
+ * the disk and the ids reserved within this batch, so two legacy ids can never share one),
+ * the id's stale copies go with it, and every other ticket file whose `parent` /
+ * `blocked_by` named a migrated id is rewritten in place. The rewrite is raw text confined
+ * to the frontmatter's two fields, so comments, layout and unknown fields survive, and a
+ * ticket keeps its sessions — they ride on the doc's own `sessions` field — and nothing
+ * else stores a ticket id. An organization whose root files are invalid is read-only and is
+ * left alone. A legacy file that cannot migrate (its references name a file that cannot, or
+ * it is broken for its own reasons) stays as written and is reported as invalid, like any
+ * other file the board cannot read; its references are left alone too — nothing is pointed
+ * at an id that has no file.
  *
  * This moves and rewrites ticket files, so it warns — to the all-hands channel, in the
- * reader's language, and to the ops error log — that legacy tickets were found and migrated,
- * that this risks losing ticket data, and that a backup is the data-safe way to run it. The
- * backup the migration itself makes covers the renamed originals; it is not a substitute for
- * the organization's own backup.
+ * reader's language, and to the ops error log. The warning goes out as the migration
+ * starts, saying what is about to happen, that it risks losing ticket data, and that a
+ * backup is the data-safe way to run it; what it did and where the originals are is said
+ * after the migration has done it. The backup the migration itself makes covers the
+ * renamed originals; it is not a substitute for the organization's own backup.
  */
 async function migrateLegacyTicketIds(deps: OrgDeps, org: LoadedOrg): Promise<void> {
   if (org.invalid !== undefined) return;
   const files = await deps.store.listTickets(org.dir);
   const legacyNamed = files.filter((f) => LEGACY_TICKET_ID_PATTERN.test(f.ticketId));
-  if (legacyNamed.length === 0) return;
-  // Every legacy-named id gets a target, whether its file turns out to carry or not: the
-  // references in other tickets follow the mapping either way, so a ticket keeps pointing
-  // where its parent went instead of going invalid over a format it cannot help.
-  const mapping = new Map<string, string>();
-  for (const oldId of new Set(legacyNamed.map((f) => f.ticketId))) {
-    let newId = `ticket-${oldId}`;
-    for (let n = 2; (await deps.store.findTicket(org.dir, newId)) !== null; n++) {
-      newId = `ticket-${oldId}-${slugSuffix(n)}`;
+  if (legacyNamed.length === 0) {
+    migrationGate.delete(org.dir);
+    return;
+  }
+  const gate = gateOf(org);
+
+  // The gate: ticket files move only once every ticket session has stopped. The sessions a
+  // file names are read leniently, so a legacy file — which the strict parser rejects —
+  // still holds its sessions back.
+  const busy = new Set<string>();
+  for (const f of files) {
+    for (const sessionId of ticketSessionIds(f.raw)) {
+      if (deps.runner.statusOf(sessionId) !== "idle") busy.add(sessionId);
     }
-    mapping.set(oldId, newId);
   }
-  // A file migrates when its references, rewritten, make it parse. One that still does not —
-  // a file broken for its own reasons — stays as written and is reported as invalid, like any
-  // other file the board cannot read.
-  const migratable = new Map<TicketFile, TicketDoc>();
-  for (const f of legacyNamed) {
-    const parsed = parseTicket(rewriteTicketRefs(f.raw, mapping));
-    if (parsed.ok) migratable.set(f, parsed.value);
+  if (busy.size > 0) {
+    for (const sessionId of busy) {
+      if (gate.prompted.has(sessionId)) continue;
+      gate.prompted.add(sessionId);
+      try {
+        await deps.runner.startTask(sessionId, [userText(TICKET_SESSIONS_STOP_PROMPT, "server")], {
+          queueIfBusy: true,
+        });
+      } catch (err) {
+        recordError(
+          deps,
+          org,
+          "org_ticket_migration_prompt_failed",
+          `Failed to send the migration stop prompt to ticket session ${sessionId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          undefined,
+        );
+      }
+    }
+    return; // A later pass retries, once the sessions are stopped.
   }
-  if (migratable.size === 0) return;
+
+  // One target per legacy id, allocated the way `createTicket` mints ids — against the disk
+  // and the ids this batch has already reserved, so two legacy ids never share a target. A
+  // legacy file joins only when, with the references that follow already-migrated tickets
+  // rewritten and the ones that do not left as written, it parses — a fixed point, since a
+  // file may become migratable only after the file it references does. A file that never
+  // parses stays behind, and so do the references to it.
+  const reserved = new Set<string>();
+  const mapping = new Map<string, string>();
+  const active = activeCopies(legacyNamed);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const f of active.values()) {
+      if (mapping.has(f.ticketId)) continue;
+      const candidate = rewriteTicketRefs(f.raw, mapping);
+      if (!parseTicket(candidate).ok) continue;
+      let newId = `ticket-${f.ticketId}`;
+      for (
+        let n = 2;
+        reserved.has(newId) || (await deps.store.findTicket(org.dir, newId)) !== null;
+        n++
+      ) {
+        newId = `ticket-${f.ticketId}-${slugSuffix(n)}`;
+      }
+      reserved.add(newId);
+      mapping.set(f.ticketId, newId);
+      grew = true;
+    }
+  }
+  if (mapping.size === 0) return; // Nothing can migrate; the files stay and are reported.
+
+  if (!gate.warned) {
+    gate.warned = true;
+    await appendSystemMessage(
+      deps,
+      org,
+      DEFAULT_CHANNEL_ID,
+      ticketIdsMigrating({ count: mapping.size }),
+      [],
+    );
+  }
+  // Everything this migration touches, originals first: the files it renames, the stale
+  // copies of a migrated id, and the modern files whose references follow. A file is
+  // rewritten only when the rewritten text parses strictly.
+  const moving = [...mapping.entries()].map(([oldId, newId]) => {
+    const f = active.get(oldId)!;
+    return { file: f, raw: rewriteTicketRefs(f.raw, mapping), newId };
+  });
+  const stale = legacyNamed.filter(
+    (f) => mapping.has(f.ticketId) && active.get(f.ticketId) !== f,
+  );
+  const following: Array<{ file: TicketFile; raw: string }> = [];
+  for (const f of files) {
+    if (LEGACY_TICKET_ID_PATTERN.test(f.ticketId)) continue;
+    const raw = rewriteTicketRefs(f.raw, mapping);
+    if (raw === f.raw) continue;
+    if (!parseTicket(raw).ok) continue; // A file that no longer parses stays as written.
+    following.push({ file: f, raw });
+  }
   const backup = path.join("tickets", `.legacy-backup-${stampOf(nowOf(deps))}`);
-  const ids = [...migratable.keys()].map((f) => f.ticketId).join(", ");
-  recordError(
-    deps,
-    org,
-    "org_ticket_legacy_migration",
-    `Migrating ${migratable.size} ticket file(s) with legacy id(s) (${ids}) to the ticket- prefixed format; originals backed up at ${backup}. Migration moves and rewrites ticket files and risks losing ticket data — keep a backup.`,
-  );
-  await appendSystemMessage(
-    deps,
-    org,
-    DEFAULT_CHANNEL_ID,
-    ticketIdsMigrated({ count: migratable.size, backup }),
-    [],
-  );
-  // The originals first, under their month/column paths without the leading `tickets/`,
-  // whatever happens after.
-  for (const f of migratable.keys()) {
+  for (const f of [...moving.map((m) => m.file), ...stale, ...following.map((x) => x.file)]) {
     const p = path.join(org.dir, backup, f.relPath.slice("tickets/".length));
     await fs.mkdir(path.dirname(p), { recursive: true });
     await fs.writeFile(p, f.raw, "utf8");
   }
-  // Rename the legacy files under their new ids.
-  for (const [f, doc] of migratable) {
-    await deps.store.writeTicket(org.dir, mapping.get(f.ticketId)!, f.column, doc);
-    await fs.unlink(path.join(org.dir, f.relPath));
+  // Rename: the migrated file is written under its new id — the raw text the mapping
+  // validated, so nothing the parser does not model is lost — and the old file is removed;
+  // the stale copies of a migrated id go with it.
+  for (const m of moving) {
+    await deps.store.writeTicketRaw(org.dir, m.newId, m.file.column, m.raw);
+    await fs.unlink(path.join(org.dir, m.file.relPath));
   }
-  // Then the files that stay: the ones whose references named a migrated id.
-  for (const f of files) {
-    if (LEGACY_TICKET_ID_PATTERN.test(f.ticketId)) continue; // Renamed or left above.
-    const raw = rewriteTicketRefs(f.raw, mapping);
-    if (raw === f.raw) continue;
-    const parsed = parseTicket(raw);
-    if (!parsed.ok) continue; // A file that no longer parses stays as written, and reported.
-    await deps.store.writeTicket(org.dir, f.ticketId, f.column, parsed.value);
+  for (const f of stale) await fs.unlink(path.join(org.dir, f.relPath));
+  // Then the files that stay: their references follow, rewritten in place.
+  for (const x of following) {
+    await deps.store.writeTicketRaw(org.dir, x.file.ticketId, x.file.column, x.raw);
   }
+
+  await appendSystemMessage(
+    deps,
+    org,
+    DEFAULT_CHANNEL_ID,
+    ticketIdsMigrated({ count: mapping.size, backup }),
+    [],
+  );
+  recordError(
+    deps,
+    org,
+    "org_ticket_legacy_migration",
+    `Migrated ${mapping.size} ticket(s) with legacy ids (${[...mapping.keys()].join(", ")}) to the ticket- prefixed format; originals backed up at ${backup}.`,
+  );
+  migrationGate.delete(org.dir);
 }
 
 /** A backup directory name's stamp: the instant, made filename-safe. */
@@ -171,9 +286,15 @@ function stampOf(nowMs: number): string {
   return new Date(nowMs).toISOString().replace(/[:.]/g, "-");
 }
 
-/** Every ticket file, parsed; an unparsable file is reported and left out, a duplicated id keeps its newest copy (the rest reported). */
+/**
+ * Every ticket file, parsed; an unparsable file is reported and left out, a duplicated id
+ * keeps its newest copy (the rest reported), and an id that does not follow the
+ * `ticket-yyyy-mm-dd-slug` format is reported too and never reaches the board — the same
+ * ids the HTTP routes reject. This is a pure read: the legacy-id migration it used to run
+ * moves ticket files, and it lives in the reconcile pass, under the lock and behind the
+ * ticket-session gate, where a read path cannot trigger it.
+ */
 export async function listTickets(deps: OrgDeps, org: LoadedOrg): Promise<TicketListing> {
-  await migrateLegacyTicketIds(deps, org);
   const files = await deps.store.listTickets(org.dir);
   // A crash between moveTicket's write of the new column and its unlink of the old one
   // leaves the id in two columns. Dropping both used to take the ticket off the board
@@ -204,6 +325,15 @@ export async function listTickets(deps: OrgDeps, org: LoadedOrg): Promise<Ticket
     }
     if (!f.parsed.ok) {
       invalid.push({ path: f.relPath, error: f.parsed.error });
+      continue;
+    }
+    if (!TICKET_ID_PATTERN.test(f.ticketId)) {
+      invalid.push({
+        path: f.relPath,
+        error: LEGACY_TICKET_ID_PATTERN.test(f.ticketId)
+          ? `ticket id ${f.ticketId} has no ticket- prefix; it waits for the one-time migration, which runs once every ticket session is stopped`
+          : `ticket id ${f.ticketId} does not follow the ticket-yyyy-mm-dd-slug format`,
+      });
       continue;
     }
     if (f.parsed.value.status !== f.column) {
@@ -918,6 +1048,10 @@ export async function reconcileOrg(
     const spend = await computeSpend(deps, org, tickets);
     return { org, tickets, spend };
   }
+  // The one-time legacy-id migration: a write over ticket files, so it runs here — under
+  // the pass's lock, and only once every ticket session has stopped (it waits the sessions
+  // out itself, prompting the busy ones) — never inside a read path.
+  await migrateLegacyTicketIds(deps, org);
   const { tickets } = await listTickets(deps, org);
   syncCaches(deps, org, tickets);
   await reconcileEmployeePlugins(deps, org);

@@ -425,6 +425,20 @@ export class OrgStore {
     await writeText(ticketPath(dir, ticketId, column), serializeTicket(doc));
   }
 
+  /**
+   * Writes a ticket file verbatim — the migration's raw-text surgery: the file has already
+   * been parsed and validated by the caller, and writing the text it read back keeps
+   * everything the parser does not model (comments, layout, unknown fields) byte-for-byte.
+   */
+  async writeTicketRaw(
+    dir: string,
+    ticketId: string,
+    column: OrgTicketStatus,
+    raw: string,
+  ): Promise<void> {
+    await writeText(ticketPath(dir, ticketId, column), raw);
+  }
+
   /** Rewrites the file in its new column and removes the old one (the frontmatter was updated by the caller). */
   async moveTicket(
     dir: string,
