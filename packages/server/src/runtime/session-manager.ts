@@ -98,7 +98,6 @@ import type {
   StopReason,
   SubagentMessageOptions,
   SubagentMessageOutcome,
-  TextPayload,
   ThinkingLevelName,
   ToolDetachResult,
 } from "@prismshadow/penguin-core";
@@ -554,7 +553,7 @@ function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
  * which builds on it when a caller wrote file attachments. Re-exported so the session
  * runtime's callers keep their spelling.
  */
-import { recallStoreOf as _recallStoreOf } from "@prismshadow/penguin-library-messaging/recall";
+import { isPlainText, recallStoreOf as _recallStoreOf } from "@prismshadow/penguin-library-messaging/recall";
 export const recallStoreOf = _recallStoreOf;
 
 /** If msg is a run_subagent tool call carrying a `prompt`, return its id and prompt (for use as the subagent's title); otherwise null. */
@@ -660,19 +659,6 @@ function stripApprovalOrigin(
       ...(restOrigin.length > 0 ? { origin: restOrigin } : {}),
       ...(pending.reason !== undefined ? { reason: pending.reason } : {}),
     },
-  };
-}
-
-/** Predicate for a plain-text message on the main session (no origin): title material is drawn only from user/model text. */
-function isPlainText(role: "user" | "assistant") {
-  return (msg: AmspRecord): msg is AmspRecord<TextPayload> => {
-    const payload = msg.payload as { type?: string; role?: string };
-    return (
-      msg.type === "model_msg" &&
-      payload.type === "text" &&
-      payload.role === role &&
-      (!msg.origin || msg.origin.length === 0)
-    );
   };
 }
 
