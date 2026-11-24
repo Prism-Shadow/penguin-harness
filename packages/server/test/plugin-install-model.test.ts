@@ -340,6 +340,18 @@ describe("a plugin's server and Agent installs", () => {
       return mia;
     };
 
+    it("keeps a cached market package on its selected Agents when a new Project or Agent is created", async () => {
+      const mia = await notesEverywhere();
+      expect(await agentSkills(mia, "mia-own", "default_agent")).not.toContain("notes");
+      expect(
+        (await mia.post("/api/projects/mia-own/agents", { agentId: "plain", name: "Plain" }))
+          .status,
+      ).toBe(201);
+      expect(await agentSkills(mia, "mia-own", "plain")).not.toContain("notes");
+      expect(await agentSkills(mia, "mia-own", "helper")).toContain("notes");
+      expect(await agentSkills(admin, "default_project", "default_agent")).toContain("notes");
+    });
+
     it("names every Agent that has it, then takes it from each before leaving the server", async () => {
       const mia = await notesEverywhere();
       const holders = (await (
