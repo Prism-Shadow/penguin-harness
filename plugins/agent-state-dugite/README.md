@@ -1,20 +1,23 @@
-# Native Git for Agent State
+# Native Git (dugite) for Agent State
 
 Records an Agent's workbench versions with native Git instead of the harness's built-in
 pure-JavaScript engine. The versions, the repository and the history the Web App shows are the
 same either way: both engines write the same commits, so the plugin can be installed or removed
 at any time.
 
+Where the host already has a `git`, the agent-state-gitcl plugin records versions with it and
+needs no download; this plugin is the fallback for a host without one.
+
 ## What it changes
 
 The harness keeps every cheap step of the Agent State repository (`<agentDir>/agent_state.git/`)
 in-process — reading HEAD, telling whether a load changed anything, walking the history. An
-engine does the two steps whose cost grows with a workbench, and this plugin does each in one
-Git process:
+engine does the two steps whose cost grows with a workbench, and this plugin runs each through
+Git:
 
 | Step | How |
 | --- | --- |
-| Writing a version | one `git fast-import`: the folder's files, the commit and the branch move |
+| Writing a version | the standard git commands a script uses — the files' blobs, the tree, the commit, the branch move — one process each |
 | Reading a version back (restore) | one `git cat-file --batch` for every tree and file of it |
 
 It takes a step only from the folder size at which it measured faster than the built-in engine
@@ -29,11 +32,10 @@ process — about 4 ms on Linux, 7 ms on macOS and 34 ms on Windows:
 
 A smaller step, an unchanged load, the history and a removal stay with the built-in engine.
 
-Those processes address only the Agent's repository (`--git-dir`). They drop every `GIT_*`
-variable of the server's environment, read no system or global Git config, never run a hook, never
-sign, and sync what they write (`core.fsync=objects,reference`). Objects are stored loose, as the
-built-in engine stores them. Who a version is by is the harness's decision and comes in the commit
-itself: the member who asked for it, else the server's Git identity.
+Those processes address only the Agent's repository (`--git-dir`), and they are plumbing
+commands: they run no hook, and they store the objects loose, as the built-in engine stores them.
+Who a version is by is the harness's decision and comes in the commit itself: the member who
+asked for it, else the server's Git identity.
 
 ## The Git it runs
 
@@ -42,7 +44,7 @@ GitHub Desktop's build of Git, as [dugite](https://github.com/desktop/dugite) pi
 [dugite-native](https://github.com/desktop/dugite-native) per platform, with its sha256. The
 first time the plugin runs on a host, it downloads that archive (24–65 MiB), verifies it, keeps
 only the `git` program (on Windows also the DLLs it loads) under
-`<data root>/cache/agent-state-git.engine/`, and deletes the archive. The kept copy is 3.4–7.1
+`<data root>/cache/agent-state-dugite.engine/`, and deletes the archive. The kept copy is 3.4–7.1
 MiB. Until it is in place, and on any host where it cannot be, the built-in engine records
 versions; the server log says which engine is in use and why.
 
@@ -73,19 +75,19 @@ the App re-assembles itself, no restart. Written by hand, it is a row of a Proje
 
 ```toml
 [plugins]
-"@penguinharness/agent-state-git" = "*"
+"@penguinharness/agent-state-dugite" = "*"
 ```
 
 ## Development
 
 ```bash
-pnpm --filter @penguinharness/agent-state-git test    # fetches the Git into node_modules/.cache once
-pnpm --filter @penguinharness/agent-state-git bench   # the two engines, step by step
+pnpm --filter @penguinharness/agent-state-dugite test    # fetches the Git into node_modules/.cache once
+pnpm --filter @penguinharness/agent-state-dugite bench   # the two engines, step by step
 ```
 
 The tests run the server's own Agent State suite with this engine, and check that it writes the
 very commits the built-in engine writes. Where the host cannot get the Git they skip, unless
-`PENGUIN_MUST_RUN` names `agent-state-git` (CI does).
+`PENGUIN_MUST_RUN` names `agent-state-dugite` (CI does).
 
 ## License
 

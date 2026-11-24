@@ -3,5 +3,5 @@
 import { fileURLToPath } from "node:url";
 
 export const GIT_CACHE = fileURLToPath(
-  new URL("../../../node_modules/.cache/agent-state-git", import.meta.url),
+  new URL("../../../node_modules/.cache/agent-state-gitcl", import.meta.url),
 );

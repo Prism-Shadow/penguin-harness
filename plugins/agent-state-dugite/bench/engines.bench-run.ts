@@ -1,5 +1,5 @@
 /**
- * `pnpm --filter @penguinharness/agent-state-git bench`: the built-in engine against this
+ * `pnpm --filter @penguinharness/agent-state-dugite bench`: the built-in engine against this
  * plugin's, through the server's own Agent State repository, on the steps a workbench pays for.
  *
  * For a workbench of N files (5 to 500, about 2 KB each, ten to a folder), each engine handed

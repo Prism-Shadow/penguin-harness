@@ -1,91 +1,38 @@
 /**
- * The Agent State engine on native Git: one process per commit, one per version read back.
+ * The Agent State engine on native Git: a commit is the standard git pipeline any script uses,
+ * one process per command; a version read back is one process.
  *
- * A commit is one `git fast-import`: the stream names the branch, the identities and the time,
- * the parent (`from`), deletes the folder and writes each of its files inline. fast-import builds
- * the trees, writes the commit and moves the branch only if the new commit descends from what the
- * branch holds when it gets there (no `--force`), so a branch moved meanwhile refuses the write.
- * Its objects are unpacked into loose files (`fastimport.unpackLimit`), the way the built-in
- * engine stores them and reads them fastest, instead of one pack per commit.
+ * A commit: hash-object writes the files' blobs, read-tree loads the parent's tree into a
+ * temporary index (empty for a root commit), update-index drops the folder the commit replaces
+ * and adds the new files, write-tree writes the tree, commit-tree writes the commit — the
+ * identity and the time the harness decided arrive as that process's environment variables, not
+ * read from any config — and update-ref moves the branch only from the parent the commit names,
+ * so a branch another writer moved meanwhile refuses the write. Plumbing writes loose objects
+ * and runs no hooks, and the blobs are hashed without filters, so the bytes are the built-in
+ * engine's bytes.
  *
  * Reading a version back is one `git cat-file --batch`: the harness walked the version's trees
  * itself and asks for every blob of it at once.
- *
- * The engine writes the same bytes as the built-in one: the message whole, both identity lines
- * with the zone the harness computed, every file `100644`, trees in git's order — so the same
- * input is the same commit under either.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type {
   AgentStateCommit,
   AgentStateEngine,
   AgentStateEngineHost,
-  AgentStateIdentity,
 } from "@prismshadow/penguin-core/plugin";
 import { locateGit, type GitProgram } from "./binary.js";
 import { finish, gitEnv, start, unavailable } from "./git.js";
 
-const LF = Buffer.from("\n");
-
-/** A path as fast-import reads it: C-quoted, so a space, a quote or a line break is never ambiguous. */
-export function quotePath(rel: string): string {
-  let out = '"';
-  for (const byte of Buffer.from(rel, "utf8")) {
-    if (byte === 0x22) out += '\\"';
-    else if (byte === 0x5c) out += "\\\\";
-    else if (byte < 0x20 || byte === 0x7f) out += `\\${byte.toString(8).padStart(3, "0")}`;
-    else out += String.fromCharCode(byte);
-  }
-  // Non-ASCII bytes went in one per character: put them back as the UTF-8 they were.
-  return Buffer.from(`${out}"`, "latin1").toString("utf8");
-}
-
-/** git's zone: `+hhmm` east of UTC. */
-export function zoneOf(offset: number): string {
+/** The zone of git's raw date form, computed from an offset in minutes: `+hhmm` east of UTC. */
+const zoneOf = (offset: number): string => {
   const abs = Math.abs(offset);
   const hh = String(Math.floor(abs / 60)).padStart(2, "0");
   const mm = String(abs % 60).padStart(2, "0");
   return `${offset < 0 ? "-" : "+"}${hh}${mm}`;
-}
-
-const ident = (who: AgentStateIdentity, when: AgentStateCommit["when"]) =>
-  `${who.name} <${who.email}> ${when.seconds} ${zoneOf(when.offset)}`;
-
-/** The fast-import stream of one commit. */
-export function importStream(c: AgentStateCommit): Buffer {
-  const parts: Buffer[] = [];
-  const line = (text: string) => parts.push(Buffer.from(`${text}\n`, "utf8"));
-  const data = (body: Uint8Array) => {
-    line(`data ${body.byteLength}`);
-    parts.push(Buffer.from(body.buffer, body.byteOffset, body.byteLength), LF);
-  };
-  line(`commit ${c.ref}`);
-  line(`author ${ident(c.author, c.when)}`);
-  line(`committer ${ident(c.committer, c.when)}`);
-  data(Buffer.from(c.message, "utf8"));
-  if (c.parent !== null) {
-    line(`from ${c.parent}`);
-    line(`D ${quotePath(c.rel)}`);
-  }
-  for (const file of c.files ?? []) {
-    line(`M 100644 inline ${quotePath(`${c.rel}/${file.rel}`)}`);
-    data(file.body);
-  }
-  line("done");
-  return Buffer.concat(parts);
-}
-
-/** fast-import leaves a report in the repository when it dies; that is not the Agent's to keep. */
-async function removeCrashReports(gitdir: string): Promise<void> {
-  const names = await fs.readdir(gitdir).catch(() => [] as string[]);
-  for (const name of names) {
-    if (name.startsWith("fast_import_crash_")) {
-      await fs.rm(path.join(gitdir, name), { force: true }).catch(() => undefined);
-    }
-  }
-}
+};
 
 /** One `cat-file --batch` process, asked for many objects at a time and answered in order. */
 class Objects {
@@ -154,11 +101,12 @@ class Objects {
 
 /**
  * The folder sizes, in files, from which this engine beats the built-in one, read off the bench
- * (bench/engines.bench-run.ts) on each platform: a write here is one fast-import plus the child
- * that unpacks it, a read one cat-file, so what decides is what a process start costs.
+ * (bench/engines.bench-run.ts) on each platform: a write here is a short pipeline of git
+ * commands (the blobs, the tree, the commit, the branch move — one process each), a read one
+ * cat-file, so what decides is what a process start costs.
  *
- * - Linux (about 4 ms a process): a commit wins from the first file — one batched sync against
- *   an fsync per object — and a restore from 100–200 files.
+ * - Linux (about 4 ms a process): a commit wins from the first file, and a restore from
+ *   100–200 files.
  * - macOS (about 7 ms): a load with a change wins from 20–50 files, a restore from 50–100.
  * - Windows (about 34 ms): a load with a change wins only between 200 and 500 files, a restore
  *   from 100–200.
@@ -172,26 +120,109 @@ export function fasterFrom(platform: NodeJS.Platform = process.platform): {
   return { commit: 1, read: 150 };
 }
 
+/** The message as the built-in engine's serializer stores it: no carriage returns, no blank
+ * edges, and one newline at the end — `commit-tree` writes what it is given, as it is. */
+function normalizedMessage(message: string): string {
+  return message.replace(/\r/g, "").replace(/^\n+/, "").replace(/\n+$/, "") + "\n";
+}
+
 export function gitEngine(git: GitProgram, version: string): AgentStateEngine {
   return {
     name: `git ${version} (dugite)`,
     fasterFrom: fasterFrom(),
 
     async commit(c) {
-      const child = start(git, c.gitdir, [
-        "-c",
-        "fastimport.unpackLimit=2147483647",
-        "fast-import",
-        "--quiet",
-        "--done",
-      ]);
+      // The commands any script uses, one process each. The index is a temporary file of this
+      // commit's own, so nothing here touches a worktree or a concurrent writer's index — the
+      // repository itself is bare, and git still asks every index-writing command for a work
+      // tree, so the temporary folder stands in as one; none of these commands reads it.
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "agent-state-dugite-"));
       try {
-        await finish(child, "fast-import", importStream(c));
-      } catch (err) {
-        await removeCrashReports(c.gitdir);
-        throw err;
+        const indexEnv = { GIT_INDEX_FILE: path.join(tmp, "index"), GIT_WORK_TREE: tmp };
+        if (c.parent !== null) {
+          await finish(start(git, c.gitdir, ["read-tree", c.parent], indexEnv), "read-tree");
+          const old = await finish(
+            start(git, c.gitdir, ["ls-tree", "-r", "-z", c.parent, "--", c.rel]),
+            "ls-tree",
+          );
+          const gone = old
+            .toString("utf8")
+            .split("\0")
+            .filter((line) => line !== "")
+            .map((line) => line.slice(line.indexOf("\t") + 1));
+          if (gone.length > 0) {
+            await finish(
+              start(git, c.gitdir, ["update-index", "-z", "--force-remove", "--stdin"], indexEnv),
+              "update-index",
+              Buffer.from(gone.map((p) => `${p}\0`).join(""), "utf8"),
+            );
+          }
+        }
+        const files = c.files ?? [];
+        if (files.length > 0) {
+          // The blobs: hashed without filters (--no-filters), so the bytes stored are the bytes
+          // the harness handed over, whoever's autocrlf or attributes say otherwise — and so
+          // the objects are the built-in engine's objects. They come out of memory, and a bare
+          // repository has no worktree to add from, so they go through temporary files this
+          // commit names itself (`blobs/0000`, one per file): plain paths of our own keep
+          // `--stdin-paths` free of any quoting, and a name a version carries — a quote, a tab,
+          // a line break, `..` — never touches the filesystem.
+          const paths: string[] = [];
+          await fs.mkdir(path.join(tmp, "blobs"), { recursive: true });
+          for (const [i, file] of files.entries()) {
+            const abs = path.join(tmp, "blobs", String(i).padStart(4, "0"));
+            await fs.writeFile(abs, file.body);
+            paths.push(abs);
+          }
+          const shas = (
+            await finish(
+              start(git, c.gitdir, ["hash-object", "-w", "--no-filters", "--stdin-paths"]),
+              "hash-object",
+              Buffer.from(paths.join("\n") + "\n", "utf8"),
+            )
+          )
+            .toString("utf8")
+            .split("\n")
+            .filter((sha) => sha !== "");
+          const added = files.map(
+            (file, i) => `100644 ${shas[i]}\t${c.rel}/${file.rel}`,
+          );
+          await finish(
+            start(git, c.gitdir, ["update-index", "-z", "--index-info"], indexEnv),
+            "update-index",
+            Buffer.from(added.map((line) => `${line}\0`).join(""), "utf8"),
+          );
+        }
+        const tree = (
+          await finish(start(git, c.gitdir, ["write-tree"], indexEnv), "write-tree")
+        )
+          .toString("utf8")
+          .trim();
+        const args = ["commit-tree", tree];
+        if (c.parent !== null) args.push("-p", c.parent);
+        const when = `${c.when.seconds} ${zoneOf(c.when.offset)}`;
+        const sha = (
+          await finish(
+            start(git, c.gitdir, args, {
+              GIT_AUTHOR_NAME: c.author.name,
+              GIT_AUTHOR_EMAIL: c.author.email,
+              GIT_AUTHOR_DATE: when,
+              GIT_COMMITTER_NAME: c.committer.name,
+              GIT_COMMITTER_EMAIL: c.committer.email,
+              GIT_COMMITTER_DATE: when,
+            }),
+            "commit-tree",
+            Buffer.from(normalizedMessage(c.message), "utf8"),
+          )
+        )
+          .toString("utf8")
+          .trim();
+        // The old value the ref must still hold: the parent, or (a root commit) nothing at all.
+        await finish(start(git, c.gitdir, ["update-ref", c.ref, sha, c.parent ?? "0".repeat(40)]), "update-ref");
+        return sha;
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
       }
-      return (await fs.readFile(path.join(c.gitdir, c.ref), "utf8")).trim();
     },
 
     async readBlobs(gitdir, oids) {
@@ -235,7 +266,7 @@ export function openGitEngine(host: AgentStateEngineHost): Promise<AgentStateEng
   let open = opening.get(host.cacheDir);
   if (open === undefined) {
     open = (async () => {
-      const say = (line: string) => host.log(`[agent-state-git] ${line}`);
+      const say = (line: string) => host.log(`[agent-state-dugite] ${line}`);
       let found: Awaited<ReturnType<typeof locateGit>>;
       try {
         found = await locateGit({ cacheDir: host.cacheDir, log: host.log });

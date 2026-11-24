@@ -18,7 +18,8 @@ export async function liveGit(): Promise<{ engine: AgentStateEngine; git: GitPro
   const engine = await openGitEngine({ cacheDir: GIT_CACHE, log: (line) => logged.push(line) });
   const found = engine === null ? null : await locateGit({ cacheDir: GIT_CACHE });
   const why = engine === null || found === null ? logged.join("; ") || "no Git" : null;
-  return mustRun("agent-state-git", why) ? { engine: engine!, git: found!.git } : null;
+  if (why !== null) console.warn(`[agent-state-dugite] the live suites skip: ${why}`);
+  return mustRun("agent-state-dugite", why) ? { engine: engine!, git: found!.git } : null;
 }
 
 /** The slice of the server's ./workbenches/repo.ts these suites drive. */

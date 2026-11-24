@@ -86,7 +86,7 @@ allowBuilds:
   # compile and the prebuilt binding loads fine without it. Deliberately skipped, like
   # electron-winstaller.
   koffi: false
-  # dugite's postinstall downloads a full Git build (25-67 MiB) from GitHub. The agent-state-git
+  # dugite's postinstall downloads a full Git build (25-67 MiB) from GitHub. The agent-state-dugite
   # plugin reads only dugite's pinned table and fetches the build itself, trimmed to `git`, the
   # first time it runs on a host — so no install and no build here ever reaches GitHub for it.
   # Deliberately not run.

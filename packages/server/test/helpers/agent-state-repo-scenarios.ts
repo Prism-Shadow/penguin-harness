@@ -1,8 +1,8 @@
 /**
  * The Agent State repository's behaviour, as one suite any engine can be run through: the
  * server's own test runs it with the built-in engine (workbench-repo.test.ts), and an engine
- * plugin runs it with its own (plugins/agent-state-git). Whatever an engine writes has to read
- * back, list and restore exactly as the built-in engine's does.
+ * plugin runs it with its own (plugins/agent-state-dugite, plugins/agent-state-gitcl). Whatever
+ * an engine writes has to read back, list and restore exactly as the built-in engine's does.
  *
  * - Given a fresh Agent, the first commit creates `agent_state.git/` with its ignore rules for
  *   people, adds nothing to `agent_state/`, and lists one version whose revision is the folder's

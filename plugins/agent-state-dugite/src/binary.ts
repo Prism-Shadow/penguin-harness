@@ -114,7 +114,7 @@ async function archive(pin: GitPin, dirs: string[], log: (line: string) => void)
   await fs.mkdir(dir, { recursive: true });
   const file = path.join(dir, pin.name);
   const temp = `${file}.${randomUUID()}.download`;
-  log(`[agent-state-git] downloading ${pin.url}`);
+  log(`[agent-state-dugite] downloading ${pin.url}`);
   try {
     const response = await fetch(pin.url, {
       headers: { Accept: "application/octet-stream", "User-Agent": "dugite" },

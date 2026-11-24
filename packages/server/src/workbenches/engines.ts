@@ -7,8 +7,11 @@
  * handing it a directory under the data root to keep files in (`<root>/cache/<contribution id>/`)
  * and a log line. The answer may take a while (a plugin that fetches its program first), so the
  * module never waits for it: until an engine has answered with itself, and after it answered
- * null, the built-in engine records versions. The first contribution that is ready wins, in
- * contribution order. An engine that later fails to run is dropped for the rest of the App.
+ * null, the built-in engine records versions. Which engine records versions is the harness's own
+ * decision, not a contributor's: the built-in side prefers the harness's own plugins' engines —
+ * a host Git over a fetched build — and the first ready one in that order wins; anything else a
+ * plugin contributed runs behind them, in contribution order. An engine that later fails to run
+ * is dropped for the rest of the App.
  *
  * A node of the tree rather than a module singleton, like every other plugin floor: a hot swap
  * that removes the plugin builds an App without its contribution, and the engine goes with it.
@@ -30,6 +33,18 @@ export interface AgentStateEnginesSlots {
   engines: Slot<{ name: string }, AgentStateEngineSource>;
 }
 
+/**
+ * The engines the harness prefers, first wins: the built-in plugins' own, a host Git over a
+ * build a plugin fetches. An engine a name here does not cover — another plugin's, or a future
+ * one — runs behind them, in contribution order.
+ */
+const PREFERRED = ["agent-state-gitcl", "agent-state-dugite"];
+
+const rankOf = (name: string): number => {
+  const at = PREFERRED.indexOf(name);
+  return at === -1 ? PREFERRED.length : at;
+};
+
 /** Which engine records Agent State versions. */
 @Interface()
 export abstract class AgentStateEngines {
@@ -47,10 +62,17 @@ export class EngineChoice implements AgentStateEngines {
   private readonly order: string[] = [];
 
   constructor(
-    contributions: ReadonlyArray<{ id: string; name: string; source: AgentStateEngineSource }>,
+    contributions: ReadonlyArray<{
+      id: string;
+      name: string;
+      source: AgentStateEngineSource;
+    }>,
     opts: { root: string; log: (line: string) => void },
   ) {
-    for (const { id, name, source } of contributions) {
+    // The harness's own engines run before any other contributor's, whatever the contribution
+    // order; the sort is stable, so engines of the same mind keep their contribution order.
+    const ordered = [...contributions].sort((a, b) => rankOf(a.name) - rankOf(b.name));
+    for (const { id, name, source } of ordered) {
       this.order.push(id);
       const say = (line: string) => opts.log(`[agent-state] ${name}: ${line}`);
       let answer: ReturnType<AgentStateEngineSource>;

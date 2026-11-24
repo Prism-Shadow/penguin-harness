@@ -257,7 +257,7 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     // `gallery`: the component library's browser layout checks run in the job that tests the
     // gallery, beside its unit suite, rather than lengthening browser-smoke.
     shard("rest", linuxRest, {
-      must_run: "sandbox-bwrap,sandbox-dsh,agent-state-git",
+      must_run: "sandbox-bwrap,sandbox-dsh,agent-state-dugite",
       gallery: linuxRest.includes(`${prefix}ui-gallery`),
     }),
   ].filter((s) => s.packages.length);
@@ -290,7 +290,7 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     shard("server", server, { build: serverBuild }),
     shard("rest", nativeRest, {
       smoke: nativeAffected.has(`${prefix}desktop`),
-      must_run: "sandbox-seatbelt,sandbox-dsh,agent-state-git",
+      must_run: "sandbox-seatbelt,sandbox-dsh,agent-state-dugite",
     }),
     shard("sites", sites),
   ].filter((s) => s.packages.length);
@@ -302,7 +302,7 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
         tests: command(server, `exec vitest run --shard=${i + 1}/${WINDOWS_SERVER_SHARDS}`),
       }),
     ),
-    shard("rest", nativeRest, { must_run: "sandbox-dsh,agent-state-git" }),
+    shard("rest", nativeRest, { must_run: "sandbox-dsh,agent-state-dugite" }),
     ...halves("sites", sites),
   ].filter((s) => s.packages.length);
   const types = selected.filter((p) => p.scripts.typecheck).map((p) => p.name);

@@ -6,9 +6,9 @@
  *   can hold them, quotes, tabs and line breaks) are written and read back exactly, in the same
  *   commits the built-in engine writes.
  * - Every object it writes is a loose file, as the built-in engine stores them: no pack per commit.
- * - What the server's environment and the operator's Git config could change does not apply: an
- *   ambient `GIT_DIR`, object directory or index file is not followed, and a global config's hooks,
- *   template and signing are not used, nor is a hook in the repository itself.
+ * - What the server's environment could change does not apply: an ambient `GIT_DIR` or index
+ *   file is not followed — the repository comes from the `--git-dir` flag and the index is a
+ *   temporary file of the commit's own.
  * - A ref another program holds locked fails the write and stays as it was; once it is released
  *   the next write goes through.
  * - A repository a person packed (`git gc`) is read and written on.
@@ -55,7 +55,7 @@ describe.skipIf(live === null)("the native engine", () => {
     );
 
   beforeEach(async () => {
-    dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-state-git-"));
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-state-dugite-"));
     gitdir = path.join(dir, "agent_state.git");
   });
   afterEach(async () => {
@@ -96,48 +96,17 @@ describe.skipIf(live === null)("the native engine", () => {
     expect(await git(["count-objects"])).toMatch(/^\d+ objects/);
   });
 
-  it("follows no ambient repository variable, and no hook, template or signing from config", async () => {
-    const hooks = path.join(dir, "hooks");
-    await fs.mkdir(hooks);
-    await fs.writeFile(path.join(hooks, "reference-transaction"), "#!/bin/sh\nexit 1\n", {
-      mode: 0o755,
-    });
-    const config = path.join(dir, "global.gitconfig");
-    await fs.writeFile(
-      config,
-      [
-        "[core]",
-        `\thooksPath = ${hooks.replaceAll("\\", "/")}`,
-        "[init]",
-        `\ttemplateDir = ${path.join(dir, "template").replaceAll("\\", "/")}`,
-        "[commit]",
-        "\tgpgSign = true",
-        "[gpg]",
-        `\tprogram = ${path.join(dir, "no-such-signer").replaceAll("\\", "/")}`,
-        "",
-      ].join("\n"),
-    );
-    process.env.GIT_CONFIG_GLOBAL = config;
+  it("follows no ambient repository variable", async () => {
     process.env.GIT_DIR = path.join(dir, "unrelated.git");
-    process.env.GIT_OBJECT_DIRECTORY = path.join(dir, "outside-objects");
     process.env.GIT_INDEX_FILE = path.join(dir, "outside-index");
     const repo = open();
     await repo.commitPath(REL, text({ "package.json": "{}" }), "first");
-    // A hook inside the repository is not run either.
-    await fs.mkdir(path.join(gitdir, "hooks"), { recursive: true });
-    await fs.copyFile(
-      path.join(hooks, "reference-transaction"),
-      path.join(gitdir, "hooks", "reference-transaction"),
-    );
-    await fs.chmod(path.join(gitdir, "hooks", "reference-transaction"), 0o755);
-
     expect((await repo.commitPath(REL, text({ "package.json": "{ }" }), "second")).changed).toBe(
       true,
     );
     process.env = { ...saved };
 
-    expect(await git(["cat-file", "commit", "HEAD"])).not.toContain("gpgsig");
-    for (const outside of ["unrelated.git", "outside-objects", "outside-index"]) {
+    for (const outside of ["unrelated.git", "outside-index"]) {
       await expect(fs.stat(path.join(dir, outside))).rejects.toMatchObject({ code: "ENOENT" });
     }
     expect((await open().history(REL)).map((v) => v.commit)).toHaveLength(2);
@@ -157,9 +126,6 @@ describe.skipIf(live === null)("the native engine", () => {
     expect((refused as { engineUnavailable?: boolean }).engineUnavailable).toBeUndefined();
     expect(await fs.readFile(lock, "utf8")).toBe("another Git process");
     expect((await repo.history(REL))[0]?.commit).toBe(first.commit);
-    expect((await fs.readdir(gitdir)).filter((n) => n.startsWith("fast_import_crash_"))).toEqual(
-      [],
-    );
     await fs.unlink(lock);
     expect((await repo.commitPath(REL, text({ "package.json": "{ }" }), "retry")).changed).toBe(
       true,

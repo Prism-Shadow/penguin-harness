@@ -6,7 +6,7 @@
  * object for object.
  *
  * Live: it needs this host's Git (test/global-setup.ts); without it the suite skips, unless
- * PENGUIN_MUST_RUN names agent-state-git.
+ * PENGUIN_MUST_RUN names agent-state-dugite.
  */
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
