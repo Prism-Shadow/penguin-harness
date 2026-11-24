@@ -21,7 +21,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import { agentSettingsPath } from "../../lib/agent-location";
 import { usePageWorkspace } from "../../lib/page-workspace";
-import { layoutActions } from "../../lib/page-layout-actions";
 import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
 import { S } from "../../lib/strings";
 import { TileIcon } from "../app-center";
@@ -88,7 +87,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
     onNavigate?.();
   };
   const open = (row: SidebarAppRow) => {
-    workspace.focus(row.page);
+    workspace.openPage(row.page);
     onNavigate?.();
   };
   const menuOf = (row: SidebarAppRow): RowActionItem[] => {
@@ -111,7 +110,12 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
             glyph: ICONS.appWindow,
             onSelect: () => open(row),
           },
-      ...layoutActions(workspace, page, onNavigate),
+      {
+        id: "separate",
+        label: S.pageWorkspace.separate,
+        glyph: ICONS.externalLink,
+        onSelect: act(() => workspace.separate(page)),
+      },
       {
         id: "fullscreen",
         label: S.appCenter.windowFullScreen,

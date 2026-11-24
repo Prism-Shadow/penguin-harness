@@ -4,8 +4,10 @@
  * tab in the right or bottom dock.
  * - the toolbar has exactly two pull-open buttons; an opened dock with no tabs shows a
  *   picker (choose what to open here), and each dock's own "+" menu adds more tabs;
- * - Ctrl+` toggles the terminal panel (front → hide → restore); the shell keeps running
- *   while hidden and reattaches on reopen;
+ * - Ctrl+` focuses the terminal and accepts the first command while attaching; the shell
+ *   keeps running while hidden, and native and asynchronous pastes on reopen retain their
+ *   place in its line editor;
+ * - an arrow typed before the first screen restore uses the foreground application's cursor mode;
  * - the terminal panel holds the conversation's shells as tabs of its own: its "+" starts
  *   another and shows it, a shell tab's × asks and kills the shell, and killing the last one
  *   leaves an empty group ready for the next explicit create;
@@ -116,6 +118,20 @@ async function runInTerminal(page, command) {
   await page.keyboard.press("Enter");
 }
 
+/** Holds the real attach request until the focused xterm has received the test's input. */
+async function holdTerminalLookup(page) {
+  const attach = Promise.withResolvers();
+  await page.route(
+    /\/api\/terminals\/[^/?]+$/,
+    async (route) => {
+      await attach.promise;
+      await route.continue();
+    },
+    { times: 1 },
+  );
+  return attach.resolve;
+}
+
 /**
  * Waits until the shown terminal is really at a prompt (see terminal.spec.mjs). The
  * sentinel is typed quote-split (echo TA''G) so the command's own echo never contains the
@@ -146,6 +162,7 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
   const sessionId = await createSession(page.request, projectId);
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
+  const attach = await holdTerminalLookup(page);
   // Open with the keyboard, like Codex/VS Code.
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "right")).toBeVisible({ timeout: 10000 });
@@ -153,11 +170,29 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
   await expect(terminalBody(page).locator(".xterm-helper-textarea")).toBeFocused({
     timeout: 20000,
   });
-  await page.keyboard.type("echo FOCUSED_''TERMINAL");
+  await page.keyboard.type("echo FOC");
+  attach();
+  await page.keyboard.type("USED_''TERMINAL");
   await page.keyboard.press("Enter");
   await expect.poll(() => screenText(page)).toContain("FOCUSED_TERMINAL");
+  // A real foreground program should receive Ctrl+B (0x02), including when it is the sidebar shortcut.
+  await runInTerminal(
+    page,
+    `node -e "process.stdin.setRawMode(true);console.log('KEY_'+'READY');process.stdin.once('data',b=>{console.log('BYTE_'+b[0]);process.exit()})"`,
+  );
+  await expect.poll(() => screenText(page)).toContain("KEY_READY");
+  await page.keyboard.press("Control+b");
+  await expect.poll(() => screenText(page)).toContain("BYTE_2");
   await runInTerminal(page, "echo DOCK_KEEPS_RUNNING");
   await expect.poll(() => screenText(page), { timeout: 15000 }).toContain("DOCK_KEEPS_RUNNING");
+  // Enter reports the Bash Readline buffer. The pasted text is only an editing fixture.
+  await runInTerminal(page, "env PS1=PASTE_''FIXTURE bash --noprofile --norc -i");
+  await expect.poll(() => screenText(page)).toContain("PASTE_FIXTURE");
+  await runInTerminal(
+    page,
+    `record_line() { printf "SAVED%s%q\\n" "=" "$READLINE_LINE"; READLINE_LINE=""; READLINE_POINT=0; }; bind 'set enable-bracketed-paste on'; bind -x '"\\C-m":record_line'; printf "EDIT_%s\\n" READY`,
+  );
+  await expect.poll(() => screenText(page)).toContain("EDIT_READY");
 
   // Hide via the dock's ×: the surface goes away, the tab and the shell do not.
   await dockAt(page, "right")
@@ -173,9 +208,40 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
     .toBe(1);
 
   // Ctrl+` restores the same shell — the marker typed before the hide is still on screen.
+  const reattach = await holdTerminalLookup(page);
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "right")).toBeVisible();
+  await expect(terminalBody(page).locator(".xterm-helper-textarea")).toBeFocused();
+  await page.evaluate(() => navigator.clipboard.writeText("alpha\nbeta"));
+  await page.keyboard.type("L");
+  await page.keyboard.press("Control+Shift+V");
+  await page.evaluate(async () => {
+    await navigator.clipboard.writeText("clip");
+    const read = navigator.clipboard.readText.bind(navigator.clipboard);
+    const gate = Promise.withResolvers();
+    window.releaseClipboard = gate.resolve;
+    navigator.clipboard.readText = () => {
+      const text = read();
+      return gate.promise.then(() => text);
+    };
+  });
+  await terminalBody(page).locator(".xterm-screen").click({ button: "right" });
+  await page.keyboard.type("R");
+  reattach();
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("DOCK_KEEPS_RUNNING");
+  await page.evaluate(() => window.releaseClipboard());
+  await expect.poll(() => screenText(page)).toContain("betaclipR");
+  expect(await screenText(page)).not.toContain("SAVED=");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => screenText(page)).toContain("SAVED=$'Lalpha\\nbetaclipR'");
+  await page.evaluate(() => {
+    navigator.clipboard.readText = () =>
+      Promise.reject(new DOMException("Denied", "NotAllowedError"));
+  });
+  await terminalBody(page).locator(".xterm-screen").click({ button: "right" });
+  await page.keyboard.type("after");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => screenText(page)).toContain("SAVED=after");
 
   // A shell tab's × (always visible) asks first — killing ends the shell for real — and
   // confirming kills it and leaves the empty group available.
@@ -191,6 +257,43 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
       { timeout: 10000 },
     )
     .toBe(0);
+});
+
+test("an opening terminal sends cursor keys in the foreground program's mode", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+  const project = await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  const session = await createSession(page.request, project);
+  await page.goto(`${BASE}/chat/${session}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+  await page.keyboard.press("Control+Backquote");
+  await waitForShell(page, "BEFORE_KEYS");
+  // Enable application cursor keys and report the input received by the real foreground PTY.
+  await runInTerminal(
+    page,
+    `node -e "process.stdin.setRawMode(true);process.stdout.write('\\x1b[?1h'+'MODE_'+'READY\\n');let bytes='';process.stdin.on('data',b=>console.log('HEX_'+(bytes+=b.toString('hex'))))"`,
+  );
+  await expect.poll(() => screenText(page)).toContain("MODE_READY");
+  await dockAt(page, "right")
+    .locator('[data-testid="dock-tab"][data-tab-id^=":app:session-tool/terminal"]')
+    .getByTestId("dock-tab-close")
+    .click();
+  await expect(anyDock(page)).toHaveCount(0);
+  const attach = await holdTerminalLookup(page);
+  await page.keyboard.press("Control+Backquote");
+  await expect(terminalBody(page).locator(".xterm-helper-textarea")).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Control+ArrowUp");
+  const ime = await page.context().newCDPSession(page);
+  await ime.send("Input.imeSetComposition", { text: "界", selectionStart: 1, selectionEnd: 1 });
+  await ime.send("Input.insertText", { text: "界" });
+  await ime.detach();
+  attach();
+  const early = Buffer.from("\x1bOA\x1b[1;5A界").toString("hex");
+  await expect.poll(() => screenText(page)).toContain("HEX_" + early);
+  await page.keyboard.press("ArrowUp");
+  await expect.poll(() => screenText(page)).toContain("HEX_" + early + "1b4f41");
+  await killTabConfirmed(page, shellTabs(page));
 });
 
 test("two toolbar toggles: an opened empty dock shows the picker; hiding keeps tabs", async ({
@@ -567,7 +670,7 @@ test("the terminal panel's + starts another shell and shows it; ending the last 
   const sessionId = await createSession(page.request, projectId);
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
-  await page.keyboard.press("Control+Backquote");
+  await openViaPicker(page, "right", "terminal");
   await expect(shellTabs(page)).toHaveCount(1, { timeout: 20000 });
   await waitForShell(page, "FIRST_SHELL");
 

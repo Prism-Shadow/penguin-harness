@@ -34,7 +34,7 @@ export function SavedPrompts({
   locale,
 }: {
   locale: string;
-  renderActions?: (actions: PromptAction[]) => ReactNode;
+  renderActions?: (actions: PromptAction[], manage?: PromptAction) => ReactNode;
   exampleText?: string | null;
   /** The composer's current text, read at click time — a new shortcut starts from what was typed. */
   readComposerText: () => string;
@@ -115,27 +115,32 @@ export function SavedPrompts({
     glyph: shortcut.prompt === exampleText ? ICONS.check : ICONS.zap,
     run: () => onFill(shortcut.prompt),
   }));
-  if (readFailed)
-    actions.push({
+  let manage: PromptAction | undefined;
+  if (readFailed) {
+    manage = {
       id: "retry",
       label: S.chat.shortcuts.retry,
+      glyph: ICONS.refresh,
       run: () => {
         setReadFailed(false);
         setReadAttempt((attempt) => attempt + 1);
       },
-    });
-  if (loaded)
-    actions.push({
+    };
+  } else if (loaded) {
+    manage = {
       id: "manage",
       label: shortcuts.length ? S.chat.shortcuts.manage : S.chat.shortcuts.new,
       glyph: shortcuts.length ? ICONS.pencil : ICONS.plus,
       run: () => (shortcuts.length ? setManaging(true) : startCreate()),
-    });
+    };
+  }
   return (
     <>
       {renderActions
-        ? renderActions(actions)
-        : actions.map((action) => <PromptButton key={action.id} action={action} />)}
+        ? renderActions(actions, manage)
+        : [...actions, ...(manage ? [manage] : [])].map((action) => (
+            <PromptButton key={action.id} action={action} />
+          ))}
       <Modal
         open={managing}
         title={S.chat.shortcuts.manage}

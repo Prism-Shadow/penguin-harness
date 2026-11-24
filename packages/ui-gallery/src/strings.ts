@@ -1128,7 +1128,7 @@ export const zh = {
       thinking: "思考",
       plan: "先读会议记录，再整理待办事项。",
       read: "读取会议记录",
-      navigation: { count: "2 步", elapsed: "总耗时" },
+      navigation: { count: "1 步", elapsed: "总耗时" },
       reply: "助手回答",
       output: "工具输出",
       receiving: "正在接收…",

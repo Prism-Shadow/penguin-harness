@@ -1,9 +1,11 @@
+/** The product brand and installation paths, followed by its platform claims, catalogues and live app. */
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { mmspModelsUrl } from "../lib/links";
 import { RELEASE_VERSION } from "../lib/version";
+import counts from "virtual:penguin-catalog-counts";
 import { BENCHMARKS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../lib/rsi-stats";
 import {
   DownloadIcon,
@@ -123,23 +125,26 @@ function ListingBadge({
 }
 
 export function Hero() {
-  const { ref: motion, active } = useVisibleActivity<HTMLHeadingElement>();
+  const { locale } = useSiteLocale();
+  const { ref: motion, active } = useVisibleActivity<HTMLParagraphElement>();
   return (
     <section className="relative overflow-hidden">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
-      <div className="relative mx-auto max-w-6xl px-4 pt-12 pb-8 text-center sm:px-6 sm:pt-20 sm:pb-10">
-        <div className="anim-rise flex items-center justify-center gap-2.5 sm:gap-3.5">
+      <div className="relative mx-auto max-w-6xl px-4 pt-12 pb-12 text-center sm:px-6 sm:pt-24 sm:pb-14">
+        <h1
+          id="home-top"
+          tabIndex={-1}
+          className="anim-rise flex items-center justify-center gap-2.5 sm:gap-3.5"
+        >
           <img
             src={`${import.meta.env.BASE_URL}penguin-logo.svg`}
             alt=""
             className="h-12 w-12 sm:h-16 sm:w-16"
           />
           <span className="text-2xl font-semibold tracking-tight sm:text-4xl">{S.siteName}</span>
-        </div>
+        </h1>
 
-        <h1
-          id="home-top"
-          tabIndex={-1}
+        <p
           ref={motion}
           className={`hero-positioning anim-rise mx-auto mt-6 font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word] ${active ? "" : "hero-motion-paused"}`}
           style={{ animationDelay: "70ms" }}
@@ -154,7 +159,7 @@ export function Hero() {
             {S.hero.positioning.reachLead}
             <HeroWord text={S.hero.positioning.reach} variant="reach" />
           </span>
-        </h1>
+        </p>
 
         <p
           className="hero-automation anim-rise mt-5 leading-6 text-balance break-keep text-gray-600 [overflow-wrap:break-word] sm:leading-8 dark:text-gray-300"
@@ -221,88 +226,80 @@ export function Hero() {
             </div>
           ))}
         </dl>
-      </div>
-    </section>
-  );
-}
 
-/** The platform inventory and its live evaluation walkthrough follow the two examples. */
-export function PlatformWalkthrough() {
-  const { locale } = useSiteLocale();
-  return (
-    <div className="mx-auto max-w-6xl px-4 py-12 text-center sm:px-6 sm:py-20">
-      <ExternalLinkScope>
-        <dl className="mx-auto grid w-fit max-w-full gap-y-6 sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-x-6 sm:gap-y-4">
-          <CatalogRow
-            count={S.hero.supportedModelsCount}
-            label={S.hero.supportedModelsLabel}
-            delay={300}
-            listClassName="gap-x-2 gap-y-1"
-          >
-            {MODEL_PROVIDERS.map((provider) => (
-              <li key={provider.id}>
-                <ExternalLink
-                  href={provider.href}
-                  aria-label={provider.name}
-                  title={provider.name}
-                  className="inline-flex rounded-md p-1 text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  <ModelProviderLogo provider={provider.id} className="h-6 w-6" />
-                </ExternalLink>
-              </li>
-            ))}
-            <li className="ml-1">
-              <ExternalLink href={mmspModelsUrl(locale)} className={ENTRY_LINK}>
-                {S.hero.supportedModelsMore}
-                <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
-              </ExternalLink>
-            </li>
-          </CatalogRow>
-
-          <CatalogRow
-            count={String(RSI_TOOLKITS.length)}
-            label={S.hero.algorithmsLabel}
-            delay={340}
-            listClassName="gap-x-5 gap-y-1.5"
-          >
-            {RSI_TOOLKITS.map((toolkit) => (
-              <li key={toolkit.plugin}>
-                {toolkit.href !== null ? (
-                  <ExternalLink href={toolkit.href} className={ENTRY_LINK}>
-                    {toolkit.label}
-                    <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+        <ExternalLinkScope>
+          <dl className="mx-auto mt-10 grid w-fit max-w-full gap-y-6 sm:mt-12 sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-x-6 sm:gap-y-4">
+            <CatalogRow
+              count={String(counts.models)}
+              label={S.hero.supportedModelsLabel}
+              delay={300}
+              listClassName="gap-x-2 gap-y-1"
+            >
+              {MODEL_PROVIDERS.map((provider) => (
+                <li key={provider.id}>
+                  <ExternalLink
+                    href={provider.href}
+                    aria-label={provider.name}
+                    title={provider.name}
+                    className="inline-flex rounded-md p-1 text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    <ModelProviderLogo provider={provider.id} className="h-6 w-6" />
                   </ExternalLink>
-                ) : (
-                  <span className={ENTRY}>{toolkit.label}</span>
-                )}
-              </li>
-            ))}
-          </CatalogRow>
-
-          <CatalogRow
-            count={String(BENCHMARKS.length)}
-            label={S.hero.benchmarksLabel}
-            delay={380}
-            listClassName="gap-x-5 gap-y-1.5"
-          >
-            {BENCHMARKS.map((benchmark) => (
-              <li key={benchmark.href}>
-                <ExternalLink href={benchmark.href} className={ENTRY_LINK}>
-                  {S.hero.benchmarkKinds[benchmark.kind]}
+                </li>
+              ))}
+              <li className="ml-1">
+                <ExternalLink href={mmspModelsUrl(locale)} className={ENTRY_LINK}>
+                  {S.hero.supportedModelsMore}
                   <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
                 </ExternalLink>
               </li>
-            ))}
-          </CatalogRow>
-        </dl>
-      </ExternalLinkScope>
+            </CatalogRow>
 
-      <LiveAppFrame
-        surface="chat-new"
-        autoplay="evolution"
-        title={S.live.evolutionFrame}
-        className="anim-rise mx-auto mt-14 max-w-6xl text-left sm:mt-16"
-      />
-    </div>
+            <CatalogRow
+              count={String(counts.algorithms)}
+              label={S.hero.algorithmsLabel}
+              delay={340}
+              listClassName="gap-x-5 gap-y-1.5"
+            >
+              {RSI_TOOLKITS.map((toolkit) => (
+                <li key={toolkit.plugin}>
+                  {toolkit.href !== null ? (
+                    <ExternalLink href={toolkit.href} className={ENTRY_LINK}>
+                      {toolkit.label}
+                      <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                    </ExternalLink>
+                  ) : (
+                    <span className={ENTRY}>{toolkit.label}</span>
+                  )}
+                </li>
+              ))}
+            </CatalogRow>
+
+            <CatalogRow
+              count={String(counts.benchmarks)}
+              label={S.hero.benchmarksLabel}
+              delay={380}
+              listClassName="gap-x-5 gap-y-1.5"
+            >
+              {BENCHMARKS.map((benchmark) => (
+                <li key={benchmark.href}>
+                  <ExternalLink href={benchmark.href} className={ENTRY_LINK}>
+                    {S.hero.benchmarkKinds[benchmark.kind]}
+                    <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                  </ExternalLink>
+                </li>
+              ))}
+            </CatalogRow>
+          </dl>
+        </ExternalLinkScope>
+
+        <LiveAppFrame
+          surface="chat-new"
+          autoplay="evolution"
+          title={S.live.evolutionFrame}
+          className="anim-rise mx-auto mt-14 max-w-6xl text-left sm:mt-16"
+        />
+      </div>
+    </section>
   );
 }

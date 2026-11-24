@@ -129,6 +129,9 @@ describe("built-in Agent provisioning", () => {
     expect(preinstalled.map((plugin) => plugin.name)).toEqual(
       expect.arrayContaining(agentBaseline),
     );
+    expect(
+      preinstalled.map((plugin) => plugin.name).filter((name) => name.endsWith("-rsi-toolkit")),
+    ).toEqual(["default-rsi-toolkit"]);
     expect(preinstalled.map((plugin) => plugin.name)).not.toContain("agent-state-git");
     const installedWorkbenches = path.join(
       t.root,

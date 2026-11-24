@@ -17,9 +17,7 @@
  *   Back closes it; closing one a link opened replaces the entry. The plugin a link names shows
  *   its detail even while the tab or the search hides its card.
  *
- * A filter chip beside the search box narrows the list to the plugins this build cannot fully
- * run, per browser (incompatible-only.ts), and while it does a notice under the title says so.
- * The status rules are plugin-status.ts.
+ * A notice counts the plugins this build cannot fully run. The status rules are in plugin-status.ts.
  *
  * - A library plugin is installed per Agent, by any member, through its card's "manage
  *   installs" dialog, and uninstalled there by the Project owner; the update nudge appears when
@@ -63,7 +61,6 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
-  ChoiceGroup,
   ConfirmModal,
   CoverCardSkeleton,
   ImpactList,
@@ -163,10 +160,6 @@ import { toastInstall } from "../../lib/agent-plugin-install";
 import { useOnPluginModulesChanged, usePluginModuleRequests } from "../../lib/plugin-modules";
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
-import {
-  usePluginsIncompatibleOnly,
-  writePluginsIncompatibleOnly,
-} from "../../lib/plugins-incompatible-only";
 import {
   PLUGIN_GROUP_BYS,
   groupRows,
@@ -352,8 +345,6 @@ export function PluginsPage() {
   const [importOpen, setImportOpen] = useState(false);
   /** Free text over names, descriptions and keywords. */
   const [query, setQuery] = useState("");
-  /** Only the plugins this build cannot fully run: the filter beside the search, kept per browser. */
-  const incompatibleOnly = usePluginsIncompatibleOnly();
   const [groupBy, setGroupBy] = useState<PluginGroupBy>(() => initialPluginsGroupBy());
   const [layout, chooseLayout] = useShowcaseLayout("penguin.pluginsLayout");
   const [sort, setSort] = useState<PluginSort>(() => initialPluginsSort());
@@ -1149,12 +1140,10 @@ export function PluginsPage() {
         : undefined,
     );
   const unsatisfiedCount = rows.filter((row) => row.module?.unsatisfied !== undefined).length;
-  const searching = query.trim() !== "" || incompatibleOnly;
-  /** The list the tabs split: every row, or the incompatible ones while the filter is on. */
-  const listed = rows.filter((row) => !incompatibleOnly || row.module?.unsatisfied !== undefined);
+  const searching = query.trim() !== "";
   // The tabs come from the whole list, not the search's matches, so typing never moves them.
-  const sections = groupBy === "none" ? [] : groupRows(listed, statusOf, groupBy, categories);
-  const tab = tabRows(sections, tabParam, listed, query);
+  const sections = groupBy === "none" ? [] : groupRows(rows, statusOf, groupBy, categories);
+  const tab = tabRows(sections, tabParam, rows, query);
   const activeTab = tab.active;
   /** The market's popularity figures (placeholders for now; see plugin-market.ts), or null. */
   const popularity = popularityOf(market);
@@ -1319,8 +1308,6 @@ export function PluginsPage() {
           <PluginsHeaderActions
             query={query}
             onQuery={setQuery}
-            incompatibleOnly={incompatibleOnly}
-            onIncompatibleOnly={writePluginsIncompatibleOnly}
             isAdmin={isAdmin}
             machinePicker={
               otherMachines.length > 0 ? (
@@ -1407,7 +1394,7 @@ export function PluginsPage() {
             {S.plugins.restartPending}
           </Notice>
         )}
-        <IncompatibleNotice filtered={incompatibleOnly} unsatisfied={unsatisfiedCount} />
+        <IncompatibleNotice unsatisfied={unsatisfiedCount} />
         <ModuleRequestsNotice
           waiting={isAdmin ? (moduleRequests.value?.pending ?? 0) : 0}
           onView={() => {
@@ -1659,52 +1646,14 @@ export function PluginsPage() {
   );
 }
 
-/**
- * The notice about incompatible plugins, one at a time. While the list holds only them it says
- * so and offers the whole list back: a filtered list that did not say so would read as plugins
- * gone missing. Otherwise, while this build cannot fully run some listed plugins, it counts them
- * and offers to show only those. Both actions flip the stored preference the filter beside the
- * search shows.
- */
-export function IncompatibleNotice({
-  filtered,
-  unsatisfied,
-}: {
-  filtered: boolean;
-  /** How many listed plugins this build cannot fully run. */
-  unsatisfied: number;
-}) {
-  if (filtered) {
-    return (
-      <Notice
-        tone="info"
-        className="mt-4"
-        action={{
-          label: S.plugins.incompatibleOnlyShowAll,
-          onClick: () => writePluginsIncompatibleOnly(false),
-        }}
-      >
-        {S.plugins.incompatibleOnlyNotice}
-      </Notice>
-    );
-  }
-  if (unsatisfied === 0) return null;
-  return (
-    <Notice
-      tone="attention"
-      className="mt-4"
-      action={{
-        label: S.plugins.unsatisfiedShow,
-        onClick: () => writePluginsIncompatibleOnly(true),
-      }}
-    >
+/** How many listed plugins cannot run on this version of the host. */
+export function IncompatibleNotice({ unsatisfied }: { unsatisfied: number }) {
+  return unsatisfied > 0 ? (
+    <Notice tone="attention" className="mt-4">
       {S.plugins.unsatisfiedNotice(unsatisfied)}
     </Notice>
-  );
+  ) : null;
 }
-
-/** The filter chip's value: the list narrowed to the plugins this build cannot fully run. */
-const INCOMPATIBLE = "incompatible";
 
 /**
  * Each select's width beside the tabs, by language: wide enough for its longest option there
@@ -1798,23 +1747,10 @@ export function ModuleRequestsNotice({
   );
 }
 
-/**
- * The page header's actions, in the Agents page header's look: every control on the small rung,
- * so the row is one height, at the header's gap. For everyone (a member narrows the list too):
- * the search box, and beside it the incompatible-only filter, a toggle chip that narrows the list
- * as the search does. Then, for an admin, the machine picker (which machine's plugins the rows
- * show, and which machine's own table an install or a removal edits), then the pair the Agents
- * page header has: Import plugin, the primary button, and Settings, the secondary one, which opens
- * the Settings dialog's Plugins page — each glyph before words that always show. On a phone the
- * search box and the filter share the first line, the box taking what the filter leaves, and the
- * admin's buttons wrap below them. The grouping and the sort stand at the tab row's end
- * (`PluginsListControls`).
- */
+/** Search the catalog. Administrators may also choose a machine, import a plugin or open Settings. */
 export function PluginsHeaderActions({
   query,
   onQuery,
-  incompatibleOnly,
-  onIncompatibleOnly,
   isAdmin,
   machinePicker,
   onOpenSettings,
@@ -1822,9 +1758,6 @@ export function PluginsHeaderActions({
 }: {
   query: string;
   onQuery: (query: string) => void;
-  /** Whether the list holds only the plugins this build cannot fully run. */
-  incompatibleOnly: boolean;
-  onIncompatibleOnly: (on: boolean) => void;
   isAdmin: boolean;
   /** The machine picker, when there is another machine to pick; null otherwise. */
   machinePicker: React.ReactNode;
@@ -1834,25 +1767,13 @@ export function PluginsHeaderActions({
 }) {
   return (
     <>
-      <div className="flex min-w-0 basis-full items-center gap-2 sm:basis-auto">
-        <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
-          <SearchInput
-            size="sm"
-            value={query}
-            placeholder={S.plugins.searchPlaceholder}
-            aria-label={S.plugins.searchPlaceholder}
-            onChange={onQuery}
-          />
-        </div>
-        <ChoiceGroup
-          shape="chip"
+      <div className="min-w-0 basis-full sm:w-56 sm:basis-auto">
+        <SearchInput
           size="sm"
-          multiple
-          aria-label={S.plugins.filterLabel}
-          className="shrink-0"
-          options={[{ value: INCOMPATIBLE, label: S.plugins.incompatibleOnlyFilter }]}
-          value={incompatibleOnly ? [INCOMPATIBLE] : []}
-          onChange={(on) => onIncompatibleOnly(on.includes(INCOMPATIBLE))}
+          value={query}
+          placeholder={S.plugins.searchPlaceholder}
+          aria-label={S.plugins.searchPlaceholder}
+          onChange={onQuery}
         />
       </div>
       {isAdmin && (

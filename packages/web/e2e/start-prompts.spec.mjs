@@ -171,3 +171,53 @@ for (const lang of ["zh", "en"]) {
     }
   });
 }
+
+test("saved actions take the shared positions and every overflow prompt is reachable", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, "priorityshortcuts", "password123");
+  const saved = Array.from({ length: 3 }, (_, index) => ({
+    id: "plan-" + index,
+    title: "Weekly plan " + (index + 1),
+    prompt: "Draft the weekly plan for team " + (index + 1) + ".",
+  }));
+  await setAccountPrefs(page.request, { lang: "en", draftShortcuts: saved });
+  await page.goto("/chat/new");
+  await page.getByRole("dialog").getByRole("button", { name: "Later" }).click();
+  const row = page.getByRole("group", { name: "Examples and shortcuts" });
+  const draft = page.locator('[data-slot="composer"] textarea').first();
+  for (const [width, count] of [
+    [1280, 3],
+    [375, 2],
+    [320, 1],
+  ]) {
+    await page.setViewportSize({ width, height: 820 });
+    const direct = row.locator('[data-slot="saved-prompt"]');
+    await expect(direct).toHaveCount(count);
+    expect(await direct.allTextContents()).toEqual(saved.slice(0, count).map((item) => item.title));
+    await expect(row.locator('[data-slot="suggestion"]')).toHaveCount(0);
+    await fit(row);
+    await expect(row.getByRole("button", { name: "Manage shortcuts" })).toBeVisible();
+    const more = row.getByRole("button", { name: "More examples" });
+    await more.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog", { name: "More examples" });
+    for (const item of saved.slice(count))
+      await expect(dialog.getByRole("button", { name: item.title })).toBeVisible();
+    const examples = dialog
+      .locator("button")
+      .filter({ hasNotText: /Weekly plan|Shuffle suggestions/ });
+    const before = (await examples.allTextContents()).filter(Boolean);
+    await dialog.getByRole("button", { name: "Shuffle suggestions" }).click();
+    const after = (await examples.allTextContents()).filter(Boolean);
+    expect(before).toHaveLength(3);
+    expect(after.every((name) => !before.includes(name))).toBe(true);
+    if (count === saved.length) {
+      await page.keyboard.press("Escape");
+      await direct.last().click();
+    } else {
+      await dialog.getByRole("button", { name: saved[2].title }).click();
+    }
+    await expect(draft).toHaveValue(saved[2].prompt);
+  }
+});

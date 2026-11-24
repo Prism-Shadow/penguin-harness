@@ -28,6 +28,7 @@ export interface SettingsGroupStatus {
     description?: string;
     descriptionZh?: string;
   }>;
+  unavailableAction?(action: string): { message: string; messageZh?: string } | undefined;
   run(action: string): Promise<{
     ok: boolean;
     message: string;
@@ -257,6 +258,23 @@ export function computerUseStatus(
   // A host that asks for the report draws the version and the checks from it: the notices then
   // keep only what has no element of its own (an older host never asks, and gets them all).
   let reported = false;
+  const unavailableAction = (action: string) => {
+    if (action !== "install") return undefined;
+    const { service } = ready();
+    const settings = service.settings();
+    if (!settings.enabled)
+      return { message: "Computer Use is off.", messageZh: "电脑操作已关闭。" };
+    if (settings.binaryPath)
+      return {
+        message: "Computer Use uses the configured agent-desktop program path.",
+        messageZh: "电脑操作使用已配置的 agent-desktop 程序路径。",
+      };
+    if (service.state().kind === "unsupported") {
+      const notice = installNotice(service);
+      return { message: notice.text, ...(notice.textZh ? { messageZh: notice.textZh } : {}) };
+    }
+    return undefined;
+  };
   return {
     report() {
       reported = true;
@@ -414,9 +432,12 @@ export function computerUseStatus(
       }
       return out;
     },
+    unavailableAction,
     async run(action) {
       const { service, probe } = ready();
       if (action === "install") {
+        const reason = unavailableAction(action);
+        if (reason) return { ok: false, ...reason };
         const settled = service.install().then(async () => {
           if (service.state().kind === "installed") await probe.refresh();
         });

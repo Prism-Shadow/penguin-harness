@@ -169,6 +169,7 @@ import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
 import type { RequestContext } from "./router";
 import type { DemoStore } from "./store";
+import { registerDemoTerminals } from "./terminal";
 import { workbenchVersions } from "./workbench-revisions";
 import {
   cleanupReview,
@@ -3367,10 +3368,8 @@ router
   );
 
 // ---------------------------------------------------------------------------------------------
-// The terminal list (a direct fetch in the app): nothing to attach to without a machine
+// Session-owned terminal resources and browser page counts.
 // ---------------------------------------------------------------------------------------------
 
-router
-  .get("/api/terminals", () => ({ terminals: [] }))
-  .get("/api/terminals/projects/:projectId/session-resources", () => ({ counts: {} }))
-  .get("/api/builtin-browser/projects/:projectId/session-resources", () => ({ counts: {} }));
+registerDemoTerminals(router);
+router.get("/api/builtin-browser/projects/:projectId/session-resources", () => ({ counts: {} }));

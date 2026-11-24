@@ -88,7 +88,7 @@ describe("ShortcutsSection", () => {
     expect(one).not.toMatch(resetAll);
   });
 
-  it("puts no default on a chord the browser keeps, and marks a binding on one in the attention tone on either host", () => {
+  it("puts no default on a chord the browser keeps, and marks a binding on one in the browser and names its desktop menu equivalent", () => {
     expect(render()).not.toContain(S.shortcuts.browserReserved);
     configureKeybindingsStoreForTests({
       storage: keybindings({ v: 1, linux: { "terminal.close": "Mod+KeyW" } }),
@@ -96,7 +96,8 @@ describe("ShortcutsSection", () => {
     for (const host of ["browser", "desktop"] as const) {
       setHostForTests(host);
       const html = render();
-      expect(count(html, S.shortcuts.browserReserved), host).toBe(1);
+      expect(count(html, S.shortcuts.browserReserved), host).toBe(host === "browser" ? 1 : 0);
+      if (host === "desktop") expect(html).toContain(S.shortcuts.desktopMenuReserved);
     }
   });
 
@@ -114,10 +115,9 @@ describe("ShortcutsSection", () => {
     expect(count(render(), S.shortcuts.browserCommon)).toBe(atDefaults + 1);
     setHostForTests("desktop");
     const desktop = render();
-    // Reload is the desktop menu's too, so that row names the menu instead; the other rows keep
-    // the browser's note.
+    // A desktop menu shortcut is relevant on this host, while browser-only claims are not.
     expect(count(desktop, S.shortcuts.desktopMenuReserved)).toBe(1);
-    expect(count(desktop, S.shortcuts.browserCommon)).toBe(atDefaults);
+    expect(count(desktop, S.shortcuts.browserCommon)).toBe(0);
   });
 
   it("shows a binding's note as soon as the binding lands", () => {
