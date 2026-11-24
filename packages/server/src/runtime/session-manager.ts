@@ -3323,7 +3323,7 @@ export abstract class Sessions {
     messages: AmspRecord[],
   ): Promise<SubagentMessageOutcome>;
   /** Host abort of one child session's current run (core `Session.abortBackgroundSubagentRun`); false when the parent runtime is not loaded, the child is unknown, or it is idle. */
-  abstract abortSubagentRun(sessionId: string, childSessionId: string): boolean;
+  abstract abortSubagentRun(sessionId: string, childSessionId: string): Promise<boolean>;
   /** Queued follow-up tasks awaiting auto-start, as their display/recall info (id + content summary). */
   abstract pendingFollowUpsOf(sessionId: string): PendingFollowUpInfo[];
   /**
