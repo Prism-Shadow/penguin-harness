@@ -2353,7 +2353,7 @@ export const zh = {
     builtinUndeletable: "内置 Agent 不可被删除",
     /** The system Agent (lib/builtin-agents.ts): its name and one line, never read from its file. */
     systemName: "系统",
-    systemDescription: "系统应用的所有者：模型库、插件市场、机器管理、成本中心与评估中心。",
+    systemDescription: "负责模型库、插件市场、机器管理和成本中心。",
     /** The pill after its name on the Agents page, and what the pill means. */
     systemTag: "系统",
     systemTagHint: "系统 Agent 拥有系统应用；它不对话、不装插件，也不能删除或导出。",

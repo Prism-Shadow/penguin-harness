@@ -85,3 +85,21 @@ test("the default Agent and Support own separately removable workbenches", async
     await member.close();
   }
 });
+
+test("the System Agent's card and overview describe its own apps in both languages", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, "presetdescriptions", "password123");
+  for (const [lang, systemApp, evaluation] of [
+    ["en", "Cost Center", "Evaluation Center"],
+    ["zh", "成本中心", "评估中心"],
+  ]) {
+    await setAccountPrefs(page.request, { lang });
+    for (const path of ["/agents", "/agents/system_agent"]) {
+      await page.goto(path);
+      const description = page.getByRole("main").getByText(systemApp, { exact: false });
+      await expect(description).toBeVisible();
+      await expect(description).not.toContainText(evaluation);
+    }
+  }
+});

@@ -2239,8 +2239,7 @@ export const en: Strings = {
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
     systemName: "System",
-    systemDescription:
-      "Owns the system apps: Models, Plugins, Machines, Cost Center and Evaluation Center.",
+    systemDescription: "Owns the Models, Plugins, Machines and Cost Center apps.",
     systemTag: "System",
     systemTagHint:
       "The system agent owns the system apps. It does not chat or take plugins, and cannot be deleted or exported.",

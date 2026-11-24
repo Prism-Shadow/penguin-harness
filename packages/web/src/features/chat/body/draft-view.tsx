@@ -332,11 +332,14 @@ export function DraftView({
   // "fallback on invalid value" effect would let the former write B in one render while the
   // latter, still judging by the stale closure's invalid value, writes the default Agent and
   // clobbers B.
-  const routeState = location.state as {
+  const handoff = location.state as {
+    projectId?: string;
     agentId?: string;
     workspace?: string;
     machineId?: string;
   } | null;
+  // An inaccessible or switched-away Project cannot supply another draft's Agent or Workspace.
+  const routeState = handoff?.projectId && handoff.projectId !== projectId ? null : handoff;
   const stateAgentId = routeState?.agentId;
   // Read here rather than beside their own effect below: the Agent resolution waits on them
   // (see `routeMachineSettled`), and a dependency array is evaluated during the render that
