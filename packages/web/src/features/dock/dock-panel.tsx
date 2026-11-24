@@ -446,6 +446,7 @@ export function DockPanel({
     }
     const pane = rootRef.current?.getBoundingClientRect();
     if (!pane) return;
+    setResizing(true);
     // The picker (no tabs) never goes fullscreen — the store refuses it and the header offers no
     // button — so its drag simply stops at the maximum.
     const canSnap = tabs.length > 0;
@@ -735,7 +736,6 @@ export function DockPanel({
       axis={horizontal ? "y" : "x"}
       edge={horizontal ? "start" : undefined}
       label={S.dock.resize}
-      onResizeStart={() => setResizing(true)}
       onResize={resizeTo}
       onResizeEnd={resizeEnd}
       onReset={onResizerDoubleClick}

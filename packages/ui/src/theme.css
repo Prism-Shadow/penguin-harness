@@ -57,6 +57,7 @@
 @import "./layers.css";
 @import "./wallpaper.css";
 @import "./window-band.css";
+@import "./components/shell/dock-frame/dock-frame.css";
 @import "./cursors.css";
 @import "./animations.css";
 /* The showcase family's sheet (components/showcase/showcase.css), served in ui-base like the

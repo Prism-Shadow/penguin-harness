@@ -1,0 +1,20 @@
+/* Only the painted divider captures a resize. The content slides behind it within the dock. */
+[data-dock-resize-seat] {
+  position: absolute;
+  z-index: var(--layer-handle);
+  touch-action: none;
+}
+[data-dock-resize-seat="right"] {
+  inset: 0 100% 0 auto;
+  display: flex;
+  width: 6px;
+}
+[data-dock-resize-seat="right"] > [role="separator"] {
+  width: 100%;
+}
+[data-dock-resize-seat="bottom"] {
+  inset: 0 0 auto;
+}
+[data-dock-resize-seat="bottom"] > [role="separator"] {
+  height: 6px;
+}
