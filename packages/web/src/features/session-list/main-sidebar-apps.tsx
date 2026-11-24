@@ -154,7 +154,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
     return actions;
   };
   return (
-    <nav aria-label={S.sidebarApps.title} className="pt-2.5">
+    <nav aria-label={S.sidebarApps.title}>
       <SidebarListHeader
         label={S.sidebarApps.title}
         searching={searching}
