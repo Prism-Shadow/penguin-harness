@@ -135,10 +135,26 @@ export interface SchedulesAgentConfig {
   ): Promise<AgentConfigView>;
 }
 
+/**
+ * The Project row an access check hands back (server `ProjectRow`, the project repos' row): a
+ * structural mirror — this package must not import the project library, which itself reads the
+ * session one.
+ */
+export interface SchedulesProjectRow {
+  projectId: string;
+  ownerUserId: string;
+  createdAt: string;
+}
+
+/** The row with the caller's standing in it (server `ProjectRow & { role: ProjectRole }`). */
+export interface SchedulesAccessibleProjectRow extends SchedulesProjectRow {
+  role: "owner" | "member";
+}
+
 /** Who may read and who may write (the server's `Access` satisfies this). */
 export interface SchedulesAccess {
-  requireProjectAccess(userId: string, projectId: string): void;
-  requireProjectOwner(userId: string, projectId: string): void;
+  requireProjectAccess(userId: string, projectId: string): SchedulesAccessibleProjectRow;
+  requireProjectOwner(userId: string, projectId: string): SchedulesProjectRow;
 }
 
 /** The data root, as the schedule file paths want it (the server's `Config`/`ServerConfig` satisfies this). */

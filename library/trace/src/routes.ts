@@ -61,10 +61,26 @@ import {
 } from "./history-lines.js";
 import type { HistoryLinesDeps } from "./history-lines.js";
 
-/** The access check the route groups reach: one call each, answers not read (server `Access`). */
+/**
+ * The Project row an access check hands back (server `ProjectRow`, the project repos' row): a
+ * structural mirror — this package must not import the project library, which itself reads the
+ * trace one.
+ */
+export interface TraceProjectRow {
+  projectId: string;
+  ownerUserId: string;
+  createdAt: string;
+}
+
+/** The row with the caller's standing in it (server `ProjectRow & { role: ProjectRole }`). */
+export interface TraceAccessibleProjectRow extends TraceProjectRow {
+  role: "owner" | "member";
+}
+
+/** The access check the route groups reach: one call each (server `Access`). */
 export interface TraceAccess {
-  requireProjectAccess(userId: string, projectId: string): unknown;
-  requireProjectOwner(userId: string, projectId: string): unknown;
+  requireProjectAccess(userId: string, projectId: string): TraceAccessibleProjectRow;
+  requireProjectOwner(userId: string, projectId: string): TraceProjectRow;
 }
 
 /** The agent-config surface the import route checks (server `AgentConfig`). */
