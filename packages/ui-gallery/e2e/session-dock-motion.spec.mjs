@@ -119,3 +119,53 @@ for (const phone of [false, true]) {
     });
   });
 }
+
+// At its width cap the dock grows back when the window widens. Session info stays clickable
+// up to the conversation's right edge while the tool content is still expanding.
+test("widening an open dock leaves the Session info button clickable", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("app.html?route=%2Fchat%2Fs-hooks-index&lang=en&theme=geek");
+  await page.getByTestId("dock-launcher").click();
+  await page.getByTestId("dock-launcher-open-agents").click();
+  const handle = page.getByTestId("dock-resizer").filter({ visible: true });
+  const dock = page.locator('[data-testid="dock"][data-position="right"]');
+  const surface = dock.locator("[data-dock-content]");
+  const info = page.getByRole("button", { name: "Session info", exact: true });
+  const grip = await handle.boundingBox();
+  await page.mouse.move(grip.x + 3, grip.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(1, grip.y + 100, { steps: 3 });
+  await page.mouse.up();
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect.poll(async () => (await dock.boundingBox()).width).toBeLessThan(500);
+  await surface.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+  await surface.evaluate((el) => {
+    el.addEventListener(
+      "transitionrun",
+      (event) => {
+        const animation = el
+          .getAnimations()
+          .find((a) => a.transitionProperty === event.propertyName);
+        if (animation) {
+          animation.pause();
+          animation.currentTime = animation.effect.getTiming().duration * 0.3;
+        }
+      },
+      { once: true },
+    );
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect
+    .poll(() => surface.evaluate((el) => el.getAnimations()[0]?.playState))
+    .toBe("paused");
+  const frame = await dock.boundingBox();
+  const divider = await handle.boundingBox();
+  expect(Math.abs(frame.x - divider.x - divider.width)).toBeLessThan(2);
+  const button = await info.boundingBox();
+  const x = Math.max(
+    button.x + 2,
+    Math.min(divider.x + divider.width / 2, button.x + button.width - 2),
+  );
+  await page.mouse.click(x, button.y + button.height / 2);
+  await expect(info).toHaveAttribute("aria-expanded", "true");
+});

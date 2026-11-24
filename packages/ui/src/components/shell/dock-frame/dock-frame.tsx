@@ -330,6 +330,23 @@ function useFullscreenPhase(
     };
   }, [phase, host]);
 
+  // Keep the covered part of this host out of keyboard navigation until the surface
+  // rejoins the flow. The application navigation and other uncovered hosts stay reachable.
+  const lifted = phase !== "docked";
+  useLayoutEffect(() => {
+    if (!lifted) return;
+    const frame = boxRef.current?.parentElement;
+    const cover = hostRef.current?.();
+    if (!frame || !cover || frame.parentElement !== cover) return;
+    const background = Array.from(cover.children).filter(
+      (node): node is HTMLElement => node instanceof HTMLElement && node !== frame && !node.inert,
+    );
+    for (const node of background) node.inert = true;
+    return () => {
+      for (const node of background) node.inert = false;
+    };
+  }, [lifted, boxRef]);
+
   // Report each phase once it is in the DOM (the attribute and the lifted box exist from this
   // commit on), never the initial docked state.
   const reported = useRef<DockFullscreenPhase | null>(null);

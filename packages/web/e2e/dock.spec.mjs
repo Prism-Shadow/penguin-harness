@@ -331,8 +331,22 @@ test("the Session toolbar and bottom dock share the middle column; resizing neve
       Math.abs(app.bottom - side.bottom),
   ).toBeLessThan(3);
   await expect(handle).toHaveCount(0);
+  // Backward tabbing from the dock reaches the navigation without visiting the
+  // covered Session toolbar, composer or bottom dock.
+  const column = host.locator("[data-session-column]");
+  const nav = page.locator('[data-slot="nav"]:visible');
+  for (let step = 0; step < 30; step++) {
+    await page.keyboard.press("Shift+Tab");
+    expect(await column.evaluate((el) => el.contains(document.activeElement))).toBe(false);
+    if (await nav.evaluate((el) => el.contains(document.activeElement))) break;
+  }
+  expect(await nav.evaluate((el) => el.contains(document.activeElement))).toBe(true);
   await right.getByTestId("dock-fullscreen").click();
   await expect(right).not.toHaveAttribute("data-fullscreen");
+  await info.focus();
+  await page.keyboard.press("Enter");
+  await expect(info).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
   await expect(right.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
   await bottom.getByTestId("dock-fullscreen").click();
   await expect(bottom).toHaveAttribute("data-fullscreen", "full");
