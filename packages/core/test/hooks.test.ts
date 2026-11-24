@@ -793,7 +793,8 @@ describe("Session pre-tool-use hooks", () => {
       (m) => isEventMessage(m) && m.payload.type === "approval_decision",
     );
     expect((decision!.payload as { decision: string }).decision).toBe("forbidden");
-    expect(llm.toolOutputs).toEqual(["Tool call denied by policy."]);
+    // The denial names the rule, not a person.
+    expect(llm.toolOutputs).toEqual(["Tool call denied by rule `no-rm`."]);
   });
 
   it("a hook allow does not get past an ask rule: the call still goes to a person", async () => {

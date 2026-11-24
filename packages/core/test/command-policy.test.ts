@@ -863,7 +863,10 @@ describe("Session applies the policy at the approval boundary", () => {
       }) as AmspRecord;
 
     expect(await fallback!(childCall("npm publish") as never)).toBe("allow");
-    expect(await fallback!(childCall("rm -rf /") as never)).toBe("forbidden");
+    expect(await fallback!(childCall("rm -rf /") as never)).toEqual({
+      decision: "forbidden",
+      rule: "no-rm-rf",
+    });
     expect(await fallback!(childCall("ls") as never)).toBe("allow");
     // The host heard of the ask hit with its reason and of the plain call without one; the
     // deny hit never reached it.
