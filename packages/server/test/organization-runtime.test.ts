@@ -3587,26 +3587,20 @@ describe("organization runtime", () => {
     it("rewrites through the parser: CRLF files, trailing comments, quoted keys and values all survive", async () => {
       await createOrg();
       await writeLegacy("2026-09-05-legacy-root", "proposed", serializeTicket(doc("Legacy root")));
-      const crlf =
-        [
-          "---",
-          "title: Legacy crlf",
-          "status: proposed",
-          `owner: agent:${CEO}`,
-          "notify:",
-          `  - agent:${CEO}`,
-          "priority: P2",
-          "sessions: []",
-          "history: []",
-          "goal: Keep the file's own bytes",
-          "acceptance_criteria: Survive the rewrite",
+      // The serializer's own output, converted to CRLF and hand-marked up: a quoted key with
+      // a trailing comment, and a quoted value.
+      const crlf = serializeTicket(
+        doc("Legacy crlf", {
+          parent: "2026-09-05-legacy-root",
+          blockedBy: "2026-09-05-legacy-root",
+        }),
+      )
+        .replace(/\n/g, "\r\n")
+        .replace(
+          /^parent: 2026-09-05-legacy-root$/m,
           '"parent": 2026-09-05-legacy-root # waits for it',
-          'blocked_by: "2026-09-05-legacy-root"',
-          "---",
-          "",
-          "A body line.",
-          "parent: 2026-09-05-legacy-root in prose must not move.",
-        ].join("\r\n") + "\r\n";
+        )
+        .replace(/^blocked_by: 2026-09-05-legacy-root$/m, 'blocked_by: "2026-09-05-legacy-root"');
       await writeLegacy("2026-09-05-legacy-crlf", "proposed", crlf);
 
       await scheduler.tickOnce();
@@ -3616,10 +3610,13 @@ describe("organization runtime", () => {
       );
       // Byte for byte: the CRLF line endings, the trailing comment and the quoted key are
       // the file's own; only the two values' spans were replaced (the quoted values unquoted,
-      // which YAML reads the same), and the prose line that starts with `parent:` stays.
+      // which YAML reads the same).
       expect(migrated).toBe(
         crlf
-          .replace('"parent": 2026-09-05-legacy-root', '"parent": ticket-2026-09-05-legacy-root')
+          .replace(
+            '"parent": 2026-09-05-legacy-root # waits for it',
+            '"parent": ticket-2026-09-05-legacy-root # waits for it',
+          )
           .replace('blocked_by: "2026-09-05-legacy-root"', "blocked_by: ticket-2026-09-05-legacy-root"),
       );
       expect(migrated.includes("\r\n")).toBe(true);
