@@ -232,20 +232,12 @@ describe("the final work step of a Task", () => {
     const live = createStreamModel();
     pushMessages(live, records);
     expect(steps(live).map((item) => item.workOutcome)).toEqual([undefined, undefined]);
-    const clock = steps(live)[0]!.workTiming;
-    expect(clock).toBeDefined();
-    expect(steps(live)[1]!.workTiming).toBe(clock);
-    expect(clock?.durationMs).toBeUndefined();
     notifyTaskIdle(live);
     const replay = createStreamModel();
     pushMessages(replay, records);
     finalizeHistory(replay);
     for (const model of [live, replay]) {
-      expect(steps(model).map((item) => item.workTiming?.durationMs)).toEqual([4000, 4000]);
-      expect(steps(model).map((item) => item.workOutcome)).toEqual([
-        undefined,
-        { state: "done", durationMs: 4000 },
-      ]);
+      expect(steps(model).map((item) => item.workOutcome)).toEqual([undefined, { state: "done" }]);
     }
   });
   it.each([
@@ -269,9 +261,8 @@ describe("the final work step of a Task", () => {
       ]);
       finalizeHistory(model);
       const [prior, next] = steps(model);
-      expect(prior?.workOutcome).toEqual({ state, durationMs: 4000 });
-      expect(prior?.workTiming?.durationMs).toBe(4000);
-      expect(next?.workTiming?.durationMs).toBe(0);
+      expect(next?.workOutcome?.state).toBe("done");
+      expect(prior?.workOutcome).toEqual({ state });
     },
   );
   it("leaves an unfinished request without a fabricated completion", () => {
@@ -3429,13 +3420,16 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     expect(th.durationMs).toBe(3200);
   });
 
-  it("history thinking (no fragments): approximates the start with the previous message's time", () => {
+  it("only times historical thinking with a recorded first fragment", () => {
     const m = createStreamModel();
     pushMessage(m, at(userText("question"), T0));
-    pushMessage(m, at(thinkingMessage("reasoning"), T1));
-    const th = items(m).find((i) => i.kind === "thinking") as ThinkingItem;
-    expect(th.startedAtMs).toBe(Date.parse(T0));
-    expect(th.durationMs).toBe(3200);
+    pushMessage(m, at(thinkingMessage("old note"), T1));
+    const measured = thinkingMessage("more thinking");
+    measured.payload.started_at = T1;
+    pushMessage(m, at(measured, T2));
+    const [older, newer] = items(m).filter((i) => i.kind === "thinking");
+    expect(older?.durationMs).toBeUndefined();
+    expect(newer?.durationMs).toBe(4800);
   });
 
   it("tool duration: tool_call close → full tool_call_output (same convention as Trace analysis)", () => {
@@ -3482,18 +3476,14 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     expect(card.outputStatus).toBe("aborted");
   });
 
-  it("history tools (no fragments): approximate the argument-generation start with the previous message's time; duration includes the generation segment", () => {
-    // Replaying Trace after a page refresh: there's no partial_tool_call start. Without
-    // approximating the generation start, tool duration would silently lose the argument
-    // generation segment (the model emits arguments token by token, often the bulk of the time).
+  it("does not charge a preceding message gap as argument generation on older calls", () => {
     const m = createStreamModel();
     pushMessage(m, at(userText("question"), T0));
     pushMessage(m, at(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "th" }), T1));
-    const card = items(m).find((i) => i.kind === "tool_call") as ToolCallItem;
-    expect(card.argStartedAtMs).toBe(Date.parse(T0));
     pushMessage(m, at(toolCallOutput({ output: "ok", toolCallId: "th", status: "completed" }), T2));
-    // Generation segment T0->T1 (3200ms) + execution segment T1->T2 (4800ms).
-    expect(card.durationMs).toBe(8000);
+    const card = items(m).find((i) => i.kind === "tool_call") as ToolCallItem;
+    expect(card.argStartedAtMs).toBeUndefined();
+    expect(card.durationMs).toBe(4800);
   });
 
   it("streaming tool: duration = argument-generation segment + execution segment (no approval); the full message does not shrink it", () => {

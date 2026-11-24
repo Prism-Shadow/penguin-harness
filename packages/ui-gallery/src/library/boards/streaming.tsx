@@ -137,7 +137,8 @@ export function StreamingBoard() {
   const answer = streamingAnswer(state.lang);
   const [run, setRun] = useState(0);
   const [activityMode, setActivityMode] = useState<ActivityDisplayMode>("standard");
-  const [finished, setFinished] = useState(false);
+  const [elapsed, setElapsed] = useState<number>();
+  const finished = elapsed !== undefined;
   const [started, setStarted] = useState(Date.now);
   const activityState = finished ? "done" : "running";
   const stream = useScriptedStream(answer, run);
@@ -167,8 +168,10 @@ export function StreamingBoard() {
             variant="secondary"
             size="xs"
             onClick={() => {
-              if (finished) setStarted(Date.now());
-              setFinished(!finished);
+              if (finished) {
+                setStarted(Date.now());
+                setElapsed(undefined);
+              } else setElapsed(Date.now() - started);
             }}
           >
             {finished ? t.restart : t.finish}
@@ -189,8 +192,9 @@ export function StreamingBoard() {
           displayMode={activityMode}
           state={activityState}
           title={finished ? t.finished : t.running}
-          runTiming={{ startMs: started, durationMs: finished ? 3000 : undefined }}
-          terminal={finished ? { label: t.finished, state: "done", durationMs: 3000 } : undefined}
+          startMs={started}
+          durationMs={elapsed}
+          terminal={finished ? { label: t.finished, state: "done" } : undefined}
           rows={[
             {
               key: "plan",
@@ -220,7 +224,9 @@ export function StreamingBoard() {
                   state={activityState}
                   name="read_file"
                   subtitle={t.read}
-                  duration={finished ? { live: false, ms: 1200 } : { live: true, sinceMs: started }}
+                  duration={
+                    finished ? { live: false, ms: elapsed } : { live: true, sinceMs: started }
+                  }
                   argumentsText={'{"file_path": "notes.md"}'}
                   output="# Weekly sync"
                 />

@@ -28,10 +28,8 @@
  * from anywhere inside it; this is the first of two stacked sticky levels, the row being read
  * pinning right below it. Collapsing while the head is stuck lands the view back on the card.
  *
- * The duration follows the count and the detail: a live clock while a step is in flight
- * (`stepRunning`), the settled span once nothing is. A work group's span runs from its earliest
- * step's start to its latest's end, so a group that merely stays open between steps does not
- * tick, or the number would climb past the span and snap back when the group settles.
+ * The duration follows the count. A live anchor measures the active work left in flight;
+ * a settled duration holds steady between steps and after the last one.
  *
  * The settle is one movement in three parts, each on the theme's motion: the head's label, mark
  * and details ease into their settled ink (`theme.css`), the settled glyph and the settled title
@@ -396,7 +394,11 @@ export function ActivityGroup({
             open={shown}
             totalStartMs={runTiming?.startMs ?? startMs}
             totalDurationMs={runTiming?.durationMs ?? terminal?.durationMs ?? durationMs}
-            totalRunning={runTiming ? runTiming.durationMs === undefined : running && !terminal}
+            totalRunning={
+              runTiming
+                ? runTiming.durationMs === undefined
+                : startMs !== undefined && inFlight && !terminal
+            }
           />
         </button>
       ) : expandable ? (

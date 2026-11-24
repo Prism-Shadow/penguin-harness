@@ -34,8 +34,11 @@ test("activity display modes work independently of the gallery theme, even on co
   await expect(group.locator("[data-step-terminal]")).toContainText("Run complete");
   await expect(rows).toHaveCount(2);
   await expect(plan).toBeVisible();
-  await expect(group.locator("[data-step-elapsed]")).toContainText("3s");
+  const elapsed = group.locator("[data-step-elapsed] [data-slot=detail]");
+  await expect(elapsed).toHaveText(/\d+(?:\.\d+)?(?:ms|s|m\d+s)/);
+  const finishedAt = await elapsed.innerText();
   await choose("Expanded");
+  await expect(elapsed).toHaveText(finishedAt);
   await expect(rows).toHaveCount(2);
   await expect(plan).toBeVisible();
 });

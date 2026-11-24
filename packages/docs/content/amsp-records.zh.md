@@ -92,6 +92,7 @@ interface TextPayload {
 interface ThinkingPayload {
   type: "thinking";
   role: "assistant";
+  started_at?: string;
   thinking: string;
   fidelity?: Fidelity;        // required by some models to replay history
 }
@@ -107,6 +108,7 @@ interface InlineThinkingPayload {
 interface ToolCallPayload {
   type: "tool_call";
   role: "assistant";
+  started_at?: string;
   name: string;
   arguments: string;          // arguments as a JSON string
   tool_call_id: string;
@@ -138,6 +140,8 @@ interface InlineDataPayload {
 ```
 
 `sender` 区分 user 角色文本的来源：真人用户（`user`）、驱动子 Agent 的父 Agent（`parent_agent`）、harness 的自动注入（`harness`，例如后台任务的完成回报、stop 钩子 `continue` 注入的输入，以及 `user_prompt` 钩子补充的 context），以及 Server 自己的触发（`server`，例如定时任务）。这个字段不会发给供应商。
+
+流式思考和工具调用的 `started_at` 记录首个片段的 UTC 时间，完整记录的时间戳表示结束。只收到完整记录时省略起点。
 
 `tool_call` 与 `tool_call_output` 通过 `tool_call_id` 严格配对。一轮内的调用构成一个批次，输出按原始调用顺序回填（见 [Agent 运行循环](/agent-loop)）。
 
