@@ -234,8 +234,8 @@ function SessionPicker({
             const leaders = Object.entries(counts)
               .filter(([, count]) => count > 0)
               .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-            // Searching live terminals must include owners beyond the current page.
-            const limit = resource === "terminal" && needle ? leaders.length : pages * PAGE_SIZE;
+            // Search all resource owners, including those beyond the current page.
+            const limit = needle ? leaders.length : pages * PAGE_SIZE;
             if (leaders.length > limit) hasMore = true;
             const relevant = new Set(leaders.slice(0, limit).map(([id]) => id));
             for (const id of active.keys()) if (!relevant.has(id)) active.delete(id);
@@ -260,7 +260,7 @@ function SessionPicker({
           }
           for (const [id, session] of new Map([...listed, ...active])) {
             const count = counts === null ? null : (counts[id] ?? 0);
-            if (resource === "terminal" && !count) continue;
+            if (resource && !count) continue;
             if (
               !listed.has(id) &&
               needle &&
@@ -308,7 +308,7 @@ function SessionPicker({
     timer = setTimeout(
       async () => {
         setLoading(true);
-        if (resource !== "terminal") await listHistory();
+        if (!resource) await listHistory();
         if (!current) return;
         refreshResources.current = () => {
           void readCounts();
@@ -330,7 +330,20 @@ function SessionPicker({
     };
   }, [sources, resource, project, needle, pages, refresh]);
   const countLabel = kind === "terminal" ? S.dock.openTerminals : S.dock.openBrowserPages;
-  const searchLabel = kind === "terminal" ? S.dock.searchActiveSessions : S.dock.searchSessions;
+  const resourceLabels = {
+    terminal: {
+      search: S.dock.searchActiveSessions,
+      empty: S.dock.noOpenTerminals,
+      start: S.dock.startSessionTerminal,
+    },
+    "builtin-browser": {
+      search: S.dock.searchBrowserSessions,
+      empty: S.dock.noOpenBrowserPages,
+      start: S.dock.startSessionBrowser,
+    },
+  };
+  const labels = resource ? resourceLabels[resource] : undefined;
+  const searchLabel = labels?.search ?? S.dock.searchSessions;
   const chosen = rows.filter((row) => selected.includes(idOf(row)) && (row.count ?? 0) > 0);
   function open(row: Row) {
     workspace?.openBesideSession(
@@ -400,6 +413,8 @@ function SessionPicker({
         aria-label={searchLabel}
         onChange={(value) => {
           setQuery(value);
+          if (value.trim() === needle) return;
+          setLoading(true);
           setRows([]);
           setPages(1);
           setSelected([]);
@@ -491,8 +506,8 @@ function SessionPicker({
       {!loading && !rows.length && !errors.length && (
         <EmptyState
           dashed
-          title={kind === "terminal" && !needle ? S.dock.noOpenTerminals : S.dock.emptySessions}
-          description={kind === "terminal" && !needle ? S.dock.startSessionTerminal : undefined}
+          title={!needle && labels ? labels.empty : S.dock.emptySessions}
+          description={needle ? undefined : labels?.start}
         />
       )}
       {more && (
