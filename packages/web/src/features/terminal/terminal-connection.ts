@@ -81,13 +81,17 @@ export interface TerminalConnectionDeps {
    */
   recheck(id: string): Promise<boolean>;
   open(id: string, handlers: SocketHandlers): AttachedSocket;
-  /** Everything that is not heartbeat traffic, in arrival order. */
-  onFrame(frame: DecodedFrame): void;
+  /** The first Restore must be parsed by xterm before it can encode input for the shell. */
+  onFrame(frame: DecodedFrame, parsed?: () => void): void;
   onStatus(status: TerminalConnectionStatus, detail: string): void;
 }
 
 export class TerminalConnection {
   private socket: AttachedSocket | null = null;
+  /** A pending clipboard read reserves its position even if subsequent keys are ready first. */
+  private inputQueue: { write?: () => void }[] | null = [];
+  private writingInput = false;
+  private restored = false;
   private terminalId: string | null = null;
   private stopped = false;
   private attempt = 0;
@@ -115,6 +119,8 @@ export class TerminalConnection {
   /** Stops for good: the pane is gone, or the shell exited and there is nothing to reattach to. */
   stop(): void {
     this.stopped = true;
+    this.inputQueue = null;
+    this.restored = false;
     this.clearRetry();
     this.stopHeartbeat();
     this.clearDial();
@@ -124,12 +130,48 @@ export class TerminalConnection {
 
   /** True while a socket is open; false through every gap the user might type into. */
   get connected(): boolean {
-    return this.socket !== null;
+    return this.socket !== null && this.dialTimer === null;
   }
 
-  /** Sends one frame if there is a socket to send it on. Input typed into a gap is dropped. */
+  /** Reserve at the gesture, complete when the browser answers (an empty completion skips it). */
+  reserveInput(): (write?: () => void) => void {
+    const slot: { write?: () => void } = {};
+    this.inputQueue?.push(slot);
+    return (write = () => {}) => {
+      slot.write = write;
+      this.flushInput();
+    };
+  }
+
+  withInputModes(write: () => void): void {
+    // xterm.paste synchronously emits onData; those bytes belong to the current operation.
+    if (this.restored && (this.writingInput || this.inputQueue?.length === 0)) write();
+    else this.reserveInput()(write);
+  }
+
+  private flushInput(): void {
+    const queue = this.inputQueue;
+    if (!queue || !this.restored || this.writingInput) return;
+    this.writingInput = true;
+    let written = 0;
+    try {
+      for (const slot of queue) {
+        if (!slot.write || this.inputQueue !== queue) break;
+        written++;
+        slot.write();
+      }
+    } finally {
+      queue.splice(0, written);
+      this.writingInput = false;
+    }
+  }
+
   send(bytes: Uint8Array): void {
-    this.socket?.send(bytes);
+    if (bytes[0] === TerminalOpcode.Input) {
+      this.withInputModes(() => this.socket?.send(bytes));
+    } else if (this.connected) {
+      this.socket?.send(bytes);
+    }
   }
 
   /**
@@ -178,7 +220,7 @@ export class TerminalConnection {
           const present = await this.within(this.deps.recheck(id), RECHECK_TIMEOUT_MS);
           if (this.stopped) return; // a stop that landed while the probe was out
           if (!present) {
-            this.stopped = true;
+            this.stop();
             this.deps.onStatus("error", "terminal is gone");
             return;
           }
@@ -189,7 +231,7 @@ export class TerminalConnection {
         // A first attach is the host's policy failing, and is fatal. A recheck is just this
         // link being down again — the same thing the retry is for, and so is its timeout.
         if (this.terminalId === null) {
-          this.stopped = true;
+          this.stop();
           this.deps.onStatus("error", detail);
           return;
         }
@@ -205,7 +247,6 @@ export class TerminalConnection {
           this.clearDial();
           this.attempt = 0;
           this.startHeartbeat();
-          this.deps.onStatus("ready", "");
         },
         onMessage: (data) => {
           if (this.socket !== socket) return;
@@ -219,6 +260,16 @@ export class TerminalConnection {
           }
           if (frame.opcode === TerminalOpcode.Pong) {
             this.answersProbes = true;
+            return;
+          }
+          if (frame.opcode === TerminalOpcode.Restore && !this.restored) {
+            this.deps.onFrame(frame, () => {
+              if (this.socket !== socket || this.restored) return;
+              this.restored = true;
+              this.inputQueue ??= [];
+              this.flushInput();
+              this.deps.onStatus("ready", "");
+            });
             return;
           }
           this.deps.onFrame(frame);
@@ -242,6 +293,8 @@ export class TerminalConnection {
   private drop(socket: AttachedSocket): void {
     if (this.socket !== socket) return;
     this.socket = null;
+    if (this.restored) this.inputQueue = null;
+    this.restored = false;
     this.stopHeartbeat();
     this.clearDial();
     socket.close();

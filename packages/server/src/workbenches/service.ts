@@ -29,6 +29,7 @@
  * listing, watcher event or request loads it. The markers are dot entries the watcher ignores,
  * so a switch takes effect through setEnabled / setAgentEnabled, which unload or load at once.
  */
+import type { AppCenterUnavailable } from "../api/types.js";
 import type {
   ServerEvent,
   AgentIndex,
@@ -762,17 +763,25 @@ export class WorkbenchService implements Workbenches {
     this.forget(projectId, agentId, workbenchId);
   }
 
-  async appCenter(projectId: string, hidden = false): Promise<AppCenterShortcut[]> {
+  async appCenter(
+    projectId: string,
+    hidden = false,
+    unavailable?: AppCenterUnavailable,
+  ): Promise<AppCenterShortcut[]> {
     const out: AppCenterShortcut[] = [];
     // The index's order is the Agents list's (created, then id); a row whose folder is no longer
     // an Agent is not one the list shows either.
     for (const row of this.agents.list(projectId)) {
       const { agentId } = row;
-      if (!(await this.agentConfig.exists(projectId, agentId))) continue;
+      if (!(await this.agentConfig.exists(projectId, agentId))) {
+        unavailable?.agents.push(agentId);
+        continue;
+      }
       // One Agent whose older layout cannot be moved is left out, not the whole App Center.
       try {
         await this.migrate(projectId, agentId);
       } catch (err) {
+        unavailable?.agents.push(agentId);
         this.log.line(`[workbenches] ${projectId}/${agentId}: ${messageOf(err)}`);
         continue;
       }
@@ -780,7 +789,10 @@ export class WorkbenchService implements Workbenches {
       this.watch(projectId, agentId);
       const base = workbenchesDir(this.paths.root, projectId, agentId);
       // With the Agent-wide switch off none of its workbenches runs, so none has a tile.
-      if (!hidden && (await isSwitchedOff(base))) continue;
+      if (!hidden && (await isSwitchedOff(base))) {
+        unavailable?.agents.push(agentId);
+        continue;
+      }
       const agentName = (await this.agentConfig.readCardMeta(projectId, agentId)).name ?? agentId;
       const shortcuts = await agentShortcuts(
         projectId,
@@ -788,6 +800,7 @@ export class WorkbenchService implements Workbenches {
         base,
         (workbenchId) => this.building(key(projectId, agentId, workbenchId)),
         hidden ? "hidden" : "appCenter",
+        unavailable,
       );
       // The plugin that installed each, from its receipt; receipts that will not read name none,
       // and the tiles still list.
