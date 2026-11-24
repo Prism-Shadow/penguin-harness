@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `ui`, `web`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1821
 
 [中文版](2026-11-24-session-dock-columns.zh.md)
 
