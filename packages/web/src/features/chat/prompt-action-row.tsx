@@ -105,7 +105,7 @@ export function PromptActionRow({
             <PromptButton key={action.id} action={action} />
           ))}
         </div>
-        <div className="flex shrink-0 items-center gap-0.5 border-s border-line ps-1">
+        <div className="flex shrink-0 items-center gap-1 border-s border-line ps-1">
           {showShuffle && (
             <IconButton
               label={shuffle.label}
