@@ -7125,8 +7125,10 @@ Benchmark：
           budget: string,
         ): string =>
           `预算暂停：${agent} 已达到 ${period} 预算的 ${percent}%（${cost} / ${budget} USD）。它与下属的日历已暂停，直到下个月或调高预算；@ 提及和直接对话仍然可用。`,
+        ticket_ids_migrating: (count: string): string =>
+          `一次性迁移：发现 ${count} 张旧格式工单，正在迁移为带 ticket- 前缀的新 id。迁移会移动并改写工单文件，有遗失工单数据的风险——为数据安全起见，请先备份。`,
         ticket_ids_migrated: (count: string, backup: string): string =>
-          `一次性迁移：${count} 张旧格式工单已迁移为带 ticket- 前缀的新 id（原文件备份在 ${backup}）。迁移会移动并改写工单文件，有遗失工单数据的风险——为数据安全起见，请先备份。`,
+          `一次性迁移完成：${count} 张旧格式工单已迁移为带 ticket- 前缀的新 id（原文件备份在 ${backup}）。`,
         ticket_blocked: (ticket: string, title: string): string =>
           `工单 ${ticket}（${title}）被阻塞了。`,
         ticket_done: (ticket: string, title: string): string =>

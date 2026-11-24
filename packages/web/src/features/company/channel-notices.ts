@@ -38,6 +38,7 @@ export const NOTICE_KINDS = Object.keys({
   channel_removed: true,
   budget_warned: true,
   budget_paused: true,
+  ticket_ids_migrating: true,
   ticket_ids_migrated: true,
   ticket_blocked: true,
   ticket_done: true,
@@ -93,6 +94,8 @@ export function noticeText(
       return budget(notices.budget_warned);
     case "budget_paused":
       return budget(notices.budget_paused);
+    case "ticket_ids_migrating":
+      return notices.ticket_ids_migrating(value("count"));
     case "ticket_ids_migrated":
       return notices.ticket_ids_migrated(value("count"), value("backup"));
     case "ticket_blocked":
