@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** Web App, Server
+- **PR:** [#1805](https://github.com/Prism-Shadow/penguin-harness/pull/1805)
 
 [English](2026-11-24-app-center-folder-membership.md)
 
