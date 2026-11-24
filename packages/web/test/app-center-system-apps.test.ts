@@ -141,8 +141,13 @@ it("opens a system app as its own page, and says it is a system app", async () =
 });
 
 it("offers only opening and arranging on a system app, and moves it into an existing folder", async () => {
-  const folder = { type: "folder" as const, id: "tools", name: "Tools", apps: [BOARD, system("models")] };
-  const { server, router } = await open({ layout: {v: 1, items: [folder]} });
+  const folder = {
+    type: "folder" as const,
+    id: "tools",
+    name: "Tools",
+    apps: [BOARD, system("models")],
+  };
+  const { server, router } = await open({ layout: { v: 1, items: [folder] } });
   await openMenu(tile(system("plugins")));
   expect(menuRows()).toEqual([
     en.appCenter.menu.open,
@@ -153,7 +158,13 @@ it("offers only opening and arranging on a system app, and moves it into an exis
   ]);
   await click(menuItem(en.appCenter.menu.moveTo));
   await click(menuItem(folder.name));
-  await waitFor(() => server.appCenterLayout()?.items.some((item) => item.type === "folder" && item.apps.includes(system("plugins"))) === true);
+  await waitFor(
+    () =>
+      server
+        .appCenterLayout()
+        ?.items.some((item) => item.type === "folder" && item.apps.includes(system("plugins"))) ===
+      true,
+  );
   expect(server.appCenterLayout()?.items).toContainEqual({
     ...folder,
     apps: [...folder.apps, system("plugins")],
