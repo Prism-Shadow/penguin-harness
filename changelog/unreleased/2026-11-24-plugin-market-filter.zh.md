@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** Web App
+- **PR:** [#1811](https://github.com/Prism-Shadow/penguin-harness/pull/1811)
 
 [English](2026-11-24-plugin-market-filter.md)
 
