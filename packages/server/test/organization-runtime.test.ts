@@ -3584,6 +3584,47 @@ describe("organization runtime", () => {
       );
     });
 
+    it("rewrites through the parser: CRLF files, trailing comments, quoted keys and values all survive", async () => {
+      await createOrg();
+      await writeLegacy("2026-09-05-legacy-root", "proposed", serializeTicket(doc("Legacy root")));
+      const crlf =
+        [
+          "---",
+          "title: Legacy crlf",
+          "status: proposed",
+          `owner: agent:${CEO}`,
+          "notify:",
+          `  - agent:${CEO}`,
+          "priority: P2",
+          "sessions: []",
+          "history: []",
+          "goal: Keep the file's own bytes",
+          "acceptance_criteria: Survive the rewrite",
+          '"parent": 2026-09-05-legacy-root # waits for it',
+          'blocked_by: "2026-09-05-legacy-root"',
+          "---",
+          "",
+          "A body line.",
+          "parent: 2026-09-05-legacy-root in prose must not move.",
+        ].join("\r\n") + "\r\n";
+      await writeLegacy("2026-09-05-legacy-crlf", "proposed", crlf);
+
+      await scheduler.tickOnce();
+      const migrated = await fs.readFile(
+        path.join(orgDir(), "tickets", "2026-09", "proposed", "ticket-2026-09-05-legacy-crlf.md"),
+        "utf8",
+      );
+      // Byte for byte: the CRLF line endings, the trailing comment and the quoted key are
+      // the file's own; only the two values' spans were replaced (the quoted values unquoted,
+      // which YAML reads the same), and the prose line that starts with `parent:` stays.
+      expect(migrated).toBe(
+        crlf
+          .replace('"parent": 2026-09-05-legacy-root', '"parent": ticket-2026-09-05-legacy-root')
+          .replace('blocked_by: "2026-09-05-legacy-root"', "blocked_by: ticket-2026-09-05-legacy-root"),
+      );
+      expect(migrated.includes("\r\n")).toBe(true);
+    });
+
     it("moves nothing when a legacy id cannot migrate: the files waiting on it stay, and nothing is pointed at an id that has no file", async () => {
       await createOrg();
       // The root cannot parse at all; the child and the modern follower can only parse once

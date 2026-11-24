@@ -14,8 +14,10 @@ import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import {
   Document as YamlDocument,
   isMap,
+  isScalar,
   isSeq,
   parse as parseYaml,
+  parseDocument,
   stringify as stringifyYaml,
 } from "yaml";
 import type {
@@ -689,27 +691,20 @@ function splitFrontmatter(text: string): Frontmatter {
   return { kind: "unterminated" };
 }
 
-/** A YAML scalar without its surrounding quotes, if it wore any. */
-function unquote(value: string): string {
-  if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
-    return value.slice(1, -1);
-  }
-  return value;
-}
-
 /**
  * Rewrites the ticket references (`parent: <id>`, `blocked_by: <id>`) in a ticket file's
- * frontmatter to follow a migration. Only the frontmatter block is touched, only at the top
- * level, and only values the mapping names: a `parent:` line in the prose, a comment above
- * the field, and everything else come back byte-for-byte — the rewrite is raw text, not a
- * parse-and-reserialize, because the parser does not model comments, layout or unknown
- * fields and must not be given the chance to drop them. A quoted value is accepted and the
- * replacement written unquoted, which YAML reads the same. A file whose references name
- * nothing in the mapping comes back as it went in.
+ * frontmatter to follow a migration. The two fields are found by the YAML document parser,
+ * not by line shape: whatever they were written with — quoting, spacing, a quoted key, a
+ * trailing comment, CRLF line endings — the parser hands back the value's own span in the
+ * original text, and only that span is replaced; the comment after it, the line endings,
+ * and everything else in the file come back byte-for-byte (there is no re-serialization for
+ * the parser to lose comments, layout or unknown fields through). The replacement is
+ * written unquoted, which YAML reads the same. A file whose references name nothing in the
+ * mapping comes back as it went in.
  */
 export function rewriteTicketRefs(raw: string, mapping: ReadonlyMap<string, string>): string {
   if (mapping.size === 0) return raw;
-  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  const lines = raw.split("\n");
   let open = -1;
   let close = -1;
   for (let i = 0; i < lines.length; i++) {
@@ -722,17 +717,26 @@ export function rewriteTicketRefs(raw: string, mapping: ReadonlyMap<string, stri
     } else if (open === -1 && lines[i]!.trim() !== "") break;
   }
   if (open === -1 || close === -1) return raw;
-  let changed = false;
-  const out = lines.map((line, i) => {
-    if (i <= open || i >= close) return line;
-    const m = /^(parent|blocked_by):[ \t]+(.*)$/.exec(line);
-    if (m === null) return line;
-    const newId = mapping.get(unquote(m[2]!.trim()));
-    if (newId === undefined) return line;
-    changed = true;
-    return `${m[1]}: ${newId}`;
-  });
-  return changed ? out.join("\n") : raw;
+  let fmStart = 0;
+  for (let i = 0; i <= open; i++) fmStart += lines[i]!.length + 1;
+  let fmLength = 0;
+  for (let i = open + 1; i < close; i++) fmLength += lines[i]!.length + 1;
+  if (close > open + 1) fmLength -= 1;
+  const doc = parseDocument(raw.slice(fmStart, fmStart + fmLength));
+  if (doc.errors.length > 0) return raw;
+  const edits: Array<{ from: number; to: number; text: string }> = [];
+  for (const key of ["parent", "blocked_by"]) {
+    const value = doc.get(key, true);
+    if (!isScalar(value) || typeof value.value !== "string" || !value.range) continue;
+    const newId = mapping.get(value.value);
+    if (newId === undefined) continue;
+    edits.push({ from: fmStart + value.range[0], to: fmStart + value.range[1], text: newId });
+  }
+  if (edits.length === 0) return raw;
+  edits.sort((a, b) => b.from - a.from);
+  let out = raw;
+  for (const edit of edits) out = out.slice(0, edit.from) + edit.text + out.slice(edit.to);
+  return out;
 }
 
 /**
