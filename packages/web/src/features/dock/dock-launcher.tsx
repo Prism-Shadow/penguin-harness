@@ -57,7 +57,6 @@ import {
 import { useSessionPanelOpener } from "./session-panel-opener";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { panelAppGlyph } from "./panel-meta";
 import { useSessionShortcuts } from "./session-shortcuts";
 import { useDockPanels } from "./panel-registry";
 import { dockVersion, isDockVisible, isNarrow, subscribeDock } from "./dock-state";
@@ -399,8 +398,7 @@ function FloatingLauncher({
   const entries: FanEntry[] = shortcuts.map((entry) => ({
     key: entry.key,
     label: entry.label,
-    glyphAt: (size) =>
-      panelAppGlyph(entry.key, size) ?? (
+    glyphAt: (size) => (
         <GlyphIcon
           d={entry.glyph}
           size={size}

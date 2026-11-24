@@ -3,7 +3,8 @@ import { ADMIN_ID, ADMIN_PASSWORD, login } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
 const catalogKinds = ["terminal", "builtin-browser"];
-const kinds = ["workspace", ...catalogKinds];
+const kinds = ["workspace", ...catalogKinds, "agents", "trace", "memory"];
+const line = (root) => root.locator("svg.ui-glyph > [data-set=line]");
 const mark = (root, kind) => root.locator('[data-system-app-icon="session-tools-' + kind + '"]');
 
 for (const [name, width, themeId, themeMode] of [
@@ -13,7 +14,7 @@ for (const [name, width, themeId, themeMode] of [
   test.describe(name, () => {
     test.use({ viewport: { width, height: 800 }, hasTouch: name === "phone" });
 
-    test("the three session tools retain their distinct app marks across launch surfaces", async ({
+    test("session shortcuts, add menus and tabs share the theme glyph while app entries retain their own marks", async ({
       page,
     }) => {
       await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
@@ -25,7 +26,7 @@ for (const [name, width, themeId, themeMode] of [
         modelId: "claude-4-8",
         baseUrl: process.env.MOCK_URL,
         apiKey: "sk-test",
-        contextWindow: 200000,
+        contextWindow: 1000000,
       };
       await expect(
         await page.request.put(project + "/models", {
@@ -35,6 +36,7 @@ for (const [name, width, themeId, themeMode] of [
       await page.goto("/apps");
       const catalog = page.locator('[data-workspace-page="catalog"]:visible');
       const marks = new Map();
+      const shortcutsByKind = new Map();
       for (const kind of catalogKinds) {
         const tile = mark(catalog, kind);
         await expect(tile).toBeVisible();
@@ -68,12 +70,15 @@ for (const [name, width, themeId, themeMode] of [
         await shortcuts.click();
         for (const kind of kinds) {
           const entry = page.getByTestId("dock-launcher-open-" + kind);
-          await expect(mark(entry, kind)).toBeVisible();
-          const svg = await mark(entry, kind).locator("svg").innerHTML();
-          if (marks.has(kind)) expect(svg).toBe(marks.get(kind));
-          else marks.set(kind, svg);
+          await expect(entry.locator("svg.ui-glyph").first()).toHaveAttribute(
+            "viewBox",
+            "0 0 24 24",
+          );
+          const glyph = await line(entry).innerHTML();
+          if (shortcutsByKind.has(kind)) expect(glyph).toBe(shortcutsByKind.get(kind));
+          else shortcutsByKind.set(kind, glyph);
         }
-        expect(new Set(marks.values()).size).toBe(kinds.length);
+        expect(new Set(shortcutsByKind.values()).size).toBe(kinds.length);
         if (id === ids[0]) {
           await page.getByTestId("dock-launcher-open-app-center").click();
           for (const kind of catalogKinds) {
@@ -81,7 +86,19 @@ for (const [name, width, themeId, themeMode] of [
             expect(await mark(catalog, kind).locator("svg").innerHTML()).toBe(marks.get(kind));
           }
           await expect(filesTile).toHaveCount(0);
-          await page.getByRole("button", { name: "Close panel: App Center", exact: true }).click();
+          const closeCatalog = page.getByRole("button", {
+            name: "Close panel: App Center",
+            exact: true,
+          });
+          const dock = page.getByTestId("dock").filter({ has: closeCatalog });
+          await dock.getByTestId("dock-add").click();
+          for (const kind of kinds) {
+            const entry = page.getByTestId("dock-add-" + kind);
+            await expect(entry).toBeVisible();
+            expect(await line(entry).innerHTML()).toBe(shortcutsByKind.get(kind));
+          }
+          await page.keyboard.press("Escape");
+          await closeCatalog.click();
           await shortcuts.click();
         }
         const terminal = page.getByTestId("dock-launcher-open-terminal");
@@ -90,7 +107,8 @@ for (const [name, width, themeId, themeMode] of [
         const tab = page.locator(
           '[data-testid="dock-tab"][data-tab-id^=":app:session-tool/terminal"]:visible',
         );
-        await expect(mark(tab, "terminal")).toBeVisible();
+        await expect(tab).toBeVisible();
+        expect(await line(tab).first().innerHTML()).toBe(shortcutsByKind.get("terminal"));
       }
       if (name === "phone")
         await page
