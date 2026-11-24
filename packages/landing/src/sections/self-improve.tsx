@@ -511,12 +511,14 @@ export function SelfImprove() {
   const c = S.selfImprove;
   return (
     <Section id="self-evolution" title={c.title} subtitle={c.subtitle}>
-      <AgentEvaluationDiagram />
       <div className="rounded-2xl bg-gray-50 p-5 sm:p-8 dark:bg-gray-900">
         <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-10">
           <MobileEvolutionFlow />
           <LoopDiagram />
           <div className="grid gap-6 sm:grid-cols-3 lg:grid-cols-1 lg:gap-5">
+            <p className="-mb-3 text-xs text-gray-500 sm:col-span-3 lg:col-span-1 dark:text-gray-400">
+              {c.sampleTrends}
+            </p>
             {c.trends.map((t, i) => {
               const data = TRENDS[i];
               if (!data) return null;
@@ -534,6 +536,9 @@ export function SelfImprove() {
             })}
           </div>
         </div>
+      </div>
+      <div className="mx-auto mt-10 max-w-5xl">
+        <AgentEvaluationDiagram />
       </div>
     </Section>
   );

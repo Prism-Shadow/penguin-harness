@@ -64,7 +64,16 @@ export const en: Strings = {
     watcha: "Watcha",
     watchaBadge: "PenguinHarness Watcha badge",
     cliInstall: "Command-line install",
+    stats: [
+      { value: "Cross-platform", label: "Linux, Windows, macOS" },
+      { value: "100% open source", label: "Apache 2.0 licensed" },
+      {
+        value: "First self-improving harness",
+        label: "A native agent self-evolution engine",
+      },
+    ],
     supportedModelsLabel: "Supported Models",
+    supportedModelsMore: "and more",
     algorithmsLabel: "RSI Algorithms",
     benchmarksLabel: "Benchmarks",
     benchmarkKinds: {
@@ -177,7 +186,7 @@ export const en: Strings = {
       "An RSI toolkit changes your agent’s harness (its prompts and Skills) while the model stays fixed, and measures every change on a Benchmark.",
     evaluate: "Evaluate",
     optimize: "Optimize",
-    title: "A unified platform where any agent can self-evolve",
+    title: "A unified self-evolution platform for any agent",
     subtitle:
       "By default the General Agent runs the optimization Skill. Each round it makes one change to the tested agent. Evaluator subagents running the evaluation Skill score the changed agent on every case of the Benchmark.",
     nodeOptimizer: "Optimizer",
@@ -189,6 +198,7 @@ export const en: Strings = {
     edgeImprove: "edit AGENTS.md, a Skill or config",
     noteOld: "snapshot before editing",
     noteNew: "kept only if the score is higher",
+    sampleTrends: "Example trends",
     trends: [
       { label: "Score", hint: "out of 100" },
       { label: "Cost", hint: "per run" },
