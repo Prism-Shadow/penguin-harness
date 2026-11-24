@@ -15,9 +15,10 @@
  *   tab's × closes the panel, the last tab closing puts the dock away;
  * - a whole dock moves to the other edge via its header button, a single tab via drag
  *   onto the drop targets;
- * - full screen is a dock at its largest below the toolbar (the right dock over its row, the
- *   bottom dock up to the toolbar; its box stays in the flow), entered by its header toggle or a
- *   drag past the max and left the same ways; a dock it covers coming on stage ends it;
+ * - after configuring a model and sending the first message, Files can move to the bottom
+ *   and enter fullscreen immediately, even when the original draft page is still mounted;
+ * - an explicit button expands the right dock across the Session, or the bottom dock up to its
+ *   toolbar. Dragging the divider only resizes the dock and keeps the conversation usable;
  * - the arrangement is PER CONVERSATION (each one manages its own tabs, browser-window
  *   style) and survives a reload; the bottom dock's height ratio is a global preference;
  * - a shell belongs to the conversation that opened it: another conversation's terminal panel
@@ -28,6 +29,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
+import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -39,12 +41,12 @@ const P = "password123";
  * as /chat loads, which would swallow every click on the dock; configure the mock model
  * first, like the other app-shell specs do.
  */
-async function configureProjectModel(request) {
+async function configureProjectModel(request, { setDefault = true } = {}) {
   const projectId = (await (await request.get(`${BASE}/api/projects`)).json()).projects[0]
     .projectId;
   const put = await request.put(`${BASE}/api/projects/${projectId}/models`, {
     data: {
-      defaultModel: { provider: "custom", modelId: "claude-4-8" },
+      ...(setDefault && { defaultModel: { provider: "custom", modelId: "claude-4-8" } }),
       models: [
         {
           provider: "custom",
@@ -342,89 +344,119 @@ test("two toolbar toggles: an opened empty dock shows the picker; hiding keeps t
   await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "false");
 });
 
-test("full screen is a dock at its largest below the toolbar — by its button or a drag past the max", async ({
+test("the Session toolbar and bottom dock share the middle column; resizing never opens fullscreen", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await provisionAndLogin(page.request, U, P);
   const projectId = await configureProjectModel(page.request);
-  await killAllTerminals(page.request);
   const sessionId = await createSession(page.request, projectId);
   await page.goto(`${BASE}/chat/${sessionId}`);
-  await page.getByPlaceholder(/输入消息/).waitFor();
-
-  await openViaPicker(page, "right", "trace");
-  const right = dockAt(page, "right");
-  await expect(right.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
-  // The composer measures the conversation column; wait out the dock's expand transition.
   const composer = page.getByPlaceholder(/输入消息/);
-  let settled = null;
-  await expect
-    .poll(async () => {
-      const box = await composer.boundingBox();
-      const same = settled !== null && box !== null && box.width === settled.width;
-      settled = box;
-      return same;
-    })
-    .toBe(true);
-  const rowBox = () => page.locator("[data-dock-row]").boundingBox();
-  const headerBox = (dock) => dock.getByTestId("dock-header").boundingBox();
-
-  // The header button: the right dock covers its own row — the conversation column — while the
-  // toolbar with the title and the statistics stays, and nothing under the cover reflowed.
-  await right.getByTestId("dock-fullscreen").click();
-  await expect(right).toHaveAttribute("data-fullscreen", "full");
-  let row = await rowBox();
-  let header = await headerBox(right);
-  expect(Math.round(header.x)).toBe(Math.round(row.x));
-  expect(Math.round(header.y)).toBe(Math.round(row.y));
-  expect(Math.round(header.width)).toBe(Math.round(row.width));
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await expect(page.getByTestId("dock-toggle-right")).toBeVisible();
-  await expect(page.getByTestId("dock-fullscreen-exit")).toHaveCount(0);
-  expect((await composer.boundingBox()).width).toBe(settled.width);
-
-  // The bottom dock is not under the cover, so bringing it forward leaves the right one full.
-  await page.keyboard.press("Control+Alt+3");
+  await composer.fill("Draft kept while resizing");
+  const location = page.url();
+  const host = page.locator("[data-dock-host]:visible");
+  const toolbar = host.locator("[data-session-toolbar]");
+  const handle = host.locator('[data-testid="dock-resizer"][aria-orientation="vertical"]');
+  const right = dockAt(page, "right");
   const bottom = dockAt(page, "bottom");
-  await expect(bottom).toBeVisible();
-  await bottom.getByTestId("dock-pick-memory").click();
-  await expect(bottom.locator('[data-tab-id="memory"][data-active="true"]')).toBeVisible();
-  await expect(right).toHaveAttribute("data-fullscreen", "full");
+  await openViaPicker(page, "right", "trace");
+  await openViaPicker(page, "bottom", "memory");
 
-  // The header button leaves in place.
+  const edges = async (locator) =>
+    locator.evaluate((element) => {
+      const { left, right, top, bottom, width } = element.getBoundingClientRect();
+      return { left, right, top, bottom, width };
+    });
+  // Measure every presented width, including frames between the viewport change and
+  // the next pointer press while the previous dock size is still transitioning.
+  const observed = await toolbar.evaluateHandle((element) => {
+    let minimum = element.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      minimum = Math.min(minimum, element.getBoundingClientRect().width);
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      return minimum;
+    };
+  });
+  for (const width of [1440, 1280, 1025, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect
+      .poll(async () => {
+        const [app, title, side, divider, lower] = await Promise.all(
+          [host, toolbar, right, handle, bottom].map(edges),
+        );
+        return Math.max(
+          Math.abs(app.top - side.top),
+          Math.abs(app.bottom - side.bottom),
+          Math.abs(title.right - divider.left),
+          Math.abs(lower.right - divider.left),
+          Math.abs(title.left - app.left),
+          Math.abs(divider.right - side.left),
+        );
+      })
+      .toBeLessThan(2);
+    const before = await edges(handle);
+    await page.mouse.move(before.left + 2, 300);
+    await page.mouse.down();
+    await page.mouse.move(1, 300, { steps: 10 });
+    await page.mouse.up();
+    await expect(right).not.toHaveAttribute("data-fullscreen");
+    expect((await edges(toolbar)).width).toBeGreaterThanOrEqual(320);
+    await expect(composer).toHaveValue("Draft kept while resizing");
+    expect(page.url()).toBe(location);
+  }
+  expect(await observed.evaluate((finish) => finish())).toBeGreaterThanOrEqual(320);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const info = toolbar.getByRole("button", { name: "Session 信息", exact: true });
+  await info.focus();
+  await page.keyboard.press("Enter");
+  await expect(info).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(info).toHaveAttribute("aria-expanded", "false");
+  await expect(info).toBeFocused();
+
+  // The explicit button covers the entire content column, with the same tab and draft underneath.
+  await right.getByTestId("dock-fullscreen").click();
+  await expect(right).toHaveAttribute("data-fullscreen", "full");
+  const app = await edges(host);
+  const side = await edges(right.locator("[data-dock-content]"));
+  expect(
+    Math.abs(app.left - side.left) +
+      Math.abs(app.top - side.top) +
+      Math.abs(app.bottom - side.bottom),
+  ).toBeLessThan(3);
+  await expect(handle).toHaveCount(0);
+  // Backward tabbing from the dock reaches the navigation without visiting the
+  // covered Session toolbar, composer or bottom dock.
+  const column = host.locator("[data-session-column]");
+  const nav = page.locator('[data-slot="nav"]:visible');
+  for (let step = 0; step < 30; step++) {
+    await page.keyboard.press("Shift+Tab");
+    expect(await column.evaluate((el) => el.contains(document.activeElement))).toBe(false);
+    if (await nav.evaluate((el) => el.contains(document.activeElement))) break;
+  }
+  expect(await nav.evaluate((el) => el.contains(document.activeElement))).toBe(true);
   await right.getByTestId("dock-fullscreen").click();
   await expect(right).not.toHaveAttribute("data-fullscreen");
-
-  // Dragging the right boundary well past the widest it may be snaps into full screen ...
-  const handle = page.locator('[data-testid="dock-resizer"][aria-orientation="vertical"]:visible');
-  let hb = await handle.boundingBox();
-  row = await rowBox();
-  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(row.x + 40, hb.y + hb.height / 2, { steps: 12 });
-  await page.mouse.up();
-  await expect(right).toHaveAttribute("data-fullscreen", "full");
-  // ... and dragging the surface's leading edge back snaps out.
-  hb = await handle.boundingBox();
-  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(hb.x + 300, hb.y + hb.height / 2, { steps: 12 });
-  await page.mouse.up();
-  await expect(right).not.toHaveAttribute("data-fullscreen");
-
-  // A full-screen bottom dock grows up to the toolbar, over the row and the right dock with it;
-  // the right dock coming back on stage, from under the cover, ends it.
+  await info.focus();
+  await page.keyboard.press("Enter");
+  await expect(info).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(right.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
   await bottom.getByTestId("dock-fullscreen").click();
   await expect(bottom).toHaveAttribute("data-fullscreen", "full");
-  row = await rowBox();
-  header = await headerBox(bottom);
-  expect(Math.round(header.y)).toBe(Math.round(row.y));
-  expect(Math.round(header.x)).toBe(Math.round(row.x));
-  await page.getByTestId("dock-toggle-right").click(); // hides the covered right dock: still full
-  await expect(bottom).toHaveAttribute("data-fullscreen", "full");
-  await page.getByTestId("dock-toggle-right").click(); // brings it back on stage: full ends
-  await expect(dockAt(page, "right")).toBeVisible();
-  await expect(bottom).not.toHaveAttribute("data-fullscreen");
+  const lower = await edges(bottom.locator("[data-dock-content]"));
+  const title = await edges(toolbar);
+  expect(Math.abs(title.bottom - lower.top) + Math.abs(title.right - lower.right)).toBeLessThan(3);
+  await bottom.getByTestId("dock-fullscreen").click();
+  await page.getByTestId("dock-toggle-right").click();
+  await expect
+    .poll(async () => Math.abs((await edges(host)).width - (await edges(toolbar)).width))
+    .toBeLessThan(2);
+  await expect(composer).toHaveValue("Draft kept while resizing");
 });
 
 test("tabs of every kind share a dock: switch, close a panel tab, terminals numbered", async ({
@@ -467,6 +499,44 @@ test("tabs of every kind share a dock: switch, close a panel tab, terminals numb
   await expect(right.locator('[data-testid="dock-tab"]')).toHaveCount(1);
   await expect(right).toBeVisible();
   await killAllTerminals(page.request);
+});
+
+test("Files moves to the bottom and enters fullscreen after the first chat reply", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await provisionAndLogin(page.request, "dockfirstreply", P);
+  await setAccountPrefs(page.request, { lang: "en", initialPasswordBannerDismissed: true });
+  await page.goto(`${BASE}/chat/new`);
+  const openModels = page.getByRole("button", { name: /^(Add an API key|Open Models)$/ });
+  const fromWorkbenchGuide = (await openModels.innerText()).includes("Open Models");
+  // Models reads the fixture provider on arrival. The API-key flow then opens the
+  // defaults dialog itself; the workbench guide leaves the settings button available.
+  await configureProjectModel(page.request, { setDefault: false });
+  await openModels.click();
+  await expect(page).toHaveURL(/\/models$/);
+  if (fromWorkbenchGuide) {
+    await page.getByRole("button", { name: "Default model settings", exact: true }).click();
+  }
+  const preferences = page.getByRole("dialog", { name: "Default model settings" });
+  await preferences.locator('[data-default-row="chat"] button').click();
+  await page.getByRole("option", { name: /claude-4-8/ }).click();
+  await preferences.getByRole("button", { name: "Done" }).click();
+  await page
+    .getByRole("complementary")
+    .getByRole("button", { name: "New chat", exact: true })
+    .click();
+  const input = page.locator('[data-slot="composer"]:visible textarea');
+  await input.fill("auth dead test");
+  await input.press("Enter");
+  await expect(page.getByText("Auth restored; hello again.", { exact: true })).toBeVisible();
+  await openViaPicker(page, "right", "workspace");
+  await dockAt(page, "right").getByTestId("dock-move").click();
+  const bottom = dockAt(page, "bottom");
+  expect((await bottom.boundingBox()).height).toBeGreaterThan(24);
+  await bottom.getByTestId("dock-fullscreen").click();
+  await expect(bottom).toHaveAttribute("data-fullscreen", "full");
+  await expect(bottom.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
 });
 
 test("a whole dock moves to the other edge; a single tab moves by drag onto the drop target", async ({

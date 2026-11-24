@@ -52,14 +52,20 @@ export function renderMainChatToolbar(scope: MainChatView) {
   return (
     <>
       {archivedRow && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div
+          data-session-toolbar
+          className="@container/session-toolbar flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800"
+        >
           <Heading level={5} as="h1" className="flex min-w-0">
             <Truncated text={archivedRow.title ?? S.chat.defaultSessionTitle} />
           </Heading>
         </div>
       )}
       {selected && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div
+          data-session-toolbar
+          className="@container/session-toolbar flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800"
+        >
           <div className="flex min-w-0 flex-1 items-center gap-3">
             {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
             <Heading level={5} as="h1" className="flex min-w-0">

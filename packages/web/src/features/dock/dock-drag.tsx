@@ -15,7 +15,7 @@
  */
 import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
-import { panelWidth } from "./use-panel-width";
+import { dockWidthFor, panelWidth } from "./use-panel-width";
 import { bottomDockHeight } from "./bottom-dock-size";
 import { composerHeight } from "./composer-height";
 import { bottomRatio, type DockPosition } from "./dock-state";
@@ -23,18 +23,18 @@ import { bottomRatio, type DockPosition } from "./dock-state";
 /** Fraction of the host's width/height that counts as an edge band for direct drops. */
 const EDGE_BAND = 0.45;
 
-function dockHostRect(): DOMRect | null {
-  return document.querySelector("[data-dock-host]")?.getBoundingClientRect() ?? null;
-}
-
 /** Resolves the drop candidate for a pointer position: widget rectangles first, then edge bands. */
-export function dockDropCandidate(x: number, y: number): DockPosition | null {
+export function dockDropCandidate(
+  x: number,
+  y: number,
+  host: HTMLElement | null,
+): DockPosition | null {
   const overTarget = document
     .elementFromPoint(x, y)
     ?.closest?.("[data-dock-pos]") as HTMLElement | null;
   if (overTarget?.dataset.dockPos) return overTarget.dataset.dockPos as DockPosition;
 
-  const rect = dockHostRect();
+  const rect = host?.getBoundingClientRect();
   if (!rect || x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
   const fractions: Array<[DockPosition, number]> = [
     ["right", (rect.right - x) / rect.width],
@@ -50,31 +50,29 @@ export function dockDropCandidate(x: number, y: number): DockPosition | null {
  * live layout, not assumed: an already-open dock contributes its rendered rect; otherwise
  * the stored sizes apply, clamped exactly as the docks clamp them. Only an OPEN dock
  * counts: a hidden one stays in the tree at zero size, and measuring that would preview a
- * region of nothing. The right region's top is the main row (`[data-dock-row]`, below the
- * chat toolbar), the row the right dock really renders in.
+ * region of nothing. The right edge spans the whole Session and the bottom stays in its column.
  */
-function previewStyle(host: DOMRect, position: DockPosition): CSSProperties {
+function previewStyle(element: HTMLElement, position: DockPosition): CSSProperties {
+  const host = element.getBoundingClientRect();
   const existing =
-    document
+    element
       .querySelector<HTMLElement>(
         `[data-testid='dock'][data-position='${position}'][data-open='true']`,
       )
       ?.getBoundingClientRect() ?? null;
   if (position === "bottom") {
-    const area = document.querySelector("[data-dock-area]")?.getBoundingClientRect().height;
+    const area = element.querySelector("[data-dock-bottom-area]")?.getBoundingClientRect() ?? host;
     const height =
       existing?.height ??
       bottomDockHeight(bottomRatio(), {
         host: host.height,
-        area: area ?? host.height,
+        area: area.height,
         composer: composerHeight(),
       });
-    return { left: host.left, top: host.bottom - height, width: host.width, height };
+    return { left: area.left, top: area.bottom - height, width: area.width, height };
   }
-  const row = document.querySelector("[data-dock-row]")?.getBoundingClientRect() ?? host;
-  const top = Math.max(host.top, row.top);
-  const width = Math.min(existing?.width ?? panelWidth(), host.width);
-  return { left: host.right - width, top, width, height: row.bottom - top };
+  const width = existing?.width ?? dockWidthFor(panelWidth(), host.width);
+  return { left: host.right - width, top: host.top, width, height: host.height };
 }
 
 /** One drop rectangle. A div, not a button: it is only ever "clicked" by a pointer release. */
@@ -101,9 +99,15 @@ function DropTarget(props: {
  * Rendered (through a body portal) only while a tab/header drag is in flight. `candidate`
  * is what the drag currently points at; `null` means "release changes nothing".
  */
-export function DockDragOverlay({ candidate }: { candidate: DockPosition | null }) {
-  const host = dockHostRect();
-  if (!host) return null;
+export function DockDragOverlay({
+  candidate,
+  element,
+}: {
+  candidate: DockPosition | null;
+  element: HTMLElement | null;
+}) {
+  if (!element) return null;
+  const host = element.getBoundingClientRect();
 
   return createPortal(
     <>
@@ -116,7 +120,7 @@ export function DockDragOverlay({ candidate }: { candidate: DockPosition | null 
           data-pos={candidate}
           aria-hidden
           className="pointer-events-none fixed z-drag-preview rounded-sm border border-sky-400/70 bg-sky-500/20"
-          style={previewStyle(host, candidate)}
+          style={previewStyle(element, candidate)}
         />
       )}
 

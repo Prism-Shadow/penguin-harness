@@ -226,9 +226,26 @@ for (const lang of ["en", "zh"]) {
     await expect(models).toBeVisible();
     const contributed = catalog.locator('li[data-app="default_agent/slides"] > button').first();
     await contributed.click();
-    await expect(
-      page.locator('[data-workspace-page^="app:"][data-pane="right"] iframe').first(),
-    ).toBeVisible();
+    const frame = page.locator('[data-workspace-page^="app:"][data-pane="right"] iframe').first();
+    await expect(frame).toBeVisible();
+    const appBody = frame.contentFrame().locator("body");
+    await appBody.evaluate((body) => {
+      body.dataset.resizeCheck = "kept";
+    });
+    const location = page.url();
+    const divider = chat.locator('[data-testid="dock-resizer"][aria-orientation="vertical"]');
+    const dividerBox = await divider.boundingBox();
+    await page.mouse.move(
+      dividerBox.x + dividerBox.width / 2,
+      dividerBox.y + dividerBox.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(1, dividerBox.y + dividerBox.height / 2, { steps: 6 });
+    await page.mouse.move(dividerBox.x + 32, dividerBox.y + dividerBox.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await expect(appBody).toHaveAttribute("data-resize-check", "kept");
+    await expect(chat.locator('[data-position="right"][data-fullscreen]')).toHaveCount(0);
+    expect(page.url()).toBe(location);
     await expect(composer).toHaveValue("Draft from the original Session");
     await add.click();
     await page.getByTestId("dock-add-app-center").click();

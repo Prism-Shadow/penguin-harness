@@ -36,13 +36,11 @@
  * (a plugin's, stored before the plugin loads) is kept as it is and rendered as a placeholder
  * until its definition arrives; only a key that cannot be a panel id at all is dropped.
  *
- * One surface at a time can be FULLSCREEN — the dock grown as far as its own edge goes: the right
- * dock over its row (the conversation beside it, with the toolbar above and the bottom dock below
- * still in view), the bottom dock or the narrow merged view up to the toolbar (over the row, and
- * the right dock in it). Fullscreen is remembered per arrangement in memory, never stored, so
+ * One surface at a time can be fullscreen. The right covers the Session, including the bottom
+ * dock, and the bottom covers the center below the toolbar. Fullscreen stays in memory, so
  * switching away and back restores it; a reload or the breakpoint flipping clears it. It holds
  * while its surface is open with tabs and no dock it COVERS is brought forward (checked after every
- * mutation, in commit()): the right dock taking the stage under a fullscreen bottom dock drops
+ * mutation, in commit()): the bottom dock taking the stage under a fullscreen right dock drops
  * it, so what was asked for is seen rather than opening under the cover.
  *
  * A store (rather than component state) because the consumers live far apart: the chat
@@ -796,19 +794,11 @@ function fullscreenEligible(position: DockPosition, candidate: ScopeLayout = lay
   return candidate[position].open && candidate[position].tabs.length > 0;
 }
 
-/**
- * Drops fullscreen when its surface stopped qualifying — hidden, or its last tab gone — and when a
- * dock it COVERS takes the stage, which would otherwise happen invisibly under the cover. Only the
- * bottom dock's cover reaches another dock: it climbs to the toolbar, over the right dock, so the
- * right dock being touched — activated, opened, or had something moved into it — ends it. The
- * right dock's cover is its own row, with the bottom dock still in view below it, so the bottom
- * dock opening, being touched or receiving a tab leaves it alone; so does anything within the
- * merged view, which is every dock there is. Runs in commit(), after every mutation.
- */
+/** Reveal a newly focused dock underneath a cover. The right cover includes the bottom dock. */
 function reconcileFullscreen(candidate: ScopeLayout = layout): void {
   const fullscreen = fullscreenByLayout.get(candidate) ?? null;
   if (fullscreen === null) return;
-  const coveredTakesStage = !narrow && fullscreen === "bottom" && candidate.focus === "right";
+  const coveredTakesStage = !narrow && fullscreen === "right" && candidate.focus === "bottom";
   if (!fullscreenEligible(fullscreen, candidate) || coveredTakesStage)
     fullscreenByLayout.delete(candidate);
 }
