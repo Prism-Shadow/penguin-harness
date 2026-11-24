@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** Web App
+- **PR:** [#1820](https://github.com/Prism-Shadow/penguin-harness/pull/1820)
 
 [English](2026-11-24-session-shortcut-glyphs.md)
 
