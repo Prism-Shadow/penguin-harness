@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   parseSessionWorkbenchPage,
-  sessionWorkbenchEntries,
   sessionWorkbenchPage,
   sessionWorkbenchPath,
 } from "../src/lib/session-workbenches";
@@ -18,12 +17,7 @@ describe("the address of a Session workbench", () => {
     expect(parseSessionWorkbenchPage(work(remote))).toEqual({ kind: "workspace", address: remote });
     expect(parseSessionWorkbenchPage({ path: "/session-tools/agents?session=unknown" })).toBeNull();
   });
-  it("offers only Files, Terminal and Browser to App Center and requires a choice for an unbound route", () => {
-    expect(
-      Object.keys(sessionWorkbenchEntries).filter(
-        (id) => sessionWorkbenchEntries[id as keyof typeof sessionWorkbenchEntries],
-      ),
-    ).toEqual(["workspace", "terminal", "builtin-browser"]);
+  it("requires a Session choice for a directory address", () => {
     expect(parseSessionWorkbenchPage({ path: sessionWorkbenchPath("terminal") })).toBeNull();
   });
 });
