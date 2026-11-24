@@ -262,7 +262,7 @@ export function builtinBrowserRoutes(
       const actor = actorOf(c, undefined);
       return c.json(
         countSessionResources(management, actor.userId, c.req.param("projectId"), () =>
-          browser.managedTabs(actor),
+          browser.managedTabInventory(actor),
         ),
       );
     });

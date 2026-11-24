@@ -22,6 +22,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, encodeFrame, encodeResize } from "./terminal-frames";
 import { TerminalConnection } from "./terminal-connection";
+import { openTerminalStream } from "./terminal-stream";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
 import { terminalUrlProvider } from "./terminal-url-provider";
 import { writeClipboard } from "../../lib/clipboard";
@@ -554,22 +555,8 @@ export function TerminalView({
         // and was reaped while this page was away.
         recheck: async (id) =>
           (await probeJson<TerminalInfo>(`/api/terminals/${encodeURIComponent(id)}`)) !== null,
-        open: (id, handlers) => {
-          const ws = new WebSocket(streamUrl(id, term.cols, term.rows, userId));
-          ws.binaryType = "arraybuffer";
-          ws.onopen = () => handlers.onOpen();
-          ws.onmessage = (event) => {
-            if (event.data instanceof ArrayBuffer) handlers.onMessage(event.data);
-          };
-          // `error` is always followed by `close`; handling both would report twice.
-          ws.onclose = () => handlers.onClose();
-          return {
-            send: (bytes) => {
-              if (ws.readyState === WebSocket.OPEN) ws.send(bytes);
-            },
-            close: () => ws.close(),
-          };
-        },
+        open: (id, handlers) =>
+          openTerminalStream(streamUrl(id, term.cols, term.rows, userId), handlers),
         onFrame: (frame) => {
           switch (frame.opcode) {
             // The restore stream is self-contained (reset + clear + repaint + cursor), so

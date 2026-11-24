@@ -100,6 +100,8 @@ export function TerminalPanel({
   const sessionId = scope?.sessionId ?? current;
   useSyncExternalStore(subscribeTerminals, liveTerminals);
   useSyncExternalStore(subscribeDock, dockVersion);
+  const owner = JSON.stringify([scope?.projectId, scope?.machineId, sessionId]);
+  const [checkedOwner, setCheckedOwner] = useState<string | null>(null);
   const latestScope = useRef(scope);
   latestScope.current = scope;
   // A scoped page is opened explicitly beside its Session. Polls, a hidden panel and the
@@ -108,13 +110,16 @@ export function TerminalPanel({
     if (!active || !sessionId) return;
     let left = false;
     const group = latestScope.current;
-    void refreshTerminals().then(() => {
-      if (!left && group && ownTerminals(group).length === 0) void createShell(group, true);
+    setCheckedOwner(null);
+    void refreshTerminals().then(async () => {
+      if (left) return;
+      if (ownTerminals(group).length === 0) await createShell(group, true);
+      if (!left) setCheckedOwner(owner);
     });
     return () => {
       left = true;
     };
-  }, [active, sessionId, scope?.machineId, scope?.projectId]);
+  }, [active, sessionId, owner]);
   const shells = ownTerminals(scope);
   const shown = shownTerminalId(scope);
   const closeShortcut = useShortcutLabel("terminal.close");
@@ -155,7 +160,7 @@ export function TerminalPanel({
 
   return (
     <div data-testid="terminal-panel" className="flex h-full min-h-0 flex-col">
-      {(scope || items.length > 0) && (
+      {(items.length > 0 || (scope && checkedOwner === owner)) && (
         <PanelTabs
           tabs={items}
           active={shown}
@@ -175,6 +180,10 @@ export function TerminalPanel({
       )}
       {shown !== null ? (
         <TerminalScreen key={shown} id={shown} active={active} />
+      ) : sessionId && checkedOwner !== owner ? (
+        <span role="status" className="m-auto text-sm text-fg-muted">
+          {S.terminal.status.connecting}
+        </span>
       ) : scope ? null : (
         <div className={`flex min-h-0 flex-1 items-center justify-center ${chrome.surface}`}>
           <Button

@@ -1351,6 +1351,31 @@ describe("Session and Project isolation", () => {
     expect(result.newTabs).toBeUndefined();
   });
 
+  it("lists zero Project browser resources on a standalone server while opening a page still requires a desktop", async () => {
+    const allowed = vi.fn();
+    const h = mount({
+      shell: null,
+      human: true,
+      resourceAccess: {
+        access: { requireProjectAccess: allowed },
+        sessions: {
+          findById: (id) =>
+            ({ sessionId: id, projectId: "work" }) as NonNullable<
+              ReturnType<import("@prismshadow/penguin-server/plugin").SessionIndex["findById"]>
+            >,
+        },
+      },
+    });
+    const group = "/projects/work/session-resources";
+    const response = await h.call("GET", group);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ counts: {} });
+    expect(allowed).toHaveBeenCalled();
+    const open = await h.call("POST", group + "/s/tabs", {});
+    expect(open.status).toBe(503);
+    expect((await errorOf(open)).error.reason).toBe("not_desktop");
+  });
+
   it("keeps child pages in their own group and closes only the selected group's guests", async () => {
     const row = (id: string) =>
       id === "parent" || id === "child" ? { sessionId: id, projectId: "project" } : null;

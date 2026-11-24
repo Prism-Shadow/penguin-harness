@@ -233,6 +233,7 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
   useEffect(() => {
     if (draft || !paneFocused) return;
     setDockConversation({
+      projectId: selected?.projectId,
       sessionId: selected?.sessionId ?? null,
       workspace: selected?.workspace ?? null,
       machineId:
