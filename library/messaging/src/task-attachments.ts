@@ -23,8 +23,8 @@ import {
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { RecallableFile } from "@prismshadow/penguin-library-session";
-import { HttpError } from "../http/errors.js";
-import { badRequest } from "../http/validate.js";
+import { HttpError } from "@prismshadow/penguin-library-http";
+import { badRequest } from "@prismshadow/penguin-library-http/validate";
 import type { AttachmentLimits } from "@prismshadow/penguin-library-setting/attachment-limits";
 
 /**

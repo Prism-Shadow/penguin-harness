@@ -33,19 +33,21 @@ import {
 import { ScryptHasher, PasswordHasher } from "./auth/password.js";
 import { LiveStreamRegistry, LiveStreams } from "./auth/live-streams.js";
 import {
-  DefaultMessagingTuning,
   Messaging,
   MessagingTaskRunner,
-  MessagingModule,
   QQScan,
-} from "./runtime/messaging/bridge.js";
-import { MessagingAccountsModule } from "./runtime/messaging/accounts-module.js";
-import { FeishuSdkProvider } from "./runtime/messaging/feishu-connector.js";
-import { TelegramTransportProvider } from "./runtime/messaging/telegram-connector.js";
-import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
-import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
-import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
-import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
+} from "@prismshadow/penguin-library-messaging/bridge";
+import {
+  DefaultMessagingTuning,
+  MessagingAccountsModule,
+  MessagingModule,
+} from "./runtime/messaging/module.js";
+import { FeishuSdkProvider } from "@prismshadow/penguin-library-messaging/feishu-connector";
+import { TelegramTransportProvider } from "@prismshadow/penguin-library-messaging/telegram-connector";
+import { QQTransportProvider } from "@prismshadow/penguin-library-messaging/qq-connector";
+import { QQScanTransportProvider } from "@prismshadow/penguin-library-messaging/qq-scan";
+import { WeChatTransportProvider } from "@prismshadow/penguin-library-messaging/wechat-connector";
+import { WeChatScanTransportProvider } from "@prismshadow/penguin-library-messaging/wechat-scan";
 import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
 import { IndexSources, PluginIndexSettings, StoredIndexSources } from "./plugin/index-config.js";
@@ -95,13 +97,13 @@ import { SessionSources } from "./runtime/session-sources.js";
 import { SessionDriverRegistry } from "./runtime/session-drivers.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
-import { UsageService } from "./services/usage-service.js";
+import { UsageServiceProvider } from "./services/usage-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ModelOAuthProvider } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
-import { TraceIndexService } from "./services/trace-index.js";
-import { TraceService } from "./services/trace-service.js";
+import { TraceIndexServiceProvider } from "./services/trace-index.js";
+import { TraceServiceProvider } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
@@ -115,7 +117,7 @@ import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
 import { AgentConfigServiceProvider } from "./services/agent-config-service.js";
-import { SnapshotService } from "./services/snapshot-service.js";
+import { SnapshotServiceProvider } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
 import { AgentService } from "./services/agent-service.js";
 import { DeletingFoldersService } from "./services/deleting-folders.js";
@@ -496,13 +498,13 @@ export class PluginIndexModule {}
 export class SandboxSettingsModule {}
 
 @Module({
-  children: [ErrorsRepo, ErrorRecorder, UsageRepo, UsageRecorder, UsageService],
+  children: [ErrorsRepo, ErrorRecorder, UsageRepo, UsageRecorder, UsageServiceProvider],
   exports: [ErrorLog, Errors, UsageStore, UsageRecording, UsageQueries],
 })
 export class ObservabilityModule {}
 
 @Module({
-  children: [TraceIndexRepo, TraceIndexService, TraceService],
+  children: [TraceIndexRepo, TraceIndexServiceProvider, TraceServiceProvider],
   exports: [TraceIndexStore, TraceIndex, Traces],
 })
 export class TracesModule {}
@@ -510,7 +512,7 @@ export class TracesModule {}
 @Module({
   children: [
     AgentConfigServiceProvider,
-    SnapshotService,
+    SnapshotServiceProvider,
     AgentService,
     DeletingFoldersService,
     MemoryServiceProvider,

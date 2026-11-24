@@ -87,7 +87,26 @@ import type {
   AgentTracesResponse,
   ContextFileShare,
   CostParts,
+  HistoryFileFact,
+  HistoryFileKey,
+  HistoryHeldRange,
+  HistoryHave,
+  HistoryLinesEvent,
+  HistoryLinesFrame,
+  HistoryLinesWindow,
   HistoryMessage,
+  HistoryPage,
+  HistoryPartFrame,
+  HistoryProgress,
+  HistoryRecords,
+  HistorySegment,
+  HistoryStreamError,
+  HistoryStreamEvent,
+  HistoryStub,
+  HistoryWindowPart,
+  MessagesLiveTail,
+  MessagesPageInfo,
+  MessagesResponse,
   RequestSpan,
   SessionCategory,
   SessionCategoryCounts,
@@ -137,6 +156,7 @@ import type {
   ApprovalMode,
   SessionBackgroundTasks,
 } from "@prismshadow/penguin-library-session";
+import type { MessagingChannel } from "@prismshadow/penguin-library-messaging/vocabulary";
 import type { UserInfo } from "@prismshadow/penguin-library-auth";
 import type {
   OrgCalendarOutcome,
@@ -1377,7 +1397,26 @@ export type {
   AgentTraceSessionFile,
   ContextFileShare,
   CostParts,
+  HistoryFileFact,
+  HistoryFileKey,
+  HistoryHeldRange,
+  HistoryHave,
+  HistoryLinesEvent,
+  HistoryLinesFrame,
+  HistoryLinesWindow,
   HistoryMessage,
+  HistoryPage,
+  HistoryPartFrame,
+  HistoryProgress,
+  HistoryRecords,
+  HistorySegment,
+  HistoryStreamError,
+  HistoryStreamEvent,
+  HistoryStub,
+  HistoryWindowPart,
+  MessagesLiveTail,
+  MessagesPageInfo,
+  MessagesResponse,
   RequestSpan,
   SessionCategory,
   SessionCategoryCounts,
@@ -2002,378 +2041,6 @@ export interface SessionPatchRequest {
   title?: string;
 }
 
-/**
- * Live in-progress tail of a running Session, carried by `MessagesResponse.live`.
- *
- * Contract (see runtime/live-tail.ts and the GET /messages route): the server captures
- * `cursor` and `fragments` atomically — in one synchronous tick, before starting the
- * trace read — while the Session is running/compacting.
- *   - `cursor`: the Session channel's most recently assigned SSE event id
- *     (`<epoch>-<seq>`); every event published up to and including this id is already
- *     reflected in `fragments`.
- *   - `fragments`: one synthetic `partial_* start` AmspRecord per open streaming
- *     fragment, whose payload carries the full accumulated content so far (text/thinking
- *     prefix, tool-call name + accumulated arguments, tool-output prefix + images), with
- *     the original `origin` chain preserved.
- *
- * Client usage (the bundled Web App's connect-first flow): after applying `messages`,
- * when the cursor's epoch matches the epoch of the SSE events seen on the current
- * connection, drop every buffered **partial** event with seq <= cursor (its content is
- * already inside `fragments`), feed `fragments` through the normal reducer path, then
- * replay the rest of the buffer. Buffered **complete** messages are never dropped by the
- * cursor — the regular overlap dedup decides for them — so nothing is lost even when a
- * complete message's trace append is still in flight at read time.
- *
- * The run form (`live=run` on a full or tail read, for a client that shows a run under way
- * the way it was streamed — the CLI chat): `live` is attached whether or not the Session
- * runs, and adds `status` and `records`, captured in the same tick as `cursor`. `messages`
- * then ends before the current run's first record (a window that begins inside the run, at its
- * input or a later goal round, holds none of it) and holds no held inputs while a run is under
- * way (they are in `records`); a run that began after the cursor, while the read was in
- * flight, is cut at its first record as well. Client usage: subscribe first, read
- * second; render `messages`, then `records`, then the stream's frames — dropping, within
- * the cursor's epoch, every record frame and `task_state` with seq <= cursor (they are in
- * `messages`, `records` and `status`) and handling every other server event. No overlap
- * dedup is needed.
- */
-export interface MessagesLiveTail {
-  cursor: string;
-  fragments: AmspRecord[];
-  /** Run form only: the Session's status at the cursor. */
-  status?: SessionStatus;
-  /**
-   * Run form only: the current run's records (one Task with the Tasks a stop hook or a goal
-   * loop continues it with, or one compaction outside a Task) in the order they were published, each streamed fragment's deltas folded into its `start`
-   * (which carries the content accumulated so far), its `stop` and complete message kept as
-   * published — the run's stream, deltas folded. Empty while idle.
-   */
-  records?: AmspRecord[];
-  /** Run form only: how many of the run's oldest records the server no longer holds (its byte cap); absent when none. */
-  omitted?: number;
-}
-
-/**
- * Pagination envelope of a windowed `GET /messages` (`tailLimit` / `before` requests
- * only; the parameterless full read never carries it). A window is a run of whole
- * message-bearing units — one unit = one Task in the Web reducer's sense, opened by a
- * main-session user prompt — cut so that no pairing (tool_call/output), compaction span
- * or steering group ever splits across windows. Besides the unit count, a window stops
- * before the unit that would take its serialized messages past 4 MiB, but always holds at
- * least one unit; such a window carries `before` like any other, with fewer units than
- * asked for.
- */
-export interface MessagesPageInfo {
-  /**
-   * Cursor of this window's first unit (`<shardIndex>:<ordinal>`): pass it back as
-   * `before=` to fetch the previous window. Stable across requests and compaction —
-   * rotation opens a NEW shard and closed shards are immutable. Absent = this window
-   * reaches the very beginning of the transcript (no older history).
-   */
-  before?: string;
-  /**
-   * Outline turns (the Web conversation outline's entry rule) opened BEFORE this
-   * window: the client offsets its global "round N" numbering by this, so a partial
-   * window never mis-numbers. 0 when the window starts at the beginning.
-   */
-  earlierTurns: number;
-  /**
-   * How many units (Tasks) the window holds, as the window was cut: the same boundaries the
-   * cut is made at (message-window.ts `scanMessages`), so a client that pages until it has N
-   * Tasks on screen counts what `tailLimit` / `limit` count — a prompt with its images, or two
-   * sends merged into one, is one. At most the `tailLimit` / `limit` asked for; fewer when the
-   * byte budget cut the window short or the history begins inside it.
-   */
-  units: number;
-  /**
-   * Cumulative stats accrued before this window, seeded into the client's stats
-   * tracker so header chips and per-turn cumulative rows equal a full load:
-   * finished-Task elapsed, subagent token totals, and the last main-session
-   * session/context token readings.
-   */
-  prior: {
-    subagentTokens: number;
-    elapsedMs: number;
-    /**
-     * Model-API time and tool wall time accrued before this window, the breakdown of
-     * `elapsedMs` the chat header shows under it. Seeded together with their total: seeding
-     * one alone would put a full elapsed time beside components covering only the window.
-     * The two may overlap and do not partition `elapsedMs` (see `TraceTaskStats.toolMs`).
-     */
-    apiMs: number;
-    toolMs: number;
-    sessionTokens: number;
-    contextTokens: number;
-  };
-  /**
-   * The model of the context this window starts in — what the `session_meta` heading that
-   * context's Trace file names, or the model a completed switch's `session_update` ahead of the
-   * window's start in that file names (the next file not opened yet). A Session can switch
-   * models between contexts, and a window that starts partway into one does not hold that
-   * record: the client seeds it, so the Tasks ahead of the window's first `session_meta` have
-   * their model, and a switch further down the window is told from a plain rotation. Absent
-   * when the Session has no Trace yet.
-   */
-  contextModel?: ModelRefDto;
-  /**
-   * Agent State directory recorded by the starting context's `session_meta`. Seeds memory
-   * change detection when that record falls before the window. Absent without a Trace.
-   */
-  agentState?: string;
-}
-
-/** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
-export interface MessagesResponse {
-  /**
-   * On windowed requests, images are served by reference: in every record that carries a
-   * `tracePosition`, an inline PNG / JPEG / GIF / WebP `data:` URL — a user `image_url`, or
-   * an entry of a tool output's `images` — is replaced by
-   * `/api/sessions/<sessionId>/trace-image?file=<fileIndex>&ordinal=<ordinal>[&i=<k>]`
-   * (`i` = the index into `images`), an immutable, access-checked image response. Expanded
-   * subagent messages, held inputs not yet in the Trace, other image types and the
-   * parameterless full read keep their data URLs.
-   */
-  messages: HistoryMessage[];
-  /**
-   * Present only while the Session is running/compacting: the in-progress stream tail
-   * (open streaming fragments + the channel cursor they cover), so a client joining
-   * mid-stream can render the currently streaming message. Omitted when idle. On
-   * windowed requests it rides TAIL pages only — a `before` page is immutable history
-   * and never carries it.
-   */
-  live?: MessagesLiveTail;
-  /**
-   * Present exactly on windowed requests (`tailLimit` / `before`): `messages` is then
-   * the requested window (subagent pointers inside it expanded as usual) rather than
-   * the full transcript. See MessagesPageInfo.
-   */
-  page?: MessagesPageInfo;
-}
-
-// ---------------------------------------------------------------------------
-// History streams (a remote Session's history, newest first, cached on the hub)
-// ---------------------------------------------------------------------------
-//
-// Two legs, both stream calls over the API socket with `x-flow: credit`:
-//   - machine leg, `GET /api/sessions/:id/history-lines` (served by every server; the hub
-//     calls it over its machine socket): the window's envelope and layout, then the Trace
-//     lines the hub does not hold, whole lines only, newest first;
-//   - web leg, `GET /api/sessions/:id/history` and `…/trace-body?ref=` (every server): the
-//     window as whole-record lines with progress, bulky bodies elided.
-
-/** One Trace file of a Session or a descendant: `${agentId}/${sessionId}/${fileIndex}`. */
-export type HistoryFileKey = string;
-
-/**
- * One run of a Trace file the hub holds: bytes [lo, hi), from a line start to just after a
- * `\n`, vouched for by the hashes of its edges. Every run is checked on its own, so a hub that
- * holds several runs (a window, then older pages, then part of the fill) is sent none of them.
- */
-export interface HistoryHeldRange {
-  lo: number;
-  /** Records before `lo` (the ordinal of the first record at or after it). */
-  loOrd: number;
-  hi: number;
-  /** sha256 (base64url) of bytes [lo, min(hi, lo + 4 KiB)). */
-  loAnchor: string;
-  /** sha256 (base64url) of bytes [max(lo, hi − 4 KiB), hi). */
-  hiAnchor: string;
-}
-
-/**
- * What the hub holds of one Trace file, sent as `have=` (base64url JSON of the array) so the
- * machine sends only what is missing: the file's identity, every run held (`ranges`), and a
- * line held in part. The single-run form (`lo`…`hiAnchor` beside `k`, no `ranges`) is still
- * read while the hub moves to `ranges`; it names one run, the top one.
- */
-export interface HistoryHave extends Partial<HistoryHeldRange> {
-  k: HistoryFileKey;
-  /** The file's inode as a decimal string: NTFS file ids pass 2^53, which a JSON number cannot carry. */
-  ino: string;
-  /** The device the file lives on, decimal: a hint, never compared (overlayfs can change it across a restart). */
-  dev?: string;
-  /** Whole milliseconds, or 0 where the machine keeps no birth time; compared only when both sides know one. */
-  birthtimeMs: number;
-  /** Every run held, in any order. */
-  ranges?: HistoryHeldRange[];
-  /**
-   * A line held in part: bytes [off, off + len) of the line starting at `off`, whose sha256 is
-   * `anchor`. The machine sends the rest of it from `off + len` — before `ready` when it is a light
-   * line of the window, after it otherwise; a partial that does not check is dropped and the line
-   * sent whole.
-   */
-  partial?: { off: number; len: number; anchor: string };
-}
-
-/** One Trace file the window or the fill reads, as the machine sees it now. */
-export interface HistoryFileFact {
-  k: HistoryFileKey;
-  /**
-   * The file's identity: the inode (decimal, see HistoryHave.ino), the device (a hint, never
-   * compared), the birth time (0 where the platform keeps none: it then reads the change time,
-   * which every append moves). A held copy is the same file while `sameHistoryFile`
-   * (services/history-wire.ts) says so; its content is checked by its runs' anchors.
-   */
-  ino: string;
-  dev?: string;
-  birthtimeMs: number;
-  size: number;
-  /** Record count by the tolerant reader's rule (blank and unparseable lines are no record). */
-  records: number;
-  /** A rotated shard: it never changes again, and a whole copy is good for good. */
-  final: boolean;
-  /** The hub's `have` for this file did not validate: drop the copy, the lines come from scratch. */
-  reset?: true;
-}
-
-/**
- * One run of records the window takes from one file, in window order: records [from, to) by
- * ordinal, bytes [from, to) by offset (blank and malformed lines inside the run are skipped as
- * the tolerant reader skips them). `origin` null: the Session's own records, which carry their
- * `tracePosition`; otherwise the child Session chain its records are tagged with, outer to
- * inner, prepended to any `origin` a line carries.
- */
-export interface HistorySegment {
-  k: HistoryFileKey;
-  from: [offset: number, ordinal: number];
-  to: [offset: number, ordinal: number];
-  origin: string[] | null;
-}
-
-/**
- * A window record whose line is heavy, in its final web form — `tracePosition` or `origin` set,
- * images by reference, bodies elided, its `elided` entries attached — so the hub can deliver
- * the window before that line's bytes arrive. `[offset, offset + length)` is its line.
- */
-export interface HistoryStub {
-  k: HistoryFileKey;
-  ordinal: number;
-  offset: number;
-  length: number;
-  record: HistoryMessage;
-}
-
-/** The machine leg's first event, `window`. */
-export interface HistoryLinesWindow {
-  /** The Session's owning Project, for the hub's offline access check. Older machines omit it. */
-  projectId?: string;
-  /** What `/messages` answers beside the records, captured before any file is read. */
-  envelope: {
-    page?: MessagesPageInfo;
-    live?: MessagesLiveTail;
-    pendingInputs: AmspRecord[];
-    serverNowMs: number;
-    status: SessionStatus;
-  };
-  /** Every Trace file of the Session and its descendants; a file the hub holds that is absent here is gone. */
-  files: HistoryFileFact[];
-  layout: HistorySegment[];
-  stubs: HistoryStub[];
-  /** Bytes (of `text`) and lines this stream will send in each phase. */
-  totals: Record<"window" | "heavy" | "fill", { bytes: number; lines: number }>;
-}
-
-/** `lines`: whole lines of file `k` from byte `off`; `ord` = records before `off`. */
-export interface HistoryLinesFrame {
-  k: HistoryFileKey;
-  off: number;
-  ord: number;
-  text: string;
-  /** `text` is base64 (bytes that are not valid UTF-8). */
-  b64?: true;
-}
-
-/** `part`: a piece of one line of file `k`, in order; `ord` = records before that line. */
-export interface HistoryPartFrame {
-  k: HistoryFileKey;
-  /** The first byte of the line this part belongs to. */
-  line: number;
-  off: number;
-  ord: number;
-  text: string;
-  last: boolean;
-  b64?: true;
-}
-
-/**
- * `window-part`: a piece of the `window` event's JSON text, for a window larger than one frame
- * (FRAME_TEXT_BUDGET). The pieces come in order before anything else; joined, their texts are
- * the `HistoryLinesWindow` JSON, and the piece with `last` completes it.
- */
-export interface HistoryWindowPart {
-  text: string;
-  last: boolean;
-}
-
-/**
- * Event names of the machine leg (`history-lines`), in order: `window` (or its `window-part`s),
- * the window's light `lines`/`part`s (with the rest of one the hub held in part), `ready` (the
- * hub can assemble the window), the rest of every other line the hub held in part, the heavy
- * lines and the fill, `done`. `ping` beats from the start,
- * planning included; `error` (HistoryStreamError) ends a stream that cannot be served, such as a
- * `body` ref into no line of the Session. Every event's data is at most FRAME_TEXT_BUDGET of text
- * plus its JSON envelope.
- */
-export type HistoryLinesEvent =
-  "window" | "window-part" | "lines" | "part" | "ready" | "done" | "error" | "ping";
-
-/** The web leg's `progress` event: at most every 250 ms, and only when a number changed. */
-export interface HistoryProgress {
-  phase: "window" | "heavy" | "fill";
-  /** The machine the bytes come from; null for this server's own Session. */
-  machineId: string | null;
-  doneBytes: number;
-  totalBytes: number;
-  doneLines: number;
-  totalLines: number;
-  /**
-   * The hub waits on the machine: `not_connected` (out of reach, the hub reconnects) and
-   * `retrying` (connected and silent, the hub asks again), each with its attempt and the time of
-   * the next; or `slow` — connected and beating, but the machine has sent nothing else for a
-   * minute (a route stuck over there): nothing is retried, `attempt` and `nextAt` are 0, and the
-   * stream goes on. Null again once bytes move.
-   */
-  waiting: null | {
-    reason: "not_connected" | "retrying" | "slow";
-    attempt: number;
-    nextAt: number;
-  };
-}
-
-/** The web leg's `page` event: what the window holds beside its records. */
-export interface HistoryPage {
-  windowId: string;
-  /** Records the window carries. */
-  count: number;
-  /** Bytes of their lines. */
-  bytes: number;
-  page?: MessagesPageInfo;
-  live?: MessagesLiveTail;
-  serverNowMs: number | null;
-}
-
-/**
- * The web leg's `records` event (whole lines, each one `HistoryMessage` JSON, `offset` counting
- * the window's text so far) and `part` event (a piece of one record longer than a frame, with
- * `last` ending it).
- */
-export interface HistoryRecords {
-  windowId: string;
-  offset: number;
-  text: string;
-  last?: boolean;
-}
-
-/** The web leg's `error` event: terminal; the reader stops and shows it. */
-export interface HistoryStreamError {
-  code: string;
-  message: string;
-  details?: ErrorDetails;
-}
-
-/** Event names of the web leg (`history`, `trace-body`); `ping` is the beat. */
-export type HistoryStreamEvent =
-  "progress" | "page" | "records" | "part" | "done" | "filled" | "error" | "ping";
-
 // ---------------------------------------------------------------------------
 // Task run, approval, interruption, compaction
 // ---------------------------------------------------------------------------
@@ -2616,609 +2283,57 @@ export interface SessionProcessesResponse {
 
 // ---------------------------------------------------------------------------
 // Messaging bindings (/api/sessions/:sessionId/messaging/*) and enabled bot accounts
-// (/api/messaging/accounts, /api/projects/:projectId/messaging/account-holders)
 // ---------------------------------------------------------------------------
 
-/** Messaging channels a Session can bind to. */
-export type MessagingChannel = "feishu" | "telegram" | "qq" | "wechat";
-
-/** Event-connection runtime state of one binding (kept in memory, not persisted). */
-export type MessagingRuntimeState = "disconnected" | "connecting" | "connected" | "error";
-
 /**
- * A failure that happened AFTER an inbound message was accepted — as opposed to a
- * connection failure, which `MessagingRuntimeStatus.lastError` reports.
- *
- * The two stages fail in completely different places and lead to different actions, and
- * from the chat they are indistinguishable (both produce silence), which is why the stage
- * is stated rather than folded into one message.
+ * The messaging vocabulary moved to the messaging domain package
+ * (@prismshadow/penguin-library-messaging/vocabulary, services+http+cli restack S8) — the
+ * routes read and write it; re-exported here so the API contract keeps spelling it.
  */
-export interface MessagingDeliveryError {
-  /** ISO 8601 timestamp of the failure. */
-  at: string;
-  /** `inbound` — the message arrived and its Task never started; `send` — a reply never reached the chat. */
-  stage: "inbound" | "send";
-  /** The failure's own message, as the channel or the Session reported it. */
-  detail: string;
-}
-
-export interface MessagingRuntimeStatus {
-  state: MessagingRuntimeState;
-  /** Failure detail; present only in the `error` state. */
-  lastError?: string;
-  /** When the state last changed (ISO 8601); absent for a binding that never connected. */
-  changedAt?: string;
-  /**
-   * When this binding last accepted an inbound message (ISO 8601).
-   *
-   * "Connected, and nothing has arrived" is the answer to the one question a chat cannot
-   * answer for itself — whether the platform is delivering anything at all. A channel that
-   * withholds messages (Telegram's group privacy, a bot that is not a member) produces
-   * exactly that, with no error anywhere.
-   *
-   * In-process AND scoped to one connection: it starts empty on every (re)connect, and a
-   * re-enable or a credential save opens a new one. So an absent field means "nothing since
-   * this connection opened", never "nothing ever" — anything reporting it has to say which,
-   * or it sends a reader off to fix a channel that is working.
-   */
-  lastInboundAt?: string;
-  /**
-   * The most recent post-acceptance failure; absent when none has happened since this
-   * connection opened, and never cleared by a later success — an intermittent failure would
-   * otherwise be erased by the next ordinary message. `at` is what says how stale it is.
-   */
-  lastDeliveryError?: MessagingDeliveryError;
-  /**
-   * The most recent CONNECTION failure, kept after the connection recovers — unlike
-   * `lastError`, which belongs to the `error` state and is gone the moment the state leaves it.
-   *
-   * A connection that fails and recovers repeatedly (a second program polling the same bot
-   * token takes turns with this one) reads as `connected` in any snapshot taken between
-   * flaps, with nothing at all to show for the failures in between. This is what is left
-   * behind — for the life of the connection, like the two above it.
-   */
-  lastConnectionError?: { at: string; detail: string };
-  /**
-   * Since when (ISO 8601) the bot has been HOLDING replies it could not deliver yet, to send
-   * them with the chat's next inbound message; absent while nothing is held. WeChat only: the
-   * platform accepts a bot's messages only for a while after the user's last one, and only
-   * about ten per message, so a long run or a quiet user leaves replies waiting rather than
-   * lost.
-   *
-   * Not a failure, and deliberately not `lastDeliveryError`: nothing is broken and nobody has
-   * to act beyond what the panel says — message the bot in WeChat and the held replies arrive
-   * first. Cleared the moment they have been delivered. Unlike the fields above it is not
-   * scoped to one connection: held replies are stored, so a backlog from before a restart is
-   * reported again as soon as the connection opens.
-   */
-  heldReplySince?: string;
-}
-
-/**
- * What a messaging binding carries whatever channel it is: the connection intent, the three
- * delivery preferences, whether a chat is known, and the row's identity and timestamps.
- *
- * Split out because this is the half that grows. Three delivery preferences arrived in one
- * release, and each would otherwise have been written into three interfaces — the credential
- * slice is the only thing a channel genuinely differs in, and it is what stays per-channel.
- *
- * `channel` is NOT here: a discriminated union discriminates on a literal the member itself
- * declares, so each interface keeps its own.
- *
- * A channel may RE-DECLARE a field below when it has more to say about it — QQ does, for all
- * three preferences, because the platform's passive-reply budget and its expiring window
- * change what setting one costs there. The re-declared type must be identical, which the
- * compiler enforces, so the redeclaration can only add documentation and never a contract.
- */
-export interface MessagingBindingCommon {
-  sessionId: string;
-  /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
-  enabled: boolean;
-  /**
-   * Send each non-blank line of a relayed assistant reply as its own message instead of one
-   * message per reply. Off by default; off is the original one-message-per-reply behaviour.
-   */
-  linePerMessage: boolean;
-  /**
-   * Relay only the LAST completed assistant message of a run, delivered when the run ends,
-   * instead of mirroring each completed message as it completes. Off by default; off is the
-   * original every-message behaviour. Independent of `linePerMessage`, which then applies to
-   * that one final message. The approval notice is not a reply and is unaffected.
-   */
-  finalReplyOnly: boolean;
-  /**
-   * Render a relayed reply's Markdown in this channel's own markup instead of sending its
-   * characters as written. ON by default. Each channel shows what it can — Telegram has no
-   * headings, lists or tables, QQ has no code or tables, Feishu has all of them, and WeChat
-   * reads Markdown itself so the render is a subtraction rather than a translation — and a
-   * rendering the channel refuses falls back to the plain source, so this can cost
-   * formatting and never a message.
-   */
-  renderMarkdown: boolean;
-  /**
-   * Whether an inbound chat is known (the bot has been messaged at least once). Replies and
-   * test messages target that chat; until it exists nothing can be sent.
-   */
-  lastChatKnown: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** The stored Feishu config, secret masked (plaintext never leaves the server). */
-export interface FeishuBindingInfo extends MessagingBindingCommon {
-  channel: "feishu";
-  appId: string;
-  /**
-   * Masked app secret (site-wide mask rule: `***`, or `first4…last4` for long values);
-   * absent when no secret is stored (never entered, or cleared) — the binding cannot be
-   * enabled until one is saved.
-   */
-  appSecretMasked?: string;
-  baseDomain: string;
-}
-
-/** The stored Telegram config, token masked (plaintext never leaves the server). */
-export interface TelegramBindingInfo extends MessagingBindingCommon {
-  channel: "telegram";
-  /** The numeric bot id (the token's half before the colon) — the channel-scoped account identity, never secret. */
-  botId: string;
-  /**
-   * Masked bot token (site-wide mask rule: `***`, or `first4…last4` for long values);
-   * absent when no token is stored (cleared) — the binding cannot be enabled until one
-   * is saved.
-   */
-  botTokenMasked?: string;
-}
-
-/**
- * The stored QQ config, secret masked (plaintext never leaves the server).
- *
- * The three preference fields are re-declared unchanged: every one of them costs something
- * different here, and the platform's reply budget is what a reader setting one needs to know.
- */
-export interface QQBindingInfo extends MessagingBindingCommon {
-  channel: "qq";
-  /** The bot's App ID — the channel-scoped account identity, never secret. */
-  appId: string;
-  /**
-   * Masked App Secret (site-wide mask rule: `***`, or `first4…last4` for long values);
-   * absent when no secret is stored (never entered, or cleared) — the binding cannot be
-   * enabled until one is saved.
-   */
-  appSecretMasked?: string;
-  /**
-   * Send each non-blank line of a relayed assistant reply as its own message instead of one
-   * message per reply. Off by default. On QQ the split is additionally capped at the
-   * platform's passive-reply budget rather than the channel-neutral ceiling, so it yields
-   * far fewer messages here than on the other channels.
-   */
-  linePerMessage: boolean;
-  /**
-   * Relay only the LAST completed assistant message of a run, delivered when the run ends.
-   * Off by default.
-   *
-   * On QQ it cuts both ways, which is worth knowing before setting it here. It spends the
-   * least of the platform's passive-reply budget a run can spend — one message, where an
-   * every-message relay spends one per completed message. But a passive reply is accepted
-   * only for a few minutes after the inbound message that funds it, and holding the reply
-   * to the run's end spends that window on the run: a run that outlives it delivers nothing
-   * at all, where the every-message relay would have sent whatever completed inside it.
-   */
-  finalReplyOnly: boolean;
-  /**
-   * Render a relayed reply's Markdown in this channel's own markup. ON by default. QQ's own
-   * subset is the widest for prose and the narrowest for code: headings, lists, blockquotes
-   * and rules render, while inline code, fenced code and tables have no syntax at all here —
-   * a code block arrives as plain escaped lines. A rendering the platform refuses falls back
-   * to the plain source, at the cost of one more slot from the passive-reply budget.
-   */
-  renderMarkdown: boolean;
-  /**
-   * Whether an inbound QQ chat is known (the bot has been messaged at least once). Weaker
-   * than it looks on this channel: QQ accepts only replies to a recent message, so a known
-   * chat is necessary but not sufficient for anything to be deliverable right now.
-   */
-  lastChatKnown: boolean;
-}
-
-/**
- * The stored WeChat config, token masked (plaintext never leaves the server).
- *
- * No preference field is re-declared. The three delivery preferences cost exactly what they
- * cost on Feishu and Telegram here — this channel has no reply budget and no expiring reply
- * window — and re-declaring a field to say nothing new about it would only invite the next
- * reader to look for the difference.
- */
-export interface WeChatBindingInfo extends MessagingBindingCommon {
-  channel: "wechat";
-  /** The bot id a scan issued — the channel-scoped account identity, never secret. */
-  botId: string;
-  /**
-   * Masked bot token (site-wide mask rule: `***`, or `first4…last4` for long values);
-   * absent when none is stored (cleared, or a scan that never completed) — the binding
-   * cannot be enabled until a scan saves one.
-   */
-  botTokenMasked?: string;
-}
-
-/** A Session's saved config for one messaging channel (`channel` is the discriminant). */
-export type MessagingBindingInfo =
-  FeishuBindingInfo | TelegramBindingInfo | QQBindingInfo | WeChatBindingInfo;
-
-/** One saved channel config with its event-connection runtime status. */
-export interface MessagingChannelState {
-  binding: MessagingBindingInfo;
-  /** Only the enabled channel's connection is ever anything but disconnected. */
-  status: MessagingRuntimeStatus;
-}
-
-/**
- * GET …/messaging response — the channel-agnostic read the channel-aware binding editor
- * loads: EVERY saved channel config (masked) with its runtime status. A Session may keep
- * both channels saved; at most one of them is enabled.
- */
-export interface MessagingBindingsResponse {
-  bindings: MessagingChannelState[];
-}
-
-/** GET / PUT …/messaging/feishu response: the Feishu config (null = not saved) plus its runtime status. */
-export interface FeishuBindingResponse {
-  binding: FeishuBindingInfo | null;
-  status: MessagingRuntimeStatus;
-}
-
-/** GET / PUT …/messaging/telegram response (the Telegram narrowing of the same envelope). */
-export interface TelegramBindingResponse {
-  binding: TelegramBindingInfo | null;
-  status: MessagingRuntimeStatus;
-}
-
-/** GET / PUT …/messaging/qq response (the QQ narrowing of the same envelope). */
-export interface QQBindingResponse {
-  binding: QQBindingInfo | null;
-  status: MessagingRuntimeStatus;
-}
-
-/** GET / PUT …/messaging/wechat response (the WeChat narrowing of the same envelope). */
-export interface WeChatBindingResponse {
-  binding: WeChatBindingInfo | null;
-  status: MessagingRuntimeStatus;
-}
-
-/**
- * PUT …/messaging/feishu — saves credentials/config ONLY, never flipping the connection
- * (exception: an enabled binding's connector restarts with the new credentials so stored
- * config and live connection never diverge). The connection toggle is POST …/state.
- */
-/**
- * The delivery preferences any channel's PUT may set. Each is optional and each behaves the
- * same way on every channel: an omitted field keeps the stored value, so a client that knows
- * about one preference can save it without having to send the others back. Their meanings are
- * on {@link MessagingBindingCommon}, and where a channel charges differently for one, on that
- * channel's own `*BindingInfo`.
- *
- * The defaults a binding created without them starts from: `linePerMessage` off,
- * `finalReplyOnly` off, `renderMarkdown` ON.
- */
-export interface MessagingDeliveryPatch {
-  linePerMessage?: boolean;
-  finalReplyOnly?: boolean;
-  renderMarkdown?: boolean;
-}
-
-export interface FeishuBindingPutRequest extends MessagingDeliveryPatch {
-  appId: string;
-  /** Omitted or blank keeps the stored secret (the masked value never round-trips). */
-  appSecret?: string;
-  /** Defaults to https://open.feishu.cn when omitted or blank. */
-  baseDomain?: string;
-  /**
-   * Drops the STORED secret (the models-page clear idiom; a typed `appSecret` wins over
-   * it). Refused with 409 `messaging_disable_before_clear` while the binding is enabled.
-   */
-  clearAppSecret?: boolean;
-}
-
-/**
- * PUT …/messaging/telegram — saves the credential ONLY, same contract as the Feishu PUT
- * (an enabled binding's connector restarts with the new token; the connection toggle is
- * POST …/state). Saving never conflicts across Sessions: the same bot may sit saved on
- * several, and only enabling it is exclusive.
- */
-export interface TelegramBindingPutRequest extends MessagingDeliveryPatch {
-  /** Omitted or blank keeps the stored token (the masked value never round-trips). */
-  botToken?: string;
-  /**
-   * Drops the STORED token (the models-page clear idiom; a typed `botToken` wins over
-   * it — and the row keeps its bot identity). Refused with 409
-   * `messaging_disable_before_clear` while the binding is enabled.
-   */
-  clearBotToken?: boolean;
-}
-
-/**
- * PUT …/messaging/qq — saves the credential pair ONLY, same contract as the Feishu PUT
- * (an enabled binding's connector restarts with the new credentials; the connection toggle
- * is POST …/state). The App ID is the account identity, so changing it rebinds the row to
- * a different bot and drops the remembered chat.
- */
-export interface QQBindingPutRequest extends MessagingDeliveryPatch {
-  appId: string;
-  /** Omitted or blank keeps the stored secret (the masked value never round-trips). */
-  appSecret?: string;
-  /**
-   * Drops the STORED secret (the models-page clear idiom; a typed `appSecret` wins over
-   * it). Refused with 409 `messaging_disable_before_clear` while the binding is enabled.
-   */
-  clearAppSecret?: boolean;
-}
-
-/**
- * PUT …/messaging/wechat — the delivery preferences ONLY.
- *
- * The one PUT on this router that carries no credential, because there is none to carry: a
- * WeChat bot token exists only where a scan put it, and there is no console to copy one out
- * of. Saving therefore presupposes a binding — a PUT before any scan answers 400
- * `wechat_token_required` rather than creating an empty row — and the connection toggle
- * stays POST …/state, as on every channel.
- */
-export interface WeChatBindingPutRequest extends MessagingDeliveryPatch {
-  /**
-   * Drops the STORED token (the models-page clear idiom). Refused with 409
-   * `messaging_disable_before_clear` while the binding is enabled. The row and its bot
-   * identity stay; only a fresh scan can make it connectable again.
-   */
-  clearBotToken?: boolean;
-}
-
-/**
- * POST …/messaging/<channel>/state — enable connects with the STORED credentials,
- * disable terminates. Enabling is what binds the bot account to this Session, and it is
- * mutually exclusive twice over: while another channel of the same Session is enabled it
- * answers 409 `another_channel_enabled`, and while another SESSION has the same account
- * enabled it answers 409 `account_enabled_elsewhere` (both say: turn that one off first).
- * A config whose secret is missing answers its channel's 400 `*_required`.
- */
-export interface MessagingBindingStateRequest {
-  enabled: boolean;
-}
-
-/** POST …/messaging/feishu/test — draft values; each omitted field falls back to the stored binding. */
-export interface FeishuTestRequest {
-  appId?: string;
-  appSecret?: string;
-  baseDomain?: string;
-}
-
-/** Credential-test outcome (an unreachable/rejected credential is `ok:false`, not an HTTP error). */
-export interface FeishuTestResponse {
-  ok: boolean;
-  latencyMs?: number;
-  error?: string;
-}
-
-/** POST …/messaging/telegram/test — a draft token, falling back to the stored binding when omitted. */
-export interface TelegramTestRequest {
-  botToken?: string;
-}
-
-/** Telegram credential-test outcome: success additionally names the bot the token signs in as. */
-export interface TelegramTestResponse {
-  ok: boolean;
-  latencyMs?: number;
-  /** The bot's `@username`, when the API reports one. */
-  botUsername?: string;
-  /**
-   * True when @BotFather's **Group Privacy** is ON for this bot, which is the default. In
-   * every group where the bot is not an administrator it then receives only a command
-   * addressed to it or a reply to one of its own messages — an ordinary sentence is never
-   * delivered, so a binding that answers fine in a direct chat stays silent there. The
-   * setting is account-wide and Telegram overrides it for a group the bot administers, so
-   * this reports the setting and never the outcome in any particular group. Absent when the
-   * API did not report the setting; never inferred.
-   */
-  groupPrivacy?: boolean;
-  error?: string;
-}
-
-/** POST …/messaging/qq/test — draft values; each omitted field falls back to the stored binding. */
-export interface QQTestRequest {
-  appId?: string;
-  appSecret?: string;
-}
-
-/**
- * QQ credential-test outcome. There is no account label: the platform's only credential
- * call is the access-token exchange, which identifies nothing beyond the App ID that was
- * sent to it.
- */
-export interface QQTestResponse {
-  ok: boolean;
-  latencyMs?: number;
-  error?: string;
-}
-
-/**
- * POST …/messaging/qq/scan — starts a scan-to-connect flow: the server registers a bind
- * task under a fresh AES key it keeps to itself, and answers with what the browser may
- * know. The key is absent from this type on purpose — it decrypts the App Secret, so it
- * never leaves the server (the same rule that keeps a stored secret from round-tripping).
- */
-export interface QQScanStartResponse {
-  /** Opaque bind-task handle, passed back to the poll endpoint. */
-  taskId: string;
-  /** The URL to ENCODE into a QR code. It is opened by the QQ app, never fetched by the browser. */
-  qrUrl: string;
-  /** How often to poll, in milliseconds (the interval the protocol is designed around). */
-  pollMs: number;
-}
-
-/**
- * POST …/messaging/qq/scan/poll — one step of the scan. `pending` means keep polling,
- * `expired` means start a new task and show a new QR, and `completed` means the server has
- * already decrypted the App Secret and SAVED the binding: `appId` names the bot that landed.
- * Saving is all it does — enabling the connection stays the separate, exclusive act it is on
- * every channel. A task id that is unknown, belongs to another Session, was already
- * resolved, or is being resolved by a poll still in flight answers 404
- * `qq_scan_task_unknown`: the task is claimed by one poll, so a client whose interval fires
- * before the previous request came back binds once rather than once per overlapping poll.
- */
-export interface QQScanPollResponse {
-  status: "none" | "pending" | "completed" | "expired";
-  /** The bound bot's App ID; present only on `completed`. Never the secret. */
-  appId?: string;
-  /** The saved binding, present on `completed` so the editor refreshes without a second GET. */
-  binding?: QQBindingInfo;
-}
-
-/**
- * WeChat credential-test outcome. There is no request body and no draft to probe: this
- * channel's credential exists only where a scan put it, so the test always probes the STORED
- * binding. It answers 400 `wechat_token_required` when there is none.
- *
- * No account label, for the same reason QQ has none: the probe (`getconfig`) reports the
- * bot's settings and names neither the bot nor the person.
- */
-export interface WeChatTestResponse {
-  ok: boolean;
-  latencyMs?: number;
-  error?: string;
-}
-
-/**
- * POST …/messaging/wechat/scan — starts a scan-to-connect flow, which on this channel is the
- * ONLY way to bind: the bot token has no console to be copied out of.
- *
- * The server registers a code and answers with what the browser may know. The platform's own
- * poll handle is absent from this type on purpose — it is what collects the bot token, so it
- * never leaves the server, and `taskId` is a handle this server mints in its place.
- */
-export interface WeChatScanStartResponse {
-  /** Opaque scan handle, passed back to the poll, verify and cancel endpoints. */
-  taskId: string;
-  /** The URL to ENCODE into a QR code. It is opened by WeChat, never fetched by the browser. */
-  qrUrl: string;
-  /** How often to poll, in milliseconds. */
-  pollMs: number;
-}
-
-/**
- * Where a WeChat scan stands. Richer than QQ's four states because the flow is: WeChat
- * separates scanning from confirming, and may interpose a pairing code shown on the phone.
- *
- * - `pending` — the code is up and nothing has happened; keep polling.
- * - `scanned` — scanned; the phone is showing the confirmation prompt.
- * - `need_verify_code` — the phone is showing digits that must be sent to the verify
- *   endpoint before the bind proceeds.
- * - `blocked` — too many wrong pairing codes; the code is spent and a new scan is needed.
- * - `expired` — the code lapsed before it was used; show a new one.
- * - `already_bound` — this bot is already bound to this server, so no new credentials were
- *   issued and nothing was saved. Not a failure: the existing binding still works.
- * - `completed` — the server has already SAVED the binding; `botId` names the bot.
- */
-export type WeChatScanStatus =
-  | "pending"
-  | "scanned"
-  | "need_verify_code"
-  | "blocked"
-  | "expired"
-  | "already_bound"
-  | "completed";
-
-/**
- * POST …/messaging/wechat/scan/poll — one step of the scan.
- *
- * `completed` means the server has decrypted nothing and stored everything: the credentials
- * went from the platform into storage without passing through the browser. Saving is all it
- * does — enabling the connection stays the separate, exclusive act it is on every channel. A
- * task id that is unknown, belongs to another Session, or was already resolved answers 404
- * `wechat_scan_task_unknown`.
- *
- * Unlike QQ's poll, an overlapping request answers `pending` rather than 404: the upstream
- * call is a LONG poll, so one of them spans several of the client's intervals, and that
- * overlap is the normal rhythm rather than a replay.
- */
-export interface WeChatScanPollResponse {
-  status: WeChatScanStatus;
-  /** The bound bot's id; present only on `completed`. Never the token. */
-  botId?: string;
-  /** The saved binding, present on `completed` so the editor refreshes without a second GET. */
-  binding?: WeChatBindingInfo;
-}
-
-/**
- * POST …/messaging/wechat/scan/verify — the digits WeChat showed on the phone.
- *
- * They ride the NEXT poll rather than a request of their own, because the platform takes the
- * pairing code as a parameter of the status call: this endpoint records them and answers
- * 204. A wrong code is not reported here — the next poll asks for one again, which is how
- * the platform reports it.
- */
-export interface WeChatScanVerifyRequest {
-  taskId: string;
-  verifyCode: string;
-}
-
-/**
- * POST …/messaging/<channel>/test-message — sent to the last known chat (409
- * `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` before one exists). On QQ this can
- * still fail with 502 afterwards: the platform accepts only replies to a message sent from
- * QQ minutes earlier, so a known chat does not mean a deliverable one.
- */
-export interface MessagingTestMessageResponse {
-  ok: true;
-}
-
-/**
- * One bot account a server has enabled: the channel and its account id (Feishu `app_id`,
- * Telegram bot id, QQ App ID, WeChat bot id), which is public by design. Never a Session,
- * never a secret.
- */
-export interface MessagingAccount {
-  channel: MessagingChannel;
-  accountId: string;
-}
-
-/**
- * GET /api/messaging/accounts (admin only) — every bot account this server has enabled,
- * across all its Projects. A server that connects machines asks each of them this when a
- * bot is about to be turned on, so that one account is enabled on one server at a time.
- */
-export interface MessagingAccountsResponse {
-  accounts: MessagingAccount[];
-}
-
-/** A server that has the asked-about bot enabled: a machine by id and alias, or this server (both null). */
-export interface MessagingAccountHolder {
-  machineId: string | null;
-  alias: string | null;
-}
-
-/**
- * Why a machine could not be asked: no connection to it, a build without the accounts
- * route (it answered 404), or any other failed answer.
- */
-export type MessagingUnreachableReason = "not_connected" | "older_build" | "failed";
-
-/** A machine of the Project that could not be asked whether it holds the bot. */
-export interface MessagingUnreachableMachine {
-  machineId: string;
-  alias: string;
-  reason: MessagingUnreachableReason;
-}
-
-/**
- * GET /api/projects/:projectId/messaging/account-holders?channel=&accountId= — which servers
- * have this bot enabled: this server, and each machine the Project uses that could be asked.
- * Machines that could not be asked are listed apart; the caller decides what to do about
- * them. Never names a Session. A caller who is not an admin is answered for this server
- * only, because machines are admins' (both lists then hold no machine).
- */
-export interface MessagingAccountHoldersResponse {
-  holders: MessagingAccountHolder[];
-  unreachable: MessagingUnreachableMachine[];
-}
-
+export type {
+  MessagingChannel,
+  MessagingRuntimeState,
+  MessagingDeliveryError,
+  MessagingRuntimeStatus,
+  MessagingBindingCommon,
+  FeishuBindingInfo,
+  TelegramBindingInfo,
+  QQBindingInfo,
+  WeChatBindingInfo,
+  MessagingBindingInfo,
+  MessagingChannelState,
+  MessagingBindingsResponse,
+  FeishuBindingResponse,
+  TelegramBindingResponse,
+  QQBindingResponse,
+  WeChatBindingResponse,
+  MessagingDeliveryPatch,
+  FeishuBindingPutRequest,
+  TelegramBindingPutRequest,
+  QQBindingPutRequest,
+  WeChatBindingPutRequest,
+  MessagingBindingStateRequest,
+  FeishuTestRequest,
+  FeishuTestResponse,
+  TelegramTestRequest,
+  TelegramTestResponse,
+  QQTestRequest,
+  QQTestResponse,
+  QQScanStartResponse,
+  QQScanPollResponse,
+  WeChatTestResponse,
+  WeChatScanStartResponse,
+  WeChatScanStatus,
+  WeChatScanPollResponse,
+  WeChatScanVerifyRequest,
+  MessagingTestMessageResponse,
+  MessagingAccount,
+  MessagingAccountsResponse,
+  MessagingAccountHolder,
+  MessagingUnreachableReason,
+  MessagingUnreachableMachine,
+  MessagingAccountHoldersResponse,
+} from "@prismshadow/penguin-library-messaging/vocabulary";
 // ---------------------------------------------------------------------------
 // SSE server events (records use the default event, only server_event here)
 // ---------------------------------------------------------------------------
@@ -3414,77 +2529,19 @@ export interface UsageErrorsClearResponse {
 // ---------------------------------------------------------------------------
 
 /**
- * Display-facing schedule status: the file's `enabled` only expresses intent; the rest is derived from runtime state.
- * The scheduler archives an agent's settled tasks (done / missed / expired) into `schedule/expired/`, so the agent
- * listings show those three only while a queued fire is still to be sent or when the move failed.
+ * The schedule vocabulary moved to the session domain package
+ * (@prismshadow/penguin-library-session/schedules, services+http+cli restack S7) — the
+ * routes read and write it; re-exported here so the API contract keeps spelling it.
  */
-export type ScheduleStatus = "active" | "disabled" | "expired" | "done" | "missed" | "invalid";
-
-export interface ScheduleItem {
-  /** Filename (without .toml) is the identifier. */
-  name: string;
-  prompt: string;
-  enabled: boolean;
-  /** ISO 8601. */
-  startAt: string;
-  /** Raw fixed interval (e.g. `30m`); unset means a one-off task. */
-  period?: string;
-  endAt?: string;
-  /** Bound target Session; defaults to creating a new Session each time. */
-  sessionId?: string;
-  workspace?: string;
-  /** Model for new-Session mode (upstream id, always paired with provider); absent means the Project's default reference. */
-  modelId?: string;
-  /** Provider group for `modelId`; present exactly when `modelId` is — a model reference is always a pair. */
-  provider?: string;
-  status: ScheduleStatus;
-  invalidReason?: string;
-  /** Next scheduled fire time (ISO 8601); unset when done/missed/invalid/disabled. */
-  nextFireAt?: string;
-  /** Most recent actual fire time (ISO 8601). */
-  lastFiredAt?: string;
-  /** Queued, waiting for the target Session to become idle. */
-  queued: boolean;
-  creatorUserId?: string;
-}
-
-export interface SchedulesResponse {
-  schedules: ScheduleItem[];
-  /** Files that failed to parse (skipped from scheduling and logged as errors). */
-  invalidFiles: Array<{ name: string; error: string }>;
-}
-
-/**
- * One task in the Project-wide listing (GET /api/projects/:projectId/schedules): the agent's
- * item plus the agent whose schedule directory holds it, since the list spans every agent.
- */
-export interface ProjectScheduleItem extends ScheduleItem {
-  agentId: string;
-}
-
-export interface ProjectSchedulesResponse {
-  /** Every agent's tasks: agents in id order, each agent's tasks in the order its own listing returns them. */
-  schedules: ProjectScheduleItem[];
-  /** Files that failed to parse (skipped from scheduling and logged as errors), with the agent that holds each. */
-  invalidFiles: Array<{ agentId: string; name: string; error: string }>;
-}
-
-export interface ScheduleUpsertRequest {
-  prompt: string;
-  enabled: boolean;
-  startAt: string;
-  period?: string;
-  endAt?: string;
-  sessionId?: string;
-  workspace?: string;
-  /** Model for new-Session mode (upstream id); always sent together with provider, omit both for the Project's default reference. */
-  modelId?: string;
-  /**
-   * Provider group for `modelId`. Both fields are sent as a pair (400 otherwise); the
-   * pair is checked against the Project config at save/reconciliation time.
-   */
-  provider?: string;
-}
+export type {
+  ScheduleStatus,
+  ScheduleItem,
+  SchedulesResponse,
+  ProjectScheduleItem,
+  ProjectSchedulesResponse,
+  ScheduleUpsertRequest,
+} from "@prismshadow/penguin-library-session/schedules";
+import type { ScheduleStatus } from "@prismshadow/penguin-library-session/schedules";
 
 // ---------------------------------------------------------------------------
 // Agent export and import: the zip is the Agent's directory

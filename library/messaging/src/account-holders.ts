@@ -22,9 +22,9 @@ import type {
   MessagingChannel,
   MessagingUnreachableMachine,
   MessagingUnreachableReason,
-} from "../../api/types.js";
-import type { MachineApi } from "../../machines/machine-api.js";
-import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+} from "./vocabulary.js";
+import type { MessagingMachineApi } from "./ports.js";
+import type { MessagingBindings } from "./messaging.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import { isMessagingChannel } from "./enabled-channel.js";
 
@@ -65,7 +65,7 @@ export function holdsAccount(
 export interface FleetMachine {
   machineId: string;
   alias: string;
-  api: Pick<MachineApi, "request"> | null;
+  api: MessagingMachineApi | null;
 }
 
 /** What one machine said: whether it holds the account, or why it could not be asked. */
@@ -90,7 +90,7 @@ function accountsOf(text: string): unknown[] | null {
  * been reconnected since this server upgraded (every connect brings the machine onto this build).
  */
 async function askMachine(
-  api: Pick<MachineApi, "request">,
+  api: MessagingMachineApi,
   channel: MessagingChannel,
   accountId: string,
 ): Promise<MachineAnswer> {

@@ -25,7 +25,7 @@ import {
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { HistoryLinesWindow } from "../src/api/types.js";
 import type { AppEnv } from "../src/auth/middleware.js";
-import { historyLinesRoutes } from "../src/http/routes/history-lines.js";
+import { historyLinesRoutes } from "@prismshadow/penguin-library-trace/routes";
 import { sessionRow } from "./fixtures/session.js";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
 

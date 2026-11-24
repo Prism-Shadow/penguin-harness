@@ -1,10 +1,10 @@
 /**
  * Messaging-binding routes: /api/sessions/:sessionId/messaging[...] — the binding
- * editor's and the Messaging dock panel's shared surface. A Session keeps at most one
- * saved config PER channel (all of them may sit saved side by side); the channel-agnostic
- * GET returns them all, and each channel owns a subtree with its own config shape —
- * /feishu, /telegram, /qq and /wechat carry the same verb set, and a further channel adds
- * its own.
+ * editor's and the Messaging dock panel's shared surface, as a pure factory over the
+ * ports it reaches (services+http+cli restack S8). A Session keeps at most one saved
+ * config PER channel (all of them may sit saved side by side); the channel-agnostic GET
+ * returns them all, and each channel owns a subtree with its own config shape — /feishu,
+ * /telegram, /qq and /wechat carry the same verb set, and a further channel adds its own.
  *
  * ENABLING the connection IS the binding, and disabling it is the unbind. Saving
  * credentials therefore never conflicts across Sessions — any number of Sessions may keep
@@ -70,35 +70,35 @@ import type {
   WeChatScanPollResponse,
   WeChatScanStartResponse,
   WeChatTestResponse,
-} from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+} from "./vocabulary.js";
+import type { AppEnv } from "@prismshadow/penguin-library-http";
+import type { MessagingBindingRow } from "./repos/messaging-bindings.js";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
-import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../../runtime/messaging/feishu-connector.js";
-import { telegramBotIdOf } from "../../runtime/messaging/telegram-connector.js";
-import { maskApiKey } from "../../services/project-config-service.js";
-import { HttpError } from "../errors.js";
+import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "./feishu-connector.js";
+import { telegramBotIdOf } from "./telegram-connector.js";
+import { maskApiKey } from "./mask.js";
+import { HttpError } from "@prismshadow/penguin-library-http";
 import {
   badRequest,
   optionalBoolean,
   optionalString,
   readJson,
   requireString,
-} from "../validate.js";
+} from "@prismshadow/penguin-library-http/validate";
 import {
   commonBindingFields,
   deliveryPatchOf,
   maskedSecretField,
   resolveSecret,
-} from "./messaging-channels.js";
-import type { MessagingChannelSpec } from "./messaging-channels.js";
-import type { MessagingChannel } from "../../runtime/messaging/connector.js";
-import { MessagingNeedsRecentMessageError } from "../../runtime/messaging/connector.js";
-import { isMessagingChannel } from "../../runtime/messaging/enabled-channel.js";
-import type { WeChatScanService } from "../../runtime/messaging/wechat-scan.js";
-import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
-import type { QQScanService } from "../../runtime/messaging/qq-scan.js";
-import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+  type MessagingChannelSpec,
+} from "./channel-specs.js";
+import type { MessagingChannel } from "./connector.js";
+import { MessagingNeedsRecentMessageError } from "./connector.js";
+import { isMessagingChannel } from "./enabled-channel.js";
+import type { WeChatScanService } from "./wechat-scan.js";
+import type { MessagingBridge } from "./bridge.js";
+import type { QQScanService } from "./qq-scan.js";
+import type { MessagingBindings } from "./messaging.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Access } from "@prismshadow/penguin-library-project";
 

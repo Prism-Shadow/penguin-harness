@@ -29,8 +29,8 @@ import type {
   OrgTicketPriority,
   OrgTicketStatus,
 } from "../api/types.js";
-import { parseScheduleFile } from "../runtime/schedule-file.js";
-import type { ScheduleDefinition } from "../runtime/schedule-file.js";
+import { parseScheduleFile } from "@prismshadow/penguin-library-session/schedule-file";
+import type { ScheduleDefinition } from "@prismshadow/penguin-library-session/schedule-file";
 import { SEMANTIC_ID_PATTERN } from "../services/ids.js";
 import { employeeNameProblem } from "./names.js";
 import { DEFAULT_CHANNEL_ID, ceoAgentId, isTicketColumn } from "./paths.js";

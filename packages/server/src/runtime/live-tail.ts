@@ -28,7 +28,6 @@
  * cleanup); the whole session entry is dropped when the run ends (SessionManager.drive's
  * finally).
  */
-import { createHash } from "node:crypto";
 import { isPartialPayload } from "@prismshadow/penguin-core";
 import type {
   CompleteModelPayload,
@@ -119,11 +118,12 @@ import type { LiveTail, LiveRun, RunStart } from "@prismshadow/penguin-library-s
 
 /**
  * The digest a record's envelope (its JSON) is compared by: a run's user inputs can carry
- * images of many megabytes, and a digest holds none of them for the run's length.
+ * images of many megabytes, and a digest holds none of them for the run's length. The real
+ * body moved to the trace library package (restack S9c) — re-exported so the server's
+ * existing importers keep their spelling.
  */
-export function envelopeDigest(envelope: string): string {
-  return createHash("sha256").update(envelope).digest("base64");
-}
+export { envelopeDigest } from "@prismshadow/penguin-library-trace/session-history";
+import { envelopeDigest } from "@prismshadow/penguin-library-trace/session-history";
 
 /** The current run's log, as the run form of GET /messages reads it. */
 /** The partial kind a complete payload closes out; null when it has no streamed counterpart. */

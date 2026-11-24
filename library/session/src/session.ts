@@ -22,6 +22,7 @@ import type {
 } from "@prismshadow/penguin-core";
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import type { ScheduleStateRow } from "./repos/schedules.js";
+import type { ScheduleDefinition } from "./schedule-file.js";
 import type { ApprovalReason as CoreApprovalReason } from "@prismshadow/penguin-core/interfaces";
 
 /** From packages/server: ApprovalMode (was api/types.ts). The contract names it, so the type lives with the contract. */
@@ -227,19 +228,20 @@ export interface RunStarter {
 }
 
 /** AgentState: the mechanism AgentStateStore implements — the Session runtime's in-memory state, data only. */
-export abstract class AgentState extends Interface<{
+@Interface()
+export abstract class AgentState {
   /** The live Session runtimes, keyed by Session id. */
-  readonly entries: Map<string, RuntimeEntry>;
-  readonly childRoots: Map<string, string>;
-  readonly locks: Map<string, Promise<unknown>>;
-  readonly deletingAgents: Set<string>;
-  readonly deletingSessions: Set<string>;
-  readonly agentGenerations: Map<string, number>;
+  abstract readonly entries: Map<string, RuntimeEntry>;
+  abstract readonly childRoots: Map<string, string>;
+  abstract readonly locks: Map<string, Promise<unknown>>;
+  abstract readonly deletingAgents: Set<string>;
+  abstract readonly deletingSessions: Set<string>;
+  abstract readonly agentGenerations: Map<string, number>;
   /** The live fragment log. */
-  readonly liveTail: LiveTail;
+  abstract readonly liveTail: LiveTail;
   /** The generation working on this state right now; every generation points it at itself when it takes the state over. */
-  current: RunStarter | null;
-}>() {}
+  abstract current: RunStarter | null;
+}
 
 /** The target pair plus a run's options (`approve` answers the run's tool rounds). */
 export type RunOpts = {
@@ -601,38 +603,11 @@ export interface RuntimeEntry {
   backgroundTasks: SessionBackgroundTasks;
 }
 
-/** From packages/server (runtime/schedule-file.ts): a registered task's definition, as the
- * schedule file states it. The contract carries the shape a schedule read shows; the
- * scheduler's file parser owns the rest of the file's fields. */
-export interface ScheduleDefinition {
-  name: string;
-  /** The Prompt to send (required). */
-  prompt: string;
-  /** Enabled switch; disabled by default. */
-  enabled: boolean;
-  /** Original text of the first trigger time (for API echo, preserving the written form). */
-  startAt: string;
-  /** First trigger time (epoch ms). */
-  startAtMs: number;
-  /** Original text of the end time. */
-  endAt?: string;
-  /** Original text of the trigger period (e.g. `30m`, for API echo); undefined means a one-shot task. */
-  period?: string;
-  /** Trigger period (ms); undefined means a one-shot task. */
-  periodMs?: number;
-  /** End time (epoch ms); no more triggers once past it. */
-  endAtMs?: number;
-  /** The target Session to bind to; defaults to creating a new Session each time. */
-  sessionId?: string;
-  /** Workspace for new-Session mode (same semantics as manually starting a session; a temporary workspace is auto-created if unspecified). */
-  workspace?: string;
-  /** Model for new-Session mode (upstream id, always paired with provider; omit both for the Project's default reference). */
-  modelId?: string;
-  /** Provider for new-Session mode: the model reference's other half, always paired with modelId. */
-  provider?: string;
-}
+/** The schedule file's parsed definition — the schedule-file module (this package) owns the
+ * shape; the contract re-exports it so the Schedules mechanism reads its own vocabulary. */
+export type { ScheduleDefinition } from "./schedule-file.js";
 
-/** From packages/server (runtime/scheduler.ts): the in-memory view of a registered task. */
+/** The in-memory view of a registered task (the scheduler's listAgent returns these). */
 export interface ScheduleEntry {
   def: ScheduleDefinition;
   state: ScheduleStateRow;

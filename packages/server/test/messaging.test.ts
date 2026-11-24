@@ -108,17 +108,17 @@ import {
   messagingInboundFileTooLargeNotice,
   messagingInboundFilesTooLargeNotice,
   splitReplyLines,
-} from "../src/runtime/messaging/bridge.js";
-import type { MessagingTaskRunner } from "../src/runtime/messaging/bridge.js";
+} from "@prismshadow/penguin-library-messaging/bridge";
+import type { MessagingTaskRunner } from "@prismshadow/penguin-library-messaging/bridge";
 import type {
   MessagingChannelConnector,
   MessagingInboundFile,
   MessagingInboundImage,
   MessagingInboundMessage,
-} from "../src/runtime/messaging/connector.js";
-import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
-import { FeishuConnector } from "../src/runtime/messaging/feishu-connector.js";
-import { FeishuApiError } from "../src/runtime/messaging/feishu-sdk.js";
+} from "@prismshadow/penguin-library-messaging/connector";
+import { messagingErrorKind } from "@prismshadow/penguin-library-messaging/error-kind";
+import { FeishuConnector } from "@prismshadow/penguin-library-messaging/feishu-connector";
+import { FeishuApiError } from "@prismshadow/penguin-library-messaging/feishu-sdk";
 import {
   MessagingPermissionError,
   MessagingUnsupportedError,
@@ -126,8 +126,8 @@ import {
   imageMimeOfName,
   isImageFileName,
   sniffImageMime,
-} from "../src/runtime/messaging/media.js";
-import { replyFileMentions } from "../src/runtime/messaging/reply-files.js";
+} from "@prismshadow/penguin-library-messaging/media";
+import { replyFileMentions } from "@prismshadow/penguin-library-messaging/reply-files";
 import { FILE_BYTES, FakeFeishuSdk, IMAGE_BYTES, oneChunk } from "./fixtures/feishu.js";
 import type { SentMedia } from "./fixtures/feishu.js";
 import { forwardingTo } from "./fixtures/forwarding.js";

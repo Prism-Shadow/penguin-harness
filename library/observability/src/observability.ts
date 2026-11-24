@@ -74,6 +74,16 @@ export type ErrorSource =
 /** Error classification: see file header — the criterion is "does a human need to step in". */
 export type ErrorKind = "expected" | "unexpected";
 
+/**
+ * Message truncation length for error records (keep only a readable summary; the full
+ * stack is still logged). The recorder clips with it, and the messaging bridge fits its
+ * file-failure records under it — so it lives with the Errors contract.
+ */
+export const MESSAGE_MAX = 500;
+
+/** What an error sink needs of the recorder: one-sided record (the messaging bridge's deps read it). */
+export type ErrorSink = Pick<Errors, "record">;
+
 export interface ErrorRecordArgs {
   source: ErrorSource;
   /** The caught error (unknown: the value caught may not be an Error; failures from the message stream pass the reason text directly). */
@@ -401,6 +411,17 @@ export abstract class UsageRecording {
     msg: AmspRecord<AmspPayload>,
     source?: "stream" | "standalone",
   ): Promise<void>;
+}
+
+/**
+ * The clock the usage statistics read time through — "today", "last 7 days" and the default
+ * series window all start from it. A structural port: the server's `Clock` capability
+ * satisfies it (the Provider in packages/server binds the service's field by hand; tests
+ * pass a stub). Declared here so the package never imports the server.
+ */
+@Interface()
+export abstract class UsageClock {
+  abstract now(): Date;
 }
 
 /** UsageQueries: the mechanism UsageService implements. */

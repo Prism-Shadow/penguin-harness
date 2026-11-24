@@ -32,16 +32,16 @@ import type {
   QQGatewayFrame,
   QQInboundEvent,
   QQSocket,
-} from "../src/runtime/messaging/qq-api.js";
+} from "@prismshadow/penguin-library-messaging/qq-api";
 import {
   QQ_API_BASE,
   QQ_INTENT_GROUP_AND_C2C,
   MessagingConnectionClosedError,
   QQApiError,
   createQQTransport,
-} from "../src/runtime/messaging/qq-api.js";
-import { MessagingChannelError } from "../src/runtime/messaging/connector.js";
-import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
+} from "@prismshadow/penguin-library-messaging/qq-api";
+import { MessagingChannelError } from "@prismshadow/penguin-library-messaging/connector";
+import { messagingErrorKind } from "@prismshadow/penguin-library-messaging/error-kind";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import type { FetchCall } from "./fixtures/fetch.js";
 import { waitFor } from "./helpers.js";

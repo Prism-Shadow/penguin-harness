@@ -15,22 +15,22 @@
  * malformed later. They share knowledge of a document's shape and nothing else, and collapsing
  * them would put request validation inside the runtime.
  *
- * What deliberately stays hand-written in `messaging.ts`: each channel's PUT and its
+ * What deliberately stays hand-written in `routes.ts`: each channel's PUT and its
  * credential test. Their SHAPE is shared — `resolveSecret` below is the ladder all three climb
  * — but the order their inputs are validated in, and how an account id falls out of a
  * credential, genuinely differ, and a table that hid that would only move the difference
  * somewhere harder to read.
  */
-import { HttpError } from "../errors.js";
-import { optionalBoolean } from "../validate.js";
-import { maskApiKey } from "../../services/project-config-service.js";
-import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
-import type { MessagingChannel } from "../../runtime/messaging/connector.js";
+import { HttpError } from "@prismshadow/penguin-library-http";
+import { optionalBoolean } from "@prismshadow/penguin-library-http/validate";
+import { maskApiKey } from "./mask.js";
+import type { MessagingBindingRow } from "./repos/messaging-bindings.js";
+import type { MessagingChannel } from "./connector.js";
 import type {
   MessagingBindingCommon,
   MessagingBindingInfo,
   MessagingDeliveryPatch,
-} from "../../api/types.js";
+} from "./vocabulary.js";
 
 /**
  * One channel's contribution to the shared HTTP surface.

@@ -262,7 +262,22 @@ export class SessionForward {
 }
 
 /** MachineSessionForward: what the machines module provides for the forward route below. */
-export abstract class MachineSessionForward extends Interface<Pick<SessionForward, "forward">>() {}
+@Interface()
+export abstract class MachineSessionForward {
+  /**
+   * Forwards `request` to the machine that holds `sessionId`, looking among the machines of
+   * `projectIds` (the Projects the caller can open) when the index does not know it yet. Null
+   * when every machine asked answered that it holds no such Session (the local routes then say
+   * `session_not_found`); 503 `machine_no_answer` when some that could hold it did not answer;
+   * otherwise the machine's answer, or this server's own reason why there is none.
+   */
+  abstract forward(
+    request: Request,
+    sessionId: string,
+    projectIds: readonly string[],
+    caller?: Omit<HistoryCaller, "projectId">,
+  ): Promise<Response | null>;
+}
 
 /**
  * The forward over one platform generation's socket cache and event hub: the index is fed by

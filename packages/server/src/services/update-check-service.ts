@@ -157,7 +157,10 @@ export class UpdateCheckService implements UpdateCheck {
   }
 }
 
-export abstract class UpdateCheck extends Interface<Pick<UpdateCheckService, "check">>() {}
+@Interface()
+export abstract class UpdateCheck {
+  abstract check(force?: boolean): Promise<UpdateCheckResponse>;
+}
 
 @Component({
   contributes: {

@@ -1,30 +1,20 @@
 /**
- * Who is reading a Session list, as far as the listing rule cares (session-sources.ts
- * `sourceSeenBy`), and how a request says so. Its own module, importing nothing at run time, so a
- * code plugin that lists Sessions through the listing rule reaches it through the plugin face
- * without bundling the session runtime.
+ * Who is reading a Session list, as far as the listing rule cares (library/trace listing.ts
+ * `sourceSeenBy`), and how a request says so. The rule itself (the header name, the view, and
+ * its parse) lives in the trace domain package (@prismshadow/penguin-library-trace/listing,
+ * services+http+cli restack S9); this module re-exports it for the server's own import paths —
+ * kept nameable here, so a code plugin that lists Sessions through the listing rule reaches it
+ * through the plugin face without bundling the session runtime — and adds the hono request view.
  */
 import type { Context } from "hono";
+import {
+  ADOPTED_AT_HEADER,
+  listingViewOf,
+  type ListingView,
+} from "@prismshadow/penguin-library-trace/listing";
 
-/**
- * The request header a server that adopted this one as a machine sends with every call it makes
- * here (its `/server/<id>` proxy and its own calls): the time it adopted this server, ISO.
- */
-export const ADOPTED_AT_HEADER = "x-penguin-adopted-at";
-
-/**
- * Who is reading a list, as far as the listing rule cares: a server that adopted this one as a
- * machine at `adoptedAt` (read from {@link ADOPTED_AT_HEADER}), or anyone else (`{}`).
- */
-export interface ListingView {
-  adoptedAt?: string;
-}
-
-/** The view a request asks for: its adoption time when the header carries a valid one. */
-export function listingViewOf(header: string | undefined): ListingView {
-  if (header === undefined || !Number.isFinite(Date.parse(header))) return {};
-  return { adoptedAt: header };
-}
+export { ADOPTED_AT_HEADER, listingViewOf };
+export type { ListingView };
 
 /**
  * Who reads a Session list or row: a server that adopted this one says when, and sees the

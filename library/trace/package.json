@@ -28,6 +28,74 @@
       "types": "./dist/trace.d.ts",
       "import": "./dist/trace.js"
     },
+    "./ports": {
+      "types": "./dist/ports.d.ts",
+      "import": "./dist/ports.js"
+    },
+    "./trace-index": {
+      "types": "./dist/trace-index.d.ts",
+      "import": "./dist/trace-index.js"
+    },
+    "./trace-service": {
+      "types": "./dist/trace-service.d.ts",
+      "import": "./dist/trace-service.js"
+    },
+    "./trace-head": {
+      "types": "./dist/trace-head.d.ts",
+      "import": "./dist/trace-head.js"
+    },
+    "./cost": {
+      "types": "./dist/cost.d.ts",
+      "import": "./dist/cost.js"
+    },
+    "./dates": {
+      "types": "./dist/dates.d.ts",
+      "import": "./dist/dates.js"
+    },
+    "./session-id": {
+      "types": "./dist/session-id.d.ts",
+      "import": "./dist/session-id.js"
+    },
+    "./titles": {
+      "types": "./dist/titles.d.ts",
+      "import": "./dist/titles.js"
+    },
+    "./listing": {
+      "types": "./dist/listing.d.ts",
+      "import": "./dist/listing.js"
+    },
+    "./trace-prompt-label": {
+      "types": "./dist/trace-prompt-label.d.ts",
+      "import": "./dist/trace-prompt-label.js"
+    },
+    "./trace-images": {
+      "types": "./dist/trace-images.d.ts",
+      "import": "./dist/trace-images.js"
+    },
+    "./trace-line-index": {
+      "types": "./dist/trace-line-index.d.ts",
+      "import": "./dist/trace-line-index.js"
+    },
+    "./history-wire": {
+      "types": "./dist/history-wire.d.ts",
+      "import": "./dist/history-wire.js"
+    },
+    "./history-layout": {
+      "types": "./dist/history-layout.d.ts",
+      "import": "./dist/history-layout.js"
+    },
+    "./message-window": {
+      "types": "./dist/message-window.d.ts",
+      "import": "./dist/message-window.js"
+    },
+    "./routes": {
+      "types": "./dist/routes.d.ts",
+      "import": "./dist/routes.js"
+    },
+    "./context-breakdown": {
+      "types": "./dist/context-breakdown.d.ts",
+      "import": "./dist/context-breakdown.js"
+    },
     "./repos/trace-index": {
       "types": "./dist/repos/trace-index.d.ts",
       "import": "./dist/repos/trace-index.js"
@@ -35,6 +103,18 @@
     "./repos": {
       "types": "./dist/repos/index.d.ts",
       "import": "./dist/repos/index.js"
+    },
+    "./session-history": {
+      "types": "./dist/session-history.d.ts",
+      "import": "./dist/session-history.js"
+    },
+    "./history-lines": {
+      "types": "./dist/history-lines.d.ts",
+      "import": "./dist/history-lines.js"
+    },
+    "./history-stream": {
+      "types": "./dist/history-stream.d.ts",
+      "import": "./dist/history-stream.js"
     }
   },
   "scripts": {
@@ -45,7 +125,11 @@
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
-    "@prismshadow/amsp": "workspace:*"
+    "@prismshadow/amsp": "workspace:*",
+    "@prismshadow/penguin-library-session": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-library-model": "workspace:*",
+    "hono": "^4.13.11"
   },
   "devDependencies": {
     "tsup": "^8.3.0",

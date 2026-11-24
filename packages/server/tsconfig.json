@@ -44,6 +44,12 @@
         "../../library/agent/src/agent-export.ts"
       ],
       "@prismshadow/penguin-library-agent/agent-zip": ["../../library/agent/src/agent-zip.ts"],
+      "@prismshadow/penguin-library-agent/partial-config": [
+        "../../library/agent/src/partial-config.ts"
+      ],
+      "@prismshadow/penguin-library-agent/snapshot-service": [
+        "../../library/agent/src/snapshot-service.ts"
+      ],
       "@prismshadow/penguin-library-agent/agent-avatar": [
         "../../library/agent/src/agent-avatar.ts"
       ],
@@ -110,6 +116,22 @@
       ],
       "@prismshadow/penguin-library-http/settle": ["../../library/http/src/settle.ts"],
       "@prismshadow/penguin-library-http/validate": ["../../library/http/src/validate.ts"],
+      "@prismshadow/penguin-library-http/socket-frames": [
+        "../../library/http/src/socket-frames.ts"
+      ],
+      "@prismshadow/penguin-library-http/socket-credit-window": [
+        "../../library/http/src/socket-credit-window.ts"
+      ],
+      "@prismshadow/penguin-library-http/socket-stream-answer": [
+        "../../library/http/src/socket-stream-answer.ts"
+      ],
+      "@prismshadow/penguin-library-http/socket-line-frames": [
+        "../../library/http/src/socket-line-frames.ts"
+      ],
+      "@prismshadow/penguin-library-http/socket-sse-text": [
+        "../../library/http/src/socket-sse-text.ts"
+      ],
+      "@prismshadow/penguin-library-http/event-stream": ["../../library/http/src/event-stream.ts"],
       "@prismshadow/penguin-library-workbench": ["../../library/workbench/src/index.ts"],
       "@prismshadow/penguin-library-workspace": ["../../library/workspace/src/index.ts"],
       "@prismshadow/penguin-library-workspace/contract": [
@@ -173,10 +195,90 @@
       "@prismshadow/penguin-library-messaging/repos/messaging-bindings": [
         "../../library/messaging/src/repos/messaging-bindings.ts"
       ],
+      "@prismshadow/penguin-library-messaging/account-holders": [
+        "../../library/messaging/src/account-holders.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/account-routes": [
+        "../../library/messaging/src/account-routes.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/bridge": ["../../library/messaging/src/bridge.ts"],
+      "@prismshadow/penguin-library-messaging/channel-specs": [
+        "../../library/messaging/src/channel-specs.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/connector": [
+        "../../library/messaging/src/connector.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/enabled-channel": [
+        "../../library/messaging/src/enabled-channel.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/error-kind": [
+        "../../library/messaging/src/error-kind.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/feishu-card": [
+        "../../library/messaging/src/feishu-card.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/feishu-connector": [
+        "../../library/messaging/src/feishu-connector.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/feishu-sdk": [
+        "../../library/messaging/src/feishu-sdk.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/markdown": [
+        "../../library/messaging/src/markdown.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/mask": ["../../library/messaging/src/mask.ts"],
+      "@prismshadow/penguin-library-messaging/media": ["../../library/messaging/src/media.ts"],
+      "@prismshadow/penguin-library-messaging/ports": ["../../library/messaging/src/ports.ts"],
+      "@prismshadow/penguin-library-messaging/qq-api": ["../../library/messaging/src/qq-api.ts"],
+      "@prismshadow/penguin-library-messaging/qq-connector": [
+        "../../library/messaging/src/qq-connector.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/qq-markdown": [
+        "../../library/messaging/src/qq-markdown.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/qq-scan": ["../../library/messaging/src/qq-scan.ts"],
+      "@prismshadow/penguin-library-messaging/recall": ["../../library/messaging/src/recall.ts"],
+      "@prismshadow/penguin-library-messaging/reply-files": [
+        "../../library/messaging/src/reply-files.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/routes": ["../../library/messaging/src/routes.ts"],
+      "@prismshadow/penguin-library-messaging/task-attachments": [
+        "../../library/messaging/src/task-attachments.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/telegram-api": [
+        "../../library/messaging/src/telegram-api.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/telegram-connector": [
+        "../../library/messaging/src/telegram-connector.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/telegram-html": [
+        "../../library/messaging/src/telegram-html.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/vocabulary": [
+        "../../library/messaging/src/vocabulary.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/wechat-api": [
+        "../../library/messaging/src/wechat-api.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/wechat-connector": [
+        "../../library/messaging/src/wechat-connector.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/wechat-markdown": [
+        "../../library/messaging/src/wechat-markdown.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/wechat-scan": [
+        "../../library/messaging/src/wechat-scan.ts"
+      ],
       "@prismshadow/penguin-library-messaging/repos/messaging-conversations": [
         "../../library/messaging/src/repos/messaging-conversations.ts"
       ],
       "@prismshadow/penguin-library-observability": ["../../library/observability/src/index.ts"],
+      "@prismshadow/penguin-library-observability/usage-service": [
+        "../../library/observability/src/usage-service.ts"
+      ],
+      "@prismshadow/penguin-library-observability/dates": [
+        "../../library/observability/src/dates.ts"
+      ],
       "@prismshadow/penguin-library-observability/observability": [
         "../../library/observability/src/observability.ts"
       ],
@@ -217,6 +319,19 @@
         "../../library/session/src/repos/sessions.ts"
       ],
       "@prismshadow/penguin-library-session/session": ["../../library/session/src/session.ts"],
+      "@prismshadow/penguin-library-session/schedule-file": [
+        "../../library/session/src/schedule-file.ts"
+      ],
+      "@prismshadow/penguin-library-session/schedule-store": [
+        "../../library/session/src/schedule-store.ts"
+      ],
+      "@prismshadow/penguin-library-session/schedules": ["../../library/session/src/schedules.ts"],
+      "@prismshadow/penguin-library-session/schedules-status": [
+        "../../library/session/src/schedules-status.ts"
+      ],
+      "@prismshadow/penguin-library-session/mtime-gate": [
+        "../../library/session/src/mtime-gate.ts"
+      ],
       "@prismshadow/penguin-library-setting": ["../../library/setting/src/index.ts"],
       "@prismshadow/penguin-library-setting/attachment-limits": [
         "../../library/setting/src/attachment-limits.ts"
@@ -258,7 +373,49 @@
       "@prismshadow/penguin-library-trace/repos/trace-index": [
         "../../library/trace/src/repos/trace-index.ts"
       ],
-      "@prismshadow/penguin-library-trace/trace": ["../../library/trace/src/trace.ts"]
+      "@prismshadow/penguin-library-trace/trace": ["../../library/trace/src/trace.ts"],
+      "@prismshadow/penguin-library-trace/trace-prompt-label": [
+        "../../library/trace/src/trace-prompt-label.ts"
+      ],
+      "@prismshadow/penguin-library-trace/trace-images": [
+        "../../library/trace/src/trace-images.ts"
+      ],
+      "@prismshadow/penguin-library-trace/trace-line-index": [
+        "../../library/trace/src/trace-line-index.ts"
+      ],
+      "@prismshadow/penguin-library-trace/history-wire": [
+        "../../library/trace/src/history-wire.ts"
+      ],
+      "@prismshadow/penguin-library-trace/history-layout": [
+        "../../library/trace/src/history-layout.ts"
+      ],
+      "@prismshadow/penguin-library-trace/message-window": [
+        "../../library/trace/src/message-window.ts"
+      ],
+      "@prismshadow/penguin-library-trace/context-breakdown": [
+        "../../library/trace/src/context-breakdown.ts"
+      ],
+      "@prismshadow/penguin-library-trace/routes": ["../../library/trace/src/routes.ts"],
+      "@prismshadow/penguin-library-trace/session-history": [
+        "../../library/trace/src/session-history.ts"
+      ],
+      "@prismshadow/penguin-library-trace/history-lines": [
+        "../../library/trace/src/history-lines.ts"
+      ],
+      "@prismshadow/penguin-library-trace/history-stream": [
+        "../../library/trace/src/history-stream.ts"
+      ],
+      "@prismshadow/penguin-library-trace/ports": ["../../library/trace/src/ports.ts"],
+      "@prismshadow/penguin-library-trace/trace-index": ["../../library/trace/src/trace-index.ts"],
+      "@prismshadow/penguin-library-trace/trace-service": [
+        "../../library/trace/src/trace-service.ts"
+      ],
+      "@prismshadow/penguin-library-trace/trace-head": ["../../library/trace/src/trace-head.ts"],
+      "@prismshadow/penguin-library-trace/session-id": ["../../library/trace/src/session-id.ts"],
+      "@prismshadow/penguin-library-trace/titles": ["../../library/trace/src/titles.ts"],
+      "@prismshadow/penguin-library-trace/listing": ["../../library/trace/src/listing.ts"],
+      "@prismshadow/penguin-library-trace/cost": ["../../library/trace/src/cost.ts"],
+      "@prismshadow/penguin-library-trace/dates": ["../../library/trace/src/dates.ts"]
     }
   },
   "include": ["src", "test"]

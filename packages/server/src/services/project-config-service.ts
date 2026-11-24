@@ -154,16 +154,11 @@ import type { Config, Paths } from "../hmr/capabilities.js";
 
 export type RawTable = Record<string, unknown>;
 
-/**
- * API key masking: length <=12 -> `***`, otherwise `first4…last4`; plaintext is
- * never sent to the client. The 12-char threshold: `first4…last4` exposes 8
- * characters, which for a 9-12 character short secret would leak more than half of
- * it, so those are masked in full instead.
- */
-export function maskApiKey(key: string): string {
-  if (key.length <= 12) return "***";
-  return `${key.slice(0, 4)}…${key.slice(-4)}`;
-}
+// The one api-key masking rule lives in the messaging library (messaging restack S6); this
+// re-export keeps the server's own import paths stable.
+import { maskApiKey } from "@prismshadow/penguin-library-messaging/mask";
+
+export { maskApiKey };
 
 function asTable(v: unknown): RawTable {
   return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as RawTable) : {};
