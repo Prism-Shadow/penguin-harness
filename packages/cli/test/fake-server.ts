@@ -36,6 +36,16 @@ import path from "node:path";
 
 type Json = Record<string, unknown>;
 
+/** The letters that make a taken ticket id unique — the server's `slugSuffix` (2 → `b`, 27 → `aa`). */
+function slugSuffix(n: number): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz";
+  let out = "";
+  for (let v = n; v > 0; v = Math.floor((v - 1) / alphabet.length)) {
+    out = `${alphabet[(v - 1) % alphabet.length]}${out}`;
+  }
+  return out;
+}
+
 export interface FakeSessionState {
   sessionId: string;
   projectId: string;
@@ -1766,9 +1776,19 @@ export class FakeServer {
         "pass --slug: lowercase English words joined by hyphens",
       );
     }
-    const ticketId = `ticket-${ORG_TODAY}-${slug}`;
-    if (org.tickets.has(ticketId))
-      return this.error(409, "ticket_exists", `Ticket already exists: ${ticketId}`);
+    // The real service mints a fresh id: a taken id takes a letter suffix, and a parent
+    // must exist — a fake that 409'd on the name or skipped the parent check would teach
+    // the CLI tests a contract the server does not keep.
+    let ticketId = `ticket-${ORG_TODAY}-${slug}`;
+    for (let n = 2; org.tickets.has(ticketId); n++) {
+      ticketId = `ticket-${ORG_TODAY}-${slug}-${slugSuffix(n)}`;
+    }
+    if (
+      typeof body.parent === "string" &&
+      ![...org.tickets.values()].some((x) => x.ticketId === body.parent)
+    ) {
+      return this.badRequest(`Parent ticket does not exist: ${body.parent}`);
+    }
     // One owner: `--owner` when it is given, the caller otherwise.
     const owner = isNonEmptyString(body.owner) ? body.owner : actor.principal;
     const rec = this.addTicket(org.orgId, {

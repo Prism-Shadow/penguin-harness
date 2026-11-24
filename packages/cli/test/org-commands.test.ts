@@ -664,6 +664,31 @@ describe("penguin org ticket (writes carry the calling session)", () => {
     }
   });
 
+  it("create mints a suffixed id when the slug is taken, and refuses a parent that has no ticket", async () => {
+    expect(await cli(["org", "ticket", "create", "--title", "Site", "--slug", "launch-site"])).toBe(
+      0,
+    );
+    expect(org().tickets.has("ticket-2026-09-02-launch-site")).toBe(true);
+    expect(
+      await cli(["org", "ticket", "create", "--title", "Site again", "--slug", "launch-site"]),
+    ).toBe(0);
+    // The server mints the second id a letter past the first — a fake that 409'd here would
+    // teach the CLI a contract the server does not keep.
+    expect(org().tickets.has("ticket-2026-09-02-launch-site-b")).toBe(true);
+    expect(
+      await cli([
+        "org",
+        "ticket",
+        "create",
+        "--title",
+        "Orphan",
+        "--parent",
+        "ticket-2026-09-02-missing",
+      ]),
+    ).toBe(1);
+    expect(err()).toContain("Parent ticket does not exist");
+  });
+
   it("move / assign / block / unblock / progress send their bodies with the caller's identity", async () => {
     server.addTicket("acme", { ticketId: "ticket-2026-09-02-site", title: "Site", owner: "agent:dev1" });
     expect(await cli(["org", "ticket", "move", "ticket-2026-09-02-site", "--to", "in_progress"])).toBe(0);
