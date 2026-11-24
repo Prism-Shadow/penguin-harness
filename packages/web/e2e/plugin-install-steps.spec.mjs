@@ -140,3 +140,59 @@ test("a server install and two Agent installs can be managed independently from 
     .toBe(false);
   expect(await holders()).toEqual([]);
 });
+
+test("an administrator activates the bundled Computer Use module from the market despite an existing Agent Skill", async ({
+  page,
+}) => {
+  await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const projectId = "market_computer_use";
+  expect(
+    (
+      await page.request.post(BASE + "/api/projects", {
+        data: { projectId, name: "Computer Use market" },
+      })
+    ).status(),
+  ).toBe(201);
+  const prefix = BASE + "/api/projects/" + projectId;
+  const status = async () =>
+    (await (await page.request.get(prefix + "/plugins/installed")).json()).plugins.find(
+      (entry) => entry.specifier === "@penguinharness/computer-use",
+    );
+  expect(await status()).toBeUndefined();
+  const parts = await (await page.request.get(prefix + "/agents/default_agent/plugins")).json();
+  expect(parts.skills.map((entry) => entry.name)).toContain("computer-use");
+  await page.addInitScript((id) => localStorage.setItem("penguin.lastProjectId", id), projectId);
+  await page.goto("/plugins");
+  const card = page.locator('article[data-plugin="computer-use"]');
+  await card.getByRole("button", { name: "Install · Computer Use", exact: true }).click();
+  const flow = page.getByRole("dialog", { name: "Install Computer Use", exact: true });
+  await flow.getByRole("button", { name: "Enable server module", exact: true }).click();
+  await expect.poll(async () => (await status())?.active, { timeout: 20000 }).toBe(true);
+  await expect(flow.getByRole("button", { name: "Back to server" })).toBeVisible();
+  const settings = await page.request.put(BASE + "/api/admin/plugin-config", {
+    data: { name: "computer-use", values: { enabled: false } },
+  });
+  expect(settings.ok(), await settings.text()).toBe(true);
+  const retry = await page.request.post(BASE + "/api/admin/plugin-config/action", {
+    data: { name: "computer-use", action: "install" },
+  });
+  expect(await retry.json()).toMatchObject({ ok: false, message: "Computer Use is off." });
+  await page.reload();
+  await expect(card.getByRole("button", { name: /Installed on 1 Agent/ })).toBeVisible();
+  expect((await status())?.active).toBe(true);
+
+  await card.locator("button.showcase-card-open").click();
+  await page
+    .getByRole("button", { name: "Disable server module computer-use", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Disable the server module of computer-use", exact: true })
+    .getByRole("button", { name: "Disable server module", exact: true })
+    .click();
+  await expect.poll(status).toBeUndefined();
+  await page.goto("/plugins");
+  await expect(
+    card.getByRole("button", { name: "Install · Computer Use", exact: true }),
+  ).toBeVisible();
+});
