@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** Core, Web App, UI Gallery
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1812
 
 [中文版](2026-11-24-preset-workbench-owners.zh.md)
 
