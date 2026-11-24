@@ -77,7 +77,7 @@ written in it. Commands, file names, ids and field names stay ASCII.
 | \`handbook/\` | the knowledge base: this index (\`README.md\`) and the documents it lists | CEO, HR, employees (\`penguin org handbook …\` or file tools) |
 | \`desks.toml\` | employee → current desk session (fact file) | the server |
 | \`calendar/<agent_id>/<event>.toml\` | calendar events, one file each (same fields as scheduled tasks, no target) | employees (\`penguin org calendar …\`) |
-| \`tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md\` | tickets; the column directory is the status | anyone (\`penguin org ticket …\`) |
+| \`tickets/<yyyy-mm>/<column>/<ticket_id>.md\` | tickets; the column directory is the status | anyone (\`penguin org ticket …\`) |
 | \`channels/<channel_id>/channel.toml\` | a channel: name, purpose, members (\`default_channel\` is everyone) | members (\`penguin org channel …\`) |
 | \`channels/<channel_id>/<yyyy-mm-dd>.jsonl\` | a channel's messages, one per line | the server (\`penguin org channel send\`) |
 | \`workspace/\` (or the \`workspace\` path in \`org_config.toml\`) | the shared workspace; its root holds the shared inputs and is nobody's desk — the CEO works in \`ceo/\`, a hire lands in a sub-directory named after its Agent id unless another one is assigned, and a relative sub-directory is created by the server as it is assigned (an absolute path must already exist) | employees |
@@ -97,7 +97,7 @@ text \`@<id>\` is shorthand: employees resolve first, then Project members; writ
 
 - A ticket file is YAML frontmatter (\`title\`, \`status\`, \`owner\`, \`notify\`, \`priority\`, \`due\`,
   \`blocked\`, \`sessions\`, \`history\`) followed by \`## Goal\`, \`## Acceptance criteria\`,
-  \`## Progress\` and \`## Result\`. Its id is \`<yyyy-mm-dd>-<slug>\`, the slug lowercase English
+  \`## Progress\` and \`## Result\`. New tickets use \`ticket-<yyyy-mm-dd>-<slug>\`, the slug lowercase English
   words joined by hyphens.
 - Columns: \`proposed\` → \`in_progress\` → \`review\` (optional) → \`done\`, or \`rejected\` (give a reason).
 - **One owner.** \`owner\` is the single principal responsible for the ticket — whoever filed it
@@ -245,7 +245,7 @@ ${input.mission}
 | \`handbook/\` | 知识库：这份索引（\`README.md\`）与它列出的文档 | CEO、HR、员工（\`penguin org handbook …\` 或文件工具） |
 | \`desks.toml\` | 员工 → 当前工位会话（事实文件） | 服务端 |
 | \`calendar/<agent_id>/<event>.toml\` | 日程项，一项一个文件（字段同定时任务，没有目标字段） | 员工（\`penguin org calendar …\`） |
-| \`tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md\` | 工单；所在列目录即状态 | 任何人（\`penguin org ticket …\`） |
+| \`tickets/<yyyy-mm>/<column>/<ticket_id>.md\` | 工单；所在列目录即状态 | 任何人（\`penguin org ticket …\`） |
 | \`channels/<channel_id>/channel.toml\` | 一个频道：名称、用途、成员（\`default_channel\` 是全员） | 成员（\`penguin org channel …\`） |
 | \`channels/<channel_id>/<yyyy-mm-dd>.jsonl\` | 频道消息，一行一条 | 服务端（\`penguin org channel send\`） |
 | \`workspace/\`（或 \`org_config.toml\` 里的 \`workspace\` 路径） | 公共工作区；根目录放共享输入，不是任何人的工位——CEO 在 \`ceo/\` 里工作，新员工不另行指定就落在以其 Agent id 命名的子目录里；相对子目录在分配时由服务端创建，绝对路径必须已存在 | 员工 |
@@ -260,7 +260,7 @@ ${input.mission}
 
 - 工单文件由 YAML frontmatter（\`title\`、\`status\`、\`owner\`、\`notify\`、\`priority\`、\`due\`、
   \`blocked\`、\`sessions\`、\`history\`）加 \`## Goal\`、\`## Acceptance criteria\`、\`## Progress\`、
-  \`## Result\` 四节组成。id 形如 \`<yyyy-mm-dd>-<slug>\`，slug 是用连字符连接的小写英文单词。
+  \`## Result\` 四节组成。新工单的 ID 形如 \`ticket-<yyyy-mm-dd>-<slug>\`，slug 是用连字符连接的小写英文单词。
 - 列：\`proposed\` → \`in_progress\` → \`review\`（可选）→ \`done\`，或 \`rejected\`（须给出理由）。
 - **负责人只有一个。** \`owner\` 是这张工单唯一的责任人——除非创建时指名他人，否则就是创建者本人；
   谁创建的以及此后发生的一切都记在 \`history\` 里。

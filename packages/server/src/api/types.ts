@@ -4302,7 +4302,7 @@ export interface OrgTicketHistoryEntry {
  * already carries the numbers), chosen for meaning — derived from an ASCII title, proposed by
  * the Project's model for a title in another language, or passed explicitly.
  */
-export const TICKET_SLUG_PATTERN = /^[a-z]+(?:-[a-z]+)*$/;
+export { TICKET_SLUG_PATTERN } from "../organization/ticket-id.js";
 
 export interface OrgTicketItem {
   ticketId: string;

@@ -6,6 +6,7 @@
  */
 import path from "node:path";
 import { projectDir } from "@prismshadow/penguin-core";
+import { ticketCreatedDate } from "./ticket-id.js";
 import type { OrgTicketStatus } from "../api/types.js";
 
 /** The kanban columns in board order; each is a directory under `tickets/<yyyy-mm>/`. */
@@ -94,9 +95,9 @@ export function ticketPath(dir: string, ticketId: string, column: OrgTicketStatu
   return path.join(ticketsDir(dir), ticketMonth(ticketId), column, `${ticketId}.md`);
 }
 
-/** The `yyyy-mm` a ticket id belongs to (its first seven characters). */
+/** The filing month used to locate a ticket in any board column. */
 export function ticketMonth(ticketId: string): string {
-  return ticketId.slice(0, 7);
+  return (ticketCreatedDate(ticketId) ?? ticketId).slice(0, 7);
 }
 
 /**

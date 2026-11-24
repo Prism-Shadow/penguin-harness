@@ -77,7 +77,7 @@ id 使用小写 snake_case，长 2 到 64 个字符，以字母开头。按惯�
 | 员工 | 以 CEO 为根、按汇报线连成一棵树的 Agent，没有部门和职位。每条记录有头衔、职责、工作区和月度预算 | `org_chart.yaml` |
 | 工位会话 | 每位员工一个常设会话，它的触发都送到这里 | `desks.toml`（由服务端写入） |
 | 日历 | 按员工存放的日程项，格式同定时任务，但去掉了目标字段。日历是唯一的周期性驱动 | `calendar/<agent_id>/<event>.toml` |
-| 工单 | 每张工单一个 Markdown 文件，所在的列目录就是它的状态 | `tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md` |
+| 工单 | 每张工单一个 Markdown 文件，所在的列目录就是它的状态 | `tickets/<yyyy-mm>/<column>/<ticket_id>.md`（新工单 ID 为 `ticket-<yyyy-mm-dd>-<slug>`） |
 | 频道 | 每个频道一个目录：一份写有名称、用途和成员的意图文件，加上按天分文件、每行一条消息的 JSON Lines | `channels/<channel_id>/channel.toml`、`channels/<channel_id>/<yyyy-mm-dd>.jsonl` |
 | 公共工作区 | 公司的工作目录 | `workspace/` |
 | 手册 | 公司的知识库 | `handbook/` |

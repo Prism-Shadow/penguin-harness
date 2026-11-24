@@ -533,7 +533,7 @@ penguin org finance [--period <YYYY-MM>] [--json]
 - `start` 打印裸 session id，与 `run --background` 一样，供 `penguin session log` 和 `penguin session input` 接手。
 - `--owner <principal>` 指定唯一的负责主体：员工（Agent id 或 `agent:<id>`）或 Project 成员（`user:<id>`）。默认取调用方。未指定 `--notify` 时，负责人会成为完整的 `notify` 列表，但前提是负责人是员工：人不会就自己名下的工单收到通知，想收到通知需要用 `--notify` 把自己加进去。
 - 谁提交的工单不由选项指定：它就是工单历史里的 `created` 条目，取自命令运行时所处的环境。
-- 工单 id 的格式是 `<yyyy-mm-dd>-<slug>`，slug 是小写英文单词，用连字符连接。`--slug <words>` 用来设置它。标题里英文太少、服务器又无法用 Project 的模型为它起名时，就需要这个选项（400 `slug_required`）。
+- 新工单的 ID 形如 `ticket-<yyyy-mm-dd>-<slug>`，slug 是小写英文单词，用连字符连接。`--slug <words>` 用来设置它。标题里英文太少、服务器又无法用 Project 的模型为它起名时，就需要这个选项（400 `slug_required`）。
 - 表明已做了工作的写操作，还会把调用方所在的会话记为工单的贡献会话之一，它的成本因此计入工单。这类写操作包括 `progress`、编辑正文和 `move --to review`。移入其他任何列，以及 `block` 和 `unblock`，都不记录。
 - `progress -m` 接受一句平实的描述，说明做了什么、在哪里；服务器记录谁写的、什么时候写的。
 - `--goal`、`--criteria` 和 `progress -m` 要求所有输入、交付物和文件都用完整路径指名。

@@ -12,7 +12,10 @@ import { AmspQuickstart } from "../sections/amsp/quickstart";
 import { AmspLinks } from "../sections/amsp/links";
 
 export function AmspPage() {
-  useDocumentMeta(S.amsp.title, S.amsp.description);
+  useDocumentMeta(S.amsp.title, S.amsp.description, {
+    image: "og-amsp.png",
+    imageAlt: S.amsp.title,
+  });
   return (
     <>
       <AmspHero />
