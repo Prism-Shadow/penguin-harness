@@ -19,22 +19,18 @@
 import { GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { useTerminalChrome } from "./terminal-appearance";
 import { S } from "../../lib/strings";
-import {
-  NO_MODIFIERS,
-  arrowSequence,
-  type ArrowKey,
-  type TerminalModifiers,
-} from "./terminal-keys";
+import { arrowSequence, type ArrowKey, type TerminalModifiers } from "./terminal-keys";
+
+type KeySequence =
+  string | ((applicationCursorKeys: boolean, modifiers: TerminalModifiers) => string);
 
 /** What the bar needs from the live terminal; null while none is attached. */
 export interface TerminalControl {
   /** Writes into the shell's input stream — the bar's keys never reach xterm's key handler. */
-  send(data: string): void;
+  send(data: KeySequence): void;
   paste(): void;
   focus(): void;
   blur(): void;
-  /** True while a full-screen app has switched the cursor keys to SS3 (see arrowSequence). */
-  applicationCursorKeys(): boolean;
 }
 
 const ARROW_GLYPH: Record<ArrowKey, string> = { left: "←", up: "↑", down: "↓", right: "→" };
@@ -60,11 +56,7 @@ export function TerminalKeyBar({ control, modifiers, onModifiers, focused }: Ter
   const capShape =
     "flex h-9 min-w-8 flex-1 basis-0 items-center justify-center rounded-sm border px-1 text-xs font-medium";
 
-  /** Sends a sequence the bar composed itself, then spends any armed modifier. */
-  const send = (data: string): void => {
-    control.current?.send(data);
-    if (modifiers.ctrl || modifiers.alt) onModifiers(NO_MODIFIERS);
-  };
+  const send = (data: KeySequence): void => control.current?.send(data);
 
   const cap = (props: {
     testId: string;
@@ -94,8 +86,7 @@ export function TerminalKeyBar({ control, modifiers, onModifiers, focused }: Ter
     cap({
       testId: `terminal-key-${key}`,
       label: S.terminal.touchKeys[key],
-      onPress: () =>
-        send(arrowSequence(key, modifiers, control.current?.applicationCursorKeys() ?? false)),
+      onPress: () => send((mode, armed) => arrowSequence(key, armed, mode)),
       children: <span aria-hidden>{ARROW_GLYPH[key]}</span>,
     });
 
