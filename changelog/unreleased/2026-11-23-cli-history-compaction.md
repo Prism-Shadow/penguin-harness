@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** fix
 - **Scope:** `cli`
+- **PR:** [#1790](https://github.com/Prism-Shadow/penguin-harness/pull/1790)
 
 [中文版](2026-11-23-cli-history-compaction.zh.md)
 
