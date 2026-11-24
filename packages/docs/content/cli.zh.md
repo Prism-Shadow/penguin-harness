@@ -7,7 +7,7 @@ description: 所有 penguin 命令和子命令的选项、默认值、输出结�
 
 CLI 以 npm 包 `@prismshadow/penguin-cli` 发布，命令名为 `penguin`。直接运行 `penguin` 会打印帮助。`-v, --version` 打印当前构建的一行标识信息，`penguin version --json` 则打印完整信息。启动时，CLI 会从工作目录加载 `.env` 文件。
 
-CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`、`session`、`agent`、`project`、`cost`、`schedule`、`benchmark`、`org`、`browser`）都向 PenguinHarness 服务器发送 HTTP 请求，并渲染返回结果。Task 在服务器上运行，Session 存放在服务器的索引里；CLI 创建的一切 Web App 都能看到，反过来也一样。只有 `config` 仍直接编辑 Project 的文件，`server` / `web` 则负责启动服务本身。
+CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`、`session`、`agent`、`app`、`project`、`cost`、`schedule`、`benchmark`、`org`、`browser`）都向 PenguinHarness 服务器发送 HTTP 请求，并渲染返回结果。Task 在服务器上运行，Session 存放在服务器的索引里；CLI 创建的一切 Web App 都能看到，反过来也一样。只有 `config` 仍直接编辑 Project 的文件，`server` / `web` 则负责启动服务本身。
 
 ## 服务器连接
 
@@ -20,12 +20,15 @@ CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`�
 
 CLI 使用本地 API token 认证。服务器每次启动都会把一个新 token 写入 `<root>/api-token`（仅所有者可读），CLI 以 `Authorization: Bearer` 的形式发送它。`PENGUIN_API_TOKEN` 优先于这个文件。CLI 只对回环地址目标读取这个文件，因此远程 `--server` 需要显式设置 `PENGUIN_API_TOKEN`。按设计，持有这个文件就等于持有管理员权限——能直接访问数据根目录的本地文件系统，本来就拥有同样的权限。`penguin server reset-admin-password` 依据的也是同一条规则。
 
+在 Session 内，服务器交给 CLI 的是另一种凭据：`PENGUIN_API_TOKEN` 是一个按 Session 签发的 token（`psess_…`），权限范围限于该 Session 所属的 Project，级别为 member。它可以读取该 Project（包括 [`app`](#penguin-app) 命令），但不能跨到其他 Project，不能执行 Project 所有者专属的写操作（如 `app enable` / `app disable`），不能访问管理端路由，也不能写用户账号设置。该 token 由服务器的启动密钥和 Session id 派生，因此每次服务器重启都会轮换。
+
 少数修改只接受人的登录，例如改变 Agent 对外暴露的修改（见 [penguin agent api](#penguin-agent-api)）。服务器以 `403` `human_required` 拒绝携带 token 的这类请求，CLI 随即改用你通过 [`penguin auth login`](#penguin-auth-login) 或 [`penguin auth token`](#penguin-auth-token) 保存的登录把同一请求再发一次：登录存放在 `<root>/cli-session.json`，以会话 Cookie 发送。CLI 只对本机上的服务器这样做，只在登录的对象本身就是本机服务器时使用，且从不在 Session 内使用——那里的命令属于 Agent。其余请求一律只带 token。
 
 ## 全局约定
 
 - 模型引用：模型的标识始终是 `(provider, model_id)` 这一对。`--model-id` 接收上游模型 id，`--provider` 接收模型所属的分组。CLI 从不推断、猜测或默认指定供应商。在 `run` 和 `chat` 上，这一对参数整体可选：两个都传即可选择模型，两个都不传则使用 Project 的默认模型；只传一个是错误。
 - Project 与 Agent 默认值：`--project-id` 依次回退到 `PENGUIN_PROJECT_ID`，再回退到 `default_project`；`--agent-id` 依次回退到 `PENGUIN_AGENT_ID`，再回退到 `default_agent`。在服务器驱动的会话里，这些环境变量指向会话所属的 Project 和 Agent。
+- App 引用：App 以其规范 ID `<agentId>/<workbenchId>` 寻址，这与 App Center 及 URL 的 `?app=` 参数使用的是同一个键。单 App 命令在 `--agent-id` 或 `PENGUIN_AGENT_ID` 指明 Agent 时也接受裸 `<workbenchId>`；在由某个 App 打开的 Session 里则可以完全省略参数：服务器会注入 `PENGUIN_APP_ID`，即打开该 Session 的 App。完整的 session id 会被当作 App 引用拒绝。
 - Session 引用：凡是接受 session id 的命令（`session log`、`session input`、`session rename`、`run --session`、`chat --resume`），完整 id 或任何唯一的片段都有效。`penguin session ls` 打印的 8 位十六进制尾部就是为此准备的简写。片段有歧义时报错，并列出所有候选。
 - 默认使用最近的 Session：session id 可选的命令（`session log`、`session input`、`chat --resume`）在省略 id 时，指向 Agent 最近的一个 Session，由 `--agent-id` 指定是哪个 Agent（`session rename` 先取调用它的 Session，见 [penguin session rename](#penguin-session-rename)）。`session log` 和 `session input` 会在 stderr 上用一行暗色的 `[latest]` 标注选中的 Session，目标始终明确，stdout 上的 `--json` 输出也保持可解析。如果这个 Agent 一个 Session 都没有，命令会打印一行提示指向 `penguin run` / `penguin chat`，然后以非零码退出。
 - JSON 输出：`--json` 打印原始 JSON，取代渲染后的或表格形式的输出。
@@ -158,11 +161,13 @@ penguin session ls [options]
 | `--project-id <id>` / `--agent-id <id>` | 范围。不带 `--agent-id` 时列出 Project 的所有 Agent。 | 见[全局约定](#全局约定) |
 | `-a, --all` | 包含已归档的 Session。 | — |
 | `--days <n>` | 只列出最近 n 个自然日内有活动的 Session。今天算第 1 天，所以 `--days 2` 覆盖昨天和今天，与 `cost --days` 一致。可与 `-a` 和 `--json` 组合。 | — |
+| `--app <id>` | 只列出由该 App 创建的 Session；必须传完整的 `<agentId>/<workbenchId>`。包含已归档的 App Session 和由其他 Agent 执行的 Session，所以与 `--agent-id` 组合时后者只筛选执行者。结果会增加 APP 列。 | — |
 | `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
 
 ```bash
 penguin session ls
 penguin session ls --agent-id default_agent -a
+penguin session ls --app default_agent/slides
 penguin session ls --json
 ```
 
@@ -244,6 +249,70 @@ penguin session rename [session_id] -t <title> [options]
 penguin session rename -t "Q3 发布准备"              # 会话内：重命名当前会话
 penguin session rename 402a2e24 -t "Q3 发布准备"     # 会话外：按片段重命名
 penguin session rename 402a2e24 -t "Q3 发布准备" --json
+```
+
+## penguin app
+
+通过服务器查看和操作 Project 的 App（workbench）：`ls` 列出 App，`info` 在不加载的前提下报告实时状态，`history` 列出版本，`reload` 从磁盘编译并加载，`enable` / `disable` 切换开关，`call` 向 App 的后端 API 发送请求。在由某个 App 打开的 Session 里，服务器会注入 `PENGUIN_APP_ID`，因此单 App 子命令可以省略参数。
+
+```bash
+penguin app ls [options]
+penguin app info [app_id] [options]
+penguin app history [app_id] [options]
+penguin app reload [app_id] [options]
+penguin app enable [app_id] [options]
+penguin app disable [app_id] [options]
+penguin app call <app_id|/path> [path] [options]
+```
+
+App ID 是规范的 `<agentId>/<workbenchId>`；简写与 `PENGUIN_APP_ID` 回退规则见[全局约定](#全局约定)。
+
+### penguin app ls
+
+列出 Project 的 App。默认只显示 App Center 展示且已启用的 App；`-a` 会补上隐藏和已停用的 App 并标注其状态。`--agent-id` 只保留某个 Agent 拥有的 App。该命令读取 App Center 的投影，不会编译或启动任何 App。
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--project-id <id>` / `--agent-id <id>` | 范围。 | 见[全局约定](#全局约定) |
+| `-a, --all` | 包含隐藏和已停用的 App。 | — |
+| `--json` | 打印 App Center 的原始行。 | — |
+| `--server <url>` | 见[服务器连接](#服务器连接)。 | — |
+
+```bash
+penguin app ls
+penguin app ls -a --json
+penguin app ls --agent-id default_agent
+```
+
+### penguin app info
+
+报告一个 App 的开关与实时状态，且完全不触碰它：命令读取 `GET …/workbenches/:id/status`，该接口不会编译、加载或写入 App。输出包括 App 自身的开关（`enabled`）与所属 Agent 的开关（`agentEnabled`）、当前是否有实例在服务（`serving`、`servingRevision`）、最近一次构建结果（`build`：`not_loaded` / `building` / `ready` / `failed`）、失败原因（`error`），以及磁盘上的当前 revision。
+
+```bash
+penguin app info default_agent/slides
+penguin app info                    # 在由该 App 打开的 Session 内
+```
+
+### penguin app history
+
+列出 App 已记录的版本（revision、commit、保存时间）。App 不存在时会明确报错并以 1 退出；App 存在但没有版本时打印空提示并以 0 退出。
+
+### penguin app reload
+
+从磁盘编译并加载 App，替换正在服务的实例。编译或加载失败时打印错误并以 1 退出；成功时打印新的 revision 与提示。需要让 App 读取改动过的文件时用它；`app info` 永远不会触发加载。
+
+### penguin app enable / penguin app disable
+
+打开或关闭 App 自身的开关。启用会加载 App；如果开关已打开但加载失败，命令会同时报告这两项结果并以 1 退出，开关保持打开，等待修复后再次加载。这两个写操作属于 Project 所有者；按 Session 签发的 token 会被以 `403` `owner_required` 拒绝。
+
+### penguin app call
+
+向 App 的后端 API（`/api/*`）发送一条 HTTP 请求并打印响应体。默认方法为 `GET`，带 `--data` 时为 `POST`；`--data` 必须是 JSON，且在 `GET`/`HEAD` 上会被拒绝。路径必须以 `/` 开头，且不能通过 `..` 越出 App 的 API 范围。在 App Session 内可以省略 App ID，只传路径。
+
+```bash
+penguin app call default_agent/slides /health
+penguin app call default_agent/slides /api/score -X POST -d '{"case": "A"}'
+penguin app call /api/score -d '{"case": "A"}'        # 在 App Session 内
 ```
 
 ## penguin agent

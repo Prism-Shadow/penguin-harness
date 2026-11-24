@@ -7,7 +7,7 @@ This page documents every `penguin` command. It opens with how the CLI reaches a
 
 The CLI ships as the npm package `@prismshadow/penguin-cli`, and the command is `penguin`. Bare `penguin` prints help. `-v, --version` prints the running build's one-line identity, and `penguin version --json` prints all of it. On startup the CLI loads a `.env` file from the working directory.
 
-The CLI is a thin client of the server. Every session-facing command (`run`, `chat`, `session`, `agent`, `project`, `cost`, `schedule`, `benchmark`, `org`, `browser`) sends HTTP requests to a PenguinHarness server and renders the replies. Tasks run on the server, Sessions live in its index, and the Web App sees everything the CLI creates, and the other way round. Only `config` still edits the Project's files directly, and `server` / `web` start the service itself.
+The CLI is a thin client of the server. Every session-facing command (`run`, `chat`, `session`, `agent`, `app`, `project`, `cost`, `schedule`, `benchmark`, `org`, `browser`) sends HTTP requests to a PenguinHarness server and renders the replies. Tasks run on the server, Sessions live in its index, and the Web App sees everything the CLI creates, and the other way round. Only `config` still edits the Project's files directly, and `server` / `web` start the service itself.
 
 ## Server connection
 
@@ -20,12 +20,15 @@ A CLI that talks to the server on the local machine needs no login, except to ch
 
 The CLI authenticates with the local API token. The server writes a fresh token to `<root>/api-token` on every boot (owner-only), and the CLI sends it as `Authorization: Bearer`. `PENGUIN_API_TOKEN` overrides the file. The CLI reads the file only for loopback targets, so a remote `--server` needs `PENGUIN_API_TOKEN` set explicitly. Holding the file grants admin authority by design, because local filesystem access to the data root already does. `penguin server reset-admin-password` relies on the same rule.
 
+Inside a Session the server hands the CLI a different credential: `PENGUIN_API_TOKEN` is a per-Session token (`psess_…`) scoped to that Session's Project with member-level access. It can read the Project, including the [`app`](#penguin-app) commands, but it cannot cross into another Project, perform Project-owner writes such as `app enable` / `app disable`, open admin routes, or write user-account settings. The token is derived from the server's boot secret and the Session id, so it rotates with every server restart.
+
 A few writes take a person's sign-in instead, such as those that change an agent's exposure (see [penguin agent api](#penguin-agent-api)). The server refuses the token on them with `403` `human_required`, and the CLI then sends that request once more with your sign-in from [`penguin auth login`](#penguin-auth-login) or [`penguin auth token`](#penguin-auth-token), stored in `<root>/cli-session.json` and sent as the session cookie. It does so only for a server on this machine, only when the sign-in itself is to a server on this machine, and never from inside a Session, where the command is an agent's. Every other request carries the token alone.
 
 ## Global conventions
 
 - Model references: a model's identity is always the `(provider, model_id)` pair. `--model-id` takes the upstream model id and `--provider` the group it belongs to. The CLI never infers, guesses or defaults the provider. On `run` and `chat` the pair as a whole is optional: pass both to pick a model, or neither to use the Project's default model. Passing only one is an error.
 - Project and agent defaults: `--project-id` falls back to `PENGUIN_PROJECT_ID`, then `default_project`. `--agent-id` falls back to `PENGUIN_AGENT_ID`, then `default_agent`. Inside a server-driven session, those variables name the session's own Project and agent.
+- App references: an App is addressed by its canonical `<agentId>/<workbenchId>`, the same key the App Center and the `?app=` URL parameter use. Single-App commands also accept a bare `<workbenchId>` when `--agent-id` or `PENGUIN_AGENT_ID` names the agent, and in a Session opened by an App they accept no argument at all: the server injects `PENGUIN_APP_ID`, the App that opened the Session. A full session id is rejected as an App reference.
 - Session references: wherever a command takes a session id (`session log`, `session input`, `session rename`, `run --session`, `chat --resume`), the full id or any unique fragment works. The 8-hex tail that `penguin session ls` prints is the intended shorthand. An ambiguous fragment is an error that lists the candidates.
 - Latest-session default: where the session id is optional (`session log`, `session input`, `chat --resume`), omitting it means the agent's most recent Session, and `--agent-id` picks the agent. (`session rename` takes the calling Session first; see [penguin session rename](#penguin-session-rename).) `session log` and `session input` name the Session they picked in a dim `[latest]` line on stderr, so the target is always clear and `--json` output on stdout stays parseable. When the agent has no Session at all, they print one line pointing at `penguin run` / `penguin chat` and exit non-zero.
 - JSON output: `--json` prints raw JSON instead of rendered or tabular output.
@@ -158,11 +161,13 @@ penguin session ls [options]
 | `--project-id <id>` / `--agent-id <id>` | Scope. Without `--agent-id`, every agent of the Project is listed. | See [Global conventions](#global-conventions) |
 | `-a, --all` | Includes archived Sessions. | — |
 | `--days <n>` | Lists only Sessions whose last activity falls within the last n calendar days. Today counts as day 1, so `--days 2` covers yesterday and today, as `cost --days` does. Combines with `-a` and `--json`. | — |
+| `--app <id>` | Lists only Sessions created by this App; pass the full `<agentId>/<workbenchId>`. Includes archived App Sessions and Sessions executed by another agent, so `--agent-id` only narrows the executor when combined. Adds an APP column. | — |
 | `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
 
 ```bash
 penguin session ls
 penguin session ls --agent-id default_agent -a
+penguin session ls --app default_agent/slides
 penguin session ls --json
 ```
 
@@ -244,6 +249,70 @@ An explicit `session_id` always wins. When you omit it inside a Session, the com
 penguin session rename -t "Q3 release prep"              # inside a session: renames it
 penguin session rename 402a2e24 -t "Q3 release prep"     # by fragment, from outside
 penguin session rename 402a2e24 -t "Q3 release prep" --json
+```
+
+## penguin app
+
+Inspects and operates the Project's Apps (workbenches) through the server: `ls` lists them, `info` reports one's live status without loading it, `history` lists recorded versions, `reload` compiles and loads it from disk, `enable` / `disable` drive its switch, and `call` sends a request to its backend API. In a Session opened by an App, the server injects `PENGUIN_APP_ID`, so single-App subcommands take no argument.
+
+```bash
+penguin app ls [options]
+penguin app info [app_id] [options]
+penguin app history [app_id] [options]
+penguin app reload [app_id] [options]
+penguin app enable [app_id] [options]
+penguin app disable [app_id] [options]
+penguin app call <app_id|/path> [path] [options]
+```
+
+App IDs are the canonical `<agentId>/<workbenchId>`; see [Global conventions](#global-conventions) for the shorthand and `PENGUIN_APP_ID` fallback.
+
+### penguin app ls
+
+Lists the Project's Apps. By default only Apps the App Center shows and that are enabled appear; `-a` adds hidden and disabled Apps and marks their state. `--agent-id` narrows the list to Apps owned by one agent. The listing reads the App Center projection, which never compiles or boots an App.
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--project-id <id>` / `--agent-id <id>` | Scope. | See [Global conventions](#global-conventions) |
+| `-a, --all` | Includes hidden and disabled Apps. | — |
+| `--json` | Prints the raw App Center rows. | — |
+| `--server <url>` | See [Server connection](#server-connection). | — |
+
+```bash
+penguin app ls
+penguin app ls -a --json
+penguin app ls --agent-id default_agent
+```
+
+### penguin app info
+
+Reports one App's switches and live state without touching it: the command reads `GET …/workbenches/:id/status`, which never compiles, loads, or writes the App. The output covers the App's own switch (`enabled`) and the owning agent's switch (`agentEnabled`), whether an instance is serving (`serving`, `servingRevision`), the latest build outcome (`build`: `not_loaded` / `building` / `ready` / `failed`), the failure reason (`error`), and the current on-disk revision.
+
+```bash
+penguin app info default_agent/slides
+penguin app info                    # inside a Session opened by the App
+```
+
+### penguin app history
+
+Lists the App's recorded versions (revision, commit, saved time). An App that does not exist is reported as such and exits 1; an App with no recorded versions prints an empty notice and exits 0.
+
+### penguin app reload
+
+Compiles and loads the App from disk, replacing the serving instance. On a compile or load error the command prints the error and exits 1; on success it prints the new revision and any hints. Use this when you want the App to pick up edited files; `app info` never does.
+
+### penguin app enable / penguin app disable
+
+Turns the App's own switch on or off. Enabling loads the App; if the switch turns on but the load fails, the command reports both outcomes and exits 1, leaving the switch on for the next fix or reload. These writes are Project-owner operations: a per-Session token is refused with `403` `owner_required`.
+
+### penguin app call
+
+Sends an HTTP request to the App's backend API (`/api/*`), printing the response body. The method defaults to `GET`, or `POST` when `--data` is given; `--data` must be JSON and is refused on `GET`/`HEAD`. The path must start with `/` and may not traverse (`..`) out of the App's API. Inside an App Session, the App ID may be omitted and the path passed alone.
+
+```bash
+penguin app call default_agent/slides /health
+penguin app call default_agent/slides /api/score -X POST -d '{"case": "A"}'
+penguin app call /api/score -d '{"case": "A"}'        # inside an App Session
 ```
 
 ## penguin agent
