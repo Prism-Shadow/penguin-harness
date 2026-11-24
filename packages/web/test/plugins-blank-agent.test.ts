@@ -21,7 +21,6 @@ import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { PluginsPage } from "../src/features/plugins/plugins-page";
 import {
-  AGENT_ID,
   PROJECT_ID,
   agentServer,
   buttonIn,
@@ -97,7 +96,7 @@ async function openInstalls(plugin: PluginItem, others: PluginItem[] = []) {
   const manage = `${en.plugins.installModel.installAgent} ${plugin.name}`;
   await waitFor(() => hasButton(manage));
   await click(button(manage));
-  await waitFor(() => hasButton(`${en.skills.install} ${AGENT_ID}`));
+  await waitFor(() => hasButton(en.plugins.installModel.addToAgent("Helper")));
   return { server, router };
 }
 
@@ -168,10 +167,13 @@ describe("installing a plugin on a new blank Agent", () => {
     await type(fieldIn(topDialog(), en.agent.id), "chart_maker");
     await click(create());
     await waitFor(() => dialogs().length === UNDER);
-    expect(topDialog().textContent).toContain(listTitle(CHARTS));
+    expect(topDialog().getAttribute("aria-label")).toBe(listTitle(CHARTS));
     // Already Installed when the list shows again: the row never passes through Install.
+    const target = topDialog().querySelector<HTMLInputElement>('input[value="chart_maker"]')!;
+    expect(target.closest("label")?.textContent).toContain(en.plugins.installModel.addedToAgent);
+    await click(target);
     expect(hasButton(`${en.skills.uninstall} chart_maker`)).toBe(true);
-    expect(hasButton(`${en.skills.install} chart_maker`)).toBe(false);
+    expect(hasButton(en.plugins.installModel.addToAgent("Charts"))).toBe(false);
     expect(whereIs(router)).toBe(detailPath(CHARTS));
   });
 
@@ -181,11 +183,11 @@ describe("installing a plugin on a new blank Agent", () => {
     await pressEscape();
     expect(hasButton(en.common.discard)).toBe(false);
     expect(dialogs()).toHaveLength(UNDER);
-    expect(topDialog().textContent).toContain(listTitle(CHARTS));
+    expect(topDialog().getAttribute("aria-label")).toBe(listTitle(CHARTS));
     await pressEscape();
     // The list is closed; the detail it was opened from stays.
     expect(dialogs()).toHaveLength(UNDER - 1);
-    expect(topDialog().textContent).not.toContain(listTitle(CHARTS));
+    expect(topDialog().getAttribute("aria-label")).not.toBe(listTitle(CHARTS));
   });
 
   it("asks before creating an Agent whose plugin runs a stdio server, and creates nothing until confirmed", async () => {
