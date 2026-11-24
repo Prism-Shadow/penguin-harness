@@ -70,6 +70,7 @@ penguin schedule update <name> [<same field flags>] [--enable|--disable]
 penguin schedule rm <name> [--project-id <id>] [--agent-id <id>]
 ```
 
+- `penguin app call` is experimental. It reaches the app's own `/api/*` handler, which may create sessions or run agents. Call only routes the app documents for agent use; never call a route that creates a session or starts another agent unless the user explicitly asked for that chain.
 - `run` starts a task and waits, rendering the conversation, unless `--background` — then it prints the new session id and exits while the server keeps running the task. `--session <session_id>` runs the task in an existing session instead of creating one; the model reference is the `--provider` + `--model-id` pair (both or neither); `--goal [budget]` runs in goal mode — the session loops until the agent declares the goal complete, with an optional spend budget.
 - **Caller-context defaults.** Inside a harness agent, a session-creating `run` fills every field you leave unspecified from your own live session, per field independently: `--workspace`, the `--model-id`/`--provider` pair, `--approve` and `--thinking` inherit the caller's values — the same convention as `run_subagent` parent inheritance. Precedence: explicit flag > caller value > plain fallback (cwd, the Project default model, `allow-all`, none — used wholesale if the caller lookup fails, with a dim stderr note). So inside an agent, `penguin run -m "..."` alone typically does the right thing; pass flags only to diverge.
 - `--timeout <duration>` (`30s`, `5m`, `2h`, or bare seconds) bounds the wait of a foreground `run`, a `session input`, or a `session log -f`. Expiry is a soft yield, not an error: the command exits 0 while the task keeps running server-side, printing a still-running note that names the follow-up commands (`--json` prints `{sessionId, status: "running", text}` with the text so far). `--timeout 0` (also `0s`) returns immediately after delivery — the same note without collected text (`--json`: `{sessionId, status: "running"}`); on a bare poll it snapshots a running session instantly. `run --background` stays the idiomatic fire-and-forget for new tasks and rejects `--timeout`; `session log --timeout` requires `-f`.
@@ -84,8 +85,10 @@ penguin schedule rm <name> [--project-id <id>] [--agent-id <id>]
 ### Inspect my apps, whether the current app is serving, and its recent sessions
 
 ```bash
-# 1. All apps installed under the current agent (including hidden and disabled)
-penguin app ls -a --agent-id "$PENGUIN_AGENT_ID" --json
+# 1. All apps in the current project, including hidden and disabled. Do not narrow
+#    by PENGUIN_AGENT_ID: in a cross-agent app session that is the executing agent,
+#    not the owner of the app that opened the session.
+penguin app ls -a --json
 
 # 2. Current app's read-only status (uses PENGUIN_APP_ID in a workbench session;
 #    in a plain session, pass the full <agentId>/<workbenchId> from `app ls`)
@@ -96,7 +99,7 @@ penguin app info --json
 penguin session ls --app "$PENGUIN_APP_ID" --json
 ```
 
-- `penguin app info` is **purely read-only**: it never compiles, loads, or starts an app. Use `penguin app reload` when you explicitly want to compile and load from disk.
+- `penguin app info` is **purely read-only**: it never compiles, loads, or starts an app. `penguin app ls` reads the App Center projection, which may run a one-time layout migration and install watchers, but it never compiles or loads an app. Use `penguin app reload` when you explicitly want to compile and load from disk.
 - Read `app info --json` fields separately:
   - `enabled` / `agentEnabled`: whether the app's own switch and the owning agent's workbenches switch are on.
   - `serving` (and `servingRevision`): whether a live instance is currently loaded in memory and serving requests/tabs.
