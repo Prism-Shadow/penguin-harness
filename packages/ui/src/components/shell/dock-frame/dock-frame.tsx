@@ -405,6 +405,16 @@ export interface DockFrameProps {
   onFullscreenPhase?: (phase: DockFullscreenPhase | null) => void;
 }
 
+// Chromium can treat a fast touch resize as a fling and consume the next tap to stop it.
+// Only a gesture that started on the divider belongs to the dock. The listener must be
+// non-passive to cancel native scrolling for that touch sequence.
+function attachResizeSeat(element: HTMLDivElement | null) {
+  if (!element) return;
+  const preventScroll = (event: TouchEvent) => event.preventDefault();
+  element.addEventListener("touchmove", preventScroll, { passive: false });
+  return () => element.removeEventListener("touchmove", preventScroll);
+}
+
 export function DockFrame({
   position,
   open,
@@ -476,6 +486,7 @@ export function DockFrame({
       : ({ "--dock-content-size": `${contentSize}px` } as CSSProperties);
   const seat = open ? (
     <div
+      ref={attachResizeSeat}
       data-dock-resize-seat={lifted ? undefined : position}
       data-layout-motion={moving ? "" : undefined}
       style={seatStyle}
