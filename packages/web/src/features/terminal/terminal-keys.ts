@@ -29,6 +29,11 @@ export type ArrowKey = "up" | "down" | "left" | "right";
 
 const ARROW_FINAL: Record<ArrowKey, string> = { up: "A", down: "B", right: "C", left: "D" };
 
+/** The unmodified arrows, Home and End share this prefix in DEC cursor-key mode. */
+export function cursorSequence(final: string, applicationCursorKeys: boolean): string {
+  return applicationCursorKeys ? `\x1bO${final}` : `\x1b[${final}`;
+}
+
 /**
  * An arrow press. An unmodified arrow follows the terminal's current cursor-key mode —
  * full-screen apps and readline prompts switch to SS3 (`ESC O A`) and read the CSI form as
@@ -43,7 +48,7 @@ export function arrowSequence(
   const final = ARROW_FINAL[key];
   const param = modifierParam(mods);
   if (param !== 1) return `\x1b[1;${param}${final}`;
-  return applicationCursorKeys ? `\x1bO${final}` : `\x1b[${final}`;
+  return cursorSequence(final, applicationCursorKeys);
 }
 
 /** Ctrl pairings that are not a letter: the C0 codes above and below the alphabet. */

@@ -21,8 +21,13 @@
  * keeps that machine's tiles where they were (arrangement.ts, `keepUnseenApps`).
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import type { AppCenterLayout, AppCenterShortcut } from "@prismshadow/penguin-server/api";
+import type {
+  AppCenterLayout,
+  AppCenterShortcut,
+  AppCenterUnavailable,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { SYSTEM_AGENT_ID } from "../../lib/builtin-agents";
 import { appAwaited, type LocatedShortcut } from "./arrangement";
 import { createCatalogStore } from "../../lib/catalog-storage";
 import { createReadStore } from "../../lib/read-store";
@@ -61,8 +66,13 @@ const remoteApps = createCatalogStore<AppCenterShortcut[]>(
   Array.isArray,
 );
 
-const loadRemoteApps = (projectId: string, machineId: string) =>
-  api.getAppCenter(projectId, machineId).then((r) => r.shortcuts);
+// Attach availability to this exact live answer. Offline/restored cache entries already keep all unseen members.
+const unavailableByListing = new WeakMap<AppCenterShortcut[], AppCenterUnavailable>();
+const loadRemoteApps = async (projectId: string, machineId: string) => {
+  const { shortcuts, unavailable } = await api.getAppCenter(projectId, machineId);
+  if (unavailable) unavailableByListing.set(shortcuts, unavailable);
+  return shortcuts;
+};
 
 const loadRemoteHidden = (projectId: string, machineId: string) =>
   api.getAppCenter(projectId, machineId, true).then((r) => r.shortcuts);
@@ -99,19 +109,23 @@ export function useAppCenter(
   const [loaded, setLoaded] = useState<{
     projectId: string;
     shortcuts: AppCenterShortcut[];
+    unavailable?: AppCenterUnavailable;
     layout: AppCenterLayout | null;
   } | null>(null);
   const [error, setError] = useState<ReactNode>(null);
   /** Reads and writes so far: a read's answer applies only while nothing newer was asked. */
   const asked = useRef(0);
+  const writes = useRef(Promise.resolve());
 
   const load = useCallback(async () => {
     if (projectId === null) return;
     const ask = ++asked.current;
     try {
-      const { shortcuts, layout } = await api.getAppCenter(projectId, null, hidden);
+      await writes.current;
       if (ask !== asked.current) return;
-      setLoaded({ projectId, shortcuts, layout });
+      const { shortcuts, layout, unavailable } = await api.getAppCenter(projectId, null, hidden);
+      if (ask !== asked.current) return;
+      setLoaded({ projectId, shortcuts, layout, unavailable });
       setError(null);
     } catch (err) {
       if (ask === asked.current) {
@@ -182,13 +196,17 @@ export function useAppCenter(
     (layout: AppCenterLayout | null) => {
       if (!current || projectId === null) return;
       // A read already under way answers with the arrangement from before this one.
-      ++asked.current;
+      const revision = ++asked.current;
       setLoaded((prev) =>
         prev !== null && prev.projectId === projectId ? { ...prev, layout } : prev,
       );
-      void api.putAppCenterLayout(projectId, layout).catch((err: unknown) => {
-        toastApiError(err);
-        void load();
+      writes.current = writes.current.then(async () => {
+        try {
+          await api.putAppCenterLayout(projectId, layout);
+        } catch (err) {
+          toastApiError(err);
+          if (revision === asked.current) void load();
+        }
       });
     },
     [projectId, load, current],
@@ -209,13 +227,31 @@ export function useAppCenter(
     unavailableMachines: remotes
       .filter((r) => r.machine.link !== "connected" || r.error)
       .map((r) => r.machine.label),
-    awaitedApp: (key) =>
-      appAwaited(
+    awaitedApp: (key) => {
+      const machineEnd = key.slice(0, key.indexOf("/")).indexOf(":");
+      const machineId = machineEnd >= 0 ? key.slice(0, machineEnd) : null;
+      const app = key.slice(machineEnd + 1);
+      const remote = machineId && remotes.find((r) => r.machine.machineId === machineId);
+      if (app.startsWith(SYSTEM_AGENT_ID + "/") && machineId === null) return appAwaited(app, null);
+      const unavailable =
+        machineId === null
+          ? current?.unavailable
+          : remote && remote.value && unavailableByListing.get(remote.value);
+      // A server predating availability details cannot confirm why an app went missing.
+      if (machineId === null && current && !unavailable) return true;
+      if (remote && remote.live && !unavailable) return true;
+      if (
+        unavailable &&
+        (unavailable.agents.includes(app.split("/")[0]!) || unavailable.apps.includes(app))
+      )
+        return true;
+      return appAwaited(
         key,
         machinesSettled && machineList !== null
-          ? remotes.map((r) => ({ machineId: r.machine.machineId, answered: r.value !== null }))
+          ? remotes.map((r) => ({ machineId: r.machine.machineId, answered: r.live }))
           : null,
-      ),
+      );
+    },
     refreshMachine: (machineId) =>
       machineId ? remotes.find((r) => r.machine.machineId === machineId)?.refresh() : void load(),
     layout: current?.layout ?? null,

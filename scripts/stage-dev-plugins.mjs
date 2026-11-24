@@ -9,8 +9,8 @@
  * agent browser's, in browser-automation — was missing from every server started here. `pnpm
  * build`, the dev prestep and the web e2e runner run it.
  *
- * Which plugins: the code plugins whose card says `preinstall: true` (PRFC-0030), the ones every
- * Project lists, so a workspace server behaves like an installed one. Each is copied as npm would
+ * Which plugins: preinstalled code plugins (PRFC-0030) and code plugins that also carry Agent
+ * content, so a workspace server can enable their bundled modules from the market. Each is copied as npm would
  * publish it — its package.json and the entries its `files` names — from its own build, which has
  * to have run (the plugin's `build`; dev-prebuild.mjs and the e2e runner build first). They bundle
  * what they run, so nothing is installed beside them; a plugin that declares runtime dependencies
@@ -32,8 +32,8 @@ const core = await import(
   pathToFileURL(path.join(ROOT, "packages", "core", "dist", "index.js")).href
 );
 
-/** The preinstalled code plugins under plugins/: `{ name, version, dir, files }`. */
-function preinstalledCodePlugins() {
+/** The code plugins this checkout stages under plugins/: `{ name, version, dir, files }`. */
+function checkoutCodePlugins() {
   const out = [];
   for (const entry of fs.readdirSync(PLUGINS).sort()) {
     const dir = path.join(PLUGINS, entry);
@@ -43,8 +43,11 @@ function preinstalledCodePlugins() {
     if (pkg.main === undefined && pkg.exports === undefined) continue;
     if (Object.keys(pkg.dependencies ?? {}).length > 0) continue;
     const table = core.readPluginTable(dir);
-    if (table === null || core.libraryContributions(table, []).card?.preinstall !== true) continue;
+    if (table === null) continue;
     const entryFile = core.packageEntry(dir);
+    const preinstalled = core.libraryContributions(table, []).card?.preinstall === true;
+    if (!preinstalled && (!core.libraryParts(dir).modules || !core.hasLibraryContributions(table)))
+      continue;
     if (entryFile === null || !fs.existsSync(entryFile)) {
       throw new Error(`${pkg.name} is not built (no ${entryFile ?? "entry"}): run its build first`);
     }
@@ -53,7 +56,7 @@ function preinstalledCodePlugins() {
   return out;
 }
 
-const plugins = preinstalledCodePlugins();
+const plugins = checkoutCodePlugins();
 fs.rmSync(PREFIX, { recursive: true, force: true });
 fs.mkdirSync(PREFIX, { recursive: true });
 for (const plugin of plugins) {

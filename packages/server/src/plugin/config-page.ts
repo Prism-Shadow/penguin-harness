@@ -70,6 +70,10 @@ export interface SettingsGroupStatus {
    * save choosing one is refused. Asked per read, like the notices.
    */
   unavailable?(): PluginConfigUnavailable[];
+  /** Explains a known action that the card no longer offers, without executing it. */
+  unavailableAction?(
+    action: string,
+  ): Pick<PluginConfigActionResult, "message" | "messageZh"> | undefined;
   /** Runs one, by its id. Told what happened, in words the page shows as they are. */
   run?(action: string): Promise<PluginConfigActionResult>;
   /**
@@ -270,6 +274,8 @@ export class PluginConfigPage {
         const group = status.get(name);
         const offered = group?.actions?.() ?? [];
         if (group?.run === undefined || !offered.some((a) => a.id === action)) {
+          const reason = group?.unavailableAction?.(action);
+          if (reason) return { ok: false, ...reason };
           throw new PluginConfigError(null, `"${name}" offers no action "${action}".`);
         }
         const { settled, ...result } = await group.run(action);

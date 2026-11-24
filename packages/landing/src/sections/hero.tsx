@@ -1,14 +1,72 @@
-import { useState } from "react";
+/** The product brand and installation paths, followed by its platform claims, catalogues and live app. */
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { mmspModelsUrl } from "../lib/links";
 import { RELEASE_VERSION } from "../lib/version";
 import counts from "virtual:penguin-catalog-counts";
-import { DownloadIcon, AirplaneIcon, TerminalIcon } from "../components/icons";
+import { BENCHMARKS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../lib/rsi-stats";
+import {
+  DownloadIcon,
+  ExternalLinkIcon,
+  ModelProviderLogo,
+  AirplaneIcon,
+  TerminalIcon,
+} from "../components/icons";
 import { ExternalLink, ExternalLinkScope } from "../components/external-link";
 import { LiveAppFrame } from "../components/live-app-frame";
 import { useVisibleActivity } from "../lib/visible-activity";
+
+/**
+ * An entry of a text catalogue row: plain text on the page, no box of its own — the row is a
+ * list, read the way the model logos beside it are.
+ */
+const ENTRY = "inline-flex items-center gap-1 text-sm font-medium text-gray-700 dark:text-gray-300";
+
+/** An entry that links out: the same text, underlined on hover, with the outside-link mark. */
+const ENTRY_LINK = `${ENTRY} underline-offset-4 decoration-gray-300 transition-colors hover:text-gray-950 hover:underline dark:decoration-gray-600 dark:hover:text-white`;
+
+/**
+ * One row of the catalogue, led by its count: the count and label above the items on phones;
+ * from `sm` up, they share the catalogue's two columns (subgrid), the count-and-label column
+ * aligned left so the three counts line up.
+ */
+function CatalogRow({
+  count,
+  label,
+  delay,
+  listClassName,
+  children,
+}: {
+  count: string;
+  label: string;
+  delay: number;
+  listClassName: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="anim-rise flex flex-col items-center sm:col-span-2 sm:grid sm:grid-cols-subgrid sm:items-center"
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <dt className="flex items-baseline gap-2 sm:text-left">
+        <span className="text-2xl leading-none font-semibold tracking-tight text-brand-600 tabular-nums dark:text-brand-300">
+          {count}
+        </span>
+        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{label}</span>
+      </dt>
+      {/* Spaced by margin, not `gap`: a gap on the subgrid would override the catalogue's own. */}
+      <dd className="mt-2.5 sm:mt-0">
+        <ul
+          className={`flex flex-wrap items-center justify-center sm:justify-start ${listClassName}`}
+        >
+          {children}
+        </ul>
+      </dd>
+    </div>
+  );
+}
 
 function HeroWord({ text, variant }: { text: string; variant: "growth" | "reach" }) {
   return (
@@ -68,15 +126,27 @@ function ListingBadge({
 
 export function Hero() {
   const { locale } = useSiteLocale();
-  const { ref: motion, active } = useVisibleActivity<HTMLHeadingElement>();
+  const { ref: motion, active } = useVisibleActivity<HTMLParagraphElement>();
   return (
     <section className="relative overflow-hidden">
-      <div className="relative mx-auto max-w-6xl px-4 pt-8 pb-12 text-center sm:px-6 sm:pt-12 sm:pb-14">
+      <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
+      <div className="relative mx-auto max-w-6xl px-4 pt-12 pb-12 text-center sm:px-6 sm:pt-24 sm:pb-14">
         <h1
           id="home-top"
           tabIndex={-1}
+          className="anim-rise flex items-center justify-center gap-2.5 sm:gap-3.5"
+        >
+          <img
+            src={`${import.meta.env.BASE_URL}penguin-logo.svg`}
+            alt=""
+            className="h-12 w-12 sm:h-16 sm:w-16"
+          />
+          <span className="text-2xl font-semibold tracking-tight sm:text-4xl">{S.siteName}</span>
+        </h1>
+
+        <p
           ref={motion}
-          className={`hero-positioning anim-rise mx-auto font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word] ${active ? "" : "hero-motion-paused"}`}
+          className={`hero-positioning anim-rise mx-auto mt-6 font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word] ${active ? "" : "hero-motion-paused"}`}
           style={{ animationDelay: "70ms" }}
         >
           <span className="hero-positioning-clause">
@@ -89,60 +159,14 @@ export function Hero() {
             {S.hero.positioning.reachLead}
             <HeroWord text={S.hero.positioning.reach} variant="reach" />
           </span>
-        </h1>
+        </p>
 
         <p
-          className="hero-automation anim-rise mt-2 leading-6 text-balance break-keep text-gray-600 [overflow-wrap:break-word] sm:leading-8 dark:text-gray-300"
+          className="hero-automation anim-rise mt-5 leading-6 text-balance break-keep text-gray-600 [overflow-wrap:break-word] sm:leading-8 dark:text-gray-300"
           style={{ animationDelay: "120ms" }}
         >
           {S.hero.subtitle}
         </p>
-
-        <ExternalLinkScope>
-          <ul
-            className="anim-rise mx-auto mt-6 grid max-w-lg grid-cols-3 gap-2"
-            style={{ animationDelay: "160ms" }}
-          >
-            {[
-              {
-                value: counts.models,
-                label: S.hero.supportedModelsLabel,
-                href: mmspModelsUrl(locale),
-              },
-              { value: counts.algorithms, label: S.hero.algorithmsLabel, href: "/plugins" },
-              { value: counts.benchmarks, label: S.hero.benchmarksLabel, href: "/benchmarks" },
-            ].map(({ value, label, href }) => {
-              const name = (
-                <>
-                  <span className="text-xl font-semibold tabular-nums sm:text-2xl">{value}</span>
-                  <span className="text-xs text-gray-600 dark:text-gray-400">{label}</span>
-                </>
-              );
-              const classes =
-                "flex min-h-11 flex-col items-center justify-center gap-1 rounded-md hover:underline focus-visible:outline-2";
-              return (
-                <li key={href}>
-                  {href.startsWith("/") ? (
-                    <Link to={href} className={classes}>
-                      {name}
-                    </Link>
-                  ) : (
-                    <ExternalLink href={href} className={classes}>
-                      {name}
-                    </ExternalLink>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </ExternalLinkScope>
-
-        <LiveAppFrame
-          surface="chat-new"
-          autoplay="evolution"
-          title={S.live.evolutionFrame}
-          className="anim-rise mx-auto mt-7 max-w-6xl text-left sm:mt-10"
-        />
 
         <div
           className="anim-rise mt-7 flex flex-wrap items-center justify-center gap-3"
@@ -186,6 +210,95 @@ export function Hero() {
             />
           </div>
         </ExternalLinkScope>
+
+        <dl
+          className="anim-rise mx-auto mt-10 grid max-w-5xl grid-cols-3 gap-x-3 sm:mt-12 sm:gap-x-6"
+          style={{ animationDelay: "250ms" }}
+        >
+          {S.hero.stats.map((stat) => (
+            <div key={stat.value} className="min-w-0">
+              <dt className="mx-auto mt-1 min-h-8 max-w-64 text-xs leading-4 text-gray-500 sm:min-h-0 sm:leading-5 dark:text-gray-400">
+                {stat.label}
+              </dt>
+              <dd className="hero-stat-value mx-auto mt-0.5 text-base leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-xl dark:text-gray-100">
+                {stat.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+
+        <ExternalLinkScope>
+          <dl className="mx-auto mt-10 grid w-fit max-w-full gap-y-6 sm:mt-12 sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-x-6 sm:gap-y-4">
+            <CatalogRow
+              count={String(counts.models)}
+              label={S.hero.supportedModelsLabel}
+              delay={300}
+              listClassName="gap-x-2 gap-y-1"
+            >
+              {MODEL_PROVIDERS.map((provider) => (
+                <li key={provider.id}>
+                  <ExternalLink
+                    href={provider.href}
+                    aria-label={provider.name}
+                    title={provider.name}
+                    className="inline-flex rounded-md p-1 text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    <ModelProviderLogo provider={provider.id} className="h-6 w-6" />
+                  </ExternalLink>
+                </li>
+              ))}
+              <li className="ml-1">
+                <ExternalLink href={mmspModelsUrl(locale)} className={ENTRY_LINK}>
+                  {S.hero.supportedModelsMore}
+                  <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                </ExternalLink>
+              </li>
+            </CatalogRow>
+
+            <CatalogRow
+              count={String(counts.algorithms)}
+              label={S.hero.algorithmsLabel}
+              delay={340}
+              listClassName="gap-x-5 gap-y-1.5"
+            >
+              {RSI_TOOLKITS.map((toolkit) => (
+                <li key={toolkit.plugin}>
+                  {toolkit.href !== null ? (
+                    <ExternalLink href={toolkit.href} className={ENTRY_LINK}>
+                      {toolkit.label}
+                      <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                    </ExternalLink>
+                  ) : (
+                    <span className={ENTRY}>{toolkit.label}</span>
+                  )}
+                </li>
+              ))}
+            </CatalogRow>
+
+            <CatalogRow
+              count={String(counts.benchmarks)}
+              label={S.hero.benchmarksLabel}
+              delay={380}
+              listClassName="gap-x-5 gap-y-1.5"
+            >
+              {BENCHMARKS.map((benchmark) => (
+                <li key={benchmark.href}>
+                  <ExternalLink href={benchmark.href} className={ENTRY_LINK}>
+                    {S.hero.benchmarkKinds[benchmark.kind]}
+                    <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                  </ExternalLink>
+                </li>
+              ))}
+            </CatalogRow>
+          </dl>
+        </ExternalLinkScope>
+
+        <LiveAppFrame
+          surface="chat-new"
+          autoplay="evolution"
+          title={S.live.evolutionFrame}
+          className="anim-rise mx-auto mt-14 max-w-6xl text-left sm:mt-16"
+        />
       </div>
     </section>
   );
