@@ -1,39 +1,20 @@
-/* The dock's content and the conversation still open in flow. A divider pressed at
-   its destination or at the moving border owns the same pointer for the entire drag. */
+/* Only the painted divider captures a resize. The content slides behind it within the dock. */
 [data-dock-resize-seat] {
   position: absolute;
-  inset: 0;
   z-index: var(--layer-handle);
-  display: flex;
-  justify-content: flex-end;
-  pointer-events: none;
-}
-[data-dock-resize-seat] > [role="separator"] {
-  position: static;
-  flex: none;
-  pointer-events: auto;
   touch-action: none;
 }
-[data-dock-resize-seat] > [role="separator"]::before {
-  content: "";
-  position: absolute;
+[data-dock-resize-seat="right"] {
+  inset: 0 100% 0 auto;
+  display: flex;
+  width: 6px;
 }
 [data-dock-resize-seat="right"] > [role="separator"] {
-  width: 6px;
-  margin-right: var(--dock-content-size);
-}
-[data-dock-resize-seat="right"] > [role="separator"]::before {
-  inset: 0 100% 0 auto;
-  width: 6px;
+  width: 100%;
 }
 [data-dock-resize-seat="bottom"] {
-  flex-direction: column;
+  inset: 0 0 auto;
 }
 [data-dock-resize-seat="bottom"] > [role="separator"] {
-  height: 6px;
-  margin-bottom: calc(var(--dock-content-size) - 3px);
-}
-[data-dock-resize-seat="bottom"] > [role="separator"]::before {
-  inset: -3px 0 auto;
   height: 6px;
 }
