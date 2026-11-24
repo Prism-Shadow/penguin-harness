@@ -665,12 +665,32 @@ describe("penguin org ticket (writes carry the calling session)", () => {
   });
 
   it("create mints a suffixed id when the slug is taken, and refuses a parent that has no ticket", async () => {
-    expect(await cli(["org", "ticket", "create", "--title", "Site", "--slug", "launch-site"])).toBe(
-      0,
-    );
+    expect(
+      await cli([
+        "org",
+        "ticket",
+        "create",
+        "--title",
+        "Site",
+        "--goal",
+        "A landing page",
+        "--slug",
+        "launch-site",
+      ]),
+    ).toBe(0);
     expect(org().tickets.has("ticket-2026-09-02-launch-site")).toBe(true);
     expect(
-      await cli(["org", "ticket", "create", "--title", "Site again", "--slug", "launch-site"]),
+      await cli([
+        "org",
+        "ticket",
+        "create",
+        "--title",
+        "Site again",
+        "--goal",
+        "Another page",
+        "--slug",
+        "launch-site",
+      ]),
     ).toBe(0);
     // The server mints the second id a letter past the first — a fake that 409'd here would
     // teach the CLI a contract the server does not keep.
