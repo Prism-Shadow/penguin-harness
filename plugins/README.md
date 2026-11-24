@@ -4,17 +4,17 @@ The PenguinHarness plugin library. Each plugin is a package under `@penguinharne
 
 A plugin's version is its npm version (`package.json`, which follows the release). Dated versions — `YYYY.MM.DD.N` — belong to what an Agent may edit locally: every skill's `SKILL.md` frontmatter carries its own `version`, and a hook package's is the `version` of its hooks contribution in `src/index.ts`, which the installer writes into `hooks.json`. Change a skill and raise its `version`; change a hook script or the contribution's commands and raise the contribution's `version` (CI checks both against the base commit, `scripts/check-plugin-versions.mjs`); a change to the card needs no new version. Skills follow the "index first, body on demand" design: only their metadata is injected into an Agent's system prompt; the Agent reads the full `SKILL.md` via shell when it actually needs it. Hook scripts are plain Node (builtins only): the harness runs them as subprocesses at the loop's hook points with `{ hook, session_id, trace_path }` on stdin and reads their JSON answer from stdout.
 
-Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/categories.ts`; a plugin with no or an unknown category lands in an "Other" group). A plugin built around someone else's product carries a `use-` prefix — `use-firecrawl`, `use-bento-slides`, `use-claude-code` — so the package name says what it is for rather than claiming the product; the skills inside keep their own names:
+Plugins by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/categories.ts`; a plugin with no or an unknown category lands in an "Other" group). A plugin built around someone else's product carries a `use-` prefix — `use-firecrawl`, `use-bento-slides`, `use-claude-code` — so the package name says what it is for rather than claiming the product; the skills inside keep their own names:
 
 | Category | Plugins |
 | --- | --- |
-| Agent Self-Evolution | `default-rsi-toolkit`, The Default RSI Toolkit ships with the product. Install an algorithm toolkit from the plugin market when an Agent needs it.
-
-`opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
+| Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
 | Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `storage`, `use-bento-slides`, `goal`, `plan`, `trace-lookup`, `agent-company`, `penguin-support`, `multimodal-tools` |
 | Utilities | `first-workbench-guide` |
 | Software Development | `software-development` |
 | AI App Development | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
+
+The product ships the Default RSI Toolkit. Install the other algorithms listed above from the RSI Platform releases in the plugin market when an Agent needs them.
 
 The host pins the A2UI, External Plugin Porting and Firecrawl packages from [PenguinHarness Apps](https://github.com/Prism-Shadow/penguin-harness-apps). Their versioned releases carry the same Skill identifiers as the bundled library.
 
