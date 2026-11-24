@@ -215,17 +215,12 @@ export interface SlashMenuItem {
   description: string;
 }
 
-/**
- * The slash list, opening upward from the composer's top edge. Its height is the caller's
- * measure of the room above (`maxHeight`), and the list scrolls inside it, so a long list never
- * runs off the top; the highlighted row keeps itself in view as the keyboard walks it.
- */
-export function SlashMenu({
+/** Slash command choices. The highlighted command follows keyboard navigation into view. */
+export function SlashMenuRows({
   items,
   active,
   onActiveChange,
   onRun,
-  maxHeight,
 }: {
   items: readonly SlashMenuItem[];
   /** The highlighted row's index. */
@@ -234,34 +229,41 @@ export function SlashMenu({
   onActiveChange: (index: number) => void;
   /** A row was pressed. */
   onRun: (index: number) => void;
-  maxHeight?: number;
 }) {
+  return items.map((item, i) => (
+    <button
+      key={item.command}
+      type="button"
+      ref={i === active ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+      onMouseEnter={() => onActiveChange(i)}
+      onClick={() => onRun(i)}
+      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${
+        i === active ? "bg-line-muted" : ""
+      }`}
+    >
+      <span className="shrink-0 font-mono text-fg">{item.command}</span>
+      <span
+        data-tooltip={item.description}
+        data-tooltip-content="text"
+        className="min-w-0 flex-1 truncate text-xs text-fg-muted"
+      >
+        {item.description}
+      </span>
+    </button>
+  ));
+}
+
+/** Draw the rows above an unclipped composer, within the height available there. */
+export function SlashMenu({
+  maxHeight,
+  ...rows
+}: Parameters<typeof SlashMenuRows>[0] & { maxHeight?: number }) {
   return (
     <div
       style={{ maxHeight }}
       className={`ui-glass ${menuPanelClass} absolute bottom-full left-0 z-menu mb-1.5 w-80 max-w-[calc(100vw-2rem)] overscroll-contain`}
     >
-      {items.map((item, i) => (
-        <button
-          key={item.command}
-          type="button"
-          ref={i === active ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
-          onMouseEnter={() => onActiveChange(i)}
-          onClick={() => onRun(i)}
-          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${
-            i === active ? "bg-line-muted" : ""
-          }`}
-        >
-          <span className="shrink-0 font-mono text-fg">{item.command}</span>
-          <span
-            data-tooltip={item.description}
-            data-tooltip-content="text"
-            className="min-w-0 flex-1 truncate text-xs text-fg-muted"
-          >
-            {item.description}
-          </span>
-        </button>
-      ))}
+      <SlashMenuRows {...rows} />
     </div>
   );
 }

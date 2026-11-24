@@ -28,13 +28,13 @@ export function DockPicker({ choices, horizontal, className = "", ...rest }: Doc
     <div
       data-testid="dock-picker"
       {...rest}
-      className={`flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4 ${className}`}
+      className={`flex min-h-0 flex-1 items-start justify-center overflow-y-auto p-4 ${className}`}
     >
       <div
         className={
           horizontal
-            ? "flex max-w-full flex-wrap items-center justify-center gap-1"
-            : "flex w-60 flex-col gap-1"
+            ? "my-auto flex max-w-full flex-wrap items-center justify-center gap-1"
+            : "my-auto flex w-60 flex-col gap-1"
         }
       >
         {choices.map((choice) => (
