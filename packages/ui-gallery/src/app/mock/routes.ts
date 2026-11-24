@@ -170,6 +170,7 @@ import { empty, fail, json, raw, Router } from "./router";
 import type { RequestContext } from "./router";
 import type { DemoStore } from "./store";
 import { registerDemoTerminals } from "./terminal";
+import { workbenchVersions } from "./workbench-revisions";
 import {
   cleanupReview,
   forgetStorageSession,
@@ -3240,12 +3241,33 @@ router
   .post("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/reload", () =>
     notFound("Workbench"),
   )
-  .get("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/history", () => ({
-    versions: [],
-  }))
-  .post("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/rollback", () =>
-    notFound("Workbench"),
-  )
+  .get("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/history", (ctx) => {
+    const workbench = installedOf(ctx).workbenches?.find((w) => w.id === ctx.params.workbenchId);
+    if (!workbench) notFound("Workbench");
+    return { versions: workbenchVersions(ctx.store, ctx.params.agentId!, workbench) };
+  })
+  .post("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/rollback", (ctx) => {
+    const installed = installedOf(ctx);
+    const current = installed.workbenches?.find((w) => w.id === ctx.params.workbenchId);
+    if (!current) notFound("Workbench");
+    const versions = workbenchVersions(ctx.store, ctx.params.agentId!, current);
+    const revision = str(record(ctx.body).revision);
+    if (!versions.some((v) => v.revision === revision)) notFound("Workbench revision");
+    if (revision === current.revision) return { workbench: current };
+    const savedAt = new Date().toISOString();
+    const workbench = { ...current, revision, uiRev: revision, loadedAt: savedAt };
+    versions.unshift({ revision, savedAt, commit: "restore-" + versions.length });
+    installed.workbenches = installed.workbenches!.map((w) =>
+      w.id === current.id ? workbench : w,
+    );
+    ctx.store.userChannel.event({
+      type: "workbench_updated",
+      projectId: ctx.params.projectId!,
+      agentId: ctx.params.agentId!,
+      workbench,
+    });
+    return { workbench };
+  })
   .delete("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId", () =>
     notFound("Workbench"),
   )

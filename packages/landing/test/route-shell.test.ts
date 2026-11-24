@@ -12,7 +12,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { notFoundShell, shellFor } from "../scripts/route-shell.mjs";
+import { notFoundShell, shellFor, withDirectoryLinks } from "../scripts/route-shell.mjs";
 
 const SHELL = readFileSync(join(__dirname, "..", "index.html"), "utf8");
 const HOME_TITLE = /<title>([^<]*)<\/title>/.exec(SHELL)![1]!;
@@ -32,11 +32,14 @@ describe("a route's shell", () => {
     const html = shellFor(SHELL, "https://penguin.ooo/amsp/", META);
     expect(titleOf(html)).toBe(META.title);
     expect(html).toContain(`<meta name="description" content="${META.description}"`);
-    expect(html).toContain(`<meta property="og:title" content="${META.title}" />`);
-    expect(html).toContain(`<meta property="og:image" content="${META.image}" />`);
-    expect(html).toContain(`<meta name="twitter:image" content="${META.image}" />`);
+    expect(html).toContain(`<meta property="og:title" content="${META.title}"`);
+    expect(html).toContain(`<meta property="og:image" content="${META.image}"`);
+    expect(html).toContain(`<meta name="twitter:image" content="${META.image}"`);
     expect(html).toContain('<link rel="canonical" href="https://penguin.ooo/amsp/" />');
-    expect(html).not.toContain(HOME_IMAGE);
+    expect(html).not.toContain(`content="${HOME_IMAGE}"`);
+    expect(html).toContain(`<meta name="twitter:title" content="${META.title}"`);
+    expect(html).toContain(`<meta name="twitter:description" content="${META.description}"`);
+    expect(html).toContain('<meta name="twitter:url" content="https://penguin.ooo/amsp/" />');
   });
 
   it("keeps the site's own title and description aside for when the reader moves on", () => {
@@ -59,7 +62,7 @@ describe("a route's shell", () => {
     });
     expect(titleOf(html)).toBe('The "&lt;AMSP&gt;" page &amp; more');
     expect(html).toContain(
-      '<meta property="og:title" content="The &quot;&lt;AMSP&gt;&quot; page &amp; more" />',
+      '<meta property="og:title" content="The &quot;&lt;AMSP&gt;&quot; page &amp; more"',
     );
   });
 
@@ -67,6 +70,15 @@ describe("a route's shell", () => {
     const withoutCard = SHELL.replace(/<meta\s+property="og:image"[^>]*>/, "");
     expect(() => shellFor(withoutCard, "https://penguin.ooo/download/")).not.toThrow();
     expect(() => shellFor(withoutCard, "https://penguin.ooo/amsp/", META)).toThrow(/og:image/);
+  });
+
+  it("publishes article cards and crawlable links with safe text and URLs", () => {
+    const article = shellFor(SHELL, "https://penguin.ooo/blog/a/", { ...META, type: "article" });
+    expect(article).toContain('<meta property="og:type" content="article"');
+    const directory = withDirectoryLinks(SHELL, [{ href: "/sub/blog/a/", label: "Part <A> & $&" }]);
+    expect(directory).toContain(
+      '<noscript><ul><li><a href="/sub/blog/a/">Part &lt;A&gt; &amp; $&amp;</a>',
+    );
   });
 
   it("claims no canonical for an address that does not exist", () => {

@@ -220,7 +220,7 @@ const mixed = () =>
       message("m2", "2026-09-07T09:00:00Z", { text: "  \n@alice ping\nsecond line" }),
     ],
     blockedTickets: [
-      ticket("2026-09-06-blocked", {
+      ticket("ticket-2026-09-06-blocked", {
         status: "in_progress",
         blocked: "waiting on legal",
         blockedBy: "agent:carol",
@@ -236,7 +236,7 @@ describe("inboxRows", () => {
   it("orders by time descending and leaves an undated row last", () => {
     expect(mixed().map((r) => r.key)).toEqual([
       "mention/m2",
-      "blocked/2026-09-06-blocked",
+      "blocked/ticket-2026-09-06-blocked",
       "done/2026-09-05-done",
       "mention/m1",
       "done/nodate",
@@ -264,12 +264,12 @@ describe("inboxRows", () => {
       target: { kind: "channel", channelId: "default_channel" },
     });
     // A blocked ticket says why it is stuck, then who it waits on.
-    expect(rows.find((r) => r.key === "blocked/2026-09-06-blocked")).toMatchObject({
+    expect(rows.find((r) => r.key === "blocked/ticket-2026-09-06-blocked")).toMatchObject({
       category: "blocked",
-      title: "2026-09-06-blocked",
+      title: "ticket-2026-09-06-blocked",
       detail: "waiting on legal · agent:carol",
       tone: "attention",
-      target: { kind: "ticket", ticketId: "2026-09-06-blocked" },
+      target: { kind: "ticket", ticketId: "ticket-2026-09-06-blocked" },
     });
     // A done ticket asks nothing of the reader: its owner as the aside, and a muted mark.
     expect(rows.find((r) => r.key === "done/2026-09-05-done")).toMatchObject({
@@ -297,7 +297,7 @@ describe("inboxRows", () => {
 
   it("dates a ticket by when it was closed, falling back to its id's day and then to nothing", () => {
     const rows = mixed();
-    expect(rows.find((r) => r.key === "blocked/2026-09-06-blocked")?.time).toBe(
+    expect(rows.find((r) => r.key === "blocked/ticket-2026-09-06-blocked")?.time).toBe(
       "2026-09-06T00:00:00.000Z",
     );
     expect(rows.find((r) => r.key === "done/2026-09-05-done")?.time).toBe(

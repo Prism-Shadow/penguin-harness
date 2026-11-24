@@ -127,19 +127,18 @@ export class Router {
     if (!store.signedIn && !this.publicPaths.has(found.route.pattern)) {
       throw new ApiError(401, "unauthorized", "Not signed in.");
     }
-    const sessionRoute = /\/(?:sessions|archived-sessions)(?:\/|$)/.test(path);
+    const machineRoute =
+      /\/(?:sessions|archived-sessions|workbenches)(?:\/|$)/.test(path) ||
+      /^\/api\/terminals(?:\/|$)/.test(path);
     if (
-      sessionRoute &&
+      machineRoute &&
       found.params.projectId &&
       found.params.projectId !== store.f.project.projectId
     ) {
       fail(404, "not_found", "Project not found.");
     }
     const result = await found.route.handler({
-      store:
-        sessionRoute || path === "/api/terminals" || path.startsWith("/api/terminals/")
-          ? store.sessionsOn(machineId)
-          : store,
+      store: machineRoute ? store.sessionsOn(machineId) : store,
       method,
       path,
       params: found.params,

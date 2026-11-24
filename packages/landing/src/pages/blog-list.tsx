@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
+import { useDocumentMeta } from "../lib/document-meta";
 import { S } from "../lib/strings";
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { formatPostDate, postsFor } from "../lib/blog";
@@ -18,6 +19,7 @@ const FILTERS: Filter[] = ["all", "news", "practice", "perspectives", "changelog
 
 export function BlogListPage() {
   const { locale } = useSiteLocale();
+  useDocumentMeta(`${S.blog.title} | ${S.siteName}`, S.blog.subtitle);
   const [filter, setFilter] = useState<Filter>("all");
   const posts = postsFor(locale, filter === "all" ? undefined : filter);
   // The same module the router loads on demand. A chunk that fails to load reloads the page

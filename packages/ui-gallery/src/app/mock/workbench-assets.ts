@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
+import { EARLY_SUPPORT } from "./workbench-revisions";
 import { pageSdkFile } from "../../../../server/src/workbenches/page-sdk";
 
 const root = fileURLToPath(new URL("../../../../../", import.meta.url));
@@ -14,6 +15,48 @@ const apps = [
 const modelControl = join(root, "plugins/use-bento-slides/workbenches/slides/ui/model-control.tsx");
 const png = join(root, "packages/desktop/build/icons/256x256.png");
 const css = join(root, "packages/web/public/workbench-ui.css");
+
+/** Keep the document beside its ordinary API mount, even when it uses a historical asset set. */
+function addPages(
+  files: Map<string, string | Uint8Array>,
+  dir: string,
+  assetDir: string,
+  entryPage: string,
+  base: string,
+  prefix: string,
+) {
+  for (const entry of readdirSync(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile() || entry.name.endsWith(".tsx")) continue;
+    const path = join(entry.parentPath, entry.name);
+    const name = relative(dir, path).split("\\").join("/");
+    const body = readFileSync(path);
+    let content: string | Uint8Array = name.endsWith(".css")
+      ? body
+          .toString()
+          .replaceAll('url("/workbench-ui.css")', 'url("' + base + prefix + '/workbench-ui.css")')
+      : body;
+    if (name === "index.html") {
+      const document = body
+        .toString()
+        .replace(/<link\b[^>]*\bhref="\/workbench-ui\.css"[^>]*>/g, "")
+        .replace(/ (href|src)="([^"#]+)"/g, (attribute: string, key: string, path: string) => {
+          if (path.startsWith("/") || /^[a-z]+:/i.test(path)) return attribute;
+          return " " + key + '="' + base + posix.join(assetDir, path) + '"';
+        });
+      content = document.replace(
+        "<head>",
+        '<head><link rel="stylesheet" data-workbench-base href="' +
+          base +
+          prefix +
+          '/workbench-ui.css"><script src="' +
+          base +
+          prefix +
+          '/workbench-requests.js"></script>',
+      );
+    }
+    files.set(name === "index.html" ? entryPage : assetDir + "/" + name, content);
+  }
+}
 
 async function assets(base: string, modelUrl: string) {
   const files = new Map<string, string | Uint8Array>();
@@ -38,39 +81,20 @@ async function assets(base: string, modelUrl: string) {
         "export * from " + JSON.stringify(base + prefix + "/amsp.js"),
       );
       files.set(dest + "/sdk/workbench.js", (await pageSdkFile("workbench.js")).body);
-      for (const entry of readdirSync(dir, { recursive: true, withFileTypes: true })) {
-        if (!entry.isFile() || entry.name.endsWith(".tsx")) continue;
-        const path = join(entry.parentPath, entry.name);
-        const name = relative(dir, path).split("\\").join("/");
-        const body = readFileSync(path);
-        let content: string | Uint8Array = name.endsWith(".css")
-          ? body
-              .toString()
-              .replaceAll(
-                'url("/workbench-ui.css")',
-                'url("' + base + prefix + '/workbench-ui.css")',
-              )
-          : body;
-        if (name === "index.html") {
-          const document = body
-            .toString()
-            .replace(/<link\b[^>]*\bhref="\/workbench-ui\.css"[^>]*>/g, "")
-            .replace(/ (href|src)="([^"#]+)"/g, (attribute: string, key: string, path: string) => {
-              if (path.startsWith("/") || /^[a-z]+:/i.test(path)) return attribute;
-              return " " + key + '="' + base + posix.join(dest, "ui", path) + '"';
-            });
-          content = document.replace(
-            "<head>",
-            '<head><link rel="stylesheet" data-workbench-base href="' +
-              base +
-              prefix +
-              '/workbench-ui.css"><script src="' +
-              base +
-              prefix +
-              '/workbench-requests.js"></script>',
-          );
-        }
-        files.set(dest + "/ui/" + name, content);
+      const ui = dest + "/ui";
+      addPages(files, dir, ui, ui + "/index.html", base, prefix);
+      if (id === "support") {
+        addPages(
+          files,
+          join(
+            root,
+            "packages/ui-gallery/fixtures/workbench-history/support-" + EARLY_SUPPORT.revision,
+          ),
+          ui + "/history/" + EARLY_SUPPORT.revision,
+          ui + "/history-" + EARLY_SUPPORT.revision + ".html",
+          base,
+          prefix,
+        );
       }
       if (id === "slides")
         files.set(dest + "/ui/model-control.js", "export * from " + JSON.stringify(modelUrl));

@@ -15,6 +15,7 @@ const TAGS = {
   "og:url": /<meta\s+property="og:url"[^>]*>/,
   title: /<title>[\s\S]*?<\/title>/,
   description: /<meta\s+name="description"[^>]*>/,
+  "og:type": /<meta\s+property="og:type"[^>]*>/,
   "og:title": /<meta\s+property="og:title"[^>]*>/,
   "og:description": /<meta\s+property="og:description"[^>]*>/,
   "og:image": /<meta\s+property="og:image"[^>]*>/,
@@ -47,33 +48,39 @@ export function shellFor(shell, url, meta) {
     `<link rel="canonical" href="${escapeAttribute(url)}" />`,
   );
   html = replaceTag(html, "og:url", `<meta property="og:url" content="${escapeAttribute(url)}" />`);
-  if (meta === undefined) return html;
-  const content = (property, value, attribute = "property") =>
-    `<meta ${attribute}="${property}" content="${escapeAttribute(value)}" />`;
-  // The site's own title and description ride along, for the page to put back when the reader
-  // leaves it inside the app (lib/document-meta.ts): the shell is all the app booted from.
-  // Both are copied as the shell encodes them: the title is element text (an attribute needs its
-  // quotes encoded too), the description already an attribute value.
-  const home = {
-    title: (TAGS.title.exec(shell)?.[0].replace(/<\/?title>/g, "") ?? "").replace(/"/g, "&quot;"),
-    description: /\scontent="([^"]*)"/.exec(TAGS.description.exec(shell)?.[0] ?? "")?.[1] ?? "",
-  };
-  html = replaceTag(
-    html,
-    "title",
-    `<title data-default="${home.title}">${escapeText(meta.title)}</title>`,
+  if (meta) {
+    // Keep the site defaults from the template so leaving a directly opened detail restores
+    // the same home metadata as a visit that started on the home page.
+    const homeTitle = TAGS.title.exec(shell)?.[0].slice("<title>".length, -"</title>".length) ?? "";
+    html = replaceTag(
+      html,
+      "title",
+      `<title data-default="${homeTitle.replace(/"/g, "&quot;")}">${escapeText(meta.title)}</title>`,
+    );
+    for (const [name, value] of Object.entries({
+      description: meta.description,
+      "og:title": meta.title,
+      "og:description": meta.description,
+      "og:type": meta.type ?? "website",
+      "og:image": meta.image,
+      "og:image:alt": meta.imageAlt,
+      "twitter:image": meta.image,
+    })) {
+      const tag = TAGS[name].exec(shell)?.[0] ?? "";
+      const original = /\scontent="([^"]*)"/.exec(tag)?.[1] ?? "";
+      const attribute = name.startsWith("og:") ? "property" : "name";
+      html = replaceTag(
+        html,
+        name,
+        `<meta ${attribute}="${name}" content="${escapeAttribute(value)}" data-default="${original}" />`,
+      );
+    }
+  }
+  // Twitter and Open Graph describe the same page, including their home defaults.
+  const twitter = ["title", "description", "url"].map((field) =>
+    TAGS[`og:${field}`].exec(html)[0].replace(`property="og:${field}"`, `name="twitter:${field}"`),
   );
-  html = replaceTag(
-    html,
-    "description",
-    `<meta name="description" content="${escapeAttribute(meta.description)}" data-default="${home.description}" />`,
-  );
-  html = replaceTag(html, "og:title", content("og:title", meta.title));
-  html = replaceTag(html, "og:description", content("og:description", meta.description));
-  html = replaceTag(html, "og:image", content("og:image", meta.image));
-  html = replaceTag(html, "og:image:alt", content("og:image:alt", meta.imageAlt));
-  html = replaceTag(html, "twitter:image", content("twitter:image", meta.image, "name"));
-  return html;
+  return html.replace("</head>", () => twitter.join("\n") + "\n</head>");
 }
 
 /**
@@ -82,4 +89,12 @@ export function shellFor(shell, url, meta) {
  */
 export function notFoundShell(shell) {
   return shell.replace(TAGS.canonical, "");
+}
+
+/** Directory links also reach crawlers and readers that do not execute the SPA. */
+export function withDirectoryLinks(shell, links) {
+  const items = links.map(
+    ({ href, label }) => `<li><a href="${escapeAttribute(href)}">${escapeText(label)}</a></li>`,
+  );
+  return shell.replace("</body>", () => `<noscript><ul>${items.join("")}</ul></noscript>\n</body>`);
 }

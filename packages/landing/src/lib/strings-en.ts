@@ -61,6 +61,7 @@ export const en: Strings = {
     subtitle: "Open Foundation for Self-Evolving Enterprise AI.",
     downloadCta: "Download desktop",
     productHuntBadge: "PenguinHarness on Product Hunt",
+    watcha: "Watcha",
     watchaBadge: "PenguinHarness Watcha badge",
     cliInstall: "Command-line install",
     stats: [
@@ -182,11 +183,18 @@ export const en: Strings = {
   },
 
   selfImprove: {
+    center: "Open the Evaluation Center",
+    baseline:
+      "AI writes the cases for an agent, trial-runs each case to calibrate its difficulty, and records the agent's first score, the baseline.",
+    diagnosis: "Diagnose capability gaps from the per-Case scores and the score-linked Traces.",
+    acceptance:
+      "The default method changes the agent one hypothesis at a time and keeps a new version only when its score strictly improves, measured against the agent's baseline on this Benchmark.",
     toolkit:
       "An RSI toolkit changes your agent’s harness (its prompts and Skills) while the model stays fixed, and measures every change on a Benchmark.",
     evaluate: "Evaluate",
     optimize: "Optimize",
-    title: "A multi-agent self-evolution framework",
+    title: "Create, evaluate and evolve as many agents as you like",
+    framework: "A multi-agent self-evolution framework",
     subtitle:
       "By default the General Agent runs the optimization Skill. Each round it makes one change to the tested agent. Evaluator subagents running the evaluation Skill score the changed agent on every case of the Benchmark.",
     nodeOptimizer: "Optimizer",
@@ -198,11 +206,6 @@ export const en: Strings = {
     edgeImprove: "edit AGENTS.md, a Skill or config",
     noteOld: "snapshot before editing",
     noteNew: "kept only if the score is higher",
-    trends: [
-      { label: "Score", hint: "out of 100" },
-      { label: "Cost", hint: "per run" },
-      { label: "Duration", hint: "per run" },
-    ],
     demo: {
       caption:
         "Demo: a decision agent is evaluated, revises its working method once and is retested on the same model. Its score goes from 84 to 100.",
@@ -269,7 +272,13 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cases: {
-    os: "Create your first self-evolving agent OS.",
+    os: "Create your first self‑evolving agent OS.",
+    change: "Change it by asking",
+    request:
+      "On the desk, show each contract's overall risk next to its status, and put the riskiest contracts at the top.",
+    tutorial: "A legal agent app from one sentence",
+    family:
+      "Because the workbench belongs to the agent, every agent can have a different one: a legal agent a contract desk, a data agent a dashboard, a support agent a ticket queue.",
     apps: ["Document Q&A", "Investment Analyst", "Legal Assistant"],
     title: "A2APP: one sentence and $0.10 build a legal agent app",
     a2app:
