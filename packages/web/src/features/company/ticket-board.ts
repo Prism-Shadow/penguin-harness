@@ -11,6 +11,9 @@ import type {
   OrgTicketsResponse,
 } from "@prismshadow/penguin-server/api";
 
+import { TICKET_SLUG_PATTERN } from "@prismshadow/penguin-server/ticket-id";
+export { ticketCreatedDate } from "@prismshadow/penguin-server/ticket-id";
+
 /** The five kanban columns, in lifecycle order. */
 export const TICKET_COLUMNS: readonly OrgTicketStatus[] = [
   "proposed",
@@ -23,13 +26,6 @@ export const TICKET_COLUMNS: readonly OrgTicketStatus[] = [
 export function isTicketStatus(value: string | null | undefined): value is OrgTicketStatus {
   return (TICKET_COLUMNS as readonly string[]).includes(value ?? "");
 }
-
-/**
- * The shape of a ticket id's slug: lowercase letters in hyphen-joined words, no digits — the
- * date prefix already carries the numbers. Mirrors TICKET_SLUG_PATTERN in the server's API
- * contract, which the browser bundle cannot import as a value; the two must stay identical.
- */
-export const TICKET_SLUG_PATTERN = /^[a-z]+(?:-[a-z]+)*$/;
 
 /** Whether a typed slug can be used as written; an empty box is not a slug and is left to the server. */
 export function isTicketSlug(value: string): boolean {
@@ -114,12 +110,6 @@ export function allTickets(res: Pick<OrgTicketsResponse, "columns">): OrgTicketI
 /** A due date (`yyyy-mm-dd`) is overdue once the local day `todayKey` (same form) has passed it. */
 export function isOverdue(due: string | undefined, todayKey: string): boolean {
   return due !== undefined && /^\d{4}-\d{2}-\d{2}/.test(due) && due.slice(0, 10) < todayKey;
-}
-
-/** The day a ticket was minted, read off its id (`yyyy-mm-dd-<slug>`); null for an id in another shape. */
-export function ticketCreatedDate(ticketId: string): string | null {
-  const m = /^(\d{4}-\d{2}-\d{2})-/.exec(ticketId);
-  return m === null ? null : m[1]!;
 }
 
 /** Tickets the server flagged (status disagreeing with the column, a duplicate id), in column order. */

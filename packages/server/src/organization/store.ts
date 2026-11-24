@@ -357,7 +357,7 @@ export class OrgStore {
    * Every `.md` file under a `<yyyy-mm>/<column>/` directory, its name minus the extension
    * taken as the ticket id. Anything outside that shape — another month directory, a
    * directory that is not one of the columns, a file that is not Markdown — is skipped.
-   * The id itself is NOT matched against `TICKET_ID_PATTERN` here: a file named by hand is
+   * The id itself is NOT validated with `isTicketId` here: a file named by hand is
    * still a ticket the board has to show, and what it is called is the caller's to judge.
    */
   async listTickets(dir: string): Promise<TicketFile[]> {

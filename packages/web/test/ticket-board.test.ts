@@ -163,6 +163,7 @@ describe("card facts", () => {
   });
 
   it("reads the creation day off the id and leaves other shapes alone", () => {
+    expect(ticketCreatedDate("ticket-2026-09-02-marketplace")).toBe("2026-09-02");
     expect(ticketCreatedDate("2026-09-02-marketplace")).toBe("2026-09-02");
     expect(ticketCreatedDate("2026-09-02-t-fb79d3")).toBe("2026-09-02");
     expect(ticketCreatedDate("marketplace")).toBeNull();

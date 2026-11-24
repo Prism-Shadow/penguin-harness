@@ -304,10 +304,11 @@ describe("tickets", () => {
     expect(slugSuffix(2)).toBe("b");
     expect(slugSuffix(26)).toBe("z");
     expect(slugSuffix(27)).toBe("aa");
+    expect(ticketMonth("ticket-2026-09-02-site")).toBe("2026-09");
     expect(ticketMonth("2026-09-02-site")).toBe("2026-09");
     // Joined the way the store joins it, so the assertion holds on Windows too.
-    expect(ticketPath("/org", "2026-09-02-site", "review")).toBe(
-      path.join("/org", "tickets", "2026-09", "review", "2026-09-02-site.md"),
+    expect(ticketPath("/org", "ticket-2026-09-02-site", "review")).toBe(
+      path.join("/org", "tickets", "2026-09", "review", "ticket-2026-09-02-site.md"),
     );
   });
 });

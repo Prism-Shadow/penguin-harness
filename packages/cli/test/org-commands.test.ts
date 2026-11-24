@@ -612,14 +612,14 @@ describe("penguin org ticket (writes carry the calling session)", () => {
       sessionId: DESK_SESSION,
       agentId: "dev1",
     });
-    expect(out()).toBe(`${t.org.ticketCreated("2026-09-02-build-the-site", "proposed")}\n`);
+    expect(out()).toBe(`${t.org.ticketCreated("ticket-2026-09-02-build-the-site", "proposed")}\n`);
     // The file records the session's employee, not the token's user; the owner it was filed
     // for is the one it names, and filing for someone else is an `assigned` history entry.
-    expect(org().tickets.get("2026-09-02-build-the-site")).toMatchObject({
+    expect(org().tickets.get("ticket-2026-09-02-build-the-site")).toMatchObject({
       owner: "agent:dev1",
     });
     expect(
-      (org().tickets.get("2026-09-02-build-the-site")!.history as Array<{ by: string }>)[0],
+      (org().tickets.get("ticket-2026-09-02-build-the-site")!.history as Array<{ by: string }>)[0],
     ).toMatchObject({ by: "agent:dev1", action: "created" });
   });
 
@@ -638,7 +638,7 @@ describe("penguin org ticket (writes carry the calling session)", () => {
       ]),
     ).toBe(0);
     expect(lastRequest("POST", "/tickets")?.body).toMatchObject({ slug: "launch-the-site" });
-    expect(org().tickets.has("2026-09-02-launch-the-site")).toBe(true);
+    expect(org().tickets.has("ticket-2026-09-02-launch-the-site")).toBe(true);
   });
 
   it("create takes the whole body from --body-file; --goal with it, --criteria without it and a bad priority are refused", async () => {

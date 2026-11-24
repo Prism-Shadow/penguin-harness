@@ -28,6 +28,7 @@
  * stub: `listen()` serves the same routes over real HTTP instead, recorded the same way. Only
  * it reaches `POST /api/auth/login`, which `penguin auth login` sends with `node:http`.
  */
+import { isTicketId, TICKET_SLUG_PATTERN } from "@prismshadow/penguin-server/ticket-id";
 import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
@@ -153,10 +154,6 @@ const DEFAULT_CEO_BUDGET = 100;
 const ORG_PERIOD = "2026-09";
 const TICKET_COLUMNS = ["proposed", "in_progress", "review", "done", "rejected"] as const;
 const OPEN_COLUMNS: readonly string[] = ["proposed", "in_progress", "review"];
-/** The server's TICKET_ID_PATTERN: a date and a letters-only slug. */
-const TICKET_ID_RE = /^\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*$/;
-/** The server's TICKET_SLUG_PATTERN. */
-const TICKET_SLUG_RE = /^[a-z]+(?:-[a-z]+)*$/;
 /** The server's CHANNEL_ID_PATTERN. */
 const CHANNEL_ID_RE = /^[a-z][a-z0-9_]{1,63}$/;
 /** `agent:<id>` / `user:<id>`, the only two principal kinds a channel holds. */
@@ -1223,7 +1220,7 @@ export class FakeServer {
         );
         return this.json({ columns, invalidFiles: org.ticketInvalidFiles });
       }
-      if (!TICKET_ID_RE.test(b)) return this.badRequest("Invalid ticket id.");
+      if (!isTicketId(b)) return this.badRequest("Invalid ticket id.");
       const rec = org.tickets.get(b);
       if (!rec) return this.error(404, "ticket_not_found", `Ticket does not exist: ${b}`);
       if (c === undefined && method === "GET") return this.json(this.ticketDetail(org, rec));
@@ -1760,10 +1757,10 @@ export class FakeServer {
     if (body.priority !== undefined && !["P0", "P1", "P2"].includes(String(body.priority))) {
       return this.badRequest("priority must be P0, P1 or P2.");
     }
-    if (body.parent !== undefined && !TICKET_ID_RE.test(String(body.parent))) {
+    if (body.parent !== undefined && !isTicketId(String(body.parent))) {
       return this.badRequest("parent must be a ticket id.");
     }
-    if (typeof body.slug === "string" && !TICKET_SLUG_RE.test(body.slug)) {
+    if (typeof body.slug === "string" && !TICKET_SLUG_PATTERN.test(body.slug)) {
       return this.badRequest("slug must be lowercase English words joined by hyphens.");
     }
     const slug = typeof body.slug === "string" ? body.slug : slugify(body.title);
@@ -1774,7 +1771,7 @@ export class FakeServer {
         "pass --slug: lowercase English words joined by hyphens",
       );
     }
-    const ticketId = `${ORG_TODAY}-${slug}`;
+    const ticketId = `ticket-${ORG_TODAY}-${slug}`;
     if (org.tickets.has(ticketId))
       return this.error(409, "ticket_exists", `Ticket already exists: ${ticketId}`);
     // One owner: `--owner` when it is given, the caller otherwise.

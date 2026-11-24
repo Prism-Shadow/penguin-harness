@@ -60,6 +60,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { orgKey } from "../../lib/company-nav";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
@@ -194,7 +195,9 @@ export function TicketsPage() {
     openDialog !== null && openDialog.projectId === projectId && openDialog.orgId === orgId
       ? openDialog.ticketId
       : null;
-  const syncedTicket = useRef<string | null>(null);
+  const routeOrg = orgKey(projectId, orgId);
+  const currentOrg = company.currentOrgKey;
+  const synced = useRef<{ org: string; ticket: string | null } | null>(null);
   const { openTicket: openTicketInShell } = company;
   const routedPath = location.pathname;
   useEffect(() => {
@@ -204,15 +207,18 @@ export function TicketsPage() {
     // would resolve against this page's stale location and replace the new history entry with
     // the board — the navigation would silently land back here.
     if (window.location.pathname !== routedPath) return;
-    if (urlTicket !== syncedTicket.current) {
-      syncedTicket.current = urlTicket;
+    // Selecting the route's organization clears the previous dialog. Open bookmarks after
+    // that selection, even if the previous organization had a ticket with the same id.
+    if (currentOrg !== routeOrg) return;
+    if (synced.current?.org !== routeOrg || synced.current.ticket !== urlTicket) {
+      synced.current = { org: routeOrg, ticket: urlTicket };
       if (urlTicket !== null) {
         openTicketInShell(projectId, orgId, urlTicket);
         return;
       }
     }
     if (dialogTicket === urlTicket) return;
-    syncedTicket.current = dialogTicket;
+    synced.current = { org: routeOrg, ticket: dialogTicket };
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -222,7 +228,17 @@ export function TicketsPage() {
       },
       { replace: true },
     );
-  }, [urlTicket, dialogTicket, projectId, orgId, openTicketInShell, setParams, routedPath]);
+  }, [
+    urlTicket,
+    dialogTicket,
+    projectId,
+    orgId,
+    openTicketInShell,
+    setParams,
+    routedPath,
+    routeOrg,
+    currentOrg,
+  ]);
 
   const confirmMove = async (reason: string) => {
     if (move === null) return;

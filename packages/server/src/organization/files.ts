@@ -35,6 +35,7 @@ import { SEMANTIC_ID_PATTERN } from "../services/ids.js";
 import { employeeNameProblem } from "./names.js";
 import { DEFAULT_CHANNEL_ID, ceoAgentId, isTicketColumn } from "./paths.js";
 import { parsePrincipal } from "./principal.js";
+import { isTicketId } from "./ticket-id.js";
 import { isValidTimeZone } from "./zoned.js";
 
 export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -538,11 +539,8 @@ export function serializeCalendarEvent(fields: {
 }
 
 // ---------------------------------------------------------------------------
-// tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md
+// tickets/<yyyy-mm>/<column>/<ticket_id>.md
 // ---------------------------------------------------------------------------
-
-/** `<yyyy-mm-dd>-<slug>`; the slug is hyphen-joined lowercase English words, never a digit. */
-export const TICKET_ID_PATTERN = /^\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*$/;
 
 /** At most this many words in a derived slug, and at most this many characters in each. */
 const SLUG_MAX_WORDS = 6;
@@ -550,7 +548,7 @@ const SLUG_MAX_WORD_LENGTH = 20;
 
 /**
  * The slug of a ticket id, derived from a title or from a model's proposal: ASCII letters
- * only, lowercased, hyphen-joined. Digits are dropped — the id already starts with the date,
+ * only, lowercased, hyphen-joined. Digits are dropped — the id already carries the date,
  * and `-2` on the end of a slug reads as a version rather than as a name. Text that carries
  * no Latin letters at all (a Chinese title) yields `""`, and one that yields a single word
  * says as little as none: both are the case the caller asks the model to name.
@@ -724,7 +722,7 @@ function ticketFields(front: Record<string, unknown>): ParseResult<TicketFields>
   const owner = str("owner");
   if (!isPersonPrincipal(owner)) return fail("owner must be agent:<id> or user:<id>");
   const parent = str("parent");
-  if (parent !== "" && !TICKET_ID_PATTERN.test(parent)) return fail("parent must be a ticket id");
+  if (parent !== "" && !isTicketId(parent)) return fail("parent must be a ticket id");
   const notifyList = front["notify"];
   if (notifyList !== undefined && notifyList !== null && !Array.isArray(notifyList)) {
     return fail("notify must be a list of principals");
@@ -746,7 +744,7 @@ function ticketFields(front: Record<string, unknown>): ParseResult<TicketFields>
   if (due !== "" && !/^\d{4}-\d{2}-\d{2}/.test(due)) return fail("due must start with yyyy-mm-dd");
   const blocked = str("blocked");
   const blockedBy = str("blocked_by");
-  if (blockedBy !== "" && !TICKET_ID_PATTERN.test(blockedBy) && !isPersonPrincipal(blockedBy)) {
+  if (blockedBy !== "" && !isTicketId(blockedBy) && !isPersonPrincipal(blockedBy)) {
     return fail("blocked_by must be a ticket id or a principal");
   }
   const sessionList = front["sessions"];
