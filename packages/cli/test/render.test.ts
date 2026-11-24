@@ -1,3 +1,8 @@
+/**
+ * Compaction replay spans belong to their originating Session. Only the generated
+ * opening of a rotated context disappears. User-quoted markers remain visible in
+ * history and on another surface's live stream.
+ */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Writable } from "node:stream";
 import type { MessageOrigin } from "@prismshadow/penguin-core";
@@ -1278,25 +1283,42 @@ describe("renderHistory (resume)", () => {
     expect(text()).toBe("");
   });
 
-  it("skips [context_summary] and legacy <context_summary> openings, while keeping ordinary mentions", () => {
+  it.each([
+    ["[context_summary]", "[/context_summary]"],
+    ["<context_summary>", "</context_summary>"],
+  ])("hides a rotated %s opening and shows a user's quoted markers", (open, close) => {
     const { stream, text } = collector();
+    const meta = sessionMeta({
+      session_id: "sess-1",
+      provider: "custom",
+      model_id: "m",
+      model_context_window: 64000,
+      system_prompt: "",
+      agent_state: "/a",
+      workspace: "/w",
+      source: "user",
+    });
+    const quoted = `${open}\nMy example\n${close}`;
     renderHistory(
       [
-        userText("[context_summary]\nEarlier work summary\n[/context_summary]"),
-        userText("<context_summary>\nLegacy summary\n</context_summary>"),
-        userText("Please explain [context_summary] formatting"),
-        assistantText("Sure."),
+        meta,
+        userText(quoted),
+        compactionBegin({ mode: "summarize", reason: "manual", context: 4000, turns: 1 }),
+        compactionEnd({ mode: "summarize", reason: "manual", status: "completed" }),
+        meta,
+        withOrigin(userText(`${open} This is a child prompt`), "child"),
+        userText(`${open}\nInternal context opening\n${close}`),
+        userText(`${open} is literal here`),
+        userText(quoted),
       ],
       stream,
       t,
     );
     const plain = stripAnsi(text());
-    expect(plain).not.toContain("Earlier work summary");
-    expect(plain).not.toContain("Legacy summary");
-    expect(plain).not.toContain("> [context_summary]");
-    expect(plain).not.toContain("> <context_summary>");
-    expect(plain).toContain("> Please explain [context_summary] formatting");
-    expect(plain).toContain("Sure.");
+    expect(plain).not.toContain("Internal context opening");
+    expect(plain).toContain(`> ${open} This is a child prompt`);
+    expect(plain).toContain(`> ${open} is literal here`);
+    expect(plain.split(`> ${quoted}`)).toHaveLength(3);
   });
 
   it("skips compaction-internal model messages per origin, resets on session_meta, and isolates parent and subagent spans", () => {
@@ -1386,19 +1408,16 @@ describe("renderHistory (resume)", () => {
     expect(plain).toContain("> after new context");
   });
 
-  it("StreamRenderer with echoInput skips [context_summary] and legacy <context_summary> without clearing expectedInput", () => {
+  it("echoes another surface's literal summary markers and deduplicates the local input", () => {
     const { stream, text } = collector();
-    const r = new StreamRenderer(stream, t, { echoInput: true });
-    r.expectInput("typed on this screen");
-    r.handle(userText("[context_summary]\nLive compacted context\n[/context_summary]"));
-    r.handle(userText("<context_summary>\nLegacy live summary\n</context_summary>"));
-    r.handle(userText("typed on this screen"));
-    r.handle(userText("hello from another surface"));
-    const plain = stripAnsi(text());
-    expect(plain).not.toContain("Live compacted context");
-    expect(plain).not.toContain("Legacy live summary");
-    expect(plain).not.toContain("> typed on this screen");
-    expect(plain).toContain("> hello from another surface");
+    const renderer = new StreamRenderer(stream, t, { echoInput: true });
+    const local = "[context_summary] typed here";
+    const remote = "<context_summary>\nTyped in the Web App\n</context_summary>";
+    renderer.expectInput(local);
+    renderer.handle(userText(local));
+    renderer.handle(userText(remote));
+    renderer.handle(userText(local));
+    expect(stripAnsi(text())).toBe(`\n> ${remote}\n\n> ${local}\n`);
   });
 });
 

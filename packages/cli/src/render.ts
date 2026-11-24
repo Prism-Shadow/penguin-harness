@@ -199,11 +199,6 @@ export function formatAbort(p: AbortPayload, t: Messages, c: Palette = STDOUT_PA
   );
 }
 
-/** Compaction-summary context opening (`[context_summary]` or legacy `<context_summary>`), matching Web's stream-model. */
-function isContextSummary(text: string): boolean {
-  return text.startsWith("[context_summary]") || text.startsWith("<context_summary>");
-}
-
 /** Options shared by history and streaming rendering. */
 export interface RenderOptions {
   /**
@@ -234,29 +229,40 @@ export function renderHistory(
   messages: AmspRecord[],
   out: NodeJS.WritableStream,
   t: Messages = defaultMessages(),
-  opts: RenderOptions = {},
+  opts: RenderOptions & { tail?: number } = {},
 ): void {
   const c = paletteFor(out);
+  const first = opts.tail === undefined ? 0 : Math.max(0, messages.length - opts.tail);
   // tool_call_id -> tool name (keyed with the origin chain: parent/child ids may collide),
   // so output lines can be labeled with the tool name of their preceding call.
   const toolNames = new Map<string, string>();
   const originKey = (msg: AmspRecord): string => msg.origin?.join("/") ?? "";
   const nameKey = (msg: AmspRecord, id: string): string => `${originKey(msg)}:${id}`;
-  // Per-origin compaction spans: hides each session's own compaction prompt/draft/tools
-  // without letting parent and nested subagent spans interfere with one another.
-  const activeCompactions = new Set<string>();
-  for (const msg of messages) {
+  // A successful summary rotates the Trace. Its new file starts with metadata, bootstrap
+  // events and the generated opening, before the first real input. Read boundaries even
+  // before --tail's display cutoff, so a tail beginning inside a span inherits its state.
+  const compactions = new Map<string, "active" | "rotating" | "opening">();
+  for (const [index, msg] of messages.entries()) {
     const origin = originKey(msg);
-    if (msg.type === "session_meta") activeCompactions.delete(origin);
-    if (isEventMessage(msg)) {
-      const p = msg.payload;
-      if (p.type === "compaction_begin") activeCompactions.add(origin);
-      else if (p.type === "compaction_end") activeCompactions.delete(origin);
-      else if (p.type === "abort") out.write(`${formatAbort(p as AbortPayload, t, c)}\n`);
+    if (msg.type === "session_meta") {
+      if (compactions.get(origin) === "rotating") compactions.set(origin, "opening");
+      else compactions.delete(origin);
       continue;
     }
-    if (!isModelMessage(msg)) continue;
-    if (activeCompactions.has(origin)) continue;
+    if (isEventMessage(msg)) {
+      const p = msg.payload;
+      if (p.type === "compaction_begin") compactions.set(origin, "active");
+      else if (p.type === "compaction_end") {
+        if (p.mode === "summarize" && p.status === "completed") compactions.set(origin, "rotating");
+        else compactions.delete(origin);
+      } else if (p.type === "abort" && index >= first)
+        out.write(`${formatAbort(p as AbortPayload, t, c)}\n`);
+      continue;
+    }
+    if (!isModelMessage(msg) || compactions.get(origin) === "active") continue;
+    const opening = compactions.get(origin) === "opening";
+    compactions.delete(origin);
+    if (index < first) continue;
     const p = msg.payload as {
       type?: string;
       role?: string;
@@ -273,9 +279,12 @@ export function renderHistory(
       case "text":
         if (p.role === "user") {
           const text = p.text ?? "";
-          // Compaction-summary injection (`[context_summary]` or legacy `<context_summary>`)
-          // opens a new context internally — never a user prompt, matching Web's stream-model.
-          if (isContextSummary(text)) break;
+          if (
+            opening &&
+            ((text.startsWith("[context_summary]") && text.endsWith("[/context_summary]")) ||
+              (text.startsWith("<context_summary>") && text.endsWith("</context_summary>")))
+          )
+            break;
           // Mid-run steering ([user_steering]-wrapped user text delivered between turns):
           // rendered as distinct user-speech lines instead of a raw marker block or a prompt.
           const steering = parseUserSteeringText(text);
@@ -860,13 +869,7 @@ export class StreamRenderer {
               this.out.write(`${dim(this.t.switchModelHandedOver(handover.tracePath), this.c)}\n`);
               this.lastLineKey = null;
             }
-            if (
-              steering === null &&
-              handover === null &&
-              !isContextSummary(p.text) &&
-              this.echoInput &&
-              !isHarnessInput(msg)
-            ) {
+            if (steering === null && handover === null && this.echoInput && !isHarnessInput(msg)) {
               if (this.expectedInput === p.text) {
                 this.expectedInput = null;
               } else {

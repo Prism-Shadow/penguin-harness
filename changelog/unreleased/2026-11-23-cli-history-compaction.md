@@ -11,5 +11,5 @@ After a long conversation compacts, `penguin session log` and `penguin chat --re
 
 ## Details
 
-- Omitted internal compaction-summary context openings from CLI history replay (with the same guard in live CLI input echoing), matching the Web App.
+- Preserved user messages that quote summary markers in history and live input, and applied the compaction filter to short history tails.
 - Omitted compaction-internal model messages recorded inside a compaction span from CLI history replay per session/subagent origin, keeping normal turns and concurrent subagent activity unaffected.
