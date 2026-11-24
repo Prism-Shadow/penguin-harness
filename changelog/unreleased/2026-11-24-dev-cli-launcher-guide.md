@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** process
 - **Scope:** `tooling`, `docs`
+- **PR:** [#1831](https://github.com/Prism-Shadow/penguin-harness/pull/1831)
 
 [中文版](2026-11-24-dev-cli-launcher-guide.zh.md)
 
