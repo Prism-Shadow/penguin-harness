@@ -1,3 +1,8 @@
+/**
+ * Compaction replay spans belong to their originating Session. Only the generated
+ * opening of a rotated context disappears. User-quoted markers remain visible in
+ * history and on another surface's live stream.
+ */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Writable } from "node:stream";
 import type { MessageOrigin } from "@prismshadow/penguin-core";
@@ -1276,6 +1281,153 @@ describe("renderHistory (resume)", () => {
       stream,
     );
     expect(text()).toBe("");
+  });
+
+  it.each([
+    ["[context_summary]", "[/context_summary]"],
+    ["<context_summary>", "</context_summary>"],
+  ])("hides a rotated %s opening and shows a user's quoted markers", (open, close) => {
+    const { stream, text } = collector();
+    const meta = sessionMeta({
+      session_id: "sess-1",
+      provider: "custom",
+      model_id: "m",
+      model_context_window: 64000,
+      system_prompt: "",
+      agent_state: "/a",
+      workspace: "/w",
+      source: "user",
+    });
+    const quoted = `${open}\nMy example\n${close}`;
+    renderHistory(
+      [
+        meta,
+        userText(quoted),
+        compactionBegin({ mode: "summarize", reason: "manual", context: 4000, turns: 1 }),
+        compactionEnd({ mode: "summarize", reason: "manual", status: "completed" }),
+        taskBegin(),
+        userText("Input from a stopped run before rotation"),
+        taskEnd(),
+        meta,
+        withOrigin(userText(`${open} This is a child prompt`), "child"),
+        userText(`${open}\nInternal context opening\n${close}`),
+        userText(`${open} is literal here`),
+        userText(quoted),
+        compactionEnd({ mode: "summarize", reason: "manual", status: "completed" }),
+        requestBegin(),
+        requestEnd("completed"),
+        meta,
+        userText(`${open}\nLiteral after reopening\n${close}`),
+      ],
+      stream,
+      t,
+    );
+    const plain = stripAnsi(text());
+    expect(plain).not.toContain("Internal context opening");
+    expect(plain).toContain("> Input from a stopped run before rotation");
+    expect(plain).toContain(`> ${open}\nLiteral after reopening\n${close}`);
+    expect(plain).toContain(`> ${open} This is a child prompt`);
+    expect(plain).toContain(`> ${open} is literal here`);
+    expect(plain.split(`> ${quoted}`)).toHaveLength(3);
+  });
+
+  it("skips compaction-internal model messages per origin, resets on session_meta, and isolates parent and subagent spans", () => {
+    const { stream, text } = collector();
+    renderHistory(
+      [
+        sessionMeta({
+          session_id: "sess-1",
+          provider: "custom",
+          model_id: "m",
+          model_context_window: 64000,
+          system_prompt: "",
+          agent_state: "/a",
+          workspace: "/w",
+          source: "user",
+        }),
+        compactionBegin({ mode: "summarize", reason: "context", context: 50000, turns: 5 }),
+        userText("Summarize the conversation so far."),
+        thinkingMessage("internal compaction thought"),
+        toolCall({ name: "exec_command", arguments: '{"cmd":"pwd"}', toolCallId: "cmp1" }),
+        toolCallOutput({ output: "/work", toolCallId: "cmp1", status: "completed" }),
+        // A nested subagent's compaction_end or session_meta must not close the parent's compaction span.
+        withOrigin(
+          compactionEnd({ mode: "summarize", reason: "context", status: "completed" }),
+          "child-1",
+        ),
+        withOrigin(
+          sessionMeta({
+            session_id: "child-1",
+            provider: "custom",
+            model_id: "m",
+            model_context_window: 64000,
+            system_prompt: "",
+            agent_state: "/a",
+            workspace: "/w",
+            source: "subagent",
+          }),
+          "child-1",
+        ),
+        // A nested subagent's own model_msg during parent compaction stays visible.
+        withOrigin(
+          toolCall({ name: "exec_command", arguments: '{"cmd":"echo sub"}', toolCallId: "sub1" }),
+          "child-1",
+        ),
+        assistantText("[summary]internal summary text[/summary]"),
+        compactionEnd({ mode: "summarize", reason: "context", status: "completed" }),
+        // A nested subagent's compaction hides its own draft without hiding parent messages.
+        withOrigin(
+          compactionBegin({ mode: "summarize", reason: "context", context: 50000, turns: 5 }),
+          "child-1",
+        ),
+        withOrigin(assistantText("[summary]child compaction draft[/summary]"), "child-1"),
+        userText("visible parent prompt"),
+        assistantText("visible parent reply"),
+        withOrigin(
+          compactionEnd({ mode: "summarize", reason: "context", status: "completed" }),
+          "child-1",
+        ),
+        // An unclosed compaction span resets when a new context's session_meta opens.
+        compactionBegin({ mode: "summarize", reason: "manual", context: 50000, turns: 5 }),
+        assistantText("[summary]unclosed compaction draft[/summary]"),
+        sessionMeta({
+          session_id: "sess-1",
+          provider: "custom",
+          model_id: "m",
+          model_context_window: 64000,
+          system_prompt: "",
+          agent_state: "/a",
+          workspace: "/w",
+          source: "user",
+        }),
+        userText("after new context"),
+      ],
+      stream,
+      t,
+    );
+    const plain = stripAnsi(text());
+    expect(plain).not.toContain("Summarize the conversation so far.");
+    expect(plain).not.toContain("internal compaction thought");
+    expect(plain).not.toContain("internal summary text");
+    expect(plain).not.toContain("child compaction draft");
+    expect(plain).not.toContain("[tool-mp1]");
+    expect(plain).not.toContain("unclosed compaction draft");
+    expect(plain).toContain("[tool-ub1] exec_command <- $ echo sub");
+    expect(plain).toContain("> visible parent prompt");
+    expect(plain).toContain("visible parent reply");
+    expect(plain).toContain("> after new context");
+  });
+
+  it("echoes another surface's literal summary markers and deduplicates the local input", () => {
+    const { stream, text } = collector();
+    const renderer = new StreamRenderer(stream, t, { echoInput: true });
+    const local = "[context_summary] typed here";
+    const remote = "<context_summary>\nTyped in the Web App\n</context_summary>";
+    renderer.expectInput(local);
+    renderer.handle(userText(local));
+    renderer.handle(userText(remote));
+    renderer.handle(userText(local));
+    expect(stripAnsi(text())).toBe(`\n> ${remote}\n\n> ${local}\n`);
   });
 });
 

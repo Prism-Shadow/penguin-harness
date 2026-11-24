@@ -76,15 +76,14 @@ export function registerLogCommand(session: Command, t: Messages): void {
       );
       if (sessionId === null) return; // no session to show; the hint is already printed
 
-      let messages = await getSessionMessages(client, sessionId);
-      if (tail !== undefined) messages = messages.slice(-tail);
+      const messages = await getSessionMessages(client, sessionId);
 
       const out = process.stdout;
       if (opts.json === true) {
-        out.write(`${JSON.stringify(messages)}\n`);
+        out.write(`${JSON.stringify(tail === undefined ? messages : messages.slice(-tail))}\n`);
         if (opts.follow !== true) return;
       } else {
-        renderHistory(messages, out, t);
+        renderHistory(messages, out, t, { tail });
       }
 
       if (opts.follow !== true) return;

@@ -9,12 +9,15 @@
  *   then the error names PENGUIN_API_TOKEN and the token file it looked for.
  * - Given schedule add with --session-id and a new-session flag, or schedule update with --enable
  *   and --disable, the command is refused before any request, naming the flags that collide.
+ * - A log tail starting inside a compaction hides its draft in text and retains all raw JSON records.
  * - Given session log --timeout without -f, it is refused before any request, naming -f/--follow.
  */
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assistantText,
+  compactionBegin,
+  compactionEnd,
   hookEvent,
   partialText,
   userText,
@@ -304,6 +307,22 @@ describe("penguin session log", () => {
     await cli(["session", "log", s.sessionId, "--tail", "1"]);
     expect(out()).not.toContain("one");
     expect(out()).toContain("three");
+  });
+  it("counts raw records for --tail while keeping an already open compaction out of the transcript", async () => {
+    const session = server.addSession();
+    server.history = [
+      userText("earlier input"),
+      compactionBegin({ mode: "summarize", reason: "manual", context: 1000, turns: 1 }),
+      assistantText("internal draft"),
+      compactionEnd({ mode: "summarize", reason: "manual", status: "completed" }),
+      assistantText("visible reply"),
+    ];
+    const args = ["session", "log", session.sessionId, "--tail", "3"];
+    await cli(args);
+    expect(out().trim()).toBe("visible reply");
+    stdout.length = 0;
+    await cli([...args, "--json"]);
+    expect(JSON.parse(out())).toEqual(server.history.slice(-3));
   });
 });
 
