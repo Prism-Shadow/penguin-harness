@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `storage`, `web`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1803
 
 [English](2026-11-24-storage-interrupted-first-read.md)
 
