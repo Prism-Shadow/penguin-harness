@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `browser-automation`, `web`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1800
 
 [English](2026-11-24-web-browser-resource-directory.md)
 
