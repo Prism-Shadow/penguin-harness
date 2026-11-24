@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { provisionAndLogin } from "./auth.mjs";
+import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
 async function seed(page, user, lang) {
-  await provisionAndLogin(page.request, user, "password123");
+  if (user === ADMIN_ID) await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
+  else await provisionAndLogin(page.request, user, "password123");
   await setAccountPrefs(page.request, { lang });
   const { projects } = await (await page.request.get("/api/projects")).json();
   const project = "/api/projects/" + projects[0].projectId;
@@ -156,3 +157,70 @@ for (const lang of ["en", "zh"]) {
     await expect(chat).toHaveAttribute("data-pane", "left");
   });
 }
+
+// Two Sessions can keep their own Browser Dock. Opening and revisiting the resource
+// directories should give each directory one global row throughout those switches.
+test("only an opened resource directory appears in Apps when two Sessions use Browser", async ({
+  page,
+}) => {
+  const first = await seed(page, ADMIN_ID, "en");
+  const created = await page.request.post(
+    "/api/projects/" + first.projectId + "/agents/default_agent/sessions",
+    { data: {} },
+  );
+  await expect(created).toBeOK();
+  const { session: second } = await created.json();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/chat/" + first.sessionId);
+  const sidebar = page.getByRole("navigation", { name: "Apps", exact: true });
+  const appRows = sidebar.locator("[data-app-row]");
+  const browser = "builtin-browser";
+  const tab = (session) =>
+    page.locator(
+      '[data-testid="dock-tab"][data-tab-id^=":app:session-tool/' +
+        browser +
+        '/"][data-tab-id$="/' +
+        session.sessionId +
+        '"]:visible',
+    );
+  const sessionRow = (session) =>
+    page.locator('button[data-session-id="' + session.sessionId + '"]:visible');
+  const shortcuts = page.getByRole("button", { name: "Shortcuts", exact: true });
+  await shortcuts.click();
+  await page.getByTestId("dock-launcher-open-" + browser).click();
+  await expect(tab(first)).toBeVisible();
+  await sessionRow(second).click();
+  await shortcuts.click();
+  await page.getByTestId("dock-launcher-open-workspace").click();
+  await page.getByTestId("dock-add").filter({ visible: true }).click();
+  await page.getByTestId("dock-add-" + browser).click();
+  await expect(tab(second)).toBeVisible();
+  const browserAddress = page.url();
+  await expect(appRows).toHaveCount(0);
+
+  const catalog = page.getByRole("complementary").getByRole("link", { name: /^App Center/ });
+  for (const [index, kind] of [browser, "terminal"].entries()) {
+    await catalog.click();
+    const key = "system_agent/session-tools-" + kind;
+    await page
+      .locator('li[data-app="' + key + '"] > button')
+      .first()
+      .click();
+    await expect(sidebar.locator('[data-app-row="' + key + '"]')).toBeVisible();
+    await expect(appRows).toHaveCount(index + 1);
+  }
+  for (const session of [first, second, first]) {
+    await sessionRow(session).click();
+    await expect(tab(session)).toBeVisible();
+    await expect(appRows).toHaveCount(2);
+  }
+  await tab(first).getByTestId("dock-tab-close").click();
+  await expect(appRows).toHaveCount(2);
+  await sessionRow(second).click();
+  await expect(tab(second)).toBeVisible();
+  await page.goto(browserAddress);
+  await expect(tab(second)).toBeVisible();
+  await page.reload();
+  await expect(tab(second)).toBeVisible();
+  await expect(appRows).toHaveCount(0);
+});
