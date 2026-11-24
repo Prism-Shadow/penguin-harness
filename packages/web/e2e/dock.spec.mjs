@@ -508,12 +508,16 @@ test("Files moves to the bottom and enters fullscreen after the first chat reply
   await provisionAndLogin(page.request, "dockfirstreply", P);
   await setAccountPrefs(page.request, { lang: "en", initialPasswordBannerDismissed: true });
   await page.goto(`${BASE}/chat/new`);
-  await page.getByRole("button", { name: /^(Add an API key|Open Models)$/ }).click();
-  await expect(page).toHaveURL(/\/models$/);
-  // Supply only the fixture provider. Choose the default through the same settings
-  // dialog as a new user, keeping both the draft and Models in this browser session.
+  const openModels = page.getByRole("button", { name: /^(Add an API key|Open Models)$/ });
+  const fromWorkbenchGuide = (await openModels.innerText()).includes("Open Models");
+  // Models reads the fixture provider on arrival. The API-key flow then opens the
+  // defaults dialog itself; the workbench guide leaves the settings button available.
   await configureProjectModel(page.request, { setDefault: false });
-  await page.getByRole("button", { name: "Default model settings" }).click();
+  await openModels.click();
+  await expect(page).toHaveURL(/\/models$/);
+  if (fromWorkbenchGuide) {
+    await page.getByRole("button", { name: "Default model settings", exact: true }).click();
+  }
   const preferences = page.getByRole("dialog", { name: "Default model settings" });
   await preferences.locator('[data-default-row="chat"] button').click();
   await page.getByRole("option", { name: /claude-4-8/ }).click();

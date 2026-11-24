@@ -56,12 +56,13 @@ async function openSessionWithNotes(page, user) {
   expect(up.ok(), "upload nested md").toBeTruthy();
 
   await page.goto(`${BASE}/chat/${sessionId}`);
+  return sessionId;
 }
 
 test("mobile merged dock: workspace opens at the bottom → nested dir → md rendered preview → × hides", async ({
   page,
 }) => {
-  await openSessionWithNotes(page, "sheetuser");
+  const sessionId = await openSessionWithNotes(page, "sheetuser");
   // Pull open the right dock: at this width it renders as the merged bottom surface,
   // whose picker then opens the Workspace (the tab still records its right-dock home).
   await page.getByTestId("dock-toggle-right").click();
