@@ -22,7 +22,8 @@ function Read-Tree([string]$Root,[string]$Relative = '') {
       Read-Tree $Root $name
     } else {
       # CopyFile carries the named data streams too. Verify each stream independently.
-      $streams = @(Get-Item -LiteralPath $item.FullName -Stream '*' | Sort-Object Stream | ForEach-Object {
+      # -Force is required because Get-ChildItem -Force enumerates Hidden files (including Hidden+System files like desktop.ini).
+      $streams = @(Get-Item -LiteralPath $item.FullName -Stream '*' -Force | Sort-Object Stream | ForEach-Object {
         $file = if ($_.Stream -eq ':$DATA') { $item.FullName } else { $item.FullName + ':' + $_.Stream }
         $_.Stream + '=' + [PenguinVolume]::Hash($file)
       })
