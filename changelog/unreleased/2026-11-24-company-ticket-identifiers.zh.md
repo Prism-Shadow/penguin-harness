@@ -1,8 +1,9 @@
 # 公司工单 ID 使用 ticket- 前缀
 
 - **Date:** 2026-11-24
-- **Type:** change
-- **Scope:** Company mode, CLI, Web App
+- **Type:** fix
+- **Scope:** `server`, `cli`, `web`, `docs`, `skills`
+- **PR:** [#1795](https://github.com/Prism-Shadow/penguin-harness/pull/1795)
 
 [English](2026-11-24-company-ticket-identifiers.md)
 

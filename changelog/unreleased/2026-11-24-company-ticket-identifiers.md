@@ -1,8 +1,9 @@
 # Company tickets get a ticket- prefix
 
 - **Date:** 2026-11-24
-- **Type:** change
-- **Scope:** Company mode, CLI, Web App
+- **Type:** fix
+- **Scope:** `server`, `cli`, `web`, `docs`, `skills`
+- **PR:** [#1795](https://github.com/Prism-Shadow/penguin-harness/pull/1795)
 
 [中文版](2026-11-24-company-ticket-identifiers.zh.md)
 

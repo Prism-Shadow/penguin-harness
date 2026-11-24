@@ -1,8 +1,9 @@
 # 存量安装兼容说明
 
 - **Date:** 2026-11-24
-- **Type:** change
-- **Scope:** Company mode
+- **Type:** fix
+- **Scope:** `server`, `cli`, `web`
+- **PR:** [#1795](https://github.com/Prism-Shadow/penguin-harness/pull/1795)
 
 [English](2026-11-24-backward-compatibility.md)
 
