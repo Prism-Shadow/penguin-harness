@@ -3,7 +3,8 @@
  * marketplace organization from the switcher, land on the CEO's desk conversation (its
  * initialization run is answered by the mock), find the CEO on the org chart and a ticket on
  * the board, open a desk from the sidebar's 工位 group and another from the org chart, work the
- * board — a click on a card opens its ticket, a mouse drag onto another column moves it, and a
+ * board — a card opens its ticket and its bookmark reopens it after a reload, a mouse drag
+ * onto another column moves it, and a
  * ticket session opened from the dialog stays on screen and joins the sidebar's 临时 group,
  * which survives a reload and empties only through its ✕ and its 全部关闭 — then work in the
  * channels — post in the all-hands channel and see the mention reach the CEO's
@@ -178,6 +179,7 @@ test("company mode: create the organization, meet the CEO, see the board and the
   expect(created.ok(), "create ticket").toBeTruthy();
   const ticket = await created.json();
   expect(ticket.status).toBe("proposed");
+  expect(ticket.ticketId).toMatch(/^ticket-\d{4}-\d{2}-\d{2}-build-the-marketplace-site$/);
   await page.goto(`/org/${projectId}/${ORG}/tickets`);
   await expect(page.getByText("Build the marketplace site").first()).toBeVisible();
 
@@ -187,6 +189,9 @@ test("company mode: create the organization, meet the CEO, see the board and the
   await card("Build the marketplace site").click();
   const siteDialog = page.getByRole("dialog", { name: "Build the marketplace site" });
   await expect(siteDialog).toBeVisible();
+  await expect(page).toHaveURL((url) => url.searchParams.get("ticket") === ticket.ticketId);
+  await page.reload();
+  await expect(siteDialog.getByText(ticket.ticketId, { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(siteDialog).toHaveCount(0);
 

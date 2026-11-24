@@ -50,7 +50,6 @@ import type {
   OrgHandbookFileResponse,
   OrgHandbookFilesResponse,
 } from "../../api/types.js";
-import { TICKET_SLUG_PATTERN } from "../../api/types.js";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../../http/errors.js";
@@ -78,7 +77,6 @@ import {
   DEFAULT_CEO_BUDGET,
   MENTION_CHAIN_LIMIT_MAX,
   ORG_CONFIG_DEFAULTS,
-  TICKET_ID_PATTERN,
   defaultTicketNotify,
   detectLanguage,
   historyNote,
@@ -90,6 +88,11 @@ import {
   slugSuffix,
   slugify,
 } from "../../organization/files.js";
+import {
+  isTicketId,
+  ticketCreatedDate,
+  TICKET_SLUG_PATTERN,
+} from "../../organization/ticket-id.js";
 import { renderHandbook } from "../../organization/handbook.js";
 import {
   DEFAULT_CHANNEL_ID,
@@ -514,8 +517,7 @@ export class OrganizationService {
    *   hand has no such entry and no closing time to test, so it is listed with `closedAt`
    *   absent rather than hidden.
    *
-   * Newest first everywhere; ticket ids start with the filing date, so ordering by id
-   * descending is ordering by age.
+   * Tickets are newest first by filing day, then by id within a day.
    */
   private inbox(
     spend: OrgSpend,
@@ -529,7 +531,8 @@ export class OrganizationService {
       .reverse()
       .slice(0, INBOX_PAGE);
     const newestFirst = <T extends { ticketId: string }>(a: T, b: T): number =>
-      a.ticketId < b.ticketId ? 1 : a.ticketId > b.ticketId ? -1 : 0;
+      (ticketCreatedDate(b.ticketId) ?? "").localeCompare(ticketCreatedDate(a.ticketId) ?? "") ||
+      b.ticketId.localeCompare(a.ticketId);
     const closedAt = new Map<string, string>();
     for (const t of tickets) {
       const at = lastClosedAt(t.doc);
@@ -1501,7 +1504,7 @@ export class OrganizationService {
   }
 
   private async requireTicket(org: LoadedOrg, ticketId: string): Promise<LoadedTicket> {
-    if (!TICKET_ID_PATTERN.test(ticketId)) throw ticketNotFound(ticketId);
+    if (!isTicketId(ticketId)) throw ticketNotFound(ticketId);
     const file = await this.deps.store.findTicket(org.dir, ticketId);
     if (file === null) throw ticketNotFound(ticketId);
     if (!file.parsed.ok)
@@ -1691,9 +1694,10 @@ export class OrganizationService {
       // filed meanwhile.
       const slug = await this.ticketSlug(projectId, title, req.slug);
       const date = zonedDate(org.config.timezone, this.now());
-      let id = `${date}-${slug}`;
+      const base = `ticket-${date}-${slug}`;
+      let id = base;
       for (let n = 2; (await this.deps.store.findTicket(org.dir, id)) !== null; n++) {
-        id = `${date}-${slug}-${slugSuffix(n)}`;
+        id = `${base}-${slugSuffix(n)}`;
       }
       if (
         req.parent !== undefined &&
@@ -1880,7 +1884,7 @@ export class OrganizationService {
       if (reason.trim() === "") throw badRequest("reason must not be empty.");
       if (by !== undefined && by !== "") {
         const p = parsePrincipal(by);
-        const isTicket = TICKET_ID_PATTERN.test(by);
+        const isTicket = isTicketId(by);
         if (!isTicket && (p === null || (p.kind !== "agent" && p.kind !== "user"))) {
           throw badRequest("by must be a ticket id or agent:<id> / user:<id>.");
         }

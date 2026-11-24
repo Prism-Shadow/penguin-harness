@@ -9,6 +9,7 @@
  *   only the owner deletes an organization (pausing stays a setting any writer may change).
  * - Bodies are validated before the service is asked: organizations, tickets (owner and slug
  *   included), handbook documents by their relative path, the channel family and its members.
+ * - A long generated id is accepted as a parent, blocker and channel reference.
  * - The organization's language, a ticket's owner and slug, and the channel of the path reach
  *   the service.
  * - The calling session and employee ride a read's query and a write's body only from the
@@ -328,6 +329,40 @@ describe("organization routes", () => {
     expect(calls).toEqual([]);
     // An owner cannot be cleared: a ticket always has one, so `null` is refused as a shape.
     expect((await owner.put(`${base}/tickets/2026-09-01-site`, { owner: null })).status).toBe(400);
+  });
+
+  it("accepts full ticket ids as parents, blockers and message references", async () => {
+    const base = `/api/projects/${ownerProject}/organizations/acme`;
+    const longId = `ticket-2026-09-01-${Array(6).fill("a".repeat(20)).join("-")}-b`;
+    const child = "ticket-2026-09-02-follow-up";
+    expect(
+      (await owner.post(`${base}/tickets`, { title: "Follow up", parent: longId })).status,
+    ).toBe(201);
+    expect((await owner.put(`${base}/tickets/${child}`, { parent: longId })).status).toBe(200);
+    expect(
+      (await owner.post(`${base}/tickets/${child}/block`, { reason: "Waiting", by: longId }))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await owner.post(`${base}/channels/default_channel/messages`, {
+          text: "Follow up",
+          refs: { ticket: longId },
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (
+        await owner.post(`${base}/tickets/${child}/block`, {
+          reason: "Waiting",
+          by: "u".repeat(101),
+        })
+      ).status,
+    ).toBe(400);
+    const malformed = "ticket-ticket-2026-09-01-follow-up";
+    expect((await owner.get(`${base}/tickets/${malformed}`)).status).toBe(400);
+    const tooLong = `ticket-2026-09-01-${"a".repeat(255)}`;
+    expect((await owner.get(`${base}/tickets/${tooLong}`)).status).toBe(400);
   });
 
   it("routes handbook documents by their relative path and keeps the index", async () => {

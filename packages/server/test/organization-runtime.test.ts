@@ -7,6 +7,7 @@
  * calendar event registered after its time is not backfilled and fires on its next slot to
  * the employee's desk (queued when busy, held when the organization or the employee is
  * paused, held silently when the master switch is off); ticket changes are noticed once;
+ * old date IDs keep their filenames and can link to new prefixed tickets in either direction;
  * channel mentions reach desks and the chain stops at the limit; budgets warn, pause and
  * resume (a zero budget being over before anything is spent); a ticket session the runner
  * refuses leaves the ticket as it was; every desk and ticket session is opened as a company
@@ -28,7 +29,7 @@ import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/session
 import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
 import { OrgStore } from "../src/organization/store.js";
 import { parseChannelConfig, serializeCalendarEvent } from "../src/organization/files.js";
-import { DEFAULT_CHANNEL_ID, ticketPath } from "../src/organization/paths.js";
+import { DEFAULT_CHANNEL_ID, ticketMonth, ticketPath } from "../src/organization/paths.js";
 import { zonedDate } from "../src/organization/zoned.js";
 import type { ErrorRecordArgs } from "@prismshadow/penguin-library-observability";
 import { DEFAULT_EMPLOYEE_PLUGINS } from "../src/runtime/organization/deps.js";
@@ -1622,7 +1623,7 @@ describe("organization runtime", () => {
         { title: "Launch the site", goal: "Ship it", owner: `agent:${HR}`, priority: "P1" },
         { userId: "alice" },
       );
-      expect(t.ticketId).toMatch(/^2026-09-01-launch-the-site$/);
+      expect(t.ticketId).toMatch(/^ticket-2026-09-01-launch-the-site$/);
       expect(t.status).toBe("proposed");
       // Filed by alice for HR: the owner is the employee, and the history says who filed it.
       expect(t.owner).toBe(`agent:${HR}`);
@@ -2024,10 +2025,57 @@ describe("organization runtime", () => {
       expect(again.history.at(-1)).toMatchObject({ by: `agent:${CEO}`, action: "progress" });
     });
 
+    it("keeps a stored id distinct from a new ticket with the same date and slug", async () => {
+      const actor = { userId: "alice" };
+      const earlier = await service.createTicket(P, ORG, { title: "First report" }, actor);
+      await service.blockTicket(P, ORG, earlier.ticketId, "Waiting for review", undefined, actor);
+      nowMs += DAY;
+      const oldId = "2026-09-02-release-plan";
+      const oldPath = ticketPath(orgDir(), oldId, "proposed");
+      const oldBody = [
+        "---",
+        "title: Existing plan",
+        "status: proposed",
+        "owner: user:alice",
+        `parent: ${earlier.ticketId}`,
+        "---",
+        "",
+        "## Goal",
+        "Keep the existing links.",
+        "",
+      ].join("\n");
+      await fs.writeFile(oldPath, oldBody);
+      const created = await service.createTicket(
+        P,
+        ORG,
+        { title: "Release plan", parent: oldId },
+        actor,
+      );
+      expect(created.ticketId).toBe(`ticket-${oldId}`);
+      expect(created.parent).toBe(oldId);
+      expect(await fs.readFile(oldPath, "utf8")).toBe(oldBody);
+      const existing = await service.ticket(P, ORG, oldId);
+      expect(existing).toMatchObject({
+        title: "Existing plan",
+        parent: earlier.ticketId,
+        children: [created.ticketId],
+      });
+      await service.blockTicket(P, ORG, oldId, "Waiting for the report", earlier.ticketId, actor);
+      await service.blockTicket(P, ORG, created.ticketId, "Waiting for the plan", oldId, actor);
+      expect((await service.ticket(P, ORG, oldId)).blockedBy).toBe(earlier.ticketId);
+      expect((await service.ticket(P, ORG, created.ticketId)).blockedBy).toBe(oldId);
+      const inbox = (await service.detail(P, ORG, "alice")).inbox!;
+      expect(inbox.blockedTickets.map((item) => item.ticketId).at(-1)).toBe(earlier.ticketId);
+      await service.moveTicket(P, ORG, oldId, "in_progress", undefined, actor);
+      expect((await service.ticket(P, ORG, oldId)).status).toBe("in_progress");
+      expect(await fs.stat(ticketPath(orgDir(), oldId, "in_progress"))).toBeTruthy();
+      expect(await fs.stat(ticketPath(orgDir(), created.ticketId, "proposed"))).toBeTruthy();
+    });
+
     it("names a ticket whose title carries no English through the Project's model", async () => {
       completion.answers = [answered("launch-the-site")];
       const t = await service.createTicket(P, ORG, { title: "上线站点" }, { userId: "alice" });
-      expect(t.ticketId).toBe("2026-09-01-launch-the-site");
+      expect(t.ticketId).toBe("ticket-2026-09-01-launch-the-site");
       // `slug` always wins, and is held to the same letters-only rule.
       const explicit = await service.createTicket(
         P,
@@ -2035,7 +2083,7 @@ describe("organization runtime", () => {
         { title: "上线站点", slug: "second-site" },
         { userId: "alice" },
       );
-      expect(explicit.ticketId).toBe("2026-09-01-second-site");
+      expect(explicit.ticketId).toBe("ticket-2026-09-01-second-site");
       await expect(
         service.createTicket(P, ORG, { title: "x", slug: "site-2" }, { userId: "alice" }),
       ).rejects.toMatchObject({ status: 400 });
@@ -2047,20 +2095,17 @@ describe("organization runtime", () => {
       // A taken id takes a letter, never a digit.
       completion.answers = [answered("launch-the-site")];
       const again = await service.createTicket(P, ORG, { title: "上线站点" }, { userId: "alice" });
-      expect(again.ticketId).toBe("2026-09-01-launch-the-site-b");
+      expect(again.ticketId).toBe("ticket-2026-09-01-launch-the-site-b");
     });
 
     it("blocking notices the blocker and the owner's manager; closing the blocker tells the owner", async () => {
-      const blocker = await service.createTicket(
-        P,
-        ORG,
-        { title: "Buy the domain" },
-        { userId: "alice" },
-      );
+      const longTitle = Array(6).fill("a".repeat(20)).join(" ");
+      const blocker = await service.createTicket(P, ORG, { title: longTitle }, { userId: "alice" });
+      expect(blocker.ticketId).toBe(`ticket-2026-09-01-${longTitle.replaceAll(" ", "-")}`);
       const t = await service.createTicket(
         P,
         ORG,
-        { title: "Launch", owner: `agent:${HR}` },
+        { title: "Launch", owner: `agent:${HR}`, parent: blocker.ticketId },
         { userId: "alice" },
       );
       started.length = 0;
@@ -2134,7 +2179,7 @@ describe("organization runtime", () => {
         { title: "Launch the site" },
         { userId: "alice" },
       );
-      const headedId = "2026-09-01-legacy-launch";
+      const headedId = "ticket-2026-09-01-legacy-launch";
       const headedPath = ticketPath(orgDir(), headedId, "in_progress");
       const headed = [
         "# Ticket: Legacy launch",
@@ -3248,7 +3293,7 @@ describe("organization runtime", () => {
 
   describe("crash-window robustness in the org store", () => {
     const ticketFile = (ticketId: string, column: string): string =>
-      path.join(orgDir(), "tickets", ticketId.slice(0, 7), column, `${ticketId}.md`);
+      path.join(orgDir(), "tickets", ticketMonth(ticketId), column, `${ticketId}.md`);
 
     it("keeps a ticket on the board when a crash left it in two columns", async () => {
       await createOrg();
@@ -3309,7 +3354,7 @@ describe("organization runtime", () => {
         { userId: "alice" },
       );
       await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, { userId: "alice" });
-      const monthDir = path.join(orgDir(), "tickets", t.ticketId.slice(0, 7));
+      const monthDir = path.join(orgDir(), "tickets", ticketMonth(t.ticketId));
       const names = (await fs.readdir(monthDir, { recursive: true })).map(String);
       expect(names.filter((n) => n.includes(t.ticketId)).map((n) => path.basename(n))).toEqual([
         `${t.ticketId}.md`,

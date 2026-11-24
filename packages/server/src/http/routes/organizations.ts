@@ -54,7 +54,7 @@ import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { Sessions } from "../../runtime/session-manager.js";
 import { deleteOrganizationWithAgents } from "../../services/organization-deletion.js";
 import type { OrganizationDeletionDeps } from "../../services/organization-deletion.js";
-import { TICKET_ID_PATTERN } from "../../organization/files.js";
+import { isTicketId, TICKET_ID_MAX_LENGTH } from "../../organization/ticket-id.js";
 import { ORG_TICKET_COLUMNS, isCalendarEventName, isChannelId } from "../../organization/paths.js";
 import { parsePrincipal } from "../../organization/principal.js";
 import type { Actor, OrgService } from "../../runtime/organization/service.js";
@@ -78,8 +78,13 @@ const LANGUAGES: readonly OrgLanguage[] = ["zh", "en"];
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
 function requireTicketId(raw: string | undefined): string {
-  if (!raw || !TICKET_ID_PATTERN.test(raw)) throw badRequest("Invalid ticket id.");
+  if (!raw || !isTicketId(raw)) throw badRequest("Invalid ticket id.");
   return raw;
+}
+
+/** Blockers can also be principals, and channel references can carry a free-form label. */
+function ticketReferenceLimit(value: unknown): number {
+  return typeof value === "string" && isTicketId(value) ? TICKET_ID_MAX_LENGTH : 100;
 }
 
 function requireName(raw: string | undefined, label: string): string {
@@ -627,7 +632,7 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     const text = optionalString(body, "body", { maxLen: 200_000 });
     // Absent means "the caller owns it"; an empty string is no principal at all.
     const owner = optionalString(body, "owner", { minLen: 1, maxLen: 100 });
-    const parent = optionalString(body, "parent", { minLen: 1, maxLen: 100 });
+    const parent = optionalString(body, "parent", { minLen: 1, maxLen: TICKET_ID_MAX_LENGTH });
     const notify = optionalStringArray(body, "notify");
     const priority = optionalEnum(body, "priority", PRIORITIES);
     const due = optionalString(body, "due", { minLen: 10, maxLen: 40 });
@@ -668,7 +673,7 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     const title = optionalString(body, "title", { minLen: 1, maxLen: 200 });
     // No null: a ticket always has an owner — reassign it, never clear it.
     const owner = optionalString(body, "owner", { minLen: 1, maxLen: 100 });
-    const parent = nullableString(body, "parent", { maxLen: 100 });
+    const parent = nullableString(body, "parent", { maxLen: TICKET_ID_MAX_LENGTH });
     const notify = optionalStringArray(body, "notify");
     const priority = optionalEnum(body, "priority", PRIORITIES);
     const due = nullableString(body, "due", { maxLen: 40 });
@@ -724,7 +729,7 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     member(c, projectId);
     const body = await readJson(c);
     const reason = requireString(body, "reason", { minLen: 1, maxLen: 2000 });
-    const by = optionalString(body, "by", { minLen: 1, maxLen: 100 });
+    const by = optionalString(body, "by", { minLen: 1, maxLen: ticketReferenceLimit(body.by) });
     return c.json(
       await deps.orgService.blockTicket(projectId, orgId, ticketId, reason, by, actorOf(c, body)),
     );
@@ -919,7 +924,11 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     if (body.refs !== undefined && body.refs !== null) {
       if (typeof body.refs !== "object") throw badRequest("refs must be an object.");
       const r = body.refs as Record<string, unknown>;
-      const ticket = optionalString(r, "ticket", { minLen: 1, maxLen: 100, label: "refs.ticket" });
+      const ticket = optionalString(r, "ticket", {
+        minLen: 1,
+        maxLen: ticketReferenceLimit(r.ticket),
+        label: "refs.ticket",
+      });
       const session = optionalString(r, "session", {
         minLen: 1,
         maxLen: 200,

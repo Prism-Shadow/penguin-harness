@@ -533,7 +533,7 @@ A desk or ticket session also creates its directory when it opens. `--budget` is
 - `start` prints the bare session id, as `run --background` does, for `penguin session log` and `penguin session input` to pick up.
 - `--owner <principal>` names the one principal responsible: an employee (an agent id or `agent:<id>`) or a Project member (`user:<id>`). It defaults to the caller. When no `--notify` is given, the owner becomes the whole `notify` list, but only if the owner is an employee: a person is not notified about a ticket they own, and adds themselves with `--notify` to be told.
 - Who filed a ticket is not a flag. It is the `created` entry of the ticket's history, taken from the environment the command ran in.
-- A ticket id is `<yyyy-mm-dd>-<slug>`, where the slug is lowercase English words joined by hyphens. `--slug <words>` sets it. A title with too little English in it needs this flag when the server cannot have the Project's model name it (400 `slug_required`).
+- New tickets use `ticket-<yyyy-mm-dd>-<slug>`, where the slug is lowercase English words joined by hyphens. `--slug <words>` sets it. A title with too little English in it needs this flag when the server cannot have the Project's model name it (400 `slug_required`).
 - A write that claims work also records the calling session as one of the ticket's contributing sessions, so its cost is added to the ticket. These writes are `progress`, an edit of the body, and `move --to review`. Moving into any other column, `block` and `unblock` record nothing.
 - `progress -m` takes one plain sentence saying what was done and where; the server records who wrote it and when.
 - `--goal`, `--criteria` and `progress -m` ask for every input, deliverable and file to be named by its full path.

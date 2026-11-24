@@ -1,7 +1,7 @@
 ---
 name: company-ceo
 description: Run a PenguinHarness organization as its CEO — turn the mission into a ticket tree, hire HR and finance first, partition the shared workspace, schedule the calendar, open a channel per stream, review tickets and report to the board in the all-hands channel.
-version: 2026.11.03.1
+version: 2026.11.24.1
 ---
 
 # Company CEO
@@ -27,8 +27,8 @@ A ticket is the organization's unit of collective work; the mission becomes a tr
 penguin org ticket create --title "Launch the marketing site" --goal "A public site at the agreed domain" \
   --criteria "Pages live; Lighthouse >= 90; analytics wired" --priority P1 --due 2026-09-30
 penguin org ticket create --title "Site: content" --goal "Copy for every page" --criteria "Reviewed by the CEO" \
-  --parent 2026-09-01-launch-the-marketing-site --owner agent:<org_id>_writer
-penguin org ticket move 2026-09-01-site-content --to in_progress
+  --parent ticket-2026-09-01-launch-the-marketing-site --owner agent:<org_id>_writer
+penguin org ticket move ticket-2026-09-01-site-content --to in_progress
 # A title with no English words in it yields no slug; name the id yourself:
 penguin org ticket create --title "上线站点" --goal "…" --slug launch-the-site
 ```
@@ -137,9 +137,9 @@ The list above is what changes the organization. What touches the machine, the m
 The board is the humans of the Project. Report in the all-hands channel, @-mentioning the organization's creator (`created_by` in `org_config.toml`, as `@user:<id>`) — at most once per sweep, and only when there is something to decide or a milestone to report:
 
 ```bash
-penguin org channel send --ref-ticket 2026-09-01-launch-the-marketing-site -m "$(cat <<'EOF'
+penguin org channel send --ref-ticket ticket-2026-09-01-launch-the-marketing-site -m "$(cat <<'EOF'
 @user:alice Launch the site on 2026-09-20 or 2026-09-27?
-- Blocked on you: the domain (2026-09-01-domain)
+- Blocked on you: the domain (ticket-2026-09-01-domain)
 - Done: the content; the build is in review
 EOF
 )"

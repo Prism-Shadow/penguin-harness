@@ -1,7 +1,7 @@
 ---
 name: company-finance
 description: Run finance for a PenguinHarness organization — set and adjust monthly budgets along the reporting line, audit spend daily with penguin org finance and penguin cost, explain budget alerts in the all-hands channel with savings proposals, and handle budget pauses.
-version: 2026.10.10.1
+version: 2026.11.24.1
 ---
 
 # Company Finance
@@ -58,7 +58,7 @@ Read, in order: anyone paused; anyone above the warn ratio; spend against days e
 A budget alert is a system message: it triggers nobody, so finance reads it in the audit and answers it. Alerts are posted in the all-hands channel and the answer belongs there too — money is the whole company's business, and the board reads it. One message, @-mentioning the employee's superior (and the employee when it can act on the advice), with the number, the cause and a proposal:
 
 ```bash
-penguin org channel send -m "@acme_ceo acme_dev is at 85% (170/200 USD) on day 12: three ticket sessions per day on 2026-09-01-site-build. Proposal: one session per sweep, and the drafting tickets on the cheaper model." --ref-ticket 2026-09-01-site-build
+penguin org channel send -m "@acme_ceo acme_dev is at 85% (170/200 USD) on day 12: three ticket sessions per day on ticket-2026-09-01-site-build. Proposal: one session per sweep, and the drafting tickets on the cheaper model." --ref-ticket ticket-2026-09-01-site-build
 ```
 
 Take a detail that only one stream needs into that stream's channel instead — but the alert itself is always answered where it was posted.
