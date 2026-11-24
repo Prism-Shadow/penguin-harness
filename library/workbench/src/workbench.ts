@@ -165,6 +165,16 @@ export interface AppCenterShortcut {
    * setting, which the Web reads as "no switch to show".
    */
   showInSidebar?: boolean;
+  /**
+   * Present on `GET /api/projects/:p/app-center?all=1`: whether both the Agent-wide and
+   * workbench switches are on. Absent from the normal App Center and hidden views.
+   */
+  enabled?: boolean;
+  /**
+   * Present on `GET /api/projects/:p/app-center?all=1`: true when `penguin.appCenter.show` is
+   * explicitly `false`. Absent from the normal App Center and hidden views.
+   */
+  hidden?: boolean;
 }
 
 /**

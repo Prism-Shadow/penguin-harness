@@ -16,7 +16,9 @@
 import type { Command } from "commander";
 import type { SessionInfo, Messages } from "@prismshadow/penguin-server/cli";
 import {
+  formatAppIdError,
   resolveAgentId,
+  resolveAppId,
   resolveConnection,
   resolveProjectId,
   ServerClient,
@@ -37,6 +39,7 @@ export function registerLsCommand(session: Command, t: Messages): void {
     .option("--agent-id <id>", t.common.agentId)
     .option("-a, --all", t.ls.all)
     .option("--days <n>", t.ls.days)
+    .option("--app <id>", t.ls.app)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
     .action(async (opts) => {
@@ -53,6 +56,23 @@ export function registerLsCommand(session: Command, t: Messages): void {
         const now = new Date();
         sinceMs = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1)).getTime();
       }
+      let appFilter: string | undefined;
+      if (opts.app !== undefined) {
+        const rawApp = String(opts.app);
+        // When --app names a canonical <ownerAgent>/<workbenchId>, --agent-id still narrows which
+        // Agent runs the Session (cross-agent workbench Sessions are valid), so only lend
+        // --agent-id as a prefix when --app is a bare <workbenchId>.
+        const parsed = resolveAppId(rawApp, {
+          agentId: rawApp.includes("/") ? undefined : opts.agentId,
+          allowEnv: false,
+        });
+        if (!parsed.ok) {
+          process.stderr.write(`${t.error(formatAppIdError(parsed, t))}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        appFilter = parsed.appId;
+      }
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
       const agentIds =
@@ -65,7 +85,9 @@ export function registerLsCommand(session: Command, t: Messages): void {
         all.push(...(await listAgentSessions(client, projectId, agentId)));
       }
       const rows = all
-        .filter((s) => opts.all === true || !s.archived)
+        // Workbench sessions are archived by default, so --app includes them automatically.
+        .filter((s) => opts.all === true || appFilter !== undefined || !s.archived)
+        .filter((s) => appFilter === undefined || s.appId === appFilter)
         .filter((s) => sinceMs === undefined || Date.parse(s.lastActiveAt) >= sinceMs)
         .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
 
@@ -77,6 +99,7 @@ export function registerLsCommand(session: Command, t: Messages): void {
         process.stdout.write(`${t.ls.empty(projectId)}\n`);
         return;
       }
+      const showApp = appFilter !== undefined || rows.some((s) => s.appId !== undefined);
       const stateText = (s: SessionInfo): string =>
         s.status === "idle" ? t.ls.stateIdle() : t.ls.stateRunning();
       process.stdout.write(
@@ -84,6 +107,7 @@ export function registerLsCommand(session: Command, t: Messages): void {
           [
             t.ls.colId(),
             t.ls.colAgent(),
+            ...(showApp ? [t.ls.colApp()] : []),
             t.ls.colTitle(),
             t.ls.colState(),
             t.ls.colLast(),
@@ -92,6 +116,7 @@ export function registerLsCommand(session: Command, t: Messages): void {
           rows.map((s) => [
             shortSessionId(s.sessionId),
             s.agentId,
+            ...(showApp ? [s.appId ?? ""] : []),
             cutText(s.title ?? "", 40),
             stateText(s),
             relativeTime(s.lastActiveAt),

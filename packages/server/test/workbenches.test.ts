@@ -555,6 +555,8 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
         modelId: "workbench-test",
         approvalMode: "allow-all",
         source: "workbench",
+        client: "workbench",
+        appId: `${AGENT}/demo`,
         archived: true,
       },
     });
@@ -574,7 +576,35 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect(active.sessions.map((s: { sessionId: string }) => s.sessionId)).not.toContain(sessionId);
     expect((await owner.patch(`/api/sessions/${sessionId}`, { archived: false })).status).toBe(200);
     const kept = (await (await owner.get(`/api/sessions/${sessionId}`)).json()) as SessionResponse;
-    expect(kept.session).toMatchObject({ source: "workbench", archived: false });
+    expect(kept.session).toMatchObject({
+      source: "workbench",
+      appId: `${AGENT}/demo`,
+      archived: false,
+    });
+
+    // Cross-agent workbench Sessions still attribute to the workbench's owning Agent, not the
+    // target Agent running the Session; HTTP callers cannot forge appId on normal Sessions.
+    expect(
+      (await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "worker" })).status,
+    ).toBe(201);
+    const cross = (await (await owner.get(`${BASE}/demo/api/open?agent=worker`)).json()) as {
+      opened: { sessionId: string; agentId: string; appId?: string };
+    };
+    expect(cross.opened).toMatchObject({
+      agentId: "worker",
+      appId: `${AGENT}/demo`,
+    });
+    const crossInfo = (await (
+      await owner.get(`/api/sessions/${cross.opened.sessionId}`)
+    ).json()) as SessionResponse;
+    expect(crossInfo.session).toMatchObject({ agentId: "worker", appId: `${AGENT}/demo` });
+
+    const spoofed = (await (
+      await owner.post(`/api/projects/${PROJECT}/agents/${AGENT}/sessions`, {
+        appId: `${AGENT}/demo`,
+      })
+    ).json()) as SessionResponse;
+    expect(spoofed.session.appId).toBeUndefined();
   });
 
   it("opens a Session that only talks with deny-all: its tool calls are denied, while a Session opened without the option runs them", async () => {
@@ -645,6 +675,91 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
       expect((await talk("always-ask")).opened).toBe(
         'createSession: approvalMode is "allow-all" or "deny-all", not "always-ask"',
       );
+    } finally {
+      await mock.close();
+    }
+  });
+
+  it("injects PENGUIN_APP_ID into commands of workbench Sessions (including cross-agent) and leaves plain Sessions without it", async () => {
+    const command = `node -e "console.log('ENV_JSON=' + JSON.stringify({ app: process.env.PENGUIN_APP_ID ?? null, agent: process.env.PENGUIN_AGENT_ID ?? null, session: process.env.PENGUIN_SESSION_ID ?? null }))"`;
+    const mock = await startMockLLM((n) => {
+      const sent = requestText(mock.requests[n - 1]!);
+      const tag = /inspect-env:([a-z-]+)/.exec(sent)?.[1];
+      if (tag === undefined) return "A title";
+      if (sent.includes('"tool_result"')) return "done";
+      return { toolUse: { id: `toolu_env_${tag}`, name: "exec_command", input: { command } } };
+    });
+    try {
+      const configured = await owner.put(`/api/projects/${PROJECT}/models`, {
+        defaultModel: { provider: "custom", modelId: MOCK_MODEL_ID },
+        models: [
+          {
+            provider: "custom",
+            modelId: MOCK_MODEL_ID,
+            apiKey: "sk-mock",
+            baseUrl: mock.url,
+            contextWindow: 200_000,
+          },
+        ],
+      });
+      expect(configured.status).toBe(200);
+
+      const inspect = async (sessionId: string, tag: string) => {
+        const res = await owner.post(`/api/sessions/${sessionId}/tasks`, {
+          input: [{ type: "text", text: `inspect-env:${tag}` }],
+        });
+        expect(res.status).toBe(202);
+        await waitFor(() => t.deps.manager.statusOf(sessionId) === "idle", 20_000);
+        const answered = mock.requests.find((req) => {
+          const text = requestText(req);
+          return text.includes('"tool_result"') && text.includes(`toolu_env_${tag}`);
+        });
+        const text = answered ? requestText(answered) : "";
+        const match = /ENV_JSON=(\{[^\n\\]+(?:\\"[^\n]*?\})?)/.exec(text);
+        // Tool output inside the JSON request body has quotes escaped; parse the matched object.
+        const raw = /ENV_JSON=(\{.*?\})(?:\\n|"|\r|\n)/.exec(text)?.[1] ?? match?.[1];
+        expect(raw).toBeDefined();
+        return JSON.parse(raw!.replace(/\\"/g, '"')) as {
+          app: string | null;
+          agent: string | null;
+          session: string | null;
+        };
+      };
+
+      const own = (await (await owner.get(`${BASE}/demo/api/open`)).json()) as {
+        opened: { sessionId: string };
+      };
+      const ownEnv = await inspect(own.opened.sessionId, "own");
+      expect(ownEnv).toEqual({
+        app: `${AGENT}/demo`,
+        agent: AGENT,
+        session: own.opened.sessionId,
+      });
+
+      expect(
+        (await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "env_worker" })).status,
+      ).toBe(201);
+      const cross = (await (await owner.get(`${BASE}/demo/api/open?agent=env_worker`)).json()) as {
+        opened: { sessionId: string };
+      };
+      const crossEnv = await inspect(cross.opened.sessionId, "cross");
+      expect(crossEnv).toEqual({
+        app: `${AGENT}/demo`,
+        agent: "env_worker",
+        session: cross.opened.sessionId,
+      });
+
+      const plain = (await (
+        await owner.post(`/api/projects/${PROJECT}/agents/${AGENT}/sessions`, {
+          approvalMode: "allow-all",
+        })
+      ).json()) as SessionResponse;
+      const plainEnv = await inspect(plain.session.sessionId, "plain");
+      expect(plainEnv).toEqual({
+        app: null,
+        agent: AGENT,
+        session: plain.session.sessionId,
+      });
     } finally {
       await mock.close();
     }

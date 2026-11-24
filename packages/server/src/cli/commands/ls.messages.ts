@@ -12,9 +12,12 @@ export interface LsText {
     /** --days: keep sessions last active within the trailing n calendar days (today = day 1). */
     days: string;
     daysInvalid(value: string): string;
+    /** --app: filter sessions created by a specific app (<agentId>/<workbenchId>). */
+    app: string;
     empty(projectId: string): string;
     colId(): string;
     colAgent(): string;
+    colApp(): string;
     colTitle(): string;
     colState(): string;
     colLast(): string;
@@ -31,9 +34,11 @@ export const lsEn: LsText = {
     all: "Include archived sessions",
     days: "Only sessions last active within the trailing <n> calendar days (today counts as day 1)",
     daysInvalid: (value) => `Invalid --days value "${value}": expected a positive integer.`,
+    app: "Only sessions created by this app (<agentId>/<workbenchId>; includes archived app sessions)",
     empty: (projectId) => `No sessions in project ${projectId} yet.`,
     colId: () => "ID",
     colAgent: () => "AGENT",
+    colApp: () => "APP",
     colTitle: () => "TITLE",
     colState: () => "STATE",
     colLast: () => "LAST",
@@ -50,9 +55,11 @@ export const lsZh: LsText = {
     all: "包含已归档会话",
     days: "只列最近 <n> 个自然日内活跃过的会话（今天算第 1 天）",
     daysInvalid: (value) => `--days 值「${value}」无效：应为正整数。`,
+    app: "只列由指定应用创建的会话（<agentId>/<workbenchId>；自动包含已归档的应用会话）",
     empty: (projectId) => `Project ${projectId} 还没有会话。`,
     colId: () => "ID",
     colAgent: () => "AGENT",
+    colApp: () => "应用",
     colTitle: () => "标题",
     colState: () => "状态",
     colLast: () => "最近活动",

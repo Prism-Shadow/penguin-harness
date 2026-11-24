@@ -378,6 +378,19 @@ describe("SessionsRepo last_active_at writes", () => {
     expect(repo.findById("s2")!.lastActiveAt).toBe(base.createdAt);
     expect(repo.findById("s2")!.hasTrace).toBe(false);
   });
+
+  it("persists appId on workbench-created rows and leaves non-app rows null", () => {
+    repo.insert({ ...base, sessionId: "s-plain", lastActiveAt: base.createdAt });
+    repo.insert({
+      ...base,
+      sessionId: "s-app",
+      client: "workbench",
+      appId: "owner_agent/slides",
+      lastActiveAt: base.createdAt,
+    });
+    expect(repo.findById("s-plain")!.appId).toBeNull();
+    expect(repo.findById("s-app")!.appId).toBe("owner_agent/slides");
+  });
 });
 
 /**

@@ -87,6 +87,8 @@ export interface ScheduleSessionCreatorShape {
     approvalMode?: "allow-all" | "deny-all";
     source?: "schedule" | "workbench";
     client?: "workbench";
+    /** Canonical `<ownerAgentId>/<workbenchId>` when opened by `WorkbenchHost.createSession`. */
+    appId?: string;
   }): Promise<{ sessionId: string }>;
 }
 

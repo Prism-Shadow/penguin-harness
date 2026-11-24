@@ -1611,6 +1611,12 @@ export interface SessionInfo {
    */
   client?: "web" | "cli" | "org" | "api" | "workbench";
   /**
+   * Canonical `<ownerAgentId>/<workbenchId>` of the App that opened this Session through
+   * `WorkbenchHost.createSession`. Always names the workbench's owning Agent even when the
+   * Session runs as another Agent of the Project; absent on non-app Sessions and legacy rows.
+   */
+  appId?: string;
+  /**
    * Background work the Session's loaded runtime still owns: command sessions running past
    * their yield window (`exec_command` promotions and `run_in_background` launches) and
    * background subagent sessions mid-round. Read from the runtime's in-memory registries —

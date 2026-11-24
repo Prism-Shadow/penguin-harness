@@ -3460,6 +3460,7 @@ export class SessionsModule {
             : (loopbackHostRoles(config.host)?.app ?? config.host);
         const token = authState.apiToken;
         const orgId = orgCache.ownerOfSession(ctx.sessionId)?.orgId ?? null;
+        const appId = sessionsRepo.findById(manager.rootSessionOf(ctx.sessionId))?.appId ?? null;
         return {
           PENGUIN_API_URL: `http://${host}:${config.port}`,
           ...(token !== null ? { PENGUIN_API_TOKEN: token } : {}),
@@ -3470,6 +3471,10 @@ export class SessionsModule {
           // --org-id inside it. Looked up per spawn from the cache the ledger and the tickets
           // project into.
           ...(orgId !== null ? { PENGUIN_ORG_ID: orgId } : {}),
+          // A session opened by a workbench (and any subagent it spawns) learns the canonical
+          // `<ownerAgentId>/<workbenchId>` of its creating App, so `penguin app` needs no
+          // explicit id inside it.
+          ...(appId !== null ? { PENGUIN_APP_ID: appId } : {}),
         };
       },
       // The directory core puts at the FRONT of PATH for every command an Agent runs (and for

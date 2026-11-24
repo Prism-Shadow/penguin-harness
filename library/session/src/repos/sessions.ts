@@ -57,6 +57,13 @@ export interface SessionRow {
    * records.
    */
   client?: "web" | "cli" | "org" | "api" | "workbench" | null;
+  /**
+   * Canonical `<ownerAgentId>/<workbenchId>` of the App that created this Session through
+   * `WorkbenchHost.createSession`. Always names the workbench's owning Agent (even when the
+   * Session itself runs on another Agent of the Project); NULL for non-app Sessions and
+   * legacy workbench rows created before the column existed.
+   */
+  appId?: string | null;
   /** Cache: a Trace record exists (set at task start / adoption / subagent registration; backfilled by list hydration). */
   hasTrace?: boolean;
   /**
@@ -112,6 +119,7 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     archivedAt: (r.archived_at as string | null) ?? null,
     keptAt: (r.kept_at as string | null) ?? null,
     client: (r.client as "web" | "cli" | "org" | "api" | "workbench" | null) ?? null,
+    appId: (r.app_id as string | null) ?? null,
     hasTrace: (r.has_trace as number) === 1,
     // The open-time backfill leaves no NULLs; the coalesce only hardens against a row
     // somehow inserted as NULL (degrades to createdAt instead of surfacing undefined).
@@ -174,8 +182,8 @@ export class SessionsRepo implements SessionIndex {
   private runInsert(verb: "INSERT" | "INSERT OR IGNORE", row: SessionRow): void {
     this.db
       .prepare(
-        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at, sandbox, thinking_level)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?, ?, ?)`,
+        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, app_id, has_trace, last_active_at, created_at, sandbox, thinking_level)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?, ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -187,6 +195,7 @@ export class SessionsRepo implements SessionIndex {
         row.approvalMode,
         row.title,
         row.client ?? null,
+        row.appId ?? null,
         row.hasTrace ? 1 : 0,
         row.lastActiveAt ?? null,
         row.createdAt,

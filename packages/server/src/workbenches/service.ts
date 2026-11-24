@@ -762,7 +762,8 @@ export class WorkbenchService implements Workbenches {
     this.forget(projectId, agentId, workbenchId);
   }
 
-  async appCenter(projectId: string, hidden = false): Promise<AppCenterShortcut[]> {
+  async appCenter(projectId: string, mode: boolean | "all" = false): Promise<AppCenterShortcut[]> {
+    const view = mode === "all" ? "all" : mode ? "hidden" : "appCenter";
     const out: AppCenterShortcut[] = [];
     // The index's order is the Agents list's (created, then id); a row whose folder is no longer
     // an Agent is not one the list shows either.
@@ -779,15 +780,17 @@ export class WorkbenchService implements Workbenches {
       // An edit made while the App Center is open loads, and the load is announced.
       this.watch(projectId, agentId);
       const base = workbenchesDir(this.paths.root, projectId, agentId);
+      const agentDisabled = await isSwitchedOff(base);
       // With the Agent-wide switch off none of its workbenches runs, so none has a tile.
-      if (!hidden && (await isSwitchedOff(base))) continue;
+      if (view === "appCenter" && agentDisabled) continue;
       const agentName = (await this.agentConfig.readCardMeta(projectId, agentId)).name ?? agentId;
       const shortcuts = await agentShortcuts(
         projectId,
         { agentId, agentName },
         base,
         (workbenchId) => this.building(key(projectId, agentId, workbenchId)),
-        hidden ? "hidden" : "appCenter",
+        view,
+        agentDisabled,
       );
       // The plugin that installed each, from its receipt; receipts that will not read name none,
       // and the tiles still list.
@@ -799,8 +802,10 @@ export class WorkbenchService implements Workbenches {
       for (const shortcut of shortcuts) {
         const plugin = installedBy.get(shortcut.workbenchId);
         // The first-party guide is hosted beside the product controls, including for installed
-        // copies whose manifest predates that entry. Hand-authored apps keep their own visibility.
-        if (plugin === "first-workbench-guide" && shortcut.workbenchId === plugin) continue;
+        // copies whose manifest predates that entry. Hand-authored apps keep their own visibility;
+        // `view === "all"` lists every installed workbench including it.
+        if (view !== "all" && plugin === "first-workbench-guide" && shortcut.workbenchId === plugin)
+          continue;
         out.push(plugin === undefined ? shortcut : { ...shortcut, plugin });
       }
     }
@@ -1414,6 +1419,7 @@ export class WorkbenchService implements Workbenches {
           approvalMode,
           source: "workbench",
           client: "workbench",
+          appId: `${agentId}/${folder.id}`,
         });
       },
       async run(sessionId: string, input: WorkbenchInput[]) {

@@ -23,6 +23,7 @@ import { cli } from "../src/index.js";
 /** The commands in the generated table's order (source-file path order), which help follows. */
 const KEYS = [
   "agent",
+  "app",
   "config",
   "cost",
   "project",

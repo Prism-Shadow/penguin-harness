@@ -156,10 +156,15 @@ export class ServerClient {
   }
 
   /** A file upload or download: `request`'s credentials and errors, the body and answer raw. */
-  async raw(method: string, apiPath: string, body?: Uint8Array): Promise<Response> {
+  async raw(
+    method: string,
+    apiPath: string,
+    body?: Uint8Array,
+    contentType = "application/octet-stream",
+  ): Promise<Response> {
     const res = await this.fetchAuthed(apiPath, {
       method,
-      headers: this.headers(body ? { "content-type": "application/octet-stream" } : {}),
+      headers: this.headers(body ? { "content-type": contentType } : {}),
       ...(body ? { body } : {}),
     });
     if (!res.ok) throw await this.toError(res);

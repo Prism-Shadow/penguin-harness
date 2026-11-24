@@ -46,6 +46,9 @@ export interface FakeSessionState {
   approvalMode: string;
   thinkingLevel?: string;
   title?: string;
+  source?: string;
+  client?: string;
+  appId?: string;
   archived: boolean;
   status: "idle" | "running" | "compacting";
   createdAt: string;
@@ -119,6 +122,39 @@ export interface FakeOrgState {
   desks: Map<string, Json>;
   /** The `unpriced` flag of the finance response. */
   unpriced: boolean;
+}
+
+/** One fake workbench/app registered on the server for `penguin app` tests. */
+export interface FakeAppState {
+  projectId: string;
+  agentId: string;
+  agentName: string;
+  workbenchId: string;
+  name: string;
+  version: string | null;
+  title: string;
+  titleZh?: string;
+  tab?: string;
+  plugin?: string;
+  revision: string;
+  uiRev: string | null;
+  loadedAt: string | null;
+  build: "ready" | "building" | "failed";
+  error: string | null;
+  hints: string[];
+  enabled: boolean;
+  agentEnabled: boolean;
+  hidden: boolean;
+  showInSidebar: boolean;
+  tabs: Array<{ id: string; key: string; title: string; titleZh?: string; renderer: Json }>;
+  versions: Array<{ revision: string; commit: string; savedAt: string }>;
+  /** Optional handler for `/api/*` requests. */
+  onApi?: (req: {
+    method: string;
+    path: string;
+    query: URLSearchParams;
+    body: unknown;
+  }) => Response;
 }
 
 /** One agent's public API settings: the management DTO's shape, keys included. */
@@ -421,6 +457,52 @@ export class FakeServer {
     return `session-2026-08-25-10-00-00-${n.toString(16).padStart(8, "0")}`;
   }
 
+  /** Apps keyed `<projectId>/<agentId>/<workbenchId>`. */
+  apps = new Map<string, FakeAppState>();
+
+  addApp(overrides: Partial<FakeAppState> & { workbenchId: string }): FakeAppState {
+    const projectId = overrides.projectId ?? "default_project";
+    const agentId = overrides.agentId ?? "default_agent";
+    const workbenchId = overrides.workbenchId;
+    const state: FakeAppState = {
+      projectId,
+      agentId,
+      agentName: overrides.agentName ?? agentId,
+      name: overrides.name ?? workbenchId,
+      version: "1.0.0",
+      title: overrides.title ?? workbenchId,
+      revision: "abc123def456",
+      uiRev: "ui0001",
+      loadedAt: "2026-11-24T00:00:00.000Z",
+      build: "ready",
+      error: null,
+      hints: [],
+      enabled: true,
+      agentEnabled: true,
+      hidden: false,
+      showInSidebar: true,
+      tabs: [
+        {
+          id: `${workbenchId}.main`,
+          key: overrides.tab ?? "main",
+          title: overrides.title ?? workbenchId,
+          ...(overrides.titleZh ? { titleZh: overrides.titleZh } : {}),
+          renderer: {
+            iframe: {
+              src: `/api/projects/${projectId}/agents/${agentId}/workbenches/${workbenchId}/ui/index.html`,
+            },
+          },
+        },
+      ],
+      versions: [
+        { revision: "abc123def456", commit: "111111111111", savedAt: "2026-11-24T00:00:00.000Z" },
+      ],
+      ...overrides,
+    };
+    this.apps.set(`${projectId}/${agentId}/${workbenchId}`, state);
+    return state;
+  }
+
   addSession(overrides: Partial<FakeSessionState> = {}): FakeSessionState {
     const sessionId = overrides.sessionId ?? this.mintSessionId();
     const now = "2026-08-25T10:00:00.000Z";
@@ -458,6 +540,7 @@ export class FakeServer {
       "PENGUIN_PROJECT_ID",
       "PENGUIN_AGENT_ID",
       "PENGUIN_ORG_ID",
+      "PENGUIN_APP_ID",
     ]) {
       this.savedEnv.set(key, process.env[key]);
     }
@@ -469,6 +552,7 @@ export class FakeServer {
     delete process.env.PENGUIN_PROJECT_ID;
     delete process.env.PENGUIN_AGENT_ID;
     delete process.env.PENGUIN_ORG_ID;
+    delete process.env.PENGUIN_APP_ID;
     globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) =>
       this.handle(input, init)) as typeof globalThis.fetch;
     return () => this.uninstall();
@@ -562,6 +646,9 @@ export class FakeServer {
       approvalMode: s.approvalMode,
       ...(s.thinkingLevel !== undefined ? { thinkingLevel: s.thinkingLevel } : {}),
       ...(s.title !== undefined ? { title: s.title } : {}),
+      ...(s.source !== undefined ? { source: s.source } : {}),
+      ...(s.client !== undefined ? { client: s.client } : {}),
+      ...(s.appId !== undefined ? { appId: s.appId } : {}),
       createdAt: s.createdAt,
       lastActiveAt: s.lastActiveAt,
       status: s.status,
@@ -1900,11 +1987,17 @@ export class FakeServer {
     );
     const method = (init?.method ?? "GET").toUpperCase();
     const apiPath = url.pathname;
+    const headers = new Headers(init?.headers);
     let body: Json | undefined;
     if (typeof init?.body === "string" && init.body.length > 0) {
       body = JSON.parse(init.body) as Json;
+    } else if (
+      init?.body instanceof Uint8Array &&
+      init.body.byteLength > 0 &&
+      (headers.get("content-type") ?? "").includes("json")
+    ) {
+      body = JSON.parse(new TextDecoder().decode(init.body)) as Json;
     }
-    const headers = new Headers(init?.headers);
     const authorization = headers.get("authorization") ?? undefined;
     const cookie = headers.get("cookie") ?? undefined;
     this.requests.push({
@@ -2353,6 +2446,121 @@ export class FakeServer {
         this.onApproval?.(session, decodeURIComponent(rest.slice("/approvals/".length)), body);
         return new Response(null, { status: 204 });
       }
+    }
+
+    const appCenterMatch = /^\/api\/projects\/([^/]+)\/app-center$/.exec(apiPath);
+    if (appCenterMatch && method === "GET") {
+      const projectId = decodeURIComponent(appCenterMatch[1]!);
+      const all = url.searchParams.get("all") === "1";
+      const shortcuts = [...this.apps.values()]
+        .filter((a) => a.projectId === projectId)
+        .filter((a) => all || (a.enabled && a.agentEnabled && !a.hidden))
+        .map((a) => ({
+          agentId: a.agentId,
+          agentName: a.agentName,
+          workbenchId: a.workbenchId,
+          title: a.title,
+          ...(a.titleZh ? { titleZh: a.titleZh } : {}),
+          ...(a.plugin ? { plugin: a.plugin } : {}),
+          path: `/app/${projectId}/${a.agentId}/${a.workbenchId}`,
+          ...(a.tab ? { tab: a.tab } : {}),
+          build: a.build,
+          ...(a.error ? { error: a.error } : {}),
+          showInSidebar: a.showInSidebar,
+          ...(all ? { enabled: a.enabled && a.agentEnabled, hidden: a.hidden } : {}),
+        }));
+      return this.json({ shortcuts, layout: null });
+    }
+
+    const wbListMatch = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/workbenches$/.exec(apiPath);
+    if (wbListMatch && method === "GET") {
+      const projectId = decodeURIComponent(wbListMatch[1]!);
+      const agentId = decodeURIComponent(wbListMatch[2]!);
+      const only = url.searchParams.get("id");
+      const matching = [...this.apps.values()].filter(
+        (a) =>
+          a.projectId === projectId &&
+          a.agentId === agentId &&
+          (only === null || a.workbenchId === only),
+      );
+      const agentEnabled = matching[0]?.agentEnabled ?? true;
+      const toWb = (a: FakeAppState) => ({
+        id: a.workbenchId,
+        name: a.name,
+        version: a.version,
+        revision: a.revision,
+        uiRev: a.uiRev,
+        tabs: a.tabs,
+        loadedAt: a.loadedAt,
+        error: a.error,
+        hints: a.hints,
+        appCenter: {
+          show: !a.hidden,
+          title: a.title,
+          ...(a.titleZh ? { titleZh: a.titleZh } : {}),
+        },
+        enabled: a.enabled,
+        showInSidebar: a.showInSidebar,
+      });
+      return this.json({ workbenches: matching.map(toWb), enabled: agentEnabled });
+    }
+
+    const wbActionMatch =
+      /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/workbenches\/([^/]+)\/(reload|enabled|history)$/.exec(
+        apiPath,
+      );
+    if (wbActionMatch) {
+      const projectId = decodeURIComponent(wbActionMatch[1]!);
+      const agentId = decodeURIComponent(wbActionMatch[2]!);
+      const workbenchId = decodeURIComponent(wbActionMatch[3]!);
+      const action = wbActionMatch[4]!;
+      const app = this.apps.get(`${projectId}/${agentId}/${workbenchId}`);
+      if (!app) return this.error(404, "not_found", `No such workbench: ${workbenchId}`);
+      const toWb = (a: FakeAppState) => ({
+        id: a.workbenchId,
+        name: a.name,
+        version: a.version,
+        revision: a.revision,
+        uiRev: a.uiRev,
+        tabs: a.tabs,
+        loadedAt: a.loadedAt,
+        error: a.error,
+        hints: a.hints,
+        appCenter: { show: !a.hidden, title: a.title },
+        enabled: a.enabled,
+        showInSidebar: a.showInSidebar,
+      });
+      if (action === "reload" && method === "POST") {
+        if (!app.enabled || !app.agentEnabled) {
+          return this.error(409, "workbench_disabled", `Workbench is disabled: ${workbenchId}`);
+        }
+        return this.json({ workbench: toWb(app) });
+      }
+      if (action === "enabled" && method === "PUT") {
+        app.enabled = Boolean(body?.enabled);
+        return this.json({ workbench: toWb(app) });
+      }
+      if (action === "history" && method === "GET") {
+        return this.json({ versions: app.versions });
+      }
+    }
+
+    const wbApiMatch =
+      /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/workbenches\/([^/]+)\/api(\/.*)?$/.exec(apiPath);
+    if (wbApiMatch) {
+      const projectId = decodeURIComponent(wbApiMatch[1]!);
+      const agentId = decodeURIComponent(wbApiMatch[2]!);
+      const workbenchId = decodeURIComponent(wbApiMatch[3]!);
+      const subPath = wbApiMatch[4] || "/";
+      const app = this.apps.get(`${projectId}/${agentId}/${workbenchId}`);
+      if (!app) return this.error(404, "not_found", `No such workbench: ${workbenchId}`);
+      if (!app.enabled || !app.agentEnabled) {
+        return this.error(409, "workbench_disabled", `Workbench is disabled: ${workbenchId}`);
+      }
+      if (app.onApi) {
+        return app.onApi({ method, path: subPath, query: url.searchParams, body: body ?? null });
+      }
+      return this.json({ ok: true, method, path: subPath, body: body ?? null });
     }
 
     return this.error(404, "not_found", `No fake route for ${method} ${apiPath}`);

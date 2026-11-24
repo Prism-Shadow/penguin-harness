@@ -250,6 +250,98 @@ describe("penguin session ls", () => {
     const rows = JSON.parse(out()) as Array<{ sessionId: string }>;
     expect(rows).toHaveLength(1);
   });
+
+  it("--app filters sessions created by an app (including archived and cross-agent sessions), shows APP column, and refuses invalid/session ids without calling the server", async () => {
+    server.agents.push({
+      agentId: "worker",
+      name: "Worker",
+      description: "",
+      sessionCount: 0,
+      activeSessionCount: 0,
+      sessionActivity: [],
+    });
+    server.addSession({
+      sessionId: "session-2026-08-25-10-00-00-aaaa0001",
+      agentId: "default_agent",
+      title: "Plain chat",
+    });
+    server.addSession({
+      sessionId: "session-2026-08-25-10-00-00-aaaa0002",
+      agentId: "default_agent",
+      title: "Deck draft",
+      source: "workbench",
+      client: "workbench",
+      appId: "default_agent/slides",
+      archived: true,
+    });
+    server.addSession({
+      sessionId: "session-2026-08-25-10-00-00-aaaa0003",
+      agentId: "worker",
+      title: "Cross-agent deck job",
+      source: "workbench",
+      client: "workbench",
+      appId: "default_agent/slides",
+      archived: true,
+    });
+    server.addSession({
+      sessionId: "session-2026-08-25-10-00-00-aaaa0004",
+      agentId: "default_agent",
+      title: "Other app",
+      source: "workbench",
+      client: "workbench",
+      appId: "default_agent/support",
+      archived: true,
+    });
+
+    // --app finds both same-agent and cross-agent archived sessions of that app, and prints APP column.
+    expect(await cli(["session", "ls", "--app", "default_agent/slides"])).toBe(0);
+    expect(out()).toContain("APP");
+    expect(out()).toContain("aaaa0002");
+    expect(out()).toContain("aaaa0003");
+    expect(out()).toContain("default_agent/slides");
+    expect(out()).not.toContain("aaaa0001");
+    expect(out()).not.toContain("aaaa0004");
+
+    // Combining canonical --app with --agent-id narrows to that session's running agent (no conflict!).
+    stdout.length = 0;
+    expect(
+      await cli([
+        "session",
+        "ls",
+        "--app",
+        "default_agent/slides",
+        "--agent-id",
+        "worker",
+        "--json",
+      ]),
+    ).toBe(0);
+    const narrowed = JSON.parse(out()) as Array<{
+      sessionId: string;
+      agentId: string;
+      appId: string;
+    }>;
+    expect(narrowed).toHaveLength(1);
+    expect(narrowed[0]).toMatchObject({
+      sessionId: "session-2026-08-25-10-00-00-aaaa0003",
+      agentId: "worker",
+      appId: "default_agent/slides",
+    });
+
+    // Bare workbenchId with PENGUIN_AGENT_ID works too.
+    stdout.length = 0;
+    process.env.PENGUIN_AGENT_ID = "default_agent";
+    expect(await cli(["session", "ls", "--app", "support", "--json"])).toBe(0);
+    expect((JSON.parse(out()) as Array<{ sessionId: string }>).map((r) => r.sessionId)).toEqual([
+      "session-2026-08-25-10-00-00-aaaa0004",
+    ]);
+
+    // Passing a sessionId to --app fails fast before hitting the server.
+    const reqBefore = server.requests.length;
+    stderr.length = 0;
+    expect(await cli(["session", "ls", "--app", "session-2026-08-25-10-00-00-aaaa0002"])).toBe(1);
+    expect(stderr.join("")).toContain("session id");
+    expect(server.requests.length).toBe(reqBefore);
+  });
 });
 
 describe("penguin session input", () => {

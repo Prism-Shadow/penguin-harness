@@ -313,6 +313,7 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-24-sessions-app-id",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -380,6 +381,7 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-24-sessions-app-id",
       ]);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -441,6 +443,7 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-24-sessions-app-id",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -505,6 +508,7 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-24-sessions-app-id",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -557,6 +561,7 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-24-sessions-app-id",
       ]);
       expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
         { address: "ssh:nas", adopted_at: null },
@@ -606,6 +611,7 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-24-sessions-app-id",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -672,6 +678,7 @@ describe("a usage table from before the purpose column: 2026-11-19-usage-records
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-24-sessions-app-id",
       ]);
       expect(db.prepare("SELECT session_id, purpose FROM usage_records").all()).toEqual([
         { session_id: "s1", purpose: null },
@@ -714,6 +721,7 @@ describe("a database from before the module requests: 2026-11-19-plugin-module-r
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-24-sessions-app-id",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -767,6 +775,7 @@ describe("a database from before the preinstall record: 2026-11-19-plugin-module
     try {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-24-sessions-app-id",
       ]);
       const record = db.prepare(
         "INSERT OR IGNORE INTO plugin_module_preinstalls (package, project_id, listed_at) VALUES (?, ?, ?)",
@@ -794,6 +803,52 @@ describe("a database from before the preinstall record: 2026-11-19-plugin-module
       expect(hasTable(db, "plugin_module_preinstalls")).toBe(false);
       migrate(db);
       expect(shape(db)).toBe(after);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+// Given a database from before session app attribution, the upgrade adds sessions.app_id on the
+// swap path, existing rows read null, and down keeps the column and any attribution stored in it.
+describe("a database from before session app attribution: 2026-11-24-sessions-app-id", () => {
+  /** A root whose line declared everything through 2026-11-19-plugin-module-preinstalls. */
+  function openPreAppId(): DatabaseSync {
+    const db = openFresh();
+    db.exec("ALTER TABLE sessions DROP COLUMN app_id");
+    stampThrough(db, "2026-11-19-plugin-module-preinstalls");
+    return db;
+  }
+
+  const insertSession = (db: DatabaseSync) =>
+    db.exec(
+      "INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, created_at)" +
+        " VALUES ('s1', 'p1', 'coder', 'openai', 'gpt', '/w', '2026-11-24T00:00:00.000Z')",
+    );
+
+  it("adds the column while a pushed platform boots, leaving existing rows null", () => {
+    const db = openPreAppId();
+    try {
+      insertSession(db);
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-11-24-sessions-app-id"]);
+      expect(db.prepare("SELECT session_id, app_id FROM sessions").all()).toEqual([
+        { session_id: "s1", app_id: null },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down keeps the column and the app ids stored in it", () => {
+    const db = openPreAppId();
+    try {
+      insertSession(db);
+      migrate(db);
+      db.exec("UPDATE sessions SET app_id = 'coder/slides' WHERE session_id = 's1'");
+      rollbackTo(db, "2026-11-19-plugin-module-preinstalls");
+      expect(db.prepare("SELECT app_id FROM sessions WHERE session_id = 's1'").get()).toEqual({
+        app_id: "coder/slides",
+      });
     } finally {
       db.close();
     }

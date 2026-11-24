@@ -433,6 +433,7 @@ export class SessionService {
       ...(messagingChannel !== null ? { messagingChannel } : {}),
       ...(orgId !== undefined ? { orgId } : {}),
       ...(row.client !== null && row.client !== undefined ? { client: row.client } : {}),
+      ...(row.appId ? { appId: row.appId } : {}),
       ...(backgroundTasks !== undefined ? { backgroundTasks } : {}),
     };
   }
@@ -841,6 +842,11 @@ export class SessionService {
      * itself ("api" is what lets the Agent API continue a Session).
      */
     client?: "web" | "cli" | "org" | "api" | "workbench";
+    /**
+     * Canonical `<ownerAgentId>/<workbenchId>` of the creating App. Internal-only (set by
+     * `WorkbenchService` alongside `client: "workbench"`), never accepted from HTTP callers.
+     */
+    appId?: string;
   }): Promise<SessionInfo> {
     if ((args.modelId === undefined) !== (args.provider === undefined)) {
       throw badRequest(
@@ -928,6 +934,7 @@ export class SessionService {
       // Agent API run did, otherwise "web" (schedule runs included). NULL means a legacy row,
       // treated as web.
       client: args.client ?? "web",
+      ...(args.appId !== undefined ? { appId: args.appId } : {}),
       // Creation is the first activity; the first driven run advances it (see SessionManager.drive).
       lastActiveAt: createdAt,
       createdAt,

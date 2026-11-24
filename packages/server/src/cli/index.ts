@@ -15,6 +15,7 @@
 export * from "./i18n.js";
 export * from "./approval.js";
 export * from "./agents.js";
+export * from "./app-id.js";
 export * from "./auth-session.js";
 export * from "./console-input.js";
 export {
@@ -36,6 +37,7 @@ export * from "./render.js";
 export * from "./server-session.js";
 export * from "./company.js";
 export * from "./commands/agent.js";
+export * from "./commands/app.js";
 export * from "./commands/cost.js";
 export * from "./commands/project.js";
 export * from "./commands/schedule.js";

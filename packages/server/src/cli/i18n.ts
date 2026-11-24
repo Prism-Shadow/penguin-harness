@@ -16,6 +16,7 @@ import {
 } from "./session-runtime.messages.js";
 import { type RenderText, renderEn, renderZh } from "./render.messages.js";
 import { type AgentText, agentEn, agentZh } from "./commands/agent.messages.js";
+import { type AppText, appEn, appZh } from "./commands/app.messages.js";
 import { type AuthText, authEn, authZh } from "./commands/auth.messages.js";
 import { type ChatText, chatEn, chatZh } from "./commands/chat.messages.js";
 import { type ConfigText, configEn, configZh } from "./commands/config.messages.js";
@@ -79,6 +80,7 @@ export interface Messages
     SessionRuntimeText,
     RenderText,
     AgentText,
+    AppText,
     AuthText,
     ChatText,
     ConfigText,
@@ -237,6 +239,7 @@ const en: Messages = {
   ...sessionruntimeEn,
   ...renderEn,
   ...agentEn,
+  ...appEn,
   ...authEn,
   ...chatEn,
   ...configEn,
@@ -331,6 +334,7 @@ const zh: Messages = {
   ...sessionruntimeZh,
   ...renderZh,
   ...agentZh,
+  ...appZh,
   ...authZh,
   ...chatZh,
   ...configZh,

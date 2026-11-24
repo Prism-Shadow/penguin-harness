@@ -782,8 +782,9 @@ export function appCenterRoutes(deps: AppCenterRouteDeps) {
     const projectId = requireValidId(c, "projectId");
     const { userId } = c.var.user;
     deps.access.requireProjectAccess(userId, projectId);
+    const mode = !hidden && c.req.query("all") === "1" ? "all" : hidden;
     return c.json({
-      shortcuts: await deps.workbenches.appCenter(projectId, hidden),
+      shortcuts: await deps.workbenches.appCenter(projectId, mode),
       layout: readAppCenterLayout(deps.prefs, userId, projectId),
     } satisfies AppCenterResponse);
   };

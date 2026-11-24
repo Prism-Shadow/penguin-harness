@@ -989,4 +989,31 @@ describe("the App Center", { timeout: 30_000 }, () => {
     );
     expect(await fs.readFile(garbled, "utf8")).toBe("{ not json");
   });
+
+  it("?all=1 lists shown, hidden, disabled, and malformed-manifest workbenches without compiling, skipping folders without package.json", async () => {
+    const base = `/api/projects/${PROJECT}/agents/${AGENT}/workbenches`;
+    // An empty directory with no package.json is not a workbench and must not appear.
+    await fs.mkdir(path.join(agentStateDir(t.root, PROJECT, AGENT), "workbenches", "empty-dir"), {
+      recursive: true,
+    });
+    // Switch one shown workbench off to verify disabled workbenches stay visible under ?all=1.
+    expect((await owner.put(`${base}/plain/enabled`, { enabled: false })).status).toBe(200);
+    try {
+      const res = await owner.get(`/api/projects/${PROJECT}/app-center?all=1`);
+      expect(res.status).toBe(200);
+      const { shortcuts } = (await res.json()) as AppCenterResponse;
+      const byKey = new Map(shortcuts.map((s) => [`${s.agentId}/${s.workbenchId}`, s]));
+
+      expect(byKey.has(`${AGENT}/empty-dir`)).toBe(false);
+      expect(byKey.get(`${AGENT}/plain`)).toMatchObject({ enabled: false, hidden: false });
+      expect(byKey.get(`${AGENT}/hidden`)).toMatchObject({ enabled: true, hidden: true });
+      expect(byKey.get(`${AGENT}/garbled`)).toMatchObject({ enabled: true, hidden: false });
+    } finally {
+      await owner.put(`${base}/plain/enabled`, { enabled: true });
+      await fs.rm(path.join(agentStateDir(t.root, PROJECT, AGENT), "workbenches", "empty-dir"), {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
 });

@@ -301,17 +301,28 @@ function shortcutOf(
 }
 
 /**
- * Which of an Agent's workbenches a listing keeps: the App Center's tiles, or the rows of the
- * Agent's sidebar list (GET …/workbenches?view=sidebar).
+ * Which of an Agent's workbenches a listing keeps: the App Center's tiles, explicitly hidden
+ * tiles, the Agent's sidebar list (GET …/workbenches?view=sidebar), or every workbench folder
+ * on disk including hidden and disabled ones (`GET …/app-center?all=1`).
  */
-export type ShortcutView = "appCenter" | "hidden" | "sidebar";
+export type ShortcutView = "appCenter" | "hidden" | "sidebar" | "all";
+
+/** A folder without a package.json is not a workbench (mirrors store.ts readFolder). */
+async function hasPackageJson(dir: string): Promise<boolean> {
+  return fs
+    .stat(path.join(dir, "package.json"))
+    .then((s) => s.isFile())
+    .catch(() => false);
+}
 
 /**
  * Whether a workbench whose own switch is on belongs in `view`. The App Center keeps a
  * declaration that holds up and is shown. The sidebar keeps one with at least one tab whose
  * installation carries no `.hidden-from-sidebar` marker, declared for the App Center or not.
+ * `all` keeps every folder with a package.json, regardless of switches or App Center visibility.
  */
 async function inView(view: ShortcutView, dir: string, manifest: AppCenterManifest) {
+  if (view === "all") return hasPackageJson(dir);
   if (view === "sidebar")
     return manifest.tabs.length > 0 && !(await isSwitchedOff(dir, HIDDEN_FROM_SIDEBAR));
   return manifest.appCenter?.show === (view !== "hidden");
@@ -328,8 +339,10 @@ export async function agentShortcuts(
   agent: { agentId: string; agentName: string },
   base: string,
   building: (workbenchId: string) => boolean,
-  /** Which filter: the App Center's, or the sidebar's ({@link inView}); the reading is the same. */
+  /** Which filter: the App Center's, hidden, the sidebar's, or all ({@link inView}); the reading is the same. */
   view: ShortcutView = "appCenter",
+  /** Whether the Agent-wide switch is off (used by `view === "all"` to mark every workbench disabled). */
+  agentDisabled = false,
 ): Promise<AppCenterShortcut[]> {
   const entries = await fs.readdir(base, { withFileTypes: true }).catch(() => []);
   const out: AppCenterShortcut[] = [];
@@ -337,12 +350,22 @@ export async function agentShortcuts(
     if (!entry.isDirectory() || !isWorkbenchId(entry.name)) continue;
     const dir = path.join(base, entry.name);
     const manifest = await readAppCenterManifest(dir, entry.name);
-    if (!(await inView(view, dir, manifest)) || (view !== "hidden" && (await isSwitchedOff(dir))))
-      continue;
+    if (!(await inView(view, dir, manifest))) continue;
+    const selfDisabled = await isSwitchedOff(dir);
+    if (view !== "hidden" && view !== "all" && selfDisabled) continue;
     const build = await buildOf(dir, building(entry.name));
     // The sidebar lists only what is shown there; a tile carries the setting for its menu.
     const showInSidebar = view === "sidebar" || !(await isSwitchedOff(dir, HIDDEN_FROM_SIDEBAR));
-    out.push(shortcutOf(projectId, agent, entry.name, manifest, build, showInSidebar));
+    const shortcut = shortcutOf(projectId, agent, entry.name, manifest, build, showInSidebar);
+    out.push(
+      view === "all"
+        ? {
+            ...shortcut,
+            enabled: !agentDisabled && !selfDisabled,
+            hidden: manifest.appCenter?.show === false,
+          }
+        : shortcut,
+    );
   }
   return out.sort(
     (a, b) => a.title.localeCompare(b.title) || a.workbenchId.localeCompare(b.workbenchId),
