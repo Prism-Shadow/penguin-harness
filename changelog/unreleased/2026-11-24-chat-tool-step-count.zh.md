@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** Web App, UI
+- **PR:** [#1801](https://github.com/Prism-Shadow/penguin-harness/pull/1801)
 
 [English](2026-11-24-chat-tool-step-count.md)
 
