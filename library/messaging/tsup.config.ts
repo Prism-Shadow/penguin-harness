@@ -1,6 +1,13 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
+  // The chat-markdown parser is inlined into the bundle rather than left a bare
+  // "@prismshadow/penguin-ui/chat-markdown" import: the entry documents that the server side
+  // inlines it, and a bare import here would reach the runtime loader as a workspace package
+  // whose package.json exports point at TypeScript sources, which Node refuses to load from
+  // node_modules. remark-parse and the micromark extensions stay external — they are this
+  // package's own dependencies.
+  noExternal: [/@prismshadow\/penguin-ui/],
   entry: [
     "src/index.ts",
     "src/messaging.ts",
