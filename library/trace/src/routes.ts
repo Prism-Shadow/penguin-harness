@@ -122,10 +122,7 @@ const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "archived"];
 export interface AgentTracesRouteDeps {
   agentConfigService: TraceAgentConfig;
   access: TraceAccess;
-  traceService: Pick<
-    Traces,
-    "agentTraces" | "readEvents" | "analyze" | "readFileRaw" | "importTraceFile"
-  >;
+  traceService: Traces;
 }
 
 export function agentTracesRoutes(deps: AgentTracesRouteDeps): Hono<AppEnv> {
