@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** Landing site
+- **PR:** [#1798](https://github.com/Prism-Shadow/penguin-harness/pull/1798)
 
 [中文版](2026-11-24-site-detail-titles.zh.md)
 
