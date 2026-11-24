@@ -101,6 +101,7 @@ import type {
   ToolDetachResult,
 } from "@prismshadow/penguin-core";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
+import { mintSessionToken } from "../auth/session-token.js";
 import { cliShimDir } from "../services/cli-shim.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
@@ -3101,6 +3102,7 @@ export class SessionManager {
     // leaves the marker blank (read as web): the child was spawned by this server's run, not
     // opened through the CLI, whatever opened its parent.
     const parentClient = this.deps.sessions.findById(entry.sessionId)?.client;
+    const rootRow = this.deps.sessions.findById(root);
     this.deps.sessions.insertOrIgnore({
       sessionId: childSid,
       projectId: entry.projectId,
@@ -3111,11 +3113,13 @@ export class SessionManager {
       // A subagent's approvals are inherited from the parent Session; the index row is
       // inserted with defaults (matches the convention for Sessions discovered by the CLI).
       approvalMode: "allow-all",
-      // The root's policy at registration, so the child row stands on its own if it is ever
-      // resumed directly; while registered it follows the root (see rootSessionOf).
-      sandbox: this.deps.sessions.findById(root)?.sandbox ?? null,
+      // The root's policy and app attribution at registration, so the child row stands on its
+      // own if it is ever resumed directly after a restart; while registered it follows the root
+      // (see rootSessionOf).
+      sandbox: rootRow?.sandbox ?? null,
       title: null,
       ...(parentClient === "org" ? { client: "org" as const } : {}),
+      ...(rootRow?.appId ? { appId: rootRow.appId } : {}),
       // Its Trace exists by construction.
       hasTrace: true,
       // A subagent's own runs are driven through the PARENT entry's drive, so nothing ever
@@ -3459,11 +3463,15 @@ export class SessionsModule {
             ? "127.0.0.1"
             : (loopbackHostRoles(config.host)?.app ?? config.host);
         const token = authState.apiToken;
+        const sessionToken = token !== null ? mintSessionToken(token, ctx.sessionId) : null;
         const orgId = orgCache.ownerOfSession(ctx.sessionId)?.orgId ?? null;
-        const appId = sessionsRepo.findById(manager.rootSessionOf(ctx.sessionId))?.appId ?? null;
+        const appId =
+          sessionsRepo.findById(manager.rootSessionOf(ctx.sessionId))?.appId ??
+          sessionsRepo.findById(ctx.sessionId)?.appId ??
+          null;
         return {
           PENGUIN_API_URL: `http://${host}:${config.port}`,
-          ...(token !== null ? { PENGUIN_API_TOKEN: token } : {}),
+          ...(sessionToken !== null ? { PENGUIN_API_TOKEN: sessionToken } : {}),
           PENGUIN_PROJECT_ID: ctx.projectId,
           PENGUIN_AGENT_ID: ctx.agentId,
           PENGUIN_SESSION_ID: ctx.sessionId,

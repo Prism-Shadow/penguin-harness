@@ -1,23 +1,26 @@
 ---
 name: penguin-orchestration
-description: Drive PenguinHarness itself from a shell — list and create agents and sessions, send and steer messages mid-flight, and query costs and scheduled tasks via the penguin CLI over the local server.
-version: 2026.10.15.1
+description: Drive PenguinHarness itself from a shell — list and create agents and sessions, inspect apps (workbenches), send and steer messages mid-flight, and query costs and scheduled tasks via the penguin CLI over the local server.
+version: 2026.11.24.1
 ---
 
 # Penguin Orchestration
 
-The `penguin` CLI is a thin client of the PenguinHarness server. Inside a harness agent session it reaches the same server that is running you, so you can orchestrate the platform yourself: list and create agents, start conversations with them, steer those conversations while they run, and query costs and scheduled tasks.
+The `penguin` CLI is a thin client of the PenguinHarness server. Inside a harness agent session it reaches the same server that is running you, so you can orchestrate the platform yourself: list and create agents, inspect apps (workbenches) and their sessions, start conversations with agents, steer those conversations while they run, and query costs and scheduled tasks.
 
 ## Before you start
 
-If the user's message only invokes this skill (e.g. "use penguin-orchestration skill") without a concrete request, ask the user what they want to orchestrate. Read-only commands (`project ls`, `agent ls`, `session ls`, `session log`, `cost`, `schedule ls`) are always safe; do not create agents, start sessions or send messages until the goal is clear.
+If the user's message only invokes this skill (e.g. "use penguin-orchestration skill") without a concrete request, ask the user what they want to orchestrate. Read-only commands (`project ls`, `agent ls`, `app ls`, `app info`, `app history`, `session ls`, `session log`, `cost`, `schedule ls`) are always safe; do not create agents, start sessions or send messages until the goal is clear.
 
 ## How the connection works
 
 - **Inside a harness agent session** (you, now): every command subprocess has `PENGUIN_API_URL`, `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID` injected, so `penguin` commands automatically reach your own server with your project and agent as the defaults — no login step.
+- **Inside a workbench-opened session** (and any subagent it spawns): `PENGUIN_APP_ID` is also injected as the canonical `<ownerAgentId>/<workbenchId>` of the app that opened the session. Keep the two "self" IDs distinct:
+  - `PENGUIN_AGENT_ID` is the **executing agent** running this session.
+  - `PENGUIN_APP_ID` is the **app that opened this session**. In a cross-agent workbench session, `PENGUIN_APP_ID`'s owner prefix can differ from `PENGUIN_AGENT_ID`.
 - **Outside an agent** (a human shell): the CLI attaches to the running local server via its lock file, or auto-starts one; the local `<data-root>/api-token` file (0600) authenticates it.
 - You are operating the same server that runs you: sessions and agents you create appear live in the web UI, where the user sees and owns everything you spawn.
-- The injected token is admin-equivalent. Act accordingly: stick to what the task requires, and prefer read-only commands until a mutation is clearly needed.
+- The injected token is a per-session credential scoped to your own project with member-level access (works in any user's project, never crosses projects, and cannot perform project-owner-only writes such as `app enable`/`disable`). Stick to what the task requires, and prefer read-only commands until a mutation is clearly needed.
 
 ## Orient first
 
@@ -26,6 +29,7 @@ Before mutating anything, see what exists:
 ```bash
 penguin project ls          # projects on this server
 penguin agent ls            # agents in the current project
+penguin app ls -a --json    # all apps in the current project (including hidden/disabled)
 penguin session ls --json   # the project's sessions, with running state
 ```
 
@@ -38,12 +42,18 @@ penguin run -m <msg> [--project-id <id>] [--agent-id <id>] [--workspace <path>]
             [--model-id <id> --provider <p>] [--approve <mode>] [--thinking <level>]
             [--session <session_id>] [--title <title>] [--background]
             [--timeout <duration>] [--goal [budget]] [--json]
-penguin session ls [--project-id <id>] [--agent-id <id>] [--days <n>] [-a|--all] [--json]
+penguin session ls [--project-id <id>] [--agent-id <id>] [--app <agentId/workbenchId>]
+                   [--days <n>] [-a|--all] [--json]
 penguin session input [session_id] [-m <text>] [--timeout <duration>]
                       [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
 penguin session log [session_id] [--project-id <id>] [--agent-id <id>] [--tail <n>]
                     [-f|--follow] [--timeout <duration>] [--json]
 penguin session rename [session_id] -t <title> [--project-id <id>] [--agent-id <id>] [--json]
+penguin app ls [--project-id <id>] [--agent-id <id>] [-a|--all] [--json]
+penguin app info [app_id] [--project-id <id>] [--agent-id <id>] [--json]
+penguin app history [app_id] [--project-id <id>] [--agent-id <id>] [--json]
+penguin app reload [app_id] [--project-id <id>] [--agent-id <id>] [--json]
+penguin app call <app_id|/path> [path] [-X <method>] [-d <json>] [--project-id <id>]
 penguin agent ls [--project-id <id>] [--json]
 penguin agent create --agent-id <id> [--name <s>] [--description <s>] [--skills <a,b>]
                      [--project-id <id>] [--json]
@@ -70,6 +80,34 @@ penguin schedule rm <name> [--project-id <id>] [--agent-id <id>]
 - `session rename -t <title>` sets a session's title, the same manual rename as the web UI's, which the auto-generated title never overwrites. Without an id it renames **the session you are running in** (`PENGUIN_SESSION_ID`), so "rename this chat" is `penguin session rename -t "<title>"`; an id renames another session. `run --title <title>` names a session as `run` creates it.
 
 ## Recipes
+
+### Inspect my apps, whether the current app is serving, and its recent sessions
+
+```bash
+# 1. All apps installed under the current agent (including hidden and disabled)
+penguin app ls -a --agent-id "$PENGUIN_AGENT_ID" --json
+
+# 2. Current app's read-only status (uses PENGUIN_APP_ID in a workbench session;
+#    in a plain session, pass the full <agentId>/<workbenchId> from `app ls`)
+penguin app info --json
+
+# 3. Sessions opened by that app (includes archived and cross-agent sessions;
+#    always pass the full <agentId>/<workbenchId> — do not omit the owner prefix)
+penguin session ls --app "$PENGUIN_APP_ID" --json
+```
+
+- `penguin app info` is **purely read-only**: it never compiles, loads, or starts an app. Use `penguin app reload` when you explicitly want to compile and load from disk.
+- Read `app info --json` fields separately:
+  - `enabled` / `agentEnabled`: whether the app's own switch and the owning agent's workbenches switch are on.
+  - `serving` (and `servingRevision`): whether a live instance is currently loaded in memory and serving requests/tabs.
+  - `build`: `"not_loaded"` (never loaded yet), `"building"`, `"ready"`, or `"failed"`.
+  - `error`: failure reason when `build` is `"failed"` (including malformed `package.json`), else `null`.
+  - Distinguishing common states:
+    - **Never loaded**: `enabled: true`, `agentEnabled: true`, `serving: false`, `build: "not_loaded"`, `error: null`.
+    - **Disabled**: `enabled: false` or `agentEnabled: false`, `serving: false`.
+    - **Serving normally**: `serving: true`, `build: "ready"`, `error: null`.
+    - **Latest build failed while old instance still serves**: `serving: true`, `build: "failed"`, `servingRevision !== revision`, `error: "<reason>"`.
+- In `penguin session ls --app <agentId>/<workbenchId>`, `--app` always takes the full `<ownerAgentId>/<workbenchId>` key and automatically includes archived sessions and sessions executed by other agents. Add `--agent-id <executor>` only when you explicitly want to narrow by which agent ran the session.
 
 ### Yesterday's or this week's sessions, with their latest replies
 

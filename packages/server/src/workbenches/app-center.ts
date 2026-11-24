@@ -76,6 +76,8 @@ export interface AppCenterManifest {
   icon?: { rev: string; tint: boolean };
   /** Why a declaration that is there is not used, with the fix; null otherwise. */
   hint: string | null;
+  /** Present when `package.json` itself cannot be parsed or is not a JSON object. */
+  packageError?: string;
 }
 
 /** The package.json of a folder could not be rewritten: it is not a JSON object to edit. */
@@ -176,17 +178,53 @@ async function readDeclaration(
   dir: string,
   id: string,
 ): Promise<{ manifest: AppCenterManifest; icon: IconImage | null }> {
-  let pkg: unknown = null;
+  let raw: string;
   try {
-    pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as unknown;
+    raw = await fs.readFile(path.join(dir, "package.json"), "utf8");
   } catch {
-    // Nothing to read: no declaration, and the load names what is wrong with the file.
+    return { manifest: { name: id, tabs: [], hint: null }, icon: null };
+  }
+  let pkg: unknown;
+  try {
+    pkg = JSON.parse(raw) as unknown;
+  } catch {
+    return {
+      manifest: {
+        name: id,
+        tabs: [],
+        hint: null,
+        packageError: "package.json is not valid JSON",
+      },
+      icon: null,
+    };
+  }
+  if (!isRecord(pkg)) {
+    return {
+      manifest: {
+        name: id,
+        tabs: [],
+        hint: null,
+        packageError: "package.json must be a JSON object",
+      },
+      icon: null,
+    };
   }
   const identity =
-    isRecord(pkg) && typeof pkg["name"] === "string" && pkg["name"].trim()
+    typeof pkg["name"] === "string" && pkg["name"].trim()
       ? { name: pkg["name"], packageName: pkg["name"] }
       : { name: id };
-  const penguin = isRecord(pkg) && isRecord(pkg["penguin"]) ? pkg["penguin"] : null;
+  if (pkg["penguin"] !== undefined && !isRecord(pkg["penguin"])) {
+    return {
+      manifest: {
+        ...identity,
+        tabs: [],
+        hint: null,
+        packageError: "package.json#penguin must be a JSON object",
+      },
+      icon: null,
+    };
+  }
+  const penguin = isRecord(pkg["penguin"]) ? pkg["penguin"] : null;
   if (penguin === null) return { manifest: { ...identity, tabs: [], hint: null }, icon: null };
   const tabs = manifestTabs(penguin);
   // No declaration reads as the default, shown. The manifest reports that effective value, so the
@@ -242,8 +280,10 @@ export async function readAppCenterIcon(dir: string, id: string): Promise<IconIm
 async function buildOf(
   dir: string,
   building: boolean,
+  packageError?: string,
 ): Promise<Pick<AppCenterShortcut, "build" | "error">> {
   if (building) return { build: "building" };
+  if (packageError !== undefined) return { build: "failed", error: packageError };
   const status = await readLoadStatus(dir);
   if (status?.failed !== true) return { build: "ready" };
   return { build: "failed", ...(status.error !== null ? { error: status.error } : {}) };
@@ -353,7 +393,7 @@ export async function agentShortcuts(
     if (!(await inView(view, dir, manifest))) continue;
     const selfDisabled = await isSwitchedOff(dir);
     if (view !== "hidden" && view !== "all" && selfDisabled) continue;
-    const build = await buildOf(dir, building(entry.name));
+    const build = await buildOf(dir, building(entry.name), manifest.packageError);
     // The sidebar lists only what is shown there; a tile carries the setting for its menu.
     const showInSidebar = view === "sidebar" || !(await isSwitchedOff(dir, HIDDEN_FROM_SIDEBAR));
     const shortcut = shortcutOf(projectId, agent, entry.name, manifest, build, showInSidebar);

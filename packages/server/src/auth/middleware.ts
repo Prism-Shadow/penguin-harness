@@ -102,17 +102,31 @@ export function currentUser(c: { var: { user: UserRow } }): UserRow {
   return c.var.user;
 }
 
+export interface AuthMiddlewareOptions {
+  apiTokenOnly?: boolean;
+  /**
+   * Optional verifier for per-Session Bearer tokens (`auth/session-token.ts`). Only consulted
+   * on `auth: "user"` routes when the Bearer is not the boot's local API token — never on
+   * `apiTokenOnly` routes such as remote browser session exchange.
+   */
+  authenticateSessionToken?: (token: string) => { user: UserRow; via: SessionVia } | null;
+}
+
 export function authMiddleware(
   auth: Auth,
   trustProxy: boolean,
-  options: { apiTokenOnly?: boolean } = {},
+  options: AuthMiddlewareOptions = {},
 ): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     // Bearer first: an explicit credential on the request outranks ambient cookies, and
     // a wrong one is an error, never a silent fallback (see the module doc).
     const bearer = bearerToken(c.req.header("authorization"));
     if (bearer !== null) {
-      const viaToken = auth.authenticateApiToken(bearer);
+      const viaToken =
+        auth.authenticateApiToken(bearer) ??
+        (!options.apiTokenOnly && options.authenticateSessionToken
+          ? options.authenticateSessionToken(bearer)
+          : null);
       if (!viaToken) {
         throw new HttpError(401, "unauthorized", "Invalid API token.");
       }

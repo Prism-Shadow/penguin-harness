@@ -170,12 +170,19 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
   } catch {
     return null;
   }
-  let pkg: { name?: unknown; version?: unknown; penguin?: { icon?: unknown } } = {};
+  let pkg: Record<string, unknown> = {};
   try {
-    pkg = JSON.parse(raw) as typeof pkg;
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+      pkg = parsed as Record<string, unknown>;
+    }
   } catch {
     // A broken package.json is still a workbench folder: the loader reports the error.
   }
+  const penguin =
+    pkg.penguin !== null && typeof pkg.penguin === "object" && !Array.isArray(pkg.penguin)
+      ? (pkg.penguin as Record<string, unknown>)
+      : null;
   const refused: string[] = [];
   const files = await walk(dir, refused);
   const source = await readFiles(dir, files);
@@ -202,10 +209,7 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
       if (icon.format === "png")
         return { kind: "png", data: Buffer.from(icon.bytes).toString("base64") };
       return null;
-    })(
-      readPluginIcon(dir, typeof pkg.penguin?.icon === "string" ? pkg.penguin.icon : undefined)
-        .icon,
-    ),
+    })(readPluginIcon(dir, typeof penguin?.icon === "string" ? penguin.icon : undefined).icon),
   };
 }
 

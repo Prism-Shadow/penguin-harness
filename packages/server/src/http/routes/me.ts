@@ -37,6 +37,7 @@ import type {
   UpdateProfileResponse,
 } from "../../api/types.js";
 import { toUserInfo } from "../../auth/service.js";
+import { isSessionPrincipal } from "../../auth/session-token.js";
 import { cookieOptions, sessionCookieName } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString } from "../validate.js";
@@ -191,6 +192,17 @@ function parseAvatar(raw: unknown): string | null {
 
 export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+
+  app.use("*", async (c, next) => {
+    if (c.req.method !== "GET" && isSessionPrincipal(c.var.user.userId)) {
+      throw new HttpError(
+        403,
+        "session_token_forbidden",
+        "A Session token cannot modify user account settings.",
+      );
+    }
+    await next();
+  });
 
   app.get("/", (c) => {
     // previewIsolated depends on the host this request came in on, so it is computed

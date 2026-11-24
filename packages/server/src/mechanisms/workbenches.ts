@@ -22,7 +22,9 @@
 import type { IconImage } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type {
+  WorkbenchBuildState,
   WorkbenchInfo,
+  WorkbenchStatus,
   WorkbenchTab,
   WorkbenchTabIcon,
   WorkbenchTabRenderer,
@@ -188,6 +190,16 @@ export abstract class Workbenches {
   /** The Agent-wide switch: false while `.disabled` sits beside the workbench folders. */
   abstract agentEnabled(projectId: string, agentId: string): Promise<boolean>;
   /**
+   * Read-only status snapshot of one workbench: switches, build outcome, live serving state,
+   * and any failure reason, without compiling, booting, migrating, or watching. Null when the
+   * Agent has no such workbench folder.
+   */
+  abstract inspect(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchStatus | null>;
+  /**
    * One workbench's registration, read from its folder alone — no migrate, no watcher, no
    * load (a 404 `WorkbenchNotFound` for an unknown id). The auth-less install-manifest gate
    * answers from this: an anonymous request must not be able to run the folder's
@@ -283,6 +295,7 @@ export abstract class Workbenches {
     projectId: string,
     agentId: string,
     workbenchId: string,
+    opts?: { requireExists?: boolean },
   ): Promise<WorkbenchVersion[]>;
   /** Restores a version's source; it is loaded (and recorded as the newest version) only when it runs. */
   abstract rollback(

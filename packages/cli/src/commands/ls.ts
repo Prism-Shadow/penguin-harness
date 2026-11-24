@@ -59,12 +59,13 @@ export function registerLsCommand(session: Command, t: Messages): void {
       let appFilter: string | undefined;
       if (opts.app !== undefined) {
         const rawApp = String(opts.app);
-        // When --app names a canonical <ownerAgent>/<workbenchId>, --agent-id still narrows which
-        // Agent runs the Session (cross-agent workbench Sessions are valid), so only lend
-        // --agent-id as a prefix when --app is a bare <workbenchId>.
+        // Require the canonical `<ownerAgent>/<workbenchId>` key: `--agent-id` filters the
+        // executing Agent only, and `PENGUIN_AGENT_ID` inside a cross-agent Session names the
+        // worker rather than the app owner.
         const parsed = resolveAppId(rawApp, {
-          agentId: rawApp.includes("/") ? undefined : opts.agentId,
+          agentId: undefined,
           allowEnv: false,
+          env: {},
         });
         if (!parsed.ok) {
           process.stderr.write(`${t.error(formatAppIdError(parsed, t))}\n`);

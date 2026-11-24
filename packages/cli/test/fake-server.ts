@@ -139,7 +139,9 @@ export interface FakeAppState {
   revision: string;
   uiRev: string | null;
   loadedAt: string | null;
-  build: "ready" | "building" | "failed";
+  build: "not_loaded" | "ready" | "building" | "failed";
+  serving?: boolean;
+  servingRevision?: string | null;
   error: string | null;
   hints: string[];
   enabled: boolean;
@@ -475,6 +477,8 @@ export class FakeServer {
       uiRev: "ui0001",
       loadedAt: "2026-11-24T00:00:00.000Z",
       build: "ready",
+      serving: true,
+      servingRevision: overrides.revision ?? "abc123def456",
       error: null,
       hints: [],
       enabled: true,
@@ -2506,7 +2510,7 @@ export class FakeServer {
     }
 
     const wbActionMatch =
-      /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/workbenches\/([^/]+)\/(reload|enabled|history)$/.exec(
+      /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/workbenches\/([^/]+)\/(status|reload|enabled|history)$/.exec(
         apiPath,
       );
     if (wbActionMatch) {
@@ -2515,7 +2519,12 @@ export class FakeServer {
       const workbenchId = decodeURIComponent(wbActionMatch[3]!);
       const action = wbActionMatch[4]!;
       const app = this.apps.get(`${projectId}/${agentId}/${workbenchId}`);
-      if (!app) return this.error(404, "not_found", `No such workbench: ${workbenchId}`);
+      if (!app) {
+        if (action === "history" && url.searchParams.get("requireExists") !== "1") {
+          return this.json({ versions: [] });
+        }
+        return this.error(404, "not_found", `No such workbench: ${workbenchId}`);
+      }
       const toWb = (a: FakeAppState) => ({
         id: a.workbenchId,
         name: a.name,
@@ -2530,6 +2539,36 @@ export class FakeServer {
         enabled: a.enabled,
         showInSidebar: a.showInSidebar,
       });
+      if (action === "status" && method === "GET") {
+        const serving =
+          app.serving !== undefined
+            ? app.serving
+            : app.enabled && app.agentEnabled && app.build === "ready";
+        return this.json({
+          workbench: {
+            id: app.workbenchId,
+            name: app.name,
+            version: app.version,
+            revision: app.revision,
+            uiRev: app.uiRev,
+            enabled: app.enabled,
+            agentEnabled: app.agentEnabled,
+            serving,
+            servingRevision: serving ? (app.servingRevision ?? app.revision) : null,
+            build: app.build,
+            error: app.error,
+            loadedAt: app.loadedAt,
+            tabs: serving ? app.tabs : [],
+            hints: app.hints,
+            showInSidebar: app.showInSidebar,
+            appCenter: {
+              show: !app.hidden,
+              title: app.title,
+              ...(app.titleZh ? { titleZh: app.titleZh } : {}),
+            },
+          },
+        });
+      }
       if (action === "reload" && method === "POST") {
         if (!app.enabled || !app.agentEnabled) {
           return this.error(409, "workbench_disabled", `Workbench is disabled: ${workbenchId}`);

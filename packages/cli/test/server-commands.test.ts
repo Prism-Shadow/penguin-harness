@@ -327,13 +327,17 @@ describe("penguin session ls", () => {
       appId: "default_agent/slides",
     });
 
-    // Bare workbenchId with PENGUIN_AGENT_ID works too.
-    stdout.length = 0;
+    // Bare workbenchId is rejected even when --agent-id or PENGUIN_AGENT_ID is set, so
+    // `--agent-id` never silently narrows out cross-agent sessions or mis-prefixes the app owner.
+    const reqBeforeBare = server.requests.length;
+    stderr.length = 0;
     process.env.PENGUIN_AGENT_ID = "default_agent";
-    expect(await cli(["session", "ls", "--app", "support", "--json"])).toBe(0);
-    expect((JSON.parse(out()) as Array<{ sessionId: string }>).map((r) => r.sessionId)).toEqual([
-      "session-2026-08-25-10-00-00-aaaa0004",
-    ]);
+    expect(await cli(["session", "ls", "--app", "slides", "--agent-id", "default_agent"])).toBe(1);
+    expect(stderr.join("")).toContain("no agent prefix");
+    stderr.length = 0;
+    expect(await cli(["session", "ls", "--app", "support", "--json"])).toBe(1);
+    expect(stderr.join("")).toContain("no agent prefix");
+    expect(server.requests.length).toBe(reqBeforeBare);
 
     // Passing a sessionId to --app fails fast before hitting the server.
     const reqBefore = server.requests.length;

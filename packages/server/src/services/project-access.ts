@@ -14,6 +14,7 @@ import type {
   Projects,
 } from "@prismshadow/penguin-library-project";
 import type { ProjectSummary } from "../api/types.js";
+import { parseSessionPrincipal } from "../auth/session-token.js";
 import { HttpError } from "../http/errors.js";
 import type { ProjectRow } from "@prismshadow/penguin-library-project/repos/projects";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
@@ -30,6 +31,12 @@ export class ProjectAccess implements Access {
    * accessible, otherwise null. Every other member here is a wrapper around it.
    */
   find(userId: string, projectId: string): (ProjectRow & { role: ProjectRole }) | null {
+    const scoped = parseSessionPrincipal(userId);
+    if (scoped !== null) {
+      if (scoped.projectId !== projectId) return null;
+      const row = this.projects.findById(projectId);
+      return row ? { ...row, role: "member" } : null;
+    }
     const row = this.projects.findById(projectId);
     if (!row) return null;
     if (row.ownerUserId === userId) return { ...row, role: "owner" };
@@ -70,12 +77,23 @@ export class ProjectAccess implements Access {
 
   /** Every project_id the user may reach (owned + granted). */
   accessibleProjectIds(userId: string): string[] {
+    const scoped = parseSessionPrincipal(userId);
+    if (scoped !== null) {
+      return this.projects.findById(scoped.projectId) ? [scoped.projectId] : [];
+    }
     return this.projects.listAccessible(userId).map((p) => p.projectId);
   }
 
   /** Owned + granted Projects with their display names. */
   async listProjects(userId: string): Promise<ProjectSummary[]> {
-    const rows = this.projects.listAccessible(userId);
+    const scoped = parseSessionPrincipal(userId);
+    const rows =
+      scoped !== null
+        ? (() => {
+            const row = this.projects.findById(scoped.projectId);
+            return row ? [{ ...row, role: "member" as const }] : [];
+          })()
+        : this.projects.listAccessible(userId);
     return Promise.all(
       rows.map(async (row) => {
         const name = await this.projectConfig.getName(row.projectId);

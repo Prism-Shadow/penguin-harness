@@ -20,10 +20,12 @@ import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 import type {
   AppCenterShortcut,
+  WorkbenchBuildState,
   WorkbenchInfo,
+  WorkbenchStatus,
   WorkbenchVersion,
 } from "@prismshadow/penguin-library-workbench";
-import type { AppCenterResponse, WorkbenchesResponse } from "../../api/types.js";
+import type { AppCenterResponse, WorkbenchStatusResponse } from "../../api/types.js";
 import {
   formatAppId,
   resolveAppId,
@@ -31,7 +33,7 @@ import {
   type AppIdError,
   type ResolvedAppId,
 } from "../app-id.js";
-import { resolveProjectId, ServerClient } from "../client.js";
+import { ApiError, resolveProjectId, ServerClient } from "../client.js";
 import { resolveConnection } from "../connection.js";
 import { cutText } from "../cut-text.js";
 import type { Messages } from "../i18n.js";
@@ -97,23 +99,37 @@ function localizedTitle(s: AppCenterShortcut, t: Messages): string {
   return t.language === "zh" ? (s.titleZh ?? s.title) : s.title;
 }
 
-function printInfo(
-  target: ResolvedAppId,
-  wb: WorkbenchInfo,
-  agentEnabled: boolean,
-  t: Messages,
-): void {
-  const status =
-    wb.enabled === false
-      ? t.app.valueDisabled()
-      : !agentEnabled
-        ? `${t.app.valueDisabled()} (${t.app.valueAgentDisabled()})`
-        : t.app.valueEnabled();
+function buildLabel(build: WorkbenchBuildState, t: Messages): string {
+  switch (build) {
+    case "not_loaded":
+      return t.app.statusNotLoaded();
+    case "building":
+      return t.app.statusBuilding();
+    case "failed":
+      return t.app.statusFailed();
+    case "ready":
+      return t.app.statusReady();
+  }
+}
+
+function printInfo(target: ResolvedAppId, wb: WorkbenchStatus, t: Messages): void {
+  const status = !wb.enabled
+    ? t.app.valueDisabled()
+    : !wb.agentEnabled
+      ? `${t.app.valueDisabled()} (${t.app.valueAgentDisabled()})`
+      : t.app.valueEnabled();
+  const serving = wb.serving
+    ? wb.servingRevision !== null && wb.servingRevision !== wb.revision
+      ? `${t.app.valueServing()} (${wb.servingRevision})`
+      : t.app.valueServing()
+    : t.app.valueNotServing();
   const lines: string[] = [
     `${t.app.fieldId()}: ${target.appId}`,
     `${t.app.fieldName()}: ${wb.name}`,
     ...(wb.version !== null ? [`${t.app.fieldVersion()}: ${wb.version}`] : []),
     `${t.app.fieldStatus()}: ${status}`,
+    `${t.app.fieldServing()}: ${serving}`,
+    `${t.app.fieldBuild()}: ${buildLabel(wb.build, t)}`,
     `${t.app.fieldRevision()}: ${wb.revision}`,
     ...(wb.loadedAt !== null ? [`${t.app.fieldLoaded()}: ${wb.loadedAt}`] : []),
   ];
@@ -128,11 +144,9 @@ function printInfo(
       `${t.app.fieldAppCenter()}: ${wb.appCenter.show ? t.app.valueShown() : t.app.valueHidden()}`,
     );
   }
-  if (wb.showInSidebar !== undefined) {
-    lines.push(
-      `${t.app.fieldSidebar()}: ${wb.showInSidebar ? t.app.valueShown() : t.app.valueHidden()}`,
-    );
-  }
+  lines.push(
+    `${t.app.fieldSidebar()}: ${wb.showInSidebar ? t.app.valueShown() : t.app.valueHidden()}`,
+  );
   if (wb.error !== null) {
     lines.push(`${t.app.fieldError()}: ${wb.error}`);
   }
@@ -204,23 +218,28 @@ export function registerAppCommand(app: Command, t: Messages): void {
       if (!target) return;
       const client = await connect(opts, t);
       const projectId = resolveProjectId(opts.projectId);
-      const res = await client.request<WorkbenchesResponse>(
-        "GET",
-        `${workbenchBase(projectId, target)}?id=${enc(target.workbenchId)}`,
-      );
-      const wb = res.workbenches[0];
-      if (!wb) {
-        process.stderr.write(`${t.error(t.app.notFound(target.appId))}\n`);
-        process.exitCode = 1;
-        return;
+      let res: WorkbenchStatusResponse;
+      try {
+        res = await client.request<WorkbenchStatusResponse>(
+          "GET",
+          `${workbenchBase(projectId, target)}/${enc(target.workbenchId)}/status`,
+        );
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404 && err.code === "not_found") {
+          process.stderr.write(`${t.error(t.app.notFound(target.appId))}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        throw err;
       }
+      const wb = res.workbench;
       if (opts.json === true) {
         process.stdout.write(
-          `${JSON.stringify({ appId: target.appId, agentId: target.agentId, agentEnabled: res.enabled ?? true, ...wb })}\n`,
+          `${JSON.stringify({ appId: target.appId, agentId: target.agentId, ...wb })}\n`,
         );
         return;
       }
-      printInfo(target, wb, res.enabled ?? true, t);
+      printInfo(target, wb, t);
     });
 
   app
@@ -276,10 +295,17 @@ export function registerAppCommand(app: Command, t: Messages): void {
           `${workbenchBase(projectId, target)}/${enc(target.workbenchId)}/enabled`,
           { enabled },
         );
+        const wb = res.workbench;
         if (opts.json === true) {
           process.stdout.write(
-            `${JSON.stringify({ appId: target.appId, agentId: target.agentId, ...res.workbench })}\n`,
+            `${JSON.stringify({ appId: target.appId, agentId: target.agentId, ...wb })}\n`,
           );
+          if (enabled && wb.error !== null) process.exitCode = 1;
+          return;
+        }
+        if (enabled && wb.error !== null) {
+          process.stderr.write(`${t.error(t.app.enabledLoadFailed(target.appId, wb.error))}\n`);
+          process.exitCode = 1;
           return;
         }
         process.stdout.write(
@@ -301,10 +327,20 @@ export function registerAppCommand(app: Command, t: Messages): void {
       if (!target) return;
       const client = await connect(opts, t);
       const projectId = resolveProjectId(opts.projectId);
-      const res = await client.request<{ versions: WorkbenchVersion[] }>(
-        "GET",
-        `${workbenchBase(projectId, target)}/${enc(target.workbenchId)}/history`,
-      );
+      let res: { versions: WorkbenchVersion[] };
+      try {
+        res = await client.request<{ versions: WorkbenchVersion[] }>(
+          "GET",
+          `${workbenchBase(projectId, target)}/${enc(target.workbenchId)}/history?requireExists=1`,
+        );
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404 && err.code === "not_found") {
+          process.stderr.write(`${t.error(t.app.notFound(target.appId))}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        throw err;
+      }
       if (opts.json === true) {
         process.stdout.write(
           `${JSON.stringify({ appId: target.appId, versions: res.versions })}\n`,

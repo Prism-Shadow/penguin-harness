@@ -62,6 +62,52 @@ export interface WorkbenchInfo {
   showInSidebar?: boolean;
 }
 
+/**
+ * Latest build / load outcome reported by read-only inspection (`GET …/workbenches/:id/status`):
+ * - `"not_loaded"`: never loaded in this process and no `.build/status.json` on disk.
+ * - `"building"`: a load is currently running or queued in this process.
+ * - `"ready"`: latest load succeeded.
+ * - `"failed"`: latest load failed, or `package.json` itself is malformed.
+ */
+export type WorkbenchBuildState = "not_loaded" | "building" | "ready" | "failed";
+
+/**
+ * Read-only status snapshot of one workbench (`GET …/workbenches/:id/status`), assembled without
+ * compiling, booting, migrating, or starting watchers. Keeps switches, build outcome, and live
+ * serving state separate so callers can distinguish "never loaded", "disabled", and "latest build
+ * failed while a previous instance is still serving".
+ */
+export interface WorkbenchStatus {
+  id: string;
+  name: string;
+  version: string | null;
+  /** Current on-disk source tree revision. */
+  revision: string;
+  /** Current on-disk `ui/` tree revision, or null when there is no `ui/`. */
+  uiRev: string | null;
+  /** App's own switch: false while `.disabled` sits in its folder. */
+  enabled: boolean;
+  /** Agent-wide switch: false while `.disabled` sits beside the Agent's workbench folders. */
+  agentEnabled: boolean;
+  /** True when a live instance is currently loaded in memory and serving requests/tabs. */
+  serving: boolean;
+  /** On-disk revision of the currently serving instance, or null when not serving. */
+  servingRevision: string | null;
+  /** Latest build / load outcome. */
+  build: WorkbenchBuildState;
+  /** Latest failure reason (load error, persisted status error, or invalid `package.json`), or null. */
+  error: string | null;
+  /** When the live instance (or last recorded load check) ran, or null when never loaded. */
+  loadedAt: string | null;
+  /** Tabs of the currently serving instance (empty when not serving). */
+  tabs: WorkbenchTab[];
+  /** Non-fatal warnings from the latest load or manifest declaration. */
+  hints: string[];
+  showInSidebar: boolean;
+  appCenter?: WorkbenchAppCenter;
+  icon?: IconRef;
+}
+
 /** How the Web App draws a contributed tab: a page of the workbench, or a renderer it carries. */
 export type WorkbenchTabRenderer =
   | {

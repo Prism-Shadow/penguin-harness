@@ -76,11 +76,13 @@ import type {
 import type {
   AppCenterShortcut,
   WorkbenchTabIcon,
+  WorkbenchBuildState,
   WorkbenchInfo,
   WorkbenchInput,
   WorkbenchRecord,
   WorkbenchRequest,
   WorkbenchResponse,
+  WorkbenchStatus,
   WorkbenchTab,
   WorkbenchUiFile,
   WorkbenchUiRuntime,
@@ -159,6 +161,8 @@ interface Loaded {
   folder: WorkbenchFolder;
   tree: ModuleTree | null;
   main: { handle(request: WorkbenchRequest): Promise<WorkbenchResponse> } | null;
+  /** On-disk revision of the currently serving instance, or null when no instance is serving. */
+  servingRevision: string | null;
   tabs: WorkbenchTab[];
   loadedAt: string;
   error: string | null;
@@ -194,9 +198,13 @@ async function isFile(file: string): Promise<boolean> {
 
 /** Reads `package.json`: the manifests, and that the package is an ES module. */
 async function readManifests(folder: WorkbenchFolder): Promise<Manifest[]> {
-  const raw = JSON.parse(
+  const parsed: unknown = JSON.parse(
     await fs.promises.readFile(path.join(folder.dir, "package.json"), "utf8"),
-  ) as {
+  );
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("package.json must be a JSON object");
+  }
+  const raw = parsed as {
     type?: unknown;
     penguin?: { modules?: unknown };
   };
@@ -473,6 +481,93 @@ export class WorkbenchService implements Workbenches {
   }
 
   /**
+   * Read-only status snapshot of one workbench — NO migrate, NO watcher, NO load: reports
+   * switches, latest build outcome, live serving state, and failure diagnostics without
+   * altering runtime or on-disk state.
+   */
+  async inspect(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchStatus | null> {
+    if (!isWorkbenchId(workbenchId)) return null;
+    const base = workbenchesDir(this.paths.root, projectId, agentId);
+    const folder = await readFolder(path.join(base, workbenchId), workbenchId);
+    if (folder === null) return null;
+    const [enabled, agentEnabled, showInSidebar, declared] = await Promise.all([
+      isSwitchedOff(folder.dir).then((off) => !off),
+      isSwitchedOff(base).then((off) => !off),
+      isSwitchedOff(folder.dir, HIDDEN_FROM_SIDEBAR).then((off) => !off),
+      readAppCenterManifest(folder.dir, folder.id),
+    ]);
+    const k = key(projectId, agentId, workbenchId);
+    const loaded = this.loaded.get(k) ?? null;
+    const building = this.building(k);
+    const persisted = loaded === null ? await readLoadStatus(folder.dir) : null;
+    const serving = loaded !== null && loaded.main !== null;
+    const servingRevision = serving ? loaded.servingRevision : null;
+
+    let build: WorkbenchBuildState;
+    let error: string | null;
+    if (building) {
+      build = "building";
+      error = loaded?.error ?? declared.packageError ?? null;
+    } else if (loaded !== null) {
+      if (loaded.error !== null) {
+        build = "failed";
+        error = loaded.error;
+      } else if (declared.packageError !== undefined) {
+        build = "failed";
+        error = declared.packageError;
+      } else {
+        build = "ready";
+        error = null;
+      }
+    } else if (declared.packageError !== undefined) {
+      build = "failed";
+      error = declared.packageError;
+    } else if (persisted !== null) {
+      build = persisted.failed ? "failed" : "ready";
+      error = persisted.error;
+    } else {
+      build = "not_loaded";
+      error = null;
+    }
+
+    const hints =
+      loaded !== null
+        ? hintsOf(loaded)
+        : [
+            ...(persisted?.hints ?? []),
+            ...(declared.hint !== null && !(persisted?.hints ?? []).includes(declared.hint)
+              ? [declared.hint]
+              : []),
+          ];
+
+    return {
+      id: folder.id,
+      name: folder.pkg.name,
+      version: folder.pkg.version,
+      revision: folder.revision,
+      uiRev: folder.uiRev,
+      enabled,
+      agentEnabled,
+      serving,
+      servingRevision,
+      build,
+      error,
+      loadedAt: loaded !== null ? loaded.loadedAt : (persisted?.checkedAt ?? null),
+      tabs: serving ? loaded.tabs : [],
+      hints,
+      showInSidebar,
+      ...(declared.appCenter !== undefined ? { appCenter: declared.appCenter } : {}),
+      ...(declared.icon !== undefined
+        ? { icon: appCenterIconRef(projectId, agentId, folder.id, declared.icon) }
+        : {}),
+    };
+  }
+
+  /**
    * What the install manifest needs, read from the folder alone — NO migrate, NO watcher,
    * NO load: an anonymous request (the manifest's auth-less gate) must not be able to run
    * the folder's compile/boot lifecycle, only look at its `package.json`. The registration
@@ -684,9 +779,20 @@ export class WorkbenchService implements Workbenches {
     projectId: string,
     agentId: string,
     workbenchId: string,
+    opts?: { requireExists?: boolean },
   ): Promise<WorkbenchVersion[]> {
-    if (!isWorkbenchId(workbenchId)) return [];
-    await this.migrate(projectId, agentId);
+    if (!isWorkbenchId(workbenchId)) {
+      if (opts?.requireExists) throw new WorkbenchNotFound(`no such workbench: ${workbenchId}`);
+      return [];
+    }
+    if (opts?.requireExists) {
+      const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
+      if (!(await isFile(path.join(dir, "package.json")))) {
+        throw new WorkbenchNotFound(`no such workbench: ${workbenchId}`);
+      }
+    } else {
+      await this.migrate(projectId, agentId);
+    }
     return this.fromRepo(key(projectId, agentId, workbenchId), () =>
       this.repo(projectId, agentId).history(repoPath(workbenchId)),
     );
@@ -1278,6 +1384,7 @@ export class WorkbenchService implements Workbenches {
         folder,
         tree,
         main,
+        servingRevision: folder.revision,
         tabs,
         loadedAt,
         error: null,
@@ -1332,6 +1439,7 @@ export class WorkbenchService implements Workbenches {
         folder,
         tree: previous?.tree ?? null,
         main: previous?.main ?? null,
+        servingRevision: previous?.servingRevision ?? null,
         tabs: previous?.tabs ?? [],
         loadedAt: previous?.loadedAt ?? loadedAt,
         error,

@@ -29,6 +29,7 @@ export interface AppText {
     colCommit(): string;
     colSaved(): string;
     statusReady(): string;
+    statusNotLoaded(): string;
     statusBuilding(): string;
     statusFailed(): string;
     statusDisabled(): string;
@@ -39,6 +40,7 @@ export interface AppText {
     reloaded(appId: string, revision: string): string;
     reloadFailed(appId: string, error: string): string;
     enabled(appId: string): string;
+    enabledLoadFailed(appId: string, error: string): string;
     disabled(appId: string): string;
     idMissing(): string;
     idLooksLikeSession(raw: string): string;
@@ -54,6 +56,8 @@ export interface AppText {
     fieldName(): string;
     fieldVersion(): string;
     fieldStatus(): string;
+    fieldServing(): string;
+    fieldBuild(): string;
     fieldRevision(): string;
     fieldLoaded(): string;
     fieldTabs(): string;
@@ -64,6 +68,8 @@ export interface AppText {
     valueEnabled(): string;
     valueDisabled(): string;
     valueAgentDisabled(): string;
+    valueServing(): string;
+    valueNotServing(): string;
     valueShown(): string;
     valueHidden(): string;
   };
@@ -97,6 +103,7 @@ export const appEn: AppText = {
     colCommit: () => "COMMIT",
     colSaved: () => "SAVED",
     statusReady: () => "ready",
+    statusNotLoaded: () => "not loaded",
     statusBuilding: () => "building",
     statusFailed: () => "failed",
     statusDisabled: () => "disabled",
@@ -107,6 +114,7 @@ export const appEn: AppText = {
     reloaded: (appId, revision) => `Reloaded ${appId} (${revision}).`,
     reloadFailed: (appId, error) => `Reload of ${appId} failed: ${error}`,
     enabled: (appId) => `Enabled ${appId}.`,
+    enabledLoadFailed: (appId, error) => `Enabled ${appId}, but loading failed: ${error}`,
     disabled: (appId) => `Disabled ${appId}.`,
     idMissing: () =>
       "No app id given: pass <agentId>/<workbenchId>, or run inside an app session where PENGUIN_APP_ID is set.",
@@ -130,6 +138,8 @@ export const appEn: AppText = {
     fieldName: () => "Name",
     fieldVersion: () => "Version",
     fieldStatus: () => "Status",
+    fieldServing: () => "Serving",
+    fieldBuild: () => "Build",
     fieldRevision: () => "Revision",
     fieldLoaded: () => "Loaded",
     fieldTabs: () => "Tabs",
@@ -140,6 +150,8 @@ export const appEn: AppText = {
     valueEnabled: () => "enabled",
     valueDisabled: () => "disabled",
     valueAgentDisabled: () => "agent switch off",
+    valueServing: () => "yes",
+    valueNotServing: () => "no",
     valueShown: () => "shown",
     valueHidden: () => "hidden",
   },
@@ -172,6 +184,7 @@ export const appZh: AppText = {
     colCommit: () => "提交",
     colSaved: () => "保存时间",
     statusReady: () => "就绪",
+    statusNotLoaded: () => "未加载",
     statusBuilding: () => "构建中",
     statusFailed: () => "失败",
     statusDisabled: () => "已停用",
@@ -182,6 +195,7 @@ export const appZh: AppText = {
     reloaded: (appId, revision) => `已重新加载 ${appId}（${revision}）。`,
     reloadFailed: (appId, error) => `重新加载 ${appId} 失败：${error}`,
     enabled: (appId) => `已启用 ${appId}。`,
+    enabledLoadFailed: (appId, error) => `已启用 ${appId}，但加载失败：${error}`,
     disabled: (appId) => `已停用 ${appId}。`,
     idMissing: () =>
       "未指定应用 id：请传 <agentId>/<workbenchId>，或在带 PENGUIN_APP_ID 的应用会话内运行。",
@@ -204,6 +218,8 @@ export const appZh: AppText = {
     fieldName: () => "名称",
     fieldVersion: () => "版本",
     fieldStatus: () => "状态",
+    fieldServing: () => "服务中",
+    fieldBuild: () => "构建",
     fieldRevision: () => "修订",
     fieldLoaded: () => "加载时间",
     fieldTabs: () => "标签页",
@@ -214,6 +230,8 @@ export const appZh: AppText = {
     valueEnabled: () => "已启用",
     valueDisabled: () => "已停用",
     valueAgentDisabled: () => "Agent 总开关已关",
+    valueServing: () => "是",
+    valueNotServing: () => "否",
     valueShown: () => "显示",
     valueHidden: () => "隐藏",
   },

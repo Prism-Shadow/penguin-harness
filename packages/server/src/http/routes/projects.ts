@@ -8,6 +8,8 @@ import type {
   ProjectsResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
+import { isSessionPrincipal } from "../../auth/session-token.js";
+import { HttpError } from "../errors.js";
 import {
   badRequest,
   optionalString,
@@ -38,6 +40,13 @@ export function projectsRoutes(deps: ProjectsRouteDeps): Hono<AppEnv> {
   });
 
   app.post("/", async (c) => {
+    if (isSessionPrincipal(c.var.user.userId)) {
+      throw new HttpError(
+        403,
+        "session_token_forbidden",
+        "A Session token cannot create a new Project.",
+      );
+    }
     const body = await readJson(c);
     const projectId = requireString(body, "projectId", { label: "projectId" });
     const name = optionalString(body, "name", { minLen: 1, maxLen: 100, label: "name" });

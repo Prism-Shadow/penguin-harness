@@ -61,8 +61,10 @@ import type {
   WorkbenchesResponse,
   WorkbenchSidebarResponse,
   WorkbenchSidebarSetResponse,
+  WorkbenchStatusResponse,
 } from "../api/types.js";
 import type { AppEnv } from "../auth/middleware.js";
+import { isSessionPrincipal } from "../auth/session-token.js";
 import type { Paths } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
 import { iconResponse } from "../http/icon-response.js";
@@ -608,6 +610,16 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     });
   });
 
+  app.get("/:id/status", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const id = c.req.param("id");
+    const workbench = await deps.workbenches.inspect(projectId, agentId, id);
+    if (workbench === null) {
+      throw new HttpError(404, "not_found", `No such workbench: ${id}`);
+    }
+    return c.json({ workbench } satisfies WorkbenchStatusResponse);
+  });
+
   app.post("/:id/reload", async (c) => {
     const { projectId, agentId } = scope(c);
     const workbench = await deps.workbenches
@@ -618,9 +630,11 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
 
   app.get("/:id/history", async (c) => {
     const { projectId, agentId } = scope(c);
-    return c.json({
-      versions: await deps.workbenches.history(projectId, agentId, c.req.param("id")),
-    });
+    const requireExists = c.req.query("requireExists") === "1";
+    const versions = await deps.workbenches
+      .history(projectId, agentId, c.req.param("id"), { requireExists })
+      .catch(notFound);
+    return c.json({ versions });
   });
 
   app.post("/:id/rollback", async (c) => {
@@ -793,6 +807,13 @@ export function appCenterRoutes(deps: AppCenterRouteDeps) {
   app.put("/layout", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const { userId } = c.var.user;
+    if (isSessionPrincipal(userId)) {
+      throw new HttpError(
+        403,
+        "session_token_forbidden",
+        "A Session token cannot modify a user's App Center layout.",
+      );
+    }
     deps.access.requireProjectAccess(userId, projectId);
     const body = await readJson(c);
     if (body.layout === undefined)

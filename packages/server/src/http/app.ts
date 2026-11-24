@@ -27,9 +27,15 @@ import { bodyLimitBytes } from "@prismshadow/penguin-library-setting/attachment-
 import { isAgentImport, MAX_PACKAGE_BYTES } from "@prismshadow/penguin-library-agent/agent-zip";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth, Users } from "@prismshadow/penguin-library-auth";
-import type { Access } from "@prismshadow/penguin-library-project";
+import type { Access, Projects } from "@prismshadow/penguin-library-project";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { Settings } from "@prismshadow/penguin-library-setting";
+import {
+  isSessionPrincipal,
+  sessionPrincipalId,
+  verifySessionToken,
+} from "../auth/session-token.js";
 
 /**
  * The assembled business surface: one request in, one response (or a decline) out.
@@ -113,6 +119,8 @@ export class HttpModule {
   @Use() private readonly settings!: Settings;
   @Use() private readonly access!: Access;
   @Use() private readonly users!: Users;
+  @Use() private readonly sessions!: SessionIndex;
+  @Use() private readonly projects!: Projects;
   @Provide() http!: Http;
   setup({ contributions }: ClassCtx) {
     const routes = [...(contributions.routes ?? [])]
@@ -136,11 +144,36 @@ export class HttpModule {
       { auth: this.auth, rule: originRule(this.config), log: (line) => this.log.line(line) },
     );
 
+    const authenticateSessionToken = (bearer: string) => {
+      const secret =
+        typeof this.auth.localApiToken === "function" ? this.auth.localApiToken() : null;
+      if (secret === null || !this.sessions || !this.projects) return null;
+      const sessionId = verifySessionToken(secret, bearer);
+      if (sessionId === null) return null;
+      const row = this.sessions.findById(sessionId);
+      if (row === null || this.projects.findById(row.projectId) === null) return null;
+      return {
+        user: {
+          userId: sessionPrincipalId(row.projectId, row.sessionId),
+          isAdmin: false,
+          passwordHash: "",
+          passwordIsInitial: false,
+          displayName: null,
+          avatar: null,
+          createdAt: row.createdAt,
+        },
+        via: "token" as const,
+      };
+    };
+
     // The HTTP surface, gated on the cookie; and the same surface once per socket user,
     // gated on that user — assembled lazily, since most users never open a socket, and kept,
     // since the one who did opens it on every page load. Hono copies a group's routes into
     // each parent it is mounted on, so mounting the groups twice shares handlers, not state.
-    const cookieGated = this.assemble(routes, authMiddleware(this.auth, this.config.trustProxy));
+    const cookieGated = this.assemble(
+      routes,
+      authMiddleware(this.auth, this.config.trustProxy, { authenticateSessionToken }),
+    );
     const asUser = new Map<string, Hono<AppEnv>>();
     const enteredAs = (userId: string): Hono<AppEnv> => {
       let app = asUser.get(userId);
@@ -250,10 +283,12 @@ export class HttpModule {
       (c.var.user as AppEnv["Variables"]["user"] | undefined) === undefined
         ? authenticate(c, next)
         : next();
-    // Only an actual Bearer may exchange credentials: a cookie an earlier user gate already
-    // authenticated (a Remote one included) must not skip this transport check.
+    // Only the boot's local API token may exchange credentials: neither a cookie nor a
+    // per-Session scoped token authenticated by an earlier user gate may skip this check.
     const tokenGate: MiddlewareHandler<AppEnv> = (c, next) =>
-      c.var.sessionVia === "token" && bearerToken(c.req.header("authorization")) !== null
+      c.var.sessionVia === "token" &&
+      !isSessionPrincipal(c.var.user.userId) &&
+      bearerToken(c.req.header("authorization")) !== null
         ? next()
         : authenticateToken(c, next);
     const mount = (r: (typeof routes)[number]) => {

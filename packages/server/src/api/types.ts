@@ -4034,6 +4034,14 @@ export interface AppCenterLayoutResponse {
 }
 
 /**
+ * GET /api/projects/:p/agents/:a/workbenches/:id/status: pure read-only snapshot of one
+ * workbench's switches, build outcome, and live serving state — never compiles or boots.
+ */
+export interface WorkbenchStatusResponse {
+  workbench: import("@prismshadow/penguin-library-workbench").WorkbenchStatus;
+}
+
+/**
  * GET /api/projects/:p/agents/:a/workbenches: every workbench of the Agent, disabled ones
  * included (each says so in `enabled`).
  */

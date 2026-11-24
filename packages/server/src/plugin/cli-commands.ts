@@ -67,6 +67,7 @@ import type {
   PluginCliCommandsResponse,
 } from "../api/types.js";
 import type { AppEnv } from "../auth/middleware.js";
+import { parseSessionPrincipal } from "../auth/session-token.js";
 import type { Db, Hmr } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest, readJson, requireString } from "../http/validate.js";
@@ -455,15 +456,26 @@ export function pluginCliCommandRoutes(deps: PluginCliCommandRouteDeps): Hono<Ap
     const target = cliCommandNamedBy(own, args);
     const asDriver = target?.tokenCaller === "session-driver" && c.var.sessionVia === "token";
     // The caller's context, checked here so a command can trust what it reads from ctx.caller.
+    const scoped = parseSessionPrincipal(user.userId);
     const caller: CliCommandCaller = { userId: user.userId, isAdmin: user.isAdmin };
     if (body.projectId !== undefined) {
       const projectId = requireString(body, "projectId", { minLen: 1, maxLen: 128 });
       if (!isValidId(projectId)) throw badRequest("projectId is not a Project id.");
+      if (scoped !== null && projectId !== scoped.projectId) {
+        throw new HttpError(
+          404,
+          "project_not_found",
+          "Project does not exist or you do not have access.",
+        );
+      }
       if (!asDriver) deps.access.requireProjectAccess(user.userId, projectId);
       caller.projectId = projectId;
     }
     if (body.sessionId !== undefined) {
       const sessionId = requireString(body, "sessionId", { minLen: 1, maxLen: 128 });
+      if (scoped !== null && sessionId !== scoped.sessionId) {
+        throw new HttpError(404, "session_not_found", "Session does not exist in this Project.");
+      }
       const row = deps.sessions.findById(sessionId);
       if (caller.projectId === undefined || row === null || row.projectId !== caller.projectId) {
         throw new HttpError(404, "session_not_found", "Session does not exist in this Project.");

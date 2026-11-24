@@ -133,6 +133,8 @@ describe("penguin app id resolution & info", () => {
     expect(await cli(["app", "info", "default_agent/slides"])).toBe(0);
     expect(out()).toContain("ID: default_agent/slides");
     expect(out()).toContain("Status: enabled");
+    expect(out()).toContain("Serving: yes");
+    expect(out()).toContain("Build: ready");
     expect(out()).toContain("unused file ui/draft.html");
 
     stdout.length = 0;
@@ -141,7 +143,10 @@ describe("penguin app id resolution & info", () => {
       appId: "default_agent/slides",
       agentId: "default_agent",
       id: "slides",
+      enabled: true,
       agentEnabled: true,
+      serving: true,
+      build: "ready",
     });
 
     // When the Agent-wide switch is off, info reports the app as disabled (agent switch off).
@@ -150,10 +155,36 @@ describe("penguin app id resolution & info", () => {
       workbenchId: "tool",
       enabled: true,
       agentEnabled: false,
+      serving: false,
+      build: "not_loaded",
+      loadedAt: null,
     });
     stdout.length = 0;
     expect(await cli(["app", "info", "paused_agent/tool"])).toBe(0);
     expect(out()).toContain("Status: disabled (agent switch off)");
+    expect(out()).toContain("Serving: no");
+    expect(out()).toContain("Build: not loaded");
+
+    // Failed rebuild while an older instance is still serving reports both serving=true and build=failed.
+    server.addApp({
+      agentId: "default_agent",
+      workbenchId: "broken-update",
+      revision: "newrev000001",
+      serving: true,
+      servingRevision: "oldrev000001",
+      build: "failed",
+      error: "index.ts(1,1): TS2304: broken",
+    });
+    stdout.length = 0;
+    expect(await cli(["app", "info", "default_agent/broken-update", "--json"])).toBe(0);
+    expect(JSON.parse(out())).toMatchObject({
+      appId: "default_agent/broken-update",
+      serving: true,
+      servingRevision: "oldrev000001",
+      revision: "newrev000001",
+      build: "failed",
+      error: "index.ts(1,1): TS2304: broken",
+    });
   });
 
   it("falls back to PENGUIN_APP_ID when app-id is omitted, and resolves bare workbenchId via --agent-id or PENGUIN_AGENT_ID", async () => {
@@ -245,6 +276,26 @@ describe("penguin app reload, enable, disable, history", () => {
     expect(app.enabled).toBe(true);
     expect(out()).toContain("Enabled default_agent/slides.");
 
+    // If enabling persists the switch but loading fails, report both and exit 1.
+    app.enabled = false;
+    app.error = "index.ts(1,1): TS2304: Cannot find name 'oops'";
+    stdout.length = 0;
+    stderr.length = 0;
+    expect(await cli(["app", "enable", "default_agent/slides"])).toBe(1);
+    expect(app.enabled).toBe(true);
+    expect(err()).toContain("Enabled default_agent/slides, but loading failed:");
+    expect(err()).toContain("TS2304");
+
+    stdout.length = 0;
+    stderr.length = 0;
+    expect(await cli(["app", "enable", "default_agent/slides", "--json"])).toBe(1);
+    expect(JSON.parse(out())).toMatchObject({
+      appId: "default_agent/slides",
+      enabled: true,
+      error: app.error,
+    });
+    app.error = null;
+
     stdout.length = 0;
     expect(await cli(["app", "history", "default_agent/slides"])).toBe(0);
     expect(out()).toContain("abc123def456");
@@ -253,6 +304,11 @@ describe("penguin app reload, enable, disable, history", () => {
     app.versions = [];
     expect(await cli(["app", "history", "default_agent/slides"])).toBe(0);
     expect(out()).toContain("No recorded versions");
+
+    // Nonexistent app reports not-found rather than an empty version list.
+    stderr.length = 0;
+    expect(await cli(["app", "history", "default_agent/missing"])).toBe(1);
+    expect(err()).toContain("No such app: default_agent/missing");
   });
 });
 

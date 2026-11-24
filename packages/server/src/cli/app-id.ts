@@ -14,7 +14,7 @@
  *   bare workbench name.
  */
 import { isValidId } from "@prismshadow/penguin-core";
-import { isWorkbenchId } from "../workbenches/store.js";
+import { isWorkbenchId } from "@prismshadow/penguin-library-agent/agent-vocab";
 
 /** Mirrors `SESSION_ID_RE` in `@prismshadow/penguin-library-cli` to catch accidental sessionId reuse. */
 const SESSION_ID_RE = /^session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}$/;

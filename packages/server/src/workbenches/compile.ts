@@ -178,6 +178,10 @@ export interface LoadStatus {
   failed: boolean;
   /** The load error, when the file records one. */
   error: string | null;
+  /** When that load ran (ISO 8601); null when the file does not say. */
+  checkedAt: string | null;
+  /** Non-fatal hints recorded by that load. */
+  hints: string[];
 }
 
 /** The last load's status as {@link writeLoadStatus} left it; null when there is none to read. */
@@ -191,11 +195,13 @@ export async function readLoadStatus(dir: string): Promise<LoadStatus | null> {
     return null;
   }
   // Whatever else the file holds, a field it lacks reads as unsaid.
-  const { revision, ok, error } = (status ?? {}) as Record<string, unknown>;
+  const { revision, ok, error, checkedAt, hints } = (status ?? {}) as Record<string, unknown>;
   return {
     revision: typeof revision === "string" ? revision : null,
     failed: ok === false,
     error: typeof error === "string" ? error : null,
+    checkedAt: typeof checkedAt === "string" ? checkedAt : null,
+    hints: Array.isArray(hints) ? hints.filter((h): h is string => typeof h === "string") : [],
   };
 }
 
