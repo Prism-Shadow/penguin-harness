@@ -199,6 +199,11 @@ export function formatAbort(p: AbortPayload, t: Messages, c: Palette = STDOUT_PA
   );
 }
 
+/** Compaction-summary context opening (`[context_summary]` or legacy `<context_summary>`), matching Web's stream-model. */
+function isContextSummary(text: string): boolean {
+  return text.startsWith("[context_summary]") || text.startsWith("<context_summary>");
+}
+
 /** Options shared by history and streaming rendering. */
 export interface RenderOptions {
   /**
@@ -235,14 +240,23 @@ export function renderHistory(
   // tool_call_id -> tool name (keyed with the origin chain: parent/child ids may collide),
   // so output lines can be labeled with the tool name of their preceding call.
   const toolNames = new Map<string, string>();
-  const nameKey = (msg: AmspRecord, id: string): string => `${msg.origin?.join("/") ?? ""}:${id}`;
+  const originKey = (msg: AmspRecord): string => msg.origin?.join("/") ?? "";
+  const nameKey = (msg: AmspRecord, id: string): string => `${originKey(msg)}:${id}`;
+  // Per-origin compaction spans: hides each session's own compaction prompt/draft/tools
+  // without letting parent and nested subagent spans interfere with one another.
+  const activeCompactions = new Set<string>();
   for (const msg of messages) {
+    const origin = originKey(msg);
+    if (msg.type === "session_meta") activeCompactions.delete(origin);
     if (isEventMessage(msg)) {
-      const p = msg.payload as { type?: string } & AbortPayload;
-      if (p.type === "abort") out.write(`${formatAbort(p, t, c)}\n`);
+      const p = msg.payload;
+      if (p.type === "compaction_begin") activeCompactions.add(origin);
+      else if (p.type === "compaction_end") activeCompactions.delete(origin);
+      else if (p.type === "abort") out.write(`${formatAbort(p as AbortPayload, t, c)}\n`);
       continue;
     }
     if (!isModelMessage(msg)) continue;
+    if (activeCompactions.has(origin)) continue;
     const p = msg.payload as {
       type?: string;
       role?: string;
@@ -258,13 +272,17 @@ export function renderHistory(
     switch (p.type) {
       case "text":
         if (p.role === "user") {
+          const text = p.text ?? "";
+          // Compaction-summary injection (`[context_summary]` or legacy `<context_summary>`)
+          // opens a new context internally — never a user prompt, matching Web's stream-model.
+          if (isContextSummary(text)) break;
           // Mid-run steering ([user_steering]-wrapped user text delivered between turns):
           // rendered as distinct user-speech lines instead of a raw marker block or a prompt.
-          const steering = parseUserSteeringText(p.text ?? "");
+          const steering = parseUserSteeringText(text);
           if (steering !== null) {
             writeSteeringLines(out, steering, t, c);
           } else {
-            out.write(`\n> ${p.text ?? ""}\n`);
+            out.write(`\n> ${text}\n`);
           }
         } else {
           // A reply's a2ui blocks print as their text fallback, as they do while streaming.
@@ -842,7 +860,13 @@ export class StreamRenderer {
               this.out.write(`${dim(this.t.switchModelHandedOver(handover.tracePath), this.c)}\n`);
               this.lastLineKey = null;
             }
-            if (steering === null && handover === null && this.echoInput && !isHarnessInput(msg)) {
+            if (
+              steering === null &&
+              handover === null &&
+              !isContextSummary(p.text) &&
+              this.echoInput &&
+              !isHarnessInput(msg)
+            ) {
               if (this.expectedInput === p.text) {
                 this.expectedInput = null;
               } else {

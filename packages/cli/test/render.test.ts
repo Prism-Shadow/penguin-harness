@@ -1277,6 +1277,129 @@ describe("renderHistory (resume)", () => {
     );
     expect(text()).toBe("");
   });
+
+  it("skips [context_summary] and legacy <context_summary> openings, while keeping ordinary mentions", () => {
+    const { stream, text } = collector();
+    renderHistory(
+      [
+        userText("[context_summary]\nEarlier work summary\n[/context_summary]"),
+        userText("<context_summary>\nLegacy summary\n</context_summary>"),
+        userText("Please explain [context_summary] formatting"),
+        assistantText("Sure."),
+      ],
+      stream,
+      t,
+    );
+    const plain = stripAnsi(text());
+    expect(plain).not.toContain("Earlier work summary");
+    expect(plain).not.toContain("Legacy summary");
+    expect(plain).not.toContain("> [context_summary]");
+    expect(plain).not.toContain("> <context_summary>");
+    expect(plain).toContain("> Please explain [context_summary] formatting");
+    expect(plain).toContain("Sure.");
+  });
+
+  it("skips compaction-internal model messages per origin, resets on session_meta, and isolates parent and subagent spans", () => {
+    const { stream, text } = collector();
+    renderHistory(
+      [
+        sessionMeta({
+          session_id: "sess-1",
+          provider: "custom",
+          model_id: "m",
+          model_context_window: 64000,
+          system_prompt: "",
+          agent_state: "/a",
+          workspace: "/w",
+          source: "user",
+        }),
+        compactionBegin({ mode: "summarize", reason: "context", context: 50000, turns: 5 }),
+        userText("Summarize the conversation so far."),
+        thinkingMessage("internal compaction thought"),
+        toolCall({ name: "exec_command", arguments: '{"cmd":"pwd"}', toolCallId: "cmp1" }),
+        toolCallOutput({ output: "/work", toolCallId: "cmp1", status: "completed" }),
+        // A nested subagent's compaction_end or session_meta must not close the parent's compaction span.
+        withOrigin(
+          compactionEnd({ mode: "summarize", reason: "context", status: "completed" }),
+          "child-1",
+        ),
+        withOrigin(
+          sessionMeta({
+            session_id: "child-1",
+            provider: "custom",
+            model_id: "m",
+            model_context_window: 64000,
+            system_prompt: "",
+            agent_state: "/a",
+            workspace: "/w",
+            source: "subagent",
+          }),
+          "child-1",
+        ),
+        // A nested subagent's own model_msg during parent compaction stays visible.
+        withOrigin(
+          toolCall({ name: "exec_command", arguments: '{"cmd":"echo sub"}', toolCallId: "sub1" }),
+          "child-1",
+        ),
+        assistantText("[summary]internal summary text[/summary]"),
+        compactionEnd({ mode: "summarize", reason: "context", status: "completed" }),
+        // A nested subagent's compaction hides its own draft without hiding parent messages.
+        withOrigin(
+          compactionBegin({ mode: "summarize", reason: "context", context: 50000, turns: 5 }),
+          "child-1",
+        ),
+        withOrigin(assistantText("[summary]child compaction draft[/summary]"), "child-1"),
+        userText("visible parent prompt"),
+        assistantText("visible parent reply"),
+        withOrigin(
+          compactionEnd({ mode: "summarize", reason: "context", status: "completed" }),
+          "child-1",
+        ),
+        // An unclosed compaction span resets when a new context's session_meta opens.
+        compactionBegin({ mode: "summarize", reason: "manual", context: 50000, turns: 5 }),
+        assistantText("[summary]unclosed compaction draft[/summary]"),
+        sessionMeta({
+          session_id: "sess-1",
+          provider: "custom",
+          model_id: "m",
+          model_context_window: 64000,
+          system_prompt: "",
+          agent_state: "/a",
+          workspace: "/w",
+          source: "user",
+        }),
+        userText("after new context"),
+      ],
+      stream,
+      t,
+    );
+    const plain = stripAnsi(text());
+    expect(plain).not.toContain("Summarize the conversation so far.");
+    expect(plain).not.toContain("internal compaction thought");
+    expect(plain).not.toContain("internal summary text");
+    expect(plain).not.toContain("child compaction draft");
+    expect(plain).not.toContain("[tool-mp1]");
+    expect(plain).not.toContain("unclosed compaction draft");
+    expect(plain).toContain("[tool-ub1] exec_command <- $ echo sub");
+    expect(plain).toContain("> visible parent prompt");
+    expect(plain).toContain("visible parent reply");
+    expect(plain).toContain("> after new context");
+  });
+
+  it("StreamRenderer with echoInput skips [context_summary] and legacy <context_summary> without clearing expectedInput", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t, { echoInput: true });
+    r.expectInput("typed on this screen");
+    r.handle(userText("[context_summary]\nLive compacted context\n[/context_summary]"));
+    r.handle(userText("<context_summary>\nLegacy live summary\n</context_summary>"));
+    r.handle(userText("typed on this screen"));
+    r.handle(userText("hello from another surface"));
+    const plain = stripAnsi(text());
+    expect(plain).not.toContain("Live compacted context");
+    expect(plain).not.toContain("Legacy live summary");
+    expect(plain).not.toContain("> typed on this screen");
+    expect(plain).toContain("> hello from another surface");
+  });
 });
 
 describe("tool-output collapsing (chat display; the Trace keeps the full text)", () => {
