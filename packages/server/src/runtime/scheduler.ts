@@ -62,6 +62,10 @@ import type {
 } from "@prismshadow/penguin-library-session";
 import type { Errors } from "@prismshadow/penguin-library-observability";
 
+// The display status of a registered task lives in the session library (schedules restack);
+// this re-export keeps the server's own import paths stable.
+export { scheduleStatus, isSettledStatus };
+
 /** Reconcile and fire-check interval (min period is 5m, so 30s granularity is plenty). */
 const TICK_INTERVAL_MS = 30_000;
 
