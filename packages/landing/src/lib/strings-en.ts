@@ -56,7 +56,7 @@ export const en: Strings = {
       growth: "Vibe-Coding",
       separator: " ",
       reachLead: "to ",
-      reach: "Vibe-Evolving",
+      reach: "Vibe-Tuning",
     },
     subtitle: "Open Foundation for Self-Evolving Enterprise AI.",
     downloadCta: "Download desktop",
@@ -64,7 +64,16 @@ export const en: Strings = {
     watcha: "Watcha",
     watchaBadge: "PenguinHarness Watcha badge",
     cliInstall: "Command-line install",
+    stats: [
+      { value: "Cross-platform", label: "Linux, Windows, macOS" },
+      { value: "100% open source", label: "Apache 2.0 licensed" },
+      {
+        value: "First self-improving harness",
+        label: "A native agent self-evolution engine",
+      },
+    ],
     supportedModelsLabel: "Supported Models",
+    supportedModelsMore: "and more",
     algorithmsLabel: "RSI Algorithms",
     benchmarksLabel: "Benchmarks",
     benchmarkKinds: {
@@ -173,11 +182,23 @@ export const en: Strings = {
   },
 
   selfImprove: {
+    workbench: {
+      title: "Self-Evolution Workbench",
+      agents: "Agent",
+      stages: ["Evaluate", "Improve", "Retest", "Next round"],
+      activeStages: ["Evaluating", "Improving", "Retesting", "Next round"],
+      tasks: [
+        { name: "Coverage Review", task: "Cross-check claims against policy terms" },
+        { name: "Service Ticket Resolution", task: "Verify and resolve pending tickets" },
+        { name: "Financial Control", task: "Reconcile accounts at close" },
+        { name: "Court Clerk Operations", task: "Verify case filings and organize records" },
+      ],
+    },
     toolkit:
       "An RSI toolkit changes your agent’s harness (its prompts and Skills) while the model stays fixed, and measures every change on a Benchmark.",
     evaluate: "Evaluate",
     optimize: "Optimize",
-    title: "A unified platform where any agent can self-evolve",
+    title: "A unified self-evolution platform for any agent",
     subtitle:
       "By default the General Agent runs the optimization Skill. Each round it makes one change to the tested agent. Evaluator subagents running the evaluation Skill score the changed agent on every case of the Benchmark.",
     nodeOptimizer: "Optimizer",
@@ -189,6 +210,7 @@ export const en: Strings = {
     edgeImprove: "edit AGENTS.md, a Skill or config",
     noteOld: "snapshot before editing",
     noteNew: "kept only if the score is higher",
+    sampleTrends: "Example trends",
     trends: [
       { label: "Score", hint: "out of 100" },
       { label: "Cost", hint: "per run" },
@@ -256,7 +278,33 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
 
   cases: {
     os: "Build your first self-evolving Agent OS",
-    apps: ["Document Q&A", "Investment Analyst", "Legal Assistant"],
+    workspace: {
+      title: "App Center",
+      project: "PenguinHarness demo",
+      apps: {
+        docs: "Document Q&A",
+        investment: "Investment Analyst",
+        legal: "Legal Assistant",
+        slides: "AI Slides",
+        images: "Image Studio",
+        support: "Support",
+        expenses: "Expense log",
+        terminal: "Terminal",
+        browser: "Browser",
+      },
+      desk: "Contract desk",
+      file: "File",
+      status: "Status",
+      reviewed: "Reviewed",
+      analyzing: "Analyzing…",
+      files: [
+        "Employment Contract - Template v3.docx",
+        "Supplier Agreement - Kestrel Foods.pdf",
+        "Office Lease - Unit 1204.pdf",
+        "Mutual NDA - Helios Labs.docx",
+        "Master Services Agreement - Northwind Logistics.pdf",
+      ],
+    },
     title: "A2APP: one sentence and $0.10 build a legal agent app",
     a2app:
       "Every agent can have a workbench of its own. The agent builds it from what you ask and changes it the same way. It opens beside the chat and reloads as the agent edits it.",

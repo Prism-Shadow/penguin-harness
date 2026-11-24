@@ -48,7 +48,7 @@ const USAGE = "system_agent/usage";
 const MODELS = "system_agent/models";
 const LAYOUT: AppCenterLayout = {
   v: 1,
-  items: [{ type: "folder", id: "tools", name: "Tools", apps: [PLUGINS] }],
+  items: [{ type: "folder", id: "tools", name: "Tools", apps: [PLUGINS, "system_agent/machines"] }],
 };
 
 const drafts: ChatDrafts = {
@@ -152,7 +152,7 @@ it("carries the system apps' trails on the App Center's entry and their tiles, a
   expect(tile(USAGE).getAttribute("aria-label")).toBe(en.todo.joined([costCenter, error]));
   expect(dotted(tile(USAGE))).toBe(true);
   expect(folder().dataset["tooltip"]).toBe(
-    en.todo.joined([en.appCenter.folderTip("Tools", 1, 0), plugin]),
+    en.todo.joined([en.appCenter.folderTip("Tools", 2, 0), plugin]),
   );
   expect(dotted(folder())).toBe(true);
   expect(tile(MODELS).dataset["tooltip"]).toBe(en.appCenter.systemTileName("Models"));

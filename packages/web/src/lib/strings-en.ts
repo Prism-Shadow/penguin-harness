@@ -1307,7 +1307,6 @@ export const en: Strings = {
       back: "Back",
       /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
       toFolders: "Into a folder",
-      newFolderWith: "Into a new folder with",
     },
     restoreTitle: "Restore default order",
     restoreBody:

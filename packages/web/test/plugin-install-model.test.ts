@@ -99,8 +99,8 @@ const props = (over: Partial<PluginCardProps> = {}): PluginCardProps => ({
 const show = (p: PluginCardProps) => mount(h(LocaleProvider, null, h(PluginCard, p)));
 const buttonNamed = (name: string) =>
   [...document.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === name);
-const buttonWithText = (text: string) =>
-  [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === text);
+const buttonWithText = (text: string, scope: ParentNode = document) =>
+  [...scope.querySelectorAll("button")].find((b) => b.textContent?.trim() === text);
 /** The market card's install control: its words, then the card's title. */
 const installControl = (label: string) => buttonNamed(`${label} · computer-use`);
 const dialog = () => document.querySelector('[role="dialog"]');
@@ -216,6 +216,44 @@ describe("a plugin on the server", () => {
     await click(installControl(en.skills.install)!);
     await click(buttonWithText(words.backToServer)!);
     expect(buttonWithText(words.uninstallServer)).toBeUndefined();
+  });
+});
+
+describe("a shipped Skill with a Project server module", () => {
+  const row = (state: NonNullable<PluginRow["module"]>["state"]): PluginRow => ({
+    ...installedRow,
+    library: { ...LIBRARY, source: "builtin", modules: true },
+    module: { ...installedRow.module!, shipped: true, state },
+  });
+  it("offers an admin a single server install before selecting Agents", async () => {
+    const apply = vi.fn();
+    await show(
+      props({
+        row: row("none"),
+        onInstallServer: apply,
+        usage: { usedBy: ["helper"], behind: [] },
+      }),
+    );
+    await click(installControl(en.skills.install)!);
+    expect(dialog()!.textContent).toContain("1/2");
+    await click(buttonWithText(words.enableModule, dialog()!)!);
+    expect(apply).toHaveBeenCalledOnce();
+  });
+  it("keeps the member's Agent install and shows that the Project module is off", async () => {
+    await show(props({ row: row("none"), isAdmin: false }));
+    await click(installControl(en.skills.install)!);
+    expect(dialog()!.textContent).toContain(en.plugins.statusHint.moduleAvailable);
+    expect(buttonNamed(en.skills.install + " helper")).toBeDefined();
+    await click(buttonWithText(words.backToServer)!);
+    expect(buttonWithText(words.enableModule)).toBeUndefined();
+  });
+  it("shows a module-loading failure even when the package already carries a Skill", async () => {
+    const failed = row("failed");
+    failed.module!.error = "The module did not load.";
+    await show(props({ row: failed, status: "failed" }));
+    await click(installControl(en.plugins.status.failed)!);
+    expect(dialog()!.textContent).toContain("The module did not load.");
+    expect(dialog()!.textContent).toContain("1/2");
   });
 });
 
