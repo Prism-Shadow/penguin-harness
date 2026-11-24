@@ -93,9 +93,13 @@ for (const phone of [false, true]) {
         const button = await files.boundingBox();
         const clickX = Math.max(button.x + 2, Math.min(x, button.x + button.width - 2));
         await page.mouse.click(clickX, button.y + button.height / 2);
+        await expect(files).toHaveCount(0);
         await expect(page.getByRole("button", { name: "Show less" }).first()).toBeVisible();
       }
       if (phone) {
+        const composer = page.locator('[data-slot="composer"] textarea:visible').first();
+        await composer.tap();
+        await expect(composer).toBeFocused();
         const cdp = await page.context().newCDPSession(page);
         await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
         await cdp.send("Input.dispatchTouchEvent", {
