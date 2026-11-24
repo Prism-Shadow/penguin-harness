@@ -22,6 +22,12 @@ import type { Failure, ReportMask } from "@prismshadow/penguin-ui";
 /** A status tone, chosen by meaning (the Web App's lib/tone.ts holds what each one means). */
 export type Tone = "busy" | "attention" | "success" | "link" | "danger" | "muted";
 
+/** One event on the user channel (`/api/events`), or a connected machine's wrapped in `machine_event`. */
+export interface UserChannelEvent {
+  readonly type: string;
+  readonly event?: { readonly type: string };
+}
+
 /** The dock a panel's tab lands in. */
 export type DockPosition = "right" | "bottom";
 
@@ -78,6 +84,8 @@ export interface WebHost {
   toastApiError(err: unknown, ctx?: FailureContext): void;
   /** Opens the Settings dialog, on `section` when the viewer may open it. */
   requestSettings(request?: { section?: string }): void;
+  /** Navigates the Web App's router to `to`. */
+  navigate(to: string): void;
   openPanel(kind: string, position?: DockPosition, fallback?: DockPosition): void;
   /** Whether that panel's tab is the shown one in an open dock. */
   isTabShown(kind: string): boolean;
@@ -90,6 +98,8 @@ export interface WebHost {
   formatRelativeLong(iso: string): string;
   /** A byte count in the app's units ("4.9GB"). */
   formatBytes(bytes: number): string;
+  /** Calls `listener` with every event on this server's user channel (`/api/events`) until the returned function is called. */
+  subscribeUserEvents(listener: (event: UserChannelEvent) => void): () => void;
   toneInk: Readonly<Record<Tone, string>>;
   toneSurface: Readonly<Record<Tone, string>>;
   toneDot: Readonly<Record<Tone, string>>;
@@ -167,6 +177,10 @@ export function requestSettings(request?: { section?: string }): void {
   need("requestSettings")(request);
 }
 
+export function navigate(to: string): void {
+  need("navigate")(to);
+}
+
 export function openPanel(kind: string, position?: DockPosition, fallback?: DockPosition): void {
   need("openPanel")(kind, position, fallback);
 }
@@ -193,4 +207,8 @@ export function formatRelativeLong(iso: string): string {
 
 export function formatBytes(bytes: number): string {
   return need("formatBytes")(bytes);
+}
+
+export function subscribeUserEvents(listener: (event: UserChannelEvent) => void): () => void {
+  return need("subscribeUserEvents")(listener);
 }

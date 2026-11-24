@@ -184,6 +184,8 @@ import type {
   VoicePolishUpdate,
 } from "../../../../web/src/api/tool-types";
 import { payloadOf } from "./types";
+import { taskTree } from "./tasks-demo";
+import type { TaskTreeResponse } from "@penguinharness/task-manager/types";
 import type {
   StorageCleanupResult,
   StorageCleanupReview,
@@ -1505,6 +1507,16 @@ router
   .post("/api/me/storage/reveal", () =>
     fail(404, "not_desktop", "Only the desktop shell can show a folder."),
   );
+
+// ---------------------------------------------------------------------------------------------
+// Task Manager (a plugin's page, `GET /api/me/tasks`): the tree of what runs right now, as the
+// demo's demonstration of it (tasks-demo.ts) — the demo store records no page sources
+// ---------------------------------------------------------------------------------------------
+
+router
+  .get("/api/me/tasks", ({ store }): TaskTreeResponse => taskTree(store))
+  .post("/api/me/tasks/sessions/:sessionId/kill", () => empty())
+  .post("/api/me/tasks/sessions/:sessionId/processes/:processId/signal", () => empty());
 
 // ---------------------------------------------------------------------------------------------
 // Messaging bindings: nothing bound in the demo; every write needs a platform behind it

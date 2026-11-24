@@ -13,6 +13,7 @@
  * means "unknown": the list path resolves it from the Trace once per process lifetime.
  */
 import type { SessionSource } from "../api/types.js";
+import { isPageSource } from "@prismshadow/penguin-core";
 import type { SessionCategory } from "@prismshadow/penguin-library-trace";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { Component } from "@prismshadow/penguin-core/kernel";
@@ -63,6 +64,8 @@ export function unrunSource(client: SessionRow["client"]): SessionSource | undef
 /**
  * The sources a program opens a Session for — the Agent API, a scheduled task's new-Session
  * run, `penguin run`, a workbench — which the listing rule files away unless the user keeps them.
+ * A Workbench page's own id (`PageSource`) is one of them: the page opened that Session, and a
+ * page's Sessions are the page's, not the reader's.
  */
 export const BACKGROUND_SOURCES: ReadonlySet<SessionSource> = new Set([
   "api",
@@ -70,6 +73,14 @@ export const BACKGROUND_SOURCES: ReadonlySet<SessionSource> = new Set([
   "cli",
   "workbench",
 ]);
+
+/**
+ * Whether a program opened the Session (`BACKGROUND_SOURCES`), a Workbench page's id included: the
+ * set holds the kinds, and a page's id is a value of its own that no set can enumerate.
+ */
+export function isBackgroundSource(source: SessionSource | undefined): boolean {
+  return source !== undefined && (BACKGROUND_SOURCES.has(source) || isPageSource(source));
+}
 
 // Who is reading a list, and the header a request says so with: their own module.
 export { ADOPTED_AT_HEADER, listingViewOf } from "./listing-view.js";
@@ -127,7 +138,7 @@ export function listCategory(
 ): SessionCategory | null {
   if (source === "company" || source === "subagent") return null;
   if (marks.archivedAt !== null) return "archived";
-  if (source !== undefined && BACKGROUND_SOURCES.has(source) && marks.keptAt === null) {
+  if (isBackgroundSource(source) && marks.keptAt === null) {
     return "archived";
   }
   return "active";

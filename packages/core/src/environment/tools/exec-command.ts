@@ -138,6 +138,7 @@ export function createExecCommandTool(
       // avoid orphans; once the process moves to background this listener is removed in finally.
       // Deliberately listens to `signal` only: a detach leaves the process running — it is the
       // opposite request.
+      ctx.onSpawnPid?.(session.pid);
       const onAbort = (): void => session.kill();
       let registered = false;
       signal?.addEventListener("abort", onAbort, { once: true });

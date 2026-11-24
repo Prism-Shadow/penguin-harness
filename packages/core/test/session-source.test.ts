@@ -16,7 +16,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createAgent } from "../src/index.js";
+import { createAgent, formatPageId } from "../src/index.js";
 import { sessionMeta, userText } from "@prismshadow/amsp/records";
 import type { AmspRecord, SessionSource } from "@prismshadow/amsp/records";
 import { tracesDir } from "../src/state/paths.js";
@@ -113,6 +113,18 @@ describe("resuming a Session", () => {
       }
     },
   );
+
+  it("carries a Workbench page's id, so a resumed page Session stays that page's", async () => {
+    const pageId = formatPageId(new Date(2026, 10, 23, 9, 5, 7));
+    await writeTrace(pageId);
+    const agent = await createAgent();
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(sourceOf(session)).toBe(pageId);
+    } finally {
+      session.dispose();
+    }
+  });
 
   it.each([
     { head: "no source", value: undefined, reads: "user" },

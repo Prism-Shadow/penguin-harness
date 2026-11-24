@@ -58,6 +58,7 @@ import type {
   EnvironmentInterface,
   LLMInterface,
   ThinkingLevelName,
+  ToolCallListing,
   ToolDetachResult,
   ToolPermission,
 } from "./interfaces/index.js";
@@ -1368,6 +1369,31 @@ export class Session {
    */
   detachToolCall(toolCallId: string): ToolDetachResult {
     return this.environment.detachToolCall?.(toolCallId) ?? "not_running";
+  }
+
+  /** The calls currently executing (EnvironmentInterface.listToolCalls): what a task monitor reads. */
+  listToolCalls(): ToolCallListing[] {
+    return this.environment.listToolCalls?.() ?? [];
+  }
+
+  /** Executing tool calls of one live subagent child session. */
+  listSubagentToolCalls(childSessionId: string): ToolCallListing[] {
+    return this.environment.listSubagentToolCalls?.(childSessionId) ?? [];
+  }
+
+  /** Background command processes owned by one live subagent child session. */
+  listSubagentBackgroundCommands(childSessionId: string): BackgroundCommandInfo[] {
+    return this.environment.listSubagentBackgroundCommands?.(childSessionId) ?? [];
+  }
+
+  /** Kills one background command process of one live subagent child session. */
+  killSubagentBackgroundCommand(childSessionId: string, processId: string): boolean {
+    return this.environment.killSubagentBackgroundCommand?.(childSessionId, processId) ?? false;
+  }
+
+  /** Detaches one executing tool call of one live subagent child session. */
+  detachSubagentToolCall(childSessionId: string, toolCallId: string): ToolDetachResult {
+    return this.environment.detachSubagentToolCall?.(childSessionId, toolCallId) ?? "not_running";
   }
 
   /** Whether a background subagent of this Session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */

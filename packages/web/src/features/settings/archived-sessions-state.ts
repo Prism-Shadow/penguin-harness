@@ -43,6 +43,7 @@ import type {
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { isPageSource } from "@prismshadow/amsp/records";
 import { apiErrorText } from "../../lib/api-error";
 import { activityKeyOf } from "../../lib/session-grouping";
 import {
@@ -266,7 +267,8 @@ export function touchesArchive(ev: ServerEvent): boolean {
     (ev.source === "api" ||
       ev.source === "schedule" ||
       ev.source === "cli" ||
-      ev.source === "workbench")
+      ev.source === "workbench" ||
+      isPageSource(ev.source))
   );
 }
 

@@ -163,6 +163,12 @@ export const en: GalleryStrings = {
         "Thirty days of usage: Tokens, cost, requests and success rate, grouped by date, Agent, model or Session, with the error panel.",
       how: "Sidebar › Cost center.",
     },
+    tasks: {
+      title: "Task Manager",
+      description:
+        "The tree of what runs right now: one section per page, a card per Session it opened, and under each Session its processes with CPU and memory — beside the Token totals of the page and of the whole tree.",
+      how: "App Center › Task Manager.",
+    },
     benchmark: {
       title: "Evaluation center",
       description:

@@ -18,6 +18,9 @@
  *   the host's key, of the host interface its module requires.
  * - Given the same program built without `--sources`, the other package's default export is not
  *   taken for this package's plugin declaration: the build passes and the declaration is its own.
+ * - Given a host interface whose signatures name a template literal type, the build passes: the
+ *   pattern projects as `string`, and a union holding it keeps its literal members and widens
+ *   only the pattern.
  */
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import fs from "node:fs";
@@ -276,6 +279,78 @@ export default { modules: [DemoPlugin] } satisfies Plugin;
       const run = generate();
       expect(run.status).toBe(0);
       expect(table().plugin).toEqual({ modules: ["DemoPlugin"], replaces: [] });
+    },
+    SPAWN_BUDGET,
+  );
+});
+
+describe("a signature over a template literal type", () => {
+  // A `@Use`d host interface whose member takes a pattern type: `page-${string}` admits a
+  // range of strings, and a definition is data — so it projects as `string` rather than
+  // stopping the build. `SessionSource` is where the platform meets this today.
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gen-ifaces-")));
+  dirs.push(root);
+  const files: Record<string, string> = {
+    "host/package.json": JSON.stringify({ name: "@example/host", version: "1.0.0" }),
+    "host/src/face.ts": `${HEADER}import { Interface } from "@prismshadow/penguin-core/plugin";
+@Component({})
+export class HostService {}
+
+export type PageSource = \`page-\${string}\`;
+export type Source = "user" | "workbench" | PageSource;
+
+@Interface()
+export abstract class HostIndex {
+  abstract pageOf(sessionId: string): PageSource;
+  abstract sourceOf(sessionId: string): Source;
+}
+
+export default { modules: [HostService] } satisfies Plugin;
+`,
+    "demo/package.json": JSON.stringify({ name: "@example/demo", version: "1.0.0" }),
+    "demo/tsconfig.json": JSON.stringify({
+      compilerOptions: { target: "es2022", module: "nodenext", noLib: true, types: [] },
+      include: ["src"],
+    }),
+    "demo/src/index.ts": `${HEADER}import { Use } from "@prismshadow/penguin-core/plugin";
+import { HostService, type HostIndex } from "../../host/src/face.js";
+
+@Component({})
+export class DemoPlugin {
+  host = HostService;
+  @Use() index!: HostIndex;
+}
+
+export default { modules: [DemoPlugin] } satisfies Plugin;
+`,
+  };
+  for (const [rel, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+    fs.writeFileSync(path.join(root, rel), text);
+  }
+
+  it(
+    "projects the pattern as `string`, and the union it sits in likewise",
+    () => {
+      const run = spawnSync(
+        process.execPath,
+        [BIN, "--project", "tsconfig.json", "--sources", "src", "--out", "ifaces.json"],
+        { cwd: path.join(root, "demo"), encoding: "utf8" },
+      );
+      expect(run.stderr).not.toMatch(/error/);
+      expect(run.status).toBe(0);
+      const table = JSON.parse(fs.readFileSync(path.join(root, "demo", "ifaces.json"), "utf8"));
+      const iface = table.ifaces["@example/host#HostIndex"];
+      // The pattern admits a range of strings, so the type it names is `string` — and being a
+      // primitive it is written where it is used rather than emitted into `types` under a name.
+      expect(iface.methods.pageOf.returns).toEqual({ data: "string" });
+      expect(table.types).not.toHaveProperty(["@example/host#PageSource"]);
+      // A union holding it keeps its literal members and widens only that one.
+      const source = table.types["@example/host#Source"];
+      expect(iface.methods.sourceOf.returns).toEqual({
+        data: { $ref: "@example/host#Source" },
+      });
+      expect(source.split("|").sort()).toEqual(["'user'", "'workbench'", "string"]);
     },
     SPAWN_BUDGET,
   );

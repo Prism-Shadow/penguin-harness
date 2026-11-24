@@ -21,8 +21,10 @@ export {
   formatRelativeLong,
   formatRelativeShort,
   isTabShown,
+  navigate,
   openPanel,
   requestSettings,
+  subscribeUserEvents,
   toastApiError,
   toneDot,
   toneInk,
@@ -35,6 +37,7 @@ export type {
   DockPosition,
   FailureContext,
   Tone,
+  UserChannelEvent,
 } from "./bridge";
 export { defineStrings, webLocale } from "./strings";
 export type { WebLocale } from "./strings";

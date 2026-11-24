@@ -60,7 +60,13 @@ export type { Sandbox, SandboxSlots } from "../sandbox/service.js";
 export type { AgentStateEngines, AgentStateEnginesSlots } from "../workbenches/engines.js";
 export type { Terminals } from "../terminal/manager.js";
 export type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
+export type { PendingApproval } from "../runtime/approvals.js";
+// A plugin that shows what an Agent's apps run reads the Workbench listing for each page's id
+// (`WorkbenchInfo.pageId`), and the usage rows and priced totals for what a page's Sessions cost.
+export type { Workbenches } from "../mechanisms/workbenches.js";
+export type { UsageStore, UsageQueries } from "@prismshadow/penguin-library-observability";
 export type { AgentService } from "../services/agent-service.js";
+export type { AgentLifecycle } from "../mechanisms/agents.js";
 export type { AgentConfigService } from "../services/agent-config-service.js";
 export type { Messaging, MessagingSlots } from "../runtime/messaging/bridge.js";
 export type {

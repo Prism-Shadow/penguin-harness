@@ -1,0 +1,11 @@
+{
+  // The server half and its tests, in the server's program (its paths reach the host's face from
+  // source). The web half has its own, tsconfig.web.json; `jsx` is here too because a bundler
+  // compiling a src/web file reads the nearest tsconfig.json, whatever it includes.
+  "extends": "../../packages/server/tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx"
+  },
+  "include": ["src", "test", "../../packages/server/src/*.d.ts"],
+  "exclude": ["src/web"]
+}

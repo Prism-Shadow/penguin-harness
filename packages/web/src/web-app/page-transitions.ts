@@ -42,6 +42,28 @@ export function isPageChange(pages: readonly PageRow[], from: string, to: string
   return before !== null && after !== null && before !== after;
 }
 
+let activeNavigate: ((to: string) => void) | null = null;
+
+/** Registers the mounted router's `navigate` for the plugin host (`navigateApp`). */
+export function setActiveNavigator(next: ((to: string) => void) | null): () => void {
+  activeNavigate = next;
+  return () => {
+    if (activeNavigate === next) activeNavigate = null;
+  };
+}
+
+/** Navigates the active router to `to` (falls back to `history.pushState` when unmounted). */
+export function navigateApp(to: string): void {
+  if (activeNavigate !== null) {
+    activeNavigate(to);
+    return;
+  }
+  if (typeof window !== "undefined") {
+    window.history.pushState(null, "", to);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }
+}
+
 /**
  * Patches `router.navigate` to ask for a view transition on a change of page, when the browser
  * can play one, the reader has not turned motion off, and the theme gives the page a duration.
@@ -70,6 +92,9 @@ export function withPageTransitions(
       ...options,
       viewTransition: enabled && options?.viewTransition !== false,
     });
+  };
+  activeNavigate ??= (to) => {
+    void router.navigate(to);
   };
   return router;
 }

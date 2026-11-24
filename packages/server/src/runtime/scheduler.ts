@@ -33,6 +33,7 @@ import type {
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin-core";
+import type { PageSource } from "@prismshadow/penguin-core";
 import type { ScheduleStateRow } from "@prismshadow/penguin-library-session/repos/schedules";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import type { ErrorSink } from "./error-recorder.js";
@@ -85,7 +86,7 @@ export interface ScheduleSessionCreatorShape {
      * `deny-all`, which asks nobody either.
      */
     approvalMode?: "allow-all" | "deny-all";
-    source?: "schedule" | "workbench";
+    source?: "schedule" | "workbench" | PageSource;
     client?: "workbench";
   }): Promise<{ sessionId: string }>;
 }

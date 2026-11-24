@@ -153,6 +153,7 @@ export function createSubagentTool(
         // subagents panel's steer/abort — reach this child by its session id even while it
         // still runs inside this call's foreground collect window.
         manager.track(session);
+        ctx.onSubagentSession?.(session.sessionId);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         yield* fail(`[run_subagent error: ${message}]`);

@@ -119,6 +119,7 @@
     "@penguinharness/software-development": "workspace:*",
     "@penguinharness/storage": "workspace:*",
     "@penguinharness/tabletop-desk": "workspace:*",
+    "@penguinharness/task-manager": "workspace:*",
     "@penguinharness/trace-lookup": "workspace:*",
     "@penguinharness/trace-rsi-toolkit": "workspace:*",
     "@penguinharness/use-bento-slides": "workspace:*",

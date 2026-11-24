@@ -138,6 +138,11 @@ class Renderer {
     if (def === undefined)
       throw new IfaceRenderError(`type '${key}' is referenced but not in the table`);
     this.slice.types[key] = def;
+    // A named entry whose whole form is the bare name it carries (`typescript#Date` →
+    // `Date`) is one of the language's own globals: the references read the global, and
+    // declaring a local of the same name would shadow itself — `type Date = Date` — which
+    // the compiler refuses as circular. The library the check compiles with has the global.
+    if (def === name) return name;
     // Reserve the slot first: a recursive type refers to itself by this name.
     const at = this.out.push("") - 1;
     this.out[at] = `export type ${name} = ${this.data(def, key)};`;

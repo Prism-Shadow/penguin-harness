@@ -651,15 +651,20 @@ for (const project of projects) {
     ["ReadonlySet", "set"],
   ]);
 
+  // A host object is one declared in a compiled dependency: a declaration file outside the
+  // sources this run projects. Which file that is differs between programs — the same package
+  // resolves through a workspace symlink in one program and through a store copy in another
+  // (pnpm installs `file:` dependencies once per peer set) — so the path alone cannot decide
+  // it: the sources roots decide, and the path checks cover a run without them.
   const isHostDeclared = (symbol) =>
     symbol !== undefined &&
     (symbol.declarations ?? []).length > 0 &&
     symbol.declarations.every((d) => {
       const f = d.getSourceFile();
-      return (
-        f.isDeclarationFile &&
-        (f.fileName.includes("/node_modules/") || /\/lib\.[\w.]+\.d\.ts$/.test(f.fileName))
-      );
+      if (!f.isDeclarationFile) return false;
+      const fileName = f.fileName.split(path.sep).join("/");
+      if (sourceRoots.length > 0) return !sourceRoots.some((root) => fileName.startsWith(root));
+      return fileName.includes("/node_modules/") || /\/lib\.[\w.]+\.d\.ts$/.test(fileName);
     });
 
   const quote = (s) => `'${s.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
@@ -689,7 +694,12 @@ for (const project of projects) {
     if (key !== null && !(type.getFlags() & (ts.TypeFlags.Primitive | ts.TypeFlags.Literal))) {
       if (key in types || stack.includes(type)) return { $ref: key };
       types[key] = null; // reserve: a self-reference met while projecting resolves to $ref
-      const projected = projectData(type, atNode, [...stack, type]);
+      // Projected from ITS OWN root: a named entry is stored once and compared by name, so
+      // its shape must not depend on where it was first reached from. Inheriting the caller's
+      // stack made the same name cut at different depths in two programs that reach it by
+      // different paths — a plugin's copy and the running platform's table then disagreed
+      // about exactly the members the load-time fit check compares.
+      const projected = projectData(type, atNode, [type]);
       if (projected === null) {
         delete types[key];
         return null;
@@ -727,6 +737,10 @@ for (const project of projects) {
     if (f & (ts.TypeFlags.Unknown | ts.TypeFlags.Any)) return "unknown";
     if (f & ts.TypeFlags.Never) return "never";
     if (f & ts.TypeFlags.StringLiteral) return quote(type.value);
+    // A template literal type (`page-${string}`) is a pattern, and a definition is data: every
+    // member it admits is a string, so it reads as `string` — the widest honest form. A union
+    // holding one widens the same way (`"user" | \`page-${string}\`` reads as `string`).
+    if (f & ts.TypeFlags.TemplateLiteral) return "string";
     if (f & ts.TypeFlags.NumberLiteral) return String(type.value);
     if (f & ts.TypeFlags.EnumLiteral && type.isUnion()) {
       return type.types.map((t) => dataOf(t, atNode, stack)).join("|");

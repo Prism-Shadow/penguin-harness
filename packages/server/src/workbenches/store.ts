@@ -9,6 +9,7 @@
  *   <agentStateDir>/workbenches/<id>/.build/        its emitted code, per revision (compile.ts)
  *   <agentStateDir>/workbenches/<id>/.disabled      present: this workbench is switched off
  *   <agentStateDir>/workbenches/<id>/.hidden-from-sidebar  present: not in its Agent's sidebar
+ *   <agentStateDir>/workbenches/<id>/.page-id       the page id its Sessions record as their source
  *   <agentStateDir>/workbenches/.disabled           present: every workbench of the Agent is
  *
  * The folder's source is every file except `state.json` (the state is the workbench's data,
@@ -22,7 +23,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { removeLeftovers } from "./leftovers.js";
 import { blobOid, isGitName, treeId, type SourceFile } from "./repo.js";
-import { agentDir, readPluginIcon } from "@prismshadow/penguin-core";
+import { agentDir, isPageSource, readPluginIcon } from "@prismshadow/penguin-core";
+import type { PageSource } from "@prismshadow/penguin-core";
 
 export const STATE_FILE = "state.json";
 export const UI_DIR = "ui";
@@ -41,6 +43,15 @@ export const DISABLED_MARKER = ".disabled";
  * with the folder.
  */
 export const HIDDEN_FROM_SIDEBAR = ".hidden-from-sidebar";
+
+/**
+ * The file holding a workbench's page id: the id its Sessions record as their `source`
+ * (`PageSource`), so the Sessions one page opened are told apart from another page's. It is the
+ * server's, written once the first time the folder is read and never rewritten — a dot entry like
+ * {@link DISABLED_MARKER}, so it is no part of the source, of a version, or of an export, and a
+ * plugin update or an archive import (which write source only) leaves it where it is.
+ */
+export const PAGE_ID_FILE = ".page-id";
 
 /**
  * Whether `dir` (a workbench's folder, or the folder of all of them) holds the off marker, or the
@@ -85,6 +96,11 @@ export interface WorkbenchFolder {
   revision: string;
   uiRev: string | null;
   pkg: { name: string; version: string | null };
+  /**
+   * The page id its Sessions record as their source; null while the folder holds none (nothing
+   * has read it for writing yet, see {@link ensurePageId}) or the file's value is not one.
+   */
+  pageId: PageSource | null;
   /**
    * The plugin icon (from `package.json#penguin.icon`, `icon.svg` at the root by default),
    * read through core's own reader: an SVG's markup or a PNG's bytes base64-encoded — safe
@@ -194,6 +210,7 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
       name: typeof pkg.name === "string" && pkg.name !== "" ? pkg.name : id,
       version: typeof pkg.version === "string" ? pkg.version : null,
     },
+    pageId: await readPageId(dir),
     iconSvg: ((icon) => {
       if (icon === undefined) return null;
       // The manifest face keeps two of the reader's formats: an SVG as its markup (already
@@ -240,6 +257,60 @@ export async function readState(dir: string): Promise<unknown> {
   } catch {
     return null;
   }
+}
+
+/**
+ * The folder's page id, as {@link PAGE_ID_FILE} holds it; null when there is none or the value in
+ * it is not a page id (a hand-edited or half-written file is no id, and a Session must never
+ * record junk as its source).
+ */
+async function readPageId(dir: string): Promise<PageSource | null> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(path.join(dir, PAGE_ID_FILE), "utf8");
+  } catch {
+    return null;
+  }
+  const value = raw.trim();
+  return isPageSource(value) ? value : null;
+}
+
+/**
+ * The folder's page id, minted and written there when it holds none yet, so every read of a
+ * workbench that runs leaves it with one. `mint` supplies a candidate (the server passes core's
+ * `formatPageId`); a candidate already taken on disk is minted again. Two readers racing write
+ * the same result: the file is created with `wx`, and a loser reads back the winner's id. A file
+ * holding something that is no page id (a hand-edit, a half-written one) is no id at all, so it is
+ * replaced rather than kept. A folder that cannot be written (a read-only checkout of an Agent
+ * State) answers null — the caller decides what an unwritable folder means for it.
+ */
+export async function ensurePageId(dir: string, mint: () => string): Promise<PageSource | null> {
+  const existing = await readPageId(dir);
+  if (existing !== null) return existing;
+  const file = path.join(dir, PAGE_ID_FILE);
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const candidate = mint();
+    if (!isPageSource(candidate)) throw new Error(`not a page id: ${JSON.stringify(candidate)}`);
+    try {
+      await fs.writeFile(file, `${candidate}\n`, { flag: "wx", flush: true });
+      return candidate;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "EEXIST") {
+        // Found on disk between our read and our write. Another reader's id is the folder's; a
+        // file holding no page id is cleared so the next attempt can write one.
+        const found = await readPageId(dir);
+        if (found !== null) return found;
+        await fs.rm(file, { force: true }).catch(() => undefined);
+        continue;
+      }
+      if (code === "ENOENT" || code === "EACCES" || code === "EPERM" || code === "EROFS") {
+        return null;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`could not mint a page id for ${dir}`);
 }
 
 /**

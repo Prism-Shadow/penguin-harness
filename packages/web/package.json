@@ -16,6 +16,7 @@
   "dependencies": {
     "@penguinharness/browser-automation": "workspace:*",
     "@penguinharness/storage": "workspace:*",
+    "@penguinharness/task-manager": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-setting": "workspace:*",

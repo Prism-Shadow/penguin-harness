@@ -43,7 +43,7 @@ import { useRuntimeLanguages } from "../lib/use-runtime-languages";
 import { ProjectProvider } from "../state/project";
 import { MachinesProvider } from "../state/machines";
 import { SessionsProvider } from "../state/sessions";
-import { withPageTransitions } from "./page-transitions";
+import { setActiveNavigator, withPageTransitions } from "./page-transitions";
 import { AppLayout } from "./app-layout";
 import { LoginPage } from "../pages/login";
 import { webAppDeps } from "./deps";
@@ -225,6 +225,13 @@ export function AppRouter({ initialPath }: AppRouterProps = {}) {
       : createMemoryRouter(appRoutes(pages), { initialEntries: [initialPath] }),
   );
   // A problem report names the page by its route's pattern, never by the ids in the address.
+  useLayoutEffect(
+    () =>
+      setActiveNavigator((to) => {
+        void router.navigate(to);
+      }),
+    [router],
+  );
   useEffect(() => {
     setReportRoute(() => routePattern(router.state.matches));
     return () => setReportRoute(null);

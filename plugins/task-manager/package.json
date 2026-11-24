@@ -1,0 +1,67 @@
+{
+  "name": "@penguinharness/task-manager",
+  "version": "0.2.18",
+  "type": "module",
+  "description": "See the tree of what runs now — each Agent Workbench page, the Sessions it opened, and the processes those Sessions started — with every page's Token total and every process's CPU and memory. The App Center's Task Manager page, and a Skill that lets an agent read the same tree from the shell.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills",
+    "tasks",
+    "task-manager"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/task-manager"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    },
+    "./types": "./src/types.ts",
+    "./web": "./src/web/index.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/index.js",
+    "skills",
+    "icon.svg",
+    "ifaces.json",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.server.json --sources src --out ifaces.json && tsup"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-observability": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web-plugin": "workspace:*",
+    "@prismshadow/skills": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "hono": "^4.13.11",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.12",
+    "zustand": "^5.0.15"
+  }
+}

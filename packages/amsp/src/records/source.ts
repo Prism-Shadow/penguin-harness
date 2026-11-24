@@ -10,12 +10,16 @@
  * one whose row was opened by the organization runtime as `company` instead
  * (`readRecordedSource` in the server's runtime/session-sources.ts).
  *
+ * A Workbench page's id is a source too (`PageSource`): it is kept as it is, so a Session a page
+ * opened stays that page's through every reader.
+ *
  * Removal: at the 0.3.0 release preparation the `benchmark` branch goes. The `undefined` branch
  * goes only together with a one-time rewrite of old heads, or stays for good — the user decides
  * then: reading never rewrites a head, so every Session created before the source was required
  * would otherwise become a malformed head, the way one without `provider` is.
  */
 import type { SessionSource } from "./types.js";
+import { isPageSource } from "./page-id.js";
 
 const SESSION_SOURCES: ReadonlySet<unknown> = new Set<SessionSource>([
   "user",
@@ -30,6 +34,9 @@ const SESSION_SOURCES: ReadonlySet<unknown> = new Set<SessionSource>([
 /** Narrows an untrusted `session_meta.source` to a SessionSource. */
 export function normalizeSessionSource(value: unknown): SessionSource {
   if (SESSION_SOURCES.has(value)) return value as SessionSource;
+  // A Workbench page's id: kept as written, since it is what tells one page's Sessions apart
+  // from another page's and from every kind above (./page-id.ts holds the alphabet it must fit).
+  if (isPageSource(value)) return value;
   // compat(0.3.0): a meta written before the source was required has none; it was a person's.
   if (value === undefined) return "user";
   // compat(0.3.0): the retired `benchmark` marked Test Sessions `penguin run` started.

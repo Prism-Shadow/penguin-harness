@@ -96,6 +96,7 @@ import type {
   SubagentMessageOutcome,
   TextPayload,
   ThinkingLevelName,
+  ToolCallListing,
   ToolDetachResult,
 } from "@prismshadow/penguin-core";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
@@ -654,16 +655,46 @@ export class SessionManager {
 
   // —— Query surface (used by Session listing / Agent active-count / SSE subscription replay) ——
 
+  /** Resolves the active root RuntimeEntry that currently hosts `sessionId` as a subagent child. */
+  private rootEntryForChild(sessionId: string): RuntimeEntry | undefined {
+    const root = this.childRoots.get(sessionId);
+    if (root !== undefined && root !== sessionId) {
+      const entry = this.entries.get(root);
+      if (entry) return entry;
+    }
+    for (const entry of this.entries.values()) {
+      if (entry.sessionId === sessionId) continue;
+      if (entry.session.listBackgroundSubagents?.().some((sub) => sub.sessionId === sessionId)) {
+        return entry;
+      }
+    }
+    return undefined;
+  }
+
   statusOf(sessionId: string): SessionStatus {
-    return this.entries.get(sessionId)?.status ?? "idle";
+    const entry = this.entries.get(sessionId);
+    if (entry) return entry.status;
+    const rootEntry = this.rootEntryForChild(sessionId);
+    const sub = rootEntry?.session
+      .listBackgroundSubagents?.()
+      .find((s) => s.sessionId === sessionId);
+    return sub?.running ? "running" : "idle";
   }
 
   pendingApprovalCount(sessionId: string): number {
-    return this.entries.get(sessionId)?.approvals.size ?? 0;
+    const entry = this.entries.get(sessionId);
+    if (entry) return entry.approvals.size;
+    return this.pendingApprovals(sessionId).length;
   }
 
   pendingApprovals(sessionId: string): PendingApproval[] {
-    return this.entries.get(sessionId)?.approvals.list() ?? [];
+    const entry = this.entries.get(sessionId);
+    if (entry) return entry.approvals.list();
+    const rootEntry = this.rootEntryForChild(sessionId);
+    if (!rootEntry) return [];
+    return rootEntry.approvals
+      .list()
+      .filter((a) => a.origin !== undefined && a.origin[a.origin.length - 1] === sessionId);
   }
 
   pendingModel(sessionId: string): ModelRefDto | undefined {
@@ -920,9 +951,31 @@ export class SessionManager {
       () => void this.state.current?.startBackgroundNoticeTask(sessionId),
     );
     session.onBackgroundMessage?.((msg) => this.forwardBackgroundMessage(sessionId, msg));
+    const prevSubagentRunning = new Map<string, boolean>();
     session.onSubagentState?.(() => {
       const entry = this.entries.get(sessionId);
-      if (entry) this.publishState(entry, entry.status);
+      if (!entry) return;
+      this.publishState(entry, entry.status);
+      const current = new Map<string, boolean>();
+      for (const sub of entry.session.listBackgroundSubagents?.() ?? []) {
+        current.set(sub.sessionId, sub.running);
+        if (prevSubagentRunning.get(sub.sessionId) !== sub.running) {
+          this.publishChildSessionState(
+            entry.projectId,
+            sub.sessionId,
+            sub.running ? "running" : "idle",
+          );
+        }
+      }
+      for (const [childSid, wasRunning] of prevSubagentRunning) {
+        if (!current.has(childSid) && wasRunning) {
+          this.publishChildSessionState(entry.projectId, childSid, "idle");
+        }
+      }
+      prevSubagentRunning.clear();
+      for (const [childSid, isRunning] of current) {
+        prevSubagentRunning.set(childSid, isRunning);
+      }
     });
     session.onBackgroundState?.(() => this.publishBackgroundTasks(sessionId));
     // The entry-lifetime approve doubles as the children's fallback approval sink: a child
@@ -973,6 +1026,14 @@ export class SessionManager {
     // measures only the launching task, and a long background run ages into eviction.
     entry.lastActivityMs = Date.now();
     this.deps.channels.get(entry.sessionId).publish(msg);
+    if (msg.origin && msg.origin.length > 0) {
+      const childSid = msg.origin[msg.origin.length - 1]!;
+      const childChannel = this.deps.channels.get(childSid);
+      if (childChannel.subscriberCount > 0) {
+        const { origin: _, ...bareMsg } = msg;
+        childChannel.publish(bareMsg);
+      }
+    }
     const ctx: UsageContext = {
       projectId: entry.projectId,
       agentId: entry.agentId,
@@ -1737,7 +1798,7 @@ export class SessionManager {
 
   /** Submit an approval decision; returns false if the pending approval doesn't exist (already decided/unknown). */
   decideApproval(sessionId: string, toolCallId: string, decision: "allow" | "deny"): boolean {
-    const entry = this.entries.get(sessionId);
+    const entry = this.entries.get(sessionId) ?? this.rootEntryForChild(sessionId);
     if (!entry) return false;
     return entry.approvals.decide(toolCallId, decision);
   }
@@ -1967,12 +2028,22 @@ export class SessionManager {
    */
   abortTask(sessionId: string): boolean {
     const entry = this.entries.get(sessionId);
-    if (!entry || !entry.abort) return false;
-    // Deny only the MAIN session's pending approvals: an approval blocks the run the user is
-    // stopping. A subagent child survives the parent's stop, and so does its question.
-    entry.approvals.denyMain();
-    entry.abort.abort();
-    return true;
+    if (entry) {
+      if (!entry.abort) return false;
+      // Deny only the MAIN session's pending approvals: an approval blocks the run the user is
+      // stopping. A subagent child survives the parent's stop, and so does its question.
+      entry.approvals.denyMain();
+      entry.abort.abort();
+      return true;
+    }
+    const rootEntry = this.rootEntryForChild(sessionId);
+    if (!rootEntry) return false;
+    for (const pending of this.pendingApprovals(sessionId)) {
+      rootEntry.approvals.decide(pending.toolCall.payload.tool_call_id, "deny");
+    }
+    const aborted = rootEntry.session.abortBackgroundSubagentRun?.(sessionId) ?? false;
+    if (aborted) rootEntry.lastActivityMs = Date.now();
+    return aborted;
   }
 
   /**
@@ -1981,7 +2052,10 @@ export class SessionManager {
    * ever report an empty list, so nothing is resurrected just to answer a poll).
    */
   listProcesses(sessionId: string): BackgroundCommandInfo[] {
-    return this.entries.get(sessionId)?.session.listBackgroundCommands?.() ?? [];
+    const entry = this.entries.get(sessionId);
+    if (entry) return entry.session.listBackgroundCommands?.() ?? [];
+    const rootEntry = this.rootEntryForChild(sessionId);
+    return rootEntry?.session.listSubagentBackgroundCommands?.(sessionId) ?? [];
   }
 
   /**
@@ -2002,18 +2076,43 @@ export class SessionManager {
    */
   detachToolCall(sessionId: string, toolCallId: string): ToolDetachResult {
     const entry = this.entries.get(sessionId);
-    if (!entry) return "not_running";
-    const result = entry.session.detachToolCall?.(toolCallId) ?? "not_running";
-    if (result === "detached") entry.lastActivityMs = Date.now();
+    if (entry) {
+      const result = entry.session.detachToolCall?.(toolCallId) ?? "not_running";
+      if (result === "detached") entry.lastActivityMs = Date.now();
+      return result;
+    }
+    const rootEntry = this.rootEntryForChild(sessionId);
+    if (!rootEntry) return "not_running";
+    const result =
+      rootEntry.session.detachSubagentToolCall?.(sessionId, toolCallId) ?? "not_running";
+    if (result === "detached") rootEntry.lastActivityMs = Date.now();
     return result;
+  }
+
+  /**
+   * The tool calls a LOADED session is executing right now (core `Session.listToolCalls`), for a
+   * task monitor: what the Session is doing this instant. An unloaded session has nothing
+   * executing — a resumed entry answers like an unknown id.
+   */
+  listToolCalls(sessionId: string): ToolCallListing[] {
+    const entry = this.entries.get(sessionId);
+    if (entry) return entry.session.listToolCalls?.() ?? [];
+    const rootEntry = this.rootEntryForChild(sessionId);
+    return rootEntry?.session.listSubagentToolCalls?.(sessionId) ?? [];
   }
 
   /** Kills one background command process of a loaded session; false when the session isn't loaded or the id is unknown. */
   killProcess(sessionId: string, processId: string): boolean {
     const entry = this.entries.get(sessionId);
-    if (!entry) return false;
-    const killed = entry.session.killBackgroundCommand?.(processId) ?? false;
-    if (killed) entry.lastActivityMs = Date.now();
+    if (entry) {
+      const killed = entry.session.killBackgroundCommand?.(processId) ?? false;
+      if (killed) entry.lastActivityMs = Date.now();
+      return killed;
+    }
+    const rootEntry = this.rootEntryForChild(sessionId);
+    if (!rootEntry) return false;
+    const killed = rootEntry.session.killSubagentBackgroundCommand?.(sessionId, processId) ?? false;
+    if (killed) rootEntry.lastActivityMs = Date.now();
     return killed;
   }
 
@@ -2034,13 +2133,26 @@ export class SessionManager {
    */
   removeProcess(sessionId: string, processId: string): "removed" | "running" | "not_found" {
     const entry = this.entries.get(sessionId);
-    if (!entry) return "not_found";
-    const info = entry.session.listBackgroundCommands?.().find((p) => p.processId === processId);
+    if (entry) {
+      const info = entry.session.listBackgroundCommands?.().find((p) => p.processId === processId);
+      if (!info) return "not_found";
+      if (info.running) return "running";
+      const removed = entry.session.killBackgroundCommand?.(processId) ?? false;
+      if (!removed) return "not_found";
+      entry.lastActivityMs = Date.now();
+      return "removed";
+    }
+    const rootEntry = this.rootEntryForChild(sessionId);
+    if (!rootEntry) return "not_found";
+    const info = rootEntry.session
+      .listSubagentBackgroundCommands?.(sessionId)
+      .find((p) => p.processId === processId);
     if (!info) return "not_found";
     if (info.running) return "running";
-    const removed = entry.session.killBackgroundCommand?.(processId) ?? false;
+    const removed =
+      rootEntry.session.killSubagentBackgroundCommand?.(sessionId, processId) ?? false;
     if (!removed) return "not_found";
-    entry.lastActivityMs = Date.now();
+    rootEntry.lastActivityMs = Date.now();
     return "removed";
   }
 
@@ -2678,6 +2790,14 @@ export class SessionManager {
         // may have been recycled and recreated during a long wait on approval, and
         // holding a stale reference would send output to an orphaned, detached channel.
         const published = this.deps.channels.get(entry.sessionId).publish(msg);
+        if (msg.origin && msg.origin.length > 0) {
+          const childSid = msg.origin[msg.origin.length - 1]!;
+          const childChannel = this.deps.channels.get(childSid);
+          if (childChannel.subscriberCount > 0) {
+            const { origin: _, ...bareMsg } = msg;
+            childChannel.publish(bareMsg);
+          }
+        }
         // Live-tail bookkeeping in the same synchronous tick as the publish: the messages
         // endpoint captures "channel cursor + open fragments + the run's records" between
         // two publishes, so the capture is always a consistent snapshot (see live-tail.ts).
@@ -2819,6 +2939,9 @@ export class SessionManager {
       sessionId: childSid,
       source,
     });
+    if (this.statusOf(childSid) !== "idle") {
+      this.publishChildSessionState(entry.projectId, childSid, "running");
+    }
     const child: ChildSession = {
       sessionId: childSid,
       agentId,
@@ -2902,6 +3025,34 @@ export class SessionManager {
       lastActiveAt,
       hasTrace,
     });
+  }
+
+  /** Broadcasts `task_state` (when subscribed) and `session_state` on the user channel for a subagent child session. */
+  private publishChildSessionState(
+    projectId: string,
+    childSessionId: string,
+    state: SessionStatus,
+  ): void {
+    const childChannel = this.deps.channels.get(childSessionId);
+    if (childChannel.subscriberCount > 0) {
+      childChannel.publish({ type: "task_state", state, queued: 0 }, "server_event");
+    }
+    const notify = this.deps.notifyProjectUsers;
+    if (!notify) return;
+    try {
+      const row = this.deps.sessions.findById(childSessionId);
+      if (!row) return;
+      notify(projectId, {
+        type: "session_state",
+        sessionId: childSessionId,
+        projectId,
+        state,
+        lastActiveAt: row.lastActiveAt,
+        hasTrace: true,
+      });
+    } catch {
+      // Same DB-closed guard as publishState.
+    }
   }
 
   private publishEvent(entry: RuntimeEntry, event: ServerEvent): void {
@@ -3011,6 +3162,7 @@ export abstract class Sessions extends Interface<
     | "retryNow"
     | "abortTask"
     | "listProcesses"
+    | "listToolCalls"
     | "probeProcessServices"
     | "killProcess"
     | "removeProcess"

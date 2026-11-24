@@ -183,11 +183,25 @@ export interface SessionMetaPayload {
  * - `company`: company mode's organization runtime opened it, as an employee's desk or for a
  *   ticket. Only company mode's own views list it.
  *
+ * - `page-…`: the page id of the Agent Workbench page that opened it (see {@link PageSource}),
+ *   which tells one workbench's Sessions from another's. Archived by default, like `workbench`.
+ *
  * Which program created the server's index row is a separate fact (the row's `client`); the two
  * can differ, as `penguin chat` (a `cli` client writing a `user` Session) shows.
  */
-export type SessionSource =
+export type SessionSourceKind =
   "user" | "api" | "schedule" | "subagent" | "cli" | "company" | "workbench";
+
+/**
+ * The page id an Agent Workbench page holds — `page-YYYY-MM-DD-HH-mm-ss-<8 hex>`, shaped like a
+ * Session id with `page-` in place of `session-` — used as the `source` of every Session that
+ * page opens. One page keeps its id for as long as its folder exists, so Sessions of the same
+ * page are told apart from another page's by it alone.
+ */
+export type PageSource = `page-${string}`;
+
+/** What kind of conversation a Session is: one of the kinds, or the page id that opened it. */
+export type SessionSource = SessionSourceKind | PageSource;
 
 // ---------------------------------------------------------------------------
 // model_msg — complete messages

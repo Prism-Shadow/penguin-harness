@@ -13,7 +13,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { SessionInfo, SessionSource } from "@prismshadow/penguin-server/api";
 import { ICONS } from "@prismshadow/penguin-ui";
-import { backgroundSourceMark } from "../src/lib/session-source-mark";
+import { backgroundSourceMark, programSource } from "../src/lib/session-source-mark";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
@@ -69,10 +69,21 @@ describe("backgroundSourceMark", () => {
     );
   });
 
+  it("marks a Workbench page's Session as the workbench it is", () => {
+    const page = session({ source: "page-2026-11-23-09-05-07-abcdef12" });
+    expect(backgroundSourceMark(page)).toEqual(
+      backgroundSourceMark(session({ source: "workbench" })),
+    );
+    expect(programSource(page)).toBe("workbench");
+  });
+
   it("names every source in English without falling back to Chinese", () => {
     setActiveStrings(en);
     for (const source of PROGRAMS) {
       expect(backgroundSourceMark(session({ source }))?.sourceLabel).not.toMatch(/\p{Script=Han}/u);
     }
+    expect(
+      backgroundSourceMark(session({ source: "page-2026-11-23-09-05-07-abcdef12" }))?.sourceLabel,
+    ).not.toMatch(/\p{Script=Han}/u);
   });
 });

@@ -537,7 +537,9 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
       opened: { sessionId: string };
     };
     // Assert the Session the workbench caller receives, including its unattended approval
-    // mode, rather than the arguments of an internal service or a missing ambient key.
+    // mode, rather than the arguments of an internal service or a missing ambient key. The
+    // source is the page's own id: the page is what opened it, and its id is what tells this
+    // page's Sessions from another page's.
     expect(own).toMatchObject({
       opened: {
         sessionId: expect.any(String),
@@ -546,7 +548,7 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
         provider: "custom",
         modelId: "workbench-test",
         approvalMode: "allow-all",
-        source: "workbench",
+        source: expect.stringMatching(/^page-/),
         archived: true,
       },
     });
@@ -557,6 +559,10 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
         `/api/me/archived-sessions?source=workbench&projectId=${PROJECT}&workspace=temp&limit=100`,
       )
     ).json()) as ArchivedSessionsResponse;
+    // A Session that never ran records its source in session_meta, which its first run writes:
+    // with the in-process registry dropped, what is left is the row's client hint, and that
+    // names the kind (`unrunSource`), not the page. A page's id is the archive's `workbench`
+    // filter all the same — the page is what opened it.
     expect(archived.sessions).toEqual(
       expect.arrayContaining([expect.objectContaining({ sessionId, source: "workbench" })]),
     );
@@ -566,6 +572,8 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect(active.sessions.map((s: { sessionId: string }) => s.sessionId)).not.toContain(sessionId);
     expect((await owner.patch(`/api/sessions/${sessionId}`, { archived: false })).status).toBe(200);
     const kept = (await (await owner.get(`/api/sessions/${sessionId}`)).json()) as SessionResponse;
+    // Same reason as the archive listing above: the registry was dropped and this Session never
+    // ran, so the row's client hint is what is left to read — the kind, not the page.
     expect(kept.session).toMatchObject({ source: "workbench", archived: false });
   });
 
@@ -622,14 +630,17 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
         provider: "custom",
         modelId: talkModel,
         approvalMode: "deny-all",
-        source: "workbench",
+        source: expect.stringMatching(/^page-/),
       });
       expect(quiet.model).toBe(talkModel);
       expect(quiet.toolResult).toContain("Tool call denied by user.");
       expect(quiet.toolResult).not.toContain("the probe was read");
 
       const working = await talk();
-      expect(working.opened).toMatchObject({ approvalMode: "allow-all", source: "workbench" });
+      expect(working.opened).toMatchObject({
+        approvalMode: "allow-all",
+        source: expect.stringMatching(/^page-/),
+      });
       expect(working.toolResult).toContain("the probe was read");
       expect(working.toolResult).not.toContain("Tool call denied");
 

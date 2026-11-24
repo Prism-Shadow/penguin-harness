@@ -19,6 +19,7 @@ import {
   defineStrings,
   openPanel,
   requestSettings,
+  subscribeUserEvents,
   toastApiError,
   toneInk,
   webLocale,
@@ -55,6 +56,7 @@ function standInHost(calls: unknown[][]): WebHost {
     failureNode: () => null,
     toastApiError: record("toastApiError"),
     requestSettings: record("requestSettings"),
+    navigate: record("navigate"),
     openPanel: record("openPanel"),
     isTabShown: () => false,
     currentDockScope: () => "~none",
@@ -62,6 +64,10 @@ function standInHost(calls: unknown[][]): WebHost {
     formatRelativeShort: (iso) => iso,
     formatRelativeLong: (iso) => iso,
     formatBytes: (bytes) => String(bytes),
+    subscribeUserEvents: (listener) => {
+      calls.push(["subscribeUserEvents", typeof listener]);
+      return () => undefined;
+    },
     toneInk: tones,
     toneSurface: tones,
     toneDot: tones,
@@ -80,9 +86,12 @@ describe("the face's host abilities", () => {
     provideWebHost(standInHost(calls));
     expect(await apiFetch("/api/board", { method: "POST", body: { a: 1 } })).toEqual({ ok: true });
     openPanel("board", "bottom");
+    const unsubscribe = subscribeUserEvents(() => undefined);
+    expect(typeof unsubscribe).toBe("function");
     expect(calls).toEqual([
       ["apiFetch", "/api/board", { method: "POST", body: { a: 1 } }],
       ["openPanel", "board", "bottom", undefined],
+      ["subscribeUserEvents", "function"],
     ]);
     expect(new HostApiError(409, "busy", "x") instanceof ApiError).toBe(true);
     expect(toneInk.danger).toBe("d");

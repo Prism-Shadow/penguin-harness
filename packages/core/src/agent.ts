@@ -1397,6 +1397,35 @@ export class Agent {
         setThinkingLevel(level) {
           childSession.thinkingLevel = level;
         },
+        listToolCalls(targetSessionId) {
+          return targetSessionId && targetSessionId !== childSession.sessionId
+            ? childSession.listSubagentToolCalls(targetSessionId)
+            : childSession.listToolCalls();
+        },
+        listBackgroundCommands(targetSessionId) {
+          return targetSessionId && targetSessionId !== childSession.sessionId
+            ? childSession.listSubagentBackgroundCommands(targetSessionId)
+            : childSession.listBackgroundCommands();
+        },
+        killBackgroundCommand(processId, targetSessionId) {
+          return targetSessionId && targetSessionId !== childSession.sessionId
+            ? childSession.killSubagentBackgroundCommand(targetSessionId, processId)
+            : childSession.killBackgroundCommand(processId);
+        },
+        detachToolCall(toolCallId, targetSessionId) {
+          return targetSessionId && targetSessionId !== childSession.sessionId
+            ? childSession.detachSubagentToolCall(targetSessionId, toolCallId)
+            : childSession.detachToolCall(toolCallId);
+        },
+        listBackgroundSubagents() {
+          return childSession.listBackgroundSubagents();
+        },
+        abortBackgroundSubagentRun(nestedSessionId) {
+          return childSession.abortBackgroundSubagentRun(nestedSessionId);
+        },
+        onSubagentState(listener) {
+          childSession.onSubagentState(listener);
+        },
         dispose() {
           return childSession.dispose();
         },

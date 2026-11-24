@@ -42,14 +42,30 @@ export function mcpConnectOutcome(results: McpServerConnectResult[]): {
   };
 }
 
+/** The timestamp every generated id carries: `YYYY-MM-DD-HH-mm-ss`, local timezone, zero-padded (4-digit year, 2 digits for the rest). */
+function idTimestamp(date: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return (
+    `${formatLocalDate(date)}` +
+    `-${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`
+  );
+}
+
 /** Generate a Session id of the form `session-YYYY-MM-DD-HH-mm-ss-<8-hex>` (local timezone, zero-padded: 4-digit year, 2 digits for the rest; hex from randomUUID). */
 export function formatSessionId(date: Date = new Date()): string {
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  const ts =
-    `${formatLocalDate(date)}` +
-    `-${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
   const hex = randomUUID().replace(/-/g, "").slice(0, 8);
-  return `session-${ts}-${hex}`;
+  return `session-${idTimestamp(date)}-${hex}`;
+}
+
+/**
+ * Generate a Workbench page id of the form `page-YYYY-MM-DD-HH-mm-ss-<8-hex>`: a Session id's
+ * shape with `page-` in place of `session-` (local timezone, zero-padded; hex from randomUUID).
+ * A page keeps its id for the life of its workbench folder (the server writes it there), and a
+ * Session the page opens records it as its source (`PageSource`).
+ */
+export function formatPageId(date: Date = new Date()): string {
+  const hex = randomUUID().replace(/-/g, "").slice(0, 8);
+  return `page-${idTimestamp(date)}-${hex}`;
 }
 
 /**

@@ -9,6 +9,7 @@
  * row must never show two alarms that mean different things.
  */
 import type { SessionInfo, SessionSource } from "@prismshadow/penguin-server/api";
+import { isPageSource } from "@prismshadow/amsp/records";
 import { ICONS } from "@prismshadow/penguin-ui";
 import { S } from "./strings";
 
@@ -30,7 +31,10 @@ export interface SourceMark {
 
 /** The program that opened a Session; null for a person's conversation and any other. */
 export function programSource(s: Pick<SessionInfo, "source">): ProgramSource | null {
-  return isProgramSource(s.source) ? s.source : null;
+  if (isProgramSource(s.source)) return s.source;
+  // A Workbench page's own id (`PageSource`) is a workbench's: the page is what opened it.
+  if (isPageSource(s.source)) return "workbench";
+  return null;
 }
 
 /** The mark of a Session a program opened; null for any other. */

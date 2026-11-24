@@ -140,6 +140,20 @@ export interface SubagentHandle {
   steer?(messages: AmspRecord[]): boolean;
   /** Pins the child Session's thinking level (`Session.thinkingLevel`: applied from its next LLM request) — a host panel's pick on a live child. Optional, like `steer`. */
   setThinkingLevel?(level: ThinkingLevelName): void;
+  /** Executing tool calls of the child Session (or a nested child when `targetSessionId` is given). Optional. */
+  listToolCalls?(targetSessionId?: string): ToolCallListing[];
+  /** Background command processes owned by the child Session (or a nested child when `targetSessionId` is given). Optional. */
+  listBackgroundCommands?(targetSessionId?: string): BackgroundCommandInfo[];
+  /** Kills one background command process of the child Session (or a nested child when `targetSessionId` is given). Optional. */
+  killBackgroundCommand?(processId: string, targetSessionId?: string): boolean;
+  /** Detaches one executing tool call of the child Session (or a nested child when `targetSessionId` is given). Optional. */
+  detachToolCall?(toolCallId: string, targetSessionId?: string): ToolDetachResult;
+  /** Live nested subagent child sessions of the child Session. Optional. */
+  listBackgroundSubagents?(): BackgroundSubagentInfo[];
+  /** Aborts one nested child session's current run. Optional. */
+  abortBackgroundSubagentRun?(childSessionId: string): boolean;
+  /** Subscribes nested subagent run-state changes on the child Session. Optional. */
+  onSubagentState?(listener: () => void): void;
   /** Releases runtime resources held by the child Session (e.g. its managed command sessions). Idempotent. */
   dispose(): void | Promise<void>;
 }
@@ -429,6 +443,24 @@ export interface ToolExecutionRequest {
  */
 export type ToolDetachResult = "detached" | "not_running" | "not_detachable";
 
+/** One executing tool call, as a monitor reads it: what `listToolCalls` hands back. */
+export interface ToolCallListing {
+  /** The call's own id — the handle `detachToolCall` takes. */
+  toolCallId: string;
+  /** The tool's name. */
+  name: string;
+  /** Epoch milliseconds: when the call entered execution. */
+  startedAtMs: number;
+  /** Primary target or command text from the call's arguments (e.g. `cmd`, `file_path`), when present. */
+  detail?: string;
+  /** The call's human-readable `description` argument, when present. */
+  description?: string;
+  /** OS pid of the foreground subprocess spawned by this call (e.g. `exec_command` within its yield window), when any. */
+  pid?: number | null;
+  /** Child Session id associated with a subagent tool call (`run_subagent` / `input_subagent`), when known. */
+  subagentSessionId?: string;
+}
+
 /**
  * The opening phrase of the note a detached call returns. Shared because a render layer has
  * to recognize a detached call from the stored output alone — the click that detached it is
@@ -526,6 +558,20 @@ export interface EnvironmentInterface {
    * later as the usual background report. Optional, like listBackgroundCommands.
    */
   detachToolCall?(toolCallId: string): ToolDetachResult;
+  /**
+   * The calls currently executing, keyed by tool_call_id (see detachToolCall): what a task
+   * monitor reads to show what a Session is doing right now. An entry lives exactly as long
+   * as its call. Optional, like listBackgroundCommands.
+   */
+  listToolCalls?(): ToolCallListing[];
+  /** Executing tool calls of one live subagent child session. Optional. */
+  listSubagentToolCalls?(childSessionId: string): ToolCallListing[];
+  /** Background command processes owned by one live subagent child session. Optional. */
+  listSubagentBackgroundCommands?(childSessionId: string): BackgroundCommandInfo[];
+  /** Kills one background command process of one live subagent child session. Optional. */
+  killSubagentBackgroundCommand?(childSessionId: string, processId: string): boolean;
+  /** Detaches one executing tool call of one live subagent child session. Optional. */
+  detachSubagentToolCall?(childSessionId: string, toolCallId: string): ToolDetachResult;
   /**
    * Whether a background subagent session is mid-round. Hosts pin a Session's runtime entry
    * on it: a `run_in_background` child outlives the call that launched it, and evicting the

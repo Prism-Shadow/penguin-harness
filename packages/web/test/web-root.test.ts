@@ -253,6 +253,8 @@ describe("the booted page table", () => {
         titleZh: "自进化工作台",
         icon: "trophy",
       },
+      // The Task Manager plugin's page: a system app of the system Agent, after the others.
+      { key: "tasks", title: "Task Manager", titleZh: "任务管理器", icon: "pulse" },
     ]);
     for (const app of apps) expect(glyphOf(app.icon)).not.toBe("");
     for (const app of apps) expect(navPagesOf(pages).some((p) => p.key === app.key)).toBe(false);

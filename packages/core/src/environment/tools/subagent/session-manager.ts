@@ -11,9 +11,12 @@
  */
 import type {
   ApproveFn,
+  BackgroundCommandInfo,
   BackgroundSubagentInfo,
   SubagentResolver,
   SubagentRunner,
+  ToolCallListing,
+  ToolDetachResult,
 } from "../../../interfaces/index.js";
 import { BackgroundRegistry } from "../background/index.js";
 import { ManagedSubagentSession } from "./session.js";
@@ -106,18 +109,89 @@ export class SubagentSessionManager {
     const handles = new Map<ManagedSubagentSession, string>();
     for (const { id, task } of this.registry.list()) handles.set(task, id);
     const out: BackgroundSubagentInfo[] = [];
+    const seen = new Set<string>();
     for (const session of [...this.live]) {
       if (session.disposed) {
         this.dropDisposed(session);
         continue;
       }
-      out.push({
-        sessionId: session.sessionId,
-        subagentId: handles.get(session) ?? null,
-        running: session.running,
-      });
+      if (!seen.has(session.sessionId)) {
+        seen.add(session.sessionId);
+        out.push({
+          sessionId: session.sessionId,
+          subagentId: handles.get(session) ?? null,
+          running: session.running,
+        });
+      }
+      for (const nested of session.listNestedSubagents()) {
+        if (!seen.has(nested.sessionId)) {
+          seen.add(nested.sessionId);
+          out.push(nested);
+        }
+      }
     }
     return out;
+  }
+
+  /** Executing tool calls of one live child session (nested children included). */
+  listToolCalls(childSessionId: string): ToolCallListing[] {
+    const direct = this.bySessionId(childSessionId);
+    if (direct) return direct.listToolCalls();
+    for (const session of [...this.live]) {
+      if (session.disposed) continue;
+      if (session.listNestedSubagents().some((n) => n.sessionId === childSessionId)) {
+        return session.listToolCalls(childSessionId);
+      }
+    }
+    return [];
+  }
+
+  /** Background command processes owned by one live child session (nested children included). */
+  listBackgroundCommands(childSessionId: string): BackgroundCommandInfo[] {
+    const direct = this.bySessionId(childSessionId);
+    if (direct) return direct.listBackgroundCommands();
+    for (const session of [...this.live]) {
+      if (session.disposed) continue;
+      if (session.listNestedSubagents().some((n) => n.sessionId === childSessionId)) {
+        return session.listBackgroundCommands(childSessionId);
+      }
+    }
+    return [];
+  }
+
+  /** Kills one background command process of one live child session (nested children included). */
+  killBackgroundCommand(childSessionId: string, processId: string): boolean {
+    const direct = this.bySessionId(childSessionId);
+    if (direct) return direct.killBackgroundCommand(processId);
+    for (const session of [...this.live]) {
+      if (session.disposed) continue;
+      if (session.listNestedSubagents().some((n) => n.sessionId === childSessionId)) {
+        return session.killBackgroundCommand(processId, childSessionId);
+      }
+    }
+    return false;
+  }
+
+  /** Detaches one executing tool call of one live child session (nested children included). */
+  detachToolCall(childSessionId: string, toolCallId: string): ToolDetachResult {
+    const direct = this.bySessionId(childSessionId);
+    if (direct) return direct.detachToolCall(toolCallId);
+    for (const session of [...this.live]) {
+      if (session.disposed) continue;
+      if (session.listNestedSubagents().some((n) => n.sessionId === childSessionId)) {
+        return session.detachToolCall(toolCallId, childSessionId);
+      }
+    }
+    return "not_running";
+  }
+
+  /** Aborts a nested child session's current run when it is not a direct child of this manager. */
+  abortNestedRun(childSessionId: string): boolean {
+    for (const session of [...this.live]) {
+      if (session.disposed) continue;
+      if (session.abortNestedSubagentRun(childSessionId)) return true;
+    }
+    return false;
   }
 
   /** Whether there's still room for a new background session (evicting a completed, idle one if needed; never evicts a running one). */

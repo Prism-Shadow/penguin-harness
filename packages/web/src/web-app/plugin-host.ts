@@ -12,6 +12,7 @@
 import { webLocale } from "@prismshadow/penguin-web-plugin";
 import { provideWebHost } from "@prismshadow/penguin-web-plugin/host";
 import { ApiError, apiFetch } from "../api/client";
+import { subscribeUserEvents } from "../lib/amsp/user-events";
 import { apiErrorText } from "../lib/api-error";
 import { failureNode, failureOf } from "../lib/failure";
 import {
@@ -24,6 +25,7 @@ import { requestSettingsPage } from "../lib/settings-request";
 import { toastApiError } from "../lib/toast-api-error";
 import { toneDot, toneInk, toneSurface } from "../lib/tone";
 import { currentDockScope, isTabShown, openPanel } from "../features/dock";
+import { navigateApp } from "./page-transitions";
 
 provideWebHost({
   ApiError,
@@ -33,6 +35,7 @@ provideWebHost({
   failureNode,
   toastApiError,
   requestSettings: requestSettingsPage,
+  navigate: navigateApp,
   openPanel,
   isTabShown,
   currentDockScope,
@@ -41,6 +44,7 @@ provideWebHost({
   formatRelativeShort: (iso) => formatRelativeShort(iso, webLocale()),
   formatRelativeLong: (iso) => formatRelativeLong(iso, webLocale()),
   formatBytes,
+  subscribeUserEvents,
   toneInk,
   toneSurface,
   toneDot,

@@ -40,6 +40,7 @@ import type {
 } from "../api/types.js";
 import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import { isPageSource } from "@prismshadow/penguin-core";
 import { HttpError, badRequest } from "../http/errors.js";
 import type { ListingView } from "../runtime/session-sources.js";
 import { compareActivityDesc } from "./session-service.js";
@@ -148,12 +149,13 @@ function groupOf(workspace: string): string {
 /**
  * The archive page's source of a Session: `user` for a conversation archived by hand — a
  * person's, or one whose Trace has not been read yet, which lists as a person's — and the
- * program's source otherwise.
+ * program's source otherwise. A Workbench page's own id (`PageSource`) is the archive's
+ * `workbench` filter: the page is what opened it, and the filter names the kinds a program opens.
  */
 function archivedSourceOf(source: SessionSource | undefined): ArchivedSessionSource {
-  return source === "api" || source === "schedule" || source === "cli" || source === "workbench"
-    ? source
-    : "user";
+  if (source === "api" || source === "schedule" || source === "cli") return source;
+  if (source === "workbench" || (source !== undefined && isPageSource(source))) return "workbench";
+  return "user";
 }
 
 /**

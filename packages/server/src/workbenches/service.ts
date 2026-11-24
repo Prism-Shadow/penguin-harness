@@ -49,6 +49,7 @@ import type {
 } from "@prismshadow/penguin-core/kernel";
 import {
   agentDir,
+  formatPageId,
   installedPlugin,
   listInstalledWorkbenches,
   PLUGIN_NAME_PATTERN,
@@ -58,7 +59,7 @@ import {
   workbenchDataDir,
   workbenchStateDir,
 } from "@prismshadow/penguin-core";
-import type { IconImage } from "@prismshadow/penguin-core";
+import type { IconImage, PageSource } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import { HttpError } from "../http/errors.js";
 import type { Channels, Clock, Config, Hmr, Log, Paths } from "../hmr/capabilities.js";
@@ -122,6 +123,7 @@ import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import type { AgentStateEngines } from "./engines.js";
 import type { VersionAuthor } from "./git-identity.js";
 import {
+  ensurePageId,
   HIDDEN_FROM_SIDEBAR,
   isSafeRelPath,
   isSwitchedOff,
@@ -178,6 +180,11 @@ function key(projectId: string, agentId: string, workbenchId: string): string {
 /** Where a workbench's folder sits in the Agent State repository. */
 function repoPath(workbenchId: string): string {
   return `workbenches/${workbenchId}`;
+}
+
+/** The page id as the listing carries it: nothing at all when the folder would not take one. */
+function pageIdField(pageId: string | null): { pageId?: string } {
+  return pageId === null ? {} : { pageId };
 }
 
 function messageOf(err: unknown): string {
@@ -499,6 +506,8 @@ export class WorkbenchService implements Workbenches {
       id: folder.id,
       name: folder.pkg.name,
       version: folder.pkg.version,
+      // Read, never minted: this path answers without writing a folder (see the doc).
+      ...pageIdField(folder.pageId),
       revision: folder.revision,
       uiRev: folder.uiRev,
       tabs,
@@ -995,6 +1004,7 @@ export class WorkbenchService implements Workbenches {
       id,
       name: l.folder.pkg.name,
       version: l.folder.pkg.version,
+      ...pageIdField(await this.pageIdOf(l.folder)),
       revision: l.folder.revision,
       uiRev: l.folder.uiRev,
       tabs: l.tabs,
@@ -1021,6 +1031,7 @@ export class WorkbenchService implements Workbenches {
       id: folder.id,
       name: folder.pkg.name,
       version: folder.pkg.version,
+      ...pageIdField(await this.pageIdOf(folder)),
       revision: folder.revision,
       uiRev: folder.uiRev,
       tabs: [],
@@ -1034,6 +1045,18 @@ export class WorkbenchService implements Workbenches {
         ? { icon: appCenterIconRef(projectId, agentId, folder.id, icon) }
         : {}),
     };
+  }
+
+  /**
+   * The workbench's page id, minted and written into its folder the first time it is asked for:
+   * the id every Session its pages open records as its source (`PageSource`), so one page's
+   * Sessions are told apart from another's. A folder that will not take the file answers null —
+   * such a workbench is listed and serves, but records its Sessions as `workbench`.
+   */
+  private async pageIdOf(folder: WorkbenchFolder): Promise<PageSource | null> {
+    const known = folder.pageId;
+    if (known !== null) return known;
+    return ensurePageId(folder.dir, formatPageId).catch(() => null);
   }
 
   /** Whether the workbench runs: neither its own off-marker nor the Agent's is there. */
@@ -1355,6 +1378,10 @@ export class WorkbenchService implements Workbenches {
   ) {
     const service = this;
     let state: unknown = await readState(folder.dir);
+    // The page whose Sessions this is: every Session the handler opens records it as its source
+    // (`PageSource`), so the tree one page's Sessions form is read back from the Traces alone.
+    // Read (and minted, when the folder holds none) before any Session can be opened.
+    const pageId = await service.pageIdOf(folder);
     // The plugin it came from names the app at the shared levels; a name no plugin could have
     // is no app's.
     const from = await installedPlugin(folder.dir).catch(() => null);
@@ -1409,7 +1436,9 @@ export class WorkbenchService implements Workbenches {
           agentId: target,
           ...(model ? { provider: model.provider, modelId: model.modelId } : {}),
           approvalMode,
-          source: "workbench",
+          // The page's id, so the Sessions one page opened are told apart from another page's
+          // (`PageSource`); a folder that would not take an id keeps the kind's own source.
+          source: pageId ?? "workbench",
           client: "workbench",
         });
       },

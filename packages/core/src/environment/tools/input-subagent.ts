@@ -115,6 +115,7 @@ export function createInputSubagentTool(
         );
         return { status: "fatal" };
       }
+      ctx.onSubagentSession?.(session.sessionId);
 
       const prompt = typeof args["prompt"] === "string" ? (args["prompt"] as string) : "";
       const empty = prompt.trim().length === 0;

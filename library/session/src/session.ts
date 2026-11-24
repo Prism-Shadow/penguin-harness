@@ -17,6 +17,7 @@ import type {
   SubagentResolver,
   SubagentMessageOutcome,
   ThinkingLevelName,
+  ToolCallListing,
   ToolCallPayload,
   ToolDetachResult,
 } from "@prismshadow/penguin-core";
@@ -412,6 +413,16 @@ export interface RuntimeSession {
   killBackgroundCommand?(processId: string): boolean;
   /** Hands one EXECUTING tool call back as a background task (core `Session.detachToolCall`). Optional: test fakes may omit it, reading as "not_running". */
   detachToolCall?(toolCallId: string): ToolDetachResult;
+  /** The tool calls the Session is executing right now (core `Session.listToolCalls`), for a task monitor. Optional: test fakes may omit it, reading as none. */
+  listToolCalls?(): ToolCallListing[];
+  /** Executing tool calls of one live subagent child session. Optional. */
+  listSubagentToolCalls?(childSessionId: string): ToolCallListing[];
+  /** Background command processes owned by one live subagent child session. Optional. */
+  listSubagentBackgroundCommands?(childSessionId: string): BackgroundCommandInfo[];
+  /** Kills one background command process of one live subagent child session. Optional. */
+  killSubagentBackgroundCommand?(childSessionId: string, processId: string): boolean;
+  /** Detaches one executing tool call of one live subagent child session. Optional. */
+  detachSubagentToolCall?(childSessionId: string, toolCallId: string): ToolDetachResult;
   /** Whether a background subagent is mid-round (core `Session.hasRunningBackgroundSubagents`); pins the entry against idle eviction. Optional, like listBackgroundCommands. */
   hasRunningBackgroundSubagents?(): boolean;
   /** All live subagent child sessions of the Session's environment (core `Session.listBackgroundSubagents`). Optional, like listBackgroundCommands. */

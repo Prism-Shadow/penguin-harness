@@ -39,6 +39,17 @@ export interface ToolExecutionContext {
    * use. Absent = this process.
    */
   fs?: ToolFs;
+  /**
+   * Reports the OS pid of a foreground subprocess spawned by this tool call (e.g. `exec_command`
+   * during its yield window) so `Environment.listToolCalls()` can expose it for live resource
+   * monitoring.
+   */
+  onSpawnPid?: (pid: number | null) => void;
+  /**
+   * Reports the child Session id associated with this tool call (e.g. `run_subagent` /
+   * `input_subagent`) so `Environment.listToolCalls()` can link the call to its subagent session.
+   */
+  onSubagentSession?: (sessionId: string) => void;
 }
 
 /**

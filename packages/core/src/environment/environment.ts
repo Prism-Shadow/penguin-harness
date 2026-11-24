@@ -46,6 +46,7 @@ import type {
   ToolConfig,
   ToolDefinition,
   ToolDetachResult,
+  ToolCallListing,
   ToolExecutionRequest,
   ToolPermission,
   VisionDescriberService,
@@ -77,6 +78,39 @@ const TOOL_ABORTED_NOTE = "[interrupted: tool aborted by user]";
 
 /** Placeholder marker used when a tool produces no output at all (tool_call_output content is never empty). */
 const TOOL_EMPTY_NOTE = "[no output]";
+
+/** Primary target keys inspected on tool call arguments to summarize what a running call is acting on. */
+const DETAIL_ARG_KEYS = [
+  "cmd",
+  "command",
+  "file_path",
+  "path",
+  "process_id",
+  "subagent_id",
+  "url",
+  "query",
+] as const;
+
+function extractToolCallMeta(args: Record<string, unknown>): {
+  detail?: string;
+  description?: string;
+} {
+  let detail: string | undefined;
+  for (const key of DETAIL_ARG_KEYS) {
+    const val = args[key];
+    if (typeof val === "string" && val.trim().length > 0) {
+      detail = val.trim();
+      break;
+    }
+  }
+  const rawDesc = args["description"];
+  const description =
+    typeof rawDesc === "string" && rawDesc.trim().length > 0 ? rawDesc.trim() : undefined;
+  return {
+    ...(detail !== undefined ? { detail } : {}),
+    ...(description !== undefined ? { description } : {}),
+  };
+}
 
 /**
  * Explanation for a failed argument JSON parse. The normal pipeline never reaches this: bad
@@ -493,9 +527,29 @@ export class Environment implements EnvironmentInterface {
   /** Host-initiated abort of one child session's current run (see EnvironmentInterface.abortBackgroundSubagentRun). */
   abortBackgroundSubagentRun(childSessionId: string): boolean {
     const session = this.subagentSessions.bySessionId(childSessionId);
-    if (!session) return false;
+    if (!session) return this.subagentSessions.abortNestedRun(childSessionId);
     this.attachHostTap(session);
     return session.abortRun();
+  }
+
+  /** Executing tool calls of one live subagent child session. */
+  listSubagentToolCalls(childSessionId: string): ToolCallListing[] {
+    return this.subagentSessions.listToolCalls(childSessionId);
+  }
+
+  /** Background command processes owned by one live subagent child session. */
+  listSubagentBackgroundCommands(childSessionId: string): BackgroundCommandInfo[] {
+    return this.subagentSessions.listBackgroundCommands(childSessionId);
+  }
+
+  /** Kills one background command process of one live subagent child session. */
+  killSubagentBackgroundCommand(childSessionId: string, processId: string): boolean {
+    return this.subagentSessions.killBackgroundCommand(childSessionId, processId);
+  }
+
+  /** Detaches one executing tool call of one live subagent child session. */
+  detachSubagentToolCall(childSessionId: string, toolCallId: string): ToolDetachResult {
+    return this.subagentSessions.detachToolCall(childSessionId, toolCallId);
   }
 
   /** Host-initiated pin of one live child session's thinking level (see EnvironmentInterface.setBackgroundSubagentThinkingLevel). */
@@ -551,7 +605,18 @@ export class Environment implements EnvironmentInterface {
    * has no background form still gets an entry, so the registry can tell "nothing is running"
    * apart from "that tool cannot be detached".
    */
-  private readonly inFlight = new Map<string, { detach: AbortController; detachable: boolean }>();
+  private readonly inFlight = new Map<
+    string,
+    {
+      detach: AbortController;
+      detachable: boolean;
+      name: string;
+      startedAtMs: number;
+      args: Record<string, unknown>;
+      pid?: number | null;
+      subagentSessionId?: string;
+    }
+  >();
 
   /**
    * Asks one executing call to continue as a background task (see
@@ -565,6 +630,25 @@ export class Environment implements EnvironmentInterface {
     if (!entry.detachable) return "not_detachable";
     entry.detach.abort();
     return "detached";
+  }
+
+  /**
+   * The calls currently executing (EnvironmentInterface.listToolCalls): what a task monitor
+   * reads. Order is unspecified — the registry is a map; a render layer orders by its own key.
+   * Argument metadata (`detail`, `description`) is extracted lazily here so normal tool execution
+   * pays zero overhead when no task monitor is reading.
+   */
+  listToolCalls(): ToolCallListing[] {
+    return [...this.inFlight.entries()].map(([toolCallId, entry]) => ({
+      toolCallId,
+      name: entry.name,
+      startedAtMs: entry.startedAtMs,
+      ...extractToolCallMeta(entry.args),
+      ...(entry.pid !== undefined ? { pid: entry.pid } : {}),
+      ...(entry.subagentSessionId !== undefined
+        ? { subagentSessionId: entry.subagentSessionId }
+        : {}),
+    }));
   }
 
   /**
@@ -671,7 +755,13 @@ export class Environment implements EnvironmentInterface {
     // (see detachToolCall). Kept separate from `ac`: that signal means "stop", this one means
     // "hand your work back and let the turn close".
     const detachCtrl = new AbortController();
-    this.inFlight.set(toolCallId, { detach: detachCtrl, detachable: tool.detachable === true });
+    this.inFlight.set(toolCallId, {
+      detach: detachCtrl,
+      detachable: tool.detachable === true,
+      name,
+      startedAtMs: Date.now(),
+      args,
+    });
     let timedOut = false;
     const timer =
       timeoutMs > 0
@@ -716,6 +806,14 @@ export class Environment implements EnvironmentInterface {
       // The file system a file tool works through, decided from the Session's confiner
       // when the tool first touches a file (see fileSystem below).
       fs: lazyToolFs(() => this.fileSystem()),
+      onSpawnPid: (pid) => {
+        const entry = this.inFlight.get(toolCallId);
+        if (entry) entry.pid = pid;
+      },
+      onSubagentSession: (subagentSessionId) => {
+        const entry = this.inFlight.get(toolCallId);
+        if (entry) entry.subagentSessionId = subagentSessionId;
+      },
       // Pass through the parent's approve callback (run_subagent uses it so the child Session
       // inherits the parent's approval mode; other tools ignore it).
       ...(request.approve ? { approve: request.approve } : {}),

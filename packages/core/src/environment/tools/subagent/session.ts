@@ -37,9 +37,13 @@ import type { AmspRecord, ApprovalDecision, ToolCallPayload } from "@prismshadow
 import type {
   ApprovalContext,
   ApproveFn,
+  BackgroundCommandInfo,
+  BackgroundSubagentInfo,
   RunCutoff,
   SubagentHandle,
   ThinkingLevelName,
+  ToolCallListing,
+  ToolDetachResult,
 } from "../../../interfaces/index.js";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
@@ -115,6 +119,7 @@ export class ManagedSubagentSession {
   constructor(handle: SubagentHandle, opts?: { resumeAgentId?: string }) {
     this.handle = handle;
     this.resumeAgentId = opts?.resumeAgentId;
+    this.handle.onSubagentState?.(() => this.notifyState());
   }
 
   /**
@@ -215,6 +220,42 @@ export class ManagedSubagentSession {
     if (this.killed || !this.handle.setThinkingLevel) return false;
     this.handle.setThinkingLevel(level);
     return true;
+  }
+
+  /** Executing tool calls of this child Session (or a nested child when `targetSessionId` is given). */
+  listToolCalls(targetSessionId?: string): ToolCallListing[] {
+    if (this.killed) return [];
+    return this.handle.listToolCalls?.(targetSessionId) ?? [];
+  }
+
+  /** Background command processes owned by this child Session (or a nested child when `targetSessionId` is given). */
+  listBackgroundCommands(targetSessionId?: string): BackgroundCommandInfo[] {
+    if (this.killed) return [];
+    return this.handle.listBackgroundCommands?.(targetSessionId) ?? [];
+  }
+
+  /** Kills one background command process of this child Session (or a nested child when `targetSessionId` is given). */
+  killBackgroundCommand(processId: string, targetSessionId?: string): boolean {
+    if (this.killed) return false;
+    return this.handle.killBackgroundCommand?.(processId, targetSessionId) ?? false;
+  }
+
+  /** Detaches one executing tool call of this child Session (or a nested child when `targetSessionId` is given). */
+  detachToolCall(toolCallId: string, targetSessionId?: string): ToolDetachResult {
+    if (this.killed) return "not_running";
+    return this.handle.detachToolCall?.(toolCallId, targetSessionId) ?? "not_running";
+  }
+
+  /** Live nested subagent child sessions owned by this child Session. */
+  listNestedSubagents(): BackgroundSubagentInfo[] {
+    if (this.killed) return [];
+    return this.handle.listBackgroundSubagents?.() ?? [];
+  }
+
+  /** Aborts one nested subagent child session's current run. */
+  abortNestedSubagentRun(childSessionId: string): boolean {
+    if (this.killed) return false;
+    return this.handle.abortBackgroundSubagentRun?.(childSessionId) ?? false;
   }
 
   // Run-state observer (host liveness): fired on every isRunning flip — startRun and the

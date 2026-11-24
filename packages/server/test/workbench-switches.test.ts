@@ -207,6 +207,8 @@ describe("workbench switches", { timeout: 30_000 }, () => {
   /** What a workbench that does not run is listed as. */
   const idle = (id: string, enabled: boolean) => ({
     id,
+    // The page id the folder holds: every read that runs mints one (see store.ts ensurePageId).
+    pageId: expect.stringMatching(/^page-/),
     revision: expect.stringMatching(/^[0-9a-f]{12}$/),
     tabs: [],
     hints: [],

@@ -45,10 +45,9 @@ export function contributedErrorText(code: string): string | undefined {
  * The live view of a plugin's tables: every property read answers from the table of the language
  * on screen. Read it at render time; a value copied out at load time keeps that moment's language.
  */
-export function defineStrings<T extends { apiErrors?: CodeTexts }>(tables: {
-  zh: T;
-  en: NoInfer<T>;
-}): T {
+export function defineStrings<
+  T extends Record<string, unknown> & { apiErrors?: CodeTexts },
+>(tables: { zh: T; en: NoInfer<T> }): T {
   const { zh, en } = tables;
   if (zh.apiErrors !== undefined && en.apiErrors !== undefined) {
     errorTables.push({ zh: zh.apiErrors, en: en.apiErrors });
