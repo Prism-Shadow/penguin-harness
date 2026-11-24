@@ -369,7 +369,7 @@ test("full screen is a dock at its largest below the toolbar — by its button o
   const rowBox = () => page.locator("[data-dock-row]").boundingBox();
   const headerBox = (dock) => dock.getByTestId("dock-header").boundingBox();
 
-  // First entry into a regular Session leaves the guide beside the composer and the dock usable.
+  // First entry into a regular Session keeps the guide in the conversation column.
   const guide = page.getByRole("region", { name: "我的第一个工作台" });
   await expect(guide).toBeVisible();
   const guideBox = await guide.boundingBox();

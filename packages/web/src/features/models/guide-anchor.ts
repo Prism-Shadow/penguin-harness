@@ -14,7 +14,7 @@ function visibleAnchor(selector: string, width: number, top: number, bottom: num
   }
 }
 
-/** The chat owns the space above its composer. Other pages share the shell's guide below them. */
+/** Find the focused chat's inline guide slot and the visible control for the current step. */
 export function useGuideAnchor(selector: string | null, inChat: boolean) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const [obscured, setObscured] = useState(false);

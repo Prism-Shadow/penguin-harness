@@ -66,6 +66,13 @@ test("builds and installs a checklist beside the actual conversation", async ({ 
   await expect(
     page.getByText("Count the seed packets and label each tray.", { exact: true }),
   ).toBeVisible();
+  const transcript = page.locator('[data-find-region="conversation"]:visible');
+  const readingHeight = (await transcript.boundingBox()).height;
+  const toggleGuide = tour.getByRole("button", { name: title, exact: true });
+  await toggleGuide.click();
+  await expect(tour.getByRole("button", { name: "Use this conversation" })).toBeHidden();
+  expect((await transcript.boundingBox()).height).toBe(readingHeight);
+  await toggleGuide.click();
   await tour.getByRole("button", { name: "Use this conversation" }).click();
   await expect(tour.getByText(text, { exact: true })).toBeVisible();
   await tour.getByLabel("Changes for the checklist").fill("Include a tray count");
