@@ -4,8 +4,8 @@
  * tab in the right or bottom dock.
  * - the toolbar has exactly two pull-open buttons; an opened dock with no tabs shows a
  *   picker (choose what to open here), and each dock's own "+" menu adds more tabs;
- * - Ctrl+` toggles the terminal panel (front → hide → restore); the shell keeps running
- *   while hidden and reattaches on reopen;
+ * - Ctrl+` focuses the terminal and accepts the first command while attaching; the shell
+ *   keeps running while hidden and reattaches on reopen;
  * - the terminal panel holds the conversation's shells as tabs of its own: its "+" starts
  *   another and shows it, a shell tab's × asks and kills the shell, and killing the last one
  *   leaves an empty group ready for the next explicit create;
@@ -146,6 +146,17 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
   const sessionId = await createSession(page.request, projectId);
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
+  // Keep the real attach request pending while the focused terminal receives the first
+  // keystrokes. The relative speed of the browser and the server varies across machines.
+  const attach = Promise.withResolvers();
+  await page.route(
+    /\/api\/terminals\/[^/?]+$/,
+    async (route) => {
+      await attach.promise;
+      await route.continue();
+    },
+    { times: 1 },
+  );
   // Open with the keyboard, like Codex/VS Code.
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "right")).toBeVisible({ timeout: 10000 });
@@ -153,7 +164,9 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
   await expect(terminalBody(page).locator(".xterm-helper-textarea")).toBeFocused({
     timeout: 20000,
   });
-  await page.keyboard.type("echo FOCUSED_''TERMINAL");
+  await page.keyboard.type("echo FOC");
+  attach.resolve();
+  await page.keyboard.type("USED_''TERMINAL");
   await page.keyboard.press("Enter");
   await expect.poll(() => screenText(page)).toContain("FOCUSED_TERMINAL");
   // A real foreground program should receive Ctrl+B (0x02), including when it is the sidebar shortcut.

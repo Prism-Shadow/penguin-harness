@@ -88,6 +88,8 @@ export interface TerminalConnectionDeps {
 
 export class TerminalConnection {
   private socket: AttachedSocket | null = null;
+  /** This view's keystrokes until its first successful attach. Drained once, or cleared on stop. */
+  private initialInput: Uint8Array[] | null = [];
   private terminalId: string | null = null;
   private stopped = false;
   private attempt = 0;
@@ -115,6 +117,7 @@ export class TerminalConnection {
   /** Stops for good: the pane is gone, or the shell exited and there is nothing to reattach to. */
   stop(): void {
     this.stopped = true;
+    this.initialInput = null;
     this.clearRetry();
     this.stopHeartbeat();
     this.clearDial();
@@ -124,12 +127,16 @@ export class TerminalConnection {
 
   /** True while a socket is open; false through every gap the user might type into. */
   get connected(): boolean {
-    return this.socket !== null;
+    return this.socket !== null && this.dialTimer === null;
   }
 
-  /** Sends one frame if there is a socket to send it on. Input typed into a gap is dropped. */
+  /** The focused xterm accepts input before both the terminal lookup and the upgrade finish. */
   send(bytes: Uint8Array): void {
-    this.socket?.send(bytes);
+    if (this.connected) {
+      this.socket?.send(bytes);
+    } else if (bytes[0] === TerminalOpcode.Input) {
+      this.initialInput?.push(bytes);
+    }
   }
 
   /**
@@ -178,7 +185,7 @@ export class TerminalConnection {
           const present = await this.within(this.deps.recheck(id), RECHECK_TIMEOUT_MS);
           if (this.stopped) return; // a stop that landed while the probe was out
           if (!present) {
-            this.stopped = true;
+            this.stop();
             this.deps.onStatus("error", "terminal is gone");
             return;
           }
@@ -189,7 +196,7 @@ export class TerminalConnection {
         // A first attach is the host's policy failing, and is fatal. A recheck is just this
         // link being down again — the same thing the retry is for, and so is its timeout.
         if (this.terminalId === null) {
-          this.stopped = true;
+          this.stop();
           this.deps.onStatus("error", detail);
           return;
         }
@@ -205,6 +212,10 @@ export class TerminalConnection {
           this.clearDial();
           this.attempt = 0;
           this.startHeartbeat();
+          if (this.initialInput !== null) {
+            for (const bytes of this.initialInput) socket.send(bytes);
+            this.initialInput = null;
+          }
           this.deps.onStatus("ready", "");
         },
         onMessage: (data) => {
