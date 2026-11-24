@@ -270,7 +270,20 @@ test("the Session toolbar and bottom dock share the middle column; resizing neve
       const { left, right, top, bottom, width } = element.getBoundingClientRect();
       return { left, right, top, bottom, width };
     });
-  for (const width of [1440, 1280, 1024]) {
+  // Measure every presented width, including frames between the viewport change and
+  // the next pointer press while the previous dock size is still transitioning.
+  const observed = await toolbar.evaluateHandle((element) => {
+    let minimum = element.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      minimum = Math.min(minimum, element.getBoundingClientRect().width);
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      return minimum;
+    };
+  });
+  for (const width of [1440, 1280, 1024, 1023]) {
     await page.setViewportSize({ width, height: 900 });
     await expect
       .poll(async () => {
@@ -293,10 +306,11 @@ test("the Session toolbar and bottom dock share the middle column; resizing neve
     await page.mouse.move(1, 300, { steps: 10 });
     await page.mouse.up();
     await expect(right).not.toHaveAttribute("data-fullscreen");
-    expect((await edges(toolbar)).width).toBeGreaterThanOrEqual(319);
+    expect((await edges(toolbar)).width).toBeGreaterThanOrEqual(320);
     await expect(composer).toHaveValue("Draft kept while resizing");
     expect(page.url()).toBe(location);
   }
+  expect(await observed.evaluate((finish) => finish())).toBeGreaterThanOrEqual(320);
   await page.setViewportSize({ width: 1280, height: 900 });
   const info = toolbar.getByRole("button", { name: "Session 信息", exact: true });
   await info.focus();

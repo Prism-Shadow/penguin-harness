@@ -447,14 +447,15 @@ export function DockFrame({
 
   // Both the settled divider and the moving border can start a drag. Fullscreen has no
   // divider, but its placeholder still reserves the gap beside the conversation.
-  const seat = open && !lifted ? (
-    <div
-      data-dock-resize-seat={position}
-      style={{ "--dock-content-size": `${contentSize}px` } as CSSProperties}
-    >
-      {handle}
-    </div>
-  ) : null;
+  const seat =
+    open && !lifted ? (
+      <div
+        data-dock-resize-seat={position}
+        style={{ "--dock-content-size": `${contentSize}px` } as CSSProperties}
+      >
+        {handle}
+      </div>
+    ) : null;
 
   // Lifted: a fixed box at the rect the phase machine gives it, transitioning its place and size
   // through the theme's layout motion while it enters or exits, clipping what the inside lays out
@@ -540,7 +541,7 @@ export function DockFrame({
         data-fullscreen={lifted ? phase : undefined}
         style={{ width: size }}
         inert={!open}
-        className={`relative flex min-h-0 shrink-0 flex-col bg-canvas ${
+        className={`relative flex min-h-0 min-w-0 flex-col bg-canvas ${
           open ? "border-l border-line" : ""
         }`}
       >

@@ -31,6 +31,7 @@ import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 
 const MIN_WIDTH = 320;
+export const MIN_CONVERSATION_WIDTH = 320;
 const WIDTH_STORAGE_KEY = "penguin.panelWidth";
 
 /** Width cap: at most half the window (keeping the chat column usable), plus a hard 720px readability ceiling. */
@@ -40,7 +41,7 @@ export function maxWidthFor(windowWidth: number): number {
 
 /** Keep the conversation usable when the navigation column takes a larger share of the window. */
 export function dockWidthFor(preferred: number, hostWidth: number): number {
-  return Math.max(0, Math.min(preferred, hostWidth - MIN_WIDTH - RESIZE_HANDLE_PX));
+  return Math.max(0, Math.min(preferred, hostWidth - MIN_CONVERSATION_WIDTH - RESIZE_HANDLE_PX));
 }
 
 /**

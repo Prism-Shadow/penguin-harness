@@ -10,6 +10,7 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
+import { RESIZE_HANDLE_PX } from "@prismshadow/penguin-ui";
 import { PageIdentity } from "../../lib/page-focus";
 import {
   borrowedDockPanel,
@@ -18,7 +19,7 @@ import {
   fullscreenDock,
   type DockPosition,
 } from "./dock-state";
-import { dockWidthFor, usePanelWidthValue } from "./use-panel-width";
+import { dockWidthFor, MIN_CONVERSATION_WIDTH, usePanelWidthValue } from "./use-panel-width";
 import type { DockMount } from "./use-dock-mount";
 
 export interface PanelBodyProps {
@@ -160,7 +161,13 @@ export function DockPanelArea({
           className="flex min-h-0 min-w-0 flex-1"
         >
           <div ref={parking} hidden />
-          <div data-session-column className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div
+            data-session-column
+            className="flex min-h-0 flex-1 flex-col"
+            style={{
+              minWidth: `min(${MIN_CONVERSATION_WIDTH}px, calc(100% - ${RESIZE_HANDLE_PX}px))`,
+            }}
+          >
             {toolbar}
             {children}
           </div>
