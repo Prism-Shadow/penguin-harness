@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `web`, `computer-use`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1807
 
 [English](2026-11-24-computer-use-module-install.md)
 
