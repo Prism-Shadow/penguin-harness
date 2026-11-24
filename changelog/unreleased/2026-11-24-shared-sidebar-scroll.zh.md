@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1827
 
 [English](2026-11-24-shared-sidebar-scroll.md)
 
