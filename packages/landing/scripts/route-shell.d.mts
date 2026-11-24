@@ -5,7 +5,12 @@ export interface RouteMeta {
   /** The share card's absolute URL. */
   image: string;
   imageAlt: string;
+  type?: "article";
 }
 
 export declare function shellFor(shell: string, url: string, meta?: RouteMeta): string;
 export declare function notFoundShell(shell: string): string;
+export declare function withDirectoryLinks(
+  shell: string,
+  links: readonly { href: string; label: string }[],
+): string;

@@ -29,6 +29,7 @@ import type {
   SiteRemarkPlugins,
   SiteRemarkRehypeOptions,
 } from "@prismshadow/penguin-ui/site";
+import { useDocumentMeta } from "../lib/document-meta";
 import { S } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { SITE_HOSTS } from "../lib/links";
@@ -321,6 +322,7 @@ export function BlogPostPage() {
   const { slug = "" } = useParams();
   const { locale } = useSiteLocale();
   const post = getPost(slug, locale);
+  useDocumentMeta(post && `${post.title} | ${S.siteName}`, post?.excerpt, { type: "article" });
   const body = usePostBody(post);
   const toc = useMemo(() => (body === undefined ? [] : extractToc(body)), [body]);
   const { activeId, pinTo } = useActiveTocEntry(toc);
