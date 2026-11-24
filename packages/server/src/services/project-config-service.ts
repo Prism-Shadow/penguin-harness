@@ -156,7 +156,9 @@ export type RawTable = Record<string, unknown>;
 
 // The one api-key masking rule lives in the messaging library (messaging restack S6); this
 // re-export keeps the server's own import paths stable.
-export { maskApiKey } from "@prismshadow/penguin-library-messaging/mask";
+import { maskApiKey } from "@prismshadow/penguin-library-messaging/mask";
+
+export { maskApiKey };
 
 function asTable(v: unknown): RawTable {
   return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as RawTable) : {};
