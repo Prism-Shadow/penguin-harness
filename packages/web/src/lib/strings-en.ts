@@ -6825,6 +6825,8 @@ Scenarios:
           budget: string,
         ): string =>
           `Budget pause: ${agent} reached ${percent}% of its ${period} budget (${cost} / ${budget} USD). Its calendar and its subordinates' are paused until the next month or a raised budget; mentions and direct conversations still work.`,
+        ticket_ids_migrated: (count: string, backup: string): string =>
+          `One-time migration: ${count} ticket(s) with legacy ids were migrated to the ticket- prefixed format (originals backed up at ${backup}). Migration moves and rewrites ticket files, which risks losing ticket data — for data safety, keep a backup.`,
         ticket_blocked: (ticket: string, title: string): string =>
           `Ticket ${ticket} (${title}) is blocked.`,
         ticket_done: (ticket: string, title: string): string =>

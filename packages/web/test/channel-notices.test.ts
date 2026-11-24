@@ -73,6 +73,20 @@ describe("noticeText", () => {
     }
   });
 
+  it("warns of a legacy ticket id migration: the count, the backup, and the data-loss risk", () => {
+    const migrated = notice("ticket_ids_migrated", {
+      count: "2",
+      backup: "tickets/.legacy-backup-2026-11-23T22-45-00-000Z",
+    });
+    for (const text of [enText(migrated), zhText(migrated)]) {
+      expect(text).toContain("2");
+      expect(text).toContain("tickets/.legacy-backup-2026-11-23T22-45-00-000Z");
+      // The risk and the advice, in the reader's language.
+      expect(text).toMatch(/risks losing ticket data|遗失工单数据的风险/);
+      expect(text).toMatch(/keep a backup|请先备份/);
+    }
+  });
+
   it("carries a ticket's id and title", () => {
     const done = notice("ticket_done", { ticket: "T-3", title: "Build the site" });
     for (const text of [enText(done), zhText(done)]) {
