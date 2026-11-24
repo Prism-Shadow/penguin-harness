@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1792](https://github.com/Prism-Shadow/penguin-harness/pull/1792)
 
 [English](2026-11-24-sidebar-apps-spacing.md)
 
