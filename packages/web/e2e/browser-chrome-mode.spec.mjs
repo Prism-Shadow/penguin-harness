@@ -119,11 +119,17 @@ test("a member pairs their own Chrome from the Browser panel, and drives its tab
   await page.getByPlaceholder(/输入消息/).waitFor();
 
   // Offered without a page host: this window has no <webview>.
-  await page.getByTestId("dock-toggle-right").click();
-  await page.getByTestId("dock-pick-builtin-browser").click();
+  await page.getByTestId("dock-launcher").click();
+  await page.getByTestId("dock-launcher-open-builtin-browser").click();
+  await expect(page).toHaveURL(/session-tools\/builtin-browser/);
   const surface = page.getByTestId("browser-chrome-surface");
   await expect(surface).toHaveAttribute("data-standing", "unpaired");
   await expect(page.locator("webview")).toHaveCount(0);
+  await expect(surface.getByRole("link").filter({ hasText: "Chrome 应用商店" })).toHaveAttribute(
+    "href",
+    /chromewebstore\.google\.com\/detail\/penguinharness-browser\/dodgfhpcbmkjfcbgnoidablfgjjhhmgp$/,
+  );
+  await expect(surface.locator('a[href$="/penguin-browser-extension.zip"]')).toBeVisible();
   const origin = new URL(BASE).origin;
   await expect(surface.getByTestId("browser-pairing-server")).toHaveText(origin);
   await expect(surface.getByTestId("browser-pairing-code")).toHaveText(/^[A-Za-z0-9_-]{43}$/);

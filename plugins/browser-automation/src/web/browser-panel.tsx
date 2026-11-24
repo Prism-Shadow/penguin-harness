@@ -113,6 +113,17 @@ export function BuiltinBrowserPanel({
     if (native && active && windowShown && sessionId && projectId)
       return showWorkbenchGroup(sessionId, projectId);
   }, [native, active, windowShown, sessionId, projectId]);
+  // A standalone server offers the account's Chrome in place of native guests. The
+  // extension surface owns its pairing guide, connection events and disabled state.
+  // Remote groups always belong to their machine, even when this Chrome is connected.
+  if (
+    scope?.machineId === null &&
+    live.backend === "chrome" &&
+    chromeInfo(live) !== null &&
+    !live.backends.some((entry) => entry.backend === "builtin" && entry.available)
+  ) {
+    return <ChromeSurface state={live} active={active} />;
+  }
   if (scope && !native)
     return (
       <ManagedBrowserPages

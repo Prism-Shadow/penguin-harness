@@ -20,7 +20,7 @@ export function SessionWorkbenchBody({
   const ref = parseSessionWorkbenchPage(page);
   const { selected, projectId } = useChatSession();
   const host = useContext(PageIdentity)?.sessionHost;
-  const panels = useSessionWorkbenchPanels();
+  const panels = useSessionWorkbenchPanels(ref?.address.machineId === null && !page.catalogDock);
   const definition = panels.find((item) => item.id === ref?.kind);
   if (
     !ref ||

@@ -36,8 +36,11 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 export function SessionWorkbenchPage() {
   const { kind } = useParams();
   const { currentProject } = useProject();
-  const definition = useSessionWorkbenchPanels().find((p) => p.id === kind);
   const location = useLocation();
+  const address = parseSessionWorkbenchPage({ path: location.pathname + location.search })?.address;
+  const definition = useSessionWorkbenchPanels(address?.machineId === null).find(
+    (p) => p.id === kind,
+  );
   if (!kind || !isSessionWorkbenchKind(kind) || !definition || !currentProject) {
     return (
       <p role="status" className="p-4">
@@ -45,7 +48,6 @@ export function SessionWorkbenchPage() {
       </p>
     );
   }
-  const address = parseSessionWorkbenchPage({ path: location.pathname + location.search })?.address;
   if (address)
     return (
       <BoundSession
