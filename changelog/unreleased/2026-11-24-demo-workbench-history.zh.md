@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** UI Gallery
+- **PR:** [#1799](https://github.com/Prism-Shadow/penguin-harness/pull/1799)
 
 [English](2026-11-24-demo-workbench-history.md)
 
