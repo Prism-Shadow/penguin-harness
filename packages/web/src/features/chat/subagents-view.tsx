@@ -23,6 +23,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
+  CopyButton,
   EmptyState,
   GlyphIcon,
   ICONS,
@@ -297,24 +298,23 @@ export function SubagentsView({
     <div className="flex h-full min-h-0 flex-col">
       {/* Call graph of the displayed Task — latest by default, a chip's Task when pinned (capped height; scrolls both ways for deep/wide trees). */}
       <div className="shrink-0 border-b border-gray-200 px-3 pb-2 pt-1.5 dark:border-gray-800">
-        <Text variant="eyebrow" className="mb-1.5">
-          {S.subagentPanel.topologyLabel}
-        </Text>
-        {history.turns.length > 1 && index >= 0 && (
-          <Pager
-            page={history.turns.length - 1 - index}
-            pageCount={history.turns.length}
-            previousLabel={S.subagentPanel.previousTurn}
-            nextLabel={S.subagentPanel.nextTurn}
-            lastPageLabel={S.subagentPanel.latestTurn}
-            readout={
-              index === 0
-                ? S.subagentPanel.latestTurn
-                : new Date(turn![0]!.spawnedAt).toLocaleDateString()
-            }
-            onChange={(next) => chooseTurn(history.turns.length - 1 - next)}
-          />
-        )}
+        <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2">
+          <Text variant="eyebrow" className="min-w-0 truncate">
+            {S.subagentPanel.topologyLabel}
+          </Text>
+          {history.turns.length > 1 && index >= 0 && (
+            <Pager
+              className="shrink-0"
+              page={history.turns.length - 1 - index}
+              pageCount={history.turns.length}
+              previousLabel={S.subagentPanel.previousTurn}
+              nextLabel={S.subagentPanel.nextTurn}
+              lastPageLabel={S.subagentPanel.latestTurn}
+              readout={S.subagentPanel.page(history.turns.length - index)}
+              onChange={(next) => chooseTurn(history.turns.length - 1 - next)}
+            />
+          )}
+        </div>
         {history.error && (
           <div role="status" className="text-xs text-fg-muted">
             {history.error}{" "}
@@ -367,6 +367,7 @@ export function SubagentsView({
             >
               {shortSessionId(active.sessionId)}
             </span>
+            <CopyButton text={active.sessionId} label={S.chat.copySessionId} size="sm" />
             {activeRunning && (
               <StatusIcon state="running" size="xs" label={S.chat.subagentRunning} />
             )}

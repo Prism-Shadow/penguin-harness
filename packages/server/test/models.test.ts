@@ -276,6 +276,17 @@ describe("models preset & catalog enrichment", () => {
       clientType: "ant-messages",
       baseUrl: "https://opencode.ai/inference/go/anthropic",
     });
+    for (const modelId of ["hy4-flash", "qwen4-max"]) {
+      expect(pick(body, "tokendance", modelId)).toMatchObject({
+        contextWindow: 1_000_000,
+        effective: {
+          baseUrl: "https://tokendance.space/gateway/v1",
+          baseUrlSource: "provider",
+          clientType: "openai-chat",
+          clientTypeSource: "provider",
+        },
+      });
+    }
     const messagesRow = pick(body, "opencode-go", "qwen4-max");
     expect(messagesRow.clientType).toBe("ant-messages");
     expect(messagesRow.effective).toMatchObject({
@@ -2484,6 +2495,29 @@ describe("preset sync: add new models / restore defaults", () => {
     const { mtimeMs } = await stat(cfgFile());
     expect(await (await sync("add")).json()).toMatchObject({ added: 0, restored: 0 });
     expect((await stat(cfgFile())).mtimeMs).toBe(mtimeMs);
+  });
+
+  it("adds a missing TokenDance preset once while preserving the user's Qwen connection", async () => {
+    const preset = (await (await api.get(url())).json()) as ModelsResponse;
+    const edited = asEntries(preset)
+      .filter((m) => !isPair("tokendance", "hy4-flash")(m))
+      .map((m) =>
+        isPair("tokendance", "qwen4-max")(m)
+          ? { ...m, baseUrl: "https://private.example/v1", clientType: "openai-responses" }
+          : m,
+      );
+    expect((await api.put(url(), { models: edited })).status).toBe(200);
+    const added = (await (await sync("add")).json()) as PresetSyncResponse;
+    expect(added.added).toBe(1);
+    expect(pick(added, "tokendance", "hy4-flash").discount).toBe(0.5);
+    expect(pick(added, "tokendance", "qwen4-max").effective).toMatchObject({
+      baseUrl: "https://private.example/v1",
+      clientType: "openai-responses",
+    });
+    expect(pick(added, "opencode-go", "qwen4-max")).toEqual(
+      pick(preset, "opencode-go", "qwen4-max"),
+    );
+    expect(await (await sync("add")).json()).toMatchObject({ added: 0, restored: 0 });
   });
 
   it("adding new models brings a scheduled preset back with its seller's promotion on top of the off-peak tier, and leaves a row already there without one as it was", async () => {

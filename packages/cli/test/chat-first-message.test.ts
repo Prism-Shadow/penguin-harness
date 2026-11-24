@@ -150,6 +150,22 @@ describe("starting penguin chat and leaving it", () => {
     });
   }
 
+  it("selects an installed plugin command without creating a Session and carries it on subsequent messages", async () => {
+    server.plugins.library = [{ name: "discuss", composerMode: true, composerCommand: "outline" }];
+    server.plugins.agentHooks.set("default_project/default_agent", ["discuss"]);
+    const bare = await driveChat(["/outline", "/exit"]);
+    expect(bare).toContain(t.composerModeState("outline", true));
+    expect(writes()).toEqual([]);
+    await driveChat(["/outline first draft", "second draft", "/outline", "plain", "/exit"]);
+    const [session] = [...server.sessions.values()];
+    expect(taskTexts(session!)).toEqual(["first draft", "second draft", "plain"]);
+    expect(session!.tasks.map((task) => task.promptHooks)).toEqual([
+      ["discuss"],
+      ["discuss"],
+      undefined,
+    ]);
+  });
+
   it("writes nothing when left with Ctrl-C twice on a terminal", async () => {
     const tty = startTerminalChat();
     await vi.waitFor(() => expect(tty.printed()).toContain("> "));

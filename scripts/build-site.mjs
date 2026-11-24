@@ -19,8 +19,7 @@
  * builds before it, and JavaScript only: nothing here reads the server's declarations
  * (PENGUIN_BUILD_JS_ONLY, see packages/server/tsup.config.ts).
  *
- * packages/a2ui and packages/chat-markdown build with core and amsp: the gallery imports the A2UI
- * grammar and the chat Markdown dialect from their dist. The settings form reads its resource
+ * The A2UI package builds with core and amsp: the gallery imports the grammar from its dist. The settings form reads its resource
  * limits from the settings library’s browser-safe entry.
  */
 import { execSync } from "node:child_process";
@@ -43,7 +42,7 @@ const run = (cmd, BASE_PATH, extra = {}) => {
 };
 
 run(
-  "pnpm --filter @prismshadow/penguin-core --filter @prismshadow/amsp --filter @prismshadow/a2ui --filter @prismshadow/chat-markdown --filter @prismshadow/penguin-library-setting... build",
+  "pnpm --filter @prismshadow/penguin-core --filter @prismshadow/amsp --filter @prismshadow/a2ui --filter @prismshadow/penguin-library-setting... build",
 );
 run('pnpm --filter "./plugins/**" build');
 run("pnpm --filter @prismshadow/penguin-landing build", base);

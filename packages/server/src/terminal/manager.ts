@@ -52,6 +52,8 @@ const KILL_GRACE_MS = 2000;
 export const MAX_TERMINALS_PER_USER = DEFAULT_TERMINAL_LIMIT;
 
 export interface CreateTerminalRequest {
+  /** The scoped panel's first open reuses a live shell before allocating a new one. */
+  reuseSession?: boolean;
   cwd: string;
   ownerUserId: string;
   /** The conversation the shell is opened for; absent or null for none. */
@@ -115,6 +117,12 @@ export class TerminalManager {
     const cwd = await resolveCwd(request.cwd);
 
     const owned = this.list(request.ownerUserId).filter((session) => session.alive);
+    // From here through track() no operation yields. Concurrent first opens therefore
+    // see the preceding request's actual PTY, including when the user's quota is full.
+    if (request.reuseSession && request.sessionId) {
+      const existing = owned.findLast((session) => session.info().sessionId === request.sessionId);
+      if (existing) return existing;
+    }
     const limit = this.opts.maxOpen?.() ?? MAX_TERMINALS_PER_USER;
     if (owned.length >= limit) {
       throw new HttpError(

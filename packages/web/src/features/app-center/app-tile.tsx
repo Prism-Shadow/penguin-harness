@@ -87,7 +87,6 @@ export interface TileDragProps {
  */
 interface TileOwner {
   id: string;
-  name: string;
   src: string | undefined;
 }
 
@@ -130,7 +129,7 @@ export function TileIcon({
         data-workbench-owner={owner.id}
         className="pointer-events-none absolute top-0 left-0 flex rounded-sm bg-canvas ring-1 ring-canvas"
       >
-        <AgentAvatar id={owner.id} src={owner.src} fallbackName={owner.name} size={badgeSize} />
+        <AgentAvatar id={owner.id} src={owner.src} size={badgeSize} />
       </span>
     </span>
   );

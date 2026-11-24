@@ -87,3 +87,59 @@ test("a steered message survives reload as a queued hint with its content — no
   await expect(page.locator("p", { hasText: STEER_TEXT })).toHaveCount(1);
   await expect(page.getByText(/插话已排队/)).toHaveCount(0);
 });
+
+test("a skill selected in the running slash menu steers this Task once and keeps the original draft", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  const sid = await createSession(page, "always-ask");
+  const { projects } = await (await page.request.get(BASE + "/api/projects")).json();
+  const { skills } = await (
+    await page.request.get(
+      BASE + "/api/projects/" + projects[0].projectId + "/agents/default_agent/skills",
+    )
+  ).json();
+  const name = skills.find((s) => /^[a-z][a-z0-9-]+$/.test(s.name)).name;
+  const cmd = "/" + name;
+  await page.setViewportSize({ width: 375, height: 740 });
+  await page.goto(BASE + "/chat/" + sid);
+  const composer = page.locator("textarea").first();
+  await composer.fill("slow stream test");
+  await composer.press("Enter");
+  const approval = page.getByRole("button", { name: "允许", exact: true });
+  await expect(approval).toBeVisible();
+  const note = "Review the saved notes";
+  await composer.fill(note + " /");
+  const row = page.getByRole("button").filter({ has: page.getByText(cmd, { exact: true }) });
+  await expect(row).toBeVisible();
+  for (const command of ["/goal", "/compact", "/model", "/agent", "/plan"]) {
+    await expect(
+      page.getByRole("button").filter({ has: page.getByText(command, { exact: true }) }),
+    ).toHaveCount(0);
+  }
+  await composer.press("Escape");
+  await expect(row).toHaveCount(0);
+  await expect(composer).toHaveValue(note + " /");
+  await expect(approval).toBeVisible();
+  await composer.fill(note);
+  await composer.press("End");
+  await composer.pressSequentially(" " + cmd);
+  await expect(row).toBeVisible();
+  await composer.dispatchEvent("keydown", { key: "Enter", isComposing: true });
+  await expect(row).toBeVisible();
+  await composer.press("ArrowDown");
+  await composer.press("Tab");
+  await expect(row).toHaveCount(0);
+  await expect(composer).toHaveValue(new RegExp(note));
+  await page.reload();
+  await expect(approval).toBeVisible();
+  await expect(composer).toHaveValue(new RegExp(note));
+  await composer.press("Enter");
+  await expect(composer).toHaveValue("");
+  await expect(page.getByText(/插话已排队，将随下一轮送达/)).toContainText("skills: " + name);
+  await approval.click();
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible({
+    timeout: 30000,
+  });
+  await expect(page.getByText("用户插话", { exact: true })).toHaveCount(1);
+});

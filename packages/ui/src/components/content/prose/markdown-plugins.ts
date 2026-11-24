@@ -50,7 +50,7 @@
  * after a closer is fine. What the rule gives up is a formula glued to a word, `$i$th`, which
  * stays text (`$i$-th` and `\(i\)th` render).
  */
-import { remarkChatMarkdown } from "@prismshadow/chat-markdown";
+import { remarkChatMarkdown } from "../../../markdown/index.js";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import type { Options } from "react-markdown";
@@ -98,7 +98,7 @@ const KATEX_OPTIONS = {
 
 /**
  * The remark (Markdown -> mdast) stage. It reads a reply in the chat dialect
- * (packages/chat-markdown) — GFM, with a bare URL made of ASCII URL characters only and
+ * (the shared UI markdown entry) — GFM, with a bare URL made of ASCII URL characters only and
  * CJK-friendly emphasis — which the server's chat channels parse with too, so a reply links and
  * bolds the same characters in the transcript and in every chat.
  */

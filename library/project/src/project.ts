@@ -28,6 +28,7 @@ export type ModelTestRequestSource = (model: {
   provider: string;
   modelId: string;
   clientType?: string;
+  baseUrl?: string;
   vision?: boolean;
 }) => Pick<ProjectModelRequest, "messages" | "config" | "idleTimeoutMs"> | undefined;
 

@@ -7,7 +7,7 @@ import { useInstallManifest, workbenchAppPath } from "../../lib/workbench-tabs";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { usePaletteActions } from "../../lib/palette-actions";
 import { useLocale } from "../../state/locale";
-import { useAppPageTab, WorkbenchFrame } from "../workbenches";
+import { useAppPageTab, WorkbenchFrame, RunningWorkbenchActions } from "../workbenches";
 import { FrameAppBody } from "./frame-app-body";
 import { setSelectedAppPath } from "../../lib/running-apps";
 
@@ -77,7 +77,7 @@ function AgentWorkbenchWindow(props: WindowProps) {
   const { projectId, shortcut, onFullScreen, onGone } = props;
   const { locale } = useLocale();
   const machineId = shortcut.machineId ?? null;
-  const { tab, pages, off, gone, failure } = useAppPageTab({
+  const { tab, workbench, pages, off, gone, failure } = useAppPageTab({
     projectId,
     agentId: shortcut.agentId,
     workbenchId: shortcut.workbenchId,
@@ -105,16 +105,28 @@ function AgentWorkbenchWindow(props: WindowProps) {
           <InstallManifest projectId={projectId} shortcut={shortcut} tab={shown?.key} />
         </>
       )}
-      {!props.exitFullScreen && pages.length >= 2 && shown && (
-        <div className="shrink-0 overflow-x-auto px-2 py-1">
-          <Segmented
-            options={pages.map((page) => ({
-              value: page.key,
-              label: localizedText(locale, page.title, page.titleZh),
-            }))}
-            value={shown.key}
-            onChange={setPicked}
-            cols={Math.min(pages.length, 5) as 2 | 3 | 4 | 5}
+      {workbench && (
+        <div className="flex shrink-0 items-center justify-end gap-2 px-2 py-1">
+          {!props.exitFullScreen && pages.length >= 2 && shown && (
+            <div className="min-w-0 flex-1 overflow-x-auto">
+              <Segmented
+                options={pages.map((page) => ({
+                  value: page.key,
+                  label: localizedText(locale, page.title, page.titleZh),
+                }))}
+                value={shown.key}
+                onChange={setPicked}
+                cols={Math.min(pages.length, 5) as 2 | 3 | 4 | 5}
+              />
+            </div>
+          )}
+          <RunningWorkbenchActions
+            running={!off}
+            projectId={projectId}
+            agentId={shortcut.agentId}
+            machineId={machineId}
+            workbench={workbench}
+            title={props.title}
           />
         </div>
       )}

@@ -43,6 +43,7 @@ import {
   agentsDir,
   isSessionMeta,
   normalizeSessionSource,
+  relocatedWorkspace,
   tracesDir,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
@@ -84,6 +85,7 @@ async function listFiles(dir: string): Promise<string[]> {
 
 /** Session facts extracted from a shard's records (registration-time classification). */
 function factsFromRecords(
+  root: string,
   projectId: string,
   agentId: string,
   sessionId: string,
@@ -110,7 +112,10 @@ function factsFromRecords(
       meta === undefined || meta.payload.source === undefined
         ? null
         : normalizeSessionSource(meta.payload.source),
-    workspace: meta && typeof meta.payload.workspace === "string" ? meta.payload.workspace : "",
+    workspace:
+      meta && typeof meta.payload.workspace === "string"
+        ? relocatedWorkspace(root, meta.payload.workspace)
+        : "",
     title: firstPrompt !== null ? fallbackTitle(firstPrompt) : null,
     provider: meta && typeof meta.payload.provider === "string" ? meta.payload.provider : null,
     modelId: meta && typeof meta.payload.model_id === "string" ? meta.payload.model_id : null,
@@ -289,7 +294,7 @@ export class TraceIndexService implements TraceIndex {
     } catch {
       records = []; // Unreadable head: facts stay unknown (meta_read=0 → retried by a later reconcile pass).
     }
-    const facts = factsFromRecords(projectId, agentId, sessionId, records);
+    const facts = factsFromRecords(this.root, projectId, agentId, sessionId, records);
     this.repo.upsertSession(facts);
     if (facts.metaRead) this.sources?.set(sessionId, facts.source);
   }
@@ -316,7 +321,13 @@ export class TraceIndexService implements TraceIndex {
       date: args.date,
       sizeBytes: args.sizeBytes,
     });
-    const facts = factsFromRecords(args.projectId, args.agentId, args.sessionId, args.records);
+    const facts = factsFromRecords(
+      this.root,
+      args.projectId,
+      args.agentId,
+      args.sessionId,
+      args.records,
+    );
     this.repo.upsertSession(facts);
     if (facts.metaRead) this.sources?.set(args.sessionId, facts.source);
     // The write moved the directory mtimes: drop the gate so the next reconcile re-syncs

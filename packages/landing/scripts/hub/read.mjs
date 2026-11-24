@@ -123,10 +123,13 @@ function workbenchVersion(dir, workbench) {
  * from its built `ifaces.json` (plugin-table.mjs). `updated` is the newest day among its parts'
  * dated versions (`newestDay`), absent when none is dated.
  */
-export function readPlugins(pluginsDir) {
+export function readPlugins(pluginsDir, externalPlugins = []) {
   const plugins = [];
-  for (const dirName of subdirs(pluginsDir)) {
-    const dir = join(pluginsDir, dirName);
+  const sources = subdirs(pluginsDir).map((name) => ({
+    dir: join(pluginsDir, name),
+    sourceUrl: `${PLUGINS_SOURCE}/${name}`,
+  }));
+  for (const { dir, sourceUrl } of [...sources, ...externalPlugins]) {
     const file = join(dir, "package.json");
     if (!existsSync(file)) continue;
     const pkg = JSON.parse(readText(file));
@@ -184,7 +187,7 @@ export function readPlugins(pluginsDir) {
         .map((workbench) => workbench.name)
         .filter((name) => typeof name === "string"),
       readme: optionalText(join(dir, "README.md")),
-      sourceUrl: `${PLUGINS_SOURCE}/${dirName}`,
+      sourceUrl,
       ...(updated !== undefined ? { updated } : {}),
     });
   }

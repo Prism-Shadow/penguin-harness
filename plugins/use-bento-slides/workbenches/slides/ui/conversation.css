@@ -93,6 +93,3 @@
 .chat-effort {
   flex: 0 1 auto;
 }
-#choice-status {
-  overflow-wrap: anywhere;
-}

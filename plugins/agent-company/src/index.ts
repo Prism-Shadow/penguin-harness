@@ -19,7 +19,6 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         shortDescriptionZh: "创建组织，以及员工、CEO、人事、财务、科研、镜像公司的操作手册。",
         category: "office-productivity",
         icon: "icon.svg",
-        preinstall: false,
         quickStart: {
           prompt:
             "Create a company-mode organization for this Project: ask me for its id, name, mission, shared workspace, model and CEO budget one question at a time, confirm the whole thing with me, then create it.",

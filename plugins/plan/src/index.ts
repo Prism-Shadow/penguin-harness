@@ -20,8 +20,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         category: "office-productivity",
         icon: "icon.svg",
         composerMode: true,
-        // Every new Agent gets Plan mode: its hook does nothing until the switch is on.
-        defaultInstall: true,
+        composerCommand: "plan",
         quickStart: {
           prompt:
             "Help me plan a migration. Ask which systems and constraints matter before drafting it.",

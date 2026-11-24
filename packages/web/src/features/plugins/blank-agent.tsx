@@ -36,7 +36,7 @@ export function blankAgentDraft(
   title: string,
   library: readonly PluginPickItem[] | null,
 ): Partial<CreateAgentDraft> {
-  // The library's default-install plugins (goal and Plan mode) stay ticked beside this one: a
+  // The library's default-install plugins stay ticked beside this one: a
   // prefilled list is the whole list Create sends, so leaving them out would skip them.
   return { name: title, plugins: [...new Set([...defaultPicks(library), plugin.name])] };
 }

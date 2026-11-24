@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Bundles the a2ui checker (packages/a2ui/src/cli.ts) into the ONE self-contained ESM file
- * the a2ui skill ships: plugins/a2ui/skills/a2ui/scripts/check.mjs. Node builtins only, no
+ * the Apps repository ships in its a2ui Skill. Node builtins only, no
  * dependencies, not minified — the file is installed into every agent's skills directory and
  * should stay readable to whoever reviews what runs there.
  *
@@ -10,7 +10,7 @@
  * committed bundle is stale, so a grammar change cannot ship without the checker that enforces
  * it. The test imports the hash helpers from this module and never needs esbuild.
  *
- * Usage: pnpm build:a2ui-check   (node scripts/build-a2ui-check.mjs)
+ * Usage: pnpm build:a2ui-check [output-file] (defaults to packages/a2ui/dist/check.mjs). Copy the result into the a2ui Skill in penguin-harness-apps before its next release.
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const SOURCES_DIR = path.join(ROOT, "packages/a2ui/src");
-export const BUNDLE_PATH = path.join(ROOT, "plugins/a2ui/skills/a2ui/scripts/check.mjs");
+const DEFAULT_OUTPUT = path.join(ROOT, "packages/a2ui/dist/check.mjs");
 export const HASH_MARKER = "// a2ui-sources-sha256: ";
 
 /** sha256 over the sorted `*.ts` sources (name and LF-normalized content), hex. */
@@ -39,7 +39,7 @@ export function hashA2uiSources(dir = SOURCES_DIR) {
 }
 
 /** The hash a bundle's header records, or null when the file is missing or has no marker. */
-export function readBundleHash(file = BUNDLE_PATH) {
+export function readBundleHash(file) {
   let head;
   try {
     head = fs.readFileSync(file, "utf8").split("\n", 4);
@@ -53,14 +53,15 @@ export function readBundleHash(file = BUNDLE_PATH) {
 async function main() {
   const esbuild = await import("esbuild");
   const hash = hashA2uiSources();
-  fs.mkdirSync(path.dirname(BUNDLE_PATH), { recursive: true });
+  const out = process.argv[2] ? path.resolve(process.argv[2]) : DEFAULT_OUTPUT;
+  fs.mkdirSync(path.dirname(out), { recursive: true });
   await esbuild.build({
     entryPoints: [path.join(SOURCES_DIR, "cli.ts")],
     bundle: true,
     format: "esm",
     platform: "node",
     target: "node24",
-    outfile: BUNDLE_PATH,
+    outfile: out,
     minify: false,
     legalComments: "none",
     logLevel: "info",
@@ -72,9 +73,7 @@ async function main() {
       ].join("\n"),
     },
   });
-  console.log(
-    `a2ui checker bundled to ${path.relative(ROOT, BUNDLE_PATH)} (sources ${hash.slice(0, 12)})`,
-  );
+  console.log(`a2ui checker bundled to ${path.relative(ROOT, out)} (sources ${hash.slice(0, 12)})`);
 }
 
 if (

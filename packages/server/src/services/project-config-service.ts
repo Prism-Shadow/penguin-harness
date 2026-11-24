@@ -1537,6 +1537,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       provider: req.provider,
       modelId: req.modelId,
       ...(credential.clientType !== undefined ? { clientType: credential.clientType } : {}),
+      ...(credential.baseUrl !== undefined ? { baseUrl: credential.baseUrl } : {}),
       ...(entry.vision === false ? { vision: false } : {}),
     });
     if (body === undefined) return undefined;

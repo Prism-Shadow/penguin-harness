@@ -89,7 +89,7 @@ describe("work display modes", () => {
     const view = await mount(group([think(1, "First decision"), call(2)]));
     expect(header().getAttribute("aria-expanded")).toBe("true");
     expect(rows()).toHaveLength(2);
-    expect(count()).toBeUndefined();
+    expect(count()).toBe(S.chat.workGroupSteps(2));
     expect(view.container.textContent).not.toContain("First decision");
     expect(view.container.textContent).not.toContain("Output 2");
     expect(view.container.textContent).toContain("Details for command 2");
@@ -166,10 +166,12 @@ describe("work display modes", () => {
       last.workOutcome = { state, durationMs: 2300 };
       const finished = () =>
         group([think(1, "First decision"), last], { ...context, taskRunning: false });
-      await mount(finished());
+      const view = await mount(group([think(1, "First decision"), call(2)]));
+      expect(header().textContent).toContain("Details for command 2");
+      await view.rerender(finished());
       const label =
         state === "done"
-          ? "Details for command 2"
+          ? S.chat.workDone
           : state === "failed"
             ? S.chat.workFailed
             : S.chat.workStopped;
@@ -200,13 +202,17 @@ describe("work display modes", () => {
       expect(header().textContent).not.toContain("资");
       item.argumentsText = JSON.stringify({ description: "核对会议记录", file_path: path });
       await view.rerender(group([item]));
+      const details = () => header().querySelectorAll('[data-step-summary] [data-slot="detail"]');
+      expect(details()).toHaveLength(2);
       expect(header().textContent).toContain("…/每周 计划/项目  记录.md");
       expect(
         header().querySelector('[data-tooltip-content="code"]')?.getAttribute("data-tooltip"),
       ).toBe(path);
       item.argumentsText = JSON.stringify({ description: path, file_path: path });
       await view.rerender(group([item]));
-      expect(header().querySelectorAll('[data-slot="detail"]')).toHaveLength(1);
+      expect(details()).toHaveLength(1);
+      expect(details()[0]!.getAttribute("data-tooltip-content")).toBe("code");
+      expect(details()[0]!.getAttribute("data-tooltip")).toBe(path);
       expect(rows()).toHaveLength(0);
     },
   );

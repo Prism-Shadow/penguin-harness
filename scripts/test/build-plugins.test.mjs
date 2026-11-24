@@ -1,7 +1,7 @@
 /**
  * Which plugin packages the build ships in the builtin prefix:
  * - every package with a code entry, and none without one (content only);
- * - but a MARKET_ONLY package, which is installed from the plugin market instead.
+ * - entry points declared with exports as well as main.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -18,7 +18,7 @@ function plugin(name, manifest) {
   fs.writeFileSync(path.join(dir, "plugins", name, "package.json"), JSON.stringify(manifest));
 }
 
-it("ships the code plugins but the market-only ones", async () => {
+it("ships code plugins declared with main or exports", async () => {
   plugin("sandbox-x", {
     name: "@penguinharness/sandbox-x",
     version: "1.0.0",
@@ -31,5 +31,5 @@ it("ships the code plugins but the market-only ones", async () => {
     exports: { ".": { import: "./dist/index.js" } },
   });
   const shipped = (await pluginPackages(dir)).map((p) => p.name);
-  assert.deepEqual(shipped, ["@penguinharness/sandbox-x"]);
+  assert.deepEqual(shipped, ["@penguinharness/computer-use", "@penguinharness/sandbox-x"]);
 });

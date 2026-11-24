@@ -481,10 +481,22 @@ export interface BackgroundSubagentInfo {
  * live child and no way to resume (resume not requested/available, or the session's record
  * is unrecoverable).
  */
-/** Look up an issued handle in the restored parent Session's own durable records. */
-export type SubagentResolver = (
-  handle: string,
-) => Promise<{ sessionId: string; agentId: string | null; alias: string } | null>;
+/** A host can deliver to a child already driven by another runtime in the same authorized Project. */
+export interface HostedSubagentAccess {
+  access(options: {
+    prompt: string;
+    abort: boolean;
+    yieldMs: number;
+    signal?: AbortSignal;
+  }): Promise<{ action?: string; text?: string; running: boolean }>;
+}
+
+export type SubagentResolver = (handle: string) => Promise<{
+  sessionId: string;
+  agentId: string | null;
+  alias: string;
+  hosted?: HostedSubagentAccess;
+} | null>;
 
 export type SubagentMessageOutcome = "steered" | "started" | "resumed" | "busy" | "gone";
 
@@ -533,6 +545,8 @@ export interface EnvironmentInterface {
    * listBackgroundCommands.
    */
   hasRunningBackgroundSubagents?(): boolean;
+  /** On parent removal, close child admission immediately and drain pending revivals and runs. */
+  disposeSubagents?(): Promise<void>;
   /**
    * All live subagent child sessions (foreground-window ones included), for a host UI's
    * subagents panel. Optional, like listBackgroundCommands.

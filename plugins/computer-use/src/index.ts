@@ -2,8 +2,8 @@
  * @penguinharness/computer-use — an Agent sees and operates the apps on this computer's desktop
  * through `penguin computer`, over vercel-labs' agent-desktop (Apache-2.0).
  *
- * A PLUGIN PACKAGE, not part of the platform, and not shipped with it: an administrator installs
- * it from the plugin market, and installing it on an Agent enables its server module (PRFC-0031).
+ * The product ships the plugin and its Skill. An administrator can enable its server module
+ * explicitly; installing the Skill on an Agent follows PRFC-0031.
  * Everything is here — the server module, the command, the settings card and the Skill — and the
  * host knows none of it (design: 05 「Computer Use」).
  *
@@ -90,7 +90,6 @@ const probes = new Map<string, Probe>();
         shortDescriptionZh: "经无障碍树查看并操作桌面应用。",
         category: "office-productivity",
         icon: "icon.svg",
-        preinstall: false,
         quickStart: {
           prompt:
             "Open the Calculator app, work out 12 × 34 with its buttons, and tell me the result it shows.",

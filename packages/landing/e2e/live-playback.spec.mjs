@@ -4,16 +4,15 @@
  * The AMSP player has independent pause and resume controls.
  */
 import { test, expect } from "@playwright/test";
-import serverPackage from "../../server/package.json" with { type: "json" };
 
 const composer = '[data-slot="composer"] textarea';
 
-async function openHero(page, lang = "zh") {
+async function openHero(page, lang = "zh", useVirtualClock = true) {
   await page.addInitScript((lang) => {
     localStorage.setItem("penguin-site.lang", lang);
     localStorage.setItem("penguin-site.theme", "light");
   }, lang);
-  await page.clock.install({ time: new Date("2026-10-28T00:00:00Z") });
+  if (useVirtualClock) await page.clock.install({ time: new Date("2026-10-28T00:00:00Z") });
   await page.goto("/");
   await page
     .getByRole("button", { name: /^(Play demo|Stop demo|播放演示|停止演示)$/ })
@@ -81,10 +80,47 @@ for (const [lang, play, stop] of [
   });
 }
 
+test("the desktop walkthrough finishes with its conversation beside the score curve in real time", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const { frame } = await openHero(page, "en", false);
+  const conversation = frame.locator('[data-pane="left"] [data-slot="composer"] textarea');
+  const benchmark = frame.locator('[data-pane="right"]');
+  await expect(benchmark.getByRole("heading", { name: "Docs QA v1", exact: true })).toBeVisible({
+    timeout: 45_000,
+  });
+  await expect(benchmark.getByText("Score over time", { exact: true })).toBeVisible();
+  await expect(conversation).toBeVisible();
+  const plot = benchmark.locator("svg.ui-chart:visible").first();
+  await expect(plot).toBeVisible();
+  await expect
+    .poll(() =>
+      plot.evaluate(
+        (svg) =>
+          new Promise((resolve) => {
+            const observer = new IntersectionObserver(
+              ([entry]) => {
+                observer.disconnect();
+                resolve(entry.intersectionRatio);
+              },
+              { root: svg.ownerDocument.documentElement },
+            );
+            observer.observe(svg);
+          }),
+      ),
+    )
+    .toBeGreaterThan(0.99);
+  const [inputBox, plotBox] = await Promise.all([conversation.boundingBox(), plot.boundingBox()]);
+  expect(inputBox.x + inputBox.width).toBeLessThanOrEqual(plotBox.x + 1);
+});
+
 test("the live homepage preview uses the new chat header and shortcut strip", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const { frame } = await openHero(page, "en");
-  await expect(frame.getByText("Create your first Agent OS", { exact: true })).toBeVisible();
+  await expect(
+    frame.getByText("Create your first self-evolving agent OS.", { exact: true }),
+  ).toBeVisible();
   await expect(frame.locator('[data-slot="counts"]')).toHaveCount(0);
   await expect(frame.locator('[data-slot="examples"]')).toBeVisible();
   await expect(frame.locator('[data-slot="version"]')).toContainText(
@@ -93,46 +129,61 @@ test("the live homepage preview uses the new chat header and shortcut strip", as
   expect(await frame.locator(composer).evaluate((el) => getComputedStyle(el).resize)).toBe("none");
 });
 
-for (const [lang, name, instruction, download] of [
-  [
-    "en",
-    "Your first workbench",
-    /in your installed copy of PenguinHarness/i,
-    "Download PenguinHarness",
-  ],
-  ["zh", "我的第一个工作台", /在已安装的 PenguinHarness 中/, "下载 PenguinHarness"],
-]) {
-  test(`opens the installed guide's download instructions (${lang})`, async ({ page }) => {
+for (const lang of ["en", "zh"]) {
+  test(`the homepage keeps the App Center and skips setup prompts (${lang})`, async ({ page }) => {
     const { frame } = await openHero(page, lang);
-    const play = page.getByRole("button", {
-      name: lang === "en" ? "Play demo" : "播放演示",
-      exact: true,
-    });
     await expect(frame.getByRole("dialog")).toHaveCount(0);
     await frame
       .getByRole("link", { name: lang === "en" ? /^App Center(?: ·|$)/ : /^应用中心(?: ·|$)/ })
       .click();
-    const tile = frame
-      .locator('li[data-app="default_agent/first-workbench-guide"] > button')
-      .first();
-    if (!("@penguinharness/first-workbench-guide" in serverPackage.dependencies)) {
-      await expect(tile).toHaveCount(0);
-      return;
-    }
-    await tile.click();
-    const guide = frame.getByRole("region", { name, exact: true });
-    await expect(guide.getByText(instruction)).toBeVisible();
-    const link = guide.getByRole("link", { name: download });
-    await expect(play).toBeVisible();
-    await page.clock.fastForward(30_000);
-    await expect(link).toBeVisible();
-    const opened = page.waitForEvent("popup");
-    await link.click();
-    const downloads = await opened;
-    await expect(downloads).toHaveURL(/\/download\/?$/);
-    await expect(downloads.getByRole("heading", { name: "macOS", exact: true })).toBeVisible();
+    await expect(frame.locator('li[data-app="default_agent/slides"]')).toBeVisible();
+    await expect(frame.locator('li[data-app="default_agent/first-workbench-guide"]')).toHaveCount(
+      0,
+    );
+    await expect(
+      frame.getByRole("region", {
+        name: lang === "en" ? "Your first workbench" : "我的第一个工作台",
+      }),
+    ).toHaveCount(0);
   });
 }
+
+test("opens the installed workbenches without navigating away from the homepage", async ({
+  page,
+}) => {
+  const { frame } = await openHero(page, "en");
+  await page.clock.resume();
+  const catalog = frame.getByRole("link", { name: /^App Center(?: ·|$)/ }).first();
+  await catalog.click();
+  for (const id of ["default_agent/slides", "default_agent/images", "penguin_support/support"]) {
+    const app = id.split("/")[1];
+    await frame.locator('li[data-app="' + id + '"] > button').click();
+    const workbench = frame
+      .locator('iframe[src*="/demo-workbenches/api/"][src*="/workbenches/' + app + '/ui/"]:visible')
+      .contentFrame();
+    if (app === "slides") {
+      await workbench.locator("[data-open-deck]").first().click();
+      const editor = workbench.locator("iframe#editor").contentFrame();
+      await expect
+        .poll(() => editor.locator("body").evaluate(() => window.bento?.read()?.slides?.length))
+        .toBe(4);
+    } else if (app === "images") {
+      const image = workbench.locator("#stage img");
+      await expect
+        .poll(() => image.evaluate((el) => el.complete && el.naturalWidth))
+        .toBeGreaterThan(0);
+      await workbench.locator("#ideas button").first().click();
+      await expect(workbench.locator("#prompt")).not.toHaveValue("");
+    } else {
+      await workbench.locator("[data-ticket]").first().click();
+      await expect(workbench.locator("#messages")).toContainText("sidebar");
+    }
+    await expect(page.getByRole("button", { name: "Play demo", exact: true })).toBeVisible();
+    await catalog.click();
+    await expect(frame.locator('li[data-app="' + id + '"]')).toBeVisible();
+  }
+  await expect(page).toHaveURL(/\/$/);
+});
 
 test("keeps the visitor's draft on keyboard takeover and replays only on request", async ({
   page,
@@ -216,8 +267,12 @@ test("a keyboard-activated navigation link keeps its destination while the scrip
 test("taking over the split preview releases the scripted drag", async ({ page }) => {
   const { frame } = await openHero(page, "en");
   await page.clock.pauseAt(await page.evaluate(() => new Date(Date.now() + 250).toISOString()));
+  const results = frame.locator('[data-workspace-page^="chat:"][data-pane] table:visible').first();
+  for (let step = 0; step < 140 && !(await results.isVisible()); step++)
+    await page.clock.runFor(450);
+  await expect(results).toBeVisible();
   const tile = frame.locator('li[data-app="system_agent/benchmark"] > button:visible');
-  for (let step = 0; step < 140 && !(await tile.isVisible()); step++) await page.clock.runFor(450);
+  for (let step = 0; step < 150 && !(await tile.isVisible()); step++) await page.clock.runFor(30);
   await expect(tile).toBeVisible();
   const preview = frame.locator("[data-pane=full] .z-drag-preview");
   for (let step = 0; step < 150 && !(await preview.isVisible()); step++)

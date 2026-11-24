@@ -15,7 +15,7 @@
  * 4. Installed into a project, a TSX file passing components valid props compiles under `tsc`
  *    and each line of one passing a wrong prop (the package's own type, and a dependency's) fails
  *    with TS2322; the rolled-up declarations themselves check, and none names a package the
- *    build bundles (`@prismshadow/a2ui`, `@prismshadow/chat-markdown`, both devDependencies) or
+ *    build bundles (`@prismshadow/a2ui`, a devDependency) or
  *    `@prismshadow/penguin-core`.
  * 5. Components rendered with `react-dom/server` use only classes `styles.css` has a rule for.
  * 6. The runtime's manifest names files that exist, its modules import nothing a page's import
@@ -222,9 +222,12 @@ try {
     ...result.extra.map((d) => say(d)),
   ];
 
-  const declarations = ["dist/index.d.ts", "dist/highlighter.d.ts"].map((file) =>
-    join(installed, file),
-  );
+  const declarations = [
+    "dist/index.d.ts",
+    "dist/a2ui.d.ts",
+    "dist/chat-markdown.d.ts",
+    "dist/highlighter.d.ts",
+  ].map((file) => join(installed, file));
   const npmResult = compile(
     project,
     {
@@ -253,6 +256,14 @@ try {
         .filter((name) => text.includes(name))
         .map((name) => `${relative(installed, file)} names ${name}`);
     }),
+  ]);
+
+  const mainUi = await import(pathToFileURL(join(installed, "dist/index.js")).href);
+  const a2ui = await import(pathToFileURL(join(installed, "dist/a2ui.js")).href);
+  check("4a", "the A2UI entry shares the renderer, registry and action provider", [
+    ...["A2uiBlock", "registerA2uiRenderer", "A2uiActionsProvider"].filter(
+      (name) => typeof a2ui[name] !== "function" || a2ui[name] !== mainUi[name],
+    ),
   ]);
 
   // --- rendered classes --------------------------------------------------------------------

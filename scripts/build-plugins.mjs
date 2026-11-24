@@ -1,6 +1,6 @@
 /**
  * The builtin plugins, shipped as the npm packages they are: every `plugins/*` package with
- * a code entry, except the MARKET_ONLY ones, is built by its own `build` script, packed by
+ * a code entry is built by its own `build` script, packed by
  * `pnpm pack` — exactly what `npm publish` would send — and installed by npm into a staging
  * directory laid out as an npm prefix (`<out>/package.json` + `<out>/node_modules/<name>/…`,
  * dependencies included). That prefix is the one shape both consumers resolve from: the hot
@@ -66,7 +66,7 @@ import { offlineCandidates, stageOfflineArchives } from "./lib/offline-archives.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 15;
+const PACK_FORMAT = 16;
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
 /**
@@ -83,20 +83,6 @@ const NATIVE_DEPENDENCIES = new Map([
   [
     "@deepseek-ai/node-addon-landlock-run",
     "resolves its per-platform launcher binary package at run time (sandbox-dsh)",
-  ],
-]);
-
-/**
- * The plugins of this repository that are NOT shipped, each with a reason: they are built,
- * tested and published to npm like every other (at a version of their own where
- * scripts/lib/own-version-plugins.mjs lists them), and the server's embedded index lists them, but
- * an administrator installs them from the plugin market — they are not in the builtin prefix, so
- * nothing carries them to every machine and no `409 plugin_shipped` stands in the market's way.
- */
-const MARKET_ONLY = new Map([
-  [
-    "@penguinharness/computer-use",
-    "not preinstalled: it downloads its own native program (agent-desktop) on the machine that runs it",
   ],
 ]);
 
@@ -203,8 +189,7 @@ async function bundleInputsHash(dir, into) {
 }
 
 /**
- * Every plugin package under `plugins/` with a code entry (`main` or `exports`) that is not
- * MARKET_ONLY: the packages of the server modules this build ships.
+ * Every plugin package under `plugins/` with a code entry (`main` or `exports`) ships in the prefix.
  */
 export async function pluginPackages(root) {
   const out = [];
@@ -217,7 +202,6 @@ export async function pluginPackages(root) {
     const pkg = JSON.parse(await fsp.readFile(manifestFile, "utf8"));
     // A package with a code entry is built and packed; one without (skills, hooks) carries no code.
     if (pkg.main === undefined && pkg.exports === undefined) continue;
-    if (MARKET_ONLY.has(pkg.name)) continue;
     const unbundled = Object.keys(pkg.dependencies ?? {}).filter(
       (d) => !NATIVE_DEPENDENCIES.has(d),
     );
@@ -258,7 +242,7 @@ export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = p
       throw new Error(`${name} is both a plugins/ package and an external pin of packages/server`);
     }
   }
-  // Listed in the market but not shipped: carried as offline archives (scripts/lib/offline-archives.mjs).
+  // The registry also serves independently versioned packages from the installed offline archives.
   const offline = await offlineCandidates({
     pluginsSrc: path.join(root, "plugins"),
     indexFile: path.join(root, "packages", "server", "src", "plugin", "builtin-index.json"),
@@ -319,6 +303,7 @@ export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = p
         staged.push({ pin, dir });
         log(`plugin ${pin.name}@${pin.version}: ${source}, sha512 verified`);
       }
+      const packedByDirectory = new Map();
       const tarballs = [];
       for (const plugin of plugins) {
         // The package's own build, then the package as npm would publish it (`files` honored,
@@ -329,7 +314,9 @@ export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = p
           (f) => f.endsWith(".tgz") && !tarballs.some((t) => path.basename(t) === f),
         );
         if (tarball === undefined) throw new Error(`pnpm pack left no tarball for ${plugin.name}`);
-        tarballs.push(path.join(packed, tarball));
+        const file = path.join(packed, tarball);
+        tarballs.push(file);
+        packedByDirectory.set(plugin.dir, file);
         log(`plugin ${plugin.name}@${plugin.version}: packed`);
       }
       // The manifest names what is shipped — how the loader tells the plugins from what npm
@@ -424,8 +411,17 @@ export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = p
       await stageOfflineArchives({
         out,
         candidates: offline,
-        build: (plugin) => run("pnpm", ["--filter", plugin.name, "run", "build"], root, env),
+        build: (plugin) =>
+          packedByDirectory.has(plugin.dir)
+            ? undefined
+            : run("pnpm", ["--filter", plugin.name, "run", "build"], root, env),
         pack: async (dir, into) => {
+          const existing = packedByDirectory.get(dir);
+          if (existing) {
+            const target = path.join(into, path.basename(existing));
+            await fsp.copyFile(existing, target);
+            return target;
+          }
           const before = new Set(await fsp.readdir(into));
           await run("pnpm", ["pack", "--pack-destination", into], dir, env);
           const made = (await fsp.readdir(into)).find((f) => f.endsWith(".tgz") && !before.has(f));

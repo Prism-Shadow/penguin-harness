@@ -97,7 +97,8 @@ import {
   type PanelBodyProps,
 } from "./dock-panel-bodies";
 import type { ComponentProps } from "react";
-import { panelGlyph, panelLabel } from "./panel-meta";
+import { sessionWorkbenchKindAt } from "../../lib/session-workbenches";
+import { panelAppGlyph, panelGlyph, panelLabel } from "./panel-meta";
 import {
   dockPanelDefinition,
   useDockPanels,
@@ -130,6 +131,7 @@ import {
   type DockTab,
   type DockView,
 } from "./dock-state";
+import { useSessionShortcuts } from "./session-shortcuts";
 import {
   maxWidthFor,
   persistPanelWidth,
@@ -260,6 +262,7 @@ export function DockPanel({
   // what re-renders the strip when a definition arrives for a tab it already shows.
   const offered = useDockPanels();
   const { position, merged, tabs, activeKey } = view;
+  const shortcuts = useSessionShortcuts(offered, merged ? undefined : "right");
   const nativeSlots = useNativePanelSlots();
   const horizontal = position === "bottom";
   const other: DockPosition = position === "right" ? "bottom" : "right";
@@ -569,15 +572,28 @@ export function DockPanel({
       }
     >
       <Menu>
-        {offered.map((definition) => (
-          <MenuItem
-            key={definition.id}
-            data-testid={`dock-add-${definition.id}`}
-            glyph={definition.glyph}
-            label={definition.label()}
-            onSelect={() => openPanelHere(definition)}
-          />
-        ))}
+        {position === "right" || merged
+          ? shortcuts.map((entry) => (
+              <MenuItem
+                key={entry.key}
+                data-testid={`dock-add-${entry.key}`}
+                glyph={panelAppGlyph(entry.key, ICON_SIZE.inlineGlyph) ?? entry.glyph}
+                label={entry.label}
+                onSelect={() => {
+                  setAddOpen(false);
+                  entry.choose();
+                }}
+              />
+            ))
+          : offered.map((definition) => (
+              <MenuItem
+                key={definition.id}
+                data-testid={`dock-add-${definition.id}`}
+                glyph={panelAppGlyph(definition.id, ICON_SIZE.inlineGlyph) ?? definition.glyph}
+                label={definition.label()}
+                onSelect={() => openPanelHere(definition)}
+              />
+            ))}
       </Menu>
     </Dropdown>
   );
@@ -639,13 +655,17 @@ export function DockPanel({
 
   // The strip's items: panel tabs by their panel's name and mark (the registry's, or the id and
   // the puzzle piece while no definition is registered).
-  const stripTabs: DockTabItem[] = tabs.map((tab) => ({
-    key: tabKey(tab),
-    label: pageOf(tab.panel)?.title ?? panelLabel(tab.panel),
-    glyph: panelGlyph(tab.panel, ICON_SIZE.inlineGlyph),
-    badge: panelBadges?.[tab.panel] === true,
-    closeLabel: S.dock.closeTab,
-  }));
+  const stripTabs: DockTabItem[] = tabs.map((tab) => {
+    const page = pageOf(tab.panel);
+    const panel = (page && sessionWorkbenchKindAt(page.path)) ?? tab.panel;
+    return {
+      key: tabKey(tab),
+      label: page?.title ?? panelLabel(tab.panel),
+      glyph: panelGlyph(panel, ICON_SIZE.inlineGlyph),
+      badge: panelBadges?.[tab.panel] === true,
+      closeLabel: S.dock.closeTab,
+    };
+  });
   const closeByKey = (key: string): void => {
     const tab = tabs.find((t) => tabKey(t) === key);
     if (tab) closeTab(tab);

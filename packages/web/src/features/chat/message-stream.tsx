@@ -17,8 +17,8 @@ import {
   type RefObject,
 } from "react";
 
+import { A2uiActionsProvider } from "@prismshadow/penguin-ui/a2ui";
 import {
-  A2uiActionsProvider,
   EmptyState,
   GlyphIcon,
   ICONS,

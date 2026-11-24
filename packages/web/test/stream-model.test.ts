@@ -169,6 +169,53 @@ function items(model: StreamModel) {
   return model.items;
 }
 
+describe("read-aloud text on the selected Task footer", () => {
+  const footer = (model: StreamModel) =>
+    model.items.filter((item) => item.kind === "task_stats").at(-1);
+  it("keeps the selected turn and every paragraph of its final response", () => {
+    const m = createStreamModel();
+    pushMessages(m, [
+      userText("Earlier question"),
+      requestBegin(),
+      assistantText("Earlier answer"),
+      requestEnd("completed"),
+      taskEnd(),
+      userText("Later question"),
+      requestBegin(),
+      assistantText("Checking the files."),
+      toolCall({ name: "ls", arguments: "{}", toolCallId: "ls1" }),
+      requestEnd("completed"),
+      toolCallOutput({ output: "report.md", toolCallId: "ls1", status: "completed" }),
+      requestBegin(),
+      thinkingMessage("An internal note"),
+      assistantText("One paragraph.\n\nA second paragraph."),
+      assistantText("Final text block."),
+      requestEnd("completed"),
+      taskEnd(),
+    ]);
+    finalizeHistory(m);
+    const [first, last] = m.items.filter((item) => item.kind === "task_stats");
+    expect(first?.readAloudText).toBe("Earlier answer");
+    expect(last?.readAloudText).toBe("One paragraph.\n\nA second paragraph.\n\nFinal text block.");
+    expect(last?.assistantText).toContain("Checking the files.");
+  });
+  it("keeps narration out of an interrupted tool-only tail and handles a partial history", () => {
+    const m = createStreamModel();
+    pushMessages(m, [
+      userText("Inspect this"),
+      assistantText("Checking first."),
+      toolCall({ name: "ls", arguments: "{}", toolCallId: "ls1" }),
+      taskEnd(),
+    ]);
+    notifyTaskIdle(m);
+    expect(footer(m)?.assistantText).toBe("Checking first.");
+    expect(footer(m)?.readAloudText).toBeUndefined();
+    pushMessages(m, [userText("Follow-up"), assistantText("Available answer."), taskEnd()]);
+    finalizeHistory(m);
+    expect(footer(m)?.readAloudText).toBe("Available answer.");
+  });
+});
+
 describe("the final work step of a Task", () => {
   const first = "2026-11-19T10:00:00.000Z";
   const last = "2026-11-19T10:00:04.000Z";

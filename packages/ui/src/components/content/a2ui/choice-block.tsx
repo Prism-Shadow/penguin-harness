@@ -28,6 +28,7 @@
  * A2UI's `parseChoicePick`), so a reload still shows the pick; an answer the reader wrote
  * themselves, or any other message, picks nothing.
  */
+import { Card } from "../../layout/card/card";
 import { useId, useMemo, useState } from "react";
 import { choiceFillText, parseChoicePick } from "@prismshadow/a2ui";
 import type { A2uiChoice, A2uiOption } from "@prismshadow/a2ui";
@@ -209,11 +210,11 @@ export function ChoiceBlock({ spec }: { spec: A2uiChoice }) {
   const questionId = useId();
   const Options = spec.multiple === true ? MultiChoice : SingleChoice;
   return (
-    <div className="a2ui-block my-3" data-a2ui="choice">
+    <Card className="a2ui-block my-3" data-a2ui="choice">
       <div id={questionId} className={A2UI_TITLE}>
         <InlineText text={spec.question} />
       </div>
       <Options spec={spec} questionId={questionId} actions={actions} strings={strings} />
-    </div>
+    </Card>
   );
 }

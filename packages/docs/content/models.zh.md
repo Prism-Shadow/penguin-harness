@@ -18,7 +18,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 - **分组**：内置分组按[内置供应商分组](#内置供应商分组)里的顺序排列；你创建的分组排在后面，按名称排序。没有模型的内置分组会隐藏；**Custom** 始终显示。**TokenDance** 分组带有**官方推荐**标签。
 - **收藏与折叠的分组**：TokenDance、Penguin Go、DeepSeek、OpenRouter、Google Gemini、OpenAI 和 Anthropic 默认已收藏，始终显示。其余分组（包括你创建的分组）排在它们下方，收在一条通栏的折叠条里，折叠条写明其中的分组数，例如「其余 11 个分组」；点击折叠条即可展开或收起。它们默认收起，浏览器会记住你的选择。要收藏某个分组或让它可以折叠，把鼠标移到分组标题上或用键盘聚焦它，再点击名称后面的星标（**收藏**或**取消收藏**）；把分组拖到另一个区域的分组标题上，也会把它移过去。收藏保存在当前浏览器里，对所有 Project 生效。搜索期间，两个区域里匹配的分组都会显示，折叠条隐藏。
-- **展开和收起分组**：点击分组标题即可展开或收起。首次访问时只有 TokenDance 分组是展开的。浏览器会记住你展开过哪些分组，按 Project 分别记录。
+- **展开和收起分组**：点击分组标题即可展开或收起。首次访问时所有分组均折叠。浏览器会记住你展开过哪些分组，按 Project 分别记录。
 - **调整分组顺序**：拖动分组标题即可移动分组。顺序保存在当前浏览器里，按 Project 分别记录；对话中的模型选择器也用同样的顺序。触摸屏上或搜索时不能拖动。
 - **搜索**：在**搜索模型：id / 名称 / 厂商**里输入，就只显示匹配的模型。搜索期间，所有包含匹配模型的分组都会展开。
 - **组内排序**：分组里的模型按价格从低到高排列。比较的是当前实际计费的价格（已扣除正在进行的促销或空闲时段折扣），按缓存命中 85%、缓存未命中 10%、输出 5% 加权计算。免费模型排在最前，没有价格的模型排在最后，价格相同的按名称排序。要换一种排法，点击分组标题栏末尾的齿轮，选择**价格（从低到高）**、**价格（从高到低）**或**名称（A→Z）**；当前选项带有勾选标记。每个分组各自记住自己的排法，保存在当前浏览器里。搜索结果同样按它排列；分组之间的顺序和对话中的模型选择器不受影响。
@@ -573,9 +573,9 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` / `gpt-5.6` / `gpt-5.5`
 - `glm-5.3` / `glm-5.3-flash`
 - `kimi-k3.1-pro` / `kimi-k3.1-pro-highspeed` / `kimi-k3`（高速版仅 Moonshot 提供）
-- `qwen3.8-max` / `qwen3.8-flash`
+- `qwen4-max` / `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
-- Hy4 支持文本和图像输入，TokenDance 的模型 ID 为 `hy4`，OpenRouter 的为 `tencent/hy4`
+- Hy4 支持文本和图像输入，TokenDance 的模型 ID 为 `hy4`、`hy4-flash`，OpenRouter 的为 `tencent/hy4`
 - `mimo-v2.6-pro` / `mimo-v2.6-flash` / `step-5-preview` / `ling-3.1-flash`（TokenDance）
 - `dots-3-note-preview`（TokenDance 上免费，512K 上下文）
 - `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`、`Qwen/Qwen3.8-Flash-Next`（ModelScope 的 api-inference，没有价格的预置条目）
@@ -602,9 +602,9 @@ Google 分组以 `gemini-4-neon`、OpenRouter 分组以 `google/gemini-4-neon` �
   - TokenDance 还在高峰时段对这四条再打 8 折，`deepseek-v4.1-flash` 与 `deepseek-v4.1-flash-1017` 在空闲时段也打。这两条把 8 折作为促销与时段规则并列声明，卡片在高峰时段显示 `省 20%`、空闲时段显示 `省 60%`，成本中心按 TokenDance 实收计费。`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813` 的 8 折只在高峰时段生效，与时段规则并列的促销表达不了，所以它们的高峰时段按牌价计费，比 TokenDance 实收高 25%。
   - Qwen 转售的 DeepSeek 模型按它自己的时段计费：北京时间每天 22:00 至次日 8:00 半价。两个 Qwen 分组的 `deepseek-v4.1-flash` 和 Token Plan 的 `deepseek-v4-pro-0813` 声明的是这一套，折扣标签的悬停说明写的也是该条目所遵循时段的窗口。
   - 存储的价格始终是高峰价格，所以磁盘上的数值与 Project 创建或同步的时间无关。
-- **固定折扣。** 目前有八个 TokenDance 模型在打折：
+- **固定折扣。** 以 TokenDance 为例：
   - `ling-3.0-flash` 打 3.5 折
-  - 三条 Doubao Seed 条目（`seed-2.1-pro`、`seed-2.1-turbo`、`seed-evolving`）打 5 折
+  - `hy4-flash`、`seed-2.1-pro`、`seed-2.1-turbo`、`seed-evolving` 打 5 折
   - `glm-5.2` 打 8 折
   - `glm-5.3`、`glm-5.3-flash` 和 `qwen3.8-max` 打 9 折
 

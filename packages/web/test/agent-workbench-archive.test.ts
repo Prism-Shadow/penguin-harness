@@ -176,7 +176,6 @@ describe("a workbench's archives on the Workbenches sub-page", () => {
     ) {
       saved.push(this.download);
     });
-    await click(rowOf("Support").querySelector("button")!);
     await click(button(`${en.workbenches.more} Support`));
     await click(menuItem(en.workbenches.exportWorkbench));
     await waitFor(() => saved.length === 1);

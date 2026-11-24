@@ -165,11 +165,28 @@ function readCard(table: PluginTable, warnings: string[]): LibraryContributions[
         `${at}.icon must be the path of a ${ICON_EXTENSIONS_TEXT} file in the package; ignored`,
       );
   }
-  for (const key of ["preinstall", "defaultInstall", "composerMode"] as const) {
+  for (const key of [
+    "preinstall",
+    "preinstallExistingProjects",
+    "defaultInstall",
+    "composerMode",
+  ] as const) {
     const value = entry[key];
     if (value === undefined) continue;
     if (typeof value === "boolean") card[key] = value;
     else warnings.push(`${at}.${key} must be true or false; ignored`);
+  }
+  if (entry.composerCommand !== undefined) {
+    if (
+      card.composerMode &&
+      typeof entry.composerCommand === "string" &&
+      /^[a-z][a-z0-9-]*$/.test(entry.composerCommand)
+    )
+      card.composerCommand = entry.composerCommand;
+    else
+      warnings.push(
+        `${at}.composerCommand needs a composer mode and a lowercase command name; ignored`,
+      );
   }
   const quickStart = readQuickStart(entry.quickStart, `${at}.quickStart`, warnings);
   if (quickStart !== undefined) card.quickStart = quickStart;

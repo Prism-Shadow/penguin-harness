@@ -65,6 +65,7 @@ import {
 } from "@prismshadow/penguin-server/cli";
 import type { TaskCreateResponse } from "@prismshadow/penguin-server/api";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
+import { composerModeCommand } from "../composer-mode-command.js";
 import { parseGoalCommand } from "../goal-command.js";
 import { parseThinkingCommand, resolveThinkingLevel } from "../thinking-command.js";
 import {
@@ -282,6 +283,7 @@ export function registerChatCommand(chat: Command, t: Messages): void {
        * every run is shown, whoever started it. Joined when there is a Session — at once on
        * --resume, at the first message otherwise — and replaced when the chat moves to another.
        */
+      const composerModes = new Set<string>();
       let view: SessionView | null = null;
       const viewOptions = (sessionId: string): SessionViewOptions => ({
         client,
@@ -492,14 +494,21 @@ export function registerChatCommand(chat: Command, t: Messages): void {
        * in the queue for the compaction to end. The run it starts or waits behind is followed by
        * the view, so nothing here waits for it.
        */
-      const postMessage = async (text: string): Promise<TaskCreateResponse> => {
+      const postMessage = async (
+        text: string,
+        promptHooks: string[] = [],
+      ): Promise<TaskCreateResponse> => {
         // Its echo, should it start a run, is on the screen already: the typed line.
         renderer.expectInput(text);
         try {
           const response = await client.request<TaskCreateResponse>(
             "POST",
             `/api/sessions/${live().sessionId}/tasks`,
-            { input: [{ type: "text", text }], steerIfBusy: true },
+            {
+              input: [{ type: "text", text }],
+              steerIfBusy: true,
+              ...(promptHooks.length ? { promptHooks } : {}),
+            },
           );
           if (response.steered === true) {
             renderer.expectInput(null);
@@ -999,6 +1008,7 @@ export function registerChatCommand(chat: Command, t: Messages): void {
             // /thinking or the calling session's context). Nothing is created now. The old
             // Session stays on the server (resumable), so its resume command is printed first.
             const previous = live();
+            composerModes.clear();
             const level = previous.thinkingLevel ?? pinAfterCreate ?? undefined;
             if (resumable) out.write(`${dim(t.resumeHint(resumeCommand(previous.sessionId)))}\n`);
             pending = {
@@ -1074,12 +1084,26 @@ export function registerChatCommand(chat: Command, t: Messages): void {
                 }
               }
             } else {
+              const mode = await composerModeCommand(
+                client,
+                session?.projectId ?? projectId,
+                session?.agentId ?? agentId,
+                text,
+              );
+              if (mode) {
+                const enabled = mode.body.length > 0 || !composerModes.has(mode.name);
+                if (enabled) composerModes.add(mode.name);
+                else composerModes.delete(mode.name);
+                out.write(`${t.composerModeState(mode.command, enabled)}\n`);
+                if (!mode.body) continue;
+                text = mode.body;
+              }
               const current = await sessionFor(text);
               if (current === null) {
                 failed = true;
               } else {
                 resumable = true;
-                await runTurn(() => postMessage(text));
+                await runTurn(() => postMessage(text, [...composerModes]));
               }
             }
           } catch (err) {

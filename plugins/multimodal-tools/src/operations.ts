@@ -113,7 +113,11 @@ function integer(value: number | undefined, min: number, max: number, what: stri
   return value;
 }
 
-function attachment(file: Attachment | undefined, kind: "image" | "audio"): ContentItem {
+function attachment(
+  file: Attachment | undefined,
+  kind: "image" | "audio",
+  googleAudio = false,
+): ContentItem {
   if (file === undefined) throw badInput(`Provide the ${kind} file.`);
   const mimeType = file.mimeType.trim();
   if (mimeType.length > 128 || !(kind === "image" ? IMAGE_TYPES : AUDIO_TYPE).test(mimeType)) {
@@ -127,7 +131,21 @@ function attachment(file: Attachment | undefined, kind: "image" | "audio"): Cont
   if (file.data.byteLength > MAX_ATTACHMENT_BYTES) {
     throw badInput(`The ${kind} file is larger than ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MiB.`);
   }
-  return { type: "inline_data.done", mime_type: mimeType, data: Buffer.from(file.data) };
+  // MediaRecorder includes codecs on its container type. Google expects the container's MIME token.
+  const container = mimeType.split(";", 1)[0]!.trim().toLowerCase();
+  const googleType =
+    container === "audio/mp4"
+      ? "audio/m4a"
+      : container === "audio/x-wav" || container === "audio/wave"
+        ? "audio/wav"
+        : container;
+  const useContainer =
+    googleAudio && ["audio/webm", "audio/ogg", "audio/m4a", "audio/wav"].includes(googleType);
+  return {
+    type: "inline_data.done",
+    mime_type: useContainer ? googleType : mimeType,
+    data: Buffer.from(file.data),
+  };
 }
 
 function pageUrl(value: string | undefined): string {
@@ -144,6 +162,13 @@ function pageUrl(value: string | undefined): string {
   return url.href;
 }
 
+/** Gemini content clients handle transcription as an instruction alongside the recording. */
+export const isGoogleContentClient = (client: string | null | undefined): boolean =>
+  client === "google-official" || client === "google-genai";
+
+const TRANSCRIBE =
+  "Transcribe the speech verbatim in its original language. Output only the transcript. Do not translate, describe the recording, or answer questions in it. Return no text if there is no speech.";
+
 /** The question an image is read with when the caller asks none. */
 export const DEFAULT_IMAGE_PROMPT = "Describe this image.";
 
@@ -151,6 +176,7 @@ export const DEFAULT_IMAGE_PROMPT = "Describe this image.";
 export function operationRequest(
   op: Operation,
   input: OperationInput,
+  client?: string | null,
 ): { messages: UniMessage[]; config: UniConfig } {
   const config: UniConfig = {};
   let items: ContentItem[];
@@ -165,7 +191,8 @@ export function operationRequest(
       ];
       break;
     case "s2t":
-      items = [attachment(input.audio, "audio")];
+      items = [attachment(input.audio, "audio", isGoogleContentClient(client))];
+      if (isGoogleContentClient(client)) items.push({ type: "text.done", text: TRANSCRIBE });
       break;
     case "fetch":
       items = [{ type: "text.done", text: pageUrl(input.url) }];

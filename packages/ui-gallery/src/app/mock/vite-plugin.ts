@@ -3,8 +3,7 @@
  * that resolves to `packages/web/src/api/client.ts` or `api/sse.ts` — from the endpoint
  * wrappers, the providers, the features — resolves to the mocks here instead. Matching on
  * the resolved file rather than the specifier text means `./client`, `../api/client` and
- * `../../api/client` are all caught. The guide workbench also has a gallery-only stand-in:
- * the static site can show its installation instructions without a plugin server.
+ * `../../api/client` are all caught. Installed workbench frames use a gallery asset URL and the matching mock API.
  *
  * Shared by the gallery's Vite config and its vitest config, so the tests that walk the
  * app's endpoint wrappers run them against the mock too. The resolution is path arithmetic
@@ -22,8 +21,8 @@ const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 /** Real module (absolute path, no extension) → the mock that stands in for it. */
 export const SWAPPED_MODULES: Readonly<Record<string, string>> = {
   [here("../../../../web/src/api/client")]: here("./client.ts"),
+  [here("../../../../web/src/lib/workbench-tabs")]: here("./workbench-tabs.ts"),
   [here("../../../../web/src/api/sse")]: here("./sse.ts"),
-  [here("../../../../web/src/features/workbenches/workbench-frame")]: here("./workbench-frame.tsx"),
 };
 
 /** The mock a relative import from `importer` should resolve to, or null for any other import. */

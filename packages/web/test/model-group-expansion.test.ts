@@ -1,15 +1,4 @@
-/**
- * model-group-expansion.ts unit tests: the models page's default-collapsed vendor groups.
- * Only DeepSeek (the catalog's first provider) is expanded on a first visit; the state is a
- * set of EXPANDED ids so groups arriving late (user-defined groups load with the rows)
- * default to collapsed without being known up front. While a search query is active every
- * rendered group is force-opened — groupModelRows only returns match-holding groups when
- * searching, and a match hidden inside a collapsed group would look like a missing result —
- * without touching the stored set. The user's toggles persist per Project (localStorage,
- * injectable storage): nothing stored or corrupted storage falls back to the default, a
- * stored empty array is honored as "all collapsed", and stale ids of since-deleted groups
- * stay inert.
- */
+/** The model library stores manual group choices per Project. Search reveals matches temporarily. */
 import { describe, expect, it } from "vitest";
 import { MODEL_PROVIDERS } from "@prismshadow/penguin-server/model-catalog";
 import {
@@ -34,12 +23,12 @@ function memStorage(): ExpansionStorage & { map: Map<string, string> } {
   };
 }
 
-/** The group the catalog puts first, which is the one the page opens on with nothing stored. */
+/** Exercise the real first provider, including when catalog ordering changes. */
 const LEAD_GROUP = MODEL_PROVIDERS[0]!.id;
 
 describe("defaultExpandedProviders", () => {
-  it("contains exactly the leading catalog group, and follows it when the curation changes", () => {
-    expect([...defaultExpandedProviders()]).toEqual([MODEL_PROVIDERS[0]!.id]);
+  it("starts with no expanded provider", () => {
+    expect([...defaultExpandedProviders()]).toEqual([]);
   });
 
   it("returns a fresh set per call (React state must not share one mutable instance)", () => {
@@ -55,7 +44,7 @@ describe("isGroupExpanded", () => {
   const expanded = defaultExpandedProviders();
 
   it("without a search query, only members of the expanded set are open", () => {
-    expect(isGroupExpanded(expanded, LEAD_GROUP, false)).toBe(true);
+    expect(isGroupExpanded(expanded, LEAD_GROUP, false)).toBe(false);
     expect(isGroupExpanded(expanded, "anthropic", false)).toBe(false);
     expect(isGroupExpanded(expanded, "custom", false)).toBe(false);
     // User-defined groups are decided by the same membership rule — collapsed until toggled.
@@ -83,16 +72,14 @@ describe("isGroupExpanded", () => {
     }
     // Clearing the query falls back to the stored set: the same groups collapse again.
     for (const g of groups) {
-      expect(isGroupExpanded(defaultExpandedProviders(), g.provider.id, false)).toBe(
-        g.provider.id === LEAD_GROUP,
-      );
+      expect(isGroupExpanded(defaultExpandedProviders(), g.provider.id, false)).toBe(false);
     }
   });
 });
 
 describe("toggleExpandedProvider", () => {
   it("adds an absent id and removes a present one, without mutating the input", () => {
-    const initial = defaultExpandedProviders();
+    const initial = new Set([LEAD_GROUP]);
     const withAnthropic = toggleExpandedProvider(initial, "anthropic");
     expect(withAnthropic.has("anthropic")).toBe(true);
     expect(withAnthropic.has(LEAD_GROUP)).toBe(true);
@@ -106,10 +93,10 @@ describe("toggleExpandedProvider", () => {
 });
 
 describe("persisted expansion (per-Project localStorage)", () => {
-  it("nothing stored — or no Project yet — falls back to the leading group alone", () => {
+  it("nothing stored or no Project yet leaves all groups collapsed", () => {
     const s = memStorage();
-    expect([...loadExpandedProviders("p1", s)]).toEqual([LEAD_GROUP]);
-    expect([...loadExpandedProviders(null, s)]).toEqual([LEAD_GROUP]);
+    expect([...loadExpandedProviders("p1", s)]).toEqual([]);
+    expect([...loadExpandedProviders(null, s)]).toEqual([]);
     expect(s.map.size).toBe(0); // load never writes; save without a Project is a no-op
     saveExpandedProviders(null, new Set(["openai"]), s);
     expect(s.map.size).toBe(0);
@@ -119,14 +106,14 @@ describe("persisted expansion (per-Project localStorage)", () => {
     const s = memStorage();
     let set = loadExpandedProviders("p1", s);
     set = toggleExpandedProvider(set, "anthropic"); // open anthropic
-    set = toggleExpandedProvider(set, LEAD_GROUP); // close the group that opens by default
+    set = toggleExpandedProvider(set, LEAD_GROUP); // also open the first group
     saveExpandedProviders("p1", set, s);
     const restored = loadExpandedProviders("p1", s);
-    expect(restored).toEqual(new Set(["anthropic"]));
+    expect(restored).toEqual(new Set(["anthropic", LEAD_GROUP]));
     expect(restored).not.toBe(set); // fresh instance per load (React state discipline)
   });
 
-  it("a stored empty array IS a choice (all collapsed), not a fallback to the default", () => {
+  it("an explicitly saved empty array keeps all groups collapsed", () => {
     const s = memStorage();
     saveExpandedProviders("p1", new Set(), s);
     expect(loadExpandedProviders("p1", s).size).toBe(0);
@@ -136,7 +123,7 @@ describe("persisted expansion (per-Project localStorage)", () => {
     const s = memStorage();
     for (const raw of ["{not json", '"deepseek"', "42", "null", "{}", ""]) {
       s.map.set(expandedGroupsKey("p1"), raw);
-      expect([...loadExpandedProviders("p1", s)]).toEqual([LEAD_GROUP]);
+      expect([...loadExpandedProviders("p1", s)]).toEqual([]);
     }
     // An array survives element-level junk: non-strings are filtered, strings kept.
     s.map.set(expandedGroupsKey("p1"), '["anthropic", 7, null, {"x": 1}]');
@@ -150,7 +137,7 @@ describe("persisted expansion (per-Project localStorage)", () => {
     expect([...loadExpandedProviders("p1", s)]).toEqual(["openai"]);
     expect(loadExpandedProviders("p2", s)).toEqual(new Set(["moonshot", "my-proxy"]));
     // A third Project is untouched by the writes above and opens on the default.
-    expect([...loadExpandedProviders("p3", s)]).toEqual([LEAD_GROUP]);
+    expect([...loadExpandedProviders("p3", s)]).toEqual([]);
   });
 
   it("stale ids of since-deleted groups are harmless and survive round-trips", () => {
@@ -178,6 +165,6 @@ describe("persisted expansion (per-Project localStorage)", () => {
       },
     };
     expect(() => saveExpandedProviders("p1", new Set(["openai"]), broken)).not.toThrow();
-    expect([...loadExpandedProviders("p1", broken)]).toEqual([LEAD_GROUP]);
+    expect([...loadExpandedProviders("p1", broken)]).toEqual([]);
   });
 });

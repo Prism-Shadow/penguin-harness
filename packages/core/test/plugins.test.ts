@@ -65,6 +65,7 @@ import {
   libraryParts,
   libraryPlugin,
   libraryPluginPackage,
+  libraryPluginReadme,
   librarySkill,
   loadDefaultInstallPlugins,
   loadLibraryPlugins,
@@ -364,6 +365,23 @@ describe("shipped packages, on a fixture library", () => {
       "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
     });
     expect(() => libraryPlugin("sample")).toThrow(/skills\/one is not declared/);
+  });
+
+  it("keeps a shipped standalone server module out of Agent lists, installs and package lookups", async () => {
+    const files = pluginPackage(
+      { name: "@penguinharness/sample", main: "./dist/index.js" },
+      { card: { preinstall: true } },
+    );
+    await library({
+      ...files,
+      "dist/index.js": "export default {};",
+      "README.md": "Native engine",
+    });
+    expect(loadLibraryPlugins()).toEqual([]);
+    expect(loadPreinstalledPlugins()).toEqual([]);
+    expect(libraryPlugin("sample")).toBeUndefined();
+    expect(libraryPluginPackage("sample")).toBeUndefined();
+    expect(libraryPluginReadme("sample")).toBeUndefined();
   });
 
   it("refuses a shipped skill without a dated version, and a shipped package that was never built, naming the file", async () => {

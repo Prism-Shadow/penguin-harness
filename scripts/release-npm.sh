@@ -59,11 +59,11 @@ case "$cmd" in
       fi
       (cd "$dir" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
     done
-    for p in amsp a2ui chat-markdown core ui server cli; do
+    for p in amsp a2ui core ui server cli; do
       (cd "packages/$p" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
     done
     # The server embeds an index of the workspace's server-module plugins (the sandbox backends,
-    # and the market-only ones such as computer-use), each at the version its package.json
+    # and independently versioned ones such as computer-use), each at the version its package.json
     # carries; those packages were just stamped, so the index follows. Left behind, the server
     # would advertise a version that was never published. An entry for a package of another
     # repository (an external built-in plugin, scripts/lib/external-plugins.mjs) keeps the version
@@ -102,7 +102,7 @@ case "$cmd" in
   test)
     pnpm --filter @prismshadow/amsp test
     pnpm --filter @prismshadow/a2ui test
-    pnpm --filter @prismshadow/chat-markdown test
+    pnpm --dir packages/ui exec vitest run test/chat-markdown.test.ts
     pnpm --filter @prismshadow/penguin-core test
     pnpm --filter @prismshadow/penguin-server test
     pnpm --filter @prismshadow/penguin-cli test

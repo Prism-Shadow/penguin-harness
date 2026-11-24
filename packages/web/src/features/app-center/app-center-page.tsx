@@ -52,6 +52,9 @@ import {
   Button,
   ConfirmModal,
   ContextMenu,
+  Dropdown,
+  Menu,
+  MenuItem,
   EmptyState,
   GlyphIcon,
   ICONS,
@@ -63,6 +66,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { agentSettingsPath } from "../../lib/agent-location";
+import { sessionAppPair } from "../../lib/session-app-dock";
 import { usePageWorkspace } from "../../lib/page-workspace";
 import { APP_CENTER_PATH, appWindowPath } from "../../lib/app-center-path";
 import { windowEntryState, WINDOW_PARAM } from "../../lib/app-window-address";
@@ -151,6 +155,11 @@ export function AppCenterPage() {
   const { locale } = useLocale();
   const navigate = useNavigate();
   const workspace = usePageWorkspace();
+  const docked = workspace != null && sessionAppPair(workspace.layout)?.app.kind === "catalog";
+  const gridClass = docked
+    ? "grid grid-cols-[repeat(auto-fill,minmax(min(100%,6rem),1fr))] gap-2 @md/catalog:gap-4"
+    : GRID;
+  const [actionsOpen, setActionsOpen] = useState(false);
   const [params, setParams] = useSearchParams();
   /** The Agent list as a value: a new array with the same Agents does not read again. */
   const agentIds = agents.map((agent) => agent.agentId).join("\n");
@@ -375,7 +384,6 @@ export function AppCenterPage() {
     duplicateOwners.has(id)
       ? {
           id: shortcut.agentId,
-          name: shortcut.agentName,
           src: avatarSrc(shortcut.agentId, shortcut.machineId),
         }
       : undefined;
@@ -421,11 +429,67 @@ export function AppCenterPage() {
   return (
     <WindowStack className="h-full">
       <AppWindow shown={!windowShown}>
-        <div data-app-center-scroll className="h-full overflow-y-auto p-4 md:p-6">
-          <div className="mx-auto flex min-h-full max-w-5xl flex-col">
+        <div data-app-center-scroll className="@container/catalog h-full overflow-y-auto">
+          <div
+            className={`mx-auto flex min-h-full max-w-5xl flex-col ${docked ? "p-3 @md/catalog:p-6" : "p-4 md:p-6"}`}
+          >
             <PageHeader
               title={S.appCenter.title}
-              {...(grid !== null ? { actions: headerActions } : {})}
+              {...(grid !== null
+                ? {
+                    actions: docked ? (
+                      <>
+                        <div className="hidden flex-wrap items-center justify-end gap-2 @lg/catalog:flex">
+                          {headerActions}
+                        </div>
+                        <div className="@lg/catalog:hidden">
+                          <Dropdown
+                            open={actionsOpen}
+                            setOpen={setActionsOpen}
+                            portal={{ direction: "down", align: "right" }}
+                            button={
+                              <Button
+                                size="sm"
+                                aria-label={S.chat.moreActions}
+                                onClick={() => setActionsOpen(!actionsOpen)}
+                              >
+                                <GlyphIcon d={ICONS.ellipsis} />
+                              </Button>
+                            }
+                          >
+                            <Menu>
+                              <MenuItem
+                                label={S.appCenter.newFolderAction}
+                                onSelect={() => {
+                                  setActionsOpen(false);
+                                  setNewFolderPicked([]);
+                                }}
+                              />
+                              <MenuItem
+                                label={S.appCenter.hiddenWorkbenches}
+                                onSelect={() => {
+                                  setActionsOpen(false);
+                                  setShowHidden(true);
+                                }}
+                              />
+                              {hasWorkbench && (
+                                <MenuItem
+                                  label={S.aiCreate.withAi}
+                                  onSelect={() => {
+                                    setActionsOpen(false);
+                                    setAiOpen(true);
+                                  }}
+                                />
+                              )}
+                            </Menu>
+                          </Dropdown>
+                        </div>
+                      </>
+                    ) : (
+                      headerActions
+                    ),
+                  }
+                : {})}
             />
             {error !== null && (
               <NoticeStrip tone="danger">
@@ -437,7 +501,7 @@ export function AppCenterPage() {
             )}
             {grid === null ? (
               error === null && (
-                <ul className={GRID} aria-busy aria-label={S.appCenter.loading}>
+                <ul className={gridClass} aria-busy aria-label={S.appCenter.loading}>
                   {[0, 1, 2, 3].map((i) => (
                     <li key={i} className="flex flex-col items-center gap-2 p-2">
                       <AppIconShape>
@@ -468,7 +532,7 @@ export function AppCenterPage() {
                     {...drag.areaProps({ kind: "end" }, () => true)}
                     className="relative flex-1 pb-6"
                   >
-                    <ul className={GRID} aria-label={S.appCenter.title}>
+                    <ul className={gridClass} aria-label={S.appCenter.title}>
                       {grid.map((item) =>
                         item.type === "app" ? (
                           appTile(item, null)

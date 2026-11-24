@@ -15,7 +15,7 @@ Goal mode lets you give an agent an objective instead of a single message. The h
 
 **Before you begin**
 
-- The agent has the `goal` plugin installed. Every new agent gets it, and so does `default_agent`; an agent created before it was a default can install it from the plugin library, or from the composer when you pick goal mode.
+- The agent has the `goal` plugin installed. An agent can install it from the plugin library, or from the composer when you pick goal mode.
 - The agent's hooks are on: **Enable hooks** on the **Hooks** sub-page of the agent's **Plugins** tab. Hooks are on unless the Project owner switched them off.
 
 Without the plugin, or with hooks off, the agent cannot start a goal. The Web App and the API report `409 goal_plugin_not_installed` instead of running a Task that would simply end.

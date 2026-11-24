@@ -14,6 +14,37 @@ import type { Strings } from "./strings";
 
 export const en: Strings = {
   appName: "PenguinHarness",
+  firstWorkbench: {
+    updateNeeded:
+      "This agent has an earlier guide. Update it to generate a checklist from a chat reply.",
+    update: "Update guide on this agent",
+    updateWarning:
+      "Replace this agent’s guide code with the library version? Local edits to the guide code will be overwritten. Your progress and checklist data will stay available.",
+    updateUnavailable: "This server’s library does not yet have the updated guide.",
+    title: "Your first workbench",
+    help: "Build and test a checklist from one of your conversations.",
+    resume: "Start or resume guide",
+    later: "Dismiss",
+    refresh: "Refresh",
+    loading: "Loading…",
+    generating: "Generating your checklist…",
+    waitReply: "Wait for a completed reply in a chat with this agent.",
+    models: "Open Models to connect a provider, then choose a model in the chat composer.",
+    chat: "Choose a model in the composer. Send a task you want to turn into a checklist, then read its reply.",
+    reply: "Reply to use",
+    feedback: "Changes for the checklist",
+    modelSettings: "Open Models",
+    toChat: "Go to chat",
+    useReply: "Use this conversation",
+    retryChat: "Retry saved request",
+    generate: "Generate checklist",
+    verified: "Test passed. The checklist saved, completed and removed the test item.",
+    install: "Install checklist",
+    open: "Open checklist",
+    test: "Test checklist",
+    testItem: "Onboarding test item",
+    download: "Download plugin",
+  },
 
   voice: {
     models: "Multimodal models",
@@ -548,6 +579,27 @@ export const en: Strings = {
   },
 
   dock: {
+    closedResources: (count: number) => `Closed resources: ${count}`,
+    toolUnavailable: "This Session workbench is unavailable.",
+    chooseSession: "Choose a Session",
+    searchSessions: "Search all Sessions",
+    searchActiveSessions: "Search Sessions with open terminals",
+    noOpenTerminals: "No open terminals",
+    startSessionTerminal:
+      "To start a terminal, open a conversation and choose Terminal from its shortcuts.",
+    emptySessions: "No matching Sessions.",
+    openTerminals: (count: number) => `${count} open ${count === 1 ? "terminal" : "terminals"}`,
+    openBrowserPages: (count: number) => `${count} open ${count === 1 ? "page" : "pages"}`,
+    archivedSession: "Archived",
+    childSession: "Subagent",
+    moreSessions: "Show more Sessions",
+    selectSession: (title: string, host: string) => `Select Session ${title} (${host})`,
+    closeSelected: "Close selected resources",
+    terminalImpact: "Running commands in the selected Sessions will stop.",
+    browserImpact: "The selected Sessions’ browser tabs will close.",
+    unavailableMachine: "Unavailable",
+    here: "This server",
+
     addTab: "Add panel",
     closeTab: "Close panel",
     hideDock: "Hide sidebar",
@@ -567,6 +619,7 @@ export const en: Strings = {
     launcherPending: "a subagent awaits approval",
     launcherPanels: "Shortcuts",
     openAppCenter: "Open App Center",
+    launcherShow: "Show launcher",
     launcherHide: "Hide launcher",
     launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
     fullscreen: "Full screen",
@@ -1162,7 +1215,7 @@ export const en: Strings = {
       `The workbench was imported, but it failed to load: ${error}`,
     importOverwriteAction: "Overwrite",
     /** The row's More menu: downloads the workbench's source as a zip. */
-    exportWorkbench: "Export",
+    exportWorkbench: "Download ZIP",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
     /** The row's "⋯" button, which holds its other actions. */
@@ -4112,7 +4165,7 @@ export const en: Strings = {
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
     start: {
-      tagline: "Create your first Agent OS",
+      tagline: "Create your first self-evolving agent OS.",
       shuffle: "Shuffle suggestions",
       moreExamples: "More examples",
       examplesTitle: "Examples and shortcuts",
@@ -5481,6 +5534,7 @@ Scenarios:
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
+    page: (n: number) => `Page ${n}`,
     previousTurn: "Previous turn",
     nextTurn: "Next turn",
     latestTurn: "Latest turn",

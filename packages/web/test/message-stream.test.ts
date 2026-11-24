@@ -204,24 +204,26 @@ describe("MessageStream error banner", () => {
     );
   const groupHeaders = (html: string) => html.match(/data-group-header\b/g)?.length ?? 0;
 
+  const groupName = (title: string, steps: number, elapsed: string) =>
+    title + S.chat.workGroupSteps(steps) + S.chat.workElapsed + elapsed;
   it.each<[string, ChatItem, boolean, string[]]>([
     [
       "a ladder waiting for its next attempt",
       ladder({ plannedDelayMs: 30_000, arrivedAtMs: Date.now() }),
       true,
-      [S.chat.workRunning, t.retryNow, t.stop, S.chat.failureReport.open],
+      [groupName(S.chat.workRunning, 1, "…"), t.retryNow, t.stop, S.chat.failureReport.open],
     ],
     [
       "a ladder sending its next attempt",
       ladder({}),
       true,
-      [S.chat.workRunning, S.chat.failureReport.open],
+      [groupName(S.chat.workRunning, 1, "…"), S.chat.failureReport.open],
     ],
     [
       "a ladder whose attempt went out",
       ladder({ retrying: true }),
       true,
-      [S.chat.workRunning, S.chat.failureReport.open],
+      [groupName(S.chat.workRunning, 1, "…"), S.chat.failureReport.open],
     ],
     ["a ladder that gave up", gaveUp, false, [S.chat.retryRun, S.chat.failureReport.open]],
     [
@@ -260,14 +262,14 @@ describe("MessageStream error banner", () => {
 
     const settledHtml = failures([step1, retried, step2, reply], false);
     expect(groupHeaders(settledHtml)).toBe(1);
-    expect(pressNames(settledHtml)).toEqual([S.chat.workDone]);
+    expect(pressNames(settledHtml)).toEqual([groupName(S.chat.workDone, 3, "0ms")]);
     expect(settledHtml).not.toContain(t.sent(3, 10));
 
     // A ladder that gave up stays outside the settled group as the turn's last line.
     const endedHtml = failures([step1, gaveUp], false);
     expect(groupHeaders(endedHtml)).toBe(1);
     expect(pressNames(endedHtml)).toEqual([
-      S.chat.workDone,
+      groupName(S.chat.workDone, 1, "0ms"),
       S.chat.retryRun,
       S.chat.failureReport.open,
     ]);

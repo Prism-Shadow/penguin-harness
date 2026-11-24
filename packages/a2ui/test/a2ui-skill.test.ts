@@ -7,18 +7,23 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { checkMermaid, checkReply, parseA2ui } from "../src/index.js";
 import { scanFences } from "../src/fences.js";
 import {
-  BUNDLE_PATH,
   HASH_MARKER,
   hashA2uiSources,
   readBundleHash,
 } from "../../../scripts/build-a2ui-check.mjs";
 
-const skillDir = path.resolve(import.meta.dirname, "../../../plugins/a2ui/skills/a2ui");
+const installed = createRequire(new URL("../../server/package.json", import.meta.url));
+const skillDir = path.join(
+  path.dirname(installed.resolve("@penguinharness/a2ui/package.json")),
+  "skills/a2ui",
+);
+const BUNDLE_PATH = path.join(skillDir, "scripts/check.mjs");
 const read = (file: string) => fs.readFile(path.join(skillDir, file), "utf8");
 
 describe("the a2ui plugin", () => {
@@ -303,7 +308,7 @@ describe("the skill's data scripts", () => {
 });
 
 describe("the bundled checker (scripts/check.mjs)", () => {
-  it("was built from the current a2ui sources — run `pnpm build:a2ui-check` and commit when this fails", () => {
+  it("was built from the current a2ui sources — run `pnpm build:a2ui-check` and update the released plugin when this fails", () => {
     expect(readBundleHash(BUNDLE_PATH), `no "${HASH_MARKER}" header in ${BUNDLE_PATH}`).toBe(
       hashA2uiSources(),
     );

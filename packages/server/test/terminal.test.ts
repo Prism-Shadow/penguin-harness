@@ -610,6 +610,44 @@ describePty("terminal API", () => {
     }
   });
 
+  it("opens a Session's first shell once across clients and reuses it at the limit", async () => {
+    const t = await createTestApp();
+    try {
+      const api = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+      const project = "/api/terminals/projects/default_project/session-resources";
+      for (const id of ["first-room", "second-room"]) {
+        t.deps.sessionsRepo.insert(sessionRow(id, { workspace: t.root }));
+      }
+      expect((await api.put("/api/admin/settings", { terminalMaxOpen: 1 })).status).toBe(200);
+      expect(await (await api.get(project)).json()).toEqual({ counts: {} });
+      const open = (room: string) => api.post(project + "/" + room + "/open", {});
+      const replies = await Promise.all([open("first-room"), open("first-room")]);
+      expect(replies.map((res) => res.status)).toEqual([200, 200]);
+      const [first, again] = await Promise.all(
+        replies.map(
+          async (res) => (await res.json()) as { id: string; cwd: string; sessionId: string },
+        ),
+      );
+      expect(first).toMatchObject({ cwd: await fs.realpath(t.root), sessionId: "first-room" });
+      expect(again!.id).toBe(first!.id);
+      expect((await open("second-room")).status).toBe(429);
+      expect((await open("missing")).status).toBe(404);
+      expect(
+        (await api.post(project.replace("default_project", "other") + "/first-room/open", {}))
+          .status,
+      ).toBe(404);
+      expect(
+        await (await api.post(project + "/close", { sessionIds: ["first-room"] })).json(),
+      ).toEqual({
+        results: [{ sessionId: "first-room", closed: 1 }],
+      });
+      expect((await open("second-room")).status).toBe(200);
+      expect(await (await api.get(project)).json()).toEqual({ counts: { "second-room": 1 } });
+    } finally {
+      await t.cleanup();
+    }
+  });
+
   it("counts concurrent shell creation per user, keeps live shells after lowering the cap and releases the slot on exit", async () => {
     const t = await createTestApp();
     try {

@@ -73,7 +73,7 @@ import {
   shell,
 } from "electron";
 import type { WindowOpenHandlerResponse } from "electron";
-import { resolveRoot } from "@prismshadow/penguin-core";
+import { installedWindowsDataLocation, resolveRoot } from "@prismshadow/penguin-core";
 import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { ServerLock } from "@prismshadow/penguin-server/lock";
@@ -864,7 +864,23 @@ async function boot(): Promise<void> {
 
 // --- app lifecycle ---------------------------------------------------------
 
-if (!app.requestSingleInstanceLock()) {
+function useInstalledProfile(): boolean {
+  if (profile !== "release" || process.platform !== "win32") return true;
+  try {
+    const base = installedWindowsDataLocation();
+    if (base) {
+      const directory = path.join(base, "desktop");
+      app.setPath("userData", directory);
+      app.setPath("sessionData", directory);
+    }
+    return true;
+  } catch (error) {
+    dialog.showErrorBox(app.name, error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+if (!useInstalledProfile() || !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   // The log file is this instance's from here: a second launch quits above without touching it.
