@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** feature
 - **Scope:** `web`, `desktop`, `first-workbench-guide`
+- **PR:** [#1825](https://github.com/Prism-Shadow/penguin-harness/pull/1825)
 
 [English](2026-11-24-first-workbench-onboarding.md)
 
