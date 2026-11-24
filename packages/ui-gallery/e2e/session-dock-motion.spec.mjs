@@ -77,6 +77,13 @@ for (const phone of [false, true]) {
       const later = await dock.boundingBox();
       const axis = phone ? "height" : "width";
       expect(later[axis] - before[axis]).toBeGreaterThan(10);
+      const border = phone ? { x, y: later.y + 1 } : { x: later.x - 2, y };
+      expect(
+        await handle.evaluate(
+          (element, point) => document.elementFromPoint(point.x, point.y) === element,
+          border,
+        ),
+      ).toBe(true);
 
       if (phone) {
         const cdp = await page.context().newCDPSession(page);
