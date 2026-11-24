@@ -30,8 +30,22 @@ export function DockScope() {
   const location = useLocation();
   const narrow = useNarrow();
   const pair = workspace?.current && sessionAppPair(workspace.layout);
-  const scope = pair ? pageSessionId(pair.session) : (sessionRoute ?? null);
-  const visibleSession = pair ? pair.session : workspace?.current;
+  // The router arrives one render before the workspace publishes its new Session/app pair.
+  // Keep the visible host across that handoff so opening the dock is an ordinary size change.
+  const beside =
+    location.state?.workspaceRequest && new URLSearchParams(location.search).get("beside");
+  const pendingHost =
+    !pair && beside
+      ? workspace?.layout.pages.find(
+          (page) =>
+            page.kind === "session" &&
+            workspace.layout.visible.includes(page.id) &&
+            pageSessionId(page) === beside,
+        )
+      : undefined;
+  const host = pair?.session ?? pendingHost;
+  const scope = host ? pageSessionId(host) : (sessionRoute ?? null);
+  const visibleSession = host ?? workspace?.current;
   const windowKey = visibleSession?.id.startsWith("scoped-chat:") ? visibleSession.id : undefined;
   const appId = pair ? pair.app.id : null;
   const existingPanel = pair ? existingDockPanel(pair.app) : null;
