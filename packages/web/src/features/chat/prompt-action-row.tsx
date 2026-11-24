@@ -9,7 +9,6 @@ export interface PromptAction {
   hint?: string;
   glyph?: string;
   slot?: string;
-  iconOnly?: boolean;
   current?: boolean;
   disabled?: boolean;
   run: () => void;
@@ -25,26 +24,27 @@ export function shortPromptTitle(value: string, locale: string): string {
 }
 
 export function PromptButton({ action }: { action: PromptAction }) {
-  if (action.iconOnly) {
-    return (
-      <IconButton label={action.label} variant="ghost" onClick={action.run}>
-        <GlyphIcon d={action.glyph!} size={ICON_SIZE.rowLead} />
-      </IconButton>
-    );
-  }
   return (
     <Button
       size="sm"
-      variant={action.slot ? "secondary" : "ghost"}
+      variant="ghost"
       data-slot={action.slot}
       aria-current={action.current || undefined}
       disabled={action.disabled === true}
       aria-label={action.label}
       title={action.hint ?? action.label}
       onClick={action.run}
-      className="min-h-9 max-w-full whitespace-nowrap"
+      className="h-9 min-w-0 max-w-full !justify-start gap-2 !px-1.5 text-start aria-current:text-accent"
       leading={
-        action.glyph ? <GlyphIcon d={action.glyph} size={ICON_SIZE.inlineGlyph} /> : undefined
+        action.glyph ? (
+          <GlyphIcon
+            d={action.glyph}
+            size={ICON_SIZE.rowLead}
+            className={
+              action.slot === "saved-prompt" ? "shrink-0 text-accent" : "shrink-0 text-fg-subtle"
+            }
+          />
+        ) : undefined
       }
     >
       <span className="min-w-0 truncate">{action.preview ?? action.label}</span>
@@ -52,71 +52,92 @@ export function PromptButton({ action }: { action: PromptAction }) {
   );
 }
 
-export function PromptActionRow({ actions }: { actions: PromptAction[] }) {
-  const row = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(0);
+export function PromptActionRow({
+  prompts,
+  manage,
+  shuffle,
+}: {
+  prompts: PromptAction[];
+  manage?: PromptAction;
+  shuffle: PromptAction;
+}) {
+  const rail = useRef<HTMLDivElement>(null);
+  const [capacity, setCapacity] = useState(1);
   const [open, setOpen] = useState(false);
-  // Hidden items keep their intrinsic width at the start of the row, outside the flex flow.
-  // An actual font/locale change therefore resizes them even when they are in the dialog.
+  // Measure the actual composer column. The rem-wide probe follows the reader's text size
+  // even when the pane's pixel width is unchanged.
+  const measure = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
-    const element = row.current;
-    if (!element) return;
-    const children = Array.from(element.children) as HTMLElement[];
-    const more = children.pop()!;
+    const parent = rail.current;
+    const unit = measure.current;
+    if (!parent || !unit) return;
     const fit = () => {
-      const width = element.clientWidth;
-      const gap = Number.parseFloat(getComputedStyle(element).columnGap) || 0;
-      const widths = children.map((child) => child.getBoundingClientRect().width);
-      const total = widths.reduce((sum, w, i) => sum + w + (i ? gap : 0), 0);
-      if (total <= width) {
-        setVisible(widths.length);
-        setOpen(false);
-        return;
-      }
-      let used = more.getBoundingClientRect().width;
-      let count = 0;
-      for (const w of widths) {
-        if (used + gap + w > width) break;
-        used += gap + w;
-        count++;
-      }
-      setVisible(count);
+      const width = parent.clientWidth / unit.getBoundingClientRect().width;
+      setCapacity(width >= 36 ? 3 : width >= 21 ? 2 : 1);
     };
     fit();
     const observer = new ResizeObserver(fit);
-    [element, more, ...children].forEach((child) => observer.observe(child));
+    observer.observe(parent);
+    observer.observe(unit);
     return () => observer.disconnect();
-  }, [actions]);
-  const hidden = "invisible pointer-events-none absolute start-0";
-  const hasMore = visible < actions.length;
+  }, []);
+  const visible = prompts.slice(0, capacity);
+  const overflow = prompts.slice(capacity);
+  const hasMore = overflow.length > 0;
+  const showShuffle = visible.some((action) => action.slot === "suggestion");
+
   return (
     <>
       <div
-        ref={row}
+        ref={rail}
         role="group"
         aria-label={S.chat.start.examplesTitle}
         data-slot="examples"
-        className="relative mt-4 flex w-full min-w-0 items-center justify-center gap-2 py-1"
+        className="mt-3 flex w-full min-w-0 items-center gap-1"
       >
-        {actions.map((action, i) => (
-          <div
-            key={action.id}
-            inert={i >= visible}
-            className={`min-w-0 max-w-full shrink-0 ${i >= visible ? hidden : ""}`}
-          >
-            <PromptButton action={action} />
-          </div>
-        ))}
-        <div inert={!hasMore} className={`min-w-0 max-w-full shrink-0 ${!hasMore ? hidden : ""}`}>
-          <IconButton
-            label={S.chat.start.moreExamples}
-            aria-haspopup="dialog"
-            aria-expanded={open}
-            variant="ghost"
-            onClick={() => setOpen(true)}
-          >
-            <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.rowLead} />
-          </IconButton>
+        <div className="relative grid min-w-0 flex-1 auto-cols-fr grid-flow-col">
+          <span
+            ref={measure}
+            aria-hidden="true"
+            className="pointer-events-none invisible absolute w-[1rem]"
+          />
+          {visible.map((action) => (
+            <PromptButton key={action.id} action={action} />
+          ))}
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5 border-s border-line ps-1">
+          {showShuffle && (
+            <IconButton
+              label={shuffle.label}
+              variant="ghost"
+              onClick={shuffle.run}
+              className="min-h-9 min-w-8"
+            >
+              <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.rowLead} />
+            </IconButton>
+          )}
+          {manage && (
+            <IconButton
+              label={manage.label}
+              variant="ghost"
+              onClick={manage.run}
+              className="min-h-9 min-w-8"
+            >
+              <GlyphIcon d={manage.glyph!} size={ICON_SIZE.rowLead} />
+            </IconButton>
+          )}
+          {hasMore && (
+            <IconButton
+              label={S.chat.start.moreExamples}
+              aria-haspopup="dialog"
+              aria-expanded={open}
+              variant="ghost"
+              onClick={() => setOpen(true)}
+              className="min-h-9 min-w-8"
+            >
+              <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.rowLead} />
+            </IconButton>
+          )}
         </div>
       </div>
       <Modal
@@ -126,7 +147,7 @@ export function PromptActionRow({ actions }: { actions: PromptAction[] }) {
         widthClass="sm:max-w-md"
       >
         <div className="flex min-w-0 flex-col gap-1">
-          {actions.slice(visible).map((action) => (
+          {overflow.map((action) => (
             <Button
               key={action.id}
               variant="ghost"
@@ -142,6 +163,17 @@ export function PromptActionRow({ actions }: { actions: PromptAction[] }) {
               <span className="min-w-0 [overflow-wrap:anywhere]">{action.label}</span>
             </Button>
           ))}
+          {!showShuffle && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={shuffle.run}
+              className="mt-1 self-start"
+              leading={<GlyphIcon d={ICONS.refresh} size={ICON_SIZE.inlineGlyph} />}
+            >
+              {shuffle.label}
+            </Button>
+          )}
         </div>
       </Modal>
     </>
