@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `landing`
+- **PR:** [#1808](https://github.com/Prism-Shadow/penguin-harness/pull/1808)
 
 [English](2026-11-24-direct-return-home-title.md)
 
