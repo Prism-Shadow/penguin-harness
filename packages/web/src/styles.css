@@ -358,3 +358,11 @@
 /* The company channel's bubble (`.channel-bubble`: the deeper inline-code chip and table rules
    inside it) lives in the shared UI package too, beside its component:
    packages/ui/src/components/chat/channel-bubble/channel-bubble.css. */
+
+/* The input stays at the visible end. A swipe reaches notices and queued messages above it. */
+.dock-composer-scroll {
+  display: flex;
+  flex-direction: column-reverse;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}

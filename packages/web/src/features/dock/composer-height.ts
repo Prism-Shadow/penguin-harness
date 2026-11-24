@@ -11,6 +11,7 @@
  * a measurement either.
  */
 import { useSyncExternalStore } from "react";
+import { DOCK_MIN_HEIGHT_PX } from "./bottom-dock-size";
 
 let height = 0;
 const listeners = new Set<() => void>();
@@ -47,4 +48,35 @@ export function measureComposer(element: HTMLElement | null): (() => void) | und
   const observer = new ResizeObserver(measure);
   observer.observe(element);
   return () => observer.disconnect();
+}
+
+/** Keep the input and its notices reachable when a phone cannot fit them above an open dock.
+ * The viewport starts at the input end of the composer. Its content keeps its natural height.
+ */
+export function measureMergedComposer(element: HTMLElement | null): (() => void) | undefined {
+  if (element === null) return undefined;
+  const content = element.firstElementChild;
+  const chat = element.parentElement;
+  const area = element.closest<HTMLElement>("[data-dock-area]");
+  if (!(content instanceof HTMLElement) || !chat || !area) return measureComposer(element);
+
+  const fit = () => {
+    const available = area.getBoundingClientRect().bottom - chat.getBoundingClientRect().top;
+    if (available <= 0) return;
+    // Even in landscape the composer keeps a scrollable share below its notices.
+    const limit = Math.max(available - DOCK_MIN_HEIGHT_PX, available / 4);
+    const scroll = content.getBoundingClientRect().height > limit;
+    element.classList.toggle("dock-composer-scroll", scroll);
+    element.style.maxHeight = scroll ? `${Math.floor(limit)}px` : "";
+  };
+  fit();
+  const observer = new ResizeObserver(fit);
+  for (const node of [area, chat, content]) observer.observe(node);
+  const stopMeasuring = measureComposer(element);
+  return () => {
+    observer.disconnect();
+    stopMeasuring?.();
+    element.classList.remove("dock-composer-scroll");
+    element.style.maxHeight = "";
+  };
 }
