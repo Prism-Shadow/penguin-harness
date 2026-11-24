@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `landing`
+- **PR:** [#1819](https://github.com/Prism-Shadow/penguin-harness/pull/1819)
 
 [中文版](2026-11-24-homepage-product-identity.zh.md)
 
