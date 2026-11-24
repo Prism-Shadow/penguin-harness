@@ -298,11 +298,10 @@ describe("the plugin market's manage-installs list", () => {
     await waitFor(() => hasButton(`${en.plugins.installModel.installAgent} charts`));
     await click(button(`${en.plugins.installModel.installAgent} charts`));
     const rows = () =>
-      [...topDialog().querySelectorAll("button")]
-        .map((b) => b.getAttribute("aria-label") ?? "")
-        .filter((l) => l.startsWith(`${en.skills.install} `))
-        .map((l) => l.slice(l.indexOf(" ") + 1));
-    const machineDefault = `default_agent ${en.chat.machineTag("gpu-box")}`;
+      [...topDialog().querySelectorAll<HTMLInputElement>('input[type="radio"]')].map(
+        (input) => input.value,
+      );
+    const machineDefault = "gpu1/default_agent";
     await waitFor(() => rows().includes(machineDefault));
     expect(rows()).toEqual([AGENT_ID, machineDefault]);
   });
