@@ -45,8 +45,19 @@ import { messagesPageQuery } from "./session-history.js";
  * connection. The library only carries it — the registry is the server's (its `LiveStreams`).
  */
 export interface SseRevocation {
+  /** The user this connection was authenticated as. */
   userId: string;
-  streams: { add(userId: string, end: () => void): () => void };
+  /**
+   * Holds the stream for as long as it is open (the server's `LiveStreams`): `add` returns the
+   * call that removes the entry again, `endForUser` ends every stream a user holds, `countFor`
+   * answers how many.
+   */
+  streams: {
+    add(userId: string, end: () => void): () => void;
+    endForUser(userId: string): number;
+    countFor(userId: string): number;
+  };
+  /** Whether the session behind this connection still exists and has not expired. Never renews it. */
   sessionIsLive(): boolean;
 }
 
