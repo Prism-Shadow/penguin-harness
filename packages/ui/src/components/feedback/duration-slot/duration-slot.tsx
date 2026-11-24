@@ -19,6 +19,8 @@ import { formatDuration, formatDurationLive } from "./format-duration";
 
 export { formatDuration, formatDurationLive } from "./format-duration";
 
+export const DURATION_TEXT_CLASS = "font-mono text-xs tabular-nums text-fg-subtle";
+
 /**
  * Whether `sinceMs` has been running for `thresholdMs`: false until that moment, then true. One
  * re-render at the crossing rather than a ticking clock. An undefined `sinceMs` (nothing running,
@@ -83,10 +85,7 @@ export function DurationSlot({
 } & Omit<HTMLAttributes<HTMLSpanElement>, "className" | "children">) {
   if (!running && durationMs === undefined) return null;
   return (
-    <span
-      {...rest}
-      className={`shrink-0 font-mono text-xs tabular-nums text-fg-subtle ${className}`}
-    >
+    <span {...rest} className={`shrink-0 ${DURATION_TEXT_CLASS} ${className}`}>
       {running ? (
         <LiveDuration
           {...(sinceMs !== undefined ? { sinceMs } : {})}

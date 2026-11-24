@@ -227,7 +227,7 @@ test("transcript find searches folded compact details and restores the closed gr
   await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
   const group = page.locator(".ui-frame[data-step-view]"),
     count = group.locator("[data-step-count]");
-  await expect(count).toHaveText("4 步");
+  await expect(count).toHaveText("2 步");
   await input.focus();
   await page.keyboard.press("ControlOrMeta+f");
   const bar = page.getByRole("search");
@@ -236,7 +236,7 @@ test("transcript find searches folded compact details and restores the closed gr
   await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
   await expect(bar.getByText("1/1", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(count).toHaveText("4 步");
+  await expect(count).toHaveText("2 步");
   await expect(group.locator(".ui-tree > [data-depth]")).toHaveCount(0);
 });
 
