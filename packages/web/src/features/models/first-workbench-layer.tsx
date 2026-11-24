@@ -24,6 +24,9 @@ import {
 } from "../../lib/first-workbench-tour";
 import { machineForSession } from "../../lib/session-machines";
 import { appWindowPath, locatedAppKey } from "../../lib/app-center-path";
+import { pageSessionId } from "../../lib/page-layout";
+import { usePageWorkspace } from "../../lib/page-workspace";
+import { sessionAppPair } from "../../lib/session-app-dock";
 import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
@@ -107,7 +110,17 @@ export function FirstWorkbenchLayer() {
     sessionVia !== "token" && request?.user === viewer && request?.scope.projectId === project
       ? (request?.scope ?? null)
       : null;
-  const onChat = pathname === "/" || pathname === "/chat" || pathname.startsWith("/chat/");
+  const workspace = usePageWorkspace();
+  const current = workspace?.current;
+  const pair = workspace && !workspace.exitFullScreen ? sessionAppPair(workspace.layout) : null;
+  // A dock shortcut focuses the tool's address while its Session stays in the main pane.
+  const chatPage =
+    current?.kind === "session"
+      ? current
+      : pair && pair.app.id === current?.id
+        ? pair.session
+        : null;
+  const onChat = !!chatPage || pathname === "/" || pathname === "/chat";
   const otherChat =
     onChat &&
     published?.live &&
@@ -118,6 +131,8 @@ export function FirstWorkbenchLayer() {
       key={JSON.stringify([viewer, scope])}
       user={viewer}
       scope={scope}
+      inChat={onChat}
+      session={chatPage ? pageSessionId(chatPage) : null}
       canConfigure={currentProject?.role === "owner"}
       automatic={request?.automatic === true}
       close={() => {
@@ -139,12 +154,16 @@ function Tour({
   close,
   canConfigure,
   automatic,
+  inChat,
+  session,
 }: {
   user: string;
   scope: PageAgent;
   close: () => void;
   canConfigure: boolean;
   automatic: boolean;
+  inChat: boolean;
+  session: string | null;
 }) {
   const w = S.firstWorkbench;
   const { locale } = useLocale();
@@ -208,7 +227,6 @@ function Tour({
   const [confirmUpdate, setConfirmUpdate] = useState(false);
   const [discussion, setDiscussion] =
     useState<Awaited<ReturnType<typeof conversationForGuide>>>(null);
-  const session = /^\/chat\/([^/]+)$/.exec(location.pathname)?.[1];
   const currentSession =
     session && session !== "new" && machineForSession(session) === machineId ? session : null;
   const active = useSessionsIfAny()?.sessions.find(
@@ -285,7 +303,6 @@ function Tour({
   }
   const waiting = guide?.phase === "chatting" || guide?.phase === "generating";
   const design = guide?.design;
-  const inChat = location.pathname === "/" || location.pathname.startsWith("/chat");
   const usable = models !== null && usableChatModel(models.models);
   const configured = models?.models.filter(hasConfiguredKey) ?? [];
   const chosen =
@@ -336,7 +353,9 @@ function Tour({
         state: { agentId, ...(machineId && { workspace: "", machineId }) },
       });
     requestAnimationFrame(() =>
-      document.querySelector<HTMLTextAreaElement>('[data-slot="composer"] textarea')?.focus(),
+      document
+        .querySelector<HTMLTextAreaElement>('[data-slot="composer"] textarea:not([inert] *)')
+        ?.focus(),
     );
   };
   const readConversation = () =>

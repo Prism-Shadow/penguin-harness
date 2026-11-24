@@ -89,6 +89,42 @@ test("mobile merged dock: workspace opens at the bottom → nested dir → md re
 test.describe("short touch viewport", () => {
   test.use({ isMobile: true, hasTouch: true, viewport: { width: 320, height: 568 } });
 
+  test("a Session shortcut keeps the guide in chat and leaves Close above the keyboard", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openSessionWithNotes(page, "dockedguidetour");
+    const guide = page.getByRole("region", { name: "Your first workbench" });
+    const session = page.locator('[data-workspace-page^="chat:"][data-pane]');
+    const inline = session.locator('[data-guide-chat="history"] [data-guide-callout]');
+    await expect(inline).toBeVisible();
+    await page.getByRole("button", { name: "Shortcuts", exact: true }).tap();
+    await page.getByTestId("dock-launcher-open-workspace").tap();
+    await expect(page).toHaveURL(/\/session-tools\/workspace\?/);
+    await expect(inline).toBeVisible();
+    const field = session.locator('[data-slot="composer"] textarea');
+    const draft = Array.from({ length: 14 }, (_, i) => `Draft line ${i + 1}`).join("\n");
+    await field.tap();
+    await field.fill(draft);
+    await page.setViewportSize({ width: 390, height: 360 });
+    await field.press("Control+End");
+    await page.keyboard.type(" done");
+    const dock = session.getByTestId("dock").filter({ visible: true });
+    await dock.getByTestId("dock-close").tap();
+    await expect(dock).toHaveCount(0);
+    await expect(field).toHaveValue(draft + " done");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: /^Sessions(?:$| ·)/ }).tap();
+    await page.getByRole("link", { name: /^App Center/ }).tap();
+    const catalog = page.locator('[data-workspace-page="catalog"][data-pane="full"]');
+    await catalog.locator('li[data-app="system_agent/models"] > button').first().tap();
+    await expect(page).toHaveURL(/\/models$/);
+    await expect(session).toHaveCount(0);
+    await expect(guide).toBeVisible();
+    await expect(page.locator("[data-guide-chat] [data-guide-callout]")).toHaveCount(0);
+  });
+
   test("tapping either toolbar button opens a usable panel while a notice shares the composer", async ({
     page,
   }) => {

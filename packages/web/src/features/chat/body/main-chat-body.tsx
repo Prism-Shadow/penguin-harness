@@ -70,7 +70,7 @@ export function renderMainChatBody(scope: MainChatView) {
     input,
   } = scope;
   const showDocks = scope.hostsAppPanel || (scope.paneFocused && archivedRow === null);
-  const guideSlot = scope.paneFocused && <div data-guide-chat="history" data-find-skip />;
+  const guideSlot = <div data-guide-chat="history" data-find-skip />;
   return (
     <>
       <ChatDockProvider value={chatDock}>

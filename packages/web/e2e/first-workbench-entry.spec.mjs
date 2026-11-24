@@ -73,6 +73,9 @@ test("builds and installs a checklist beside the actual conversation", async ({ 
   await expect(tour.getByRole("button", { name: "Use this conversation" })).toBeHidden();
   expect((await transcript.boundingBox()).height).toBe(readingHeight);
   await toggleGuide.click();
+  await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await page.getByTestId("dock-launcher-open-workspace").click();
+  await expect(page).toHaveURL(/\/session-tools\/workspace\?/);
   await tour.getByRole("button", { name: "Use this conversation" }).click();
   await expect(tour.getByText(text, { exact: true })).toBeVisible();
   await tour.getByLabel("Changes for the checklist").fill("Include a tray count");

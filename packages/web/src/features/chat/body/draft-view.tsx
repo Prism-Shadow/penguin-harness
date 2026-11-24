@@ -978,7 +978,7 @@ export function DraftView({
   // and its examples.
   const composer = (
     <>
-      {paneFocused && <div data-guide-chat />}
+      <div data-guide-chat />
       {models && chatModels.length === 0 && (
         <Notice
           tone="attention"
