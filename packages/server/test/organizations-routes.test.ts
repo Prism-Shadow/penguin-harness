@@ -321,6 +321,13 @@ describe("organization routes", () => {
     expect(calls).toEqual([]);
     // An owner cannot be cleared: a ticket always has one, so `null` is refused as a shape.
     expect((await owner.put(`${base}/tickets/ticket-2026-09-01-site`, { owner: null })).status).toBe(400);
+    // A legacy ticket id is not an id: a path or a parent naming one is refused at the door,
+    // before the service is asked — the board has no legacy paths to route to.
+    expect((await owner.get(`${base}/tickets/2026-09-05-legacy-site`)).status).toBe(400);
+    expect(
+      (await owner.post(`${base}/tickets`, { title: "T", parent: "2026-09-05-legacy-site" })).status,
+    ).toBe(400);
+    expect(calls).toEqual([]);
   });
 
   it("routes handbook documents by their relative path and keeps the index", async () => {

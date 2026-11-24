@@ -3306,6 +3306,31 @@ describe("organization runtime", () => {
         `${t.ticketId}.md`,
       ]);
     });
+
+    it("mints a suffixed id when the slug is taken, and refuses a parent ticket that does not exist", async () => {
+      await createOrg();
+      const first = await service.createTicket(
+        P,
+        ORG,
+        { title: "Site", slug: "launch-the-site" },
+        { userId: "alice" },
+      );
+      const second = await service.createTicket(
+        P,
+        ORG,
+        { title: "Site again", slug: "launch-the-site" },
+        { userId: "alice" },
+      );
+      expect(second.ticketId).toBe(`${first.ticketId}-b`);
+      await expect(
+        service.createTicket(
+          P,
+          ORG,
+          { title: "Orphan", parent: "ticket-2026-09-99-missing" },
+          { userId: "alice" },
+        ),
+      ).rejects.toThrow("Parent ticket does not exist");
+    });
   });
 
   describe("legacy ticket id migration", () => {
@@ -3331,8 +3356,34 @@ describe("organization runtime", () => {
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(path.join(dir, `${id}.md`), raw, "utf8");
     };
+    /** Writes a ticket file under its new-format id. */
+    const writeModern = async (id: string, raw: string): Promise<void> => {
+      const p = path.join(orgDir(), "tickets", "2026-09", "proposed", `${id}.md`);
+      await fs.mkdir(path.dirname(p), { recursive: true });
+      await fs.writeFile(p, raw, "utf8");
+    };
+    /** The legacy file a test wrote, by id and column. */
+    const legacyPath = (id: string, column: string): string =>
+      path.join(orgDir(), "tickets", "2026-09", column, `${id}.md`);
+    const backupDirs = async (): Promise<string[]> =>
+      (await fs.readdir(path.join(orgDir(), "tickets"))).filter((n) =>
+        n.startsWith(".legacy-backup-"),
+      );
+    /** The all-hands notices, in the order the passes left them. */
+    const noticesOf = async (): Promise<Array<{ kind: string; params: Record<string, string> }>> => {
+      const allHands = await service.channelMessages(
+        P,
+        ORG,
+        { userId: "alice" },
+        DEFAULT_CHANNEL_ID,
+        {},
+      );
+      return allHands.messages
+        .filter((m) => m.sender === "system" && m.notice !== undefined)
+        .map((m) => m.notice!);
+    };
 
-    it("migrates once: backup, prefixed rename, references rewritten, and a warning that names the risk", async () => {
+    it("migrates once in a reconcile pass: backup, prefixed rename, references rewritten, a starting warning and a closing report", async () => {
       await createOrg();
       const parentRaw = serializeTicket(doc("Legacy parent"));
       await writeLegacy("2026-09-05-legacy-parent", "proposed", parentRaw);
@@ -3341,90 +3392,259 @@ describe("organization runtime", () => {
         "proposed",
         serializeTicket(doc("Legacy child", { blockedBy: "2026-09-05-legacy-parent" })),
       );
-      const modern = path.join(
-        orgDir(),
-        "tickets",
-        "2026-09",
-        "proposed",
-        "ticket-2026-09-06-modern.md",
-      );
-      await fs.mkdir(path.dirname(modern), { recursive: true });
-      await fs.writeFile(
-        modern,
+      await writeModern(
+        "ticket-2026-09-06-modern",
         serializeTicket(doc("Modern child", { parent: "2026-09-05-legacy-parent" })),
-        "utf8",
       );
       errors.length = 0;
 
+      // The migration is a write over ticket files, so the read path no longer runs it:
+      // a pass does, behind the ticket-session gate.
+      await scheduler.tickOnce();
       const board = await service.tickets(P, ORG);
       expect(board.columns.proposed.map((x) => x.ticketId).sort()).toEqual([
         "ticket-2026-09-05-legacy-child",
         "ticket-2026-09-05-legacy-parent",
         "ticket-2026-09-06-modern",
       ]);
+      expect(board.invalidFiles).toEqual([]);
       // The legacy files are gone, and the originals sit in the backup under their own paths.
-      await expect(
-        fs.access(path.join(orgDir(), "tickets", "2026-09", "proposed", "2026-09-05-legacy-parent.md")),
-      ).rejects.toThrow();
-      const ticketsDir = path.join(orgDir(), "tickets");
-      const backups = (await fs.readdir(ticketsDir)).filter((n) => n.startsWith(".legacy-backup-"));
+      await expect(fs.access(legacyPath("2026-09-05-legacy-parent", "proposed"))).rejects.toThrow();
+      const backups = await backupDirs();
       expect(backups).toHaveLength(1);
       expect(
         await fs.readFile(
-          path.join(ticketsDir, backups[0]!, "2026-09", "proposed", "2026-09-05-legacy-parent.md"),
+          path.join(orgDir(), "tickets", backups[0]!, "2026-09", "proposed", "2026-09-05-legacy-parent.md"),
           "utf8",
         ),
       ).toBe(parentRaw);
       // The references followed the migration, in both a legacy and a modern file.
       expect(
         await fs.readFile(
-          path.join(ticketsDir, "2026-09", "proposed", "ticket-2026-09-05-legacy-child.md"),
+          path.join(orgDir(), "tickets", "2026-09", "proposed", "ticket-2026-09-05-legacy-child.md"),
           "utf8",
         ),
       ).toContain("blocked_by: ticket-2026-09-05-legacy-parent");
-      expect(await fs.readFile(modern, "utf8")).toContain(
-        "parent: ticket-2026-09-05-legacy-parent",
-      );
-      // The warning: the all-hands channel learns what happened, the risk, and the backup advice.
-      const allHands = await service.channelMessages(
-        P,
-        ORG,
-        { userId: "alice" },
-        DEFAULT_CHANNEL_ID,
-        {},
-      );
-      const notices = allHands.messages.filter(
-        (m) => m.sender === "system" && m.notice?.kind === "ticket_ids_migrated",
-      );
-      expect(notices).toHaveLength(1);
-      expect(notices[0]!.notice!.params.count).toBe("2");
-      expect(notices[0]!.notice!.params.backup).toContain(".legacy-backup-");
-      expect(notices[0]!.text).toContain("risks losing ticket data");
-      expect(notices[0]!.text).toContain("keep a backup");
-      // The ops log carries the same warning, once.
+      expect(
+        await fs.readFile(
+          path.join(orgDir(), "tickets", "2026-09", "proposed", "ticket-2026-09-06-modern.md"),
+          "utf8",
+        ),
+      ).toContain("parent: ticket-2026-09-05-legacy-parent");
+      // The channel first learns it is about to happen — the risk, and that a backup is the
+      // data-safe way — then what happened and where the originals are.
+      const notices = await noticesOf();
+      expect(notices.map((n) => n.kind)).toEqual(["ticket_ids_migrating", "ticket_ids_migrated"]);
+      expect(notices[0]!.params.count).toBe("2");
+      expect(notices[1]!.params.count).toBe("2");
+      expect(notices[1]!.params.backup).toContain(".legacy-backup-");
+      // The ops log carries the completion, once.
       expect(errors.filter((e) => e.code === "org_ticket_legacy_migration")).toHaveLength(1);
-      // One-time means once: a second listing migrates nothing.
+      // One-time means once: a second pass migrates nothing and adds no notice.
       errors.length = 0;
-      await service.tickets(P, ORG);
+      await scheduler.tickOnce();
       expect(errors.filter((e) => e.code === "org_ticket_legacy_migration")).toHaveLength(0);
-      expect((await fs.readdir(ticketsDir)).filter((n) => n.startsWith(".legacy-backup-"))).toHaveLength(1);
+      expect((await noticesOf()).map((n) => n.kind)).toEqual([
+        "ticket_ids_migrating",
+        "ticket_ids_migrated",
+      ]);
+      expect(await backupDirs()).toHaveLength(1);
     });
 
-    it("pushes a migrated id past a new-format id that took its date and slug", async () => {
+    it("waits for a busy ticket session: prompts it once to stop and moves nothing until it is idle", async () => {
+      await createOrg();
+      const raw = serializeTicket(doc("Legacy gated", { sessions: ["session-busy-1"] }));
+      await writeLegacy("2026-09-05-legacy-gated", "proposed", raw);
+      busy.add("session-busy-1");
+      started.length = 0;
+
+      await scheduler.tickOnce();
+      // The session mid-run is told, once, to stop and stay idle.
+      expect(started).toHaveLength(1);
+      expect(started[0]!.sessionId).toBe("session-busy-1");
+      expect(started[0]!.queueIfBusy).toBe(true);
+      expect(started[0]!.text).toContain("one-time migration");
+      // Until it stops, no ticket file moves and no notice goes out.
+      expect(
+        await fs.readFile(legacyPath("2026-09-05-legacy-gated", "proposed"), "utf8"),
+      ).toBe(raw);
+      expect(await backupDirs()).toHaveLength(0);
+      expect((await noticesOf()).map((n) => n.kind)).toEqual([]);
+      // While it waits, the read path is a pure read: the file is reported, never migrated.
+      const waiting = await service.tickets(P, ORG);
+      expect(waiting.invalidFiles).toHaveLength(1);
+      expect(waiting.invalidFiles[0]!.error).toContain("waits for the one-time migration");
+      // The prompt goes out once, not on every pass.
+      await scheduler.tickOnce();
+      expect(started.filter((s) => s.sessionId === "session-busy-1")).toHaveLength(1);
+
+      busy.clear();
+      await scheduler.tickOnce();
+      const board = await service.tickets(P, ORG);
+      expect(board.columns.proposed.map((x) => x.ticketId)).toEqual([
+        "ticket-2026-09-05-legacy-gated",
+      ]);
+      expect(board.invalidFiles).toEqual([]);
+      expect(await backupDirs()).toHaveLength(1);
+      // The stop prompt was never sent a second time.
+      expect(started.filter((s) => s.sessionId === "session-busy-1")).toHaveLength(1);
+    });
+
+    it("gives every legacy id its own target, past a new-format id that took one of their slugs", async () => {
       await createOrg();
       const colDir = path.join(orgDir(), "tickets", "2026-09", "proposed");
       await fs.mkdir(colDir, { recursive: true });
       await fs.writeFile(
-        path.join(colDir, "ticket-2026-09-05-legacy-task.md"),
+        path.join(colDir, "ticket-2026-09-05-legacy-task-b.md"),
         serializeTicket(doc("Taken")),
         "utf8",
       );
       await writeLegacy("2026-09-05-legacy-task", "proposed", serializeTicket(doc("Legacy task")));
+      await writeLegacy(
+        "2026-09-05-legacy-task-b",
+        "proposed",
+        serializeTicket(doc("Legacy task b")),
+      );
+      await scheduler.tickOnce();
       const board = await service.tickets(P, ORG);
+      // Three sources, three targets: the legacy id whose slug a modern file took is pushed
+      // a suffix past it, and the modern file keeps its own.
       expect(board.columns.proposed.map((x) => x.ticketId).sort()).toEqual([
         "ticket-2026-09-05-legacy-task",
         "ticket-2026-09-05-legacy-task-b",
+        "ticket-2026-09-05-legacy-task-b-b",
       ]);
+      expect(
+        await fs.readFile(path.join(colDir, "ticket-2026-09-05-legacy-task-b.md"), "utf8"),
+      ).toContain("title: Taken");
+      expect(
+        await fs.readFile(path.join(colDir, "ticket-2026-09-05-legacy-task-b-b.md"), "utf8"),
+      ).toContain("title: Legacy task b");
+    });
+
+    it("migrates a duplicated legacy id by its newest copy and takes the stale copy to the backup", async () => {
+      await createOrg();
+      const oldRaw = serializeTicket(doc("Copied"));
+      const newRaw = serializeTicket(doc("Copied", { status: "in_progress" }));
+      await writeLegacy("2026-09-05-copied", "proposed", oldRaw);
+      await writeLegacy("2026-09-05-copied", "in_progress", newRaw);
+      // The newest copy wins, whatever the wall clock did between the two writes.
+      const older = legacyPath("2026-09-05-copied", "proposed");
+      const newer = legacyPath("2026-09-05-copied", "in_progress");
+      await fs.utimes(older, new Date(T0), new Date(T0));
+      await fs.utimes(newer, new Date(T0 + 1000), new Date(T0 + 1000));
+
+      await scheduler.tickOnce();
+      const board = await service.tickets(P, ORG);
+      expect(board.columns.proposed.map((x) => x.ticketId)).toEqual([]);
+      expect(board.columns.in_progress.map((x) => x.ticketId)).toEqual([
+        "ticket-2026-09-05-copied",
+      ]);
+      await expect(fs.access(older)).rejects.toThrow();
+      await expect(fs.access(newer)).rejects.toThrow();
+      // Both originals — the winner and the stale copy — are in the backup.
+      const backups = await backupDirs();
+      expect(backups).toHaveLength(1);
+      const backupBase = path.join(orgDir(), "tickets", backups[0]!, "2026-09");
+      expect(await fs.readFile(path.join(backupBase, "proposed", "2026-09-05-copied.md"), "utf8")).toBe(oldRaw);
+      expect(await fs.readFile(path.join(backupBase, "in_progress", "2026-09-05-copied.md"), "utf8")).toBe(newRaw);
+      // One ticket was migrated, and the channel was told so.
+      const notices = await noticesOf();
+      expect(notices.map((n) => n.kind)).toEqual(["ticket_ids_migrating", "ticket_ids_migrated"]);
+      expect(notices[0]!.params.count).toBe("1");
+    });
+
+    it("rewrites only the two frontmatter fields: comments, hand-written fields and the body survive byte for byte", async () => {
+      await createOrg();
+      await writeLegacy("2026-09-05-legacy-root", "proposed", serializeTicket(doc("Legacy root")));
+      // Built from the serializer's own output, then marked up the way a hand edit would:
+      // a comment, an extra frontmatter field, and quoting around the parent reference.
+      const plain = serializeTicket(
+        doc("Legacy rich", {
+          parent: "2026-09-05-legacy-root",
+          extra: { hand_written: "keep me" },
+        }),
+      );
+      const raw =
+        plain
+          .replace(/^---\n/, "---\n# a hand-written comment a serializer round-trip would drop\n")
+          .replace("parent: 2026-09-05-legacy-root", 'parent: "2026-09-05-legacy-root"') +
+        "parent: 2026-09-05-legacy-root mentioned in the body must not move.\n";
+      await writeLegacy("2026-09-05-legacy-rich", "proposed", raw);
+
+      await scheduler.tickOnce();
+      const migrated = await fs.readFile(
+        path.join(orgDir(), "tickets", "2026-09", "proposed", "ticket-2026-09-05-legacy-rich.md"),
+        "utf8",
+      );
+      // Byte for byte, except the one frontmatter field the migration exists to rewrite —
+      // and the body line that merely starts with `parent:` stays exactly as written.
+      expect(migrated).toBe(
+        raw.replace('parent: "2026-09-05-legacy-root"', "parent: ticket-2026-09-05-legacy-root"),
+      );
+    });
+
+    it("moves nothing when a legacy id cannot migrate: the files waiting on it stay, and nothing is pointed at an id that has no file", async () => {
+      await createOrg();
+      // The root cannot parse at all; the child and the modern follower can only parse once
+      // it has migrated — which it never does, so their references are left as written.
+      const brokenRaw = "---\ntitle: Broken\n---\nA frontmatter missing everything else.\n";
+      await writeLegacy("2026-09-05-legacy-root", "proposed", brokenRaw);
+      const childRaw = serializeTicket(doc("Legacy child", { parent: "2026-09-05-legacy-root" }));
+      await writeLegacy("2026-09-05-legacy-child", "proposed", childRaw);
+      await writeModern(
+        "ticket-2026-09-06-modern",
+        serializeTicket(doc("Modern child", { parent: "2026-09-05-legacy-root" })),
+      );
+      errors.length = 0;
+
+      await scheduler.tickOnce();
+      // Every file is where it was, byte for byte: no rename, no rewritten reference.
+      expect(
+        await fs.readFile(legacyPath("2026-09-05-legacy-root", "proposed"), "utf8"),
+      ).toBe(brokenRaw);
+      expect(
+        await fs.readFile(legacyPath("2026-09-05-legacy-child", "proposed"), "utf8"),
+      ).toBe(childRaw);
+      expect(await backupDirs()).toHaveLength(0);
+      expect((await noticesOf()).map((n) => n.kind)).toEqual([]);
+      expect(errors.filter((e) => e.code === "org_ticket_legacy_migration")).toHaveLength(0);
+      // The board reports all three as invalid: the broken file, and the two whose
+      // references name a legacy id the strict format rejects.
+      const board = await service.tickets(P, ORG);
+      expect(board.invalidFiles.map((f) => path.basename(f.path)).sort()).toEqual([
+        "2026-09-05-legacy-child.md",
+        "2026-09-05-legacy-root.md",
+        "ticket-2026-09-06-modern.md",
+      ]);
+    });
+
+    it("reports a filename that follows no ticket format and leaves it out of the migration", async () => {
+      await createOrg();
+      const weirdPath = path.join(
+        orgDir(),
+        "tickets",
+        "2026-09",
+        "proposed",
+        "2026-09-05-Not-a-ticket.md",
+      );
+      await fs.mkdir(path.dirname(weirdPath), { recursive: true });
+      await fs.writeFile(weirdPath, serializeTicket(doc("Not a ticket")), "utf8");
+      errors.length = 0;
+
+      const board = await service.tickets(P, ORG);
+      expect(board.columns.proposed).toEqual([]);
+      expect(board.invalidFiles).toHaveLength(1);
+      expect(board.invalidFiles[0]!.path).toBe("tickets/2026-09/proposed/2026-09-05-Not-a-ticket.md");
+      expect(board.invalidFiles[0]!.error).toContain(
+        "does not follow the ticket-yyyy-mm-dd-slug format",
+      );
+      // The migration does not touch it either: no backup, no notice.
+      await scheduler.tickOnce();
+      expect(await fs.readFile(weirdPath, "utf8")).toBe(serializeTicket(doc("Not a ticket")));
+      expect(await backupDirs()).toHaveLength(0);
+      expect((await noticesOf()).map((n) => n.kind)).toEqual([]);
+      expect(errors.some((e) => e.code === "org_ticket_invalid")).toBe(true);
     });
 
     it("leaves a legacy file that does not parse alone", async () => {
@@ -3435,9 +3655,10 @@ describe("organization runtime", () => {
       const headed = "# Ticket: Legacy launch\n\nStatus: proposed\n";
       await fs.writeFile(headedPath, headed, "utf8");
       errors.length = 0;
-      await service.tickets(P, ORG);
+      await scheduler.tickOnce();
       expect(await fs.readFile(headedPath, "utf8")).toBe(headed);
-      expect((await fs.readdir(path.join(orgDir(), "tickets"))).filter((n) => n.startsWith(".legacy-backup-"))).toHaveLength(0);
+      expect(await backupDirs()).toHaveLength(0);
+      expect((await noticesOf()).map((n) => n.kind)).toEqual([]);
       // The invalid file is still reported, migration or not.
       expect(errors.some((e) => e.code === "org_ticket_invalid")).toBe(true);
     });
