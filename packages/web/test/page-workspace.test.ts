@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   closePage,
   emptyLayout,
-  placePage,
   reorderPage,
   visitPage,
   type OpenPage,
@@ -14,39 +13,37 @@ const x: OpenPage = { id: "app:x", kind: "window", title: "X", path: "/apps?app=
 const y: OpenPage = { id: "app:y", kind: "window", title: "Y", path: "/apps?app=y" };
 
 describe("the open pages in a browser window", () => {
-  it("opens links beside the focused session and returns to the same app from either pane", () => {
-    let state = placePage(visitPage(emptyLayout, a), x, 1);
-    state = visitPage(state, y);
-    expect(state.visible).toEqual([a.id, y.id]);
-    state = visitPage(visitPage(state, a), x);
-    expect(state.visible).toEqual([a.id, x.id]);
-    expect(state.focus).toBe(x.id);
-    expect(state.pages.map((page) => page.id)).toEqual([a.id, x.id, y.id]);
-    expect(visitPage(state, x)).toBe(state);
+  it("opens each global destination alone after leaving a Session dock", () => {
+    const open = visitPage(visitPage(emptyLayout, a), x);
+    const dock = { ...open, visible: [a.id, x.id], focus: x.id };
+    for (const page of [a, x, y, b]) {
+      const next = visitPage(dock, page);
+      expect(next.visible).toEqual([page.id]);
+      expect(next.focus).toBe(page.id);
+      expect(visitPage(next, page)).toBe(next);
+    }
+    const switched = visitPage(visitPage(dock, y), x);
+    expect(switched.pages).toEqual([a, x, y]);
+    expect(switched.visible).toEqual([x.id]);
   });
-  it("can compare two sessions, swap them and reorder the open list without changing the view", () => {
-    let state = placePage(visitPage(emptyLayout, a), b, 1);
-    state = placePage(state, b, 0);
-    expect(state.visible).toEqual([b.id, a.id]);
+  it("reorders open pages without changing the visible one", () => {
+    const state = visitPage(visitPage(emptyLayout, a), b);
     const next = reorderPage(state, b.id, a.id);
-    expect(next.pages.map((page) => page.id)).toEqual([b.id, a.id]);
-    expect(next.visible).toEqual(state.visible);
+    expect(next.pages).toEqual([b, a]);
+    expect(next.visible).toEqual([b.id]);
   });
-  it("closing a pane selects its next tab before expanding the other side", () => {
-    let state = visitPage(placePage(visitPage(emptyLayout, a), x, 1), y);
-    state = closePage(state, y.id);
-    expect(state.visible).toEqual([a.id, x.id]);
-    expect(state.focus).toBe(x.id);
-    state = closePage(state, x.id);
-    expect(state.visible).toEqual([a.id]);
+  it("closing the active page chooses a visible neighbor and excludes minimized pages", () => {
+    let state = visitPage(visitPage(visitPage(emptyLayout, a), x), y);
+    state = closePage({ ...state, minimized: [x.id] }, y.id);
     expect(state.focus).toBe(a.id);
-    expect(closePage(state, a.id)).toEqual(emptyLayout);
+    expect(state.visible).toEqual([a.id]);
+    expect(closePage(closePage(state, x.id), a.id)).toEqual(emptyLayout);
   });
-  it("updates an inner address and title without adding another copy or moving its pane", () => {
-    const state = placePage(visitPage(emptyLayout, a), x, 1);
+  it("updates an app's inner address and title without reopening it", () => {
+    const state = visitPage(visitPage(emptyLayout, a), x);
     const moved = { ...x, title: "Report", path: "/apps?app=x&at=detail" };
     const next = visitPage(state, moved);
     expect(next.pages).toEqual([a, moved]);
-    expect(next.visible).toEqual(state.visible);
+    expect(next.visible).toEqual([x.id]);
   });
 });

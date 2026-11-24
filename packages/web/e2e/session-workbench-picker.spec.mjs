@@ -145,6 +145,11 @@ test("an App Center workbench lists archived Sessions and closes only their sele
     await row.click();
     const activeGroup = page.locator('[data-testid="terminal-panel"]:visible');
     await expect(activeGroup.getByTestId("terminal-tab")).toHaveCount(expectedCount);
+    const menus = page.getByRole("navigation", { name: "Apps", exact: true });
+    await expect(menus.locator("[data-app-row]")).toHaveCount(1);
+    await expect(
+      menus.locator('[data-app-row="system_agent/session-tools-terminal"]'),
+    ).toBeVisible();
     const owned = (await (await page.request.get("/api/terminals")).json()).terminals.filter(
       (t) => t.alive && t.sessionId === owner.sessionId,
     );
@@ -160,8 +165,7 @@ test("an App Center workbench lists archived Sessions and closes only their sele
       source: original.source,
       archived: original.archived,
     });
-    await page.goto("/apps");
-    await terminalTile.click();
+    await menus.locator('[data-app-row="system_agent/session-tools-terminal"]').click();
   }
   await page.setViewportSize({ width: 375, height: 750 });
   const hasWrites = [];

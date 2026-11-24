@@ -5,7 +5,7 @@
  * - The default order puts standard system apps first, then keeps the incoming order.
  * - A stored layout keeps its order and folders; an app it names that is no longer listed drops
  *   out, a listed app it does not name is appended in default grid order, and a folder keeps
- *   its place while it holds an app — one app is enough — and goes once it is empty.
+ *   its place while it holds two or more apps. Its remaining app takes that place.
  * - Dropping an app beside another moves it there, inside a folder when the target is in one; a
  *   folder never goes into a folder. Dropping onto an app makes a folder of the two in that
  *   app's place; onto a folder adds to its end. Taking an app out puts it right after its folder,
@@ -146,18 +146,45 @@ describe("arrange", () => {
     ]);
   });
 
-  it("keeps a folder left with one app in its place, and drops an empty one", () => {
+  it("promotes a lone survivor in place and drops an empty folder", () => {
     const layout = stored([
       { type: "folder", id: "f1", name: "Work", apps: ["a1/gone", "a1/two"] },
       { type: "folder", id: "f2", name: "Old", apps: ["a1/also-gone"] },
       { type: "app", app: "a1/one" },
     ]);
     expect(outline(arrange(shortcuts(), layout))).toEqual([
-      "Work[a1/two]",
+      "a1/two",
       "a1/one",
       "a1/three",
       "a1/four",
     ]);
+  });
+
+  it("keeps unseen members while their machine is offline or their system tile is unavailable", () => {
+    const previous = stored([
+      {
+        type: "folder",
+        id: "f1",
+        name: "Work",
+        apps: ["a1/two", "m1:a1/desk", "system_agent/machines"],
+      },
+    ]);
+    const awaited = (key: string) => appAwaited(key, [{ machineId: "m1", answered: false }]);
+    const grid = arrange(shortcuts(), previous, awaited);
+    expect(outline(grid)[0]).toBe("Work[a1/two]");
+    const restored = keepUnseenApps(layoutOf(moveToEnd(grid, "a1/one")), previous, awaited);
+    expect(restored.items[0]).toEqual(previous.items[0]);
+  });
+
+  it("leaves a temporarily unavailable survivor in the folder's slot when the visible app moves away", () => {
+    const previous = stored([
+      { type: "folder", id: "f1", name: "Work", apps: ["a1/two", "m1:a1/desk"] },
+    ]);
+    const awaited = (key: string) => key === "m1:a1/desk";
+    const grid = arrange(shortcuts(), previous, awaited);
+    const saved = keepUnseenApps(layoutOf(moveToEnd(grid, "a1/two")), previous, awaited);
+    expect(saved.items[0]).toEqual({ type: "app", app: "m1:a1/desk" });
+    expect(saved.items.at(-1)).toEqual({ type: "app", app: "a1/two" });
   });
 
   it("round-trips through the layout it stores", () => {
@@ -233,9 +260,11 @@ describe("moves", () => {
     expect(outline(moveIntoFolder(withFolder(), "f1", "f1"))).toEqual(outline(withFolder()));
   });
 
-  it("takes an app out to right after its folder, which keeps its one app; the last one out leaves no folder", () => {
+  it("keeps two members grouped and promotes the last member when another leaves", () => {
+    const three = moveIntoFolder(withFolder(), "a1/four", "f1");
+    expect(outline(takeOutOfFolder(three, "a1/four"))).toEqual(outline(withFolder()));
     const one = takeOutOfFolder(withFolder(), "a1/three");
-    expect(outline(one)).toEqual(["a1/one", "Work[a1/two]", "a1/three", "a1/four"]);
+    expect(outline(one)).toEqual(["a1/one", "a1/two", "a1/three", "a1/four"]);
     expect(outline(takeOutOfFolder(one, "a1/two"))).toEqual(LISTED);
   });
 
@@ -248,7 +277,7 @@ describe("moves", () => {
     // The first picked app sits in a folder that keeps an app: the new one comes right after it.
     expect(outline(groupApps(withFolder(), ["a1/four", "a1/three"], made))).toEqual([
       "a1/one",
-      "Work[a1/two]",
+      "a1/two",
       "Picked[a1/three, a1/four]",
     ]);
     // A folder emptied by the pick gives the new one its place.
@@ -260,17 +289,17 @@ describe("moves", () => {
     // One app is a folder too.
     expect(outline(groupApps(plain(), ["a1/two"], made))).toEqual([
       "a1/one",
-      "Picked[a1/two]",
+      "a1/two",
       "a1/three",
       "a1/four",
     ]);
     expect(outline(groupApps(plain(), ["a1/gone"], made))).toEqual(LISTED);
   });
 
-  it("moves an item to the end, out of its folder, which keeps its other app", () => {
+  it("moves an item to the end and promotes its former sibling", () => {
     expect(outline(moveToEnd(withFolder(), "a1/two"))).toEqual([
       "a1/one",
-      "Work[a1/three]",
+      "a1/three",
       "a1/four",
       "a1/two",
     ]);
