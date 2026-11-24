@@ -3,7 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `server`, `cli`, `web`
-- **PR:** [#1795](https://github.com/Prism-Shadow/penguin-harness/pull/1795)
+- **PR:** [#1795](https://github.com/Prism-Shadow/penguin-harness/pull/1795), [#1823](https://github.com/Prism-Shadow/penguin-harness/pull/1823)
 
 [中文版](2026-11-24-backward-compatibility.zh.md)
 

@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** `amsp`, `core`, `web`, `ui-gallery`
+- **PR:** [#1823](https://github.com/Prism-Shadow/penguin-harness/pull/1823)
 
 [English](2026-11-24-activity-run-finished-label.md)
 
