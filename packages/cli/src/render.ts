@@ -255,13 +255,17 @@ export function renderHistory(
       else if (p.type === "compaction_end") {
         if (p.mode === "summarize" && p.status === "completed") compactions.set(origin, "rotating");
         else compactions.delete(origin);
+      } else if (p.type === "request_begin" && compactions.get(origin) === "rotating") {
+        // A request in the old file reopens that context. An input alone can be left there
+        // by a run stopped during bootstrap, before the pending rotation took place.
+        compactions.delete(origin);
       } else if (p.type === "abort" && index >= first)
         out.write(`${formatAbort(p as AbortPayload, t, c)}\n`);
       continue;
     }
     if (!isModelMessage(msg) || compactions.get(origin) === "active") continue;
     const opening = compactions.get(origin) === "opening";
-    compactions.delete(origin);
+    if (opening) compactions.delete(origin);
     if (index < first) continue;
     const p = msg.payload as {
       type?: string;

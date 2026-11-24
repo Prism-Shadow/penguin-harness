@@ -1305,17 +1305,27 @@ describe("renderHistory (resume)", () => {
         userText(quoted),
         compactionBegin({ mode: "summarize", reason: "manual", context: 4000, turns: 1 }),
         compactionEnd({ mode: "summarize", reason: "manual", status: "completed" }),
+        taskBegin(),
+        userText("Input from a stopped run before rotation"),
+        taskEnd(),
         meta,
         withOrigin(userText(`${open} This is a child prompt`), "child"),
         userText(`${open}\nInternal context opening\n${close}`),
         userText(`${open} is literal here`),
         userText(quoted),
+        compactionEnd({ mode: "summarize", reason: "manual", status: "completed" }),
+        requestBegin(),
+        requestEnd("completed"),
+        meta,
+        userText(`${open}\nLiteral after reopening\n${close}`),
       ],
       stream,
       t,
     );
     const plain = stripAnsi(text());
     expect(plain).not.toContain("Internal context opening");
+    expect(plain).toContain("> Input from a stopped run before rotation");
+    expect(plain).toContain(`> ${open}\nLiteral after reopening\n${close}`);
     expect(plain).toContain(`> ${open} This is a child prompt`);
     expect(plain).toContain(`> ${open} is literal here`);
     expect(plain.split(`> ${quoted}`)).toHaveLength(3);
