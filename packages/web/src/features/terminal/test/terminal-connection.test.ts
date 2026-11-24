@@ -5,6 +5,12 @@
  * socket comes back on its own, a suspended tab does not get mistaken for a dead link, a
  * terminal that is genuinely gone stops the retries, and the heartbeat answers whoever
  * probes it.
+ * - Two views opening together deliver their own initial keystrokes in order, including
+ *   keys typed during lookup, during the upgrade and after the socket opens.
+ * - Closing a view during attach discards its input, even if the same terminal reopens.
+ * - An open socket holds keys and paste operations in order until its Restore is parsed.
+ * - Clipboard reads reserve input in gesture order; a denied read releases later keys,
+ *   and a read from a lost connection cannot deliver its text to a reattached shell.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -20,16 +26,19 @@ import { TerminalOpcode, decodeFrame, encodeFrame } from "../terminal-frames";
 class FakeSocket implements AttachedSocket {
   readonly sent: Uint8Array[] = [];
   closed = false;
+  private opened = false;
   constructor(readonly handlers: SocketHandlers) {}
   send(bytes: Uint8Array): void {
-    this.sent.push(bytes);
+    if (this.opened && !this.closed) this.sent.push(bytes);
   }
   close(): void {
     this.closed = true;
   }
-  /** The server accepted the upgrade. */
-  open(): void {
+  /** A successful upgrade normally delivers the terminal's screen immediately. */
+  open(restore = true): void {
+    this.opened = true;
     this.handlers.onOpen();
+    if (restore) this.deliver(TerminalOpcode.Restore);
   }
   /** The server sent one frame. */
   deliver(opcode: TerminalOpcode, text = ""): void {
@@ -41,6 +50,12 @@ class FakeSocket implements AttachedSocket {
   }
   opcodes(): number[] {
     return this.sent.map((bytes) => bytes[0] as number);
+  }
+  inputText(): string {
+    return this.sent
+      .filter((bytes) => bytes[0] === TerminalOpcode.Input)
+      .map((bytes) => decodeFrame(bytes.buffer as ArrayBuffer)?.text)
+      .join("");
   }
 }
 
@@ -54,7 +69,11 @@ interface Harness {
 }
 
 function harness(
-  options: { first?: () => Promise<string>; recheck?: (id: string) => Promise<boolean> } = {},
+  options: {
+    first?: () => Promise<string>;
+    recheck?: (id: string) => Promise<boolean>;
+    parseRestore?: (parsed: () => void) => void;
+  } = {},
 ): Harness {
   const sockets: FakeSocket[] = [];
   const statuses: Harness["statuses"] = [];
@@ -68,7 +87,13 @@ function harness(
       sockets.push(socket);
       return socket;
     },
-    onFrame: (frame) => frames.push(frame.opcode),
+    onFrame: (frame, parsed) => {
+      frames.push(frame.opcode);
+      if (parsed) {
+        if (options.parseRestore) options.parseRestore(parsed);
+        else parsed();
+      }
+    },
     onStatus: (status, detail) => statuses.push({ status, detail }),
   });
   return {
@@ -105,14 +130,105 @@ function deferred<T>(): Deferred<T> {
 afterEach(() => vi.useRealTimers());
 
 describe("terminal connection", () => {
-  it("reports ready once the socket opens", async () => {
+  it("releases the next paste and keys when the earlier clipboard read is denied", async () => {
     vi.useFakeTimers();
     const h = harness();
     h.connection.start();
     await settle();
-    h.sockets[0]?.open();
+    const denied = h.connection.reserveInput();
+    const read = h.connection.reserveInput();
+    const send = (text: string) => h.connection.send(encodeFrame(TerminalOpcode.Input, text));
+    send("!");
+    read(() => send("pasted"));
+    const socket = h.sockets[0]!;
+    socket.open();
+    expect(socket.inputText()).toBe("");
+    denied();
+    expect(socket.inputText()).toBe("pasted!");
 
-    expect(h.statuses).toEqual([{ status: "ready", detail: "" }]);
+    const stale = h.connection.reserveInput();
+    send("old");
+    socket.drop();
+    h.connection.wake();
+    await settle();
+    h.sockets[1]!.open();
+    stale(() => send("old paste"));
+    send("new");
+    expect(h.sockets[1]!.inputText()).toBe("new");
+  });
+
+  it("delivers each opening view's complete input to its own terminal", async () => {
+    vi.useFakeTimers();
+    const a = harness({ first: async () => "a" });
+    const b = harness({ first: async () => "b" });
+    const input = (text: string) => encodeFrame(TerminalOpcode.Input, text);
+    a.connection.start();
+    b.connection.start();
+    a.connection.send(input("ec"));
+    b.connection.send(input("echo B\r"));
+    await settle();
+
+    const socketA = a.sockets[0]!;
+    const socketB = b.sockets[0]!;
+    a.connection.send(input("ho A"));
+    socketB.open();
+    expect(socketB.inputText()).toBe("echo B\r");
+    expect(socketA.sent).toEqual([]);
+    socketA.open();
+    a.connection.send(input("\r"));
+    expect(socketA.inputText()).toBe("echo A\r");
+
+    socketA.drop();
+    a.connection.wake();
+    await settle();
+    a.sockets[1]!.open();
+    expect(a.sockets[1]!.sent).toEqual([]);
+  });
+
+  it("discards a closed view's input when the same terminal reopens", async () => {
+    vi.useFakeTimers();
+    const first = harness();
+    first.connection.start();
+    await settle();
+    first.connection.send(encodeFrame(TerminalOpcode.Input, "echo closed\r"));
+    first.connection.stop();
+
+    const reopened = harness();
+    reopened.connection.start();
+    const command = encodeFrame(TerminalOpcode.Input, "echo reopened\r");
+    reopened.connection.send(command);
+    await settle();
+    first.sockets[0]!.open();
+    reopened.sockets[0]!.open();
+    expect(first.sockets[0]!.sent).toEqual([]);
+    expect(reopened.sockets[0]!.inputText()).toBe("echo reopened\r");
+  });
+
+  it("keeps keys and a paste in order until the live socket's Restore has been parsed", async () => {
+    vi.useFakeTimers();
+    const parses: (() => void)[] = [];
+    const h = harness({ parseRestore: (parsed) => parses.push(parsed) });
+    const send = (text: string) => h.connection.send(encodeFrame(TerminalOpcode.Input, text));
+    h.connection.start();
+    await settle();
+    const first = h.sockets[0]!;
+    first.open();
+    send("before ");
+    h.connection.withInputModes(() => send("paste"));
+    first.drop();
+    h.connection.wake();
+    await settle();
+    const current = h.sockets[1]!;
+    current.open(false);
+    parses[0]!();
+    expect(current.sent).toEqual([]);
+    current.deliver(TerminalOpcode.Restore);
+    send(" after");
+    expect(current.sent).toEqual([]);
+    expect(h.statuses.at(-1)?.status).toBe("reconnecting");
+    parses[1]!();
+    expect(current.inputText()).toBe("before paste after");
+    expect(h.statuses.at(-1)).toEqual({ status: "ready", detail: "" });
   });
 
   it("reattaches after the link drops, and says so meanwhile", async () => {
@@ -187,7 +303,7 @@ describe("terminal connection", () => {
     const reply = socket.sent.at(-1) as Uint8Array;
     expect(reply[0]).toBe(TerminalOpcode.Pong);
     expect(decodeFrame(reply.buffer as ArrayBuffer)?.text).toBe("1234");
-    expect(h.frames).toEqual([]); // heartbeat traffic never reaches xterm
+    expect(h.frames).toEqual([TerminalOpcode.Restore]); // heartbeat traffic never reaches xterm
   });
 
   it("passes output through to the terminal", async () => {
@@ -199,7 +315,7 @@ describe("terminal connection", () => {
     socket.open();
     socket.deliver(TerminalOpcode.Output, "hello");
 
-    expect(h.frames).toEqual([TerminalOpcode.Output]);
+    expect(h.frames).toEqual([TerminalOpcode.Restore, TerminalOpcode.Output]);
   });
 
   it("drops a socket that stopped answering, and reattaches", async () => {
@@ -325,7 +441,7 @@ describe("terminal connection", () => {
     h.sockets[0]?.open();
     h.sockets[0]?.drop();
 
-    h.connection.send(encodeFrame(TerminalOpcode.Input, "rm -rf /\r"));
+    h.connection.send(encodeFrame(TerminalOpcode.Input, "echo reconnect\r"));
     await vi.advanceTimersByTimeAsync((RETRY_DELAYS_MS[0] as number) * 1.2);
     h.sockets[1]?.open();
 
@@ -408,6 +524,7 @@ describe("terminal connection", () => {
     await settle();
     // The link swallows the handshake: no onOpen, no onClose, CONNECTING forever.
     const stalled = h.sockets[0] as FakeSocket;
+    h.connection.send(encodeFrame(TerminalOpcode.Input, "echo first\r"));
 
     // 15s: DIAL_TIMEOUT_MS in the source, written as a literal so this case also runs
     // (red) on the tree before the fix, where the export does not exist yet.
@@ -430,6 +547,7 @@ describe("terminal connection", () => {
 
     fresh.open();
     expect(h.statuses.at(-1)).toEqual({ status: "ready", detail: "" });
+    expect(fresh.inputText()).toBe("echo first\r");
   });
 
   it("gives up on a recheck that never answers, and tries it again", async () => {
