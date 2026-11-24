@@ -65,7 +65,7 @@ export function setShortcutBlocker(fn: (() => boolean) | null): void {
 /**
  * The window's keydown listener. A held chord auto-repeats: a repeat of a command that has a
  * handler is kept from the browser's own action (a binding on ⌘P would print from the first
- * repeat on) but does not run the command again, so a held ⌥⌘1 toggles the sidebar once. Behind
+ * repeat on) but does not run the command again, so a held ⌘B toggles the sidebar once. Behind
  * an open dialog every key is left alone, so the dialog's own keys (and the browser's) work as if
  * nothing were bound.
  */
@@ -73,6 +73,22 @@ export function handleShortcutKeydown(event: KeyboardEvent): void {
   if (event.defaultPrevented) return;
   const id = matchShortcut(event, keymap(), ["global"], currentPlatform());
   if (id === null) return;
+  if (
+    id === "sidebar.toggle" &&
+    (event.key === "b" || event.key === "B") &&
+    !event.shiftKey &&
+    !event.altKey &&
+    typeof Element !== "undefined" &&
+    event.target instanceof Element
+  ) {
+    // Plain text (including the chat composer) has no Bold command. Rich text and a shell do.
+    const editable = event.target
+      .closest("[contenteditable]")
+      ?.getAttribute("contenteditable")
+      ?.toLowerCase();
+    if (editable === "" || editable === "true" || (event.ctrlKey && event.target.closest(".xterm")))
+      return;
+  }
   if (blocker?.() === true && commandById(id).overDialogs !== true) return;
   if (event.repeat) {
     if (hasCommandHandler(id)) event.preventDefault();

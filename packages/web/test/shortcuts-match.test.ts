@@ -183,12 +183,12 @@ describe("the six panel and navigation commands", () => {
   const cases: Array<[CommandId, Partial<KeyLike> & { code: string }]> = [
     ["sessions.search", { code: "KeyS", altKey: true }],
     ["chat.new", { code: "KeyN", altKey: true }],
-    ["sidebar.toggle", { code: "Digit1", altKey: true }],
+    ["sidebar.toggle", { code: "KeyB" }],
     ["dock.toggleRight", { code: "Digit2", altKey: true }],
     ["dock.toggleBottom", { code: "Digit3", altKey: true }],
   ];
 
-  it("bind with Mod+Alt: ⌥⌘ on a Mac, Ctrl+Alt elsewhere", () => {
+  it("use the primary modifier for each platform", () => {
     for (const [id, init] of cases) {
       expect(matchShortcut(key({ ...init, metaKey: true }), defaults("mac"), ALL, "mac"), id).toBe(
         id,
