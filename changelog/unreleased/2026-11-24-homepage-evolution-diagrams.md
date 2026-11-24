@@ -7,4 +7,4 @@
 
 [中文版](2026-11-24-homepage-evolution-diagrams.zh.md)
 
-Two blue diagrams beneath the product gallery show how one request generates apps and how four task agents independently improve on the same evaluation platform. Both adapt to phone screens and retain the entire flow when reduced motion is enabled.
+The homepage App Center scene shows nine apps alongside the legal agent’s contract desk and its sample reviews. The Self-Evolution Workbench scene follows four GDPEVO Essential tasks through evaluation, improvement, retesting and the next round. Each agent advances independently. With reduced motion, the workbench shows a still view of all four stages.

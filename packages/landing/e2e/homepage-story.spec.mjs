@@ -5,15 +5,35 @@ for (const [lang, headline, subtitle, apps, steps] of [
     "en",
     "From Vibe-Coding to Vibe-Evolving",
     "Open Foundation for Self-Evolving Enterprise AI.",
-    ["Document Q&A", "Investment Analyst", "Legal Assistant"],
-    ["Evaluate", "Improve", "Retest"],
+    [
+      "Document Q&A",
+      "Investment Analyst",
+      "Legal Assistant",
+      "Image Studio",
+      "AI Slides",
+      "Support",
+      "Expense log",
+      "Terminal",
+      "Browser",
+    ],
+    ["Evaluating", "Improving", "Retesting", "Next round"],
   ],
   [
     "zh",
     "从 许愿式编程 到 许愿式调优",
     "企业级 AI 应用的统一自进化底座",
-    ["文档问答", "投资分析", "法务助手"],
-    ["评估", "改进", "复测"],
+    [
+      "文档问答",
+      "投资分析",
+      "法务助手",
+      "图像工作室",
+      "AI PPT",
+      "客服工作台",
+      "报销登记",
+      "命令行终端",
+      "浏览器",
+    ],
+    ["评估中", "改进中", "复测中", "下一轮"],
   ],
 ]) {
   for (const width of [320, 1280]) {
@@ -61,8 +81,17 @@ for (const [lang, headline, subtitle, apps, steps] of [
       for (const app of apps) {
         await expect(appsDiagram.getByText(app, { exact: true })).toBeVisible();
       }
-      for (const stage of steps) {
-        await expect(platform.getByText(stage, { exact: true })).toBeVisible();
+      await expect(
+        appsDiagram.getByText(lang === "en" ? "Contract desk" : "合同工作台"),
+      ).toBeVisible();
+      await expect(appsDiagram.getByText(lang === "en" ? "Analyzing…" : "分析中…")).toBeVisible();
+      const phases = platform.locator('td[aria-current="step"]');
+      for (const [index, stage] of steps.entries()) {
+        await expect(phases.nth(index)).toHaveText(stage);
+        await expect(phases.nth(index).locator("[data-live=spinner]")).toHaveCSS(
+          "animation-name",
+          "none",
+        );
       }
       await expect(platform.locator("[data-agent-loop]")).toHaveCount(4);
       await expect(platform.locator("animateMotion")).toHaveCount(0);
@@ -129,4 +158,26 @@ test("listing badges share the hero entrance and reserve their bounds through sl
     releaseHunt();
     releaseWatcha();
   }
+});
+
+// In view the runs advance on independent schedules. After the final stage, a new
+// evaluation begins. Switching to reduced motion leaves one still run in each stage.
+test("task agents advance independently and start a new round", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => localStorage.setItem("penguin-site.lang", "en"));
+  await page.goto("/");
+  const workbench = page.getByRole("group", { name: "Self-Evolution Workbench", exact: true });
+  await workbench.scrollIntoViewIfNeeded();
+  const phases = workbench.locator('td[aria-current="step"]');
+  await expect(phases).toHaveText(["Evaluating", "Improving", "Retesting", "Next round"]);
+  await page.clock.install();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(workbench).toHaveAttribute("data-active", "true");
+  await page.clock.runFor(1650);
+  await expect(phases).toHaveText(["Improving", "Improving", "Retesting", "Next round"]);
+  await page.clock.runFor(8500);
+  await expect(phases.first()).toHaveText("Evaluating");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.runFor(5500);
+  await expect(phases).toHaveText(["Evaluating", "Improving", "Retesting", "Next round"]);
 });
