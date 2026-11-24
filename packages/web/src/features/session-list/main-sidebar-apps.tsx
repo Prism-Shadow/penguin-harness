@@ -56,16 +56,12 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
   const [sorting, setSorting] = useState(false);
   const [sort, setSort] = useState<"default" | "name" | "recent">("default");
   const list = useRef<HTMLUListElement>(null);
+  const activeId = workspace?.current?.id;
+  const activeAppKey = rows.find((row) => row.page.id === activeId)?.key;
   useLayoutEffect(() => {
-    const box = list.current;
-    const active = box?.querySelector('[aria-current="page"]');
-    if (!box || !active || !box.clientHeight || box.scrollHeight <= box.clientHeight) return;
-    // Reveal an app selected through another entry without moving the sidebar's other groups.
-    const bounds = box.getBoundingClientRect();
-    const item = active.getBoundingClientRect();
-    if (item.top < bounds.top) box.scrollTop += item.top - bounds.top;
-    else if (item.bottom > bounds.bottom) box.scrollTop += item.bottom - bounds.bottom;
-  }, [workspace?.current?.id, rows.length, folded, searching, sort]);
+    // Reveal a newly selected app in the sidebar, including when it opens from the App Center.
+    list.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+  }, [activeAppKey]);
   if (!workspace || rows.length === 0) return null;
   const visible = rows.filter((row) =>
     row.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
@@ -229,11 +225,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
         {visible.length === 0 && (
           <p className="px-2.5 pt-2 text-xs text-fg-muted">{S.sidebarApps.noMatches}</p>
         )}
-        <ul
-          ref={list}
-          aria-label={S.sidebarApps.title}
-          className="max-h-[min(8rem,18dvh)] space-y-px overflow-y-auto md:max-h-[min(12rem,25dvh)]"
-        >
+        <ul ref={list} aria-label={S.sidebarApps.title} className="space-y-px">
           {visible.map((row) => {
             const actions = menuOf(row);
             const state = S.appCenter.running;
@@ -273,7 +265,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
                 }
                 name={row.title}
                 {...(name !== row.title ? { label: name, hint: name } : {})}
-                active={workspace.current?.id === row.page.id}
+                active={activeAppKey === row.key}
                 running
                 build={row.build}
                 menuActions={actions}
