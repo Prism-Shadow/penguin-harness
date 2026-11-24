@@ -15,6 +15,8 @@
  *   tab's × closes the panel, the last tab closing puts the dock away;
  * - a whole dock moves to the other edge via its header button, a single tab via drag
  *   onto the drop targets;
+ * - after configuring a model and sending the first message, Files can move to the bottom
+ *   and enter fullscreen immediately, even when the original draft page is still mounted;
  * - an explicit button expands the right dock across the Session, or the bottom dock up to its
  *   toolbar. Dragging the divider only resizes the dock and keeps the conversation usable;
  * - the arrangement is PER CONVERSATION (each one manages its own tabs, browser-window
@@ -27,6 +29,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
+import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -38,12 +41,12 @@ const P = "password123";
  * as /chat loads, which would swallow every click on the dock; configure the mock model
  * first, like the other app-shell specs do.
  */
-async function configureProjectModel(request) {
+async function configureProjectModel(request, { setDefault = true } = {}) {
   const projectId = (await (await request.get(`${BASE}/api/projects`)).json()).projects[0]
     .projectId;
   const put = await request.put(`${BASE}/api/projects/${projectId}/models`, {
     data: {
-      defaultModel: { provider: "custom", modelId: "claude-4-8" },
+      ...(setDefault && { defaultModel: { provider: "custom", modelId: "claude-4-8" } }),
       models: [
         {
           provider: "custom",
@@ -496,6 +499,40 @@ test("tabs of every kind share a dock: switch, close a panel tab, terminals numb
   await expect(right.locator('[data-testid="dock-tab"]')).toHaveCount(1);
   await expect(right).toBeVisible();
   await killAllTerminals(page.request);
+});
+
+test("Files moves to the bottom and enters fullscreen after the first chat reply", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await provisionAndLogin(page.request, "dockfirstreply", P);
+  await setAccountPrefs(page.request, { lang: "en", initialPasswordBannerDismissed: true });
+  await page.goto(`${BASE}/chat/new`);
+  await page.getByRole("button", { name: /^(Add an API key|Open Models)$/ }).click();
+  await expect(page).toHaveURL(/\/models$/);
+  // Supply only the fixture provider. Choose the default through the same settings
+  // dialog as a new user, keeping both the draft and Models in this browser session.
+  await configureProjectModel(page.request, { setDefault: false });
+  await page.getByRole("button", { name: "Default model settings" }).click();
+  const preferences = page.getByRole("dialog", { name: "Default model settings" });
+  await preferences.locator('[data-default-row="chat"] button').click();
+  await page.getByRole("option", { name: /claude-4-8/ }).click();
+  await preferences.getByRole("button", { name: "Done" }).click();
+  await page
+    .getByRole("complementary")
+    .getByRole("button", { name: "New chat", exact: true })
+    .click();
+  const input = page.locator('[data-slot="composer"]:visible textarea');
+  await input.fill("auth dead test");
+  await input.press("Enter");
+  await expect(page.getByText("Auth restored; hello again.", { exact: true })).toBeVisible();
+  await openViaPicker(page, "right", "workspace");
+  await dockAt(page, "right").getByTestId("dock-move").click();
+  const bottom = dockAt(page, "bottom");
+  expect((await bottom.boundingBox()).height).toBeGreaterThan(24);
+  await bottom.getByTestId("dock-fullscreen").click();
+  await expect(bottom).toHaveAttribute("data-fullscreen", "full");
+  await expect(bottom.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
 });
 
 test("a whole dock moves to the other edge; a single tab moves by drag onto the drop target", async ({
