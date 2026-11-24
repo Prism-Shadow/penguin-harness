@@ -1329,18 +1329,9 @@ export const zh = {
   },
   /** The sidebar's app list, under the nav and above the conversations (main-sidebar-apps.tsx). */
   pageWorkspace: {
-    leftPane: "左侧页面",
-    rightPane: "右侧页面",
     restore: "恢复",
     workbenches: "工作台",
-    left: "在左侧打开",
-    right: "在右侧打开",
-    whole: "整页显示",
-    swap: "交换两侧",
     separate: "在新窗口打开",
-    actions: "分栏操作",
-    closeView: "关闭视图",
-    resize: "调整页面宽度",
     empty: "此 Agent 没有可打开的工作台。",
   },
   sidebarApps: {
