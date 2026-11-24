@@ -245,6 +245,7 @@ export function renderMainChatBody(scope: MainChatView) {
                                 <MachineRestartNotice machineId={pageMachineId} />
                               )}
                               {stream.goal && <GoalStatusBanner goal={stream.goal} />}
+                              {scope.paneFocused && <div data-guide-chat />}
                               {input}
                             </div>
                           </WallpaperSurface>

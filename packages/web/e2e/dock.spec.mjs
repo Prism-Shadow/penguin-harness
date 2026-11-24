@@ -369,6 +369,12 @@ test("full screen is a dock at its largest below the toolbar — by its button o
   const rowBox = () => page.locator("[data-dock-row]").boundingBox();
   const headerBox = (dock) => dock.getByTestId("dock-header").boundingBox();
 
+  // First entry into a regular Session leaves the guide beside the composer and the dock usable.
+  const guide = page.getByRole("region", { name: "我的第一个工作台" });
+  await expect(guide).toBeVisible();
+  const guideBox = await guide.boundingBox();
+  expect(guideBox.x + guideBox.width).toBeLessThanOrEqual((await right.boundingBox()).x);
+
   // The header button: the right dock covers its own row — the conversation column — while the
   // toolbar with the title and the statistics stays, and nothing under the cover reflowed.
   await right.getByTestId("dock-fullscreen").click();

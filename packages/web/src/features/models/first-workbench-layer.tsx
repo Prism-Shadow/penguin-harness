@@ -365,6 +365,7 @@ function Tour({
   return (
     <GuideCallout
       anchorSelector={anchor}
+      inChat={inChat}
       title={w.title}
       laterLabel={w.later}
       onLater={close}
