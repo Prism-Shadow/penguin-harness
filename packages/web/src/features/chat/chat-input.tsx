@@ -70,7 +70,7 @@
  * paste and drop, history recall and the draft cache live here. What it draws with is the UI
  * package's composer family — `ComposerCard`, `ChipRow` and `Chip`, the attachment tiles
  * (`AttachmentList`, `AttachmentImage`, `AttachmentFile`), the `MenuSelect` pickers on
- * `ToolbarTrigger`s, `SendButton`, `SlashMenu` and `SlashPicker` — and the model picker bound to
+ * `ToolbarTrigger`s, `SendButton` and portaled slash menus — and the model picker bound to
  * the catalog (model-select.tsx) and the context gauge (context-gauge.tsx).
  */
 import {
@@ -118,11 +118,11 @@ import {
   ICON_SIZE,
   MenuSelect,
   Notice,
+  MenuTitle,
   PickerList,
   ProviderLogo,
   SendButton,
-  SlashMenu,
-  SlashPicker,
+  SlashMenuRows,
   noAutofill,
   toastError,
   toastInfo,
@@ -959,10 +959,6 @@ export function ChatInput({
   // is the draft (and becomes the new session's first message once the staged switch is sent).
   const [modelSwitchOpen, setModelSwitchOpen] = useState(false);
   const [agentSwitchOpen, setAgentSwitchOpen] = useState(false);
-  const agentSwitchRef = useRef<HTMLDivElement>(null);
-  // Anchor for the popups that open upward, and the room actually available above them.
-  const anchorRef = useRef<HTMLDivElement>(null);
-  const [upwardMaxH, setUpwardMaxH] = useState<number>();
   // Staged handoff target from /agent (chip, fixed at the front of the input); only one allowed, picking again replaces it directly.
   const [target, setTarget] = useState<AgentSummary | null>(null);
   // Staged model switch from /model (chip too), cached in the draft exactly like the handoff
@@ -1565,37 +1561,6 @@ export function ChatInput({
   const slashOpen = slashMatches.length > 0;
   const activeSlash = slashMatches[Math.min(slashIndex, slashMatches.length - 1)];
 
-  // Close the `/agent` picker on click-outside / Escape (same convention as Dropdown; the panel
-  // has no trigger button of its own, so the handling lives here). The `/model` picker is a
-  // Modal and closes itself — its overlay click and esc layer — so it is not handled here.
-  useEffect(() => {
-    if (!agentSwitchOpen) return;
-    // Dismissing the panel puts the caret back where the user was typing: the picker's search
-    // box stole the focus when it opened, and without this it would be left on <body>.
-    const closeAll = () => {
-      setAgentSwitchOpen(false);
-      textareaRef.current?.focus();
-    };
-    // globalThis.* event types: the React ones imported above would shadow the DOM ones here.
-    const onClick = (e: globalThis.MouseEvent) => {
-      const panel = agentSwitchRef.current;
-      if (panel && !panel.contains(e.target as Node)) closeAll();
-    };
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      // `isComposing`: Escape while an IME candidate list is up means "drop the candidates",
-      // not "close the picker". Closing there would be unrecoverable — the command already
-      // consumed its `/agent` token, so the user's remaining draft is all they have
-      // and the picker is the only way back to the pick they were making.
-      if (e.key === "Escape" && !e.isComposing) closeAll();
-    };
-    window.addEventListener("mousedown", onClick);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onClick);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [agentSwitchOpen]);
-
   /** Stage a model as the /model chip (null = drop it), keeping the draft cache in step. */
   const stageModel = (m: ModelInfo | null) => {
     setPendingModel(m);
@@ -1648,31 +1613,6 @@ export function ChatInput({
     }
     stageModel(null);
   };
-
-  // The menus above are drawn upward (`bottom-full`) from the composer, so their ceiling is
-  // whatever ancestor clips overflow — on the draft page that's the centered scroll area, whose
-  // top edge sits well below the viewport's. A static `40vh` cap can't know that distance and
-  // clipped the first rows on shorter windows, so measure the real gap when a menu opens.
-  useEffect(() => {
-    if (!slashOpen && !agentSwitchOpen) return;
-    const measure = () => {
-      const el = anchorRef.current;
-      if (!el) return;
-      let ceiling = 0;
-      for (let p = el.parentElement; p; p = p.parentElement) {
-        if (getComputedStyle(p).overflowY !== "visible") {
-          ceiling = p.getBoundingClientRect().top;
-          break;
-        }
-      }
-      // Less the menu's own 6px offset from the composer, plus a little breathing room.
-      const room = el.getBoundingClientRect().top - ceiling - 14;
-      setUpwardMaxH(Math.max(96, Math.min(320, Math.round(room))));
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [slashOpen, agentSwitchOpen]);
 
   /**
    * Auto-grow the textarea (caps at roughly 6 lines, scrolls internally beyond that). The
@@ -2268,7 +2208,8 @@ export function ChatInput({
       setOpen={setGoalBudgetEditorOpen}
       onEscape={cancelGoalBudget}
       className="min-w-0"
-      menuClass="bottom-full left-1/2 -ml-32 mb-2 w-64 max-w-[calc(100vw-2rem)] origin-bottom"
+      portal={{ direction: "up", align: "left" }}
+      menuClass="w-64 origin-bottom"
       button={
         <button
           type="button"
@@ -2341,24 +2282,49 @@ export function ChatInput({
   );
 
   return (
-    <div className="relative" ref={anchorRef}>
+    <div className="relative">
       {/* Drag-and-drop upload: mounted with the composer (chat page and draft page alike, and
           kept while a Task runs), so dropping works exactly when there is a composer to attach
           to — but bounded to the enclosing ChatDropRegion, so only the chat area reacts.
           Dropped files go through addDroppedFiles into the same intake as the "+" menu. */}
       {variant === "session" && <FileDropZone onFiles={addDroppedFiles} />}
-      {/* Slash command menu (triggered by typing /; /compact plus one entry per installed skill).
-          Height is capped to the room measured above the composer (see upwardMaxH) with internal
-          scrolling, so a long skill list never pushes the menu's top edge out of view; the active
-          row keeps itself scrolled into view. */}
-      {slashOpen && (
-        <SlashMenu
-          items={slashMatches.map((c) => ({ command: c.cmd, description: c.desc }))}
-          active={Math.min(slashIndex, slashMatches.length - 1)}
-          onActiveChange={setSlashIndex}
-          onRun={(i) => slashMatches[i]?.run()}
-          maxHeight={upwardMaxH}
-        />
+      {(slashOpen || agentSwitchOpen) && (
+        <Dropdown
+          button={null}
+          open
+          anchorElement={textareaRef}
+          returnFocus={() => textareaRef.current}
+          portal={{ direction: "up", align: "left" }}
+          focusOnOpen={agentSwitchOpen}
+          menuClass="w-80 overscroll-contain"
+          setOpen={() => {
+            if (agentSwitchOpen) {
+              setAgentSwitchOpen(false);
+              textareaRef.current?.focus();
+            } else {
+              setSlashDismissed(slashTok?.start ?? null);
+            }
+          }}
+        >
+          {agentSwitchOpen ? (
+            <>
+              <MenuTitle>{S.chat.switchAgentTitle}</MenuTitle>
+              <AgentMenuList
+                agents={agents}
+                {...(currentAgentId !== undefined ? { currentAgentId } : {})}
+                onPick={pickHandoffTarget}
+                avatarSrc={(agentId) => avatarSrc(agentId, agentsMachineId)}
+              />
+            </>
+          ) : (
+            <SlashMenuRows
+              items={slashMatches.map((c) => ({ command: c.cmd, description: c.desc }))}
+              active={Math.min(slashIndex, slashMatches.length - 1)}
+              onActiveChange={setSlashIndex}
+              onRun={(i) => slashMatches[i]?.run()}
+            />
+          )}
+        </Dropdown>
       )}
 
       {/* /model handoff picker (session state): the same model-picker dialog the draft's model
@@ -2377,20 +2343,6 @@ export function ChatInput({
           {...(defaultModel !== undefined ? { defaultModel } : {})}
           onPick={pickSwitchModel}
         />
-      )}
-
-      {/* /agent handoff picker (title bar + search box + capped list + keyboard navigation),
-          with the same staged semantics as /model — the pick becomes the target chip, and
-          sending is what hands the conversation over. */}
-      {agentSwitchOpen && (
-        <SlashPicker ref={agentSwitchRef} maxHeight={upwardMaxH} title={S.chat.switchAgentTitle}>
-          <AgentMenuList
-            agents={agents}
-            {...(currentAgentId !== undefined ? { currentAgentId } : {})}
-            onPick={pickHandoffTarget}
-            avatarSrc={(agentId) => avatarSrc(agentId, agentsMachineId)}
-          />
-        </SlashPicker>
       )}
 
       {/* A setting needs changing (`composerNotice` says which). Amber rather than muted
