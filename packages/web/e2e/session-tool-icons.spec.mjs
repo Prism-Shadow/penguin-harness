@@ -45,6 +45,7 @@ for (const [name, width, themeId, themeMode] of [
       const filesTile = catalog.locator('li[data-app="system_agent/session-tools-workspace"]');
       await expect(filesTile).toHaveCount(0);
       const ids = [];
+      const drawer = page.getByRole("banner").getByRole("button", { name: /^Sessions/ });
       for (let i = 0; i < 2; i++) {
         const created = await page.request.post(project + "/agents/default_agent/sessions", {
           data: {},
@@ -56,11 +57,7 @@ for (const [name, width, themeId, themeMode] of [
         // Use the workspace row for an in-app navigation so the first running tool stays mounted.
         if (id === ids[0]) await page.goto("/chat/" + id);
         else {
-          if (name === "phone")
-            await page
-              .getByRole("banner")
-              .getByRole("button", { name: /^Sessions/ })
-              .click();
+          if (name === "phone") await drawer.click();
           await page
             .locator('[data-session-id="' + id + '"]:visible')
             .first()
@@ -110,16 +107,21 @@ for (const [name, width, themeId, themeMode] of [
         await expect(tab).toBeVisible();
         expect(await line(tab).first().innerHTML()).toBe(shortcutsByKind.get("terminal"));
       }
-      if (name === "phone")
-        await page
-          .getByRole("banner")
-          .getByRole("button", { name: /^Sessions/ })
-          .click();
+      if (name === "phone") await drawer.click();
       const running = page.getByRole("navigation", { name: "Apps", exact: true });
-      await expect(mark(running, "terminal")).toHaveCount(2);
-      for (const row of await mark(running, "terminal").all()) {
-        expect(await row.locator("svg").innerHTML()).toBe(marks.get("terminal"));
-      }
+      await expect(mark(running, "terminal")).toHaveCount(0);
+      await page.getByRole("link", { name: /^App Center(?: ·|$)/ }).click();
+      await catalog
+        .locator('li[data-app="system_agent/session-tools-terminal"] > button')
+        .first()
+        .click();
+      await expect(
+        page.getByRole("searchbox", { name: "Search Sessions with open terminals" }),
+      ).toBeVisible();
+      if (name === "phone") await drawer.click();
+      const terminalMark = mark(running, "terminal");
+      await expect(terminalMark).toBeVisible();
+      expect(await terminalMark.locator("svg").innerHTML()).toBe(marks.get("terminal"));
     });
   });
 }

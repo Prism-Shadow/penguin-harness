@@ -399,12 +399,12 @@ function FloatingLauncher({
     key: entry.key,
     label: entry.label,
     glyphAt: (size) => (
-        <GlyphIcon
-          d={entry.glyph}
-          size={size}
-          className={entry.key === "hide" ? toneInk.muted : undefined}
-        />
-      ),
+      <GlyphIcon
+        d={entry.glyph}
+        size={size}
+        className={entry.key === "hide" ? toneInk.muted : undefined}
+      />
+    ),
     badge: entry.key === "agents" && agentsPending,
     testId: entry.key === "hide" ? "dock-launcher-hide" : `dock-launcher-open-${entry.key}`,
     choose: () => {
