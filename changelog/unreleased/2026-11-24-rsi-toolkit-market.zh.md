@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** Server, CLI, Desktop
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1804
 
 [English](2026-11-24-rsi-toolkit-market.md)
 
