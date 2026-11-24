@@ -702,6 +702,8 @@ describe("penguin org ticket (writes carry the calling session)", () => {
         "create",
         "--title",
         "Orphan",
+        "--goal",
+        "Nobody holds me",
         "--parent",
         "ticket-2026-09-02-missing",
       ]),
