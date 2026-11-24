@@ -27,16 +27,23 @@ for (const [lang, headline, subtitle, apps, steps] of [
       });
       await page.addInitScript((lang) => localStorage.setItem("penguin-site.lang", lang), lang);
       await page.goto("/");
-      await expect(page.getByRole("heading", { level: 1 })).toHaveText(headline);
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText("PenguinHarness");
+      await expect(page.locator(".hero-positioning")).toHaveText(headline);
       await expect(page.locator(".hero-automation")).toHaveText(subtitle);
       const backdrop = page.locator(".neon-bg");
       await expect(backdrop).toHaveCSS("pointer-events", "none");
       await expect(backdrop.locator(".neon-blob").first()).toHaveCSS("animation-name", "none");
-      const metrics = page.locator("main section").first().locator("ul").first().getByRole("link");
-      await expect(metrics).toHaveCount(3);
-      for (const metric of await metrics.all()) await expect(metric).toHaveText(/^[1-9]\d*/);
-      await expect(metrics.nth(1)).toHaveAttribute("href", "/plugins");
-      await expect(metrics.nth(2)).toHaveAttribute("href", "/benchmarks");
+      const hero = page.locator("main section").first();
+      const features = hero.locator("dl").first();
+      await expect(features.locator("dd")).toHaveCount(3);
+      await expect(features.locator("dd").last()).toHaveText(
+        lang === "en" ? "First self-improving harness" : "首个自进化 Harness",
+      );
+      const catalogue = hero.locator("dl").nth(1);
+      await expect(catalogue.locator("dt")).toHaveCount(3);
+      for (const metric of await catalogue.locator("dt").all())
+        await expect(metric).toHaveText(/^[1-9]\d*/);
+      await expect(catalogue.locator('a[href="https://arxiv.org/abs/2309.03409"]')).toBeVisible();
       await expect(page.locator("main video")).toHaveCount(0);
       await expect(page.getByRole("button", { name: /Play demo|播放演示/ }).first()).toBeVisible();
       const watcha = page.locator('a[href="https://watcha.cn/products/penguinharness"]');
@@ -51,7 +58,7 @@ for (const [lang, headline, subtitle, apps, steps] of [
       expect(right.x + right.width).toBeLessThanOrEqual(width);
       for (const app of apps)
         await expect(page.locator("#cases figure").getByText(app, { exact: true })).toBeVisible();
-      const loops = page.locator("#self-evolution figure").first();
+      const loops = page.locator("#self-evolution figure").filter({ has: page.locator("dl") });
       for (const [target, suite, algorithm] of [
         [apps[0], "rag-bench-essential", "OPRO"],
         [lang === "en" ? "Software engineering" : "软件工程", "deep-swe", "ACE"],
