@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PenguinHarness Support</title>
+    <link rel="stylesheet" href="/workbench-ui.css" />
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <main class="page">
+      <header class="page-header">
+        <h1 data-copy="title"></h1>
+        <button id="new" class="wb-primary" data-copy="newTicket"></button>
+      </header>
+      <div class="filters">
+        <input id="search" type="search" aria-label="Search questions" />
+        <select id="filter" aria-label="Status">
+          <option value="all" data-copy="all"></option>
+          <option value="open" data-copy="open"></option>
+          <option value="running" data-copy="running"></option>
+          <option value="answered" data-copy="answered"></option>
+          <option value="resolved" data-copy="resolved"></option>
+          <option value="failed" data-copy="failed"></option>
+        </select>
+      </div>
+      <p id="page-error" role="alert" hidden></p>
+      <ul id="list" aria-label="Questions"></ul>
+      <footer>
+        <select id="locale" aria-label="Language">
+          <option value="en">English</option>
+          <option value="zh">中文</option>
+        </select>
+      </footer>
+    </main>
+
+    <dialog id="dialog" aria-labelledby="dialog-title">
+      <header class="dialog-header">
+        <h2 id="dialog-title" tabindex="-1"></h2>
+        <button id="close" type="button" aria-label="Close">×</button>
+      </header>
+      <div class="dialog-body">
+        <p id="dialog-error" role="alert" hidden></p>
+        <form id="create" hidden>
+          <label>
+            <span data-copy="question"></span>
+            <textarea name="text" maxlength="20000" rows="5" required></textarea>
+          </label>
+          <div class="actions">
+            <button type="button" id="cancel" data-copy="cancel"></button>
+            <button id="submit" type="submit" class="wb-primary" data-copy="submit"></button>
+          </div>
+        </form>
+        <section id="ticket" hidden>
+          <p id="status" role="status" class="muted"></p>
+          <p id="waiting" class="muted" hidden></p>
+          <div id="messages"></div>
+          <div class="actions">
+            <button id="resolve" type="button"></button>
+            <button id="retry" type="button" data-copy="retry" hidden></button>
+          </div>
+          <form id="followup">
+            <label>
+              <span data-copy="followup"></span>
+              <textarea name="text" maxlength="20000" rows="3" required></textarea>
+            </label>
+            <div class="actions">
+              <button class="wb-primary" data-copy="send"></button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </dialog>
+  </body>
+</html>
