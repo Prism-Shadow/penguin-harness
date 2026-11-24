@@ -3,6 +3,8 @@ import {
   useCallback,
   useContext,
   useRef,
+  useLayoutEffect,
+  useState,
   type ComponentType,
   type ReactNode,
   type RefObject,
@@ -16,7 +18,7 @@ import {
   fullscreenDock,
   type DockPosition,
 } from "./dock-state";
-import { usePanelWidthValue } from "./use-panel-width";
+import { dockWidthFor, usePanelWidthValue } from "./use-panel-width";
 import type { DockMount } from "./use-dock-mount";
 
 export interface PanelBodyProps {
@@ -34,6 +36,12 @@ interface PanelContainers {
   nodes: Map<string, HTMLElement>;
   parking: RefObject<HTMLDivElement | null>;
 }
+const AreaWidth = createContext<number | null>(null);
+
+export function useDockAreaWidth() {
+  return useContext(AreaWidth);
+}
+
 const Containers = createContext<PanelContainers | null>(null);
 
 function place(container: HTMLElement, slot: HTMLElement) {
@@ -73,14 +81,31 @@ export function DockPanelArea({
   mounts,
   sessionId,
   Body,
+  toolbar,
+  right,
   children,
 }: {
   mounts: DockMount[] | null;
   sessionId: string | null;
   Body: ComponentType<PanelBodyProps>;
+  toolbar: ReactNode;
+  right: ReactNode;
   children: ReactNode;
 }) {
-  const width = usePanelWidthValue();
+  const preferred = usePanelWidthValue();
+  const area = useRef<HTMLDivElement>(null);
+  const [hostWidth, setHostWidth] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const element = area.current;
+    if (!element) return;
+    const measure = () => setHostWidth(element.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const width = hostWidth === null ? preferred : dockWidthFor(preferred, hostWidth);
   const page = useContext(PageIdentity);
   const parking = useRef<HTMLDivElement>(null);
   const pool = useRef<PanelContainers>({ nodes: new Map(), parking }).current;
@@ -126,14 +151,26 @@ export function DockPanelArea({
   }
   return (
     <Containers.Provider value={pool}>
-      <div data-dock-area data-right-dock-width={width} className="flex min-h-0 flex-1 flex-col">
-        <div ref={parking} hidden />
-        {children}
-        {[...placements.values()].map((props) => {
-          const node = pool.nodes.get(props.id);
-          return node ? createPortal(<Body {...props} />, node, props.id) : null;
-        })}
-      </div>
+      <AreaWidth.Provider value={hostWidth}>
+        <div
+          ref={area}
+          data-dock-area
+          data-dock-row
+          data-right-dock-width={width}
+          className="flex min-h-0 min-w-0 flex-1"
+        >
+          <div ref={parking} hidden />
+          <div data-session-column className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {toolbar}
+            {children}
+          </div>
+          {right}
+          {[...placements.values()].map((props) => {
+            const node = pool.nodes.get(props.id);
+            return node ? createPortal(<Body {...props} />, node, props.id) : null;
+          })}
+        </div>
+      </AreaWidth.Provider>
     </Containers.Provider>
   );
 }

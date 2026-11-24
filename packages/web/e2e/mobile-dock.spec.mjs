@@ -13,7 +13,7 @@ import { provisionAndLogin } from "./auth.mjs";
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
 
-test.use({ viewport: { width: 412, height: 915 } });
+test.use({ viewport: { width: 375, height: 812 }, hasTouch: true });
 
 test("mobile merged dock: workspace opens at the bottom → nested dir → md rendered preview → × hides", async ({
   page,
@@ -69,6 +69,34 @@ test("mobile merged dock: workspace opens at the bottom → nested dir → md re
   // Drill into the directory → open the md → default rendered view (h1 shown, not source).
   await dock.getByText("notes").first().click();
   await dock.getByText("demo.md").first().click();
+  await expect(dock.getByRole("heading", { name: "Sheet Heading" })).toBeVisible();
+
+  // The same open file stays in the merged dock through a touch drag beyond its upper bound.
+  const divider = await dock.getByTestId("dock-resizer").boundingBox();
+  const touch = await page.context().newCDPSession(page);
+  const x = Math.round(divider.x + divider.width / 2);
+  const y = Math.round(divider.y + divider.height / 2);
+  await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+  for (const top of [y - 12, y - 32, 1])
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x, y: top }],
+    });
+  await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await touch.detach();
+  await expect(dock).not.toHaveAttribute("data-fullscreen");
+  await expect(dock.getByRole("heading", { name: "Sheet Heading" })).toBeVisible();
+  await expect(page).toHaveURL(`${BASE}/chat/${sessionId}`);
+  const toolbar = page.locator("[data-session-toolbar]");
+  expect((await dock.boundingBox()).y).toBeGreaterThan(
+    (await toolbar.boundingBox()).y + (await toolbar.boundingBox()).height,
+  );
+  await dock.getByTestId("dock-fullscreen").tap();
+  await expect(dock).toHaveAttribute("data-fullscreen", "full");
+  await dock.getByTestId("dock-fullscreen").tap();
+  await expect(dock).not.toHaveAttribute("data-fullscreen");
+  await page.setViewportSize({ width: 1023, height: 850 });
+  await expect(page.locator('[data-testid="dock"][data-position="right"]')).toHaveCount(0);
   await expect(dock.getByRole("heading", { name: "Sheet Heading" })).toBeVisible();
 
   // The dock's × puts the surface away; the toolbar toggle reads closed again.

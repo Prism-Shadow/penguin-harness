@@ -18,15 +18,8 @@
  * so the conversation measures the same under every surface).
  *
  * A surface can go FULLSCREEN — grown as far as its own edge goes, which is the element the
- * caller names: the right dock's row (the conversation beside it; the toolbar above and the
- * bottom dock below stay in view), the bottom dock's area up to the toolbar (the row and itself,
- * over the right dock). The box in the flow keeps its size as a placeholder — the conversation
- * beside or above it does not reflow, so nothing under the cover scrolls or refits — and only the
- * content box inside it lifts off (`fixed`, on the `dock` layer); the bodies are the same
- * elements, so a terminal, a file preview or an editor draft carries over untouched. The resize
- * handle moves to the lifted box's LEADING edge (the right dock's left, the bottom dock's top),
- * where a pull back inward is the way out by drag, while the placeholder keeps the handle's
- * footprint without a second bar; the header's own toggle is the other way back.
+ * caller names. The box in the flow keeps its size while its content lifts; the terminal,
+ * file preview or editor draft stays mounted. Only a docked surface offers a resize handle.
  *
  * The flip is the theme's layout motion, in three phases the root announces as
  * `data-fullscreen` (absent in the flow): ENTERING lifts the box at its docked rect and sends it
@@ -53,7 +46,6 @@ import type {
 } from "react";
 import { layer } from "../../../layers";
 import { WallpaperLayer } from "../app-shell/wallpaper";
-import { RESIZE_HANDLE_PX } from "../../layout/resize-handle/resize-handle";
 
 export type DockEdge = "right" | "bottom";
 
@@ -453,45 +445,9 @@ export function DockFrame({
   const lifted = phase !== "docked";
   const moving = animate && (phase === "entering" || phase === "exiting");
 
-  // The handle's seat. In the flow the seat is `display: contents`, so the handle lays itself out
-  // as the caller placed it: the right dock's as the one item of the spacer before the root — the
-  // spacer, not the handle, is what costs the row its `RESIZE_HANDLE_PX`, so the footprint stays
-  // while the handle is away — and the bottom dock's as the overlay straddling the root's top
-  // edge. Lifted, the seat is a fixed box on the lifted surface's LEADING edge, where a pull back
-  // inward is the way out: a band straddling the right dock's left edge for the handle to fill, a
-  // zero-height line along the bottom dock's top edge for the overlay handle to straddle as it
-  // straddles the root's. It sits on the `dock-handle` layer, above the surface's `dock` (the box
-  // comes later in the tree, so one layer for both would paint it over the handle), and follows
-  // the box's rect, with the box's
-  // layout motion while it moves. The SEAT changes, never the handle: one element through every
-  // phase, so a drag that began on it in the flow goes on when the snap lifts the surface
-  // mid-gesture — a remounted handle would keep the pointer's capture and never report the
-  // release that ends the drag. There is one handle at a time.
-  const seatStyle: CSSProperties | undefined =
-    lifted && box !== null
-      ? position === "right"
-        ? {
-            top: box.top,
-            left: box.left - RESIZE_HANDLE_PX / 2,
-            width: RESIZE_HANDLE_PX,
-            height: box.height,
-            zIndex: layer("dock-handle"),
-          }
-        : {
-            top: box.top,
-            left: box.left,
-            width: box.width,
-            height: 0,
-            zIndex: layer("dock-handle"),
-          }
-      : undefined;
-  const seatClass =
-    seatStyle === undefined ? "contents" : position === "right" ? "fixed flex" : "fixed";
-  const seat = open ? (
-    <div data-layout-motion={moving ? "" : undefined} style={seatStyle} className={seatClass}>
-      {handle}
-    </div>
-  ) : null;
+  // A fullscreen surface has no resizable boundary. Its in-flow placeholder still reserves
+  // the divider width so the covered conversation and its draft keep their layout.
+  const seat = open && !lifted ? handle : null;
 
   // Lifted: a fixed box at the rect the phase machine gives it, transitioning its place and size
   // through the theme's layout motion while it enters or exits, clipping what the inside lays out
@@ -567,7 +523,7 @@ export function DockFrame({
   return (
     <>
       {/* The spacer: `w-1.5` is RESIZE_HANDLE_PX, the width the handle costs the row. */}
-      {seat !== null && <div className="flex w-1.5 shrink-0">{seat}</div>}
+      {open && <div className="flex w-1.5 shrink-0">{seat}</div>}
       <div
         ref={rootRef}
         data-testid="dock"
