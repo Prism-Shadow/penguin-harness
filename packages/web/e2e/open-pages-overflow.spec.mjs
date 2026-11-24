@@ -99,7 +99,14 @@ test("many visited conversations and repeated launches use only their own sideba
   await expect(apps(page).getByRole("listitem")).toHaveCount(1);
   const workspace = (id) => page.locator(`button[data-session-id="${id}"]:visible`);
   await expect(side.locator("button[data-session-id]")).toHaveCount(sessions.length);
-  await fromRow(page, workspace(first.id), "Open on the left");
+  await workspace(first.id).click();
+  const chat = slot(page, first.key);
+  await chat.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await chat.getByRole("button", { name: "Open App Center", exact: true }).click();
+  await page
+    .locator('[data-workspace-page="catalog"] li[data-app="system_agent/models"] > button')
+    .first()
+    .click();
   await expect(slot(page, first.key)).toHaveAttribute("data-pane", "left");
   await expect(slot(page, "app:system_agent/models")).toHaveAttribute("data-pane", "right");
   await expect(slot(page, first.key).locator(composer)).toHaveValue("A draft from the first page");
@@ -167,7 +174,9 @@ test("sidebar minimize restores the same workbench and close ends its frame", as
   await fromRow(page, target, "Close");
   await expect(slot(page, appKey)).toHaveCount(0);
   expect(original.isDetached()).toBe(true);
-  await expect(page.locator(`button[data-session-id="${notes.id}"]`)).toHaveCount(1);
+  const source = page.locator(`button[data-session-id="${notes.id}"]`);
+  await expect(source).toHaveCount(1);
+  await source.click();
   await expect(chat.locator(composer)).toHaveValue("Keep this triage note");
   await expect(page.getByRole("tab", { name: "App Center", exact: true })).toHaveAttribute(
     "aria-selected",

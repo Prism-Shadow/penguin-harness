@@ -4,7 +4,7 @@ Your Agents see and operate the apps on your computer's desktop with `penguin co
 
 ## Install
 
-1. PenguinHarness ships **Computer Use**. An administrator can enable its server module in Settings → Plugins. The plugin then downloads agent-desktop 1.3.1 from the npm registry of **Plugin Sources** (then its npm registry mirror, when chosen; an address is given up only after 30 s without data), checks it against the digests pinned in this package, and keeps only this machine's program, under `<data root>/cache/computer-use/`.
+1. PenguinHarness ships **Computer Use**. An administrator selects **Enable server module** in the plugin market to load it for the current Project. The plugin then downloads agent-desktop 1.3.1 from the npm registry of **Plugin Sources** (then its npm registry mirror, when chosen; an address is given up only after 30 s without data), checks it against the digests pinned in this package, and keeps only this machine's program, under `<data root>/cache/computer-use/`.
 2. Install the plugin on an Agent (its Plugins tab). The Agent gets the `computer-use` Skill.
 3. Check **Settings → Plugins → Computer Use**: it shows agent-desktop's state and what this machine still needs.
 
@@ -14,7 +14,7 @@ Your Agents see and operate the apps on your computer's desktop with `penguin co
 | Windows 10 1809+ | The server running on the signed-in user's desktop (not as a service, over SSH or in Session 0); the Visual C++ runtime. |
 | Linux (glibc 2.35+) | A desktop session: its display, session bus and accessibility bus, and a window manager. On Wayland there is no pointer input. |
 
-A machine that cannot reach the npm registry can point **agent-desktop program path** (an advanced setting) at a program installed by other means. Installing the plugin itself from the market or a zip runs npm on the server machine (the desktop app does not bring npm of its own yet). The package has no dependencies and no install scripts.
+A machine that cannot reach the npm registry can point **agent-desktop program path** (an advanced setting) at a program installed by other means. The server uses the bundled plugin without npm. A machine with Computer Use switched off keeps it off until an administrator enables it in Settings. The package has no dependencies and no install scripts.
 
 ## Who may use it
 

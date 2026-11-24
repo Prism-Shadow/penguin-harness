@@ -19,12 +19,12 @@ import { computerUseStatus } from "../src/status.js";
 
 function card(
   state: InstallState,
-  opts: { platform?: NodeJS.Platform; probe?: ProbeResult | null } = {},
+  opts: { platform?: NodeJS.Platform; probe?: ProbeResult | null; enabled?: boolean } = {},
 ) {
   const service = {
     pin: { version: "1.3.1" },
     platform: opts.platform ?? "linux",
-    settings: () => ({ enabled: true }),
+    settings: () => ({ enabled: opts.enabled ?? true }),
     refresh: async () => {},
     state: () => state,
   };
@@ -54,6 +54,20 @@ describe("the status page's report", () => {
     expect(failed.version!.text).toContain("agent-desktop program path");
     expect(failed.version!.text).not.toContain("no data arrived");
     expect(failed.summary?.state).toBe("attention");
+  });
+
+  it("reports the device switch when a stale download or retry is submitted", async () => {
+    for (const state of [
+      { kind: "missing" },
+      { kind: "failed", at: 0, message: "offline" },
+    ] as const) {
+      const status = card(state, { enabled: false });
+      expect(status.actions()).toEqual([]);
+      expect(await status.run("install")).toMatchObject({
+        ok: false,
+        message: "Computer Use is off.",
+      });
+    }
   });
 
   it("shows an install in progress as preparing, with its progress", () => {
