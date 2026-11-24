@@ -9,7 +9,8 @@
  *   Install opens the flow on step 1 of 2: it says what installing on the server does, and its
  *   button hands the install to the page; while it runs the step shows its words and a bar; a
  *   failure stays on the step with the next steps (Plugin Sources, a zip import, dismiss).
- * - Given the same plugin, a member's flow ends at step 1: it asks an admin and says it did.
+ * - Members can request an Agent package or an unread release, from the card or its detail.
+ *   A request never runs the server install or opens the Agent chooser.
  * - A prepared plugin opens at agent selection. Only the chosen copy is added or removed.
  * - Given a module the build ships that another Project's shared table lists, the detail's
  *   Disable server module is held and described by the shared tag and its hint.
@@ -125,6 +126,7 @@ describe("the flow of a plugin not on the server", () => {
     await show(props({ onInstallServer }));
     await click(installControl(en.skills.install)!);
     expect(dialog()!.querySelector('[role="progressbar"]')).toBeNull();
+    expect(dialog()!.textContent).toMatch(/all projects on this server/i);
     expect(dialog()!.textContent).toContain(words.prepareForAgents);
     await click(buttonWithText(words.installServer)!);
     expect(onInstallServer).toHaveBeenCalledOnce();
@@ -139,6 +141,7 @@ describe("the flow of a plugin not on the server", () => {
       const row = { ...marketRow, module: { ...marketRow.module!, entry } };
       const page = await show(props({ row }));
       await click(installControl(en.skills.install)!);
+      expect(dialog()!.textContent).toMatch(/all projects on this server/i);
       expect(dialog()!.textContent).toContain(known ? words.prepareService : words.preparePackage);
       expect(dialog()!.querySelector("input[type=radio]")).toBeNull();
       await page.unmount();
@@ -170,16 +173,34 @@ describe("the flow of a plugin not on the server", () => {
     expect(p.onDismissFailure).toHaveBeenCalledOnce();
   });
 
-  it("ends a member's at step 1: it asks an admin, and says it did", async () => {
-    const onAskAdmin = vi.fn(async () => undefined);
-    await show(props({ isAdmin: false, onAskAdmin }));
-    await click(installControl(en.skills.install)!);
-    expect(dialog()!.textContent).toContain(words.askBody);
-    expect(buttonWithText(words.installServer)).toBeUndefined();
-    await click(buttonWithText(words.askAdmin)!);
-    expect(onAskAdmin).toHaveBeenCalledOnce();
-    expect(dialog()!.textContent).toContain(words.asked);
-  });
+  it.each(["archive", "published card", "published detail"])(
+    "lets a member request a package from its %s",
+    async (entryPoint) => {
+      const onAskAdmin = vi.fn(async () => undefined);
+      const onInstallServer = vi.fn();
+      const { offline: _offline, ...published } = ENTRY;
+      const row =
+        entryPoint === "archive"
+          ? marketRow
+          : { ...marketRow, module: { ...marketRow.module!, entry: published } };
+      await show(props({ row, isAdmin: false, onAskAdmin, onInstallServer }));
+      if (entryPoint === "published detail") {
+        await click(document.querySelector<HTMLElement>(".showcase-card-open")!);
+        await click(buttonNamed(`${words.askAdmin} computer-use`)!);
+      } else {
+        await click(installControl(en.skills.install)!);
+      }
+      const flow = [...document.querySelectorAll('[role="dialog"]')].at(-1)!;
+      expect(flow.textContent).toContain(words.askBody);
+      expect(buttonWithText(words.installServer, flow)).toBeUndefined();
+      expect(buttonWithText(words.uninstallServer, flow)).toBeUndefined();
+      await click(buttonWithText(words.askAdmin, flow)!);
+      expect(onAskAdmin).toHaveBeenCalledOnce();
+      expect(onInstallServer).not.toHaveBeenCalled();
+      expect(flow.textContent).toContain(words.asked);
+      expect(flow.querySelector("[type=radio]")).toBeNull();
+    },
+  );
 });
 
 describe("a plugin on the server", () => {

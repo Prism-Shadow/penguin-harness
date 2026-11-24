@@ -22,7 +22,7 @@ export type ServerStep =
   | "install"
   /** A server module the build ships, not run by this Project yet: an admin enables it. */
   | "enable"
-  /** Not on the server, with Agent content: a member asks an admin. */
+  /** Not on the server, with Agent content or unread contents: a member asks an admin. */
   | "ask"
   /** Not on the server, server modules alone: a member cannot act. */
   | "held"
@@ -163,7 +163,9 @@ export function InstallFlow(props: InstallFlowProps) {
 
             {(props.server === "install" || props.server === "enable") && (
               <details className="text-xs text-fg-muted">
-                <summary className="cursor-pointer">{words.installDetails}</summary>
+                <summary tabIndex={0} className="cursor-pointer">
+                  {words.installDetails}
+                </summary>
                 <p className="mt-1">{S.plugins.applyConfirmWarning(true)}</p>
               </details>
             )}

@@ -13,8 +13,8 @@
  *   「新建空白 Agent」, opens Create Agent over it prefilled with the plugin, and the Agent it
  *   creates joins the list installed while the list stays open;
  * - Quick invoke is gated on the currently selected agent having the skill installed (here the
- *   current agent is default_agent; its button is disabled for a preinstall:false skill like
- *   company-setup the current agent lacks);
+ *   current agent is default_agent; the fixture removes agent-company, so its quick
+ *   action is disabled);
  * - "Quick invoke" navigates to /chat/new (default_agent), **prefilling** the invoke text in the
  *   UI language and preselecting its declared skill — the toolbar's skill dropdown
  *   button shows a count badge of 1, and that item shows as selected in the menu;
@@ -102,9 +102,15 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  // The install target for "Install on Agent": default_agent has all skills preinstalled, so use a blank Agent to exercise the install/uninstall flow.
+  // Keep Agent Company absent from the current Agent and give the chooser a blank target.
+  const defaultPlugins = BASE + "/api/projects/" + projectId + "/agents/default_agent/plugins";
+  const state = await (await page.request.get(defaultPlugins)).json();
+  if (state.skills.some((skill) => skill.name === "company-setup")) {
+    const removed = await page.request.delete(defaultPlugins + "/agent-company");
+    expect(removed.ok(), await removed.text()).toBe(true);
+  }
   const created = await page.request.post(`${BASE}/api/projects/${projectId}/agents`, {
-    data: { agentId: "agent_helper", name: "Helper Agent" },
+    data: { agentId: "agent_helper", name: "Helper Agent", defaultPlugins: false },
   });
   expect(created.ok(), "create helper agent").toBeTruthy();
 
@@ -136,10 +142,7 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   const brief = plugins.find((item) => item.name === "data-analysis").quickStart.promptZh;
   expect(brief).toBeTruthy();
 
-  // Quick invoke opens a draft on the currently selected Agent (default_agent here), so it's
-  // gated on that Agent having one of the plugin's skills: default_agent ships every preinstalled
-  // plugin (data-analysis is enabled), while company-setup is preinstall:false and
-  // absent from it, so its button is disabled.
+  // The current Agent has Data Analysis. Agent Company is in the market but absent from the Agent.
   await expect(page.getByRole("button", { name: "快速调用 · 数据分析" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "快速调用 · 智能体公司" })).toBeDisabled();
 

@@ -3275,22 +3275,23 @@ export const en: Strings = {
       installDetails: "How this affects the server",
       chooseAgent: "Choose an agent",
       chooseAgentHelp: "Choose who will use this plugin. You can add it to more than one agent.",
-      prepareForAgents: "Install one copy on this server. Then choose which agents can use it.",
-      preparePackage: "Install one copy on this server to make the plugin available here.",
+      prepareForAgents:
+        "All projects on this server share one copy. After installation, choose which agents can use it.",
+      preparePackage:
+        "All projects on this server share one copy. Install the plugin to see what it provides.",
       prepareService:
-        "Install this service on the server. This plugin works without adding it to an agent.",
+        "All projects on this server share one copy. This service runs without an agent installation.",
       projectServiceOff: "This project’s service is off. You can still add the plugin to an agent.",
       projectReady: "The plugin’s service is enabled for this project.",
       projectServiceHelp:
         "The plugin is already on this server. Enable its service for this project.",
+      add: "Add",
       addToAgent: (name: string) => `Add to ${name}`,
       addedToAgent: "Added",
       serverDone: (name: string) => `${name} is on the server, shared by every Project.`,
-      askBody:
-        "It is not on the server yet: ask an admin to install it there; once it is, install it on your Agents.",
+      askBody: "Ask an admin to install the shared copy for all projects on this server.",
       askAdmin: "Ask an admin to install",
-      asked:
-        "An admin has been asked to install it. Once it is on the server, come back here to install it on your Agents.",
+      asked: "Your installation request has been sent to the administrator.",
       finish: "Done",
       checking: "Checking the plugin source…",
       installing: "Installing…",

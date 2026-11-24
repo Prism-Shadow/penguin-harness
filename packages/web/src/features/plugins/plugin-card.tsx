@@ -126,6 +126,12 @@ import { PluginUpdateParts } from "./plugin-update-parts";
 import { BlankAgentDialog, BlankAgentRow, type BlankAgentSource } from "./blank-agent";
 import { toastApiError } from "../../lib/toast-api-error";
 
+/** The same target names the selected action and its confirmation. */
+function installTargetLabel(name: string, id: string | null, machine: string | null): string {
+  const label = id === null ? name : `${name} (${id})`;
+  return machine === null ? label : `${label} ${S.chat.machineTag(machine)}`;
+}
+
 /** The install control's icon: the arrow landing in its tray. */
 const INSTALL_ICON = ICONS.download;
 
@@ -303,13 +309,27 @@ export function PluginCard(props: PluginCardProps) {
   const [pendingStdio, setPendingStdio] = useState<string | null>(null);
   // Agent whose Set up form is open (null = none).
   const [setUpAgent, setSetUpAgent] = useState<string | null>(null);
+  // Count names only for an open chooser or confirmation, not for every card in the market.
+  const duplicateNames = new Set<string>();
+  if (installOpen || pendingUpdate !== null) {
+    const seen = new Set<string>();
+    for (const { agent } of targets) {
+      const name = agentDisplayName(agent);
+      if (seen.has(name)) duplicateNames.add(name);
+      seen.add(name);
+    }
+  }
   const targetOf = (key: string) => targets.find((t) => t.key === key);
   /** An install target's name, its machine after it as the dialog lists it. */
   const nameOf = (key: string) => {
     const target = targetOf(key);
     if (target === undefined) return key;
     const name = agentDisplayName(target.agent);
-    return target.machine === null ? name : `${name} ${S.chat.machineTag(target.machine.label)}`;
+    return installTargetLabel(
+      name,
+      duplicateNames.has(name) ? target.agent.agentId : null,
+      target.machine?.label ?? null,
+    );
   };
   /** Where an install on these targets runs commands: the one machine they share, or this server. */
   const machineOf = (keys: readonly string[]): string | undefined => {
@@ -347,6 +367,7 @@ export function PluginCard(props: PluginCardProps) {
     plugin === undefined && !builtIn && row.module?.entry?.offline?.library === true;
   /** It has something for Agents: two steps; a plugin of server modules alone has one. */
   const agentContent = (plugin !== undefined && agentInstallable(plugin)) || preServerAgent;
+  const contentsKnown = plugin !== undefined || builtIn || row.module?.entry?.offline !== undefined;
   // An Agent can already have a shipped Skill while its Project has yet to list the module.
   const shippedHybrid = plugin?.modules === true && row.module?.shipped === true;
   /** The flow's server step, for this plugin and this reader. */
@@ -358,9 +379,20 @@ export function PluginCard(props: PluginCardProps) {
     if (plugin !== undefined || onServer || (builtIn && row.module?.state !== "none"))
       return "done";
     if (props.isAdmin) return builtIn ? "enable" : "install";
-    return !builtIn && agentContent ? "ask" : "held";
+    return !builtIn && (agentContent || !contentsKnown) ? "ask" : "held";
   }
   const serverStep = installServerStep();
+
+  function manageLabel(): string {
+    if (serverStep === "ask") return S.plugins.installModel.askAdmin;
+    if (serverStep === "enable") {
+      return shippedHybrid ? S.skills.install : S.plugins.installModel.enableModule;
+    }
+    if (agentContent) return S.plugins.installModel.installAgent;
+    return serverStep === "done"
+      ? S.plugins.marketServerInstalled
+      : S.plugins.installModel.installServer;
+  }
 
   const confirmUpdate = async () => {
     if (pendingUpdate === null || plugin === undefined) return;
@@ -429,16 +461,7 @@ export function PluginCard(props: PluginCardProps) {
     }
     // The one install control: the flow, on the server's step while the plugin is not there. A
     // member's, for a plugin of server modules alone, is held, saying why.
-    const installWords =
-      shippedHybrid && serverStep === "enable"
-        ? S.skills.install
-        : !agentContent && serverStep === "done"
-          ? S.plugins.marketServerInstalled
-          : agentContent
-            ? S.plugins.installModel.installAgent
-            : serverStep === "enable"
-              ? S.plugins.installModel.enableModule
-              : S.plugins.installModel.installServer;
+    const installWords = manageLabel();
     const held = !agentContent && serverStep === "held";
     const manage = (
       <EntityCardAction
@@ -658,9 +681,7 @@ export function PluginCard(props: PluginCardProps) {
             />
           }
           steps={agentContent ? 2 : 1}
-          contentsKnown={
-            plugin !== undefined || builtIn || row.module?.entry?.offline !== undefined
-          }
+          contentsKnown={contentsKnown}
           server={serverStep}
           {...(shippedHybrid
             ? {
@@ -714,6 +735,7 @@ export function PluginCard(props: PluginCardProps) {
                       onSelect={() => setSelectedTargetKey(t.key)}
                       onDone={closeInstall}
                       name={agentDisplayName(t.agent)}
+                      showId={duplicateNames.has(agentDisplayName(t.agent))}
                       avatarSrc={avatarSrc(t.agent.agentId, t.machine?.machineId ?? null)}
                       machine={t.machine?.label ?? null}
                       installed={usage?.usedBy.includes(t.key) ?? false}
@@ -1050,6 +1072,7 @@ export function InstallRow({
   onDone,
   agentId,
   name,
+  showId = false,
   avatarSrc,
   machine = null,
   installed,
@@ -1068,6 +1091,7 @@ export function InstallRow({
   onDone: () => void;
   agentId: string;
   name: string;
+  showId?: boolean;
   /** The Agent's own picture, when it has one (lib/agent-avatar.ts). */
   avatarSrc?: string | undefined;
   /** The ssh alias of the machine the Agent lives on; null for this server. */
@@ -1102,7 +1126,10 @@ export function InstallRow({
           className="shrink-0 accent-current"
         />
         <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" src={avatarSrc} />
-        <span className="min-w-0 flex-1 break-words">{name}</span>
+        <span className="min-w-0 flex-1 break-words">
+          {name}
+          {showId && <span className="block text-xs text-fg-muted">{agentId}</span>}
+        </span>
         {machine !== null && (
           <span className="max-w-[35%] break-words text-xs text-fg-muted">
             {S.chat.machineTag(machine)}
@@ -1163,13 +1190,13 @@ export function InstallRow({
               variant="primary"
               className="shrink-0"
               aria-label={S.plugins.installModel.addToAgent(
-                machine === null ? name : `${name} ${S.chat.machineTag(machine)}`,
+                installTargetLabel(name, showId ? agentId : null, machine),
               )}
               onClick={() => onToggle(true)}
               {...hold}
               {...(held?.busy === true ? { "aria-busy": true } : {})}
             >
-              {S.plugins.installModel.addToAgent(name)}
+              {S.plugins.installModel.add}
             </Button>
           ) : null}
           {installed && (

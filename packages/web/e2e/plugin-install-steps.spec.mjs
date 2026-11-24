@@ -1,3 +1,10 @@
+/**
+ * Market setup against a running server:
+ * - The card and detail manage the server copy and individual Agent copies independently.
+ * - A bundled Agent skill can coexist with a service awaiting project activation.
+ * - In either language, Tab reaches the service impact before activation; Enter and Space toggle it.
+ * - Namesakes expose their IDs. At phone width the selected action fits, and only its Agent receives the copy.
+ */
 import { test, expect } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
@@ -203,3 +210,114 @@ test("an administrator activates the bundled Computer Use module from the market
     card.getByRole("button", { name: "Install · Computer Use", exact: true }),
   ).toBeVisible();
 });
+
+for (const lang of ["en", "zh"]) {
+  const english = lang === "en";
+  const projectId = "sheet_targets_" + lang;
+  const longName = english
+    ? "Production Incident Response and Customer Support Coordination"
+    : "生产环境突发事件响应和客户技术支持跨团队协作与服务协调智能体";
+  const displayName = english ? "On-call" : "值班";
+
+  test(`the ${lang} sheet exposes the service impact to the keyboard before enabling it`, async ({
+    page,
+  }) => {
+    await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
+    await setAccountPrefs(page.request, { lang });
+    const id = "sheet_service_" + lang;
+    expect(
+      (
+        await page.request.post(BASE + "/api/projects", { data: { projectId: id, name: id } })
+      ).status(),
+    ).toBe(201);
+    await page.addInitScript((id) => localStorage.setItem("penguin.lastProjectId", id), id);
+    await page.goto("/plugins");
+    await page
+      .locator('article[data-plugin="computer-use"] .showcase-card-bar button')
+      .first()
+      .click();
+    const flow = page.getByRole("dialog").last();
+    const impact = flow.getByText(english ? "How this affects the server" : "对服务端的影响", {
+      exact: true,
+    });
+    await page.keyboard.press("Tab");
+    await expect(impact).toBeFocused();
+    await page.keyboard.press("Enter");
+    const warning = flow.getByText(
+      english ? /running agents are not affected/i : /正在运行的 Agent 不受影响/,
+    );
+    await expect(warning).toBeVisible();
+    await page.keyboard.press("Space");
+    await expect(warning).toBeHidden();
+    await page.keyboard.press("Tab");
+    await expect(
+      flow.getByRole("button", {
+        name: english ? "Enable server module" : "启用服务端模块",
+        exact: true,
+      }),
+    ).toBeFocused();
+  });
+
+  test(`the ${lang} Agent chooser identifies namesakes and fits the selected action on a 320px phone`, async ({
+    page,
+  }) => {
+    await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
+    await setAccountPrefs(page.request, { lang });
+    expect(
+      (
+        await page.request.post(BASE + "/api/projects", { data: { projectId, name: projectId } })
+      ).status(),
+    ).toBe(201);
+    const agents = BASE + "/api/projects/" + projectId + "/agents";
+    for (const [agentId, name] of [
+      ["alpha", displayName],
+      ["beta", displayName],
+      ["coordinator", longName],
+    ]) {
+      const create = await page.request.post(agents, {
+        data: { agentId, name, defaultPlugins: false },
+      });
+      expect(create.ok(), await create.text()).toBe(true);
+    }
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.addInitScript((id) => localStorage.setItem("penguin.lastProjectId", id), projectId);
+    await page.goto("/plugins");
+    await page
+      .locator('article[data-plugin="data-analysis"] .showcase-card-bar button')
+      .first()
+      .click();
+    const flow = page.getByRole("dialog").last();
+    const action = flow.getByRole("button", {
+      name: (english ? "Add to " : "添加给 ") + longName,
+      exact: true,
+    });
+    await flow.getByRole("radio", { name: longName, exact: true }).check();
+    await action.scrollIntoViewIfNeeded();
+    await expect(action).toContainText(english ? "Add" : "添加");
+    // The visible verb and both button edges fit its action row, even if the button overflows to the left.
+    const bounds = await action.evaluate((button) => {
+      const box = button.getBoundingClientRect();
+      const parent = button.parentElement.getBoundingClientRect();
+      return { left: box.left - parent.left, right: parent.right - box.right };
+    });
+    expect.soft(bounds.left).toBeGreaterThanOrEqual(0);
+    expect.soft(bounds.right).toBeGreaterThanOrEqual(0);
+    await expect.soft(action).toBeInViewport({ ratio: 1 });
+    for (const id of ["alpha", "beta"]) {
+      const row = flow.getByRole("radio", { name: new RegExp(displayName + ".*" + id) });
+      await expect(flow.getByText(id, { exact: true })).toBeVisible();
+      await row.check();
+    }
+    await flow
+      .getByRole("button", {
+        name: new RegExp((english ? "Add to " : "添加给 ") + displayName + ".*beta"),
+      })
+      .click();
+    const installed = async (id) =>
+      (await (await page.request.get(agents + "/" + id + "/plugins")).json()).skills.map(
+        (skill) => skill.name,
+      );
+    await expect.poll(() => installed("beta")).toContain("data-analysis");
+    expect(await installed("alpha")).not.toContain("data-analysis");
+  });
+}

@@ -252,7 +252,12 @@ describe("a server module's card", () => {
   });
 
   it("holds a member's server control on a market package, saying only an admin changes the server", () => {
-    const html = card(moduleRow("none", false), false);
+    const row = moduleRow("none", false);
+    row.module!.entry = {
+      ...BWRAP,
+      offline: { version: BWRAP.version, library: false, modules: true },
+    };
+    const html = card(row, false);
     const tag =
       new RegExp(`<button[^>]*aria-label="${words.installServer} sandbox-bwrap"[^>]*>`).exec(
         html,
