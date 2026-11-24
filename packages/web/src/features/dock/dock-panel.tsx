@@ -98,7 +98,7 @@ import {
 } from "./dock-panel-bodies";
 import type { ComponentProps } from "react";
 import { sessionWorkbenchKindAt } from "../../lib/session-workbenches";
-import { panelAppGlyph, panelGlyph, panelLabel } from "./panel-meta";
+import { panelGlyph, panelLabel } from "./panel-meta";
 import {
   dockPanelDefinition,
   useDockPanels,
@@ -446,6 +446,7 @@ export function DockPanel({
     }
     const pane = rootRef.current?.getBoundingClientRect();
     if (!pane) return;
+    setResizing(true);
     // The picker (no tabs) never goes fullscreen — the store refuses it and the header offers no
     // button — so its drag simply stops at the maximum.
     const canSnap = tabs.length > 0;
@@ -577,7 +578,7 @@ export function DockPanel({
               <MenuItem
                 key={entry.key}
                 data-testid={`dock-add-${entry.key}`}
-                glyph={panelAppGlyph(entry.key, ICON_SIZE.inlineGlyph) ?? entry.glyph}
+                glyph={<GlyphIcon d={entry.glyph} size={ICON_SIZE.inlineGlyph} />}
                 label={entry.label}
                 onSelect={() => {
                   setAddOpen(false);
@@ -589,7 +590,7 @@ export function DockPanel({
               <MenuItem
                 key={definition.id}
                 data-testid={`dock-add-${definition.id}`}
-                glyph={panelAppGlyph(definition.id, ICON_SIZE.inlineGlyph) ?? definition.glyph}
+                glyph={<GlyphIcon d={definition.glyph} size={ICON_SIZE.inlineGlyph} />}
                 label={definition.label()}
                 onSelect={() => openPanelHere(definition)}
               />
@@ -735,7 +736,6 @@ export function DockPanel({
       axis={horizontal ? "y" : "x"}
       edge={horizontal ? "start" : undefined}
       label={S.dock.resize}
-      onResizeStart={() => setResizing(true)}
       onResize={resizeTo}
       onResizeEnd={resizeEnd}
       onReset={onResizerDoubleClick}
