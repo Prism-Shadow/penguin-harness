@@ -584,6 +584,9 @@ export const en: Strings = {
     chooseSession: "Choose a Session",
     searchSessions: "Search all Sessions",
     searchActiveSessions: "Search Sessions with open terminals",
+    searchBrowserSessions: "Search Sessions with open browser pages",
+    noOpenBrowserPages: "No open browser pages",
+    startSessionBrowser: "To open a page, choose Browser from a conversation’s shortcuts.",
     noOpenTerminals: "No open terminals",
     startSessionTerminal:
       "To start a terminal, open a conversation and choose Terminal from its shortcuts.",
