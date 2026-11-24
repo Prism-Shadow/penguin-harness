@@ -173,3 +173,42 @@ test("widening an open dock leaves the Session info button clickable", async ({ 
   await page.mouse.click(x, button.y + button.height / 2);
   await expect(info).toHaveAttribute("aria-expanded", "true");
 });
+
+for (const reducedMotion of ["no-preference", "reduce"]) {
+  test(`a moved dock accepts a tab drag immediately with ${reducedMotion} motion`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.emulateMedia({ reducedMotion });
+    await page.goto("app.html?route=%2Fchat%2Fs-hooks-index&lang=en&theme=modern");
+    const right = page.locator('[data-testid="dock"][data-position="right"][data-open="true"]');
+    const bottom = page.locator('[data-testid="dock"][data-position="bottom"][data-open="true"]');
+    await page.getByTestId("dock-toggle-right").click();
+    await right.getByTestId("dock-pick-workspace").click();
+    await right.getByTestId("dock-add").click();
+    await page.getByTestId("dock-add-trace").click();
+
+    const arrivals = await page.evaluateHandle(() => {
+      const transitions = [];
+      document.addEventListener("transitionrun", (event) => {
+        if (event.target.matches('[data-position="bottom"] > [data-dock-content]'))
+          transitions.push(event.propertyName);
+      });
+      return transitions;
+    });
+    await right.getByTestId("dock-move").click();
+    const tab = bottom.locator('[data-tab-id="workspace"]');
+    const box = await tab.boundingBox();
+    const x = box.x + box.width / 2;
+    await page.mouse.move(x, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x + 10, box.y - 120, { steps: 5 });
+    const target = page.locator('[data-testid="dock-layout-target"][data-dock-pos="right"]');
+    await expect(target).toBeVisible();
+    expect(await arrivals.jsonValue()).toEqual([]);
+    const drop = await target.boundingBox();
+    await page.mouse.move(drop.x + drop.width / 2, drop.y + drop.height / 2);
+    await page.mouse.up();
+    await expect(right.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
+  });
+}

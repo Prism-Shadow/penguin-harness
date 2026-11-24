@@ -510,11 +510,9 @@ export function DockPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A flip the store marks instant (a scope switch, a cross-dock move) must apply without
-  // sliding. Leaving the tree is no longer what makes that instant — the node outlives a
-  // collapse now — so the animation is left off for the commit that carries the flip and
-  // restored two frames later, once the new size has been painted.
-  const [snap, setSnap] = useState(false);
+  // Suppress motion for an instant scope change or cross-dock move, including the first
+  // host measurement when the destination mounts. Restore motion after the new size paints.
+  const [snap, setSnap] = useState(!animateEntrance);
   const lastOpen = useRef(open);
   if (lastOpen.current !== open) {
     lastOpen.current = open;
