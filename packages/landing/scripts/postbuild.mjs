@@ -17,7 +17,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { notFoundShell, shellFor } from "./route-shell.mjs";
+import { notFoundShell, shellFor, withDirectoryLinks } from "./route-shell.mjs";
 import {
   absoluteUrl,
   BASE_PATH,
@@ -59,7 +59,7 @@ function shellForRoute(route) {
         .join("") + "</head>",
   );
 }
-writeFileSync(join(dist, "index.html"), shellForRoute("/"));
+writeFileSync(join(dist, "index.html"), shellFor(shellForRoute("/"), absoluteUrl("/")));
 const routes = [...pageRoutes(), ...blogRoutes(), ...rfcRoutes(), ...hubRoutes()];
 for (const { route, meta } of routes) {
   // A page's own share card must ship with it: unfurlers fetch it by absolute URL, so a missing
@@ -71,14 +71,18 @@ for (const { route, meta } of routes) {
   }
   const dir = join(dist, route);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(
-    join(dir, "index.html"),
-    shellFor(
-      shellForRoute(route),
-      absoluteUrl(route),
-      meta === undefined ? undefined : { ...meta, image: absoluteUrl(meta.image) },
-    ),
+  let html = shellFor(
+    shellForRoute(route),
+    absoluteUrl(route),
+    meta === undefined ? undefined : { ...meta, image: absoluteUrl(meta.image) },
   );
+  if (["/plugins/", "/benchmarks/", "/blog/"].includes(route)) {
+    const links = routes
+      .filter((entry) => entry.route.startsWith(route) && entry.route !== route)
+      .map((entry) => ({ href: BASE_PATH + entry.route, label: entry.meta.title }));
+    html = withDirectoryLinks(html, links);
+  }
+  writeFileSync(join(dir, "index.html"), html);
 }
 
 writeFileSync(join(dist, "404.html"), notFoundShell(shell));
