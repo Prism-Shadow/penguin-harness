@@ -2,7 +2,8 @@ import { expect, test } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
-const kinds = ["workspace", "terminal", "builtin-browser"];
+const catalogKinds = ["terminal", "builtin-browser"];
+const kinds = ["workspace", ...catalogKinds];
 const mark = (root, kind) => root.locator('[data-system-app-icon="session-tools-' + kind + '"]');
 
 for (const [name, width, themeId, themeMode] of [
@@ -34,12 +35,13 @@ for (const [name, width, themeId, themeMode] of [
       await page.goto("/apps");
       const catalog = page.locator('[data-workspace-page="catalog"]:visible');
       const marks = new Map();
-      for (const kind of kinds) {
+      for (const kind of catalogKinds) {
         const tile = mark(catalog, kind);
         await expect(tile).toBeVisible();
         marks.set(kind, await tile.locator("svg").innerHTML());
       }
-      expect(new Set(marks.values()).size).toBe(kinds.length);
+      const filesTile = catalog.locator('li[data-app="system_agent/session-tools-workspace"]');
+      await expect(filesTile).toHaveCount(0);
       const ids = [];
       for (let i = 0; i < 2; i++) {
         const created = await page.request.post(project + "/agents/default_agent/sessions", {
@@ -67,14 +69,18 @@ for (const [name, width, themeId, themeMode] of [
         for (const kind of kinds) {
           const entry = page.getByTestId("dock-launcher-open-" + kind);
           await expect(mark(entry, kind)).toBeVisible();
-          expect(await mark(entry, kind).locator("svg").innerHTML()).toBe(marks.get(kind));
+          const svg = await mark(entry, kind).locator("svg").innerHTML();
+          if (marks.has(kind)) expect(svg).toBe(marks.get(kind));
+          else marks.set(kind, svg);
         }
+        expect(new Set(marks.values()).size).toBe(kinds.length);
         if (id === ids[0]) {
           await page.getByTestId("dock-launcher-open-app-center").click();
-          for (const kind of kinds) {
+          for (const kind of catalogKinds) {
             await expect(mark(catalog, kind)).toBeVisible();
             expect(await mark(catalog, kind).locator("svg").innerHTML()).toBe(marks.get(kind));
           }
+          await expect(filesTile).toHaveCount(0);
           await page.getByRole("button", { name: "Close panel: App Center", exact: true }).click();
           await shortcuts.click();
         }

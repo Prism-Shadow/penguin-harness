@@ -13,6 +13,7 @@
  *   navigation inside a grouped app, its close button still returns directly to its tile.
  * - The header's New folder makes a folder of the apps checked in its dialog, under the name
  *   typed there, at the first checked app's place.
+ * - An old folder containing the built-in Files tile still opens a separately installed Files app.
  * - A system app's tile opens its own page, where the nav keeps the App Center lit, Benchmark
  *   detail pages included.
  */
@@ -198,6 +199,40 @@ test.beforeAll(async ({ browser }) => {
   const base = `${project}/agents/default_agent/workbenches`;
   for (const title of APPS) await importApp(seed.request, base, title);
   await seed.close();
+});
+
+test("a saved folder keeps its installed Files app after the built-in Files tile leaves the catalog", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, "filescatalog", P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const { projects } = await (await page.request.get("/api/projects")).json();
+  const base = "/api/projects/" + projects[0].projectId;
+  const builtin = "system_agent/session-tools-workspace";
+  const installed = "default_agent/session-tools-workspace";
+  await importApp(
+    page.request,
+    base + "/agents/default_agent/workbenches",
+    "Files",
+    "session-tools-workspace",
+  );
+  const layout = {
+    v: 1,
+    items: [{ type: "folder", id: "tools", name: "Tools", apps: [builtin, installed] }],
+  };
+  await expect(await page.request.put(base + "/app-center/layout", { data: { layout } })).toBeOK();
+  await page.goto("/apps");
+  await page.locator('[data-folder="tools"] > button').first().click();
+  const tile = page.locator(`li[data-app="${installed}"] > button`).first();
+  await expect(tile).toBeVisible();
+  await expect(page.locator(`li[data-app="${builtin}"]`)).toHaveCount(0);
+  await tile.click();
+  await expect(page.locator(`[data-workspace-page="app:${installed}"] iframe`)).toBeVisible();
+  expect((await (await page.request.get(base + "/app-center")).json()).layout).toEqual(layout);
+  await page.goto("/session-tools/workspace");
+  await expect(
+    page.getByRole("region", { name: "Files", exact: true }).getByRole("searchbox"),
+  ).toBeVisible();
 });
 
 test("an installed game's canvas captures the mouse on click only when its tab opts in", async ({

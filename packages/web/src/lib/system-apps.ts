@@ -22,12 +22,7 @@ import { routeUnder } from "../web-app/route-under";
 import { SYSTEM_AGENT_ID } from "./builtin-agents";
 import { useLocale } from "../state/locale";
 import { useSessionWorkbenchPanels } from "./dock-panel-registry";
-import {
-  isSessionWorkbenchKind,
-  sessionWorkbenchAppKey,
-  sessionWorkbenchEntries,
-  sessionWorkbenchPath,
-} from "./session-workbenches";
+import { sessionWorkbenchAppKey, sessionWorkbenchPath } from "./session-workbenches";
 import { useWebAppPages } from "./web-app-pages";
 
 /** A system app as its readers draw it. */
@@ -122,18 +117,13 @@ export function useSystemApps(): readonly SystemApp[] {
     () => [
       ...systemAppsOf(pages, isAdmin),
       ...panels.flatMap((panel) =>
-        isSessionWorkbenchKind(panel.id) && sessionWorkbenchEntries[panel.id]
+        panel.id === "terminal" || panel.id === "builtin-browser"
           ? [
               {
                 key: sessionWorkbenchAppKey(panel.id),
                 path: sessionWorkbenchPath(panel.id),
                 title: panel.label(),
-                icon:
-                  panel.id === "workspace"
-                    ? "folder"
-                    : panel.id === "terminal"
-                      ? "terminalWindow"
-                      : "globe",
+                icon: panel.id === "terminal" ? "terminalWindow" : "globe",
                 order: panel.order,
               },
             ]
