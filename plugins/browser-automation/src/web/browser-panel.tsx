@@ -18,7 +18,7 @@
  * menu does not offer it.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Button, EmptyState, useWindowShown } from "@prismshadow/penguin-ui";
+import { Button, EmptyState, Waiting, useWindowShown } from "@prismshadow/penguin-ui";
 import type { SessionWorkbenchScope } from "@prismshadow/penguin-web-plugin";
 import { showWorkbenchGroup } from "./dock-scope";
 import { ManagedBrowserPages } from "./managed-browser-pages";
@@ -106,25 +106,19 @@ export function BuiltinBrowserPanel({
 }) {
   const live = useSyncExternalStore(subscribeBrowser, browserState, browserState);
   const windowShown = useWindowShown();
-  const native = scope?.machineId === null && live.supported && live.backend === "builtin";
+  const desktop = live.backends?.some((entry) => entry.backend === "builtin" && entry.available);
+  const native =
+    scope?.machineId === null && desktop && live.supported && live.backend === "builtin";
   const sessionId = scope?.sessionId,
     projectId = scope?.projectId;
   useLayoutEffect(() => {
     if (native && active && windowShown && sessionId && projectId)
       return showWorkbenchGroup(sessionId, projectId);
   }, [native, active, windowShown, sessionId, projectId]);
-  // A standalone server offers the account's Chrome in place of native guests. The
-  // extension surface owns its pairing guide, connection events and disabled state.
-  // Remote groups always belong to their machine, even when this Chrome is connected.
-  if (
-    scope?.machineId === null &&
-    live.backend === "chrome" &&
-    chromeInfo(live) !== null &&
-    !live.backends.some((entry) => entry.backend === "builtin" && entry.available)
-  ) {
-    return <ChromeSurface state={live} active={active} />;
-  }
-  if (scope && !native)
+  // Remote groups belong to their machine. A local group needs the server's desktop capability
+  // before reading native tabs; standalone servers use the account's Chrome surface below.
+  if (scope?.machineId === null && desktop === undefined) return <Waiting />;
+  if (scope && !native && (scope.machineId !== null || desktop))
     return (
       <ManagedBrowserPages
         key={JSON.stringify([scope.machineId, scope.projectId, scope.sessionId])}
