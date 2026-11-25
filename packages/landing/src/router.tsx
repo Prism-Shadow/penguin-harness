@@ -13,6 +13,7 @@ import { lazy, Suspense, useEffect } from "react";
 import type { ComponentType } from "react";
 import {
   BrowserRouter,
+  Link,
   Navigate,
   Outlet,
   Route,
@@ -21,15 +22,19 @@ import {
   useNavigationType,
   useParams,
 } from "react-router";
-import { useRouteScroll, useSiteLocale } from "@prismshadow/penguin-ui/site";
+import { SiteNav, useRouteScroll, useSiteLocale } from "@prismshadow/penguin-ui/site";
+import type { SiteLinkProps } from "@prismshadow/penguin-ui/site";
 import { DOCS_URL, GALLERY_URL } from "./lib/links";
 import { useRouteCanonical } from "./lib/document-meta";
 import { useListReturn } from "./lib/hub/back";
 import { AnnouncementBar } from "./components/announcement-bar";
-import { Nav } from "./components/nav";
 import { Footer } from "./components/footer";
 import { NeonBackground } from "./components/neon-bg";
 import { PostPending } from "./components/post-pending";
+
+function routeLink({ href, ...props }: SiteLinkProps) {
+  return <Link to={href} {...props} />;
+}
 
 const AmspPage = lazy(() =>
   import("./pages/amsp").then((module) => ({ default: module.AmspPage })),
@@ -105,7 +110,11 @@ function Layout() {
     <div className="relative flex min-h-full flex-col">
       {!location.pathname.startsWith("/rfcs") && <NeonBackground />}
       <AnnouncementBar />
-      <Nav />
+      <SiteNav
+        siteRoot={import.meta.env.BASE_URL}
+        pathname={location.pathname}
+        renderLink={routeLink}
+      />
       <main className="flex-1">
         <Outlet />
       </main>

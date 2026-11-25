@@ -169,6 +169,7 @@ export * from "./components/actions/create-buttons/create-buttons";
 export * from "./components/feedback/notice/notice";
 export * from "./components/feedback/todo-notice/todo-notice";
 export * from "./components/feedback/progress-bar/progress-bar";
+export * from "./components/feedback/staged-progress/staged-progress";
 export * from "./components/feedback/duration-slot/duration-slot";
 // Retry — the retry and reconnect status every surface shares (trying, waiting with its countdown,
 // gave up, blocked), its one-press buttons, and the second-ticking countdown under them.

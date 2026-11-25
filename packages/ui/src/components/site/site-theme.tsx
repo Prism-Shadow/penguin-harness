@@ -63,6 +63,10 @@ export function SiteThemeProvider({ children }: { children: ReactNode }) {
   );
 }
 
+export function useOptionalSiteTheme(): SiteTheme | null {
+  return useContext(SiteThemeContext);
+}
+
 export function useSiteTheme(): SiteTheme {
   const ctx = useContext(SiteThemeContext);
   if (!ctx) throw new Error("useSiteTheme must be used inside SiteThemeProvider");

@@ -9,7 +9,6 @@ import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "./peak-windows";
 import type { ProtocolClientType } from "./protocol-client-types";
-import { EVOLUTION_DEMO } from "./evolution-demo";
 import type { Strings } from "./strings";
 
 export const en: Strings = {
@@ -3244,12 +3243,16 @@ export const en: Strings = {
       flowTitle: (name: string) => `Install ${name}`,
       backToServer: "Back to server",
       toAgents: "Continue to Agents",
-      prepare: "Prepare plugin",
-      projectService: "Enable the service for this project",
       ready: "Ready on this server",
+      thisServer: "This server",
+      enableNow: "Enable",
       installDetails: "How this affects the server",
       chooseAgent: "Choose an agent",
       chooseAgentHelp: "Choose who will use this plugin. You can add it to more than one agent.",
+      chooseAfterInstall:
+        "The plugin is installed. Choose an agent to use it; until you add it to one, no agent has it.",
+      chooseLater: "Choose later",
+      addAnother: "Add to another agent",
       prepareForAgents:
         "All projects on this server share one copy. After installation, choose which agents can use it.",
       preparePackage:
@@ -3264,15 +3267,36 @@ export const en: Strings = {
       addToAgent: (name: string) => `Add to ${name}`,
       addedToAgent: "Added",
       serverDone: (name: string) => `${name} is on the server, shared by every Project.`,
-      askBody: "Ask an admin to install the shared copy for all projects on this server.",
+      askTitle: "An admin needs to install this",
+      askBody:
+        "This plugin is not on this server yet, and only an admin can install it. Use the button below to let an admin know, then come back to choose an agent once it is installed.",
       askAdmin: "Ask an admin to install",
-      asked: "Your installation request has been sent to the administrator.",
+      askedTitle: "The admin has been told",
+      asked: "Once the admin has installed it, come back here to choose the agent that uses it.",
       finish: "Done",
-      checking: "Checking the plugin source…",
-      installing: "Installing…",
-      fromOffline: "Installing from the offline archive…",
-      loading: "Loading module…",
-      stepShort: { checking: "Checking…", fromOffline: "Installing…", loading: "Loading…" },
+      starting: "Getting ready…",
+      checking: "Looking up the plugin…",
+      installing: "Downloading and installing…",
+      downloadingNow: "Downloading…",
+      fromOffline: "Installing from the copy that came with this server…",
+      loading: "Starting the plugin…",
+      handing: "Handing it to that machine…",
+      stepShort: {
+        checking: "Looking up…",
+        installing: "Installing…",
+        fromOffline: "Installing…",
+        loading: "Starting…",
+      },
+      progressLabel: (name: string) => `Install progress of ${name}`,
+      noCancel:
+        "An install cannot be stopped once it starts. If you close this window, it carries on in the background.",
+      background: "Continue in background",
+      doneTitle: (name: string) => `${name} is ready`,
+      doneAgents: (agents: string) => `Added to ${agents}.`,
+      doneService: "It is installed on this server, and this project can use it now.",
+      failedTitle: (name: string) => `${name} could not be installed`,
+      failedHelp:
+        "Try again. If it keeps failing, switch to another plugin source or import it from a file.",
       uninstallTitle: (name: string) => `Uninstall ${name} from the server`,
       uninstallBody: (name: string, agents: number) =>
         agents === 0
@@ -4133,10 +4157,11 @@ export const en: Strings = {
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
     start: {
-      tagline: "Create your first self-evolving agent OS.",
-      shuffle: "Shuffle suggestions",
-      moreExamples: "More examples",
+      tagline: "Create your first self-evolving Harness OS.",
       examplesTitle: "Examples and shortcuts",
+      appsSearchPlaceholder: "Search apps…",
+      appsEmptyHint: "No apps yet. Click Build New App to make one.",
+      appsNoMatch: "No matching apps",
     },
     shortcuts: {
       retry: "Reload my shortcuts",
@@ -4157,132 +4182,27 @@ export const en: Strings = {
         `Delete "${title}"? The shortcut disappears from every device you use.`,
     },
     exampleTasks: {
-      game: {
-        label: "Penguin Skiing",
-        desc: "A Ski Safari-style 2D game: a penguin on skis rides steep slopes downhill, flips in the air off the crests for points and gets back up after a crash",
-        prompt: `Build a self-contained 2D downhill skiing game starring a penguin on visible skis. Make the slope readable ahead of the player. Speed should build on descents and carry over a crest into a jump. Holding Space or touching the playfield rotates the penguin in the air. Reward a clean landing, show which trick scored, and let a crash cost speed before the penguin gets back up. Ease players in with a forgiving first jump. Give takeoff, landing and falling distinct sound and movement, with a mute control. Pause, resume and restart must work without a page reload.
+      buildApp: {
+        label: "Build New App",
+        desc: "Build a workbench app on the current agent and publish it to the App Center",
+        prompt: `Build a new workbench app for me on the current Agent and publish it to the App Center (set penguin.appCenter.show to true in package.json). Use a modern design with commercial-product quality, and verify that the app loads and runs cleanly when done:
+<Enter your idea>
 
-Ship one HTML file that plays offline. With the tools available, try a short run by keyboard and by touch, land a flip, crash and recover, then restart. Tell me where to open the game, how to play, and which interactions you checked.`,
+Example: Build a PenguinHarness support app, similar to a ticket system, that answers PenguinHarness usage questions and cites the source for each answer.`,
       },
-      gamecenter: {
-        label: "Mini Arcade",
-        desc: "Ten offline games with distinct mechanics, keyboard and touch controls, and a shared lobby",
-        prompt: `Build an offline mini arcade with ten genuinely different games: for example snake, a sliding-number puzzle, falling blocks, breakout, minesweeper, memory pairs, sokoban, a space shooter, a platform jumper and rhythm tap. Give each a separate playable page and a place in the same lobby. Before a round, show its goal and controls. Each action should change the game immediately; score or remaining moves, a clear win or loss, and a one-tap retry should follow each game's own rules.
+      optimizeApp: {
+        label: "Optimize App",
+        desc: "Pick an existing workbench app to improve its design, usability or features",
+        promptFor: (appTitle: string, agentId: string, workbenchId: string): string =>
+          `Optimize <enter your requirements> of the current app "${appTitle}" (workbench \`${workbenchId}\` on Agent \`${agentId}\`). If there is no benchmark, read the existing workbench code and start the optimization directly, then reload and verify the result.
 
-Support keyboard and touch. Keep swipes and taps inside the playfield from scrolling the page, leave the back button reachable, and keep only the active game running or playing sound. Use local assets so the lobby and games open offline. Test entering every game, performing its signature move, finishing a round and restarting cleanly. Return to the lobby and open another game on a phone-sized screen. Give me the launch file and the results of the checks you could run.`,
+Example: Optimize the current app's interface so complete beginners with no technical background can learn to use it right away, adding a tutorial when helpful.`,
       },
-      lol: {
-        label: "Worlds Anthems",
-        desc: "Worlds anthems on the SoundCloud Widget API — a single file that opens from file://",
-        prompt: `Build a single-file Worlds anthem player using the visible official SoundCloud widget and its API (https://developers.soundcloud.com/docs/api/html5-widget). Offer these eight original links:
-- Warriors (S4) — https://soundcloud.com/leagueoflegends/warriors
-- Worlds Collide (S5) — https://soundcloud.com/leagueoflegends/worlds-collide
-- Legends Never Die (S7) — https://soundcloud.com/leagueoflegends/legends-never-die
-- Phoenix (S9) — https://soundcloud.com/leagueoflegends/phoenix
-- Burn It All Down (S11) — https://soundcloud.com/leagueoflegends/burn-it-all-down
-- GODS (S13) — https://soundcloud.com/leagueoflegends/gods
-- Heavy Is The Crown (S14) — https://soundcloud.com/linkinpark/heavy-is-the-crown
-- Sacrifice (S15) — https://soundcloud.com/leagueoflegends/sacrifice
-
-Select a track on a phone or desktop, play or pause it, seek, switch tracks, mute and adjust volume. Make the current track, elapsed time and duration easy to read. Support keyboard transport controls without interfering with focused sliders or buttons. Use the widget’s READY, PLAY, PAUSE, PLAY_PROGRESS, FINISH and error signals. Wait for the widget to confirm playback before changing the play button or advancing elapsed time. When embeds are slow, blocked or offline, show the state, a retry and the selected track’s official link. Keep the playlist usable without the SDK.
-
-Test a real track after a user gesture, see its reported position advance, pause it, seek and switch songs. Also try a blocked widget and the official-link fallback. Report which checks actually worked with the available connection.`,
-      },
-      rhythmRunner: {
-        label: "Rhythm Runner",
-        desc: "A Muse Dash-style rhythm runner: high notes send the penguin flying, low notes put it on a sled along the ground",
-        prompt: `Build a single-file offline rhythm runner. Give the penguin an original, audible instrumental course with a beat map. After the player presses Start, schedule the music and judge high and low notes against the same audio clock. A high input should launch the penguin immediately; a low one should duck onto its sled. Offer two keys and two generous touch targets. Introduce the lanes with a few spaced notes, give distinct Perfect, Great and Miss feedback, and show the combo as it builds or breaks. Let misses continue to the end of the song. Include mute, pause and resume without losing synchronization, an end score and replay.
-
-Play a complete course and verify audible output, a deliberate early or late input, a successful hit in both lanes, pause/resume and a fresh second run with keyboard or touch. Share the file, controls and the checks you actually made.`,
-      },
-      ragDocsExpert: {
-        label: "Document Q&A",
-        desc: "Create a docs expert with its own workbench to search, ask questions and inspect sources",
-        prompt: `Create a Claude Code documentation expert Agent and an installable PenguinHarness workbench. Index https://github.com/ericbuess/claude-code-docs with the retrieved revision and date. Let me search the indexed documents, ask a question, and open a citation at the exact heading or passage behind the answer. Handle no matches, failed downloads and retry. Keep the most recent successful index available offline and label it with its date. If the source is unavailable on the first run, show how to import a local copy.
-
-Install and open the workbench with the available permissions. Ask one question answered by a real passage, follow its citation, and try a question with no supporting text. Check keyboard and phone navigation. Tell me how to open the Agent and workbench and what you verified.`,
-      },
-      investmentCopilot: {
-        label: "Investment Analyst",
-        desc: "Create an investment agent with its own workbench for quotes, company lookup and market questions",
-        prompt: `Create an investment research Agent and an installable PenguinHarness workbench. Let me find a listed company, compare price changes over the same interval and currency, and inspect sources for sector moves, news or filings. Use a permitted market-data source, show its timestamp, currency and any delay, and refresh available quotes every five minutes or on request. If service access is unavailable, accept a user-supplied timestamped sample and label it as such. Indicate stale, missing or unlisted data, keep the last successful result and allow retry. Ground explanations in linked records, and distinguish an inference from a fact.
-
-Install and try the workbench with a sourced quote or a supplied sample. Look up an unknown company, retry a failed refresh, and open a cited source from a narrow screen and the keyboard. Tell me how to open it and which data you actually used.`,
-      },
-      legalDesk: {
-        label: "Legal Assistant",
-        desc: "Create a legal agent with its own workbench for contract uploads, review status and report downloads",
-        prompt: `Create a contract review Agent and an installable PenguinHarness workbench. Let me upload a contract, see the processing status for that file, reopen its findings, and download the report. Each finding should quote the exact clause and identify its page, section or paragraph, explain the concern and offer a revision for review. Keep separate uploads and their findings distinct. For an unsupported or unreadable file show the reason and allow a replacement or retry. Use only documents the user supplies; label any example contract clearly.
-
-Install and try the workbench with a short sample. Compare a quoted clause with the original, check that the report includes it, and then try an unreadable file and reopen the first result. Make upload and retrieval usable with keyboard or touch in both themes. Tell me how to open it and what was tested.`,
-      },
-      agentBenchmarkBuild: {
-        label: "Decision Benchmark",
-        desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
-        prompt: `Use \`agent-initialization\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
-
-Agent:
-- id: \`${EVOLUTION_DEMO.agentId}\`
-- capability: make stable, explainable finite choices when public information is incomplete or conflicting
-- installed_skills: \`[]\`
-
-Benchmark:
-- id: \`${EVOLUTION_DEMO.benchmarkId}\`
-- capability: form and transfer a stable finite-choice decision process from public rules, historical examples, and current facts
-- desired_baseline_score: \`<75\`
-- pilot_iteration_limit: \`5\`
-
-Scenarios:
-1. Make football betting decisions from historical matches and current information.
-2. Choose after-sales actions from policy and ticket facts.
-3. Choose investment actions from a strategy, historical markets, and current indicators.`,
-      },
-      agentOptimization: {
-        label: "Tune an Agent",
-        desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
-        prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
-
-- test_agent_id: \`${EVOLUTION_DEMO.agentId}\`
-- benchmark_id: \`${EVOLUTION_DEMO.benchmarkId}\`
-- capability_direction: improve stability under incomplete information, conflicting rules, and finite choices
-- runs: \`3\`
-- desired_score: \`>=95\`
-- candidate_round_limit: \`5\``,
-      },
-      benchmarkImport: {
-        label: "Ticket Benchmark",
-        desc: "Import GDPEVO Essential-Service Ticket Resolution's train and test sets: optimize an agent on the train tasks, then check the gain on test tasks it has not seen",
-        prompt:
-          "Use the `benchmark-design` Skill to import the GDPEVO Essential-Service Ticket Resolution benchmark: " +
-          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train, " +
-          "together with its paired test set. If this Project already has them, just tell me " +
-          "and leave them as they are.",
-      },
-      dailyPlan: {
-        label: "Daily Planner",
-        desc: "09:00 every day: talk through the day's plan in this same chat, and review yesterday's progress",
-        prompt:
-          "Set up a scheduled task: every day at 9am, in this same conversation, plan today's work " +
-          "with me. Read back over the conversation first and say what yesterday's plan got done and " +
-          "where it stuck, then offer an ordered shortlist for today with a line of reasoning each, " +
-          "and write up what I confirm as a checklist.",
-      },
-      githubDigest: {
-        label: "GitHub Digest",
-        desc: "A daily pass over one repo's issues, PRs and CI, ending in prioritized recommendations",
-        prompt:
-          "Set up a scheduled task: every morning, use gh to digest one GitHub repo's issues, PRs " +
-          "and CI — surface what has stalled, what is waiting on review and what is failing — and " +
-          "end with recommendations ranked by priority, each saying why it sits where it does.",
-      },
-      memoryReview: {
-        label: "Weekly Memory",
-        desc: "Friday evening: go through what is worth remembering from the week and write it into Memory",
-        prompt:
-          "Set up a scheduled task: every Friday evening, in this same conversation, go through " +
-          "what is worth remembering from the week with me. Check the existing memory index first so " +
-          "nothing is duplicated, then take it item by item — what to record, what to revise — and " +
-          "write what I confirm into Memory.",
+      publishApp: {
+        label: "Publish App",
+        desc: "Pick an existing workbench app and have the agent submit it to the public apps repository and plugin index so others can install it",
+        promptFor: (appTitle: string, agentId: string, workbenchId: string): string =>
+          `Package the app "${appTitle}" (workbench \`${workbenchId}\` on agent \`${agentId}\`) as a plugin and publish it. Following each repository's own contribution guide, open two pull requests: one to the apps repository https://github.com/Prism-Shadow/penguin-harness-apps that adds the app, and one to the plugin index https://github.com/Prism-Shadow/penguin-harness-plugins that registers it. An index entry must point at a package that is already published and can be downloaded; if the apps repository has not released it yet, open the index pull request as a draft and say what it is waiting for. Keep personal data and secrets out of what you publish, and ask me first about anything that may be private and about decisions that are mine to make, such as the license. When you are done, send me the links to both pull requests.`,
       },
     },
     sessionList: "Sessions",

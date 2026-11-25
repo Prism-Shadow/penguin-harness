@@ -125,6 +125,8 @@ for (const [theme, mode] of [
     await expect(shortcut).toBeFocused();
     await checkInk(page, shortcut, info);
     await page.keyboard.press("Enter");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
     await expect(shortcut).toHaveAttribute("aria-current", "true");
     await expect(page.locator(".ui-start textarea")).not.toHaveValue("");
   });

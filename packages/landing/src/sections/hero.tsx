@@ -5,7 +5,6 @@ import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { mmspModelsUrl } from "../lib/links";
 import { RELEASE_VERSION } from "../lib/version";
-import counts from "virtual:penguin-catalog-counts";
 import { BENCHMARKS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../lib/rsi-stats";
 import {
   DownloadIcon,
@@ -230,7 +229,7 @@ export function Hero() {
         <ExternalLinkScope>
           <dl className="mx-auto mt-10 grid w-fit max-w-full gap-y-6 sm:mt-12 sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-x-6 sm:gap-y-4">
             <CatalogRow
-              count={String(counts.models)}
+              count="1000+"
               label={S.hero.supportedModelsLabel}
               delay={300}
               listClassName="gap-x-2 gap-y-1"
@@ -256,7 +255,7 @@ export function Hero() {
             </CatalogRow>
 
             <CatalogRow
-              count={String(counts.algorithms)}
+              count="10+"
               label={S.hero.algorithmsLabel}
               delay={340}
               listClassName="gap-x-5 gap-y-1.5"
@@ -276,7 +275,7 @@ export function Hero() {
             </CatalogRow>
 
             <CatalogRow
-              count={String(counts.benchmarks)}
+              count="20+"
               label={S.hero.benchmarksLabel}
               delay={380}
               listClassName="gap-x-5 gap-y-1.5"

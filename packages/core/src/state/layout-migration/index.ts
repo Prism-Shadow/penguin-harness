@@ -38,8 +38,9 @@ import {
 import {
   checkProjectsLevel,
   legacyProjects,
-  moveProject,
+  moveProjects,
   PROJECTS_LEVEL,
+  rewriteMovedProject,
 } from "./steps/2026-11-projects-level.js";
 
 export { LayoutMigrationError } from "./error.js";
@@ -65,8 +66,9 @@ const current = new Map<string, Promise<void>>();
 
 /**
  * Migrates the data root at `root`. Throws a {@link LayoutMigrationError} when the root's layout
- * cannot be migrated as it stands — nothing is moved then — or when a step fails part-way; the
- * steps that finished stay done, and the next run goes on from where this one stopped.
+ * cannot be migrated as it stands or a Project folder cannot be moved — nothing is moved then —
+ * or when a step fails after the folders moved; the steps that finished stay done, and the next
+ * run goes on from where this one stopped.
  */
 export async function migrateDataRootLayout(
   root: string,
@@ -90,10 +92,12 @@ export async function migrateDataRootLayout(
     const legacy = await legacyProjects(root);
     await checkProjectsLevel(root, legacy);
 
+    const ids = [...new Set([...ctx.unfinished(PROJECTS_LEVEL), ...legacy])];
+    await moveProjects(ctx, ids);
     const moves: PathMove[] = [];
     const movedProjects: string[] = [];
-    for (const id of new Set([...ctx.unfinished(PROJECTS_LEVEL), ...legacy])) {
-      const move = await moveProject(ctx, id);
+    for (const id of ids) {
+      const move = await rewriteMovedProject(ctx, id);
       if (move === null) continue;
       moves.push(move);
       movedProjects.push(id);

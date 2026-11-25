@@ -309,6 +309,12 @@ export interface DemoFixtures {
   pluginModules: PluginModuleStatus[];
   pluginModuleRequests: PluginModuleRequest[];
   pluginIndex: PluginIndexResponse;
+  /**
+   * What an install of a market package the server does not hold yet does in the demo
+   * (install-stream.ts), by specifier: the library plugin that lands, or the failure the
+   * download ends in.
+   */
+  marketInstalls: Record<string, DemoMarketInstall>;
   /** The market's curation: the selected plugins, which may lead, and their art. */
   market: PluginMarketResponse;
   readmes: Record<string, string>;
@@ -361,6 +367,21 @@ export interface UsageDay {
    * their Tokens stay out of the Token figures. Absent on a chat turn's day.
    */
   purpose?: string;
+}
+
+const MEETING_NOTES = "@penguinharness/meeting-notes";
+const PDF_TOOLKIT = "@penguinharness/pdf-toolkit";
+
+/** A market package's scripted install: how large its download is, and how it ends. */
+export interface DemoMarketInstall {
+  /** The download's size in bytes. */
+  bytes: number;
+  /** The library plugin the install lands, with what Agents can use of it. */
+  lands?: PluginItem;
+  /** The library category the landed plugin joins. */
+  category?: string;
+  /** The download stops this far in (0 to 1) and the install fails with these words. */
+  fails?: { at: number; message: string };
 }
 
 export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFixtures {
@@ -1227,9 +1248,72 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
         categories: ["messaging"],
         updatedAt: Math.floor(ago(40) / 1000),
       },
+      // Not on the server yet, with a Skill for Agents: the market's whole install, from the
+      // registry check to choosing an Agent.
+      {
+        name: MEETING_NOTES,
+        version: "0.3.1",
+        description:
+          "Turns a meeting recording or transcript into minutes with decisions and action items.",
+        descriptionZh: "把会议录音或文字稿整理成纪要，列出决定和待办。",
+        shortDescription: "Minutes, decisions and action items from a meeting.",
+        shortDescriptionZh: "从一场会议整理出纪要、决定和待办。",
+        authors: ["PenguinHarness"],
+        license: "MIT",
+        keywords: ["meetings", "notes"],
+        categories: ["office-productivity"],
+        updatedAt: Math.floor(ago(6) / 1000),
+        offline: { version: "0.3.1", library: true, modules: true },
+      },
+      // The same, whose download stops part-way: the install that fails and offers a retry.
+      ...(embedded
+        ? []
+        : [
+            {
+              name: PDF_TOOLKIT,
+              version: "1.4.0",
+              description: "Reads, splits, merges and fills in PDF files.",
+              descriptionZh: "读取、拆分、合并和填写 PDF 文件。",
+              shortDescription: "Read, split, merge and fill in PDFs.",
+              shortDescriptionZh: "读取、拆分、合并和填写 PDF。",
+              authors: ["PenguinHarness"],
+              license: "MIT",
+              keywords: ["pdf", "documents"],
+              categories: ["office-productivity"],
+              updatedAt: Math.floor(ago(11) / 1000),
+              offline: { version: "1.4.0", library: true, modules: false },
+            },
+          ]),
     ],
     failures: [],
     pending: [],
+  };
+  const marketInstalls: Record<string, DemoMarketInstall> = {
+    [MEETING_NOTES]: {
+      bytes: 8_600_000,
+      category: "office-productivity",
+      lands: {
+        name: "meeting-notes",
+        description:
+          "Turns a meeting recording or transcript into minutes with decisions and action items.",
+        descriptionZh: "把会议录音或文字稿整理成纪要，列出决定和待办。",
+        shortDescription: "Minutes, decisions and action items from a meeting.",
+        shortDescriptionZh: "从一场会议整理出纪要、决定和待办。",
+        version: "0.3.1",
+        package: MEETING_NOTES,
+        source: "installed",
+        skills: [skill("meeting-notes", "整理会议纪要", "Write up a meeting's minutes")],
+        hooks: [],
+        mcpServers: [],
+      },
+    },
+    [PDF_TOOLKIT]: {
+      bytes: 11_900_000,
+      fails: {
+        at: 0.62,
+        message: `${PDF_TOOLKIT}@1.4.0 could not be downloaded from its release channel: the connection closed before the file was complete.`,
+      },
+    },
   };
   const readmes: Record<string, string> = {
     "@penguinharness/sandbox-bwrap":
@@ -2183,6 +2267,7 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
     pluginModules: [],
     pluginModuleRequests: [],
     pluginIndex,
+    marketInstalls,
     market: marketFixture(),
     readmes,
     benchmarks,

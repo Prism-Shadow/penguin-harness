@@ -1,7 +1,17 @@
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 
-import { Heading, ICONS, PenguinLogo } from "@prismshadow/penguin-ui";
+import {
+  Dropdown,
+  Heading,
+  ICON_SIZE,
+  ICONS,
+  MenuItem,
+  PenguinLogo,
+  SearchInput,
+  TextAction,
+} from "@prismshadow/penguin-ui";
 import { VersionStamp } from "../../components/account/version-stamp";
 import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
 import { S } from "../../lib/strings";
@@ -10,9 +20,12 @@ import { versionBadgeFor } from "../../lib/update-flow";
 import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { useLocale } from "../../state/locale";
-import { pickExamples, type ExampleTaskId } from "./example-tasks";
+import { useProject } from "../../state/project";
+import { SkillIcon } from "../skills";
+import { EXAMPLE_TASKS, type ExampleTaskId } from "./example-tasks";
 import { PromptActionRow, type PromptAction } from "./prompt-action-row";
 import { SavedPrompts } from "./saved-prompts";
+import { useProjectApps, type ProjectApps } from "./use-project-apps";
 
 export interface StartDashboardProps {
   /** The composer and the pills under it: set between the brand and the examples. */
@@ -25,6 +38,10 @@ export interface StartDashboardProps {
   exampleText?: string | null;
   /** The composer's text at this moment: a new shortcut starts from it. */
   readComposerText: () => string;
+  /** Current Project id for listing existing apps in the "Optimize App" menu. */
+  projectId?: string | null;
+  /** Machine id of the draft's workspace, when targeting a remote machine. */
+  machineId?: string | null;
 }
 
 export function StartDashboard({
@@ -33,7 +50,11 @@ export function StartDashboard({
   exampleText = null,
   fill,
   readComposerText,
+  projectId,
+  machineId = null,
 }: StartDashboardProps) {
+  const { currentProject } = useProject();
+  const activeProjectId = projectId ?? currentProject?.projectId ?? null;
   return (
     <div className="ui-start anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3 md:px-4">
       <div className="mx-auto my-auto w-full min-w-0 max-w-3xl shrink-0 py-4">
@@ -59,6 +80,8 @@ export function StartDashboard({
           fill={fill}
           exampleText={exampleText}
           readComposerText={readComposerText}
+          projectId={activeProjectId}
+          machineId={machineId}
         />
       </div>
       <StartVersionLine />
@@ -156,35 +179,203 @@ function VersionBadge() {
 // ---------------------------------------------------------------------------
 
 const TASK_GLYPHS: Record<ExampleTaskId, string> = {
-  ragDocsExpert: ICONS.bookOpen,
-  investmentCopilot: ICONS.barChart,
-  legalDesk: ICONS.file,
-  game: ICONS.play,
-  gamecenter: ICONS.tiles,
-  lol: ICONS.sliders,
-  rhythmRunner: ICONS.pulse,
-  agentBenchmarkBuild: ICONS.trophy,
-  agentOptimization: ICONS.targetArrow,
-  benchmarkImport: ICONS.download,
-  dailyPlan: ICONS.sunrise,
-  githubDigest: ICONS.gitBranch,
-  memoryReview: ICONS.brain,
+  buildApp: ICONS.appWindow,
+  optimizeApp: ICONS.sparkles,
+  publishApp: ICONS.upload,
 };
+
+/** The shortcuts that open a list of the Project's apps and fill a prompt naming the one picked. */
+type AppTaskId = Extract<ExampleTaskId, "optimizeApp" | "publishApp">;
+
+const isAppTask = (id: ExampleTaskId): id is AppTaskId =>
+  id === "optimizeApp" || id === "publishApp";
+
+export function appShortcutTitle(
+  app: Pick<AppCenterShortcut, "title" | "titleZh">,
+  locale: string,
+): string {
+  return locale.startsWith("zh") ? (app.titleZh ?? app.title) : app.title;
+}
+
+export function filterAppShortcuts(
+  apps: readonly AppCenterShortcut[],
+  locale: string,
+  query: string,
+): AppCenterShortcut[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...apps];
+  return apps.filter((app) => {
+    const title = appShortcutTitle(app, locale).toLowerCase();
+    return (
+      title.includes(q) ||
+      app.title.toLowerCase().includes(q) ||
+      (app.titleZh?.toLowerCase().includes(q) ?? false) ||
+      app.workbenchId.toLowerCase().includes(q) ||
+      app.agentName.toLowerCase().includes(q) ||
+      app.agentId.toLowerCase().includes(q)
+    );
+  });
+}
+
+/**
+ * The body of an app shortcut's menu: a search over the apps, each row filling the prompt
+ * `promptOf` writes for it, the row whose prompt the composer holds checked.
+ */
+function AppPickList({
+  list: { apps, error, retry },
+  locale,
+  exampleText,
+  promptOf,
+  onPick,
+}: {
+  list: ProjectApps;
+  locale: string;
+  exampleText: string | null;
+  promptOf: (app: AppCenterShortcut) => string;
+  onPick: (app: AppCenterShortcut) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const listRef = useRef<HTMLDivElement>(null);
+  const filtered = apps === null ? [] : filterAppShortcuts(apps, locale, query);
+  const searchLabel = S.chat.start.appsSearchPlaceholder;
+  return (
+    <>
+      <div className="border-b border-line-muted px-2 pb-1.5 pt-0.5">
+        <SearchInput
+          variant="menu"
+          autoFocus
+          value={query}
+          onChange={setQuery}
+          placeholder={searchLabel}
+          aria-label={searchLabel}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              const first = listRef.current?.querySelector<HTMLElement>("button");
+              if (first) {
+                e.preventDefault();
+                first.focus();
+              }
+            }
+          }}
+        />
+      </div>
+      <div ref={listRef} className="max-h-56 overflow-y-auto">
+        {apps === null ? (
+          error !== null ? (
+            <p className="px-3 py-1.5 text-xs text-fg-muted">
+              {error} <TextAction onClick={retry}>{S.common.retry}</TextAction>
+            </p>
+          ) : (
+            <p className="px-3 py-1.5 text-xs text-fg-subtle">{S.common.loading}</p>
+          )
+        ) : apps.length === 0 ? (
+          <p className="px-3 py-1.5 text-xs text-fg-subtle">{S.chat.start.appsEmptyHint}</p>
+        ) : filtered.length === 0 ? (
+          <p className="px-3 py-1.5 text-xs text-fg-subtle">{S.chat.start.appsNoMatch}</p>
+        ) : (
+          filtered.map((app) => {
+            const title = appShortcutTitle(app, locale);
+            const on = exampleText !== null && promptOf(app) === exampleText;
+            return (
+              <MenuItem
+                key={`${app.agentId}/${app.workbenchId}`}
+                density="sm"
+                aria-pressed={on}
+                checked={on}
+                onSelect={() => onPick(app)}
+                glyph={
+                  <SkillIcon
+                    icon={app.icon}
+                    fallback={ICONS.appWindow}
+                    size={ICON_SIZE.inlineGlyph}
+                    className="shrink-0 text-fg-subtle"
+                  />
+                }
+                label={
+                  <>
+                    <span>{title}</span>{" "}
+                    <span className="text-fg-subtle">
+                      {app.agentName} / {app.workbenchId}
+                    </span>
+                  </>
+                }
+              />
+            );
+          })
+        )}
+      </div>
+    </>
+  );
+}
 
 function ExamplesSection({
   ready,
   exampleText,
   fill,
   readComposerText,
+  projectId,
+  machineId,
 }: {
   ready: boolean;
   exampleText: string | null;
   fill: (prompt: string, skills: readonly string[]) => void;
   readComposerText: () => string;
+  projectId: string | null;
+  machineId: string | null;
 }) {
   const { locale } = useLocale();
-  const [examples, setExamples] = useState(() => pickExamples());
-  const actions: PromptAction[] = examples.map((task) => {
+  const appList = useProjectApps(projectId, machineId);
+  // An app a library plugin installed is published already: it is not offered for publishing.
+  const unpublished: ProjectApps = {
+    ...appList,
+    apps: appList.apps?.filter((app) => app.plugin === undefined) ?? null,
+  };
+  const [openMenu, setOpenMenu] = useState<AppTaskId | null>(null);
+
+  const actions: PromptAction[] = EXAMPLE_TASKS.map((task) => {
+    if (isAppTask(task.id)) {
+      const id = task.id;
+      const copy = S.chat.exampleTasks[id];
+      const list = id === "publishApp" ? unpublished : appList;
+      const promptOf = (app: AppCenterShortcut) =>
+        copy.promptFor(appShortcutTitle(app, locale), app.agentId, app.workbenchId);
+      const current =
+        exampleText !== null && (list.apps ?? []).some((app) => promptOf(app) === exampleText);
+      const open = openMenu === id;
+      return {
+        id,
+        label: copy.label,
+        hint: copy.desc,
+        slot: "suggestion",
+        current,
+        disabled: !ready,
+        menu: true,
+        expanded: open,
+        glyph: current ? ICONS.check : TASK_GLYPHS[id],
+        run: () => setOpenMenu(open ? null : id),
+        wrap: (button) => (
+          <Dropdown
+            button={button}
+            open={open}
+            setOpen={(next) => setOpenMenu(next ? id : null)}
+            portal={{ direction: "down", align: "left" }}
+            menuClass="w-[26rem]"
+            className="min-w-0 max-w-full"
+          >
+            <AppPickList
+              list={list}
+              locale={locale}
+              exampleText={exampleText}
+              promptOf={promptOf}
+              onPick={(app) => {
+                setOpenMenu(null);
+                fill(promptOf(app), task.skills);
+              }}
+            />
+          </Dropdown>
+        ),
+      };
+    }
     const copy = S.chat.exampleTasks[task.id];
     const current = copy.prompt === exampleText;
     return {
@@ -198,12 +389,7 @@ function ExamplesSection({
       run: () => fill(copy.prompt, task.skills),
     };
   });
-  const shuffle = {
-    id: "shuffle",
-    label: S.chat.start.shuffle,
-    glyph: ICONS.refresh,
-    run: () => setExamples((shown) => pickExamples(shown)),
-  };
+
   return (
     <SavedPrompts
       locale={locale}
@@ -211,7 +397,7 @@ function ExamplesSection({
       readComposerText={readComposerText}
       onFill={(prompt) => fill(prompt, [])}
       renderActions={(saved, manage) => (
-        <PromptActionRow prompts={[...saved, ...actions]} manage={manage} shuffle={shuffle} />
+        <PromptActionRow prompts={[...actions, ...saved]} manage={manage} />
       )}
     />
   );

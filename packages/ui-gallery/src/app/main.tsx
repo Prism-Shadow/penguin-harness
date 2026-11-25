@@ -14,7 +14,8 @@
  * `open=settings` (or `settings.<page>`) asks the app for its Settings dialog through the
  * app's own request seam, which the account menu answers as soon as it mounts; `embed=1` makes
  * the app the guest of the page that frames it (guest-frame.ts); `notices=1` raises the notices a
- * conversation can carry in the demo store (mock/notices.ts).
+ * conversation can carry in the demo store (mock/notices.ts), and `as=member` signs the demo
+ * account in as a member.
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -57,6 +58,7 @@ const store = getStore({
   lang: params.lang,
   signedIn: !params.signedOut,
   notices: params.notices === true,
+  member: params.member === true,
   embedded: params.embedded === true,
   freshProject: params.freshProject === true,
   evolutionDemo: params.autoplay === "evolution",

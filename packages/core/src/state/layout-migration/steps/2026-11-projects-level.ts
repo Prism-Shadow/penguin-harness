@@ -9,6 +9,13 @@
  * 5. re-point each Agent's Windows `workbenches` junction, whose target is absolute;
  * 6. re-key the Memory of the Workspaces inside it (rekey-memory.ts, once for the whole run).
  *
+ * Parts 1 and 2 are done for every Project of the run before part 3 for any, and they move all
+ * of the run's folders or none: Windows refuses to rename a folder while any program has it, or
+ * a file in it, open (a terminal or a command whose working folder is inside, an editor, a File
+ * Explorer window), and when that outlasts the retries the folders this run moved are put back.
+ * The root is then left in the layout it had, so the older build a refused hot update keeps
+ * serving finds every Project where it was, and the next run starts over.
+ *
  * Traces are never rewritten: their recorded paths resolve through the link. A Project folder an
  * older build makes at the top level after a downgrade is moved by the next start the same way.
  *
@@ -31,8 +38,8 @@ import {
 import type { StepContext } from "../context.js";
 import { LayoutMigrationError } from "../error.js";
 import type { LayoutStepId, PathMove } from "../journal.js";
-import { linkDir, repointLink } from "../link.js";
-import { isRealDir, lstatOrNull, moveDir } from "../move.js";
+import { isLink, linkDir, repointLink } from "../link.js";
+import { heldOpen, isRealDir, lstatOrNull, moveDir } from "../move.js";
 import { projectPathFiles, rewriteFilePaths } from "../rewrite.js";
 
 export const PROJECTS_LEVEL: LayoutStepId = "2026-11-projects-level";
@@ -114,20 +121,103 @@ export async function checkProjectsLevel(root: string, ids: readonly string[]): 
 }
 
 /**
- * Steps 1–5 for one Project: answers its move, or null when there is nothing of it to finish (a
- * journal entry for a Project deleted since). Each part checks the disk before it acts, so a run
- * cut short anywhere is finished by the next one.
+ * Parts 1 and 2 for every Project of the run whose folder is still at its old place. All of them
+ * move or none do: when one cannot be moved, the ones moved before it are put back, newest first,
+ * and the run stops with nothing moved. A Project an earlier run already moved is left as it is.
  */
-export async function moveProject(ctx: StepContext, id: string): Promise<PathMove | null> {
+export async function moveProjects(ctx: StepContext, ids: readonly string[]): Promise<void> {
+  const moved: string[] = [];
+  for (const id of ids) {
+    const from = legacyProjectDir(ctx.root, id);
+    const to = projectDir(ctx.root, id);
+    let renaming = false;
+    try {
+      await ctx.begin(PROJECTS_LEVEL, id);
+      if (!(await isRealDir(from))) continue;
+      await fs.mkdir(projectsDir(ctx.root), { recursive: true });
+      renaming = true;
+      await moveDir(from, to);
+      renaming = false;
+      moved.push(id);
+      await linkDir(from, to);
+    } catch (err) {
+      throw await putBack(ctx, id, moved, err, renaming && heldOpen(err));
+    }
+    ctx.log(`[layout] moved the Project ${id} to ${to}`);
+  }
+}
+
+/**
+ * Undoes this run's moves after `failed` could not be moved, and answers the error that stops the
+ * run. A folder that cannot be put back stays moved, linked from its old place as a finished move
+ * is, and the journal keeps it for the next run to finish.
+ */
+async function putBack(
+  ctx: StepContext,
+  failed: string,
+  moved: readonly string[],
+  cause: unknown,
+  /** Whether the cause is Windows refusing the rename because the folder is held open. */
+  held: boolean,
+): Promise<LayoutMigrationError> {
+  const stayed: string[] = [];
+  for (const id of [...moved].reverse()) {
+    const from = legacyProjectDir(ctx.root, id);
+    const to = projectDir(ctx.root, id);
+    try {
+      if (await isLink(from)) await fs.unlink(from);
+      await moveDir(to, from);
+    } catch {
+      stayed.push(id);
+      await linkDir(from, to).catch(() => {});
+    }
+  }
+  // The journal and the level are tidied as far as they can be: whatever is left behind is what
+  // the next run would find and finish anyway. `rmdir` removes the level only while it is empty.
+  for (const id of [failed, ...moved]) {
+    if (!stayed.includes(id)) await ctx.finish(PROJECTS_LEVEL, id).catch(() => {});
+  }
+  await fs.rmdir(projectsDir(ctx.root)).catch(() => {});
+
+  const from = legacyProjectDir(ctx.root, failed);
+  const to = projectDir(ctx.root, failed);
+  const reason = cause instanceof Error ? cause.message : String(cause);
+  if (stayed.length > 0) {
+    return new LayoutMigrationError(
+      "step_failed",
+      `The Project "${failed}" could not be moved from ${from} to ${to} (${reason}), and ` +
+        `${stayed.map((id) => `"${id}"`).join(", ")} could not be put back after it, so ` +
+        `${stayed.length === 1 ? "that Project stays" : "those Projects stay"} moved. Fix the ` +
+        `cause, then start again and the move goes on from where it stopped.`,
+    );
+  }
+  if (held) {
+    return new LayoutMigrationError(
+      "folder_in_use",
+      `Windows would not move the Project folder ${from} ` +
+        `(${(cause as NodeJS.ErrnoException).code}): a program has it or a file in it open, such ` +
+        `as a terminal, editor or File Explorer window, or a command running in one of its ` +
+        `Workspaces. Nothing was moved; close it and try again.`,
+    );
+  }
+  return new LayoutMigrationError(
+    "step_failed",
+    `The Project "${failed}" could not be moved from ${from} to ${to} (${reason}). Nothing was ` +
+      `moved; fix the cause, then try again.`,
+  );
+}
+
+/**
+ * Parts 2–5 for one Project once its folder is under `projects/`, moved by this run or an
+ * earlier one: answers its move, or null when there is nothing of it to finish (a journal entry
+ * for a Project deleted since). Each part checks the disk before it acts, so a run cut short
+ * anywhere is finished by the next one.
+ */
+export async function rewriteMovedProject(ctx: StepContext, id: string): Promise<PathMove | null> {
   const from = legacyProjectDir(ctx.root, id);
   const to = projectDir(ctx.root, id);
-  await ctx.begin(PROJECTS_LEVEL, id);
   try {
-    if (await isRealDir(from)) {
-      await fs.mkdir(projectsDir(ctx.root), { recursive: true });
-      await moveDir(from, to);
-      ctx.log(`[layout] moved the Project ${id} to ${to}`);
-    } else if (!(await isRealDir(to))) {
+    if (!(await isRealDir(to))) {
       await ctx.finish(PROJECTS_LEVEL, id);
       return null;
     }
@@ -139,7 +229,6 @@ export async function moveProject(ctx: StepContext, id: string): Promise<PathMov
     }
     return move;
   } catch (err) {
-    if (err instanceof LayoutMigrationError) throw err;
     throw new LayoutMigrationError(
       "step_failed",
       `The Project "${id}" could not be moved from ${from} to ${to} ` +

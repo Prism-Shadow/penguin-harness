@@ -89,6 +89,7 @@ import { relistSystemAppModules } from "../services/system-app-relist.js";
 import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls";
 import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
 import {
+  LayoutMigrationError,
   useInstalledPluginPrefix,
   useLibraryHost,
   usePushedPluginLibrary,
@@ -380,7 +381,21 @@ async function createInner(
   // ran it at start) costs one listing. A migration that stops fails this boot: a push is then
   // refused with its sentence and the previous platform keeps serving.
   if (caps !== null) {
-    await migrateDataRoot(caps.config.root, caps.db, (line) => console.log(line));
+    try {
+      await migrateDataRoot(caps.config.root, caps.db, (line) => console.log(line));
+    } catch (err) {
+      // Here the folder Windows would not move is most often held by what a hot update keeps
+      // running — the terminals and the commands agents started, working inside a Workspace —
+      // and the person reading this needs to hear that a restart ends them.
+      if (err instanceof LayoutMigrationError && err.code === "folder_in_use") {
+        throw new LayoutMigrationError(
+          err.code,
+          `${err.message} The server keeps its current version; restarting it ends its ` +
+            `terminals and commands.`,
+        );
+      }
+      throw err;
+    }
   }
   // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
   // the predecessor declared at the version this build also declares, hard-stop the

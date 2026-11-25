@@ -283,6 +283,24 @@
   border-inline-start: var(--showcase-line-w, 1px) solid
     var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
 }
+/* An action whose job is under way: its words over the job's bar, the bar as wide as the action
+   up to a cap, so a wide card does not stretch it into a rule. */
+.showcase-card-bar > button[data-progress] {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.3rem;
+}
+.showcase-card-bar-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.showcase-card-bar-progress {
+  display: block;
+  width: min(100%, 8rem);
+}
 .showcase-card-bar > button:not(:disabled):hover {
   background: var(--showcase-surface-muted, color-mix(in srgb, currentColor 6%, transparent));
   color: var(--showcase-accent, currentColor);

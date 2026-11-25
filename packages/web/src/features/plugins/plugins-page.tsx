@@ -123,6 +123,7 @@ import { toneInk } from "../../lib/tone";
 import { appWindowPath } from "../../lib/app-center-path";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
 import type { InstallTarget, PluginCardProps } from "./plugin-card";
+import type { InstallFailure } from "./plugin-install-flow";
 import { rowTitle } from "./plugin-marks";
 import {
   ALL_TAB,
@@ -180,7 +181,7 @@ import {
   type PluginStatus,
 } from "./plugin-status";
 import { toastApiError, toastFailure } from "../../lib/toast-api-error";
-import { toldFailure } from "../../lib/failure";
+import { failureOf, toldFailure } from "../../lib/failure";
 
 const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map(), mcp: new Map() };
 
@@ -314,8 +315,10 @@ export function PluginsPage() {
     stage: api.InstallStage;
   } | null>(null);
   /** The last server install that failed, per specifier: said under its card with the next steps. */
-  const [installFailures, setInstallFailures] = useState<ReadonlyMap<string, string>>(new Map());
-  const failInstall = (specifier: string, why: string | null) =>
+  const [installFailures, setInstallFailures] = useState<ReadonlyMap<string, InstallFailure>>(
+    new Map(),
+  );
+  const failInstall = (specifier: string, why: InstallFailure | null) =>
     setInstallFailures((m) => {
       const next = new Map(m);
       if (why === null) next.delete(specifier);
@@ -542,6 +545,9 @@ export function PluginsPage() {
     const { specifier, install } = target;
     setPendingSpecifier(specifier);
     if (install) failInstall(specifier, null);
+    // The server's last report, kept for a failure to say where the install stopped.
+    let lastStage: api.InstallStage | null = null;
+    let lastProgress: { received: number; total: number | null } | null = null;
     try {
       const next = install
         ? await api.installPluginStream(
@@ -551,9 +557,12 @@ export function PluginsPage() {
             // A download the user has navigated away from does not write this visit's state;
             // the request itself runs on.
             (received, total) => {
+              lastProgress = { received, total };
               if (isCurrentVisit()) setInstallProgress({ specifier, received, total });
             },
             (stage) => {
+              lastStage = stage;
+              lastProgress = null;
               if (!isCurrentVisit()) return;
               setInstallStage({ specifier, stage });
               // A download belongs to one source: the next step's words replace its percent.
@@ -607,8 +616,13 @@ export function PluginsPage() {
     } catch (e) {
       // A failed install is said under its card, with the next steps; a failed removal toasts.
       if (isCurrentVisit()) {
-        if (install) failInstall(specifier, apiErrorText(e));
-        else toastApiError(e);
+        if (install) {
+          failInstall(specifier, {
+            failure: failureOf(e, { what: "a plugin could not be installed on the server" }),
+            stage: lastStage,
+            progress: lastProgress,
+          });
+        } else toastApiError(e);
       }
     } finally {
       if (isCurrentVisit()) {
@@ -1229,6 +1243,7 @@ export function PluginsPage() {
           : null,
       failure:
         row.module !== undefined ? (installFailures.get(row.module.specifier) ?? null) : null,
+      remoteInstall: rowMachine !== undefined && selfId !== undefined && rowMachine !== selfId,
       onDismissFailure: () => {
         if (row.module !== undefined) failInstall(row.module.specifier, null);
       },
