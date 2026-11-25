@@ -49,14 +49,20 @@ import {
   parseSkillFrontmatter,
   pluginContentVersion,
   listInstalledWorkbenches,
+  workbenchesDir,
 } from "@prismshadow/penguin-core";
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import { isNewSemanticId, NEW_ID_RULE, SEMANTIC_ID_RULE } from "./ids.js";
 import { agentAvatarRev } from "./agent-avatar.js";
 import { isWorkbenchId } from "./agent-vocab.js";
 import { isTopicFileName } from "./memory-service.js";
-import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "./types.js";
-import type { AgentListItem, AgentCreation } from "./types.js";
+import type {
+  AgentAuthor,
+  AgentCreation,
+  AgentDeletionInfo,
+  AgentListItem,
+  PluginUpdateRef,
+} from "./types.js";
 import { refuseReservedAgentId } from "./system-agent.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
