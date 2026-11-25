@@ -5,8 +5,18 @@
  * One package, no server dependencies — the server imports these; nothing here imports the
  * server.
  */
-export { AgentConfig, Memory } from "./contract.js";
-export type { AgentPaths } from "./ports.js";
+export { AgentConfig, Memory, Snapshots, AgentLifecycle } from "./contract.js";
+export type { AgentPackage } from "./contract.js";
+export type {
+  AgentPaths,
+  AgentPluginLibrary,
+  AgentPluginModules,
+  AgentWorkbenches,
+  AgentDirectorySkills,
+  AgentTaskRunner,
+  AgentTaskSessions,
+  AgentTaskOutcome,
+} from "./ports.js";
 export {
   STATE_FILE,
   TMP_SUFFIX,
@@ -17,6 +27,28 @@ export {
   isGitEntry,
 } from "./agent-vocab.js";
 export { AgentConfigService, maskApiKey } from "./agent-config-service.js";
+export { AgentService, refuseBuiltinDeletion } from "./agent-service.js";
+export type { AgentListItem, AgentCreation } from "./agent-service.js";
+export { AgentSkills, InstalledAgentSkills } from "./agent-skills.js";
+export { AgentTasks, HostAgentTasks } from "./agent-tasks.js";
+export type { AgentTaskStart, AgentTaskState, AgentTaskStatus } from "./agent-tasks.js";
+export {
+  deleteAgentEverywhere,
+  refuseUndeletable,
+  removeAgents,
+} from "./agent-deletion.js";
+export type { AgentDeletionDeps, AgentRemoval } from "./agent-deletion.js";
+export { migrateEmployeeAuthors } from "./agent-author-migration.js";
+export { FsLimiter, countEntries, purgeTree } from "./tree-purge.js";
+export type { PurgeFailure, PurgeOptions } from "./tree-purge.js";
+export {
+  isNewSemanticId,
+  randomHex8,
+  SEMANTIC_ID_PATTERN,
+  USERNAME_PATTERN,
+  SEMANTIC_ID_RULE,
+  NEW_ID_RULE,
+} from "./ids.js";
 export { MemoryService } from "./memory-service.js";
 export {
   MAX_MEMORY_ARCHIVE_FILES,
@@ -70,6 +102,12 @@ export type {
   AgentKernelUpdateResponse,
   AgentConfigUpdateRequest,
   AgentConfigView,
+  AgentListItem,
+  AgentCreation,
+  AgentDeletionInfo,
+  PluginUpdateRef,
+  ModuleActor,
+  AgentEmployment,
   MemoryScopeInfo,
   MemoryFolderFile,
   MemoryFileInfo,
