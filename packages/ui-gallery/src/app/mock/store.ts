@@ -185,6 +185,10 @@ export class DemoStore {
       this.f.chatDefaults.workspace = RSI_WORKSPACE;
     }
     if (notices) raiseNotices(this.f);
+    if (init.member) {
+      this.f.user = { ...this.f.user, isAdmin: false };
+      this.f.project = { ...this.f.project, role: "member" };
+    }
     if (init.freshProject && embedded) this.f.prefs.initialPasswordBannerDismissed = true;
     const ref = DEFAULT_MODEL;
     const seeded: Record<string, Transcript> = {
@@ -663,6 +667,8 @@ interface StoreInit {
   signedIn: boolean;
   /** Raise the notices a conversation can carry (notices.ts). */
   notices?: boolean;
+  /** The account is a Project member and no admin. */
+  member?: boolean;
   /** The public site embeds a working Project. Gallery boards also exercise maintenance states. */
   embedded?: boolean;
   evolutionDemo?: boolean;

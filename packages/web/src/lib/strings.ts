@@ -3440,12 +3440,18 @@ export const zh = {
       flowTitle: (name: string) => `安装 ${name}`,
       backToServer: "返回服务端步骤",
       toAgents: "继续选择 Agent",
-      prepare: "准备插件",
-      projectService: "为当前项目启用服务",
       ready: "服务端已准备好",
+      /** Where the plugin installs, under its name, when no machine is selected. */
+      thisServer: "这台服务器",
+      /** The primary button of a plugin the server already carries. */
+      enableNow: "启用",
       installDetails: "对服务端的影响",
       chooseAgent: "选择智能体",
       chooseAgentHelp: "选择要使用这款插件的智能体。你可以依次添加给多个智能体。",
+      /** The same step right after this sheet installed the plugin. */
+      chooseAfterInstall: "插件已经装好。选一个智能体来使用它；添加之前，没有智能体会用到它。",
+      chooseLater: "以后再选",
+      addAnother: "添加给其他智能体",
       prepareForAgents: "这台服务器上的所有项目共用一份插件。安装后，选择哪些智能体可以使用它。",
       preparePackage: "这台服务器上的所有项目共用一份插件。安装后即可查看它提供的功能。",
       prepareService: "这台服务器上的所有项目共用一份插件。这项服务无需添加给智能体。",
@@ -3456,17 +3462,39 @@ export const zh = {
       addToAgent: (name: string) => `添加给 ${name}`,
       addedToAgent: "已添加",
       serverDone: (name: string) => `${name} 已在服务端，所有 Project 共用。`,
-      askBody: "请管理员安装插件，供这台服务器上的所有项目共用。",
+      askTitle: "需要管理员来安装",
+      askBody:
+        "这款插件还没有装到这台服务器，只有管理员能安装。点下面的按钮告诉管理员，装好后再回来选择智能体。",
       askAdmin: "请管理员安装",
-      asked: "安装申请已发送给管理员。",
+      askedTitle: "已经告诉管理员",
+      asked: "管理员装好之后，回到这里选择要使用它的智能体。",
       finish: "完成",
-      /** Progress on the clicked control. */
-      checking: "检查插件源…",
-      installing: "安装中…",
-      fromOffline: "从离线包安装…",
-      loading: "加载模块…",
-      /** The same steps on a card's one-line install control. */
-      stepShort: { checking: "检查插件源…", fromOffline: "从离线包安装…", loading: "加载模块…" },
+      /** The install sheet while the server works: one sentence per stage. */
+      starting: "正在准备…",
+      checking: "正在查找这款插件…",
+      installing: "正在下载并安装…",
+      downloadingNow: "正在下载…",
+      fromOffline: "正在用服务器自带的安装包安装…",
+      loading: "正在启动插件…",
+      /** The same stage when the install is written for another machine. */
+      handing: "正在交给那台机器…",
+      /** The same stages on a card's one-line install control. */
+      stepShort: {
+        checking: "查找中…",
+        installing: "安装中…",
+        fromOffline: "安装中…",
+        loading: "启动中…",
+      },
+      progressLabel: (name: string) => `${name} 的安装进度`,
+      noCancel: "安装开始后不能中途取消。关掉这个窗口，安装会在后台继续。",
+      background: "在后台继续",
+      /** The sheet once everything it started is complete. */
+      doneTitle: (name: string) => `${name} 可以用了`,
+      doneAgents: (agents: string) => `已添加给 ${agents}。`,
+      doneService: "它已经装到这台服务器，当前项目现在就能使用。",
+      /** The sheet when the server install failed. */
+      failedTitle: (name: string) => `没能装上 ${name}`,
+      failedHelp: "可以再试一次；一直失败的话，换一个插件源，或者从文件导入。",
       /** The server-uninstall confirm. */
       uninstallTitle: (name: string) => `从服务端卸载 ${name}`,
       uninstallBody: (name: string, agents: number) =>

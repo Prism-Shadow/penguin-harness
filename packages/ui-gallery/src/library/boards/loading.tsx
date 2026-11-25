@@ -4,7 +4,8 @@
  * side by side, each theme in a frame of its own (a theme's recipes key on the document root),
  * and a replay that answers one region inside the delay and the other after it, so the first
  * never shows a placeholder and the second shows it only from the delay on; the progress bar on
- * its three heights, toned and indeterminate; and the transfer row in every place a
+ * its three heights, toned and indeterminate; the staged bar in each state of its current stage;
+ * and the transfer row in every place a
  * conversation's history coming over from a machine shows it — standing in for the transcript
  * (counting, not yet counted, waiting for the machine), over the transcript (going on, and
  * waiting in the same line), under an unfolded output.
@@ -20,13 +21,20 @@ import {
   ProgressBar,
   RetryStatus,
   SkeletonCard,
+  StagedProgress,
   StatusIcon,
   THEME_IDS,
   TransferProgress,
   WAITING_DELAY_MS,
   Waiting,
 } from "@prismshadow/penguin-ui";
-import type { ProgressBarSize, StatusIconSize, ThemeId } from "@prismshadow/penguin-ui";
+import type {
+  ProgressBarSize,
+  ProgressStage,
+  StagedProgressStatus,
+  StatusIconSize,
+  ThemeId,
+} from "@prismshadow/penguin-ui";
 import { BoardGroup, ReplayButton } from "../../foundations/shared";
 import { BASE } from "../../lib/location";
 import { useGallery } from "../../state";
@@ -46,6 +54,28 @@ const BAR_RUNGS: readonly (readonly [ProgressBarSize, number])[] = [
   ["xs", 30],
   ["sm", 60],
   ["md", 90],
+];
+
+/** A staged job's stages, as an install has them: the download gets the room for its amount. */
+const STAGES: readonly ProgressStage[] = [
+  { key: "check" },
+  { key: "fetch", weight: 3 },
+  { key: "start" },
+  { key: "choose" },
+];
+
+/** The staged bar's states, each at the place that shows it. */
+const STAGED: readonly {
+  key: "stagedLive" | "stagedAmount" | "stagedWaiting" | "stagedStopped" | "stagedFinished";
+  current: number;
+  value?: number;
+  status: StagedProgressStatus;
+}[] = [
+  { key: "stagedLive", current: 0, status: "running" },
+  { key: "stagedAmount", current: 1, value: 0.45, status: "running" },
+  { key: "stagedWaiting", current: 3, status: "waiting" },
+  { key: "stagedStopped", current: 1, value: 0.6, status: "stopped" },
+  { key: "stagedFinished", current: 4, status: "running" },
 ];
 
 /** The demo's amounts, as the Web App formats them: one unit per total, the done figure padded. */
@@ -104,6 +134,26 @@ export function LoadingBoard({ part }: { part?: LibraryPart }) {
           <div className="grid gap-1">
             <span className="lib-caption">{t.progressIndeterminate}</span>
             <ProgressBar indeterminate size="md" label={t.progressLabel} />
+          </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.staged} aside={t.stagedHint}>
+        <div className="lib-stack" style={{ maxWidth: "28rem" }}>
+          {STAGED.map(({ key, ...bar }) => (
+            <div key={key} className="grid gap-1">
+              <span className="lib-caption">{t[key]}</span>
+              <StagedProgress stages={STAGES} {...bar} label={t.stagedLabel} />
+            </div>
+          ))}
+          <div className="grid gap-1">
+            <span className="lib-caption">xs</span>
+            <StagedProgress
+              stages={STAGES}
+              current={1}
+              value={0.45}
+              size="xs"
+              label={t.stagedLabel}
+            />
           </div>
         </div>
       </BoardGroup>

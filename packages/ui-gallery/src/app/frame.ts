@@ -16,7 +16,8 @@
  *
  * Two more params serve the screenshot script and the browser checks, and the gallery's own pages
  * set neither: `wallpaper` (with `wallpaperSettings`) seeds a custom background the same way, and
- * `notices=1` raises the notices a conversation can carry. `window=<platform>` frames the app as
+ * `notices=1` raises the notices a conversation can carry, and `as=member` signs the demo account
+ * in as a Project member who is no admin. `window=<platform>` frames the app as
  * the desktop shell's main window (the desktop-window surface sets it).
  *
  * A page outside the gallery frames the same document with `embeddedFrameSrc`: it names only the
@@ -111,6 +112,11 @@ export interface FrameTarget {
    */
   notices?: boolean;
   /**
+   * Sign the demo account in as a Project member who is no admin, so the surfaces show what a
+   * member is offered where an admin acts (asking an admin to install a plugin).
+   */
+  member?: boolean;
+  /**
    * Frame the app as the desktop shell's main window on this platform: the frame is handed a
    * stand-in for the shell's window bridge before the app boots, so the app draws its title band
    * (and, off macOS, its window buttons) as it does in the desktop app. The buttons do nothing.
@@ -128,6 +134,7 @@ export function appFrameSrc(base: string, prefs: FramePrefs, target: FrameTarget
   if (target.embedded) params.set("embed", "1");
   if (target.autoplay) params.set("autoplay", target.autoplay);
   if (target.notices) params.set("notices", "1");
+  if (target.member) params.set("as", "member");
   if (target.window) params.set("window", target.window);
   return `${base}${APP_FRAME_PATH}?${params.toString()}`;
 }
@@ -183,6 +190,7 @@ export function parseFrameParams(search: string): FrameParams {
       ? { freshProject: true }
       : {}),
     ...(params.get("notices") === "1" ? { notices: true } : {}),
+    ...(params.get("as") === "member" ? { member: true } : {}),
     ...(platform !== undefined ? { window: platform } : {}),
   };
 }

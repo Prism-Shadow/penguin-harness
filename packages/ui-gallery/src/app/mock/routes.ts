@@ -166,6 +166,7 @@ import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 import type { ApprovalsResponse } from "../../../../amsp/src/types";
 import type { UsageDay } from "./fixtures";
 import { IDS } from "./ids";
+import { landInstall } from "./install-stream";
 import { empty, fail, json, raw, Router } from "./router";
 import type { RequestContext } from "./router";
 import type { DemoStore } from "./store";
@@ -3331,27 +3332,8 @@ router
       return store.f.installedPlugins;
     },
   )
-  .post(
-    "/api/projects/:projectId/plugins/installed",
-    ({ store, body }): InstalledPluginsResponse => {
-      const specifier = str(record(body).specifier);
-      if (!store.f.installedPlugins.shipped.includes(specifier))
-        fail(404, "plugin_not_shipped", "This build does not ship that plugin.");
-      if (!store.f.installedPlugins.plugins.some((p) => p.specifier === specifier)) {
-        store.f.installedPlugins.plugins.push({
-          specifier,
-          active: false,
-          builtin: true,
-          modules: [],
-          replaces: [],
-          everywhere: true,
-          machines: [],
-          here: true,
-        });
-        store.f.installedPlugins.restartPending = true;
-      }
-      return store.f.installedPlugins;
-    },
+  .post("/api/projects/:projectId/plugins/installed", ({ store, body }): InstalledPluginsResponse =>
+    landInstall(store, body),
   )
   .post("/api/projects/:projectId/plugins/installed/archive", () =>
     readOnly("install a plugin archive"),
