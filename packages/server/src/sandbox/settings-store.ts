@@ -13,9 +13,9 @@
  * is `SandboxSettingsStatus`, in settings-status.ts.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import { PluginConfig } from "../plugin/config.js";
+import { PluginConfig, resolveTable } from "../plugin/config.js";
 import { Sandbox, SandboxModule } from "./service.js";
-import { sandboxStartOf } from "./settings-policy.js";
+import { sandboxStartOf } from "@prismshadow/penguin-library-sandbox/policy";
 
 /** The sandbox's group name (its contribution id), and the parent a backend's group names. */
 export const SANDBOX_GROUP = "sandbox";
@@ -376,10 +376,12 @@ export class SandboxSettings {
     // applying the defaults here would un-confine a deployment on every hot update.
     const schema = () => pluginConfig.schema(SANDBOX_GROUP);
     if (pluginConfig.saved(SANDBOX_GROUP)) {
-      sandbox.configure(sandboxStartOf(schema(), pluginConfig.get(SANDBOX_GROUP)).policy);
+      sandbox.configure(
+        sandboxStartOf(schema(), pluginConfig.get(SANDBOX_GROUP), resolveTable).policy,
+      );
     }
     pluginConfig.watch(SANDBOX_GROUP, (doc) =>
-      sandbox.configure(sandboxStartOf(schema(), doc).policy),
+      sandbox.configure(sandboxStartOf(schema(), doc, resolveTable).policy),
     );
   }
 }

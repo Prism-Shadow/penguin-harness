@@ -134,8 +134,12 @@ import {
 import { Sandbox, SandboxModule } from "../sandbox/service.js";
 import { agentWritableRoots } from "../workbenches/data-dirs.js";
 import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
-import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "../sandbox/settings-policy.js";
-import { PluginConfig } from "../plugin/config.js";
+import {
+  sandboxEnabledOf,
+  sandboxPresetsOf,
+  sandboxStartOf,
+} from "@prismshadow/penguin-library-sandbox/policy";
+import { PluginConfig, resolveTable } from "../plugin/config.js";
 import {
   SessionService,
   type ArchivedRow,
@@ -4575,12 +4579,19 @@ export class SessionsModule {
       sandboxBackends: () => sandbox.backends().map((b) => b.name),
       // The Sandbox card's presets, read per view: a rename there reaches the next read.
       sandboxPresets: () =>
-        sandboxPresetsOf(pluginConfig.schema(SANDBOX_GROUP), pluginConfig.get(SANDBOX_GROUP)),
+        sandboxPresetsOf(
+          pluginConfig.schema(SANDBOX_GROUP),
+          pluginConfig.get(SANDBOX_GROUP),
+          resolveTable,
+        ),
       sandboxSwitchOn: () => sandboxEnabledOf(pluginConfig.get(SANDBOX_GROUP)),
       // The default preset's approval mode, while the switch is on.
       sandboxDefaultApproval: () =>
-        sandboxStartOf(pluginConfig.schema(SANDBOX_GROUP), pluginConfig.get(SANDBOX_GROUP))
-          .approvalMode,
+        sandboxStartOf(
+          pluginConfig.schema(SANDBOX_GROUP),
+          pluginConfig.get(SANDBOX_GROUP),
+          resolveTable,
+        ).approvalMode,
     });
     this.manager = manager;
     this.sessionService = sessionService;

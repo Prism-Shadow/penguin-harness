@@ -161,6 +161,7 @@
     "@prismshadow/penguin-library-observability": "workspace:*",
     "@prismshadow/penguin-library-organization": "workspace:*",
     "@prismshadow/penguin-library-project": "workspace:*",
+    "@prismshadow/penguin-library-sandbox": "workspace:*",
     "@prismshadow/penguin-library-session": "workspace:*",
     "@prismshadow/penguin-library-setting": "workspace:*",
     "@prismshadow/penguin-library-terminal": "workspace:*",
