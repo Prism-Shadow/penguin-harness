@@ -90,10 +90,12 @@ import { SkillTile } from "../skills";
 import { packageUpdate } from "./plugin-package-update";
 import { MarketPluginCard } from "./plugin-market-card";
 import type { InstallStage } from "../../api/endpoints";
+import { InstallProgress } from "./install-bar";
+import { installPlan, installStepWords } from "./install-progress";
 import {
   InstallFailureNote,
   InstallFlow,
-  installStepWords,
+  type InstallFailure,
   type ServerStep,
 } from "./plugin-install-flow";
 import { PluginCover } from "./plugin-cover";
@@ -134,6 +136,8 @@ function installTargetLabel(name: string, id: string | null, machine: string | n
 
 /** The install control's icon: the arrow landing in its tray. */
 const INSTALL_ICON = ICONS.download;
+/** The plugin's icon in the install flow's head, in px. */
+const FLOW_ICON_PX = 44;
 
 /**
  * An Agent a library plugin can be installed on: one of this server's, or a machine's own.
@@ -248,8 +252,10 @@ export interface PluginCardProps {
   stage?: InstallStage | null;
   /** Another row's is: one at a time, so this one is held rather than queued. */
   blocked: boolean;
-  /** The last server install of this row failed: why, with what to do next. */
-  failure?: string | null;
+  /** The last server install of this row failed: why, and where it stopped. */
+  failure?: InstallFailure | null;
+  /** A server install of this row is written for another machine, which fetches it itself. */
+  remoteInstall?: boolean;
   onDismissFailure?: () => void;
   /** The failure's next steps: the Plugin Sources settings, and the zip import. */
   onOpenSources?: () => void;
@@ -293,10 +299,13 @@ export function PluginCard(props: PluginCardProps) {
   const [selectedTargetKey, setSelectedTargetKey] = useState<string | null>(null);
   // The Create agent dialog over the flow's Agent list, opened by its first row.
   const [blankOpen, setBlankOpen] = useState(false);
+  // The targets the plugin was added to since the flow opened: what its last step reports.
+  const [addedKeys, setAddedKeys] = useState<readonly string[]>([]);
   const closeInstall = () => {
     setInstallOpen(false);
     setSelectedTargetKey(null);
     setBlankOpen(false);
+    setAddedKeys([]);
   };
   // Agents pending an update confirmation (null = none): an update is an overwriting reinstall,
   // so it is confirmed against the list of parts it rewrites before it runs.
@@ -382,6 +391,35 @@ export function PluginCard(props: PluginCardProps) {
     return !builtIn && (agentContent || !contentsKnown) ? "ask" : "held";
   }
   const serverStep = installServerStep();
+  /** The stages a server install of this plugin has for this reader: the bar's segments. */
+  const plan = installPlan({
+    server: serverStep === "install" || serverStep === "enable" ? serverStep : "none",
+    remote: props.remoteInstall === true,
+    modules: row.module?.entry?.offline?.modules ?? null,
+    agents:
+      agentContent &&
+      (serverStep === "done" ||
+        serverStep === "install" ||
+        serverStep === "enable" ||
+        shippedHybrid),
+  });
+  /** The same bar at the size of a card's one-line control, while the install runs. */
+  const compactProgress = props.busy ? (
+    <InstallProgress
+      plan={plan}
+      phase="running"
+      stage={props.stage}
+      progress={props.progress}
+      size="xs"
+      label={S.plugins.installModel.progressLabel(title)}
+    />
+  ) : undefined;
+  /** Adds the plugin to a target; the flow's last step names the ones that took it. */
+  const addTo = async (key: string, item: PluginItem) => {
+    if (await props.onToggleInstall(key, item, true)) {
+      setAddedKeys((keys) => (keys.includes(key) ? keys : [...keys, key]));
+    }
+  };
 
   function manageLabel(): string {
     if (serverStep === "ask") return S.plugins.installModel.askAdmin;
@@ -468,7 +506,7 @@ export function PluginCard(props: PluginCardProps) {
         key="manage"
         {...(where === "hero" && firstOpen === undefined ? { variant: "primary" as const } : {})}
         glyph={INSTALL_ICON}
-        label={props.busy ? installStepWords(props.progress, props.stage) : installWords}
+        label={props.busy ? installStepWords(props.progress, props.stage, true) : installWords}
         name={`${installWords} ${row.name}`}
         // Under way, the step is said in words at every width: a spinner alone says nothing.
         words={props.busy ? "always" : words}
@@ -633,6 +671,28 @@ export function PluginCard(props: PluginCardProps) {
       )),
   ];
   const quickStart = plugin === undefined ? null : libraryQuickStart(plugin);
+  /** What the finished install flow offers first: the plugin's app, else its example. */
+  const flowNext = () => {
+    if (firstOpen !== undefined) {
+      return {
+        label: S.plugins.openApp,
+        onClick: () => {
+          closeInstall();
+          firstOpen();
+        },
+      };
+    }
+    if (plugin !== undefined && quickStart !== null && onAgent && props.canQuickStart) {
+      return {
+        label: S.plugins.quickAction,
+        onClick: () => {
+          closeInstall();
+          props.onQuickStart(plugin);
+        },
+      };
+    }
+    return null;
+  };
 
   const dialogs = (
     <>
@@ -676,11 +736,20 @@ export function PluginCard(props: PluginCardProps) {
               icon={rowIcon(row)}
               name={row.name}
               fallback={ICONS.puzzle}
-              size={44}
+              size={FLOW_ICON_PX}
               glyph={24}
             />
           }
+          iconSize={FLOW_ICON_PX}
+          {...(description !== S.plugins.noDescription && description !== S.plugins.shippedNoEntry
+            ? { description }
+            : {})}
+          {...(version !== undefined ? { version } : {})}
           steps={agentContent ? 2 : 1}
+          plan={plan}
+          remote={props.remoteInstall === true}
+          added={addedKeys.map(nameOf)}
+          next={flowNext()}
           contentsKnown={contentsKnown}
           server={serverStep}
           {...(shippedHybrid
@@ -750,7 +819,7 @@ export function PluginCard(props: PluginCardProps) {
                         if (!on) setPendingUninstall(t.key);
                         else if (installNeedsConfirm(plugin, installed.get(t.key))) {
                           setPendingStdio(t.key);
-                        } else void props.onToggleInstall(t.key, plugin, true);
+                        } else void addTo(t.key, plugin);
                       }}
                       onUpdate={() => setPendingUpdate([t.key])}
                       onSetUp={() => setSetUpAgent(t.key)}
@@ -843,7 +912,7 @@ export function PluginCard(props: PluginCardProps) {
           onConfirm={() => {
             const key = pendingStdio;
             setPendingStdio(null);
-            void props.onToggleInstall(key, plugin, true);
+            void addTo(key, plugin);
           }}
         >
           <StdioInstallBody
@@ -927,6 +996,7 @@ export function PluginCard(props: PluginCardProps) {
           onOpen={() => setDetailOpen(true)}
           install={{
             label: action,
+            progress: compactProgress,
             // While its own server install runs it stays live: it reopens the flow to watch.
             disabled: props.pending === true || (props.blocked && !props.busy) || memberHeld,
             ...(memberHeld ? { hint: S.plugins.installModel.adminOnly } : {}),
@@ -998,7 +1068,7 @@ export function PluginCard(props: PluginCardProps) {
         ? {
             note: (
               <InstallFailureNote
-                reason={props.failure}
+                failure={props.failure.failure}
                 onOpenSources={props.onOpenSources}
                 onImportFile={props.isAdmin ? props.onImportFile : undefined}
                 onDismiss={props.onDismissFailure}

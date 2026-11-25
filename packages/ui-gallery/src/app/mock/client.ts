@@ -11,6 +11,7 @@ import { apiUrl } from "../../../../web/src/lib/server-context";
 import { machineForPath } from "../../../../web/src/lib/session-machines";
 import { ApiError } from "./errors";
 import { answerAsResponse } from "./fetch-shim";
+import { installStream } from "./install-stream";
 import { router } from "./routes";
 import { getStore } from "./store";
 import type { Method } from "./router";
@@ -84,6 +85,9 @@ export async function apiUpload<T>(path: string): Promise<T> {
   return apiFetch<T>(path, { method: "POST" });
 }
 
+/** The server install route, which answers a stream to a page that asks for one. */
+const INSTALL_PATH = /^\/api\/projects\/[^/]+\/plugins\/installed$/;
+
 export interface ApiFetchStreamOptions {
   method?: "GET" | "POST";
   body?: unknown;
@@ -101,6 +105,10 @@ export async function apiFetchStream(
 ): Promise<Response> {
   await beat();
   if (options.signal?.aborted) throw options.signal.reason;
+  // An install is the one answer the page reads as it arrives: its stream is scripted.
+  if (options.method === "POST" && INSTALL_PATH.test(path)) {
+    return installStream(getStore(), options.body);
+  }
   const target = "server" in options ? (options.server ?? null) : machineForPath(path);
   const response = await answerAsResponse(
     options.method ?? "GET",

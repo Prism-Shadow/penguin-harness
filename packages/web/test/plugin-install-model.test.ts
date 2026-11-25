@@ -3,12 +3,16 @@
  * A plugin's one install control and its flow: the server first, then the Agents.
  *
  * - Given a server install under way, the card's install control says the step it is at, in its
- *   one-line words — checking, downloading with its percent, installing, loading — never a word
- *   that says nothing; the flow says the step whole.
+ *   one-line words — looking up, downloading with its percent, installing, starting — over the
+ *   install's staged bar; the flow says the step as a sentence under the same bar.
  * - Given a plugin not on the server whose offline archive carries Agent content, an admin's
- *   Install opens the flow on step 1 of 2: it says what installing on the server does, and its
- *   button hands the install to the page; while it runs the step shows its words and a bar; a
- *   failure stays on the step with the next steps (Plugin Sources, a zip import, dismiss).
+ *   Install opens the flow with no bar: it says what installing on the server does, and its
+ *   button hands the install to the page; while it runs the flow shows the staged bar and the
+ *   step's sentence, and says the install carries on if the sheet is closed; a failure stops the
+ *   bar where the server's reports stood, with the reason, Try again and the next steps (Plugin
+ *   Sources, a zip import, dismiss).
+ * - Given the install this sheet ran is complete, the flow hands over to the Agents with a way
+ *   to choose later, and once one is added says the plugin is ready and who has it.
  * - Members can request an Agent package or an unread release, from the card or its detail.
  *   A request never runs the server install or opens the Agent chooser.
  * - A prepared plugin opens at agent selection. Only the chosen copy is added or removed.
@@ -103,6 +107,11 @@ const buttonWithText = (text: string, scope: ParentNode = document) =>
 /** The market card's install control: its words, then the card's title. */
 const installControl = (label: string) => buttonNamed(`${label} · computer-use`);
 const dialog = () => document.querySelector('[role="dialog"]');
+/** The staged bar's segments under `scope`, each as `stage:state`. */
+const stagesOf = (scope: ParentNode) =>
+  [...scope.querySelectorAll("[data-stage]")].map(
+    (segment) => `${segment.getAttribute("data-stage")}:${segment.getAttribute("data-state")}`,
+  );
 
 describe("the install control under way", () => {
   it("says each step the server install reaches", async () => {
@@ -115,6 +124,8 @@ describe("the install control under way", () => {
     for (const [step, label] of steps) {
       const page = await show(props({ busy: true, ...step }));
       expect(installControl(label), label).toBeDefined();
+      // The same staged bar the flow draws, at the control's size.
+      expect(installControl(label)!.querySelector('[role="progressbar"]'), label).not.toBeNull();
       await page.unmount();
     }
   });
@@ -128,7 +139,7 @@ describe("the flow of a plugin not on the server", () => {
     expect(dialog()!.querySelector('[role="progressbar"]')).toBeNull();
     expect(dialog()!.textContent).toMatch(/all projects on this server/i);
     expect(dialog()!.textContent).toContain(words.prepareForAgents);
-    await click(buttonWithText(words.installServer)!);
+    await click(buttonWithText(en.skills.install, dialog()!)!);
     expect(onInstallServer).toHaveBeenCalledOnce();
   });
 
@@ -148,23 +159,48 @@ describe("the flow of a plugin not on the server", () => {
     }
   });
 
-  it("shows the step's words while it runs, and a failure with its next steps", async () => {
+  it("shows the step's sentence under the staged bar while it runs, and a failure with its next steps", async () => {
     const running = await show(props({ busy: true, stage: { stage: "checking" } }));
     await click(installControl(words.stepShort.checking)!);
-    expect(dialog()!.querySelector('[role="status"]')?.textContent).toContain(words.checking);
+    const status = dialog()!.querySelector('[role="status"]')!;
+    expect(status.textContent).toContain(words.checking);
+    expect(stagesOf(status)).toEqual([
+      "check:running",
+      "fetch:pending",
+      "start:pending",
+      "agents:pending",
+    ]);
+    expect(dialog()!.textContent).toContain(words.noCancel);
+    expect(buttonWithText(words.background, dialog()!)).toBeDefined();
     await running.unmount();
 
+    const reason = "@penguinharness/computer-use is not published on registry.npmjs.org yet.";
+    const onInstallServer = vi.fn();
     const p = props({
-      failure: "@penguinharness/computer-use is not published on registry.npmjs.org yet.",
+      failure: {
+        failure: { text: reason, report: null },
+        stage: { stage: "installing", source: "channel" },
+        progress: { received: 60, total: 100 },
+      },
+      onInstallServer,
       onOpenSources: vi.fn(),
       onImportFile: vi.fn(),
       onDismissFailure: vi.fn(),
     });
     await show(p);
     await click(installControl(en.skills.install)!);
-    expect(dialog()!.querySelector('[data-testid="install-failure"]')?.textContent).toContain(
-      words.failedNote("@penguinharness/computer-use is not published on registry.npmjs.org yet."),
-    );
+    const failure = dialog()!.querySelector('[data-testid="install-failure"]')!;
+    expect(failure.textContent).toContain(words.failedTitle("computer-use"));
+    expect(failure.textContent).toContain(reason);
+    // The bar stops in the download, where the server's last report stood.
+    expect(stagesOf(dialog()!)).toEqual([
+      "check:done",
+      "fetch:stopped",
+      "start:pending",
+      "agents:pending",
+    ]);
+    await click(buttonWithText(en.common.retry, dialog()!)!);
+    expect(onInstallServer).toHaveBeenCalledOnce();
     await click(buttonWithText(words.sourcesSettings)!);
     await click(buttonWithText(words.importFromFile)!);
     await click(buttonWithText(words.dismiss)!);
@@ -203,12 +239,43 @@ describe("the flow of a plugin not on the server", () => {
   );
 });
 
+describe("the install this sheet ran, once the server has the plugin", () => {
+  it("hands over to the Agents, then says the plugin is ready and who has it", async () => {
+    const before = props({ onInstallServer: vi.fn() });
+    const page = await show(before);
+    await click(installControl(en.skills.install)!);
+    // The server's answer lands: the same card now carries the library plugin.
+    const after = {
+      ...before,
+      row: installedRow,
+      status: "installed" as const,
+      usage: { usedBy: [], behind: [] },
+    };
+    await page.rerender(h(LocaleProvider, null, h(PluginCard, after)));
+    expect(dialog()!.textContent).toContain(words.chooseAfterInstall);
+    expect(stagesOf(dialog()!)).toEqual([
+      "check:done",
+      "fetch:done",
+      "start:done",
+      "agents:waiting",
+    ]);
+    expect(buttonWithText(words.chooseLater, dialog()!)).toBeDefined();
+    await click(buttonNamed(words.addToAgent("helper"))!);
+    expect(dialog()!.textContent).toContain(words.doneTitle("computer-use"));
+    expect(dialog()!.textContent).toContain(words.doneAgents("helper"));
+    expect(dialog()!.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe(
+      "100",
+    );
+  });
+});
+
 describe("a plugin on the server", () => {
   it("opens on its agents and only adds the selected copy", async () => {
     const p = props({ row: installedRow, status: "installed", usage: { usedBy: [], behind: [] } });
     await show(p);
     await click(installControl(en.skills.install)!);
     expect(dialog()!.textContent).toContain(words.chooseAgentHelp);
+    expect(dialog()!.querySelector('[role="progressbar"]')).toBeNull();
     expect(dialog()!.querySelector('input[value="helper"]:checked')).not.toBeNull();
     await click(buttonNamed(words.addToAgent("helper"))!);
     expect(p.onToggleInstall).toHaveBeenCalledWith("helper", LIBRARY, true);
@@ -270,7 +337,7 @@ describe("a shipped Skill with a Project server module", () => {
     );
     await click(installControl(en.skills.install)!);
     expect(dialog()!.querySelector('[role="progressbar"]')).toBeNull();
-    await click(buttonWithText(words.enableModule, dialog()!)!);
+    await click(buttonWithText(words.enableNow, dialog()!)!);
     expect(apply).toHaveBeenCalledOnce();
   });
   it("keeps the member's Agent install and shows that the Project module is off", async () => {

@@ -6,7 +6,8 @@ import { notifyPluginsChanged } from "../../lib/project-change-events";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toastApiError } from "../../lib/toast-api-error";
-import { installStepWords } from "./plugin-install-flow";
+import { InstallProgress } from "./install-bar";
+import { installAmount, installPlan, installStepWords } from "./install-progress";
 import {
   INDEX_KEY,
   LIBRARY_KEY,
@@ -96,6 +97,12 @@ export function PackageUpdateDialog({
       setBusy(false);
     }
   };
+  // An update is the same server install: the same stages, with no Agents to choose after it.
+  const plan = installPlan({
+    server: "install",
+    modules: release.libraryOnly ? false : null,
+    agents: false,
+  });
   return (
     <ConfirmModal
       open
@@ -112,7 +119,24 @@ export function PackageUpdateDialog({
     >
       <p>{S.plugins.packageUpdateBody(title, release.from, release.to)}</p>
       {!release.libraryOnly && <p>{S.plugins.applyConfirmWarning(true)}</p>}
-      {busy && <p role="status">{installStepWords(progress, stage)}</p>}
+      {busy && (
+        <div className="space-y-2" role="status">
+          <InstallProgress
+            plan={plan}
+            phase="running"
+            stage={stage}
+            progress={progress}
+            label={S.plugins.installModel.progressLabel(title)}
+            valueText={installStepWords(progress, stage)}
+          />
+          <p className="flex items-baseline justify-between gap-3">
+            <span className="min-w-0 break-words">{installStepWords(progress, stage)}</span>
+            {installAmount(progress) !== null && (
+              <span className="shrink-0 tabular-nums text-fg-muted">{installAmount(progress)}</span>
+            )}
+          </p>
+        </div>
+      )}
     </ConfirmModal>
   );
 }

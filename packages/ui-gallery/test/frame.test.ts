@@ -39,6 +39,7 @@ describe("the frame URL", () => {
       signedOut: true,
       open: "settings",
       notices: true,
+      member: true,
       window: "win32",
     });
     expect(src.startsWith(`/gallery${APP_FRAME_PATH}?`)).toBe(true);
@@ -49,6 +50,7 @@ describe("the frame URL", () => {
       signedOut: true,
       open: "settings",
       notices: true,
+      member: true,
       window: "win32",
     });
     for (const [param, key] of Object.entries(SEEDED_KEYS)) {
