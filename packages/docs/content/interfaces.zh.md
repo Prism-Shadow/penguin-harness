@@ -216,8 +216,6 @@ type ApprovalReason = { kind: "policy"; rule: string }; // 命中了一条命令
 
 `"forbidden"` 永远不是宿主给出的答案。`Session.run` 会用 [Project 命令策略](/configuration#命令策略)包装注入的回调，命中 `deny` 规则的命令不会问到宿主，直接得到 `"forbidden"`。命中 `ask` 规则的命令会带着 `{ reason: { kind: "policy", rule } }` 交给回调：宿主不能只按审批模式作答，而要交给人决定（服务端在 `deny-all` 以外的所有模式下都这样做）。其余调用照旧不带第二个参数。引擎本身始终只传调用本身，从不读取这个原因。
 
-拒绝可以不带规则名，也可以署名规则。`PolicyDenial` 署名了作答规则时，引擎渲染 `Tool call denied by rule `<Name>`.`；裸 `"deny"` 渲染 "Tool call denied by user."，裸 `"forbidden"` 渲染 "Tool call denied by policy."。命令策略的作答总是署名规则，策略造成的拒绝因此不会被读成人的拒绝。
-
 第二个参数是可选的，按单参数签名写的回调照样能通过编译，只是会像对待其他调用一样决定 `ask` 命中。子 Session 无需额外转发：它继承的回调就是父 Session 的策略包装，子 Session 给出的原因随调用一起经过它。
 
 带规则名的拒批——`deny` 规则的 `"forbidden"`，以及无法向人请示的宿主（无人值守会话）对策略原因给出的 `"deny"`——渲染为 ``Tool call denied by rule `<rule>`.``。裸的 `"deny"` 仍是「Tool call denied by user.」，裸的 `"forbidden"` 仍是「Tool call denied by policy.」。决定值本身随 `approval_decision` 事件传递，Trace 不用额外字段就能记录决策者。已有回调如果只返回 `"allow"` 或 `"deny"`，无需任何改动。

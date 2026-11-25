@@ -719,6 +719,16 @@ describe("Session applies the policy at the approval boundary", () => {
             arguments: JSON.stringify({ cmd: "rm -rf /tmp/definitely-not-run" }),
             toolCallId: "call_veto",
           });
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "gh pr merge 7 --squash" }),
+            toolCallId: "call_ask",
+          });
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "ls /tmp" }),
+            toolCallId: "call_plain",
+          });
           return { status: "completed" };
         }
         yield assistantText("Understood, choosing another approach.");
@@ -740,25 +750,47 @@ describe("Session applies the policy at the approval boundary", () => {
       environment,
       imagesDir: path.join(tmp, "images"),
       modelHasVision: true,
-      commandPolicy: () => DENY_RM,
+      commandPolicy: () => ({
+        rules: [
+          { name: "no-rm-rf", pattern: "rm -rf" },
+          { name: "gh-pr-merge", pattern: "gh pr merge", action: "ask" },
+        ],
+      }),
     });
 
     const all: AmspRecord[] = [];
-    // No `approve` injected: the conservative fallback denies everything, but the policy
+    // No `approve` injected: the conservative fallback denies everything, but a policy hit
     // still answers in its own name instead of masquerading as a person's refusal.
     for await (const msg of session.run([userText("clean up")])) {
       all.push(msg);
     }
 
     expect(executed).toBe(0);
-    const decision = all.find(
-      (m) => (m.payload as { type?: string }).type === "approval_decision",
-    )!;
-    expect((decision.payload as { decision?: string }).decision).toBe("forbidden");
-    const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
-    expect((output.payload as { output: string }).output).toBe(
-      "Tool call denied by rule `no-rm-rf`.",
-    );
+    const outputOf = (id: string) =>
+      (
+        all.find(
+          (m) =>
+            (m.payload as { type?: string }).type === "tool_call_output" &&
+            (m.payload as { tool_call_id?: string }).tool_call_id === id,
+        )!.payload as { output: string }
+      ).output;
+    const decisionOf = (id: string) =>
+      (
+        all.find(
+          (m) =>
+            (m.payload as { type?: string }).type === "approval_decision" &&
+            (m.payload as { tool_call_id?: string }).tool_call_id === id,
+        )!.payload as { decision?: string }
+      ).decision;
+    // A `deny` rule refuses in its own name.
+    expect(decisionOf("call_veto")).toBe("forbidden");
+    expect(outputOf("call_veto")).toBe("Tool call denied by rule `no-rm-rf`.");
+    // An `ask` hit is denied naming its rule too: nobody is there to put it to a person.
+    expect(decisionOf("call_ask")).toBe("deny");
+    expect(outputOf("call_ask")).toBe("Tool call denied by rule `gh-pr-merge`.");
+    // A call matching neither rule stays the bare conservative denial.
+    expect(decisionOf("call_plain")).toBe("deny");
+    expect(outputOf("call_plain")).toBe("Tool call denied by user.");
   });
 
   it("a project policy switched off lets the same command through to execution", async () => {
