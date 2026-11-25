@@ -126,6 +126,7 @@ export function PermissionSelect({
   onChange,
   disabled,
   direction = "up",
+  machineId = null,
 }: {
   approvalMode: ApprovalMode;
   /**
@@ -139,6 +140,8 @@ export function PermissionSelect({
   /** Blocks a second pick while one saves; deliberately NOT drawn dimmed (that read as a flicker). */
   disabled: boolean;
   direction?: "up" | "down";
+  /** The machine whose Sandbox settings More… opens (null = this server). */
+  machineId?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   // The pick shows the moment it is made: waiting for the server's row would draw the old
@@ -333,6 +336,7 @@ export function PermissionSelect({
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
           section="sandbox"
+          pluginMachine={machineId}
         />
       )}
     </>

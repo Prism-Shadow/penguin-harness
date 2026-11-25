@@ -290,6 +290,13 @@ export function DraftView({
   // null = still loading (the thinking picker below stays disabled until resolved).
   const [chatDefaults, setChatDefaults] = useState<ChatDefaultsDto | null>(null);
   /**
+   * The Sandbox settings of the machine the draft's workspace is on (`workspaceMachine !== null`).
+   * Each server keeps its own Sandbox switch, presets and default preset (`sandboxDefaults`), so a
+   * draft on a remote machine must read its sandbox view and default approval mode from that
+   * machine rather than this server's `chatDefaults.sandbox`.
+   */
+  const [remoteSandbox, setRemoteSandbox] = useState<SessionSandbox | null>(null);
+  /**
    * Set once the chat-defaults-changed event delivered a fresh block (see the reseed
    * handler below): from then on the mount-time fetch must not apply — it was started
    * earlier and would overwrite the fresher event payload when it resolves.
@@ -311,6 +318,33 @@ export function DraftView({
       cancelled = true;
     };
   }, [projectId]);
+  useEffect(() => {
+    if (workspaceMachine === null) {
+      setRemoteSandbox(null);
+      return;
+    }
+    setRemoteSandbox(null);
+    if (remoteLink !== "connected") return;
+    let cancelled = false;
+    api
+      .getChatDefaults(projectId, workspaceMachine)
+      .then((res) => {
+        if (cancelled) return;
+        setRemoteSandbox(res.sandbox ?? null);
+        const seeded = chatDefaults?.approvalMode ?? res.sandbox?.defaultApprovalMode;
+        if (
+          seeded !== undefined &&
+          cached.approvalMode === undefined &&
+          !touchedRef.current.approval
+        ) {
+          setApprovalMode(seeded);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, workspaceMachine, remoteLink, chatDefaults?.approvalMode, cached.approvalMode]);
 
   /**
    * Fields the user already touched this mount: the project defaults arrive async (after
@@ -431,12 +465,16 @@ export function DraftView({
     ) {
       setWorkspace(chatDefaults.workspace);
     }
-    // The Project's own default wins; else the Sandbox card's default preset, while it is on.
-    const seeded = chatDefaults.approvalMode ?? chatDefaults.sandbox?.defaultApprovalMode;
+    // The Project's own default wins; else the Sandbox card's default preset on the target
+    // machine, while it is on. When the draft is on a remote machine, its own sandbox fetch
+    // seeds the preset default once that machine answers.
+    const seeded =
+      chatDefaults.approvalMode ??
+      (workspaceMachine === null ? chatDefaults.sandbox?.defaultApprovalMode : undefined);
     if (seeded !== undefined && cached.approvalMode === undefined && !touchedRef.current.approval) {
       setApprovalMode(seeded);
     }
-  }, [chatDefaults, stateWorkspace, cached.workspace, cached.approvalMode]);
+  }, [chatDefaults, stateWorkspace, workspaceMachine, cached.workspace, cached.approvalMode]);
 
   const chatModels = useMemo(
     () => models?.models.filter((m) => m.chatEligible !== false) ?? [],
@@ -496,19 +534,25 @@ export function DraftView({
   useEffect(
     () =>
       onPluginConfigSaved("sandbox", () => {
-        void api.getChatDefaults(projectId, null).then(
+        void api.getChatDefaults(projectId, workspaceMachine).then(
           (res) => {
-            setChatDefaults((prev) => ({
-              ...(prev ?? {}),
-              ...(res.sandbox !== undefined ? { sandbox: res.sandbox } : {}),
-            }));
-            const seeded = res.approvalMode ?? res.sandbox?.defaultApprovalMode;
+            if (workspaceMachine === null) {
+              setChatDefaults((prev) => ({
+                ...(prev ?? {}),
+                ...(res.sandbox !== undefined ? { sandbox: res.sandbox } : {}),
+              }));
+            } else {
+              setRemoteSandbox(res.sandbox ?? null);
+            }
+            const seeded =
+              (workspaceMachine === null ? res.approvalMode : chatDefaults?.approvalMode) ??
+              res.sandbox?.defaultApprovalMode;
             if (seeded !== undefined && !touchedRef.current.approval) setApprovalMode(seeded);
           },
           () => undefined,
         );
       }),
-    [projectId],
+    [projectId, workspaceMachine, chatDefaults?.approvalMode],
   );
   useEffect(() => {
     const onEvent = (e: Event) => {
@@ -847,7 +891,17 @@ export function DraftView({
       const dockScope = currentDockScope();
       let createdId: string | null = null;
       try {
-        const body: SessionCreateRequest = { approvalMode };
+        const body: SessionCreateRequest = {};
+        // When the draft is on a remote machine whose sandbox defaults have not arrived yet and
+        // neither the user nor the Project pinned an approvalMode, let the remote server resolve
+        // its own sandboxDefaultApproval() instead of overwriting it with the local "allow-all".
+        const deferRemoteDefaultApproval =
+          workspaceMachine !== null &&
+          remoteSandbox === null &&
+          !touchedRef.current.approval &&
+          cached.approvalMode === undefined &&
+          chatDefaults?.approvalMode === undefined;
+        if (!deferRemoteDefaultApproval) body.approvalMode = approvalMode;
         if (Object.keys(sandboxPick).length > 0) body.sandbox = sandboxPick;
         body.modelId = modelInfo.modelId;
         body.provider = modelInfo.provider;
@@ -908,6 +962,9 @@ export function DraftView({
       agentId,
       approvalMode,
       sandboxPick,
+      remoteSandbox,
+      cached.approvalMode,
+      chatDefaults?.approvalMode,
       modelRef,
       modelInfo,
       workspace,
@@ -1008,7 +1065,10 @@ export function DraftView({
         approvalMode={approvalMode}
         // A draft becomes an ordinary conversation, never an organization's: every mode.
         approvalModes={APPROVAL_MODES}
-        sandbox={{ ...(chatDefaults?.sandbox ?? UNCONFINED), ...sandboxPick }}
+        sandbox={{
+          ...((workspaceMachine === null ? chatDefaults?.sandbox : remoteSandbox) ?? UNCONFINED),
+          ...sandboxPick,
+        }}
         onChangePermission={changePermission}
         modeSaving={false}
         autoFocus

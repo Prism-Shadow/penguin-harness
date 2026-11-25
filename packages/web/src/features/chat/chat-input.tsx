@@ -2769,6 +2769,7 @@ export function ChatInput({
               onChange={onChangePermission}
               disabled={modeSaving}
               direction={models && onChangeModel ? "down" : "up"}
+              machineId={agentsMachineId}
             />
             {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
             <SkillSelect
