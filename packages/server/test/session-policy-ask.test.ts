@@ -222,8 +222,8 @@ describe("a command-policy ask hit on the server", () => {
     expect(answers).toEqual(["allow"]);
   });
 
-  it("is denied under deny-all, and nobody is asked", async () => {
-    const answers: ApprovalDecision[] = [];
+  it("is denied under deny-all, naming the rule, and nobody is asked", async () => {
+    const answers: (ApprovalDecision | PolicyDenial)[] = [];
     const seen = requests(t, SID);
     adoptSession(t.deps, askingSession(SID, answers), {
       projectId: PROJECT,
@@ -231,7 +231,9 @@ describe("a command-policy ask hit on the server", () => {
     });
     await t.deps.manager.startTask(SID, [userText("ship it")]);
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
-    expect(answers).toEqual(["deny"]);
+    // deny-all answers itself without parking a request, but the answer still carries the
+    // rule — a refusal the policy caused is the rule's, not a person's.
+    expect(answers).toEqual([{ decision: "deny", rule: RULE }]);
     expect(seen).toEqual([]);
   });
 

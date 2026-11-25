@@ -189,8 +189,13 @@ export function makeApprove(args: {
   return async (toolCall, context) => {
     const mode = getMode();
     // The Project's security policy wants a person: the mode's automatic yes does not apply.
+    // deny-all never parks a request either, but its denial still names the rule the same
+    // way an unattended denial does — a refusal the policy caused is the rule's answer, not
+    // a person's.
     if (context?.reason !== undefined) {
-      return mode === "deny-all" ? "deny" : manual(toolCall, context.reason);
+      return mode === "deny-all"
+        ? { decision: "deny", rule: context.reason.rule }
+        : manual(toolCall, context.reason);
     }
     switch (mode) {
       case "allow-all":

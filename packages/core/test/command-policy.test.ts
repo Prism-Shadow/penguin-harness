@@ -708,6 +708,59 @@ describe("Session applies the policy at the approval boundary", () => {
     ).toBe(true);
   });
 
+  it("a configured policy still names its rule when the host injects no approval callback", async () => {
+    let executed = 0;
+    let turn = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate(): AsyncGenerator<AmspRecord, LLMOutcome> {
+        if (turn++ === 0) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "rm -rf /tmp/definitely-not-run" }),
+            toolCallId: "call_veto",
+          });
+          return { status: "completed" };
+        }
+        yield assistantText("Understood, choosing another approach.");
+        return { status: "completed" };
+      },
+    };
+    const environment: EnvironmentInterface = {
+      listTools: async () => [],
+      // eslint-disable-next-line require-yield
+      executeTool: async function* () {
+        executed += 1;
+        throw new Error("a vetoed command must never be executed");
+      },
+      toolPermission: () => undefined,
+    };
+    const session = new Session({
+      meta: meta(),
+      bootstrap: async () => ({ llm }),
+      environment,
+      imagesDir: path.join(tmp, "images"),
+      modelHasVision: true,
+      commandPolicy: () => DENY_RM,
+    });
+
+    const all: AmspRecord[] = [];
+    // No `approve` injected: the conservative fallback denies everything, but the policy
+    // still answers in its own name instead of masquerading as a person's refusal.
+    for await (const msg of session.run([userText("clean up")])) {
+      all.push(msg);
+    }
+
+    expect(executed).toBe(0);
+    const decision = all.find(
+      (m) => (m.payload as { type?: string }).type === "approval_decision",
+    )!;
+    expect((decision.payload as { decision?: string }).decision).toBe("forbidden");
+    const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
+    expect((output.payload as { output: string }).output).toBe(
+      "Tool call denied by rule `no-rm-rf`.",
+    );
+  });
+
   it("a project policy switched off lets the same command through to execution", async () => {
     let approveCalls = 0;
     let executedCmd: string | null = null;
