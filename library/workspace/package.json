@@ -59,6 +59,10 @@
     "./draft-shortcuts": {
       "types": "./dist/draft-shortcuts.d.ts",
       "import": "./dist/draft-shortcuts.js"
+    },
+    "./directory-skills": {
+      "types": "./dist/directory-skills.d.ts",
+      "import": "./dist/directory-skills.js"
     }
   },
   "scripts": {

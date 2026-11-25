@@ -12,6 +12,7 @@ export default defineConfig({
     "src/drafts.ts",
     "src/user-drafts.ts",
     "src/draft-shortcuts.ts",
+    "src/directory-skills.ts",
   ],
   format: ["esm"],
   target: "node24",

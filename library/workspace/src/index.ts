@@ -56,3 +56,14 @@ export {
   DRAFT_SHORTCUT_ID_MAX,
   validateDraftShortcuts,
 } from "./draft-shortcuts.js";
+export {
+  SKILL_SOURCE_DIRS,
+  discoverDirectorySkills,
+  directorySkillIcon,
+  resolveDirectorySkills,
+} from "./directory-skills.js";
+export type {
+  SkillSourceDir,
+  DirectorySkill,
+  DirectorySkillEntry,
+} from "./directory-skills.js";
