@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "penguin": {
-    "version": "2026.11.24.1",
+    "version": "2026.11.25.1",
     "icon": "ui/icon.svg",
     "appCenter": {
       "show": true,

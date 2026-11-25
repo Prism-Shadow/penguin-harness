@@ -183,6 +183,20 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
 
   it("opens the preset workbench with its own title, route and App Center icon", async () => {
     const preset = `${BASE}/benchmark`;
+    const center = await owner.get(`/api/projects/${PROJECT}/app-center`);
+    expect(center.status).toBe(200);
+    expect(await center.json()).toMatchObject({
+      shortcuts: expect.arrayContaining([
+        expect.objectContaining({
+          agentId: AGENT,
+          workbenchId: "benchmark",
+          icon: {
+            url: expect.stringMatching(new RegExp(`^${preset}/app-center/icon\\?rev=[0-9a-f]+$`)),
+            tint: false,
+          },
+        }),
+      ]),
+    });
     const icon = await owner.get(`${preset}/app-center/icon`);
     expect(icon.status).toBe(200);
     const svg = await icon.text();
