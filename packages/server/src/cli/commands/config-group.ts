@@ -1,26 +1,33 @@
 /**
  * The group-connection side of `penguin config model add` / `model remove`: without
- * `--model-id`, the two commands set or drop the group's `[providers.<id>]` table. The
- * connection flags, their patching, the group-id rule and the refusals both forms share are
- * defined here.
+ * `--model-id`, the two commands set or drop the group's `[providers.<id>]` table through the
+ * server's models HTTP API. The connection flags, their patching, the group-id rule and the
+ * refusals both forms share are defined here.
  */
 import {
   type ProjectConfig,
+  type ProviderConnection,
   type ProviderConnectionPatch,
   groupKeyReaches,
-  loadProjectConfig,
-  providerConnectionShape,
-  setProviderConnection,
 } from "@prismshadow/penguin-core";
+import type {
+  ModelInfo,
+  ModelsResponse,
+  ModelUpdateEntry,
+  ProviderConnectionResponse,
+  ProviderConnectionUpdate,
+} from "@prismshadow/penguin-library-model";
 import {
   fixedClientType,
   fixedClientTypeRefuses,
   providerInfo,
 } from "../../model-catalog/catalog.js";
+import { ApiError, ServerClient } from "../client.js";
+import { resolveConnection } from "../connection.js";
 import type { Messages } from "../i18n.js";
-import { resolveProjectRoot } from "../root-option.js";
 
 const GROUP_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+const enc = encodeURIComponent;
 
 /** The connection flags `model add` takes in both of its forms. */
 export interface ConnectionFlags {
@@ -30,6 +37,82 @@ export interface ConnectionFlags {
   clearBaseUrl?: boolean;
   clientType?: string;
   clearClientType?: boolean;
+}
+
+/** Converts a server `ModelsResponse` into the `ProjectConfig` shape CLI formatters and checks inspect. */
+export function projectConfigFromModelsResponse(res: ModelsResponse): ProjectConfig {
+  const unshapeMaskedKey = (masked: string): string =>
+    masked.length === 9 && masked[4] === "…" ? `000000000${masked.slice(-4)}` : masked;
+  const providers: Record<string, ProviderConnection> = {};
+  for (const [id, p] of Object.entries(res.providers ?? {})) {
+    providers[id] = {
+      ...(p.baseUrl !== undefined ? { base_url: p.baseUrl } : {}),
+      ...(p.clientType !== undefined ? { client_type: p.clientType } : {}),
+      ...(p.apiKeyMasked !== undefined ? { api_key: unshapeMaskedKey(p.apiKeyMasked) } : {}),
+      ...(p.createdAt !== undefined ? { created_at: p.createdAt } : {}),
+    };
+  }
+  return {
+    ...(res.defaultModel !== undefined
+      ? {
+          default_model: {
+            provider: res.defaultModel.provider,
+            model_id: res.defaultModel.modelId,
+          },
+        }
+      : {}),
+    ...(res.visionModel !== undefined
+      ? {
+          vision_model: {
+            provider: res.visionModel.provider,
+            model_id: res.visionModel.modelId,
+          },
+        }
+      : {}),
+    ...(Object.keys(providers).length > 0 ? { providers } : {}),
+    models: res.models.map((m) => ({
+      provider: m.provider,
+      model_id: m.modelId,
+      ...(m.displayName !== undefined ? { display_name: m.displayName } : {}),
+      ...(m.contextWindow !== undefined ? { context_window: m.contextWindow } : {}),
+      ...(m.clientType !== undefined ? { client_type: m.clientType } : {}),
+      ...(m.vision !== undefined ? { vision: m.vision } : {}),
+      ...(m.maxTokens !== undefined ? { max_tokens: m.maxTokens } : {}),
+      ...(m.fastMode !== undefined ? { fast_mode: m.fastMode } : {}),
+      ...(m.pricing !== undefined
+        ? {
+            pricing: {
+              unit: "usd_per_mtok" as const,
+              cache_read: m.pricing.cacheRead,
+              cache_write: m.pricing.cacheWrite,
+              output: m.pricing.output,
+            },
+          }
+        : {}),
+      ...(m.credential?.apiKeyMasked !== undefined
+        ? { api_key: unshapeMaskedKey(m.credential.apiKeyMasked) }
+        : {}),
+      ...(m.credential?.baseUrl !== undefined ? { base_url: m.credential.baseUrl } : {}),
+      ...(m.credential?.createdAt !== undefined ? { created_at: m.credential.createdAt } : {}),
+    })),
+  };
+}
+
+/** Shapes one `ModelInfo` back into a `ModelUpdateEntry` for `PUT /api/projects/:p/models` (preserves stored key by omitting `apiKey`). */
+export function toModelUpdateEntry(m: ModelInfo): ModelUpdateEntry {
+  return {
+    provider: m.provider,
+    modelId: m.modelId,
+    ...(m.displayName !== undefined ? { displayName: m.displayName } : {}),
+    ...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
+    ...(m.clientType !== undefined ? { clientType: m.clientType } : {}),
+    ...(m.vision !== undefined ? { vision: m.vision } : {}),
+    ...(m.maxTokens !== undefined ? { maxTokens: m.maxTokens } : {}),
+    ...(m.fastMode !== undefined ? { fastMode: m.fastMode } : {}),
+    ...(m.pricing !== undefined ? { pricing: m.pricing } : {}),
+    ...(m.discount !== undefined ? { discount: m.discount } : {}),
+    ...(m.credential?.baseUrl !== undefined ? { baseUrl: m.credential.baseUrl } : {}),
+  };
 }
 
 /**
@@ -78,6 +161,24 @@ export function refuse(t: Messages, message: string): void {
   process.exitCode = 1;
 }
 
+export function refuseErr(t: Messages, err: unknown): void {
+  refuse(
+    t,
+    err instanceof ApiError && err.detail
+      ? err.detail
+      : err instanceof Error
+        ? err.message
+        : String(err),
+  );
+}
+
+export async function configClient(
+  opts: { server?: string; root?: string },
+  t: Messages,
+): Promise<ServerClient> {
+  return new ServerClient(await resolveConnection({ server: opts.server, root: opts.root }, t), t);
+}
+
 /**
  * `model add` without `--model-id`: sets or clears the group's connection
  * (`[providers.<group>]`), which the group's models without a value of their own follow. The
@@ -88,6 +189,7 @@ export async function addGroupConnection(
   opts: ConnectionFlags & {
     provider: string;
     projectId: string;
+    server?: string;
     root?: string;
     contextWindow?: number;
     maxTokens?: number;
@@ -100,7 +202,6 @@ export async function addGroupConnection(
   },
   t: Messages,
 ): Promise<void> {
-  const root = await resolveProjectRoot(opts.root);
   const group = String(opts.provider).trim();
   const rowOnly =
     opts.contextWindow !== undefined ||
@@ -115,16 +216,6 @@ export async function addGroupConnection(
     refuse(t, t.modelGroupOnlyFlags(group));
     return;
   }
-  // The group-name rule the models page and the server apply; a group some model already
-  // names (one `model add` created under another spelling) is let through.
-  if (
-    !GROUP_ID.test(group) &&
-    providerInfo(group) === undefined &&
-    !(await loadProjectConfig(root, opts.projectId)).models.some((m) => m.provider === group)
-  ) {
-    refuse(t, t.providerInvalidGroup(group));
-    return;
-  }
   const parsed = connectionPatch(opts, t);
   if ("refusal" in parsed) {
     refuse(t, parsed.refusal);
@@ -135,36 +226,56 @@ export async function addGroupConnection(
     refuse(t, t.providerNothingToSet(group));
     return;
   }
-  // The server's group routes refuse this too: Penguin Go's protocol is fixed.
+  if (typeof patch.base_url === "string" && !isHttpUrl(patch.base_url.trim())) {
+    refuse(t, t.providerInvalidBaseUrl(patch.base_url));
+    return;
+  }
+  const client = await configClient(opts, t);
+  const modelsPath = `/api/projects/${enc(opts.projectId)}/models`;
+  const before = projectConfigFromModelsResponse(
+    await client.request<ModelsResponse>("GET", modelsPath),
+  );
+  if (
+    !GROUP_ID.test(group) &&
+    providerInfo(group) === undefined &&
+    !before.models.some((m) => m.provider === group)
+  ) {
+    refuse(t, t.providerInvalidGroup(group));
+    return;
+  }
   if (
     patch.client_type !== undefined &&
     fixedClientTypeRefuses(
       group,
       "group",
       patch.client_type,
-      (await loadProjectConfig(root, opts.projectId)).providers?.[group]?.client_type,
+      before.providers?.[group]?.client_type,
     )
   ) {
     refuse(t, t.protocolFixed(providerInfo(group)?.label ?? group, fixedClientType(group)!));
     return;
   }
-  // The group's models without a base URL of their own are all sent here, so a typo would
-  // break every one of them at its next request: the check the server's group routes make.
-  if (typeof patch.base_url === "string" && !isHttpUrl(patch.base_url.trim())) {
-    refuse(t, t.providerInvalidBaseUrl(patch.base_url));
-    return;
-  }
+  const body: ProviderConnectionUpdate = {
+    ...(patch.api_key !== undefined
+      ? patch.api_key === null
+        ? { clearApiKey: true }
+        : { apiKey: patch.api_key.trim() }
+      : {}),
+    ...(patch.base_url !== undefined ? { baseUrl: patch.base_url } : {}),
+    ...(patch.client_type !== undefined ? { clientType: patch.client_type } : {}),
+  };
   let cfg: ProjectConfig;
   try {
-    cfg = await setProviderConnection(root, opts.projectId, group, patch);
+    const res = await client.request<ProviderConnectionResponse>(
+      "PUT",
+      `${modelsPath}/providers/${enc(group)}`,
+      body,
+    );
+    cfg = projectConfigFromModelsResponse(res);
   } catch (err) {
-    refuse(t, err instanceof Error ? err.message : String(err));
+    refuseErr(t, err);
     return;
   }
-  // Models that keep a value of their own for a changed field are unaffected by it: say how
-  // many, so a "why does this model still use the old key" never needs the file to answer. A
-  // model whose own base URL is not on the group's endpoint never takes the group key
-  // (groupKeyReaches), so a key change passes it by as well.
   const groupBaseUrl = cfg.providers?.[group]?.base_url;
   const rows = cfg.models.filter((m) => m.provider === group);
   const own = (value: string | undefined): boolean => (value ?? "").trim() !== "";
@@ -176,8 +287,6 @@ export async function addGroupConnection(
       (patch.client_type !== undefined && own(m.client_type)),
   ).length;
   process.stdout.write(`${t.providerSaved(group, overriding)}\n`);
-  // A group of the user's own exists only through its models; one with none yet is either
-  // about to get them or a typo, and either way the user should know.
   if (rows.length === 0 && providerInfo(group) === undefined) {
     process.stdout.write(`${t.providerNoModels(group)}\n`);
   }
@@ -189,21 +298,24 @@ export async function addGroupConnection(
  * time. A group with no table is refused, pointing at `--model-id`.
  */
 export async function removeGroupConnection(
-  opts: { provider: string; projectId: string; root?: string },
+  opts: { provider: string; projectId: string; server?: string; root?: string },
   t: Messages,
 ): Promise<void> {
-  const root = await resolveProjectRoot(opts.root);
   const group = String(opts.provider).trim();
-  const before = await loadProjectConfig(root, opts.projectId);
+  const client = await configClient(opts, t);
+  const modelsPath = `/api/projects/${enc(opts.projectId)}/models`;
+  const before = projectConfigFromModelsResponse(
+    await client.request<ModelsResponse>("GET", modelsPath),
+  );
   if (before.providers?.[group] === undefined) {
     refuse(t, t.providerNothingToRemove(group));
     return;
   }
-  const cfg = await setProviderConnection(root, opts.projectId, group, {
-    api_key: null,
-    base_url: null,
-    client_type: null,
+  await client.request<ProviderConnectionResponse>("PUT", `${modelsPath}/providers/${enc(group)}`, {
+    clearApiKey: true,
+    baseUrl: null,
+    clientType: null,
   });
-  const models = cfg.models.filter((m) => m.provider === group).length;
-  process.stdout.write(`${t.providerRemoved(group, models)}\n`);
+  const rows = before.models.filter((m) => m.provider === group).length;
+  process.stdout.write(`${t.providerRemoved(group, rows)}\n`);
 }

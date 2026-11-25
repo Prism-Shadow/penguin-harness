@@ -79,6 +79,13 @@ export abstract class AgentConfig {
     agentId: string,
     req: VaultUpdateRequest,
   ): Promise<VaultResponse>;
+  abstract setVaultEntry(
+    projectId: string,
+    agentId: string,
+    key: string,
+    value: string,
+  ): Promise<void>;
+  abstract removeVaultEntry(projectId: string, agentId: string, key: string): Promise<boolean>;
 }
 
 /** A package an import swaps in: a zip of the Agent's directory, or a `.tar.gz` snapshot. */
