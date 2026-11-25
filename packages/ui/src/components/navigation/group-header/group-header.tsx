@@ -21,7 +21,7 @@ import { ICON_SIZE } from "../../../icon-scale";
 
 /** A folder toggle's and a "more" row's shape: a dense, muted row with a chevron column. */
 const FOLDER_ROW_CLASS =
-  "flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-xs font-medium text-fg-subtle transition-colors duration-150 hover:bg-fg/5";
+  "flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-left text-xs font-medium text-fg-subtle transition-colors duration-150 hover:bg-fg/5";
 
 /**
  * A "more"-style row (a group's load-next-page, a folder's paging, the reveal-more-groups cap):
@@ -228,7 +228,7 @@ export function GroupHeader({
       // the one thing on screen that says the row can be dragged at all.
       // min-w-0: the row never asks for more than its column; the title button gives way (it
       // truncates) and the actions after it keep their size.
-      className={`group/header flex min-w-0 items-center gap-1 px-1 pb-0.5${
+      className={`group/header mb-0.5 flex min-h-7 min-w-0 items-center gap-1 px-1${
         draggable ? " cursor-grab" : ""
       }`}
       {...(draggable
@@ -254,7 +254,7 @@ export function GroupHeader({
         {...(title !== undefined
           ? { "data-tooltip": title, "data-tooltip-content": "text", "data-tooltip-extra": true }
           : {})}
-        className="flex min-w-0 flex-1 items-center gap-1 self-stretch rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-fg/5"
+        className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch rounded-md px-1.5 text-left transition-colors duration-150 hover:bg-fg/5"
       >
         {glyph !== undefined ? (
           <GlyphIcon

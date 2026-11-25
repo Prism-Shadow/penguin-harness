@@ -9,7 +9,7 @@ export function GroupBlock({
   children: ReactNode;
 }) {
   return (
-    <div className="relative pt-2.5">
+    <div className="relative pt-1.5 first:pt-0.5">
       {dropEdge !== null && (
         <div
           aria-hidden

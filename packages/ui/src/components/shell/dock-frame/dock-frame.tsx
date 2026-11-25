@@ -73,7 +73,7 @@ export function DockHeaderButton({
       data-tooltip={label}
       aria-label={label}
       {...rest}
-      className={`flex ${coarse ? "h-8 w-8" : "h-6 w-6"} shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:bg-line-muted hover:text-fg ${className}`}
+      className={`flex ${coarse ? "h-8 w-8" : "h-7 w-7"} shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:bg-line-muted hover:text-fg ${className}`}
     >
       {children}
     </button>
@@ -443,7 +443,7 @@ export function DockFrame({
     <header
       data-testid="dock-header"
       {...headerProps}
-      className={`flex shrink-0 items-center gap-2 border-b border-line px-2 py-1.5 text-xs ${
+      className={`flex min-h-10 shrink-0 items-center gap-2 border-b border-line px-2.5 py-1.5 text-xs ${
         movable ? "cursor-grab select-none" : ""
       }`}
     >

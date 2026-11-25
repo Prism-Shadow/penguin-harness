@@ -95,13 +95,13 @@ import { toastApiError } from "../../lib/toast-api-error";
  * `group` reaches them.
  */
 const rowSurface = (active: boolean, inert = false) =>
-  `group flex select-none items-center rounded-md pr-1 transition-colors duration-150 ${
+  `group flex h-8 select-none items-center rounded-md pr-1 transition-colors duration-150 ${
     active ? NAV_FILL.selected : inert ? "" : NAV_FILL.hover
   }`;
 
 /** The row's own button, at the channel rows' density so the whole sidebar reads as one list. */
 const rowButton = (active: boolean) =>
-  `flex min-w-0 flex-1 items-center ${ICON_GAP.row} px-2.5 py-1.5 text-left text-sm transition-colors duration-150 disabled:opacity-60 ${
+  `flex h-full min-w-0 flex-1 items-center ${ICON_GAP.row} px-2.5 text-left text-sm transition-colors duration-150 disabled:opacity-60 ${
     active ? "font-medium text-gray-900 dark:text-gray-100" : "text-gray-600 dark:text-gray-400"
   }`;
 
@@ -489,7 +489,7 @@ export function OrgSessionGroups({
             {S.company.sessionList.noEmployees}
           </p>
         ) : (
-          <ul className="space-y-1">
+          <ul className="space-y-px">
             {desks.map((d) => (
               <DeskRow
                 key={d.agentId}
@@ -520,7 +520,7 @@ export function OrgSessionGroups({
             </button>
           }
         >
-          <ul className="space-y-1">
+          <ul className="space-y-px">
             {tempRows.map((row) => (
               <TempRow
                 key={row.sessionId}

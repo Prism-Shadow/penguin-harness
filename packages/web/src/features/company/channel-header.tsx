@@ -377,7 +377,7 @@ export function ChannelHeader({
 
   return (
     <>
-      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+      <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 px-3 py-1.5 md:px-4 dark:border-gray-800">
         <div className="flex min-w-0 flex-1 items-baseline gap-x-3 gap-y-1">
           {/* The name is a direct child of the heading, with the "?" right after it — the
               anchoring every other title in the app uses (OrgPage's own header included), and
