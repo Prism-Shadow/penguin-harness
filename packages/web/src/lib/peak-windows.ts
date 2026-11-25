@@ -1,7 +1,7 @@
 /**
  * The off-peak tier's peak windows as the dictionaries spell them. The type sits in lib/ because
  * both dictionaries take it; the models feature computes it (`peakWindows` in
- * features/models/model-grouping.ts).
+ * model-grouping.ts).
  */
 import type { OffPeakDiscount } from "@prismshadow/penguin-server/model-catalog";
 

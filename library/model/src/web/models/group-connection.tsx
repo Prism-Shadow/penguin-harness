@@ -17,7 +17,7 @@
  */
 import { useState } from "react";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
-import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
+import type { ModelProviderInfo } from "../../model-catalog/index";
 import {
   ChevronDown,
   ConfirmModal,
@@ -26,12 +26,12 @@ import {
   MenuItem,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { toneDot } from "../../lib/tone";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneDot } from "@prismshadow/penguin-web/internal";
 import { HEADER_TEXT, connectedMenuItems } from "./group-header";
 import type { ConnectedMenuItem } from "./group-header";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** What a menu row runs; the page supplies each. */
 export interface ConnectionActions {

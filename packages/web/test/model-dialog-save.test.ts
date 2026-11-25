@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The models page's config dialog (features/models/models-page.tsx) under the settings commit
+ * The models page's config dialog (the models feature's models-page.tsx) under the settings commit
  * model, on the real page against a fake of the models API.
  *
  * - A save the server refuses leaves the dialog open with the draft, and the list as it was:
@@ -65,7 +65,7 @@ import {
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
-import { ModelsPage } from "../src/features/models/models-page";
+import { ModelsPage } from "@prismshadow/penguin-library-model/web/models/models-page";
 import { AuthProvider } from "../src/state/auth";
 import { LocaleProvider } from "../src/state/locale";
 import { ProjectProvider } from "../src/state/project";

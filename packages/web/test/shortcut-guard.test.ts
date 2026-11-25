@@ -25,8 +25,8 @@ const ALLOWED_DIR = "lib/shortcuts";
  */
 const EXCUSED_FILES = new Set([
   "features/workspace/workspace-finder-model.ts",
-  "features/model-picker/model-picker-logic.ts",
-  "features/model-picker/model-picker-modal.tsx",
+  "library/model/src/web/model-picker/model-picker-logic.ts",
+  "library/model/src/web/model-picker/model-picker-modal.tsx",
   "lib/workbench-theme.ts",
 ]);
 

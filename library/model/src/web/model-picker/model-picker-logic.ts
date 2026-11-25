@@ -13,7 +13,7 @@
  * `modelLabel` lives here too (model-select.tsx re-exports it for its existing importers), so
  * the modal and the triggers share it without importing each other.
  */
-import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
+import type { ModelProviderInfo } from "../../model-catalog/index";
 import type { ModelInfo } from "@prismshadow/penguin-server/api";
 import {
   discountedPrice,
@@ -25,8 +25,8 @@ import {
   type ModelCredentialRowLike,
   type ModelRefValue,
   type ModelRowLike,
-} from "../../lib/model-grouping";
-import { modelTags, type ModelTag } from "../../lib/model-tags";
+} from "@prismshadow/penguin-web/internal";
+import { modelTags, type ModelTag } from "@prismshadow/penguin-web/internal";
 
 /**
  * Display label for a model: the display name, or falls back to the upstream id (model_id is

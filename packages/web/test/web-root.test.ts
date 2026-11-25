@@ -93,9 +93,9 @@ import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
 import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
-import { PinnedBalanceBadge } from "../src/features/models/group-balance";
+import { PinnedBalanceBadge } from "@prismshadow/penguin-library-model/web/models/group-balance";
 import { ProjectSettingsLayer } from "@prismshadow/penguin-library-project/web/projects/project-settings-layer";
-import { DefaultModelsLayer } from "../src/features/models/default-models-layer";
+import { DefaultModelsLayer } from "@prismshadow/penguin-library-model/web/models/default-models-layer";
 import { ProjectSwitcher } from "@prismshadow/penguin-library-project/web/projects/project-switcher";
 import {
   companyChannels,

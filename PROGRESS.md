@@ -13,4 +13,5 @@
 ## 分支头
 - W10 agents → library/agent：0105e42d80
 - W11 projects → library/project：6a38ddcf51
-- W12 traces → library/trace：本提交
+- W12 traces → library/trace：42547b90a6
+- W13 models+model-picker → library/model：本提交

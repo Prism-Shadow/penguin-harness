@@ -20,7 +20,7 @@ import {
   clientTypeAfterProviderChange,
   rowToEntry,
   type RowState,
-} from "../src/features/models/models-page";
+} from "@prismshadow/penguin-library-model/web/models/models-page";
 import {
   detectableBaseUrl,
   displayWidthCh,
@@ -30,8 +30,8 @@ import {
   needsProtocolDetectOnSave,
   protocolForPersist,
   protocolSelectorValue,
-} from "../src/features/models/protocol-types";
-import { protocolPathForModel } from "../src/features/models/protocol-path";
+} from "@prismshadow/penguin-library-model/web/models/protocol-types";
+import { protocolPathForModel } from "@prismshadow/penguin-library-model/web/models/protocol-path";
 
 /** The group table a new Project writes for a built-in group, in the resolver's shape. */
 function presetGroup(id: string): ProviderConnectionShape {

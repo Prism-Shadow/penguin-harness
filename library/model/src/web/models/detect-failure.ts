@@ -6,9 +6,9 @@
  * person's base URL.
  */
 import { toastError } from "@prismshadow/penguin-ui";
-import { toldFailure } from "../../lib/failure";
-import { S } from "../../lib/strings";
-import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toldFailure } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toastApiError, toastFailure } from "@prismshadow/penguin-web/internal";
 
 /** Why the detection came to nothing: a check, no protocol answered, or a failed request. */
 export type DetectMiss = "check" | "none" | { error: unknown };

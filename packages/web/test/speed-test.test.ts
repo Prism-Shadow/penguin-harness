@@ -3,7 +3,7 @@
  * (>= 40 tok/s green, >= 15 yellow, below red) — the card badge colors.
  */
 import { describe, expect, it } from "vitest";
-import { tpsTone, ttftTone } from "../src/features/models/speed-test";
+import { tpsTone, ttftTone } from "@prismshadow/penguin-library-model/web/models/speed-test";
 
 describe("speed-test tones", () => {
   it("grades TTFT boundaries", () => {

@@ -121,19 +121,19 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { cardBodyClick } from "../../lib/card-open";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useProject } from "../../state/project";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { USD_TO_CNY, useTheme, type Currency } from "../../state/theme";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { cardBodyClick } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { USD_TO_CNY, useTheme, type Currency } from "@prismshadow/penguin-web/internal";
 
-import { AiCreateModal, AiCreateButtons } from "../ai-create";
-import { formatDateTime, humanizeTokens } from "../../lib/format";
+import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
+import { formatDateTime, humanizeTokens } from "@prismshadow/penguin-web/internal";
 import {
   MODEL_PROVIDERS,
   PENGUIN_GO_PROVIDER_ID,
@@ -147,7 +147,7 @@ import {
   type FastModeProtocol,
   type ModelProviderBridgeAuth,
   type ModelProviderInfo,
-} from "@prismshadow/penguin-server/model-catalog";
+} from "../../model-catalog/index";
 
 import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
 import {
@@ -158,13 +158,13 @@ import {
   isFreeModel,
   sameModelRef,
   userProviderInfo,
-} from "../../lib/model-grouping";
+} from "@prismshadow/penguin-web/internal";
 import {
   commitModelGroupOrder,
   loadModelGroupOrder,
   saveModelGroupOrder,
-} from "../../lib/model-group-order";
-import { TAG_TONE, inUseTag, modelTags } from "../../lib/model-tags";
+} from "@prismshadow/penguin-web/internal";
+import { TAG_TONE, inUseTag, modelTags } from "@prismshadow/penguin-web/internal";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -199,8 +199,8 @@ import {
   withModelGroupPinned,
   type ModelGroupPins,
 } from "./model-group-pins";
-import { clearDraftModelRef } from "../chat/draft-cache";
-import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
+import { clearDraftModelRef } from "@prismshadow/penguin-web/internal";
+import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "@prismshadow/penguin-web/internal";
 import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
 import type { PresetSyncHost } from "./preset-sync";
 import { buildImportedRows, groupImportConnection, pickableModelIds } from "./group-import";
@@ -214,8 +214,8 @@ import {
   type ProviderConnections,
 } from "./connection";
 
-import { useToolBindings } from "../../state/use-tool-bindings";
-import { notifyModelsChanged, requestDefaultModels } from "../../lib/default-models-request";
+import { useToolBindings } from "@prismshadow/penguin-web/internal";
+import { notifyModelsChanged, requestDefaultModels } from "@prismshadow/penguin-web/internal";
 import { usageTargets, type UsageTarget } from "./default-models";
 import { CONNECT_PARAM } from "./connect-link";
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
@@ -231,7 +231,7 @@ import {
 
 import { formatLatency, tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-test";
 
-import { toneInk } from "../../lib/tone";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
 
 import {
@@ -257,9 +257,9 @@ import {
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
 import { ConnectDefaultOfferConfirm } from "./connect-default-offer";
-import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toastApiError, toastFailure } from "@prismshadow/penguin-web/internal";
 import { toastDetectFailed, type DetectMiss } from "./detect-failure";
-import { failureNode, toldFailure, toldNode } from "../../lib/failure";
+import { failureNode, toldFailure, toldNode } from "@prismshadow/penguin-web/internal";
 
 /**
  * The authorization flows a group's Connect dialog can run, keyed by the flow named in that

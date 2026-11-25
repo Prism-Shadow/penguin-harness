@@ -16,7 +16,7 @@
  */
 import { useId, useState } from "react";
 import { Button, Checkbox, FieldLabel, SearchInput } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** From this many listed models on, a filter box stands above the rows. */
 const FILTER_FROM = 11;

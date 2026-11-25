@@ -38,7 +38,7 @@ import {
   CLIENT_PROTOCOLS,
   routedClientType,
   vendorClientType,
-} from "@prismshadow/penguin-server/model-catalog";
+} from "../../model-catalog/index";
 
 /**
  * The protocol path appended to the base URL for a model entry. An explicit client type

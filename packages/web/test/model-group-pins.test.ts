@@ -26,7 +26,7 @@ import {
   storeModelGroupsFolded,
   withModelGroupPinned,
   type ModelGroupPins,
-} from "../src/features/models/model-group-pins";
+} from "@prismshadow/penguin-library-model/web/models/model-group-pins";
 
 import { memoryStorage, blockedStorage } from "./helpers/storage";
 

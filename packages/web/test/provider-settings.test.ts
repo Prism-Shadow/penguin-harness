@@ -58,7 +58,7 @@ import {
   groupKeyMissesRow,
   inheritedConnection,
   rowKey,
-} from "../src/features/models/connection";
+} from "@prismshadow/penguin-library-model/web/models/connection";
 import {
   ProviderSettingsDialog,
   groupEnvKey,
@@ -70,9 +70,9 @@ import {
   providerSettingsUpdate,
   probeGroupProtocol,
   saveGroupSettings,
-} from "../src/features/models/provider-settings-dialog";
+} from "@prismshadow/penguin-library-model/web/models/provider-settings-dialog";
 import { userProviderInfo } from "../src/lib/model-grouping";
-import { ProtocolSuffixMenu } from "../src/features/models/protocol-suffix";
+import { ProtocolSuffixMenu } from "@prismshadow/penguin-library-model/web/models/protocol-suffix";
 import { S } from "../src/lib/strings";
 import { json, stubFetch } from "./helpers/fetch";
 

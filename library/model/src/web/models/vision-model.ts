@@ -7,7 +7,7 @@
  * same conversion the models page saves it with.
  */
 import type { ModelRefDto, ModelsResponse } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
+import * as api from "@prismshadow/penguin-web/internal";
 import { rowToEntry, toRow } from "./models-page";
 
 export async function putVisionModel(

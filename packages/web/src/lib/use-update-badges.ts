@@ -4,7 +4,7 @@
  * pinned sidebar and the rail, the system apps' App Center tiles (system-app-notes.ts carries the
  * Plugins, Models and Cost Center trails there), and the pages that clear each trail.
  *
- * One owner activates the fetches. The sidebar badges' module (features/models/
+ * One owner activates the fetches. The sidebar badges' module (the models feature's
  * main-sidebar-badges.module.ts) mounts one for the signed-in session that calls this with
  * `eager` on, which is what makes a badge appear on a fresh load at all — the pages stay passive and read the shared
  * caches (`use-version-info.ts`, `use-desktop-update.ts`, `use-project-todos.ts`, and the

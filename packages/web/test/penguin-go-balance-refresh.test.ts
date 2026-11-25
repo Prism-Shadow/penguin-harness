@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement as h } from "react";
 import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
-import { GroupBalance, PinnedBalanceBadge } from "../src/features/models/group-balance";
+import { GroupBalance, PinnedBalanceBadge } from "@prismshadow/penguin-library-model/web/models/group-balance";
 import { ProjectProvider } from "../src/state/project";
 import { ThemeProvider } from "../src/state/theme";
 import { en } from "../src/lib/strings-en";

@@ -56,11 +56,11 @@ import {
   providerCalledKeyless,
   providerEnvFallbackKey,
   type ModelProviderInfo,
-} from "@prismshadow/penguin-server/model-catalog";
+} from "../../model-catalog/index";
 
-import * as api from "../../api/endpoints";
-import { formatDateTime } from "../../lib/format";
-import { S } from "../../lib/strings";
+import * as api from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -74,7 +74,7 @@ import {
 } from "./protocol-types";
 
 import type { RowState } from "./models-page";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 import { toastDetectFailed, type DetectMiss } from "./detect-failure";
 
 /** A group's row as this dialog reads it: what it stores of its own. */

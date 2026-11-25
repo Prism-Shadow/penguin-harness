@@ -326,7 +326,19 @@ importers:
       '@prismshadow/penguin-library-http':
         specifier: workspace:*
         version: file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      react:
+        specifier: ^19.1.0
+        version: 19.2.7
+      react-router:
+        specifier: ^8.3.0
+        version: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
     devDependencies:
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.17
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -353,7 +365,7 @@ importers:
         version: link:../http
       '@prismshadow/penguin-library-model':
         specifier: workspace:*
-        version: file:library/model(supports-color@10.2.2)
+        version: file:library/model(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)
       '@prismshadow/penguin-library-project':
         specifier: workspace:*
         version: file:library/project(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)
@@ -412,7 +424,7 @@ importers:
         version: link:../machine
       '@prismshadow/penguin-library-model':
         specifier: workspace:*
-        version: file:library/model(supports-color@10.2.2)
+        version: file:library/model(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)
       '@prismshadow/penguin-library-organization':
         specifier: workspace:*
         version: link:../organization
@@ -523,7 +535,7 @@ importers:
         version: link:../http
       '@prismshadow/penguin-library-model':
         specifier: workspace:*
-        version: file:library/model(supports-color@10.2.2)
+        version: file:library/model(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)
       '@prismshadow/penguin-library-session':
         specifier: workspace:*
         version: link:../session
@@ -8481,32 +8493,50 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-library-model@file:library/model(supports-color@10.2.2)':
+  '@prismshadow/penguin-library-model@file:library/model(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)':
     dependencies:
       '@prismshadow/mmsp': 0.5.12(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      react: 19.2.7
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
+      - '@types/react'
       - bufferutil
+      - immer
+      - micromark
+      - micromark-util-types
+      - react-dom
       - supports-color
+      - use-sync-external-store
       - utf-8-validate
       - ws
       - zod
 
-  '@prismshadow/penguin-library-model@file:library/model(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@prismshadow/penguin-library-model@file:library/model(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@prismshadow/mmsp': 0.5.12(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      react: 19.2.7
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
+      - '@types/react'
       - bufferutil
+      - immer
+      - micromark
+      - micromark-util-types
+      - react-dom
       - supports-color
+      - use-sync-external-store
       - utf-8-validate
       - ws
       - zod
@@ -8517,7 +8547,7 @@ snapshots:
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-library-model': file:library/model(supports-color@10.2.2)
+      '@prismshadow/penguin-library-model': file:library/model(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)
       '@prismshadow/penguin-library-project': file:library/project(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)
       '@prismshadow/penguin-library-trace': file:library/trace(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
     transitivePeerDependencies:
@@ -8540,7 +8570,7 @@ snapshots:
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-library-model': file:library/model(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-model': file:library/model(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-project': file:library/project(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-trace': file:library/trace(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
     transitivePeerDependencies:
@@ -8589,7 +8619,7 @@ snapshots:
       '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-machine': file:library/machine(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-library-model': file:library/model(supports-color@10.2.2)
+      '@prismshadow/penguin-library-model': file:library/model(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)
       '@prismshadow/penguin-library-organization': file:library/organization(supports-color@10.2.2)
       '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)
       '@prismshadow/penguin-library-trace': file:library/trace(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
@@ -8619,7 +8649,7 @@ snapshots:
       '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-machine': file:library/machine(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-library-model': file:library/model(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-model': file:library/model(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-organization': file:library/organization(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-trace': file:library/trace(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -8707,7 +8737,7 @@ snapshots:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-library-model': file:library/model(supports-color@10.2.2)
+      '@prismshadow/penguin-library-model': file:library/model(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)
       '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       hono: 4.13.13
@@ -8732,7 +8762,7 @@ snapshots:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-library-model': file:library/model(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-model': file:library/model(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       hono: 4.13.13

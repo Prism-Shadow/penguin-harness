@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
-import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
-import { joinedNote, useSystemAppNotes } from "../../lib/system-app-notes";
-import { useAuth } from "../../state/auth";
-import type { NavBadge } from "../../lib/sidebar-contributions";
+import { navNoteFor, useUpdateBadges } from "@prismshadow/penguin-web/internal";
+import { joinedNote, useSystemAppNotes } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import type { NavBadge } from "@prismshadow/penguin-web/internal";
 
 /** Main AppLayout previously owned this eager hook. Keep one signed-in owner as a slot provider. */
 function MainUpdateBadgesOwner({ children }: { children: ReactNode }) {

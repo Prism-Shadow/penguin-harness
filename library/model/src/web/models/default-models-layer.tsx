@@ -18,19 +18,19 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { MODEL_PROVIDERS, PENGUIN_GO_PROVIDER_ID } from "@prismshadow/penguin-server/model-catalog";
+import { MODEL_PROVIDERS, PENGUIN_GO_PROVIDER_ID } from "../../model-catalog/index";
 import { ModelSetupGuide } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { onDefaultModelsRequest, onModelsChanged } from "../../lib/default-models-request";
+import * as api from "@prismshadow/penguin-web/internal";
+import { onDefaultModelsRequest, onModelsChanged } from "@prismshadow/penguin-web/internal";
 import {
   dismissOnboarding,
   onboardingDismissed,
   onboardingStep,
   usableChatModel,
-} from "../../lib/model-onboarding";
-import { S } from "../../lib/strings";
-import { useAuth } from "../../state/auth";
-import { useProject } from "../../state/project";
+} from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
 import { ProjectDefaultModelsDialog } from "./default-models";
 import { connectPath } from "./connect-link";
 import { TOKENDANCE_PROVIDER_ID } from "./tokendance-banner";
