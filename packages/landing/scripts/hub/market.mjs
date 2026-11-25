@@ -24,9 +24,9 @@ export const EMBEDDED_MARKET_DOC = join(
   "..",
   "..",
   "..",
-  "server",
-  "src",
+  "library",
   "plugin",
+  "src",
   "builtin-market.json",
 );
 

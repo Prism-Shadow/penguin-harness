@@ -84,7 +84,7 @@ import {
   shippedIcon,
 } from "./library-plugins";
 // The market's curation as this build embeds it: its paths are the gallery's static files.
-import builtinMarket from "../../../../server/src/plugin/builtin-market.json";
+import builtinMarket from "../../../../library/plugin/src/builtin-market.json";
 import {
   docsAgentsMd,
   RSI_ROUND,
