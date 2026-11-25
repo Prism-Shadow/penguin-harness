@@ -13,7 +13,7 @@ import {
   sessionModelPickerDisabled,
   sessionRowStale,
   switchContextShape as shapeOf,
-} from "../src/features/chat/model-switch";
+} from "@prismshadow/penguin-library-session/web/chat/model-switch";
 import { createStreamModel, pushMessage } from "../src/lib/amsp/stream-model";
 
 const A = { provider: "anthropic", modelId: "a-1" };

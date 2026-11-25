@@ -117,7 +117,7 @@ async function fresh() {
   strings.setActiveStrings(en);
   return {
     en,
-    failed: await import("../src/features/chat/history-load-failed"),
+    failed: await import("@prismshadow/penguin-library-session/web/chat/history-load-failed"),
     machines: await import("../src/state/machines"),
     auth: await import("../src/state/auth"),
     project: await import("../src/state/project"),

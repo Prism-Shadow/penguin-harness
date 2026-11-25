@@ -28,7 +28,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { UseBenchmarkModal, type UseTab } from "../src/features/benchmark/use-benchmark-modal";
 import { DEFAULT_TOOLKIT_PLUGIN, OPTIMIZATION_SKILL } from "../src/features/benchmark/rsi-methods";
-import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
+import { draftKey, loadDraft } from "@prismshadow/penguin-library-session/web/chat/draft-cache";
 import { formatScore } from "../src/lib/format";
 import { S } from "../src/lib/strings";
 import { AuthProvider } from "../src/state/auth";

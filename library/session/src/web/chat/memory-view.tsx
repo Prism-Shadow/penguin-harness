@@ -1,0 +1,358 @@
+/**
+ * The Memory tab's content (the dock provides the shell — features/dock): two levels, modeled
+ * by memory-nav.ts. The list shows both scopes' topic lists — the same server routes the
+ * agent-settings memory tab reads — with a marker on what this conversation changed: a topic,
+ * or a file of its folder, listed under it; files in a folder no topic keeps follow under a note
+ * of their own. A topic's detail is the memory's content rendered like the file viewer
+ * (Markdown, frontmatter stripped — the header already shows those fields), then the files it
+ * keeps, each opening as read-only code with line numbers. A file deleted after being changed
+ * simply leaves the list (buildMemoryList); the unavailable note below covers the race where
+ * the file disappears between the listing load and the click, and a kept file the server will
+ * not show (over 512 KB, or not text).
+ *
+ * Entry routes by origin: a memory-changes card row lands directly on that memory's detail;
+ * entering through the panel toggle lands on the list. Management (add / edit / delete)
+ * stays on the agent-settings tab — the list header links there — so this view never
+ * duplicates the bridge-modal flows.
+ */
+import { useEffect, useState, type ReactNode } from "react";
+import type { MemoryFolderFile, SessionInfo } from "@prismshadow/penguin-server/api";
+import {
+  CodeSurface,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Md,
+  Waiting,
+  bodyWithoutFrontmatter,
+  languageForFileName,
+} from "@prismshadow/penguin-ui";
+import { S, api, failureNode, formatBytes, formatRelativeDate, isFolderFilePath, memoryRowKey, useLocale } from "@prismshadow/penguin-web/internal";
+import type { MemoryChangeRow, MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
+
+import {
+  buildMemoryList,
+  memoryNavBack,
+  memoryNavForRequest,
+  type MemoryListRow,
+  type MemoryNavMode,
+  type ScopeFiles,
+} from "./memory-nav";
+
+/** The scope marks: the folder for the Workspace scope, the person for the User scope. */
+const SCOPE_ICON = { user: ICONS.user, workspace: ICONS.folder } as const;
+
+/** The scope glyph + tooltip pair, shared with the memory-changes card's rows. */
+export function scopeGlyph(scope: "user" | "workspace", scopeKey?: string) {
+  return {
+    d: SCOPE_ICON[scope],
+    title: scope === "user" ? S.memory.userScope : S.chat.memoryScopeWorkspace(scopeKey ?? ""),
+  };
+}
+
+/** List-group title: the User scope's fixed label, or the Workspace directory's basename. */
+function groupTitle(group: {
+  scope: "user" | "workspace";
+  scopeKey: string;
+  workspacePath?: string;
+}): string {
+  return group.scope === "user"
+    ? S.memory.userScope
+    : (group.workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) ?? group.scopeKey);
+}
+
+export function ChatMemoryView({
+  session,
+  machineId = null,
+  changes,
+  scopes,
+  listingError,
+  request,
+  active,
+  onOpenSettings,
+}: {
+  session: SessionInfo;
+  /** The machine the Session is on (null for this server): its Agent's memory is read there. */
+  machineId?: string | null;
+  /** This conversation's aggregated memory changes (identity-stable — chat-page only swaps the array when the content moved). */
+  changes: MemoryChangeRow[];
+  /** The server listing, loaded by chat-page's use-memory-listing; null = not loaded. */
+  scopes: ScopeFiles[] | null;
+  listingError: ReactNode;
+  /** Navigation command from openMemory (object identity re-triggers): with a target it lands on that memory's detail, without one on the list. */
+  request: { target: MemoryLocateTarget | null } | null;
+  /** Whether the panel is showing (detail loading waits for it). */
+  active: boolean;
+  /** Opens the agent-settings memory tab, where management (add / edit / delete) lives. */
+  onOpenSettings?: () => void;
+}) {
+  const { locale } = useLocale();
+
+  // ---- navigation (memory-nav.ts): entry routing + back ----
+  const [mode, setMode] = useState<MemoryNavMode>({ kind: "list" });
+  // Landing on a located memory just shows its content — no highlight, no transient tint —
+  // the same arrival the file-summary card's rows give (they only preview the file).
+  useEffect(() => {
+    if (request === null) return;
+    setMode(memoryNavForRequest(request));
+  }, [request]);
+
+  // ---- detail content (loaded per target; keyed so a stale response can't cross targets) ----
+  const detailKey = mode.kind === "detail" ? memoryRowKey(mode.target) : null;
+  const [detail, setDetail] = useState<{
+    key: string;
+    content: string | null;
+    failed: boolean;
+    /** Why the content could not be read, once it failed. */
+    failure?: ReactNode;
+    /** The files a topic keeps; empty for a kept file's own detail. */
+    files: MemoryFolderFile[];
+  } | null>(null);
+  useEffect(() => {
+    if (!active || mode.kind !== "detail") return;
+    const target = mode.target;
+    const key = memoryRowKey(target);
+    const scopeKey = target.scope === "user" ? "user" : (target.scopeKey ?? "");
+    let cancelled = false;
+    setDetail({ key, content: null, failed: false, files: [] });
+    // One route reads both: a topic answers with the files it keeps, a kept file with none.
+    void api
+      .getMemoryFile(session.projectId, session.agentId, scopeKey, target.file, machineId)
+      .then((res) => {
+        if (!cancelled) {
+          setDetail({ key, content: res.content, files: res.file.files, failed: false });
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setDetail({
+          key,
+          content: null,
+          failed: true,
+          files: [],
+          failure: failureNode(err, {
+            text: S.chat.memoryContentUnavailable,
+            what: "a memory's content could not be read",
+          }),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // detailKey stands in for mode.target's identity; changes refresh a just-rewritten file
+    // (identity-stable, so streaming ticks never re-fire this).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, detailKey, session.projectId, session.agentId, machineId, changes]);
+
+  const groups = buildMemoryList(scopes, changes);
+
+  // ---- detail level ----
+  if (mode.kind === "detail") {
+    const target = mode.target;
+    const listedRow = groups
+      .flatMap((g) => [...g.rows, ...g.orphanRows])
+      .find((r) => memoryRowKey(r.target) === detailKey);
+    const isFile = isFolderFilePath(target.file);
+    const loaded = detail !== null && detail.key === detailKey;
+    const glyph = scopeGlyph(target.scope, target.scopeKey);
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-3 py-2 dark:border-gray-800/60">
+          <button
+            type="button"
+            onClick={() => setMode(memoryNavBack())}
+            data-tooltip={S.chat.memoryBack}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          >
+            <GlyphIcon d={ICONS.arrowLeftCentered} size={ICON_SIZE.iconButton} />
+            <span className="sr-only">{S.chat.memoryBack}</span>
+          </button>
+          <span data-tooltip={glyph.title} className="shrink-0 text-gray-400">
+            <GlyphIcon d={glyph.d} size={ICON_SIZE.rowLead} />
+            <span className="sr-only">{glyph.title}</span>
+          </span>
+          <p className="min-w-0 flex-1 truncate font-mono text-sm font-semibold">
+            {listedRow?.title ?? target.file}
+          </p>
+          {listedRow &&
+            (listedRow.updatedAt !== undefined || listedRow.modifiedAt !== undefined) && (
+              <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+                {listedRow.updatedAt ??
+                  (listedRow.modifiedAt !== undefined
+                    ? formatRelativeDate(listedRow.modifiedAt, locale)
+                    : "")}
+              </span>
+            )}
+        </div>
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 py-3">
+          {listedRow?.description !== undefined && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">{listedRow.description}</p>
+          )}
+          {!loaded || (!detail.failed && detail.content === null) ? (
+            <Waiting rows={3} />
+          ) : detail.failed ? (
+            <p className="text-xs text-gray-400 dark:text-gray-500">{detail.failure}</p>
+          ) : isFile ? (
+            <CodeSurface
+              language={languageForFileName(target.file)}
+              code={detail.content ?? ""}
+              highlight
+              lineNumbers
+              wrap
+              className="text-xs leading-relaxed"
+            />
+          ) : (
+            <>
+              <div className="md-body text-sm">
+                <Md text={bodyWithoutFrontmatter(detail.content ?? "")} />
+              </div>
+              {detail.files.length > 0 && (
+                // The files the topic keeps, ruled off below its text: each opens as code.
+                <section className="border-t border-gray-100 pt-2 dark:border-gray-800/60">
+                  <p className="py-1 text-xs text-gray-500 dark:text-gray-400">
+                    {S.memory.keptFiles}
+                  </p>
+                  <ul>
+                    {detail.files.map((file) => (
+                      <li key={file.path}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMode({ kind: "detail", target: { ...target, file: file.path } })
+                          }
+                          className="flex w-full items-center gap-3 rounded-md px-1.5 py-1.5 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                        >
+                          <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-700 dark:text-gray-300">
+                            {file.path}
+                          </span>
+                          <span className="flex shrink-0 gap-2 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+                            <span>{formatBytes(file.size)}</span>
+                            <span>{formatRelativeDate(file.modifiedAt, locale)}</span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  /** One list row: a topic (with a count of the files it keeps), or a kept file indented under it. */
+  const listRow = (row: MemoryListRow, indent: boolean) => (
+    <li key={memoryRowKey(row.target)}>
+      <button
+        type="button"
+        onClick={() => setMode({ kind: "detail", target: row.target })}
+        className={`flex w-full items-center gap-3 py-2 pr-3.5 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50 ${indent ? "pl-7" : "pl-3.5"}`}
+      >
+        <div className="min-w-0 flex-1">
+          <p
+            className={`flex items-center gap-1.5 truncate font-mono font-medium text-gray-800 dark:text-gray-200 ${row.kind === "file" ? "text-xs" : "text-sm"}`}
+          >
+            {row.changed !== undefined && (
+              <span
+                data-tooltip={S.chat.memoryChangedMark}
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500"
+              >
+                <span className="sr-only">{S.chat.memoryChangedMark}</span>
+              </span>
+            )}
+            <span className="min-w-0 truncate">{row.title}</span>
+            {row.fileCount !== undefined && row.fileCount > 0 && (
+              <span
+                data-tooltip={S.memory.fileCount(row.fileCount)}
+                className="flex shrink-0 items-center gap-1 font-sans text-xs font-normal tabular-nums text-gray-400 dark:text-gray-500"
+              >
+                <GlyphIcon d={ICONS.paperclip} size={ICON_SIZE.inlineGlyph} />
+                <span aria-hidden="true">{row.fileCount}</span>
+                <span className="sr-only">{S.memory.fileCount(row.fileCount)}</span>
+              </span>
+            )}
+          </p>
+          {row.description !== undefined && (
+            <p className="truncate text-xs text-gray-500 dark:text-gray-400">{row.description}</p>
+          )}
+        </div>
+        {(row.updatedAt !== undefined || row.modifiedAt !== undefined) && (
+          <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+            {row.updatedAt ??
+              (row.modifiedAt !== undefined ? formatRelativeDate(row.modifiedAt, locale) : "")}
+          </span>
+        )}
+      </button>
+    </li>
+  );
+
+  // ---- list level ----
+  return (
+    <div className="h-full min-h-0 overflow-y-auto">
+      <div className="flex items-center gap-1 px-3.5 pb-1 pt-2">
+        <span className="min-w-0 flex-1" />
+        {onOpenSettings && (
+          // Labelled, not a bare glyph: the arrow says the click leaves this panel, the text
+          // says where it lands, and nobody has to hover to find that out. `title` repeats the
+          // label verbatim rather than expanding on it, so the accessible name matches the
+          // visible one. The label fits the shared width's 320px minimum; past that (a larger
+          // text size) it truncates instead of pushing the row wider.
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            data-tooltip={S.chat.openAgentMemory}
+            className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          >
+            <GlyphIcon d={ICONS.boxArrowOut} size={ICON_SIZE.inlineGlyph} />
+            <span className="truncate">{S.chat.openAgentMemory}</span>
+          </button>
+        )}
+      </div>
+      {listingError !== null && groups.length === 0 ? (
+        <p className="px-3.5 py-2 text-xs text-gray-500 dark:text-gray-400">{listingError}</p>
+      ) : scopes === null && groups.length === 0 ? (
+        <div className="px-3.5 py-2">
+          <Waiting rows={3} />
+        </div>
+      ) : groups.every((g) => g.rows.length === 0 && g.orphanRows.length === 0) ? (
+        <p className="px-3.5 py-2 text-xs text-gray-400 dark:text-gray-500">
+          {S.chat.memoryEmptyAll}
+        </p>
+      ) : (
+        groups.map((group) =>
+          group.rows.length === 0 && group.orphanRows.length === 0 ? null : (
+            <div key={`${group.scope} ${group.scopeKey}`} className="pb-2">
+              <div className="flex items-center gap-2 px-3.5 py-1.5">
+                <span className="shrink-0 text-gray-400">
+                  <GlyphIcon d={SCOPE_ICON[group.scope]} size={ICON_SIZE.inlineGlyph} />
+                </span>
+                <p
+                  className="min-w-0 flex-1 truncate text-xs text-gray-500 dark:text-gray-400"
+                  data-tooltip={group.workspacePath}
+                  data-tooltip-content="text"
+                  data-tooltip-extra
+                >
+                  {groupTitle(group)}
+                </p>
+                <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+                  {S.memory.itemCount(group.rows.filter((r) => r.kind === "topic").length)}
+                </span>
+              </div>
+              <ul>{group.rows.map((row) => listRow(row, row.kind === "file"))}</ul>
+              {group.orphanRows.length > 0 && (
+                <>
+                  <p className="px-3.5 pb-1 pt-2 text-xs text-gray-500 dark:text-gray-400">
+                    {S.memory.orphanFiles}
+                  </p>
+                  <ul>{group.orphanRows.map((row) => listRow(row, false))}</ul>
+                </>
+              )}
+            </div>
+          ),
+        )
+      )}
+    </div>
+  );
+}

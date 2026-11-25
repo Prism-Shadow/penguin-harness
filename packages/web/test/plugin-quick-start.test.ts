@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { libraryQuickStart } from "../src/features/plugins/plugin-card";
-import { draftFromUnknown } from "../src/features/chat/draft-cache";
+import { draftFromUnknown } from "@prismshadow/penguin-library-session/web/chat/draft-cache";
 
 const skill = (name: string) => ({ name, description: "", version: "2026.08.01.1" });
 

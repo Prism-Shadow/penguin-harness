@@ -76,7 +76,7 @@ import * as api from "../../api/endpoints";
 import { openHistoryStream } from "../../api/sse";
 import { CostPartsRows, ElapsedSplitRows, StatHint } from "../../components/ui/stat-hint";
 import { readHistory } from "../../lib/history/history-read";
-import { HistoryFileLoading } from "../chat/history-loading";
+import { HistoryFileLoading } from "@prismshadow/penguin-library-session/web";
 import { S } from "../../lib/strings";
 import {
   computeTps,

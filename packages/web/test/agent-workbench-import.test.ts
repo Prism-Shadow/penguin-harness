@@ -15,7 +15,7 @@ import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClipboardWriterProvider } from "@prismshadow/penguin-ui";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
-import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
+import { draftKey, loadDraft } from "@prismshadow/penguin-library-session/web/chat/draft-cache";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { ADMIN_ME } from "./helpers/admin-settings";

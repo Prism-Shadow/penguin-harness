@@ -22,7 +22,7 @@ import {
   isOutdatedMachine,
   type DeleteWorkspaceDeps,
   type DeleteWorkspaceTarget,
-} from "../src/features/session-list/delete-workspace";
+} from "@prismshadow/penguin-library-session/web/session-list/delete-workspace";
 import { workspaceGroupKey } from "../src/lib/session-grouping";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 

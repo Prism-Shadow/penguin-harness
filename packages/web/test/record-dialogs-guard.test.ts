@@ -37,7 +37,7 @@ import type {
 import { AddMachineDialog } from "../src/features/machines/add-machine-dialog";
 import { SshHostDialog } from "../src/features/machines/ssh-host-dialog";
 import { CreateBenchmarkModal } from "../src/features/benchmark/create-benchmark-modal";
-import { SavedPrompts } from "../src/features/chat/saved-prompts";
+import { SavedPrompts } from "@prismshadow/penguin-library-session/web/chat/saved-prompts";
 import { HomepageDialog } from "../../../plugins/browser-automation/src/web/homepage-dialog";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import {

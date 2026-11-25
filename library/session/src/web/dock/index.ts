@@ -1,0 +1,85 @@
+export { docksOnScreen } from "./dock-state";
+
+export {
+  clearDockPages,
+  closeDockPage,
+  detachDockPage,
+  dockActiveKey,
+  openPanel,
+  setSessionPanelOpener,
+} from "./dock-state";
+
+export { dockWorkspace } from "./dock-terminal";
+
+export { currentDockScope } from "./dock-state";
+
+export { isTabShown } from "./dock-state";
+
+export { dockPanelDefinition } from "./panel-registry";
+
+export { panelLabel } from "./panel-registry";
+
+export { registerDockPanel } from "./panel-registry";
+
+export type { DockPanelBodyProps } from "./panel-registry";
+
+export type { DockPanelDefinition } from "./panel-registry";
+
+export type { PanelId } from "./panel-registry";
+
+export { ChatDockArea, DockPanel } from "./dock-panel";
+
+export { DockLauncher } from "./dock-launcher";
+
+export { useDockMount } from "./use-dock-mount";
+
+export { setDockConversation } from "./dock-terminal";
+
+export { TERMINAL_PANEL } from "./dock-terminal";
+
+export { subscribeTerminalPanelOffered } from "./dock-terminal";
+
+export { terminalPanelOffered } from "./dock-terminal";
+
+export { reownTerminals } from "./dock-terminal";
+
+export { adoptDockScope } from "./dock-state";
+
+export { closedDockView } from "./dock-state";
+
+export { dockViews } from "./dock-state";
+
+export { dockVersion } from "./dock-state";
+
+export { panelDock } from "./dock-state";
+
+export { isPanelOpen } from "./dock-state";
+
+export { subscribeDock } from "./dock-state";
+
+export { isDockVisible } from "./dock-state";
+
+export { isNarrow } from "./dock-state";
+
+export { toggleDock } from "./dock-state";
+
+export type { DockPosition } from "./dock-state";
+
+export { setCloseGuard } from "@prismshadow/penguin-web/internal";
+
+export { tabKey } from "./dock-state";
+
+export { launcherHiddenVersion } from "./dock-launcher-state";
+
+export { readLauncherHidden } from "./dock-launcher-state";
+
+export { subscribeLauncherHidden } from "./dock-launcher-state";
+
+export { writeLauncherHidden } from "./dock-launcher-state";
+
+export { setDockScope } from "./dock-state";
+export { measureComposer, measureMergedComposer } from "./composer-height";
+
+export { LAUNCHER_HIDDEN_KEY } from "./dock-launcher-state";
+
+export { createShell, ownTerminals, selectTerminal, shownTerminalId, useDockSessionId } from "./dock-terminal";

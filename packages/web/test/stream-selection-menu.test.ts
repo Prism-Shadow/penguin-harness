@@ -20,12 +20,12 @@ import {
   LinkMenuRows,
   SelectionMenuRows,
   type CapturedSelection,
-} from "../src/features/chat/stream-selection-menu";
+} from "@prismshadow/penguin-library-session/web/chat/stream-selection-menu";
 
 import type { LinkRow } from "@prismshadow/penguin-web-plugin";
 import { browserLinkRow } from "../../../plugins/browser-automation/src/web/link-row";
-import type { ComposerControl } from "../src/features/chat/chat-input";
-import { ReferenceChip } from "../src/features/chat/reference-chip";
+import type { ComposerControl } from "@prismshadow/penguin-library-session/web/chat/chat-input";
+import { ReferenceChip } from "@prismshadow/penguin-library-session/web/chat/reference-chip";
 import { excerptLabel } from "../src/lib/selection-menu";
 import type { ComposerReference } from "../src/lib/workspace-tree";
 import { S, setActiveStrings, zh } from "../src/lib/strings";

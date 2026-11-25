@@ -23,7 +23,7 @@ import {
 import { requestSettingsPage } from "../lib/settings-request";
 import { toastApiError } from "../lib/toast-api-error";
 import { toneDot, toneInk, toneSurface } from "../lib/tone";
-import { currentDockScope, isTabShown, openPanel } from "../features/dock";
+import { currentDockScope, isTabShown, openPanel } from "@prismshadow/penguin-library-session/web";
 import { isOpenPageDrag } from "../lib/page-layout";
 
 provideWebHost({

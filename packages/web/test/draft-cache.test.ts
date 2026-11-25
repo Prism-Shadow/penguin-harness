@@ -26,7 +26,7 @@ import {
   parseDraft,
   saveDraft,
   sessionDraftKey,
-} from "../src/features/chat/draft-cache";
+} from "@prismshadow/penguin-library-session/web/chat/draft-cache";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 describe("parseDraft (field-by-field validation)", () => {

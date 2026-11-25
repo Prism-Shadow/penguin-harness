@@ -24,7 +24,7 @@ import {
   pushMessages,
   type ChatItem,
 } from "../src/lib/amsp/stream-model";
-import { summarizeWork } from "../src/features/chat/work-summary";
+import { summarizeWork } from "@prismshadow/penguin-library-session/web/chat/work-summary";
 
 let nextId = 1;
 

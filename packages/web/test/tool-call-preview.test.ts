@@ -26,7 +26,7 @@ import {
   previewArguments,
   shortenPath,
   showsBackgroundAction,
-} from "../src/features/chat/tool-call-card";
+} from "@prismshadow/penguin-library-session/web/chat/tool-call-card";
 
 const headerSubtitle = (...args: Parameters<typeof toolHeaderDetails>) =>
   toolHeaderDetails(...args).subtitle;

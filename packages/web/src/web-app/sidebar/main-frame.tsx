@@ -1,13 +1,9 @@
 import type { ReactNode } from "react";
-import {
-  MainSidebarFragments,
-  renderMainSessionList,
-  renderMainSessionDialogs,
-} from "../../features/session-list";
+import { DRAFT_SESSION_ID, MainSidebarFragments, renderMainSessionDialogs, renderMainSessionList } from "@prismshadow/penguin-library-session/web";
 import { sectionsIn } from "../../lib/sidebar-modes";
 import { NavRow, Segmented, SidebarFrame, SidebarNavArea } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { DRAFT_SESSION_ID } from "../../features/chat";
+
 import { NEW_CHAT_ICON } from "../../lib/main-sidebar-persistence";
 import type { MainSidebarView } from "./main-navigation";
 

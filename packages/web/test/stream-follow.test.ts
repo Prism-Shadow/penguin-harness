@@ -24,7 +24,7 @@ import {
   createStreamFollow,
   followToBottom,
   stickToBottom,
-} from "../src/features/chat/stream-follow";
+} from "@prismshadow/penguin-library-session/web/chat/stream-follow";
 
 /** Short scroll area: content 500px, viewport 460px, scrollable slack only 40px (always under the 80px threshold). */
 const SHORT = { scrollHeight: 500, clientHeight: 460 };

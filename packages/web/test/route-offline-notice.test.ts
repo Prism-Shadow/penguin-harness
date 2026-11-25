@@ -19,7 +19,7 @@
  */
 import { createElement as h } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { RouteOfflineNotice } from "../src/features/chat/route-offline-notice";
+import { RouteOfflineNotice } from "@prismshadow/penguin-library-session/web/chat/route-offline-notice";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { mount, unmountAll } from "./helpers/dom";

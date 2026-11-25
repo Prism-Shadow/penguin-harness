@@ -16,12 +16,12 @@ import { createElement as h } from "react";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import { mount, settle, unmountAll } from "./helpers/dom";
 
-type Counts = typeof import("../src/features/chat/use-start-dashboard");
+type Counts = typeof import("@prismshadow/penguin-library-session/web/chat/use-start-dashboard");
 
 /** A fresh copy of the hooks, so one test's last-read lists never seed another's. */
 async function freshCounts(): Promise<Counts> {
   vi.resetModules();
-  return import("../src/features/chat/use-start-dashboard");
+  return import("@prismshadow/penguin-library-session/web/chat/use-start-dashboard");
 }
 
 /** What the start page's panel shows for the two counts: a number, or "—" while there is none. */

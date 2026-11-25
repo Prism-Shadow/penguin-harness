@@ -55,7 +55,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { memoryStorage } from "./helpers/storage";
 
-let dock: typeof import("../src/features/dock/dock-state");
+let dock: typeof import("@prismshadow/penguin-library-session/web/dock/dock-state");
 
 beforeAll(async () => {
   // Not vi.stubGlobal: the package config unstubs globals before every test, and the module
@@ -64,7 +64,7 @@ beforeAll(async () => {
     configurable: true,
     value: memoryStorage(),
   });
-  dock = await import("../src/features/dock/dock-state");
+  dock = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
 });
 
 let scopeSeq = 0;
@@ -338,7 +338,7 @@ describe("persistence", () => {
     dock.setDockScope(owner);
     expect(dock.dockActiveKey("right")).toBe(":app:penguin_support/support");
     vi.resetModules();
-    dock = await import("../src/features/dock/dock-state");
+    dock = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
     dock.setDockScope(owner);
     expect(dock.dockActiveKey("right")).toBe("memory");
     expect(dock.dockTabs("right").map(dock.tabKey)).toEqual(["memory", "agents"]);
@@ -357,7 +357,7 @@ describe("persistence", () => {
 
     // Reload: a second module instance reading the same storage back from scratch.
     vi.resetModules();
-    const reloaded = await import("../src/features/dock/dock-state");
+    const reloaded = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
     reloaded.setDockScope(a);
     expect(reloaded.panelDock("workspace")).toBe("right");
     expect(reloaded.isDockVisible("right")).toBe(true);
@@ -378,7 +378,7 @@ describe("persistence", () => {
       JSON.stringify({ scopes: { s: { right: { tabs, active: "acme.kanban", open: true } } } }),
     );
     vi.resetModules();
-    const reloaded = await import("../src/features/dock/dock-state");
+    const reloaded = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
     reloaded.setDockScope("s");
     expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual(["schedules", "acme.kanban"]);
     expect(reloaded.dockActiveKey("right")).toBe("acme.kanban");
@@ -406,7 +406,7 @@ describe("persistence", () => {
       }),
     );
     vi.resetModules();
-    const reloaded = await import("../src/features/dock/dock-state");
+    const reloaded = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
     reloaded.setDockScope("session-old");
     expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual(["workspace", "terminal"]);
     expect(reloaded.dockActiveKey("right")).toBe("terminal");
@@ -424,7 +424,7 @@ describe("persistence", () => {
     dock.setDockScope(scope);
     dock.openPanel("builtin-browser", "bottom");
     vi.resetModules();
-    const reloaded = await import("../src/features/dock/dock-state");
+    const reloaded = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
     reloaded.setDockScope(scope);
     expect(reloaded.panelDock("builtin-browser")).toBe("bottom");
     expect(reloaded.dockActiveKey("bottom")).toBe("builtin-browser");
@@ -436,7 +436,7 @@ describe("persistence", () => {
       '{"scopes": {"s": {"right": {"tabs": [42]}}}, "bottomRatio": "x"}',
     );
     vi.resetModules();
-    const reloaded = await import("../src/features/dock/dock-state");
+    const reloaded = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
     reloaded.setDockScope("s");
     expect(reloaded.dockTabs("right")).toHaveLength(0);
     expect(reloaded.isDockVisible("right")).toBe(false);
@@ -612,7 +612,7 @@ describe("fullscreen", () => {
     expect(dock.fullscreenDock()).toBe("right");
     dock.setBottomRatio(0.6);
     vi.resetModules();
-    const reloaded = await import("../src/features/dock/dock-state");
+    const reloaded = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
     reloaded.setDockScope(owner);
     expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual(["workspace", "memory"]);
     expect(reloaded.bottomRatio()).toBe(0.6);
@@ -630,7 +630,7 @@ describe("fullscreen", () => {
       }),
     });
     vi.resetModules();
-    const responsive = await import("../src/features/dock/dock-state");
+    const responsive = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
     const a = `responsive-a-${scopeSeq}`;
     const b = `responsive-b-${scopeSeq}`;
     responsive.setDockScope(a);

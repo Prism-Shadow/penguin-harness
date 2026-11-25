@@ -34,12 +34,12 @@ import { ISSUE_FORM_URL, ISSUE_URL_CAP, buildReport } from "@prismshadow/penguin
 import type { ReportEnvironment } from "@prismshadow/penguin-ui";
 import { refusalHandoff } from "../src/lib/amsp/compaction-summary";
 import { createStreamModel, pushMessages } from "../src/lib/amsp/stream-model";
-import { handoffFailure } from "../src/features/chat/request-notice";
-import { requestFailureReport } from "../src/features/chat/request-failure-report";
+import { handoffFailure } from "@prismshadow/penguin-library-session/web/chat/request-notice";
+import { requestFailureReport } from "@prismshadow/penguin-library-session/web/chat/request-failure-report";
 import type {
   RequestFailure,
   RequestFailurePlace,
-} from "../src/features/chat/request-failure-report";
+} from "@prismshadow/penguin-library-session/web/chat/request-failure-report";
 
 const ID = "req_011CUz3tF8eJ2dQx6Q9pY7Ln";
 const WORKSPACE = "/home/alice/projects/acme-secret";

@@ -23,7 +23,7 @@ import {
   memoryNavBack,
   memoryNavForRequest,
   type ScopeFiles,
-} from "../src/features/chat/memory-nav";
+} from "@prismshadow/penguin-library-session/web/chat/memory-nav";
 
 describe("memoryNavForRequest / memoryNavBack", () => {
   it("no request, and a request without a target (panel or card-header entry), land on the list", () => {

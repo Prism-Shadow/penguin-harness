@@ -21,7 +21,7 @@ import {
   routedView,
   sessionForProject,
   sessionProbeKey,
-} from "../src/features/chat/session-project";
+} from "@prismshadow/penguin-library-session/web/chat/session-project";
 
 const SESSION: SessionInfo = {
   sessionId: "session-a",

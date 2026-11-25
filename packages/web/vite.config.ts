@@ -21,6 +21,7 @@
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import { dropNonWoff2FontSources, penguinUi } from "../ui/src/vite-plugin";
@@ -110,6 +111,25 @@ export default defineConfig({
   // package (its toasts, tooltips and Esc layers) and one face holding the app's handed-over host.
   resolve: {
     dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
+    // The session domain's web half (library/session/src/web) is compiled with the app the same
+    // way, but as TS source behind two face specifiers rather than a dependency entry: the face
+    // the app boots its modules through, and the app's internals the half consumes
+    // (src/internal.ts). Aliased to source so the app program, this build and the tests all read
+    // the same files the typecheck reads.
+    alias: [
+      {
+        find: /^@prismshadow\/penguin-library-session\/web$/,
+        replacement: `${fileURLToPath(new URL("../../library/session/src/web", import.meta.url))}index.ts`,
+      },
+      {
+        find: /^@prismshadow\/penguin-library-session\/web\/(.*)$/,
+        replacement: `${fileURLToPath(new URL("../../library/session/src/web", import.meta.url))}$1`,
+      },
+      {
+        find: /^@prismshadow\/penguin-web\/internal$/,
+        replacement: fileURLToPath(new URL("./src/internal.ts", import.meta.url)),
+      },
+    ],
   },
   build: {
     // Never inline a font. Vite turns any asset under 4 KB into a data: URI, and a font slice the

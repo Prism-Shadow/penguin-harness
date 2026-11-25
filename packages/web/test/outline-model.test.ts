@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../src/lib/amsp/stream-model";
-import { handoffMessage } from "../src/features/chat/agent-handoff";
+import { handoffMessage } from "@prismshadow/penguin-library-session/web/chat/agent-handoff";
 import { buildBackgroundTaskDoneMessage, buildScheduledMessage } from "@prismshadow/amsp/markers";
 import {
   OUTLINE_MIN_TURNS,
@@ -20,7 +20,7 @@ import {
   railTickPitch,
   railWindowHalf,
   windowOutline,
-} from "../src/features/chat/outline-model";
+} from "@prismshadow/penguin-library-session/web/chat/outline-model";
 
 let nextId = 0;
 const user = (text: string): ChatItem => ({ kind: "user_text", id: nextId++, text });

@@ -12,7 +12,7 @@ import {
   isStopAction,
   midRunAction,
   type MidRunComposerState,
-} from "../src/features/chat/composer-send";
+} from "@prismshadow/penguin-library-session/web/chat/composer-send";
 
 /** An active session with every channel wired, steer mode, and a one-line text draft. */
 const BASE: MidRunComposerState = {

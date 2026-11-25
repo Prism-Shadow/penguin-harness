@@ -30,12 +30,7 @@ import * as api from "../../api/endpoints";
 import { isDesktopShellWindow } from "../../lib/account-menu";
 import { useThemePackList } from "../../lib/account-sync/theme-packs";
 import { useInstantSetting } from "../../lib/instant-setting";
-import {
-  launcherHiddenVersion,
-  readLauncherHidden,
-  subscribeLauncherHidden,
-  writeLauncherHidden,
-} from "../dock";
+import { launcherHiddenVersion, readLauncherHidden, subscribeLauncherHidden, writeLauncherHidden } from "@prismshadow/penguin-library-session/web";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import {

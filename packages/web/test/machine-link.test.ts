@@ -20,7 +20,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
-import { machineRestartNeeded } from "../src/features/chat/machine-away";
+import { machineRestartNeeded } from "@prismshadow/penguin-library-session/web/chat/machine-away";
 import { machineLink, remoteAgentsEmpty } from "../src/lib/machine-link";
 import { S } from "../src/lib/strings";
 

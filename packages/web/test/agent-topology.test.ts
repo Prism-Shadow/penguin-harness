@@ -69,7 +69,7 @@ import {
   resolveAgentLabel,
   shortSessionId,
   taskStartCount,
-} from "../src/features/chat/agent-topology";
+} from "@prismshadow/penguin-library-session/web/chat/agent-topology";
 
 function meta(sessionId: string, agentState = "/a"): AmspRecord<SessionMetaPayload> {
   return sessionMeta({

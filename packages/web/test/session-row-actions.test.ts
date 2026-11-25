@@ -14,7 +14,7 @@ import {
   composeMarks,
   rowExtensionsOf,
   withEntries,
-} from "../src/features/session-list/row-actions";
+} from "@prismshadow/penguin-library-session/web/session-list/row-actions";
 import type { RowAction } from "../src/lib/session-row-contributions";
 
 const contributed = (id: string, order: number, code: RowAction): Contributed =>

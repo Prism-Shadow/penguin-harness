@@ -25,7 +25,7 @@ import {
   shortcutDraftError,
   upsertShortcut,
   type UserShortcut,
-} from "../src/features/chat/user-shortcuts";
+} from "@prismshadow/penguin-library-session/web/chat/user-shortcuts";
 
 const shortcut = (id: string, title = `title ${id}`, prompt = `prompt ${id}`): UserShortcut => ({
   id,

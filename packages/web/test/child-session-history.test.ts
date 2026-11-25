@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ChildSessionHistory } from "../src/features/chat/child-session-history";
+import { ChildSessionHistory } from "@prismshadow/penguin-library-session/web/chat/child-session-history";
 
 function child(sessionId: string, turnKey: string) {
   return {

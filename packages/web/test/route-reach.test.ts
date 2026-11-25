@@ -22,7 +22,7 @@ import {
   routeLookupPending,
   routeReach,
   silentMachinesOf,
-} from "../src/features/chat/route-reach";
+} from "@prismshadow/penguin-library-session/web/chat/route-reach";
 
 const NOT_FOUND = { status: 404 };
 const NO_ANSWER = { status: 503 };

@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-session",
   "version": "0.2.20",
-  "description": "The sessions domain: the SessionIndex, SessionDrivers, SessionOrigins and Schedules mechanisms, the ApprovalMode vocabulary, and the sessions/schedules repos. A library package - the server imports it; nothing here imports the server.",
+  "description": "The sessions domain: the SessionIndex, SessionDrivers, SessionOrigins and Schedules mechanisms, the ApprovalMode vocabulary, and the sessions/schedules repos. A library package - the server imports it; nothing here imports the server. The domain's web half (the chat, session-list and dock pages) lives under src/web/, compiled by the Web App's build.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -63,7 +63,9 @@
     "./mtime-gate": {
       "types": "./dist/mtime-gate.d.ts",
       "import": "./dist/mtime-gate.js"
-    }
+    },
+    "./web": "./src/web/index.ts",
+    "./web/*": "./src/web/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -79,9 +81,17 @@
     "smol-toml": "^1.9.1"
   },
   "devDependencies": {
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web-plugin": "workspace:*",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router": "^8.3.0",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "zustand": "^5.0.15"
   },
   "engines": {
     "node": ">=24"

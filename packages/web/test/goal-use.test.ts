@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { UNLIMITED_BUDGET, parseBudgetInput } from "../src/features/chat/goal-use";
+import { UNLIMITED_BUDGET, parseBudgetInput } from "@prismshadow/penguin-library-session/web/chat/goal-use";
 
 describe("parseBudgetInput", () => {
   it("treats empty input as unlimited and parses k/m suffixes", () => {

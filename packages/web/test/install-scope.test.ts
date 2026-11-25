@@ -365,14 +365,14 @@ describe("bootInstallScope", () => {
     // already holding the pre-wipe map — including a terminal tab whose shell died with the
     // old root — and its first scope switch would write the whole thing back.
     vi.resetModules();
-    await import("../src/features/dock/dock-state");
+    await import("@prismshadow/penguin-library-session/web/dock/dock-state");
 
     expect(await bootInstallScope()).toBe("reload");
     expect(storage.map.has("penguin.dock.layout")).toBe(false);
 
     // Pass two — the reload. Every module re-evaluates against the swept store.
     vi.resetModules();
-    const dock = await import("../src/features/dock/dock-state");
+    const dock = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
     expect(await bootInstallScope()).toBe("mount");
 
     // The first route resolution's setDockScope is what persisted the old map; here it can

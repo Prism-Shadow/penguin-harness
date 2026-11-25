@@ -1,0 +1,740 @@
+/**
+ * Message stream container: renders the ChatItem list; auto-sticks to the
+ * bottom while streaming — an upward swipe immediately pauses follow, and scrolling back near
+ * the bottom resumes it (see stream-follow.ts for the exact rule).
+ * StreamRenderContext threads the pending-approval map and approval callback down to tool
+ * cards at any nesting depth. Text selected in the stream, and a web link in it, get the app's
+ * own context menu (Copy / Add to conversation; open the link or copy its address — see
+ * stream-selection-menu.tsx).
+ */
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+  type RefObject,
+} from "react";
+
+import { A2uiActionsProvider } from "@prismshadow/penguin-ui/a2ui";
+import {
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  MessageBubble,
+  ReportIssueAction,
+  TextAction,
+  exceptionReport,
+  isReportable,
+} from "@prismshadow/penguin-ui";
+import { FIND_LOAD_OLDER_EVENT, FIND_MORE_ATTR, FindRevealContext, S, WorkspaceLinksProvider, useRegionRevealed } from "@prismshadow/penguin-web/internal";
+import type { ChatItem, ComposerReference, MemoryChangeRow, TaskStats } from "@prismshadow/penguin-web/internal";
+
+import type { ElidedBodies, HistoryTransfer, PendingApproval } from "./use-session-stream";
+import { MessageItem } from "./message-item";
+import type { RequestFailure } from "./request-failure-report";
+import { parseUserMessageBody } from "./user-message-body";
+import { interactiveReplyIndex } from "./a2ui-reply";
+import { readOnlyActions } from "./a2ui-answered";
+
+import { SessionWorkGroup, isWorkItem } from "./work-group";
+import { ElidedBodiesContext } from "./elided-body";
+import { HistoryTransferLine } from "./history-loading";
+import { createStreamFollow, followToBottom, stickToBottom } from "./stream-follow";
+import type { StreamFollow } from "./stream-follow";
+import type { ForkTarget } from "./task-stats-line";
+import { useStreamSelectionMenu } from "./stream-selection-menu";
+
+/**
+ * What a reply's rich blocks (```a2ui choices and forms) read from context: whether they take
+ * input, where a pick goes, and the language of its text.
+ */
+export type A2uiActions = ComponentProps<typeof A2uiActionsProvider>["value"];
+
+/** No reply yet: the read-only actions a first render starts from. */
+const NO_ACTIONS: ReadonlyMap<number, A2uiActions> = new Map();
+
+/** Context passed down to nested rendering (pending approvals + approval submit callback + current origin chain). */
+export interface StreamRenderContext {
+  /** approvalKey(origin, toolCallId) → pending approval (disambiguates by origin when parent/child session tool_call_ids collide). */
+  pendingApprovals: ReadonlyMap<string, PendingApproval>;
+  onApprove: (toolCallId: string, decision: "allow" | "deny", origin: string[]) => Promise<void>;
+  /**
+   * "Move to background" on an executing tool call: the call hands its work back as a
+   * background task and the turn carries on. Only honored on main-session items — a
+   * subagent's call belongs to the child Session's environment, which the route does not
+   * target (same rule as onRetryNow). The button does not render if this isn't wired up.
+   */
+  onSendToBackground?: (toolCallId: string) => Promise<void>;
+  /** Origin chain at the current render level (empty array for the main session; subagent cards append one level each). */
+  origin: string[];
+  /**
+   * Whether the Task at this level is still running (taskState for the main session, its own
+   * running state for a subagent card). The "Reasoning & Tools" group uses this to decide: as
+   * long as the model might still call another tool, the trailing group always shows "Running".
+   */
+  taskRunning: boolean;
+  /** Converts this turn's stats into cost (USD) at the current pricing of `model`, the model the turn ran on (the Session's own when the turn names none); returns null when no price is configured (cost is hidden). */
+  taskCost?: (stats: TaskStats, model?: { provider: string; modelId: string }) => number | null;
+  /**
+   * "Retry now" on the live reconnect countdown: skips the remaining backoff wait
+   * server-side (POST /retry-now); the line flips to "retrying" when the request_begin
+   * arrives. Only honored on main-session items — a subagent's backoff belongs to the
+   * child session, which the route does not target.
+   */
+  onRetryNow?: () => void;
+  /** "Give up" on the live reconnect countdown: the ordinary session abort (same call as the Stop button). */
+  onGiveUp?: () => void;
+  /**
+   * "Retry" on the line a run ended on (the fatal error banner, a reconnect line that gave up, or
+   * the stop marker): runs the Session once with no new input, so only the unfinished turn's
+   * held input is sent (POST /retry); rejects when the server refuses it. Offered only on the
+   * stream's last item while no Task runs — anything after it has already resent that input —
+   * and only on main-session items, since a subagent's run belongs to the child session, which
+   * the route does not target. The button does not render if this isn't wired up.
+   */
+  onRetry?: () => Promise<void>;
+  /**
+   * Opens a failed or retrying model request's details — 「[详情]」 on its line: a report to copy
+   * or to file as a GitHub issue. On every level (a subagent's request fails the same way). The
+   * action does not render if this isn't wired up.
+   */
+  onShowFailure?: (failure: RequestFailure) => void;
+  /**
+   * Opens the Files panel and navigates to this file (a file-summary card's row, or a link in
+   * the stream's Markdown naming a Workspace file; takes a Workspace-relative path). The card
+   * doesn't render and links keep opening a new tab if this isn't wired up. Must be stable:
+   * every rendered link reads it through context (see WorkspaceLinksProvider).
+   */
+  onOpenFile?: (path: string) => void;
+  /** Opens the subagents panel focused on this child session (subagent chip click); `origin` is the ctx.origin at the chip's render level — the child's ancestor chain, excluding its own id. */
+  onOpenSubagent?: (sessionId: string, origin: string[]) => void;
+  /** Opens the Memory panel on its list (memory-changes card header); the button doesn't render if this isn't wired up. */
+  onOpenMemory?: () => void;
+  /** Opens the Memory panel on this row's memory content (memory-changes card row click); rows render inert if this isn't wired up. */
+  onLocateMemoryChange?: (row: MemoryChangeRow) => void;
+  /** Keys of changed memory files that no longer exist (deleted after the change): the card drops those rows. Absent while the listing hasn't loaded. */
+  deletedMemoryKeys?: ReadonlySet<string>;
+  /** Absolute Workspace path of the current Session (used by the file-summary card to normalize body paths). */
+  workspace?: string | null;
+  /** Batch file-existence check (with session-level caching); the card doesn't render if this isn't wired up. */
+  statFiles?: (paths: string[]) => Promise<ReadonlySet<string>>;
+  /** Creates a new root Session through the selected completed assistant turn. */
+  onFork?: (target: ForkTarget) => Promise<void>;
+  /**
+   * The actions of the reply whose blocks take input: `interactive` set, `fill` putting the
+   * picked text in this conversation's composer (an empty fill, a choice's "Other…", empties
+   * it), `lang` the interface language, and `drafts` + `draftScope` keeping a form's or a
+   * multi-select's answers in progress across a reload. Honored for the main conversation only,
+   * and there for the latest reply with nothing said after it (see a2ui-reply.ts); every other
+   * reply gets the same language with input off, no drafts, and the text of the message that
+   * answered it, which its blocks read their answers back from (a2ui-answered.ts). Must keep its
+   * identity while its inputs do: the blocks read it through context, past the memoized
+   * Markdown, so a fresh object per render would re-render every block on every stream frame.
+   */
+  a2uiActions?: A2uiActions;
+  /**
+   * Unfolds the values a history window carried folded (a tool's output, a long argument, a
+   * thinking block) when their row is opened. Absent, a folded row keeps its preview.
+   */
+  bodies?: ElidedBodies;
+}
+
+/**
+ * Whether the image items right behind this one belong to the same message: a prompt the person
+ * wrote (its text arrives first, its images as separate items behind it), or the first image of a
+ * prompt that had no text. A harness input or a source block that renders as a banner carries no
+ * images of its own.
+ */
+function takesImages(item: ChatItem): boolean {
+  if (item.kind === "user_image") return true;
+  if (item.kind !== "user_text" || item.sender === "harness") return false;
+  const body = parseUserMessageBody(item.text);
+  return body !== null && body.backgroundDone !== true;
+}
+
+/** Pure list rendering (reused recursively inside subagent cards): consecutive thinking + tool-call items are aggregated into one "Reasoning & Tools" group. */
+export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRenderContext }) {
+  // Split into segments first — group (consecutive thinking + tool calls) or single (everything
+  // else) — then render. ActivityGroup needs to know whether it's the last segment (current turn
+  // still in progress) to decide its default expanded/collapsed state. A prompt's images arrive as
+  // image items right behind its text; they join the prompt's segment, so the message draws them
+  // as one row above its text with one footer, the way the composer showed them.
+  type Seg =
+    { type: "group"; items: ChatItem[] } | { type: "single"; item: ChatItem; images?: string[] };
+  const segs: Seg[] = [];
+  let run: ChatItem[] = [];
+  const flushRun = () => {
+    if (run.length > 0) {
+      segs.push({ type: "group", items: run });
+      run = [];
+    }
+  };
+  for (const item of items) {
+    if (isWorkItem(item)) run.push(item);
+    else {
+      flushRun();
+      const prev = segs[segs.length - 1];
+      if (item.kind === "user_image" && prev?.type === "single" && takesImages(prev.item)) {
+        (prev.images ??= []).push(item.imageUrl);
+        continue;
+      }
+      segs.push({ type: "single", item });
+    }
+  }
+  flushRun();
+
+  // A reply's choice or form takes input only as the main conversation's open question
+  // (a2ui-reply.ts; the subagent panel spreads this ctx under its own origin). Every other
+  // reply gets the same language with input off and the message that answered it
+  // (a2ui-answered.ts). The model mutates the items in place, so this is derived on every
+  // render; each reply keeps last render's actions object while its answer and language do,
+  // so its blocks do not re-render on every stream frame.
+  const live = ctx.a2uiActions;
+  const liveReply =
+    live !== undefined ? items[interactiveReplyIndex(items, ctx.origin)] : undefined;
+  const keptActions = useRef(NO_ACTIONS);
+  const still =
+    live === undefined ? undefined : readOnlyActions(keptActions.current, items, live.lang);
+  if (still !== undefined) keptActions.current = still;
+
+  // The stream's last item, the one place the line a run ended on may offer Retry. The ended
+  // Task's own stats row can settle after it; anything else that follows — a message, a new
+  // run's reply — has already sent the unfinished turn's input again.
+  let tailAt = items.length - 1;
+  while (tailAt >= 0 && items[tailAt]!.kind === "task_stats") tailAt--;
+  const tail = items[tailAt];
+
+  const renderSeg = (seg: Seg, i: number): ReactNode =>
+    seg.type === "group" ? (
+      <SessionWorkGroup
+        key={`wg-${seg.items[0]!.id}`}
+        items={seg.items}
+        ctx={ctx}
+        isLast={i === segs.length - 1}
+      />
+    ) : seg.item.kind === "assistant_text" && live !== undefined && still !== undefined ? (
+      // Every reply gets a provider and only its value moves between the two: when the user
+      // answers, the question's reply changes a context value rather than its place in the
+      // tree, so it is not remounted (no Markdown re-parse, no diagram re-render), and only
+      // the blocks of a reply whose value changed re-render.
+      <A2uiActionsProvider
+        key={seg.item.id}
+        value={seg.item === liveReply ? live : still.get(seg.item.id)!}
+      >
+        <MessageItem item={seg.item} ctx={ctx} />
+      </A2uiActionsProvider>
+    ) : (
+      <MessageItem
+        key={seg.item.id}
+        item={seg.item}
+        ctx={ctx}
+        last={seg.item === tail}
+        {...(seg.images !== undefined ? { images: seg.images } : {})}
+      />
+    );
+
+  /**
+   * Each turn's AI-side content (reply, reasoning-and-tools group, compaction banner, ...) plus
+   * its trailing stats row shares a single group container. The stats row is that turn's footer
+   * (timestamp and copy button live there, and the whole row is transparent by default), so
+   * hovering **any** content within the turn must be able to reveal it.
+   *
+   * The stats row can't simply be paired with the adjacent assistant reply — if compaction
+   * happens mid-turn, the compaction banner gets inserted between them (items:
+   * assistant_text → compaction → task_stats), breaking the pairing instantly. The stats row
+   * would then become a strip that's both invisible and unhoverable (the element's own `group`
+   * class doesn't apply to itself: group-hover is a descendant selector).
+   *
+   * The container is created as soon as the turn's **first** segment appears, keyed by that
+   * segment's id, and the key never changes afterward. If we waited for the stats row to arrive
+   * before moving already-rendered groups into a new container, React would treat it as a
+   * position change — unmount and remount — and the ActivityGroup and tool-card expanded states
+   * (each backed by its own internal useState) would reset instantly: any tool details the user
+   * had manually expanded would collapse the moment the reply finishes.
+   *
+   * User messages never enter this container: they have their own footer, and including them
+   * would make hovering a user message also light up the AI's stats row.
+   */
+  const nodes: ReactNode[] = [];
+  let turn: { seg: Seg; i: number }[] = [];
+  const flushTurn = () => {
+    if (turn.length === 0) return;
+    const first = turn[0]!.seg;
+    const key = first.type === "group" ? first.items[0]!.id : first.item.id;
+    const body = turn;
+    turn = [];
+    nodes.push(
+      <div key={`turn-${key}`} className="group">
+        {body.map((t) => renderSeg(t.seg, t.i))}
+      </div>,
+    );
+  };
+
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i]!;
+    const isUserMsg =
+      seg.type === "single" && (seg.item.kind === "user_text" || seg.item.kind === "user_image");
+    if (isUserMsg) {
+      flushTurn();
+      // Outline jump anchor, top level only (ctx.origin is empty just for the main
+      // conversation): item ids restart per model, so stamping nested renders — subagent
+      // conversations in the panel — would duplicate anchor values; the outline queries
+      // them scoped to the main stream's scroll container. The wrapper stays classless:
+      // margins collapse straight through it, and the outline's transient flash class
+      // lives outside React's managed props (className would wipe it on re-render).
+      nodes.push(
+        ctx.origin.length === 0 ? (
+          <div key={`anchor-${seg.item.id}`} data-outline-anchor={seg.item.id}>
+            {renderSeg(seg, i)}
+          </div>
+        ) : (
+          renderSeg(seg, i)
+        ),
+      );
+      continue;
+    }
+    turn.push({ seg, i });
+    // Stats row = end of this turn; seal the container here. Anything after belongs to the next turn.
+    if (seg.type === "single" && seg.item.kind === "task_stats") flushTurn();
+  }
+  flushTurn(); // Turn not yet finished (stats row hasn't arrived): container already exists, subsequent content is appended directly
+
+  return <>{nodes}</>;
+}
+
+/** Scroll-up backfill wiring (windowed history): state + trigger for the top-of-stream affordance. */
+export interface OlderHistoryControls {
+  /** Older windows exist beyond the loaded history (scrolling near the top triggers onLoad). */
+  hasMore: boolean;
+  /** A backfill request is in flight (spinner row). */
+  loading: boolean;
+  /** The last backfill failed (retry row); null = fine. */
+  error: string | null;
+  /** What the failed backfill threw: a defect (not the reader's to fix) offers 「[报告问题]」. */
+  errorCause?: unknown;
+  /** Number of windows already prepended: the prepend signal for scroll anchoring, and >0 gates the beginning-of-history marker (a session that fit one window shows no extra chrome). */
+  prependedCount: number;
+  onLoad: () => void;
+  /**
+   * Reads running behind the transcript: an older window coming over (its progress replaces the
+   * spinner), and the rest of the conversation syncing behind the first paint (a line in the
+   * row while nothing else is in it). Absent or null for a Session on this server.
+   */
+  transfer?: Pick<HistoryTransfer, "older" | "fill">;
+  /**
+   * A window was loaded because the reader scrolled up past the Tasks the conversation opened
+   * on: only then does reaching the beginning say so. Absent = true (every window counts).
+   */
+  beyondTail?: boolean;
+}
+
+/** Distance from the top (px) at which scrolling starts fetching the previous history window. */
+const OLDER_TRIGGER_PX = 300;
+
+export function MessageStream({
+  items,
+  version,
+  ctx,
+  scrollElRef,
+  outline,
+  older,
+  onAddExcerpt,
+  findRegion = "conversation",
+}: {
+  items: ChatItem[];
+  /** View-model version number (a repaint signal for in-place updates that also drives auto-scroll). */
+  version: number;
+  ctx: StreamRenderContext;
+  /** Mirrors the scroll container element out to the owner (the conversation outline's jump/scrollspy target). */
+  scrollElRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * Overlay slot rendered inside the stream's positioning wrapper (the conversation
+   * outline's tick rail): the rail must span exactly the stream area — not the composer —
+   * and anchor its absolute positioning to this wrapper, which only this component owns.
+   */
+  outline?: ReactNode;
+  /** Scroll-up backfill of older history windows; omitted = the whole transcript is loaded (no top affordance). */
+  older?: OlderHistoryControls;
+  /** Stages a selection in the composer. Read-only transcripts offer Copy alone. */
+  onAddExcerpt?: (reference: ComposerReference) => void;
+  /**
+   * The find-in-page region this transcript is (`data-find-region`). The main conversation and
+   * the subagent panel are two of them, and the bar tells them apart by this value alone
+   * (components/find/find-bar.tsx), which is why it is a prop rather than a constant.
+   */
+  findRegion?: string;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // A search of this region opens its collapsed work groups (lib/find-expand.ts).
+  const revealedForFind = useRegionRevealed(scrollRef);
+  const selectionMenu = useStreamSelectionMenu(onAddExcerpt);
+  // An upward-swipe intent immediately exits auto-follow; scrolling back near the bottom resumes it — see stream-follow.ts (#75) for the exact rule.
+  const followRef = useRef<StreamFollow | null>(null);
+  const follow = (followRef.current ??= createStreamFollow());
+  // Back-to-bottom button visibility (React state — the follow object mutates outside React):
+  // shown only when follow is off AND there is actually content below the fold. The second
+  // condition matters: a wheel-up flick over a list that already fits the viewport exits follow
+  // (stream-follow.ts keeps that rule deliberately) but must not surface a "jump to latest"
+  // button with nothing to jump to. Synced after every event that can change either input
+  // (wheel-up at the very top fires no scroll event, so syncing on scroll alone is not enough)
+  // and in the version effect (content growing while unstuck fires no scroll event either).
+  const [showJump, setShowJump] = useState(false);
+  /**
+   * Animated-return phase (back-to-bottom clicked, glide in flight). The glide is a
+   * self-driven rAF loop rather than native scrollTo({behavior:"smooth"}) for two
+   * live-tested reasons: (1) re-aiming a native smooth scroll on every stream commit resets
+   * its easing, capping descent below a fast stream's growth rate — the return then never
+   * arrives; (2) an in-flight native smooth scroll cannot be interrupted, so a wheel-up
+   * cancel would keep dragging the user downward for hundreds of ms. The rAF loop chases the
+   * LIVE bottom each frame with a velocity floor above any realistic growth rate, and
+   * cancelling it stops the descent within a frame. While returning, the button stays hidden
+   * and the stick snap must not fire (an instant snap on the next commit would kill the glide).
+   */
+  const returningRef = useRef(false);
+  const returnRafRef = useRef<number | null>(null);
+  const cancelReturn = () => {
+    if (returnRafRef.current !== null) {
+      cancelAnimationFrame(returnRafRef.current);
+      returnRafRef.current = null;
+    }
+    returningRef.current = false;
+  };
+  useEffect(() => () => cancelReturn(), []);
+  /** Local previous scrollTop, only for detecting the user fighting the return animation upward (the follow object keeps its own). */
+  const lastTopRef = useRef<number | null>(null);
+  const syncJump = () => {
+    const el = scrollRef.current;
+    setShowJump(
+      !returningRef.current &&
+        !follow.stick &&
+        el !== null &&
+        el.scrollHeight - el.scrollTop - el.clientHeight > 1,
+    );
+  };
+
+  /** Held refs for prepend scroll anchoring (see the layout effect below). */
+  const olderRef = useRef(older);
+  olderRef.current = older;
+  const lastPrependedRef = useRef(older?.prependedCount ?? 0);
+  const lastHeightRef = useRef(0);
+  /**
+   * Where the oldest loaded prompt sat in the viewport at the last scroll or commit: what
+   * a prepend restores. A window landing above pushes it down by the window's height, and
+   * the browser's own scroll anchoring may or may not have compensated already (it does
+   * away from the top, never at scroll offset 0), so the correction is measured on the
+   * node itself rather than assumed from the height delta — which would apply it twice.
+   */
+  const anchorRef = useRef<{ id: string; top: number } | null>(null);
+  const recordAnchor = (el: HTMLDivElement) => {
+    const node = el.querySelector<HTMLElement>("[data-outline-anchor]");
+    anchorRef.current =
+      node === null
+        ? null
+        : { id: node.dataset.outlineAnchor ?? "", top: node.getBoundingClientRect().top };
+  };
+
+  /** Near the top of loaded history: fetch the previous window (loading/error states gate re-triggering; the retry row is click-driven). */
+  const maybeLoadOlder = (el: HTMLDivElement) => {
+    const o = olderRef.current;
+    if (!o || !o.hasMore || o.loading || o.error !== null) return;
+    if (el.scrollTop < OLDER_TRIGGER_PX) o.onLoad();
+  };
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const prevTop = lastTopRef.current;
+    lastTopRef.current = el.scrollTop;
+    // Scrollbar-drag / keyboard scroll upward during the return cancels it (wheel/touch cancel in their own handlers).
+    if (returningRef.current && prevTop !== null && el.scrollTop < prevTop - 1) {
+      cancelReturn();
+    }
+    follow.scrolled({
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    });
+    maybeLoadOlder(el);
+    recordAnchor(el);
+    syncJump();
+  };
+
+  // The selection menu holds the view while it is open: it hangs off a point in the content, and
+  // a snap during a live reply would scroll that point out from under it (the menu then closes,
+  // as it does for any scroll that moves its anchor). Declared before the commit snap below so a
+  // commit that opens the menu applies the hold first. Releasing it catches a view that was
+  // following up with whatever arrived meanwhile; the user's own scrolling during the hold still
+  // decides whether it was following (see stream-follow.ts).
+  const menuOpen = selectionMenu.open;
+  useLayoutEffect(() => {
+    follow.hold(menuOpen);
+    if (menuOpen) return;
+    const el = scrollRef.current;
+    if (el && !returningRef.current) followToBottom(el, follow);
+    syncJump();
+    // syncJump is recreated per render; the effect keys on the menu's open state only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuOpen, follow]);
+
+  // Layout effect (not useEffect): the stick-to-bottom snap must land before paint, otherwise
+  // fast streams show the bottom edge "catching up" by the growth of each commit. Suppressed
+  // during the animated return — the glide owns the scroll position until it arrives — and
+  // while the selection menu holds the view (follow.snaps).
+  // Every snap goes through stickToBottom, which reports the landed position to the follow
+  // model synchronously — the snap's async scroll event otherwise races late content growth
+  // and could misinitialize follow as "parked above the bottom" right after entering a
+  // conversation (see stream-follow.ts). A following view's snap goes through followToBottom,
+  // which first judges the live position, so a scroll the browser has applied but not yet
+  // reported (a key, the scrollbar, a find or outline jump) is never undone.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    // Prepend scroll anchoring: when older windows land ABOVE the viewport, keep the
+    // message the user was reading exactly where it was by moving scrollTop by however far
+    // the recorded prompt was displaced (same pre-paint timing as the stick snap, so
+    // nothing flashes); the content growth stands in when that prompt is gone.
+    // Keyed on the prepend count — ordinary streaming growth at the bottom must not
+    // shift the view. lastHeightRef is refreshed every commit, so at the prepend commit
+    // it still holds the pre-prepend height. Skipped while the snap below owns the
+    // position (a prepend while stuck at the bottom cannot move the tail); a held view is
+    // anchored like any other, since nothing snaps it.
+    const prepended = older?.prependedCount ?? 0;
+    if (el && prepended > lastPrependedRef.current && !follow.snaps && !returningRef.current) {
+      const a = anchorRef.current;
+      const node =
+        a === null
+          ? null
+          : el.querySelector<HTMLElement>(`[data-outline-anchor="${CSS.escape(a.id)}"]`);
+      el.scrollTop +=
+        a !== null && node !== null
+          ? node.getBoundingClientRect().top - a.top
+          : el.scrollHeight - lastHeightRef.current;
+    }
+    lastPrependedRef.current = prepended;
+    if (el) lastHeightRef.current = el.scrollHeight;
+    if (el && !returningRef.current) followToBottom(el, follow);
+    if (el) recordAnchor(el);
+    syncJump();
+    // syncJump is recreated per render; the effect intentionally keys on stream growth only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version, follow, older?.prependedCount]);
+
+  // The container and the content can also resize OUTSIDE stream commits: the app shell's
+  // notice banner (initial-password reminder) mounting after /api/me resolves shrinks the
+  // scroll viewport, and a late-loading image grows the transcript. Neither fires a scroll
+  // event nor bumps `version`, so while following, the view silently ended up a banner's
+  // height above the bottom right after opening a conversation. Re-snap on any such resize
+  // under the same guards as the commit snap; lastHeightRef stays in sync so a later
+  // prepend's anchor offset isn't inflated by off-commit growth the anchor already saw.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      lastHeightRef.current = el.scrollHeight;
+      if (!returningRef.current) followToBottom(el, follow);
+      syncJump();
+    });
+    ro.observe(el);
+    // The content wrapper is the scroll container's only child and stays mounted for this
+    // component's whole lifetime, so observing it once covers all content growth.
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+    // syncJump is recreated per render; the observer only needs the stable follow object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [follow]);
+
+  // The wheel is heard natively, by a listener that is not passive and never prevents the
+  // default. React registers its wheel handlers as passive, and the browser then scrolls on the
+  // compositor first and tells the page up to a frame later: a stream commit in between would
+  // still follow, and its snap would pull the view back down under the reader's first upward
+  // tick. A blocking listener makes the browser hand the page the first wheel event of a gesture
+  // before it scrolls (the rest of the gesture stays asynchronous), so follow is off before the
+  // view moves.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      follow.wheel(e.deltaY);
+      if (e.deltaY < 0) cancelReturn(); // user takes over: the glide stops within a frame
+      syncJump();
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+    // cancelReturn and syncJump are recreated per render but read only refs, state setters and
+    // the stable follow object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [follow]);
+
+  // Find bar's "load and keep searching" row (components/find/find-bar.tsx): dispatches this
+  // event on the region element so the bar never needs a callback prop of its own. The guards
+  // are maybeLoadOlder's minus the scrollTop threshold (the click is the request) and minus the
+  // error check, so after a failed backfill the click retries it.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onFindLoadOlder = () => {
+      const o = olderRef.current;
+      if (o && o.hasMore && !o.loading) o.onLoad();
+    };
+    el.addEventListener(FIND_LOAD_OLDER_EVENT, onFindLoadOlder);
+    return () => el.removeEventListener(FIND_LOAD_OLDER_EVENT, onFindLoadOlder);
+  }, []);
+
+  /** Back-to-bottom: glide down to the live bottom (reduced motion gets an instant jump); follow re-engages on arrival. */
+  const jumpToLatest = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      follow.resume();
+      stickToBottom(el, follow);
+      syncJump();
+      return;
+    }
+    cancelReturn();
+    returningRef.current = true;
+    // Far away: teleport to three viewports above the bottom first, then glide the rest —
+    // bounds the animation to well under a second regardless of how far the user scrolled.
+    const far = el.scrollHeight - el.clientHeight - el.scrollTop;
+    if (far > 3 * el.clientHeight) el.scrollTop = el.scrollHeight - 4 * el.clientHeight;
+    let last = performance.now();
+    const stepFrame = (now: number) => {
+      returnRafRef.current = null;
+      const live = scrollRef.current;
+      if (!live || !returningRef.current) return;
+      const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
+      last = now;
+      const remaining = live.scrollHeight - live.clientHeight - live.scrollTop;
+      if (remaining <= 1) {
+        returningRef.current = false;
+        follow.resume();
+        stickToBottom(live, follow);
+        syncJump();
+        return;
+      }
+      // Proportional ease-out toward the LIVE bottom, with a time-based velocity floor
+      // (3200px/s) that outruns any realistic streaming growth so the glide always lands.
+      const step = Math.max(remaining * Math.min(1, dt * 10), 3200 * dt);
+      live.scrollTop += Math.min(step, remaining);
+      returnRafRef.current = requestAnimationFrame(stepFrame);
+    };
+    returnRafRef.current = requestAnimationFrame(stepFrame);
+    syncJump();
+  };
+
+  // A read behind the transcript says so in the row (an older window loading, or the sync behind
+  // the first paint); a failure keeps the row's retry. The row itself stands only where there
+  // is history above, so a conversation that fits one window never gains or loses it.
+  const reading =
+    older !== undefined &&
+    (older.loading || (older.error === null && (older.transfer?.fill ?? null) !== null));
+
+  return (
+    <div className="relative h-full min-h-0">
+      <div
+        ref={(el) => {
+          scrollRef.current = el;
+          if (scrollElRef) scrollElRef.current = el;
+          selectionMenu.hostRef(el);
+        }}
+        data-find-region={findRegion}
+        {...(older?.hasMore ? { [FIND_MORE_ATTR]: "true" } : {})}
+        // A selection inside the stream answers a secondary click with the app's own menu;
+        // everything else keeps the browser's (see stream-selection-menu.tsx).
+        onPointerDown={selectionMenu.hostProps.onPointerDown}
+        onContextMenu={selectionMenu.hostProps.onContextMenu}
+        onKeyDown={selectionMenu.hostProps.onKeyDown}
+        onScroll={onScroll}
+        onTouchStart={(e) => {
+          const t = e.touches[0];
+          if (t) follow.touchStart(t.clientY);
+        }}
+        onTouchMove={(e) => {
+          const t = e.touches[0];
+          if (t) follow.touchMove(t.clientY);
+          if (returningRef.current) cancelReturn(); // touching the list mid-return = taking control
+          syncJump();
+        }}
+        onTouchEnd={() => follow.touchEnd()}
+        className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6"
+      >
+        <div className="mx-auto max-w-3xl">
+          {/* Top-of-history affordance: spinner while the previous window loads, a notice with
+              Retry after a failure, and — once at least one window was backfilled — a quiet
+              beginning-of-conversation marker when there is nothing older. Idle-with-more shows
+              nothing — scrolling near the top triggers the fetch by itself — but the row keeps
+              its height the moment there IS history above: a spinner that took space only
+              while spinning pushed the transcript down by its own height, and the prepend's
+              anchoring could not give that back. */}
+          {older && items.length > 0 && (older.hasMore || older.prependedCount > 0) && (
+            <div className="flex min-h-7 items-center justify-center">
+              {reading ? (
+                <HistoryTransferLine
+                  loading={older.loading}
+                  older={older.transfer?.older ?? null}
+                  fill={older.transfer?.fill ?? null}
+                />
+              ) : older.error !== null ? (
+                // A notice line like the transcript's others, the error in it and Retry after it
+                // — not a red sentence that is itself the button. A press that starts no load
+                // (the stream is rebuilding after a reconnect) leaves Retry pressable.
+                <MessageBubble
+                  variant="notice"
+                  actions={
+                    <>
+                      <TextAction onClick={older.onLoad}>{S.common.retry}</TextAction>
+                      {isReportable(older.errorCause) && (
+                        <ReportIssueAction
+                          report={() =>
+                            exceptionReport(older.errorCause, {
+                              what: "earlier messages of the conversation could not be loaded",
+                            })
+                          }
+                        />
+                      )}
+                    </>
+                  }
+                >
+                  {S.chat.loadEarlierFailed(older.error)}
+                </MessageBubble>
+              ) : !older.hasMore && older.prependedCount > 0 && older.beyondTail !== false ? (
+                <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
+                  {S.chat.historyBeginning}
+                </span>
+              ) : null}
+            </div>
+          )}
+          {items.length === 0 ? (
+            <EmptyState title={S.chat.emptyStream} />
+          ) : (
+            // Links in replies, reasoning and compaction summaries name files of this Session's
+            // Workspace: they open in its Files panel rather than a new tab (see workspace-links.tsx).
+            <WorkspaceLinksProvider workspace={ctx.workspace ?? null} onOpenFile={ctx.onOpenFile}>
+              <FindRevealContext.Provider value={revealedForFind}>
+                <ElidedBodiesContext.Provider value={ctx.bodies ?? null}>
+                  <MessageItems items={items} ctx={ctx} />
+                </ElidedBodiesContext.Provider>
+              </FindRevealContext.Provider>
+            </WorkspaceLinksProvider>
+          )}
+        </div>
+      </div>
+      {outline}
+      {selectionMenu.panel}
+      {/* Back-to-bottom (shows once the user scrolls away from content below the fold): floats
+          just above the composer; clicking returns to the bottom and re-enters follow, so the
+          view keeps tracking the live stream. */}
+      {showJump && (
+        <button
+          type="button"
+          aria-label={S.chat.jumpToLatest}
+          data-tooltip={S.chat.jumpToLatest}
+          onClick={jumpToLatest}
+          className="anim-pop absolute bottom-3 left-1/2 z-raised -translate-x-1/2 rounded-full border border-gray-300 bg-white p-1.5 text-gray-500 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+        >
+          <GlyphIcon d={ICONS.arrowDown} size={16} />
+        </button>
+      )}
+    </div>
+  );
+}

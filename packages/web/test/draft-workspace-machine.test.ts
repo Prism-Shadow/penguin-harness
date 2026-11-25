@@ -21,13 +21,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { toastStore } from "@prismshadow/penguin-ui";
 import { S } from "../src/lib/strings";
-import { dispatchChatDefaultsChanged } from "../src/features/chat/chat-defaults-event";
+import { dispatchChatDefaultsChanged } from "@prismshadow/penguin-library-session/web/chat/chat-defaults-event";
 import {
   clearDraftChatDefaults,
   draftKey,
   loadDraft,
   saveDraft,
-} from "../src/features/chat/draft-cache";
+} from "@prismshadow/penguin-library-session/web/chat/draft-cache";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { whereIs } from "./helpers/agent-app";
 import { button, click, hasButton, settle, type, unmountAll, waitFor } from "./helpers/dom";
