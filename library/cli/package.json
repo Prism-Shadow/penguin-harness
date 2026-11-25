@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-cli",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "The CLI host's face for command code: the server connection, the API client and its error, terminal input, the text helpers and the host message groups their words come from. A library package - the server and a shipped plugin's CLI module import it; nothing here imports the server, the CLI or a plugin.",
   "license": "Apache-2.0",
   "author": {

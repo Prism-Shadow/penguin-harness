@@ -4,6 +4,7 @@
 
 每个版本一行简述。逐版本的细节见 [`changelog/<version>/`](changelog/)。
 
+- **0.2.19** — 2026-11-26。PenguinHarness 以 Harness OS 发布。应用中心是 Project 的主屏，每个工作台对应一个图标。系统应用包括模型库、插件市场、机器管理、成本中心和自进化工作台。构建新应用、优化已有应用和发布应用三个操作放在输入框下方。工作台页面可以是 `.tsx` 文件，保存的版本就是 git 提交。插件市场显示封面卡片或紧凑列表，安装时用一条按阶段分段的进度条。主题包以 zip 格式导入导出，Doodle（卡通）成为第四个内置主题。另外还有多模态工具、电脑操作、存储空间和计划模式。模型预设包括 Gemini 4 Neon、Tencent Hy4、Qwen4 Max、Gemini 4 Hydrogen 和 DeepSeek TTS。首次启动时自动把 Project 移入 `projects/`。([细则](changelog/0.2.19/))
 - **0.2.18** — 2026-10-27。基于 0.2.17 的修复版本。设置和未发送的草稿跟随账号，不再绑定浏览器。工作台页面通过 AMSP 实时跟随 Agent。本地页面不再等待远程机器或互联网。另外：机器重连和模型请求重试合并为一行；后台删除 Agent；TokenDance 重定向到浏览器自身地址；成本中心不再重复计数请求；SDK 读取历史记录时会重试。([细则](changelog/0.2.18/))
 - **0.2.17** — 2026-10-26。Agent API 流式输出 Session 本身的记录，供 `@prismshadow/amsp` SDK 读取。回复里可以带统计图与表单。Trace 视图重做了。远程机器上的对话会读取那台机器自己的 Agent、Session、记忆和模型。另外：MMSP 0.5.6 带上了 Kimi K3.1 Pro；Markdown 阅读器支持目录和在文档中查找；终端的作用域限于所属对话。0.2.16 及更早的 Windows 桌面应用需要手动安装一次 0.2.17。([细则](changelog/0.2.17/))
 - **0.2.16** — 2026-10-14。Agent Workbench、内置 PenguinHarness 问答助手、Gemini 4 Argon 与 GPT-6 Luna、本地背景图片，以及按 Project 隔离的浏览器登录状态。([细则](changelog/0.2.16/))

@@ -1,0 +1,10 @@
+# 应用中心按会话显示运行中的终端
+
+- **Date:** 2026-11-23
+- **Type:** feature
+- **Scope:** `web`
+- **PR:** [#1771](https://github.com/Prism-Shadow/penguin-harness/pull/1771)
+
+[English](2026-11-23-session-resource-overviews.md)
+
+终端列表显示仍有终端在运行的会话，包括已归档的会话和子智能体会话。关闭最后一个终端后，该行会消失。要为一个会话创建首个终端，从该会话的快捷方式打开终端。浏览器列表显示各会话已打开的页数，文件列表显示各会话的 Workspace 目录。

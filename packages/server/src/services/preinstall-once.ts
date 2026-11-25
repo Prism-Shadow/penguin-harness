@@ -37,7 +37,7 @@
  * prepares 1.0 removes this file, its call in hmr/platform.ts and the plugin_module_preinstalls
  * table with its repo (and a migration that drops it), and decides whether a module preinstalled
  * after 1.0 should still reach existing Projects (PRFC-0030's open question). See
- * changelog/unreleased/2026-11-19-backward-compatibility.md.
+ * changelog/0.2.19/2026-11-19-backward-compatibility.md.
  */
 import type {
   PluginModulePreinstalls,

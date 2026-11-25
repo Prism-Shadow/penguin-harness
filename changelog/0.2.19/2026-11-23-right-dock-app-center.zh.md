@@ -1,0 +1,10 @@
+# 从右侧面板打开应用中心
+
+- **Date:** 2026-11-23
+- **Type:** fix
+- **Scope:** `web`
+- **PR:** [#1764](https://github.com/Prism-Shadow/penguin-harness/pull/1764)
+
+[English](2026-11-23-right-dock-app-center.md)
+
+右侧面板的加号和对话中的快捷方式提供相同的操作。应用中心按面板宽度排布操作按钮和应用图标，选中的应用在当前对话右侧打开，同时保留草稿。

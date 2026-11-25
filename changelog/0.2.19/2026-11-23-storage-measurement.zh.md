@@ -1,0 +1,10 @@
+# 存储占用测量完成后立即显示结果
+
+- **Date:** 2026-11-23
+- **Type:** feature
+- **Scope:** `storage`, `web`
+- **PR:** [#1727](https://github.com/Prism-Shadow/penguin-harness/pull/1727)
+
+[English](2026-11-23-storage-measurement.md)
+
+初次打开设置中的「存储空间」时，面板显示「正在测量存储空间…」。服务端测量完成后即显示总量与各分类占用。刷新时，已有的完整数字会保留到新结果返回。

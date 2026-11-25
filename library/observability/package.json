@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-observability",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "The observability domain: the ErrorLog/Errors, UsageStore/UsageRecording mechanisms, the usage grouping, and the errors/usage repos. A library package - the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {

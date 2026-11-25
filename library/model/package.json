@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-model",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "The models domain: the model/credential plumbing vocabulary (the DTOs the models routes return and take), the ModelOAuth mechanism and its flow vocabulary, and the model promotions / provider auth token repos. A library package - the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {

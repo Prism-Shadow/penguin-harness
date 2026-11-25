@@ -1,1 +1,0 @@
-- Fixed stray top-level `Subagent <id>` chips appearing mid-conversation when a long-running background subagent started outside the 20-task backfill window emitted live updates or was resumed via `input_subagent`.

@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-db",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "The server's SQLite database: the connection (open/readonly/narrow-write), the table-creation SQL, the named migrations, and the Db capability the runtime publishes. A library package \u2014 the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {

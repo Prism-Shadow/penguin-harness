@@ -9,6 +9,24 @@ import type { ReleaseNote } from "./release-notes";
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.2.19",
+    date: "2026-11-26",
+    zh: [
+      "「应用中心」是主屏幕。Project 的每个应用都有一个图标，可以拖进文件夹。点击图标，应用会在独立窗口打开。「模型库」「插件市场」等系统页面也有图标。",
+      "「新建对话页」上的「构建新应用」「优化已有应用」「发布应用」各自填入一条对应的消息，让 Agent 构建、优化或发布应用。",
+      "「插件市场」页面有封面卡片或紧凑列表两种视图，还有搜索和筛选。安装时有一条进度条显示各个步骤。更新会先显示已安装版本和目标版本。",
+      "主题就是主题包，管理员往服务器添加一个文件即可，每个账号都可以选用。新的 Doodle（卡通）主题与 Frost（白领）、Console（极客）、Primer（朴素）并列。有三种方式可以跟踪对话中的思考过程和工具步骤。",
+      "选定语音模型后，可以用麦克风把语音听写成消息草稿，回复消息上的扬声器会朗读最终答案。「计划模式」让 Agent 先定下方案再执行。「存储空间」页显示数据占用情况，可以审查后再清理缓存和临时工作文件。",
+    ],
+    en: [
+      "The App Center is the home screen: every app of the Project is a tile, tiles drag into folders, a click opens an app in its own window, and Models, Plugins and the other system pages are tiles too.",
+      "Build New App, Optimize App and Publish App on the new chat page each fill a message that asks the agent to build, improve or publish an app.",
+      "The Plugins page is a market with cover cards or a compact list, search and filters; installing runs through one progress bar that shows its steps, and updates show the installed and target versions first.",
+      "Themes are packs an administrator adds to the server as one file and every account can pick; the new Doodle theme joins Frost, Console and Primer; and there are three ways to follow a conversation's reasoning and tool steps.",
+      "With a voice model chosen, the microphone dictates into the message draft and the speaker on a reply reads the final answer aloud; Plan mode asks the agent to settle on an approach before carrying it out; and the Storage page shows what the data takes up and cleans up caches and temporary work after a review.",
+    ],
+  },
+  {
     version: "0.2.18",
     date: "2026-10-27",
     zh: [
