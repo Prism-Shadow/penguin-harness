@@ -181,7 +181,14 @@ function VersionBadge() {
 const TASK_GLYPHS: Record<ExampleTaskId, string> = {
   buildApp: ICONS.appWindow,
   optimizeApp: ICONS.sparkles,
+  publishApp: ICONS.upload,
 };
+
+/** The shortcuts that open a list of the Project's apps and fill a prompt naming the one picked. */
+type AppTaskId = Extract<ExampleTaskId, "optimizeApp" | "publishApp">;
+
+const isAppTask = (id: ExampleTaskId): id is AppTaskId =>
+  id === "optimizeApp" || id === "publishApp";
 
 export function appShortcutTitle(
   app: Pick<AppCenterShortcut, "title" | "titleZh">,
@@ -210,27 +217,27 @@ export function filterAppShortcuts(
   });
 }
 
-function OptimizeAppPickList({
+/**
+ * The body of an app shortcut's menu: a search over the apps, each row filling the prompt
+ * `promptOf` writes for it, the row whose prompt the composer holds checked.
+ */
+function AppPickList({
   list: { apps, error, retry },
   locale,
   exampleText,
+  promptOf,
   onPick,
 }: {
   list: ProjectApps;
   locale: string;
   exampleText: string | null;
+  promptOf: (app: AppCenterShortcut) => string;
   onPick: (app: AppCenterShortcut) => void;
 }) {
   const [query, setQuery] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
   const filtered = apps === null ? [] : filterAppShortcuts(apps, locale, query);
   const searchLabel = S.chat.start.appsSearchPlaceholder;
-  const promptOf = (app: AppCenterShortcut) =>
-    S.chat.exampleTasks.optimizeApp.promptFor(
-      appShortcutTitle(app, locale),
-      app.agentId,
-      app.workbenchId,
-    );
   return (
     <>
       <div className="border-b border-line-muted px-2 pb-1.5 pt-0.5">
@@ -318,47 +325,51 @@ function ExamplesSection({
 }) {
   const { locale } = useLocale();
   const appList = useProjectApps(projectId, machineId);
-  const [appMenuOpen, setAppMenuOpen] = useState(false);
-  const optimizePromptFor = (app: AppCenterShortcut) =>
-    S.chat.exampleTasks.optimizeApp.promptFor(
-      appShortcutTitle(app, locale),
-      app.agentId,
-      app.workbenchId,
-    );
+  // An app a library plugin installed is published already: it is not offered for publishing.
+  const unpublished: ProjectApps = {
+    ...appList,
+    apps: appList.apps?.filter((app) => app.plugin === undefined) ?? null,
+  };
+  const [openMenu, setOpenMenu] = useState<AppTaskId | null>(null);
 
   const actions: PromptAction[] = EXAMPLE_TASKS.map((task) => {
-    if (task.id === "optimizeApp") {
-      const copy = S.chat.exampleTasks.optimizeApp;
+    if (isAppTask(task.id)) {
+      const id = task.id;
+      const copy = S.chat.exampleTasks[id];
+      const list = id === "publishApp" ? unpublished : appList;
+      const promptOf = (app: AppCenterShortcut) =>
+        copy.promptFor(appShortcutTitle(app, locale), app.agentId, app.workbenchId);
       const current =
-        exampleText !== null &&
-        (appList.apps ?? []).some((app) => optimizePromptFor(app) === exampleText);
+        exampleText !== null && (list.apps ?? []).some((app) => promptOf(app) === exampleText);
+      const open = openMenu === id;
       return {
-        id: task.id,
+        id,
         label: copy.label,
         hint: copy.desc,
         slot: "suggestion",
         current,
         disabled: !ready,
         menu: true,
-        expanded: appMenuOpen,
-        glyph: current ? ICONS.check : TASK_GLYPHS[task.id],
-        run: () => setAppMenuOpen((v) => !v),
+        expanded: open,
+        glyph: current ? ICONS.check : TASK_GLYPHS[id],
+        run: () => setOpenMenu(open ? null : id),
         wrap: (button) => (
           <Dropdown
             button={button}
-            open={appMenuOpen}
-            setOpen={setAppMenuOpen}
+            open={open}
+            setOpen={(next) => setOpenMenu(next ? id : null)}
             portal={{ direction: "down", align: "left" }}
             menuClass="w-[26rem]"
             className="min-w-0 max-w-full"
           >
-            <OptimizeAppPickList
-              list={appList}
+            <AppPickList
+              list={list}
               locale={locale}
               exampleText={exampleText}
+              promptOf={promptOf}
               onPick={(app) => {
-                setAppMenuOpen(false);
-                fill(optimizePromptFor(app), task.skills);
+                setOpenMenu(null);
+                fill(promptOf(app), task.skills);
               }}
             />
           </Dropdown>

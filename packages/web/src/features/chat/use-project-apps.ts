@@ -1,6 +1,6 @@
 /**
- * The apps the start page's optimize menu offers: the Project's App Center shortcuts on the
- * machine that holds the draft's Workspace, the system Agent's apps left out.
+ * The apps the start page's app shortcuts (optimize, publish) offer: the Project's App Center
+ * shortcuts on the machine that holds the draft's Workspace, the system Agent's apps left out.
  *
  * The list is read when the draft's Project or machine changes, and again a moment after the
  * server says a workbench there finished loading or went away; a burst of that news (a restart
@@ -57,7 +57,7 @@ export function useProjectApps(projectId: string | null, machineId: string | nul
       setLoaded({ where, apps: shortcuts.filter((app) => app.agentId !== SYSTEM_AGENT_ID) });
     } catch (err) {
       if (ask === asked.current) {
-        const error = failureNode(err, { what: "the apps to optimize could not be read" });
+        const error = failureNode(err, { what: "the start page's app list could not be read" });
         setFailed({ where, error });
       }
     }

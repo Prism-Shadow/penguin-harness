@@ -1,6 +1,7 @@
 /**
- * A saved account shortcut is directly usable on a fresh draft alongside the two built-in app
- * shortcuts ("Build New App" and "Optimize App"). The shortcut can be renamed, reloaded and deleted.
+ * A saved account shortcut is directly usable on a fresh draft alongside the built-in app
+ * shortcuts ("Build New App", "Optimize App" and "Publish App"). The shortcut can be renamed,
+ * reloaded and deleted.
  */
 import { expect, test } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -20,7 +21,7 @@ async function fit(group) {
     .toEqual([]);
 }
 
-test("saved prompts sit alongside the two preset shortcuts and can be managed from a phone", async ({
+test("saved prompts sit alongside the preset shortcuts and can be managed from a phone", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -42,8 +43,12 @@ test("saved prompts sit alongside the two preset shortcuts and can be managed fr
   await expect(page.locator('[data-slot="count"]')).toHaveCount(0);
   await fit(shortcuts);
   const suggestions = shortcuts.locator('[data-slot="suggestion"]');
-  await expect(suggestions).toHaveCount(2);
-  expect(await suggestions.allTextContents()).toEqual(["Build New App", "Optimize App"]);
+  await expect(suggestions).toHaveCount(3);
+  expect(await suggestions.allTextContents()).toEqual([
+    "Build New App",
+    "Optimize App",
+    "Publish App",
+  ]);
   const draft = page.locator('[data-slot="composer"] textarea').first();
   await shortcuts.getByRole("button", { name: "Reading notes", exact: true }).click();
   await expect(draft).toHaveValue("Summarize my reading notes.");

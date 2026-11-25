@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The start page's optimize menu reads the Project's apps (features/chat/use-project-apps.ts).
+ * The start page's app menus read the Project's apps (features/chat/use-project-apps.ts).
  *
  * - Given the first read has not answered, then there is no list yet: the menu shows it as
  *   loading, never as "no apps".

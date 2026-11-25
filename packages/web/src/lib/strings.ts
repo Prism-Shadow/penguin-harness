@@ -4365,6 +4365,12 @@ export const zh = {
 
 示例：优化当前应用的界面，让新手小白、不懂计算机的人也可以快速学会使用，必要时候添加引导教程。`,
       },
+      publishApp: {
+        label: "发布应用",
+        desc: "选择一个已有的工作台应用，让 Agent 提交到公开的应用仓库和插件索引，供其他人安装",
+        promptFor: (appTitle: string, agentId: string, workbenchId: string): string =>
+          `把应用「${appTitle}」（Agent \`${agentId}\` 下的工作台 \`${workbenchId}\`）打包成插件公开发布。按各仓库自己的贡献说明提交两个 Pull Request：一个提交到应用仓库 https://github.com/Prism-Shadow/penguin-harness-apps 加入该应用，一个提交到插件索引 https://github.com/Prism-Shadow/penguin-harness-plugins 登记它。索引条目要指向已经发布、可以下载的安装包；如果应用仓库还没有发布它，就把索引的 Pull Request 开成草稿，并写明它在等什么。公开的内容里不要带个人数据或密钥；拿不准能不能公开的内容，以及许可证这类要由我决定的事，先问我。完成后把两个 Pull Request 的链接发给我。`,
+      },
     },
     sessionList: "Session",
     /** The Session list's heading, named for how the list is grouped. */

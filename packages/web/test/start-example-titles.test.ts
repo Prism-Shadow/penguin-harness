@@ -15,24 +15,27 @@ it.each([
   for (const name of names) expect(shortPromptTitle(name, locale)).toBe(name);
 });
 
-it("names the chosen app, its Agent and its workbench in the optimize prompt", () => {
-  const zhPrompt = zh.chat.exampleTasks.optimizeApp.promptFor(
-    "客服工作台",
-    "penguin_support",
-    "desk",
-  );
-  expect(zhPrompt).toContain("「客服工作台」");
-  expect(zhPrompt).toContain("`penguin_support`");
-  expect(zhPrompt).toContain("`desk`");
+it.each(["optimizeApp", "publishApp"] as const)(
+  "names the chosen app, its Agent and its workbench in the %s prompt",
+  (id) => {
+    const zhPrompt = zh.chat.exampleTasks[id].promptFor("客服工作台", "penguin_support", "desk");
+    expect(zhPrompt).toContain("「客服工作台」");
+    expect(zhPrompt).toContain("`penguin_support`");
+    expect(zhPrompt).toContain("`desk`");
 
-  const enPrompt = en.chat.exampleTasks.optimizeApp.promptFor(
-    "Support Desk",
-    "penguin_support",
-    "desk",
-  );
-  expect(enPrompt).toContain('"Support Desk"');
-  expect(enPrompt).toContain("`penguin_support`");
-  expect(enPrompt).toContain("`desk`");
+    const enPrompt = en.chat.exampleTasks[id].promptFor("Support Desk", "penguin_support", "desk");
+    expect(enPrompt).toContain('"Support Desk"');
+    expect(enPrompt).toContain("`penguin_support`");
+    expect(enPrompt).toContain("`desk`");
+  },
+);
+
+it("names both repositories the publish prompt submits to", () => {
+  for (const strings of [zh, en]) {
+    const prompt = strings.chat.exampleTasks.publishApp.promptFor("Desk", "a1", "desk");
+    expect(prompt).toContain("https://github.com/Prism-Shadow/penguin-harness-apps");
+    expect(prompt).toContain("https://github.com/Prism-Shadow/penguin-harness-plugins");
+  }
 });
 
 it("filters existing apps by localized title, workbench id and agent", () => {

@@ -177,7 +177,7 @@ for (const [lang, mode, width] of [
     await page.goto(`/app.html?route=/chat/new&theme=doodle&mode=${mode}&lang=${lang}`);
     const box = page.locator('.ui-start [data-slot="examples"]');
     const examples = box.locator('[data-slot="suggestion"]');
-    await expect(examples).toHaveCount(2);
+    await expect(examples).toHaveCount(3);
     const first = examples.first();
     // Suggestions accept keyboard focus after the Agent’s Skills have loaded.
     await expect(first).toBeEnabled();

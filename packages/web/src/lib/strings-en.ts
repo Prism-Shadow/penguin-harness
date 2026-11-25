@@ -4169,6 +4169,12 @@ Example: Build a PenguinHarness support app, similar to a ticket system, that an
 
 Example: Optimize the current app's interface so complete beginners with no technical background can learn to use it right away, adding a tutorial when helpful.`,
       },
+      publishApp: {
+        label: "Publish App",
+        desc: "Pick an existing workbench app and have the agent submit it to the public apps repository and plugin index so others can install it",
+        promptFor: (appTitle: string, agentId: string, workbenchId: string): string =>
+          `Package the app "${appTitle}" (workbench \`${workbenchId}\` on agent \`${agentId}\`) as a plugin and publish it. Following each repository's own contribution guide, open two pull requests: one to the apps repository https://github.com/Prism-Shadow/penguin-harness-apps that adds the app, and one to the plugin index https://github.com/Prism-Shadow/penguin-harness-plugins that registers it. An index entry must point at a package that is already published and can be downloaded; if the apps repository has not released it yet, open the index pull request as a draft and say what it is waiting for. Keep personal data and secrets out of what you publish, and ask me first about anything that may be private and about decisions that are mine to make, such as the license. When you are done, send me the links to both pull requests.`,
+      },
     },
     sessionList: "Sessions",
     sessionListByMode: { workspace: "Workspaces", agent: "Agents", time: "Recent" },
