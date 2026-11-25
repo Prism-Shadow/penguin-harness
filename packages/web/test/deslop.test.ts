@@ -79,6 +79,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/models/preset-sync.tsx": { 24: [1, "W10"] },
   "features/settings/proxy-section.tsx": { 24: [1, "W10"] },
   "features/traces/trace-panel.tsx": { 24: [2, "W10"] },
+  "library/session/src/web/chat/archived-session-stub.tsx": { 24: [1, "W10"] },
   "lib/strings-en.ts": { 24: [31, "W10"] },
   "lib/strings.ts": { 24: [31, "W10"] },
 };
