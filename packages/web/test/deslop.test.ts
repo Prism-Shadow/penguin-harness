@@ -64,7 +64,7 @@ const POLICY: DeslopPolicy = {
  * it also takes rule 24's middle-dot separators, which were counted when the rule arrived.
  */
 const ALLOWLIST: DeslopAllowlist = {
-  "features/terminal/terminal-appearance.ts": { 9: [1, "W10"] },
+  "library/terminal/src/web/terminal-appearance.ts": { 9: [1, "W10"] },
   "components/account/app-info-dialog.tsx": { 24: [1, "W10"] },
   "features/agents/agent-settings-page.tsx": { 24: [3, "W10"] },
   "features/benchmark/benchmark-detail.tsx": { 24: [1, "W10"] },
@@ -121,7 +121,7 @@ const TOKENS_ONLY: readonly string[] = [
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",
   "features/settings/trace-import-row.tsx",
-  "features/terminal/terminal-keybar.tsx",
+  "library/terminal/src/web/terminal-keybar.tsx",
   "library/workspace/src/web/workspace-finder.tsx",
   "library/workspace/src/web/workspace-finder-model.ts",
   "library/workspace/src/web/workspace-select.tsx",

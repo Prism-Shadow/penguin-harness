@@ -38,6 +38,8 @@
   "devDependencies": {
     "@penguinharness/reading-desk": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/reading-desk-0.2.20-rc.1.tgz",
     "@playwright/test": "^1.61.1",
+    "@prismshadow/penguin-library-machine": "workspace:*",
+    "@prismshadow/penguin-library-terminal": "workspace:*",
     "@prismshadow/penguin-library-workspace": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@tailwindcss/vite": "^4.1.0",

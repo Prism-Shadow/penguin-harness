@@ -18,7 +18,9 @@
  */
 import { GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { useTerminalChrome } from "./terminal-appearance";
-import { S } from "../../lib/strings";
+import {
+  S,
+} from "@prismshadow/penguin-web/internal";
 import { arrowSequence, type ArrowKey, type TerminalModifiers } from "./terminal-keys";
 
 type KeySequence =

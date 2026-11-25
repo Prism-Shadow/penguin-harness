@@ -40,3 +40,4 @@ export {
   type TerminalStatus,
 } from "./terminal-view";
 export { useTerminalChrome } from "./terminal-appearance";
+export { TerminalModule } from "./module";

@@ -17,19 +17,20 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button, ConfirmModal, GlyphIcon, ICON_SIZE, PanelTabs } from "@prismshadow/penguin-ui";
 import type { PanelTabItem } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { NAV_ICONS } from "../../lib/nav-icons";
-import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
-import { dockVersion, subscribeDock } from "../dock/dock-state";
 import {
+  S,
+  NAV_ICONS,
   createShell,
+  dockVersion,
   ownTerminals,
   selectTerminal,
   shownTerminalId,
+  subscribeDock,
   useDockSessionId,
-} from "../dock/dock-terminal";
+  useShortcutLabel,
+  type DockPanelBodyProps,
+} from "@prismshadow/penguin-web/internal";
 import type { SessionWorkbenchScope } from "@prismshadow/penguin-web-plugin";
-import type { DockPanelBodyProps } from "../dock/panel-registry";
 import { useTerminalChrome } from "./terminal-appearance";
 import {
   displayTitle,

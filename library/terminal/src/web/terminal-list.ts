@@ -12,15 +12,15 @@
  *   tab cannot see (a shell exiting on its own, terminals opened from another window).
  */
 import type { TerminalInfo } from "./terminal-view";
-import { probeSession } from "../../api/session-probe";
-import { ANSWER_TIMEOUT_MS } from "../../api/socket";
-import { apiUrl } from "../../lib/server-context";
 import {
+  probeSession,
+  ANSWER_TIMEOUT_MS,
+  apiUrl,
   machineForTerminal,
   rememberTerminalMachine,
   terminalSources,
   terminalUrl,
-} from "../../lib/terminal-machines";
+} from "@prismshadow/penguin-web/internal";
 
 /**
  * Shell titles usually open with a `user@host` marker (bash and zsh default title

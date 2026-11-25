@@ -17,46 +17,6 @@ export interface WebModule {
 }
 
 export const WEB_MODULES: readonly WebModule[] = [
-  {
-    name: "terminal",
-    dependsOn: [
-      // The locale runtime (`S`). The shared UI primitives are the @prismshadow/penguin-ui
-      // package, which a module may import like any other package.
-      "lib/strings",
-      // Pointer and viewport hooks the touch key bar and the /terminal page size themselves by.
-      "lib/use-coarse-pointer",
-      "lib/use-visual-viewport-height",
-      // Copy and paste, and the keymap: which chords the focused terminal keeps for the shell
-      // and which it hands to the app (close, the clipboard pair).
-      "lib/clipboard",
-      "lib/shortcuts/",
-      // The probe the shell list fetches with.
-      "api/session-probe",
-      // The app's API channel: the shell list reads the Response itself (`apiRequest`).
-      "api/client",
-      // The socket's answer timeout: the shell list's machine-list call waits as long as the app's other socket calls.
-      "api/socket",
-      // Theme and sign-in state the view reads.
-      "state/theme",
-      "state/auth",
-      // Where the server is, and which machine a shell runs on.
-      "lib/server-context",
-      "lib/terminal-machines",
-      "lib/terminal-http",
-      // The glyph a docked terminal's tab shows.
-      "lib/nav-icons",
-      // The dock's visibility store: the view pool keeps a shell mounted while its dock tab is
-      // hidden. Declared by file until the dock is a module with an entry of its own.
-      "features/dock/dock-state",
-      // The panel body the dock mounts (terminal-panel.tsx) runs inside the dock's panel
-      // runtime: it reads the live-terminal store, renders through the panel context and is
-      // typed by the dock's panel registry. Declared by file for the same reason.
-      "features/dock/dock-terminal",
-      "features/dock/panel-context",
-      "features/dock/panel-registry",
-      // The dock panel definition the module contributes (main-dock-panel.tsx) reaches
-      // the dock the way every cross-feature import must: through the dock's index.
-      "features/dock/index",
-    ],
-  },
+  // The terminal's web half lives in library/terminal (its ./web face) since W17; the dock
+  // reaches it through the face, so no in-app module entry remains.
 ];

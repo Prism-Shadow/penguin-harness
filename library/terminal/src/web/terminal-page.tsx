@@ -26,9 +26,12 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import { ConfirmModal, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { useCoarsePointer } from "../../lib/use-coarse-pointer";
-import { useVisualViewportHeight } from "../../lib/use-visual-viewport-height";
+import {
+  S,
+  useCoarsePointer,
+  useVisualViewportHeight,
+  rememberTerminalMachine,
+} from "@prismshadow/penguin-web/internal";
 import { useTerminalChrome } from "./terminal-appearance";
 import { killTerminal } from "./terminal-list";
 import {
@@ -38,7 +41,6 @@ import {
   type TerminalInfo,
   type TerminalStatus,
 } from "./terminal-view";
-import { rememberTerminalMachine } from "../../lib/terminal-machines";
 
 const STORAGE_KEY = "penguin.terminal.page.id";
 

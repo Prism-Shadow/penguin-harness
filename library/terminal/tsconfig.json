@@ -16,5 +16,6 @@
       "@prismshadow/penguin-library-session/resources": ["../session/src/resources.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

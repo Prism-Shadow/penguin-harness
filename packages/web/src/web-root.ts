@@ -42,7 +42,7 @@ import { PluginsModule } from "./features/plugins/module";
 import { MachinesModule } from "@prismshadow/penguin-library-machine/web";
 import { UsageModule } from "./features/usage/module";
 import { BenchmarkModule } from "./features/benchmark/module";
-import { TerminalModule } from "./features/terminal/module";
+import { TerminalModule } from "@prismshadow/penguin-library-terminal/web";
 import { WorkbenchesModule } from "./features/workbenches/module";
 import { CompanyModule } from "./features/company/module";
 import { SettingsModule } from "./features/settings/module";

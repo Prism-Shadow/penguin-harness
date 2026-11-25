@@ -95,7 +95,9 @@
     "./cli-notice": {
       "types": "./dist/cli-notice.d.ts",
       "import": "./dist/cli-notice.js"
-    }
+    },
+    "./web": "./src/web/index.ts",
+    "./web/*": "./src/web/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -115,7 +117,17 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web": "workspace:*",
+    "@prismshadow/penguin-web-plugin": "workspace:*",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
     "@types/ws": "^8.18.1",
+    "@xterm/addon-clipboard": "^0.1.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"

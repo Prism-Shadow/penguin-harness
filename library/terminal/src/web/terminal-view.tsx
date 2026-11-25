@@ -25,7 +25,18 @@ import { TerminalConnection } from "./terminal-connection";
 import { openTerminalStream } from "./terminal-stream";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
 import { terminalUrlProvider } from "./terminal-url-provider";
-import { writeClipboard } from "../../lib/clipboard";
+import {
+  writeClipboard,
+  useCoarsePointer,
+  useTheme,
+  currentPlatform,
+  keymap,
+  terminalClipboardAction,
+  terminalKeyAction,
+  useAuth,
+  machineForTerminal,
+  probeJson,
+} from "@prismshadow/penguin-web/internal";
 import { TerminalKeyBar, type TerminalControl } from "./terminal-keybar";
 import {
   NO_MODIFIERS,
@@ -35,16 +46,7 @@ import {
   type TerminalModifiers,
 } from "./terminal-keys";
 import { TouchScroll } from "./terminal-touch";
-import { useCoarsePointer } from "../../lib/use-coarse-pointer";
-import { useTheme } from "../../state/theme";
-import { currentPlatform } from "../../lib/shortcuts/platform";
-import { keymap } from "../../lib/shortcuts/store";
-import { terminalClipboardAction } from "../../lib/shortcuts/terminal-clipboard";
-import { terminalKeyAction } from "../../lib/shortcuts/terminal-keys";
-import { useAuth } from "../../state/auth";
-import { machineForTerminal } from "../../lib/terminal-machines";
-import { probeJson } from "../../lib/terminal-http";
-export { fetchJson, probeJson, HttpStatusError } from "../../lib/terminal-http";
+export { fetchJson, probeJson, HttpStatusError } from "@prismshadow/penguin-web/internal";
 
 /**
  * xterm and its addons load lazily, on the first actual terminal render: their UMD

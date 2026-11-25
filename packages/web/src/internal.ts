@@ -23,9 +23,21 @@ export {
   panelLabel,
   setCloseGuard,
   tabKey,
+  TERMINAL_PANEL,
+  dockVersion,
+  subscribeDock,
+  terminalPanelOffered,
+  subscribeTerminalPanelOffered,
   type DockPanelBodyProps,
   type PanelId,
 } from "./features/dock/index";
+export {
+  createShell,
+  ownTerminals,
+  selectTerminal,
+  shownTerminalId,
+  useDockSessionId,
+} from "./features/dock/dock-terminal";
 export { filesApi, filesScopeKey, type FilesScope } from "./api/workspace-files";
 export { formatBytes, formatDateTime, formatRelativeLong, formatRelativeShort, formatShortDateTime, formatSpan } from "./lib/format";
 export { cardBodyClick } from "./lib/card-open";
@@ -97,3 +109,20 @@ export { PageSlot, useNarrow } from "./lib/page-slot";
 export { WorkbenchExitBall } from "./features/workbenches";
 export { apiErrorText } from "./lib/api-error";
 export { focusSessionMachine } from "./lib/session-machines";
+export { NAV_ICONS } from "./lib/nav-icons";
+export { useTheme } from "./state/theme";
+export { useCoarsePointer } from "./lib/use-coarse-pointer";
+export { useVisualViewportHeight } from "./lib/use-visual-viewport-height";
+export { useShortcutLabel } from "./lib/shortcuts/use-keymap";
+export { terminalClipboardAction } from "./lib/shortcuts/terminal-clipboard";
+export { terminalKeyAction } from "./lib/shortcuts/terminal-keys";
+export {
+  machineForTerminal,
+  rememberTerminalMachine,
+  terminalSources,
+  terminalUrl,
+} from "./lib/terminal-machines";
+export { probeSession } from "./api/session-probe";
+export { ANSWER_TIMEOUT_MS } from "./api/socket";
+export { apiUrl } from "./lib/server-context";
+export { HttpStatusError, fetchJson, probeJson } from "./lib/terminal-http";
