@@ -3,6 +3,7 @@
 - **Date:** 2026-11-24
 - **Type:** fix
 - **Scope:** Web App
+- **PR:** [#1833](https://github.com/Prism-Shadow/penguin-harness/pull/1833)
 
 [English](2026-11-24-phone-files-tree.md)
 
