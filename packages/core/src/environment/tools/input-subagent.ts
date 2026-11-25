@@ -10,7 +10,9 @@
  * the child's next input assembly. The boolean `abort` argument aborts the child's CURRENT
  * run only; combined with a non-empty `prompt` it interrupts and redirects — the prompt
  * starts a fresh round once the aborted one settles. Within the window, queued approval
- * requests from the child session are also passed through (see subagent/session.ts).
+ * requests from the child session are also passed through (see subagent/session.ts). A round
+ * this tool starts that is still running when the window ends is left unattended like a
+ * background launch: its completion is reported to the parent as a harness user message.
  *
  * The model-facing output is the child's latest COMPLETE assistant text — every access reads
  * as "what it last said", not an incremental delta drain (live rendering still flows to the
@@ -32,7 +34,7 @@ import {
   DEFAULT_SUBAGENT_YIELD_MS,
   resultForSubagentExit,
 } from "./subagent/index.js";
-import { approvalHint } from "./run-subagent.js";
+import { approvalHint, leaveSubagentUnattended } from "./run-subagent.js";
 import { collectWindow } from "./subagent/collect.js";
 import { clampYield } from "./background/index.js";
 import { describeArgumentError } from "./tool-arguments.js";
@@ -158,6 +160,7 @@ export function createInputSubagentTool(
       // the follow-up prompts), a follow-up run while it is idle. steer() itself answers
       // false on an idle child, so the running/idle race settles on whichever side is true
       // at delivery.
+      let startedRound = false;
       if (!empty) {
         if (session.steer([userText(prompt, "parent_agent")])) {
           yield delta(`[steering message queued for subagent ${subagentId}]\n`);
@@ -165,6 +168,7 @@ export function createInputSubagentTool(
           // startRun expresses edge cases like already-disposed via throw, collapsed here into failed (the tool never throws outward).
           try {
             session.startRun([userText(prompt, "parent_agent")]);
+            startedRound = true;
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             yield delta(`[input_subagent error: ${message}]`);
@@ -196,6 +200,28 @@ export function createInputSubagentTool(
       if (signal?.aborted) return { status: "aborted" };
       const latest = session.lastAssistantText;
       if (latest !== null) yield delta(latest);
+      if (session.running && startedRound) {
+        // The round this call started outlives its window: the call is about to return, so
+        // the child is handed everything an unattended round needs. The session may be a
+        // fresh instance (resumed after its slot was freed) or one that was only ever
+        // polled, and neither carries a completion report; one that already does gets it
+        // replaced, so the report names this round's prompt and still fires once. A round
+        // that settles inside the window is never handed over here — its result is this
+        // call's own output.
+        const childSessionId = session.sessionId;
+        const registeredId = manager
+          .listLive()
+          .find((child) => child.sessionId === childSessionId)?.subagentId;
+        leaveSubagentUnattended(session, registeredId ?? subagentId, prompt, services, approve);
+        // No approval hint: the standing sink just attached carries a queued request to the
+        // user itself, so "poll to review" would send the model after work it is not doing.
+        return {
+          status: "completed",
+          note:
+            `[subagent still running with subagent_id ${subagentId}; its completion will ` +
+            `arrive as a [background_task_done] user message — no need to poll]`,
+        };
+      }
       if (session.running) {
         return {
           status: "completed",
