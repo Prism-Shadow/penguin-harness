@@ -113,7 +113,6 @@ describe("built-in Agent provisioning", () => {
       "agent-evaluation",
       "browser-automation",
       "computer-use",
-      "continual-learning",
       "data-analysis",
       "default-rsi-toolkit",
       "goal",
@@ -133,6 +132,8 @@ describe("built-in Agent provisioning", () => {
     ).toEqual(["default-rsi-toolkit"]);
     expect(preinstalled.map((plugin) => plugin.name)).not.toContain("agent-state-git");
     expect(preinstalled.map((plugin) => plugin.name)).not.toContain("penguin-support");
+    // Its stop hook starts a background Session after a long Task: a person installs it.
+    expect(preinstalled.map((plugin) => plugin.name)).not.toContain("continual-learning");
     const installedWorkbenches = path.join(
       t.root,
       "projects",
