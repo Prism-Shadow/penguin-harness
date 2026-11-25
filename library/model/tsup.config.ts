@@ -9,6 +9,7 @@ export default defineConfig({
     "src/model-oauth-service.ts",
     "src/modelscope-auth-service.ts",
     "src/platform-auth-service.ts",
+    "src/tool-model-test.ts",
     "src/model-catalog/index.ts",
     "src/model-catalog/catalog.ts",
     "src/model-catalog/client-protocols.ts",
