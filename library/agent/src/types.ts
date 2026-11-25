@@ -10,6 +10,7 @@ import type {
   ThinkingLevelName,
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core";
+import type { AgentPackage } from "./contract.js";
 
 /** Read-only vault entry display: key name + masked value; plaintext is never sent. */
 export interface VaultEntryInfo {
