@@ -202,6 +202,18 @@
       "@prismshadow/penguin-library-model/model-balance": [
         "../../library/model/src/model-balance.ts"
       ],
+      "@prismshadow/penguin-library-model/tool-binding-key": [
+        "../../library/model/src/tool-binding-key.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-modalities": [
+        "../../library/model/src/model-modalities.ts"
+      ],
+      "@prismshadow/penguin-library-model/tool-model-test": [
+        "../../library/model/src/tool-model-test.ts"
+      ],
+      "@prismshadow/penguin-library-model/tool-model-bindings": [
+        "../../library/model/src/tool-model-bindings.ts"
+      ],
       "@prismshadow/penguin-library-machine": ["../../library/machine/src/index.ts"],
       "@prismshadow/penguin-library-machine/browser-extensions": [
         "../../library/machine/src/browser-extensions.ts"

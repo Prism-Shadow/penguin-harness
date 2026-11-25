@@ -72,6 +72,22 @@
       "types": "./dist/model-balance.d.ts",
       "import": "./dist/model-balance.js"
     },
+    "./tool-binding-key": {
+      "types": "./dist/tool-binding-key.d.ts",
+      "import": "./dist/tool-binding-key.js"
+    },
+    "./model-modalities": {
+      "types": "./dist/model-modalities.d.ts",
+      "import": "./dist/model-modalities.js"
+    },
+    "./tool-model-test": {
+      "types": "./dist/tool-model-test.d.ts",
+      "import": "./dist/tool-model-test.js"
+    },
+    "./tool-model-bindings": {
+      "types": "./dist/tool-model-bindings.d.ts",
+      "import": "./dist/tool-model-bindings.js"
+    },
     "./repos/model-promotions": {
       "types": "./dist/repos/model-promotions.d.ts",
       "import": "./dist/repos/model-promotions.js"
