@@ -28,3 +28,11 @@ export type {
   FilesStatRequest,
   FilesStatResponse,
 } from "./types.js";
+export {
+  TEMP_WORKSPACE_GROUP,
+  isTempWorkspace,
+  matchesWorkspaceGroup,
+} from "./workspace-group.js";
+export { assertWorkspaceAllowed } from "./workspace-guard.js";
+export { archiveWorkspaceGroup } from "./workspace-archive.js";
+export type { WorkspaceArchiveDeps } from "./workspace-archive.js";

@@ -141,6 +141,27 @@
       "@prismshadow/penguin-library-workspace/workspace-files-service": [
         "../../library/workspace/src/workspace-files-service.ts"
       ],
+      "@prismshadow/penguin-library-workspace/workspace-group": [
+        "../../library/workspace/src/workspace-group.ts"
+      ],
+      "@prismshadow/penguin-library-workspace/workspace-guard": [
+        "../../library/workspace/src/workspace-guard.ts"
+      ],
+      "@prismshadow/penguin-library-workspace/workspace-archive": [
+        "../../library/workspace/src/workspace-archive.ts"
+      ],
+      "@prismshadow/penguin-library-workspace/drafts": [
+        "../../library/workspace/src/drafts.ts"
+      ],
+      "@prismshadow/penguin-library-workspace/user-drafts": [
+        "../../library/workspace/src/user-drafts.ts"
+      ],
+      "@prismshadow/penguin-library-workspace/draft-shortcuts": [
+        "../../library/workspace/src/draft-shortcuts.ts"
+      ],
+      "@prismshadow/penguin-library-workspace/directory-skills": [
+        "../../library/workspace/src/directory-skills.ts"
+      ],
       "@prismshadow/penguin-library-workbench/workbench": [
         "../../library/workbench/src/workbench.ts"
       ],
