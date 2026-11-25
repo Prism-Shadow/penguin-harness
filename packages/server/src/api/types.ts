@@ -1136,9 +1136,6 @@ export type {
 } from "@prismshadow/penguin-library-agent/types";
 export { AVATAR_MAX_CHARS } from "@prismshadow/penguin-library-agent/types";
 
-/** One library plugin an Agent's installed copy is behind on — one of its skills or its hook package carries an older dated version than the library's same part (see {@link AgentSummary.pluginUpdates}). */
-export type { PluginUpdateRef } from "@prismshadow/penguin-library-agent/types";
-
 /**
  * Who made an Agent (`author` in system_config.yaml): a person in the Web App (`user`), an
  * agent working in a Session (`agent`), or company mode creating an organization's CEO or a new
@@ -1281,8 +1278,6 @@ export interface AgentCreateRequest {
 export interface AgentCreateResponse {
   agent: AgentSummary;
 }
-
-export type { AgentDeletionInfo } from "@prismshadow/penguin-library-agent/types";
 
 /** DELETE /api/projects/:projectId/agents/:agentId (202). */
 export interface AgentDeleteResponse {
