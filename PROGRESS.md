@@ -47,3 +47,41 @@ pnpm-lock.yaml 未含。后果与已试路径：
   绑 agentDeletion 端口）；其余路径全部薄 shim。
 - OrgRuns/OrgSessions/OrgScheduler/OrgService 契约 @Interface() 形逐成员照搬实现，default 参数
   写可选等价。
+
+## S22 落图（2026-11-24，实现完成，验证候 lockfile）
+
+- 新建 `library/plugin`（@prismshadow/penguin-library-plugin）：git mv plugin/ 全部 35 个 .ts
+  ＋builtin-index/builtin-market.json＋market-covers/ 资产、services/{plugin-archive,
+  plugin-library,plugin-modules,plugin-server-uninstall,plugin-tables,plugin-uninstall,
+  preinstall-once}、http/icon-response.ts、mechanisms/plugins.ts→mechanisms.ts。
+- 契约：api/types.ts 的 plugin DTO 闭包 66 个声明（34 个种子＋传递依赖，含 McpTransport/
+  HookItem/SkillMetadataItem/IconRef 及 plugin 契约引用的 agent-create/task-create 形状）切到
+  library/plugin/src/types.ts（1233 行）；api/types.ts 改 re-export（66 名单）。闭包脚本核对：
+  before 290 decl → after 224，一一对应，无缺漏。
+- 端口（library/plugin/src/ports.ts）：unpackedAssetsDir＋platformIfaceTable＋isDevProfile
+  （loader/typescript/market-covers/offline-archives 用，server plugin/platform-ports.ts 绑定，
+  四个 shim import 即绑）；PluginUninstallWorkbenches（remove＋notFound，admin-plugins/plugins
+  路由经 pluginUninstallWorkbenches() 包装）；OwnTableListing（listInOwnTable＋UnparseableConfig，
+  preinstall-once shim 绑定）；PluginModulesService 的 config/hmr/reassembly/channels(peekUser)/
+  log/clock 端口＋db 用 library-db 的 Db。readManifest 直取 @prismshadow/penguin-hmr/manifest
+  （server hmr/manifest.ts 本就是它的 re-export）。
+- 留 server：plugin/index.ts（barrel）、plugin/views.ts（MachineApi 类型依赖）、
+  plugin/cli-commands.ts（Provider：@Use hmr/db 是服务端能力；契约/slot/路由/run 机制搬
+  library/plugin/src/cli-commands.ts，server 文件 re-export＋Provider）、services/own-table-listing.ts
+  （依赖 project-config-migrations→model-catalog，链太深，走端口）。
+- 装配：services/plugin-modules.ts 重写为 PluginModulesServiceProvider（Object.assign 绑 14 个
+  端口，peekUser 组合 channels.peek(userChannelKey(userId))，绑后调 service.setup()）；
+  platform.ts 注册换 Provider。checkoutRoot 移 library/plugin/src/checkout-root.ts（cli-shim
+  保留内部使用，改从 library import；cli-shim.test.ts 改 import）。
+- 全部旧路径薄 shim（plugin/ 30 个＋services/ 6 个＋icon-response＋mechanisms/plugins）；
+  hmr/platform.ts（红线内）对 plugin/host、loader、unsatisfied、install、library-host 的 import
+  经 shim 原样可用，未动 hmr 一字。
+- package.json：library/plugin deps（core/hmr/auth/db/http/machine/messaging/project/session/
+  setting ＋ commander/fflate/hono/minimatch/safe-regex/smol-toml/tar/which）＋46 个 exports
+  子路径；tsup 47 entries；server package.json 加依赖；server tsconfig 加 46 映射。
+- changelog 双语 changelog/unreleased/2026-11-24-library-plugin.md/.zh.md。
+- lockfile：新包再添依赖，与 S20/S21 同候 owner 集中重生成。
+
+## 时间线（续）
+
+- S22 头：本提交；三片齐后分支头即 PR3 的 head。

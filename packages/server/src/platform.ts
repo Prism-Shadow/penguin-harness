@@ -171,7 +171,7 @@ import { SystemAppModule } from "./plugin/system-app-modules.js";
 import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
 import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls";
 import { PluginModules } from "./mechanisms/plugins.js";
-import { PluginModulesService } from "./services/plugin-modules.js";
+import { PluginModulesServiceProvider } from "./services/plugin-modules.js";
 import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { PluginMarketRoutes } from "./http/routes/plugin-market.js";
@@ -647,7 +647,7 @@ export class ThemesModule {}
   children: [
     PluginModuleRequestsRepo,
     PluginModulePreinstallsRepo,
-    PluginModulesService,
+    PluginModulesServiceProvider,
     PluginModuleRoutes,
     SystemAppModule,
   ],

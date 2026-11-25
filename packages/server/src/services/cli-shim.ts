@@ -40,6 +40,7 @@
  * installation's `penguin` answer in its place.
  */
 import { readHarnessMeta } from "../harness-meta.js";
+import { checkoutRoot } from "@prismshadow/penguin-library-plugin/checkout-root";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -76,25 +77,6 @@ export interface CliLaunch {
 /** The checkout's CLI entries, relative to the workspace root. */
 const SOURCE_ENTRY = ["packages", "cli", "src", "penguin.ts"] as const;
 const BUILT_ENTRY = ["packages", "cli", "dist", "penguin.js"] as const;
-
-/**
- * The root of the checkout `fromDir` lies in — the directory holding `pnpm-workspace.yaml` —
- * or null outside one.
- *
- * Walks up rather than counting `..` segments, because the depth differs between a `tsx` run
- * (`packages/server/src/…`), a built one (`packages/server/dist/…`), the desktop shell's
- * single-file bundle, and a copy pnpm injected into another package's `node_modules`. Outside
- * a checkout (an npm install, a packaged app) the walk reaches the filesystem root.
- */
-export function checkoutRoot(fromDir: string): string | null {
-  let dir = path.resolve(fromDir);
-  for (;;) {
-    if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-}
 
 /**
  * The TypeScript loader that runs a checkout's CLI from source, as the file URL `--import`
