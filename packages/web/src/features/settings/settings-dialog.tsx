@@ -111,7 +111,7 @@ export function SettingsDialog({
   onClose,
   section,
   pluginFocus,
-  pluginMachine,
+  pluginMachine = null,
 }: {
   open: boolean;
   onClose: () => void;
@@ -119,7 +119,7 @@ export function SettingsDialog({
   section?: SettingsSectionKey;
   /** On the Plugins page: the card an opening scrolls to (e.g. `sandbox`). */
   pluginFocus?: string;
-  /** On the Plugins / Sandbox page: the machine the page opens on (null = this server). */
+  /** On the Plugins and Sandbox pages: the machine they open on (null, the default: this server). */
   pluginMachine?: string | null;
 }) {
   // uploadLimits feeds the Upload limits page's "?" (sectionInfo below); the rest pick pages.
@@ -293,16 +293,11 @@ export function SettingsDialog({
           <PluginsSection
             host="sources"
             {...(focus !== undefined ? { focus } : {})}
-            {...(pluginMachine !== undefined ? { machine: pluginMachine } : {})}
+            machine={pluginMachine}
           />
         )}
         {current === "moduleRequests" && <ModuleRequestsPage />}
-        {current === "sandbox" && (
-          <PluginsSection
-            host="sandbox"
-            {...(pluginMachine !== undefined ? { machine: pluginMachine } : {})}
-          />
-        )}
+        {current === "sandbox" && <PluginsSection host="sandbox" machine={pluginMachine} />}
         {current === "users" && <AdminUsersSection />}
         {ContributedBody !== undefined && (
           <ContributedBody openPage={(key) => goTo(key as SettingsSectionKey)} />

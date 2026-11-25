@@ -126,9 +126,13 @@ export function PermissionSelect({
   onChange,
   disabled,
   direction = "up",
-  machineId = null,
+  machineId,
 }: {
-  approvalMode: ApprovalMode;
+  /**
+   * Null while it is not known yet — a draft whose server has not answered: the button draws no
+   * level and stays shut until it is, rather than show a mode another server would start with.
+   */
+  approvalMode: ApprovalMode | null;
   /**
    * The approval modes the Session may be given, in order (`approvalModeChoices`): a preset
    * holding any other is not offered, unless it is the current one.
@@ -141,7 +145,7 @@ export function PermissionSelect({
   disabled: boolean;
   direction?: "up" | "down";
   /** The machine whose Sandbox settings More… opens (null = this server). */
-  machineId?: string | null;
+  machineId: string | null;
 }) {
   const [open, setOpen] = useState(false);
   // The pick shows the moment it is made: waiting for the server's row would draw the old
@@ -157,7 +161,7 @@ export function PermissionSelect({
   const P = S.chat.permission;
   const nameOf = (p: SessionSandboxPreset) => localizedText(locale, p.name, p.nameZh);
   const presets = presetsOf(sandbox);
-  const current = matchPreset(presets, approvalMode, sandbox);
+  const current = approvalMode === null ? null : matchPreset(presets, approvalMode, sandbox);
   // A preset this server cannot enforce stays listed, greyed out, saying why — with no backend
   // mounted, every preset that confines: not installed, or enabled but failing its check, with
   // the first such backend's reason.
@@ -189,27 +193,34 @@ export function PermissionSelect({
       block !== null ? blockText(block).reason : confines ? P.enforceable : P.needsNoBackend,
     ].join("\n");
   };
-  const level = permissionLevel(approvalMode, sandbox);
-  // The swap animation plays only for a CHANGE of level, never on the first paint — React's
-  // "adjust state while rendering" pattern for information from the previous render.
+  const level = approvalMode === null ? null : permissionLevel(approvalMode, sandbox);
+  // The swap animation plays only for a CHANGE of level, never on the first paint (nor on the
+  // first level after an unknown one) — React's "adjust state while rendering" pattern for
+  // information from the previous render.
   const [shownLevel, setShownLevel] = useState(level);
   const [animate, setAnimate] = useState(false);
   if (shownLevel !== level) {
     setShownLevel(level);
-    setAnimate(true);
+    setAnimate(shownLevel !== null);
   }
   // With the Sandbox switch off the menu is the approval modes, so the button names the mode.
   const switchOff = sandboxSwitchOff(sandbox);
-  const levelName = switchOff
-    ? (S.chat.approvalModeNames[approvalMode] ?? approvalMode)
-    : current !== null
-      ? nameOf(current)
-      : P.custom;
-  const summary = [
-    `${P.fs}: ${P.fsModes[sandbox.mode] ?? sandbox.mode}`,
-    `${P.network}: ${P.networkModes[sandbox.network] ?? sandbox.network}`,
-    `${P.approval}: ${S.chat.approvalModeNames[approvalMode] ?? approvalMode}`,
-  ].join(" · ");
+  const levelName =
+    approvalMode === null
+      ? "…"
+      : switchOff
+        ? (S.chat.approvalModeNames[approvalMode] ?? approvalMode)
+        : current !== null
+          ? nameOf(current)
+          : P.custom;
+  const summary =
+    approvalMode === null
+      ? null
+      : [
+          `${P.fs}: ${P.fsModes[sandbox.mode] ?? sandbox.mode}`,
+          `${P.network}: ${P.networkModes[sandbox.network] ?? sandbox.network}`,
+          `${P.approval}: ${S.chat.approvalModeNames[approvalMode] ?? approvalMode}`,
+        ].join(" · ");
   const pick = (p: SessionSandboxPreset) => {
     if (current?.id === p.id) {
       setOpen(false);
@@ -246,19 +257,28 @@ export function PermissionSelect({
           <button
             type="button"
             aria-label={`${P.label}: ${levelName}`}
-            data-tooltip={`${P.label}：${levelName}\n${summary}`}
-            data-level={level}
-            disabled={disabled}
+            data-tooltip={`${P.label}：${levelName}${summary === null ? "" : `\n${summary}`}`}
+            {...(level !== null ? { "data-level": level } : {})}
+            disabled={disabled || level === null}
             onClick={() => setOpen((v) => !v)}
             // Icon only, the + button's square and its look (the package's ToolbarTrigger, which
             // this cannot be: that one dims while disabled): the level is in the icon's shape and
             // colour, and spelled out in the accessible name and the title.
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-surface-muted hover:text-fg"
           >
-            {/* Keyed by level: a new level mounts a new icon, which swaps in. */}
-            <span key={level} className={animate ? "anim-icon-swap" : undefined}>
-              <LevelGlyph level={level} size={ICON_SIZE.iconButton} />
-            </span>
+            {/* Keyed by level: a new level mounts a new icon, which swaps in. Unknown, the
+              button holds the thinking picker's "…", in no level's tone. */}
+            {level === null ? (
+              <GlyphIcon
+                d={ICONS.ellipsis}
+                size={ICON_SIZE.iconButton}
+                className="text-fg-subtle"
+              />
+            ) : (
+              <span key={level} className={animate ? "anim-icon-swap" : undefined}>
+                <LevelGlyph level={level} size={ICON_SIZE.iconButton} />
+              </span>
+            )}
           </button>
         }
       >

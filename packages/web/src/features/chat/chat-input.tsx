@@ -623,6 +623,7 @@ export function ChatInput({
   autoFocus,
   agents,
   agentsMachineId = null,
+  machineId,
   currentAgentId,
   skills,
   initialSkills,
@@ -817,7 +818,8 @@ export function ChatInput({
   sessionId?: string;
   /** Whether the current model supports image input (models config's vision; assumed supported by default). */
   vision: boolean;
-  approvalMode: ApprovalMode;
+  /** Null while it is not known yet (a draft whose server has not answered): no level is drawn. */
+  approvalMode: ApprovalMode | null;
   /**
    * The approval modes the permission button may offer, in order (`approvalModeChoices`): all
    * four, except that an organization's Session leaves out `always-ask` unless it is the current
@@ -835,6 +837,12 @@ export function ChatInput({
   agents: AgentSummary[];
   /** The machine `agents` lives on, for their pictures; null (the default) for this server. */
   agentsMachineId?: string | null;
+  /**
+   * The machine the conversation runs on (null: this server), whose Sandbox settings the
+   * permission menu's More… opens. Not `agentsMachineId`: a Session's `/agent` candidates are
+   * this server's Agents wherever the Session runs.
+   */
+  machineId: string | null;
   /** The Agent this composer already belongs to (the Session's, or the draft's selection): marked as the current entry in the `/agent` picker. */
   currentAgentId?: string;
   /**
@@ -2769,7 +2777,7 @@ export function ChatInput({
               onChange={onChangePermission}
               disabled={modeSaving}
               direction={models && onChangeModel ? "down" : "up"}
-              machineId={agentsMachineId}
+              machineId={machineId}
             />
             {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
             <SkillSelect

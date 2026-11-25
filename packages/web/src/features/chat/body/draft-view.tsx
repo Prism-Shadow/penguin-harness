@@ -108,6 +108,7 @@ import {
   type ChatDefaultsChangedDetail,
 } from "../chat-defaults-event";
 import { newChatAgentId } from "../new-chat";
+import { requestedApproval, shownApproval, useTargetDefaults } from "../draft-permission";
 import { onPluginConfigSaved } from "../../../lib/plugin-config-event";
 import { effectiveThinkingLevel } from "../../model-picker";
 import { useAgentSkills } from "../use-agent-skills";
@@ -255,11 +256,19 @@ export function DraftView({
     });
     onWorkspaceChange?.(workspace, workspaceMachine);
   }, [paneFocused, workspace, workspaceMachine, onWorkspaceChange]);
-  const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
-    cached.approvalMode ?? "allow-all",
+  /**
+   * The approval mode the person picked, here or in an earlier visit; null while nobody has, and
+   * the Project's pin or the target server's default preset decides (draft-permission.ts).
+   */
+  const [approvalPick, setApprovalPick] = useState<ApprovalMode | null>(
+    cached.approvalMode ?? null,
   );
-  // Only what the person picked: the rest follows the server's sandbox settings, which the
-  // chat-defaults response carries, so the button shows what the Session would start with.
+  // Only what the person picked: the rest follows the target server's sandbox settings, which
+  // its chat-defaults response carries, so the button shows what the Session would start with.
+  // A preset picked from one server's menu is kept when the Workspace moves to another: it is a
+  // file mode and a network level, which the server creating the Session checks and refuses
+  // when it cannot hold them, where dropping it would start the Session on that server's
+  // default instead of what the person asked for.
   const [sandboxPick, setSandboxPick] = useState<Partial<SessionSandbox>>(cached.sandbox ?? {});
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(cached.modelRef ?? null);
   const [promptHooks, setPromptHooks] = useState<string[]>(cached.promptHooks ?? []);
@@ -290,13 +299,6 @@ export function DraftView({
   // null = still loading (the thinking picker below stays disabled until resolved).
   const [chatDefaults, setChatDefaults] = useState<ChatDefaultsDto | null>(null);
   /**
-   * The Sandbox settings of the machine the draft's workspace is on (`workspaceMachine !== null`).
-   * Each server keeps its own Sandbox switch, presets and default preset (`sandboxDefaults`), so a
-   * draft on a remote machine must read its sandbox view and default approval mode from that
-   * machine rather than this server's `chatDefaults.sandbox`.
-   */
-  const [remoteSandbox, setRemoteSandbox] = useState<SessionSandbox | null>(null);
-  /**
    * Set once the chat-defaults-changed event delivered a fresh block (see the reseed
    * handler below): from then on the mount-time fetch must not apply — it was started
    * earlier and would overwrite the fresher event payload when it resolves.
@@ -305,7 +307,8 @@ export function DraftView({
   useEffect(() => {
     let cancelled = false;
     // This server's defaults, the block every machine is synced from; a draft on a machine
-    // takes its models and its Agent's thinking level from that machine (`models`, getAgentConfig).
+    // takes its models, its Agent's thinking level and its permission defaults from that machine
+    // (`models`, getAgentConfig, useTargetDefaults below).
     api
       .getChatDefaults(projectId, null)
       .then((res) => {
@@ -318,42 +321,23 @@ export function DraftView({
       cancelled = true;
     };
   }, [projectId]);
-  useEffect(() => {
-    if (workspaceMachine === null) {
-      setRemoteSandbox(null);
-      return;
-    }
-    setRemoteSandbox(null);
-    if (remoteLink !== "connected") return;
-    let cancelled = false;
-    api
-      .getChatDefaults(projectId, workspaceMachine)
-      .then((res) => {
-        if (cancelled) return;
-        setRemoteSandbox(res.sandbox ?? null);
-        const seeded = chatDefaults?.approvalMode ?? res.sandbox?.defaultApprovalMode;
-        if (
-          seeded !== undefined &&
-          cached.approvalMode === undefined &&
-          !touchedRef.current.approval
-        ) {
-          setApprovalMode(seeded);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, workspaceMachine, remoteLink, chatDefaults?.approvalMode, cached.approvalMode]);
+  // The permission defaults come from the server the Session will run on, this one included:
+  // its Sandbox switch, presets and default preset are its own (draft-permission.ts).
+  const { defaults: target, reload: reloadTarget } = useTargetDefaults(
+    projectId,
+    workspaceMachine,
+    workspaceMachine === null || remoteLink === "connected",
+  );
 
   /**
    * Fields the user already touched this mount: the project defaults arrive async (after
    * mount), and an explicit pick made in the meantime must never be clobbered by them.
    * The mount-time cache (`cached`) covers everything picked in PREVIOUS visits; these
    * refs cover the window between mount and the defaults resolving. The Agent needs no flag:
-   * the resolution below never replaces a valid selection.
+   * the resolution below never replaces a valid selection, and the approval mode needs none
+   * either: nothing seeds it (approvalPick).
    */
-  const touchedRef = useRef({ workspace: false, approval: false });
+  const touchedRef = useRef({ workspace: false });
 
   // Unified resolution of the Agent selection (a single effect, single writer):
   // explicit route state > current valid value (from cache / panel selection) > the
@@ -447,12 +431,13 @@ export function DraftView({
     setWorkspaceMachine(stateMachineId ?? null);
   }, [location.key, stateWorkspace, stateMachineId]);
 
-  // Project defaults for Workspace / approval mode: the same apply-once discipline as the
-  // route-state effects above, deferred until the defaults resolve. A field is only seeded
-  // when nothing with higher precedence claims it — no route override (workspace only), no
-  // mount-time cached value (a cached "" workspace counts: it is an explicit temporary workspace),
-  // and no user edit since mount. Model is deliberately not here (models.defaultModel
-  // already flows through its own fallback effect below — the single-sourced default).
+  // The Project's default Workspace: the same apply-once discipline as the route-state effects
+  // above, deferred until the defaults resolve. It is only seeded when nothing with higher
+  // precedence claims it — no route override, no mount-time cached value (a cached ""
+  // workspace counts: it is an explicit temporary workspace), and no user edit since mount.
+  // Model is deliberately not here (models.defaultModel already flows through its own fallback
+  // effect below — the single-sourced default), nor is the approval mode, which is never seeded
+  // (approvalPick).
   const appliedProjectDefaults = useRef(false);
   useEffect(() => {
     if (chatDefaults === null || appliedProjectDefaults.current) return;
@@ -465,16 +450,11 @@ export function DraftView({
     ) {
       setWorkspace(chatDefaults.workspace);
     }
-    // The Project's own default wins; else the Sandbox card's default preset on the target
-    // machine, while it is on. When the draft is on a remote machine, its own sandbox fetch
-    // seeds the preset default once that machine answers.
-    const seeded =
-      chatDefaults.approvalMode ??
-      (workspaceMachine === null ? chatDefaults.sandbox?.defaultApprovalMode : undefined);
-    if (seeded !== undefined && cached.approvalMode === undefined && !touchedRef.current.approval) {
-      setApprovalMode(seeded);
-    }
-  }, [chatDefaults, stateWorkspace, workspaceMachine, cached.workspace, cached.approvalMode]);
+  }, [chatDefaults, stateWorkspace, cached.workspace]);
+  // What the permission button shows, and the approval mode the create request names.
+  const localPin = chatDefaults?.approvalMode;
+  const shownMode = shownApproval(approvalPick, target, localPin);
+  const sentMode = requestedApproval(approvalPick, target, localPin);
 
   const chatModels = useMemo(
     () => models?.models.filter((m) => m.chatEligible !== false) ?? [],
@@ -509,12 +489,14 @@ export function DraftView({
         const d = detail.defaults;
         defaultsFromEventRef.current = true;
         setChatDefaults(d);
-        touchedRef.current = { workspace: false, approval: false };
+        touchedRef.current = { workspace: false };
         setWorkspace(d.workspace ?? "");
         // The default Workspace is on this server, as on a fresh mount, whose cache no longer
         // holds a machine either.
         setWorkspaceMachine(null);
-        setApprovalMode(d.approvalMode ?? d.sandbox?.defaultApprovalMode ?? "allow-all");
+        // The new pin, or this server's default preset, decides from here, as on a fresh mount.
+        setApprovalPick(null);
+        reloadTarget();
         // The Agent a fresh mount would now start on (the new block's default while it names
         // an Agent, then default_agent, then the first).
         setAgentId(newChatAgentId(agents, d));
@@ -524,36 +506,15 @@ export function DraftView({
       // refetch and re-pin the STALE default from the old models prop.
       if (detail.defaultModel !== undefined) setModelRef(detail.defaultModel);
     },
-    [agents],
+    [agents, reloadTarget],
   );
   /** Latest-closure mirror for the window listener (same convention as persistRef). */
   const onDefaultsChangedRef = useRef(onDefaultsChanged);
   onDefaultsChangedRef.current = onDefaultsChanged;
   // The Sandbox card was saved (from the composer's More…, say): the permission menu reads the
-  // sandbox view again, and an approval mode nobody picked follows the new default preset.
-  useEffect(
-    () =>
-      onPluginConfigSaved("sandbox", () => {
-        void api.getChatDefaults(projectId, workspaceMachine).then(
-          (res) => {
-            if (workspaceMachine === null) {
-              setChatDefaults((prev) => ({
-                ...(prev ?? {}),
-                ...(res.sandbox !== undefined ? { sandbox: res.sandbox } : {}),
-              }));
-            } else {
-              setRemoteSandbox(res.sandbox ?? null);
-            }
-            const seeded =
-              (workspaceMachine === null ? res.approvalMode : chatDefaults?.approvalMode) ??
-              res.sandbox?.defaultApprovalMode;
-            if (seeded !== undefined && !touchedRef.current.approval) setApprovalMode(seeded);
-          },
-          () => undefined,
-        );
-      }),
-    [projectId, workspaceMachine, chatDefaults?.approvalMode],
-  );
+  // target server's sandbox view again, and an approval mode nobody picked follows its new
+  // default preset.
+  useEffect(() => onPluginConfigSaved("sandbox", reloadTarget), [reloadTarget]);
   useEffect(() => {
     const onEvent = (e: Event) => {
       const detail = chatDefaultsChangedDetail(e, projectId);
@@ -665,7 +626,9 @@ export function DraftView({
   const persistNow = useCallback(() => {
     cancelPendingSave();
     if (!userId) return;
-    const data: DraftCache = { text: textRef.current, workspace, approvalMode };
+    const data: DraftCache = { text: textRef.current, workspace };
+    // Only a pick is kept: a default written here would come back as a choice next visit.
+    if (approvalPick !== null) data.approvalMode = approvalPick;
     if (Object.keys(sandboxPick).length > 0) data.sandbox = sandboxPick;
     // Saved with the path: a draft restored without its machine would create the Session
     // here, against a path that only exists somewhere else.
@@ -688,7 +651,7 @@ export function DraftView({
     agentId,
     workspace,
     workspaceMachine,
-    approvalMode,
+    approvalPick,
     sandboxPick,
     modelRef,
     promptHooks,
@@ -858,8 +821,7 @@ export function DraftView({
   // A preset sets both halves of the draft's level at once, as it does on a Session; an
   // approval-mode pick (switch off) leaves the sandbox half unpicked, so the settings decide it.
   const changePermission = useCallback((pick: PermissionPick) => {
-    touchedRef.current.approval = true;
-    setApprovalMode(pick.approvalMode);
+    setApprovalPick(pick.approvalMode);
     setSandboxPick((prev) => draftSandboxAfter(prev, pick));
   }, []);
 
@@ -892,16 +854,9 @@ export function DraftView({
       let createdId: string | null = null;
       try {
         const body: SessionCreateRequest = {};
-        // When the draft is on a remote machine whose sandbox defaults have not arrived yet and
-        // neither the user nor the Project pinned an approvalMode, let the remote server resolve
-        // its own sandboxDefaultApproval() instead of overwriting it with the local "allow-all".
-        const deferRemoteDefaultApproval =
-          workspaceMachine !== null &&
-          remoteSandbox === null &&
-          !touchedRef.current.approval &&
-          cached.approvalMode === undefined &&
-          chatDefaults?.approvalMode === undefined;
-        if (!deferRemoteDefaultApproval) body.approvalMode = approvalMode;
+        // Only a choice: without one, the server creating the Session starts it from its own
+        // default preset (draft-permission.ts).
+        if (sentMode !== undefined) body.approvalMode = sentMode;
         if (Object.keys(sandboxPick).length > 0) body.sandbox = sandboxPick;
         body.modelId = modelInfo.modelId;
         body.provider = modelInfo.provider;
@@ -960,11 +915,8 @@ export function DraftView({
     [
       projectId,
       agentId,
-      approvalMode,
+      sentMode,
       sandboxPick,
-      remoteSandbox,
-      cached.approvalMode,
-      chatDefaults?.approvalMode,
       modelRef,
       modelInfo,
       workspace,
@@ -1062,18 +1014,16 @@ export function DraftView({
         {...(contextWindow !== undefined ? { contextWindow } : {})}
         contextNow={0}
         vision={vision}
-        approvalMode={approvalMode}
+        approvalMode={shownMode}
         // A draft becomes an ordinary conversation, never an organization's: every mode.
         approvalModes={APPROVAL_MODES}
-        sandbox={{
-          ...((workspaceMachine === null ? chatDefaults?.sandbox : remoteSandbox) ?? UNCONFINED),
-          ...sandboxPick,
-        }}
+        sandbox={{ ...(target.answer?.sandbox ?? UNCONFINED), ...sandboxPick }}
         onChangePermission={changePermission}
         modeSaving={false}
         autoFocus
         agents={agents}
         agentsMachineId={workspaceMachine}
+        machineId={workspaceMachine}
         {...(agentId ? { currentAgentId: agentId } : {})}
         skills={agentSkills}
         {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}

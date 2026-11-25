@@ -577,7 +577,7 @@ function SubagentComposer({
           approvalMode={approvalMode}
           approvalModes={approvalModes}
           sandbox={sandbox}
-          agentsMachineId={machineForSession(sessionId)}
+          machineId={machineForSession(sessionId)}
           onChangePermission={onChangePermission}
           modeSaving={modeSaving}
           agents={[]}

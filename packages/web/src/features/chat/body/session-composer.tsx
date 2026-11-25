@@ -157,7 +157,7 @@ export function SessionComposer({
       modeSaving={modeSaving}
       autoFocus
       agents={agents}
-      agentsMachineId={machineForSession(selected.sessionId)}
+      machineId={machineForSession(selected.sessionId)}
       currentAgentId={selected.agentId}
       skills={agentSkills}
       {...(sessionDraft.skills && sessionDraft.skills.length > 0

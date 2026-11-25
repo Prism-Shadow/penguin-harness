@@ -30,6 +30,7 @@ export interface DraftCache {
    * together from the picker all the way to Session creation.
    */
   machineId?: string;
+  /** The approval mode the person picked; never a default, which would come back as a pick. */
   approvalMode?: ApprovalMode;
   /** The draft's own permission picks; a half left out follows the server's sandbox settings. */
   sandbox?: Partial<SessionSandbox>;

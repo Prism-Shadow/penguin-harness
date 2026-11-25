@@ -124,14 +124,17 @@ let projectModels: ModelsResponse = MODELS;
 
 /**
  * `chatDefaults` is the Project's `[default_chat]` block the server answers with (none by
- * default); `models` its model table ({@link MODELS} by default); `role` the signed-in user's
- * role in it (owner by default). `plugins` is the plugin library and the hook packages the Agent
- * starts with; without it the plugin routes are not there. `extra` answers what this world does
- * not (another surface's routes, on any server), or passes with undefined.
+ * default), or what each server answers (null for this one: a block, a refusal, or a promise
+ * the test settles); `models` its model table ({@link MODELS} by default); `role` the signed-in
+ * user's role in it (owner by default). `plugins` is the plugin library and the hook packages the
+ * Agent starts with; without it the plugin routes are not there. `extra` answers what this world
+ * does not (another surface's routes, on any server), or passes with undefined.
  */
 export function draftWorld(
   options: {
-    chatDefaults?: ChatDefaultsDto;
+    chatDefaults?:
+      | ChatDefaultsDto
+      | ((machine: string | null) => ChatDefaultsDto | Response | Promise<ChatDefaultsDto>);
     models?: ModelsResponse;
     role?: ProjectRole;
     plugins?: { library: PluginItem[]; hooks: string[] };
@@ -211,7 +214,12 @@ export function draftWorld(
     }
     const project = `/api/projects/${PROJECT_ID}`;
     if (path === `${project}/machines`) return json(machines);
-    if (path === `${project}/chat-defaults`) return json(options.chatDefaults ?? {});
+    if (path === `${project}/chat-defaults`) {
+      const defaults = options.chatDefaults;
+      if (typeof defaults !== "function") return json(defaults ?? {});
+      const answered = await defaults(machine);
+      return answered instanceof Response ? answered : json(answered);
+    }
     if (path === `${project}/models`) return json(projectModels);
     if (path === `${project}/agents` && method === "GET") {
       return json({
