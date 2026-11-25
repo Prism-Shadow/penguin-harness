@@ -46,6 +46,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import type { MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter, useLocation } from "react-router";
 import { MessageStream } from "../src/features/chat/message-stream";
 import type {
   A2uiActions,
@@ -77,6 +78,10 @@ vi.mock("../src/lib/reply-link", async (importOriginal) => {
 
 const WS = "/home/user/workspaces/tmp-1";
 
+/** The stream under a Router: the links inside navigate through the Router's own history. */
+const RouterStream = (props: ComponentProps<typeof MessageStream>) =>
+  createElement(MemoryRouter, { initialEntries: ["/"] }, createElement(MessageStream, props));
+
 /** All rendered <a ...> opening tags. */
 const anchors = (html: string) => html.match(/<a\b[^>]*>/g) ?? [];
 /** The names of every rendered button: its label, or its words with the tags dropped. */
@@ -97,7 +102,7 @@ describe("MessageStream links", () => {
       onOpenFile,
     };
     const html = renderToStaticMarkup(
-      createElement(MessageStream, {
+      createElement(RouterStream, {
         items: [
           {
             kind: "assistant_text",
@@ -138,7 +143,7 @@ describe("MessageStream error banner", () => {
   };
   const banner = (errorCode: string) =>
     renderToStaticMarkup(
-      createElement(MessageStream, {
+      createElement(RouterStream, {
         items: [{ kind: "llm_error", id: 1, errorCode, errorMessage: "400 Bad Request" }],
         version: 1,
         ctx,
@@ -148,7 +153,7 @@ describe("MessageStream error banner", () => {
 
   const stream = (items: ChatItem[], taskRunning = false) =>
     renderToStaticMarkup(
-      createElement(MessageStream, {
+      createElement(RouterStream, {
         items,
         version: 1,
         ctx: { ...ctx, taskRunning, onRetry: async () => {} },
@@ -188,7 +193,7 @@ describe("MessageStream error banner", () => {
   });
   const failures = (items: ChatItem[], taskRunning = true) =>
     renderToStaticMarkup(
-      createElement(MessageStream, {
+      createElement(RouterStream, {
         items,
         version: 1,
         ctx: {
@@ -276,7 +281,7 @@ describe("MessageStream error banner", () => {
   it("Details hands the page the failure: the provider's words, the attempts and the model", async () => {
     const onShowFailure = vi.fn();
     await mount(
-      createElement(MessageStream, {
+      createElement(RouterStream, {
         items: [{ ...gaveUp, model: { provider: "custom", modelId: "claude-4-8" } } as ChatItem],
         version: 1,
         ctx: { ...ctx, onShowFailure },
@@ -297,6 +302,43 @@ describe("MessageStream error banner", () => {
   });
 });
 
+describe("MessageStream session links", () => {
+  const ctx: StreamRenderContext = {
+    pendingApprovals: new Map(),
+    onApprove: async () => {},
+    origin: [],
+    taskRunning: false,
+  };
+
+  it("a session id in a user message navigates through the Router in place", async () => {
+    const SID = "session-2026-11-25-10-00-00-4a5b6c7d";
+    const seen: string[] = [];
+    const LocationSpy = () => {
+      const { pathname } = useLocation();
+      seen.push(pathname);
+      return null;
+    };
+    await mount(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ["/"] },
+        createElement(LocationSpy),
+        createElement(MessageStream, {
+          items: [{ kind: "user_text", id: 1, text: `open ${SID} later` } as ChatItem],
+          version: 1,
+          ctx,
+          onAddExcerpt: () => {},
+        }),
+      ),
+    );
+    const link = document.querySelector(`a[href="/chat/${SID}"]`);
+    expect(link).not.toBeNull();
+    await click(link as HTMLElement);
+    expect(seen).toContain(`/chat/${SID}`);
+    await unmountAll();
+  });
+});
+
 describe("MessageStream older history", () => {
   const ctx: StreamRenderContext = {
     pendingApprovals: new Map(),
@@ -307,7 +349,7 @@ describe("MessageStream older history", () => {
   const reply: ChatItem = { kind: "assistant_text", id: 1, text: "Done.", streaming: false };
   const top = (over: Partial<OlderHistoryControls>) =>
     renderToStaticMarkup(
-      createElement(MessageStream, {
+      createElement(RouterStream, {
         items: [reply],
         version: 1,
         ctx,
@@ -339,7 +381,7 @@ describe("MessageStream older history", () => {
     // A press that starts nothing: the failure, and so the row's state, stay as they were.
     const onLoad = vi.fn();
     await mount(
-      createElement(MessageStream, {
+      createElement(RouterStream, {
         items: [reply],
         version: 1,
         ctx,
@@ -376,7 +418,7 @@ describe("MessageStream prompts with attachments", () => {
       createElement(
         LocaleProvider,
         null,
-        createElement(MessageStream, { items, version: 1, ctx, onAddExcerpt: () => {} }),
+        createElement(RouterStream, { items, version: 1, ctx, onAddExcerpt: () => {} }),
       ),
     );
   const anchorCount = (html: string) => html.match(/data-outline-anchor=/g)?.length ?? 0;
@@ -462,7 +504,7 @@ describe("MessageStream answered A2UI blocks", () => {
       createElement(
         LocaleProvider,
         null,
-        createElement(MessageStream, {
+        createElement(RouterStream, {
           items,
           version: 1,
           ctx: {

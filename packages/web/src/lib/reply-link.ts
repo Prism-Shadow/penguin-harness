@@ -106,10 +106,10 @@ export function resolveReplyLink(href: string | undefined, workspace: string | n
 export interface WorkspaceLinks {
   /** The Session's absolute Workspace path, which an absolute href must lie inside. */
   workspace: string | null;
-  /** Opens a Workspace-relative path in the conversation's Files panel. */
-  openFile: (path: string) => void;
-  /** Navigates to an internal SPA route (`/chat/<sessionId>`, `/org…`). */
-  openRoute?: (to: string) => void;
+  /** Opens a Workspace-relative path in the conversation's Files panel; absent when the surface has no Files panel, and a file link then keeps a new tab. */
+  openFile?: (path: string) => void;
+  /** Navigates to an internal SPA route (`/chat/<sessionId>`, `/org…`) through the app's Router. */
+  openRoute: (to: string) => void;
 }
 
 /** The attributes a rendered link adds on top of its own. */
@@ -155,23 +155,20 @@ export function replyLinkBehavior(href: string | undefined, links: WorkspaceLink
     case "external":
       return NEW_TAB;
     case "file":
-      return {
-        onClick: (event) => {
-          event.preventDefault();
-          links.openFile(link.path);
-        },
-      };
+      return links.openFile
+        ? {
+            onClick: (event) => {
+              event.preventDefault();
+              links.openFile!(link.path);
+            },
+          }
+        : NEW_TAB;
     case "route":
       return {
         onClick: (event) => {
           if (!isPlainClick(event)) return;
           event.preventDefault();
-          if (links.openRoute) {
-            links.openRoute(link.to);
-          } else if (typeof window !== "undefined") {
-            window.history.pushState({}, "", link.to);
-            window.dispatchEvent(new PopStateEvent("popstate"));
-          }
+          links.openRoute(link.to);
         },
       };
     case "anchor":

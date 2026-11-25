@@ -10,8 +10,8 @@
  * blocks into banners, what a model request's retry or failure line says and offers, and the
  * Retry a failed or stopped run's last line offers.
  */
-import { isPlainClick } from "../../lib/shortcuts/plain-click";
 import { useState } from "react";
+import { Link } from "react-router";
 import type { ReactNode } from "react";
 import {
   AssistantText,
@@ -268,21 +268,15 @@ function linkifySessionIds(text: string): ReactNode {
     const sid = m[0];
     if (idx > last) parts.push(text.slice(last, idx));
     parts.push(
-      <a
+      // The Router's own link: an internal navigation with the history entry and the
+      // unsaved-form guard; a modified or middle click keeps the browser's default.
+      <Link
         key={`sid-${i}-${idx}`}
-        href={`/chat/${sid}`}
-        onClick={(event) => {
-          if (!isPlainClick(event)) return;
-          event.preventDefault();
-          if (typeof window !== "undefined") {
-            window.history.pushState({}, "", `/chat/${sid}`);
-            window.dispatchEvent(new PopStateEvent("popstate"));
-          }
-        }}
+        to={`/chat/${sid}`}
         className="font-mono underline decoration-current/40 underline-offset-2 hover:decoration-current"
       >
         {sid}
-      </a>,
+      </Link>,
     );
     last = idx + sid.length;
   });
