@@ -119,7 +119,7 @@ import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime
 import { AgentConfigServiceProvider } from "./services/agent-config-service.js";
 import { SnapshotServiceProvider } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
-import { AgentService } from "./services/agent-service.js";
+import { AgentServiceProvider } from "./services/agent-service.js";
 import { DeletingFoldersService } from "./services/deleting-folders.js";
 import { RootDataLayout } from "./services/data-layout.js";
 import { DataLayout } from "./mechanisms/data-layout.js";
@@ -513,7 +513,7 @@ export class TracesModule {}
   children: [
     AgentConfigServiceProvider,
     SnapshotServiceProvider,
-    AgentService,
+    AgentServiceProvider,
     DeletingFoldersService,
     MemoryServiceProvider,
     BenchmarkServiceProvider,
