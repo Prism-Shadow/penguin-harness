@@ -158,13 +158,7 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
         : null;
     if (visit === routedVisitRef.current) return;
     routedVisitRef.current = visit;
-    if (
-      visit === null ||
-      !projectId ||
-      !selectedOrgId ||
-      !selectedSessionId ||
-      !selectedAgentId
-    )
+    if (visit === null || !projectId || !selectedOrgId || !selectedSessionId || !selectedAgentId)
       return;
     openTempSession(user?.userId ?? null, projectId, selectedOrgId, {
       sessionId: selectedSessionId,
