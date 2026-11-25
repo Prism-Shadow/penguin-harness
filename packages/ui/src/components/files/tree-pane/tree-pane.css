@@ -1,0 +1,42 @@
+/* This tree fills the single-column Files pane. Use its own height so a resized dock
+   and a dock sharing the screen with the composer respond to the same available room. */
+.files-tree-with-path {
+  container: files-tree / size;
+}
+
+@container files-tree (max-height: 10rem) {
+  .files-tree-header {
+    display: flex;
+    align-items: center;
+  }
+
+  .files-tree-path {
+    min-width: 0;
+    flex: 1;
+    padding-block: 0;
+    border: 0;
+  }
+
+  .files-tree-tools {
+    /* Anchor the expanded search box to the entire header, including the path. */
+    position: static;
+    padding-block: 0;
+    border: 0;
+  }
+
+  .files-tree-search-slot {
+    flex: 0 0 1.5rem;
+  }
+
+  .files-tree-with-path [role="tree"] {
+    padding-top: 0;
+  }
+
+  .files-tree-header[data-search-open] {
+    min-height: 2rem;
+  }
+
+  .files-tree-header[data-search-open] .files-tree-path {
+    visibility: hidden;
+  }
+}

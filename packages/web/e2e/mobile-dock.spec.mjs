@@ -5,6 +5,7 @@
  * opens its tab there; drilling into a directory and opening a Markdown file renders the
  * preview; the dock's × puts the whole surface away.
  * A short phone with a composer notice can still open a panel, reach its actions, and return to its draft.
+ * With both initial notices, opening Files from Shortcuts exposes a whole row before any scroll, and more files can be reached below it.
  * Slash rows remain tappable, and the focused text and Close stay visible when a keyboard reduces
  * the layout viewport or only the visual viewport.
  * Upload uses a nested path (notes/demo.md): also covers the server's sandbox
@@ -19,7 +20,7 @@ const MOCK = process.env.MOCK_URL;
 
 test.use({ viewport: { width: 375, height: 812 }, hasTouch: true });
 
-async function openSessionWithNotes(page, user) {
+async function openSessionWithNotes(page, user, paths = ["notes/demo.md"]) {
   await provisionAndLogin(page.request, user, "password123");
   await setAccountPrefs(page.request, { lang: "en" });
   const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
@@ -49,11 +50,13 @@ async function openSessionWithNotes(page, user) {
   const sessionId = sess.session.sessionId;
 
   const md = Buffer.from("# Sheet Heading\n\nBody paragraph.").toString("base64");
-  const up = await page.request.put(
-    `${BASE}/api/sessions/${sessionId}/files/content?path=notes/demo.md`,
-    { data: { dataBase64: md } },
-  );
-  expect(up.ok(), "upload nested md").toBeTruthy();
+  for (const path of paths) {
+    const up = await page.request.put(
+      `${BASE}/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}`,
+      { data: { dataBase64: md } },
+    );
+    expect(up.ok(), "upload " + path).toBeTruthy();
+  }
 
   await page.goto(`${BASE}/chat/${sessionId}`);
   return sessionId;
@@ -208,6 +211,32 @@ for (const browserName of ["webkit", "chromium"]) {
     isMobile: true,
     hasTouch: true,
   });
+  phoneTest(
+    browserName + ": Files opens with a whole tappable row while both composer notices are present",
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 568 });
+      await openSessionWithNotes(page, "phonedirectory" + browserName, ["a.md", "b.md", "c.md"]);
+      await expect(page.getByText(/using its initial password/)).toBeVisible();
+      await expect(page.getByText(/compaction threshold/).first()).toBeVisible();
+
+      await page.getByRole("button", { name: "Shortcuts", exact: true }).tap();
+      await page.getByTestId("dock-launcher-open-workspace").tap();
+      const dock = page.locator('[data-testid="dock"][data-position="bottom"][data-open="true"]');
+      // Check before the tap: Playwright can otherwise scroll a clipped target into position.
+      const first = dock.getByRole("treeitem", { name: /a\.md/ });
+      await expect(first).toBeInViewport({ ratio: 1 });
+      await first.tap();
+      const back = dock.getByRole("button", { name: "Back to list" });
+      await back.tap();
+      const file = dock.getByRole("treeitem", { name: /c\.md/ });
+      await file.scrollIntoViewIfNeeded();
+      await expect(file).toBeInViewport({ ratio: 1 });
+      await file.tap();
+      await expect(dock.getByRole("heading", { name: "Sheet Heading" })).toBeInViewport();
+      await back.tap();
+      await expect(dock.getByRole("tree")).toBeVisible();
+    },
+  );
   phoneTest(
     browserName + ": slash choices, the focused draft and Close stay reachable above the keyboard",
     async ({ page, browser }) => {

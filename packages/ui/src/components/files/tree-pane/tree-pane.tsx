@@ -31,6 +31,7 @@ import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { useMeasuredWidth } from "../../layout/measure/use-measured-width";
 import { filesActionClass } from "../files-frame/files-frame";
+import "./tree-pane.css";
 
 /** The narrowest search box, in px, that still shows its placeholder whole. */
 const SEARCH_MIN_WIDTH = 140;
@@ -46,6 +47,8 @@ export interface TreePaneSearch {
 
 export interface TreePaneProps extends Omit<HTMLAttributes<HTMLDivElement>, "children"> {
   search: TreePaneSearch;
+  /** The path when the tree is the only pane. Shares the search row in a short panel. */
+  path?: ReactNode;
   /** The header's actions, after the search box. */
   actions?: ReactNode;
   /** The listing failed: said in place of the tree (its words, and 「[报告问题]」 for a failure). */
@@ -64,6 +67,7 @@ export interface TreePaneProps extends Omit<HTMLAttributes<HTMLDivElement>, "chi
 
 export function TreePane({
   search,
+  path,
   actions,
   error = null,
   loading = false,
@@ -99,59 +103,65 @@ export function TreePane({
       fold(false);
   };
   return (
-    <div {...rest} className={`flex min-h-0 flex-1 flex-col ${className}`}>
+    <div
+      {...rest}
+      className={`flex min-h-0 flex-1 flex-col ${path ? "files-tree-with-path" : ""} ${className}`}
+    >
       {/* Esc in a non-empty box clears it rather than reaching the dock or a dialog above, which
           is what that key means here (SearchInput); in the folded box it also folds it back. */}
-      <div className="relative flex shrink-0 items-center gap-1 border-b border-line-muted px-2 py-1.5">
-        {/* The box's room, whatever stands in it: `flex-1` over a zero basis measures the row
+      <div className="files-tree-header relative shrink-0" data-search-open={spread || undefined}>
+        {path && <div className="files-tree-path border-b border-line px-2 py-1.5">{path}</div>}
+        <div className="files-tree-tools relative flex shrink-0 items-center gap-1 border-b border-line-muted px-2 py-1.5">
+          {/* The box's room, whatever stands in it: `flex-1` over a zero basis measures the row
             less the actions, never its own content. */}
-        <div ref={slot} className="flex min-w-0 flex-1 justify-end">
-          {folded && (
-            <button
-              ref={magnifier}
-              type="button"
-              aria-label={search.placeholder}
-              data-tooltip={search.placeholder}
-              onClick={() => setOpened(true)}
-              className={`${filesActionClass} ${spread ? "invisible" : ""}`}
-            >
-              <GlyphIcon d={ICONS.search} size={ICON_SIZE.iconButton} />
-            </button>
-          )}
-          {(!folded || spread) && (
-            <div
-              className={
-                folded ? "absolute inset-x-2 inset-y-0 flex items-center" : "flex min-w-0 flex-1"
-              }
-              onBlur={folded ? leave : undefined}
-            >
-              <SearchInput
-                variant="panel"
-                className="min-w-0 flex-1"
-                value={search.value}
-                onChange={search.onChange}
-                placeholder={search.placeholder}
+          <div ref={slot} className="files-tree-search-slot flex min-w-0 flex-1 justify-end">
+            {folded && (
+              <button
+                ref={magnifier}
+                type="button"
                 aria-label={search.placeholder}
-                clearLabel={search.clearLabel}
-                autoFocus={folded}
-                alwaysClearable={folded}
-                onClear={
-                  folded
-                    ? () => {
-                        search.onChange("");
-                        fold(true);
-                      }
-                    : undefined
+                data-tooltip={search.placeholder}
+                onClick={() => setOpened(true)}
+                className={`${filesActionClass} ${spread ? "invisible" : ""}`}
+              >
+                <GlyphIcon d={ICONS.search} size={ICON_SIZE.iconButton} />
+              </button>
+            )}
+            {(!folded || spread) && (
+              <div
+                className={
+                  folded ? "absolute inset-x-2 inset-y-0 flex items-center" : "flex min-w-0 flex-1"
                 }
-              />
+                onBlur={folded ? leave : undefined}
+              >
+                <SearchInput
+                  variant="panel"
+                  className="min-w-0 flex-1"
+                  value={search.value}
+                  onChange={search.onChange}
+                  placeholder={search.placeholder}
+                  aria-label={search.placeholder}
+                  clearLabel={search.clearLabel}
+                  autoFocus={folded}
+                  alwaysClearable={folded}
+                  onClear={
+                    folded
+                      ? () => {
+                          search.onChange("");
+                          fold(true);
+                        }
+                      : undefined
+                  }
+                />
+              </div>
+            )}
+          </div>
+          {actions !== undefined && actions !== null && (
+            <div className={`flex shrink-0 items-center gap-1 ${spread ? "invisible" : ""}`}>
+              {actions}
             </div>
           )}
         </div>
-        {actions !== undefined && actions !== null && (
-          <div className={`flex shrink-0 items-center gap-1 ${spread ? "invisible" : ""}`}>
-            {actions}
-          </div>
-        )}
       </div>
       {error !== null ? (
         <p className="px-3 py-3 text-sm text-tone-danger-fg">{error}</p>
