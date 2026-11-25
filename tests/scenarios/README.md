@@ -17,6 +17,7 @@ what the product showed.
 | [`install/from-ref`](install/from-ref/TASK.md)               | `scratch`          | 30         | Does the given release, tag or revision install from nothing? |
 | [`usability/use-ui`](usability/use-ui/TASK.md)               | `install/from-ref` | 45         | Can a new user find their way through the Web App?            |
 | [`usability/use-cli`](usability/use-cli/TASK.md)             | `install/from-ref` | 30         | Can a new user get work done from the terminal?               |
+| [`usability/agent-auth`](usability/agent-auth/TASK.md)       | `install/from-ref` | 30         | Do Agent roles, refiners, and upgrade requests bound an Agent's actions? |
 | [`usability/changed-feature`](usability/changed-feature/TASK.md) | `install/from-ref` | 60         | Is every change the changelog promises really there?          |
 
 A group names one question about the product (can it be installed, is it usable), not a part of
