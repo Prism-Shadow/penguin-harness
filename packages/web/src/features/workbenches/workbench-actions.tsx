@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -12,10 +12,13 @@ import {
   MenuItem,
   MenuSeparator,
   Modal,
+  type PaletteAction,
+  type RowActionItem,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { downloadArchive } from "../../lib/archive-download";
 import { formatDateTime } from "../../lib/format";
+import { usePaletteActions } from "../../lib/palette-actions";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
 
@@ -24,23 +27,32 @@ interface WorkbenchScope {
   agentId: string;
   machineId: string | null;
 }
+/** What an action needs of its workbench: a settings row has the whole record, a running app's row only the id. */
+type WorkbenchRef = Pick<WorkbenchInfo, "id"> & {
+  revision?: WorkbenchInfo["revision"] | undefined;
+};
+interface History {
+  workbench: WorkbenchRef;
+  versions: WorkbenchVersion[];
+}
 /** The row of the newest version holding the workbench's current files; -1 when none does. */
-function currentVersionAt(history: { workbench: WorkbenchInfo; versions: WorkbenchVersion[] }) {
+function currentVersionAt(history: History) {
   return history.versions.findIndex((version) => version.revision === history.workbench.revision);
 }
 
-/** The same source, version and removal operations for a settings row and its running page. */
+/**
+ * The same source, version and removal operations wherever a workbench is managed: `menu` is the
+ * settings row's More button, `actions` the same operations as rows for a menu that already
+ * exists (a running app's row in the sidebar), and `modals` the dialogs both open.
+ */
 export function useWorkbenchActions(
   { projectId, agentId, machineId }: WorkbenchScope,
   onChanged?: () => void | Promise<void>,
 ) {
   const [busy, setBusy] = useState(false);
-  const [history, setHistory] = useState<{
-    workbench: WorkbenchInfo;
-    versions: WorkbenchVersion[];
-  } | null>(null);
+  const [history, setHistory] = useState<History | null>(null);
   const [confirm, setConfirm] = useState<{
-    workbench: WorkbenchInfo;
+    workbench: WorkbenchRef;
     revision?: string;
     sourceTitle?: string | undefined;
   } | null>(null);
@@ -56,7 +68,7 @@ export function useWorkbenchActions(
     }
   };
   /** The shared archive download (archive-download.ts); a failure surfaces as a toast. */
-  const exportWorkbench = async (workbench: WorkbenchInfo) => {
+  const exportWorkbench = async (workbench: WorkbenchRef) => {
     if (!projectId) return;
     try {
       await downloadArchive(
@@ -68,34 +80,74 @@ export function useWorkbenchActions(
     }
   };
 
+  const reload = (workbench: WorkbenchRef) => {
+    if (!projectId) return;
+    void act(() => api.reloadWorkbench(projectId, agentId, workbench.id, machineId), true);
+  };
+  /** A caller that knows only the id has the current revision read with the versions. */
+  const showHistory = (workbench: WorkbenchRef) => {
+    if (!projectId) return;
+    void act(async () => {
+      const [{ versions }, revision] = await Promise.all([
+        api.getWorkbenchHistory(projectId, agentId, workbench.id, machineId),
+        workbench.revision !== undefined
+          ? workbench.revision
+          : api
+              .getWorkbench(projectId, agentId, workbench.id, machineId)
+              .then((res) => res.workbenches.find((w) => w.id === workbench.id)?.revision),
+      ]);
+      setHistory({ workbench: { id: workbench.id, revision }, versions });
+    });
+  };
+
   function menu(workbench: WorkbenchInfo, title: string, running: boolean, sourceTitle?: string) {
     if (projectId === null) return null;
     return (
       <WorkbenchRowMenu
         title={title}
         disabled={busy}
-        onReload={
-          running
-            ? () =>
-                void act(
-                  () => api.reloadWorkbench(projectId, agentId, workbench.id, machineId),
-                  true,
-                )
-            : undefined
-        }
-        onHistory={() =>
-          void act(async () =>
-            setHistory({
-              workbench,
-              versions: (await api.getWorkbenchHistory(projectId, agentId, workbench.id, machineId))
-                .versions,
-            }),
-          )
-        }
+        onReload={running ? () => reload(workbench) : undefined}
+        onHistory={() => showHistory(workbench)}
         onExport={() => void exportWorkbench(workbench)}
         onRemove={() => setConfirm({ workbench, sourceTitle })}
       />
     );
+  }
+
+  /** Reload is absent while the workbench does not run: there is nothing to reload. */
+  function actions(workbench: WorkbenchRef, running: boolean): RowActionItem[] {
+    if (projectId === null) return [];
+    return [
+      ...(running
+        ? [
+            {
+              id: "reload",
+              label: S.workbenches.reload,
+              glyph: ICONS.refresh,
+              onSelect: () => reload(workbench),
+            },
+          ]
+        : []),
+      {
+        id: "history",
+        label: S.workbenches.historyAction,
+        glyph: ICONS.history,
+        onSelect: () => showHistory(workbench),
+      },
+      {
+        id: "export",
+        label: S.workbenches.exportWorkbench,
+        glyph: ICONS.download,
+        onSelect: () => void exportWorkbench(workbench),
+      },
+      {
+        id: "remove",
+        label: S.workbenches.removeWorkbench,
+        glyph: ICONS.trash,
+        danger: true,
+        onSelect: () => setConfirm({ workbench }),
+      },
+    ];
   }
 
   const modals = projectId !== null && (
@@ -178,25 +230,40 @@ export function useWorkbenchActions(
     </>
   );
 
-  return { menu, modals };
+  return { menu, actions, reload, busy, modals };
 }
 
-/** Running applications keep their controls in the host, outside the workbench document. */
-export function RunningWorkbenchActions({
-  projectId,
-  agentId,
-  machineId,
-  workbench,
-  title,
-  running,
-}: WorkbenchScope & { workbench: WorkbenchInfo; title: string; running: boolean }) {
-  const { menu, modals } = useWorkbenchActions({ projectId, agentId, machineId });
-  return (
-    <>
-      <div className="shrink-0">{menu(workbench, title, running)}</div>
-      {modals}
-    </>
+/**
+ * A full page has no sidebar row to carry the app's menu, so the command palette offers reload,
+ * version history and the download while the page is shown. Returns the dialogs they open.
+ */
+export function useWorkbenchPaletteActions(
+  scope: WorkbenchScope,
+  workbench: WorkbenchInfo | null,
+  title: string,
+  running: boolean,
+) {
+  const { actions, modals } = useWorkbenchActions(scope);
+  // Removal stays with the app's row and the Agent's settings: the palette lists no destructive command.
+  const rows = (workbench === null ? [] : actions(workbench, running)).filter(
+    (action) => action.danger !== true,
   );
+  /** The handlers close over this render's state, so the palette runs the newest ones. */
+  const latest = useRef(rows);
+  latest.current = rows;
+  const listed = rows.map((row) => `${row.id}\n${row.label}`).join("\n");
+  const palette = useMemo<PaletteAction[]>(
+    () =>
+      latest.current.map(({ id, label }) => ({
+        id: `workbench-${id}`,
+        label: S.workbenches.paletteAction(title, label),
+        keywords: ["app", "workbench", id],
+        run: () => latest.current.find((row) => row.id === id)?.onSelect(),
+      })),
+    [listed, title],
+  );
+  usePaletteActions(palette);
+  return modals;
 }
 
 function WorkbenchRowMenu({

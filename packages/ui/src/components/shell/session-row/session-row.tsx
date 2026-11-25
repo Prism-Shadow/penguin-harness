@@ -21,7 +21,12 @@
  * clipped tail by scrolling it while the row is hovered or focused, keyed on the row's
  * `data-title-reveal`.
  */
-import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import {
+  Fragment,
+  type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import { ICON_SIZE } from "../../../icon-scale";
 import {
   ActivityIcon,
@@ -35,7 +40,7 @@ import { ICONS } from "../../icons/icons";
 import { NAV_FILL } from "../../navigation/nav-list/nav-list";
 import { setDragPreview } from "../../overlays/drag-preview/drag-preview";
 import { Dropdown } from "../../overlays/dropdown/dropdown";
-import { MenuItem } from "../../overlays/menu/menu";
+import { MenuItem, MenuSeparator } from "../../overlays/menu/menu";
 import type { AnchorRect } from "../../overlays/portal-panel/context-menu";
 import { useRowContextMenu } from "../../overlays/portal-panel/use-row-context-menu";
 
@@ -49,6 +54,8 @@ export interface RowActionItem {
   glyph: string;
   /** Destructive: the danger ink on the menu row and on the hover button's hover. */
   danger?: boolean;
+  /** Starts another group in the menu: a rule is drawn above its row. */
+  separated?: boolean;
   onSelect: () => void;
 }
 
@@ -379,14 +386,16 @@ export function SessionRow({
           button={null}
         >
           {menuActions.map((action) => (
-            <MenuItem
-              key={action.id}
-              density="sm"
-              glyph={action.glyph}
-              label={action.label}
-              danger={action.danger === true}
-              onSelect={fromMenu(action)}
-            />
+            <Fragment key={action.id}>
+              {action.separated === true && <MenuSeparator />}
+              <MenuItem
+                density="sm"
+                glyph={action.glyph}
+                label={action.label}
+                danger={action.danger === true}
+                onSelect={fromMenu(action)}
+              />
+            </Fragment>
           ))}
         </Dropdown>
       </div>

@@ -10,7 +10,9 @@ test("Support restores both bundled pages and keeps the same question when reope
     .click();
   const open = () => page.locator('li[data-app="penguin_support/support"] > button').click();
   const history = async () => {
-    await page.getByRole("button", { name: /More.*Support/i }).click();
+    const row = page.locator('[data-app-row="penguin_support/support"]');
+    await row.hover();
+    await row.locator("xpath=ancestor::li").getByRole("button", { name: "More actions" }).click();
     await page.getByRole("menuitem", { name: /Version history/i }).click();
     return page.getByRole("dialog");
   };

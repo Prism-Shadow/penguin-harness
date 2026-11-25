@@ -16,14 +16,14 @@
  * (`useRowContextMenu`, the conversation rows' pattern); a hold's replayed click does not also
  * open the app.
  */
-import type { HTMLAttributes, ReactNode } from "react";
+import { Fragment, type HTMLAttributes, type ReactNode } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { InstallRing } from "../../icons/spinner/spinner";
 import { NAV_FILL } from "../../navigation/nav-list/nav-list";
 import { Dropdown } from "../../overlays/dropdown/dropdown";
-import { Menu, MenuItem } from "../../overlays/menu/menu";
+import { Menu, MenuItem, MenuSeparator } from "../../overlays/menu/menu";
 import { useRowContextMenu } from "../../overlays/portal-panel/use-row-context-menu";
 import { RowHoverActions, type RowActionItem } from "../session-row/session-row";
 
@@ -176,13 +176,15 @@ export function AppRow({
         >
           <Menu label={name} density="sm" className="py-1">
             {menuActions.map((action) => (
-              <MenuItem
-                key={action.id}
-                glyph={action.glyph}
-                label={action.label}
-                danger={action.danger === true}
-                onSelect={fromMenu(action)}
-              />
+              <Fragment key={action.id}>
+                {action.separated === true && <MenuSeparator />}
+                <MenuItem
+                  glyph={action.glyph}
+                  label={action.label}
+                  danger={action.danger === true}
+                  onSelect={fromMenu(action)}
+                />
+              </Fragment>
             ))}
           </Menu>
         </Dropdown>

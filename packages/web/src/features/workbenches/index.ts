@@ -6,4 +6,6 @@ export { WorkbenchExitBall } from "./exit-ball";
 
 export type { AppPageTabQuery } from "./use-app-page-tab";
 
-export { RunningWorkbenchActions, useWorkbenchActions } from "./workbench-actions";
+export { useWorkbenchActions, useWorkbenchPaletteActions } from "./workbench-actions";
+
+export { WorkbenchPageStatus } from "./workbench-page-status";

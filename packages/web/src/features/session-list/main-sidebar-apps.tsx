@@ -2,8 +2,10 @@
  * The sidebar Apps group lists the current Project’s open app pages in this window.
  * Opening a running row selects its workspace page. The same page owns minimize, restore and
  * close, whether it renders a native route, a contributed iframe or an Agent workbench.
+ * An Agent workbench's row also carries what manages the workbench itself (reload, version
+ * history, download, removal): the app's pane draws nothing above its content.
  */
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import {
   APP_ROW_ICON_PX,
@@ -23,7 +25,9 @@ import { agentSettingsPath } from "../../lib/agent-location";
 import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
 import { S } from "../../lib/strings";
+import { useProject } from "../../state/project";
 import { TileIcon } from "../app-center";
+import { useWorkbenchActions } from "../workbenches";
 import { useSidebarApps, type SidebarAppRow } from "./use-sidebar-apps";
 
 /** Whether the group is folded, per browser: a viewer's convenience, kept through a reload. */
@@ -44,6 +48,28 @@ function writeFolded(folded: boolean): void {
   } catch {
     // Storage refused (a private window): the fold holds for this visit only.
   }
+}
+
+/** One workbench row's management actions and the dialogs they open, scoped to its own Agent. */
+function WorkbenchRowActions({
+  row,
+  children,
+}: {
+  row: SidebarAppRow;
+  children: (manage: RowActionItem[]) => ReactNode;
+}) {
+  const projectId = useProject().currentProject?.projectId ?? null;
+  const { actions, modals } = useWorkbenchActions({
+    projectId,
+    agentId: row.agentId,
+    machineId: row.machineId,
+  });
+  return (
+    <>
+      {children(actions({ id: row.workbenchId }, true))}
+      {modals}
+    </>
+  );
 }
 
 export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
@@ -86,7 +112,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
     workspace.openPage(row.page);
     onNavigate?.();
   };
-  const menuOf = (row: SidebarAppRow): RowActionItem[] => {
+  const menuOf = (row: SidebarAppRow, manage: readonly RowActionItem[]): RowActionItem[] => {
     const page = row.page;
     const act = (fn: () => void) => () => {
       fn();
@@ -144,13 +170,22 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
           onSelect: () => workspace.reorder(next.page.id, page.id),
         });
     }
-    if (!row.system)
-      actions.push({
-        id: "settings",
-        label: S.sidebarApps.viewInSettings,
-        glyph: ICONS.gear,
-        onSelect: () => go(agentSettingsPath(row.agentId, row.machineId, "workbenches")),
-      });
+    if (!row.system) {
+      // The workbench's own group, ruled off from the window's; removal stays last.
+      const remove = manage.find((item) => item.danger === true);
+      const group: RowActionItem[] = [
+        ...manage.filter((item) => item !== remove),
+        {
+          id: "settings",
+          label: S.sidebarApps.viewInSettings,
+          glyph: ICONS.gear,
+          onSelect: () => go(agentSettingsPath(row.agentId, row.machineId, "workbenches")),
+        },
+        ...(remove ? [remove] : []),
+      ];
+      group[0] = { ...group[0]!, separated: true };
+      actions.push(...group);
+    }
     return actions;
   };
   return (
@@ -227,54 +262,64 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
         )}
         <ul ref={list} aria-label={S.sidebarApps.title} className="space-y-px pt-0.5">
           {visible.map((row) => {
-            const actions = menuOf(row);
-            const state = S.appCenter.running;
-            const name = S.sidebarApps.rowName(row.title, row.agentName, state);
-            return (
-              <AppRow
-                key={row.key}
-                appKey={row.key}
-                drag={{
-                  draggable: true,
-                  onDragStart(event) {
-                    event.dataTransfer.setData(PAGE_DRAG_TYPE, row.page.id);
-                    event.dataTransfer.effectAllowed = "move";
-                  },
-                  onDragOver(event) {
-                    if (sort === "default" && event.dataTransfer.types.includes(PAGE_DRAG_TYPE))
-                      event.preventDefault();
-                  },
-                  onDrop(event) {
-                    const id = event.dataTransfer.getData(PAGE_DRAG_TYPE);
-                    if (sort === "default" && rows.some((item) => item.page.id === id)) {
-                      event.preventDefault();
-                      workspace.reorder(id, row.page.id);
-                    }
-                  },
-                }}
-                icon={
-                  <TileIcon
-                    shortcut={{
-                      workbenchId: row.workbenchId,
-                      ...(row.system && { system: row.system }),
-                      ...(row.icon !== null ? { icon: row.icon } : {}),
-                    }}
-                    title={row.title}
-                    size={APP_ROW_ICON_PX}
-                  />
-                }
-                name={row.title}
-                {...(name !== row.title ? { label: name, hint: name } : {})}
-                active={activeAppKey === row.key}
-                running
-                build={row.build}
-                menuActions={actions}
-                windowActions={actions.filter(
-                  (item) => item.id === "fullscreen" || item.id === "close",
-                )}
-                moreLabel={S.chat.moreActions}
-                onOpen={() => open(row)}
-              />
+            const render = (manage: readonly RowActionItem[]) => {
+              const actions = menuOf(row, manage);
+              const state = S.appCenter.running;
+              const name = S.sidebarApps.rowName(row.title, row.agentName, state);
+              return (
+                <AppRow
+                  key={row.key}
+                  appKey={row.key}
+                  drag={{
+                    draggable: true,
+                    onDragStart(event) {
+                      event.dataTransfer.setData(PAGE_DRAG_TYPE, row.page.id);
+                      event.dataTransfer.effectAllowed = "move";
+                    },
+                    onDragOver(event) {
+                      if (sort === "default" && event.dataTransfer.types.includes(PAGE_DRAG_TYPE))
+                        event.preventDefault();
+                    },
+                    onDrop(event) {
+                      const id = event.dataTransfer.getData(PAGE_DRAG_TYPE);
+                      if (sort === "default" && rows.some((item) => item.page.id === id)) {
+                        event.preventDefault();
+                        workspace.reorder(id, row.page.id);
+                      }
+                    },
+                  }}
+                  icon={
+                    <TileIcon
+                      shortcut={{
+                        workbenchId: row.workbenchId,
+                        ...(row.system && { system: row.system }),
+                        ...(row.icon !== null ? { icon: row.icon } : {}),
+                      }}
+                      title={row.title}
+                      size={APP_ROW_ICON_PX}
+                    />
+                  }
+                  name={row.title}
+                  {...(name !== row.title ? { label: name, hint: name } : {})}
+                  active={activeAppKey === row.key}
+                  running
+                  build={row.build}
+                  menuActions={actions}
+                  windowActions={actions.filter(
+                    (item) => item.id === "fullscreen" || item.id === "close",
+                  )}
+                  moreLabel={S.chat.moreActions}
+                  onOpen={() => open(row)}
+                />
+              );
+            };
+            // A system app has no versions and is never removed: its row manages the window only.
+            return row.system ? (
+              render([])
+            ) : (
+              <WorkbenchRowActions key={row.key} row={row}>
+                {render}
+              </WorkbenchRowActions>
             );
           })}
         </ul>

@@ -321,7 +321,12 @@ it("keeps the open app when changing Agents and leaves the next Agent's unopened
     en.pageWorkspace.separate,
     en.appCenter.windowFullScreen,
     en.common.close,
+    // The pane draws nothing above the app, so the row's menu manages the workbench too.
+    en.workbenches.reload,
+    en.workbenches.historyAction,
+    en.workbenches.exportWorkbench,
     en.sidebarApps.viewInSettings,
+    en.workbenches.removeWorkbench,
   ]);
 });
 
