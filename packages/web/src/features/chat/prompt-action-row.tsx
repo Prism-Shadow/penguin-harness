@@ -33,7 +33,6 @@ export function PromptButton({ action }: { action: PromptAction }) {
       variant="secondary"
       data-slot={action.slot}
       aria-current={action.current || undefined}
-      aria-haspopup={action.menu ? "menu" : undefined}
       aria-expanded={action.menu ? Boolean(action.expanded) : undefined}
       disabled={action.disabled === true}
       aria-label={action.label}

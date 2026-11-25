@@ -4326,7 +4326,7 @@ export const zh = {
       tagline: "创建你的第一个自进化 Agent OS",
       examplesTitle: "示例与快捷指令",
       appsSearchPlaceholder: "搜索应用…",
-      appsEmptyHint: "暂无已安装的应用",
+      appsEmptyHint: "还没有应用，先点「构建新应用」做一个",
       appsNoMatch: "没有匹配的应用",
     },
     shortcuts: {
@@ -4360,9 +4360,6 @@ export const zh = {
       optimizeApp: {
         label: "优化已有应用",
         desc: "选择一个已有的工作台应用，改进它的界面设计、交互体验或功能",
-        prompt: `优化当前应用的<输入你的需求>。如果没有对应的 benchmark，可以直接阅读现有工作台代码开始优化过程，完成后重新加载并验证效果。
-
-示例：优化当前应用的界面，让新手小白、不懂计算机的人也可以快速学会使用，必要时候添加引导教程。`,
         promptFor: (appTitle: string, agentId: string, workbenchId: string): string =>
           `优化当前应用「${appTitle}」（Agent \`${agentId}\` 下的工作台 \`${workbenchId}\`）的<输入你的需求>。如果没有对应的 benchmark，可以直接阅读现有工作台代码开始优化过程，完成后重新加载并验证效果。
 

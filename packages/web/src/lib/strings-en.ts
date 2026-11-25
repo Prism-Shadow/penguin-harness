@@ -4131,7 +4131,7 @@ export const en: Strings = {
       tagline: "Create your first self-evolving agent OS.",
       examplesTitle: "Examples and shortcuts",
       appsSearchPlaceholder: "Search apps…",
-      appsEmptyHint: "No apps installed yet",
+      appsEmptyHint: "No apps yet. Click Build New App to make one.",
       appsNoMatch: "No matching apps",
     },
     shortcuts: {
@@ -4155,7 +4155,7 @@ export const en: Strings = {
     exampleTasks: {
       buildApp: {
         label: "Build New App",
-        desc: "Build a workbench app on the current Agent and publish it to the App Center",
+        desc: "Build a workbench app on the current agent and publish it to the App Center",
         prompt: `Build a new workbench app for me on the current Agent and publish it to the App Center (set penguin.appCenter.show to true in package.json). Use a modern design with commercial-product quality, and verify that the app loads and runs cleanly when done:
 <Enter your idea>
 
@@ -4164,9 +4164,6 @@ Example: Build a PenguinHarness support app, similar to a ticket system, that an
       optimizeApp: {
         label: "Optimize App",
         desc: "Pick an existing workbench app to improve its design, usability or features",
-        prompt: `Optimize <enter your requirements> of the current app. If there is no benchmark, read the existing workbench code and start the optimization directly, then reload and verify the result.
-
-Example: Optimize the current app's interface so complete beginners with no technical background can learn to use it right away, adding a tutorial when helpful.`,
         promptFor: (appTitle: string, agentId: string, workbenchId: string): string =>
           `Optimize <enter your requirements> of the current app "${appTitle}" (workbench \`${workbenchId}\` on Agent \`${agentId}\`). If there is no benchmark, read the existing workbench code and start the optimization directly, then reload and verify the result.
 

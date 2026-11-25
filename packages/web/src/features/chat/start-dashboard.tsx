@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 
@@ -10,24 +10,22 @@ import {
   MenuItem,
   PenguinLogo,
   SearchInput,
+  TextAction,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
 import { VersionStamp } from "../../components/account/version-stamp";
 import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
-import { SYSTEM_AGENT_ID } from "../../lib/builtin-agents";
 import { S } from "../../lib/strings";
 
 import { versionBadgeFor } from "../../lib/update-flow";
 import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
 import { useVersionInfo } from "../../lib/use-version-info";
-import { WORKBENCH_UPDATED_EVENT, type WorkbenchUpdatedDetail } from "../../lib/workbench-tabs";
-import { useSafeMode } from "../../rescue/safe-mode";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { SkillIcon } from "../skills";
 import { EXAMPLE_TASKS, type ExampleTaskId } from "./example-tasks";
 import { PromptActionRow, type PromptAction } from "./prompt-action-row";
 import { SavedPrompts } from "./saved-prompts";
+import { useProjectApps, type ProjectApps } from "./use-project-apps";
 
 export interface StartDashboardProps {
   /** The composer and the pills under it: set between the brand and the examples. */
@@ -212,61 +210,20 @@ export function filterAppShortcuts(
   });
 }
 
-function useProjectApps(projectId: string | null, machineId: string | null): AppCenterShortcut[] {
-  const safe = useSafeMode();
-  const [apps, setApps] = useState<AppCenterShortcut[]>([]);
-  const asked = useRef(0);
-
-  const read = useCallback(async () => {
-    const mine = ++asked.current;
-    if (safe || !projectId) {
-      setApps([]);
-      return;
-    }
-    try {
-      const { shortcuts } = await api.getAppCenter(projectId, machineId);
-      if (asked.current !== mine) return;
-      setApps(shortcuts.filter((app) => app.agentId !== SYSTEM_AGENT_ID));
-    } catch {
-      if (asked.current === mine) setApps([]);
-    }
-  }, [safe, projectId, machineId]);
-
-  useEffect(() => {
-    void read();
-    return () => {
-      asked.current++;
-    };
-  }, [read]);
-
-  useEffect(() => {
-    const onUpdated = (e: Event) => {
-      const d = (e as CustomEvent<WorkbenchUpdatedDetail>).detail;
-      if (!d || (d.projectId === projectId && (d.machineId ?? null) === machineId)) {
-        void read();
-      }
-    };
-    window.addEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
-    return () => window.removeEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
-  }, [projectId, machineId, read]);
-
-  return apps;
-}
-
 function OptimizeAppPickList({
-  apps,
+  list: { apps, error, retry },
   locale,
   exampleText,
   onPick,
 }: {
-  apps: readonly AppCenterShortcut[];
+  list: ProjectApps;
   locale: string;
   exampleText: string | null;
   onPick: (app: AppCenterShortcut) => void;
 }) {
   const [query, setQuery] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
-  const filtered = filterAppShortcuts(apps, locale, query);
+  const filtered = apps === null ? [] : filterAppShortcuts(apps, locale, query);
   const searchLabel = S.chat.start.appsSearchPlaceholder;
   const promptOf = (app: AppCenterShortcut) =>
     S.chat.exampleTasks.optimizeApp.promptFor(
@@ -296,7 +253,15 @@ function OptimizeAppPickList({
         />
       </div>
       <div ref={listRef} className="max-h-56 overflow-y-auto">
-        {apps.length === 0 ? (
+        {apps === null ? (
+          error !== null ? (
+            <p className="px-3 py-1.5 text-xs text-fg-muted">
+              {error} <TextAction onClick={retry}>{S.common.retry}</TextAction>
+            </p>
+          ) : (
+            <p className="px-3 py-1.5 text-xs text-fg-subtle">{S.common.loading}</p>
+          )
+        ) : apps.length === 0 ? (
           <p className="px-3 py-1.5 text-xs text-fg-subtle">{S.chat.start.appsEmptyHint}</p>
         ) : filtered.length === 0 ? (
           <p className="px-3 py-1.5 text-xs text-fg-subtle">{S.chat.start.appsNoMatch}</p>
@@ -352,7 +317,7 @@ function ExamplesSection({
   machineId: string | null;
 }) {
   const { locale } = useLocale();
-  const apps = useProjectApps(projectId, machineId);
+  const appList = useProjectApps(projectId, machineId);
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const optimizePromptFor = (app: AppCenterShortcut) =>
     S.chat.exampleTasks.optimizeApp.promptFor(
@@ -362,11 +327,11 @@ function ExamplesSection({
     );
 
   const actions: PromptAction[] = EXAMPLE_TASKS.map((task) => {
-    const copy = S.chat.exampleTasks[task.id];
     if (task.id === "optimizeApp") {
+      const copy = S.chat.exampleTasks.optimizeApp;
       const current =
         exampleText !== null &&
-        (copy.prompt === exampleText || apps.some((app) => optimizePromptFor(app) === exampleText));
+        (appList.apps ?? []).some((app) => optimizePromptFor(app) === exampleText);
       return {
         id: task.id,
         label: copy.label,
@@ -388,7 +353,7 @@ function ExamplesSection({
             className="min-w-0 max-w-full"
           >
             <OptimizeAppPickList
-              apps={apps}
+              list={appList}
               locale={locale}
               exampleText={exampleText}
               onPick={(app) => {
@@ -400,6 +365,7 @@ function ExamplesSection({
         ),
       };
     }
+    const copy = S.chat.exampleTasks[task.id];
     const current = copy.prompt === exampleText;
     return {
       id: task.id,

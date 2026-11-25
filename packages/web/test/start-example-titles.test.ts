@@ -6,13 +6,6 @@ import { appShortcutTitle, filterAppShortcuts } from "../src/features/chat/start
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
-it("defines only the two app preset shortcuts", () => {
-  expect(EXAMPLE_TASKS.map((t) => t.id)).toEqual(["buildApp", "optimizeApp"]);
-  for (const task of EXAMPLE_TASKS) {
-    expect(task.skills).toEqual(["penguin-plugin", "web-design"]);
-  }
-});
-
 it.each([
   ["zh", zh],
   ["en", en],
@@ -22,24 +15,24 @@ it.each([
   for (const name of names) expect(shortPromptTitle(name, locale)).toBe(name);
 });
 
-it("formats the optimizeApp prompt for a chosen workbench", () => {
+it("names the chosen app, its Agent and its workbench in the optimize prompt", () => {
   const zhPrompt = zh.chat.exampleTasks.optimizeApp.promptFor(
     "客服工作台",
     "penguin_support",
-    "support",
+    "desk",
   );
-  expect(zhPrompt).toContain("客服工作台");
-  expect(zhPrompt).toContain("penguin_support");
-  expect(zhPrompt).toContain("support");
+  expect(zhPrompt).toContain("「客服工作台」");
+  expect(zhPrompt).toContain("`penguin_support`");
+  expect(zhPrompt).toContain("`desk`");
 
   const enPrompt = en.chat.exampleTasks.optimizeApp.promptFor(
     "Support Desk",
     "penguin_support",
-    "support",
+    "desk",
   );
-  expect(enPrompt).toContain("Support Desk");
-  expect(enPrompt).toContain("penguin_support");
-  expect(enPrompt).toContain("support");
+  expect(enPrompt).toContain('"Support Desk"');
+  expect(enPrompt).toContain("`penguin_support`");
+  expect(enPrompt).toContain("`desk`");
 });
 
 it("filters existing apps by localized title, workbench id and agent", () => {

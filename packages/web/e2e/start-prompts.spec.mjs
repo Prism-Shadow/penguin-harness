@@ -144,10 +144,8 @@ for (const lang of ["zh", "en"]) {
       const item = row.getByRole("button", { name: second, exact: true });
       await expect(item).toHaveAccessibleName(second);
       await item.click();
-      const dialog = page.getByRole("dialog");
-      if (await dialog.count()) {
-        await dialog.getByRole("button", { name: /Replace|替换/ }).click();
-      }
+      // A fill over what an earlier fill put there, untouched, goes straight in.
+      await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(page.locator('[data-slot="composer"] textarea').first()).toHaveValue(prompt);
       await row.evaluate((el) => {
         el.parentElement.style.maxWidth = "";
