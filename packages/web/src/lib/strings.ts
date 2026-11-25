@@ -22,41 +22,6 @@ import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";
 
 export const zh = {
   appName: "PenguinHarness",
-  firstWorkbench: {
-    askOwner: "请联系项目所有者连接模型服务商，然后重新读取。",
-    remoteModels: (machine: string) => `请在 ${machine} 上配置模型，然后重新读取。`,
-    newChecklist: "新建清单",
-    choose: "在消息输入框旁选择聊天模型。",
-    updateNeeded: "此智能体安装的是旧版引导。更新后即可使用对话回复生成清单。",
-    update: "更新此智能体的引导",
-    updateWarning:
-      "用库中的版本替换此智能体的引导代码？本地编辑过的引导代码将被覆盖。引导进度和清单数据会保留。",
-    updateUnavailable: "此服务端的插件库还没有新版引导。",
-    title: "我的第一个工作台",
-    help: "用自己的对话生成清单，安装后测试。",
-    resume: "开始或继续引导",
-    later: "收起",
-    refresh: "重新读取",
-    loading: "正在读取…",
-    generating: "正在生成清单…",
-    waitReply: "请等待此智能体的对话完成一条回复。",
-    models: "先连接模型服务商，再向智能体发送你的任务。",
-    chat: "把想做成清单的任务发给智能体。",
-    reply: "用于生成的回复",
-    feedback: "清单修改意见",
-    modelSettings: "打开模型库",
-    toChat: "前往对话",
-    useReply: "使用这段对话",
-    retryChat: "重试已保存的请求",
-    generate: "生成清单",
-    verified: "测试通过。清单已保存、完成并删除测试条目。",
-    install: "安装清单",
-    open: "打开清单",
-    test: "测试清单",
-    testItem: "引导测试条目",
-    download: "下载插件",
-    connect: "连接一个服务商，或在模型卡片中填写它的 API Key。",
-  },
 
   voice: {
     /** The Project settings page of the multimodal models. */

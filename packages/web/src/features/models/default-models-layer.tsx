@@ -20,9 +20,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { MODEL_PROVIDERS, PENGUIN_GO_PROVIDER_ID } from "@prismshadow/penguin-server/model-catalog";
 import { ModelSetupGuide } from "@prismshadow/penguin-ui";
-import { usePageAgent } from "../../lib/page-agent";
-import { guideClosed, guideLocation, guideStorage } from "../../lib/first-workbench-tour";
-import { startFirstWorkbench, useFirstWorkbench } from "../../lib/first-workbench-entry";
 import * as api from "../../api/endpoints";
 import { onDefaultModelsRequest, onModelsChanged } from "../../lib/default-models-request";
 import {
@@ -52,27 +49,11 @@ export function DefaultModelsLayer() {
   const { pathname } = useLocation();
   /** The chat pages, the only ones the onboarding opens anything over on its own. */
   const onChat = pathname === "/" || pathname === "/chat" || pathname.startsWith("/chat/");
-  const { user, sessionVia } = useAuth();
+  const { user } = useAuth();
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const owner = currentProject?.role === "owner";
   const [phase, setPhase] = useState<Phase>("idle");
-  const published = usePageAgent();
-  const human = sessionVia !== "token";
-  const activeAgent =
-    published?.live && published.agent.projectId === projectId ? published.agent : null;
-  const guideScope = onChat && human ? activeAgent : null;
-  const guide = useFirstWorkbench(guideScope);
-  const offered = useRef<string | null>(null);
-  const viewer = user?.userId;
-  useEffect(() => {
-    if (!guide || !viewer || !guideScope) return;
-    const { projectId, agentId, machineId } = guideScope;
-    const key = guideStorage(viewer, guideLocation(projectId, agentId, machineId).pathname);
-    if (offered.current === key || guideClosed(key)) return;
-    offered.current = key;
-    startFirstWorkbench(guideScope, true);
-  }, [guide, viewer, guideScope]);
   /** The dialog was opened by the onboarding: its sentence says why. */
   const [fromOnboarding, setFromOnboarding] = useState(false);
   /** What is open shows on any page, not only over the chat pages (see the header). */
@@ -91,12 +72,6 @@ export function DefaultModelsLayer() {
   const check = useCallback(
     async (first: boolean) => {
       if (import.meta.env.PUBLIC_PRODUCT_DEMO || !projectId || !owner) return;
-      if (
-        first
-          ? !onChat || !guideScope || guideScope.machineId !== null || guide !== false
-          : phaseRef.current !== "guide" && phaseRef.current !== "waiting"
-      )
-        return;
       let models;
       try {
         models = await api.getModels(projectId, null);
@@ -125,7 +100,7 @@ export function DefaultModelsLayer() {
         setPhase("dialog");
       }
     },
-    [projectId, owner, guide, guideScope, onChat],
+    [projectId, owner],
   );
 
   useEffect(() => {

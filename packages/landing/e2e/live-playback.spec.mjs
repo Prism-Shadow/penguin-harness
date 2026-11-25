@@ -137,14 +137,6 @@ for (const lang of ["en", "zh"]) {
       .getByRole("link", { name: lang === "en" ? /^App Center(?: ·|$)/ : /^应用中心(?: ·|$)/ })
       .click();
     await expect(frame.locator('li[data-app="default_agent/slides"]')).toBeVisible();
-    await expect(frame.locator('li[data-app="default_agent/first-workbench-guide"]')).toHaveCount(
-      0,
-    );
-    await expect(
-      frame.getByRole("region", {
-        name: lang === "en" ? "Your first workbench" : "我的第一个工作台",
-      }),
-    ).toHaveCount(0);
   });
 }
 

@@ -38,7 +38,6 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
-import { GUIDE_MODEL_SELECTED } from "../../../lib/first-workbench-entry";
 import { draftUploads } from "../../../lib/draft-uploads";
 import { handOverSession } from "../session-handover";
 import {
@@ -981,7 +980,6 @@ export function DraftView({
   // and its examples.
   const composer = (
     <>
-      <div data-guide-chat />
       {models && chatModels.length === 0 && (
         <Notice
           tone="attention"
@@ -1000,15 +998,7 @@ export function DraftView({
         onStop={async () => undefined}
         modelRef={modelRef}
         models={chatModels}
-        onChangeModel={(model) => {
-          setModelRef(model);
-          if (model)
-            window.dispatchEvent(
-              new CustomEvent(GUIDE_MODEL_SELECTED, {
-                detail: { projectId, agentId: resolvedAgentId, machineId: workspaceMachine, model },
-              }),
-            );
-        }}
+        onChangeModel={setModelRef}
         thinkingLevel={thinkingLevel}
         onChangeThinkingLevel={onChangeThinkingLevel}
         {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}

@@ -33,8 +33,6 @@ export interface ModelSetupGuideProps {
   /** The other way out: a sentence, and the button that leads to where a key is typed. */
   keyText: string;
   keyAction: { label: string; onClick: () => void };
-  /** Opens the installed first-workbench guide, when the Project has it. */
-  guideAction?: { label: string; onClick: () => void };
   laterLabel: string;
   onClose: () => void;
   closeLabel?: string;
@@ -47,7 +45,6 @@ export function ModelSetupGuide({
   providers,
   keyText,
   keyAction,
-  guideAction,
   laterLabel,
   onClose,
   closeLabel,
@@ -60,16 +57,9 @@ export function ModelSetupGuide({
       widthClass="sm:max-w-lg"
       {...(closeLabel !== undefined ? { closeLabel } : {})}
       footer={
-        <>
-          <Button size="sm" onClick={onClose}>
-            {laterLabel}
-          </Button>
-          {guideAction && (
-            <Button size="sm" onClick={guideAction.onClick}>
-              {guideAction.label}
-            </Button>
-          )}
-        </>
+        <Button size="sm" onClick={onClose}>
+          {laterLabel}
+        </Button>
       }
     >
       <div className="space-y-4">

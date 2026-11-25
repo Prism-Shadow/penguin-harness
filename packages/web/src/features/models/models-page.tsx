@@ -1867,7 +1867,7 @@ export function ModelsPage() {
               />
             </div>
             {/* Every default at once: chat, the multimodal operations and the tools. */}
-            <Button size="sm" data-guide-anchor="model-settings" onClick={requestDefaultModels}>
+            <Button size="sm" onClick={requestDefaultModels}>
               {S.defaultModels.title}
             </Button>
             {/* "Add new models" appears only while new presets are actually waiting, and the

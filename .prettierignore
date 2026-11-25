@@ -48,6 +48,3 @@ playwright-report/
 
 # Browser distribution from pptxgenjs, kept byte-for-byte for the offline workbench export.
 plugins/use-bento-slides/workbenches/slides/ui/vendor/pptxgen-4.0.1.bundle.js
-
-# Generated ZIP writer and checklist sources, bundled by the guide plugin
-plugins/first-workbench-guide/workbenches/first-workbench-guide/archives.mjs
