@@ -482,9 +482,14 @@ function FloatingLauncher({
 
   const label = agentsPending ? `${S.dock.launcher} · ${S.dock.launcherPending}` : S.dock.launcher;
   useLayoutEffect(() => {
-    if (needsList) {
-      fanRef.current?.querySelector<HTMLElement>(":focus")?.scrollIntoView({ block: "nearest" });
-    }
+    const list = fanRef.current;
+    const focused = list?.querySelector<HTMLElement>(":focus");
+    if (!needsList || !list || !focused) return;
+    focused.scrollIntoView({ block: "nearest" });
+    const box = list.getBoundingClientRect();
+    const item = focused.getBoundingClientRect();
+    if (item.bottom > box.bottom - 4) list.scrollTop += Math.ceil(item.bottom - (box.bottom - 4));
+    else if (item.top < box.top + 4) list.scrollTop -= Math.ceil(box.top + 4 - item.top);
   }, [needsList, fan?.listHeight, fan?.bodyWidth]);
 
   return (

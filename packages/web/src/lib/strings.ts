@@ -5742,11 +5742,15 @@ Benchmark：
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
-    page: (n: number) => `第 ${n} 页`,
+    page: (n: number) => `第 ${n} 轮`,
     previousTurn: "上一轮",
     nextTurn: "下一轮",
     latestTurn: "最新一轮",
     topologyLabel: "调用关系",
+    zoom: "缩放",
+    zoomIn: "放大",
+    zoomOut: "缩小",
+    zoomFit: "适应窗口",
     mainSessionNote: "主会话请在对话区查看",
     empty: "这个会话还没有子智能体",
     nodeRunning: "运行中",

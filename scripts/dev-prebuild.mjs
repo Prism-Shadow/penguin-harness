@@ -41,8 +41,8 @@
  *   re-invocation (from packages/server's dev script) is a no-op. The window is
  *   deliberately tiny so a human edit-then-restart cycle always rebuilds.
  *
- * Usage: `node scripts/dev-prebuild.mjs` (install + build a2ui/core/hmr/theme-pack/
- * server/cli) or `node scripts/dev-prebuild.mjs --install-only` (dev:docs / dev:landing — no workspace
+ * Usage: `node scripts/dev-prebuild.mjs` (install + build the server/cli workspace dependency
+ * closure and plugins) or `node scripts/dev-prebuild.mjs --install-only` (dev:docs / dev:landing — no workspace
  * deps to build, but installs must still be current).
  */
 import { createHash } from "node:crypto";
@@ -192,64 +192,75 @@ function ensureInstalled() {
   return true;
 }
 
-let announced = false;
-while (!tryAcquire()) {
-  if (!announced) console.log("[dev-prebuild] another dev prestep is running; waiting...");
-  announced = true;
-  await sleep(500);
-}
-for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
-  process.on(sig, () => {
-    release();
-    process.exit(1);
-  });
-}
+/**
+ * The pnpm filter arguments that select the server and CLI workspace dependency closure plus the
+ * content plugin packages for `dev-prebuild`, excluding `@prismshadow/penguin-ui` (read from
+ * source in the workspace; only the production web bundle copies its build output) and the native
+ * sandbox backends (staged by the hot push and the desktop build).
+ */
+export const DEV_PREBUILD_FILTERS = [
+  "--filter",
+  "@prismshadow/penguin-server...",
+  "--filter",
+  "@prismshadow/penguin-cli...",
+  "--filter",
+  "!@prismshadow/penguin-ui",
+  "--filter",
+  "@penguinharness/*",
+  "--filter",
+  "!@penguinharness/sandbox-*",
+];
 
-let exitCode = 1;
-try {
-  if (!ensureInstalled()) {
-    exitCode = 1;
-  } else if (INSTALL_ONLY) {
-    exitCode = 0;
-  } else {
-    let stampAge = Infinity;
-    try {
-      stampAge = Date.now() - statSync(BUILD_STAMP).mtimeMs;
-    } catch {
-      // no stamp yet — build
-    }
-    if (stampAge < SKIP_WINDOW_MS) {
-      console.log("[dev-prebuild] deps were just built by a concurrent invocation; skipping.");
-      // The concurrent builder normally refreshed the cache too, but verify against the
-      // current output anyway — the check is two directory walks and a hash, and it keeps
-      // the invariant unconditional: after any successful prestep, the Vite dep cache
-      // matches the injected deps actually on disk.
-      refreshViteCache();
+if (
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  let announced = false;
+  while (!tryAcquire()) {
+    if (!announced) console.log("[dev-prebuild] another dev prestep is running; waiting...");
+    announced = true;
+    await sleep(500);
+  }
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process.on(sig, () => {
+      release();
+      process.exit(1);
+    });
+  }
+
+  let exitCode = 1;
+  try {
+    if (!ensureInstalled()) {
+      exitCode = 1;
+    } else if (INSTALL_ONLY) {
       exitCode = 0;
     } else {
-      console.log(
-        "[dev-prebuild] building core, a2ui, the server modules the CLI imports, the CLI, and the plugins' tables...",
-      );
-      // One pnpm invocation, so they run in dependency order: the CLI bundle inlines core,
-      // and the server build inlines hmr and theme-pack, so each has to be rebuilt before its
-      // consumer. theme-pack is TypeScript source the server reads through its injected copy;
-      // the build is what refreshes that copy, so a dev server sees an edit to the validator.
-      // Through each package's `build` script, not tsup directly: that is the script
-      // syncInjectedDepsAfterScripts names, so the CLI's injected copy of the server is
-      // refreshed with the output.
-      const res = spawnSync(
-        "pnpm",
-        [
-          ...["core", "hmr", "theme-pack", "server", "cli"].flatMap((pkg) => [
-            "--filter",
-            `@prismshadow/penguin-${pkg}`,
-          ]),
-          "--filter",
-          "@prismshadow/a2ui",
-          ...["--filter", "@penguinharness/*", "--filter", "!@penguinharness/sandbox-*"],
-          "build",
-        ],
-        {
+      let stampAge = Infinity;
+      try {
+        stampAge = Date.now() - statSync(BUILD_STAMP).mtimeMs;
+      } catch {
+        // no stamp yet — build
+      }
+      if (stampAge < SKIP_WINDOW_MS) {
+        console.log("[dev-prebuild] deps were just built by a concurrent invocation; skipping.");
+        // The concurrent builder normally refreshed the cache too, but verify against the
+        // current output anyway — the check is two directory walks and a hash, and it keeps
+        // the invariant unconditional: after any successful prestep, the Vite dep cache
+        // matches the injected deps actually on disk.
+        refreshViteCache();
+        exitCode = 0;
+      } else {
+        console.log(
+          "[dev-prebuild] building the server and CLI workspace dependencies, the CLI, and the plugins' tables...",
+        );
+        // One pnpm invocation over `@prismshadow/penguin-server...` and `@prismshadow/penguin-cli...`,
+        // so every workspace dependency they import (core, amsp, skills, library/*, a2ui, hmr,
+        // theme-pack) builds in dependency order before its consumer. theme-pack is TypeScript
+        // source the server reads through its injected copy; the build is what refreshes that copy,
+        // so a dev server sees an edit to the validator. Through each package's `build` script, not
+        // tsup directly: that is the script syncInjectedDepsAfterScripts names, so the CLI's
+        // injected copy of the server is refreshed with the output.
+        const res = spawnSync("pnpm", [...DEV_PREBUILD_FILTERS, "build"], {
           cwd: ROOT,
           stdio: "inherit",
           // shell on Windows: pnpm is a .cmd shim there (see ensureInstalled).
@@ -257,26 +268,26 @@ try {
           // The server's declarations take most of its build and nothing at runtime reads
           // them; the other packages' configs ignore this.
           env: { ...process.env, PENGUIN_BUILD_JS_ONLY: "1" },
-        },
-      );
-      // The preinstalled plugins' server modules (the agent browser's among them) load from the
-      // builtin prefix beside the server's entry, as an installed server's do: stage it from the
-      // builds just made (scripts/stage-dev-plugins.mjs).
-      const staged =
-        res.status === 0
-          ? spawnSync(process.execPath, [path.join(ROOT, "scripts", "stage-dev-plugins.mjs")], {
-              cwd: ROOT,
-              stdio: "inherit",
-            })
-          : res;
-      if (staged.status === 0) {
-        writeFileSync(BUILD_STAMP, String(Date.now()));
-        refreshViteCache();
+        });
+        // The preinstalled plugins' server modules (the agent browser's among them) load from the
+        // builtin prefix beside the server's entry, as an installed server's do: stage it from the
+        // builds just made (scripts/stage-dev-plugins.mjs).
+        const staged =
+          res.status === 0
+            ? spawnSync(process.execPath, [path.join(ROOT, "scripts", "stage-dev-plugins.mjs")], {
+                cwd: ROOT,
+                stdio: "inherit",
+              })
+            : res;
+        if (staged.status === 0) {
+          writeFileSync(BUILD_STAMP, String(Date.now()));
+          refreshViteCache();
+        }
+        exitCode = staged.status ?? 1;
       }
-      exitCode = staged.status ?? 1;
     }
+  } finally {
+    release();
   }
-} finally {
-  release();
+  process.exit(exitCode);
 }
-process.exit(exitCode);

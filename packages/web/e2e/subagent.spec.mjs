@@ -482,8 +482,8 @@ test("previous and next turns retain the original child through another send and
   const previous = dock.getByRole("button", { name: "上一轮", exact: true });
   const next = dock.getByRole("button", { name: "下一轮", exact: true });
   await expect(previous).toBeEnabled();
-  const readout = dock.locator('[aria-live="polite"]').filter({ hasText: /^第 \d+ 页$/ });
-  await expect(readout).toHaveText("第 2 页");
+  const readout = dock.locator('[aria-live="polite"]').filter({ hasText: /^第 \d+ 轮$/ });
+  await expect(readout).toHaveText("第 2 轮");
   await expect(next).toBeDisabled();
   const title = await dock.getByText("调用关系", { exact: true }).boundingBox();
   const pageNumber = await readout.boundingBox();
@@ -495,7 +495,7 @@ test("previous and next turns retain the original child through another send and
   expect(secondId).not.toBe(firstId);
   await previous.focus();
   await page.keyboard.press("Enter");
-  await expect(readout).toHaveText("第 1 页");
+  await expect(readout).toHaveText("第 1 轮");
   await expect(previous).toBeDisabled();
   await expect(identity).toHaveAttribute("data-tooltip", firstId);
   await graph.getByRole("button").last().focus();
