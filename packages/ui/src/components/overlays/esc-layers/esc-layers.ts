@@ -19,14 +19,9 @@ import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
  */
 const escLayers: symbol[] = [];
 
-// Layer ids are registry symbols with a per-copy salt and counter: unique per layer (a pop is
-// by identity), and unique across copies of this module that a twice-linked package would load.
-let nextLayerId = 0;
-const salt = Math.random().toString(36).slice(2);
-
 /** Register an Escape-consuming layer (called when an overlay opens); pair with popEscLayer. */
 export function pushEscLayer(): symbol {
-  const id = Symbol.for(`penguin-harness.ui.esc-layer:${salt}:${++nextLayerId}`);
+  const id = Symbol("esc-layer");
   escLayers.push(id);
   return id;
 }

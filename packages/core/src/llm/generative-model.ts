@@ -87,11 +87,6 @@ import {
   resolveContextWindow,
 } from "./context-limits.js";
 
-// The per-call "stopped" sentinel's registry-key salt and counter: unique per call, and unique
-// across copies of this module that a twice-linked package would load.
-let stoppedCalls = 0;
-const modelSalt = Math.random().toString(36).slice(2);
-
 // ---------------------------------------------------------------------------
 // Pure conversion function: AmspRecord[] → a single UniMessage (unit-testable, no network)
 // ---------------------------------------------------------------------------
@@ -966,11 +961,7 @@ export class GenerativeModel implements LLMInterface {
      * The pre-loop `userSignal?.aborted` check below covers the *other* half of this (aborting
      * while suspended at a `yield`); it cannot help here, since the loop never gets back to it.
      */
-    // A per-call sentinel, unique across calls and across copies of this module a twice-linked
-    // package would load: a registry key salted per module copy, counted per call.
-    const STOPPED = Symbol.for(
-      `penguin-harness.core.generative-model.stopped:${modelSalt}:${++stoppedCalls}`,
-    );
+    const STOPPED = Symbol("stopped");
     const stopped: Promise<typeof STOPPED> = new Promise((resolve) => {
       if (ac.signal.aborted) {
         resolve(STOPPED);

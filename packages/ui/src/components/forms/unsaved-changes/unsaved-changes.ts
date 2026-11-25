@@ -43,17 +43,9 @@ export const unsavedStore = createStore<UnsavedState>(() => ({ entries: [], aski
 const inScope = (entry: { scope: string | null }, scope: string | undefined): boolean =>
   scope === undefined || entry.scope === scope;
 
-// Entry handles are registry symbols with a per-copy salt and counter: unique per entry (a
-// clear is by identity), and unique across copies of this module that a twice-linked package
-// would load.
-let nextEntryId = 0;
-const salt = Math.random().toString(36).slice(2);
-const entryId = (): symbol =>
-  Symbol.for(`penguin-harness.ui.unsaved-entry:${salt}:${++nextEntryId}`);
-
 /** Registers one dirty form; the handle is what {@link clearUnsaved} takes. */
 export function markUnsaved(scope: string | null, discard: (() => void) | null): symbol {
-  const id = entryId();
+  const id = Symbol("unsaved");
   unsavedStore.setState((s) => ({ entries: [...s.entries, { id, scope, discard }] }));
   return id;
 }
@@ -98,7 +90,7 @@ let saving: readonly SavingEntry[] = [];
 
 /** Registers one save in flight under `scope`; the handle is what {@link clearSaving} takes. */
 export function markSaving(scope: string): symbol {
-  const id = entryId();
+  const id = Symbol("saving");
   saving = [...saving, { id, scope }];
   return id;
 }
