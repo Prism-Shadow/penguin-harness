@@ -64,6 +64,7 @@ import type {
 import type { AppEnv } from "../auth/middleware.js";
 import type { Paths } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
+import { endpointOf } from "../http/app.js";
 import { iconResponse } from "../http/icon-response.js";
 import { mediaType } from "@prismshadow/penguin-library-http/media-type";
 import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
@@ -803,23 +804,164 @@ export function appCenterRoutes(deps: AppCenterRouteDeps) {
 
 @Component({
   contributes: {
+    "AgentAuthPermissionProvider.roles": [
+      { id: "role.workbench.read", parents: ["readonly"] },
+      { id: "role.workbench.maintain", children: ["workbench.read"], parents: ["general@self"] },
+      {
+        id: "role.workbench.all",
+        children: ["workbench.maintain"],
+        parents: ["system-maintainer"],
+      },
+    ],
     "HttpModule.routes": [
       {
-        id: "WorkbenchManifestModule.routes",
+        id: "workbenches.manifest",
         prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
         auth: "none",
         order: 19,
       },
       {
-        id: "WorkbenchesModule.routes",
+        id: "workbench.list",
+        method: "GET",
         prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
         auth: "user",
+        role: "workbench.read",
         order: 20,
       },
       {
-        id: "WorkbenchesModule.appCenterRoutes",
+        id: "workbench.setAllEnabled",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/enabled",
+        auth: "user",
+        role: "workbench.maintain",
+        order: 20,
+      },
+      {
+        id: "workbench.setEnabled",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id/enabled",
+        auth: "user",
+        role: "workbench.maintain",
+        order: 20,
+      },
+      {
+        id: "workbench.importArchive",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/archive",
+        auth: "user",
+        role: "workbench.maintain",
+        order: 20,
+      },
+      {
+        id: "workbench.exportArchive",
+        method: "GET",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id/archive",
+        auth: "user",
+        role: "workbench.read",
+        order: 20,
+      },
+      {
+        id: "workbench.reload",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id/reload",
+        auth: "user",
+        role: "workbench.maintain",
+        order: 20,
+      },
+      {
+        id: "workbench.getHistory",
+        method: "GET",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id/history",
+        auth: "user",
+        role: "workbench.read",
+        order: 20,
+      },
+      {
+        id: "workbench.rollback",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id/rollback",
+        auth: "user",
+        role: "workbench.maintain",
+        order: 20,
+      },
+      {
+        id: "workbench.updateSidebar",
+        method: "PATCH",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id/sidebar",
+        auth: "user",
+        role: "workbench.maintain",
+        order: 20,
+      },
+      {
+        id: "workbench.updateAppCenter",
+        method: "PATCH",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id/app-center",
+        auth: "user",
+        role: "workbench.maintain",
+        order: 20,
+      },
+      {
+        id: "workbench.getAppCenterIcon",
+        method: "GET",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id/app-center/icon",
+        auth: "user",
+        role: "workbench.read",
+        order: 20,
+      },
+      {
+        id: "workbench.delete",
+        method: "DELETE",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id",
+        auth: "user",
+        role: "workbench.all",
+        order: 20,
+      },
+      {
+        id: "workbench.serveUi",
+        method: "GET",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id/ui/*",
+        auth: "user",
+        role: "workbench.read",
+        order: 20,
+      },
+      {
+        id: "workbench.serveSdkUi",
+        method: "GET",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id/sdk/ui/*",
+        auth: "user",
+        role: "workbench.read",
+        order: 20,
+      },
+      {
+        id: "workbench.serveSdkFile",
+        method: "GET",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id/sdk/:file",
+        auth: "user",
+        role: "workbench.read",
+        order: 20,
+      },
+      {
+        id: "workbench.callApi",
+        method: "ALL",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches/:id/api/*",
+        auth: "user",
+        role: "workbench.maintain",
+        order: 20,
+      },
+      {
+        id: "workbench.appCenter.list",
+        method: "GET",
         prefix: "/api/projects/:projectId/app-center",
         auth: "user",
+        role: "workbench.read",
+        order: 20,
+      },
+      {
+        id: "workbench.appCenter.updateLayout",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/app-center/layout",
+        auth: "user",
+        role: "workbench.maintain",
         order: 20,
       },
     ],
@@ -833,23 +975,57 @@ export class WorkbenchRoutes {
   @Use() private readonly prefs!: UiPrefsStore;
   @Use() private readonly projects!: Projects;
   @Use() private readonly machines!: Machines;
-  @Bind("WorkbenchesModule.routes") routes!: Hono<AppEnv>;
-  @Bind("WorkbenchesModule.appCenterRoutes") appCenterRoutes!: Hono<AppEnv>;
   /** The manifest on its own auth-less gate, ahead of the session gate — see manifestRoutes. */
-  @Bind("WorkbenchManifestModule.routes") manifestRoutes!: Hono<AppEnv>;
+  @Bind("workbenches.manifest") manifestRoutes!: Hono<AppEnv>;
+  @Bind("workbench.list") listRoute!: Hono<AppEnv>;
+  @Bind("workbench.setAllEnabled") setAllEnabledRoute!: Hono<AppEnv>;
+  @Bind("workbench.setEnabled") setEnabledRoute!: Hono<AppEnv>;
+  @Bind("workbench.importArchive") importArchiveRoute!: Hono<AppEnv>;
+  @Bind("workbench.exportArchive") exportArchiveRoute!: Hono<AppEnv>;
+  @Bind("workbench.reload") reloadRoute!: Hono<AppEnv>;
+  @Bind("workbench.getHistory") getHistoryRoute!: Hono<AppEnv>;
+  @Bind("workbench.rollback") rollbackRoute!: Hono<AppEnv>;
+  @Bind("workbench.updateSidebar") updateSidebarRoute!: Hono<AppEnv>;
+  @Bind("workbench.updateAppCenter") updateAppCenterRoute!: Hono<AppEnv>;
+  @Bind("workbench.getAppCenterIcon") getAppCenterIconRoute!: Hono<AppEnv>;
+  @Bind("workbench.delete") deleteRoute!: Hono<AppEnv>;
+  @Bind("workbench.serveUi") serveUiRoute!: Hono<AppEnv>;
+  @Bind("workbench.serveSdkUi") serveSdkUiRoute!: Hono<AppEnv>;
+  @Bind("workbench.serveSdkFile") serveSdkFileRoute!: Hono<AppEnv>;
+  @Bind("workbench.callApi") callApiRoute!: Hono<AppEnv>;
+  @Bind("workbench.appCenter.list") appCenterListRoute!: Hono<AppEnv>;
+  @Bind("workbench.appCenter.updateLayout") appCenterUpdateLayoutRoute!: Hono<AppEnv>;
   setup() {
-    this.routes = workbenchRoutes({
+    const group = workbenchRoutes({
       access: this.access,
       workbenches: this.workbenches,
       root: this.paths.root,
       agentConfig: this.agentConfig,
     });
-    this.appCenterRoutes = appCenterRoutes({
+    this.listRoute = endpointOf(group, "GET", "/");
+    this.setAllEnabledRoute = endpointOf(group, "PUT", "/enabled");
+    this.setEnabledRoute = endpointOf(group, "PUT", "/:id/enabled");
+    this.importArchiveRoute = endpointOf(group, "POST", "/archive");
+    this.exportArchiveRoute = endpointOf(group, "GET", "/:id/archive");
+    this.reloadRoute = endpointOf(group, "POST", "/:id/reload");
+    this.getHistoryRoute = endpointOf(group, "GET", "/:id/history");
+    this.rollbackRoute = endpointOf(group, "POST", "/:id/rollback");
+    this.updateSidebarRoute = endpointOf(group, "PATCH", "/:id/sidebar");
+    this.updateAppCenterRoute = endpointOf(group, "PATCH", "/:id/app-center");
+    this.getAppCenterIconRoute = endpointOf(group, "GET", "/:id/app-center/icon");
+    this.deleteRoute = endpointOf(group, "DELETE", "/:id");
+    this.serveUiRoute = endpointOf(group, "GET", "/:id/ui/*");
+    this.serveSdkUiRoute = endpointOf(group, "GET", "/:id/sdk/ui/*");
+    this.serveSdkFileRoute = endpointOf(group, "GET", "/:id/sdk/:file");
+    this.callApiRoute = endpointOf(group, "ALL", "/:id/api/*");
+    const acGroup = appCenterRoutes({
       access: this.access,
       workbenches: this.workbenches,
       prefs: this.prefs,
       projects: this.projects,
     });
+    this.appCenterListRoute = endpointOf(acGroup, "GET", "/");
+    this.appCenterUpdateLayoutRoute = endpointOf(acGroup, "PUT", "/layout");
     // The manifest answers without a session (see manifestRoutes): it reads only the
     // workbench's own registration — its name, version, tabs and icon — nothing per-user.
     // A remote machine's manifest rides the same forward the machine proxy uses: this

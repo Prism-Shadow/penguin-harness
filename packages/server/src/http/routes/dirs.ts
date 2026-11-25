@@ -238,20 +238,42 @@ export function normalizeRequestedDir(requested: string, platform: string): stri
   return platform === "win32" && /^[A-Za-z]:$/.test(requested) ? `${requested}\\` : requested;
 }
 
+import { endpointOf } from "../app.js";
+
 /** The Project-scoped directory routes; the repos and the access check are components of their own. */
 @Component({
   contributes: {
     "HttpModule.routes": [
       {
-        id: "projects.dirs",
+        id: "project.dir.list",
+        method: "GET",
         prefix: "/api/projects/:projectId/dirs",
         auth: "user",
+        role: "project.read",
         order: 150,
       },
       {
-        id: "projects.dir-skills",
+        id: "project.dir.checkAccess",
+        method: "POST",
+        prefix: "/api/projects/:projectId/dirs/access",
+        auth: "user",
+        role: "project.read",
+        order: 150,
+      },
+      {
+        id: "skill.listDir",
+        method: "GET",
         prefix: "/api/projects/:projectId/dir-skills",
         auth: "user",
+        role: "skill.read",
+        order: 160,
+      },
+      {
+        id: "skill.getDirIcon",
+        method: "GET",
+        prefix: "/api/projects/:projectId/dir-skills/icon",
+        auth: "user",
+        role: "skill.read",
         order: 160,
       },
     ],
@@ -260,10 +282,16 @@ export function normalizeRequestedDir(requested: string, platform: string): stri
 export class ProjectsRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly desktop!: Desktop;
-  @Bind("projects.dirs") dirsRoutes!: Hono<AppEnv>;
-  @Bind("projects.dir-skills") dirSkillsRoutes!: Hono<AppEnv>;
+  @Bind("project.dir.list") dirListRoute!: Hono<AppEnv>;
+  @Bind("project.dir.checkAccess") dirCheckAccessRoute!: Hono<AppEnv>;
+  @Bind("skill.listDir") listDirSkillsRoute!: Hono<AppEnv>;
+  @Bind("skill.getDirIcon") getDirSkillIconRoute!: Hono<AppEnv>;
   setup() {
-    this.dirsRoutes = dirsRoutes({ access: this.access, desktop: this.desktop.current() });
-    this.dirSkillsRoutes = directorySkillsRoutes({ access: this.access });
+    const dirsGroup = dirsRoutes({ access: this.access, desktop: this.desktop.current() });
+    this.dirListRoute = endpointOf(dirsGroup, "GET", "/");
+    this.dirCheckAccessRoute = endpointOf(dirsGroup, "POST", "/access");
+    const dirSkillsGroup = directorySkillsRoutes({ access: this.access });
+    this.listDirSkillsRoute = endpointOf(dirSkillsGroup, "GET", "/");
+    this.getDirSkillIconRoute = endpointOf(dirSkillsGroup, "GET", "/icon");
   }
 }

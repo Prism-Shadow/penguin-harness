@@ -13,6 +13,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { LanguageIndexResponse } from "../../api/types.js";
 import type { Languages } from "../../languages/service.js";
+import { endpointOf } from "../app.js";
 
 export function languageRoutes(languages: () => Languages): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -41,9 +42,19 @@ export function languageRoutes(languages: () => Languages): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "LanguageRoutes.routes",
+        id: "languages.list",
+        method: "GET",
         prefix: "/api/languages",
         auth: "user",
+        role: "system.read",
+        order: 70,
+      },
+      {
+        id: "languages.getGrammar",
+        method: "GET",
+        prefix: "/api/languages/:id/grammar",
+        auth: "user",
+        role: "system.read",
         order: 70,
       },
     ],
@@ -51,8 +62,11 @@ export function languageRoutes(languages: () => Languages): Hono<AppEnv> {
 })
 export class LanguageRoutes {
   @Use() private readonly languages!: Languages;
-  @Bind("LanguageRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("languages.list") listRoute!: Hono<AppEnv>;
+  @Bind("languages.getGrammar") getGrammarRoute!: Hono<AppEnv>;
   setup() {
-    this.routes = languageRoutes(() => this.languages);
+    const group = languageRoutes(() => this.languages);
+    this.listRoute = endpointOf(group, "GET", "/");
+    this.getGrammarRoute = endpointOf(group, "GET", "/:id/grammar");
   }
 }

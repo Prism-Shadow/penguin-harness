@@ -44,6 +44,10 @@ import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-sessi
 import type { Access } from "@prismshadow/penguin-library-project";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { UserDraftsStore } from "@prismshadow/penguin-library-auth";
+import type { AgentAuth } from "../../mechanisms/agent-auth.js";
+import { UpgradeRequestDecisionError } from "../../auth/agent-auth-service.js";
+import type { AgentAuthRole } from "../../auth/agent-roles.js";
+import { DEFAULT_AGENT_AUTH_ROLE } from "../../auth/agent-roles.js";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import { deleteAgentEverywhere } from "../../services/agent-deletion.js";
 import { migrateEmployeeAuthors } from "../../services/agent-author-migration.js";
@@ -64,6 +68,8 @@ export interface AgentsRouteDeps {
   workbenches: Pick<Workbenches, "releaseAgent">;
   /** Users' unsent drafts, which go with the Agent's Sessions. */
   drafts: Pick<UserDraftsStore, "deleteByAgent">;
+  /** The Agent auth service: initializes, queries, updates, and revokes the Agent's role grant. */
+  agentAuth: AgentAuth;
 }
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */
@@ -154,6 +160,7 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       // The creator brings the plugins' server modules along (PRFC-0031).
       actor: { userId: c.var.user.userId, isAdmin: c.var.user.isAdmin },
     });
+    deps.agentAuth.issueSession(projectId, agentId, new Date());
     const agent: AgentSummary = {
       ...item,
       activeSessionCount: 0,
@@ -170,8 +177,206 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     // Deletion is a Project-level management operation: owner only.
     deps.access.requireProjectOwner(c.var.user.userId, projectId);
-    const deletion = await deleteAgentEverywhere(deps, projectId, agentId);
+    const deletion = await deleteAgentEverywhere(
+      { ...deps, agentAuth: deps.agentAuth },
+      projectId,
+      agentId,
+    );
     return c.json({ deletion } satisfies AgentDeleteResponse, 202);
+  });
+
+  app.get("/:agentId/auth", (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const current = deps.agentAuth.generationOf(projectId, agentId);
+    const grant = deps.agentAuth.currentGrant(projectId, agentId);
+    const refinedRoutes = grant?.routeRefiners ?? {};
+    return c.json({
+      projectId,
+      agentId,
+      role: grant?.role ?? current?.role ?? DEFAULT_AGENT_AUTH_ROLE,
+      configuredRole: current?.role ?? DEFAULT_AGENT_AUTH_ROLE,
+      generation: current?.generation ?? 0,
+      apiIds: current?.apiIds ?? [],
+      inheritedRoles: [...(grant?.inheritedRoles ?? [])],
+      effectiveApiCount: grant?.apiIds.size ?? 0,
+      allEndpoints: grant?.allEndpoints ?? false,
+      agentApi: grant?.agentApi ?? false,
+      unconditionalRoutes: [...(grant?.unconditionalRoutes ?? [])],
+      refinedRoutes,
+      temporaryGrants: deps.agentAuth.temporaryGrantsOf?.(projectId, agentId) ?? {
+        onceGrants: [],
+        agentSessionGrants: [],
+      },
+      upgradeRequests: deps.agentAuth.listUpgradeRequests?.(projectId, agentId) ?? [],
+      mismatches: grant?.mismatches ?? { unknownRoles: [], unknownRoutes: [] },
+      availableAgentRoles: deps.agentAuth.listAgentRoles?.() ?? [],
+      roleTree: deps.agentAuth.roleTreeSnapshot?.() ?? {},
+    });
+  });
+
+  app.put("/:agentId/auth", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    const body = await readJson(c);
+    let definedRoleId: string | undefined;
+    if (body.defineRole !== undefined) {
+      if (
+        body.defineRole === null ||
+        typeof body.defineRole !== "object" ||
+        Array.isArray(body.defineRole)
+      ) {
+        throw badRequest("defineRole must be an object.");
+      }
+      const def = body.defineRole as Record<string, unknown>;
+      const defId = requireString(def, "id", { minLen: 1, maxLen: 200, label: "defineRole.id" });
+      const defInherits = optionalStringArray(def, "inherits");
+      const defWithAsk = optionalStringArray(def, "withAsk");
+      const defRoutes = optionalStringArray(def, "routes");
+      const defFlags = optionalStringArray(def, "flags") as
+        ReadonlyArray<"allEndpoints" | "agentApi"> | undefined;
+      const defDesc = optionalString(def, "description", {
+        maxLen: 500,
+        label: "defineRole.description",
+      });
+      const created = deps.agentAuth.defineAgentRole?.({
+        id: defId,
+        ...(defInherits !== undefined ? { inherits: defInherits } : {}),
+        ...(defWithAsk !== undefined ? { withAsk: defWithAsk } : {}),
+        ...(defRoutes !== undefined ? { routes: defRoutes } : {}),
+        ...(defFlags !== undefined ? { flags: defFlags } : {}),
+        ...(defDesc !== undefined ? { description: defDesc } : {}),
+      });
+      definedRoleId = created?.id ?? defId;
+    }
+    const current = deps.agentAuth.generationOf(projectId, agentId);
+    const role =
+      optionalString(body, "role", { minLen: 1, maxLen: 200, label: "role" }) ??
+      definedRoleId ??
+      current?.role ??
+      DEFAULT_AGENT_AUTH_ROLE;
+    const apiIds = optionalStringArray(body, "apiIds") ?? [];
+    const inherits = optionalStringArray(body, "inherits");
+    const withAsk = optionalStringArray(body, "withAsk");
+    const updated = deps.agentAuth.updateGrant(
+      projectId,
+      agentId,
+      role as AgentAuthRole,
+      apiIds,
+      new Date(),
+      {
+        ...(inherits !== undefined ? { inherits } : {}),
+        ...(withAsk !== undefined ? { withAsk } : {}),
+      },
+    );
+    const grant = deps.agentAuth.currentGrant(projectId, agentId);
+    const refinedRoutes = grant?.routeRefiners ?? {};
+    return c.json({
+      projectId,
+      agentId,
+      role: grant?.role ?? updated.role,
+      configuredRole: updated.role,
+      generation: updated.generation,
+      apiIds: updated.apiIds,
+      inheritedRoles: [...(grant?.inheritedRoles ?? [])],
+      effectiveApiCount: grant?.apiIds.size ?? 0,
+      allEndpoints: grant?.allEndpoints ?? false,
+      agentApi: grant?.agentApi ?? false,
+      unconditionalRoutes: [...(grant?.unconditionalRoutes ?? [])],
+      refinedRoutes,
+      temporaryGrants: deps.agentAuth.temporaryGrantsOf?.(projectId, agentId) ?? {
+        onceGrants: [],
+        agentSessionGrants: [],
+      },
+      mismatches: grant?.mismatches ?? { unknownRoles: [], unknownRoutes: [] },
+    });
+  });
+
+  app.post("/:agentId/auth/requests", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const body = await readJson(c);
+    const grants = optionalStringArray(body, "grants") ?? [];
+    if (grants.length === 0) {
+      throw badRequest("grants must be a non-empty array of role or route IDs.");
+    }
+    const reason = optionalString(body, "reason", { maxLen: 1000, label: "reason" });
+    const routeId = optionalString(body, "routeId", { maxLen: 200, label: "routeId" });
+    if (typeof deps.agentAuth.requestUpgrade !== "function") {
+      throw new HttpError(501, "not_implemented", "Permission upgrade requests are not available.");
+    }
+    const request = deps.agentAuth.requestUpgrade({
+      projectId,
+      agentId,
+      grants,
+      ...(reason !== undefined ? { reason } : {}),
+      ...(routeId !== undefined ? { routeId } : {}),
+      ...(c.var.agentAuth?.tokenHash !== undefined ? { tokenHash: c.var.agentAuth.tokenHash } : {}),
+      now: new Date(),
+    });
+    return c.json(
+      {
+        request,
+        approvalChoices: [
+          { id: "allowed_once", label: "1. allowed once" },
+          { id: "allowed_for_agent", label: "2. allowed when use this agent" },
+          { id: "always_allowed", label: "3. always allowed (write role)" },
+        ],
+      },
+      201,
+    );
+  });
+
+  app.post("/:agentId/auth/requests/:requestId/decide", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    const requestId = requireString({ requestId: c.req.param("requestId") }, "requestId", {
+      minLen: 1,
+      maxLen: 200,
+      label: "requestId",
+    });
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    const body = await readJson(c);
+    const decision = requireString(body, "decision", {
+      minLen: 1,
+      maxLen: 100,
+      label: "decision",
+    });
+    if (typeof deps.agentAuth.decideUpgradeRequest !== "function") {
+      throw new HttpError(
+        501,
+        "not_implemented",
+        "Permission upgrade decisions are not available.",
+      );
+    }
+    let result;
+    try {
+      result = deps.agentAuth.decideUpgradeRequest({
+        projectId,
+        agentId,
+        requestId,
+        decision,
+        now: new Date(),
+      });
+    } catch (err) {
+      if (err instanceof UpgradeRequestDecisionError) {
+        throw new HttpError(err.status, err.code, err.message);
+      }
+      throw err;
+    }
+    return c.json({
+      request: result.request,
+      role: result.grant?.role ?? DEFAULT_AGENT_AUTH_ROLE,
+      generation: result.grant?.generation ?? 0,
+      effectiveApiCount: result.grant?.apiIds.size ?? 0,
+      temporaryGrants: deps.agentAuth.temporaryGrantsOf?.(projectId, agentId) ?? {
+        onceGrants: [],
+        agentSessionGrants: [],
+      },
+    });
   });
 
   return app;

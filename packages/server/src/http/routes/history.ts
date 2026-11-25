@@ -142,15 +142,19 @@ export function historyRoutes(deps: HistoryRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+import { endpointOf } from "../app.js";
+
 @Component({
   contributes: {
     "HttpModule.routes": [
       {
-        id: "HistoryRoutes.routes",
+        id: "session.getHistory",
         // After the Session forward (268), which answers a machine's Session first, and ahead
-        // of the Session routes (session-api.sessions, 270).
-        prefix: "/api/sessions",
+        // of the Session routes (270).
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/history",
         auth: "user",
+        role: "session.read",
         order: 269,
       },
     ],
@@ -164,9 +168,9 @@ export class HistoryRoutes {
   @Use() private readonly channels!: Channels;
   @Use() private readonly liveStreams!: LiveStreams;
   @Use() private readonly auth!: Auth;
-  @Bind("HistoryRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("session.getHistory") routes!: Hono<AppEnv>;
   setup() {
-    this.routes = historyRoutes({
+    const group = historyRoutes({
       sessions: this.sessionsRepo,
       access: this.access,
       traces: this.traces,
@@ -175,5 +179,6 @@ export class HistoryRoutes {
       liveStreams: this.liveStreams,
       auth: this.auth,
     });
+    this.routes = endpointOf(group, "GET", "/:sessionId/history");
   }
 }

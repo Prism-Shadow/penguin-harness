@@ -29,6 +29,7 @@ export interface SchedulesRouteDeps {
   schedulesRepo: Schedules;
 }
 import { HttpError } from "../errors.js";
+import { endpointOf } from "../app.js";
 import {
   badRequest,
   optionalString,
@@ -333,17 +334,66 @@ async function readItem(
 
 @Component({
   contributes: {
+    "AgentAuthPermissionProvider.roles": [
+      { id: "role.schedule.read", parents: ["readonly"] },
+      { id: "role.schedule.maintain", children: ["schedule.read"], parents: ["general@self"] },
+      { id: "role.schedule.all", children: ["schedule.maintain"], parents: ["system-maintainer"] },
+    ],
     "HttpModule.routes": [
       {
-        id: "SchedulerRoutes.routes",
+        id: "schedule.list",
+        method: "GET",
         prefix: "/api/projects/:projectId/agents/:agentId/schedules",
         auth: "user",
+        role: "schedule.read",
         order: 200,
       },
       {
-        id: "SchedulerRoutes.projectRoutes",
+        id: "schedule.create",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/schedules",
+        auth: "user",
+        role: "schedule.maintain",
+        order: 200,
+      },
+      {
+        id: "schedule.templatePlaceholder",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/schedules/template-placeholder",
+        auth: "user",
+        role: "schedule.maintain",
+        order: 200,
+      },
+      {
+        id: "schedule.get",
+        method: "GET",
+        prefix: "/api/projects/:projectId/agents/:agentId/schedules/:name",
+        auth: "user",
+        role: "schedule.read",
+        order: 200,
+      },
+      {
+        id: "schedule.update",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/agents/:agentId/schedules/:name",
+        auth: "user",
+        role: "schedule.maintain",
+        order: 200,
+      },
+      {
+        id: "schedule.delete",
+        method: "DELETE",
+        prefix: "/api/projects/:projectId/agents/:agentId/schedules/:name",
+        auth: "user",
+        role: "schedule.all",
+        order: 200,
+      },
+      {
+        id: "schedule.listProject",
+        method: "GET",
         prefix: "/api/projects/:projectId/schedules",
         auth: "user",
+        role: "schedule.read",
         order: 200,
       },
     ],
@@ -356,8 +406,13 @@ export class SchedulerRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly scheduler!: Scheduling;
   @Use() private readonly schedulesRepo!: Schedules;
-  @Bind("SchedulerRoutes.routes") routes!: Hono<AppEnv>;
-  @Bind("SchedulerRoutes.projectRoutes") projectRoutes!: Hono<AppEnv>;
+  @Bind("schedule.list") listRoute!: Hono<AppEnv>;
+  @Bind("schedule.create") createRoute!: Hono<AppEnv>;
+  @Bind("schedule.templatePlaceholder") templatePlaceholderRoute!: Hono<AppEnv>;
+  @Bind("schedule.get") getRoute!: Hono<AppEnv>;
+  @Bind("schedule.update") updateRoute!: Hono<AppEnv>;
+  @Bind("schedule.delete") deleteRoute!: Hono<AppEnv>;
+  @Bind("schedule.listProject") listProjectRoute!: Hono<AppEnv>;
   setup() {
     const deps: SchedulesRouteDeps = {
       agentConfigService: this.agentConfig,
@@ -367,7 +422,13 @@ export class SchedulerRoutes {
       scheduler: this.scheduler,
       schedulesRepo: this.schedulesRepo,
     };
-    this.routes = scheduleRoutes(deps);
-    this.projectRoutes = projectScheduleRoutes(deps);
+    const group = scheduleRoutes(deps);
+    this.listRoute = endpointOf(group, "GET", "/");
+    this.createRoute = endpointOf(group, "POST", "/");
+    this.templatePlaceholderRoute = endpointOf(group, "POST", "/template-placeholder");
+    this.getRoute = endpointOf(group, "GET", "/:name");
+    this.updateRoute = endpointOf(group, "PUT", "/:name");
+    this.deleteRoute = endpointOf(group, "DELETE", "/:name");
+    this.listProjectRoute = endpointOf(projectScheduleRoutes(deps), "GET", "/");
   }
 }

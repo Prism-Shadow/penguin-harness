@@ -167,6 +167,7 @@ import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "./workspace-f
 import { archivedSessionsRoutes } from "./archived-sessions.js";
 import { ArchivedSessionsService } from "../../services/archived-sessions-service.js";
 import { PreviewTokens } from "./preview.js";
+import { endpointOf } from "../app.js";
 import type { ModelOAuth } from "@prismshadow/penguin-library-model";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
@@ -177,6 +178,7 @@ import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
+import { AgentAuth } from "../../mechanisms/agent-auth.js";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { OrgService } from "../../runtime/organization/service.js";
 import type { ToolModelBindings } from "../../services/tool-model-bindings.js";
@@ -1754,113 +1756,877 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
 
 @Component({
   contributes: {
+    "AgentAuthPermissionProvider.roles": [
+      { id: "role.session.read", parents: ["readonly"] },
+      { id: "role.session.maintain", children: ["session.read"], parents: ["general"] },
+      { id: "role.session.all", children: ["session.maintain"], parents: ["system-maintainer"] },
+      { id: "role.workspace.read", parents: ["readonly"] },
+      { id: "role.workspace.maintain", children: ["workspace.read"], parents: ["general"] },
+      {
+        id: "role.workspace.all",
+        children: ["workspace.maintain"],
+        parents: ["system-maintainer"],
+      },
+      { id: "role.model.read", parents: ["readonly"] },
+      { id: "role.model.maintain", children: ["model.read"], parents: ["system-maintainer"] },
+      { id: "role.model.all", children: ["model.maintain"], parents: ["admin"] },
+      { id: "role.vault.read", parents: ["system-maintainer"] },
+      { id: "role.vault.maintain", children: ["vault.read"] },
+      { id: "role.vault.all", children: ["vault.maintain"], parents: ["admin"] },
+    ],
     "HttpModule.routes": [
       {
-        id: "session-api.model-oauth-callback",
+        id: "sessions.model-oauth-callback",
         prefix: "/api/projects/:projectId/model-oauth/callback",
         auth: "none",
         order: 6,
       },
       {
-        id: "session-api.models",
+        id: "model.list",
+        method: "GET",
         prefix: "/api/projects/:projectId/models",
         auth: "user",
+        role: "model.read",
         order: 100,
       },
       {
-        id: "session-api.model-oauth",
-        prefix: "/api/projects/:projectId/model-oauth",
+        id: "model.update",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/models",
         auth: "user",
+        role: "model.all",
+        order: 100,
+      },
+      {
+        id: "model.updateProvider",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/models/providers/:provider",
+        auth: "user",
+        role: "model.all",
+        order: 100,
+      },
+      {
+        id: "model.syncPresets",
+        method: "POST",
+        prefix: "/api/projects/:projectId/models/sync-presets",
+        auth: "user",
+        role: "model.maintain",
+        order: 100,
+      },
+      {
+        id: "model.getBalance",
+        method: "GET",
+        prefix: "/api/projects/:projectId/models/balance",
+        auth: "user",
+        role: "model.read",
+        order: 100,
+      },
+      {
+        id: "model.setDefault",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/models/default",
+        auth: "user",
+        role: "model.maintain",
+        order: 100,
+      },
+      {
+        id: "model.test",
+        method: "POST",
+        prefix: "/api/projects/:projectId/models/test",
+        auth: "user",
+        role: "model.read",
+        order: 100,
+      },
+      {
+        id: "model.detect",
+        method: "POST",
+        prefix: "/api/projects/:projectId/models/detect",
+        auth: "user",
+        role: "model.read",
+        order: 100,
+      },
+      {
+        id: "model.listRemote",
+        method: "POST",
+        prefix: "/api/projects/:projectId/models/list",
+        auth: "user",
+        role: "model.read",
+        order: 100,
+      },
+      {
+        id: "model.detectVision",
+        method: "POST",
+        prefix: "/api/projects/:projectId/models/detect-vision",
+        auth: "user",
+        role: "model.read",
+        order: 100,
+      },
+      {
+        id: "model.oauth.start",
+        method: "POST",
+        prefix: "/api/projects/:projectId/model-oauth/start",
+        auth: "user",
+        role: "model.all",
         order: 110,
       },
       {
-        id: "session-api.platform-auth",
-        prefix: "/api/projects/:projectId/platform-auth",
+        id: "model.oauth.submitCode",
+        method: "POST",
+        prefix: "/api/projects/:projectId/model-oauth/:flowId/code",
         auth: "user",
+        role: "model.all",
+        order: 110,
+      },
+      {
+        id: "model.oauth.getStatus",
+        method: "GET",
+        prefix: "/api/projects/:projectId/model-oauth/:flowId",
+        auth: "user",
+        role: "model.read",
+        order: 110,
+      },
+      {
+        id: "model.platformAuth.start",
+        method: "POST",
+        prefix: "/api/projects/:projectId/platform-auth/start",
+        auth: "user",
+        role: "model.all",
         order: 115,
       },
       {
-        id: "session-api.modelscope-auth",
-        prefix: "/api/projects/:projectId/modelscope-auth",
+        id: "model.platformAuth.sync",
+        method: "POST",
+        prefix: "/api/projects/:projectId/platform-auth/sync",
         auth: "user",
+        role: "model.maintain",
+        order: 115,
+      },
+      {
+        id: "model.platformAuth.getStatus",
+        method: "GET",
+        prefix: "/api/projects/:projectId/platform-auth/:flowId/status",
+        auth: "user",
+        role: "model.read",
+        order: 115,
+      },
+      {
+        id: "model.platformAuth.retry",
+        method: "POST",
+        prefix: "/api/projects/:projectId/platform-auth/:flowId/retry",
+        auth: "user",
+        role: "model.all",
+        order: 115,
+      },
+      {
+        id: "model.platformAuth.cancel",
+        method: "POST",
+        prefix: "/api/projects/:projectId/platform-auth/:flowId/cancel",
+        auth: "user",
+        role: "model.all",
+        order: 115,
+      },
+      {
+        id: "model.modelscopeAuth.start",
+        method: "POST",
+        prefix: "/api/projects/:projectId/modelscope-auth/start",
+        auth: "user",
+        role: "model.all",
         order: 116,
       },
       {
-        id: "session-api.chat-defaults",
+        id: "model.modelscopeAuth.getStatus",
+        method: "GET",
+        prefix: "/api/projects/:projectId/modelscope-auth/:flowId/status",
+        auth: "user",
+        role: "model.read",
+        order: 116,
+      },
+      {
+        id: "model.modelscopeAuth.retry",
+        method: "POST",
+        prefix: "/api/projects/:projectId/modelscope-auth/:flowId/retry",
+        auth: "user",
+        role: "model.all",
+        order: 116,
+      },
+      {
+        id: "model.modelscopeAuth.cancel",
+        method: "POST",
+        prefix: "/api/projects/:projectId/modelscope-auth/:flowId/cancel",
+        auth: "user",
+        role: "model.all",
+        order: 116,
+      },
+      {
+        id: "model.chatDefaults.get",
+        method: "GET",
         prefix: "/api/projects/:projectId/chat-defaults",
         auth: "user",
+        role: "model.read",
         order: 120,
       },
       {
-        id: "session-api.command-policy",
+        id: "model.chatDefaults.update",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/chat-defaults",
+        auth: "user",
+        role: "model.maintain",
+        order: 120,
+      },
+      {
+        id: "project.commandPolicy.get",
+        method: "GET",
         prefix: "/api/projects/:projectId/command-policy",
         auth: "user",
+        role: "project.read",
         order: 130,
       },
       {
-        id: "session-api.agents",
+        id: "project.commandPolicy.update",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/command-policy",
+        auth: "user",
+        role: "project.all",
+        order: 130,
+      },
+      {
+        id: "agent.list",
+        method: "GET",
         prefix: "/api/projects/:projectId/agents",
         auth: "user",
+        role: "agent.read",
         order: 140,
       },
       {
-        id: "session-api.agent-deletions",
-        prefix: "/api/projects/:projectId/agent-deletions",
+        id: "agent.create",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents",
         auth: "user",
+        role: "agent.maintain",
+        order: 140,
+      },
+      {
+        id: "agent.delete",
+        method: "DELETE",
+        prefix: "/api/projects/:projectId/agents/:agentId",
+        auth: "user",
+        role: "agent.all",
+        order: 140,
+      },
+      {
+        id: "agent.auth.get",
+        method: "GET",
+        prefix: "/api/projects/:projectId/agents/:agentId/auth",
+        auth: "user",
+        role: "agent.read",
+        order: 140,
+      },
+      {
+        id: "agent.auth.update",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/agents/:agentId/auth",
+        auth: "user",
+        role: "admin.maintain",
+        order: 140,
+      },
+      {
+        id: "agent.auth.requestUpgrade",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/auth/requests",
+        auth: "user",
+        role: "agent.read",
+        order: 140,
+      },
+      {
+        id: "agent.auth.decideRequest",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/auth/requests/:requestId/decide",
+        auth: "user",
+        role: "admin.maintain",
+        order: 140,
+      },
+      {
+        id: "agent.getDeletion",
+        method: "GET",
+        prefix: "/api/projects/:projectId/agent-deletions/:deletionId",
+        auth: "user",
+        role: "agent.read",
         order: 141,
       },
       {
-        id: "session-api.agent-config",
+        id: "agent.config.get",
+        method: "GET",
         prefix: "/api/projects/:projectId/agents/:agentId/config",
         auth: "user",
+        role: "agent.read",
         order: 170,
       },
       {
-        id: "session-api.vault",
+        id: "agent.config.update",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/agents/:agentId/config",
+        auth: "user",
+        role: "agent.maintain",
+        order: 170,
+      },
+      {
+        id: "agent.config.mcpTest",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/config/mcp-test",
+        auth: "user",
+        role: "agent.maintain",
+        order: 170,
+      },
+      {
+        id: "agent.config.kernelUpdate",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/config/kernel-update",
+        auth: "user",
+        role: "agent.maintain",
+        order: 170,
+      },
+      {
+        id: "agent.config.reset",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/config/reset",
+        auth: "user",
+        role: "agent.all",
+        order: 170,
+      },
+      {
+        id: "vault.get",
+        method: "GET",
         prefix: "/api/projects/:projectId/agents/:agentId/vault",
         auth: "user",
+        role: "vault.read",
         order: 180,
       },
       {
-        id: "session-api.agent-sessions",
+        id: "vault.update",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/agents/:agentId/vault",
+        auth: "user",
+        role: "vault.maintain",
+        order: 180,
+      },
+      {
+        id: "vault.setEntry",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/agents/:agentId/vault/entries/:key",
+        auth: "user",
+        role: "vault.maintain",
+        order: 180,
+      },
+      {
+        id: "vault.deleteEntry",
+        method: "DELETE",
+        prefix: "/api/projects/:projectId/agents/:agentId/vault/entries/:key",
+        auth: "user",
+        role: "vault.all",
+        order: 180,
+      },
+      {
+        id: "vault.templatePlaceholder",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/vault/template-placeholder",
+        auth: "user",
+        role: "vault.maintain",
+        order: 180,
+      },
+      {
+        id: "session.list",
+        method: "GET",
         prefix: "/api/projects/:projectId/agents/:agentId/sessions",
         auth: "user",
+        role: "session.read",
         order: 250,
       },
       {
-        id: "session-api.sessions-batch",
+        id: "session.create",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/sessions",
+        auth: "user",
+        role: "session.maintain",
+        order: 250,
+      },
+      {
+        id: "session.listBatch",
+        method: "POST",
         prefix: "/api/projects/:projectId/sessions/batch",
         auth: "user",
+        role: "session.read",
         order: 255,
       },
       {
-        id: "session-api.sessions-archive",
+        id: "session.archiveWorkspace",
+        method: "POST",
         prefix: "/api/projects/:projectId/sessions/archive",
         auth: "user",
+        role: "session.all",
         order: 256,
       },
       {
-        id: "session-api.usage",
+        id: "usage.get",
+        method: "GET",
         prefix: "/api/projects/:projectId/usage",
         auth: "user",
+        role: "trace.read",
         order: 260,
       },
       {
-        id: "session-api.workspace-files",
+        id: "usage.getModelTotals",
+        method: "GET",
+        prefix: "/api/projects/:projectId/usage/model-totals",
+        auth: "user",
+        role: "trace.read",
+        order: 260,
+      },
+      {
+        id: "usage.listErrors",
+        method: "GET",
+        prefix: "/api/projects/:projectId/usage/errors",
+        auth: "user",
+        role: "trace.read",
+        order: 260,
+      },
+      {
+        id: "usage.clearErrors",
+        method: "DELETE",
+        prefix: "/api/projects/:projectId/usage/errors",
+        auth: "user",
+        role: "trace.all",
+        order: 260,
+      },
+      {
+        id: "workspace.listFiles",
+        method: "GET",
         prefix: "/api/projects/:projectId/workspace-files",
         auth: "user",
+        role: "workspace.read",
         order: 265,
       },
       {
-        id: "session-api.sessions",
-        prefix: "/api/sessions",
+        id: "workspace.readFile",
+        method: "GET",
+        prefix: "/api/projects/:projectId/workspace-files/content",
         auth: "user",
+        role: "workspace.read",
+        order: 265,
+      },
+      {
+        id: "workspace.writeFile",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/workspace-files/content",
+        auth: "user",
+        role: "workspace.maintain",
+        order: 265,
+      },
+      {
+        id: "workspace.deleteFile",
+        method: "DELETE",
+        prefix: "/api/projects/:projectId/workspace-files/content",
+        auth: "user",
+        role: "workspace.all",
+        order: 265,
+      },
+      {
+        id: "workspace.createFile",
+        method: "POST",
+        prefix: "/api/projects/:projectId/workspace-files/create",
+        auth: "user",
+        role: "workspace.maintain",
+        order: 265,
+      },
+      {
+        id: "workspace.moveFile",
+        method: "POST",
+        prefix: "/api/projects/:projectId/workspace-files/move",
+        auth: "user",
+        role: "workspace.maintain",
+        order: 265,
+      },
+      {
+        id: "workspace.searchFiles",
+        method: "GET",
+        prefix: "/api/projects/:projectId/workspace-files/search",
+        auth: "user",
+        role: "workspace.read",
+        order: 265,
+      },
+      {
+        id: "workspace.revealFile",
+        method: "POST",
+        prefix: "/api/projects/:projectId/workspace-files/reveal",
+        auth: "user",
+        role: "workspace.maintain",
+        order: 265,
+      },
+      {
+        id: "session.get",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId",
+        auth: "user",
+        role: "session.read",
         order: 270,
       },
       {
-        id: "session-api.archived-sessions",
+        id: "session.update",
+        method: "PATCH",
+        prefix: "/api/sessions/:sessionId",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.fork",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/fork",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.delete",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId",
+        auth: "user",
+        role: "session.all",
+        order: 270,
+      },
+      {
+        id: "session.getScratchpadFile",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/scratchpad/:fileName",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.getTraceImage",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/trace-image",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.getMessages",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/messages",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.getAmsp",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/amsp",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.listApprovals",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/approvals",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.stream",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/stream",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.runTask",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/tasks",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.steer",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/steer",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.deleteSteer",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId/steer/:steerId",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.messageSubagent",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/subagents/:childSessionId/message",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.abortSubagent",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/subagents/:childSessionId/abort",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.deleteFollowUp",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId/follow-ups/:followUpId",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.interrupt",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/interrupt",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.getGoal",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/goal",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.resolveApproval",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/approvals/:toolCallId",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.backgroundToolCall",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/tool-calls/:toolCallId/background",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.abort",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/abort",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.listProcesses",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/processes",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.killProcess",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/processes/:processId/kill",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.deleteProcess",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId/processes/:processId",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.retryNow",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/retry-now",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.retry",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/retry",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.compact",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/compact",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.switchModel",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/switch-model",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.listFiles",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/files",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.readFile",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/files/content",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.writeFile",
+        method: "PUT",
+        prefix: "/api/sessions/:sessionId/files/content",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.deleteFile",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId/files/content",
+        auth: "user",
+        role: "session.all",
+        order: 270,
+      },
+      {
+        id: "session.createFile",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/files/create",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.moveFile",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/files/move",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.searchFiles",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/files/search",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.revealFile",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/files/reveal",
+        auth: "user",
+        role: "session.maintain",
+        order: 270,
+      },
+      {
+        id: "session.previewFileRedirect",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/files/preview-redirect",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.statFiles",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/files/stat",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.getContext",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/context",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.listTraces",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/traces",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.getTrace",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/traces/:index",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.getTraceAnalysis",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/traces/:index/analysis",
+        auth: "user",
+        role: "session.read",
+        order: 270,
+      },
+      {
+        id: "session.listArchivedGroups",
+        method: "GET",
+        prefix: "/api/me/archived-sessions/groups",
+        auth: "user",
+        role: "session.read",
+        order: 275,
+      },
+      {
+        id: "session.listArchived",
+        method: "GET",
         prefix: "/api/me/archived-sessions",
         auth: "user",
+        role: "session.read",
+        order: 275,
+      },
+      {
+        id: "session.unarchive",
+        method: "POST",
+        prefix: "/api/me/archived-sessions/unarchive",
+        auth: "user",
+        role: "session.maintain",
+        order: 275,
+      },
+      {
+        id: "session.deleteArchived",
+        method: "POST",
+        prefix: "/api/me/archived-sessions/delete",
+        auth: "user",
+        role: "session.all",
         order: 275,
       },
     ],
@@ -1898,29 +2664,119 @@ export class SessionApiRoutes {
   @Use() private readonly auth!: Auth;
   @Use() private readonly drivers!: SessionDrivers;
   @Use() private readonly agentApi!: AgentApi;
+  @Use() private readonly agentAuth!: AgentAuth;
   @Use() private readonly orgService!: OrgService;
   @Use() private readonly workbenches!: Workbenches;
   @Use() private readonly drafts!: UserDraftsStore;
   /** Optional for trees without the model tools group: every model then gets the chat probe. */
   @Use() private readonly toolModelBindings?: ToolModelBindings;
-  @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
-  @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
-  @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
-  @Bind("session-api.platform-auth") platformAuthRoutes!: Hono<AppEnv>;
-  @Bind("session-api.modelscope-auth") modelScopeAuthRoutes!: Hono<AppEnv>;
-  @Bind("session-api.chat-defaults") chatDefaultsRoutes!: Hono<AppEnv>;
-  @Bind("session-api.command-policy") commandPolicyRoutes!: Hono<AppEnv>;
-  @Bind("session-api.agents") agentsRoutes!: Hono<AppEnv>;
-  @Bind("session-api.agent-deletions") agentDeletionsRoutes!: Hono<AppEnv>;
-  @Bind("session-api.agent-config") agentConfigRoutes!: Hono<AppEnv>;
-  @Bind("session-api.vault") vaultRoutes!: Hono<AppEnv>;
-  @Bind("session-api.agent-sessions") agentSessionsRoutes!: Hono<AppEnv>;
-  @Bind("session-api.sessions-batch") sessionsBatchRoutes!: Hono<AppEnv>;
-  @Bind("session-api.sessions-archive") sessionsArchiveRoutes!: Hono<AppEnv>;
-  @Bind("session-api.usage") usageRoutes!: Hono<AppEnv>;
-  @Bind("session-api.workspace-files") workspaceFilesRoutes!: Hono<AppEnv>;
-  @Bind("session-api.sessions") sessionsRoutes!: Hono<AppEnv>;
-  @Bind("session-api.archived-sessions") archivedSessionsRoutes!: Hono<AppEnv>;
+  @Bind("sessions.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
+  @Bind("model.list") modelListRoute!: Hono<AppEnv>;
+  @Bind("model.update") modelUpdateRoute!: Hono<AppEnv>;
+  @Bind("model.updateProvider") modelUpdateProviderRoute!: Hono<AppEnv>;
+  @Bind("model.syncPresets") modelSyncPresetsRoute!: Hono<AppEnv>;
+  @Bind("model.getBalance") modelGetBalanceRoute!: Hono<AppEnv>;
+  @Bind("model.setDefault") modelSetDefaultRoute!: Hono<AppEnv>;
+  @Bind("model.test") modelTestRoute!: Hono<AppEnv>;
+  @Bind("model.detect") modelDetectRoute!: Hono<AppEnv>;
+  @Bind("model.listRemote") modelListRemoteRoute!: Hono<AppEnv>;
+  @Bind("model.detectVision") modelDetectVisionRoute!: Hono<AppEnv>;
+  @Bind("model.oauth.start") modelOauthStartRoute!: Hono<AppEnv>;
+  @Bind("model.oauth.submitCode") modelOauthSubmitCodeRoute!: Hono<AppEnv>;
+  @Bind("model.oauth.getStatus") modelOauthGetStatusRoute!: Hono<AppEnv>;
+  @Bind("model.platformAuth.start") platformAuthStartRoute!: Hono<AppEnv>;
+  @Bind("model.platformAuth.sync") platformAuthSyncRoute!: Hono<AppEnv>;
+  @Bind("model.platformAuth.getStatus") platformAuthGetStatusRoute!: Hono<AppEnv>;
+  @Bind("model.platformAuth.retry") platformAuthRetryRoute!: Hono<AppEnv>;
+  @Bind("model.platformAuth.cancel") platformAuthCancelRoute!: Hono<AppEnv>;
+  @Bind("model.modelscopeAuth.start") modelscopeAuthStartRoute!: Hono<AppEnv>;
+  @Bind("model.modelscopeAuth.getStatus") modelscopeAuthGetStatusRoute!: Hono<AppEnv>;
+  @Bind("model.modelscopeAuth.retry") modelscopeAuthRetryRoute!: Hono<AppEnv>;
+  @Bind("model.modelscopeAuth.cancel") modelscopeAuthCancelRoute!: Hono<AppEnv>;
+  @Bind("model.chatDefaults.get") chatDefaultsGetRoute!: Hono<AppEnv>;
+  @Bind("model.chatDefaults.update") chatDefaultsUpdateRoute!: Hono<AppEnv>;
+  @Bind("project.commandPolicy.get") commandPolicyGetRoute!: Hono<AppEnv>;
+  @Bind("project.commandPolicy.update") commandPolicyUpdateRoute!: Hono<AppEnv>;
+  @Bind("agent.list") agentListRoute!: Hono<AppEnv>;
+  @Bind("agent.create") agentCreateRoute!: Hono<AppEnv>;
+  @Bind("agent.delete") agentDeleteRoute!: Hono<AppEnv>;
+  @Bind("agent.auth.get") agentAuthGetRoute!: Hono<AppEnv>;
+  @Bind("agent.auth.update") agentAuthUpdateRoute!: Hono<AppEnv>;
+  @Bind("agent.auth.requestUpgrade") agentAuthRequestUpgradeRoute!: Hono<AppEnv>;
+  @Bind("agent.auth.decideRequest") agentAuthDecideRequestRoute!: Hono<AppEnv>;
+  @Bind("agent.getDeletion") agentGetDeletionRoute!: Hono<AppEnv>;
+  @Bind("agent.config.get") agentConfigGetRoute!: Hono<AppEnv>;
+  @Bind("agent.config.update") agentConfigUpdateRoute!: Hono<AppEnv>;
+  @Bind("agent.config.mcpTest") agentConfigMcpTestRoute!: Hono<AppEnv>;
+  @Bind("agent.config.kernelUpdate") agentConfigKernelUpdateRoute!: Hono<AppEnv>;
+  @Bind("agent.config.reset") agentConfigResetRoute!: Hono<AppEnv>;
+  @Bind("vault.get") vaultGetRoute!: Hono<AppEnv>;
+  @Bind("vault.update") vaultUpdateRoute!: Hono<AppEnv>;
+  @Bind("vault.setEntry") vaultSetEntryRoute!: Hono<AppEnv>;
+  @Bind("vault.deleteEntry") vaultDeleteEntryRoute!: Hono<AppEnv>;
+  @Bind("vault.templatePlaceholder") vaultTemplatePlaceholderRoute!: Hono<AppEnv>;
+  @Bind("session.list") listSessionsRoute!: Hono<AppEnv>;
+  @Bind("session.create") createSessionRoute!: Hono<AppEnv>;
+  @Bind("session.listBatch") sessionsBatchRoutes!: Hono<AppEnv>;
+  @Bind("session.archiveWorkspace") sessionsArchiveRoutes!: Hono<AppEnv>;
+  @Bind("usage.get") usageGetRoute!: Hono<AppEnv>;
+  @Bind("usage.getModelTotals") usageGetModelTotalsRoute!: Hono<AppEnv>;
+  @Bind("usage.listErrors") usageListErrorsRoute!: Hono<AppEnv>;
+  @Bind("usage.clearErrors") usageClearErrorsRoute!: Hono<AppEnv>;
+  @Bind("workspace.listFiles") workspaceListFilesRoute!: Hono<AppEnv>;
+  @Bind("workspace.readFile") workspaceReadFileRoute!: Hono<AppEnv>;
+  @Bind("workspace.writeFile") workspaceWriteFileRoute!: Hono<AppEnv>;
+  @Bind("workspace.deleteFile") workspaceDeleteFileRoute!: Hono<AppEnv>;
+  @Bind("workspace.createFile") workspaceCreateFileRoute!: Hono<AppEnv>;
+  @Bind("workspace.moveFile") workspaceMoveFileRoute!: Hono<AppEnv>;
+  @Bind("workspace.searchFiles") workspaceSearchFilesRoute!: Hono<AppEnv>;
+  @Bind("workspace.revealFile") workspaceRevealFileRoute!: Hono<AppEnv>;
+  @Bind("session.get") getSessionRoute!: Hono<AppEnv>;
+  @Bind("session.update") updateSessionRoute!: Hono<AppEnv>;
+  @Bind("session.fork") forkSessionRoute!: Hono<AppEnv>;
+  @Bind("session.delete") deleteSessionRoute!: Hono<AppEnv>;
+  @Bind("session.getScratchpadFile") getScratchpadFileRoute!: Hono<AppEnv>;
+  @Bind("session.getTraceImage") getTraceImageRoute!: Hono<AppEnv>;
+  @Bind("session.getMessages") getMessagesRoute!: Hono<AppEnv>;
+  @Bind("session.getAmsp") getAmspRoute!: Hono<AppEnv>;
+  @Bind("session.listApprovals") listApprovalsRoute!: Hono<AppEnv>;
+  @Bind("session.stream") streamSessionRoute!: Hono<AppEnv>;
+  @Bind("session.runTask") runTaskRoute!: Hono<AppEnv>;
+  @Bind("session.steer") steerSessionRoute!: Hono<AppEnv>;
+  @Bind("session.deleteSteer") deleteSteerRoute!: Hono<AppEnv>;
+  @Bind("session.messageSubagent") messageSubagentRoute!: Hono<AppEnv>;
+  @Bind("session.abortSubagent") abortSubagentRoute!: Hono<AppEnv>;
+  @Bind("session.deleteFollowUp") deleteFollowUpRoute!: Hono<AppEnv>;
+  @Bind("session.interrupt") interruptSessionRoute!: Hono<AppEnv>;
+  @Bind("session.getGoal") getGoalRoute!: Hono<AppEnv>;
+  @Bind("session.resolveApproval") resolveApprovalRoute!: Hono<AppEnv>;
+  @Bind("session.backgroundToolCall") backgroundToolCallRoute!: Hono<AppEnv>;
+  @Bind("session.abort") abortSessionRoute!: Hono<AppEnv>;
+  @Bind("session.listProcesses") listProcessesRoute!: Hono<AppEnv>;
+  @Bind("session.killProcess") killProcessRoute!: Hono<AppEnv>;
+  @Bind("session.deleteProcess") deleteProcessRoute!: Hono<AppEnv>;
+  @Bind("session.retryNow") retryNowRoute!: Hono<AppEnv>;
+  @Bind("session.retry") retryRoute!: Hono<AppEnv>;
+  @Bind("session.compact") compactRoute!: Hono<AppEnv>;
+  @Bind("session.switchModel") switchModelRoute!: Hono<AppEnv>;
+  @Bind("session.listFiles") sessionListFilesRoute!: Hono<AppEnv>;
+  @Bind("session.readFile") sessionReadFileRoute!: Hono<AppEnv>;
+  @Bind("session.writeFile") sessionWriteFileRoute!: Hono<AppEnv>;
+  @Bind("session.deleteFile") sessionDeleteFileRoute!: Hono<AppEnv>;
+  @Bind("session.createFile") sessionCreateFileRoute!: Hono<AppEnv>;
+  @Bind("session.moveFile") sessionMoveFileRoute!: Hono<AppEnv>;
+  @Bind("session.searchFiles") sessionSearchFilesRoute!: Hono<AppEnv>;
+  @Bind("session.revealFile") sessionRevealFileRoute!: Hono<AppEnv>;
+  @Bind("session.previewFileRedirect") previewFileRedirectRoute!: Hono<AppEnv>;
+  @Bind("session.statFiles") statFilesRoute!: Hono<AppEnv>;
+  @Bind("session.getContext") getContextRoute!: Hono<AppEnv>;
+  @Bind("session.listTraces") listTracesRoute!: Hono<AppEnv>;
+  @Bind("session.getTrace") getTraceRoute!: Hono<AppEnv>;
+  @Bind("session.getTraceAnalysis") getTraceAnalysisRoute!: Hono<AppEnv>;
+  @Bind("session.listArchivedGroups") listArchivedGroupsRoute!: Hono<AppEnv>;
+  @Bind("session.listArchived") listArchivedRoute!: Hono<AppEnv>;
+  @Bind("session.unarchive") unarchiveSessionsRoute!: Hono<AppEnv>;
+  @Bind("session.deleteArchived") deleteArchivedSessionsRoute!: Hono<AppEnv>;
   setup() {
     const manager = this.manager as SessionManager;
     const sessionService = this.sessionService as SessionService;
@@ -1973,32 +2829,58 @@ export class SessionApiRoutes {
       sessionsRepo,
     };
     this.modelOauthCallbackRoutes = modelOAuthCallbackRoutes(modelOAuthDeps);
-    this.modelsRoutes = modelsRoutes({
+    const modelsGroup = modelsRoutes({
       ...modelDeps,
       penguinGoOrigin: this.config.penguinGoOrigin ?? normalizePenguinGoOrigin(undefined),
       ...(this.toolModelBindings !== undefined
         ? { toolModelBindings: this.toolModelBindings }
         : {}),
     });
-    this.modelOauthRoutes = modelOAuthRoutes(modelOAuthDeps);
-    this.platformAuthRoutes = platformAuthRoutes({ ...modelDeps, platformAuth: this.platformAuth });
-    this.modelScopeAuthRoutes = modelScopeAuthRoutes({
+    this.modelListRoute = endpointOf(modelsGroup, "GET", "/");
+    this.modelUpdateRoute = endpointOf(modelsGroup, "PUT", "/");
+    this.modelUpdateProviderRoute = endpointOf(modelsGroup, "PUT", "/providers/:provider");
+    this.modelSyncPresetsRoute = endpointOf(modelsGroup, "POST", "/sync-presets");
+    this.modelGetBalanceRoute = endpointOf(modelsGroup, "GET", "/balance");
+    this.modelSetDefaultRoute = endpointOf(modelsGroup, "PUT", "/default");
+    this.modelTestRoute = endpointOf(modelsGroup, "POST", "/test");
+    this.modelDetectRoute = endpointOf(modelsGroup, "POST", "/detect");
+    this.modelListRemoteRoute = endpointOf(modelsGroup, "POST", "/list");
+    this.modelDetectVisionRoute = endpointOf(modelsGroup, "POST", "/detect-vision");
+    const oauthGroup = modelOAuthRoutes(modelOAuthDeps);
+    this.modelOauthStartRoute = endpointOf(oauthGroup, "POST", "/start");
+    this.modelOauthSubmitCodeRoute = endpointOf(oauthGroup, "POST", "/:flowId/code");
+    this.modelOauthGetStatusRoute = endpointOf(oauthGroup, "GET", "/:flowId");
+    const platformGroup = platformAuthRoutes({ ...modelDeps, platformAuth: this.platformAuth });
+    this.platformAuthStartRoute = endpointOf(platformGroup, "POST", "/start");
+    this.platformAuthSyncRoute = endpointOf(platformGroup, "POST", "/sync");
+    this.platformAuthGetStatusRoute = endpointOf(platformGroup, "GET", "/:flowId/status");
+    this.platformAuthRetryRoute = endpointOf(platformGroup, "POST", "/:flowId/retry");
+    this.platformAuthCancelRoute = endpointOf(platformGroup, "POST", "/:flowId/cancel");
+    const modelscopeGroup = modelScopeAuthRoutes({
       ...modelDeps,
       modelScopeAuth: this.modelScopeAuth,
     });
-    this.chatDefaultsRoutes = chatDefaultsRoutes({
+    this.modelscopeAuthStartRoute = endpointOf(modelscopeGroup, "POST", "/start");
+    this.modelscopeAuthGetStatusRoute = endpointOf(modelscopeGroup, "GET", "/:flowId/status");
+    this.modelscopeAuthRetryRoute = endpointOf(modelscopeGroup, "POST", "/:flowId/retry");
+    this.modelscopeAuthCancelRoute = endpointOf(modelscopeGroup, "POST", "/:flowId/cancel");
+    const chatDefaultsGroup = chatDefaultsRoutes({
       agentConfigService,
       projectConfigService,
       access,
       sandboxDefaults: () => sessionService.defaultsView(),
       machines: this.machines,
     });
-    this.commandPolicyRoutes = commandPolicyRoutes({
+    this.chatDefaultsGetRoute = endpointOf(chatDefaultsGroup, "GET", "/");
+    this.chatDefaultsUpdateRoute = endpointOf(chatDefaultsGroup, "PUT", "/");
+    const commandPolicyGroup = commandPolicyRoutes({
       projectConfigService,
       access,
       machines: this.machines,
     });
-    this.agentsRoutes = agentsRoutes({
+    this.commandPolicyGetRoute = endpointOf(commandPolicyGroup, "GET", "/");
+    this.commandPolicyUpdateRoute = endpointOf(commandPolicyGroup, "PUT", "/");
+    const agentsGroup = agentsRoutes({
       agentApi: this.agentApi,
       agentConfigService,
       agentService: this.agents,
@@ -2012,30 +2894,121 @@ export class SessionApiRoutes {
       traceIndex: this.traceIndex,
       workbenches: this.workbenches,
       drafts: this.drafts,
+      agentAuth: this.agentAuth,
     });
-    this.agentDeletionsRoutes = agentDeletionsRoutes({ access, agentService: this.agents });
-    this.agentConfigRoutes = agentConfigRoutes({
+    this.agentListRoute = endpointOf(agentsGroup, "GET", "/");
+    this.agentCreateRoute = endpointOf(agentsGroup, "POST", "/");
+    this.agentDeleteRoute = endpointOf(agentsGroup, "DELETE", "/:agentId");
+    this.agentAuthGetRoute = endpointOf(agentsGroup, "GET", "/:agentId/auth");
+    this.agentAuthUpdateRoute = endpointOf(agentsGroup, "PUT", "/:agentId/auth");
+    this.agentAuthRequestUpgradeRoute = endpointOf(agentsGroup, "POST", "/:agentId/auth/requests");
+    this.agentAuthDecideRequestRoute = endpointOf(
+      agentsGroup,
+      "POST",
+      "/:agentId/auth/requests/:requestId/decide",
+    );
+    const deletionsGroup = agentDeletionsRoutes({ access, agentService: this.agents });
+    this.agentGetDeletionRoute = endpointOf(deletionsGroup, "GET", "/:deletionId");
+    const agentConfigGroup = agentConfigRoutes({
       agentConfigService,
       manager,
       access,
       config: this.config,
     });
-    this.vaultRoutes = vaultRoutes({ agentConfigService, manager, access });
-    this.agentSessionsRoutes = agentSessionsRoutes(sessionsDeps);
-    this.sessionsBatchRoutes = sessionsBatchRoutes(sessionsDeps);
-    this.sessionsArchiveRoutes = sessionsArchiveRoutes(sessionsDeps);
-    this.usageRoutes = usageRoutes({ access, usageService: this.usage });
-    this.workspaceFilesRoutes = workspaceFilesRoutes({
+    this.agentConfigGetRoute = endpointOf(agentConfigGroup, "GET", "/");
+    this.agentConfigUpdateRoute = endpointOf(agentConfigGroup, "PUT", "/");
+    this.agentConfigMcpTestRoute = endpointOf(agentConfigGroup, "POST", "/mcp-test");
+    this.agentConfigKernelUpdateRoute = endpointOf(agentConfigGroup, "POST", "/kernel-update");
+    this.agentConfigResetRoute = endpointOf(agentConfigGroup, "POST", "/reset");
+    const vaultGroup = vaultRoutes({ agentConfigService, manager, access });
+    this.vaultGetRoute = endpointOf(vaultGroup, "GET", "/");
+    this.vaultUpdateRoute = endpointOf(vaultGroup, "PUT", "/");
+    this.vaultSetEntryRoute = endpointOf(vaultGroup, "PUT", "/entries/:key");
+    this.vaultDeleteEntryRoute = endpointOf(vaultGroup, "DELETE", "/entries/:key");
+    this.vaultTemplatePlaceholderRoute = endpointOf(vaultGroup, "POST", "/template-placeholder");
+    const agentSessions = agentSessionsRoutes(sessionsDeps);
+    this.listSessionsRoute = endpointOf(agentSessions, "GET", "/");
+    this.createSessionRoute = endpointOf(agentSessions, "POST", "/");
+    this.sessionsBatchRoutes = endpointOf(sessionsBatchRoutes(sessionsDeps), "POST", "/");
+    this.sessionsArchiveRoutes = endpointOf(sessionsArchiveRoutes(sessionsDeps), "POST", "/");
+    const usageGroup = usageRoutes({ access, usageService: this.usage });
+    this.usageGetRoute = endpointOf(usageGroup, "GET", "/");
+    this.usageGetModelTotalsRoute = endpointOf(usageGroup, "GET", "/model-totals");
+    this.usageListErrorsRoute = endpointOf(usageGroup, "GET", "/errors");
+    this.usageClearErrorsRoute = endpointOf(usageGroup, "DELETE", "/errors");
+    const wfGroup = workspaceFilesRoutes({
       access,
       workspaceFiles: this.workspaceFiles,
       desktopMode: sessionsDeps.desktopMode,
       fileReveal: this.fileReveal,
     });
-    this.sessionsRoutes = sessionsRoutes(sessionsDeps);
+    this.workspaceListFilesRoute = endpointOf(wfGroup, "GET", "/");
+    this.workspaceReadFileRoute = endpointOf(wfGroup, "GET", "/content");
+    this.workspaceWriteFileRoute = endpointOf(wfGroup, "PUT", "/content");
+    this.workspaceDeleteFileRoute = endpointOf(wfGroup, "DELETE", "/content");
+    this.workspaceCreateFileRoute = endpointOf(wfGroup, "POST", "/create");
+    this.workspaceMoveFileRoute = endpointOf(wfGroup, "POST", "/move");
+    this.workspaceSearchFilesRoute = endpointOf(wfGroup, "GET", "/search");
+    this.workspaceRevealFileRoute = endpointOf(wfGroup, "POST", "/reveal");
+    const sGroup = sessionsRoutes(sessionsDeps);
+    this.getSessionRoute = endpointOf(sGroup, "GET", "/:sessionId");
+    this.updateSessionRoute = endpointOf(sGroup, "PATCH", "/:sessionId");
+    this.forkSessionRoute = endpointOf(sGroup, "POST", "/:sessionId/fork");
+    this.deleteSessionRoute = endpointOf(sGroup, "DELETE", "/:sessionId");
+    this.getScratchpadFileRoute = endpointOf(sGroup, "GET", "/:sessionId/scratchpad/:fileName");
+    this.getTraceImageRoute = endpointOf(sGroup, "GET", "/:sessionId/trace-image");
+    this.getMessagesRoute = endpointOf(sGroup, "GET", "/:sessionId/messages");
+    this.getAmspRoute = endpointOf(sGroup, "GET", "/:sessionId/amsp");
+    this.listApprovalsRoute = endpointOf(sGroup, "GET", "/:sessionId/approvals");
+    this.streamSessionRoute = endpointOf(sGroup, "GET", "/:sessionId/stream");
+    this.runTaskRoute = endpointOf(sGroup, "POST", "/:sessionId/tasks");
+    this.steerSessionRoute = endpointOf(sGroup, "POST", "/:sessionId/steer");
+    this.deleteSteerRoute = endpointOf(sGroup, "DELETE", "/:sessionId/steer/:steerId");
+    this.messageSubagentRoute = endpointOf(
+      sGroup,
+      "POST",
+      "/:sessionId/subagents/:childSessionId/message",
+    );
+    this.abortSubagentRoute = endpointOf(
+      sGroup,
+      "POST",
+      "/:sessionId/subagents/:childSessionId/abort",
+    );
+    this.deleteFollowUpRoute = endpointOf(sGroup, "DELETE", "/:sessionId/follow-ups/:followUpId");
+    this.interruptSessionRoute = endpointOf(sGroup, "POST", "/:sessionId/interrupt");
+    this.getGoalRoute = endpointOf(sGroup, "GET", "/:sessionId/goal");
+    this.resolveApprovalRoute = endpointOf(sGroup, "POST", "/:sessionId/approvals/:toolCallId");
+    this.backgroundToolCallRoute = endpointOf(
+      sGroup,
+      "POST",
+      "/:sessionId/tool-calls/:toolCallId/background",
+    );
+    this.abortSessionRoute = endpointOf(sGroup, "POST", "/:sessionId/abort");
+    this.listProcessesRoute = endpointOf(sGroup, "GET", "/:sessionId/processes");
+    this.killProcessRoute = endpointOf(sGroup, "POST", "/:sessionId/processes/:processId/kill");
+    this.deleteProcessRoute = endpointOf(sGroup, "DELETE", "/:sessionId/processes/:processId");
+    this.retryNowRoute = endpointOf(sGroup, "POST", "/:sessionId/retry-now");
+    this.retryRoute = endpointOf(sGroup, "POST", "/:sessionId/retry");
+    this.compactRoute = endpointOf(sGroup, "POST", "/:sessionId/compact");
+    this.switchModelRoute = endpointOf(sGroup, "POST", "/:sessionId/switch-model");
+    this.sessionListFilesRoute = endpointOf(sGroup, "GET", "/:sessionId/files");
+    this.sessionReadFileRoute = endpointOf(sGroup, "GET", "/:sessionId/files/content");
+    this.sessionWriteFileRoute = endpointOf(sGroup, "PUT", "/:sessionId/files/content");
+    this.sessionDeleteFileRoute = endpointOf(sGroup, "DELETE", "/:sessionId/files/content");
+    this.sessionCreateFileRoute = endpointOf(sGroup, "POST", "/:sessionId/files/create");
+    this.sessionMoveFileRoute = endpointOf(sGroup, "POST", "/:sessionId/files/move");
+    this.sessionSearchFilesRoute = endpointOf(sGroup, "GET", "/:sessionId/files/search");
+    this.sessionRevealFileRoute = endpointOf(sGroup, "POST", "/:sessionId/files/reveal");
+    this.previewFileRedirectRoute = endpointOf(sGroup, "GET", "/:sessionId/files/preview-redirect");
+    this.statFilesRoute = endpointOf(sGroup, "POST", "/:sessionId/files/stat");
+    this.getContextRoute = endpointOf(sGroup, "GET", "/:sessionId/context");
+    this.listTracesRoute = endpointOf(sGroup, "GET", "/:sessionId/traces");
+    this.getTraceRoute = endpointOf(sGroup, "GET", "/:sessionId/traces/:index");
+    this.getTraceAnalysisRoute = endpointOf(sGroup, "GET", "/:sessionId/traces/:index/analysis");
     const deletion = sessionDeletionDeps(sessionsDeps);
     const projectEvents = this.projectEvents;
     const machines = this.machines;
-    this.archivedSessionsRoutes = archivedSessionsRoutes({
+    const archivedGroup = archivedSessionsRoutes({
       service: new ArchivedSessionsService({
         listProjects: (userId) => access.listProjects(userId),
         canAccess: (userId, projectId) => access.canAccess(userId, projectId),
@@ -2066,5 +3039,9 @@ export class SessionApiRoutes {
           })),
       }),
     });
+    this.listArchivedGroupsRoute = endpointOf(archivedGroup, "GET", "/groups");
+    this.listArchivedRoute = endpointOf(archivedGroup, "GET", "/");
+    this.unarchiveSessionsRoute = endpointOf(archivedGroup, "POST", "/unarchive");
+    this.deleteArchivedSessionsRoute = endpointOf(archivedGroup, "POST", "/delete");
   }
 }

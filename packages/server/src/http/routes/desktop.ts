@@ -227,6 +227,8 @@ export function desktopWindowRoutes(deps: DesktopRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+import { endpointOf } from "../app.js";
+
 @Component({
   contributes: {
     "HttpModule.routes": [
@@ -245,30 +247,53 @@ export class DesktopRoutes {
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "DesktopUpdateRoutes.routes", prefix: "/api/desktop/update", auth: "user", order: 10 },
+      {
+        id: "desktop.update.get",
+        method: "GET",
+        prefix: "/api/desktop/update",
+        auth: "user",
+        role: "system.read",
+        order: 10,
+      },
+      {
+        id: "desktop.update.check",
+        method: "POST",
+        prefix: "/api/desktop/update/check",
+        auth: "user",
+        role: "system.all",
+        order: 10,
+      },
+      {
+        id: "desktop.update.download",
+        method: "POST",
+        prefix: "/api/desktop/update/download",
+        auth: "user",
+        role: "system.all",
+        order: 10,
+      },
+      {
+        id: "desktop.update.install",
+        method: "POST",
+        prefix: "/api/desktop/update/install",
+        auth: "user",
+        role: "system.all",
+        order: 10,
+      },
     ],
   },
 })
 export class DesktopUpdateRoutes {
   @Use() private readonly desktop!: Desktop;
-  @Bind("DesktopUpdateRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("desktop.update.get") getRoute!: Hono<AppEnv>;
+  @Bind("desktop.update.check") checkRoute!: Hono<AppEnv>;
+  @Bind("desktop.update.download") downloadRoute!: Hono<AppEnv>;
+  @Bind("desktop.update.install") installRoute!: Hono<AppEnv>;
   setup() {
-    this.routes = desktopUpdateRoutes({ desktop: this.desktop.current() });
-  }
-}
-
-@Component({
-  contributes: {
-    "HttpModule.routes": [
-      { id: "DesktopTrayRoutes.routes", prefix: "/api/desktop/tray", auth: "user", order: 10 },
-    ],
-  },
-})
-export class DesktopTrayRoutes {
-  @Use() private readonly desktop!: Desktop;
-  @Bind("DesktopTrayRoutes.routes") routes!: Hono<AppEnv>;
-  setup() {
-    this.routes = desktopTrayRoutes({ desktop: this.desktop.current() });
+    const group = desktopUpdateRoutes({ desktop: this.desktop.current() });
+    this.getRoute = endpointOf(group, "GET", "/");
+    this.checkRoute = endpointOf(group, "POST", "/check");
+    this.downloadRoute = endpointOf(group, "POST", "/download");
+    this.installRoute = endpointOf(group, "POST", "/install");
   }
 }
 
@@ -276,9 +301,44 @@ export class DesktopTrayRoutes {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "DesktopPrivacySettingsRoutes.routes",
+        id: "desktop.tray.get",
+        method: "GET",
+        prefix: "/api/desktop/tray",
+        auth: "user",
+        role: "system.read",
+        order: 10,
+      },
+      {
+        id: "desktop.tray.update",
+        method: "PUT",
+        prefix: "/api/desktop/tray",
+        auth: "user",
+        role: "system.maintain",
+        order: 10,
+      },
+    ],
+  },
+})
+export class DesktopTrayRoutes {
+  @Use() private readonly desktop!: Desktop;
+  @Bind("desktop.tray.get") getRoute!: Hono<AppEnv>;
+  @Bind("desktop.tray.update") updateRoute!: Hono<AppEnv>;
+  setup() {
+    const group = desktopTrayRoutes({ desktop: this.desktop.current() });
+    this.getRoute = endpointOf(group, "GET", "/");
+    this.updateRoute = endpointOf(group, "PUT", "/");
+  }
+}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "desktop.privacy.open",
+        method: "POST",
         prefix: "/api/desktop/privacy-settings",
         auth: "user",
+        role: "system.all",
         order: 10,
       },
     ],
@@ -286,23 +346,34 @@ export class DesktopTrayRoutes {
 })
 export class DesktopPrivacySettingsRoutes {
   @Use() private readonly desktop!: Desktop;
-  @Bind("DesktopPrivacySettingsRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("desktop.privacy.open") routes!: Hono<AppEnv>;
   setup() {
-    this.routes = desktopPrivacySettingsRoutes({ desktop: this.desktop.current() });
+    this.routes = endpointOf(
+      desktopPrivacySettingsRoutes({ desktop: this.desktop.current() }),
+      "POST",
+      "/",
+    );
   }
 }
 
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "DesktopWindowRoutes.routes", prefix: "/api/desktop/window", auth: "user", order: 10 },
+      {
+        id: "desktop.window.action",
+        method: "POST",
+        prefix: "/api/desktop/window",
+        auth: "user",
+        role: "system.maintain",
+        order: 10,
+      },
     ],
   },
 })
 export class DesktopWindowRoutes {
   @Use() private readonly desktop!: Desktop;
-  @Bind("DesktopWindowRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("desktop.window.action") routes!: Hono<AppEnv>;
   setup() {
-    this.routes = desktopWindowRoutes({ desktop: this.desktop.current() });
+    this.routes = endpointOf(desktopWindowRoutes({ desktop: this.desktop.current() }), "POST", "/");
   }
 }

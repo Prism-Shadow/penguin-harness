@@ -35,6 +35,7 @@ import type { MarketPicture, MarketPictures } from "../../plugin/market-pictures
 import { bundledCoversDir, readBundledPicture } from "../../plugin/market-covers.js";
 import { indexMirrorRules } from "../../plugin/mirror-settings.js";
 import { errorBody } from "../errors.js";
+import { endpointOf } from "../app.js";
 
 /** The headers a picture is answered with, beside its content type. */
 const PICTURE_HEADERS: Readonly<Record<string, string>> = {
@@ -125,7 +126,22 @@ function reseed(parked: unknown): MarketSnapshot | null {
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "PluginMarketRoutes.routes", prefix: "/api/plugins/market", auth: "user", order: 68 },
+      {
+        id: "plugin.market.get",
+        method: "GET",
+        prefix: "/api/plugins/market",
+        auth: "user",
+        role: "plugin.read",
+        order: 68,
+      },
+      {
+        id: "plugin.market.getAsset",
+        method: "GET",
+        prefix: "/api/plugins/market/asset",
+        auth: "user",
+        role: "plugin.read",
+        order: 68,
+      },
     ],
   },
   context: {
@@ -137,7 +153,8 @@ export class PluginMarketRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly log!: Log;
   @Use() private readonly hmr!: Hmr;
-  @Bind("PluginMarketRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("plugin.market.get") getRoute!: Hono<AppEnv>;
+  @Bind("plugin.market.getAsset") getAssetRoute!: Hono<AppEnv>;
   private source: MarketSource | null = null;
 
   setup(_ctx: ClassCtx, context: Json) {
@@ -159,12 +176,14 @@ export class PluginMarketRoutes {
     // Found once per App, on the first picture asked for: a push brings a new App with its own
     // assets, and looking may unpack them.
     let covers: string | null | undefined;
-    this.routes = pluginMarketRoutes({
+    const group = pluginMarketRoutes({
       source: this.source,
       pictures: marketPictures({ dir: marketPictureDir(this.config.root), proxy, log }),
       bundled: () =>
         covers === undefined ? (covers = bundledCoversDir(this.hmr.assetsDir())) : covers,
     });
+    this.getRoute = endpointOf(group, "GET", "/");
+    this.getAssetRoute = endpointOf(group, "GET", "/asset");
   }
 
   park(): Json {

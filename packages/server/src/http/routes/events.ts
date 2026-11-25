@@ -12,6 +12,7 @@ import { Channels } from "../../hmr/capabilities.js";
 import { LiveStreams } from "../../auth/live-streams.js";
 import { Auth } from "@prismshadow/penguin-library-auth";
 import { userChannelKey } from "../user-channel.js";
+import { endpointOf } from "../app.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface EventsRouteDeps {
@@ -48,9 +49,11 @@ export function eventsRoutes(deps: EventsRouteDeps): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "EventsRoutes.routes",
+        id: "events.stream",
+        method: "GET",
         prefix: "/api/events",
         auth: "user",
+        role: "system.read",
         order: 60,
       },
     ],
@@ -60,12 +63,16 @@ export class EventsRoutes {
   @Use() private readonly channels!: Channels;
   @Use() private readonly liveStreams!: LiveStreams;
   @Use() private readonly auth!: Auth;
-  @Bind("EventsRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("events.stream") routes!: Hono<AppEnv>;
   setup() {
-    this.routes = eventsRoutes({
-      channels: this.channels as ChannelHub,
-      liveStreams: this.liveStreams,
-      auth: this.auth,
-    });
+    this.routes = endpointOf(
+      eventsRoutes({
+        channels: this.channels as ChannelHub,
+        liveStreams: this.liveStreams,
+        auth: this.auth,
+      }),
+      "GET",
+      "/",
+    );
   }
 }

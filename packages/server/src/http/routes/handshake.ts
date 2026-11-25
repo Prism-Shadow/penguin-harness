@@ -16,6 +16,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { Hmr, Paths } from "../../hmr/capabilities.js";
 import { versionReport } from "../../version-report.js";
 import type { HandshakeAnswer } from "../../machines/handshake.js";
+import { endpointOf } from "../app.js";
 
 /** The registry slot this process's boot identity lives in (see bootIdentity). */
 const BOOT_IDENTITY = "handshake:boot-identity";
@@ -46,17 +47,29 @@ export function handshakeRoutes(deps: { identity: () => Promise<HandshakeAnswer>
  */
 @Component({
   contributes: {
+    "AgentAuthPermissionProvider.roles": [
+      { id: "role.system.read", parents: ["readonly"] },
+      { id: "role.system.maintain", children: ["system.read"] },
+      { id: "role.system.all", children: ["system.maintain"], parents: ["admin"] },
+    ],
     "HttpModule.routes": [
-      { id: "HandshakeRoutes.routes", prefix: "/api/handshake", auth: "user", order: 21 },
+      {
+        id: "handshake.get",
+        method: "GET",
+        prefix: "/api/handshake",
+        auth: "user",
+        role: "system.read",
+        order: 21,
+      },
     ],
   },
 })
 export class HandshakeRoutes {
   @Use() private readonly paths!: Paths;
   @Use() private readonly hmr!: Hmr;
-  @Bind("HandshakeRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("handshake.get") routes!: Hono<AppEnv>;
   setup() {
     const identity = bootIdentity(this.hmr.resources, this.paths.root);
-    this.routes = handshakeRoutes({ identity: () => identity });
+    this.routes = endpointOf(handshakeRoutes({ identity: () => identity }), "GET", "/");
   }
 }

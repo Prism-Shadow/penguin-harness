@@ -379,13 +379,81 @@ export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+import { endpointOf } from "../app.js";
+
 @Component({
   contributes: {
     "HttpModule.routes": [
       {
-        id: "MeRoutes.routes",
+        id: "me.get",
+        method: "GET",
         prefix: "/api/me",
         auth: "user",
+        role: "system.read",
+        order: 10,
+      },
+      {
+        id: "me.updatePassword",
+        method: "PUT",
+        prefix: "/api/me/password",
+        auth: "user",
+        role: "system.all",
+        order: 10,
+      },
+      {
+        id: "me.updateProfile",
+        method: "PUT",
+        prefix: "/api/me/profile",
+        auth: "user",
+        role: "system.maintain",
+        order: 10,
+      },
+      {
+        id: "me.getPrefs",
+        method: "GET",
+        prefix: "/api/me/prefs",
+        auth: "user",
+        role: "system.read",
+        order: 10,
+      },
+      {
+        id: "me.updatePrefs",
+        method: "PUT",
+        prefix: "/api/me/prefs",
+        auth: "user",
+        role: "system.maintain",
+        order: 10,
+      },
+      {
+        id: "me.getBackgroundImage",
+        method: "GET",
+        prefix: "/api/me/background-image",
+        auth: "user",
+        role: "system.read",
+        order: 10,
+      },
+      {
+        id: "me.updateBackgroundImage",
+        method: "PUT",
+        prefix: "/api/me/background-image",
+        auth: "user",
+        role: "system.maintain",
+        order: 10,
+      },
+      {
+        id: "me.getDrafts",
+        method: "GET",
+        prefix: "/api/me/drafts",
+        auth: "user",
+        role: "system.read",
+        order: 10,
+      },
+      {
+        id: "me.updateDrafts",
+        method: "PATCH",
+        prefix: "/api/me/drafts",
+        auth: "user",
+        role: "system.maintain",
         order: 10,
       },
     ],
@@ -400,13 +468,21 @@ export class MeRoutes {
   @Use() private readonly backgroundImages!: BackgroundImageStore;
   @Use() private readonly settings!: Settings;
   @Use() private readonly users!: Users;
-  @Bind("MeRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("me.get") getRoute!: Hono<AppEnv>;
+  @Bind("me.updatePassword") updatePasswordRoute!: Hono<AppEnv>;
+  @Bind("me.updateProfile") updateProfileRoute!: Hono<AppEnv>;
+  @Bind("me.getPrefs") getPrefsRoute!: Hono<AppEnv>;
+  @Bind("me.updatePrefs") updatePrefsRoute!: Hono<AppEnv>;
+  @Bind("me.getBackgroundImage") getBackgroundImageRoute!: Hono<AppEnv>;
+  @Bind("me.updateBackgroundImage") updateBackgroundImageRoute!: Hono<AppEnv>;
+  @Bind("me.getDrafts") getDraftsRoute!: Hono<AppEnv>;
+  @Bind("me.updateDrafts") updateDraftsRoute!: Hono<AppEnv>;
   setup({ contributions }: ClassCtx) {
     const ownedPrefs = (contributions.ownedPrefs ?? []).map((c) => ({
       key: c.data.key as string,
       message: c.data.message as string,
     }));
-    this.routes = meRoutes({
+    const group = meRoutes({
       authService: this.auth,
       config: this.config,
       desktop: this.desktop.current() as DesktopService | null,
@@ -417,5 +493,14 @@ export class MeRoutes {
       usersRepo: this.users,
       ownedPrefs,
     });
+    this.getRoute = endpointOf(group, "GET", "/");
+    this.updatePasswordRoute = endpointOf(group, "PUT", "/password");
+    this.updateProfileRoute = endpointOf(group, "PUT", "/profile");
+    this.getPrefsRoute = endpointOf(group, "GET", "/prefs");
+    this.updatePrefsRoute = endpointOf(group, "PUT", "/prefs");
+    this.getBackgroundImageRoute = endpointOf(group, "GET", "/background-image");
+    this.updateBackgroundImageRoute = endpointOf(group, "PUT", "/background-image");
+    this.getDraftsRoute = endpointOf(group, "GET", "/drafts");
+    this.updateDraftsRoute = endpointOf(group, "PATCH", "/drafts");
   }
 }
