@@ -242,9 +242,11 @@
     "@prismshadow/penguin-library-session": "workspace:*",
     "@prismshadow/penguin-library-trace": "workspace:*",
     "hono": "^4.13.11",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "tar": "^7.5.21"
   },
   "devDependencies": {
+    "@prismshadow/penguin-hmr": "workspace:*",
     "@types/ws": "^8.18.1",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
