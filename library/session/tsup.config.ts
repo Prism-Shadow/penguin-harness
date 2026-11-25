@@ -22,7 +22,6 @@ export default defineConfig({
     "src/trace-file-path.ts",
     "src/system-agent.ts",
     "src/sandbox-ceiling.ts",
-    "src/workspace-group.ts",
   ],
   format: ["esm"],
   target: "node24",

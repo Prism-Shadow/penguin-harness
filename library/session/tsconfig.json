@@ -15,6 +15,10 @@
       "@prismshadow/penguin-library-http/errors": ["../http/src/errors.ts"],
       "@prismshadow/penguin-library-http/validate": ["../http/src/validate.ts"],
       "@prismshadow/penguin-library-trace": ["../trace/src/trace.ts"],
+      "@prismshadow/penguin-library-workspace": ["../workspace/src/index.ts"],
+      "@prismshadow/penguin-library-workspace/workspace-group": [
+        "../workspace/src/workspace-group.ts"
+      ],
       "@prismshadow/penguin-library-trace/repos/trace-index": [
         "../trace/src/repos/trace-index.ts"
       ],
