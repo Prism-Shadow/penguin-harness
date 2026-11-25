@@ -71,7 +71,7 @@ import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
 import { DockPanelTitle } from "../../lib/dock-panel-empty";
 import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
 
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import {
   dockPageId,
   sessionAppPair,

@@ -17,7 +17,7 @@ import type { useMainSidebarFetchScope } from "./main-sidebar-fetch-scope";
 import { failureNode } from "../../lib/failure";
 
 /** Consecutive live main statements 116..122, called once in original hook order. */
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 
 export function useMainSidebarArchiveSession(scope: ReturnType<typeof useMainSidebarFetchScope>) {
   const pages = usePageWorkspace();

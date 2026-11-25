@@ -14,7 +14,7 @@ import { useLocation, useMatch } from "react-router";
 import { useNarrow } from "../../lib/page-slot";
 import { useProject } from "../../state/project";
 import { announceDockScope } from "./dock-listeners";
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { sessionAppPair, dockPageKey, existingDockPanel } from "../../lib/session-app-dock";
 import {
   setDockScope,

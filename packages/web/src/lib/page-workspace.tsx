@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { matchPath, useLocation, useNavigate } from "react-router";
 import { leaveWindow, windowAt, windowInFront } from "./app-window-address";
 import { parseSessionWorkbenchPage } from "./session-workbenches";
@@ -43,39 +35,7 @@ import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { getSession } from "../api/endpoints";
 import { focusSessionMachine, machineForSession } from "./session-machines";
 import { toastApiError } from "./toast-api-error";
-
-interface SessionLocation {
-  projectId: string;
-  machineId: string | null;
-  session?: SessionInfo;
-}
-
-export interface Workspace {
-  /** Router address, including the conversation that hosts a docked directory. */
-  address: string;
-  scope: number;
-  accountScope: number;
-  layout: PageLayout;
-  current: OpenPage | null;
-  pageForDrag(id: string): OpenPage | undefined;
-  resumeDraft(): boolean;
-  openBesideSession(sessionId: string, page: OpenPage, source?: SessionLocation): void;
-  focus(page: OpenPage): void;
-  openPage(page: OpenPage): void;
-  canDockRunningApp(session: OpenPage, app: OpenPage): boolean;
-  dockRunningApp(session: OpenPage, app: OpenPage): void;
-  close(id: string): void;
-  minimize(id: string): void;
-  fullScreen(page: OpenPage): void;
-  /** The page occupying the full shell, with its original component still mounted. */
-  exitFullScreen?: () => void;
-  reorder(id: string, before: string): void;
-  openAppCenterBesideSession(sessionId: string, source?: SessionLocation): void;
-  openFromAppCenter(page: OpenPage, replace?: boolean): boolean;
-  separate(page: OpenPage): void;
-}
-const Context = createContext<Workspace | null>(null);
-export const usePageWorkspace = () => useContext(Context);
+import { PageWorkspaceContext as Context, type SessionLocation } from "./page-workspace-context";
 
 interface DockOperations {
   clearDockPages(): void;

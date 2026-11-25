@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   closePage,
@@ -45,5 +46,20 @@ describe("the open pages in a browser window", () => {
     const next = visitPage(state, moved);
     expect(next.pages).toEqual([a, moved]);
     expect(next.visible).toEqual([x.id]);
+  });
+});
+
+describe("the page workspace context module", () => {
+  // A second evaluation of the module mints a second context, and a consumer holding the first
+  // reads null under a mounted provider. The dev server evaluates a module again when anything
+  // it imports at runtime is edited, so this one may import only react.
+  it("imports nothing at runtime but react", () => {
+    const source = readFileSync(
+      new URL("../src/lib/page-workspace-context.ts", import.meta.url),
+      "utf8",
+    );
+    const runtime = [...source.matchAll(/^(?:import|export)\s(?!type\s)[^;]*?from\s+"([^"]+)"/gm)];
+    expect(runtime.map((match) => match[1])).toEqual(["react"]);
+    expect(source).not.toMatch(/\bimport\s*\(|^import\s+"/m);
   });
 });
