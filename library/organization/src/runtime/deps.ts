@@ -19,7 +19,7 @@ import type {
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { MessagingChannel } from "@prismshadow/penguin-library-messaging/vocabulary";
-import type { OrgCache } from "@prismshadow/penguin-library-organization";
+import type { OrgCache } from "../organization.js";
 import type { OrgStore } from "../store.js";
 import type { ErrorSink } from "@prismshadow/penguin-library-observability";
 import type { SemanticIdKind, SemanticIdSuggestResponse } from "../types.js";
