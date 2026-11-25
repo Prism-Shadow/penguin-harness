@@ -2,7 +2,7 @@
  * WeChat's credential section: the scan block, the stored-token row, and the direct-chats rule.
  * There is nothing to type on this channel, so the QR is not the easy path but the only one.
  */
-import { S } from "../../../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { WeChatScanConnect } from "../../wechat-scan-connect";
 import type { ChannelFieldsProps } from "../channel-form";
 import { StoredSecretRow } from "../fields-kit";

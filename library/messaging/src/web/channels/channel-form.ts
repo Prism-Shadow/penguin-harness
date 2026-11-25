@@ -14,7 +14,7 @@
  */
 import type { ReactNode } from "react";
 import type { MessagingBindingInfo, MessagingRuntimeStatus } from "@prismshadow/penguin-server/api";
-import { S } from "../../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /**
  * The delivery preferences every channel carries — the saved fields that are not credentials,

@@ -5,7 +5,7 @@ import type {
   TelegramTestRequest,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../../../api/endpoints";
-import { S } from "../../../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import type { MessagingChannelForm } from "../channel-form";
 import { TelegramFields } from "./fields";
 import {

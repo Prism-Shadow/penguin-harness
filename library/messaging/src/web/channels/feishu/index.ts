@@ -5,7 +5,7 @@ import type {
   FeishuTestRequest,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../../../api/endpoints";
-import { S } from "../../../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { plainTestOutcome, type MessagingChannelForm } from "../channel-form";
 import { FeishuFields } from "./fields";
 import {

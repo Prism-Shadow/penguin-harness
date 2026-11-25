@@ -3,7 +3,7 @@
  * the fallback for a bot the scan cannot reach, and the replies-only rule under them.
  */
 import { Input, PasswordInput } from "@prismshadow/penguin-ui";
-import { S } from "../../../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { QQScanConnect } from "../../qq-scan-connect";
 import type { ChannelFieldsProps } from "../channel-form";
 import { CornerLinkedField, ExternalLink, StoredSecretRow, errorText } from "../fields-kit";

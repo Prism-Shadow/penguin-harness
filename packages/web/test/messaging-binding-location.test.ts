@@ -26,7 +26,7 @@ import {
   editorAccess,
   holderConflict,
   holdersNote,
-} from "../src/features/messaging/messaging-binding-location";
+} from "@prismshadow/penguin-library-messaging/web/messaging-binding-location";
 import type { MachineLink } from "../src/lib/machine-link";
 import { forgetSessionMachines, rememberSessionMachine } from "../src/lib/session-machines";
 import { formatDateTime } from "../src/lib/format";

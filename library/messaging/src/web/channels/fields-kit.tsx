@@ -5,7 +5,7 @@
  */
 import type { ReactNode } from "react";
 import { Checkbox, FieldLabel } from "@prismshadow/penguin-ui";
-import { S } from "../../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import type { MessagingFormErrors } from "./channel-form";
 
 export function errorText(

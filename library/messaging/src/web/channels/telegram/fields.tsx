@@ -1,6 +1,6 @@
 /** Telegram's credential section: the Bot Token, with @BotFather at its corner. */
 import { PasswordInput } from "@prismshadow/penguin-ui";
-import { S } from "../../../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import type { ChannelFieldsProps } from "../channel-form";
 import { CornerLinkedField, ExternalLink, StoredSecretRow, errorText } from "../fields-kit";
 import type { TelegramFormFields } from "./form";

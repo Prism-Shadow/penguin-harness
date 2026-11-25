@@ -28,8 +28,8 @@ import type {
   MessagingChannelState,
   SessionInfo,
 } from "@prismshadow/penguin-server/api";
-import { MessagingPanel } from "../src/features/messaging/messaging-panel";
-import { rememberBinding } from "../src/features/messaging/messaging-binding-cache";
+import { MessagingPanel } from "@prismshadow/penguin-library-messaging/web/messaging-panel";
+import { rememberBinding } from "@prismshadow/penguin-library-messaging/web/messaging-binding-cache";
 import { formatDateTime } from "../src/lib/format";
 import { rememberMachineSessions } from "../src/lib/machine-cache";
 import { forgetSessionMachines, machineForSession } from "../src/lib/session-machines";

@@ -1,6 +1,6 @@
 /** What a Telegram credential test reports, as the notices the editor shows for it. */
 import type { TelegramTestResponse } from "@prismshadow/penguin-server/api";
-import { S } from "../../../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import type { MessagingTestNotice } from "../channel-form";
 
 /**

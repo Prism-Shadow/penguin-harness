@@ -22,7 +22,7 @@ import {
   QrCode,
   qqScanStep,
   type QQScanTally,
-} from "../src/features/messaging/qq-scan-connect";
+} from "@prismshadow/penguin-library-messaging/web/qq-scan-connect";
 
 import { S } from "../src/lib/strings";
 

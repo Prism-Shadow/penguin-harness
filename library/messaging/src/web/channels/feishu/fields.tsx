@@ -1,6 +1,6 @@
 /** Feishu's credential section: App ID (console link at its corner), App Secret, API domain. */
 import { Input, PasswordInput } from "@prismshadow/penguin-ui";
-import { S } from "../../../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import type { ChannelFieldsProps } from "../channel-form";
 import { CornerLinkedField, ExternalLink, StoredSecretRow, errorText } from "../fields-kit";
 import type { FeishuFormFields } from "./form";
