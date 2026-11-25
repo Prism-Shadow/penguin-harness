@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@prismshadow/penguin-library-session": ["../session/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}
