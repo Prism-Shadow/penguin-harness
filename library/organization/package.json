@@ -143,7 +143,9 @@
     "@prismshadow/penguin-library-http": "workspace:*",
     "@prismshadow/penguin-library-agent-api": "workspace:*",
     "@prismshadow/penguin-library-trace": "workspace:*",
-    "hono": "^4.13.11"
+    "hono": "^4.13.11",
+    "smol-toml": "^1.9.1",
+    "yaml": "^2.5.0"
   },
   "devDependencies": {
     "tsup": "^8.3.0",
