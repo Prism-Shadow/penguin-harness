@@ -27,7 +27,14 @@ import {
   useEscLayer,
   useMicrophoneLevels,
 } from "@prismshadow/penguin-ui";
-import { S, apiErrorText, boundToolModel, getVoicePolish, polishTranscript, transcribeRecording } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  apiErrorText,
+  boundToolModel,
+  getVoicePolish,
+  polishTranscript,
+  transcribeRecording,
+} from "@prismshadow/penguin-web/internal";
 
 import { canRecordSpeech, captureSpeech, recordingData } from "./recording";
 import { useVoice } from "./voice-scope";

@@ -8,7 +8,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../src/api/client";
-import { exitedProcessIds, reportableProcessFailure } from "@prismshadow/penguin-library-session/web/chat/process-list";
+import {
+  exitedProcessIds,
+  reportableProcessFailure,
+} from "@prismshadow/penguin-library-session/web/chat/process-list";
 
 const row = (processId: string, running: boolean) => ({ processId, running });
 

@@ -28,8 +28,20 @@ import {
   exceptionReport,
   isReportable,
 } from "@prismshadow/penguin-ui";
-import { FIND_LOAD_OLDER_EVENT, FIND_MORE_ATTR, FindRevealContext, S, WorkspaceLinksProvider, useRegionRevealed } from "@prismshadow/penguin-web/internal";
-import type { ChatItem, ComposerReference, MemoryChangeRow, TaskStats } from "@prismshadow/penguin-web/internal";
+import {
+  FIND_LOAD_OLDER_EVENT,
+  FIND_MORE_ATTR,
+  FindRevealContext,
+  S,
+  WorkspaceLinksProvider,
+  useRegionRevealed,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  ChatItem,
+  ComposerReference,
+  MemoryChangeRow,
+  TaskStats,
+} from "@prismshadow/penguin-web/internal";
 
 import type { ElidedBodies, HistoryTransfer, PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";

@@ -40,7 +40,12 @@ import {
   useElapsedPast,
 } from "@prismshadow/penguin-ui";
 import { HistoryMachineRetry } from "./history-machine-retry";
-import { S, machineForSession, transferAmount, useMachines } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  machineForSession,
+  transferAmount,
+  useMachines,
+} from "@prismshadow/penguin-web/internal";
 
 import { machineAway } from "./machine-away";
 

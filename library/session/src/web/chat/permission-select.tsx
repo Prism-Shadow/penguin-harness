@@ -43,8 +43,32 @@ import {
   MenuRadioItem,
   MenuSeparator,
 } from "@prismshadow/penguin-ui";
-import { PERMISSION_LEVEL_GLYPH, PERMISSION_LEVEL_TONE, S, SettingsDialog, approvalModePick, firstUnavailableBackend, localizedText, matchPreset, menuRowLevel, permissionLevel, permissionMenu, presetBlock, presetEffects, presetPick, presetsOf, sandboxSwitchOff, toneInk, useAuth, useLocale } from "@prismshadow/penguin-web/internal";
-import type { PermissionLevel, PermissionPick, PresetBlock } from "@prismshadow/penguin-web/internal";
+import {
+  PERMISSION_LEVEL_GLYPH,
+  PERMISSION_LEVEL_TONE,
+  S,
+  SettingsDialog,
+  approvalModePick,
+  firstUnavailableBackend,
+  localizedText,
+  matchPreset,
+  menuRowLevel,
+  permissionLevel,
+  permissionMenu,
+  presetBlock,
+  presetEffects,
+  presetPick,
+  presetsOf,
+  sandboxSwitchOff,
+  toneInk,
+  useAuth,
+  useLocale,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  PermissionLevel,
+  PermissionPick,
+  PresetBlock,
+} from "@prismshadow/penguin-web/internal";
 
 /**
  * A level's shield in the level's tone: the button's mark, and the mark ahead of each row's name.

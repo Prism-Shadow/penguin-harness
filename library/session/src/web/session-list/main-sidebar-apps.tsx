@@ -19,7 +19,13 @@ import {
   ICON_SIZE,
   type RowActionItem,
 } from "@prismshadow/penguin-ui";
-import { PAGE_DRAG_TYPE, S, TileIcon, agentSettingsPath, usePageWorkspace } from "@prismshadow/penguin-web/internal";
+import {
+  PAGE_DRAG_TYPE,
+  S,
+  TileIcon,
+  agentSettingsPath,
+  usePageWorkspace,
+} from "@prismshadow/penguin-web/internal";
 
 import { useSidebarApps, type SidebarAppRow } from "./use-sidebar-apps";
 

@@ -1,4 +1,19 @@
-import { DockPanelTitle, S, ScopedPanelSession, SessionAppDockBody, chordKeys, confirmClose, displayedBinding, dockPageId, pageSessionId, sessionAppPair, sessionWorkbenchKindAt, useCoarsePointer, useKeymap, usePageWorkspace } from "@prismshadow/penguin-web/internal";
+import {
+  DockPanelTitle,
+  S,
+  ScopedPanelSession,
+  SessionAppDockBody,
+  chordKeys,
+  confirmClose,
+  displayedBinding,
+  dockPageId,
+  pageSessionId,
+  sessionAppPair,
+  sessionWorkbenchKindAt,
+  useCoarsePointer,
+  useKeymap,
+  usePageWorkspace,
+} from "@prismshadow/penguin-web/internal";
 /**
  * One dock surface (dock-state.ts owns the arrangement): a tab strip across the top and
  * the active tab's body below — or, while the open dock has no tabs, a centered picker

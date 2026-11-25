@@ -6,8 +6,21 @@ import { SessionElapsed, sessionElapsedSplit } from "../session-stats";
 import { useEffect, useState, type ReactNode } from "react";
 
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { S, bucketCostUsd, humanizeDuration, humanizeDurationLive, humanizeTokens, liveSessionElapsedMs, sessionElapsedBreakdown } from "@prismshadow/penguin-web/internal";
-import type { BucketPricing, Currency, StreamModel, TaskStatsTracker } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  bucketCostUsd,
+  humanizeDuration,
+  humanizeDurationLive,
+  humanizeTokens,
+  liveSessionElapsedMs,
+  sessionElapsedBreakdown,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  BucketPricing,
+  Currency,
+  StreamModel,
+  TaskStatsTracker,
+} from "@prismshadow/penguin-web/internal";
 
 import { advanceCostStat, type CostStatDisplay, type CostStatHold } from "../header-stats";
 

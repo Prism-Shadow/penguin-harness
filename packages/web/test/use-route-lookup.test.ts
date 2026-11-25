@@ -30,7 +30,10 @@ import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../src/api/client";
 import { useRouteLookup } from "@prismshadow/penguin-library-session/web/chat/use-route-lookup";
-import type { RouteLookup, RouteLookupInput } from "@prismshadow/penguin-library-session/web/chat/use-route-lookup";
+import type {
+  RouteLookup,
+  RouteLookupInput,
+} from "@prismshadow/penguin-library-session/web/chat/use-route-lookup";
 import { mount, settle, unmountAll } from "./helpers/dom";
 
 beforeEach(() => {

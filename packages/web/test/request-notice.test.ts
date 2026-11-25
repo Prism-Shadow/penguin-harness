@@ -16,7 +16,10 @@
  *   apart from one that refused the request.
  */
 import { describe, expect, it, vi } from "vitest";
-import { llmErrorNotice, requestNotice } from "@prismshadow/penguin-library-session/web/chat/request-notice";
+import {
+  llmErrorNotice,
+  requestNotice,
+} from "@prismshadow/penguin-library-session/web/chat/request-notice";
 import type { RequestRetryPresses } from "@prismshadow/penguin-library-session/web/chat/request-notice";
 import type { LlmErrorItem, ReconnectItem } from "../src/lib/amsp/stream-model";
 import { setActiveStrings, zh } from "../src/lib/strings";

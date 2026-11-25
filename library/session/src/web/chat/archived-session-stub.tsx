@@ -10,7 +10,13 @@
 import { useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { Pill, Button, ConfirmModal, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
-import { S, api, formatDateTime, programSource, toastApiError } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  api,
+  formatDateTime,
+  programSource,
+  toastApiError,
+} from "@prismshadow/penguin-web/internal";
 
 export function ArchivedSessionStub({
   session,

@@ -1,5 +1,13 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { api, failureNode, forgetSession, removeFromSessionOrder, saveSessionOrder, toastApiError, usePageWorkspace } from "@prismshadow/penguin-web/internal";
+import {
+  api,
+  failureNode,
+  forgetSession,
+  removeFromSessionOrder,
+  saveSessionOrder,
+  toastApiError,
+  usePageWorkspace,
+} from "@prismshadow/penguin-web/internal";
 
 import { removePinnedSession, savePinnedSessions } from "./pinned-sessions";
 

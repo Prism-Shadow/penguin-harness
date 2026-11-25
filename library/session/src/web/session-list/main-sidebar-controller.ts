@@ -1,4 +1,9 @@
-import type { MainSidebarProps, SidebarBindingReader, SidebarNavSelector, SidebarPagesReader } from "@prismshadow/penguin-web/internal";
+import type {
+  MainSidebarProps,
+  SidebarBindingReader,
+  SidebarNavSelector,
+  SidebarPagesReader,
+} from "@prismshadow/penguin-web/internal";
 import { useMainSidebarInputs } from "./main-sidebar-inputs";
 import { useMainSidebarSessions } from "./main-sidebar-sessions";
 import { useMainSidebarGroupMode } from "./main-sidebar-group-mode";

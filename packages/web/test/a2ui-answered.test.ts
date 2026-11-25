@@ -15,7 +15,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { buildBackgroundTaskDoneMessage, buildScheduledMessage } from "@prismshadow/amsp/markers";
-import { readOnlyActions, replyAnswers } from "@prismshadow/penguin-library-session/web/chat/a2ui-answered";
+import {
+  readOnlyActions,
+  replyAnswers,
+} from "@prismshadow/penguin-library-session/web/chat/a2ui-answered";
 import { buildSkillsMessage } from "@prismshadow/penguin-library-session/web/chat/skill-use";
 import type { ChatItem } from "../src/lib/amsp/stream-model";
 

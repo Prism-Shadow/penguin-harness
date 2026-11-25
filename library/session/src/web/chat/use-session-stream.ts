@@ -25,12 +25,35 @@ import type {
   SessionStatus,
   SubagentRuntimeInfo,
 } from "@prismshadow/penguin-server/api";
-import { apiSocket, createStreamController, createStreamModel, getGoal, machineForSession, openHistoryStream, openSessionStream, openTraceBodyStream, probeSession } from "@prismshadow/penguin-web/internal";
-import type { ChatItem, HistoryTransfer, OlderHistoryState, PendingApproval, StreamController, StreamModel, ThinkingItem, ToolCallItem } from "@prismshadow/penguin-web/internal";
+import {
+  apiSocket,
+  createStreamController,
+  createStreamModel,
+  getGoal,
+  machineForSession,
+  openHistoryStream,
+  openSessionStream,
+  openTraceBodyStream,
+  probeSession,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  ChatItem,
+  HistoryTransfer,
+  OlderHistoryState,
+  PendingApproval,
+  StreamController,
+  StreamModel,
+  ThinkingItem,
+  ToolCallItem,
+} from "@prismshadow/penguin-web/internal";
 
 import type { GoalBannerState } from "./goal-use";
 
-export type { HistoryTransfer, OlderHistoryState, PendingApproval } from "@prismshadow/penguin-web/internal";
+export type {
+  HistoryTransfer,
+  OlderHistoryState,
+  PendingApproval,
+} from "@prismshadow/penguin-web/internal";
 
 /** Fetches the whole of an item's folded values (see the stream controller's loadBodies). */
 export interface ElidedBodies {

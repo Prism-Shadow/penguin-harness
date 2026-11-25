@@ -9,7 +9,10 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
-import { ElidedBodiesContext, ElidedBodyNote } from "@prismshadow/penguin-library-session/web/chat/elided-body";
+import {
+  ElidedBodiesContext,
+  ElidedBodyNote,
+} from "@prismshadow/penguin-library-session/web/chat/elided-body";
 import type { ThinkingItem } from "../src/lib/amsp/stream-model";
 import { S } from "../src/lib/strings";
 import { button, click, mount, unmountAll } from "./helpers/dom";

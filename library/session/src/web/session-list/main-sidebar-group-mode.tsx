@@ -3,7 +3,12 @@ import { useArrived } from "@prismshadow/penguin-ui";
 import { loadPinnedSessions } from "./pinned-sessions";
 import { loadWorkspaceRegistry, type WorkspaceEntry } from "./workspace-registry";
 
-import { initialGroupMode, initialSessionSortMode, loadGroupSet, loadSessionOrder } from "@prismshadow/penguin-web/internal";
+import {
+  initialGroupMode,
+  initialSessionSortMode,
+  loadGroupSet,
+  loadSessionOrder,
+} from "@prismshadow/penguin-web/internal";
 import type { GroupMode, SessionSortMode } from "@prismshadow/penguin-web/internal";
 
 import { loadGroupOrder } from "./group-order";

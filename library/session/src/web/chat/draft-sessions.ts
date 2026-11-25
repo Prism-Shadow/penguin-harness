@@ -22,7 +22,14 @@
  */
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
-import { DRAFT_SESSION_ID, forgetDraftUploads, parkDraftUploads, randomHex, subscribeAccountApplied, syncedStorage } from "@prismshadow/penguin-web/internal";
+import {
+  DRAFT_SESSION_ID,
+  forgetDraftUploads,
+  parkDraftUploads,
+  randomHex,
+  subscribeAccountApplied,
+  syncedStorage,
+} from "@prismshadow/penguin-web/internal";
 
 import {
   clearDraft,

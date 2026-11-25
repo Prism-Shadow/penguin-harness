@@ -11,7 +11,20 @@ import type {
   SessionInfo,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
-import { ApiError, S, api, createStreamModel, finalizeHistory, machineForSession, pushMessage, switchDeskModel, toastApiError, toastFailure, toldFailure, useCompany } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  S,
+  api,
+  createStreamModel,
+  finalizeHistory,
+  machineForSession,
+  pushMessage,
+  switchDeskModel,
+  toastApiError,
+  toastFailure,
+  toldFailure,
+  useCompany,
+} from "@prismshadow/penguin-web/internal";
 
 import { adoptDockScope } from "../../dock";
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";

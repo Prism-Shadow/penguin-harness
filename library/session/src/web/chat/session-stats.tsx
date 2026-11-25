@@ -11,7 +11,19 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { CostParts } from "@prismshadow/penguin-server/api";
-import { CostPartsRows, ElapsedSplitRows, S, StatHint, TokenPartsRows, cacheHitRate, formatPercent, humanizeDuration, humanizeDurationLive, liveSessionElapsedMs, sessionElapsedBreakdown } from "@prismshadow/penguin-web/internal";
+import {
+  CostPartsRows,
+  ElapsedSplitRows,
+  S,
+  StatHint,
+  TokenPartsRows,
+  cacheHitRate,
+  formatPercent,
+  humanizeDuration,
+  humanizeDurationLive,
+  liveSessionElapsedMs,
+  sessionElapsedBreakdown,
+} from "@prismshadow/penguin-web/internal";
 import type { Currency, TaskStatsTracker, UsageParts } from "@prismshadow/penguin-web/internal";
 
 interface ElapsedSource {

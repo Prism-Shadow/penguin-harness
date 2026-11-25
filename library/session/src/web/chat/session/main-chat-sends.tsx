@@ -5,7 +5,14 @@ import type {
   ModelRefDto,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
-import { ApiError, S, api, machineForSession, switchDeskModel, toastApiError } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  S,
+  api,
+  machineForSession,
+  switchDeskModel,
+  toastApiError,
+} from "@prismshadow/penguin-web/internal";
 
 import { discardUnstartedSession } from "../unstarted-session";
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";

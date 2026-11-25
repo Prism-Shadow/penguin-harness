@@ -22,7 +22,11 @@
 import { DEFAULT_MAX_TURN_ATTEMPTS } from "@prismshadow/penguin-core/interfaces";
 import type { RetryAction } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
-import type { CompactionItem, LlmErrorItem, ReconnectItem } from "@prismshadow/penguin-web/internal";
+import type {
+  CompactionItem,
+  LlmErrorItem,
+  ReconnectItem,
+} from "@prismshadow/penguin-web/internal";
 
 import { httpStatusOf } from "./provider-error";
 import type { RequestFailure } from "./request-failure-report";

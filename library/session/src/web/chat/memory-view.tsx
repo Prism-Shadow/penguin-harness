@@ -27,7 +27,16 @@ import {
   bodyWithoutFrontmatter,
   languageForFileName,
 } from "@prismshadow/penguin-ui";
-import { S, api, failureNode, formatBytes, formatRelativeDate, isFolderFilePath, memoryRowKey, useLocale } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  api,
+  failureNode,
+  formatBytes,
+  formatRelativeDate,
+  isFolderFilePath,
+  memoryRowKey,
+  useLocale,
+} from "@prismshadow/penguin-web/internal";
 import type { MemoryChangeRow, MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
 
 import {

@@ -1,6 +1,19 @@
 import { useMemo } from "react";
 import type { AppCenterShortcut, IconRef } from "@prismshadow/penguin-server/api";
-import { SYSTEM_AGENT_ID, agentDisplayName, localizedText, nameOnMachine, systemAppKey, systemShortcutsOf, useLocale, useMachines, usePageAgent, useProject, useRunningAppRecords, useSystemApps } from "@prismshadow/penguin-web/internal";
+import {
+  SYSTEM_AGENT_ID,
+  agentDisplayName,
+  localizedText,
+  nameOnMachine,
+  systemAppKey,
+  systemShortcutsOf,
+  useLocale,
+  useMachines,
+  usePageAgent,
+  useProject,
+  useRunningAppRecords,
+  useSystemApps,
+} from "@prismshadow/penguin-web/internal";
 import type { OpenPage, SystemShortcut } from "@prismshadow/penguin-web/internal";
 
 export interface SidebarAppRow {

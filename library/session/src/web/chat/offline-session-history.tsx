@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { EmptyState, Notice } from "@prismshadow/penguin-ui";
-import { ApiError, S, createStreamModel, machineForSession, openHistoryStream, pushMessages, readHistory, seedHistoryWindow, useMachines } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  S,
+  createStreamModel,
+  machineForSession,
+  openHistoryStream,
+  pushMessages,
+  readHistory,
+  seedHistoryWindow,
+  useMachines,
+} from "@prismshadow/penguin-web/internal";
 import type { ChatItem } from "@prismshadow/penguin-web/internal";
 
 import { HistoryMachineRetry } from "./history-machine-retry";

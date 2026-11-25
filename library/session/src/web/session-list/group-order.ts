@@ -1,4 +1,9 @@
-import { moveInSequence, orderWithinPinPartitions, readStringArray, writeStringArray } from "@prismshadow/penguin-web/internal";
+import {
+  moveInSequence,
+  orderWithinPinPartitions,
+  readStringArray,
+  writeStringArray,
+} from "@prismshadow/penguin-web/internal";
 import type { GroupMode, SessionOrderStorage } from "@prismshadow/penguin-web/internal";
 
 /**

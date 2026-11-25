@@ -1,5 +1,12 @@
 import { toastError, toastSuccess } from "@prismshadow/penguin-ui";
-import { S, api, groupPageOf, machineForSession, toastApiError, workspaceGroupKey } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  api,
+  groupPageOf,
+  machineForSession,
+  toastApiError,
+  workspaceGroupKey,
+} from "@prismshadow/penguin-web/internal";
 
 import { deleteWorkspaceGroup, isOutdatedMachine } from "./delete-workspace";
 import {

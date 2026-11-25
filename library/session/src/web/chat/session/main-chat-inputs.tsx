@@ -1,4 +1,11 @@
-import { scopedValue, useAuth, useCompany, useProject, useSessions, useTheme } from "@prismshadow/penguin-web/internal";
+import {
+  scopedValue,
+  useAuth,
+  useCompany,
+  useProject,
+  useSessions,
+  useTheme,
+} from "@prismshadow/penguin-web/internal";
 import type { Scoped, StagedThinkingSwitch } from "@prismshadow/penguin-web/internal";
 import { useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";

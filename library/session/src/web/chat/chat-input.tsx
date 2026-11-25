@@ -130,8 +130,41 @@ import {
   type TagInputChip,
 } from "@prismshadow/penguin-ui";
 
-import { BOOK_ICON, ModelCatalogSelect, ModelPickerModal, S, SELECTABLE_THINKING_LEVELS, SkillIcon, SkillPickList, ThinkingLevelSelect, agentDisplayName, buildSkillsMessage, employeesLast, fitTextarea, formatBytes, humanizeTokens, isEmployee, isLongPaste, localizedShortText, longPasteFileName, modelLabel, sameModelRef, skillSlashItems, splitBySize, splitDroppedFiles, thinkingLevelLabel, toggleSkillName, useAgentAvatarSrc, useAuth, useLocale } from "@prismshadow/penguin-web/internal";
-import type { ComposerReference, DraftUploads, PermissionPick } from "@prismshadow/penguin-web/internal";
+import {
+  BOOK_ICON,
+  ModelCatalogSelect,
+  ModelPickerModal,
+  S,
+  SELECTABLE_THINKING_LEVELS,
+  SkillIcon,
+  SkillPickList,
+  ThinkingLevelSelect,
+  agentDisplayName,
+  buildSkillsMessage,
+  employeesLast,
+  fitTextarea,
+  formatBytes,
+  humanizeTokens,
+  isEmployee,
+  isLongPaste,
+  localizedShortText,
+  longPasteFileName,
+  modelLabel,
+  sameModelRef,
+  skillSlashItems,
+  splitBySize,
+  splitDroppedFiles,
+  thinkingLevelLabel,
+  toggleSkillName,
+  useAgentAvatarSrc,
+  useAuth,
+  useLocale,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  ComposerReference,
+  DraftUploads,
+  PermissionPick,
+} from "@prismshadow/penguin-web/internal";
 
 import { useDictation } from "./voice/dictation";
 import { useDraftHeight } from "./use-draft-height";

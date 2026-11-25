@@ -60,7 +60,15 @@ import {
   type ActivityGroupRow,
 } from "@prismshadow/penguin-ui";
 
-import { S, approvalKey, compactionDegraded, compactionResultVisible, compactionShortOfRoom, compactionSummaryText, humanizeDuration } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  approvalKey,
+  compactionDegraded,
+  compactionResultVisible,
+  compactionShortOfRoom,
+  compactionSummaryText,
+  humanizeDuration,
+} from "@prismshadow/penguin-web/internal";
 import type { CompactionItem, ToolCallItem } from "@prismshadow/penguin-web/internal";
 
 import type { StreamRenderContext } from "./message-stream";

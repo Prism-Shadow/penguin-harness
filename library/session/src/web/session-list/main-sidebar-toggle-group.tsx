@@ -1,5 +1,15 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { GroupPager, clampGroupPage, cutAtWatermark, groupPageCount, groupPageSlice, groupSessionsByTime, matchesSessionQuery, saveGroupSet, storeSessionSortMode } from "@prismshadow/penguin-web/internal";
+import {
+  GroupPager,
+  clampGroupPage,
+  cutAtWatermark,
+  groupPageCount,
+  groupPageSlice,
+  groupSessionsByTime,
+  matchesSessionQuery,
+  saveGroupSet,
+  storeSessionSortMode,
+} from "@prismshadow/penguin-web/internal";
 import type { SessionSortMode } from "@prismshadow/penguin-web/internal";
 import { savePinnedSessions, togglePinnedSession } from "./pinned-sessions";
 

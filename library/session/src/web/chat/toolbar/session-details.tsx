@@ -6,7 +6,13 @@
 import type { ReactNode } from "react";
 import type { AgentSummary, SessionInfo } from "@prismshadow/penguin-server/api";
 import { CopyButton } from "@prismshadow/penguin-ui";
-import { S, agentDisplayName, formatDateTime, nameOnMachine, providerInfo } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  agentDisplayName,
+  formatDateTime,
+  nameOnMachine,
+  providerInfo,
+} from "@prismshadow/penguin-web/internal";
 
 import type { HeaderStats } from "./session-stats";
 

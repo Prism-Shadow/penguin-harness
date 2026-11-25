@@ -21,7 +21,13 @@ import type {
   SessionInfo,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
-import { groupShape, hasConfiguredKey, modelCalledKeyless, sameModelRef, trailingCompaction } from "@prismshadow/penguin-web/internal";
+import {
+  groupShape,
+  hasConfiguredKey,
+  modelCalledKeyless,
+  sameModelRef,
+  trailingCompaction,
+} from "@prismshadow/penguin-web/internal";
 import type { ThinkingSwitchItem } from "@prismshadow/penguin-web/internal";
 
 /**

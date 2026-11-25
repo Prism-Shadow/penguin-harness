@@ -5,7 +5,11 @@
  */
 import { useMemo, useRef } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { aggregateMemoryChanges, machineForSession, sameMemoryChanges } from "@prismshadow/penguin-web/internal";
+import {
+  aggregateMemoryChanges,
+  machineForSession,
+  sameMemoryChanges,
+} from "@prismshadow/penguin-web/internal";
 import type { StreamModel } from "@prismshadow/penguin-web/internal";
 
 import { panelDock } from "../../dock";

@@ -2,7 +2,16 @@ import { Fragment, useState } from "react";
 import type { ReactNode } from "react";
 
 import { Heading, ICONS, PenguinLogo } from "@prismshadow/penguin-ui";
-import { PENGUIN_LOGO_URL, S, VersionStamp, openAppInfo, useLocale, useUpdateFlow, useVersionInfo, versionBadgeFor } from "@prismshadow/penguin-web/internal";
+import {
+  PENGUIN_LOGO_URL,
+  S,
+  VersionStamp,
+  openAppInfo,
+  useLocale,
+  useUpdateFlow,
+  useVersionInfo,
+  versionBadgeFor,
+} from "@prismshadow/penguin-web/internal";
 
 import { pickExamples, type ExampleTaskId } from "./example-tasks";
 import { PromptActionRow, type PromptAction } from "./prompt-action-row";

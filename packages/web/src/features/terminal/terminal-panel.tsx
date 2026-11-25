@@ -20,7 +20,15 @@ import type { PanelTabItem } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
-import { createShell, dockVersion, ownTerminals, selectTerminal, shownTerminalId, subscribeDock, useDockSessionId } from "@prismshadow/penguin-library-session/web";
+import {
+  createShell,
+  dockVersion,
+  ownTerminals,
+  selectTerminal,
+  shownTerminalId,
+  subscribeDock,
+  useDockSessionId,
+} from "@prismshadow/penguin-library-session/web";
 import type { DockPanelBodyProps } from "@prismshadow/penguin-library-session/web";
 
 import type { SessionWorkbenchScope } from "@prismshadow/penguin-web-plugin";

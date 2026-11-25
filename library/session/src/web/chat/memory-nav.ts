@@ -15,7 +15,11 @@ import type {
   MemoryScopeInfo,
 } from "@prismshadow/penguin-server/api";
 import { isFolderFilePath, memoryRowKey } from "@prismshadow/penguin-web/internal";
-import type { MemoryChangeOp, MemoryChangeRow, MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
+import type {
+  MemoryChangeOp,
+  MemoryChangeRow,
+  MemoryLocateTarget,
+} from "@prismshadow/penguin-web/internal";
 
 export type MemoryNavMode = { kind: "list" } | { kind: "detail"; target: MemoryLocateTarget };
 

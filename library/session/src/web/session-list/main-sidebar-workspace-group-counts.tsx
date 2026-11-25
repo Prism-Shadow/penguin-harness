@@ -1,5 +1,13 @@
 import { useMemo } from "react";
-import { aggregateWorkspaceCounts, aggregateWorkspaceLatest, completeWorkspaceGroups, dropsEmployeeGroup, groupSessionsByWorkspace, isConversationAgent, machineForSession } from "@prismshadow/penguin-web/internal";
+import {
+  aggregateWorkspaceCounts,
+  aggregateWorkspaceLatest,
+  completeWorkspaceGroups,
+  dropsEmployeeGroup,
+  groupSessionsByWorkspace,
+  isConversationAgent,
+  machineForSession,
+} from "@prismshadow/penguin-web/internal";
 
 import { mergeRegisteredWorkspaces } from "./workspace-registry";
 import { orderGroups } from "./group-order";

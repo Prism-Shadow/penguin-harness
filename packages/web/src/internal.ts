@@ -33,11 +33,7 @@ export { probeSession } from "./api/session-probe";
 
 export { apiSocket } from "./api/socket";
 
-export {
-  openHistoryStream,
-  openSessionStream,
-  openTraceBodyStream,
-} from "./api/sse";
+export { openHistoryStream, openSessionStream, openTraceBodyStream } from "./api/sse";
 
 export type { ToolBinding } from "./api/tool-types";
 
@@ -115,10 +111,7 @@ export {
   thinkingLevelLabel,
   trailingCompaction,
 } from "./features/model-picker/index";
-export type {
-  StagedThinkingSwitch,
-  ThinkingSwitchItem,
-} from "./features/model-picker/index";
+export type { StagedThinkingSwitch, ThinkingSwitchItem } from "./features/model-picker/index";
 
 export { groupShape } from "./features/models/connection";
 
@@ -133,11 +126,7 @@ export { noteScheduleEvent } from "./features/schedules/index";
 
 export { SettingsDialog } from "./features/settings/index";
 
-export {
-  SkillIcon,
-  SkillPickList,
-  toggleSkillName,
-} from "./features/skills/index";
+export { SkillIcon, SkillPickList, toggleSkillName } from "./features/skills/index";
 
 export {
   HttpStatusError,
@@ -153,20 +142,13 @@ export {
 } from "./features/terminal/index";
 export type { TerminalInfo } from "./features/terminal/index";
 
-export {
-  WorkspaceLinksProvider,
-  WorkspaceSelect,
-} from "./features/workspace/index";
+export { WorkspaceLinksProvider, WorkspaceSelect } from "./features/workspace/index";
 
 export { a2uiDrafts } from "./lib/a2ui-drafts";
 
 export { isDesktopShellWindow } from "./lib/account-menu";
 
-export {
-  subscribeAccountApplied,
-  syncedStorage,
-  writeCached,
-} from "./lib/account-sync/cache";
+export { subscribeAccountApplied, syncedStorage, writeCached } from "./lib/account-sync/cache";
 
 export { useAgentAvatarSrc } from "./lib/agent-avatar";
 
@@ -239,11 +221,7 @@ export {
   mergedIntervalMs,
   sessionElapsedBreakdown,
 } from "./lib/amsp/task-stats";
-export type {
-  BucketPricing,
-  TaskStats,
-  TaskStatsTracker,
-} from "./lib/amsp/task-stats";
+export type { BucketPricing, TaskStats, TaskStatsTracker } from "./lib/amsp/task-stats";
 
 export { apiErrorText } from "./lib/api-error";
 
@@ -292,11 +270,7 @@ export {
   useDockPanels,
   useSessionWorkbenchPanels,
 } from "./lib/dock-panel-registry";
-export type {
-  DockPanelBodyProps,
-  DockPanelDefinition,
-  PanelId,
-} from "./lib/dock-panel-registry";
+export type { DockPanelBodyProps, DockPanelDefinition, PanelId } from "./lib/dock-panel-registry";
 
 export {
   draftUploads,
@@ -308,11 +282,7 @@ export type { DraftUploads } from "./lib/draft-uploads";
 
 export { failureNode, toldFailure, toldNode } from "./lib/failure";
 
-export {
-  dropRegionAction,
-  isFileDrag,
-  splitDroppedFiles,
-} from "./lib/file-drop";
+export { dropRegionAction, isFileDrag, splitDroppedFiles } from "./lib/file-drop";
 export type { DragSignal, DropRegionAction } from "./lib/file-drop";
 
 export { isFilePathLike, toWorkspaceRelative } from "./lib/file-path";
@@ -341,10 +311,7 @@ export {
   humanizeTokens,
 } from "./lib/format";
 
-export {
-  elidedArgumentsPreview,
-  elidedPreview,
-} from "./lib/history/elided-preview";
+export { elidedArgumentsPreview, elidedPreview } from "./lib/history/elided-preview";
 
 export { readHistory } from "./lib/history/history-read";
 
@@ -354,10 +321,7 @@ export { isLongPaste, longPasteFileName } from "./lib/long-paste";
 
 export { mixAgents, useMachineAgents } from "./lib/machine-agent-lists";
 
-export {
-  cachedMachineAgents,
-  rememberMachineAgents,
-} from "./lib/machine-cache";
+export { cachedMachineAgents, rememberMachineAgents } from "./lib/machine-cache";
 
 export { machineLink, remoteAgentsEmpty } from "./lib/machine-link";
 export type { MachineLink } from "./lib/machine-link";
@@ -425,20 +389,11 @@ export {
   presetsOf,
   sandboxSwitchOff,
 } from "./lib/permission-level";
-export type {
-  PermissionLevel,
-  PermissionPick,
-  PresetBlock,
-} from "./lib/permission-level";
+export type { PermissionLevel, PermissionPick, PresetBlock } from "./lib/permission-level";
 
 export { onPluginConfigSaved } from "./lib/plugin-config-event";
 
-export {
-  ofProject,
-  scopeKey,
-  scoped,
-  scopedValue,
-} from "./lib/project-scope";
+export { ofProject, scopeKey, scoped, scopedValue } from "./lib/project-scope";
 export type { Scoped } from "./lib/project-scope";
 
 export { randomHex } from "./lib/random-id";
@@ -528,15 +483,9 @@ export {
   storeSessionSortMode,
   writeStringArray,
 } from "./lib/session-order";
-export type {
-  SessionOrderStorage,
-  SessionSortMode,
-} from "./lib/session-order";
+export type { SessionOrderStorage, SessionSortMode } from "./lib/session-order";
 
-export {
-  closeSessionResources,
-  listSessionResourceCounts,
-} from "./lib/session-resource-counts";
+export { closeSessionResources, listSessionResourceCounts } from "./lib/session-resource-counts";
 
 export type {
   RowAction,
@@ -548,16 +497,9 @@ export type {
   WorkspaceTarget,
 } from "./lib/session-row-contributions";
 
-export {
-  forgetSession,
-  noteSessionSeen,
-  useSessionSeen,
-} from "./lib/session-seen";
+export { forgetSession, noteSessionSeen, useSessionSeen } from "./lib/session-seen";
 
-export {
-  backgroundSourceMark,
-  programSource,
-} from "./lib/session-source-mark";
+export { backgroundSourceMark, programSource } from "./lib/session-source-mark";
 
 export {
   isSessionWorkbenchKind,
@@ -574,11 +516,7 @@ export { onCommand } from "./lib/shortcuts/dispatcher";
 
 export { currentPlatform } from "./lib/shortcuts/platform";
 
-export {
-  displayedBinding,
-  useKeymap,
-  useShortcutTitle,
-} from "./lib/shortcuts/use-keymap";
+export { displayedBinding, useKeymap, useShortcutTitle } from "./lib/shortcuts/use-keymap";
 
 export type { SidebarSection } from "./lib/sidebar-contributions";
 

@@ -77,4 +77,10 @@ export { measureComposer, measureMergedComposer } from "./composer-height";
 
 export { LAUNCHER_HIDDEN_KEY } from "./dock-launcher-state";
 
-export { createShell, ownTerminals, selectTerminal, shownTerminalId, useDockSessionId } from "./dock-terminal";
+export {
+  createShell,
+  ownTerminals,
+  selectTerminal,
+  shownTerminalId,
+  useDockSessionId,
+} from "./dock-terminal";

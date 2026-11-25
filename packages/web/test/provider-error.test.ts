@@ -10,7 +10,11 @@
  *   body with no such sentence, or one that does not parse, the message comes back as it came.
  */
 import { describe, expect, it } from "vitest";
-import { httpStatusOf, providerWordsOf, requestIdOf } from "@prismshadow/penguin-library-session/web/chat/provider-error";
+import {
+  httpStatusOf,
+  providerWordsOf,
+  requestIdOf,
+} from "@prismshadow/penguin-library-session/web/chat/provider-error";
 
 describe("a provider's error message", () => {
   it.each<[string | undefined, number | null]>([

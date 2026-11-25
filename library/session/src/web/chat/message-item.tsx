@@ -26,7 +26,15 @@ import {
   TextAction,
   useCountdown,
 } from "@prismshadow/penguin-ui";
-import { S, attachmentFileName, formatMessageTime, parseSkillsMessage, routedUrl, splitAttachments, useLocale } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  attachmentFileName,
+  formatMessageTime,
+  parseSkillsMessage,
+  routedUrl,
+  splitAttachments,
+  useLocale,
+} from "@prismshadow/penguin-web/internal";
 import type { ChatItem, ReconnectItem } from "@prismshadow/penguin-web/internal";
 
 import { MessageFilesCard } from "./message-files-card";

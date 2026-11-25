@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FIRST_PAINT_BYTES, TAIL_UNITS, apiErrorText, createStreamModel, getChildSessions, openHistoryStream, pushMessages, readHistory, seedHistoryWindow } from "@prismshadow/penguin-web/internal";
+import {
+  FIRST_PAINT_BYTES,
+  TAIL_UNITS,
+  apiErrorText,
+  createStreamModel,
+  getChildSessions,
+  openHistoryStream,
+  pushMessages,
+  readHistory,
+  seedHistoryWindow,
+} from "@prismshadow/penguin-web/internal";
 import type { StreamModel } from "@prismshadow/penguin-web/internal";
 
 import { ChildSessionHistory } from "./child-session-history";

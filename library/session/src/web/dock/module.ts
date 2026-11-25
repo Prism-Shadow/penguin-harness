@@ -17,7 +17,14 @@ import {
   type Contributed,
 } from "@prismshadow/penguin-core/kernel";
 
-import { S, glyphOf, parseSessionWorkbenchPage, registerSessionAppDockAdapter, sessionWorkbenchPage, zh } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  glyphOf,
+  parseSessionWorkbenchPage,
+  registerSessionAppDockAdapter,
+  sessionWorkbenchPage,
+  zh,
+} from "@prismshadow/penguin-web/internal";
 
 import type {
   DockLayoutListener,
