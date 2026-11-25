@@ -42,6 +42,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { useNavigate } from "react-router";
 
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import {
@@ -61,10 +62,11 @@ import {
 import { S } from "../../lib/strings";
 import { hasConfiguredKey, sameModelRef } from "../../lib/model-grouping";
 import { loadModelGroupOrder } from "../../lib/model-group-order";
-import { useProjectIfAny } from "../../state/project";
+import { rememberProject, useProjectIfAny } from "../../state/project";
 import {
   entryRow,
   groupShortcutIndex,
+  hasKeyedPickerModel,
   hiddenModelCount,
   initialGroupId,
   modelLabel,
@@ -109,6 +111,8 @@ export interface ModelPickerModalProps {
   defaultModel?: ModelRefDto;
   /** A row was chosen. The host closes the dialog (it owns `open`). */
   onPick: (m: ModelInfo) => void;
+  /** Opens the Models page when the no-key overlay button is pressed; defaults to navigating to `/models`. */
+  onOpenModels?: () => void;
 }
 
 export function ModelPickerModal({ open, onClose, title, ...body }: ModelPickerModalProps) {
@@ -140,9 +144,11 @@ function ModelPickerBody({
   projectId: explicitProjectId,
   onPick,
   onClose,
+  onOpenModels,
 }: Omit<ModelPickerModalProps, "open" | "title">) {
   // The models page's dragged group order, read once per open (the body remounts on each), so
   // an order changed there is picked up on the next open without a reload.
+  const navigate = useNavigate();
   const project = useProjectIfAny();
   const projectId = explicitProjectId ?? project?.currentProject?.projectId ?? null;
   const groupOrder = useMemo(() => loadModelGroupOrder(projectId), [projectId]);
@@ -159,6 +165,7 @@ function ModelPickerBody({
     tools: purpose === "tool",
   };
   const groups = pickerGroups(models, visibility);
+  const noKeyedModel = !hasKeyedPickerModel(groups);
   const results = searching ? searchPickerGroups(models, { ...visibility, query }) : [];
   const hidden = hiddenModelCount(models, { ...visibility, query });
 
@@ -333,6 +340,15 @@ function ModelPickerBody({
 
   const mod = isMacPlatform() ? "⌥" : "Alt+";
   const showToggle = hidden > 0 || showAll;
+  const openModels = () => {
+    onClose();
+    if (onOpenModels) {
+      onOpenModels();
+      return;
+    }
+    if (projectId) rememberProject(projectId);
+    void navigate("/models");
+  };
   // Every band carries the same two handlers, which the body as a whole needs.
   const band = {
     onKeyDown,
@@ -371,7 +387,7 @@ function ModelPickerBody({
         <CloseButton onClose={onClose} />
       </div>
 
-      <div {...band} className="flex min-h-0 flex-1 flex-col sm:flex-row">
+      <div {...band} className="relative flex min-h-0 flex-1 flex-col sm:flex-row">
         {/* Rail: a column beside the list, a sideways-scrolling strip on a phone. */}
         <NavList
           label={S.modelPicker.groups}
@@ -452,6 +468,24 @@ function ModelPickerBody({
             </ul>
           )}
         </div>
+
+        {noKeyedModel && (
+          <div
+            data-testid="model-picker-no-key-overlay"
+            className="absolute inset-0 z-raised flex flex-col items-center justify-center gap-3 bg-surface/90 p-6 text-center"
+          >
+            <span aria-hidden="true" className="text-fg-subtle">
+              <GlyphIcon d={ICONS.keyOff} size={ICON_SIZE.sectionMark} decor="empty" />
+            </span>
+            <div className="max-w-xs space-y-1">
+              <p className="text-sm font-medium text-fg">{S.modelPicker.noKeyTitle}</p>
+              <p className="text-xs text-fg-muted">{S.modelPicker.noKeyHint}</p>
+            </div>
+            <Button size="sm" variant="primary" onClick={openModels}>
+              {S.modelPicker.goToModels}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* On a phone the bar appears only when it holds an action. */}

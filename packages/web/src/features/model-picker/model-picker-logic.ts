@@ -84,6 +84,13 @@ export function pickerGroups<T extends ModelCredentialRowLike>(
   );
 }
 
+/** Whether any group in the picker holds a model with a configured key. */
+export function hasKeyedPickerModel<T extends ModelCredentialRowLike>(
+  groups: readonly PickerGroup<T>[],
+): boolean {
+  return groups.some((g) => g.rows.some(hasConfiguredKey));
+}
+
 /**
  * How many models the key filter hides under `query` — the number on the "show models without
  * a key" toggle. Zero once the toggle is on, and zero when nothing has a key (everything is

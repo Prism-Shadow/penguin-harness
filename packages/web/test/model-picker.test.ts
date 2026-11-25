@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
 /**
- * The model-picker dialog's logic (features/model-picker/model-picker-logic.ts).
+ * The model-picker dialog's logic (features/model-picker/model-picker-logic.ts) and its no-key
+ * overlay (features/model-picker/model-picker-modal.tsx).
  *
  * - The rail shows the groups holding a key-configured model, in the user's saved order; the
  *   selected and the default model stay visible without a key, the toggle counts and then lists
@@ -14,12 +16,19 @@
  * - The keyboard wraps up and down through the list's rows or the rail's groups, moves between
  *   rail and list with left, right and Tab, and names a group with ⌥/Alt+1–9 while leaving
  *   ⌘/Ctrl+digit to the browser.
+ * - When no model in the picker has a configured key, an overlay reminds the user to connect a
+ *   model provider or configure an API key and offers a button that closes the picker and
+ *   navigates to `/models`.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createElement as h } from "react";
+import { RouterProvider, createMemoryRouter } from "react-router";
+import type { ModelInfo } from "@prismshadow/penguin-server/api";
 import type { ModelCredentialRowLike } from "../src/lib/model-grouping";
 import {
   entryRow,
   groupShortcutIndex,
+  hasKeyedPickerModel,
   hiddenModelCount,
   initialGroupId,
   matchRank,
@@ -29,7 +38,11 @@ import {
   searchPickerGroups,
   stepIndex,
 } from "../src/features/model-picker/model-picker-logic";
+import { ModelPickerModal } from "../src/features/model-picker/model-picker-modal";
 import { S } from "../src/lib/strings";
+import { button, click, mount, unmountAll, waitFor } from "./helpers/dom";
+
+afterEach(() => unmountAll());
 
 const configured = (
   provider: string,
@@ -92,8 +105,11 @@ describe("pickerGroups: the rail", () => {
 
   it("lists everything, with nothing to toggle, when no model has a key", () => {
     const bare = pool.map((m) => keyless(m.provider, m.modelId));
-    expect(pickerGroups(bare, { showAll: false }).flatMap((g) => g.rows)).toHaveLength(5);
+    const bareGroups = pickerGroups(bare, { showAll: false });
+    expect(bareGroups.flatMap((g) => g.rows)).toHaveLength(5);
     expect(hiddenModelCount(bare, { showAll: false, query: "" })).toBe(0);
+    expect(hasKeyedPickerModel(bareGroups)).toBe(false);
+    expect(hasKeyedPickerModel(pickerGroups(pool, { showAll: false }))).toBe(true);
   });
 });
 
@@ -247,5 +263,69 @@ describe("keyboard", () => {
     expect(groupShortcutIndex(k("3", { metaKey: true }))).toBeNull();
     expect(groupShortcutIndex(k("3", { ctrlKey: true }))).toBeNull();
     expect(groupShortcutIndex(k("3", { altKey: true, shiftKey: true }))).toBeNull();
+  });
+});
+
+describe("ModelPickerModal: no-key overlay", () => {
+  const bareModels = pool.map((m) => ({
+    provider: m.provider,
+    modelId: m.modelId,
+    contextWindow: 128_000,
+  })) as ModelInfo[];
+
+  const keyedModels = pool.map((m) => ({
+    ...m,
+    contextWindow: 128_000,
+  })) as ModelInfo[];
+
+  it("shows the overlay when no model has a key and navigates to /models on button click", async () => {
+    const onClose = vi.fn();
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/chat/new",
+          element: h(ModelPickerModal, {
+            open: true,
+            onClose,
+            title: S.chat.chooseModel,
+            models: bareModels,
+            value: null,
+            onPick: () => {},
+          }),
+        },
+        { path: "/models", element: h("p", null, "Models Library") },
+      ],
+      { initialEntries: ["/chat/new"] },
+    );
+    await mount(h(RouterProvider, { router }));
+    const overlay = document.querySelector('[data-testid="model-picker-no-key-overlay"]');
+    expect(overlay).not.toBeNull();
+    expect(overlay?.textContent).toContain(S.modelPicker.noKeyTitle);
+    expect(overlay?.textContent).toContain(S.modelPicker.noKeyHint);
+
+    await click(button(S.modelPicker.goToModels));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => router.state.location.pathname === "/models");
+  });
+
+  it("does not show the overlay when at least one model has a configured key", async () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/chat/new",
+          element: h(ModelPickerModal, {
+            open: true,
+            onClose: () => {},
+            title: S.chat.chooseModel,
+            models: keyedModels,
+            value: null,
+            onPick: () => {},
+          }),
+        },
+      ],
+      { initialEntries: ["/chat/new"] },
+    );
+    await mount(h(RouterProvider, { router }));
+    expect(document.querySelector('[data-testid="model-picker-no-key-overlay"]')).toBeNull();
   });
 });

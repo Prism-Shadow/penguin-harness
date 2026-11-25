@@ -1091,6 +1091,9 @@ export const en: Strings = {
     clearAssignment: "Clear assignment",
     groups: "Model groups",
     hideModelsWithoutKey: "Hide models without a key",
+    noKeyTitle: "No model has an API key configured",
+    noKeyHint: "Connect a model provider or configure an API key in Models",
+    goToModels: "Go to Models",
     hint: (mod: string): string => `←→ groups / models · ${mod}1–9 jump to a group`,
   },
   workbenches: {

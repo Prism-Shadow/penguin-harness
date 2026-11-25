@@ -1193,6 +1193,10 @@ export const zh = {
     groups: "模型分组",
     /** Footer toggle while models without a key are listed: turns the listing back off. */
     hideModelsWithoutKey: "隐藏未配置 key 的模型",
+    /** Overlay shown over the model picker when no model in the list has an API key configured. */
+    noKeyTitle: "尚未配置可用的模型",
+    noKeyHint: "请前往模型库连接模型提供商或配置 API Key",
+    goToModels: "前往模型库",
     /**
      * Footer keyboard legend; `mod` is "⌥" on macOS and "Alt+" elsewhere. Only the two moves a
      * list does not suggest by itself — ↑↓, Enter and Esc go without saying, and the footer
