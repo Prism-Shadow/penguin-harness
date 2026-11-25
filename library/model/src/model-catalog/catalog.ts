@@ -4210,6 +4210,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
   },
   {
+    // ¥0.15 per 1,000 billed characters (TokenDance's items rate, read 2026-11-25): the characters are the prompt tokens.
+    provider: "tokendance",
+    modelId: "deepseek-tts",
+    displayName: "DeepSeek TTS",
+    pricing: cny(150, 150, 0),
+    supportsVision: false,
+    tool: true,
+    clientType: "deepseek-speech",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
+  },
+  {
     // ¥0.00011 a second of audio (TokenDance's items rate, MMSP 0.5.12's registry, read 2026-11-19).
     provider: "tokendance",
     modelId: "deepseek-asr",

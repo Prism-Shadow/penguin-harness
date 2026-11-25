@@ -425,6 +425,40 @@ describe("model-catalog", () => {
     }
   });
 
+  it("the TokenDance DeepSeek TTS preset streams audio from its gateway speech endpoint", async () => {
+    const audio = Buffer.from([0x49, 0x44, 0x33, 0x04]);
+    const fake = stubFetch(
+      () => new Response(audio, { headers: { "content-type": "audio/mpeg" } }),
+    );
+    try {
+      const entry = presetModelEntries().find(
+        (row) => row.provider === "tokendance" && row.model_id === "deepseek-tts",
+      )!;
+      expect(entry).toBeDefined();
+      const table = presetProviderTable();
+      table.tokendance!.api_key = "td-group-key";
+      const connection = storedConnection(entry, table);
+      expect(connection.clientType).toBe("deepseek-speech");
+      const client = new AutoLLMClient({ model: entry.model_id, ...connection });
+      const chunks: Uint8Array[] = [];
+      for await (const event of client.streamingResponse({
+        messages: [{ role: "user", content_items: [{ type: "text.done", text: "你好" }] }],
+        config: {},
+      })) {
+        for (const item of event.content_items)
+          if (item.type === "inline_data.done") chunks.push(item.data);
+      }
+      expect(fake.calls).toHaveLength(1);
+      const call = fake.calls[0]!;
+      expect(call.url).toBe("https://tokendance.space/gateway/deepseek/v1/tools/tts");
+      expect(call.headers.get("authorization")).toBe("Bearer td-group-key");
+      expect(JSON.parse(call.body)).toMatchObject({ text: "你好" });
+      expect(chunks.map((bytes) => Buffer.from(bytes))).toEqual([audio]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
     expect(attributionHeaders("https://tokendance.space/gateway/v1")).toEqual({
       "X-App-URL": APP_URL,
@@ -890,7 +924,9 @@ describe("MMSP's clients as the catalog reads them", () => {
       }
       if (
         m.provider === "tokendance" &&
-        (m.clientType === "deepseek-webtool" || m.clientType === "deepseek-transcription")
+        (m.clientType === "deepseek-webtool" ||
+          m.clientType === "deepseek-speech" ||
+          m.clientType === "deepseek-transcription")
       ) {
         // TokenDance's DeepSeek tool endpoint is DeepSeek's clients on its gateway: their pair is
         // DeepSeek's, which MMSP reads for no base URL only, so the gateway row's key is its own.
