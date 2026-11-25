@@ -150,9 +150,7 @@
       "@prismshadow/penguin-library-workspace/workspace-archive": [
         "../../library/workspace/src/workspace-archive.ts"
       ],
-      "@prismshadow/penguin-library-workspace/drafts": [
-        "../../library/workspace/src/drafts.ts"
-      ],
+      "@prismshadow/penguin-library-workspace/drafts": ["../../library/workspace/src/drafts.ts"],
       "@prismshadow/penguin-library-workspace/user-drafts": [
         "../../library/workspace/src/user-drafts.ts"
       ],

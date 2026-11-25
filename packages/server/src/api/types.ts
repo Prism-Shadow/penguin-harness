@@ -650,7 +650,11 @@ export interface BackgroundImagePutResponse {
 
 // The drafts vocabulary moved to the workspace domain library (drafts.ts there); each is
 // imported and re-exported — the server→library direction only.
-export { DRAFT_KINDS, DRAFT_VALUE_MAX_CHARS, DRAFTS_PATCH_MAX_ENTRIES } from "@prismshadow/penguin-library-workspace/drafts";
+export {
+  DRAFT_KINDS,
+  DRAFT_VALUE_MAX_CHARS,
+  DRAFTS_PATCH_MAX_ENTRIES,
+} from "@prismshadow/penguin-library-workspace/drafts";
 export type { DraftKind } from "@prismshadow/penguin-library-workspace/drafts";
 
 /** GET /api/me/drafts: every draft the account keeps, by key, as the JSON each was written with. */
