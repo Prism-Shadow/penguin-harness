@@ -56,6 +56,11 @@ import { NewTabPage } from "./new-tab-page";
 import { registerSlot, setSlotVisible } from "./slot-registry";
 import { webviewForTab, type WebviewElement } from "./webview-registry";
 
+// The panel's slot id: a registry symbol salted per module copy and counted per panel, so ids
+// stay unique across panels and across copies of this module a twice-linked package would load.
+let slotIds = 0;
+const slotSalt = Math.random().toString(36).slice(2);
+
 /**
  * Runs a command on the page element of a tab. The element refuses every call until its
  * page has attached, and a page that is not there cannot be driven anyway, so a refusal is
@@ -185,7 +190,7 @@ function BrowserSurface({
   // workbench tab shown over the Chat window parks the page instead: the page is laid over the
   // slot from outside the window, so hiding the window does not hide it).
   const slotRef = useRef<HTMLDivElement | null>(null);
-  const [slotId] = useState(() => Symbol("builtin-browser-slot"));
+  const [slotId] = useState(() => Symbol.for(`penguin-harness.browser-automation.slot:${slotSalt}:${++slotIds}`));
   const windowShown = useWindowShown();
   useLayoutEffect(() => {
     const element = slotRef.current;

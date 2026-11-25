@@ -93,8 +93,11 @@ import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-cor
 const node = (command: CliCommandProgram): Command => command as Command;
 export type ChatState = "idle" | "running" | "approving" | "confirming-exit";
 
-/** What the prompt answers when a run starts while it waits: the main loop follows it. */
-const BUSY = Symbol("busy");
+/** What the prompt answers when a run starts while it waits: the main loop follows it.
+ *
+ * A registry key: the CLI process can load this command module's package twice (a direct link
+ * and a pnpm virtual-store copy), and the sentinel must stay identical across every copy. */
+const BUSY = Symbol.for("penguin-harness.cli.chat.busy");
 
 /**
  * What a new chat's Session is created with at the first message: the flags, the calling
