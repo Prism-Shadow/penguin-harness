@@ -27,7 +27,6 @@ import type {
 import {
   deskRowLabel,
   deskRows,
-  deskSessionIdsWhenLoaded,
   liveEmployeeStates,
   orgRowActivity,
   ticketSessionTitles,
@@ -253,24 +252,6 @@ describe("the desk row's messaging mark", () => {
     expect(withDeskMessagingChannel(bound, "s-t1", "telegram")).toBe(bound);
     expect(withDeskMessagingChannel(bound, "s-ceo", "telegram")).toBe(bound);
     expect(withDeskMessagingChannel(bound, "s-pm", null)).toBe(bound);
-  });
-});
-
-describe("deskSessionIdsWhenLoaded", () => {
-  it("waits while neither the chart nor the route has named the organization", () => {
-    expect(deskSessionIdsWhenLoaded(null, undefined)).toBeUndefined();
-  });
-
-  it("answers with the chart's desks alone before the route is read", () => {
-    expect(deskSessionIdsWhenLoaded(chart, undefined)).toEqual(["s-ceo", null, null]);
-  });
-
-  it("answers with the route's desks when the chart is another organization's", () => {
-    expect(deskSessionIdsWhenLoaded(null, sessions)).toEqual(["s-pm", "s-ceo"]);
-  });
-
-  it("reads both together once they are there, in chart order", () => {
-    expect(deskSessionIdsWhenLoaded(chart, sessions)).toEqual(["s-ceo", "s-pm", null]);
   });
 });
 

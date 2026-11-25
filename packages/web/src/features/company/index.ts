@@ -10,6 +10,6 @@ export { switchDeskModel } from "./desk-model";
 
 export { PathCapsulesProvider } from "./path-capsule";
 
-export { deskRows, deskSessionIdsWhenLoaded } from "./org-sessions";
+export { deskRows } from "./org-sessions";
 
-export { chatPath, openTempSession, createTempEntryGate } from "./temp-session";
+export { chatPath, openTempSession } from "./temp-session";

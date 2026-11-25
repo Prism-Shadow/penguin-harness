@@ -255,68 +255,6 @@ export function dismissTempSession(
 }
 
 /**
- * An organization ticket session reached through a deep link, waiting to join the Temporary
- * group. The dialog that opens a session from a ticket lists it directly; a deep link (a
- * session id clicked in a conversation) reaches the same session without one, and the chat
- * lifecycle registers it instead — through the visit gate below, so that it happens once per
- * visit, at the moment the organization's roster can tell a desk from a ticket session.
- */
-export interface RoutedTempEntry {
-  userId: string | null;
-  projectId: string;
-  orgId: string;
-  sessionId: string;
-  agentId: string;
-  title: string;
-}
-
-/** What the gate decided about a pending entry once asked with the organization's roster. */
-export type TempEntryGateAction =
-  | { kind: "hold" }
-  | { kind: "skip" }
-  | { kind: "open"; entry: RoutedTempEntry };
-
-/**
- * The deep-link registration's timing, pure and unit tested. A session joins the Temporary
- * group once per VISIT, not once per render: the roster and title caches refreshing while the
- * reader stays are not visits, so an entry the reader dismissed is not written back by the
- * next refresh. The registration also waits for the session's own organization's roster (the
- * chart is kept only for the organization the shell has open; the sessions snapshot is read
- * per organization), so a cold start cannot list a desk session first and leave it stuck in
- * the list — the first answer that names the organization decides, once.
- */
-export interface TempEntryGate {
-  /** Marks the visit for the conversation entered; a null key ends it. */
-  enter(key: string | null, entry: RoutedTempEntry | null): void;
-  /** Asks once with the roster (`undefined` while it is not there yet); a decision consumes the pending entry. */
-  settle(desks: readonly (string | null)[] | undefined): TempEntryGateAction;
-}
-
-export function createTempEntryGate(): TempEntryGate {
-  let visit: string | null = null;
-  let pending: RoutedTempEntry | null = null;
-  return {
-    enter(key, entry) {
-      if (key === null) {
-        // The reader left the conversation, or it stopped being an organization's session.
-        visit = null;
-        pending = null;
-        return;
-      }
-      if (visit === key) return;
-      visit = key;
-      pending = entry;
-    },
-    settle(desks) {
-      if (pending === null || desks === undefined) return { kind: "hold" };
-      const entry = pending;
-      pending = null;
-      return desks.includes(entry.sessionId) ? { kind: "skip" } : { kind: "open", entry };
-    },
-  };
-}
-
-/**
  * The group's "Close all": every entry of this organization's list at once, with no
  * confirmation — the sessions themselves are untouched, and each is still one click away in
  * its ticket. Nothing navigates.

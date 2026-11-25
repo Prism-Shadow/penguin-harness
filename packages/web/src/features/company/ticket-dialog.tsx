@@ -95,9 +95,7 @@ import {
 } from "./ticket-board";
 import { ticketHistoryRows, ticketSummaryCounts } from "./ticket-history";
 import { dayKey } from "./calendar-geom";
-import { orgKey } from "../../lib/company-nav";
-import { deskRows } from "./org-sessions";
-import { chatPath, openTempSession } from "./temp-session";
+import { chatPath } from "./temp-session";
 import { toastApiError } from "../../lib/toast-api-error";
 import { failureNode } from "../../lib/failure";
 
@@ -439,19 +437,12 @@ function TicketDialog({
     );
 
   /**
-   * Opens a ticket session: the one way out of the dialog. The session goes to the top of the
-   * company sidebar's Temporary group (a desk session keeps its desk row instead) and the
-   * conversation opens as its full page. The current Agent follows it, as a desk row's does.
+   * Opens a ticket session: the one way out of the dialog. The conversation opens as its full
+   * page, and the chat lifecycle lists it in the company sidebar's Temporary group (the one
+   * writer for that list — see main-chat-lifecycle.tsx). The current Agent follows it, as a
+   * desk row's does.
    */
   const openSession = (session: { sessionId: string; agentId: string; title?: string }) => {
-    const desks = deskRows(company.orgChart, company.orgSessions.get(orgKey(projectId, orgId)));
-    openTempSession(
-      me,
-      projectId,
-      orgId,
-      { sessionId: session.sessionId, agentId: session.agentId, title: session.title ?? "" },
-      desks.map((d) => d.sessionId),
-    );
     if (session.agentId !== "") setCurrentAgentId(session.agentId);
     onClose();
     navigate(chatPath(session.sessionId));
