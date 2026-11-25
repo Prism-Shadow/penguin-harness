@@ -1,6 +1,6 @@
 /**
- * The ids vocabulary moved to the projects domain package
- * (@prismshadow/penguin-library-project/ids, server restack S11) — admin, agent and
- * organization services share it too. This file keeps the server's own import paths.
+ * The semantic id rules moved to the agent domain library
+ * (@prismshadow/penguin-library-agent/ids, services+http+cli restack S10) — a pure tool
+ * with no server dependencies. This re-export keeps the server's import paths stable.
  */
-export * from "@prismshadow/penguin-library-project/ids";
+export * from "@prismshadow/penguin-library-agent/ids";

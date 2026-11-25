@@ -52,6 +52,14 @@
       "types": "./dist/workbench-dirs.d.ts",
       "import": "./dist/workbench-dirs.js"
     },
+    "./tree-purge": {
+      "types": "./dist/tree-purge.d.ts",
+      "import": "./dist/tree-purge.js"
+    },
+    "./ids": {
+      "types": "./dist/ids.d.ts",
+      "import": "./dist/ids.js"
+    },
     "./system-agent": {
       "types": "./dist/system-agent.d.ts",
       "import": "./dist/system-agent.js"
