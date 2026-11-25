@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 for (const [lang, headline, subtitle, apps, steps] of [
   [
     "en",
-    "From Vibe-Coding to Vibe-Tuning",
+    "From Vibe-Coding to Vibe-Finetuning",
     "Open Foundation for Self-Evolving Enterprise AI.",
     [
       "Document Q&A",
