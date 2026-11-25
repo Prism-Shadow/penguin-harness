@@ -31,6 +31,7 @@ import { Toaster, toastStore } from "@prismshadow/penguin-ui";
 import { onDefaultModelsRequest } from "../src/lib/default-models-request";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { setPinnedBalance } from "../src/features/models/balance";
 import { ModelsPage } from "../src/features/models/models-page";
 import { AuthProvider } from "../src/state/auth";
 import { LocaleProvider } from "../src/state/locale";
@@ -98,9 +99,19 @@ function modelsServer(start: ModelRefDto | undefined, offers: (provider: string)
   };
   const fake = stubFetch((req) => {
     if (req.path === "/api/me") return json(ADMIN_ME);
+    if (req.path === "/api/me/prefs") return json({ prefs: {} });
     if (req.path === "/api/projects") return json({ projects: [PROJECT] });
     if (req.path === "/api/projects/p1/agents") return json({ agents: [] });
     if (req.path === "/api/projects/p1/usage/model-totals") return json({ totals: [] });
+    if (req.path === "/api/projects/p1/models/balance") {
+      return json({
+        ok: true,
+        provider: req.query.get("provider") ?? "tokendance",
+        amount: "10.00",
+        currency: "CNY",
+        fetchedAt: "2026-11-25T00:00:00Z",
+      });
+    }
     if (req.path === "/api/projects/p1/models" && req.method === "GET") return json(table);
     if (req.path === "/api/projects/p1/models/providers/tokendance" && req.method === "PUT") {
       const defaultOffer = connect("tokendance", TOKENDANCE);
@@ -134,7 +145,19 @@ function modelsServer(start: ModelRefDto | undefined, offers: (provider: string)
     fake.requests
       .filter((r) => r.path === "/api/projects/p1/models/default" && r.method === "PUT")
       .map((r) => r.body);
-  return { writes };
+  /** The pinned-balance preference writes sent to `/api/me/prefs`. */
+  const pinWrites = () =>
+    fake.requests
+      .filter(
+        (r) =>
+          r.path === "/api/me/prefs" &&
+          r.method === "PUT" &&
+          typeof r.body === "object" &&
+          r.body !== null &&
+          "pinnedBalance" in r.body,
+      )
+      .map((r) => r.body);
+  return { writes, pinWrites };
 }
 
 async function openModelsPage(start: ModelRefDto | undefined, offers = (_p: string) => true) {
@@ -174,7 +197,11 @@ const defaults = () =>
   );
 /** The question asked when DeepSeek's default meets TokenDance's offer. */
 const SWITCH_QUESTION = () =>
-  en.models.connectDefaultOffer("TokenDance", "DeepSeek Flash (DeepSeek)", "DeepSeek V4.1 Flash");
+  en.models.connectDefaultOffer(
+    "TokenDance",
+    "DeepSeek Flash (DeepSeek)",
+    "DeepSeek V4.1 Flash (TokenDance)",
+  );
 /** Presses the topmost dialog's button that reads `text`. */
 const pressInDialog = (text: string) =>
   click(
@@ -220,6 +247,7 @@ describe("the question after a connect offered a default model", () => {
   });
   afterEach(async () => {
     await unmountAll();
+    setPinnedBalance(null);
     vi.restoreAllMocks();
     toastStore.setState({ items: [] });
     localStorage.clear();
@@ -233,10 +261,11 @@ describe("the question after a connect offered a default model", () => {
 
     expect(dialogButtons()).toEqual([en.models.connectDefaultKeep, en.models.connectDefaultSwitch]);
     expect(server.writes()).toEqual([]);
+    expect(server.pinWrites()).toEqual([]);
     expect(defaults()).toEqual(["DeepSeek Flash"]);
   });
 
-  it("Switch writes the offered model as the default, the list marks it, and a notice says it saved", async () => {
+  it("Switch writes the offered model as the default, pins its balance, the list marks it, and a notice says it saved", async () => {
     const server = await openModelsPage(DEEPSEEK);
     await saveTokenDanceKey();
     await waitFor(() => shows(SWITCH_QUESTION()));
@@ -245,6 +274,9 @@ describe("the question after a connect offered a default model", () => {
     await waitFor(() => defaults()[0] === "DeepSeek V4.1 Flash");
 
     expect(server.writes()).toEqual([TOKENDANCE]);
+    expect(server.pinWrites()).toEqual([
+      { pinnedBalance: { projectId: "p1", provider: "tokendance" } },
+    ]);
     expect(defaults()).toEqual(["DeepSeek V4.1 Flash"]);
     expect(notices()).toEqual([en.common.saved, en.common.saved]);
     expect(shows(SWITCH_QUESTION())).toBe(false);
@@ -259,6 +291,7 @@ describe("the question after a connect offered a default model", () => {
     await waitFor(() => !shows(SWITCH_QUESTION()));
 
     expect(server.writes()).toEqual([]);
+    expect(server.pinWrites()).toEqual([]);
     expect(defaults()).toEqual(["DeepSeek Flash"]);
   });
 
@@ -270,9 +303,9 @@ describe("the question after a connect offered a default model", () => {
       await saveTokenDanceKey();
       await waitFor(() => asked.mock.calls.length > 0);
 
-      expect(shows(en.models.connectDefaultOfferUnset("TokenDance", "DeepSeek V4.1 Flash"))).toBe(
-        false,
-      );
+      expect(
+        shows(en.models.connectDefaultOfferUnset("TokenDance", "DeepSeek V4.1 Flash (TokenDance)")),
+      ).toBe(false);
       expect(server.writes()).toEqual([]);
     } finally {
       stop();
@@ -317,12 +350,24 @@ describe("the question after a connect offered a default model", () => {
     const question = en.models.connectDefaultOffer(
       "Penguin Go",
       "DeepSeek Flash (DeepSeek)",
-      "Go Flash",
+      "Go Flash (Penguin Go)",
     );
 
     expect(shows(question)).toBe(false);
 
     await closeDialog();
     await waitFor(() => shows(question));
+  });
+
+  it("formats the Chinese switch question with both models carrying their provider in parentheses", () => {
+    expect(
+      zh.models.connectDefaultOffer(
+        "Penguin Go",
+        zh.models.modelInGroup("DeepSeek V4 Flash 0731", "TokenDance"),
+        zh.models.modelInGroup("DeepSeek V4.1 Flash", "Penguin Go"),
+      ),
+    ).toBe(
+      "已连接 Penguin Go。当前默认模型 DeepSeek V4 Flash 0731（TokenDance） 不在这个分组里，要换成 DeepSeek V4.1 Flash（Penguin Go）吗？更换后，新建的 Session 将默认使用它。",
+    );
   });
 });
