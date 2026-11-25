@@ -10,14 +10,13 @@
  * penguin SVG. There is no `ui/icons/` convention. UI files and api dispatch are untouched
  * (covered by workbenches.test.ts).
  *
- * Like the loaded-once group there, each case runs the TypeScript compiler, so one app and
- * one compile are shared.
+ * On an Agent with both the demo and the preset Self-Evolution Workbench, each manifest
+ * opens its own app with its own icon. The demo cases share an app and its initial load.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isSafeIconSvg, workbenchesDir } from "@prismshadow/penguin-core";
-import type { WorkbenchInfo } from "../src/api/types.js";
 import { MAIN_ICON } from "../src/workbenches/manifest.js";
 import { withMachineInStartUrl } from "../src/workbenches/routes.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
@@ -25,6 +24,7 @@ import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.j
 const PROJECT = "owner-wf";
 const AGENT = "default_agent";
 const BASE = `/api/projects/${PROJECT}/agents/${AGENT}/workbenches`;
+const DEMO = `${BASE}/demo`;
 /** The seeded admin's own project, for the cold anonymous-read app (its workbench is pre-seeded). */
 const DEFAULT_PROJECT = "default_project";
 const COLD_BASE = `/api/projects/${DEFAULT_PROJECT}/agents/${AGENT}/workbenches`;
@@ -134,21 +134,20 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
   let t: Awaited<ReturnType<typeof createTestApp>>;
   let owner: ReturnType<typeof apiClient>;
   let dir: string;
-  let wf: WorkbenchInfo;
 
   // One real compiler load, shared by both cases (see the loaded-once note in workbenches.test.ts).
   beforeAll(async () => {
     ({ t, owner, dir } = await workbenchApp({ icon: true }));
-    const res = await owner.get(BASE);
+    const res = await owner.get(`${BASE}?id=demo`);
     expect(res.status).toBe(200);
-    wf = ((await res.json()) as { workbenches: WorkbenchInfo[] }).workbenches[0]!;
+    expect(await res.json()).toMatchObject({ workbenches: [{ id: "demo", error: null }] });
   }, 30_000);
   afterAll(async () => {
     await t.cleanup();
   });
 
   const manifest = async () => {
-    const res = await owner.get(`${BASE}/${wf.id}/manifest.webmanifest`);
+    const res = await owner.get(`${DEMO}/manifest.webmanifest`);
     const text = await res.text();
     expect(res.status, text).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/manifest+json");
@@ -165,7 +164,7 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     expect(m.short_name).toBe("Board");
     expect(m.version).toBe("1.0.0");
     expect(m.display).toBe("standalone");
-    expect(m.scope).toBe(`/app/owner-wf/default_agent/${wf.id}`);
+    expect(m.scope).toBe(`/app/${PROJECT}/${AGENT}/demo`);
     expect(m.start_url).toBe(m.scope);
     const icons = m.icons as { src: string; sizes: string; type: string }[];
     expect(icons).toHaveLength(1);
@@ -182,9 +181,39 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     expect(isSafeIconSvg(decoded)).toBe(true);
   });
 
+  it("opens the preset workbench with its own title, route and App Center icon", async () => {
+    const preset = `${BASE}/benchmark`;
+    const center = await owner.get(`/api/projects/${PROJECT}/app-center`);
+    expect(center.status).toBe(200);
+    expect(await center.json()).toMatchObject({
+      shortcuts: expect.arrayContaining([
+        expect.objectContaining({
+          agentId: AGENT,
+          workbenchId: "benchmark",
+          icon: {
+            url: expect.stringMatching(new RegExp(`^${preset}/app-center/icon\\?rev=[0-9a-f]+$`)),
+            tint: false,
+          },
+        }),
+      ]),
+    });
+    const icon = await owner.get(`${preset}/app-center/icon`);
+    expect(icon.status).toBe(200);
+    const svg = await icon.text();
+    expect(isSafeIconSvg(svg)).toBe(true);
+    expect(svg).not.toBe(ICON_SVG);
+    const response = await owner.get(`${preset}/manifest.webmanifest`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      name: "Self-Evolution Workbench",
+      start_url: `/app/${PROJECT}/${AGENT}/benchmark`,
+      icons: [{ src: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}` }],
+    });
+  });
+
   it("falls back to the main app's penguin SVG when the workbench ships no icon", async () => {
     await fs.rm(path.join(dir, "icon.svg"));
-    const res = await owner.post(`${BASE}/${wf.id}/reload`);
+    const res = await owner.post(`${DEMO}/reload`);
     expect(res.status, await res.text()).toBe(200);
     const m = await manifest();
     expect(m.icons).toEqual([{ src: MAIN_ICON, sizes: "any", type: "image/svg+xml" }]);
@@ -221,21 +250,21 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
         },
       }),
     );
-    const res = await owner.post(`${BASE}/${wf.id}/reload`);
+    const res = await owner.post(`${DEMO}/reload`);
     expect(res.status, await res.text()).toBe(200);
     // The whole manifest is named for and opens the FIRST tab — its icon comes with it, not
     // some later tab's: name, page and icon are one face (the plugin icon would only be
     // asked when the first tab declares none).
-    const m = (await (await owner.get(`${BASE}/${wf.id}/manifest.webmanifest`)).json()) as {
+    const m = (await (await owner.get(`${DEMO}/manifest.webmanifest`)).json()) as {
       icons: { src: string; type: string }[];
     };
     expect(m.icons).toHaveLength(1);
     expect(m.icons[0]!.type).toBe("image/png");
     expect(m.icons[0]!.src).toBe(`data:image/png;base64,${PNG_BYTES_BASE64}`);
     // The other tab's own manifest takes ITS icon.
-    const svg = (await (
-      await owner.get(`${BASE}/${wf.id}/tabs/svg/manifest.webmanifest`)
-    ).json()) as { icons: { src: string; type: string }[] };
+    const svg = (await (await owner.get(`${DEMO}/tabs/svg/manifest.webmanifest`)).json()) as {
+      icons: { src: string; type: string }[];
+    };
     expect(svg.icons[0]!.type).toBe("image/svg+xml");
     expect(svg.icons[0]!.src).toBe(
       `data:image/svg+xml;base64,${Buffer.from(ICON_SVG, "utf8").toString("base64")}`,
@@ -274,9 +303,9 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
         },
       }),
     );
-    const res = await owner.post(`${BASE}/${wf.id}/reload`);
+    const res = await owner.post(`${DEMO}/reload`);
     expect(res.status, await res.text()).toBe(200);
-    const m = (await (await owner.get(`${BASE}/${wf.id}/manifest.webmanifest`)).json()) as {
+    const m = (await (await owner.get(`${DEMO}/manifest.webmanifest`)).json()) as {
       icons: { src: string; type: string }[];
     };
     // Not the second tab's PNG: the first tab anchors the face, and this fixture's workbench
@@ -296,7 +325,7 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     // Installation runs on the workbench's own host, where the main origin's session cookie
     // is not sent; the manifest must answer anyway (this exact fetch used to 401 behind the
     // session gate and the browser refused to install).
-    const res = await t.app.request(`${BASE}/${wf.id}/manifest.webmanifest`);
+    const res = await t.app.request(`${DEMO}/manifest.webmanifest`);
     const text = await res.text();
     expect(res.status, text).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/manifest+json");
@@ -315,25 +344,25 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8"));
     pkg.penguin.modules[0]!.contributes["WebModule.sessionTabs"] = [TAB, stats];
     await fs.writeFile(path.join(dir, "package.json"), JSON.stringify(pkg, null, 1));
-    const reloaded = await owner.post(`${BASE}/${wf.id}/reload`);
+    const reloaded = await owner.post(`${DEMO}/reload`);
     expect(reloaded.status, await reloaded.text()).toBe(200);
 
-    const res = await t.app.request(`${BASE}/${wf.id}/tabs/stats/manifest.webmanifest`);
+    const res = await t.app.request(`${DEMO}/tabs/stats/manifest.webmanifest`);
     const text = await res.text();
     expect(res.status, text).toBe(200);
     const m = JSON.parse(text) as { name: string; short_name: string; scope: string };
     // The tab is the app: its own title, its own full-page route as scope/start_url.
     expect(m.name).toBe("Stats");
     expect(m.short_name).toBe("Stats");
-    expect(m.scope).toBe(`/app/${PROJECT}/${AGENT}/${wf.id}/stats`);
+    expect(m.scope).toBe(`/app/${PROJECT}/${AGENT}/demo/stats`);
     // The workbench-level manifest keeps its own face: the first tab, the shared route.
     const whole = JSON.parse(
-      await (await t.app.request(`${BASE}/${wf.id}/manifest.webmanifest`)).text(),
+      await (await t.app.request(`${DEMO}/manifest.webmanifest`)).text(),
     ) as { name: string; scope: string };
     expect(whole.name).toBe("Board");
-    expect(whole.scope).toBe(`/app/${PROJECT}/${AGENT}/${wf.id}`);
+    expect(whole.scope).toBe(`/app/${PROJECT}/${AGENT}/demo`);
     // An unknown tab is the same 404 the routes give an unknown workbench.
-    const missing = await t.app.request(`${BASE}/${wf.id}/tabs/nope/manifest.webmanifest`);
+    const missing = await t.app.request(`${DEMO}/tabs/nope/manifest.webmanifest`);
     expect(missing.status).toBe(404);
   });
 
@@ -377,10 +406,10 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     // the installed app opens the tab there. Here the hop is exercised through the route's
     // own query contract against the null forward (no machine connected): 503, the proxy's
     // own answer for it.
-    const res = await t.app.request(`${BASE}/${wf.id}/manifest.webmanifest?machine=vm-1`);
+    const res = await t.app.request(`${DEMO}/manifest.webmanifest?machine=vm-1`);
     expect(res.status).toBe(503);
     // The workbench-level route without the query is untouched by the machine contract.
-    const local = await t.app.request(`${BASE}/${wf.id}/manifest.webmanifest`);
+    const local = await t.app.request(`${DEMO}/manifest.webmanifest`);
     expect(local.status).toBe(200);
     const m = JSON.parse(await local.text()) as { start_url: string };
     expect(m.start_url).not.toContain("machine=");

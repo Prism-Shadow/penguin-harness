@@ -63,6 +63,8 @@ import type {
   Fidelity,
   AmspRecord,
   TokenCounts,
+  ThinkingPayload,
+  ToolCallPayload,
 } from "@prismshadow/amsp/records";
 import type {
   GenerativeModelConfig,
@@ -249,6 +251,7 @@ export function usageToTokenCounts(usage: UsageMetadata): TokenCounts {
 /** The item streaming now, from its first visible fragment: MMSP streams one item at a time. */
 interface OpenItem {
   kind: "text" | "thinking" | "tool_call";
+  startedAt?: string;
   /** What its fragments carried so far — all an interrupted stream leaves of it. */
   content: string;
   /** A tool call's name and its Session-unique id (a `#n` suffix when the provider's id was already taken). */
@@ -356,13 +359,14 @@ export class EventTranslator {
     const open = this.open;
     this.open = null;
     if (!open) return;
-    yield partial(open, "stop");
-    if (open.kind === "text") yield assistantText(open.content);
-    else if (open.kind === "thinking") yield thinkingMessage(open.content);
+    if (open.kind === "text") {
+      yield partial(open, "stop");
+      yield assistantText(open.content);
+    } else if (open.kind === "thinking") yield* this.closeWork(open, thinkingMessage(open.content));
     else {
       const { name, content, toolCallId } = open;
       const call = toolCall({ name, arguments: content, toolCallId });
-      yield early ? markInterruptedToolCall(call) : call;
+      yield* this.closeWork(open, early ? markInterruptedToolCall(call) : call);
     }
   }
 
@@ -395,7 +399,9 @@ export class EventTranslator {
       if (kind === "tool_call" ? !call?.name : !content) return;
       const toolCallId = call ? this.toolCallIds.allocate(call.tool_call_id) : "";
       this.open = { kind, content: "", name: call?.name ?? "", toolCallId };
-      yield partial(this.open, "start");
+      const start = partial(this.open, "start");
+      this.open.startedAt = start.timestamp;
+      yield start;
     }
     if (!content) return;
     this.open.content += content;
@@ -408,16 +414,33 @@ export class EventTranslator {
   ): Generator<AmspRecord> {
     const open = this.open;
     this.open = null;
-    if (open) yield partial(open, "stop");
     if (done.type === "tool_call.done") {
       const toolCallId = open?.toolCallId ?? this.toolCallIds.allocate(done.tool_call_id);
       const { name, arguments: args, fidelity } = done;
-      yield toolCall({ name, arguments: args, toolCallId, ...fidelityProp(fidelity) });
+      yield* this.closeWork(
+        open,
+        toolCall({ name, arguments: args, toolCallId, ...fidelityProp(fidelity) }),
+      );
     } else if (done.type === "text.done") {
+      if (open) yield partial(open, "stop");
       yield assistantText(done.text, done.fidelity);
     } else {
-      yield thinkingMessage(done.thinking, done.fidelity);
+      yield* this.closeWork(open, thinkingMessage(done.thinking, done.fidelity));
     }
+  }
+
+  /** Keep the observed work interval on the complete record: Trace omits partials. */
+  private *closeWork(
+    open: OpenItem | null,
+    record: AmspRecord<ThinkingPayload | ToolCallPayload>,
+  ): Generator<AmspRecord> {
+    if (open) {
+      const stop = partial(open, "stop");
+      if (open.startedAt !== undefined) record.payload.started_at = open.startedAt;
+      record.timestamp = stop.timestamp;
+      yield stop;
+    }
+    yield record;
   }
 }
 

@@ -4,7 +4,7 @@
  * the pages the system Agent owns, read from the page table, as tiles beside the workbenches.
  *
  * - Given no arrangement of the viewer's, the system apps come first, in their order, then the
- *   workbenches; an administrator sees five, a member four (no Machines).
+ *   workbenches; Machines is visible only to administrators.
  * - A system tile of the Web App's own opens its page at its own address, not a window, and its
  *   hint says it is a system app (a server module's iframe one opens in the window:
  *   app-center-frame-apps.test.ts).
@@ -53,7 +53,7 @@ const board: WorkbenchInfo = {
 
 const BOARD = `${AGENT_ID}/board`;
 const system = (key: string) => `system_agent/${key}`;
-const ADMIN_SYSTEM = ["models", "plugins", "machines", "usage", "benchmark"].map(system);
+const ADMIN_SYSTEM = ["models", "plugins", "machines", "usage"].map(system);
 
 beforeAll(() => setActiveStrings(en));
 afterAll(() => setActiveStrings(zh));
@@ -122,13 +122,7 @@ it("puts the system apps first, in their order, then the workbenches", async () 
 
 it("shows a member the system apps without Machines", async () => {
   await open({ serverAdmin: false });
-  expect(order()).toEqual([
-    system("models"),
-    system("plugins"),
-    system("usage"),
-    system("benchmark"),
-    BOARD,
-  ]);
+  expect(order()).toEqual([system("models"), system("plugins"), system("usage"), BOARD]);
 });
 
 it("opens a system app as its own page, and says it is a system app", async () => {
@@ -140,23 +134,34 @@ it("opens a system app as its own page, and says it is a system app", async () =
   expect(whereIs(router)).toBe("/models");
 });
 
-it("offers only opening and arranging on a system app, and folds it in by Move to…", async () => {
-  const { server, router } = await open();
+it("offers only opening and arranging on a system app, and moves it into an existing folder", async () => {
+  const folder = {
+    type: "folder" as const,
+    id: "tools",
+    name: "Tools",
+    apps: [BOARD, system("models")],
+  };
+  const { server, router } = await open({ layout: { v: 1, items: [folder] } });
   await openMenu(tile(system("plugins")));
   expect(menuRows()).toEqual([
     en.appCenter.menu.open,
     en.appCenter.menu.moveTo,
     en.appCenter.menu.moveForward,
     en.appCenter.menu.moveBackward,
+    en.appCenter.menu.restoreDefault,
   ]);
   await click(menuItem(en.appCenter.menu.moveTo));
-  await click(menuItem("Board"));
-  await waitFor(() => server.appCenterLayout() !== null);
+  await click(menuItem(folder.name));
+  await waitFor(
+    () =>
+      server
+        .appCenterLayout()
+        ?.items.some((item) => item.type === "folder" && item.apps.includes(system("plugins"))) ===
+      true,
+  );
   expect(server.appCenterLayout()?.items).toContainEqual({
-    type: "folder",
-    id: expect.any(String),
-    name: en.appCenter.newFolder,
-    apps: [BOARD, system("plugins")],
+    ...folder,
+    apps: [...folder.apps, system("plugins")],
   });
   expect(whereIs(router)).toBe("/apps");
 });
@@ -223,6 +228,6 @@ it("still shows and opens the system apps when the server's list cannot be read"
   const { router } = await open({ failRead: true });
   expect(order()).toEqual(ADMIN_SYSTEM);
   expect(document.body.textContent).not.toContain(en.appCenter.workbenchesEmptyTitle);
-  await click(tile(system("benchmark")));
-  expect(whereIs(router)).toBe("/benchmark");
+  await click(tile(system("usage")));
+  expect(whereIs(router)).toBe("/usage");
 });

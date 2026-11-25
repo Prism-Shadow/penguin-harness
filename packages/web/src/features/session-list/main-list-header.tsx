@@ -1,8 +1,6 @@
 import {
   Dropdown,
-  GlyphIcon,
   ICONS,
-  ICON_SIZE,
   Menu,
   MenuLabel,
   MenuRadioItem,
@@ -153,18 +151,14 @@ export function renderMainListHeader(scope: MainSidebarState) {
       {newEntity === "agent" ? (
         <SidebarControl
           label={newEntityLabel}
-          glyph={<GlyphIcon d={ICONS.robotPlus} size={ICON_SIZE.iconButton} />}
+          glyph={ICONS.robotPlus}
           onClick={() => {
             navigate("/agents", { state: { create: true } });
             onNavigate?.();
           }}
         />
       ) : newEntity === "chat" ? (
-        <SidebarControl
-          label={newEntityLabel}
-          glyph={<GlyphIcon d={NEW_CHAT_ICON} size={ICON_SIZE.iconButton} />}
-          onClick={() => newChat()}
-        />
+        <SidebarControl label={newEntityLabel} glyph={NEW_CHAT_ICON} onClick={() => newChat()} />
       ) : (
         <WorkspaceSelect
           // Remount per Project: the picker browses lazily and caches the listing
@@ -183,7 +177,7 @@ export function renderMainListHeader(scope: MainSidebarState) {
           trigger={(open, toggle) => (
             <SidebarControl
               label={newEntityLabel}
-              glyph={<GlyphIcon d={ICONS.folderPlus} size={ICON_SIZE.iconButton} />}
+              glyph={ICONS.folderPlus}
               active={open}
               aria-expanded={open}
               onClick={toggle}

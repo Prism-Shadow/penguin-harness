@@ -17,7 +17,7 @@
  * - The system Agent's settings page has only the Overview and Plugins tabs, a deep link to any
  *   other tab included: the overview names it from the dictionary and offers no save or export,
  *   and the Plugins tab lists the system apps the viewer sees, read-only, each opening its page:
- *   five for an administrator, four (no Machines) for a member.
+ *   Machines is available to administrators.
  * - The plugin market's manage-installs list offers neither this server's system Agent nor a
  *   machine's.
  */
@@ -116,7 +116,7 @@ describe("the system Agent on the Agents page", () => {
       pages: SYSTEM_APP_PAGES,
     });
     await waitFor(() => cards().length === 2);
-    await click(button(en.agent.systemAppCount(4)));
+    await click(button(en.agent.systemAppCount(3)));
     expect(router.state.location.pathname).toBe("/agents/system_agent");
     expect(router.state.location.search).toBe("?tab=workbenches");
   });
@@ -240,13 +240,7 @@ describe("the system Agent's settings page", () => {
   it("lists its system apps on the Plugins tab, read-only, and Open goes to the page", async () => {
     const router = await openSystemPage("workbenches");
     await waitFor(() => appRows().length > 0);
-    expect(appRows()).toEqual([
-      "Models",
-      "Plugins",
-      "Machines",
-      "Cost Center",
-      "Self-Evolution Workbench",
-    ]);
+    expect(appRows()).toEqual(["Models", "Plugins", "Machines", "Cost Center"]);
     expect(hasButton(en.workbenches.importTitle)).toBe(false);
     expect(document.querySelector('[role="switch"], input[type="checkbox"]')).toBeNull();
     await click(button(`${en.appCenter.menu.open} Models`));
@@ -256,7 +250,7 @@ describe("the system Agent's settings page", () => {
   it("lists a member the system apps they can open, without Machines", async () => {
     await openSystemPage("workbenches", { serverAdmin: false });
     await waitFor(() => appRows().length > 0);
-    expect(appRows()).toEqual(["Models", "Plugins", "Cost Center", "Self-Evolution Workbench"]);
+    expect(appRows()).toEqual(["Models", "Plugins", "Cost Center"]);
   });
 });
 
@@ -298,11 +292,10 @@ describe("the plugin market's manage-installs list", () => {
     await waitFor(() => hasButton(`${en.plugins.installModel.installAgent} charts`));
     await click(button(`${en.plugins.installModel.installAgent} charts`));
     const rows = () =>
-      [...topDialog().querySelectorAll("button")]
-        .map((b) => b.getAttribute("aria-label") ?? "")
-        .filter((l) => l.startsWith(`${en.skills.install} `))
-        .map((l) => l.slice(l.indexOf(" ") + 1));
-    const machineDefault = `default_agent ${en.chat.machineTag("gpu-box")}`;
+      [...topDialog().querySelectorAll<HTMLInputElement>('input[type="radio"]')].map(
+        (input) => input.value,
+      );
+    const machineDefault = "gpu1/default_agent";
     await waitFor(() => rows().includes(machineDefault));
     expect(rows()).toEqual([AGENT_ID, machineDefault]);
   });

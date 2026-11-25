@@ -246,23 +246,6 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    if (json.model === "claude-guide-checklist") {
-      const design = {
-        title: "Seed exchange",
-        items: [
-          { group: "Materials", task: "Count packets", doneWhen: "Packet count is recorded" },
-          { group: "Materials", task: "Label trays", doneWhen: "Every tray has a label" },
-          { group: "Guests", task: "Confirm arrivals", doneWhen: "The sign-in sheet is ready" },
-        ],
-      };
-      const text = flat.includes("Return only JSON with this shape")
-        ? JSON.stringify(design)
-        : "Count the seed packets and label each tray.";
-      block(res, 0, { type: "text", text: "" }, [{ type: "text_delta", text }]);
-      messageStop(res, "end_turn", 26);
-      return;
-    }
-
     if (json.model === "claude-bento-first" || json.model === "claude-bento-second") {
       block(res, 0, { type: "text", text: "" }, [
         { type: "text_delta", text: "Served by " + json.model },
@@ -558,7 +541,69 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Five thinking/tool pairs make a saved, two-digit history with real file arguments.
+    if (flat.includes("activity clock fixture") && !isTitle) {
+      const scenario = flat.includes("activity clock fixture tool")
+        ? "tool"
+        : flat.includes("activity clock fixture thinking")
+          ? "thinking"
+          : "text";
+      const answer = (index) => {
+        const chunk = (text) =>
+          sse(res, "content_block_delta", {
+            type: "content_block_delta",
+            index,
+            delta: { type: "text_delta", text },
+          });
+        sse(res, "content_block_start", {
+          type: "content_block_start",
+          index,
+          content_block: { type: "text", text: "" },
+        });
+        let n = 0;
+        const next = () => {
+          chunk(`answer-part-${++n} `);
+          if (n < 16) setTimeout(next, 180);
+          else {
+            sse(res, "content_block_stop", { type: "content_block_stop", index });
+            messageStop(res, "end_turn", 24);
+          }
+        };
+        next();
+      };
+      if (scenario === "text" || hasToolResult) {
+        answer(0);
+      } else {
+        sse(res, "content_block_start", {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "thinking", thinking: "" },
+        });
+        sse(res, "content_block_delta", {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "thinking_delta", thinking: "Reviewing the notes." },
+        });
+        const thinkingMs = flat.includes("thinking reload") ? 4500 : 700;
+        setTimeout(() => {
+          sse(res, "content_block_delta", {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "signature_delta", signature: "sig_activity_clock" },
+          });
+          sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });
+          if (scenario === "thinking") answer(1);
+          else {
+            block(res, 1, { type: "tool_use", id: "clock_tool", name: "exec_command", input: {} }, [
+              { type: "input_json_delta", partial_json: '{"cmd":"pwd"}' },
+            ]);
+            messageStop(res, "tool_use", 12);
+          }
+        }, thinkingMs);
+      }
+      return;
+    }
+
+    // Ten tool calls interleaved with thinking exercise a saved two-digit tool count.
     if (flat.includes("ten-step work history") && !isTitle) {
       const path = "资料/每周 总结/评审 记录.md";
       const calls = [
@@ -574,7 +619,10 @@ const server = http.createServer((req, res) => {
           },
         ],
         ["exec_command", { cmd: "pwd", description: "确认工作目录" }],
-        ["read_file", { file_path: path, description: "核对本周评审记录" }],
+        ...Array.from({ length: 6 }, () => [
+          "read_file",
+          { file_path: path, description: "核对本周评审记录" },
+        ]),
       ];
       const completed = [...flat.matchAll(/toolu_work_history_(\d+)/g)].reduce(
         (n, match) => Math.max(n, Number(match[1])),

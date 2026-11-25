@@ -1,7 +1,5 @@
 /**
- * The page table of the features whose pages are the system apps (Models, Plugins, Machines, the
- * Cost Center, the Evaluation Center and its detail page), with the App Center's and the Agents
- * page's: read from the features' own module declarations, the way the booted app's table is, so a
+ * System apps, Benchmark routes, the App Center and Agents pages: read from the features' own module declarations, the way the booted app's table is, so a
  * test sees exactly the apps those modules contribute. Each page draws nothing.
  */
 import { moduleMetaOf, type Contributed, type ModuleClass } from "@prismshadow/penguin-core/kernel";

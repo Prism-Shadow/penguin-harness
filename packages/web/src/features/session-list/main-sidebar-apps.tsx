@@ -21,7 +21,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import { agentSettingsPath } from "../../lib/agent-location";
 import { usePageWorkspace } from "../../lib/page-workspace";
-import { layoutActions } from "../../lib/page-layout-actions";
 import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
 import { S } from "../../lib/strings";
 import { TileIcon } from "../app-center";
@@ -57,16 +56,12 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
   const [sorting, setSorting] = useState(false);
   const [sort, setSort] = useState<"default" | "name" | "recent">("default");
   const list = useRef<HTMLUListElement>(null);
+  const activeId = workspace?.current?.id;
+  const activeAppKey = rows.find((row) => row.page.id === activeId)?.key;
   useLayoutEffect(() => {
-    const box = list.current;
-    const active = box?.querySelector('[aria-current="page"]');
-    if (!box || !active || !box.clientHeight || box.scrollHeight <= box.clientHeight) return;
-    // Reveal an app selected through another entry without moving the sidebar's other groups.
-    const bounds = box.getBoundingClientRect();
-    const item = active.getBoundingClientRect();
-    if (item.top < bounds.top) box.scrollTop += item.top - bounds.top;
-    else if (item.bottom > bounds.bottom) box.scrollTop += item.bottom - bounds.bottom;
-  }, [workspace?.current?.id, rows.length, folded, searching, sort]);
+    // Reveal a newly selected app in the sidebar, including when it opens from the App Center.
+    list.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+  }, [activeAppKey]);
   if (!workspace || rows.length === 0) return null;
   const visible = rows.filter((row) =>
     row.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
@@ -88,7 +83,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
     onNavigate?.();
   };
   const open = (row: SidebarAppRow) => {
-    workspace.focus(row.page);
+    workspace.openPage(row.page);
     onNavigate?.();
   };
   const menuOf = (row: SidebarAppRow): RowActionItem[] => {
@@ -111,7 +106,12 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
             glyph: ICONS.appWindow,
             onSelect: () => open(row),
           },
-      ...layoutActions(workspace, page, onNavigate),
+      {
+        id: "separate",
+        label: S.pageWorkspace.separate,
+        glyph: ICONS.externalLink,
+        onSelect: act(() => workspace.separate(page)),
+      },
       {
         id: "fullscreen",
         label: S.appCenter.windowFullScreen,
@@ -154,7 +154,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
     return actions;
   };
   return (
-    <nav aria-label={S.sidebarApps.title} className="pt-2.5">
+    <nav aria-label={S.sidebarApps.title}>
       <SidebarListHeader
         label={S.sidebarApps.title}
         searching={searching}
@@ -225,11 +225,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
         {visible.length === 0 && (
           <p className="px-2.5 pt-2 text-xs text-fg-muted">{S.sidebarApps.noMatches}</p>
         )}
-        <ul
-          ref={list}
-          aria-label={S.sidebarApps.title}
-          className="max-h-[min(8rem,18dvh)] space-y-px overflow-y-auto md:max-h-[min(12rem,25dvh)]"
-        >
+        <ul ref={list} aria-label={S.sidebarApps.title} className="space-y-px pt-0.5">
           {visible.map((row) => {
             const actions = menuOf(row);
             const state = S.appCenter.running;
@@ -269,7 +265,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
                 }
                 name={row.title}
                 {...(name !== row.title ? { label: name, hint: name } : {})}
-                active={workspace.current?.id === row.page.id}
+                active={activeAppKey === row.key}
                 running
                 build={row.build}
                 menuActions={actions}

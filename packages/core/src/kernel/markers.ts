@@ -28,9 +28,7 @@ export type IfaceHandle<T> = (abstract new () => T) &
  * structural (kernel/sig.ts); the class is only the handle. The generator projects the
  * instance type like any other interface.
  *
- * Two spellings, for two different things.
- *
- * **The interface declares its own members** — `@Interface()`, and the members are the
+ * The interface declares its own members — `@Interface()`, and the members are the
  * class's, which is where their doc comments belong:
  *
  * ```ts
@@ -44,19 +42,10 @@ export type IfaceHandle<T> = (abstract new () => T) &
  * A decorated class must be exactly a declaration: no heritage, no constructor, no
  * concrete or private member. The generator rejects the rest rather than deciding what
  * belongs in the contract.
- *
- * **The interface IS an existing type** — the base-class form, which the decorator
- * cannot express: TypeScript has no way to carry a decorator's type argument into the
- * instance type, so the members would be invisible to every consumer.
- *
- * ```ts
- * export abstract class Config extends Interface<ServerConfig>() {}
- * ```
  */
 export function Interface<T = unknown>(): IfaceHandle<T> {
   // Applied as a decorator it is called with the class and hands it back untouched;
-  // named in a heritage clause it is the (never constructed) base. One function does both
-  // — a `class {}` would throw "cannot be invoked without 'new'" in the first position.
+  // a `class {}` would throw "cannot be invoked without 'new'" in that position.
   function handle(target?: unknown, _context?: unknown): unknown {
     return target;
   }

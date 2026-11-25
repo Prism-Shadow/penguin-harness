@@ -32,6 +32,7 @@ import {
   createBrowserRouter,
   createMemoryRouter,
   createRoutesFromElements,
+  useLocation,
   useRouteError,
 } from "react-router";
 import { CrashNotice, setReportRoute } from "@prismshadow/penguin-ui";
@@ -49,6 +50,7 @@ import { LoginPage } from "../pages/login";
 import { webAppDeps } from "./deps";
 function RequireAuth() {
   const { user } = useAuth();
+  const location = useLocation();
   const { sessionProviders, userEvents } = webAppDeps.useDeps();
   // Plugin-contributed grammars, adopted once for the signed-in tree (see the hook). Called
   // before the early returns, because a hook cannot be conditional; it fetches only once a user
@@ -61,8 +63,11 @@ function RequireAuth() {
     (inner, { id, Component }) => <Component key={id}>{inner}</Component>,
     <AppLayout renderRoute={(location) => <ShellRoutes location={location} />} />,
   );
+  const draftProject = location.pathname === "/chat/new" ? location.state?.projectId : undefined;
   return (
-    <ProjectProvider>
+    <ProjectProvider
+      {...(typeof draftProject === "string" ? { initialProjectId: draftProject } : {})}
+    >
       <MachinesProvider>
         <SessionsProvider userEvents={userEvents}>{layout}</SessionsProvider>
       </MachinesProvider>

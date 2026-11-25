@@ -11,11 +11,14 @@
  *   makes the dialog say "已连接" and close itself, and turns the panel into the Chrome surface.
  * - The strip's "+" asks the extension for a tab; the tab appears in the strip, and the page
  *   area stands a card for it with "在 Chrome 中显示". Its × asks the extension to close it.
+ * - An administrator reloading a Session's Browser shortcut waits for the server's status
+ *   and sees the pairing guide without requesting desktop tabs.
  * The extension is played from the test process by a WebSocket client that speaks the browser
  * link's frames (desktop-browser-command / -reply / -event).
  */
 import { test, expect, request as playwrightRequest } from "@playwright/test";
-import { provisionAndLogin } from "./auth.mjs";
+import { watchSocket } from "./api-socket.mjs";
+import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -109,6 +112,37 @@ function fakeExtension(token) {
   return { ws, ops };
 }
 
+test("reloading a Session's Browser shortcut waits for desktop availability", async ({ page }) => {
+  await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
+  const projectId = await configureProjectModel(page.request);
+  const sessionId = await createSession(page.request, projectId);
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await page.getByTestId("dock-launcher").click();
+  await page.getByTestId("dock-launcher-open-builtin-browser").click();
+  const surface = page.getByTestId("browser-chrome-surface");
+  await expect(surface).toHaveAttribute("data-standing", "unpaired");
+
+  const socket = await watchSocket(page);
+  const status = Promise.withResolvers();
+  socket.slowDown(async (call) => {
+    if (call.path === "/api/builtin-browser/status") await status.promise;
+    return 0;
+  });
+  try {
+    await page.reload();
+    const dock = page.getByTestId("dock").filter({
+      has: page.locator('[data-tab-id^=":app:session-tool/builtin-browser/"]'),
+    });
+    await expect(dock.getByRole("status")).toBeVisible();
+  } finally {
+    status.resolve();
+  }
+  await expect(surface.getByTestId("browser-pairing-code")).toHaveText(/^[A-Za-z0-9_-]{43}$/);
+  expect(socket.calls.map((call) => call.path)).not.toContain(
+    `/api/builtin-browser/projects/${projectId}/session-resources/${sessionId}/tabs`,
+  );
+});
+
 test("a member pairs their own Chrome from the Browser panel, and drives its tabs from there", async ({
   page,
 }) => {
@@ -119,11 +153,17 @@ test("a member pairs their own Chrome from the Browser panel, and drives its tab
   await page.getByPlaceholder(/输入消息/).waitFor();
 
   // Offered without a page host: this window has no <webview>.
-  await page.getByTestId("dock-toggle-right").click();
-  await page.getByTestId("dock-pick-builtin-browser").click();
+  await page.getByTestId("dock-launcher").click();
+  await page.getByTestId("dock-launcher-open-builtin-browser").click();
+  await expect(page).toHaveURL(/session-tools\/builtin-browser/);
   const surface = page.getByTestId("browser-chrome-surface");
   await expect(surface).toHaveAttribute("data-standing", "unpaired");
   await expect(page.locator("webview")).toHaveCount(0);
+  await expect(surface.getByRole("link").filter({ hasText: "Chrome 应用商店" })).toHaveAttribute(
+    "href",
+    /chromewebstore\.google\.com\/detail\/penguinharness-browser\/dodgfhpcbmkjfcbgnoidablfgjjhhmgp$/,
+  );
+  await expect(surface.locator('a[href$="/penguin-browser-extension.zip"]')).toBeVisible();
   const origin = new URL(BASE).origin;
   await expect(surface.getByTestId("browser-pairing-server")).toHaveText(origin);
   await expect(surface.getByTestId("browser-pairing-code")).toHaveText(/^[A-Za-z0-9_-]{43}$/);

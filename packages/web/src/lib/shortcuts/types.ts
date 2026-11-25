@@ -74,6 +74,8 @@ export interface ShortcutCommand {
     windows?: string | null;
     linux?: string | null;
   };
+  /** Alternate desktop chord when the browser uses that combination itself. */
+  desktopDefault?: string;
 }
 
 /** id → chord (null = unbound), fully resolved for the current platform. */

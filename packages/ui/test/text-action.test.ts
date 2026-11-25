@@ -9,7 +9,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { TextAction } from "../src/components/actions/text-action/text-action";
-import { renderStatic } from "../src/testing";
+import { classTokens, renderStatic } from "../src/testing";
 
 const press = (props: Parameters<typeof TextAction>[0]) =>
   renderStatic(createElement(TextAction, props));
@@ -24,6 +24,13 @@ describe("a text action", () => {
     expect(words(html)).toBe("[Retry]");
     expect(heard(html)).toBe("Retry");
     expect(html).not.toMatch(/\sdisabled=""/);
+    expect(classTokens(html)).toContain("text-fg");
+  });
+
+  it("sets its word in the danger ink when tone is danger", () => {
+    const tokens = classTokens(press({ tone: "danger", children: "Report" }));
+    expect(tokens).toContain("text-tone-danger-fg");
+    expect(tokens).not.toContain("text-fg");
   });
 
   it("in flight says it is busy and takes no press; disabled, takes none either", () => {

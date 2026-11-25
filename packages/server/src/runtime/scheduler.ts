@@ -36,16 +36,20 @@ import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin
 import type { ScheduleStateRow } from "@prismshadow/penguin-library-session/repos/schedules";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import type { ErrorSink } from "./error-recorder.js";
-import type { ScheduleDefinition } from "./schedule-file.js";
-import { latestSlotAt, slotInWindow } from "./schedule-file.js";
+import type { ScheduleDefinition } from "@prismshadow/penguin-library-session/schedule-file";
+import { latestSlotAt, slotInWindow } from "@prismshadow/penguin-library-session/schedule-file";
 import {
   ScheduleFileCache,
   archiveScheduleFile,
   readScheduleFile,
   validateScheduleModelRef,
-} from "./schedule-store.js";
-import type { ScheduleConfigSource } from "./schedule-store.js";
-import type { ScheduleStatus } from "../api/types.js";
+} from "@prismshadow/penguin-library-session/schedule-store";
+import type { ScheduleConfigSource } from "@prismshadow/penguin-library-session/schedule-store";
+import {
+  scheduleStatus,
+  isSettledStatus,
+} from "@prismshadow/penguin-library-session/schedules-status";
+import type { ScheduleStatus } from "@prismshadow/penguin-library-session/schedules";
 import { Component, Interface, Opaque, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { userChannelKey } from "../http/routes/events.js";
@@ -57,6 +61,10 @@ import type {
   SessionIndex,
 } from "@prismshadow/penguin-library-session";
 import type { Errors } from "@prismshadow/penguin-library-observability";
+
+// The display status of a registered task lives in the session library (schedules restack);
+// this re-export keeps the server's own import paths stable.
+export { scheduleStatus, isSettledStatus };
 
 /** Reconcile and fire-check interval (min period is 5m, so 30s granularity is plenty). */
 const TICK_INTERVAL_MS = 30_000;
@@ -91,8 +99,34 @@ export interface ScheduleSessionCreatorShape {
 }
 
 /** What the scheduler needs of the session runtime — declared here, at the consumer (Go style). */
-export abstract class ScheduleSessionCreator extends Interface<ScheduleSessionCreatorShape>() {}
-export abstract class ScheduleTaskRunner extends Interface<ScheduleTaskRunnerShape>() {}
+@Interface()
+export abstract class ScheduleSessionCreator {
+  abstract createSession(args: {
+    projectId: string;
+    agentId: string;
+    workspace?: string;
+    modelId?: string;
+    provider?: string;
+    /**
+     * Unattended creators pass `allow-all`: nobody is there to answer an ask the default
+     * preset's approval mode would bring. A workbench Session that only talks passes
+     * `deny-all`, which asks nobody either.
+     */
+    approvalMode?: "allow-all" | "deny-all";
+    source?: "schedule" | "workbench";
+    client?: "workbench";
+  }): Promise<{ sessionId: string }>;
+}
+
+@Interface()
+export abstract class ScheduleTaskRunner {
+  abstract statusOf(sessionId: string): string;
+  abstract startTask(
+    sessionId: string,
+    input: ReturnType<typeof userText>[],
+    opts?: { queueIfBusy?: boolean; driver?: string },
+  ): Promise<{ sessionId: string; queued: boolean }>;
+}
 
 /**
  * Trigger input = a `[scheduled_task]` origin block (task name and fire time) + the prompt
@@ -108,24 +142,6 @@ interface PendingFire {
   agentId: string;
   name: string;
   sessionId: string;
-}
-
-/** Displayed status precedence: invalid > done/missed (one-shot) > expired > enabled flag. */
-export function scheduleStatus(
-  def: ScheduleDefinition,
-  state: ScheduleStateRow,
-  nowMs: number,
-): ScheduleStatus {
-  if (state.invalidReason !== null) return "invalid";
-  if (def.periodMs === undefined && state.firedOnce) return "done";
-  if (def.periodMs === undefined && state.missed) return "missed";
-  if (def.endAtMs !== undefined && nowMs > def.endAtMs) return "expired";
-  return def.enabled ? "active" : "disabled";
-}
-
-/** Settled = can never fire again without a file edit (done / missed / expired): the statuses the scheduler archives. */
-export function isSettledStatus(status: ScheduleStatus): boolean {
-  return status === "done" || status === "missed" || status === "expired";
 }
 
 /** In-memory view of a registered task (definition + run state + queued flag). */

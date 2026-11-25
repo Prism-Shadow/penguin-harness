@@ -62,6 +62,9 @@ import {
 } from "../runtime/session-sources.js";
 import type { ListingView } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
+import { sessionIdCreatedAt } from "@prismshadow/penguin-library-trace/session-id";
+
+export { sessionIdCreatedAt };
 import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { aboveSandboxCeiling } from "./sandbox-ceiling.js";
@@ -169,19 +172,8 @@ export function applySandboxPick(
   return { ...rest, mode, ...(network === "open" ? {} : { network }) };
 }
 
-const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
-
 /** Stands in for the organization map when company mode is not wired in (tests, older assemblies). */
 const EMPTY_ORG_IDS: ReadonlyMap<string, string> = new Map();
-
-/** Derives creation time from the local timestamp embedded in session_id; returns null if it doesn't match. */
-export function sessionIdCreatedAt(sessionId: string): string | null {
-  const m = SESSION_ID_TS_RE.exec(sessionId);
-  if (!m) return null;
-  const [, y, mo, d, h, mi, s] = m;
-  const date = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s));
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
 
 /**
  * The order a Session list is served in: `created` (the default) is newest creation first;

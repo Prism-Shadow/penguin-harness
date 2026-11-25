@@ -13,8 +13,8 @@
  *   「新建空白 Agent」, opens Create Agent over it prefilled with the plugin, and the Agent it
  *   creates joins the list installed while the list stays open;
  * - Quick invoke is gated on the currently selected agent having the skill installed (here the
- *   current agent is default_agent; its button is disabled for a preinstall:false skill like
- *   company-setup the current agent lacks);
+ *   current agent is default_agent; the fixture removes agent-company, so its quick
+ *   action is disabled);
  * - "Quick invoke" navigates to /chat/new (default_agent), **prefilling** the invoke text in the
  *   UI language and preselecting its declared skill — the toolbar's skill dropdown
  *   button shows a count badge of 1, and that item shows as selected in the menu;
@@ -63,10 +63,6 @@ const SKILLS = [
   "benchmark-design",
   "agent-evaluation",
   "agent-optimization",
-  "opro-rsi-toolkit",
-  "ape-rsi-toolkit",
-  "ace-rsi-toolkit",
-  "awm-rsi-toolkit",
   "data-analysis",
   "penguin-sdk",
   "penguin-plugin",
@@ -106,9 +102,15 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  // The install target for "Install on Agent": default_agent has all skills preinstalled, so use a blank Agent to exercise the install/uninstall flow.
+  // Keep Agent Company absent from the current Agent and give the chooser a blank target.
+  const defaultPlugins = BASE + "/api/projects/" + projectId + "/agents/default_agent/plugins";
+  const state = await (await page.request.get(defaultPlugins)).json();
+  if (state.skills.some((skill) => skill.name === "company-setup")) {
+    const removed = await page.request.delete(defaultPlugins + "/agent-company");
+    expect(removed.ok(), await removed.text()).toBe(true);
+  }
   const created = await page.request.post(`${BASE}/api/projects/${projectId}/agents`, {
-    data: { agentId: "agent_helper", name: "Helper Agent" },
+    data: { agentId: "agent_helper", name: "Helper Agent", defaultPlugins: false },
   });
   expect(created.ok(), "create helper agent").toBeTruthy();
 
@@ -140,10 +142,7 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   const brief = plugins.find((item) => item.name === "data-analysis").quickStart.promptZh;
   expect(brief).toBeTruthy();
 
-  // Quick invoke opens a draft on the currently selected Agent (default_agent here), so it's
-  // gated on that Agent having one of the plugin's skills: default_agent ships every preinstalled
-  // plugin (data-analysis is enabled), while company-setup is preinstall:false and
-  // absent from it, so its button is disabled.
+  // The current Agent has Data Analysis. Agent Company is in the market but absent from the Agent.
   await expect(page.getByRole("button", { name: "快速调用 · 数据分析" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "快速调用 · 智能体公司" })).toBeDisabled();
 
@@ -178,12 +177,13 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
 
   // The shared flow shows each Agent and its available action.
   await installAction.click();
-  const dialog = page.getByRole("dialog").filter({ hasText: "安装到 Agent" });
+  const dialog = page.getByRole("dialog").filter({ hasText: "选择智能体" });
   // The default Agent already carries the plugin. The helper can install it.
   const uninstallDefault = page.getByRole("button", { name: "卸载 default_agent" });
-  const installHelper = page.getByRole("button", { name: "安装 agent_helper" });
+  const installHelper = page.getByRole("button", { name: "添加给 Helper Agent" });
   await expect(uninstallDefault).toBeVisible();
   await expect(uninstallDefault).toContainText("卸载");
+  await dialog.locator('input[value="agent_helper"]').check();
   await expect(installHelper).toBeVisible();
   // Install on the helper, then read the result from the server.
   await installHelper.click();
@@ -205,7 +205,7 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
     .getByRole("dialog", { name: "卸载 数据分析" })
     .getByRole("button", { name: "卸载", exact: true })
     .click();
-  await expect(page.getByRole("button", { name: "安装 agent_helper" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "添加给 Helper Agent" })).toBeVisible();
   // The first row, 「新建空白 Agent」: Create Agent opens over the list with the plugin ticked;
   // once created, it closes and the new Agent is in the still-open list, installed.
   await page.getByRole("button", { name: "新建并安装" }).click();
@@ -214,6 +214,7 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   await createDialog.getByRole("textbox", { name: "Agent id", exact: true }).fill("blank_analyst");
   await createDialog.getByRole("button", { name: "创建", exact: true }).click();
   await expect(createDialog).toHaveCount(0);
+  await dialog.locator('input[value="blank_analyst"]').check();
   await expect(page.getByRole("button", { name: "卸载 blank_analyst" })).toContainText("卸载");
   await expect
     .poll(async () => {
@@ -245,11 +246,24 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   await expect(skillsBtn).toBeVisible();
   await expect(skillsBtn).toContainText("1");
 
-  // Open the menu: all listed skills each occupy a row (default_agent has everything preinstalled), with data-analysis shown as selected.
+  // The default Agent receives the bundled skills. Other RSI methods require a separate install.
   const row = (name) => page.getByRole("button", { name: new RegExp(`^${name}`) });
   await skillsBtn.click();
   for (const s of SKILLS) {
     await expect(row(s)).toBeVisible();
+  }
+  for (const method of [
+    "ace",
+    "ape",
+    "awm",
+    "openskill",
+    "opro",
+    "rrsi",
+    "skilladam",
+    "skillopt",
+    "trace",
+  ]) {
+    await expect(row(method + "-rsi-toolkit")).toHaveCount(0);
   }
   await expect(row("data-analysis")).toHaveAttribute("aria-pressed", "true");
 

@@ -56,11 +56,12 @@ export const en: Strings = {
       growth: "Vibe-Coding",
       separator: " ",
       reachLead: "to ",
-      reach: "Vibe-Evolving",
+      reach: "Vibe-Finetuning",
     },
     subtitle: "Open Foundation for Self-Evolving Enterprise AI.",
     downloadCta: "Download desktop",
     productHuntBadge: "PenguinHarness on Product Hunt",
+    watcha: "Watcha",
     watchaBadge: "PenguinHarness Watcha badge",
     cliInstall: "Command-line install",
     stats: [
@@ -71,7 +72,6 @@ export const en: Strings = {
         label: "A native agent self-evolution engine",
       },
     ],
-    supportedModelsCount: "1000+",
     supportedModelsLabel: "Supported Models",
     supportedModelsMore: "and more",
     algorithmsLabel: "RSI Algorithms",
@@ -182,11 +182,23 @@ export const en: Strings = {
   },
 
   selfImprove: {
+    workbench: {
+      title: "Self-Evolution Workbench",
+      agents: "Agent",
+      stages: ["Evaluate", "Improve", "Retest", "Next round"],
+      activeStages: ["Evaluating", "Improving", "Retesting", "Next round"],
+      tasks: [
+        { name: "Coverage Review", task: "Cross-check claims against policy terms" },
+        { name: "Service Ticket Resolution", task: "Verify and resolve pending tickets" },
+        { name: "Financial Control", task: "Reconcile accounts at close" },
+        { name: "Court Clerk Operations", task: "Verify case filings and organize records" },
+      ],
+    },
     toolkit:
       "An RSI toolkit changes your agent’s harness (its prompts and Skills) while the model stays fixed, and measures every change on a Benchmark.",
     evaluate: "Evaluate",
     optimize: "Optimize",
-    title: "A multi-agent self-evolution framework",
+    title: "A unified self-evolution platform for any agent",
     subtitle:
       "By default the General Agent runs the optimization Skill. Each round it makes one change to the tested agent. Evaluator subagents running the evaluation Skill score the changed agent on every case of the Benchmark.",
     nodeOptimizer: "Optimizer",
@@ -198,16 +210,12 @@ export const en: Strings = {
     edgeImprove: "edit AGENTS.md, a Skill or config",
     noteOld: "snapshot before editing",
     noteNew: "kept only if the score is higher",
+    sampleTrends: "Example trends",
     trends: [
       { label: "Score", hint: "out of 100" },
       { label: "Cost", hint: "per run" },
       { label: "Duration", hint: "per run" },
     ],
-    demo: {
-      caption:
-        "Demo: a decision agent is evaluated, revises its working method once and is retested on the same model. Its score goes from 84 to 100.",
-      cost: "Six test-agent runs cost $0.0373, not counting Benchmark creation, scoring or the optimizer.",
-    },
     diagramLabel:
       "One round of self-evolution: the Optimizer runs agent-optimization and dispatches Evaluator subagents running agent-evaluation. They run the tested agent on each Benchmark case and score it. From the scores and Traces, the Optimizer edits version N into version N+1. Version N+1 is kept only if its score is higher. Version N is saved as a snapshot before it is edited.",
   },
@@ -269,8 +277,34 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cases: {
-    os: "Create your first self-evolving agent OS.",
-    apps: ["Document Q&A", "Investment Analyst", "Legal Assistant"],
+    os: "Build your first self-evolving Agent OS",
+    workspace: {
+      title: "App Center",
+      project: "PenguinHarness demo",
+      apps: {
+        docs: "Document Q&A",
+        investment: "Investment Analyst",
+        legal: "Legal Assistant",
+        slides: "AI Slides",
+        images: "Image Studio",
+        support: "Support",
+        expenses: "Expense log",
+        terminal: "Terminal",
+        browser: "Browser",
+      },
+      desk: "Contract desk",
+      file: "File",
+      status: "Status",
+      reviewed: "Reviewed",
+      analyzing: "Analyzing…",
+      files: [
+        "Employment Contract - Template v3.docx",
+        "Supplier Agreement - Kestrel Foods.pdf",
+        "Office Lease - Unit 1204.pdf",
+        "Mutual NDA - Helios Labs.docx",
+        "Master Services Agreement - Northwind Logistics.pdf",
+      ],
+    },
     title: "A2APP: one sentence and $0.10 build a legal agent app",
     a2app:
       "Every agent can have a workbench of its own. The agent builds it from what you ask and changes it the same way. It opens beside the chat and reloads as the agent edits it.",
@@ -278,8 +312,6 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       "Describe what you need in one request. PenguinHarness builds a legal agent app that takes contract uploads, identifies risks and produces review reports to download.",
     prompt:
       "Build a legal review agent with a simple workspace where users upload contracts, track the review, and download a report with risky clauses, explanations, and suggested revisions.",
-    caption:
-      "The app it built: upload contracts, follow each file's review and download a report of risky clauses with suggested revisions",
     cost: "Five sample reviews cost $0.0423 in model calls.",
   },
 

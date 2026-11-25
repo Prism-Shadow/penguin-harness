@@ -89,7 +89,7 @@ function NewChannelButton({
         data-tooltip={label}
         aria-label={label}
         onClick={() => setOpen(true)}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
       >
         <PlusIcon size={ICON_SIZE.groupHeaderAction} />
       </button>
@@ -139,7 +139,7 @@ function ChannelRow({
         data-tooltip={channel.purpose !== "" ? `${label} · ${channel.purpose}` : label}
         aria-label={note !== null ? `${label} · ${note}` : label}
         className={({ isActive }) =>
-          `flex min-w-0 flex-1 items-center ${ICON_GAP.row} rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
+          `flex h-8 min-w-0 flex-1 items-center ${ICON_GAP.row} rounded-md px-2.5 text-sm transition-colors duration-150 ${
             isActive
               ? `${NAV_FILL.selected} font-medium text-gray-900 dark:text-gray-100`
               : unread
@@ -178,7 +178,7 @@ function ChannelRow({
 /** A run's title inside the list (My channels / Other channels), with how many it holds. */
 function GroupTitle({ label, count }: { label: string; count: number }) {
   return (
-    <p className="flex items-center gap-1.5 px-2.5 pb-0.5 pt-2.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+    <p className="mt-1.5 flex h-7 items-center gap-1.5 px-2.5 text-xs font-medium text-gray-500 first:mt-0.5 dark:text-gray-400">
       <span className="min-w-0 truncate">{label}</span>
       <span className="tabular-nums text-gray-400 dark:text-gray-500">{count}</span>
     </p>
@@ -237,8 +237,8 @@ export function ChannelSidebar({
     <>
       {/* The list's header, at the height and density of the development list's own, with
           "New channel" as its trailing action. */}
-      <div className="mt-3 flex items-center justify-between gap-2 px-1 pt-2">
-        <Text variant="eyebrow" as="span" className="px-1">
+      <div className="mt-2 first:mt-1 flex h-8 items-center justify-between gap-2 px-1">
+        <Text variant="eyebrow" as="span" className="px-1.5">
           {S.company.channels.listTitle}
         </Text>
         <NewChannelButton

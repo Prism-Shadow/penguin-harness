@@ -12,13 +12,17 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  partialText,
   sessionMeta,
   subagentEvent,
   taskBegin,
+  taskEnd,
   toolCall,
+  userText,
   withOrigin,
 } from "@prismshadow/penguin-core";
 import type {
+  ApproveFn,
   BackgroundSubagentInfo,
   AmspRecord,
   SubagentMessageOptions,
@@ -48,6 +52,8 @@ function subagentsFakeSession(
   sent: SentMessage[],
   aborts: string[],
   stateListeners: (() => void)[],
+  bgMessageListeners: ((msg: AmspRecord) => void)[] = [],
+  approvalFallbacks: ApproveFn[] = [],
 ): RuntimeSession {
   return fakeSession(sessionId, {
     listBackgroundSubagents: () => children.map((c) => ({ ...c })),
@@ -83,7 +89,12 @@ function subagentsFakeSession(
     onSubagentState: (listener: () => void) => {
       stateListeners.push(listener);
     },
-    setSubagentApprovalFallback: () => {},
+    onBackgroundMessage: (listener: (msg: AmspRecord) => void) => {
+      bgMessageListeners.push(listener);
+    },
+    setSubagentApprovalFallback: (approve: ApproveFn) => {
+      approvalFallbacks.push(approve);
+    },
   });
 }
 
@@ -97,6 +108,8 @@ describe("session subagent routes and liveness", () => {
   let sent: SentMessage[];
   let aborts: string[];
   let stateListeners: (() => void)[];
+  let bgMessageListeners: ((msg: AmspRecord) => void)[];
+  let approvalFallbacks: ApproveFn[];
 
   beforeAll(async () => {
     t = await createTestApp();
@@ -116,9 +129,19 @@ describe("session subagent routes and liveness", () => {
     sent = [];
     aborts = [];
     stateListeners = [];
+    bgMessageListeners = [];
+    approvalFallbacks = [];
     const parent = adoptSession(
       t.deps,
-      subagentsFakeSession(SID, children, sent, aborts, stateListeners),
+      subagentsFakeSession(
+        SID,
+        children,
+        sent,
+        aborts,
+        stateListeners,
+        bgMessageListeners,
+        approvalFallbacks,
+      ),
       {
         projectId: PROJECT,
         approvalMode: "always-ask",
@@ -320,5 +343,94 @@ describe("session subagent routes and liveness", () => {
     ).toBe(404);
     expect(sent).toEqual([]);
     expect(aborts).toEqual([]);
+  });
+
+  it("jumping to a running subagent session reports running status, streams live child records/approvals, and converges to idle", async () => {
+    const childId = uniqueSessionId();
+    children[0] = { sessionId: childId, subagentId: "subagent-jump01", running: true };
+    t.deps.sessionsRepo.insert(
+      sessionRow(childId, { projectId: PROJECT, approvalMode: "always-ask" }),
+    );
+    stateListeners[0]!();
+
+    // 1. Direct GET /api/sessions/:childId reports status "running" while hosted by parent.
+    const infoRes = await api.get(`/api/sessions/${childId}`);
+    expect(infoRes.status).toBe(200);
+    const infoJson = (await infoRes.json()) as { session: { status: string } };
+    expect(infoJson.session.status).toBe("running");
+
+    // 2. Subscribing to /api/sessions/:childId/stream delivers task_state: "running" on first frame.
+    const streamRes = await api.get(`/api/sessions/${childId}/stream`);
+    expect(streamRes.status).toBe(200);
+    const reader = streamRes.body!.getReader();
+    const { value } = await reader.read();
+    await reader.cancel();
+    const firstFrame = new TextDecoder().decode(value);
+    expect(firstFrame).toContain('"type":"task_state"');
+    expect(firstFrame).toContain('"state":"running"');
+
+    // 3. Subscribe to the child's channel and verify origin-stripped live messages, liveFragments, and approvals.
+    const childServerEvents: ServerEvent[] = [];
+    const childRecords: AmspRecord[] = [];
+    t.deps.channels.get(childId).subscribe((evt) => {
+      if (evt.event === "server_event") {
+        childServerEvents.push(JSON.parse(evt.data) as ServerEvent);
+      } else {
+        childRecords.push(JSON.parse(evt.data) as AmspRecord);
+      }
+    });
+
+    const forward = bgMessageListeners[0]!;
+    forward(withOrigin(taskBegin(), childId));
+    forward(withOrigin(userText("investigate bug", "parent_agent"), childId));
+    forward(withOrigin(partialText("start", ""), childId));
+    forward(withOrigin(partialText("delta", "analyzing..."), childId));
+
+    expect(t.deps.manager.pendingInputs(childId)).toHaveLength(1);
+    expect((t.deps.manager.pendingInputs(childId)[0]!.payload as { text?: string }).text).toBe(
+      "investigate bug",
+    );
+    expect(t.deps.manager.liveFragments(childId)).toHaveLength(1);
+    expect((t.deps.manager.liveFragments(childId)[0]!.payload as { text?: string }).text).toBe(
+      "analyzing...",
+    );
+    expect(childRecords.every((r) => !r.origin?.length)).toBe(true);
+
+    // 4. Child tool approval escalates to the child's channel (origin-stripped) and can be decided on the child session.
+    const fallbackApprove = approvalFallbacks[0]!;
+    const decisionPromise = fallbackApprove(
+      withOrigin(
+        toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "tc_child_1" }),
+        childId,
+      ),
+    );
+    expect(t.deps.manager.pendingApprovalCount(childId)).toBe(1);
+    expect(t.deps.manager.pendingApprovals(childId)[0]?.origin).toBeUndefined();
+    const approvalEvt = childServerEvents.find((e) => e.type === "approval_request");
+    expect(approvalEvt).toBeDefined();
+    expect(
+      approvalEvt && approvalEvt.type === "approval_request" ? approvalEvt.origin : "missing",
+    ).toBeUndefined();
+
+    expect(t.deps.manager.decideApproval(childId, "tc_child_1", "allow")).toBe(true);
+    expect(await decisionPromise).toBe("allow");
+
+    // 5. Steer and abort directly on the child session route while it is hosted.
+    const steerRes = await api.post(`/api/sessions/${childId}/tasks`, {
+      input: [{ type: "text", text: "also check edge cases" }],
+      steerIfBusy: true,
+    });
+    expect(steerRes.status).toBe(202);
+    expect((await steerRes.json()) as { steered?: boolean }).toMatchObject({ steered: true });
+    expect(sent.at(-1)?.childSessionId).toBe(childId);
+
+    // 6. When the child finishes, task_end and state listener converge child status to "idle" and clear liveFragments.
+    children[0]!.running = false;
+    forward(withOrigin(taskEnd(), childId));
+    stateListeners[0]!();
+
+    expect(t.deps.manager.statusOf(childId)).toBe("idle");
+    expect(t.deps.manager.liveFragments(childId)).toEqual([]);
+    expect(childServerEvents.some((e) => e.type === "task_state" && e.state === "idle")).toBe(true);
   });
 });

@@ -52,7 +52,7 @@ export function renderMainGroupByTime(scope: MainSidebarState) {
               ? { scope: group.key, fullRows: ordered[i] ?? [] }
               : undefined;
           return (
-            <div key={group.key} className="pt-2.5">
+            <div key={group.key} className="pt-1.5 first:pt-0.5">
               <GroupHeader
                 open={!collapsed}
                 onToggle={() => toggleGroup(group.key)}

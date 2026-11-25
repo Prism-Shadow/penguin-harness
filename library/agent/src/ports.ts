@@ -10,3 +10,21 @@ import { Interface } from "@prismshadow/penguin-core/kernel";
 export abstract class AgentPaths {
   abstract root: string;
 }
+
+/** The snapshots service's log surface: one line at a time (the server's `Log` satisfies it). */
+@Interface()
+export abstract class SnapshotLog {
+  abstract line(text: string): void;
+}
+
+/** The snapshots service's clock (the server's `Clock` satisfies it). */
+@Interface()
+export abstract class SnapshotClock {
+  abstract now(): Date;
+}
+
+/** Where the harness root is, for the snapshots service (the server's `Paths` satisfies it). */
+@Interface()
+export abstract class SnapshotPaths {
+  abstract root: string;
+}

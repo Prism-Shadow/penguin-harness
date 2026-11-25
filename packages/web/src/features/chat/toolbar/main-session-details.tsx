@@ -72,7 +72,7 @@ export function renderMainSessionDetails(scope: MainChatView) {
                     No breakdown rides on a chip: a hover hint on a visible reading never opens,
                     and this button holds no "?", so the breakdowns are in the details card it
                     opens. The row sets the chips' face and ink, and keeps each on one line. */}
-          <span className="hidden items-center gap-3 whitespace-nowrap px-2 font-mono text-xs text-gray-500 sm:flex dark:text-gray-400">
+          <span className="hidden items-center gap-3 whitespace-nowrap px-2 font-mono text-xs text-gray-500 @xl/session-toolbar:flex dark:text-gray-400">
             <StatChip
               glyph={STAT_ICONS.tokens}
               value={hs.tokensText}
@@ -116,7 +116,7 @@ export function renderMainSessionDetails(scope: MainChatView) {
             )}
           </span>
           {/* Narrow: the info icon alone (the chips would crowd the title out). */}
-          <span className="flex h-7 w-7 items-center justify-center text-gray-500 sm:hidden dark:text-gray-400">
+          <span className="flex h-7 w-7 items-center justify-center text-gray-500 @xl/session-toolbar:hidden dark:text-gray-400">
             <GlyphIcon d={ICONS.info} size={ICON_SIZE.navRow} />
           </span>
         </button>

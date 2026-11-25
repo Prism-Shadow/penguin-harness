@@ -53,7 +53,7 @@ export interface RailProps {
 
 export function Rail({ head, children, foot, label }: RailProps) {
   return (
-    <div className="flex h-full flex-col items-center gap-1 py-2.5">
+    <div className="flex h-full flex-col items-center gap-1 py-2">
       {head}
       <nav
         {...(label !== undefined ? { "aria-label": label } : {})}
@@ -198,7 +198,7 @@ export function RailAccountButton({
       aria-haspopup="menu"
       aria-expanded={expanded}
       onClick={onClick}
-      className="flex h-8 w-8 shrink-0 items-center justify-center"
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors duration-150 hover:bg-fg/7"
     >
       {children}
     </button>

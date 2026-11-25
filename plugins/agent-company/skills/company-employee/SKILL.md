@@ -1,7 +1,7 @@
 ---
 name: company-employee
 description: The protocol every employee of a PenguinHarness organization follows — read the handbook first, act on [org_trigger] work runs, schedule tickets from the desk session and do the work in ticket sessions, block instead of idling, ask the board in the all-hands channel before anything heavy, costly, irreversible or outside the workspace, keep channel and budget discipline, and drive it all with penguin org.
-version: 2026.11.05.1
+version: 2026.11.24.1
 ---
 
 # Company Employee
@@ -24,7 +24,7 @@ Write in the organization's **working language** — the one the handbook's 「�
 | `org_chart.yaml` | The employee tree: `agent_id`, `title`, `reports_to`, `duties`, `workspace`, `budget`, `model` | the CEO and HR, through `penguin org hire` / `employee set` |
 | `desks.toml` | Employee → current desk session | the server only |
 | `calendar/<agent_id>/<name>.toml` | One calendar event per file | its employee, HR |
-| `tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md` | One ticket per file; the column directory is its status | anyone, through `penguin org ticket …` |
+| `tickets/<yyyy-mm>/<column>/<ticket_id>.md` | One ticket per file; the column directory is its status | anyone, through `penguin org ticket …` |
 | `channels/<channel_id>/channel.toml` | One channel: its name, purpose and members (`default_channel` holds everyone) | its members, through `penguin org channel …` |
 | `channels/<channel_id>/<yyyy-mm-dd>.jsonl` | A channel's messages, one JSON line each | the server, through `penguin org channel send` |
 | `workspace/` | The shared workspace; its root holds the shared inputs and is nobody's desk, and each desk works in a sub-directory of it (the CEO's is `ceo/`, and a hire's is named after its Agent id unless the CEO assigned another) | employees, each in its own partition |
@@ -44,7 +44,7 @@ event: daily-standup                 # kind=event: the calendar event and when i
 fired_at: 2026-09-01T09:00:00+08:00
 message: msg-… from agent:acme_ceo   # kind=mention: the triggering message and its sender
 channel: default_channel             # kind=mention: the channel it was said in — answer there
-ticket: 2026-09-01-site-launch       # kind=ticket_work: the ticket id
+ticket: ticket-2026-09-01-site-launch       # kind=ticket_work: the ticket id
 budget: 12.40 / 30.00 USD (41%)      # this period's spend (you + subordinates) / your budget; unbounded when none
 [/org_trigger]
 <body>
@@ -114,8 +114,8 @@ history:                       # the operation log — the server writes this
 - **The operator is known from your environment.** Every `penguin org` command already carries
   your Agent id and your session, so there is nothing to pass and nothing to sign; a write from
   your session is recorded as you.
-- **Ids are `<yyyy-mm-dd>-<slug>`**, the slug lowercase English words joined by hyphens
-  (`2026-09-14-launch-the-marketing-site`). A title with no English words in it cannot yield
+- **New ticket ids are `ticket-<yyyy-mm-dd>-<slug>`**, the slug lowercase English words joined by hyphens
+  (`ticket-2026-09-14-launch-the-marketing-site`). A title with no English words in it cannot yield
   one, so pass `--slug launch-the-site` on `create` when the server asks for it.
 
 ## The ticket session: do the work, write it back
@@ -132,7 +132,7 @@ Waiting for a decision, a key, another ticket or a person is not something to po
 
 ```bash
 penguin org ticket block <ticket_id> --reason "Domain not confirmed, cannot go live" --by user:alice
-penguin org ticket block <ticket_id> --reason "Needs the API from the backend ticket" --by 2026-09-01-backend-api
+penguin org ticket block <ticket_id> --reason "Needs the API from the backend ticket" --by ticket-2026-09-01-backend-api
 penguin org ticket unblock <ticket_id>      # after you verified the blocker is really gone
 ```
 
@@ -165,14 +165,14 @@ The approval mode itself belongs to the board. The board changes it in the organ
 The board is the humans of the Project; the one you ask is the organization's creator — `created_by` in `org_config.toml`, written `@user:<id>`. Ask in the **all-hands channel** (`default_channel`): it is the one channel every person is in, and a mention of someone a channel does not hold is refused. One message a person can answer with one word: the question on its first line, then one short line each for what it needs (estimated duration, CPU/GPU, memory, disk, network, money if any), how to stop it, and what you do if the answer is no (see "Writing a channel message"). Then block the ticket on that person, and **end the run**:
 
 ```bash
-penguin org channel send --ref-ticket 2026-09-01-dep-eval -m "$(cat <<'EOF'
-@user:alice May I start the full evaluation run for 2026-09-01-dep-eval?
+penguin org channel send --ref-ticket ticket-2026-09-01-dep-eval -m "$(cat <<'EOF'
+@user:alice May I start the full evaluation run for ticket-2026-09-01-dep-eval?
 - Needs: about 2 h on every CPU core, 8 GB of RAM, 4 GB downloaded into <app_data_dir>/organizations/co_lab/workspace/experiments/dep-eval/data/
 - Stop: it runs inside the ticket session; stopping the session stops it
 - If not: I evaluate the 10% sample only
 EOF
 )"
-penguin org ticket block 2026-09-01-dep-eval --reason "Waiting for the board's go-ahead on the full evaluation run" --by user:alice
+penguin org ticket block ticket-2026-09-01-dep-eval --reason "Waiting for the board's go-ahead on the full evaluation run" --by user:alice
 ```
 
 The blocked ticket appears in that person's overview as waiting on them, sweeps skip it, and nothing runs. The answer comes back as a `kind: mention` at your desk or as a message in your desk conversation; only a clear yes **to that proposal** lets you proceed — unblock the ticket, record the answer in a progress line, and start (or restart) the ticket session with what was approved. "Yes, but smaller" is a new plan: do the smaller thing, and ask again when you need the rest. A "no" is a progress line and the alternative you offered. No answer by your next sweep: do other work and remind at most once a day. In a ticket session, write the proposal, block, and end the session — the desk hears the answer and restarts the work; never wait inside a run.
@@ -185,7 +185,7 @@ Talk happens in **channels**. `default_channel` is the all-hands channel every e
 
 - Answer where you were addressed: a `kind: mention` trigger names the channel on its `channel:` line, and the reply belongs in the same one — `penguin org channel send --channel <id> -m "…"`. Reply only when the asker has to act on what you write: the answer to their question, a decision you need from them, a blocker they own. Starting, doing or finishing what a mention asked for is not news, and neither are "received", "will do" and "I will follow the rules": the ticket's progress lines and the board already show it, so do the work and let the ticket speak.
 - Read the channels you are in — `penguin org channel ls`, then `penguin org channel tail --channel <id> -n 50` (`--date <yyyy-mm-dd>` for another day) — on your own schedule; a message that does not @ you never interrupts you. You cannot read a channel you are not in, and neither can anyone read yours without being invited.
-- **Post only what someone else must act on, and @-mention that person**: a decision, a blocker they own, the next step you hand them, or a completion they asked to hear about. A message nobody has to act on is a status broadcast, and the board, the ticket's `## Progress` and the next sweep's "Since your last sweep" already carry it. A handoff is one line and the ticket: `penguin org channel send --channel ch_site -m "@acme_reviewer 2026-09-01-site-launch is ready for review" --ref-ticket 2026-09-01-site-launch`. The deliverables' paths are in the ticket's `## Result` and how to do the step is the other side's call, so the message carries neither. A message that mentions someone the channel does not hold is refused — invite them first, or write where they already are.
+- **Post only what someone else must act on, and @-mention that person**: a decision, a blocker they own, the next step you hand them, or a completion they asked to hear about. A message nobody has to act on is a status broadcast, and the board, the ticket's `## Progress` and the next sweep's "Since your last sweep" already carry it. A handoff is one line and the ticket: `penguin org channel send --channel ch_site -m "@acme_reviewer ticket-2026-09-01-site-launch is ready for review" --ref-ticket ticket-2026-09-01-site-launch`. The deliverables' paths are in the ticket's `## Result` and how to do the step is the other side's call, so the message carries neither. A message that mentions someone the channel does not hold is refused — invite them first, or write where they already are.
 - **Never @-mention yourself.** The server does not deliver a mention to its own sender, so a ticket session cannot wake its desk that way: move the ticket to `review` (or `done`) and the desk finds it on the board at its next sweep.
 - `@all` is that channel's members, not the whole company. Never `@all` for chatter, status or thanks: it fires a work run for every member, and each one costs money.
 - Open a channel when a thread would drown the all-hands channel — one per stream or per big ticket: `penguin org channel create ch_<id> --name "<what it is>" --purpose "<what belongs here>"` (by convention a channel id starts with `ch_`, an organization id with `co_`; the server does not enforce it and older ids keep working), then `penguin org channel invite ch_<id> agent:<owner>` for exactly the principals the work needs, and say so once in the all-hands channel so nobody has to guess where the thread went. A new channel holds only you until you invite.
@@ -208,7 +208,7 @@ A channel is read by people scanning it between other things, and a message that
 - **Pass a multi-line message through a quoted heredoc**, so the shell leaves the `$`, backticks and quotes inside it alone:
 
 ```bash
-penguin org channel send --ref-ticket 2026-11-02-growth-hire -m "$(cat <<'EOF'
+penguin org channel send --ref-ticket ticket-2026-11-02-growth-hire -m "$(cat <<'EOF'
 @user:alice Hire a growth lead at 20 USD/month and keep the total at 100?
 - Paid for by: developer 28 → 16, reviewer 16 → 8; the others unchanged
 - Alternative: keep every budget and raise the total to 120 (not recommended: the reviewer spent under 8 so far)
@@ -269,7 +269,7 @@ penguin org finance [--period <YYYY-MM>] [--json]               # spend (cumulat
 - A calendar event you add for yourself or a colleague goes at its own hour with a role-appropriate period (daily for owners of daily work, 2–3 days for reviewers, weekly for finance); never `--start-at now` for a recurring event, never a second daily sweep for the same employee. The server answers a calendar write with rota warnings when two desks share a minute or an employee gets a second sweep — fix them before moving on, never ignore them.
 
 - **Facts are the server's.** `desks.toml`, a ticket's `sessions` and `history` fields and the channels' message files are written by the server; for everything else you would edit by hand, the CLI is the writer.
-- **A moved file must carry its status.** `penguin org ticket move` changes the column directory and the frontmatter's `status` together; a hand move that changes one and not the other marks the ticket invalid on the board until it is fixed. Ticket ids are `<yyyy-mm-dd>-<slug>`, the slug lowercase English words joined by hyphens, and stay in their creation month's directory; moving columns never changes the month.
+- **A moved file must carry its status.** `penguin org ticket move` changes the column directory and the frontmatter's `status` together; a hand move that changes one and not the other marks the ticket invalid on the board until it is fixed. New ticket ids are `ticket-<yyyy-mm-dd>-<slug>`, the slug lowercase English words joined by hyphens, and stay in their creation month's directory; moving columns never changes the month.
 - **Unattended means unattended.** Desk and ticket sessions run under the organization's approval mode with nobody watching, so a call that mode would hand to a person is denied on the spot rather than held for one; never plan on a human approving a step mid-run — ask the board for it, block the ticket and end the run. Under a mode that keeps read-write tools for a person (`read-only`), that includes the `penguin org` commands themselves: when even a progress line is refused, end the run saying what you needed and which mode refused it, and wait for the board — do not retry it.
 - **Your own scheduled tasks are not calendar events.** `penguin schedule …` writes `agent_state/schedule/` and fires regardless of the organization; schedule organization work with `penguin org calendar …`, which respects the organization's status and budgets.
 - **Never mention yourself and never schedule at your own session to "check back".** Every automated conversation must terminate; the calendar is the only recurring driver.

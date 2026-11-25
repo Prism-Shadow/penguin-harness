@@ -76,17 +76,18 @@ async function openInstalls(machines: FakeMachine[]) {
 /** The machine's `helper`, as the dialog's buttons name it. */
 const MACHINE_HELPER = `${AGENT_ID} ${en.chat.machineTag("gpu-box")}`;
 
-/** Who each of the dialog's rows acts on, in order: its Install (or Uninstall) button's name. */
+const remoteKey = `gpu1/${AGENT_ID}`;
 const rows = () =>
-  [...topDialog().querySelectorAll("button")]
-    .map((b) => b.getAttribute("aria-label") ?? "")
-    .filter((l) => l.startsWith(`${en.skills.install} `) || l.startsWith(`${en.skills.uninstall} `))
-    .map((l) => l.slice(l.indexOf(" ") + 1));
-
-/** Whether the row of `who` offers `verb` (Install, or Uninstall once installed). */
-const offers = (verb: string, who: string) =>
+  [...topDialog().querySelectorAll<HTMLInputElement>('input[type="radio"]')].map(
+    (input) => input.value,
+  );
+const select = (key: string) =>
+  click(topDialog().querySelector<HTMLInputElement>(`input[value="${key}"]`)!);
+const remoteAdd = en.plugins.installModel.addToAgent(MACHINE_HELPER);
+const localAdd = en.plugins.installModel.addToAgent("Helper");
+const offers = (name: string) =>
   [...topDialog().querySelectorAll("button")].some(
-    (b) => b.getAttribute("aria-label") === `${verb} ${who}`,
+    (button) => button.getAttribute("aria-label") === name,
   );
 
 describe("installing a library plugin on a machine's Agent", () => {
@@ -100,16 +101,16 @@ describe("installing a library plugin on a machine's Agent", () => {
   it("lists the machine's Agents after this server's, each named with its machine", async () => {
     await openInstalls([GPU]);
     await waitFor(() => rows().length === 2);
-    expect(rows()).toEqual([AGENT_ID, MACHINE_HELPER]);
+    expect(rows()).toEqual([AGENT_ID, remoteKey]);
     expect(topDialog().textContent).toContain(`${AGENT_ID}${en.chat.machineTag("gpu-box")}`);
   });
 
   it("installs on the machine's Agent from its library, and nothing on this server's", async () => {
     const server = await openInstalls([GPU]);
-    await waitFor(
-      () => rows().length === 2 && !button(`${en.skills.install} ${MACHINE_HELPER}`).disabled,
-    );
-    await click(button(`${en.skills.install} ${MACHINE_HELPER}`));
+    await waitFor(() => rows().length === 2);
+    await select(remoteKey);
+    await waitFor(() => !button(remoteAdd).disabled);
+    await click(button(remoteAdd));
     await waitFor(() => server.skillsOn("gpu1", AGENT_ID).length === 1);
     const installsSent = server.fetch.requests.filter(
       (r) =>
@@ -120,20 +121,21 @@ describe("installing a library plugin on a machine's Agent", () => {
       ["gpu1", { names: ["charts"], skipModules: true }],
     ]);
     expect(server.skillsOn(null, AGENT_ID)).toEqual([]);
-    await waitFor(() => offers(en.skills.uninstall, MACHINE_HELPER));
-    expect(offers(en.skills.install, AGENT_ID)).toBe(true);
+    await waitFor(() => offers(`${en.skills.uninstall} ${MACHINE_HELPER}`));
+    await select(AGENT_ID);
+    expect(offers(localAdd)).toBe(true);
   });
 
   it("uninstalls from the machine's Agent with one request for the whole plugin, and none per part", async () => {
     const server = await openInstalls([GPU]);
-    await waitFor(
-      () => rows().length === 2 && !button(`${en.skills.install} ${MACHINE_HELPER}`).disabled,
-    );
-    await click(button(`${en.skills.install} ${MACHINE_HELPER}`));
-    await waitFor(() => offers(en.skills.uninstall, MACHINE_HELPER));
+    await waitFor(() => rows().length === 2);
+    await select(remoteKey);
+    await waitFor(() => !button(remoteAdd).disabled);
+    await click(button(remoteAdd));
+    await waitFor(() => offers(`${en.skills.uninstall} ${MACHINE_HELPER}`));
     await click(button(`${en.skills.uninstall} ${MACHINE_HELPER}`));
     await click(buttonIn(topDialog(), en.skills.uninstall));
-    await waitFor(() => offers(en.skills.install, MACHINE_HELPER));
+    await waitFor(() => offers(remoteAdd));
     const deletes = server.fetch.requests.filter((r) => r.method === "DELETE");
     expect(deletes.map((r) => [r.machine, r.path])).toEqual([
       ["gpu1", `/api/projects/${PROJECT_ID}/agents/${AGENT_ID}/plugins/charts`],
@@ -143,14 +145,14 @@ describe("installing a library plugin on a machine's Agent", () => {
 
   it("goes back to Install when the machine's library does not have the plugin", async () => {
     const server = await openInstalls([{ ...GPU, library: [] }]);
-    await waitFor(
-      () => rows().length === 2 && !button(`${en.skills.install} ${MACHINE_HELPER}`).disabled,
-    );
-    await click(button(`${en.skills.install} ${MACHINE_HELPER}`));
+    await waitFor(() => rows().length === 2);
+    await select(remoteKey);
+    await waitFor(() => !button(remoteAdd).disabled);
+    await click(button(remoteAdd));
     await waitFor(() =>
       server.fetch.requests.some((r) => r.machine === "gpu1" && r.method === "POST"),
     );
-    await waitFor(() => offers(en.skills.install, MACHINE_HELPER));
+    await waitFor(() => offers(remoteAdd));
     expect(server.skillsOn("gpu1", AGENT_ID)).toEqual([]);
   });
 
@@ -164,11 +166,13 @@ describe("installing a library plugin on a machine's Agent", () => {
     ]);
     const server = await openInstalls([{ ...GPU, reconnecting: true }]);
     await waitFor(() => rows().length === 2);
-    expect(rows()).toEqual([AGENT_ID, MACHINE_HELPER]);
-    const held = button(`${en.skills.install} ${MACHINE_HELPER}`);
+    expect(rows()).toEqual([AGENT_ID, remoteKey]);
+    await select(remoteKey);
+    const held = button(remoteAdd);
     expect(held.disabled).toBe(true);
     expect(held.getAttribute("data-tooltip")).toBe(en.machines.composer.reconnecting);
-    expect(button(`${en.skills.install} ${AGENT_ID}`).disabled).toBe(false);
+    await select(AGENT_ID);
+    expect(button(localAdd).disabled).toBe(false);
     expect(server.fetch.requests.filter((r) => r.machine === "gpu1")).toEqual([]);
   });
 

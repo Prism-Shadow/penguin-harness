@@ -530,35 +530,26 @@ describe("fullscreen", () => {
     expect(dock.fullscreenDock()).toBe("right");
   });
 
-  it("right: survives the bottom dock opening, activating and receiving a panel", () => {
-    dock.openPanel("memory", "bottom");
-    dock.openPanel("builtin-browser", "bottom");
-    dock.openPanel("workspace", "right");
-    dock.setDockFullscreen("right");
-    dock.toggleDock("bottom"); // hidden
-    dock.toggleDock("bottom"); // open again, focused — it shows below the covered row
-    dock.activateTab("memory");
-    // The agent opens the browser, whose tab lives at the bottom: shown there, under nothing.
-    dock.openPanel("builtin-browser");
-    expect(dock.fullscreenDock()).toBe("right");
-  });
-
-  it("bottom: ends when the right dock is toggled open", () => {
-    dock.openPanel("workspace", "bottom");
-    dock.setDockFullscreen("bottom");
-    dock.toggleDock("right");
-    expect(dock.fullscreenDock()).toBeNull();
-  });
-
-  it("bottom: ends when a tab of the right dock activates or a panel lands there", () => {
+  it("keeps the bottom fullscreen when the uncovered right dock receives a panel", () => {
     dock.openPanel("memory", "right");
     dock.openPanel("workspace", "bottom");
     dock.setDockFullscreen("bottom");
-    dock.activateTab("memory"); // the covered dock takes the stage
+    dock.toggleDock("right");
+    dock.toggleDock("right");
+    dock.activateTab("memory");
+    dock.openPanel("trace", "right");
+    expect(dock.fullscreenDock()).toBe("bottom");
+  });
+
+  it("reveals the bottom dock when it opens or receives focus under a fullscreen right dock", () => {
+    dock.openPanel("workspace", "right");
+    dock.setDockFullscreen("right");
+    dock.toggleDock("bottom");
     expect(dock.fullscreenDock()).toBeNull();
 
-    dock.setDockFullscreen("bottom");
-    dock.openPanel("trace"); // a new panel lands in the right dock by default
+    dock.openPanel("memory", "bottom");
+    dock.setDockFullscreen("right");
+    dock.activateTab("memory");
     expect(dock.fullscreenDock()).toBeNull();
   });
 

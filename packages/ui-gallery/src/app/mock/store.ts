@@ -15,7 +15,7 @@ import { buildFixtures, DEFAULT_MODEL, effectiveOf } from "./fixtures";
 import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
 import { IDS } from "./ids";
-import { seedFreshProject } from "./fresh-project";
+import { seedFreshProject, seedPresetWorkbenches } from "./fresh-project";
 import { raiseNotices } from "./notices";
 import {
   rsiEvaluatorTranscript,
@@ -132,18 +132,28 @@ export class DemoStore {
   private demoTakenOver = false;
   private readonly live = new Map<string, Live>();
   private created = 0;
+  private readonly installedAtStart: DemoFixtures["installed"];
   private readonly remoteSessions = new Map<string, DemoStore>();
 
   constructor(
     private readonly init: StoreInit,
     now: number,
-    private readonly machine?: { id: string; catalog: DemoFixtures },
+    private readonly machine?: {
+      id: string;
+      catalog: DemoFixtures;
+      installed: DemoFixtures["installed"];
+    },
   ) {
     const { lang, signedIn, embedded, evolutionDemo, notices } = init;
     this.lang = lang;
     this.signedIn = signedIn;
     if (machine) {
-      this.f = { ...machine.catalog, sessions: [] };
+      this.installedAtStart = machine.installed;
+      this.f = {
+        ...machine.catalog,
+        installed: structuredClone(this.installedAtStart),
+        sessions: [],
+      };
       return;
     }
     this.f = buildFixtures(lang, now, embedded);
@@ -168,6 +178,8 @@ export class DemoStore {
         }
       }
     }
+    seedPresetWorkbenches(this.f, init.freshProject === true);
+    this.installedAtStart = structuredClone(this.f.installed);
     if (evolutionDemo) {
       this.f.chatDefaults.agentId = IDS.agents.general;
       this.f.chatDefaults.workspace = RSI_WORKSPACE;
@@ -222,6 +234,7 @@ export class DemoStore {
       store = new DemoStore({ lang: this.lang, signedIn: this.signedIn }, Date.now(), {
         id: owner,
         catalog: this.f,
+        installed: this.installedAtStart,
       });
       this.remoteSessions.set(owner, store);
     }

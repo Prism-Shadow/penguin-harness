@@ -361,6 +361,11 @@ export class BuiltinBrowser {
     return this.builtinRuntime(actor).tabs.list();
   }
 
+  /** A standalone server has no built-in guests to include in the Project resource directory. */
+  managedTabInventory(actor: Actor): BuiltinBrowserTab[] {
+    return this.builtin === null ? [] : this.managedTabs(actor);
+  }
+
   openManagedTab(actor: Actor, sessionId: string, url?: string): Promise<BuiltinBrowserTab> {
     return this.builtinRuntime(actor).openTab({
       sessionId,

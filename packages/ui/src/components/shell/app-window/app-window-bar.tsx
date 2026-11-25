@@ -45,7 +45,7 @@ export function AppWindowBar({
 }: AppWindowBarProps) {
   return (
     <div className="@container shrink-0 border-b border-line">
-      <div className="flex flex-wrap items-center gap-2 px-3 py-1.5">
+      <div className="flex min-h-10 flex-wrap items-center gap-2 px-3 py-1.5">
         {icon}
         <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{title}</h1>
         {controls && (

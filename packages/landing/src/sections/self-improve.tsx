@@ -9,9 +9,7 @@
  * The chart values are illustrative. Their shapes follow the rules, not a
  * wish: the score only rises because a version is kept only when it scores higher, while cost and
  * duration are recorded but never optimised, so they wander. Phones get the same loop as a stacked
- * reading. Reduced motion: the flow dots stay off and every line is drawn finished. Under the
- * panel, the recorded demo of a decision agent's round (what it shows is the video's accessible
- * name), captioned with what its test runs cost.
+ * reading. Reduced motion: the flow dots stay off and every line is drawn finished.
  */
 import { AgentEvaluationDiagram } from "../components/application-diagrams";
 import { useEffect, useRef } from "react";
@@ -20,13 +18,6 @@ import { useVisibleActivity } from "../lib/visible-activity";
 import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { useWidth } from "../lib/use-width";
 import { Section } from "../components/section";
-import { DemoVideo } from "../components/demo-video";
-import { demoVideoUrl } from "../lib/community-assets";
-import { useSiteLocale } from "@prismshadow/penguin-ui/site";
-import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
-import demoPosterZh from "../assets/shots/decision-evo-zh.webp";
-import demoPosterEn from "../assets/shots/decision-evo-en.webp";
-
 /** Skill names and version marks are identifiers, the same in every language. */
 const OPTIMIZER_SKILL = "agent-optimization";
 const EVALUATOR_SKILL = "agent-evaluation";
@@ -547,24 +538,18 @@ function LoopDiagram() {
   );
 }
 
-/** The recorded demo and its title-frame poster, per language. */
-const DEMO: Record<Locale, { video: string; poster: string }> = {
-  zh: { video: demoVideoUrl("decision_evo_zh"), poster: demoPosterZh },
-  en: { video: demoVideoUrl("decision_evo_en"), poster: demoPosterEn },
-};
-
 export function SelfImprove() {
   const c = S.selfImprove;
-  const { locale } = useSiteLocale();
-  const demo = DEMO[locale];
   return (
     <Section id="self-evolution" title={c.title} subtitle={c.subtitle}>
-      <AgentEvaluationDiagram />
       <div className="rounded-2xl bg-gray-50 p-5 sm:p-8 dark:bg-gray-900">
         <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-10">
           <MobileEvolutionFlow />
           <LoopDiagram />
           <div className="grid gap-6 sm:grid-cols-3 lg:grid-cols-1 lg:gap-5">
+            <p className="-mb-3 text-xs text-gray-500 sm:col-span-3 lg:col-span-1 dark:text-gray-400">
+              {c.sampleTrends}
+            </p>
             {c.trends.map((t, i) => {
               const data = TRENDS[i];
               if (!data) return null;
@@ -583,12 +568,9 @@ export function SelfImprove() {
           </div>
         </div>
       </div>
-      <figure className="mx-auto mt-10 max-w-5xl">
-        <DemoVideo src={demo.video} poster={demo.poster} label={c.demo.caption} />
-        <figcaption className="mt-3 text-center text-sm text-gray-600 dark:text-gray-400">
-          {c.demo.cost}
-        </figcaption>
-      </figure>
+      <div className="mx-auto mt-10 max-w-5xl">
+        <AgentEvaluationDiagram />
+      </div>
     </Section>
   );
 }

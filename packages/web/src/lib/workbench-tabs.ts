@@ -14,7 +14,7 @@ import { useEffect } from "react";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "./server-context";
 
-export interface WorkbenchTab {
+export type WorkbenchTab = {
   /** `<workbenchId>/<key>`: what a frame keys its page on. */
   tabId: string;
   workbenchId: string;
@@ -22,8 +22,6 @@ export interface WorkbenchTab {
   key: string;
   title: string;
   titleZh?: string;
-  /** Where the page is served from — through the machine's connection when the workbench lives on one. */
-  src: string;
   pointerLock?: true;
   /** The machine whose server holds the workbench (the Agent's Session runs there); null = this server. */
   machineId: string | null;
@@ -35,7 +33,7 @@ export interface WorkbenchTab {
   uiRev: string;
   /** The load error of the CURRENT files; the tab still shows the last good UI. */
   error: string | null;
-}
+} & ({ src: string; builtin?: never } | { builtin: "SelfEvolutionWorkbench"; src?: never });
 
 /**
  * Dispatched on `window` when the server says a workbench of some Agent was (re)loaded or
@@ -66,7 +64,7 @@ export function workbenchesBase(projectId: string, agentId: string): string {
 }
 
 /** A tab's page, keyed on the UI revision so a changed page is a new URL. */
-export function workbenchUiUrl(tab: Pick<WorkbenchTab, "src" | "uiRev">): string {
+export function workbenchUiUrl(tab: { src: string; uiRev: string }): string {
   return `${tab.src}${tab.src.includes("?") ? "&" : "?"}rev=${tab.uiRev}`;
 }
 
@@ -90,27 +88,30 @@ export function workbenchTabsOf(
   machineId: string | null = null,
 ): WorkbenchTab[] {
   return workbenches.flatMap((w) =>
-    w.tabs.flatMap((tab) =>
-      "iframe" in tab.renderer
-        ? [
-            {
-              tabId: `${w.id}/${tab.key}`,
-              workbenchId: w.id,
-              key: tab.key,
-              title: tab.title,
-              ...(tab.titleZh === undefined ? {} : { titleZh: tab.titleZh }),
-              src: apiUrl(tab.renderer.iframe.src, machineId),
-              ...(tab.renderer.iframe.pointerLock === true ? { pointerLock: true as const } : {}),
-              machineId,
-              name: w.name,
-              version: w.version,
-              revision: w.revision,
-              uiRev: w.uiRev ?? w.revision,
-              error: w.error,
-            },
-          ]
-        : [],
-    ),
+    w.tabs.flatMap((tab): WorkbenchTab[] => {
+      const shared = {
+        tabId: w.id + "/" + tab.key,
+        workbenchId: w.id,
+        key: tab.key,
+        title: tab.title,
+        ...(tab.titleZh === undefined ? {} : { titleZh: tab.titleZh }),
+        machineId,
+        name: w.name,
+        version: w.version,
+        revision: w.revision,
+        uiRev: w.uiRev ?? w.revision,
+        error: w.error,
+      };
+      if ("builtin" in tab.renderer) {
+        return tab.renderer.builtin === "SelfEvolutionWorkbench"
+          ? [{ ...shared, builtin: tab.renderer.builtin }]
+          : [];
+      }
+      const { src, pointerLock } = tab.renderer.iframe;
+      return [
+        { ...shared, src: apiUrl(src, machineId), ...(pointerLock ? { pointerLock: true } : {}) },
+      ];
+    }),
   );
 }
 

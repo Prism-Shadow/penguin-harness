@@ -113,6 +113,16 @@ describe("resolution", () => {
     expect(matchShortcut(e, keymap, ["global"], "linux")).toBe("palette.toggle");
   });
 
+  it("keeps a saved global binding when a later release adds a matching default", () => {
+    const keymap = new Map(defaults("linux"));
+    keymap.set("terminal.toggle", parseChord("Mod+KeyB"));
+    const press = key({ code: "KeyB", key: "b", ctrlKey: true });
+    expect(
+      matchShortcut(press, keymap, ["global"], "linux", (id) => id === "terminal.toggle"),
+    ).toBe("terminal.toggle");
+    expect(matchShortcut(press, keymap, ["global"], "linux", () => false)).toBe("sidebar.toggle");
+  });
+
   it("never matches an unbound command", () => {
     const keymap: Keymap = new Map<CommandId, Chord | null>([["terminal.close", null]]);
     expect(matchShortcut(key({ code: "KeyW", ctrlKey: true }), keymap, ALL, "linux")).toBeNull();
@@ -183,12 +193,12 @@ describe("the six panel and navigation commands", () => {
   const cases: Array<[CommandId, Partial<KeyLike> & { code: string }]> = [
     ["sessions.search", { code: "KeyS", altKey: true }],
     ["chat.new", { code: "KeyN", altKey: true }],
-    ["sidebar.toggle", { code: "Digit1", altKey: true }],
+    ["sidebar.toggle", { code: "KeyB" }],
     ["dock.toggleRight", { code: "Digit2", altKey: true }],
     ["dock.toggleBottom", { code: "Digit3", altKey: true }],
   ];
 
-  it("bind with Mod+Alt: ⌥⌘ on a Mac, Ctrl+Alt elsewhere", () => {
+  it("use the primary modifier for each platform", () => {
     for (const [id, init] of cases) {
       expect(matchShortcut(key({ ...init, metaKey: true }), defaults("mac"), ALL, "mac"), id).toBe(
         id,

@@ -50,6 +50,8 @@ import type {
   RuntimeSession,
   SessionBackgroundTasks,
   SwitchModelOpts,
+  SessionSandbox,
+  ApprovalMode,
 } from "@prismshadow/penguin-library-session";
 import type {
   Access,
@@ -119,20 +121,37 @@ import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import { decodeCursor } from "../services/message-window.js";
 import type { TitleNotifier } from "./title-generator.js";
-import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
-import type { ClassCtx, Json, Opaque } from "@prismshadow/penguin-core/kernel";
+import {
+  Component,
+  Interface,
+  Module,
+  Provide,
+  Use,
+  type ClassCtx,
+  type Json,
+  type Opaque,
+} from "@prismshadow/penguin-core/kernel";
 import { Sandbox, SandboxModule } from "../sandbox/service.js";
 import { agentWritableRoots } from "../workbenches/data-dirs.js";
 import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
 import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "../sandbox/settings-policy.js";
 import { PluginConfig } from "../plugin/config.js";
-import { SessionService } from "../services/session-service.js";
+import {
+  SessionService,
+  type ArchivedRow,
+  type SessionListOrder,
+  type SessionListPaging,
+  type SessionService as SessionServiceImpl,
+} from "../services/session-service.js";
 import { ModelScopeAuth } from "../services/modelscope-auth-service.js";
 import { TitleGenerator } from "./title-generator.js";
 import { loopbackHostRoles } from "../services/preview-token.js";
 import { agentNoProxy } from "../net/proxy.js";
 import type { SandboxService } from "../sandbox/service.js";
+import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
+import type { SessionSource } from "@prismshadow/amsp";
+import type { SessionCategory, SessionCategoryCounts, SessionInfo } from "../api/types.js";
+import type { ListingView } from "@prismshadow/penguin-library-trace/listing";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
 import type {
   MessageCursor,
@@ -144,7 +163,7 @@ import type {
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
-import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
+import { enabledMessagingChannel } from "@prismshadow/penguin-library-messaging/enabled-channel";
 import { MODELSCOPE_PROVIDER_ID } from "../model-catalog/catalog.js";
 
 /**
@@ -530,34 +549,13 @@ function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
 }
 
 /**
- * The recall store of a queued input whose caller supplied none: everything recallable is
- * already in the input itself — the user's text and the inline image URLs, the only two
- * shapes a task input is ever built from.
- *
- * `files` is empty because the path a written attachment landed on is known only to
- * whoever wrote it. A caller that wrote some therefore builds its store on top of this one
- * instead of leaving it to be derived, and passes the input as it stood BEFORE the
- * `[attached file: …]` lines were folded in — derived from the folded input, `text` would
- * hand a recall back a raw scratchpad path in place of the chip it was meant to restore.
+ * The recall store derived from an input's plain user text and inline images (services+http+
+ * cli restack S8): it moved to @prismshadow/penguin-library-messaging's recall module,
+ * which builds on it when a caller wrote file attachments. Re-exported so the session
+ * runtime's callers keep their spelling.
  */
-export function recallStoreOf(input: AmspRecord[]): RecallStore {
-  const text = input
-    .filter(isPlainText("user"))
-    .map((m) => m.payload.text)
-    .join("\n");
-  const images: string[] = [];
-  for (const msg of input) {
-    const payload = msg.payload as { type?: string; image_url?: unknown };
-    if (
-      msg.type === "model_msg" &&
-      payload.type === "image_url" &&
-      typeof payload.image_url === "string"
-    ) {
-      images.push(payload.image_url);
-    }
-  }
-  return { text, images, files: [] };
-}
+import { recallStoreOf as _recallStoreOf } from "@prismshadow/penguin-library-messaging/recall";
+export const recallStoreOf = _recallStoreOf;
 
 /** If msg is a run_subagent tool call carrying a `prompt`, return its id and prompt (for use as the subagent's title); otherwise null. */
 /** Whether this main-stream message is a delivered `[user_steering]` user text (one per queued steering entry, see core's steeringMessages). */
@@ -615,6 +613,56 @@ interface ChildSession {
   prompt: string;
 }
 
+/**
+ * Live state of a subagent child hosted inside a parent RuntimeEntry, so `/chat/:childSessionId`
+ * sees the child's own `statusOf`, `task_state`, `liveFragments`, and pre-request held inputs.
+ */
+interface HostedChildState {
+  parentSessionId: string;
+  publishedStatus: SessionStatus;
+  contextWindow?: SessionMetaPayload["model_context_window"];
+  taskOpen: boolean;
+  awaitingFirstRequest: boolean;
+  compacting: boolean;
+  pendingInputs: AmspRecord[];
+  pendingBootstrap: AmspRecord[];
+}
+
+/** Strips the outermost child session hop from an origin-tagged record. */
+function stripChildOrigin(msg: AmspRecord): { childSessionId: string; record: AmspRecord } | null {
+  if (!msg.origin || msg.origin.length === 0) return null;
+  const [childSessionId, ...restOrigin] = msg.origin;
+  if (!childSessionId) return null;
+  const { origin: _dropped, ...withoutOrigin } = msg;
+  return {
+    childSessionId,
+    record: restOrigin.length > 0 ? { ...withoutOrigin, origin: restOrigin } : withoutOrigin,
+  };
+}
+
+/** Strips the outermost child session hop from a pending approval request. */
+function stripApprovalOrigin(
+  pending: PendingApproval,
+): { childSessionId: string; pending: PendingApproval } | null {
+  const origin = pending.origin ?? pending.toolCall.origin;
+  if (!origin || origin.length === 0) return null;
+  const [childSessionId, ...restOrigin] = origin;
+  if (!childSessionId) return null;
+  const { origin: _dropped, ...toolCallWithoutOrigin } = pending.toolCall;
+  const toolCall =
+    restOrigin.length > 0
+      ? { ...toolCallWithoutOrigin, origin: restOrigin }
+      : toolCallWithoutOrigin;
+  return {
+    childSessionId,
+    pending: {
+      toolCall,
+      ...(restOrigin.length > 0 ? { origin: restOrigin } : {}),
+      ...(pending.reason !== undefined ? { reason: pending.reason } : {}),
+    },
+  };
+}
+
 /** Predicate for a plain-text message on the main session (no origin): title material is drawn only from user/model text. */
 function isPlainText(role: "user" | "assistant") {
   return (msg: AmspRecord): msg is AmspRecord<TextPayload> => {
@@ -664,6 +712,8 @@ export class SessionManager {
   >();
   /** Each Project's model config as last seen (see noticeModelConfigEdit). */
   private readonly modelConfigSeen = new Map<string, { table: unknown; models: string }>();
+  /** Hosted subagent children tracked while their parent entry is loaded. */
+  private readonly hostedChildren = new Map<string, HostedChildState>();
   /** Open streaming fragments and the current run's records (fed by drive, served to GET /messages; see live-tail.ts). */
   private readonly liveTail: LiveTail;
   private readonly sweepTimer: NodeJS.Timeout;
@@ -694,16 +744,68 @@ export class SessionManager {
 
   // —— Query surface (used by Session listing / Agent active-count / SSE subscription replay) ——
 
-  statusOf(sessionId: string): SessionStatus {
+  private entryStatusOf(sessionId: string): SessionStatus {
     return this.entries.get(sessionId)?.status ?? "idle";
   }
 
+  private runningChildOwner(
+    childSessionId: string,
+  ): { entry: RuntimeEntry; runtime: RuntimeSession } | undefined {
+    for (const entry of this.entries.values()) {
+      for (const old of entry.retired?.keys() ?? []) {
+        if (
+          old
+            .listBackgroundSubagents?.()
+            .some((child) => child.sessionId === childSessionId && child.running)
+        ) {
+          return { entry, runtime: old };
+        }
+      }
+      if (
+        entry.session
+          .listBackgroundSubagents?.()
+          .some((child) => child.sessionId === childSessionId && child.running)
+      ) {
+        return { entry, runtime: entry.session };
+      }
+    }
+    return undefined;
+  }
+
+  private isHostedChildRunning(sessionId: string): boolean {
+    if (this.runningChildOwner(sessionId) !== undefined) return true;
+    const hosted = this.hostedChildren.get(sessionId);
+    if (hosted?.taskOpen && this.entryStatusOf(hosted.parentSessionId) !== "idle") {
+      return true;
+    }
+    return false;
+  }
+
+  statusOf(sessionId: string): SessionStatus {
+    const direct = this.entryStatusOf(sessionId);
+    if (direct !== "idle") return direct;
+    return this.isHostedChildRunning(sessionId) ? "running" : "idle";
+  }
+
   pendingApprovalCount(sessionId: string): number {
-    return this.entries.get(sessionId)?.approvals.size ?? 0;
+    const direct = this.entries.get(sessionId)?.approvals.size ?? 0;
+    if (direct > 0) return direct;
+    return this.pendingApprovals(sessionId).length;
   }
 
   pendingApprovals(sessionId: string): PendingApproval[] {
-    return this.entries.get(sessionId)?.approvals.list() ?? [];
+    const direct = this.entries.get(sessionId)?.approvals.list() ?? [];
+    if (direct.length > 0) return direct;
+    const hosted: PendingApproval[] = [];
+    for (const entry of this.entries.values()) {
+      for (const pending of entry.approvals.list()) {
+        if (pending.origin?.[0] === sessionId) {
+          const stripped = stripApprovalOrigin(pending);
+          if (stripped) hosted.push(stripped.pending);
+        }
+      }
+    }
+    return hosted;
   }
 
   pendingModel(sessionId: string): ModelRefDto | undefined {
@@ -811,7 +913,7 @@ export class SessionManager {
     const parent = this.deps.sessions.findById(sessionId);
     let resume: { agentId: string; subagentId?: string } | undefined;
     const managed = this.childOwner(entry, childSessionId);
-    if (managed && this.statusOf(childSessionId) === "idle")
+    if (managed && this.entryStatusOf(childSessionId) === "idle")
       return (await managed.sendToBackgroundSubagent?.(childSessionId, messages)) ?? "gone";
     if (parent && this.entries.has(childSessionId)) {
       const owned = await this.deps.traces?.ownedSubagents(parent);
@@ -862,9 +964,11 @@ export class SessionManager {
     if (
       entry &&
       this.childOwner(entry, childSessionId)?.abortBackgroundSubagentRun?.(childSessionId)
-    )
+    ) {
+      this.denyChildApprovals(entry, childSessionId);
       return true;
-    if (this.statusOf(childSessionId) === "idle") return false;
+    }
+    if (this.entryStatusOf(childSessionId) === "idle") return false;
     const parent = this.deps.sessions.findById(sessionId);
     if (
       !parent ||
@@ -874,6 +978,14 @@ export class SessionManager {
     )
       return false;
     return this.abortTask(childSessionId);
+  }
+
+  private denyChildApprovals(entry: RuntimeEntry, childSessionId: string): void {
+    for (const pending of entry.approvals.list()) {
+      if (pending.origin?.[0] === childSessionId) {
+        entry.approvals.decide(pending.toolCall.payload.tool_call_id, "deny");
+      }
+    }
   }
 
   /** Queued follow-up tasks awaiting auto-start, as their display/recall info (id + content summary). */
@@ -909,12 +1021,20 @@ export class SessionManager {
    * (the draft flow subscribes only after the input publish) loses the user's own message.
    */
   pendingInputs(sessionId: string): AmspRecord[] {
-    return this.entries.get(sessionId)?.pendingInputs ?? [];
+    return (
+      this.entries.get(sessionId)?.pendingInputs ??
+      this.hostedChildren.get(sessionId)?.pendingInputs ??
+      []
+    );
   }
 
   /** The running Task's streamed bootstrap records (see RuntimeEntry.pendingBootstrap); empty when idle. */
   pendingBootstrap(sessionId: string): AmspRecord[] {
-    return this.entries.get(sessionId)?.pendingBootstrap ?? [];
+    return (
+      this.entries.get(sessionId)?.pendingBootstrap ??
+      this.hostedChildren.get(sessionId)?.pendingBootstrap ??
+      []
+    );
   }
 
   /** Number of Sessions for this Agent that are currently running / compacting. */
@@ -1025,7 +1145,25 @@ export class SessionManager {
     // session idle included. Core wraps the sink with the command policy, so a child's `ask`
     // hit routed there arrives with its policy reason and still reaches a person.
     const entry = this.entries.get(sessionId);
-    if (entry) session.setSubagentApprovalFallback?.(this.entryApprove(entry));
+    if (entry) {
+      session.setSubagentApprovalFallback?.(this.entryApprove(entry));
+      for (const child of this.subagentsOf(sessionId)) {
+        if (!this.hostedChildren.has(child.sessionId)) {
+          this.hostedChildren.set(child.sessionId, {
+            parentSessionId: sessionId,
+            publishedStatus: child.running ? "running" : "idle",
+            taskOpen: false,
+            awaitingFirstRequest: false,
+            compacting: false,
+            pendingInputs: [],
+            pendingBootstrap: [],
+          });
+        }
+        if (child.running && this.liveTail.run(child.sessionId) === null) {
+          this.liveTail.begin(child.sessionId);
+        }
+      }
+    }
   }
 
   private async resolveSubagent(callerId: string, address: string) {
@@ -1126,11 +1264,13 @@ export class SessionManager {
       }
     }
     const running = () =>
-      this.statusOf(id) !== "idle" ||
+      this.entryStatusOf(id) !== "idle" ||
       managed
         ?.listBackgroundSubagents?.()
         .some((child) => child.sessionId === id && child.running) === true;
-    const channel = this.deps.channels.get(this.statusOf(id) !== "idle" ? id : (ownerId ?? id));
+    const channel = this.deps.channels.get(
+      this.entryStatusOf(id) !== "idle" ? id : (ownerId ?? id),
+    );
     const wait = (timeout: number) =>
       new Promise<void>((resolve) => {
         const done = () => {
@@ -1149,7 +1289,9 @@ export class SessionManager {
       });
     let action: string | undefined;
     if (options.abort) {
-      const stopped = this.abortTask(id) || managed?.abortBackgroundSubagentRun?.(id);
+      const stopped =
+        (this.entryStatusOf(id) !== "idle" && this.abortTask(id)) ||
+        managed?.abortBackgroundSubagentRun?.(id);
       action = stopped
         ? "[subagent current run aborted]"
         : "[subagent was already idle; nothing to abort]";
@@ -1159,7 +1301,7 @@ export class SessionManager {
       if (options.abort && running())
         throw new Error("The original run is still stopping. Send the follow-up after it settles.");
       const input = [userText(options.prompt, "parent_agent")];
-      if (managed && this.statusOf(id) === "idle") {
+      if (managed && this.entryStatusOf(id) === "idle") {
         const sent = await managed.sendToBackgroundSubagent?.(id, input);
         if (sent !== "started" && sent !== "steered")
           throw new Error("The subagent cannot accept input right now.");
@@ -1217,13 +1359,30 @@ export class SessionManager {
       toolPermission: (name) => entry.session.toolPermission(name),
       registry: entry.approvals,
       unattended: () => this.deps.sessions.findById(entry.sessionId)?.client === "org",
-      publishRequest: (pending) =>
+      publishRequest: (pending) => {
         this.publishEvent(entry, {
           type: "approval_request",
           toolCall: pending.toolCall,
           ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
           ...(pending.reason !== undefined ? { reason: pending.reason } : {}),
-        }),
+        });
+        const childApproval = stripApprovalOrigin(pending);
+        if (childApproval) {
+          this.deps.channels.get(childApproval.childSessionId).publish(
+            {
+              type: "approval_request",
+              toolCall: childApproval.pending.toolCall,
+              ...(childApproval.pending.origin !== undefined
+                ? { origin: childApproval.pending.origin }
+                : {}),
+              ...(childApproval.pending.reason !== undefined
+                ? { reason: childApproval.pending.reason }
+                : {}),
+            },
+            "server_event",
+          );
+        }
+      },
     });
   }
 
@@ -1235,6 +1394,7 @@ export class SessionManager {
     // measures only the launching task, and a long background run ages into eviction.
     entry.lastActivityMs = Date.now();
     this.deps.channels.get(entry.sessionId).publish(msg);
+    this.publishChildStreamMessage(entry, msg);
     const ctx: UsageContext = {
       projectId: entry.projectId,
       agentId: entry.agentId,
@@ -1321,8 +1481,16 @@ export class SessionManager {
     this.assertAgentNotDeleting(sessionId);
     this.assertSessionNotDeleting(sessionId);
     const entry = this.entries.get(sessionId);
-    if (entry && !opts?.queueIfBusy && !opts?.interrupt && !opts?.steerIfBusy) {
-      this.assertIdle(entry);
+    if (!opts?.queueIfBusy && !opts?.interrupt && !opts?.steerIfBusy) {
+      if (entry) {
+        this.assertIdle(entry);
+      } else if (this.isHostedChildRunning(sessionId)) {
+        throw new HttpError(
+          409,
+          "task_in_progress",
+          "This Session already has a Task in progress.",
+        );
+      }
     }
   }
 
@@ -1339,6 +1507,13 @@ export class SessionManager {
       this.assertSessionNotDeleting(sessionId);
       const entry = this.entries.get(sessionId);
       if (entry) this.assertIdle(entry);
+      else if (this.isHostedChildRunning(sessionId)) {
+        throw new HttpError(
+          409,
+          "task_in_progress",
+          "This Session already has a Task in progress.",
+        );
+      }
       return operation();
     });
   }
@@ -1391,6 +1566,29 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
+      const hostedOwner = !this.entries.has(sessionId)
+        ? this.runningChildOwner(sessionId)
+        : undefined;
+      if (hostedOwner) {
+        if (opts?.steerIfBusy) {
+          const outcome = await hostedOwner.runtime.sendToBackgroundSubagent?.(sessionId, input);
+          if (outcome === "steered" || outcome === "started") {
+            hostedOwner.entry.lastActivityMs = Date.now();
+            return {
+              sessionId,
+              queued: false,
+              ...(outcome === "steered" ? { steered: true } : {}),
+            };
+          }
+        }
+        if (!opts?.queueIfBusy && !opts?.interrupt && !opts?.steerIfBusy) {
+          throw new HttpError(
+            409,
+            "task_in_progress",
+            "This Session already has a Task in progress.",
+          );
+        }
+      }
       const entry = await this.ensureEntry(sessionId);
       // Neither started nor queued on a runtime stranded on a model it cannot reach.
       assertNotStranded(entry);
@@ -1407,7 +1605,11 @@ export class SessionManager {
       // Each branch below adds the switches' contexts once it is known to take the input;
       // without a switch nothing is awaited, so a plain Task starts exactly as it always did.
       const hooks = opts?.promptHooks ?? [];
-      if (opts?.interrupt && (entry.status !== "idle" || entry.followUps.length > 0)) {
+      const hostedRunning = this.isHostedChildRunning(entry.sessionId);
+      if (
+        opts?.interrupt &&
+        (entry.status !== "idle" || hostedRunning || entry.followUps.length > 0)
+      ) {
         this.assertQueueRoom(entry);
         this.enqueueInterrupt(entry, {
           id: randomUUID(),
@@ -1418,7 +1620,7 @@ export class SessionManager {
         return { sessionId: entry.sessionId, queued: true };
       }
       if (
-        (entry.status !== "idle" || entry.queuedModel) &&
+        (entry.status !== "idle" || hostedRunning || entry.queuedModel) &&
         (opts?.queueIfBusy || opts?.steerIfBusy)
       ) {
         this.assertQueueRoom(entry);
@@ -1435,7 +1637,7 @@ export class SessionManager {
         entry.lastActivityMs = Date.now();
         // Re-publish the current state so subscribers pick up the new queued count (the
         // input itself is published when the follow-up actually starts).
-        this.publishState(entry, entry.status);
+        this.publishState(entry, this.statusOf(entry.sessionId));
         return { sessionId: entry.sessionId, queued: true };
       }
       this.assertIdle(entry);
@@ -2012,8 +2214,16 @@ export class SessionManager {
   /** Submit an approval decision; returns false if the pending approval doesn't exist (already decided/unknown). */
   decideApproval(sessionId: string, toolCallId: string, decision: "allow" | "deny"): boolean {
     const entry = this.entries.get(sessionId);
-    if (!entry) return false;
-    return entry.approvals.decide(toolCallId, decision);
+    if (entry?.approvals.decide(toolCallId, decision)) return true;
+    for (const parent of this.entries.values()) {
+      const pending = parent.approvals
+        .list()
+        .find((p) => p.toolCall.payload.tool_call_id === toolCallId && p.origin?.[0] === sessionId);
+      if (pending) {
+        return parent.approvals.decide(toolCallId, decision);
+      }
+    }
+    return false;
   }
 
   /**
@@ -2032,13 +2242,20 @@ export class SessionManager {
    */
   steer(sessionId: string, input: AmspRecord[], recall: RecallStore, driver?: string): void {
     const entry = this.entries.get(sessionId);
-    if (!entry || !this.steerRunning(entry, input, recall, driver)) {
-      throw new HttpError(
-        409,
-        "not_running",
-        "This Session has no Task in progress; send the message as a new task instead.",
-      );
+    if (entry && this.steerRunning(entry, input, recall, driver)) {
+      return;
     }
+    const hostedOwner = this.runningChildOwner(sessionId);
+    if (hostedOwner) {
+      void hostedOwner.runtime.sendToBackgroundSubagent?.(sessionId, input);
+      hostedOwner.entry.lastActivityMs = Date.now();
+      return;
+    }
+    throw new HttpError(
+      409,
+      "not_running",
+      "This Session has no Task in progress; send the message as a new task instead.",
+    );
   }
 
   /**
@@ -2196,10 +2413,15 @@ export class SessionManager {
       interrupt: true,
     });
     entry.lastActivityMs = Date.now();
-    this.publishState(entry, entry.status);
+    this.publishState(entry, this.statusOf(entry.sessionId));
     if (entry.abort) {
       entry.approvals.denyMain();
       entry.abort.abort();
+      return;
+    }
+    const hostedOwner = this.runningChildOwner(entry.sessionId);
+    if (hostedOwner && hostedOwner.runtime.abortBackgroundSubagentRun?.(entry.sessionId)) {
+      this.denyChildApprovals(hostedOwner.entry, entry.sessionId);
     }
   }
 
@@ -2241,12 +2463,19 @@ export class SessionManager {
    */
   abortTask(sessionId: string): boolean {
     const entry = this.entries.get(sessionId);
-    if (!entry || !entry.abort) return false;
-    // Deny only the MAIN session's pending approvals: an approval blocks the run the user is
-    // stopping. A subagent child survives the parent's stop, and so does its question.
-    entry.approvals.denyMain();
-    entry.abort.abort();
-    return true;
+    if (entry?.abort) {
+      // Deny only the MAIN session's pending approvals: an approval blocks the run the user is
+      // stopping. A subagent child survives the parent's stop, and so does its question.
+      entry.approvals.denyMain();
+      entry.abort.abort();
+      return true;
+    }
+    const hostedOwner = this.runningChildOwner(sessionId);
+    if (hostedOwner && hostedOwner.runtime.abortBackgroundSubagentRun?.(sessionId)) {
+      this.denyChildApprovals(hostedOwner.entry, sessionId);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -2351,6 +2580,15 @@ export class SessionManager {
       );
     }
     return Promise.allSettled(pending).then((results) => {
+      for (const [childSessionId, state] of [...this.hostedChildren]) {
+        if (state.parentSessionId !== entry.sessionId) continue;
+        this.liveTail.clear(childSessionId);
+        if (state.publishedStatus !== "idle" && this.entryStatusOf(childSessionId) === "idle") {
+          state.publishedStatus = "idle";
+          this.publishHostedChildState(childSessionId, state, "idle");
+        }
+        this.hostedChildren.delete(childSessionId);
+      }
       const failure = results.find((result) => result.status === "rejected");
       if (failure) throw failure.reason;
     });
@@ -2509,6 +2747,11 @@ export class SessionManager {
       // half hour would otherwise wait for a resume from the Trace (see keepLoaded).
       if (this.keptLoaded.has(key)) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
+      for (const [childSessionId, state] of [...this.hostedChildren]) {
+        if (state.parentSessionId !== entry.sessionId) continue;
+        this.liveTail.clear(childSessionId);
+        this.hostedChildren.delete(childSessionId);
+      }
       this.entries.delete(key);
     }
   }
@@ -2598,7 +2841,7 @@ export class SessionManager {
   }
 
   private assertIdle(entry: RuntimeEntry): void {
-    if (entry.status === "running") {
+    if (entry.status === "running" || this.isHostedChildRunning(entry.sessionId)) {
       throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
     }
     if (entry.status === "compacting" || entry.queuedModel) {
@@ -2996,6 +3239,9 @@ export class SessionManager {
         // endpoint captures "channel cursor + open fragments + the run's records" between
         // two publishes, so the capture is always a consistent snapshot (see live-tail.ts).
         this.liveTail.observe(entry.sessionId, msg, published);
+        if (msg.origin?.length) {
+          this.publishChildStreamMessage(entry, msg);
+        }
         echo.after(msg);
         watcher?.observe(msg);
         try {
@@ -3165,7 +3411,7 @@ export class SessionManager {
     // Every state flip also reports the queued follow-up count, the undelivered steering
     // mirror, and the live subagent children, so subscribers can render all three hints
     // without a dedicated event type.
-    const subagents = entry.session.listBackgroundSubagents?.() ?? [];
+    const subagents = this.subagentsOf(entry.sessionId);
     const meta = entry.session.metaMessage;
     this.publishEvent(entry, {
       type: "task_state",
@@ -3183,6 +3429,7 @@ export class SessionManager {
         : {}),
       ...(subagents.length > 0 ? { subagents } : {}),
     });
+    this.syncHostedChildrenState(entry);
     // The same flip again, this time on the user channel and carrying the Session id: a tab
     // subscribes to the ONE conversation it has open, so the event above can never move any
     // other row's badge. Only the queued/steering hints stay session-scoped — they belong to
@@ -3218,6 +3465,183 @@ export class SessionManager {
       lastActiveAt,
       hasTrace,
     });
+  }
+
+  private publishChildStreamMessage(entry: RuntimeEntry, msg: AmspRecord): void {
+    const stripped = stripChildOrigin(msg);
+    if (!stripped) return;
+    const { childSessionId, record } = stripped;
+    let state = this.hostedChildren.get(childSessionId);
+    if (!state) {
+      const running =
+        this.runningChildOwner(childSessionId) !== undefined ||
+        ((!record.origin || record.origin.length === 0) &&
+          (record.payload as { type?: string }).type !== "task_end");
+      state = {
+        parentSessionId: entry.sessionId,
+        publishedStatus: running ? "running" : "idle",
+        taskOpen: false,
+        awaitingFirstRequest: false,
+        compacting: false,
+        pendingInputs: [],
+        pendingBootstrap: [],
+      };
+      this.hostedChildren.set(childSessionId, state);
+      if (running && this.liveTail.run(childSessionId) === null) {
+        this.liveTail.begin(childSessionId);
+      }
+    } else {
+      state.parentSessionId = entry.sessionId;
+    }
+
+    if (!record.origin || record.origin.length === 0) {
+      const pt = (record.payload as { type?: string }).type;
+      if (isSessionMeta(record)) {
+        state.contextWindow = record.payload.model_context_window;
+      }
+      if (pt === "task_begin") {
+        state.taskOpen = true;
+        state.awaitingFirstRequest = true;
+        state.compacting = false;
+        state.pendingBootstrap = [];
+        if (this.liveTail.run(childSessionId) === null) {
+          this.liveTail.begin(childSessionId);
+        }
+        if (state.publishedStatus !== "running" && this.entryStatusOf(childSessionId) === "idle") {
+          state.publishedStatus = "running";
+          this.publishHostedChildState(childSessionId, state, "running");
+        }
+      } else if (pt === "task_end") {
+        state.taskOpen = false;
+        state.awaitingFirstRequest = false;
+        state.compacting = false;
+      } else {
+        if (
+          state.awaitingFirstRequest &&
+          record.type === "model_msg" &&
+          (pt === "text" || pt === "image") &&
+          (record.payload as { role?: string }).role === "user"
+        ) {
+          state.pendingInputs.push(record);
+        }
+        if (pt === "mcp_connect_begin" || pt === "mcp_connect_end" || pt === "tool_list_ready") {
+          state.pendingBootstrap.push(record);
+        }
+        if (pt === "compaction_begin") state.compacting = true;
+        else if (pt === "compaction_end") state.compacting = false;
+        if (pt === "request_begin" && !state.compacting) {
+          state.awaitingFirstRequest = false;
+          state.pendingInputs = [];
+          state.pendingBootstrap = [];
+        }
+      }
+    }
+
+    if (
+      state.publishedStatus === "running" &&
+      this.liveTail.run(childSessionId) === null &&
+      ((record.origin && record.origin.length > 0) ||
+        (record.payload as { type?: string }).type !== "task_end")
+    ) {
+      this.liveTail.begin(childSessionId);
+    }
+
+    const published = this.deps.channels.get(childSessionId).publish(record);
+    this.liveTail.observe(childSessionId, record, published);
+
+    if (
+      (!record.origin || record.origin.length === 0) &&
+      (record.payload as { type?: string }).type === "task_end"
+    ) {
+      if (!this.isHostedChildRunning(childSessionId)) {
+        this.liveTail.clear(childSessionId);
+        if (state.publishedStatus !== "idle" && this.entryStatusOf(childSessionId) === "idle") {
+          state.publishedStatus = "idle";
+          this.publishHostedChildState(childSessionId, state, "idle");
+        }
+        const childEntry = this.entries.get(childSessionId);
+        if (childEntry && (childEntry.queuedModel || childEntry.followUps.length > 0)) {
+          void this.state.current?.startQueuedFollowUp(childSessionId);
+        }
+      }
+    }
+  }
+
+  private syncHostedChildrenState(entry: RuntimeEntry): void {
+    for (const child of this.subagentsOf(entry.sessionId)) {
+      let state = this.hostedChildren.get(child.sessionId);
+      if (!state) {
+        state = {
+          parentSessionId: entry.sessionId,
+          publishedStatus: "idle",
+          taskOpen: false,
+          awaitingFirstRequest: false,
+          compacting: false,
+          pendingInputs: [],
+          pendingBootstrap: [],
+        };
+        this.hostedChildren.set(child.sessionId, state);
+      } else {
+        state.parentSessionId = entry.sessionId;
+      }
+    }
+    for (const [childSessionId, state] of this.hostedChildren) {
+      if (state.parentSessionId !== entry.sessionId) continue;
+      if (entry.status === "idle" && this.runningChildOwner(childSessionId) === undefined) {
+        state.taskOpen = false;
+        state.awaitingFirstRequest = false;
+        state.compacting = false;
+      }
+      if (this.entryStatusOf(childSessionId) !== "idle") continue;
+      const running = this.isHostedChildRunning(childSessionId);
+      if (running) {
+        if (this.liveTail.run(childSessionId) === null) {
+          this.liveTail.begin(childSessionId);
+        }
+        if (state.publishedStatus !== "running") {
+          state.publishedStatus = "running";
+          this.publishHostedChildState(childSessionId, state, "running");
+        }
+      } else {
+        this.liveTail.clear(childSessionId);
+        if (state.publishedStatus !== "idle") {
+          state.publishedStatus = "idle";
+          this.publishHostedChildState(childSessionId, state, "idle");
+          const childEntry = this.entries.get(childSessionId);
+          if (childEntry && (childEntry.queuedModel || childEntry.followUps.length > 0)) {
+            void this.state.current?.startQueuedFollowUp(childSessionId);
+          }
+        }
+      }
+    }
+  }
+
+  private publishHostedChildState(
+    childSessionId: string,
+    state: HostedChildState,
+    status: SessionStatus,
+  ): void {
+    const childEntry = this.entries.get(childSessionId);
+    const subagents = this.subagentsOf(childSessionId);
+    this.deps.channels.get(childSessionId).publish(
+      {
+        type: "task_state",
+        ...(state.contextWindow !== undefined ? { contextWindow: state.contextWindow } : {}),
+        state: status,
+        queued: childEntry?.followUps.length ?? 0,
+        ...(childEntry && childEntry.pendingSteering.length > 0
+          ? { pendingSteering: childEntry.pendingSteering.map((p) => p.info) }
+          : {}),
+        ...(childEntry && childEntry.returnedSteering.length > 0
+          ? { returnedSteering: childEntry.returnedSteering.map((p) => p.info) }
+          : {}),
+        ...(childEntry && childEntry.followUps.length > 0
+          ? { pendingFollowUps: childEntry.followUps.map(followUpInfo) }
+          : {}),
+        ...(subagents.length > 0 ? { subagents } : {}),
+      },
+      "server_event",
+    );
   }
 
   private publishEvent(entry: RuntimeEntry, event: ServerEvent): void {
@@ -3293,76 +3717,648 @@ export class SessionManager {
 }
 
 /** The session runtime: one entry per live Session, task mutex, approvals, streaming. */
-export abstract class Sessions extends Interface<
-  Pick<
-    SessionManager,
-    | "statusOf"
-    | "pendingApprovalCount"
-    | "pendingApprovals"
-    | "pendingFollowUpCount"
-    | "pendingSteeringOf"
-    | "subagentsOf"
-    | "sendToSubagent"
-    | "abortSubagentRun"
-    | "pendingFollowUpsOf"
-    | "liveFragments"
-    | "liveRun"
-    | "pendingInputs"
-    | "pendingBootstrap"
-    | "activeCountForAgent"
-    | "invalidateAgentRuntimes"
-    | "invalidateProjectRuntimes"
-    | "assertCanAcceptTask"
-    | "startTask"
-    | "retryTask"
-    | "startGoal"
-    | "startCompact"
-    | "startSwitch"
-    | "onModelChanged"
-    | "decideApproval"
-    | "steer"
-    | "recallSteering"
-    | "recallFollowUp"
-    | "interruptQueued"
-    | "retryNow"
-    | "abortTask"
-    | "listProcesses"
-    | "probeProcessServices"
-    | "killProcess"
-    | "removeProcess"
-    | "abortProject"
-    | "beginAgentDeletion"
-    | "endAgentDeletion"
-    | "beginSessionDeletion"
-    | "endSessionDeletion"
-    | "atIdleBoundary"
-    | "shutdown"
-    | "detach"
-    | "runningSessionIds"
-    | "sweepIdle"
-    | "keepLoaded"
-    | "preload"
-  >
->() {}
+@Interface()
+export abstract class Sessions {
+  // —— Query surface (used by Session listing / Agent active-count / SSE subscription replay) ——
+  abstract statusOf(sessionId: string): SessionStatus;
+  abstract pendingApprovalCount(sessionId: string): number;
+  abstract pendingApprovals(sessionId: string): PendingApproval[];
+  /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start. */
+  abstract pendingFollowUpCount(sessionId: string): number;
+  /** Steering messages queued but not yet delivered to the model (display mirror; see RuntimeEntry.pendingSteering). */
+  abstract pendingSteeringOf(sessionId: string): PendingSteeringInfo[];
+  /**
+   * Live subagent children of an ACTIVE runtime entry (empty when the session is not loaded
+   * — after a restart there is no in-process child left to report, so empty is the truth).
+   * Rides `task_state` events and the SSE subscribe snapshot; the panel renders child
+   * running marks from this instead of parsing tool-output text.
+   */
+  abstract subagentsOf(sessionId: string): BackgroundSubagentInfo[];
+  /**
+   * Host message to one child session — a user input on the child, whatever its state:
+   * steering while it runs, a follow-up run while it is idle, a revival (resume-session
+   * semantics) when it is no longer live (core `Session.sendToBackgroundSubagent`). The
+   * parent runtime itself is loaded on demand (ensureEntry — the same get-or-resume path a
+   * task uses), so messaging a child of a long-idle conversation works after a restart too;
+   * the resume fallback names the child's owning Agent from its own session row, which must
+   * belong to the parent's project.
+   */
+  abstract sendToSubagent(
+    sessionId: string,
+    childSessionId: string,
+    messages: AmspRecord[],
+  ): Promise<SubagentMessageOutcome>;
+  /** Host abort of one child session's current run (core `Session.abortBackgroundSubagentRun`); false when the parent runtime is not loaded, the child is unknown, or it is idle. */
+  abstract abortSubagentRun(sessionId: string, childSessionId: string): Promise<boolean>;
+  /** Queued follow-up tasks awaiting auto-start, as their display/recall info (id + content summary). */
+  abstract pendingFollowUpsOf(sessionId: string): PendingFollowUpInfo[];
+  /**
+   * Live tail of a running session: one synthetic `partial_* start` AmspRecord per open
+   * streaming fragment, carrying the full accumulated content so far (see live-tail.ts).
+   * Empty when idle or when nothing is streaming. GET /messages attaches this (with a
+   * channel cursor) so a client joining mid-stream can render the in-progress message.
+   */
+  abstract liveFragments(sessionId: string): AmspRecord[];
+  /**
+   * The current run's records (one drive: a Task, a goal loop, a compaction or a model switch)
+   * in publish order, each streamed fragment's deltas folded into its start, with the records
+   * the run starts at; null when no run is under way (see live-tail.ts). The run form of
+   * GET /messages attaches the records and cuts its history read before the run.
+   */
+  abstract liveRun(sessionId: string): LiveRun | null;
+  /**
+   * The running Task's input messages as published at launch; empty when idle. The engine
+   * writes these exact envelopes to the Trace only after the first run's bootstrap (MCP
+   * connect + discovery), so GET /messages appends whichever of them the Trace read has
+   * not caught up to yet — without this, a client rebuilding history during the connect
+   * (the draft flow subscribes only after the input publish) loses the user's own message.
+   */
+  abstract pendingInputs(sessionId: string): AmspRecord[];
+  /** The running Task's streamed bootstrap records (see RuntimeEntry.pendingBootstrap); empty when idle. */
+  abstract pendingBootstrap(sessionId: string): AmspRecord[];
+  /** Number of Sessions for this Agent that are currently running / compacting. */
+  abstract activeCountForAgent(projectId: string, agentId: string): number;
+  /**
+   * Bumps one Agent's config generation so every runtime built before it is discarded on
+   * its next idle access and re-resumed via the loader (history is preserved through the
+   * Trace). What warrants it is a Session-fixed fact changing under the runtime — the
+   * Project's credentials (see invalidateProjectRuntimes). Agent State changes never do:
+   * core reads them into the next model context itself. A Task already in flight is neither
+   * aborted nor hot-swapped: it keeps the values it started with, and its entry is rebuilt
+   * on the first access after it returns to idle (see ensureEntry).
+   */
+  abstract invalidateAgentRuntimes(projectId: string, agentId: string): void;
+  /**
+   * After a Project's models/credentials change: invalidate every cached runtime in this
+   * Project, so the next Task re-resumes with the new api_key / base_url. Same
+   * effective-value semantics as invalidateAgentRuntimes — no hot swap into a Task already
+   * in flight. Iterating the active table is complete here, not a shortcut: the generation
+   * map only matters for runtimes that are already cached, and an Agent with no cached
+   * entry builds fresh through the loader anyway.
+   */
+  abstract invalidateProjectRuntimes(projectId: string): void;
+  // —— Task / compaction drive ——
+  /**
+   * Cheap, lock-free rehearsal of the 409/503 conditions startTask checks, throwing exactly the
+   * same HttpErrors. **Advisory only**: it neither takes the Session lock nor loads an entry, so
+   * a session that isn't in the active table reads as acceptable and a status change racing this
+   * call is not caught — the authoritative check is still the one inside startTask.
+   *
+   * It exists so a caller that has irreversible work to do first (POST /tasks writes the
+   * message's file attachments to disk) can find out about the ordinary "a Task is already
+   * running" rejection before doing it, instead of undoing it afterwards.
+   */
+  abstract assertCanAcceptTask(
+    sessionId: string,
+    opts?: {
+      queueIfBusy?: boolean;
+      interrupt?: boolean;
+      steerIfBusy?: boolean;
+    },
+  ): void;
+  /**
+   * Start a Task: get-or-load → 409
+   * mutual-exclusion check → publish the input messages first → drive run in the
+   * background. Returns the current actual session_id (the new id after self-heal).
+   * With `queueIfBusy`, a busy session (running/compacting) enqueues the input as a
+   * follow-up instead of 409: it auto-starts as an ordinary next task once the session
+   * returns to idle (`queued: true` in the result; see startQueuedFollowUp).
+   * `opts.recall` is that queued message's original
+   * content — optional, because only the HTTP route knows the parts of it the input does
+   * not carry (the pre-attachment text and where each file landed on disk); every other
+   * caller's store is read off the input, so a queued follow-up is recallable and shows
+   * its content whichever path queued it.
+   *
+   * With `interrupt`, a busy session aborts its run and the input waits at the head of the
+   * queue instead (see enqueueInterrupt). So does an idle one whose queue has not drained yet,
+   * so that the interrupt cannot overtake an earlier one still waiting to start.
+   *
+   * With `steerIfBusy`, a running Task takes the input as steering, exactly as `steer` gives it
+   * (`steered: true`; `recall` is then the steering message's content). A compaction has no
+   * Task to steer, and a run already settling no longer takes steering (core refuses it): both
+   * queue the input as `queueIfBusy` does. Decided here, under the lock, so one request does
+   * whatever the Session's state calls for.
+   *
+   * `promptHooks` names the composer's switches (prompt-hooks.ts): their contexts join the input
+   * behind the user's message once it is known to start, queue or interrupt — a steered input
+   * takes none, as steering consults no `user_prompt` hook. `recall` stays the user's own.
+   */
+  abstract startTask(
+    sessionId: string,
+    input: AmspRecord[],
+    opts?: {
+      queueIfBusy?: boolean;
+      interrupt?: boolean;
+      steerIfBusy?: boolean;
+      recall?: RecallStore;
+      promptHooks?: readonly string[];
+      /**
+       * The signed-in person sending it: the driver of the run it starts — now, or when it leaves
+       * the queue (RuntimeEntry.runDriver). Absent for everything nobody signed in sent: the local
+       * API token, schedules without a creator, the Agent API, company mode, the bridge.
+       */
+      driver?: string;
+    },
+  ): Promise<{ sessionId: string; queued: boolean; steered?: boolean }>;
+  /**
+   * Retry a failed or stopped run (`POST /retry`): a Task started with EMPTY input, so core
+   * sends the input of the turn that did not finish — held as carry-over since the run ended
+   * `fatal`, gave up reconnecting or was stopped by the user, with whatever the model had
+   * already written — and nothing else. No user message is published or recorded, and with no
+   * Prompt there is no user_prompt consult. Gated like startTask (busy is the same 409) but
+   * never queued, and refused with 409 `nothing_to_retry` when nothing is held — the user's
+   * next message already resent that input, or no run was cut short — since the run would end
+   * at once and the client would watch a Task start and stop with nothing sent. Not a person's
+   * input for company mode's hop accounting: the turn it resends was counted, or not, when
+   * it was first sent.
+   */
+  abstract retryTask(sessionId: string, driver?: string): Promise<{ sessionId: string }>;
+  /**
+   * Start a goal run: like startTask, but the goal plugin composes the input and its stop
+   * hook drives every later round inside this one `session.run` call — so the Session
+   * stays `running` for the whole goal (every round), the existing abort endpoint
+   * interrupts the entire loop and schedules queue behind it as usual. The plugin's
+   * `user_prompt` hook (hooks run in core and nowhere else — `Session.runUserPromptHook`)
+   * writes the Session's goal file and answers the round-1 protocol message; it runs under
+   * the session lock AFTER the idle check, since it overwrites the goal file a running goal
+   * is reading. An Agent without the goal plugin's hook package is refused with the route's
+   * 409 before the Session is even loaded (goal-plugin.ts); a loaded Session whose hook
+   * answers null is the same 409, and an empty answer a 500. Round inputs
+   * are yielded by core and published like any streamed message; progress additionally goes
+   * out as goal_* server events (the run state itself is the goal file the plugin maintains).
+   */
+  abstract startGoal(
+    sessionId: string,
+    args: {
+      /** The user's own message(s) exactly as submitted — text and images, no wrapping. */
+      messages: AmspRecord[];
+      /** The user's own objective text (leading marker blocks stripped): what the plugin records, the goal_started event and the title material. */
+      objective: string;
+      budget: number;
+    },
+  ): Promise<{ sessionId: string }>;
+  /** Manually compact the context: 409 if already running; compaction output also flows into the SSE channel. */
+  abstract startCompact(sessionId: string): Promise<{ sessionId: string }>;
+  /**
+   * Switches the Session's model in place (`POST /switch-model`) — core `Session.switchModel`,
+   * gated like a compaction (open, not deleting, idle). Core decides everything before its
+   * first event, so the head of its stream is pulled here, under the lock, and tells the three
+   * outcomes apart:
+   *
+   * - it throws — a refusal, answered 409 with the code of its reason (see `switchRefusal`);
+   * - it is already done — a Session that never ran has no context to close: core re-assembled
+   *   its first context on the target, nothing streams, and the row carries the new pair by
+   *   the time this returns (`switched: true`; the route answers with the fresh DTO);
+   * - it yields — a driven run like a compaction (`switched: false`): status `compacting`,
+   *   idle when it ends. The head is a compaction's begin, the first record of a bootstrap (a
+   *   Session loaded from its Trace opens its context first), or — for a context with no
+   *   completed turn, which streams no pair — the opener's first record.
+   *
+   * The switch is the entry's run from that pull on — it can be stopped, and a deletion or a
+   * shutdown waits for it — while the entry only reads `compacting` once there is something
+   * to stream, so a refusal never flickers a state.
+   *
+   * The entry and the row follow the runtime as the new context's `session_meta` passes
+   * through the drive (see `drive`); a switch that does not complete streams no meta and
+   * leaves them where they were. Usage: a drive bills to the model it started on, so the
+   * switch's compaction request goes to the model that served it and the next run to the new
+   * one.
+   *
+   * A Session not in memory is loaded the ordinary way first, so a refusal of the target is
+   * core's, as for any loaded Session. Only one the ordinary load refuses — its model can no
+   * longer be reached — is loaded for this switch alone (`SessionLoader.load`'s `switchTo`):
+   * with a Trace it is resumed anyway, since core then hands its history over by Trace path
+   * rather than ask that model for a summary; without one it is rebuilt on the target, and the
+   * load is the whole switch (200, or the target's 409). Such a runtime runs nothing on the
+   * model it cannot reach (`RuntimeEntry.stranded`), and one the switch did not move is not
+   * kept: the next access loads it the ordinary way and meets the ordinary refusal.
+   */
+  abstract startSwitch(
+    sessionId: string,
+    ref: ModelRefDto,
+    whenIdle?: boolean,
+  ): Promise<{ sessionId: string; switched: boolean }>;
+  /**
+   * Subscribes to a Session's model moving: an in-session switch completing, or a row brought
+   * back in step with its Trace when the Session loads. The listener runs once the entry and
+   * the row carry the new pair. Returns the unsubscribe. Company mode listens: an employee's
+   * model is its desk Session's.
+   */
+  abstract onModelChanged(listener: (sessionId: string, model: ModelRefDto) => void): () => void;
+  /** Submit an approval decision; returns false if the pending approval doesn't exist (already decided/unknown). */
+  abstract decideApproval(
+    sessionId: string,
+    toolCallId: string,
+    decision: "allow" | "deny",
+  ): boolean;
+  /**
+   * Mid-run steering: forward the message to the running Session (core delivers it between
+   * turns as a standalone `[user_steering]` user message followed by its images — no SSE
+   * event of its own; the messages arrive through the stream the drive loop already
+   * publishes). 409 when the Session isn't running a Task (idle / compacting / not loaded)
+   * or the run finished in the race window — the caller falls back to submitting a normal
+   * task, which carries the same text and images.
+   *
+   * `recall` is the queued message's original content: its summary (with a fresh id) is
+   * mirrored on the entry and broadcast via `task_state` (and the SSE subscribe snapshot)
+   * until the delivered `[user_steering]` message is observed on the stream — that is what
+   * keeps the composer's "steering queued" hint, content included, alive across reloads —
+   * and the content itself is what a recall (recallSteering) hands back to the composer.
+   */
+  abstract steer(
+    sessionId: string,
+    input: AmspRecord[],
+    recall: RecallStore,
+    driver?: string,
+  ): void;
+  /**
+   * Recall an undelivered steering message (#287): withdraw it from core's queue and the
+   * display mirror, re-broadcast state, and hand back its original content for the composer
+   * to restore. 409 `not_pending` when the entry is no longer queued — already delivered to
+   * the model (core's `unsteer` says so authoritatively; the mirror can lag behind delivery
+   * until the `[user_steering]` message is observed on the stream), the run exited, or the
+   * id is unknown — all the same outcome for the caller: nothing left to take back.
+   */
+  abstract recallSteering(sessionId: string, steerId: string): RecallStore;
+  /**
+   * Recall a queued follow-up task (#287): remove it from the queue before it auto-starts,
+   * re-broadcast state, and hand back its original content (plus the thinking level it was
+   * queued with). Being in the queue is the whole condition — every queued entry carries a
+   * recall store (see QueuedFollowUp.recall), so no queued message is ever refused. 409
+   * `follow_up_started` when the id is not in the queue: it already auto-started, or the
+   * runtime was released and took the queue with it. Its own code, distinct from steering's
+   * `not_pending`, because the two mean different things to the user — a follow-up became a
+   * task of its own, a steering message reached the model mid-run.
+   */
+  abstract recallFollowUp(sessionId: string, followUpId: string): { recall: RecallStore };
+  /**
+   * Send one waiting message now (POST /interrupt): the queued follow-up `followUpId` names,
+   * or the undelivered steering message `steerId` names, becomes an interrupt (see
+   * enqueueInterrupt). A follow-up keeps its id, so it stays recallable by it; one that is an
+   * interrupt already is left where it is. 409 `follow_up_started` when the follow-up is no
+   * longer queued, 409 `not_pending` when the steering message already reached the model.
+   */
+  abstract interruptQueued(
+    sessionId: string,
+    target:
+      | {
+          followUpId: string;
+        }
+      | {
+          steerId: string;
+        },
+  ): void;
+  /**
+   * "Retry now" on the reconnect countdown: skip the in-progress backoff wait and fire
+   * the next retry immediately (the attempt counter is unchanged — the skipped wait does
+   * not consume an extra attempt). Returns false as a benign no-op when the session has
+   * no active runtime or no reconnect wait is in progress — timing races (the wait
+   * elapsed right before the click) must not surface as errors. Mirrors the steer seam:
+   * manager → RuntimeSession → core Session → engine.
+   */
+  abstract retryNow(sessionId: string): boolean;
+  /**
+   * Interrupt the current Task/compaction: pending approvals converge to deny first,
+   * then the AbortSignal fires. Returns false if nothing is in progress (the route
+   * treats this as a 204 no-op).
+   */
+  abstract abortTask(sessionId: string): boolean;
+  /**
+   * Background command processes of a LOADED session (empty when the entry is not in
+   * the active table — a resumed entry starts with a fresh environment and can only
+   * ever report an empty list, so nothing is resurrected just to answer a poll).
+   */
+  abstract listProcesses(sessionId: string): BackgroundCommandInfo[];
+  /**
+   * Refreshes the listen-port probes behind the process list's `serviceUrl` (core
+   * `Session.probeBackgroundCommandServices`): called by the processes route before
+   * listing, so the first fetch already carries probed URLs. Bounded by core's own probe
+   * timeout and TTL; a session that isn't loaded has no processes to probe.
+   */
+  abstract probeProcessServices(sessionId: string): Promise<void>;
+  /** Kills one background command process of a loaded session; false when the session isn't loaded or the id is unknown. */
+  abstract killProcess(sessionId: string, processId: string): boolean;
+  /**
+   * Removes one EXITED background command entry from a loaded session's process list.
+   * A running process is refused ("running") — stopping is killProcess's job, and a
+   * bare removal must never surprise-signal a live process group. "not_found" covers
+   * an unloaded session and an unknown id alike: the entry is gone either way. The
+   * removal itself reuses the kill path — core's registry removal signals the (dead)
+   * group defensively and drops the row, exactly like input_command's post-exit reap.
+   * The only race, an entry observed running that exits before a retry, is benign:
+   * the caller gets "running", refreshes, and sees the row exited on the next look.
+   *
+   * Note what leaves with the row: the registry entry owns the ManagedSession holding
+   * that process's captured output, so after a removal input_command on the same
+   * process_id answers "unknown process_id". Removal is a deliberate discard, not just
+   * a list tidy-up — the Web App says so at the button and in the docs.
+   */
+  abstract removeProcess(sessionId: string, processId: string): "removed" | "running" | "not_found";
+  /**
+   * Before deleting a Project, converge all its active runs and clear them out of the
+   * active table. Returns the drive and background-cleanup Promises of the affected entries: the
+   * caller (deleteProject) should await them before removing the directory, so that
+   * interrupt-cleanup Trace writes don't recreate the directory after deletion.
+   */
+  abstract abortProject(projectId: string): Promise<void>[];
+  /**
+   * Before deleting an Agent, converge all its active runs and clear them out of the
+   * active table (same semantics as abortProject). Also marks this Agent as "being
+   * deleted": new Tasks/compactions entering during the deletion process are always
+   * rejected with 409 (assertAgentNotDeleting), closing the race window where a new
+   * task recreates the directory and revives an already-deleted Agent between the
+   * abortAgent snapshot and the directory removal. The caller must call
+   * endAgentDeletion once deletion finishes (success or failure).
+   */
+  abstract beginAgentDeletion(projectId: string, agentId: string): Promise<void>[];
+  abstract endAgentDeletion(projectId: string, agentId: string): void;
+  /**
+   * Before deleting a single Session, converge its active run and clear it out of the
+   * active table (same semantics as beginAgentDeletion). Also marks this Session as
+   * "being deleted": new Tasks/compactions entering during the deletion process are
+   * always rejected with 409 (assertSessionNotDeleting), closing the race window where
+   * a new task recreates the entry and Trace file, reviving an already-deleted Session
+   * between the abort snapshot and the file removal. The caller must call
+   * endSessionDeletion once deletion finishes (success or failure). Returns the
+   * drive and background-cleanup Promise: the caller should await it before deleting the Trace file,
+   * so cleanup writes don't recreate the file.
+   */
+  abstract beginSessionDeletion(sessionId: string): Promise<void>[];
+  abstract endSessionDeletion(sessionId: string): void;
+  /**
+   * Run a metadata operation at an idle Session boundary under the same mutex as Task and
+   * compaction starts. Session fork uses this to snapshot an append-only Trace without a Task
+   * beginning between its status check and final read. An uncached Session is idle by definition;
+   * unlike startTask this path deliberately does not load a heavyweight runtime.
+   */
+  abstract atIdleBoundary<T>(sessionId: string, operation: () => Promise<T>): Promise<T>;
+  /** Graceful shutdown: reject new tasks (503), interrupt all active runs, and wait for them to finish (default ≤5s). */
+  abstract shutdown(timeoutMs?: number): Promise<void>;
+  /**
+   * The hand-over's half of a swap: this generation stops working on the state and leaves
+   * everything in it as it is — running Tasks keep running, pending approvals keep waiting —
+   * for the next generation to take over (PRFC-0015). Only what is this instance's own stops:
+   * the idle sweep. `shutdown` is the other ending, for a state nobody takes over.
+   */
+  abstract detach(): void;
+  /** The Sessions with a Task in flight right now — what a swap parks, so that a successor that cannot take the state over knows which ones to start again. */
+  abstract runningSessionIds(): string[];
+  /**
+   * Active-table idle eviction: removes entries that are idle (idle status, no pending
+   * approvals, no in-flight drive) and have been inactive past the timeout, releasing
+   * the core Session's full in-memory history. This is purely memory reclamation: the
+   * next access re-resumes via the loader, so correctness is unaffected. Lock-table
+   * entries are auto-cleaned by withLock once their chain drains (including leftover
+   * entries under the old id after self-heal). `now` / `idleMs` are injectable for
+   * tests and timers.
+   */
+  abstract sweepIdle(now?: number, idleMs?: number): void;
+  /**
+   * Pins (`on`) or releases a Session's runtime entry against idle eviction (see sweepIdle).
+   * The messaging bridge holds the pin for as long as a binding's connection is enabled: that
+   * Session is where the bot lives on this server, and evicting it after half an hour of quiet
+   * makes the next chat message wait for a resume from the Trace before anything else happens.
+   *
+   * It pins only what is loaded and loads nothing itself (preload does). A stale id pins
+   * nothing: an entry a delete removed is gone from the table whatever this set says, and the
+   * bridge releases the id when its connection goes.
+   */
+  abstract keepLoaded(sessionId: string, on: boolean): void;
+  /**
+   * Loads a Session's runtime into the active table ahead of its first Task, through the same
+   * get-or-resume path that Task would take, so the first message after a messaging connection
+   * comes up — an enable, a server restart — does not pay for a resume from the Trace on top of
+   * everything else. Only the load: no run starts, and the core bootstrap (session metadata,
+   * MCP connections) still happens on the first run. Under the Session lock, like startTask, so
+   * a Task arriving mid-load waits for this load instead of starting a second one.
+   *
+   * A Session that is gone or being deleted, alone or with its Agent, resolves quietly: there is
+   * nothing to warm and the caller has nothing to do about it. One that never ran is rebuilt
+   * under its own id (see createCoreSessionLoader), so the binding that asked keeps its Session.
+   * Any other load failure rejects; the first Task meets the same failure and reports it where a
+   * person will see it.
+   */
+  abstract preload(sessionId: string): Promise<void>;
+}
 
-export abstract class SessionServiceIface extends Interface<
-  Pick<
-    SessionServiceImpl,
-    | "toInfo"
-    | "hasTrace"
-    | "listingOf"
-    | "listSessions"
-    | "archivedRows"
-    | "activeRows"
-    | "sessionStats"
-    | "createSession"
-    | "defaultSandbox"
-    | "pickSandbox"
-    | "updateSandbox"
-    | "latestTracePath"
-    | "adoptUnmanagedTraceSessions"
-  >
->() {}
+@Interface()
+export abstract class SessionServiceIface {
+  /**
+   * DB row -> SessionInfo (run status and pending approval count come from session-manager).
+   * Async because `source` is derived from session_meta: a registry miss (Session predating
+   * this process) falls back to reading the Trace head once (see sourceOf). `traces` is the
+   * list flow's one-walk discovery result; without it a miss locates the shard itself.
+   * `archived` is the listing rule's answer (listCategory), not the bare mark: a background
+   * Session the user never kept reads archived, and a subagent with a stray mark does not.
+   *
+   * `orgIds` is the list flow's one-query organization map (see listSessions); without it the
+   * organization is a point lookup, which is what the single-Session paths want. `view` is who
+   * is reading (sourceSeenBy): a server that adopted this one sees its earlier Sessions as CLI
+   * tasks, in `source` and `archived` alike.
+   */
+  abstract toInfo(
+    row: SessionRow,
+    hasTrace: boolean,
+    orgIds?: ReadonlyMap<string, string>,
+    view?: ListingView,
+  ): Promise<SessionInfo>;
+  /** Whether this Session already has a Trace record (a Task has been run): answered by the index (reconciled first). */
+  abstract hasTrace(row: SessionRow): Promise<boolean>;
+  /**
+   * Where one row is listed, for a caller holding just the row (a PATCH, the archive page's
+   * batches). A row the registry already classified costs nothing; any other is looked up
+   * through the trace index once (hasTrace reconciles the Agent), so a subagent Session is
+   * known for one even before any list has walked it.
+   */
+  abstract listingOf(row: SessionRow, view?: ListingView): Promise<SessionCategory | null>;
+  /**
+   * List, sorted by createdAt descending — or, with `order: "activity"`, by lastActiveAt
+   * descending (ties by sessionId, see {@link compareActivityDesc}). Every row is served
+   * **straight from the DB**, whichever client created it, with no Trace directory scanning —
+   * the answer to many-session sidebar reloads re-walking the filesystem on every request (#139).
+   * Sessions living only in the Trace directory were adopted into the index by the
+   * boot-time sweep (`adoptUnmanagedTraceSessions`), so listing never discovers. One
+   * lazy discovery walk still runs for a list call that contains rows this process has
+   * not classified yet (no in-process source entry): it supplies the Trace locations for
+   * the one-time head reads and backfills the `has_trace` cache; once every row is
+   * classified, list calls touch only the DB.
+   *
+   * Optional `paging` returns just that slice (the sidebar pages with limit+1 to detect
+   * "has more"); slicing happens before toInfo, so per-request source derivation (lazy
+   * Trace-head reads) stays bounded by the page size.
+   *
+   * The `before` form pages the activity order by cursor: only rows strictly below it are
+   * walked and served. An offset cannot page that order, because a row below the offset that
+   * becomes active moves above it and the next page would skip a row; a cursor stays put — the
+   * moved row is simply not served again (the client learns of it from `session_state`). The
+   * offset form keeps serving the `created` order exactly as before.
+   *
+   * `category` filters to one list (the sidebar's `active`, the archive page's `archived`)
+   * **before** paging, so offset/limit page within the category. Filtering needs each walked
+   * row's category (a possible Trace-head read per row, cached in the sources registry);
+   * without `withCounts` the walk stops as soon as the requested page is complete.
+   * `withCounts` classifies every row, a cursor or not, and returns per-category totals over
+   * the whole list — plus the same totals broken down by Workspace path, and each path's
+   * newest Session's `createdAt`, once over every category (`workspaceLatest`, the Workspace
+   * picker's "recently used") and once over the active ones (`workspaceLatestActive`) — so the
+   * sidebar can list every Workspace that holds active Sessions (not only the ones its loaded
+   * pages happen to touch) and place the groups by the recency of what they show, all without
+   * loading them.
+   *
+   * `workspaceGroup` filters the same way, to one Workspace group (see workspace-group.ts),
+   * so a sidebar grouped by Workspace pages each group down its OWN stream instead of
+   * sharing one per-Agent cursor — without it, one group's "load more" consumes the page
+   * its siblings were about to read, and their rows move on screen untouched. The two
+   * filters compose; the returned counts stay whole-Agent either way.
+   *
+   * A `subagent` or `company` Session — a child its parent's Agent panel opens, company mode's
+   * desk and ticket Sessions — belongs to no category (listCategory), whatever its marks: every
+   * classified form of the list (`category`, `workspaceGroup` or `withCounts`) leaves it out of
+   * the page, the totals, the Workspace breakdown and its stamps alike. The plain form, which
+   * classifies nothing, still serves every row.
+   *
+   * `excludeOrg` drops the rows an organization owns (its desk and ticket sessions, and the
+   * sub-sessions they spawned) from the stream BEFORE anything else looks at it — the page,
+   * `counts`, `workspaceCounts`, both Workspace stamps and the limit+1 "has more" all describe the
+   * same own-rows stream. It is what development mode's list asks for: that list draws the
+   * user's own conversations, and a total or a stamp that still counted a desk or a ticket
+   * session would make its Workspace appear as a group the list can never fill. The rule above
+   * does not replace it: a person's conversation attached to a ticket is stamped `org` but
+   * stays `user`, and a row the organization caches name before the reconcile pass stamps it
+   * reads as `user`. Without the flag every row is served, whichever client created it, but
+   * for that rule.
+   *
+   * `view` is who reads the list (sourceSeenBy): every row is classified and served as that
+   * reader sees it.
+   */
+  abstract listSessions(
+    projectId: string,
+    agentId: string,
+    opts?: {
+      paging?: SessionListPaging;
+      order?: SessionListOrder;
+      category?: SessionCategory;
+      workspaceGroup?: string;
+      withCounts?: boolean;
+      excludeOrg?: boolean;
+      view?: ListingView;
+    },
+  ): Promise<{
+    sessions: SessionInfo[];
+    counts?: SessionCategoryCounts;
+    workspaceCounts?: Record<string, SessionCategoryCounts>;
+    workspaceLatest?: Record<string, string>;
+    workspaceLatestActive?: Record<string, string>;
+  }>;
+  /**
+   * The archive page's walk (services/archived-sessions-service.ts): every row of the Agent the
+   * listing rule files as archived — the rows `listSessions` serves with `category: "archived"`
+   * and `excludeOrg`, classified the same way — with the source each was classified by and
+   * whether it has a Trace. It builds no SessionInfo: the page makes one (toInfo) only for the
+   * rows a response carries, so a request costs a classification per archived row, not a full
+   * row view per archived row. `view` is who reads it, as for listSessions.
+   */
+  abstract archivedRows(
+    projectId: string,
+    agentId: string,
+    view?: ListingView,
+  ): Promise<ArchivedRow[]>;
+  /**
+   * The sidebar's share of the Agent (services/workspace-archive.ts, the "delete workspace"
+   * route): every row the listing rule files as active — the rows `listSessions` serves with
+   * `category: "active"` and `excludeOrg`, classified the same way, loaded or not. `view` is
+   * who reads it, as for listSessions.
+   */
+  abstract activeRows(
+    projectId: string,
+    agentId: string,
+    view?: ListingView,
+  ): Promise<SessionRow[]>;
+  /**
+   * Session stats (Agents list card): total count = size of the union of DB index
+   * ∪ Trace directory discovery; activity = number of active Sessions per day over
+   * the last `days` days (deduplicated count of Sessions created that day or with a
+   * Trace record that day; index 0 = earliest, last index = today). Counts only —
+   * does not backfill index rows.
+   */
+  abstract sessionStats(
+    projectId: string,
+    agentId: string,
+    days: number,
+  ): Promise<{ sessionCount: number; activity: number[] }>;
+  /**
+   * Startup adoption sweep: walks the whole trace tree once per boot and adopts every
+   * unmanaged Session (a Trace with no index row — legacy CLI-direct runs) as a
+   * `client: "cli"` row, so lists stay pure-SQLite afterwards. Enumerates
+   * `<root>/<project>/agents/<agent>/` directories directly — legacy Traces can live
+   * under Projects the DB has never seen — and reuses the existing discovery/adoption
+   * path per Agent (mtime-gated TraceIndexService reconcile, then registration-time
+   * facts; adoption reads no file itself). Idempotent (insertOrIgnore), so re-running —
+   * e.g. after a hot swap re-assembles the business surface — only costs the gated
+   * reconcile. Returns the number of rows adopted.
+   */
+  abstract adoptUnmanagedTraceSessions(): Promise<number>;
+  /**
+   * Create a Session: the model reference is a complete `(provider, modelId)` pair.
+   * Half a reference is a client error, never something to resolve — the missing half
+   * is never guessed, since a guessed provider would send an entry's credential to a
+   * vendor nobody named. Omitting both falls back to the Project's default reference
+   * (400 prompting to configure a model first if there is none). `workspace` is already
+   * validated by the route guard. The new Session is added to the active table
+   * (idle).
+   */
+  abstract createSession(args: {
+    projectId: string;
+    agentId: string;
+    /** Upstream id of the session's model; always paired with provider. Omit both for the Project's default reference. */
+    modelId?: string;
+    /** The provider group for `modelId`; always paired with modelId, never inferred. */
+    provider?: string;
+    workspace?: string;
+    thinkingLevel?: ThinkingLevelName;
+    approvalMode?: ApprovalMode;
+    /** The composer's sandbox picks; omitted halves take the server's settings. */
+    sandbox?: Partial<SessionSandbox>;
+    /** Whether the creator is an administrator (may loosen past the settings). Default false. */
+    isAdmin?: boolean;
+    /**
+     * What kind of conversation this is, recorded in the Session's session_meta: `schedule`
+     * from the scheduler, `company` from the organization runtime, `cli` from `penguin run`
+     * (the only source a request may name), `api` from an Agent API run; absent means `user`,
+     * a person's conversation.
+     */
+    source?: SessionSource;
+    /**
+     * Creating-client hint stored on the index row (`POST .../sessions` body `client`):
+     * "cli" from the CLI, defaulting to "web". "org" and "api" are not accepted over HTTP —
+     * the organization runtime and the Agent API's run handler call this method directly and
+     * are the only callers that pass them, so no request can claim either provenance for
+     * itself ("api" is what lets the Agent API continue a Session).
+     */
+    client?: "web" | "cli" | "org" | "api" | "workbench";
+  }): Promise<SessionInfo>;
+  /** The policy a new Session starts with: the server's Sandbox settings. */
+  abstract defaultSandbox(): SandboxSettings;
+  /**
+   * The policy a pick would give one Session, checked — the non-admin ceiling and what this
+   * server can enforce — and not written: a PATCH checks every field before it writes any.
+   */
+  abstract pickSandbox(
+    row: SessionRow,
+    pick: Partial<SessionSandbox>,
+    isAdmin: boolean,
+  ): SandboxSettings;
+  /** Stores one Session's policy (`pickSandbox`'s): its next command runs under it. */
+  abstract updateSandbox(sessionId: string, policy: SandboxSettings): void;
+  /**
+   * Absolute path of a Session's **latest** Trace file (the current context shard);
+   * undefined when no Trace exists. Costs a directory walk, so only the single-session
+   * GET includes it in the DTO (see SessionInfo.tracePath) — the web's `/model` switch
+   * hands it to the new session's `[model_switch_from]` block so the model can read the
+   * source history itself when it needs it.
+   */
+  abstract latestTracePath(row: SessionRow): Promise<string | undefined>;
+}
 
 /** The per-spawn policies every Session's command environment is built with. */
 @Interface()

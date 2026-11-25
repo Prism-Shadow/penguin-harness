@@ -19,7 +19,7 @@ for (const [width, lang, label] of [
       .getByRole("link", { name: lang === "zh" ? "在主题包中打开" : "Open in Theme Packs" })
       .scrollIntoViewIfNeeded();
     await expect(page.locator("iframe")).toHaveCount(1);
-    await expect(page.locator(".neon-blob")).toHaveCount(0);
+    await expect(page.locator(".neon-bg")).toHaveCount(1);
     await expect(page.locator("#self-evolution animateMotion")).toHaveCount(0);
     if (width >= 768) {
       await page.locator('#self-evolution svg[role="img"]').scrollIntoViewIfNeeded();
@@ -46,6 +46,7 @@ test("returns instantly under reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => localStorage.setItem("penguin-site.lang", "zh"));
   await page.goto("/");
+  await expect(page.locator("#home-top")).toBeVisible();
   await page.evaluate(() => scrollTo({ top: 2000, behavior: "instant" }));
   const top = page.getByRole("button", { name: "回到顶部", exact: true });
   await expect(top).toBeVisible();

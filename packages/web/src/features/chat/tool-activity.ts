@@ -1,5 +1,5 @@
 import type { RunState, ToolCallDuration } from "@prismshadow/penguin-ui";
-import type { ToolCallItem } from "../../lib/amsp/stream-model";
+import { localWorkTime, type ToolCallItem } from "../../lib/amsp/stream-model";
 import { S } from "../../lib/strings";
 
 /** State and clock shared by the tool's detail card and its compact step header. */
@@ -55,13 +55,17 @@ export function toolActivity(item: ToolCallItem, pending: boolean) {
     item.durationMs !== undefined
       ? { live: false, ms: item.durationMs }
       : executing
-        ? { live: true, sinceMs: item.approvalAtMs ?? item.callStartedAtMs, offsetMs: genMs }
+        ? {
+            live: true,
+            sinceMs: localWorkTime(item, item.approvalAtMs ?? item.callStartedAtMs),
+            offsetMs: genMs,
+          }
         : pending
           ? genMs > 0
             ? { live: false, ms: genMs }
             : undefined
           : item.callStreaming
-            ? { live: true, sinceMs: item.argStartedAtMs }
+            ? { live: true, sinceMs: localWorkTime(item, item.argStartedAtMs) }
             : undefined;
   return { state, stateLabel, duration };
 }

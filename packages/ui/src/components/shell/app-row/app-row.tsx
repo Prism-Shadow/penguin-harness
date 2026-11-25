@@ -95,7 +95,7 @@ export function AppRow({
       <div
         ref={ctx.rowRef}
         {...ctx.rowProps}
-        className={`group flex select-none items-center rounded-md pr-1 transition-colors duration-150 ${
+        className={`group flex h-8 select-none items-center rounded-md pr-1 transition-colors duration-150 ${
           active ? NAV_FILL.selected : NAV_FILL.hover
         }`}
       >
@@ -112,7 +112,7 @@ export function AppRow({
             if (ctx.consumeLongPressClick()) return;
             if (!closed) onOpen();
           }}
-          className={`flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left ${
+          className={`flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-left ${
             closed ? "cursor-default" : ""
           }`}
         >
@@ -150,7 +150,7 @@ export function AppRow({
         <div
           className={
             windowActions
-              ? "flex shrink-0 items-center [&_button]:pointer-events-auto [&_button]:size-7 [&_button]:opacity-100 pointer-coarse:[&_button]:size-10"
+              ? "flex shrink-0 items-center [&_button]:pointer-events-auto [&_button]:size-6 [&_button]:opacity-100 pointer-coarse:[&_button]:size-8"
               : "invisible flex h-6 shrink-0 items-center group-hover:visible group-focus-within:visible [&_button]:pointer-events-auto [&_button]:opacity-100"
           }
           onPointerDown={(event) => event.stopPropagation()}

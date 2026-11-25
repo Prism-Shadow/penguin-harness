@@ -14,37 +14,6 @@ import type { Strings } from "./strings";
 
 export const en: Strings = {
   appName: "PenguinHarness",
-  firstWorkbench: {
-    updateNeeded:
-      "This agent has an earlier guide. Update it to generate a checklist from a chat reply.",
-    update: "Update guide on this agent",
-    updateWarning:
-      "Replace this agent’s guide code with the library version? Local edits to the guide code will be overwritten. Your progress and checklist data will stay available.",
-    updateUnavailable: "This server’s library does not yet have the updated guide.",
-    title: "Your first workbench",
-    help: "Build and test a checklist from one of your conversations.",
-    resume: "Start or resume guide",
-    later: "Dismiss",
-    refresh: "Refresh",
-    loading: "Loading…",
-    generating: "Generating your checklist…",
-    waitReply: "Wait for a completed reply in a chat with this agent.",
-    models: "Open Models to connect a provider, then choose a model in the chat composer.",
-    chat: "Choose a model in the composer. Send a task you want to turn into a checklist, then read its reply.",
-    reply: "Reply to use",
-    feedback: "Changes for the checklist",
-    modelSettings: "Open Models",
-    toChat: "Go to chat",
-    useReply: "Use this conversation",
-    retryChat: "Retry saved request",
-    generate: "Generate checklist",
-    verified: "Test passed. The checklist saved, completed and removed the test item.",
-    install: "Install checklist",
-    open: "Open checklist",
-    test: "Test checklist",
-    testItem: "Onboarding test item",
-    download: "Download plugin",
-  },
 
   voice: {
     models: "Multimodal models",
@@ -584,6 +553,9 @@ export const en: Strings = {
     chooseSession: "Choose a Session",
     searchSessions: "Search all Sessions",
     searchActiveSessions: "Search Sessions with open terminals",
+    searchBrowserSessions: "Search Sessions with open browser pages",
+    noOpenBrowserPages: "No open browser pages",
+    startSessionBrowser: "To open a page, choose Browser from a conversation’s shortcuts.",
     noOpenTerminals: "No open terminals",
     startSessionTerminal:
       "To start a terminal, open a conversation and choose Terminal from its shortcuts.",
@@ -1119,6 +1091,9 @@ export const en: Strings = {
     clearAssignment: "Clear assignment",
     groups: "Model groups",
     hideModelsWithoutKey: "Hide models without a key",
+    noKeyTitle: "No model has an API key configured",
+    noKeyHint: "Connect a model provider or configure an API key in Models",
+    goToModels: "Go to Models",
     hint: (mod: string): string => `←→ groups / models · ${mod}1–9 jump to a group`,
   },
   workbenches: {
@@ -1226,18 +1201,9 @@ export const en: Strings = {
     exitToAppCenter: "Exit full page (back to the App Center)",
   },
   pageWorkspace: {
-    leftPane: "Left pane",
-    rightPane: "Right pane",
     restore: "Restore",
     workbenches: "Workbenches",
-    left: "Open on the left",
-    right: "Open on the right",
-    whole: "Show full page",
-    swap: "Swap panes",
     separate: "Open in a new window",
-    actions: "Pane actions",
-    closeView: "Close view",
-    resize: "Resize panes",
     empty: "This Agent has no workbenches to open.",
   },
   sidebarApps: {
@@ -1313,7 +1279,6 @@ export const en: Strings = {
       back: "Back",
       /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
       toFolders: "Into a folder",
-      newFolderWith: "Into a new folder with",
     },
     restoreTitle: "Restore default order",
     restoreBody:
@@ -2246,8 +2211,7 @@ export const en: Strings = {
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
     systemName: "System",
-    systemDescription:
-      "Owns the system apps: Models, Plugins, Machines, Cost Center and Evaluation Center.",
+    systemDescription: "Owns the Models, Plugins, Machines and Cost Center apps.",
     systemTag: "System",
     systemTagHint:
       "The system agent owns the system apps. It does not chat or take plugins, and cannot be deleted or exported.",
@@ -3244,12 +3208,6 @@ export const en: Strings = {
       n === 1
         ? "This build cannot fully run 1 installed plugin. Its row says why."
         : `This build cannot fully run ${n} installed plugins. Their rows say why.`,
-    /** The notice's action: filters the list down to those rows. */
-    unsatisfiedShow: "Show",
-    /** Page notice while the filter beside the search narrows the list to the incompatible plugins. */
-    incompatibleOnlyNotice: "Only incompatible plugins are shown.",
-    /** That notice's action: turns the filter off. */
-    incompatibleOnlyShowAll: "Show all",
     /** The admin's notice while members' requests to run a plugin's server module wait. */
     moduleRequestsNotice: (n: number) =>
       n === 1
@@ -3282,18 +3240,30 @@ export const en: Strings = {
       flowTitle: (name: string) => `Install ${name}`,
       backToServer: "Back to server",
       toAgents: "Continue to Agents",
-      stepServer: "Install on server",
-      stepAgents: "Install on Agents",
-      stepOf: (step: number, steps: number) => `Step ${step} of ${steps}`,
-      stepDone: "Done",
+      prepare: "Prepare plugin",
+      projectService: "Enable the service for this project",
+      ready: "Ready on this server",
+      installDetails: "How this affects the server",
+      chooseAgent: "Choose an agent",
+      chooseAgentHelp: "Choose who will use this plugin. You can add it to more than one agent.",
+      prepareForAgents:
+        "All projects on this server share one copy. After installation, choose which agents can use it.",
+      preparePackage:
+        "All projects on this server share one copy. Install the plugin to see what it provides.",
+      prepareService:
+        "All projects on this server share one copy. This service runs without an agent installation.",
+      projectServiceOff: "This project’s service is off. You can still add the plugin to an agent.",
+      projectReady: "The plugin’s service is enabled for this project.",
+      projectServiceHelp:
+        "The plugin is already on this server. Enable its service for this project.",
+      add: "Add",
+      addToAgent: (name: string) => `Add to ${name}`,
+      addedToAgent: "Added",
       serverDone: (name: string) => `${name} is on the server, shared by every Project.`,
-      askBody:
-        "It is not on the server yet: ask an admin to install it there; once it is, install it on your Agents.",
+      askBody: "Ask an admin to install the shared copy for all projects on this server.",
       askAdmin: "Ask an admin to install",
-      asked:
-        "An admin has been asked to install it. Once it is on the server, come back here to install it on your Agents.",
+      asked: "Your installation request has been sent to the administrator.",
       finish: "Done",
-      onServer: "Uninstalling it from the server uninstalls it from every Agent.",
       checking: "Checking the plugin source…",
       installing: "Installing…",
       fromOffline: "Installing from the offline archive…",
@@ -3406,12 +3376,6 @@ export const en: Strings = {
     openSettings: "Settings",
     pageDesc:
       "Every plugin, by category. Plugins of skills and/or a hook package ship with this build and are installed on agents; server-module plugins, such as the Agent Sandbox backends, are installed on the whole server by an admin.",
-    /**
-     * The filter beside the search: a toggle that narrows the list to the plugins this build cannot
-     * fully run, remembered in this browser; the group's accessible name, and the toggle's words.
-     */
-    filterLabel: "Filter plugins",
-    incompatibleOnlyFilter: "Incompatible only",
     /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "Group by",
     groupBy: {
@@ -4959,7 +4923,7 @@ Scenarios:
     workFailed: "Run failed",
     workStopped: "Stopped",
     workRetryStep: (n: number) => `Retry #${n}`,
-    workElapsed: "Total time",
+    workElapsed: "Activity time",
     workGroupSteps: (n: number) => `${n} ${n === 1 ? "step" : "steps"}`,
     approvalWaiting: "awaiting approval",
     copyCode: "Copy code",

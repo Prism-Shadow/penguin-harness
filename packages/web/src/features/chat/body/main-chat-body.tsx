@@ -1,4 +1,4 @@
-import { Activity } from "react";
+import { Activity, type ReactNode } from "react";
 import { WallpaperSurface, Button, EmptyState, Skeleton } from "@prismshadow/penguin-ui";
 import { S } from "../../../lib/strings";
 import { MessageStream } from "../message-stream";
@@ -12,14 +12,20 @@ import { HistoryLoadFailed } from "../history-load-failed";
 import { HistoryLoading } from "../history-loading";
 import { RequestFailureDialog } from "../request-failure-dialog";
 import { MachineRestartNotice } from "../machine-restart-notice";
-import { ChatDockArea, DockPanel, DockLauncher, measureComposer } from "../../dock";
+import {
+  ChatDockArea,
+  DockPanel,
+  DockLauncher,
+  measureComposer,
+  measureMergedComposer,
+} from "../../dock";
 import { ChatDockProvider } from "../session/main-dock-context";
 import { ReplyFilesProvider } from "../reply-files-provider";
 import { PathCapsulesProvider } from "../../company";
 import { ArchivedSessionStub } from "../archived-session-stub";
 import type { MainChatView } from "./main-chat-view";
 
-export function renderMainChatBody(scope: MainChatView) {
+export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
   const {
     navigate,
     location,
@@ -71,19 +77,23 @@ export function renderMainChatBody(scope: MainChatView) {
             conversation state the dock provider around it hands down (reply-files-provider.tsx).
             A context provider adds no element, so the row and the docks below keep their layout. */}
         <ReplyFilesProvider>
-          {/* data-dock-area: the row and the bottom dock together — what a fullscreen bottom dock
-            (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
-            dock covers the row alone. Layout-neutral: it takes the column's remaining height
-            exactly as the row and the dock did when they sat in the column themselves. */}
           <ChatDockArea
             mounts={showDocks ? [rightMount, bottomMount] : null}
             sessionId={scope.draft ? null : scope.routeSessionId}
+            toolbar={toolbar}
+            right={
+              showDocks &&
+              rightMount.view && (
+                <DockPanel
+                  view={rightMount.view}
+                  open={rightMount.open}
+                  animateEntrance={rightMount.animateEntrance}
+                  panelBadges={{ agents: anySubagentPending }}
+                />
+              )
+            }
           >
-            {/* Body: chat column + the right dock on this row (below the toolbar — a dock
-              beside the whole page would squeeze the header), with the bottom dock after the
-              row spanning the full page width. data-dock-row is what the drag preview
-              measures for a right landing. */}
-            <div data-dock-row className="flex min-h-0 flex-1">
+            <div data-dock-bottom-area className="flex min-h-0 min-w-0 flex-1 flex-col">
               {/* The chat area, and the only region a dragged file may be dropped on (#311): it
                 covers the conversation and the composer in both branches below, and nothing else
                 — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
@@ -227,27 +237,31 @@ export function renderMainChatBody(scope: MainChatView) {
                               onClose={() => setFailureShown(null)}
                             />
                           </div>
-                          {/* Measured: the bottom dock's docked height stops where this box would
-                            be covered, and gives way as it grows. */}
-                          <WallpaperSurface
-                            ref={measureComposer}
-                            className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800"
+                          <div
+                            ref={
+                              bottomMount.open && bottomMount.view?.merged
+                                ? measureMergedComposer
+                                : measureComposer
+                            }
+                            className="shrink-0"
                           >
-                            <div className="mx-auto max-w-3xl">
-                              {/* Goal banner docked above the composer: an in-flight goal's progress
+                            <WallpaperSurface className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
+                              <div className="mx-auto max-w-3xl">
+                                {/* Goal banner docked above the composer: an in-flight goal's progress
                                 (restored on load while still active), or the terminal state reached
                                 during this page's lifetime. The stop button is the composer's
                                 regular stop (one abort ends the whole goal loop). */}
-                              {/* A conversation on a machine whose server needs a restart: its live
+                                {/* A conversation on a machine whose server needs a restart: its live
                                 updates stay away until then, and this says so instead of the
                                 stream retrying in silence. */}
-                              {!draft && pageMachineId !== null && (
-                                <MachineRestartNotice machineId={pageMachineId} />
-                              )}
-                              {stream.goal && <GoalStatusBanner goal={stream.goal} />}
-                              {input}
-                            </div>
-                          </WallpaperSurface>
+                                {!draft && pageMachineId !== null && (
+                                  <MachineRestartNotice machineId={pageMachineId} />
+                                )}
+                                {stream.goal && <GoalStatusBanner goal={stream.goal} />}
+                                {input}
+                              </div>
+                            </WallpaperSurface>
+                          </div>
                         </Activity>
                       </>
                     ) : routeSessionOffline ? (
@@ -287,24 +301,15 @@ export function renderMainChatBody(scope: MainChatView) {
                 )}
               </ChatDropRegion>
 
-              {showDocks && rightMount.view && (
+              {showDocks && bottomMount.view && (
                 <DockPanel
-                  view={rightMount.view}
-                  open={rightMount.open}
-                  animateEntrance={rightMount.animateEntrance}
+                  view={bottomMount.view}
+                  open={bottomMount.open}
+                  animateEntrance={bottomMount.animateEntrance}
                   panelBadges={{ agents: anySubagentPending }}
                 />
               )}
             </div>
-
-            {showDocks && bottomMount.view && (
-              <DockPanel
-                view={bottomMount.view}
-                open={bottomMount.open}
-                animateEntrance={bottomMount.animateEntrance}
-                panelBadges={{ agents: anySubagentPending }}
-              />
-            )}
           </ChatDockArea>
         </ReplyFilesProvider>
       </ChatDockProvider>

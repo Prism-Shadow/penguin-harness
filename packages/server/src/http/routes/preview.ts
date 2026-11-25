@@ -14,7 +14,7 @@
  * would be a same-origin XSS with full API access.
  */
 import { Hono } from "hono";
-import type { PreviewTokenSigner } from "../../services/preview-token.js";
+import type { PreviewTokenPayload, PreviewTokenSigner } from "../../services/preview-token.js";
 import {
   hostOnly,
   requestAuthority,
@@ -91,9 +91,11 @@ export function previewRoutes(deps: PreviewDeps) {
   return app;
 }
 
-export abstract class PreviewTokens extends Interface<
-  Pick<PreviewTokenSigner, "sign" | "verify">
->() {}
+@Interface()
+export abstract class PreviewTokens {
+  abstract sign(payload: PreviewTokenPayload): string;
+  abstract verify(token: string): PreviewTokenPayload | null;
+}
 
 @Module({
   contributes: {

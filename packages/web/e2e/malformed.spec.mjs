@@ -72,8 +72,8 @@ test("a malformed tool_call settles unpaired; the retry line shows and the retry
 
   // UI: the retry stays inside the single work group rather than splitting it; after expanding
   // the group, the retry line and the settled broken tool card are both inside it.
-  await expect(page.getByRole("button", { name: /已完成/ })).toHaveCount(1);
-  await page.getByRole("button", { name: /已完成/ }).click();
+  await expect(page.getByRole("button", { name: /运行完毕/ })).toHaveCount(1);
+  await page.getByRole("button", { name: /运行完毕/ }).click();
   const group = page.locator(".anim-msg.my-2").first();
   await expect(group.getByText(/已发起第 2\/10 次请求/)).toBeVisible();
   // The broken call never ran and gets no result: its status icon names it aborted (the icon's

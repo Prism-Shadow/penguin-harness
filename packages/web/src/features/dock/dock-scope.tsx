@@ -10,19 +10,43 @@ import { pageSessionId } from "../../lib/page-layout";
  * docks flash on the incoming one.
  */
 import { useLayoutEffect, useRef } from "react";
-import { useMatch } from "react-router";
+import { useLocation, useMatch } from "react-router";
+import { useNarrow } from "../../lib/page-slot";
 import { useProject } from "../../state/project";
 import { announceDockScope } from "./dock-listeners";
 import { usePageWorkspace } from "../../lib/page-workspace";
 import { sessionAppPair, dockPageKey, existingDockPanel } from "../../lib/session-app-dock";
-import { setDockScope, openDockPage, panelDock, detachDockPage } from "./dock-state";
+import {
+  setDockScope,
+  openDockPage,
+  activateTab,
+  panelDock,
+  detachDockPage,
+  setDockFullscreen,
+} from "./dock-state";
 
 export function DockScope() {
   const sessionRoute = useMatch("/chat/:sessionId")?.params.sessionId;
   const workspace = usePageWorkspace();
+  const location = useLocation();
+  const narrow = useNarrow();
   const pair = workspace?.current && sessionAppPair(workspace.layout);
-  const scope = pair ? pageSessionId(pair.session) : (sessionRoute ?? null);
-  const visibleSession = pair ? pair.session : workspace?.current;
+  // The router arrives one render before the workspace publishes its new Session/app pair.
+  // Keep the visible host across that handoff so opening the dock is an ordinary size change.
+  const beside =
+    location.state?.workspaceRequest && new URLSearchParams(location.search).get("beside");
+  const pendingHost =
+    !pair && beside
+      ? workspace?.layout.pages.find(
+          (page) =>
+            page.kind === "session" &&
+            workspace.layout.visible.includes(page.id) &&
+            pageSessionId(page) === beside,
+        )
+      : undefined;
+  const host = pair?.session ?? pendingHost;
+  const scope = host ? pageSessionId(host) : (sessionRoute ?? null);
+  const visibleSession = host ?? workspace?.current;
   const windowKey = visibleSession?.id.startsWith("scoped-chat:") ? visibleSession.id : undefined;
   const appId = pair ? pair.app.id : null;
   const existingPanel = pair ? existingDockPanel(pair.app) : null;
@@ -43,6 +67,12 @@ export function DockScope() {
     const key = dockPageKey(appId);
     detachDockPage(key, owner!);
     if (!panelDock(key) || sameScope) openDockPage(key, existingPanel);
+    else activateTab(key);
   }, [appId, existingPanel, scope, windowKey]);
+  useLayoutEffect(() => {
+    if (!appId || location.state?.fullScreenSessionTool !== appId) return;
+    setDockFullscreen(narrow ? "bottom" : "right");
+    return () => setDockFullscreen(null);
+  }, [appId, location.key, narrow]);
   return null;
 }

@@ -198,20 +198,21 @@ function ExamplesSection({
       run: () => fill(copy.prompt, task.skills),
     };
   });
-  actions.push({
+  const shuffle = {
     id: "shuffle",
     label: S.chat.start.shuffle,
     glyph: ICONS.refresh,
-    iconOnly: true,
     run: () => setExamples((shown) => pickExamples(shown)),
-  });
+  };
   return (
     <SavedPrompts
       locale={locale}
       exampleText={exampleText}
       readComposerText={readComposerText}
       onFill={(prompt) => fill(prompt, [])}
-      renderActions={(saved) => <PromptActionRow actions={[...actions, ...saved]} />}
+      renderActions={(saved, manage) => (
+        <PromptActionRow prompts={[...saved, ...actions]} manage={manage} shuffle={shuffle} />
+      )}
     />
   );
 }

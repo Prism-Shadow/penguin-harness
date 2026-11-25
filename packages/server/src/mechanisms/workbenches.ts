@@ -19,6 +19,7 @@
  * the member whose request it serves: that version is authored by them
  * (../workbenches/git-identity.ts); without it, by the server's Git identity.
  */
+import type { AppCenterUnavailable } from "../api/types.js";
 import type { IconImage } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type {
@@ -308,7 +309,11 @@ export abstract class Workbenches {
    * the manifests, each one's last load status and the loads under way — nothing is loaded or
    * compiled. From then on the Agents' folders are watched, so an edit loads and is announced.
    */
-  abstract appCenter(projectId: string, hidden?: boolean): Promise<AppCenterShortcut[]>;
+  abstract appCenter(
+    projectId: string,
+    hidden?: boolean,
+    unavailable?: AppCenterUnavailable,
+  ): Promise<AppCenterShortcut[]>;
   /**
    * The icon a workbench's App Center declaration names, read and checked again; null when the
    * workbench is unknown, its declaration does not hold up, or it names no icon.

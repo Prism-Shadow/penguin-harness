@@ -1,0 +1,10 @@
+# 在短屏手机上浏览工作区文件
+
+- **Date:** 2026-11-24
+- **Type:** fix
+- **Scope:** Web App
+- **PR:** [#1833](https://github.com/Prism-Shadow/penguin-harness/pull/1833)
+
+[English](2026-11-24-phone-files-tree.md)
+
+手机屏幕较矮时，文件面板将目录路径、搜索和文件操作排在同一行。输入框及其提示仍然可见，可以直接点开文件，也可以滑动列表浏览其他文件。

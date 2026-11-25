@@ -115,7 +115,7 @@ export function SidebarFrame({
         <div className={`h-2 shrink-0 ${edge}`} />
       ) : (
         <nav className={`flex min-h-0 flex-col pt-0.5 ${edge}`}>
-          <div className="min-h-0 overflow-y-auto overflow-x-clip px-2 pt-1.5">{pinned}</div>
+          <div className="min-h-0 overflow-y-auto overflow-x-clip px-2 py-1.5">{pinned}</div>
         </nav>
       )}
       {/* The floor (`min-h-24`) is where the fixed block starts giving way instead. */}
@@ -186,7 +186,7 @@ export function SidebarListHeader({
   return (
     <div
       data-layout-motion
-      className={`mt-3 grid items-center px-1 pt-2 ${
+      className={`mt-2 first:mt-1 grid h-8 items-center px-1 ${
         searching
           ? "grid-cols-[0fr_1fr]"
           : fold
@@ -201,9 +201,9 @@ export function SidebarListHeader({
           aria-label={label}
           onClick={fold.toggle}
           disabled={searching}
-          className={`flex min-w-0 items-center gap-1 overflow-hidden px-1 text-left ${searching ? "invisible" : ""}`}
+          className={`flex h-7 min-w-0 items-center gap-1 overflow-hidden rounded-md px-1.5 text-left transition-colors duration-150 hover:bg-fg/5 ${searching ? "invisible" : ""}`}
         >
-          <Text as="span" variant="eyebrow" className="min-w-0 flex-1 truncate">
+          <Text as="span" variant="eyebrow" className="min-w-0 truncate">
             {label}
           </Text>
           <Chevron open={fold.open} size={ICON_SIZE.chevronDense} className="text-fg-subtle" />
@@ -212,7 +212,7 @@ export function SidebarListHeader({
         <Text
           as="span"
           variant="eyebrow"
-          className={`min-w-0 overflow-hidden whitespace-nowrap px-1 transition-opacity duration-200 ${
+          className={`min-w-0 overflow-hidden whitespace-nowrap px-1.5 transition-opacity duration-200 ${
             searching ? "opacity-0" : "opacity-100"
           }`}
         >
@@ -230,7 +230,7 @@ export function SidebarListHeader({
  * trigger another module draws (a picker's own button).
  */
 export function sidebarControlClass(active = false): string {
-  return `flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
+  return `flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
     active ? `${NAV_FILL.selected} text-fg` : `text-fg-subtle ${NAV_FILL.hover} hover:text-fg`
   }`;
 }
@@ -284,7 +284,7 @@ export function SidebarSwitcherButton({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-base font-semibold transition-colors duration-150 hover:bg-fg/7"
+      className="flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-sm font-semibold transition-colors duration-150 hover:bg-fg/7"
     >
       <span className="min-w-0 flex-1 truncate font-sans text-left">{label}</span>
       <span className="text-fg-subtle">
@@ -330,7 +330,7 @@ export function SidebarAccountButton({
       aria-expanded={expanded}
       {...(hint !== undefined ? { "data-tooltip": hint } : {})}
       {...(label !== undefined ? { "aria-label": label } : {})}
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-fg/7"
+      className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left transition-colors duration-150 hover:bg-fg/7"
     >
       {avatar}
       <span className="min-w-0 flex-1 truncate font-sans text-sm font-medium">{name}</span>

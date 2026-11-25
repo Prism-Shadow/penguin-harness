@@ -77,7 +77,7 @@ The handbook, the employee briefs (`AGENTS.md`), the CEO's initialization run an
 | Employees | Agents in a reporting tree rooted at the CEO, with no departments or positions. Each entry has a title, duties, a Workspace and a monthly budget | `org_chart.yaml` |
 | Desk sessions | One standing Session per employee, where its triggers arrive | `desks.toml` (written by the server) |
 | Calendar | Per-employee events in the scheduled-task format, without the target fields. The calendar is the only recurring driver | `calendar/<agent_id>/<event>.toml` |
-| Tickets | One Markdown file per ticket, in a column directory that is its status | `tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md` |
+| Tickets | One Markdown file per ticket, in a column directory that is its status | `tickets/<yyyy-mm>/<column>/<ticket_id>.md` (new IDs use `ticket-<yyyy-mm-dd>-<slug>`) |
 | Channels | One directory per channel: an intent file with its name, purpose and members, and one JSON line per message, split by day | `channels/<channel_id>/channel.toml`, `channels/<channel_id>/<yyyy-mm-dd>.jsonl` |
 | Shared workspace | The company's working directory | `workspace/` |
 | Handbook | The company's knowledge base | `handbook/` |

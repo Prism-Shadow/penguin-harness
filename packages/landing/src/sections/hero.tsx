@@ -1,17 +1,11 @@
-/**
- * Product-first hero: the slogan, the subtitle in grey, two direct installation paths, three stat
- * tiles (the small label over the big value), three catalogue rows (supported models,
- * self-evolution algorithms, Benchmarks) each led by its count, whose outside links confirm
- * before they open (the models row's closing "and more" links to MMSP's model index), and then
- * the app itself, live: the start page in a frame. What the rows list, and where each entry
- * links, is lib/rsi-stats.ts; the algorithm and Benchmark counts are those lists' lengths.
- */
-import type { ReactNode } from "react";
+/** The product brand and installation paths, followed by its platform claims, catalogues and live app. */
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { mmspModelsUrl } from "../lib/links";
 import { RELEASE_VERSION } from "../lib/version";
+import counts from "virtual:penguin-catalog-counts";
 import { BENCHMARKS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../lib/rsi-stats";
 import {
   DownloadIcon,
@@ -88,6 +82,48 @@ function HeroWord({ text, variant }: { text: string; variant: "growth" | "reach"
   );
 }
 
+/** The link and its reserved bounds are available while the external artwork loads. */
+function ListingBadge({
+  href,
+  src,
+  name,
+  label,
+}: {
+  href: string;
+  src: string;
+  name: string;
+  label: string;
+}) {
+  const [ready, setReady] = useState(false);
+  return (
+    <ExternalLink
+      href={href}
+      aria-label={label}
+      className="flex min-h-11 min-w-0 flex-1 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-offset-2"
+    >
+      <span className="relative block aspect-[250/54] w-full">
+        {!ready && (
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 flex items-center justify-center rounded-md border border-gray-300 bg-white text-sm font-semibold text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+          >
+            {name}
+          </span>
+        )}
+        <img
+          alt=""
+          width="250"
+          height="54"
+          src={src}
+          onLoad={() => setReady(true)}
+          onError={() => setReady(false)}
+          className={`absolute inset-0 h-full w-full object-contain ${ready ? "visible" : "invisible"}`}
+        />
+      </span>
+    </ExternalLink>
+  );
+}
+
 export function Hero() {
   const { locale } = useSiteLocale();
   const { ref: motion, active } = useVisibleActivity<HTMLParagraphElement>();
@@ -156,31 +192,22 @@ export function Hero() {
         </div>
 
         <ExternalLinkScope>
-          <div className="mx-auto mt-4 flex max-w-[360px] items-center justify-center gap-2">
-            <ExternalLink
+          <div
+            className="anim-rise mx-auto mt-4 flex max-w-[360px] items-center justify-center gap-2"
+            style={{ animationDelay: "210ms" }}
+          >
+            <ListingBadge
               href="https://www.producthunt.com/products/penguinharness"
-              className="flex min-h-11 min-w-0 flex-1 items-center justify-center"
-            >
-              <img
-                alt={S.hero.productHuntBadge}
-                width="250"
-                height="54"
-                className="h-auto w-full"
-                src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&theme=light&t=1784804711946"
-              />
-            </ExternalLink>
-            <ExternalLink
+              src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&theme=light&t=1784804711946"
+              name="Product Hunt"
+              label={S.hero.productHuntBadge}
+            />
+            <ListingBadge
               href="https://watcha.cn/products/penguinharness"
-              className="flex min-h-11 min-w-0 flex-1 items-center justify-center"
-            >
-              <img
-                alt={S.hero.watchaBadge}
-                width="250"
-                height="54"
-                className="h-auto w-full"
-                src="https://watcha.cn/api/v2/products/penguinharness/badge?style=1&dark=false"
-              />
-            </ExternalLink>
+              src="https://watcha.cn/api/v2/products/penguinharness/badge?style=1&dark=false"
+              name={S.hero.watcha}
+              label={S.hero.watchaBadge}
+            />
           </div>
         </ExternalLinkScope>
 
@@ -203,7 +230,7 @@ export function Hero() {
         <ExternalLinkScope>
           <dl className="mx-auto mt-10 grid w-fit max-w-full gap-y-6 sm:mt-12 sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-x-6 sm:gap-y-4">
             <CatalogRow
-              count={S.hero.supportedModelsCount}
+              count={String(counts.models)}
               label={S.hero.supportedModelsLabel}
               delay={300}
               listClassName="gap-x-2 gap-y-1"
@@ -229,7 +256,7 @@ export function Hero() {
             </CatalogRow>
 
             <CatalogRow
-              count={String(RSI_TOOLKITS.length)}
+              count={String(counts.algorithms)}
               label={S.hero.algorithmsLabel}
               delay={340}
               listClassName="gap-x-5 gap-y-1.5"
@@ -249,7 +276,7 @@ export function Hero() {
             </CatalogRow>
 
             <CatalogRow
-              count={String(BENCHMARKS.length)}
+              count={String(counts.benchmarks)}
               label={S.hero.benchmarksLabel}
               delay={380}
               listClassName="gap-x-5 gap-y-1.5"

@@ -2,10 +2,8 @@
  * The Plugins page's pieces, rendered: the header actions with the grouping select, a card's
  * actions by kind and role, a server module's confirm, and the detail dialog's sections by kind.
  *
- * - A member sees the search box and the incompatible-only filter, and neither Import plugin nor
- *   Settings; an admin sees, after those, Import plugin and then Settings, with their words.
- * - The filter beside the search shows whether the list holds only the incompatible plugins, and
- *   pressing it asks for the other state.
+ * - A member sees the search box, and neither Import plugin nor
+ *   Settings; an admin sees, after it, Import plugin and then Settings, with their words.
  * - Choosing a grouping in the header regroups the cards that way.
  * - The grouping select shows the chosen grouping as its own phrase, and keeps an accessible name
  *   for what it groups.
@@ -44,9 +42,7 @@
  *   Set up, a member is told the owner sets them. Only the owner may uninstall: a member reads
  *   "Installed" with no Uninstall behind it. Saving writes the vault with every existing
  *   key kept, the new values added, an empty field left out.
- * - While the list holds only the incompatible plugins, the page says so and offers the whole
- *   list back, not Show again; otherwise it counts what this build cannot fully run and offers
- *   Show, and says nothing when there is none.
+ * - The compatibility notice counts the affected plugins.
  *
  * Rendered to static markup inside the locale provider, as `owner-only-actions.test.ts` renders
  * its cards. Static markup has no layout, so how the header row wraps on a phone is not here.
@@ -142,8 +138,6 @@ type HeaderProps = Parameters<typeof PluginsHeaderActions>[0];
 const headerProps = (overrides: Partial<HeaderProps> = {}): HeaderProps => ({
   query: "",
   onQuery: () => undefined,
-  incompatibleOnly: false,
-  onIncompatibleOnly: () => undefined,
   isAdmin: false,
   machinePicker: null,
   onOpenSettings: () => undefined,
@@ -153,67 +147,27 @@ const headerProps = (overrides: Partial<HeaderProps> = {}): HeaderProps => ({
 const header = (isAdmin: boolean) => inLocale(PluginsHeaderActions, headerProps({ isAdmin }));
 
 describe("the plugins page header", () => {
-  it("offers a member the search box and the filter, and neither Import plugin nor Settings", () => {
+  it("offers a member the search box, and neither Import plugin nor Settings", () => {
     const html = header(false);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
-    expect(buttonWords(html)).toContain(en.plugins.incompatibleOnlyFilter);
     expect(html).not.toContain(`aria-label="${en.plugins.groupByLabel}"`);
     expect(buttonWords(html)).not.toContain(en.plugins.importPlugin);
     expect(buttonWords(html)).not.toContain(en.plugins.openSettings);
   });
 
-  it("offers an admin, after the search box and the filter, Import plugin and then Settings", () => {
+  it("offers an admin, after the search box, Import plugin and then Settings", () => {
     const html = header(true);
     const search = html.indexOf(`aria-label="${en.plugins.searchPlaceholder}"`);
     expect(search).toBeGreaterThanOrEqual(0);
-    expect(html.indexOf(`aria-label="${en.plugins.filterLabel}"`)).toBeGreaterThan(search);
-    expect(buttonWords(html)).toEqual([
-      en.plugins.incompatibleOnlyFilter,
-      en.plugins.importPlugin,
-      en.plugins.openSettings,
-    ]);
-  });
-
-  it("shows the filter's state and asks for the other one when pressed", () => {
-    for (const on of [false, true]) {
-      const html = inLocale(PluginsHeaderActions, headerProps({ incompatibleOnly: on }));
-      const chip = /<button[^>]*aria-pressed="(true|false)"[^>]*>(.*?)<\/button>/s.exec(html);
-      expect(text(chip?.[2] ?? "").trim()).toBe(en.plugins.incompatibleOnlyFilter);
-      expect(chip?.[1]).toBe(String(on));
-      const asked: boolean[] = [];
-      const tree = PluginsHeaderActions(
-        headerProps({ incompatibleOnly: on, onIncompatibleOnly: (next) => asked.push(next) }),
-      );
-      const group = elements(tree).find((el) => el.props["aria-label"] === en.plugins.filterLabel);
-      const props = group?.props as {
-        onChange: (values: string[]) => void;
-        options: { value: string }[];
-      };
-      props.onChange(on ? [] : [props.options[0]!.value]);
-      expect(asked).toEqual([!on]);
-    }
+    expect(buttonWords(html)).toEqual([en.plugins.importPlugin, en.plugins.openSettings]);
   });
 });
 
-describe("the notice about incompatible plugins", () => {
-  const notice = (filtered: boolean, unsatisfied: number) =>
-    inLocale(IncompatibleNotice, { filtered, unsatisfied });
-
-  it("says the list is filtered and offers it whole again, not Show, while it is", () => {
-    for (const unsatisfied of [0, 2]) {
-      const html = notice(true, unsatisfied);
-      expect(text(html)).toContain(en.plugins.incompatibleOnlyNotice);
-      expect(text(html)).not.toContain(en.plugins.unsatisfiedNotice(unsatisfied));
-      expect(buttonWords(html)).toEqual([en.plugins.incompatibleOnlyShowAll]);
-    }
-  });
-
-  it("counts what this build cannot fully run and offers Show, and says nothing with none", () => {
-    const html = notice(false, 2);
-    expect(text(html)).toContain(en.plugins.unsatisfiedNotice(2));
-    expect(buttonWords(html)).toEqual([en.plugins.unsatisfiedShow]);
-    expect(notice(false, 0)).toBe("");
-  });
+it("counts incompatible plugins while keeping the catalog visible", () => {
+  expect(text(inLocale(IncompatibleNotice, { unsatisfied: 2 }))).toContain(
+    en.plugins.unsatisfiedNotice(2),
+  );
+  expect(inLocale(IncompatibleNotice, { unsatisfied: 0 })).toBe("");
 });
 
 const BWRAP: PluginIndexEntry = {
@@ -274,6 +228,24 @@ const card = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardPro
     ...overrides,
   });
 
+describe("a removable workbench plugin", () => {
+  it("does not identify bundled or manually installed workbenches as built in", () => {
+    for (const source of ["builtin", "installed"] as const) {
+      const html = card(
+        {
+          ...libraryRow,
+          library: { ...LIBRARY, source, workbenches: [{ name: "sample", version: "1.0.0" }] },
+        },
+        true,
+      );
+      expect(html).not.toContain(en.plugins.builtin);
+    }
+    expect(card({ ...libraryRow, library: { ...LIBRARY, source: "builtin" } }, true)).toContain(
+      en.plugins.builtin,
+    );
+  });
+});
+
 describe("a server module's card", () => {
   const words = en.plugins.installModel;
   it("offers an admin Install on server for a market package, and leaves uninstalling to the detail", () => {
@@ -298,7 +270,12 @@ describe("a server module's card", () => {
   });
 
   it("holds a member's server control on a market package, saying only an admin changes the server", () => {
-    const html = card(moduleRow("none", false), false);
+    const row = moduleRow("none", false);
+    row.module!.entry = {
+      ...BWRAP,
+      offline: { version: BWRAP.version, library: false, modules: true },
+    };
+    const html = card(row, false);
     const tag =
       new RegExp(`<button[^>]*aria-label="${words.installServer} sandbox-bwrap"[^>]*>`).exec(
         html,
@@ -808,6 +785,11 @@ describe("a plugin's MCP servers", () => {
   it("names the values an Agent's copy waits for, and offers its owner Set up and Uninstall", () => {
     const row = (isOwner: boolean) =>
       inLocale(InstallRow, {
+        targetKey: "default_agent",
+        radioGroup: "agents",
+        selected: true,
+        onSelect: () => undefined,
+        onDone: () => undefined,
         agentId: "default_agent",
         name: "General Agent",
         installed: true,
@@ -830,7 +812,7 @@ describe("a plugin's MCP servers", () => {
     expect(buttonText(member, `${en.plugins.setUp} default_agent`)).toBeUndefined();
     // Uninstalling is the owner's alone: a member reads that it is installed and nothing more.
     expect(buttonText(member, `${en.skills.uninstall} default_agent`)).toBeUndefined();
-    expect(member).toContain(en.skills.installed);
+    expect(member).toContain(en.plugins.installModel.addedToAgent);
     expect(member).toContain(
       `${en.plugins.mcpNeedsSetup(["MAIL_CLIENT_SECRET"])} · ${en.plugins.mcpSetUpByOwner}`,
     );

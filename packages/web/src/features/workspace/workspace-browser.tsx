@@ -59,6 +59,7 @@ import {
 } from "react";
 
 import {
+  Breadcrumbs,
   Button,
   ConfirmModal,
   CopiedStatus,
@@ -1866,7 +1867,9 @@ export function WorkspaceBrowser({
   const crumbSegments =
     crumbTarget === "" ? [S.files.root] : [S.files.root, ...crumbTarget.split("/")];
   const crumbPath = crumbTarget === "" ? S.files.root : `${S.files.root}/${crumbTarget}`;
+  const crumbs = crumbSegments.map((label) => ({ label }));
   const showTree = narrow ? selectedPath === null : treeVisible;
+  const treeAlone = narrow && showTree;
   const canEdit = preview !== null && editor === null && canEditPreview(preview);
   /** A Markdown file in its rendered view: the reader, with nothing floating over it. */
   const markdownRendered = preview !== null && preview.kind === "md" && richView === "rendered";
@@ -1904,6 +1907,7 @@ export function WorkspaceBrowser({
   const tree = (
     <TreePane
       {...treeMenuProps}
+      path={treeAlone ? <Breadcrumbs items={crumbs} title={crumbPath} /> : undefined}
       search={{
         value: query,
         onChange: setQuery,
@@ -2618,23 +2622,25 @@ export function WorkspaceBrowser({
           copy) floats in the pill over it; a rendered Markdown file has nothing floating over
           it — its Edit and its reader's outline and find buttons are in this row. The panel's
           own actions (refresh, upload) sit in the tree pane's header beside its search box. */}
-      <FilesToolbar
-        layout={layout}
-        previewShown={!showTree}
-        onBack={backToTree}
-        treeVisible={treeVisible}
-        onTreeVisibleChange={setTree}
-        labels={{
-          back: S.files.backToList,
-          showTree: S.files.showTree,
-          hideTree: S.files.hideTree,
-        }}
-        crumbs={crumbSegments.map((label) => ({ label }))}
-        crumbTitle={crumbPath}
-        find={reader.findShown && <ReaderFindBar reader={reader} className="flex-1" />}
-      >
-        {fileRowActions}
-      </FilesToolbar>
+      {!treeAlone && (
+        <FilesToolbar
+          layout={layout}
+          previewShown={!showTree}
+          onBack={backToTree}
+          treeVisible={treeVisible}
+          onTreeVisibleChange={setTree}
+          labels={{
+            back: S.files.backToList,
+            showTree: S.files.showTree,
+            hideTree: S.files.hideTree,
+          }}
+          crumbs={crumbs}
+          crumbTitle={crumbPath}
+          find={reader.findShown && <ReaderFindBar reader={reader} className="flex-1" />}
+        >
+          {fileRowActions}
+        </FilesToolbar>
+      )}
 
       {/* Wide, the tree and the handle beside it stay mounted and slide in and out of the panel's
           left edge; narrow, one column holds the tree or the preview. */}

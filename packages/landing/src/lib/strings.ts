@@ -52,15 +52,16 @@ export const zh = {
   hero: {
     /** Two clauses keep the emphasized phrases and punctuation in each locale's reading order. */
     positioning: {
-      growthLead: "从",
+      growthLead: "从 ",
       growth: "许愿式编程",
-      separator: "",
-      reachLead: "到",
+      separator: " ",
+      reachLead: "到 ",
       reach: "许愿式调优",
     },
     subtitle: "企业级 AI 应用的统一自进化底座",
     downloadCta: "下载桌面版",
     productHuntBadge: "PenguinHarness Product Hunt 徽章",
+    watcha: "观猹",
     watchaBadge: "PenguinHarness 观猹徽章",
     cliInstall: "命令行安装",
     stats: [
@@ -68,12 +69,6 @@ export const zh = {
       { value: "100% 开源", label: "Apache 2.0 协议" },
       { value: "首个自进化 Harness", label: "原生 Agent 自进化引擎" },
     ],
-    /**
-     * The three catalogue rows under the stat tiles, each led by its count; their entries live in
-     * lib/rsi-stats.ts. The model count is a claim about the catalog and is spelled here; the
-     * algorithm and Benchmark counts are those lists' lengths.
-     */
-    supportedModelsCount: "1000+",
     supportedModelsLabel: "支持模型",
     supportedModelsMore: "以及更多",
     algorithmsLabel: "自进化算法",
@@ -184,11 +179,23 @@ export const zh = {
 
   /** The self-evolution loop and its three recorded numbers (sections/self-improve.tsx). */
   selfImprove: {
+    workbench: {
+      title: "自进化工作台",
+      agents: "Agent",
+      stages: ["评估", "改进", "复测", "下一轮"],
+      activeStages: ["评估中", "改进中", "复测中", "下一轮"],
+      tasks: [
+        { name: "医保审核", task: "对照医保条款与申报材料" },
+        { name: "服务工单处理", task: "核实并处理待办工单" },
+        { name: "财务管控", task: "核对账目与结账数据" },
+        { name: "法院书记员业务", task: "核对立案材料，整理归档信息" },
+      ],
+    },
     toolkit:
       "RSI 工具包改的是 Agent 的 Harness，也就是它的提示词和 Skill，模型保持不动，每一处改动都在 Benchmark 上度量效果。",
     evaluate: "评估",
     optimize: "优化",
-    title: "多智能体协同的自进化框架",
+    title: "任意 Agent 的统一自进化平台",
     subtitle:
       "默认由 General Agent 运行优化 Skill，每一轮只改被测 Agent 的一处；Evaluator 子 Agent 运行评估 Skill，在 Benchmark 的每个题目上给修改后的 Agent 打分。",
     nodeOptimizer: "Optimizer",
@@ -201,15 +208,12 @@ export const zh = {
     noteOld: "修改前先保存快照",
     noteNew: "只有分数更高才保留",
     /** Index-aligned with TRENDS in sections/self-improve.tsx. */
+    sampleTrends: "示例趋势",
     trends: [
       { label: "分数", hint: "满分 100" },
       { label: "成本", hint: "每次运行" },
       { label: "耗时", hint: "每次运行" },
     ],
-    demo: {
-      caption: "演示：决策智能体经过评测、一次工作方法改进和同模型复测，分数从 84 提升到 100。",
-      cost: "被测 Agent 的 6 次运行花费 $0.0373，不含出题、评分和优化的成本。",
-    },
     diagramLabel:
       "一轮自进化：Optimizer 运行 agent-optimization，并派发运行 agent-evaluation 的 Evaluator 子 Agent。它们在每个 Benchmark 题目上运行被测 Agent 并打分。Optimizer 根据分数和 Trace 把版本 N 修改为版本 N+1。只有分数更高，版本 N+1 才会保留。版本 N 在修改前会先保存为快照。",
   },
@@ -264,8 +268,34 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cases: {
-    os: "创建你的第一个自进化 Agent OS",
-    apps: ["文档问答", "投资分析", "法务助手"],
+    os: "亲手构建你的第一个自进化 Agent OS",
+    workspace: {
+      title: "应用中心",
+      project: "PenguinHarness 演示",
+      apps: {
+        docs: "文档问答",
+        investment: "投资分析",
+        legal: "法务助手",
+        slides: "AI PPT",
+        images: "图像工作室",
+        support: "客服工作台",
+        expenses: "报销登记",
+        terminal: "命令行终端",
+        browser: "浏览器",
+      },
+      desk: "合同工作台",
+      file: "文件",
+      status: "状态",
+      reviewed: "已审阅",
+      analyzing: "分析中…",
+      files: [
+        "劳动合同模板 v3.docx",
+        "供应商协议 - 红隼食品.pdf",
+        "办公室租赁合同 - 1204 单元.pdf",
+        "双向保密协议 - 赫利俄斯实验室.docx",
+        "主服务协议 - 北风物流.pdf",
+      ],
+    },
     title: "A2APP：一句话 + 0.6 元构建法务应用",
     /** The subtitle's first line, saying what A2APP is; `subtitle` is its second. */
     a2app:
@@ -274,7 +304,6 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       "用一句话描述需求，PenguinHarness 就能构建法务智能体应用：上传合同、识别风险并生成审阅报告。",
     prompt:
       "新建一个法务智能体，负责审阅合同、协议等法律文件：找出风险条款、说明理由并给出修改建议。再在法务智能体上做一个 Agent Workbench 标签页，当作它的工作台：我上传文件后，由它在后台分析，完成后生成一份分析报告供我下载。页面上只要上传、文件列表（每个文件的处理状态）和报告下载，不显示任何对话过程；颜色一律取自主题变量，明暗两种主题下都要好看。",
-    caption: "生成的应用：上传合同，查看每个文件的处理状态，下载列出风险条款和修改建议的审阅报告",
     cost: "5 次样件审阅的模型花费：$0.0423。",
   },
 

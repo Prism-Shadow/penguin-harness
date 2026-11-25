@@ -1303,16 +1303,55 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
       withOrigin(at(assistantText("c1 live"), "2026-07-05T00:00:02.000Z"), "c1"),
       "e1-9",
     );
-    h.resolveOlder(SPAWN_TASK, pageInfo({ earlierTurns: 0 }));
-    await flush();
     const r2 = findToolCard(h.controller.model, [], "r2") as ToolCallItem;
+    // Even before the older window arrives, a mid-run record from c1 never hijacks r2.
     expect(r2.subagent).toBeUndefined();
-    // r2's own child speaks, opening with r2's prompt: it binds to r2.
+    expect(h.controller.model.items.filter((i) => i.kind === "subagent")).toHaveLength(0);
+    // r2's own child speaks before the older window lands: it binds to r2 immediately.
     h.controller.handleRecord(
       withOrigin(at(userText("new"), "2026-07-05T00:00:03.000Z"), "c9"),
       "e1-10",
     );
     expect(r2.subagentSessionId).toBe("c9");
+    h.resolveOlder(SPAWN_TASK, pageInfo({ earlierTurns: 0 }));
+    await flush();
+    expect(r2.subagentSessionId).toBe("c9");
+    expect(childReplies(h)).toEqual(["child history", "c1 live"]);
+  });
+
+  it("an older background child whose spawning Task lies past the 20-Task backfill never leaves a stray subagent row in the active Task", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "running" });
+    // 20 newest Tasks are already on screen, with older Tasks (including Task 2 that spawned c1)
+    // still before the cursor — backfill is complete without reaching Task 2.
+    h.resolveLoad(
+      turns(20, "05"),
+      undefined,
+      null,
+      pageInfo({ before: "1:10", earlierTurns: 3, units: 20 }),
+    );
+    await p;
+    expect(h.controller.older.hasMore).toBe(true);
+    expect(h.loadCalls()).toBe(1);
+
+    // c1 (spawned in Task 2, beyond the 20-Task tail) speaks live in the background.
+    h.controller.handleRecord(
+      withOrigin(
+        at(assistantText("still working in background"), "2026-07-05T01:00:00.000Z"),
+        "c1",
+      ),
+      "e1-50",
+    );
+    expect(h.controller.model.items.filter((i) => i.kind === "subagent")).toHaveLength(0);
+    expect(childReplies(h)).toEqual(["still working in background"]);
+
+    // When the user later scrolls up to the window that spawned c1, its history and live words merge.
+    const scroll = h.controller.loadOlder();
+    h.resolveOlder(SPAWN_TASK, pageInfo({ earlierTurns: 0 }));
+    await scroll;
+    expect(h.controller.model.items.filter((i) => i.kind === "subagent")).toHaveLength(0);
+    expect(childReplies(h)).toEqual(["child history", "still working in background"]);
   });
 
   it("a failed backfill surfaces on older.error, stops the backfill, and can be retried", async () => {

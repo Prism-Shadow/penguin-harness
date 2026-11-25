@@ -52,8 +52,7 @@ export interface AgentPreset {
 export function systemAgentPreset(): AgentPreset {
   return {
     name: "System",
-    description:
-      "Owns the system apps: Models, Plugins, Machines, Cost Center and Evaluation Center.",
+    description: "Owns the system apps: Models, Plugins, Machines and Cost Center.",
     plugins: [],
     system: true,
   };

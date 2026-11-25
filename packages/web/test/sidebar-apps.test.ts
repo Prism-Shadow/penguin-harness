@@ -115,7 +115,9 @@ async function open(
     at: options.at ?? HERE,
     pages: SYSTEM_APP_PAGES,
     extra: [
-      ...SYSTEM_APP_PAGES.filter((p) => p.app || p.key === "benchmark-detail").map((p) => ({
+      ...SYSTEM_APP_PAGES.filter(
+        (p) => p.app || p.key === "benchmark" || p.key === "benchmark-detail",
+      ).map((p) => ({
         path: p.path,
         element: h("p", null, p.key),
       })),
@@ -294,7 +296,6 @@ it("keeps the open app when changing Agents and leaves the next Agent's unopened
   await openMenu(key("board"));
   expect(menuLabels()).toEqual([
     en.pageWorkspace.restore,
-    en.pageWorkspace.right,
     en.pageWorkspace.separate,
     en.appCenter.windowFullScreen,
     en.common.close,
@@ -375,22 +376,24 @@ it("switches subpages in a multi-page workbench", async () => {
 it("lists each opened native app once in Apps and restores its last address", async () => {
   const { router } = await open([], { at: "/apps" });
   expect(group()).toBeNull();
-  for (const name of ["models", "plugins", "machines", "usage", "benchmark"]) {
+  for (const name of ["models", "plugins", "machines", "usage"]) {
     await run(() => router.navigate("/" + name));
     expect(
       group()?.querySelector(`[data-app-row="system_agent/${name}"]`)?.getAttribute("aria-current"),
     ).toBe("page");
   }
   await run(() => router.navigate("/benchmark/sample?agentId=helper"));
-  const app = "system_agent/benchmark";
+  expect(row("system_agent/benchmark")).toBeNull();
+  await run(() => router.navigate("/plugins?tab=installed"));
+  const app = "system_agent/plugins";
   expect(group()?.querySelectorAll(`[data-app-row="${app}"]`)).toHaveLength(1);
   await openMenu(app);
   await click(menuItem(en.appCenter.windowMinimize));
-  expect(whereIs(router)).not.toContain("/benchmark");
+  expect(whereIs(router)).not.toContain("/plugins");
   expect(row(app)?.getAttribute("aria-current")).toBeNull();
   await openMenu(app);
   await click(menuItem(en.pageWorkspace.restore));
-  expect(whereIs(router)).toBe("/benchmark/sample?agentId=helper");
+  expect(whereIs(router)).toBe("/plugins?tab=installed");
   await openMenu(app);
   await click(menuItem(en.common.close));
   expect(row(app)).toBeNull();
@@ -404,4 +407,43 @@ it("limits native Apps rows to the viewer's released pages even on direct naviga
   await run(() => router.navigate("/models"));
   expect(row("system_agent/models")).not.toBeNull();
   expect(row("system_agent/machines")).toBeNull();
+});
+
+it("jumps to the hosting conversation's docked view when clicking a sidebar tab opened beside a session", async () => {
+  const { router } = await open([workbench("board"), workbench("notes")]);
+  await run(() => router.navigate("/apps?beside=here&fromCatalog=1"));
+  await until(() => document.querySelector(`li[data-app="${key("board")}"] > button`) !== null);
+  await click(
+    document.querySelector<HTMLButtonElement>(`li[data-app="${key("board")}"] > button`)!,
+  );
+  const dockedBoard = `/apps?app=${encodeURIComponent(key("board"))}&beside=here&fromCatalog=1`;
+  await until(() => frameOf("Board") !== null);
+  const frame = frameOf("Board")!;
+
+  // Clicking the active sidebar tab while already in the session keeps the docked view.
+  await click(row(key("board"))!);
+  expect(whereIs(router)).toBe(dockedBoard);
+  expect(frameOf("Board")).toBe(frame);
+
+  // Switching to another conversation and clicking the sidebar tab jumps back to the docked session view.
+  await run(() => router.navigate("/chat/second"));
+  expect(whereIs(router)).toBe("/chat/second");
+  await click(row(key("board"))!);
+  expect(whereIs(router)).toBe(dockedBoard);
+  expect(frameOf("Board")).toBe(frame);
+  expect(reachable(frame)).toBe(true);
+
+  // Opening a second app in the same session dock allows switching between both docked apps via sidebar tabs.
+  await run(() => router.navigate("/apps?beside=here&fromCatalog=1"));
+  await until(() => document.querySelector(`li[data-app="${key("notes")}"] > button`) !== null);
+  await click(
+    document.querySelector<HTMLButtonElement>(`li[data-app="${key("notes")}"] > button`)!,
+  );
+  const dockedNotes = `/apps?app=${encodeURIComponent(key("notes"))}&beside=here&fromCatalog=1`;
+  await until(() => frameOf("Notes") !== null);
+  await run(() => router.navigate("/chat/second"));
+  await click(row(key("board"))!);
+  expect(whereIs(router)).toBe(dockedBoard);
+  await click(row(key("notes"))!);
+  expect(whereIs(router)).toBe(dockedNotes);
 });

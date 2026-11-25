@@ -22,3 +22,8 @@ declare module "virtual:penguin-rfc-prs" {
   export const updatedAt: string;
   export const prs: unknown;
 }
+
+declare module "virtual:penguin-catalog-counts" {
+  const counts: { models: number; algorithms: number; benchmarks: number };
+  export default counts;
+}

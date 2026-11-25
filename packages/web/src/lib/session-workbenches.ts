@@ -17,6 +17,11 @@ export const sessionWorkbenchEntries = {
 
 export type SessionWorkbenchKind = keyof typeof sessionWorkbenchEntries;
 
+/** These tools offer a Project-wide resource directory in the App Center. */
+export function hasAppCenterDirectory(id: string): id is "terminal" | "builtin-browser" {
+  return id === "terminal" || id === "builtin-browser";
+}
+
 export function isSessionWorkbenchKind(id: string): id is SessionWorkbenchKind {
   return Object.hasOwn(sessionWorkbenchEntries, id);
 }

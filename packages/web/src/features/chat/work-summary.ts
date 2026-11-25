@@ -1,67 +1,67 @@
-/**
- * Summary for the "Reasoning & Tools" group header (pure logic, unit-testable): step count only
- * counts **tool calls** (thinking doesn't count as a step).
- *
- * Duration is the group's **real wall-clock span**: earliest segment start → latest segment end,
- * including everything in between — approval waits, gaps while the model decides its next step,
- * parallel work counted once. The header answers "how long did this group take", not "how much
- * compute happened inside it" (per-item cards carry the fine-grained settled durations).
- * Segment endpoints follow the same settlement convention as each item's durationMs (see
- * settleToolDuration in stream-model.ts): thinking is [startedAtMs, +durationMs]; a tool's
- * durationMs = argument-generation segment + execution segment (the approval wait between them
- * is excluded from the item's own duration, but lands inside the group span), so the endpoints
- * are [argStartedAtMs, +generation segment] and [approvalAtMs ?? callStartedAtMs, +execution
- * segment]. Segments missing a start point can't be placed on the timeline and fall back to
- * plain summation on top of the span. `startMs` is the earliest placed start — the anchor the
- * group header ticks from while an item is still in flight (once nothing is running the header
- * freezes at the computed span, so the displayed number never jumps backwards).
- */
-import type { ChatItem } from "../../lib/amsp/stream-model";
+import {
+  localWorkTime,
+  type ChatItem,
+  type ThinkingItem,
+  type ToolCallItem,
+} from "../../lib/amsp/stream-model";
+import { mergedIntervalMs } from "../../lib/amsp/task-stats";
 
-export function summarizeWork(items: ChatItem[]): {
+/** The union of observed thinking, argument generation and execution in this group. */
+export function summarizeWork(items: readonly ChatItem[]): {
   steps: number;
-  durationMs: number;
+  durationMs?: number;
   startMs?: number;
 } {
   let steps = 0;
-  let fallbackMs = 0;
-  let minStart: number | undefined;
-  let maxEnd: number | undefined;
-  /** Group open = the earliest start stamp of ANY item, settled or not — a still-streaming first item must already anchor the live tick. */
-  const seen = (startMs: number | undefined) => {
-    if (startMs !== undefined && (minStart === undefined || startMs < minStart)) minStart = startMs;
-  };
-  const add = (startMs: number | undefined, spanMs: number) => {
-    if (spanMs <= 0) return;
-    if (startMs === undefined) {
-      fallbackMs += spanMs;
-      return;
+  let liveStart: number | undefined;
+  let localStart = 0;
+  const settled: [number, number][] = [];
+
+  function open(item: ThinkingItem | ToolCallItem, start: number | undefined) {
+    if (start !== undefined && (liveStart === undefined || start < liveStart)) {
+      liveStart = start;
+      localStart = localWorkTime(item, start)!;
     }
-    seen(startMs);
-    const end = startMs + spanMs;
-    if (maxEnd === undefined || end > maxEnd) maxEnd = end;
-  };
-  for (const it of items) {
-    if (it.kind === "thinking") {
-      seen(it.startedAtMs);
-      if (it.durationMs !== undefined) add(it.startedAtMs, it.durationMs);
-      continue;
-    }
-    if (it.kind !== "tool_call") continue;
-    steps += 1;
-    seen(it.argStartedAtMs ?? it.callStartedAtMs ?? it.approvalAtMs);
-    if (it.durationMs === undefined) continue;
-    const genMs =
-      it.argStartedAtMs !== undefined && it.callStartedAtMs !== undefined
-        ? Math.min(it.durationMs, Math.max(0, it.callStartedAtMs - it.argStartedAtMs))
-        : 0;
-    add(it.argStartedAtMs, genMs);
-    add(it.approvalAtMs ?? it.callStartedAtMs, it.durationMs - genMs);
   }
-  const spanMs = minStart !== undefined && maxEnd !== undefined ? maxEnd - minStart : 0;
-  return {
-    steps,
-    durationMs: spanMs + fallbackMs,
-    ...(minStart !== undefined ? { startMs: minStart } : {}),
-  };
+
+  function add(start: number | undefined, end: number) {
+    if (start !== undefined && end >= start) settled.push([start, end]);
+  }
+
+  for (const item of items) {
+    if (item.kind === "thinking" && item.startedAtMs !== undefined) {
+      if (item.durationMs !== undefined) add(item.startedAtMs, item.startedAtMs + item.durationMs);
+      else if (item.streaming) open(item, item.startedAtMs);
+    }
+    if (item.kind !== "tool_call" || item.outputOnly) continue;
+    steps++;
+    const { argStartedAtMs, callStartedAtMs, approvalAtMs } = item;
+    if (callStartedAtMs !== undefined) add(argStartedAtMs, callStartedAtMs);
+    else if (item.callStreaming) open(item, argStartedAtMs);
+
+    if (item.decision === "deny" || item.decision === "forbidden") continue;
+    const execution = approvalAtMs ?? callStartedAtMs;
+    if (execution === undefined) continue;
+    if (item.durationMs !== undefined) {
+      const generation =
+        argStartedAtMs !== undefined && callStartedAtMs !== undefined
+          ? Math.max(0, callStartedAtMs - argStartedAtMs)
+          : 0;
+      add(execution, execution + Math.max(0, item.durationMs - generation));
+    } else if (!item.outputComplete && (item.decision === "allow" || item.outputStreaming)) {
+      open(item, execution);
+    }
+  }
+
+  if (liveStart === undefined) {
+    return settled.length ? { steps, durationMs: mergedIntervalMs(settled) } : { steps };
+  }
+
+  // From the earliest open interval onwards the clock already covers every overlapping step.
+  // Only the union before that point needs carrying into the live duration.
+  const since = liveStart;
+  const earlier = settled
+    .filter(([start]) => start < since)
+    .map(([start, end]): [number, number] => [start, Math.min(end, since)]);
+  return { steps, startMs: localStart - mergedIntervalMs(earlier) };
 }

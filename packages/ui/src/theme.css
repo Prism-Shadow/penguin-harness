@@ -57,6 +57,7 @@
 @import "./layers.css";
 @import "./wallpaper.css";
 @import "./window-band.css";
+@import "./components/shell/dock-frame/dock-frame.css";
 @import "./cursors.css";
 @import "./animations.css";
 /* The showcase family's sheet (components/showcase/showcase.css), served in ui-base like the
@@ -561,22 +562,24 @@
     }
   }
 
-  /* A theme can turn the inner sheet as its track folds. The outer track and its ink stay put. */
+  /* The inner sheet slides with its track as the fold opens and closes; a theme can override
+     `--_fold-sheet-animation` on `.ui-frame` to turn the sheet instead. */
   @media (prefers-reduced-motion: no-preference) {
-    :root:not([data-motion="reduced"])
-      .ui-frame
-      > [data-slot="head"]
-      + [data-slot="body"]
-      > [data-sheet-phase] {
+    :root:not([data-motion="reduced"]) [data-sheet-phase] {
       transform-origin: top center;
-      animation: var(--_fold-sheet-animation, none) var(--ui-dur-layout) var(--ui-ease-layout) both;
+      animation: var(--_fold-sheet-animation, ui-fold-slide) var(--ui-dur-layout)
+        var(--ui-ease-layout) both;
     }
-    :root:not([data-motion="reduced"])
-      .ui-frame
-      > [data-slot="head"]
-      + [data-slot="body"]
-      > [data-sheet-phase="closing"] {
+    :root:not([data-motion="reduced"]) [data-sheet-phase="closing"] {
       animation-direction: reverse;
+    }
+  }
+  @keyframes ui-fold-slide {
+    from {
+      transform: translateY(-0.375rem);
+    }
+    to {
+      transform: translateY(0);
     }
   }
   @keyframes ui-fold-paper {

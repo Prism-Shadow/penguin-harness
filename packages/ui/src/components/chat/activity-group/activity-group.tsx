@@ -28,10 +28,8 @@
  * from anywhere inside it; this is the first of two stacked sticky levels, the row being read
  * pinning right below it. Collapsing while the head is stuck lands the view back on the card.
  *
- * The duration follows the count and the detail: a live clock while a step is in flight
- * (`stepRunning`), the settled span once nothing is. A work group's span runs from its earliest
- * step's start to its latest's end, so a group that merely stays open between steps does not
- * tick, or the number would climb past the span and snap back when the group settles.
+ * The duration follows the count. A live anchor measures the active work left in flight;
+ * a settled duration holds steady between steps and after the last one.
  *
  * The settle is one movement in three parts, each on the theme's motion: the head's label, mark
  * and details ease into their settled ink (`theme.css`), the settled glyph and the settled title
@@ -81,6 +79,7 @@ const TITLE_INK: Readonly<Record<ActivityMark["state"], string>> = {
   error: "text-tone-danger-fg",
 };
 
+export const DEFAULT_ACTIVITY_DISPLAY_MODE = "standard";
 export type ActivityDisplayMode = "standard" | "expanded" | "compact";
 
 export interface ActivityStepSummary {
@@ -105,7 +104,7 @@ export interface ActivityGroupRow {
 }
 
 export interface ActivityStepNavigation {
-  /** Localized number of real rows in this group. */
+  /** Localized number of tool calls in this group. */
   count?: string;
   /** Older callers may still supply the former pager labels. */
   previous?: string;
@@ -239,7 +238,7 @@ export function ActivityGroup({
   rows,
   stepNavigation,
   runTiming,
-  displayMode: preference = "standard",
+  displayMode: preference = DEFAULT_ACTIVITY_DISPLAY_MODE,
   terminal,
   children,
   actions,
@@ -247,7 +246,7 @@ export function ActivityGroup({
   const hookState = activityState(state);
   const running = hookState === "running";
   const inFlight = stepRunning ?? state === "running";
-  const displayMode = stepNavigation ? preference : "standard";
+  const displayMode = stepNavigation ? preference : DEFAULT_ACTIVITY_DISPLAY_MODE;
   const [view, setView] = useState(() => initialReadingState(displayMode));
   // A preference change applies the new defaults before React commits the next frame.
   if (view.mode !== displayMode) setView(initialReadingState(displayMode));
@@ -386,7 +385,7 @@ export function ActivityGroup({
           <WallpaperBackdrop />
           <WorkStepHeader
             summary={summary}
-            live={running && !terminal}
+            compactStep={currentRow !== undefined}
             progress={inFlight && !terminal}
             settledHere={settledHere}
             titleInk={TITLE_INK[activityState(summary.state)]}
@@ -395,7 +394,11 @@ export function ActivityGroup({
             open={shown}
             totalStartMs={runTiming?.startMs ?? startMs}
             totalDurationMs={runTiming?.durationMs ?? terminal?.durationMs ?? durationMs}
-            totalRunning={runTiming ? runTiming.durationMs === undefined : running && !terminal}
+            totalRunning={
+              runTiming
+                ? runTiming.durationMs === undefined
+                : startMs !== undefined && inFlight && !terminal
+            }
           />
         </button>
       ) : expandable ? (

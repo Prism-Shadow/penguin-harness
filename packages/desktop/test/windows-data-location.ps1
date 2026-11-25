@@ -69,8 +69,22 @@ try {
   }
   if ([IO.File]::Exists($pointer) -or [IO.File]::Exists((Join-Path $old 'server.lock'))) { throw 'Interrupted setup published a root or left a source reservation.' }
   Set-Content -LiteralPath $state -Stream 'Marker' -Value 'named user stream' -NoNewline
+  $hiddenData = Join-Path $old 'desktop.ini'
+  [IO.File]::WriteAllText($hiddenData,'[.ShellClassInfo]')
+  Set-Content -LiteralPath $hiddenData -Stream 'Marker' -Value 'hidden stream' -NoNewline
+  [IO.File]::SetAttributes($hiddenData,[IO.FileAttributes]::Hidden -bor [IO.FileAttributes]::System -bor [IO.FileAttributes]::ReadOnly)
+  $hiddenDesktop = Join-Path $desktop '.hidden-profile'
+  [IO.File]::WriteAllText($hiddenDesktop,'hidden desktop entry')
+  [IO.File]::SetAttributes($hiddenDesktop,[IO.FileAttributes]::Hidden)
   Run $destination $true
   if ((Get-Content -LiteralPath (Join-Path $destination 'data\workspace.txt') -Stream 'Marker' -Raw) -cne 'named user stream') { throw 'The verified copy lost a named stream.' }
+  $copiedHiddenData = Join-Path $destination 'data\desktop.ini'
+  if ([IO.File]::ReadAllText($copiedHiddenData) -cne '[.ShellClassInfo]') { throw 'Hidden/system file content changed.' }
+  if ((Get-Content -LiteralPath $copiedHiddenData -Stream 'Marker' -Raw) -cne 'hidden stream') { throw 'Hidden/system file lost a named stream.' }
+  $copiedAttrs = [IO.File]::GetAttributes($copiedHiddenData)
+  if (!($copiedAttrs -band [IO.FileAttributes]::Hidden) -or !($copiedAttrs -band [IO.FileAttributes]::System) -or !($copiedAttrs -band [IO.FileAttributes]::ReadOnly)) { throw 'Hidden/system file attributes were not preserved.' }
+  $copiedHiddenDesktop = Join-Path $destination 'desktop\.hidden-profile'
+  if ([IO.File]::ReadAllText($copiedHiddenDesktop) -cne 'hidden desktop entry' -or !([IO.File]::GetAttributes($copiedHiddenDesktop) -band [IO.FileAttributes]::Hidden)) { throw 'Hidden desktop profile file was not preserved.' }
   if ([IO.Directory]::Exists($stage)) { throw 'Retry left behind interrupted staging files.' }
   if ([IO.File]::ReadAllText($pointer) -ne $destination) { throw 'The verified location was not published.' }
   foreach ($copy in @($state,(Join-Path $destination 'data\workspace.txt'))) {
@@ -82,6 +96,7 @@ try {
   $next = Join-Path $base 'Second disk'
   Run $next $true
   if (![IO.File]::Exists((Join-Path $destination 'data\workspace.txt')) -or [IO.File]::ReadAllText($pointer) -ne $next) { throw 'Repeated moves did not preserve their source.' }
+  if ([IO.File]::ReadAllText((Join-Path $next 'data\desktop.ini')) -cne '[.ShellClassInfo]' -or [IO.File]::ReadAllText((Join-Path $next 'desktop\.hidden-profile')) -cne 'hidden desktop entry') { throw 'Repeated moves did not preserve hidden/system files.' }
   $history = [IO.File]::ReadAllText((Join-Path $next 'windows-data-roots.json')) | ConvertFrom-Json
   if ($history.to -ne (Join-Path $next 'data') -or $history.from.Count -ne 2 -or $history.from -notcontains $old -or $history.from -notcontains (Join-Path $destination 'data')) { throw 'Repeated moves lost the path needed to reopen an older Session.' }
   Write-Output 'Windows data selection, relocation, recovery and profile verification passed.'

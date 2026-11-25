@@ -94,23 +94,29 @@ import {
 } from "./runtime/session-manager.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { Scheduler } from "./runtime/scheduler.js";
-import { MessagingBridge } from "./runtime/messaging/bridge.js";
-import { FeishuConnector } from "./runtime/messaging/feishu-connector.js";
-import { createLarkSdk } from "./runtime/messaging/feishu-sdk.js";
-import type { FeishuSdk } from "./runtime/messaging/feishu-sdk.js";
-import { TelegramConnector } from "./runtime/messaging/telegram-connector.js";
-import { createTelegramTransport } from "./runtime/messaging/telegram-api.js";
-import type { TelegramTransport } from "./runtime/messaging/telegram-api.js";
-import { QQConnector } from "./runtime/messaging/qq-connector.js";
-import { createQQTransport } from "./runtime/messaging/qq-api.js";
-import type { QQTransport } from "./runtime/messaging/qq-api.js";
-import { QQScanService, createQQScanTransport } from "./runtime/messaging/qq-scan.js";
-import { WeChatConnector } from "./runtime/messaging/wechat-connector.js";
-import { createWeChatTransport } from "./runtime/messaging/wechat-api.js";
-import type { WeChatTransport } from "./runtime/messaging/wechat-api.js";
-import { WeChatScanService, createWeChatScanTransport } from "./runtime/messaging/wechat-scan.js";
-import type { WeChatScanTransport } from "./runtime/messaging/wechat-scan.js";
-import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
+import { MessagingBridge } from "@prismshadow/penguin-library-messaging/bridge";
+import { FeishuConnector } from "@prismshadow/penguin-library-messaging/feishu-connector";
+import { createLarkSdk } from "@prismshadow/penguin-library-messaging/feishu-sdk";
+import type { FeishuSdk } from "@prismshadow/penguin-library-messaging/feishu-sdk";
+import { TelegramConnector } from "@prismshadow/penguin-library-messaging/telegram-connector";
+import { createTelegramTransport } from "@prismshadow/penguin-library-messaging/telegram-api";
+import type { TelegramTransport } from "@prismshadow/penguin-library-messaging/telegram-api";
+import { QQConnector } from "@prismshadow/penguin-library-messaging/qq-connector";
+import { createQQTransport } from "@prismshadow/penguin-library-messaging/qq-api";
+import type { QQTransport } from "@prismshadow/penguin-library-messaging/qq-api";
+import {
+  QQScanService,
+  createQQScanTransport,
+} from "@prismshadow/penguin-library-messaging/qq-scan";
+import { WeChatConnector } from "@prismshadow/penguin-library-messaging/wechat-connector";
+import { createWeChatTransport } from "@prismshadow/penguin-library-messaging/wechat-api";
+import type { WeChatTransport } from "@prismshadow/penguin-library-messaging/wechat-api";
+import {
+  WeChatScanService,
+  createWeChatScanTransport,
+} from "@prismshadow/penguin-library-messaging/wechat-scan";
+import type { WeChatScanTransport } from "@prismshadow/penguin-library-messaging/wechat-scan";
+import type { QQScanTransport } from "@prismshadow/penguin-library-messaging/qq-scan";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
@@ -119,11 +125,8 @@ import { SnapshotService } from "./services/snapshot-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
-import { TraceIndexService } from "./services/trace-index.js";
-import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
-import { UsageService } from "./services/usage-service.js";
 import { HmrHost, hmrControl } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
@@ -156,7 +159,7 @@ import { chatDefaultsRoutes } from "./http/routes/chat-defaults.js";
 import { commandPolicyRoutes } from "./http/routes/command-policy.js";
 import { vaultRoutes } from "./http/routes/vault.js";
 import { memoryRoutes } from "./http/routes/memory.js";
-import { scheduleRoutes } from "./http/routes/schedules.js";
+import { scheduleRoutes } from "@prismshadow/penguin-library-session/schedules";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "./http/routes/skills.js";
 import { agentHooksRoutes } from "./http/routes/hooks.js";
@@ -168,7 +171,7 @@ import { agentConfigRoutes } from "./http/routes/agent-config.js";
 import { agentTracesRoutes } from "./http/routes/agent-traces.js";
 import { usageRoutes } from "./http/routes/usage.js";
 import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
-import { sessionMessagingRoutes } from "./http/routes/messaging.js";
+import { sessionMessagingRoutes } from "@prismshadow/penguin-library-messaging/routes";
 import { versionRoutes } from "./http/routes/version.js";
 import { machinesRoutes } from "./http/routes/machines.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";

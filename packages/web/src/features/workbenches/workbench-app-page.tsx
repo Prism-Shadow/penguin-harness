@@ -14,10 +14,9 @@
  * remembers the Project and Agent the way the shell does — its localStorage keys — before
  * navigating.
  */
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import type { PaletteAction } from "@prismshadow/penguin-ui";
-import { useFirstWorkbench, GUIDE_ID } from "../../lib/first-workbench-entry";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
 import { useInstallManifest } from "../../lib/workbench-tabs";
@@ -60,17 +59,6 @@ export function WorkbenchAppPage() {
     ownEvents: true,
     enabled: !safe,
   });
-  const tour = useFirstWorkbench(
-    !safe && workbenchId === GUIDE_ID ? { projectId, agentId, machineId } : null,
-  );
-  useEffect(() => {
-    if (!tour) return;
-    rememberSelection(projectId, agentId);
-    void navigate("/chat/new", {
-      replace: true,
-      state: { firstWorkbench: { projectId, agentId, machineId } },
-    });
-  }, [tour, projectId, agentId, machineId, navigate]);
   const paletteShortcut = useShortcutLabel("palette.toggle");
   // The page is the app: the browser tab carries the tab's own name (the manifest's name is
   // the same title), not the main app's.

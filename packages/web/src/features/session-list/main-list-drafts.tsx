@@ -16,7 +16,7 @@ export function renderMainListDrafts(scope: MainSidebarState) {
   } = scope;
   return (
     shownDrafts.length > 0 && (
-      <div className="pt-2.5">
+      <div className="pt-1.5 first:pt-0.5">
         <GroupHeader
           open={searching || !collapsedGroups.has(DRAFTS_GROUP_KEY)}
           onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}

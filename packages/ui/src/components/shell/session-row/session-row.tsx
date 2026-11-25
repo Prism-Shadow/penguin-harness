@@ -285,7 +285,7 @@ export function SessionRow({
         // is suppressed on this row only. select-none keeps a held press from raising the text
         // selection callout on touch instead of the menu.
         {...ctx.rowProps}
-        className={`group flex select-none items-center rounded-md pr-1 transition-colors duration-150 ${
+        className={`group flex h-8 select-none items-center rounded-md pr-1 transition-colors duration-150 ${
           draggable ? "cursor-grab " : ""
         }${active ? NAV_FILL.selected : NAV_FILL.hover}`}
       >
@@ -301,7 +301,7 @@ export function SessionRow({
             if (ctx.consumeLongPressClick()) return;
             onOpen();
           }}
-          className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
+          className="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2.5 text-left"
         >
           {agent && (
             <span

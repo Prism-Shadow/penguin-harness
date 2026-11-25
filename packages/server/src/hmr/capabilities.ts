@@ -23,6 +23,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Resources, Opaque, ModuleClass } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "../config.js";
+import type { CliLaunch } from "../services/cli-shim.js";
 import type { AuthRuntimeState } from "../auth/runtime-state.js";
 import { newAuthRuntimeState } from "../auth/runtime-state.js";
 import type { ChannelHub, Channel } from "../runtime/channel.js";
@@ -380,7 +381,140 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
  */
 
 /** The process configuration object — one per process; the listen callback writes the real port into it. */
-export abstract class Config extends Interface<ServerConfig>() {}
+@Interface()
+export abstract class Config {
+  /** Local data root directory (shared with the SDK/CLI). */
+  abstract root: string;
+  /** HTTP listen address and port (defaults to 127.0.0.1:7364, deliberately avoiding common ports like 3000/8080). */
+  abstract host: string;
+  /**
+   * Listen port. `0` asks the OS for an ephemeral port (the desktop shell always does),
+   * in which case the value is only a request: index.ts writes the ACTUAL bound port back
+   * here once listening, because preview URLs are built from the server's own port rather
+   * than the browser's (dev serves the SPA on a different port; see resolvePreviewTarget).
+   */
+  abstract port: number;
+  /**
+   * Port the first-login link points at instead of `port` (PENGUIN_DEV_APP_PORT). `pnpm dev`
+   * sets it to Vite's 7365: there the App is served by Vite, while this server only answers
+   * the API, so a link on this server's own port lands on a page that does not exist. Only
+   * that link uses it — previews and the Agents' API URL must keep reaching this server.
+   *
+   * OPTIONAL like cliEntry, and left out of HMR_INTERFACES: only index.ts reads it.
+   */
+  abstract devAppPort?: number;
+  /** SQLite database path; ":memory:" for test injection. */
+  abstract dbPath: string;
+  /** Frontend static assets directory; whether it's enabled is decided by checking existence when the app is assembled. */
+  abstract webDist: string;
+  /**
+   * Origin that serves Workspace HTML previews (PENGUIN_PREVIEW_ORIGIN), e.g.
+   * `https://preview.example.com`. It must differ from the App origin by **hostname** —
+   * cookies ignore ports, so a second port would still share the session cookie. Unset
+   * is the norm locally: the loopback counterpart (`127.0.0.1` <-> `localhost`) is
+   * derived per request instead.
+   */
+  abstract previewOrigin: string | null;
+  /**
+   * Trusted Penguin Go origin (PENGUIN_GO_ORIGIN); never supplied by a browser request.
+   *
+   * OPTIONAL like cliEntry: a runtime older than this field publishes none, and a pushed
+   * platform must still boot there — authorization and balance consumers then use the
+   * default `normalizePenguinGoOrigin(undefined)` returns.
+   */
+  abstract penguinGoOrigin?: string;
+  /**
+   * Base URL of the ModelScope authorization bridge (MODELSCOPE_BRIDGE_URL), without a
+   * trailing slash — e.g. `https://go.penguin.ooo/modelscope`. The harness sends the
+   * start/poll exchange here and never to ModelScope itself: the bridge holds the OAuth
+   * client secret. Unlike `penguinGoOrigin` this value carries a path prefix in production,
+   * because the bridge is mounted under one and strips it from the incoming request.
+   *
+   * OPTIONAL for the same reason as penguinGoOrigin; ModelScopeAuthProvider defaults it.
+   */
+  abstract modelscopeBridgeUrl?: string;
+  /**
+   * Fixed initial password for the seeded built-in admin (PENGUIN_SEED_ADMIN_PASSWORD),
+   * used by automated tests and e2e. Null is the norm: the seed then generates a random
+   * password that is hashed and discarded unseen, and the account is claimed through the
+   * first-login link instead.
+   */
+  abstract seedAdminPassword: string | null;
+  /** Login session validity period (30 days). */
+  abstract authSessionTtlMs: number;
+  /**
+   * Sliding renewal threshold: a session validated with less than this much left is renewed to
+   * the full TTL. Set one day below the TTL, so any session used at least a day after it was
+   * issued renews — in practice a session in regular use never expires, and the TTL is the
+   * idle timeout.
+   */
+  abstract authSessionRenewMs: number;
+  /**
+   * Desktop mode (PENGUIN_DESKTOP_TOKEN): the per-launch token minted by the desktop
+   * shell. Non-null enables the one-shot claim link and the Bearer-token shutdown
+   * endpoints and requires a loopback HOST — desktop mode passes the token through a
+   * URL, which must never leave the machine.
+   */
+  abstract desktopToken: string | null;
+  /**
+   * Port announcement file (PENGUIN_PORT_FILE): once the App is up, the actual
+   * bound port is written here — the supervising process's way to learn the port when
+   * it starts the server with PORT=0.
+   */
+  abstract portFile: string | null;
+  /**
+   * Trust `x-forwarded-proto` and `x-forwarded-host` from the request (PENGUIN_TRUST_PROXY=1),
+   * each only as a single value (@prismshadow/penguin-library-http/public-origin). Off by default: the headers are
+   * caller-supplied, so on a non-loopback bind an untrusted caller could set the scheme to
+   * `https` to walk through the hot-update network gate (hmr/routes.ts) while actually speaking
+   * plaintext, get session cookies stamped `Secure` over plain HTTP, which the browser then never
+   * sends back (a sign-in that never takes), or choose where a provider's authorization
+   * redirects. Enable this only behind a reverse proxy that terminates TLS, keeps `Host`,
+   * overwrites `x-forwarded-proto` with one value and overwrites or strips `x-forwarded-host`
+   * before the request reaches this process. The origin check reads the scheme alone, with the
+   * raw `Host`. An HTTPS deployment that leaves it off issues session cookies WITHOUT the
+   * `Secure` flag (auth/middleware.ts cookieOptions). The desktop shell always sets it.
+   */
+  abstract trustProxy: boolean;
+  /**
+   * The published plugin market document this deployment reads (PENGUIN_PLUGIN_MARKET), or null
+   * for the one embedded in the build alone. Unset = the community repository's; `off` = no
+   * outbound request for the market, its document or its pictures; any other value replaces the
+   * URL, and the pictures are read beside it (plugin/market.ts).
+   *
+   * OPTIONAL like `pluginIndexUrl`: a runtime older than this field publishes none, and the
+   * market then reads the variable from its own process environment (http/routes/plugin-market.ts).
+   */
+  abstract pluginMarketUrl?: string | null;
+  /**
+   * The CLI entry script this harness offers as `penguin` to the Agents it runs and in its
+   * terminals — the file the `<root>/bin/penguin` shim runs (see services/cli-shim.ts).
+   * `PENGUIN_CLI_ENTRY` when set: `penguin server|web` exports its own entry there, and the
+   * desktop shell passes the bundled one to the server it forks. Otherwise, on a server running
+   * from a checkout, that checkout's CLI: its source while the server runs from source, else its
+   * build (offeredCli). Null = no CLI to offer; see cliLaunch for why.
+   *
+   * Related to but wider than the self-update endpoint's use of the same variable
+   * (http/routes/version.ts), which accepts only an INSTALLED entry it can re-run as
+   * `penguin update`: a checkout has no release to update to, but its CLI is exactly the
+   * one an Agent working on that checkout should be running.
+   *
+   * OPTIONAL for the same reason: absent — a runtime older than this field — reads as null,
+   * no CLI to offer and no shim written.
+   */
+  abstract cliEntry?: string | null;
+  /**
+   * How the shim runs cliEntry and where it came from: the interpreter options before it (the
+   * TypeScript loader for a source run), the checkout this server runs from, the origin, and —
+   * when cliEntry is null on a checkout — why its CLI cannot run, which the shim and the
+   * terminals then say instead of falling through to another installation's `penguin`.
+   *
+   * OPTIONAL like cliEntry, and for the same reason: a runtime older than this field publishes
+   * none, which reads as a plain entry from an installation — no options, no checkout, nothing
+   * to report.
+   */
+  abstract cliLaunch?: Omit<CliLaunch, "entry">;
+}
 
 /**
  * The SQLite handle (single-writer, one per process). Statements are host objects.
@@ -474,7 +608,17 @@ export abstract class Desktop {
   abstract shell(): ShellFrames;
 }
 
-export abstract class AuthState extends Interface<AuthRuntimeState>() {}
+@Interface()
+export abstract class AuthState {
+  /** The first-login link this boot printed, or null before one was minted. */
+  abstract firstLoginToken: string | null;
+  /**
+   * This boot's local API token (auth/api-token.ts), installed by the startup assembly.
+   * Null in constructions that never minted one — they simply never authenticate a Bearer
+   * header.
+   */
+  abstract apiToken: string | null;
+}
 
 @Interface()
 export abstract class Log {

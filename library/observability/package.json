@@ -28,6 +28,14 @@
       "types": "./dist/observability.d.ts",
       "import": "./dist/observability.js"
     },
+    "./usage-service": {
+      "types": "./dist/usage-service.d.ts",
+      "import": "./dist/usage-service.js"
+    },
+    "./dates": {
+      "types": "./dist/dates.d.ts",
+      "import": "./dist/dates.js"
+    },
     "./repos/errors": {
       "types": "./dist/repos/errors.d.ts",
       "import": "./dist/repos/errors.js"
@@ -50,6 +58,9 @@
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-agent-api": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-library-model": "workspace:*",
+    "@prismshadow/penguin-library-project": "workspace:*",
     "@prismshadow/penguin-library-trace": "workspace:*"
   },
   "devDependencies": {

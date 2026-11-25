@@ -298,7 +298,7 @@ export function pageTableFor(
  * for everything under the router.
  */
 export function WebAppPagesProvider({ children }: { children: ReactNode }) {
-  const { pages: booted, pageRenderers } = webAppDeps.useDeps();
+  const { pages: booted, pageRenderers, userEvents } = webAppDeps.useDeps();
   // A page of a web module waiting for its server module is in the table only while that
   // module runs (gated-slots.ts); the table follows the gates.
   const gates = useModuleGates();
@@ -320,13 +320,14 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const value = useMemo<WebAppPagesValue>(
     () => ({
       pages: pageTableFor(compiled, answer, pageRenderers),
+      workbenchHost: { pageRenderers, userEvents },
       pending,
       // A mocked or older server may leave these out.
       quickStarts: [],
       startMetrics: startMetricsOf(answer),
       refresh: store.refresh,
     }),
-    [compiled, answer, pageRenderers, pending, store],
+    [compiled, answer, pageRenderers, userEvents, pending, store],
   );
   const rules = useMemo(() => fileRendererRulesOf(answer), [answer]);
   // The server re-assembled (a plugin came or went), or the stream lost events: ask again.

@@ -698,6 +698,44 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     }
   });
 
+  it("resuming a released child session does not re-emit session_meta onto the parent stream", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-resume-no-meta");
+    await fs.mkdir(ws, { recursive: true });
+    const parent = await agent.createSession({ workspaceDir: ws });
+    const runner = lastSpawnedRunner();
+    try {
+      const spawned = await runner.spawn({});
+      const childSessionId = spawned.sessionId;
+      // First run emits session_meta (or takeMeta takes it) and persists the child Trace.
+      expect(spawned.takeMeta?.()?.type).toBe("session_meta");
+      scriptedProvider.state.replies = ["done"];
+      for await (const _ of spawned.run({ messages: [userText("initial")] })) {
+        // drain first run so the Trace file is written
+      }
+      spawned.dispose();
+
+      // Resuming the same child session later (e.g. via input_subagent after release) must not
+      // emit session_meta a second time, which would write a duplicate subagent pointer in the
+      // parent Trace.
+      const resumed = await runner.resume!({ sessionId: childSessionId });
+      try {
+        expect(resumed.takeMeta?.() ?? null).toBeNull();
+        scriptedProvider.state.replies = ["done again"];
+        const emitted: AmspRecord[] = [];
+        for await (const msg of resumed.run({ messages: [userText("follow-up")] })) {
+          emitted.push(msg);
+        }
+        expect(emitted.length).toBeGreaterThan(0);
+        expect(emitted.some((m) => m.type === "session_meta")).toBe(false);
+      } finally {
+        resumed.dispose();
+      }
+    } finally {
+      parent.dispose();
+    }
+  });
+
   it("inherits the parent's CURRENT model: a child spawned after an in-session switch runs on the switched-to model", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-inherit-switched");

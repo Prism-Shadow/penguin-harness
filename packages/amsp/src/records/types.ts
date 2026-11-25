@@ -256,6 +256,8 @@ export interface InlineDataPayload {
 export interface ThinkingPayload {
   type: "thinking";
   role: "assistant";
+  /** Timestamp of the first observed fragment, when the provider streamed this item. */
+  started_at?: string;
   thinking: string;
   /**
    * Provider-fidelity payload closing the thinking block (Claude thinking signatures / redacted
@@ -279,6 +281,8 @@ export interface InlineThinkingPayload {
 export interface ToolCallPayload {
   type: "tool_call";
   role: "assistant";
+  /** Timestamp of the first observed fragment, when the provider streamed this item. */
+  started_at?: string;
   name: string;
   /** Tool arguments as a JSON string. */
   arguments: string;

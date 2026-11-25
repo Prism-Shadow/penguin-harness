@@ -4,15 +4,16 @@ The PenguinHarness plugin library. Each plugin is a package under `@penguinharne
 
 A plugin's version is its npm version (`package.json`, which follows the release). Dated versions — `YYYY.MM.DD.N` — belong to what an Agent may edit locally: every skill's `SKILL.md` frontmatter carries its own `version`, and a hook package's is the `version` of its hooks contribution in `src/index.ts`, which the installer writes into `hooks.json`. Change a skill and raise its `version`; change a hook script or the contribution's commands and raise the contribution's `version` (CI checks both against the base commit, `scripts/check-plugin-versions.mjs`); a change to the card needs no new version. Skills follow the "index first, body on demand" design: only their metadata is injected into an Agent's system prompt; the Agent reads the full `SKILL.md` via shell when it actually needs it. Hook scripts are plain Node (builtins only): the harness runs them as subprocesses at the loop's hook points with `{ hook, session_id, trace_path }` on stdin and reads their JSON answer from stdout.
 
-Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/categories.ts`; a plugin with no or an unknown category lands in an "Other" group). A plugin built around someone else's product carries a `use-` prefix — `use-firecrawl`, `use-bento-slides`, `use-claude-code` — so the package name says what it is for rather than claiming the product; the skills inside keep their own names:
+Plugins by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/categories.ts`; a plugin with no or an unknown category lands in an "Other" group). A plugin built around someone else's product carries a `use-` prefix — `use-firecrawl`, `use-bento-slides`, `use-claude-code` — so the package name says what it is for rather than claiming the product; the skills inside keep their own names:
 
 | Category | Plugins |
 | --- | --- |
 | Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
 | Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `storage`, `use-bento-slides`, `goal`, `plan`, `trace-lookup`, `agent-company`, `penguin-support`, `multimodal-tools` |
-| Utilities | `first-workbench-guide` |
 | Software Development | `software-development` |
 | AI App Development | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
+
+The product ships the Default RSI Toolkit. Install the other algorithms listed above from the RSI Platform releases in the plugin market when an Agent needs them.
 
 The host pins the A2UI, External Plugin Porting and Firecrawl packages from [PenguinHarness Apps](https://github.com/Prism-Shadow/penguin-harness-apps). Their versioned releases carry the same Skill identifiers as the bundled library.
 
@@ -20,7 +21,7 @@ The host pins the A2UI, External Plugin Porting and Firecrawl packages from [Pen
 
 The four `sandbox-*` packages are not library content but server modules: Agent Sandbox backends that confine every command an Agent runs (`sandbox-bwrap` on Linux, `sandbox-seatbelt` on macOS, `sandbox-wsl` on Windows, `sandbox-dsh` on all three, file writes only). Each declares a card beside its `SandboxModule.providers` contribution (descriptions and the `sandbox` category; no skills or hooks) and carries an `icon.svg` for its card on the Plugins page, where an admin installs it on the server.
 
-`computer-use` is a server module and a library plugin at once, and the one plugin here the build does not ship (`MARKET_ONLY` in `scripts/build-plugins.mjs`): it is published to npm and listed in the server's embedded index, and an administrator installs it from the plugin market. It contributes the `penguin computer` command, a settings card on the Plugins page and the `computer-use` Skill, and downloads and verifies its own native program, [agent-desktop](https://github.com/vercel-labs/agent-desktop), on the machine that runs it.
+`computer-use` ships both a server module and an Agent Skill. An administrator enables the bundled module for the current Project from the plugin market. It contributes the `penguin computer` command, a settings card on the Plugins page and the `computer-use` Skill, and downloads and verifies its own native program, [agent-desktop](https://github.com/vercel-labs/agent-desktop), on the machine that runs it.
 
 `agent-state-git` is a server module too: it contributes an engine to `AgentStateHistoryModule.engines`, so an Agent's workbench versions are written and read back by native Git — GitHub Desktop's build, as dugite pins it, fetched the first time the plugin runs on a host — instead of the built-in isomorphic-git. Its card has no category (Other); an admin installs it on the Plugins page.
 
@@ -72,5 +73,3 @@ pnpm --filter @prismshadow/penguin-core test        # loader, the hook scripts a
 `use-bento-slides` carries the `bento-slides` Skill and the `workbenches/slides/` app, the AI PPT workbench: Bento's slide editor in a sandboxed frame beside the Agent's chat, where the person and the Agent edit one deck file (`decks/<id>.bento.json` in the workbench's data folder, `app/data/slides/`, which the handler reads and writes with `node:fs` and the Agent with its file tools) and the page replays the person's unsaved edits on the Agent's version, element by element. It is preinstalled, so `default_agent` has a Slides tab and an AI PPT tile in the App Center. It ships the Bento runtime unmodified as `ui/vendor/bento-slides-1.2.13.runtime.txt` (MIT, 736 KB) and Bento's agent guide as the Skill's `references/bento-agents.md`; `THIRD-PARTY-NOTICES.md` records both. `test/slides-sync.test.ts` holds the merge to its cases and `test/handler.test.ts` the handler, against a host whose data and cache folders are temporary folders on disk.
 
 Each plugin that ships skills also has its own `test/skills.test.ts`: it runs every `skills/<name>/` through [`@prismshadow/skills`](../packages/skills) (its `SKILL.md` must pass the parser vendored from vercel-labs/skills), so `pnpm -r test` covers them. The loader's own rules on top of that — a one-line description, skill names unique across the library — are core's test.
-
-`first-workbench-guide` is preinstalled on new default Agents. It uses the native model picker and a conversation to build a checklist for the user's own task. The guide installs the workbench on the current Agent and exports the same workbench inside a complete library plugin.

@@ -247,7 +247,8 @@ export function pluginTags(
   if (categoryTitle !== undefined) {
     tags.push(<PluginTag key="category">{categoryTitle}</PluginTag>);
   }
-  if (rowBuiltin(row)) {
+  // A workbench installation is removable even when its package ships with the host.
+  if (rowBuiltin(row) && !row.library?.workbenches?.length) {
     tags.push(
       <PluginTag
         key="builtin"

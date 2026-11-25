@@ -97,13 +97,13 @@ function enteredProject(projectId: string | null): Partial<ProjectStoreState> {
   return { currentProjectId: projectId, currentAgentId: null, agents: null, agentsLoading: true };
 }
 
-function createProjectStore() {
+function createProjectStore(initialProjectId?: string) {
   /** Agent-list asks so far: only the newest one's answer is applied (see reloadAgents). */
   let agentsAsked = 0;
   return createStore<ProjectStoreState>((set, get) => ({
     projects: [],
     projectsLoading: true,
-    currentProjectId: null,
+    currentProjectId: initialProjectId ?? null,
 
     agents: null,
     agentsLoading: true,
@@ -224,8 +224,14 @@ function projectView(
   return { currentProject, agents, currentAgent: agentOf(agents, state.currentAgentId) };
 }
 
-export function ProjectProvider({ children }: { children: ReactNode }) {
-  const [store] = useState(createProjectStore);
+export function ProjectProvider({
+  initialProjectId,
+  children,
+}: {
+  initialProjectId?: string;
+  children: ReactNode;
+}) {
+  const [store] = useState(() => createProjectStore(initialProjectId));
   const state = useStore(store);
 
   useEffect(() => {

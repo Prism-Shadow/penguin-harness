@@ -11,6 +11,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseFrontmatter } from "../../ui/src/components/site/markdown-text.ts";
+import { en } from "../src/lib/strings-en.ts";
 import { hubRoutes as hubRouteList, loadHub } from "./hub/hub.mjs";
 
 /** Production origin, no trailing slash. Override for a staging deploy. */
@@ -37,23 +39,6 @@ function slugsIn(dir) {
     if (slug !== undefined) slugs.add(slug);
   }
   return [...slugs].sort();
-}
-
-/** Newest `date:` in a post's frontmatter across its language variants, if any. */
-function newestDate(dir, slug) {
-  let newest;
-  for (const lang of ["en", "zh"]) {
-    let raw;
-    try {
-      raw = readFileSync(join(dir, `${slug}.${lang}.md`), "utf8");
-    } catch {
-      continue; // A post exists in one language only; the other is a legitimate miss.
-    }
-    const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw)?.[1] ?? "";
-    const date = /^date:\s*"?(\d{4}-\d{2}-\d{2})"?\s*$/m.exec(frontmatter)?.[1];
-    if (date !== undefined && (newest === undefined || date > newest)) newest = date;
-  }
-  return newest;
 }
 
 /**
@@ -99,12 +84,34 @@ export function hubRoutes() {
 
 /** Blog routes, one per post plus the list page. */
 export function blogRoutes() {
+  const card = { image: "/og-cover.png", imageAlt: en.siteName };
   return [
-    { route: "/blog/" },
-    ...slugsIn(BLOG_DIR).map((slug) => ({
-      route: `/blog/${slug}/`,
-      lastmod: newestDate(BLOG_DIR, slug),
-    })),
+    {
+      route: "/blog/",
+      meta: { ...card, title: en.hub.pageTitle(en.blog.title), description: en.blog.subtitle },
+    },
+    ...slugsIn(BLOG_DIR).map((slug) => {
+      const variants = ["en", "zh"].flatMap((lang) => {
+        const file = join(BLOG_DIR, `${slug}.${lang}.md`);
+        return existsSync(file) ? [parseFrontmatter(readFileSync(file, "utf8")).meta] : [];
+      });
+      // Static HTML uses the site's default language. Both translations share one canonical URL.
+      const post = variants[0];
+      return {
+        route: `/blog/${slug}/`,
+        lastmod: variants
+          .map((variant) => variant.date)
+          .filter(Boolean)
+          .sort()
+          .at(-1),
+        meta: {
+          ...card,
+          title: en.hub.pageTitle(post.title),
+          description: post.excerpt,
+          type: "article",
+        },
+      };
+    }),
   ];
 }
 

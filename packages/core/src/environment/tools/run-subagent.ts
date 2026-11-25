@@ -224,6 +224,8 @@ export function createSubagentTool(
           // input_subagent to continue accessing it.
           const id = manager.register(session);
           registered = true;
+          const forward = services?.backgroundForward;
+          if (forward) session.setMessageTap(forward);
           if (detachSignal?.aborted) {
             // Detached by the user mid-window. The child now outlives this call, so it needs
             // everything the collect window was giving it: a standing approval sink (without
@@ -233,8 +235,6 @@ export function createSubagentTool(
             // run_in_background launch's — nobody is going to poll for it.
             armSubagentDoneReport(session, id, prompt, services);
             if (approve) session.setPersistentApprovalSink(approve);
-            const forward = services?.backgroundForward;
-            if (forward) session.setMessageTap(forward);
             // No approval hint here, exactly as on a run_in_background launch: the standing
             // sink just attached carries a queued request to the user itself, so "poll to
             // review" would send the model after work it is not doing — the deadline

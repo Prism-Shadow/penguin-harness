@@ -22,8 +22,8 @@ export function HomePage() {
   return (
     <>
       <Hero />
-      <SelfImprove />
       <Cases />
+      <SelfImprove />
       <Pillars />
       <Compare />
       <Benchmark />

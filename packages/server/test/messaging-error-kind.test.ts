@@ -13,16 +13,16 @@
  * wechat transport suites).
  */
 import { describe, expect, it } from "vitest";
-import { MessagingChannelError } from "../src/runtime/messaging/connector.js";
-import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
+import { MessagingChannelError } from "@prismshadow/penguin-library-messaging/connector";
+import { messagingErrorKind } from "@prismshadow/penguin-library-messaging/error-kind";
 import {
   MessagingMediaTooLargeError,
   MessagingOutboundCapError,
   MessagingPermissionError,
   MessagingUnsupportedError,
-} from "../src/runtime/messaging/media.js";
-import { MessagingConnectionClosedError } from "../src/runtime/messaging/qq-api.js";
-import { TelegramApiError } from "../src/runtime/messaging/telegram-api.js";
+} from "@prismshadow/penguin-library-messaging/media";
+import { MessagingConnectionClosedError } from "@prismshadow/penguin-library-messaging/qq-api";
+import { TelegramApiError } from "@prismshadow/penguin-library-messaging/telegram-api";
 
 /** Feishu's 99991672, which every one of its calls throws alike — the point of the code half. */
 const scopeDenial = (): MessagingPermissionError =>

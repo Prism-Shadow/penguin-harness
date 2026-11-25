@@ -25,7 +25,7 @@ export function RunStatus({ activity }: { activity: SessionActivity }) {
       <span data-slot="mark" className="flex shrink-0">
         <ActivityIcon activity={activity} label={label} />
       </span>
-      <span data-slot="label" className="hidden sm:inline">
+      <span data-slot="label" className="hidden @xl/session-toolbar:inline">
         {label}
       </span>
     </span>

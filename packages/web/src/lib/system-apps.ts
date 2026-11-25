@@ -1,8 +1,7 @@
 /**
  * The system apps: the pages the system Agent owns as its apps (PRFC-0033) — every page of the
- * table whose contribution carries `app` and names a `title`, the five the features contribute
- * (Models, Plugins, Machines, the Cost Center and the Evaluation Center) and any a server module
- * contributes. Nothing here names them: the App Center draws them as tiles, the system Agent's
+ * table whose contribution carries `app` and names a `title`, whether contributed by a Web App
+ * feature or a server module. Nothing here names them: the App Center draws them as tiles, the system Agent's
  * settings list them, and the nav keeps the App Center lit on their pages, all from this reading.
  *
  * - Only offered pages (`released`) whose role rule the viewer meets: an admin-only page
@@ -23,9 +22,8 @@ import { SYSTEM_AGENT_ID } from "./builtin-agents";
 import { useLocale } from "../state/locale";
 import { useSessionWorkbenchPanels } from "./dock-panel-registry";
 import {
-  isSessionWorkbenchKind,
+  hasAppCenterDirectory,
   sessionWorkbenchAppKey,
-  sessionWorkbenchEntries,
   sessionWorkbenchPath,
 } from "./session-workbenches";
 import { useWebAppPages } from "./web-app-pages";
@@ -122,18 +120,13 @@ export function useSystemApps(): readonly SystemApp[] {
     () => [
       ...systemAppsOf(pages, isAdmin),
       ...panels.flatMap((panel) =>
-        isSessionWorkbenchKind(panel.id) && sessionWorkbenchEntries[panel.id]
+        hasAppCenterDirectory(panel.id)
           ? [
               {
                 key: sessionWorkbenchAppKey(panel.id),
                 path: sessionWorkbenchPath(panel.id),
                 title: panel.label(),
-                icon:
-                  panel.id === "workspace"
-                    ? "folder"
-                    : panel.id === "terminal"
-                      ? "terminalWindow"
-                      : "globe",
+                icon: panel.id === "terminal" ? "terminalWindow" : "globe",
                 order: panel.order,
               },
             ]

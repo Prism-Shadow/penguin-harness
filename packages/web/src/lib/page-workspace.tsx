@@ -9,6 +9,7 @@ import {
 } from "react";
 import { matchPath, useLocation, useNavigate } from "react-router";
 import { leaveWindow, windowAt, windowInFront } from "./app-window-address";
+import { parseSessionWorkbenchPage } from "./session-workbenches";
 import { closeApp, useRunningAppRecords } from "./running-apps";
 import { useSystemApps, systemAppFullPage } from "./system-apps";
 import { localizedText } from "./skill-use";
@@ -20,7 +21,6 @@ import { useSessions } from "../state/sessions";
 import {
   closePage,
   emptyLayout,
-  placePage,
   reorderPage,
   visitPage,
   type OpenPage,
@@ -51,6 +51,8 @@ interface SessionLocation {
 }
 
 export interface Workspace {
+  /** Router address, including the conversation that hosts a docked directory. */
+  address: string;
   scope: number;
   accountScope: number;
   layout: PageLayout;
@@ -59,15 +61,14 @@ export interface Workspace {
   resumeDraft(): boolean;
   openBesideSession(sessionId: string, page: OpenPage, source?: SessionLocation): void;
   focus(page: OpenPage): void;
-  place(page: OpenPage, side: 0 | 1, before?: string): void;
+  openPage(page: OpenPage): void;
+  canDockRunningApp(session: OpenPage, app: OpenPage): boolean;
   dockRunningApp(session: OpenPage, app: OpenPage): void;
   close(id: string): void;
   minimize(id: string): void;
-  whole(page: OpenPage): void;
   fullScreen(page: OpenPage): void;
   /** The page occupying the full shell, with its original component still mounted. */
   exitFullScreen?: () => void;
-  swap(): void;
   reorder(id: string, before: string): void;
   openAppCenterBesideSession(sessionId: string, source?: SessionLocation): void;
   openFromAppCenter(page: OpenPage, replace?: boolean): boolean;
@@ -170,7 +171,10 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
   );
   // Attachments belong to the open window. An ordinary navigation to another Session
   // can restore its own app without transferring this Session's right-hand tab.
-  const bySession = useRef(new Map<string, string>());
+  // A global visit can open the same catalog or app in another folder or without
+  // its dock metadata. Keep the address and ownership attached to this conversation.
+  const bySession = useRef(new Map<string, OpenPage>());
+  const byApp = useRef(new Map<string, { session: OpenPage; app: OpenPage }>());
   const readNumber = useRef(0);
   const ref = useRef(layout);
   ref.current = layout;
@@ -200,6 +204,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     if (changed) {
       pending.current = null;
       bySession.current.clear();
+      byApp.current.clear();
       hosts.current.clear();
       resourceOwners.current.clear();
       readNumber.current++;
@@ -214,6 +219,10 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
   }, [lifetime.scope]);
   const currentId = current?.id;
   const title = current?.title;
+  const nativeFullScreen =
+    current?.kind === "system" && location.state?.nativeAppFullScreen === current.id;
+  const dockedFullScreen =
+    current?.kind === "window" && location.state?.dockedFullScreen === current.id;
   useLayoutEffect(() => {
     const request = pending.current;
     const arrived =
@@ -231,32 +240,25 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       );
     } else if (current) {
       let next = visitPage(ref.current, current);
-      // Leaving a conversation dock through an ordinary link opens that destination alone.
-      // Keeping a bound workbench beside the catalog would reattach its previous Session.
-      const previousPair = sessionAppPair(ref.current);
-      const leavingDock =
-        !beside &&
-        current.kind !== "session" &&
-        previousPair &&
-        (current.id !== previousPair.app.id || current.kind === "catalog");
+      const knownHost = hosts.current.get(current.id);
+      const matchingToolHost =
+        !toolSession ||
+        (knownHost &&
+          pageSessionId(knownHost) === beside &&
+          (fromCatalog || toolSession === beside));
       if (
-        leavingDock ||
-        (toolSession !== undefined &&
-          ((!toolSession && !fromCatalog) || (toolSession && !hosts.current.has(current.id))))
-      ) {
-        next = { ...next, visible: [current.id], focus: current.id, right: [] };
-      } else if (
         beside &&
         current.kind !== "session" &&
-        (fromCatalog || current.kind !== "catalog")
+        (fromCatalog || current.kind !== "catalog") &&
+        matchingToolHost
       ) {
         const session = sessionAt(beside, current.id);
         next = paired(next, session, current);
       } else if (current.kind === "session") {
-        const attached = next.pages.find((p) => p.id === bySession.current.get(current.id));
+        const attached = bySession.current.get(current.id);
         if (attached) next = paired(next, current, attached);
-        else if (sessionAppPair(next))
-          next = { ...next, visible: [current.id], focus: current.id, right: [] };
+      } else if (!nativeFullScreen && !dockedFullScreen && !toolSession) {
+        byApp.current.delete(current.id);
       }
       publish(next);
     }
@@ -265,17 +267,9 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     // The last open draft already occupies /chat/new. Dismissing it must reveal another surface.
     const fallback =
       currentId === "chat:new" || next.minimized.includes("chat:new") ? "/apps" : "/chat/new";
-    const focused = next.pages.find((entry) => entry.id === next.focus);
-    if (focused && !focused.catalogDock && sessionToolTarget(focused.path) === null)
-      next = { ...next, visible: [focused.id], right: [] };
     const pair = sessionAppPair(next);
     let to = next.pages.find((entry) => entry.id === next.focus)?.path ?? fallback;
     if (pair) {
-      next = {
-        ...next,
-        visible: [pair.session.id, pair.app.id],
-        right: [...new Set([...next.right.filter((id) => id !== pair.session.id), pair.app.id])],
-      };
       const target = new URL(pair.app.path, window.location.origin);
       target.searchParams.set("beside", pageSessionId(pair.session));
       if (pair.app.catalogDock) {
@@ -301,7 +295,14 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     }
     const token = ++ticket.current;
     pending.current = { to, token, layout: next, ...(closed ? { closed } : {}) };
-    void navigate(to, { replace, state: { workspaceRequest: token } });
+    const maximizeTool = pair && location.state?.fullScreenSessionTool === pair.app.id;
+    void navigate(to, {
+      replace,
+      state: {
+        workspaceRequest: token,
+        ...(maximizeTool && { fullScreenSessionTool: pair.app.id }),
+      },
+    });
   }
   function pageForDrag(id: string): OpenPage | undefined {
     const open = ref.current.pages.find((page) => page.id === id);
@@ -347,11 +348,11 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     );
   }
   function paired(base: PageLayout, session: OpenPage, app: OpenPage): PageLayout {
+    if (app.kind !== "catalog") byApp.current.set(app.id, { session, app });
     const visited = visitPage(visitPage(base, session), app);
     return {
       ...visited,
       visible: [session.id, app.id],
-      right: [...new Set([...base.right.filter((id) => id !== session.id), app.id])],
       focus: app.id,
     };
   }
@@ -359,10 +360,12 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
   useLayoutEffect(() => {
     if (pair) {
       for (const [id, attached] of bySession.current)
-        if (attached === pair.app.id && id !== pair.session.id) bySession.current.delete(id);
-      bySession.current.set(pair.session.id, pair.app.id);
+        if (attached.id === pair.app.id && id !== pair.session.id) bySession.current.delete(id);
+      bySession.current.set(pair.session.id, pair.app);
+      if (pair.app.kind !== "catalog")
+        byApp.current.set(pair.app.id, { session: pair.session, app: pair.app });
     }
-  }, [pair?.session.id, pair?.app.id]);
+  }, [pair?.session.id, pair?.app]);
   const owner = pair?.session.sessionHost;
   useLayoutEffect(() => {
     if (owner) return focusSessionMachine(owner.session.sessionId, owner.machineId);
@@ -371,14 +374,14 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
   function openBesideSession(id: string, page: OpenPage, source?: SessionLocation) {
     const target = sessionToolTarget(page.path);
     if (target === null && !page.catalogDock) {
-      whole(page);
+      go(visitPage(ref.current, page));
       return;
     }
     if (
       !id ||
       page.kind === "session" ||
       (page.kind === "catalog" && !page.catalogDock) ||
-      (target != null && target !== id)
+      (!page.resourceHost && target != null && target !== id)
     )
       return;
     // A directory opened from a conversation selects the resource owner, while its
@@ -426,7 +429,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     const path = "/chat/" + encodeURIComponent(id);
     if (!source) {
       if (target && !hosts.current.has(page.id)) {
-        go({ ...visitPage(ref.current, page), visible: [page.id], right: [] });
+        go(visitPage(ref.current, page));
         return;
       }
       attach(
@@ -510,13 +513,12 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       return;
     }
     if (page.kind === "session" && pair && pair.session.id !== page.id) {
-      const attached = ref.current.pages.find((p) => p.id === bySession.current.get(page.id));
+      const attached = bySession.current.get(page.id);
       if (attached) {
         go(paired(ref.current, page, attached));
         return;
       }
-      const next = visitPage(ref.current, page);
-      go({ ...next, visible: [page.id], right: [] });
+      go(visitPage(ref.current, page));
       return;
     }
     go(visitPage(ref.current, page));
@@ -526,10 +528,6 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     if (!draft || currentId === draft.id) return false;
     focus(draft);
     return true;
-  };
-  const place = (page: OpenPage, side: 0 | 1, before?: string) => {
-    const layout = placePage(ref.current, page, side);
-    go(before ? reorderPage(layout, page.id, before) : layout);
   };
   const dismiss = (id: string, keepOpen: boolean) => {
     const before = ref.current;
@@ -543,21 +541,25 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
           pages: before.pages,
           recent: before.recent,
           minimized: [...before.minimized, id],
-          right: removed.visible.length === 2 ? before.right : [],
         }
       : removed;
     const pair = sessionAppPair(before);
     if (page.kind !== "session") {
       detachDockPage(dockPageKey(id));
+      if (!keepOpen) byApp.current.delete(id);
       for (const [sid, attached] of bySession.current)
-        if (attached === id) bySession.current.delete(sid);
+        if (attached.id === id) bySession.current.delete(sid);
     }
     if (pair && pair.app.id === id) {
       const active = dockPageId(dockActiveKey("right") ?? "");
-      const prior = next.pages.find((p) => p.id === active);
+      const found = next.pages.find((p) => p.id === active);
+      const prior =
+        found &&
+        (byApp.current.get(found.id)?.app ??
+          (found.kind === "catalog" ? { ...found, catalogDock: true } : found));
       next = prior
         ? paired(next, pair.session, prior)
-        : { ...next, visible: [pair.session.id], focus: pair.session.id, right: [] };
+        : { ...next, visible: [pair.session.id], focus: pair.session.id };
       go(next, true, closed);
       return;
     }
@@ -585,13 +587,13 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       publish(next);
     }
   };
-  const nativeFullScreen =
-    current?.kind === "system" && location.state?.nativeAppFullScreen === current.id;
-  const dockedFullScreen =
-    current?.kind === "window" && location.state?.dockedFullScreen === current.id;
   function fullScreen(page: OpenPage) {
+    if (contextualDockPage(page.path)) {
+      void navigate(page.path, { state: { fullScreenSessionTool: page.id } });
+      return;
+    }
     if (page.kind === "system") {
-      void navigate(page.path, { state: { nativeAppFullScreen: page.id } });
+      void navigate(page.path, { state: { nativeAppFullScreen: page.id, returnTo: path } });
       return;
     }
     const record = apps.find((entry) => "app:" + entry.key === page.id);
@@ -614,7 +616,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       });
       return;
     }
-    openFullPage(navigate, target, page.path, { fromWindow: currentId === page.id });
+    openFullPage(navigate, target, path, { fromWindow: currentId === page.id });
   }
   // A conversation row still owns its draft, including files staged only in its composer.
   // Closing its view takes it out of the pane while the row can reopen that same composer.
@@ -629,21 +631,24 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     } else dismiss(id, page.kind === "session");
   };
   const minimize = (id: string) => dismiss(id, true);
-  const whole = (page: OpenPage) => {
-    if (pair) {
-      detachDockPage(dockPageKey(pair.app.id));
-      bySession.current.delete(pair.session.id);
+  const openPage = (page: OpenPage) => {
+    const docked = byApp.current.get(page.id);
+    if (docked) {
+      const session =
+        ref.current.pages.find((entry) => entry.id === docked.session.id) ?? docked.session;
+      const app = { ...docked.app, path: page.path, title: page.title };
+      if (pair?.app.id === page.id && pair.session.id === session.id)
+        openPanel(dockPageKey(page.id), "right");
+      go(paired(ref.current, session, app));
+      return;
     }
-    go({ ...visitPage(ref.current, page), visible: [page.id], right: [] });
-  };
-  const swap = () => {
-    const before = ref.current;
-    if (before.visible.length === 2 && !sessionAppPair(before))
-      publish({
-        ...before,
-        visible: [...before.visible].reverse(),
-        right: before.pages.map((p) => p.id).filter((id) => !before.right.includes(id)),
-      });
+    // A bound tool renders in its authorized Session's dock. Its canonical address
+    // resolves that scope even when another Session or resource currently has focus.
+    if (contextualDockPage(page.path)) {
+      void navigate(page.path);
+      return;
+    }
+    go(visitPage(ref.current, page));
   };
   const reorder = (id: string, before: string) => publish(reorderPage(ref.current, id, before));
   const openAppCenterBesideSession = (id: string, source?: SessionLocation) =>
@@ -654,12 +659,26 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     go(paired(ref.current, pair.session, { ...page, catalogDock: true }), replace);
     return true;
   }
+  function canDockRunningApp(session: OpenPage, app: OpenPage) {
+    if (session.kind !== "session" || (app.kind !== "window" && app.kind !== "system"))
+      return false;
+    const resource = parseSessionWorkbenchPage(app);
+    if (!resource) return sessionToolTarget(app.path) === undefined;
+    const id = pageSessionId(session);
+    const host = session.sessionHost;
+    return (
+      resource.address.sessionId === id &&
+      resource.address.projectId === (host?.session.projectId ?? projectId) &&
+      resource.address.machineId === (host ? host.machineId : machineForSession(id))
+    );
+  }
   const separate = (page: OpenPage) => {
     window.open(page.path, "_blank", "noopener");
   };
   return (
     <Context.Provider
       value={{
+        address: path,
         layout,
         scope: lifetime.scope,
         accountScope: lifetime.accountScope,
@@ -668,21 +687,26 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
         resumeDraft,
         openBesideSession,
         focus,
-        place,
-        dockRunningApp: (session, app) => go(paired(ref.current, session, app)),
-        whole,
+        openPage,
+        canDockRunningApp,
+        dockRunningApp: (session, app) => {
+          if (!canDockRunningApp(session, app)) return;
+          if (session.sessionHost) {
+            hosts.current.set(app.id, session);
+            hosts.current.set(session.id, session);
+          }
+          go(paired(ref.current, session, app));
+        },
         close,
         minimize,
         fullScreen,
         ...(dockedFullScreen || nativeFullScreen
           ? {
               exitFullScreen: () => {
-                if (dockedFullScreen) returnToHostEntry(navigate, location.state.returnTo);
-                else void navigate(path, { replace: true });
+                returnToHostEntry(navigate, location.state?.returnTo ?? path);
               },
             }
           : {}),
-        swap,
         reorder,
         openAppCenterBesideSession,
         openFromAppCenter,

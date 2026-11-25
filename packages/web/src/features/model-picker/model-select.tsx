@@ -46,6 +46,7 @@ export function ModelCatalogSelect({
   purpose = "chat",
   onClear,
   clearLabel,
+  onOpenModels,
 }: {
   models: ModelInfo[];
   /** Currently selected (provider, modelId) pair; null = not yet chosen. */
@@ -63,6 +64,8 @@ export function ModelCatalogSelect({
   onClear?: () => void;
   /** The clear action's words (the picker's own when absent). */
   clearLabel?: string;
+  /** Opens the Models page when the no-key overlay button is pressed. */
+  onOpenModels?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   // Something to pick: the list the picker will show once every model is listed.
@@ -109,6 +112,7 @@ export function ModelCatalogSelect({
         models={models}
         value={value}
         {...(defaultModel !== undefined ? { defaultModel } : {})}
+        {...(onOpenModels !== undefined ? { onOpenModels } : {})}
         onPick={(m) => {
           onChange({ provider: m.provider, modelId: m.modelId });
           setOpen(false);

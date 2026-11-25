@@ -103,6 +103,35 @@ describe("the mocked API", () => {
     expect(crashes, "handlers that threw something other than an ApiError").toEqual([]);
   });
 
+  it("keeps demo workbench restorations within the installation and resets a new demo", async () => {
+    const fresh = () => resetStore({ lang: "en", signedIn: true, freshProject: true });
+    const store = fresh();
+    const machine = store.f.machines.machines.find((m) => !m.local && m.api)!.machineId!;
+    const history = (machineId: string | null = null) =>
+      api.getWorkbenchHistory(IDS.project, "penguin_support", "support", machineId);
+    const { versions } = await history();
+    expect(versions).toHaveLength(2);
+    const old = versions[1]!.revision;
+    await api.rollbackWorkbench(IDS.project, "penguin_support", "support", old, machine);
+    expect((await history(machine)).versions.map((v) => v.revision)).toEqual([
+      old,
+      versions[0]!.revision,
+      old,
+    ]);
+    expect((await history()).versions).toEqual(versions);
+    await expect(
+      api.getWorkbenchHistory(IDS.project, IDS.agents.general, "support", null),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      api.getWorkbenchHistory("unknown", "penguin_support", "support", null),
+    ).rejects.toMatchObject({ status: 404 });
+    fresh();
+    await api.rollbackWorkbench(IDS.project, "penguin_support", "support", old, null);
+    expect((await history(machine)).versions.map((v) => v.revision)).toEqual(
+      versions.map((v) => v.revision),
+    );
+  });
+
   it("lists and announces a Session only on the machine that owns its workspace", async () => {
     const store = resetStore({ lang: "en", signedIn: true, freshProject: true });
     const remote = store.f.machines.machines.find((m) => !m.local && m.api && m.machineId)!;
@@ -212,6 +241,7 @@ describe("the mocked API", () => {
       IDS.agents.docs,
       IDS.agents.notes,
       IDS.agents.general,
+      "penguin_support",
     ]);
     expect(agents.agents.every((agent) => Number.isInteger(agent.pluginCount))).toBe(true);
     const projectId = store.f.project.projectId;

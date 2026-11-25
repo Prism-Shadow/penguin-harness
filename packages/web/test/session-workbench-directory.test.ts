@@ -1,11 +1,18 @@
 /** @vitest-environment jsdom */
-import { createElement as h } from "react";
+/**
+ * - A bulk close across machines leaves failed groups selected and offers a targeted retry.
+ * - Files lists archived workspaces without reading any resource counts.
+ * - A Browser count refresh removes the last closed page’s Session, and an empty Session
+ *   shortcut still opens its own workbench.
+ * - Searching the Browser directory finds an archived child beyond the first page.
+ */
+import { act, createElement as h } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { SessionWorkbenchPage } from "../src/features/dock/session-workbench-page";
 import { en } from "../src/lib/strings-en";
 import { setActiveStrings, zh } from "../src/lib/strings";
-import { button, click, mount, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, field, mount, run, type, unmountAll, waitFor } from "./helpers/dom";
 
 const fixture = vi.hoisted(() => {
   const agent = { agentId: "author" };
@@ -59,6 +66,7 @@ vi.mock("../src/lib/session-resource-counts", () => ({
 
 afterEach(async () => {
   await unmountAll();
+  vi.useRealTimers();
   vi.resetAllMocks();
   setActiveStrings(zh);
 });
@@ -73,7 +81,8 @@ async function directory(kind: string) {
   );
 }
 
-it("keeps same-ID local and remote resource groups distinct, reports a failed target and retries only that target", async () => {
+it.each(["terminal", "builtin-browser"])("%s retries only the failed machine", async (kind) => {
+  const unit = kind === "terminal" ? "terminal" : "page";
   setActiveStrings(en);
   const live = new Map<string | null, number>([
     [null, 1],
@@ -95,7 +104,7 @@ it("keeps same-ID local and remote resource groups distinct, reports a failed ta
       return { results: [{ sessionId: "shared", closed: count }] };
     },
   );
-  await directory("terminal");
+  await directory(kind);
   const checkbox = (host: string) =>
     document.querySelector<HTMLInputElement>(
       'input[aria-label="Select Session Notes (' + host + ')"]',
@@ -110,15 +119,19 @@ it("keeps same-ID local and remote resource groups distinct, reports a failed ta
   expect(fixture.open).toHaveBeenCalledWith(
     "shared",
     expect.objectContaining({ path: expect.stringContaining("machine=remote-a") }),
-    expect.objectContaining({ projectId: "project", machineId: "remote-a", session: fixture.row }),
+    expect.objectContaining({
+      projectId: "project",
+      machineId: "remote-a",
+      session: fixture.row,
+    }),
   );
   expect(fixture.close).not.toHaveBeenCalled();
   await click(checkbox("This server"));
   await click(checkbox("Studio"));
   await click(button("Close selected resources (2)"));
   const confirm = () => document.querySelector<HTMLElement>('[role="dialog"]')!;
-  expect(confirm().textContent).toContain("Notes (This server) 1 open terminal");
-  expect(confirm().textContent).toContain("Notes (Studio) 2 open terminals");
+  expect(confirm().textContent).toContain("Notes (This server) 1 open " + unit);
+  expect(confirm().textContent).toContain("Notes (Studio) 2 open " + unit + "s");
   await click(button("Close"));
   await waitFor(
     () => document.body.textContent?.includes("Studio (shared): close_failed") === true,
@@ -144,15 +157,62 @@ it("lists archived workspaces by path without counting terminal or browser resou
   expect(fixture.counts).not.toHaveBeenCalled();
 });
 
-it("keeps authorized browser groups with no pages available alongside active browser groups", async () => {
+it("removes the Session when its last page closes and can open that empty Session by its shortcut", async () => {
   setActiveStrings(en);
-  fixture.list.mockResolvedValue({ sessions: [fixture.row] });
+  let pages = 2;
   fixture.counts.mockImplementation(async (_kind, _project, machine) =>
-    machine === "remote-a" ? { shared: 3 } : {},
+    machine === "remote-a" ? { shared: pages } : {},
   );
+  fixture.get.mockResolvedValue({ session: fixture.row });
   await directory("builtin-browser");
-  await waitFor(() => document.body.textContent?.includes("3 open pages") === true);
+  await waitFor(() => document.body.textContent?.includes("2 open pages") === true);
+  expect(document.querySelectorAll("li")).toHaveLength(1);
   expect(document.querySelector("li")?.textContent).toContain("Studio");
-  expect(document.body.textContent).toContain("0 open pages");
-  expect(fixture.get).not.toHaveBeenCalled();
+  expect(fixture.list).not.toHaveBeenCalled();
+  pages = 0;
+  await run(() => window.dispatchEvent(new Event("focus")));
+  await waitFor(() => document.body.textContent?.includes("No open browser pages") === true);
+  expect(document.querySelector("li")).toBeNull();
+  expect(fixture.open).not.toHaveBeenCalled();
+  await unmountAll();
+  await directory("builtin-browser?project=project&session=shared&machine=remote-a");
+  await waitFor(() => fixture.open.mock.calls.length === 1);
+  expect(fixture.open).toHaveBeenCalledWith(
+    "shared",
+    expect.objectContaining({ path: expect.stringContaining("machine=remote-a") }),
+    { projectId: "project", machineId: "remote-a", session: fixture.row },
+  );
+});
+
+it("finds an archived child outside the first page of browser owners and excludes other Projects", async () => {
+  setActiveStrings(en);
+  vi.useFakeTimers();
+  const ids = Array.from({ length: 33 }, (_, i) => "owner-" + String(i).padStart(2, "0"));
+  fixture.counts.mockImplementation(async (_kind, _project, machine) =>
+    machine === null ? Object.fromEntries(ids.map((id) => [id, 1])) : {},
+  );
+  fixture.get.mockImplementation(async (id: string) => ({
+    session: {
+      ...fixture.row,
+      sessionId: id,
+      ...(id === ids[0] ? { projectId: "another", title: "Recipe elsewhere" } : {}),
+      ...(id === ids.at(-1) ? { title: "Recipe", source: "subagent", archived: true } : {}),
+    },
+  }));
+  await directory("builtin-browser");
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(document.body.textContent).not.toContain("Recipe");
+  const search = field("Search Sessions with open browser pages");
+  await type(search, "recipe");
+  await act(() => vi.advanceTimersByTimeAsync(150));
+  const row = document.querySelector("li");
+  expect(row?.textContent).toContain("Archived");
+  expect(row?.textContent).toContain("Subagent");
+  expect(row?.textContent).toContain(ids.at(-1));
+  expect(document.querySelectorAll("li")).toHaveLength(1);
+  await type(search, "no match");
+  await act(() => vi.advanceTimersByTimeAsync(150));
+  expect(document.body.textContent).toContain("No matching Sessions.");
+  expect(document.body.textContent).not.toContain("No open browser pages");
+  expect(fixture.list).not.toHaveBeenCalled();
 });

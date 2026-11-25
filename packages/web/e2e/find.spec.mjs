@@ -121,12 +121,12 @@ test("Ctrl+F scopes to the focused area, Ctrl+Shift+F searches them all", async 
   await expect(bar.getByText(`1/${HITS}`, { exact: true })).toBeVisible();
 
   // The bar is no Escape layer, so the other global shortcuts still run while it is open: the
-  // sidebar folds away and comes back (Ctrl+Alt+1), from inside the query field.
+  // sidebar folds away and comes back (Ctrl+B), from inside the query field.
   const sidebarRegion = page.locator('[data-find-region="sessions"]');
   await expect(sidebarRegion).toBeVisible();
-  await input.press("ControlOrMeta+Alt+1");
+  await input.press("ControlOrMeta+b");
   await expect(sidebarRegion).toBeHidden();
-  await input.press("ControlOrMeta+Alt+1");
+  await input.press("ControlOrMeta+b");
   await expect(sidebarRegion).toBeVisible();
 
   // Escape closes it, and the paint goes with it.
@@ -227,7 +227,7 @@ test("transcript find searches folded compact details and restores the closed gr
   await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
   const group = page.locator(".ui-frame[data-step-view]"),
     count = group.locator("[data-step-count]");
-  await expect(count).toHaveText("4 步");
+  await expect(count).toHaveText("2 步");
   await input.focus();
   await page.keyboard.press("ControlOrMeta+f");
   const bar = page.getByRole("search");
@@ -236,7 +236,7 @@ test("transcript find searches folded compact details and restores the closed gr
   await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
   await expect(bar.getByText("1/1", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(count).toHaveText("4 步");
+  await expect(count).toHaveText("2 步");
   await expect(group.locator(".ui-tree > [data-depth]")).toHaveCount(0);
 });
 
@@ -276,4 +276,32 @@ test("load and keep searching backfills earlier turns and lands on the nearest h
   await expect(bar.getByText("2/3", { exact: true })).toBeVisible();
   await expect(page.getByText("zebracorn two")).toBeInViewport();
   await expect(bar.getByText("更早的内容尚未加载")).toHaveCount(0);
+});
+
+test("the sidebar shortcut works while composing and leaves rich-text formatting to its editor", async ({
+  page,
+}) => {
+  const makeSession = await setup(page);
+  await page.goto(`${BASE}/chat/${await makeSession()}`);
+  const composer = page.getByPlaceholder(/输入消息/);
+  const sidebar = page.locator('[data-find-region="sessions"]');
+  await composer.fill("Keep this draft.");
+  await composer.press("ControlOrMeta+b");
+  await expect(sidebar).toBeHidden();
+  await expect(composer).toHaveValue("Keep this draft.");
+  await composer.press("ControlOrMeta+b");
+  await expect(sidebar).toBeVisible();
+
+  const editor = page.locator("[data-shortcut-test-editor]");
+  await page.evaluate(() => {
+    const element = document.createElement("div");
+    element.contentEditable = "true";
+    element.setAttribute("data-shortcut-test-editor", "");
+    document.body.append(element);
+    element.focus();
+  });
+  await editor.press("ControlOrMeta+b");
+  await expect(sidebar).toBeVisible();
+  await page.keyboard.type("Bold");
+  await expect(editor.locator("b,strong")).toHaveText("Bold");
 });

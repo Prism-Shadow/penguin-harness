@@ -397,7 +397,7 @@ function CardSkeletons({ rows }: { rows: number }) {
   );
 }
 
-export function BenchmarkPage() {
+export function BenchmarkPage({ onOpen }: { onOpen?: (id: string) => void } = {}) {
   useDocumentTitle(S.benchmark.title);
   const navigate = useNavigate();
   const { currentProject, currentAgent, agents } = useProject();
@@ -471,7 +471,7 @@ export function BenchmarkPage() {
     setAiTarget(filterAgentId ?? fallbackAgent);
     setAiOpen(true);
   };
-  const open = (benchmarkId: string) => navigate(benchmarkRoute(benchmarkId));
+  const open = onOpen ?? ((benchmarkId: string) => navigate(benchmarkRoute(benchmarkId)));
   const clearAgentFilter = () =>
     setSearchParams(
       (prev) => {

@@ -1,0 +1,596 @@
+/**
+ * Message-window scanner: the pure logic behind cursor pagination of
+ * `GET /api/sessions/:id/messages` (TraceService.readMessagesPage).
+ *
+ * A window **unit** is one Task in the Web reducer's sense: it opens at a main-session
+ * user prompt (text or image) and runs until the next such prompt. Cutting only at these
+ * boundaries is what keeps every stream-model invariant intact inside a window — a
+ * tool_call is never separated from its tool_call_output (outputs land before the next
+ * user prompt), a compaction_begin/end span never splits (compaction-internal messages
+ * stay skippable), a steering chip keeps the images that ride behind it, and a
+ * mid-Task shard rotation (auto compaction with carry-over) stays glued to its Task.
+ *
+ * The scanner walks one shard's RAW messages (no subagent expansion — origin-carrying
+ * messages never appear in a shard) and mirrors, decision for decision, the Web reducer
+ * in web/src/lib/amsp/stream-model.ts (pushMessage/startTask/finalizeOpenTask) plus the
+ * outline-entry rule in web/src/features/chat/outline-model.ts (buildOutline) — the four
+ * implementations of "what is one turn" (this file, stream-model, outline-model, and
+ * trace-service.analyze) must stay in step; tests on both sides pin the shared cases.
+ *
+ * Two distinct counts come out of one pass:
+ *   - **unit boundaries** — the safe cut points described above (banner-only prompts and
+ *     goal-round re-sends included: they start Tasks in the reducer);
+ *   - **outline turns** — the subset that opens an entry in the Web's conversation
+ *     outline (`第 N 轮` numbering). Machine-only prompts (handoff / model-switch
+ *     blocks), goal rounds past 1, steering chips and compaction injections do NOT open
+ *     entries, and consecutive user messages of one send merge into one entry — the
+ *     count must match buildOutline exactly, or a paginated outline would mis-number.
+ *
+ * The pass also accumulates the **prior stats** a partial window needs seeded into the
+ * Web's stats tracker so header chips and per-turn cumulative rows keep telling the
+ * truth (see task-stats.ts `seedPriorStats`): elapsed time of finished Tasks, subagent
+ * token totals (via the caller-provided child expander), and the last main-session
+ * session/context token readings.
+ *
+ * Task records (`task_begin` / `task_end`) are skipped outright, before anything else looks at
+ * a message: Tasks are still derived from user prompts here, and skipping keeps every cut,
+ * count and timing exactly what it is on a Trace written before the records existed — the
+ * cached prefix records stay valid, so CACHE_VERSION is unchanged by them. So is it by the
+ * in-session switch's Trace handoff, which counts like a summary: no shard written before it
+ * existed holds a `[model_switch_from]` block naming its own Session (a `/model` block names
+ * the Session it came from), so no cached record changes. A `session_update` is metadata like
+ * `session_meta`: no item, no Task, no timing. Version 5 has it so: a harness that predates the
+ * record cached a shard holding one (after a downgrade) as an event that advances the open Task.
+ *
+ * Scan state is carried across shards (a Task can span a rotation). Cached per-shard
+ * prefix records (trace_files.page_stats) persist the carry so old shards are read at
+ * most once ever; bump CACHE_VERSION whenever any rule in this file changes.
+ */
+import { isTaskRecord, parseUserSteeringText } from "@prismshadow/penguin-core";
+import {
+  parseBackgroundTaskDoneMessage,
+  parseHandoffMessage,
+  parseInPlaceModelSwitch,
+  parseModelSwitchMessage,
+} from "@prismshadow/amsp/markers";
+import type { AmspRecord } from "@prismshadow/penguin-core";
+import type { MessageCursor, WindowPriorStats } from "./trace.js";
+
+/** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
+export const CACHE_VERSION = 5;
+
+/** Open-Task bookkeeping carried across messages (mirrors StreamModel.task* fields). */
+interface TaskCarry {
+  open: boolean;
+  /** Task first/latest message timestamps (ms; the degenerate-round elapsed fallback). */
+  firstTsMs: number;
+  lastTsMs: number;
+  /** Last non-compaction request_end (ms); the Task's true end when present. */
+  lastReqEndMs: number | null;
+  /** Whether this Task saw main usage / non-blank assistant text — decides whether a stats row would be emitted at its close (which breaks a user-item run). */
+  sawUsage: boolean;
+  sawReply: boolean;
+  /** Compaction usage held pending (committed to the Task by a later non-compaction request_end — mirrors task-stats.ts pendingCompaction*). */
+  pendingCompactionUsage: boolean;
+  /**
+   * A tool output of the current turn has arrived and is still owed to the model (mirrors
+   * StreamModel.turnToolOutputs: set by a complete tool_call_output, cleared when the next
+   * request opens or a Task starts). A Task can never end in that window, so a background
+   * completion notice landing there is in-task by position — the recognizer for notices
+   * written by a pre-stamp core (see the user-text branch).
+   */
+  turnToolOutputs: boolean;
+  /** Open Request's begin timestamp (ms), null between Requests (mirrors StreamModel.openRequestBeginMs). */
+  reqBeginMs: number | null;
+  /** Approval wait accumulated inside the open Request (ms), deducted at its end (mirrors StreamModel.openApprovalWaitMs). */
+  reqApprovalWaitMs: number;
+  /** This Task's model-API time so far (ms; mirrors task-stats taskLlmMs). */
+  apiMs: number;
+  /**
+   * Tool executions still open, keyed by tool_call_id, holding each one's execution start (ms):
+   * the tool_call's own timestamp, moved forward to the approval moment once one arrives. A
+   * plain object rather than a Map because a shard is cached mid-Task and this state is JSON.
+   */
+  openTools: Record<string, number>;
+  /** This Task's settled tool execution intervals (ms), unioned when it closes (mirrors task-stats taskToolIntervals). */
+  toolIntervals: Array<[number, number]>;
+}
+
+/**
+ * Total length of the **union** of the given intervals (ms): overlapping and nested runs count
+ * once, so parallel tool calls yield wall time rather than a sum of durations. Shared with
+ * trace-service, which decomposes finished Trace files the same way.
+ */
+export function mergedIntervalMs(intervals: ReadonlyArray<readonly [number, number]>): number {
+  if (intervals.length === 0) return 0;
+  const sorted = [...intervals].sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let [openStart, openEnd] = sorted[0]!;
+  for (let i = 1; i < sorted.length; i++) {
+    const [start, end] = sorted[i]!;
+    if (start > openEnd) {
+      total += openEnd - openStart;
+      openStart = start;
+      openEnd = end;
+    } else if (end > openEnd) {
+      openEnd = end;
+    }
+  }
+  return total + (openEnd - openStart);
+}
+
+/** Full scanner state, serializable into a shard's cached prefix record. */
+export interface ScanState {
+  totals: WindowPriorStats;
+  task: TaskCarry;
+  /** Between a main-session compaction_begin and its compaction_end. */
+  compactionActive: boolean;
+  /** A steering chip is still collecting its trailing images (mirrors StreamModel.openSteering). */
+  steeringOpen: boolean;
+  /**
+   * Inside an unbroken, entry-carrying run of user items — buildOutline's `lastWasUser`,
+   * tracked at the item level: true after an entry-eligible user item, false after any
+   * non-user item (a stats row included) AND after banner/goal-round texts (which open no
+   * entry and break the run in buildOutline). Both the window-cut and the merge decision
+   * key off it, so a cut can never split what the outline merges.
+   */
+  runOpen: boolean;
+}
+
+export function initialScanState(): ScanState {
+  return {
+    totals: {
+      turns: 0,
+      subagentTokens: 0,
+      elapsedMs: 0,
+      apiMs: 0,
+      toolMs: 0,
+      sessionTokens: 0,
+      contextTokens: 0,
+    },
+    task: {
+      open: false,
+      firstTsMs: 0,
+      lastTsMs: 0,
+      lastReqEndMs: null,
+      sawUsage: false,
+      sawReply: false,
+      pendingCompactionUsage: false,
+      turnToolOutputs: false,
+      reqBeginMs: null,
+      reqApprovalWaitMs: 0,
+      apiMs: 0,
+      openTools: {},
+      toolIntervals: [],
+    },
+    compactionActive: false,
+    steeringOpen: false,
+    runOpen: false,
+  };
+}
+
+/** One safe cut point: `ordinal` indexes into the shard's parsed message array; `stats` is the cumulative prior AT the cut (the unit itself not included). */
+export interface UnitBoundary {
+  ordinal: number;
+  stats: WindowPriorStats;
+}
+
+/**
+ * Aggregate a subagent pointer's child subtree without materializing its messages:
+ * the token sum feeds `subagentTokens`, the max timestamp advances the open Task's
+ * lastTs exactly as routeNested's touchTask would for every expanded child message.
+ * Null = child trace missing (the pointer event stays a plain event, contributing nothing).
+ */
+export interface ChildAggregate {
+  requestTokens: number;
+  maxTsMs: number | null;
+}
+
+function tsMs(timestamp: string): number | null {
+  const ms = Date.parse(timestamp);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** Mirrors stream-model touchTask: advance the open Task's latest timestamp (compaction-internal messages excluded). */
+function touchTask(state: ScanState, ms: number | null): void {
+  if (!state.task.open || state.compactionActive || ms === null) return;
+  if (ms > state.task.lastTsMs) state.task.lastTsMs = ms;
+}
+
+/** Mirrors stream-model finalizeOpenTask + task-stats endTask: settle the open Task's elapsed into the cumulative. */
+function finalizeTask(state: ScanState): void {
+  const t = state.task;
+  if (!t.open) return;
+  t.open = false;
+  const endMs = t.lastReqEndMs ?? t.lastTsMs;
+  state.totals.elapsedMs += Math.max(0, endMs - t.firstTsMs);
+  // The elapsed breakdown folds on the same boundary as the total (mirrors task-stats endTask).
+  // Tools still open at the close never finished within this trace and contribute nothing.
+  state.totals.apiMs += t.apiMs;
+  state.totals.toolMs += mergedIntervalMs(t.toolIntervals);
+  t.pendingCompactionUsage = false;
+}
+
+/** Mirrors stream-model startTask: finalize the previous Task and open a new one at `ms`. */
+function startTask(state: ScanState, ms: number | null): void {
+  finalizeTask(state);
+  const t = state.task;
+  t.open = true;
+  t.firstTsMs = ms ?? 0;
+  t.lastTsMs = t.firstTsMs;
+  t.lastReqEndMs = null;
+  t.sawUsage = false;
+  t.sawReply = false;
+  t.pendingCompactionUsage = false;
+  t.turnToolOutputs = false;
+  t.reqBeginMs = null;
+  t.reqApprovalWaitMs = 0;
+  t.apiMs = 0;
+  t.openTools = {};
+  t.toolIntervals = [];
+}
+
+/** A non-user item entered the stream: the user-item run breaks (buildOutline's lastWasUser = false). */
+function breakRuns(state: ScanState): void {
+  state.runOpen = false;
+}
+
+/**
+ * Handle one Task-starting user message (prompt text or non-steering image).
+ * `entryEligible` says whether the message would open an outline entry (buildOutline's
+ * rule); ineligible messages (banner blocks, harness-injected inputs) still start Tasks — and
+ * still cut when the run is broken — but never count and always break the run, exactly
+ * as buildOutline resets lastWasUser for them.
+ */
+function onTaskStart(
+  state: ScanState,
+  ms: number | null,
+  entryEligible: boolean,
+  onBoundary: (stats: WindowPriorStats) => void,
+): void {
+  // A stats row emitted while closing the previous Task lands BEFORE this user item and
+  // breaks the item run (finalizeOpenTask inserts it ahead of the new prompt) — mirror
+  // that so two sends merged by the outline are never cut apart, while two sends
+  // separated by a stats row cut (and count) as two.
+  if (state.task.open && (state.task.sawUsage || state.task.sawReply)) breakRuns(state);
+  const boundary = !state.runOpen;
+  startTask(state, ms);
+  if (boundary) onBoundary({ ...state.totals });
+  if (entryEligible) {
+    if (boundary) state.totals.turns += 1;
+    state.runOpen = true;
+  } else {
+    state.runOpen = false;
+  }
+}
+
+/**
+ * buildOutline's eligibility for a user prompt: machine-only source blocks and
+ * harness-injected inputs (goal rounds, hook continues) open no entry. A background
+ * completion notice shares the harness stamp but keeps its independent turn when it starts
+ * a Task (`isNotice` — the caller already parsed it), matching the Web reducer.
+ */
+function outlineEligible(text: string, sender: string | undefined, isNotice: boolean): boolean {
+  if (sender === "harness" && !isNotice) return false;
+  return !parseHandoffMessage(text) && !parseModelSwitchMessage(text);
+}
+
+/**
+ * Scan one shard's raw messages, mutating `state` in place and reporting every unit
+ * boundary through `onBoundary` (with the cumulative priors AT the cut). `expandChild`
+ * resolves a subagent pointer's aggregate (may hit a per-request memo); pass null to
+ * skip child reads when the caller does not need subagent totals for this span.
+ */
+export async function scanMessages(
+  state: ScanState,
+  messages: readonly AmspRecord[],
+  onBoundary: (ordinal: number, stats: WindowPriorStats) => void,
+  expandChild: ((sessionId: string) => Promise<ChildAggregate | null>) | null,
+  fromOrdinal = 0,
+  toOrdinal = messages.length,
+): Promise<void> {
+  // The Session the shard belongs to, as its head names it (an in-session switch's handoff
+  // names the Session itself).
+  const sessionId = (
+    messages.find((m) => m.type === "session_meta")?.payload as { session_id?: string } | undefined
+  )?.session_id;
+  for (let i = fromOrdinal; i < toOrdinal; i++) {
+    const msg = messages[i]!;
+    // Shards never contain origin-carrying messages (core's Writer filters them);
+    // defensively skip any that appear rather than mis-shaping the counts.
+    if (msg.origin !== undefined && msg.origin.length > 0) continue;
+    if (isTaskRecord(msg)) continue;
+    const ms = tsMs(msg.timestamp);
+    const p = msg.payload as Record<string, unknown> & { type?: string; role?: string };
+
+    // Mirrors pushMessage's first step: anything that is not a complete user image
+    // closes the steering-images window (session_meta and events included).
+    const isUserImage = msg.type === "model_msg" && p.type === "image_url";
+    if (!isUserImage) state.steeringOpen = false;
+    // A completed switch's session_update counts like session_meta: no item (the Web draws its
+    // marker, as it does for a meta naming another model), no Task, no timing.
+    if (msg.type === "event_msg" && p.type === "session_update") continue;
+
+    if (msg.type === "model_msg") {
+      // Compaction-internal model messages: never rendered, never counted (stream-model
+      // returns before any item/Task logic; only touchTask advances).
+      if (state.compactionActive) {
+        touchTask(state, ms);
+        continue;
+      }
+      if (p.type === "text" && p.role === "user" && typeof p.text === "string") {
+        const text = p.text;
+        // Compaction-summary injection, or the Trace handoff an in-session model switch opens
+        // the next context with in its place: no item, no Task, no run change (the Web folds the
+        // handoff into the switch's marker).
+        if (
+          text.startsWith("[context_summary]") ||
+          text.startsWith("<context_summary>") ||
+          parseInPlaceModelSwitch(text, sessionId) !== null
+        ) {
+          touchTask(state, ms);
+          continue;
+        }
+        // Mid-run steering: rendered as a user_steering item (not user_text) — it breaks
+        // the outline's user-item run but never starts a Task or cuts a window.
+        if (parseUserSteeringText(text) !== null) {
+          touchTask(state, ms);
+          breakRuns(state);
+          state.steeringOpen = true;
+          continue;
+        }
+        // A background completion notice injected into the running Task rides inside it
+        // like steering — a banner item, no Task start, no cut, no entry — but opens no
+        // trailing-image window (notices carry none). Recognized by the delivery stamp,
+        // or by POSITION for notices written by a pre-stamp core: a Task never ends while
+        // this turn's tool outputs are still owed to the model (turnToolOutputs), so a
+        // notice landing there is in-task even without the stamp — the same rule trace
+        // analysis applies, and the same fallback the Web reducer applies (the two must
+        // stay in step). An unstamped notice after a no-tool turn falls through to
+        // onTaskStart: an idle-launched notice task keeps its independent turn.
+        const notice = parseBackgroundTaskDoneMessage(text);
+        if (
+          notice !== null &&
+          (notice.done.delivery === "steering" || state.task.turnToolOutputs)
+        ) {
+          touchTask(state, ms);
+          breakRuns(state);
+          continue;
+        }
+        onTaskStart(
+          state,
+          ms,
+          outlineEligible(text, (p as { sender?: string }).sender, notice !== null),
+          (stats) => onBoundary(i, stats),
+        );
+        continue;
+      }
+      if (p.type === "image_url") {
+        // An image riding behind a steering chip folds into it: no item, no Task.
+        if (state.steeringOpen) {
+          touchTask(state, ms);
+          continue;
+        }
+        onTaskStart(state, ms, true, (stats) => onBoundary(i, stats));
+        continue;
+      }
+      if (p.type === "text" && p.role === "assistant" && typeof p.text === "string") {
+        touchTask(state, ms);
+        // Blank fidelity-only messages produce no item (stream-model discards them).
+        if (p.text.trim() !== "") {
+          state.task.sawReply = true;
+          breakRuns(state);
+        }
+        continue;
+      }
+      if (p.type === "thinking") {
+        touchTask(state, ms);
+        if (typeof p.thinking === "string" && p.thinking.trim() !== "") breakRuns(state);
+        continue;
+      }
+      if (p.type === "tool_call") {
+        touchTask(state, ms);
+        // Execution starts here unless an approval follows and moves it (mirrors
+        // stream-model's settleToolDuration, which prefers approvalAtMs over callStartedAtMs).
+        if (ms !== null && typeof p.tool_call_id === "string" && p.tool_call_id !== "") {
+          state.task.openTools[p.tool_call_id] = ms;
+        }
+        breakRuns(state);
+        continue;
+      }
+      if (p.type === "tool_call_output") {
+        // Updates an existing card (no new item); the turn now owes the model its results
+        // — the window a positionally-recognized notice keys on (see turnToolOutputs).
+        touchTask(state, ms);
+        if (ms !== null && typeof p.tool_call_id === "string") {
+          const startMs = state.task.openTools[p.tool_call_id];
+          if (startMs !== undefined) {
+            delete state.task.openTools[p.tool_call_id];
+            if (ms > startMs) state.task.toolIntervals.push([startMs, ms]);
+          }
+        }
+        state.task.turnToolOutputs = true;
+        continue;
+      }
+      // inline_* render nothing.
+      touchTask(state, ms);
+      continue;
+    }
+
+    if (msg.type === "event_msg") {
+      touchTask(state, ms);
+      const t = p.type;
+      if (t === "compaction_begin") {
+        state.compactionActive = true;
+        breakRuns(state); // the compaction banner is an item
+        continue;
+      }
+      if (t === "compaction_end") {
+        // Closes the banner opened by the begin (no new item mid-window). A compaction the
+        // user quit out of is closed as `failed` by the resume path before the session
+        // appends anything else (see core's resumeSession), so a span is never left open
+        // across the conversation that follows it.
+        state.compactionActive = false;
+        continue;
+      }
+      if (t === "abort") {
+        breakRuns(state); // the interruption marker is an item
+        continue;
+      }
+      if (t === "request_end") {
+        // Pair with request_begin for this Task's API time, deducting the approval wait that
+        // falls inside the span (core awaits approval inside the streaming loop). Settled
+        // before the compaction guard below so a compaction Request still clears the pairing;
+        // its time is excluded here exactly as it is from the Chat page's elapsed.
+        const reqBeginMs = state.task.reqBeginMs;
+        const reqWaitMs = state.task.reqApprovalWaitMs;
+        state.task.reqBeginMs = null;
+        state.task.reqApprovalWaitMs = 0;
+        if (!state.compactionActive && reqBeginMs !== null && ms !== null) {
+          state.task.apiMs += Math.max(0, ms - reqBeginMs - reqWaitMs);
+        }
+        if (state.compactionActive) continue; // compaction requests render nothing
+        if (ms !== null) state.task.lastReqEndMs = ms;
+        // Pending compaction usage commits at a later non-compaction request_end
+        // (compaction mid-Task) — from then on the Task WILL show a stats row.
+        if (state.task.pendingCompactionUsage) {
+          state.task.sawUsage = true;
+          state.task.pendingCompactionUsage = false;
+        }
+        const status = p.status;
+        // A retryable end renders a reconnect-hint item. The legacy spellings
+        // (failed/timeout/malformed) keep pre-convergence Traces rendering the same way.
+        if (
+          status === "retryable" ||
+          status === "failed" ||
+          status === "timeout" ||
+          status === "malformed"
+        ) {
+          breakRuns(state);
+        }
+        continue;
+      }
+      if (t === "token_usage") {
+        const request = p.request as { total?: number } | undefined;
+        const session = p.session as { total?: number } | undefined;
+        // The session cumulative tracks the provider even during compaction
+        // (task-stats trackMainUsage does the same).
+        if (typeof session?.total === "number") state.totals.sessionTokens = session.total;
+        if (state.compactionActive) {
+          state.task.pendingCompactionUsage = true;
+        } else {
+          if (typeof request?.total === "number") state.totals.contextTokens = request.total;
+          state.task.sawUsage = true;
+        }
+        continue;
+      }
+      if (t === "subagent" && typeof p.session_id === "string" && expandChild !== null) {
+        // The pointer expands to the child's messages in the served transcript: their
+        // token_usage feeds the parent's subagent totals at every depth, and their
+        // timestamps advance the open Task exactly as routeNested's touchTask would.
+        const agg = await expandChild(p.session_id);
+        if (agg !== null) {
+          state.totals.subagentTokens += agg.requestTokens;
+          touchTask(state, agg.maxTsMs);
+        }
+        continue;
+      }
+      if (t === "request_begin") {
+        // No item, no run change — but a new request means the previous turn's tool
+        // outputs have been sent with it (mirrors stream-model's request_begin reset;
+        // compaction requests don't consume the pending turn state).
+        if (!state.compactionActive) state.task.turnToolOutputs = false;
+        if (ms !== null) state.task.reqBeginMs = ms;
+        continue;
+      }
+      if (t === "approval_decision") {
+        // The human wait ran inside the open Request (core awaits approval in the streaming
+        // loop), so it is deducted from API time; execution only begins now, so the tool's
+        // interval start moves here (mirrors stream-model noteApprovalWait + settleToolDuration).
+        const id = (p as { tool_call_id?: unknown }).tool_call_id;
+        if (ms !== null && typeof id === "string") {
+          const calledMs = state.task.openTools[id];
+          if (calledMs !== undefined) {
+            if (ms > calledMs) state.task.reqApprovalWaitMs += ms - calledMs;
+            state.task.openTools[id] = ms;
+          }
+        }
+        continue;
+      }
+      // Unexpanded pointers: no items, no run change.
+      continue;
+    }
+    // session_meta: no item (steering window already closed above).
+  }
+}
+
+/** Finalize the trailing open Task (end of the whole trace): the cumulative then covers every finished Task. */
+export function finalizeScan(state: ScanState): void {
+  finalizeTask(state);
+}
+
+// ---------------------------------------------------------------------------
+// Cursor encoding
+// ---------------------------------------------------------------------------
+
+/** A window cursor: shard file index + message ordinal within that shard's parsed array. */
+
+/**
+ * `<fileIndex>:<ordinal>` — stable across requests and compaction: rotation always
+ * opens a NEW shard, closed shards are immutable, and the active shard is append-only,
+ * so a (shard, ordinal) pair never moves.
+ */
+export function encodeCursor(c: MessageCursor): string {
+  return `${c.fileIndex}:${c.ordinal}`;
+}
+
+/** Strict parse of a cursor string; null when malformed (callers turn that into a 400). */
+export function decodeCursor(raw: string): MessageCursor | null {
+  const m = /^(\d{1,9}):(\d{1,9})$/.exec(raw);
+  if (!m) return null;
+  return { fileIndex: Number(m[1]), ordinal: Number(m[2]) };
+}
+
+// ---------------------------------------------------------------------------
+// Cached per-shard prefix records
+// ---------------------------------------------------------------------------
+
+/**
+ * The persisted shape of trace_files.page_stats: the scan state at the END of a shard
+ * (cumulative from the very beginning of the session). Only immutable shards are cached
+ * — the newest shard still grows. `v` gates rule evolution: a record from an older
+ * CACHE_VERSION is recomputed as if absent.
+ */
+export interface ShardPrefixRecord {
+  v: number;
+  state: ScanState;
+}
+
+export function serializePrefix(state: ScanState): string {
+  return JSON.stringify({ v: CACHE_VERSION, state } satisfies ShardPrefixRecord);
+}
+
+/** Parse a cached record; null when absent, unparseable, or from another CACHE_VERSION. */
+export function deserializePrefix(raw: string | null): ScanState | null {
+  if (raw === null) return null;
+  try {
+    const rec = JSON.parse(raw) as ShardPrefixRecord;
+    if (rec.v !== CACHE_VERSION || typeof rec.state !== "object" || rec.state === null) {
+      return null;
+    }
+    return rec.state;
+  } catch {
+    return null;
+  }
+}
+
+/** Deep-copy a scan state (cached records must not be mutated by a later scan). */
+export function cloneScanState(state: ScanState): ScanState {
+  return {
+    totals: { ...state.totals },
+    task: { ...state.task },
+    compactionActive: state.compactionActive,
+    steeringOpen: state.steeringOpen,
+    runOpen: state.runOpen,
+  };
+}

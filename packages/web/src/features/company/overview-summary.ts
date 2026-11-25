@@ -16,7 +16,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { Tone } from "../../lib/tone";
 import { DEFAULT_CHANNEL_ID } from "./channel-list";
-import { TICKET_COLUMNS } from "./ticket-board";
+import { TICKET_COLUMNS, ticketCreatedDate } from "./ticket-board";
 
 export interface EmployeeCounts {
   total: number;
@@ -236,14 +236,12 @@ function firstLine(text: string): string {
 }
 
 /**
- * A ticket's own time. Ticket ids are `yyyy-mm-dd-<slug>` and the board item carries no
- * timestamp, so the day it was filed is the only time the inbox can rank it by; null for an
- * id that does not start with a date.
+ * A board item has no timestamp. Rank it by its filing day when its id records one.
  */
 function ticketTime(ticketId: string): string | null {
-  const m = /^(\d{4}-\d{2}-\d{2})-/.exec(ticketId);
-  if (m === null) return null;
-  const iso = `${m[1]}T00:00:00.000Z`;
+  const day = ticketCreatedDate(ticketId);
+  if (day === null) return null;
+  const iso = `${day}T00:00:00.000Z`;
   return Number.isNaN(Date.parse(iso)) ? null : iso;
 }
 

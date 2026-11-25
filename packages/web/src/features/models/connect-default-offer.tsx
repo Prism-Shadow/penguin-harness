@@ -16,6 +16,7 @@ import { ConfirmModal, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
+import { setPinnedBalance } from "./balance";
 
 /** A row as far as naming it goes. */
 interface NamedRow {
@@ -47,12 +48,15 @@ export function ConnectDefaultOfferConfirm({
 }) {
   const [busy, setBusy] = useState(false);
   const group = groupLabel(offer.model.provider);
-  const model = displayName(offer.model, rows);
+  const model = S.models.modelInGroup(displayName(offer.model, rows), group);
   const { current } = offer;
   const accept = async () => {
     setBusy(true);
     try {
       const res = await api.putDefaultModel(projectId, offer.model);
+      if (providerInfo(offer.model.provider)?.balance !== undefined) {
+        setPinnedBalance({ projectId, provider: offer.model.provider });
+      }
       onAccepted(res.defaultModel);
       toastSuccess(S.common.saved);
       onClose();

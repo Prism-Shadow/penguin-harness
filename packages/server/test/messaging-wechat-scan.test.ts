@@ -26,21 +26,21 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WeChatScanPollResponse, WeChatScanStartResponse } from "../src/api/types.js";
-import { WECHAT_API_BASE } from "../src/runtime/messaging/wechat-api.js";
+import { WECHAT_API_BASE } from "@prismshadow/penguin-library-messaging/wechat-api";
 import type {
   WeChatScanPollResult,
   WeChatScanTransport,
-} from "../src/runtime/messaging/wechat-scan.js";
+} from "@prismshadow/penguin-library-messaging/wechat-scan";
 import {
   WECHAT_SCAN_TASK_TTL_MS,
   WeChatScanService,
   createWeChatScanTransport,
-} from "../src/runtime/messaging/wechat-scan.js";
+} from "@prismshadow/penguin-library-messaging/wechat-scan";
 import type {
   WeChatBotClient,
   WeChatCredentials,
   WeChatTransport,
-} from "../src/runtime/messaging/wechat-api.js";
+} from "@prismshadow/penguin-library-messaging/wechat-api";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { sessionRow } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";

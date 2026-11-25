@@ -3606,28 +3606,203 @@ export class MachinesService {
   }
 }
 
-export abstract class Machines extends Interface<
-  Pick<
-    MachinesService,
-    | "list"
-    | "imageVersion"
-    | "job"
-    | "startInstall"
-    | "start"
-    | "syncConfigEverywhere"
-    | "proxyTarget"
-    | "projectApis"
-    | "jobs"
-    | "startUse"
-    | "stopUsing"
-    | "addSshHost"
-    | "sshHost"
-    | "updateSshHost"
-    | "diagnose"
-    | "sshHosts"
-    | "addToProject"
-  >
->() {}
+@Interface()
+export abstract class Machines {
+  /**
+   * The machines this server knows, answered for one Project: `installed` means installed
+   * FOR THIS PROJECT; a host installed for another one is reported through `elsewhere`, so
+   * the page offers an adoption (one row) rather than an install (30 MB over ssh).
+   */
+  abstract list(projectId: string): MachineInfo[];
+
+  /**
+   * The version this server would install, or null when it has none to name. A hot-pushed
+   * server names its pushed state; a release nothing was pushed to names the image it
+   * shipped, once that is laid down (at boot, by start()'s sweep); a source checkout names the
+   * image it last built — its next install builds again, from the checkout as it is then —
+   * and null before the first build. A server that is none of these has no image at all. The
+   * page asks so it can say so up front, rather than letting every install fail at the same
+   * step.
+   */
+  abstract imageVersion(): string | null;
+
+  /** The running or last job; null before the first one. */
+  abstract job(): MachineJob | null;
+
+  /**
+   * Starts an install, refusing rather than queueing. The refusals decidable here are
+   * answered synchronously, so the page distinguishes "did not start" from "started and
+   * failed" without reading the log.
+   */
+  abstract startInstall(
+    projectId: string,
+    address: string,
+    replaceProgram?: boolean,
+  ): Promise<
+    | {
+        ok: true;
+      }
+    | {
+        ok: false;
+        why: InstallRefusal;
+      }
+  >;
+
+  // --- the generation's lifetime: what an App does at boot and on its way out ------------------
+  /**
+   * Brings back every machine this server keeps connected — a restart or a hot push in between
+   * notwithstanding — five at a time, starting a server that is down on the way. Only those: a
+   * stop or a delete cleared the mark, and a machine merely installed on was never asked for.
+   * Called by the platform at boot and not awaited there: a host that is slow to answer must not
+   * hold up the App that serves everything else.
+   */
+  abstract start(): Promise<void>;
+
+  /**
+   * Pushes a Project's config to every connected machine it uses — a key rotated here, a
+   * default switched, a command policy edited, the Project renamed, a plugin listed: each
+   * reaches them at once. Not through #sweep: that returns null for a machine that is busy and
+   * would silently drop the edit; a sync in flight is instead told to run once more
+   * (#syncCoalesced), and an install in flight on the machine is not a reason to lose a
+   * credential either — the two do not contend for the shell.
+   */
+  abstract syncConfigEverywhere(projectId: string): Promise<void>;
+
+  abstract proxyTarget(machineId: string): Promise<ProxyTarget | null>;
+
+  /**
+   * The machines a Project uses that this server installed on and knows by id, each with a
+   * client to its own API while it is connected (null otherwise) — for a page of this server
+   * that lists what those machines hold (the archive page). Every call carries this server's
+   * adoption time, as the proxy's do. Two aliases for one machine are one entry, spoken to
+   * through the alias holding a connection.
+   */
+  abstract projectApis(projectId: string): Promise<
+    Array<{
+      machineId: string;
+      alias: string;
+      api: MachineApi | null;
+    }>
+  >;
+
+  /** The queued, the running and the last finished job per machine — what the page lists. */
+  abstract jobs(): MachineJob[];
+
+  /**
+   * Brings machines into use, as one queued batch: for each, install (or bring the build
+   * forward) if the record says it is not on this server's build, then connect and hand it
+   * the Project config — the whole of what a person means by "use this machine", as one job
+   * per machine, one after another. Refusals decidable without ssh are answered by id, so
+   * the page can say them; everything else is queued and reported through `jobs`.
+   */
+  abstract startUse(
+    projectId: string,
+    addresses: readonly string[],
+    replaceProgram?: boolean,
+  ): {
+    refused: {
+      machineId: string;
+      why: MachineUseRefusal;
+    }[];
+  };
+
+  /**
+   * Lets go of machines: the connection is dropped and the Project stops listing them. The
+   * install over there stays — another Project may use it, and "stop using" is not "wipe".
+   * With the record's held mark cleared, nothing re-holds them on the next boot either.
+   */
+  abstract stopUsing(projectId: string, addresses: readonly string[]): void;
+
+  /**
+   * Adds a host to this server's ssh config, so it can be enabled like any other — with the
+   * password it signs in with when one is given, stored here and never in the config. The block
+   * and the password are checked before anything is written, and an alias the config already
+   * declares is refused rather than shadowed: ssh takes the first block that matches, so a second
+   * one would be silently ignored and the person would wonder why their edit did nothing.
+   */
+  abstract addSshHost(
+    entry: SshHostEntry,
+    password?: string,
+  ): Promise<
+    | {
+        ok: true;
+      }
+    | HostRefusal
+    | {
+        ok: false;
+        why: "exists";
+      }
+  >;
+
+  /**
+   * A host's block as the page can show it back: what it says, whether this app wrote it — only
+   * then may the page rewrite it; a hand-written block may carry options this app does not know
+   * (a jump host, a key agent setting), and rewriting it would drop them — and whether a password
+   * is stored for it. Never the password.
+   */
+  abstract sshHost(alias: string): {
+    entry: SshHostEntry;
+    editable: boolean;
+    passwordSaved: boolean;
+  } | null;
+
+  /**
+   * Rewrites, in place, a block this app wrote — the alias stays, everything else is the new
+   * entry — and sets how the host signs in: `password` a string stores it, null deletes the stored
+   * one (back to keys), absent leaves it. A hand-written block is never rewritten, but its
+   * password may still be set while the entry sent is the block as it stands.
+   */
+  abstract updateSshHost(
+    alias: string,
+    entry: Omit<SshHostEntry, "alias">,
+    password?: string | null,
+  ): Promise<
+    | {
+        ok: true;
+      }
+    | HostRefusal
+    | {
+        ok: false;
+        why: "not-found";
+      }
+    | {
+        ok: false;
+        why: "foreign";
+      }
+  >;
+
+  /**
+   * Checks a machine without writing anything there (machines/diagnose.ts): can this server
+   * sign in, is it a platform a release exists for, does it have what the installer runs,
+   * can it download the release itself, is there room, is the port free. Refused while a job
+   * or this server's own work is on that machine — the checks would queue behind its commands
+   * on its session.
+   */
+  abstract diagnose(
+    address: string,
+  ): Promise<MachineDiagnosis | "unknown-machine" | "self" | "busy">;
+
+  /**
+   * The hosts in this server's ssh config with what each one's own block says — for the page's
+   * add dialog, which shows `user@host:port` beside an alias. Read on request, like the list.
+   */
+  abstract sshHosts(): SshHostSummary[];
+
+  /**
+   * Puts machines in a Project's list without installing anything there: each then has a card,
+   * whose one thing to do is enabling it. Refusals by id, as `startUse` answers them; nothing
+   * reaches a machine.
+   */
+  abstract addToProject(
+    projectId: string,
+    addresses: readonly string[],
+  ): {
+    refused: {
+      machineId: string;
+      why: MachineUseRefusal;
+    }[];
+  };
+}
 
 @Module({
   contributes: {

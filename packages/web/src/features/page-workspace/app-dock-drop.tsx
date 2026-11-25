@@ -1,8 +1,8 @@
 import { useEffect, useState, type DragEvent as ReactDragEvent } from "react";
 import { createPortal } from "react-dom";
-import { pageSessionId, PAGE_DRAG_TYPE } from "../../lib/page-layout";
+import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
 import { usePageWorkspace } from "../../lib/page-workspace";
-import { sessionAppPair, sessionToolTarget, slotDomId } from "../../lib/session-app-dock";
+import { sessionAppPair, slotDomId } from "../../lib/session-app-dock";
 
 /** During dragover the data store is protected. The ID was readable at the native dragstart. */
 export function useAppDockDrop(narrow: boolean) {
@@ -51,15 +51,13 @@ export function useAppDockDrop(narrow: boolean) {
       setPreview(null);
       return;
     }
-    // A running app belongs to this conversation's physical right dock. The generic
-    // half-page targets below this listener still handle ordinary page-to-page splits.
+    // The conversation’s physical dock is the only drop target in the page area.
     event.stopPropagation();
     const root = document.getElementById(slotDomId(session.id));
     const row = root?.querySelector<HTMLElement>("[data-dock-row]");
     const area = row?.closest<HTMLElement>("[data-dock-area]");
     const preferred = Number(area?.dataset.rightDockWidth);
-    const target = sessionToolTarget(app.path);
-    if (!row || !preferred || (target !== undefined && target !== pageSessionId(session))) {
+    if (!row || !preferred || !workspace.canDockRunningApp(session, app)) {
       setPreview(null);
       return;
     }

@@ -5,7 +5,7 @@
  * - The name starts as "New folder", selected, so typing replaces it.
  * - The list is every app of the grid in its order, each with its icon and name. An app already
  *   in a folder names that folder; picking it takes it out of there.
- * - Create is live once an app is picked and the name, trimmed, is 1 to 40 characters. The one
+ * - Create is live once two apps are picked and the name, trimmed, is 1 to 40 characters. The one
  *   field means Enter creates. The folder is made at the place of the first picked app
  *   (arrangement.ts `groupApps`).
  * - Closing after a change asks before it is thrown away (the settings commit model).
@@ -83,7 +83,7 @@ function NewFolderForm({
   /** The starting name is selected once, when the field first takes focus. */
   const unselected = useRef(true);
   const name = form.draft.name.trim();
-  const valid = name !== "" && [...name].length <= FOLDER_NAME_MAX && form.draft.apps.length > 0;
+  const valid = name !== "" && [...name].length <= FOLDER_NAME_MAX && form.draft.apps.length >= 2;
   /** Every app in the grid's order, with the folder it sits in. */
   const rows = grid.flatMap<{ app: GridApp; folder: GridFolder | null }>((item) =>
     item.type === "app"

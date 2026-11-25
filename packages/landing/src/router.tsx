@@ -23,6 +23,7 @@ import {
 } from "react-router";
 import { useRouteScroll, useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { DOCS_URL, GALLERY_URL } from "./lib/links";
+import { useRouteCanonical } from "./lib/document-meta";
 import { useListReturn } from "./lib/hub/back";
 import { AnnouncementBar } from "./components/announcement-bar";
 import { Nav } from "./components/nav";
@@ -95,13 +96,14 @@ function SiblingRedirect({ url }: { url: string }) {
 function Layout() {
   const location = useLocation();
   const navigationType = useNavigationType();
+  useRouteCanonical(location.pathname);
   useRouteScroll(location);
   // After the route scroll: Back to a hub list puts it where the visitor left it.
   useListReturn(location, navigationType);
 
   return (
     <div className="relative flex min-h-full flex-col">
-      {location.pathname !== "/" && !location.pathname.startsWith("/rfcs") && <NeonBackground />}
+      {!location.pathname.startsWith("/rfcs") && <NeonBackground />}
       <AnnouncementBar />
       <Nav />
       <main className="flex-1">

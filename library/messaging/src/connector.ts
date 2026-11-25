@@ -1,0 +1,343 @@
+/**
+ * The messaging-channel connector seam: what the MessagingBridge needs from one chat
+ * platform (Feishu, Telegram, QQ and WeChat today; further channels implement the same interface
+ * and register in app assembly). A connector owns everything channel-specific — credential
+ * shape, wire protocol, event normalization — and hands the bridge a channel-neutral
+ * view: a client for outbound sends and credential checks, and a long-lived event
+ * connection delivering normalized inbound messages (text, images and files, each as far as
+ * the channel actually carries them).
+ *
+ * Config documents are the repo's stored per-channel JSON (`MessagingBindingRow.config`);
+ * every connector method validates its own shape and throws a readable error on a
+ * malformed one — the bridge treats that like any other channel failure.
+ */
+import type { MessagingChannel } from "./vocabulary.js";
+
+/**
+ * Known messaging channels, declared once with the wire types. The DB stores the discriminator
+ * as text; `isMessagingChannel` (enabled-channel.ts) narrows a stored one, and an unknown value
+ * is skipped defensively.
+ */
+export type { MessagingChannel };
+
+/** One inbound image's bytes, once fetched, with the MIME type the bridge needs for its data URL. */
+export interface MessagingInboundImageData {
+  data: Buffer;
+  /** e.g. `image/png` — the connector's best answer, from the channel's own type or the bytes. */
+  mimeType: string;
+}
+
+/**
+ * An image attached to an inbound message: a handle, not the bytes.
+ *
+ * The bytes are deliberately NOT eagerly downloaded by the connector. Most of what makes
+ * an inbound message uninteresting is decided after the event is normalized — a
+ * redelivery is dropped before anything else happens — and a channel that downloaded
+ * first would pay a full image transfer for every replay. Fetching lazily also puts the
+ * cap where the transfer is: `fetch` refuses anything over `maxBytes` rather than handing
+ * the bridge something it would only discard, which is what keeps a 100MB attachment from
+ * ever being resident in this process.
+ */
+export interface MessagingInboundImage {
+  /**
+   * Downloads the image. Two distinct failures, and the bridge answers them differently:
+   * `MessagingMediaTooLargeError` (see media.ts) for anything past `maxBytes`, which the
+   * user fixes by sending something smaller, and any other Error — carrying the channel's
+   * OWN reason, since a permission the bot lacks and a network blip are not the same
+   * problem — for a transfer that could not be made at all. That reason reaches the chat,
+   * so a connector must keep credentials out of it (see telegram-api's fetchErrorText).
+   */
+  fetch(maxBytes: number): Promise<MessagingInboundImageData>;
+}
+
+/**
+ * A non-image file attached to an inbound message: a handle, not the bytes, for exactly the
+ * reasons MessagingInboundImage is one — a redelivery is dropped before anything is
+ * transferred, and the cap rides into `fetch` so an oversized attachment is refused at the
+ * byte that crosses it rather than buffered whole and measured afterwards. A file's ceiling
+ * is the server's per-file attachment limit, which is far larger than an image's, so the
+ * difference between refusing during and after the transfer is correspondingly larger.
+ *
+ * There is no MIME type on this seam. An image needs one because its bytes become a `data:`
+ * URL inside the conversation; a file's bytes go to the Session scratchpad and reach the
+ * model as a PATH, so the name's extension is the whole of what says what it is — and a
+ * channel's declared media type is the sender's claim about a file nothing here parses.
+ */
+export interface MessagingInboundFile {
+  /**
+   * The sender's own file name, extension included — what the model sees at the end of the
+   * `[attached file: …]` path, and what a refusal notice names. Channel text, so it is
+   * neither trusted nor pre-sanitized here: the attachment writer maps it onto a name that
+   * is safe on disk (see services/task-attachments.ts). A channel with no name for a file
+   * says so with a plain fallback rather than inventing one, since a made-up extension
+   * would tell the model the file is something it is not.
+   */
+  fileName: string;
+  /** Downloads the file; the same two failure shapes MessagingInboundImage.fetch documents. */
+  fetch(maxBytes: number): Promise<Buffer>;
+}
+
+/** One inbound chat message, normalized across channels. */
+export interface MessagingInboundMessage {
+  /**
+   * Channel-scoped chat id, and the reply target for direct chats. Opaque to the bridge, for
+   * the same reason `messageId` is: the connector both mints it here and consumes it in
+   * `sendText`, so a channel whose replies need more routing context than a chat identity
+   * encodes it (Telegram appends the forum topic). It is stored verbatim as the binding's
+   * last known chat, so whatever is encoded here is what survives a restart.
+   */
+  chatId: string;
+  /** Direct chat with the bot, or a group chat (groups prefer reply-to-message). */
+  chatKind: "direct" | "group";
+  /**
+   * Channel-scoped id of the inbound message itself (the group reply target). Opaque to
+   * the bridge: the connector both mints it here and consumes it in `replyText`, so a
+   * channel whose native message ids are not globally unique encodes whatever context a
+   * reply needs (Telegram packs `chatId:messageId`). It is also the bridge's inbound
+   * dedupe key, so it must identify the MESSAGE and not the delivery: a channel that
+   * redelivers one message must mint the same id both times. `""` opts the channel out of
+   * deduplication entirely — the honest answer for a connector with no message identity,
+   * and better than every message after the first reading as a duplicate.
+   */
+  messageId: string;
+  /**
+   * The message's plain text; null for anything that carries none (stickers, voice, …) — a
+   * message with no text, no image and no file gets the not-supported notice. An image or a
+   * file sent with a caption puts the caption here: the caption IS that message's text, so
+   * a channel needs no second field for it and the bridge no second rule. A channel that
+   * carries a caption on media it does NOT deliver must still report null, or the model
+   * answers a question about an attachment it never received.
+   */
+  text: string | null;
+  /**
+   * Images attached to this message (absent or empty when there are none). Handles rather
+   * than bytes — see MessagingInboundImage. A channel that carries several images in one
+   * message lists them in the order the user sees them.
+   */
+  images?: readonly MessagingInboundImage[];
+  /**
+   * Non-image files attached to this message, in the order the user sees them (absent or
+   * empty when there are none) — see MessagingInboundFile.
+   *
+   * Optional, like `images`, so a channel that delivers no files simply never populates it
+   * rather than carrying an empty list through its whole normalizer. A message may carry
+   * text, images and files together; the bridge composes one composer input out of whatever
+   * is there.
+   */
+  files?: readonly MessagingInboundFile[];
+  /** Sender display name when the channel's event carries one. */
+  senderName?: string;
+}
+
+export interface MessagingConnectorHandlers {
+  onMessage(msg: MessagingInboundMessage): void | Promise<void>;
+  /** The connection completed a handshake (may fire again after an automatic reconnect). */
+  onReady?(): void;
+  /**
+   * The connection failed and the channel gave up (or the initial connect failed). A
+   * {@link MessagingChannelError} says whether the outage clears without anyone acting.
+   */
+  onError?(err: unknown): void;
+  /**
+   * The connection's account started or stopped holding replies it could not deliver yet
+   * (see {@link MessagingReplyHeldError}): the ISO time since which it holds some, or null once
+   * it holds none. Fired on every change, and once at connect for a backlog held from before.
+   * Only a channel that holds replies (WeChat) ever calls it.
+   */
+  onHeldChange?(since: string | null): void;
+  /**
+   * A send the connector made on its OWN — a withheld tail flushed after the quiet period, held
+   * replies delivered on the next inbound message — failed for good. No caller is waiting on
+   * those sends, so this is the only way their failure reaches the binding's status and the
+   * error table.
+   */
+  onSendFailed?(err: unknown): void;
+}
+
+/** A live inbound event stream; `close` ends it (idempotent). */
+export interface MessagingConnection {
+  close(): void;
+}
+
+/**
+ * A channel failure that carries its connector's verdict on whether anybody has to act.
+ *
+ * `recovers` answers one question: made again with nothing changed, does the same attempt go
+ * through? A connection the connector's own retry brings back — a network drop, a reset TLS
+ * handshake, a deadline, a platform restarting — does, and so does a send the next message
+ * gets past (a 5xx, a rate limit). A credential the platform refused, a permission never
+ * granted or a console setting in the way does not, however eagerly the connector retries.
+ *
+ * The verdict is decided where the failure is understood — the transport that read the
+ * platform's status and its own code, or the connection loop that knows why it gave up on a
+ * socket — and error-kind.ts reads the boolean and nothing else: a wording match would tie
+ * the dashboard's "needs a human" count to how a platform phrases itself.
+ */
+export class MessagingChannelError extends Error {
+  constructor(
+    message: string,
+    /** Whether the same attempt, made again with nothing changed, goes through. */
+    readonly recovers: boolean,
+  ) {
+    super(message);
+    this.name = "MessagingChannelError";
+  }
+}
+
+/**
+ * A send the connector did not deliver NOW but KEPT, to deliver later on its own. Not a failure:
+ * the text is not lost, nothing is broken, and nobody has anything to do — the platform only
+ * lets the bot speak inside a window the user's own messages open, and the user's next message
+ * opens it again (WeChat's context token, see wechat-connector.ts). The bridge therefore files
+ * no error record for it and leaves `lastDeliveryError` alone; the connection reports what it
+ * holds through `onHeldChange` instead.
+ */
+export class MessagingReplyHeldError extends MessagingChannelError {
+  constructor(message: string) {
+    super(message, true);
+    this.name = "MessagingReplyHeldError";
+  }
+}
+
+/**
+ * A PROBE send (see MessagingSendOptions.probe) refused because the platform will not let the
+ * bot speak until the user has messaged it recently. Recovers by itself in the sense that matters:
+ * the user sends the bot a message, and the same test goes through.
+ */
+export class MessagingNeedsRecentMessageError extends MessagingChannelError {
+  constructor(message: string) {
+    super(message, true);
+    this.name = "MessagingNeedsRecentMessageError";
+  }
+}
+
+/**
+ * Whether a request the platform answered with this HTTP status may go through unchanged next
+ * time: 408 and 429 say "not now" and a 5xx is the platform's own fault, while any other 4xx is
+ * a refusal that repeats until someone changes something — the line core draws for an LLM
+ * provider's status.
+ */
+export function httpStatusRecovers(status: number | undefined): boolean {
+  return status === 408 || status === 429 || (status !== undefined && status >= 500);
+}
+
+/**
+ * A successful credential check's optional payload: whatever the probe learned that the test
+ * endpoint's feedback can act on. Every member is independently optional — a channel reports
+ * the ones its check happens to answer and omits the rest, so a check that learned nothing
+ * beyond "these credentials work" returns an empty object.
+ */
+export interface MessagingAccountInfo {
+  /** A short human-readable label of the account the credentials sign in as (Telegram: the bot's `@username`). */
+  accountLabel?: string;
+  /**
+   * Whether this ACCOUNT is set up to receive ordinary messages in the groups it belongs to
+   * — as opposed to only the ones a platform hands a bot by default.
+   *
+   * Telegram's privacy mode is the case that needs saying: it is on for every bot whose
+   * owner has not turned it off in @BotFather, and under it `getUpdates` simply omits
+   * everything in a group that is not a command addressed to this bot or a reply to one of
+   * its messages. Nothing errors — the messages are never delivered, so a binding that works
+   * perfectly in a direct chat looks dead in a group. It is one account-wide setting and
+   * Telegram overrides it in any group the bot administers, so `false` says the account is
+   * muted where it is an ordinary member, never that some particular group is silent. Absent
+   * when the channel has no such notion, or reports nothing about it: unknown must never be
+   * reported as a problem.
+   */
+  readsGroupMessages?: boolean;
+}
+
+/**
+ * What a send had to give up in order to land, as a short readable phrase. The message DID
+ * arrive — a send that did not throws — so this is not a failure: it says the message is
+ * somewhere less right than it was addressed to, which is otherwise invisible from the
+ * outside. A channel that always delivers as addressed returns nothing at all; Telegram is
+ * the one that reports, a forum topic deleted under a live conversation sending the reply to
+ * General instead.
+ */
+export type MessagingSendNote = string;
+
+/** One file on its way out to a chat: the bytes, plus the name the chat should show. */
+export interface MessagingOutboundFile {
+  /** Display name — the base name of the Workspace-relative path the reply mentioned. */
+  fileName: string;
+  data: Buffer;
+}
+
+/** How one outbound text should be rendered. Absent throughout means plain text. */
+export interface MessagingSendOptions {
+  /**
+   * Read the text as Markdown and render it in whatever this channel's markup is.
+   *
+   * A REQUEST, not an instruction: the connector owns both what its channel can show and
+   * what to do when the channel refuses the rendered form, and it must fall back to sending
+   * this same text plainly rather than let a formatting failure cost the message. What
+   * survives the conversion differs per channel and is documented at each renderer
+   * (telegram-html.ts, feishu-card.ts, qq-markdown.ts).
+   *
+   * Only a relayed assistant message ever sets it. The fixed notices and the test message
+   * carry no markup and are sent as they are written, so a bug in a renderer can never
+   * reach the one message a user sends to check whether the binding works at all.
+   */
+  markdown?: boolean;
+  /**
+   * This send is a probe of the outbound leg ("send test message"), not a reply. A connector
+   * that would HOLD a refused message for later delivery must throw
+   * {@link MessagingNeedsRecentMessageError} instead: a held probe that arrives an hour later
+   * proves nothing, and the person pressing the button needs to hear why it did not arrive now.
+   */
+  probe?: boolean;
+}
+
+/** Outbound half of one bound account. Every method throws on failure with a readable reason. */
+export interface MessagingClient {
+  /** Credential check (used by the test endpoint); resolving means the config signs in. */
+  checkCredentials(): Promise<MessagingAccountInfo | null>;
+  /** Sends a text message into a chat by chat id; resolves a MessagingSendNote when it degraded. */
+  sendText(
+    chatId: string,
+    text: string,
+    opts?: MessagingSendOptions,
+  ): Promise<MessagingSendNote | void>;
+  /** Replies a text message to a specific inbound message (threads correctly in group chats). */
+  replyText(
+    messageId: string,
+    text: string,
+    opts?: MessagingSendOptions,
+  ): Promise<MessagingSendNote | void>;
+  /**
+   * Sends a picture into a chat, so a chart the Agent drew arrives as something the reader
+   * can see rather than as a download. Channels that need an upload step first do it here —
+   * the bridge holds bytes and a name, never a channel's file handle.
+   */
+  sendImage(chatId: string, file: MessagingOutboundFile): Promise<void>;
+  /** Sends any other file into a chat as an attachment. */
+  sendFile(chatId: string, file: MessagingOutboundFile): Promise<void>;
+}
+
+export interface MessagingChannelConnector {
+  readonly channel: MessagingChannel;
+  /**
+   * How many outbound messages this channel will accept in answer to ONE inbound message,
+   * or undefined where no such limit exists (Feishu and Telegram both send freely).
+   *
+   * A channel that declares one enforces it itself — the connector is the only place that
+   * knows what the platform rejects and how to combine messages so nothing is lost. What
+   * the bridge does with the number is narrower: it caps the one-message-per-line split at
+   * it, because that option's own ceiling is sized for a channel with no such budget and
+   * would otherwise ask for more messages than the channel can ever deliver.
+   */
+  readonly replyBudget?: number;
+  /** Builds the outbound client for one stored config (throws on a malformed document). */
+  createClient(config: Record<string, unknown>): Promise<MessagingClient>;
+  /**
+   * Opens the inbound event stream for one stored config. Resolves as soon as the
+   * connection is constructed and connecting — lifecycle arrives via the handlers
+   * (`onReady` / `onError`), because channels reconnect on their own and a single promise
+   * cannot carry a lifecycle.
+   */
+  connect(
+    config: Record<string, unknown>,
+    handlers: MessagingConnectorHandlers,
+  ): Promise<MessagingConnection>;
+}

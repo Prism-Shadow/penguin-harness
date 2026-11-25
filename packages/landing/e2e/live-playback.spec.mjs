@@ -137,14 +137,6 @@ for (const lang of ["en", "zh"]) {
       .getByRole("link", { name: lang === "en" ? /^App Center(?: ·|$)/ : /^应用中心(?: ·|$)/ })
       .click();
     await expect(frame.locator('li[data-app="default_agent/slides"]')).toBeVisible();
-    await expect(frame.locator('li[data-app="default_agent/first-workbench-guide"]')).toHaveCount(
-      0,
-    );
-    await expect(
-      frame.getByRole("region", {
-        name: lang === "en" ? "Your first workbench" : "我的第一个工作台",
-      }),
-    ).toHaveCount(0);
   });
 }
 
@@ -257,7 +249,7 @@ test("a keyboard-activated navigation link keeps its destination while the scrip
   await apps.focus();
   await apps.press("Enter");
   await expect(page.getByRole("button", { name: "Play demo", exact: true })).toBeVisible();
-  const tile = frame.locator('li[data-app="system_agent/benchmark"] > button');
+  const tile = frame.locator('li[data-app="default_agent/benchmark"] > button');
   await expect(tile).toBeVisible();
   await page.clock.fastForward(60_000);
   await expect(tile).toBeVisible();
@@ -271,7 +263,7 @@ test("taking over the split preview releases the scripted drag", async ({ page }
   for (let step = 0; step < 140 && !(await results.isVisible()); step++)
     await page.clock.runFor(450);
   await expect(results).toBeVisible();
-  const tile = frame.locator('li[data-app="system_agent/benchmark"] > button:visible');
+  const tile = frame.locator('li[data-app="default_agent/benchmark"] > button:visible');
   for (let step = 0; step < 150 && !(await tile.isVisible()); step++) await page.clock.runFor(30);
   await expect(tile).toBeVisible();
   const preview = frame.locator("[data-pane=full] .z-drag-preview");
@@ -379,7 +371,9 @@ test.describe("starting the demo on a touchscreen", () => {
           const visible = Math.max(0, Math.min(innerHeight, rect.bottom) - Math.max(0, rect.top));
           return visible / rect.height;
         });
-      expect(await visibleFraction()).toBe(0);
+      // With the gallery immediately below the compact heading, the page can already be
+      // scrolled to the top before the toolbar reaches the bottom edge.
+      if ((await page.evaluate(() => scrollY)) > 0) expect(await visibleFraction()).toBe(0);
       await play.tap();
       await expect.poll(visibleFraction).toBeGreaterThan(0.5);
       await expect(stop).toBeInViewport({ ratio: 1 });

@@ -154,16 +154,11 @@ import type { Config, Paths } from "../hmr/capabilities.js";
 
 export type RawTable = Record<string, unknown>;
 
-/**
- * API key masking: length <=12 -> `***`, otherwise `first4…last4`; plaintext is
- * never sent to the client. The 12-char threshold: `first4…last4` exposes 8
- * characters, which for a 9-12 character short secret would leak more than half of
- * it, so those are masked in full instead.
- */
-export function maskApiKey(key: string): string {
-  if (key.length <= 12) return "***";
-  return `${key.slice(0, 4)}…${key.slice(-4)}`;
-}
+// The one api-key masking rule lives in the messaging library (messaging restack S6); this
+// re-export keeps the server's own import paths stable.
+import { maskApiKey } from "@prismshadow/penguin-library-messaging/mask";
+
+export { maskApiKey };
 
 function asTable(v: unknown): RawTable {
   return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as RawTable) : {};
@@ -442,6 +437,16 @@ function rowsFollowingGroupKey(raw: RawTable, provider: string): number {
   ).length;
 }
 
+/** The first chat-eligible model id of `provider` in `raw.models`, or undefined when it holds none. */
+function firstChatModelOf(raw: RawTable, provider: string): string | undefined {
+  for (const m of asArray(raw.models)) {
+    if (m.provider !== provider || typeof m.model_id !== "string" || m.model_id === "") continue;
+    if (catalogEntryFor(provider, m.model_id)?.tool === true) continue;
+    return m.model_id;
+  }
+  return undefined;
+}
+
 /**
  * The default a write that stores `provider`'s group key offers (connectDefaultOffer), from the
  * table as it stood (`before`) and the one the write stores (`next`). The offer is only reported:
@@ -451,15 +456,18 @@ function connectOfferOf(
   before: RawTable,
   next: RawTable,
   provider: string,
+  wroteKey?: boolean,
 ): DefaultModelOffer | undefined {
   const current = optRef(before.default_model);
   return connectDefaultOffer({
     provider,
     hadKey: providerTableOf(before)[provider]?.api_key !== undefined,
     hasKey: providerTableOf(next)[provider]?.api_key !== undefined,
+    ...(wroteKey !== undefined ? { wroteKey } : {}),
     current:
       current === undefined ? undefined : { provider: current.provider, modelId: current.model_id },
     holds: (modelId) => asArray(before.models).some((m) => entryMatches(m, provider, modelId)),
+    firstChatModelId: firstChatModelOf(before, provider),
   });
 }
 
@@ -2218,7 +2226,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       checkGroupProtocol(raw, provider, patch.clientType);
       const { table, keyChanged } = patchProviderTable(asTable(raw.providers), provider, patch);
       const next = { ...raw, providers: table };
-      const defaultOffer = connectOfferOf(raw, next, provider);
+      const defaultOffer = connectOfferOf(raw, next, provider, Boolean(patch.apiKey?.trim()));
       await this.writeRaw(projectId, next);
       if (keyChanged && provider === MODELSCOPE_PROVIDER_ID) {
         this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);

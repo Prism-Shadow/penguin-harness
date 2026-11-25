@@ -16,6 +16,7 @@
 import type { IconRef, PluginItem, SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import aceIcon from "@penguinharness/ace-rsi-toolkit/icon.svg?raw";
 import acePkg from "@penguinharness/ace-rsi-toolkit/package.json";
+import evaluationWorkbench from "../../../../../plugins/agent-evaluation/workbenches/benchmark/package.json";
 import evaluationIcon from "../../../../../plugins/agent-evaluation/icon.svg?raw";
 import evaluationPkg from "../../../../../plugins/agent-evaluation/package.json";
 import apeIcon from "@penguinharness/ape-rsi-toolkit/icon.svg?raw";
@@ -523,23 +524,30 @@ export function rsiToolkitPlugins(): PluginItem[] {
         "2026.10.29.4",
       ),
     ]),
-  ];
+  ].map((plugin) =>
+    plugin.package === defaultPkg.name ? plugin : { ...plugin, source: "installed" as const },
+  );
 }
 
 /** The Agent Evaluation plugin: the evaluator every toolkit measures through, and Benchmark design. */
 export function agentEvaluationPlugin(): PluginItem {
-  return libraryPlugin(evaluationPkg, evaluationIcon, [
-    skill(
-      "agent-evaluation",
-      "Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.",
-      "2026.11.03.1",
-    ),
-    skill(
-      "benchmark-design",
-      "Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline, or import a published Benchmark package.",
-      "2026.11.01.1",
-    ),
-  ]);
+  return libraryPlugin(
+    evaluationPkg,
+    evaluationIcon,
+    [
+      skill(
+        "agent-evaluation",
+        "Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.",
+        "2026.11.03.1",
+      ),
+      skill(
+        "benchmark-design",
+        "Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline, or import a published Benchmark package.",
+        "2026.11.01.1",
+      ),
+    ],
+    { workbenches: [{ name: "benchmark", version: evaluationWorkbench.penguin.version }] },
+  );
 }
 
 /** The PenguinHarness Q&A Assistant: a Skill, and the `support` workbench it installs. */

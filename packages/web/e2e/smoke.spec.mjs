@@ -8,6 +8,7 @@
  * - Given a completed conversation, when it reloads and receives a follow-up, history appears
  *   once and the new turn completes instead of becoming stranded (the #89 regression).
  * - Work displays share the count and elapsed time, including after a completed turn is reopened.
+ * - A skewed browser clock measures live thinking and resumes it across a mid-thought reload.
  * - Given a Compact run waiting on an approval, its line opens by itself with Allow and Deny.
  */
 import { test, expect } from "@playwright/test";
@@ -156,7 +157,7 @@ test("the account's display setting changes saved history and survives a differe
   await openSteps(group);
   await expect(rows).toHaveCount(4);
   await expectFoldedBodies(group);
-  await expect(group.locator("[data-step-count]")).toHaveText("4 步");
+  await expect(group.locator("[data-step-count]")).toHaveText("2 步");
   await changeActivityDisplay(page, userId, "展开");
   await openSteps(group);
   await expect(rows).toHaveCount(4);
@@ -165,7 +166,7 @@ test("the account's display setting changes saved history and survives a differe
   await changeActivityDisplay(page, userId, "紧凑");
 
   const count = group.locator("[data-step-count]");
-  await expect(count).toHaveText("4 步");
+  await expect(count).toHaveText("2 步");
   await expect(group.locator("[data-step-terminal]")).toBeVisible();
   await expect(rows).toHaveCount(0);
   await expectFoldedBodies(group);
@@ -177,7 +178,7 @@ test("the account's display setting changes saved history and survives a differe
 
   await setAccountPrefs(page.request, { themeId: "github" });
   await page.reload();
-  await expect(count).toHaveText("4 步");
+  await expect(count).toHaveText("2 步");
   await expect(rows).toHaveCount(0);
   await expect(page.getByText("Both tools finished.", { exact: true })).toHaveCount(1);
 });
@@ -193,7 +194,7 @@ test("compact activity follows two approvals while preserving the first reader's
   const group = activityRoot(page),
     count = group.locator("[data-step-count]"),
     rows = activityRows(group);
-  await expect(count).toHaveText("2 步");
+  await expect(count).toHaveText("1 步");
   // The run waits on an approval: the line opens by itself, so Allow and Deny show at once.
   await expect(rows).toHaveCount(2);
   await expect(group.getByRole("button", { name: "允许", exact: true })).toBeVisible();
@@ -201,13 +202,14 @@ test("compact activity follows two approvals while preserving the first reader's
   await expect(rows.first()).not.toContainText("I will check");
 
   const total = group.locator("[data-step-elapsed] .font-mono");
-  const runningTime = await total.innerText();
-  await expect(total).not.toHaveText(runningTime);
+  const waitingTime = await total.innerText();
   const reviewer = await context.newPage();
   await reviewer.goto(`/chat/${sessionId}`);
   const reviewing = activityRoot(reviewer);
   await rows.locator("button[aria-expanded]").first().click();
   await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
+
+  await expect(total).toHaveText(waitingTime);
 
   // The second reader approves the same Session while the first keeps the original thinking open.
   await openSteps(reviewing);
@@ -215,7 +217,7 @@ test("compact activity follows two approvals while preserving the first reader's
   if (!(await allow.isVisible()))
     await activityRows(reviewing).locator("button[aria-expanded]").first().click();
   await allow.click();
-  await expect(count).toHaveText("4 步");
+  await expect(count).toHaveText("2 步");
   await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
   await group.locator("[data-group-header]").click();
   await expect(rows).toHaveCount(0);
@@ -224,42 +226,122 @@ test("compact activity follows two approvals while preserving the first reader's
     await activityRows(reviewing).locator("button[aria-expanded]").first().click();
   await allow.click();
   await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
-  await expect(count).toHaveText("4 步");
+  await expect(count).toHaveText("2 步");
   await expect(rows).toHaveCount(0);
-  await expect(reviewing.locator("[data-step-terminal] [data-slot=label]")).toHaveText("已完成");
+  await expect(reviewing.locator("[data-step-terminal] [data-slot=label]")).toHaveText("运行完毕");
   await reviewer.close();
 });
 
-test("the current step leaves room for the same count and clock in each display mode", async ({
-  page,
-}) => {
+for (const mode of ["standard", "expanded", "compact"]) {
+  for (const scenario of ["text", "thinking", "tool"]) {
+    test(`${mode}: ${scenario} work time during a long final answer and after reload`, async ({
+      page,
+    }) => {
+      const skew =
+        scenario === "thinking" ? { standard: 300_000, expanded: -300_000, compact: 0 }[mode] : 0;
+      const reloadThinking = skew < 0;
+      await createSession(page, `clock${mode}${scenario}`, "allow-all");
+      await setAccountPrefs(page.request, { activityDisplayMode: mode });
+      await page.reload();
+      if (skew) await page.clock.setSystemTime(Date.now() + skew);
+      await send(page, `activity clock fixture ${scenario}${reloadThinking ? " reload" : ""}`);
+      const group = activityRoot(page);
+      const header = group.locator("[data-group-header]");
+      const clock = header.locator("[data-step-elapsed] [data-slot=detail]");
+      const count = header.locator("[data-step-count]");
+      if (scenario !== "text") {
+        await expect(header).toBeVisible();
+        await expect(header.locator("[data-slot=label]")).toHaveText(
+          mode === "compact" ? "思考" : "运行中",
+        );
+        await expect(count).toHaveCount(0);
+      }
+      if (skew > 0) await expect(clock).toHaveText("0s", { timeout: 650 });
+      if (reloadThinking) {
+        await expect(clock).toHaveText("2s", { timeout: 3500 });
+        await page.reload();
+        await expect(clock).toHaveText(/^[2-4]s$/, { timeout: 1500 });
+      }
+      const reply = page
+        .locator(".ui-stream.md-body")
+        .filter({ hasText: /answer-part-1 / })
+        .first();
+      await expect(reply).toContainText("answer-part-2 ");
+      await expect(reply).not.toContainText("answer-part-16");
+      if (scenario === "text") {
+        await expect(group).toHaveCount(0);
+      } else if (scenario === "tool") {
+        await expect(count).toHaveText("1 步");
+      } else {
+        await expect(count).toHaveCount(0);
+      }
+      const frozen = scenario === "text" ? null : await clock.innerText();
+      await expect(reply).toContainText("answer-part-10 ");
+      if (frozen !== null) await expect(clock).toHaveText(frozen);
+      await expect(reply).toContainText("answer-part-16");
+      if (frozen !== null) await expect(header.locator("[data-slot=label]")).toHaveText("运行完毕");
+      await page.reload();
+      await expect(reply).toContainText("answer-part-16");
+      if (frozen === null) await expect(group).toHaveCount(0);
+      else {
+        await expect(clock).toHaveText(frozen);
+        await expect(header.locator("[data-slot=label]")).toHaveText("运行完毕");
+        await expect(count).toHaveCount(scenario === "tool" ? 1 : 0);
+      }
+    });
+  }
+}
+
+test("the live tool count and clock follow the caption in each display mode", async ({ page }) => {
   const sessionId = await createSession(page, "smokeliveworkalignment", "always-ask", "modern");
   await send(page, "ten-step work history");
   const group = activityRoot(page),
     header = group.locator("[data-group-header]");
   for (const lang of ["en", "zh"]) {
-    const first = new Map();
     for (const activityDisplayMode of ["standard", "expanded", "compact"]) {
       await setAccountPrefs(page.request, { lang, activityDisplayMode, toolAliases: false });
       await page.reload();
       await expect(group).toHaveAttribute("data-step-view", activityDisplayMode);
       await expect(header.locator("[data-step-count]")).toHaveText(
-        lang === "zh" ? "2 步" : "2 steps",
+        lang === "zh" ? "1 步" : "1 step",
       );
       await expect(header).not.toHaveAttribute("data-step-terminal", "true");
       if (activityDisplayMode === "compact") await expect(header).toContainText("起草评审记录");
       for (const width of [1280, 320]) {
         await page.setViewportSize({ width, height: 800 });
-        const [box, count, clock] = await Promise.all(
-          [header, header.locator("[data-step-count]"), header.locator("[data-step-elapsed]")].map(
-            (part) => part.boundingBox(),
-          ),
-        );
-        const positions = [count.x - box.x, clock.x - box.x, count.y - box.y, clock.y - box.y];
-        if (!first.has(width)) first.set(width, positions);
-        for (const [i, pos] of positions.entries())
-          expect(Math.abs(pos - first.get(width)[i])).toBeLessThanOrEqual(1);
-        expect(clock.x + clock.width).toBeLessThanOrEqual(width);
+        const geometry = await header.evaluate((el) => {
+          const summary = el.querySelector("[data-step-summary]").getBoundingClientRect();
+          const tally = el.querySelector("[data-step-count]");
+          const timer = el.querySelector("[data-step-elapsed] [data-slot=detail]");
+          const styles = (node) => {
+            const css = getComputedStyle(node);
+            return [
+              css.fontFamily,
+              css.fontSize,
+              css.fontWeight,
+              css.fontVariantNumeric,
+              css.lineHeight,
+            ];
+          };
+          const count = tally.getBoundingClientRect(),
+            clock = timer.getBoundingClientRect();
+          return {
+            afterSummary: count.left - summary.right,
+            afterCount: clock.left - count.right,
+            baseline: Math.abs(count.bottom - clock.bottom),
+            right: clock.right,
+            countStyle: styles(tally),
+            clockStyle: styles(timer),
+          };
+        });
+        expect(geometry.afterSummary).toBeGreaterThanOrEqual(0);
+        expect(geometry.afterSummary).toBeLessThan(18);
+        expect(geometry.afterCount).toBeGreaterThan(0);
+        expect(geometry.afterCount).toBeLessThan(18);
+        expect(geometry.baseline).toBeLessThanOrEqual(1);
+        expect(geometry.countStyle).toEqual(geometry.clockStyle);
+        expect(geometry.countStyle).toContain("tabular-nums");
+        expect(geometry.right).toBeLessThanOrEqual(width);
       }
     }
   }
@@ -295,11 +377,11 @@ test("reopened ten-step history keeps its compact header together on desktop and
       await expect(group).toHaveAttribute("data-step-view", activityDisplayMode);
       await expect(head).toHaveAttribute("data-step-terminal", "true");
       await expect(head.locator('[data-slot="label"]')).toHaveText(
-        lang === "zh" ? "已完成" : "Done",
+        lang === "zh" ? "运行完毕" : "Done",
       );
       await expect(head).not.toContainText("read_file");
       await expect(count).toHaveText(n);
-      await expect(rows).toHaveCount(activityDisplayMode === "expanded" ? 10 : 0);
+      await expect(rows).toHaveCount(activityDisplayMode === "expanded" ? 20 : 0);
       time ??= await elapsed.locator(".font-mono").innerText();
       await expect(elapsed.locator(".font-mono")).toHaveText(time);
       for (const width of [1280, 390, 320]) {
@@ -327,9 +409,14 @@ test("reopened ten-step history keeps its compact header together on desktop and
     }
     await head.focus();
     await page.keyboard.press("Enter");
-    await expect(rows).toHaveCount(10);
-    await rows.first().locator("button[aria-expanded]").first().click();
-    await expect(rows.first()).toContainText("Reviewing item 1.");
+    await expect(rows).toHaveCount(20);
+    const firstThinking = rows.first().locator("button[aria-expanded]").first();
+    for (const height of [800, 740]) {
+      await page.setViewportSize({ width: 320, height });
+      await firstThinking.click();
+      await expect(rows.first()).toContainText("Reviewing item 1.");
+      await firstThinking.click();
+    }
     await expect(elapsed.locator(".font-mono")).toHaveText(time);
   }
 });

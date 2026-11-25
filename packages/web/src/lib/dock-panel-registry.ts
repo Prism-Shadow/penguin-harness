@@ -122,12 +122,16 @@ export function dockPanelDefinition(id: PanelId): DockPanelDefinition | undefine
 }
 
 /** Registered and offered panels, by `order` then id. */
-export function dockPanels(viewer?: { isAdmin: boolean }): DockPanelDefinition[] {
+export function dockPanels(viewer?: {
+  isAdmin: boolean;
+  localSession?: boolean;
+}): DockPanelDefinition[] {
   return [...entries.keys()]
     .flatMap((id) => live(id)?.definition ?? [])
     .filter((definition) =>
       viewer && definition.availableFromAppCenter
-        ? definition.availableFromAppCenter(viewer)
+        ? definition.availableFromAppCenter(viewer) ||
+          (viewer.localSession === true && definition.offered?.() === true)
         : (definition.offered?.() ?? true),
     )
     .sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -168,8 +172,8 @@ export function panelGlyphPath(id: PanelId): string {
 }
 
 /** A scoped tool or its directory can be opened before a chat dock has mounted. */
-export function useSessionWorkbenchPanels(): DockPanelDefinition[] {
+export function useSessionWorkbenchPanels(localSession = false): DockPanelDefinition[] {
   const isAdmin = useAuth().user?.isAdmin === true;
   const revision = useSyncExternalStore(subscribeDockPanels, dockPanelsVersion);
-  return useMemo(() => dockPanels({ isAdmin }), [revision, isAdmin]);
+  return useMemo(() => dockPanels({ isAdmin, localSession }), [revision, isAdmin, localSession]);
 }

@@ -22,36 +22,6 @@ import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";
 
 export const zh = {
   appName: "PenguinHarness",
-  firstWorkbench: {
-    updateNeeded: "此智能体安装的是旧版引导。更新后即可使用对话回复生成清单。",
-    update: "更新此智能体的引导",
-    updateWarning:
-      "用库中的版本替换此智能体的引导代码？本地编辑过的引导代码将被覆盖。引导进度和清单数据会保留。",
-    updateUnavailable: "此服务端的插件库还没有新版引导。",
-    title: "我的第一个工作台",
-    help: "用自己的对话生成清单，安装后测试。",
-    resume: "开始或继续引导",
-    later: "收起",
-    refresh: "重新读取",
-    loading: "正在读取…",
-    generating: "正在生成清单…",
-    waitReply: "请等待此智能体的对话完成一条回复。",
-    models: "打开模型库配置服务商，然后在对话输入框旁选择模型。",
-    chat: "在输入框旁选择模型，发送你想做成清单的任务，读完回复后继续。",
-    reply: "用于生成的回复",
-    feedback: "清单修改意见",
-    modelSettings: "打开模型库",
-    toChat: "前往对话",
-    useReply: "使用这段对话",
-    retryChat: "重试已保存的请求",
-    generate: "生成清单",
-    verified: "测试通过。清单已保存、完成并删除测试条目。",
-    install: "安装清单",
-    open: "打开清单",
-    test: "测试清单",
-    testItem: "引导测试条目",
-    download: "下载插件",
-  },
 
   voice: {
     /** The Project settings page of the multimodal models. */
@@ -665,6 +635,9 @@ export const zh = {
     chooseSession: "选择会话",
     searchSessions: "搜索全部会话",
     searchActiveSessions: "搜索有运行中终端的会话",
+    searchBrowserSessions: "搜索打开了浏览器页面的会话",
+    noOpenBrowserPages: "没有打开的浏览器页面",
+    startSessionBrowser: "要打开页面，请从会话的快捷方式中选择「浏览器」。",
     noOpenTerminals: "没有运行中的终端",
     startSessionTerminal: "要新建终端，请打开一个会话，从快捷方式中选择「终端」。",
     emptySessions: "未找到匹配的会话。",
@@ -1220,6 +1193,10 @@ export const zh = {
     groups: "模型分组",
     /** Footer toggle while models without a key are listed: turns the listing back off. */
     hideModelsWithoutKey: "隐藏未配置 key 的模型",
+    /** Overlay shown over the model picker when no model in the list has an API key configured. */
+    noKeyTitle: "尚未配置可用的模型",
+    noKeyHint: "请前往模型库连接模型提供商或配置 API Key",
+    goToModels: "前往模型库",
     /**
      * Footer keyboard legend; `mod` is "⌥" on macOS and "Alt+" elsewhere. Only the two moves a
      * list does not suggest by itself — ↑↓, Enter and Esc go without saying, and the footer
@@ -1326,18 +1303,9 @@ export const zh = {
   },
   /** The sidebar's app list, under the nav and above the conversations (main-sidebar-apps.tsx). */
   pageWorkspace: {
-    leftPane: "左侧页面",
-    rightPane: "右侧页面",
     restore: "恢复",
     workbenches: "工作台",
-    left: "在左侧打开",
-    right: "在右侧打开",
-    whole: "整页显示",
-    swap: "交换两侧",
     separate: "在新窗口打开",
-    actions: "分栏操作",
-    closeView: "关闭视图",
-    resize: "调整页面宽度",
     empty: "此 Agent 没有可打开的工作台。",
   },
   sidebarApps: {
@@ -1420,7 +1388,6 @@ export const zh = {
       back: "返回",
       /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
       toFolders: "移入分组",
-      newFolderWith: "与其组成新分组",
     },
     restoreTitle: "恢复默认排列",
     restoreBody: "应用中心将回到默认顺序：你的排序与分组都会清除，应用本身不受影响。",
@@ -2360,7 +2327,7 @@ export const zh = {
     builtinUndeletable: "内置 Agent 不可被删除",
     /** The system Agent (lib/builtin-agents.ts): its name and one line, never read from its file. */
     systemName: "系统",
-    systemDescription: "系统应用的所有者：模型库、插件市场、机器管理、成本中心与评估中心。",
+    systemDescription: "负责模型库、插件市场、机器管理和成本中心。",
     /** The pill after its name on the Agents page, and what the pill means. */
     systemTag: "系统",
     systemTagHint: "系统 Agent 拥有系统应用；它不对话、不装插件，也不能删除或导出。",
@@ -2940,7 +2907,7 @@ export const zh = {
      */
     connectDefaultSwitchTitle: "更换默认模型",
     connectDefaultOffer: (group: string, current: string, model: string): string =>
-      `已连接 ${group}。当前默认模型 ${current} 不在这个分组里，要换成 ${model} 吗？更换后，新建的 Session 将默认使用它。`,
+      `已连接 ${group}。当前默认模型 ${current} 不在这个分组里，要换成 ${model}吗？更换后，新建的 Session 将默认使用它。`,
     connectDefaultOfferUnset: (group: string, model: string): string =>
       `已连接 ${group}。要把 ${model} 设为默认模型吗？新建的 Session 将默认使用它。`,
     connectDefaultSwitch: "更换",
@@ -3442,12 +3409,6 @@ export const zh = {
     runsPartly: (reason: string) => `此构建上有一部分未生效：${reason}`,
     /** Page notice while this build cannot fully run a listed plugin. */
     unsatisfiedNotice: (n: number) => `当前构建无法完整运行 ${n} 个已装插件，原因见各自的条目。`,
-    /** The notice's action: filters the list down to those rows. */
-    unsatisfiedShow: "查看",
-    /** Page notice while the filter beside the search narrows the list to the incompatible plugins. */
-    incompatibleOnlyNotice: "当前只显示不兼容的插件。",
-    /** That notice's action: turns the filter off. */
-    incompatibleOnlyShowAll: "显示全部",
     /** The admin's notice while members' requests to run a plugin's server module wait. */
     moduleRequestsNotice: (n: number) => `${n} 个服务端模块等待启用`,
     /** That notice's action: opens the Settings dialog's module requests page, where they are decided. */
@@ -3479,17 +3440,26 @@ export const zh = {
       flowTitle: (name: string) => `安装 ${name}`,
       backToServer: "返回服务端步骤",
       toAgents: "继续选择 Agent",
-      stepServer: "安装到服务端",
-      stepAgents: "安装到 Agent",
-      stepOf: (step: number, steps: number) => `第 ${step} 步，共 ${steps} 步`,
-      stepDone: "已完成",
+      prepare: "准备插件",
+      projectService: "为当前项目启用服务",
+      ready: "服务端已准备好",
+      installDetails: "对服务端的影响",
+      chooseAgent: "选择智能体",
+      chooseAgentHelp: "选择要使用这款插件的智能体。你可以依次添加给多个智能体。",
+      prepareForAgents: "这台服务器上的所有项目共用一份插件。安装后，选择哪些智能体可以使用它。",
+      preparePackage: "这台服务器上的所有项目共用一份插件。安装后即可查看它提供的功能。",
+      prepareService: "这台服务器上的所有项目共用一份插件。这项服务无需添加给智能体。",
+      projectServiceOff: "当前项目尚未启用这项服务。你仍可将插件添加给智能体。",
+      projectReady: "当前项目已启用这款插件的服务。",
+      projectServiceHelp: "插件已随服务端提供，启用后当前项目就能使用这项服务。",
+      add: "添加",
+      addToAgent: (name: string) => `添加给 ${name}`,
+      addedToAgent: "已添加",
       serverDone: (name: string) => `${name} 已在服务端，所有 Project 共用。`,
-      askBody: "它还不在服务端：请管理员把它安装到服务端，装好后你再把它装到 Agent。",
+      askBody: "请管理员安装插件，供这台服务器上的所有项目共用。",
       askAdmin: "请管理员安装",
-      asked: "已请管理员安装。它装到服务端后，再回到这里把它装到 Agent。",
+      asked: "安装申请已发送给管理员。",
       finish: "完成",
-      /** The flow's Agent step: how the Agents' copies relate to the server. */
-      onServer: "从服务端卸载会同时从所有 Agent 卸载。",
       /** Progress on the clicked control. */
       checking: "检查插件源…",
       installing: "安装中…",
@@ -3596,12 +3566,6 @@ export const zh = {
     openSettings: "设置",
     pageDesc:
       "所有插件按分类列出。只含技能和／或钩子包的插件随本次构建自带，装到 Agent 上使用；服务端模块插件（如 Agent 运行沙箱后端）由管理员安装到整个服务端。",
-    /**
-     * The filter beside the search: a toggle that narrows the list to the plugins this build cannot
-     * fully run, remembered in this browser; the group's accessible name, and the toggle's words.
-     */
-    filterLabel: "筛选插件",
-    incompatibleOnlyFilter: "只看不兼容",
     /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "分组方式",
     groupBy: {
@@ -5179,11 +5143,11 @@ Benchmark：
       input_subagent: "交流",
     } as Record<string, string>,
     workRunning: "运行中",
-    workDone: "已完成",
+    workDone: "运行完毕",
     workFailed: "运行失败",
     workStopped: "已停止",
     workRetryStep: (n: number) => `第 ${n} 次重试`,
-    workElapsed: "总耗时",
+    workElapsed: "活动用时",
     workGroupSteps: (n: number) => `${n} 步`,
     approvalWaiting: "待审批",
     copyCode: "复制代码",

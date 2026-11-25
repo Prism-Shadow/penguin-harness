@@ -27,6 +27,13 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         },
       },
     ],
+    "PluginLibraryModule.workbenches": [
+      {
+        id: "agent-evaluation.workbench.benchmark",
+        name: "benchmark",
+        path: "workbenches/benchmark",
+      },
+    ],
     "PluginLibraryModule.skills": [
       {
         id: "agent-evaluation.skill.agent-evaluation",

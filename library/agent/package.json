@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-agent",
   "version": "0.2.18",
-  "description": "The agent domain: the AgentConfig and Memory mechanisms and their services (the Web App's Agent config, vault, skills/schedules prompt templates and Memory tabs), the Agent package import/export/zip caps, the avatar plumbing and the API vocabulary. One package, no server dependencies \u2014 the server imports these; nothing here imports the server.",
+  "description": "The agent domain: the AgentConfig and Memory mechanisms and their services (the Web App's Agent config, vault, skills/schedules prompt templates and Memory tabs), the Agent package import/export/zip caps, the avatar plumbing and the API vocabulary. One package, no server dependencies — the server imports these; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -76,6 +76,14 @@
       "types": "./dist/agent-zip.d.ts",
       "import": "./dist/agent-zip.js"
     },
+    "./partial-config": {
+      "types": "./dist/partial-config.d.ts",
+      "import": "./dist/partial-config.js"
+    },
+    "./snapshot-service": {
+      "types": "./dist/snapshot-service.d.ts",
+      "import": "./dist/snapshot-service.js"
+    },
     "./agent-avatar": {
       "types": "./dist/agent-avatar.d.ts",
       "import": "./dist/agent-avatar.js"
@@ -94,7 +102,8 @@
     "@prismshadow/penguin-library-session": "workspace:*",
     "@prismshadow/penguin-library-trace": "workspace:*",
     "fflate": "^0.8.3",
-    "yaml": "^2.5.0"
+    "yaml": "^2.5.0",
+    "tar": "^7.5.21"
   },
   "devDependencies": {
     "@types/node": "^24",

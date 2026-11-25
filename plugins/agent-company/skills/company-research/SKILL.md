@@ -1,7 +1,7 @@
 ---
 name: company-research
 description: Run experiments and papers in a PenguinHarness research organization — fix the harness and the metric first, run an autoresearch-style loop (one editable surface, the same time budget per experiment, a results log, keep only improvements) inside a resource envelope the board approved in the all-hands channel, and put every claim through adversarial review by a reviewer who is not its author.
-version: 2026.10.10.1
+version: 2026.11.24.1
 ---
 
 # Company Research
@@ -35,8 +35,8 @@ An experiment loop is the textbook case of what `company-employee` calls heavy o
 Then block the ticket on the board and end the run, exactly as "Asking the board" in `company-employee` says:
 
 ```bash
-penguin org channel send -m "@user:alice 2026-09-01-dep-eval is ready for its experiment loop: 5-minute runs on GPU 0 (about 10 GB of VRAM), one at a time, 40 runs or 4 h in total, 6 GB of disk under <app_data_dir>/organizations/co_lab/workspace/experiments/dep-eval/; the dataset is already in the shared root and no paid API is involved. It runs inside the ticket session — stop that session and the loop stops. May I start? Otherwise I stop at 10 runs." --ref-ticket 2026-09-01-dep-eval
-penguin org ticket block 2026-09-01-dep-eval --reason "Waiting for the board's resource envelope for the experiment loop" --by user:alice
+penguin org channel send -m "@user:alice ticket-2026-09-01-dep-eval is ready for its experiment loop: 5-minute runs on GPU 0 (about 10 GB of VRAM), one at a time, 40 runs or 4 h in total, 6 GB of disk under <app_data_dir>/organizations/co_lab/workspace/experiments/dep-eval/; the dataset is already in the shared root and no paid API is involved. It runs inside the ticket session — stop that session and the loop stops. May I start? Otherwise I stop at 10 runs." --ref-ticket ticket-2026-09-01-dep-eval
+penguin org ticket block ticket-2026-09-01-dep-eval --reason "Waiting for the board's resource envelope for the experiment loop" --by user:alice
 ```
 
 Once approved, write the envelope into the ticket's `## Goal` (machine, concurrency, total, disk, keys — the numbers as approved) and into the handbook as `decisions/<yyyy-mm-dd>-envelope-<ticket_id>.md`, so the next session reads it instead of asking again. **Inside the envelope the loop runs unattended.** Reaching its total ends the loop; exceeding it — more hours, a second GPU, more runs — or needing something new — a dataset that is not there, an API key, a bigger model — is a new ask in the same channel, with the same block-and-end. A resource you lack is something you request, never something you work around: no hunting for a key on the machine, no substituting a dataset the ticket did not name, no quietly running on the CPU when the GPU was refused.
@@ -84,8 +84,8 @@ Run the loop in the foreground of the ticket session — never in the background
 A claim goes through the board's `review` column, and the reviewer's job is to try to break it. The move itself starts nothing — `notify` hears only of a ticket's close, only the owner may open a session on the ticket, and the owner's sweep starts sessions only for `in_progress` tickets — so on every round the author starts the review itself, right after moving the ticket to `review` with `## Result` complete:
 
 ```bash
-penguin org ticket move 2026-09-01-dep-eval --to review
-penguin org ticket start 2026-09-01-dep-eval --agent-id co_lab_reviewer -m "Review round 1: the claim is in ## Result; results.tsv, logs/ and the harness are in <app_data_dir>/organizations/co_lab/workspace/co_lab_researcher/experiments/2026-09-01-dep-eval/"
+penguin org ticket move ticket-2026-09-01-dep-eval --to review
+penguin org ticket start ticket-2026-09-01-dep-eval --agent-id co_lab_reviewer -m "Review round 1: the claim is in ## Result; results.tsv, logs/ and the harness are in <app_data_dir>/organizations/co_lab/workspace/co_lab_researcher/experiments/ticket-2026-09-01-dep-eval/"
 ```
 
 That session runs as the reviewer, in the reviewer's own partition, with the whole ticket and the note as its first message: name the round and the experiment directory by full path. No mention is needed — it would only wake a desk that cannot open the session.

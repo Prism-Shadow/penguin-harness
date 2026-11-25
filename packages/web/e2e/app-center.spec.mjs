@@ -11,12 +11,16 @@
  *   opens as a panel over the grid; the menu moves a tile backward; the arrangement outlives a
  *   reload; restoring the default order asks first and then clears it. After several pages of
  *   navigation inside a grouped app, its close button still returns directly to its tile.
+ * - With long Apps and Workspaces lists, the desktop wheel and phone swipe scroll both groups
+ *   from end to end. Keyboard navigation, search, folding and workspace paging stay reachable.
  * - The header's New folder makes a folder of the apps checked in its dialog, under the name
  *   typed there, at the first checked app's place.
+ * - An old folder containing the built-in Files tile still opens a separately installed Files app.
  * - A system app's tile opens its own page, where the nav keeps the App Center lit, Benchmark
  *   detail pages included.
  */
 import { test, expect } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
 import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 import { zip } from "./workbench-zip.mjs";
@@ -198,6 +202,42 @@ test.beforeAll(async ({ browser }) => {
   const base = `${project}/agents/default_agent/workbenches`;
   for (const title of APPS) await importApp(seed.request, base, title);
   await seed.close();
+});
+
+test("an installed Files app takes its old folder’s slot when the retired built-in tile was its other member", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, "filescatalog", P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const { projects } = await (await page.request.get("/api/projects")).json();
+  const base = "/api/projects/" + projects[0].projectId;
+  const builtin = "system_agent/session-tools-workspace";
+  const installed = "default_agent/session-tools-workspace";
+  await importApp(
+    page.request,
+    base + "/agents/default_agent/workbenches",
+    "Files",
+    "session-tools-workspace",
+  );
+  const layout = {
+    v: 1,
+    items: [{ type: "folder", id: "tools", name: "Tools", apps: [builtin, installed] }],
+  };
+  await expect(await page.request.put(base + "/app-center/layout", { data: { layout } })).toBeOK();
+  await page.goto("/apps");
+  await expect(page.locator('[data-folder="tools"]')).toHaveCount(0);
+  const tile = page.locator(`li[data-app="${installed}"] > button`).first();
+  await expect(tile).toBeVisible();
+  await expect(page.locator(`li[data-app="${builtin}"]`)).toHaveCount(0);
+  await tile.click();
+  await expect(page.locator(`[data-workspace-page="app:${installed}"] iframe`)).toBeVisible();
+  await expect
+    .poll(async () => (await (await page.request.get(base + "/app-center")).json()).layout)
+    .toEqual({ v: 1, items: [{ type: "app", app: installed }] });
+  await page.goto("/session-tools/workspace");
+  await expect(
+    page.getByRole("region", { name: "Files", exact: true }).getByRole("searchbox"),
+  ).toBeVisible();
 });
 
 test("an installed game's canvas captures the mouse on click only when its tab opts in", async ({
@@ -425,6 +465,83 @@ test("the header's New folder makes a folder of the checked apps at the first on
   await expect.poll(names).toEqual(["Alpha", "Pair"]);
 });
 
+for (const width of [1280, 375]) {
+  test(`an App Center folder promotes its last app in place at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 820 });
+    await provisionAndLogin(page.request, U, P);
+    await setAccountPrefs(page.request, { lang: "en" });
+    const projectId = (await (await page.request.get("/api/projects")).json()).projects[0]
+      .projectId;
+    const base = "/api/projects/" + projectId + "/app-center";
+    const keys = APPS.map((name) => "default_agent/" + name.toLowerCase());
+    const items = [{ type: "folder", id: "tasks", name: "Tasks", apps: keys }];
+    await expect(
+      await page.request.put(base + "/layout", { data: { layout: { v: 1, items } } }),
+    ).toBeOK();
+    await page.goto("/apps");
+    const folder = page.locator('[data-folder="tasks"] > button').first();
+    const tile = (id) => page.locator('li[data-app="' + id + '"] > button').first();
+    await folder.click();
+    await tile(keys[2]).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Remove from folder", exact: true }).click();
+    await expect(folder).toHaveAttribute("aria-label", /2 apps/);
+    if ((await folder.getAttribute("aria-expanded")) !== "true") await folder.click();
+    await tile(keys[1]).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Remove from folder", exact: true }).click();
+    await expect(folder).toHaveCount(0);
+    await expect(tile(keys[0])).toBeVisible();
+    await page.reload();
+    await expect(tile(keys[0])).toBeVisible();
+    const retained = (await (await page.request.get(base)).json()).layout;
+    expect(retained.items.slice(0, 3)).toEqual(keys.map((app) => ({ type: "app", app })));
+    await tile(keys[0]).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Move to…", exact: true }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu.getByRole("menuitem")).toHaveCount(2);
+    expect(await menu.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+    await menu.getByRole("menuitem", { name: "New folder…", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "New folder" });
+    await expect(dialog.getByRole("button", { name: "Create" })).toBeDisabled();
+    await dialog.getByRole("checkbox", { name: /Beta/ }).check();
+    await expect(dialog.getByRole("button", { name: "Create" })).toBeEnabled();
+  });
+}
+
+test("disabling an app keeps its folder until the app is uninstalled", async ({ page }) => {
+  await provisionAndLogin(page.request, "folderavailability", P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const { projects } = await (await page.request.get("/api/projects")).json();
+  const base = "/api/projects/" + projects[0].projectId;
+  const workbenches = base + "/agents/default_agent/workbenches";
+  await importApp(page.request, workbenches, "Reader");
+  await importApp(page.request, workbenches, "Planner");
+  const apps = ["default_agent/reader", "default_agent/planner"];
+  const layout = { v: 1, items: [{ type: "folder", id: "desk", name: "Desk", apps }] };
+  await expect(await page.request.put(base + "/app-center/layout", { data: { layout } })).toBeOK();
+  await expect(
+    await page.request.put(workbenches + "/planner/enabled", { data: { enabled: false } }),
+  ).toBeOK();
+  await page.goto("/apps");
+  const folder = page.locator('[data-folder="desk"] > button').first();
+  await folder.click();
+  await expect(page.locator('li[data-app="default_agent/reader"]')).toBeVisible();
+  await expect(page.locator('li[data-app="default_agent/planner"]')).toHaveCount(0);
+  const readLayout = async () =>
+    (await (await page.request.get(base + "/app-center")).json()).layout;
+  expect(await readLayout()).toEqual(layout);
+  await expect(
+    await page.request.put(workbenches + "/planner/enabled", { data: { enabled: true } }),
+  ).toBeOK();
+  await page.reload();
+  if ((await folder.getAttribute("aria-expanded")) !== "true") await folder.click();
+  await expect(page.locator('li[data-app="default_agent/planner"]')).toBeVisible();
+  await expect(await page.request.delete(workbenches + "/planner")).toBeOK();
+  await page.reload();
+  await expect(folder).toHaveCount(0);
+  await expect(page.locator('li[data-app="default_agent/reader"]')).toBeVisible();
+  await expect.poll(readLayout).toEqual({ v: 1, items: [{ type: "app", app: apps[0] }] });
+});
+
 test("a system app's tile opens its page, where the App Center stays lit", async ({ page }) => {
   await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
   await setAccountPrefs(page.request, { lang: "en" });
@@ -516,23 +633,59 @@ test("searching, sorting and folding sidebar directories keeps the open page and
   await expect(page).toHaveURL(/\/chat\/new$/);
 });
 
-test("many open apps scroll inside Apps while the workspace and directory search remain reachable", async ({
-  page,
-}) => {
+test("Apps and Workspaces share the desktop and phone sidebar scroll area", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await provisionAndLogin(page.request, "sidebarlonglist", P);
   await setAccountPrefs(page.request, { lang: "en" });
   const { projects } = await (await page.request.get("/api/projects")).json();
-  const base = `/api/projects/${projects[0].projectId}/agents/default_agent/workbenches`;
+  const project = `/api/projects/${projects[0].projectId}`;
+  const agent = project + "/agents/default_agent";
+  const model = { provider: "custom", modelId: "claude-4-8" };
+  await expect(
+    await page.request.put(project + "/models", {
+      data: {
+        defaultModel: model,
+        models: [
+          { ...model, apiKey: "sk-mock", baseUrl: process.env.MOCK_URL, contextWindow: 200000 },
+        ],
+      },
+    }),
+  ).toBeOK();
+  async function addWorkspace(index) {
+    const workspace = test.info().outputPath("workspace-" + index);
+    await mkdir(workspace, { recursive: true });
+    await expect(await page.request.post(agent + "/sessions", { data: { workspace } })).toBeOK();
+  }
+  const region = page.locator('[data-find-region="sessions"]').filter({ visible: true });
+  const group = page.getByRole("navigation", { name: "Apps", exact: true });
+  const list = group.getByRole("list", { name: "Apps", exact: true });
+  const offset = () => region.evaluate((el) => el.scrollTop);
+  const maxOffset = () => region.evaluate((el) => el.scrollHeight - el.clientHeight);
+  await addWorkspace(1);
+  await page.goto("/apps");
+  await expect(region.getByText("workspace-1", { exact: true })).toBeInViewport();
+  await expect(group).toHaveCount(0);
+  expect(await maxOffset()).toBe(0);
+
+  for (let i = 2; i <= 12; i++) await addWorkspace(i);
   const titles = Array.from(
     { length: 30 },
     (_, index) => "Notebook-" + String(index + 1).padStart(2, "0"),
   );
-  for (const title of titles) await importApp(page.request, base, title);
-  await page.goto("/apps");
-  const group = page.getByRole("navigation", { name: "Apps", exact: true });
-  const list = group.getByRole("list", { name: "Apps", exact: true });
-  await expect(list).toHaveCount(0);
+  for (const title of titles) await importApp(page.request, agent + "/workbenches", title);
+  const catalog = project + "/app-center";
+  await page.reload();
+  const notebook = page.locator('li[data-app="default_agent/notebook-01"] > button').first();
+  for (const width of [1440, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    await notebook.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Move to…" }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu.getByRole("menuitem")).toHaveCount(2);
+    expect(await menu.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+    await page.keyboard.press("Escape");
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   for (const title of titles) {
     await page
       .getByRole("complementary")
@@ -549,43 +702,106 @@ test("many open apps scroll inside Apps while the workspace and directory search
   }
   const count = await list.getByRole("listitem").count();
   expect(count).toBeGreaterThanOrEqual(30);
-  const bounds = () =>
-    list.evaluate((el) => ({
-      height: el.clientHeight,
-      content: el.scrollHeight,
-      offset: el.scrollTop,
-    }));
-  const desktop = await bounds();
-  expect(desktop.content).toBeGreaterThan(desktop.height * 3);
-  expect(desktop.offset).toBeGreaterThan(0);
-  const workspaces = page.getByRole("button", { name: "Workspaces", exact: true });
+  const workspaces = region.getByRole("button", { name: "Workspaces", exact: true });
+  const next = region.getByRole("button", { name: "Next groups", exact: true });
+  const first = list.locator("[data-app-row]").first();
+  await expect(list.locator('[aria-current="page"]')).toBeInViewport();
+  for (const phone of [false, true]) {
+    const cdp = phone ? await page.context().newCDPSession(page) : null;
+    if (cdp) {
+      await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+      await page.setViewportSize({ width: 390, height: 700 });
+      const opener = page.getByRole("banner").getByRole("button", { name: /^Sessions/ });
+      await expect(opener).toBeInViewport();
+      const button = await opener.boundingBox();
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ x: button.x + button.width / 2, y: button.y + button.height / 2 }],
+      });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await expect(group).toBeVisible();
+    }
+    await region.evaluate((el) => el.scrollTo(0, 0));
+    await expect(first).toBeInViewport();
+    await expect(next).not.toBeInViewport();
+    const box = await region.boundingBox();
+    const x = box.x + box.width / 2;
+    async function scroll(direction) {
+      const distance = direction * box.height * 0.6;
+      if (cdp) {
+        const y = box.y + box.height / 2 + distance / 2;
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+        for (let step = 1; step <= 6; step++) {
+          await cdp.send("Input.dispatchTouchEvent", {
+            type: "touchMove",
+            touchPoints: [{ x, y: y - (distance * step) / 6 }],
+          });
+        }
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      } else {
+        await page.mouse.move(x, box.y + box.height / 2);
+        await page.mouse.wheel(0, distance);
+      }
+      return offset();
+    }
+    expect(await list.evaluate((el) => el.scrollHeight - el.clientHeight)).toBe(0);
+    await scroll(1);
+    await expect.poll(offset).toBeGreaterThan(0);
+    expect(await list.evaluate((el) => el.scrollTop)).toBe(0);
+    await expect
+      .poll(
+        async () => {
+          await scroll(1);
+          return region.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+        },
+        { intervals: [100] },
+      )
+      .toBe(0);
+    expect(await list.evaluate((el) => el.scrollTop)).toBe(0);
+    await expect(next).toBeInViewport();
+    await expect(first).not.toBeInViewport();
+    await expect(page.getByRole("link", { name: /^App Center(?: ·|$)/ })).toBeInViewport();
+    await expect(
+      page
+        .getByRole("button", { name: /sidebarlonglist/ })
+        .and(page.locator('[aria-haspopup="menu"]')),
+    ).toBeInViewport();
+    await expect.poll(() => scroll(-1), { intervals: [100] }).toBe(0);
+    if (cdp) await cdp.detach();
+
+    // Tabbing from an offscreen group brings its control into the shared viewport.
+    await workspaces.evaluate((el) => el.focus({ preventScroll: true }));
+    await page.keyboard.press("Tab");
+    await expect(region.getByRole("button", { name: "Search chats", exact: true })).toBeFocused();
+    await expect(workspaces).toBeInViewport();
+    await next.click();
+    await expect(region.getByText("workspace-1", { exact: true })).toBeInViewport();
+    await region.getByRole("button", { name: "Previous groups" }).click();
+    await first.focus();
+    await expect(first).toBeInViewport();
+  }
+  await group.getByRole("button", { name: "Apps", exact: true }).click();
+  await expect(list).toHaveCount(0);
   await expect(workspaces).toBeInViewport();
-  await page.setViewportSize({ width: 390, height: 700 });
-  await page
-    .getByRole("banner")
-    .getByRole("button", { name: /^Sessions/ })
-    .click();
-  expect((await bounds()).height).toBeLessThan(desktop.height);
-  // In a short drawer, reaching the next group takes at most a few rows of outer scrolling,
-  // regardless of how many apps are running. The rest of the app list scrolls independently.
-  const gap = await workspaces.evaluate((button) => {
-    const scroll = button.closest(".overflow-y-auto");
-    const distance = Math.max(
-      0,
-      button.getBoundingClientRect().bottom - scroll.getBoundingClientRect().bottom,
-    );
-    const row = document.querySelectorAll('nav[aria-label="Apps"] li > div');
-    const height = [...row].find((node) => node.clientHeight > 0).clientHeight;
-    scroll.scrollBy(0, distance + 1);
-    return distance / height;
-  });
-  expect(gap).toBeLessThanOrEqual(3);
-  await expect(workspaces).toBeInViewport();
+  await group.getByRole("button", { name: "Apps", exact: true }).click();
+  const kept = {
+    v: 1,
+    items: [
+      {
+        type: "folder",
+        id: "notes",
+        name: "Notebooks",
+        apps: ["default_agent/notebook-01", "default_agent/notebook-02"],
+      },
+    ],
+  };
+  await expect(await page.request.put(catalog + "/layout", { data: { layout: kept } })).toBeOK();
   await group.getByRole("button", { name: "Search apps" }).click();
   const search = group.getByRole("searchbox", { name: "Search apps" });
   await search.fill("Notebook-01");
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list.getByRole("button", { name: /Notebook-01/ })).toBeVisible();
+  expect((await (await page.request.get(catalog)).json()).layout).toEqual(kept);
   await expect(page).toHaveURL(/notebook-30/);
   await search.press("Escape");
   await expect(list.getByRole("listitem")).toHaveCount(count);

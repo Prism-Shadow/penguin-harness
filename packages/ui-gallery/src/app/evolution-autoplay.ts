@@ -14,9 +14,13 @@ export function installEvolutionAutoplay(
     return () => undefined;
   const doc = win.document;
   // A suspended workspace tab retains its DOM while another page is on screen.
+  const available = (element: Element) =>
+    !element.closest("[inert]") &&
+    element.getClientRects().length > 0 &&
+    win.getComputedStyle(element).visibility !== "hidden";
   const shown = <T extends Element>(selector: string, matches?: (element: T) => boolean) =>
     [...doc.querySelectorAll<T>(selector)].find(
-      (element) => element.getClientRects().length > 0 && (!matches || matches(element)),
+      (element) => available(element) && (!matches || matches(element)),
     );
   const letters = Array.from(prompt);
   const setValue = Object.getOwnPropertyDescriptor(
@@ -111,8 +115,8 @@ export function installEvolutionAutoplay(
         timer = playback.schedule(advance, 1300);
       }
     } else if (destination === "center") {
-      // The Evaluation Center is a system app: its tile in the App Center opens it.
-      const tile = shown<HTMLButtonElement>('li[data-app="system_agent/benchmark"] > button');
+      // Open the default Agent's evaluation workbench from its App Center tile.
+      const tile = shown<HTMLButtonElement>('li[data-app="default_agent/benchmark"] > button');
       const appCenter = shown<HTMLAnchorElement>('a[href="/apps"]');
       if (tile) {
         destination = "detail";
@@ -127,9 +131,7 @@ export function installEvolutionAutoplay(
         timer = playback.schedule(advance, 700);
       } else {
         // On a phone, open the real navigation drawer before choosing the App Center.
-        [...doc.querySelectorAll<HTMLButtonElement>("header button")]
-          .find((button) => button.getClientRects().length > 0)
-          ?.click();
+        [...doc.querySelectorAll<HTMLButtonElement>("header button")].find(available)?.click();
         timer = playback.schedule(advance, 400);
       }
     } else if (destination === "detail") {
@@ -194,9 +196,14 @@ export function installEvolutionAutoplay(
         stop();
       }
     } else if (destination === "replay") {
+      // Real Agent apps retain their page across visits. Leave the list ready for the next round.
+      shown<HTMLButtonElement>(
+        "main button",
+        (button) => button.getAttribute("aria-label") === S.benchmark.backToList,
+      )?.click();
       const button = [...doc.querySelectorAll<HTMLButtonElement>("button")].find(
         (candidate) =>
-          candidate.getClientRects().length > 0 &&
+          available(candidate) &&
           (candidate.textContent?.trim() === S.chat.newSessionMenu ||
             candidate.getAttribute("aria-label")?.startsWith(S.chat.newSessionMenu)),
       );
@@ -205,9 +212,7 @@ export function installEvolutionAutoplay(
         button.click();
         timer = playback.schedule(advance, 200);
       } else {
-        [...doc.querySelectorAll<HTMLButtonElement>("header button")]
-          .find((candidate) => candidate.getClientRects().length > 0)
-          ?.click();
+        [...doc.querySelectorAll<HTMLButtonElement>("header button")].find(available)?.click();
         timer = playback.schedule(advance, 400);
       }
     } else {

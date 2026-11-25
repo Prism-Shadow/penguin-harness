@@ -17,7 +17,7 @@
  * built with the global class as the string "[object Request]" ("Failed to parse URL from
  * [object Request]" — the Gemini SDK's Interactions client builds every request that way)
  * and a global FormData body as "[object FormData]". Code that imports undici's fetch on
- * purpose pairs it with undici's own classes (runtime/messaging/telegram-api.ts).
+ * purpose pairs it with undici's own classes (library/messaging's telegram-api).
  *
  * Dispatcher per settings state (keyed on the "application uses the proxy" switch; the
  * separate agent-environment switch never touches the dispatcher — it only drives the

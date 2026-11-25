@@ -153,8 +153,8 @@ export function approximateTokens(text: string): number {
 
 /**
  * Token estimate for a batch of input messages: image content gets a flat allowance,
- * everything else is estimated from its serialized payload (covering user text, tool
- * outputs and tool calls uniformly; the JSON syntax counted along the way is a small
+ * everything else is estimated from its serialized payload excluding Trace-only work
+ * timestamps (covering user text, tool outputs and tool calls uniformly; the JSON syntax counted along the way is a small
  * overestimate — the safe direction, and it also stands in for chat-template structure).
  *
  * Images appear in two shapes and both must bypass the character count: as a payload of
@@ -167,11 +167,16 @@ export function approximateTokens(text: string): number {
 export function approximateMessagesTokens(messages: AmspRecord[]): number {
   let total = 0;
   for (const msg of messages) {
-    const p = msg.payload as { type?: string; images?: unknown };
-    if (p.type === "image_url" || p.type === "inline_data") {
+    const p = msg.payload;
+    if ("type" in p && (p.type === "image_url" || p.type === "inline_data")) {
       total += IMAGE_TOKEN_ESTIMATE;
-    } else if (Array.isArray(p.images)) {
-      const { images, ...rest } = p as { images: unknown[] };
+    } else if ("started_at" in p && (p.type === "thinking" || p.type === "tool_call")) {
+      // The first fragment's timestamp belongs to Trace playback. Tool arguments and
+      // provider fidelity may carry their own timestamps and are part of the request.
+      const { started_at, ...content } = p;
+      total += approximateTokens(JSON.stringify(content));
+    } else if ("images" in p && Array.isArray(p.images)) {
+      const { images, ...rest } = p;
       total += images.length * IMAGE_TOKEN_ESTIMATE + approximateTokens(JSON.stringify(rest));
     } else {
       total += approximateTokens(JSON.stringify(msg.payload));

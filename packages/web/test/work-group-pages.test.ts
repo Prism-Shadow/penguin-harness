@@ -89,7 +89,7 @@ describe("work display modes", () => {
     const view = await mount(group([think(1, "First decision"), call(2)]));
     expect(header().getAttribute("aria-expanded")).toBe("true");
     expect(rows()).toHaveLength(2);
-    expect(count()).toBe(S.chat.workGroupSteps(2));
+    expect(count()).toBe(S.chat.workGroupSteps(1));
     expect(view.container.textContent).not.toContain("First decision");
     expect(view.container.textContent).not.toContain("Output 2");
     expect(view.container.textContent).toContain("Details for command 2");
@@ -127,12 +127,21 @@ describe("work display modes", () => {
     });
     const view = await mount(group([first]));
     expect(header().textContent).toContain(S.chat.thinking);
+    expect(count()).toBeUndefined();
+    expect(header().querySelector("[data-step-summary]")?.hasAttribute("data-reveal")).toBe(false);
     expect(header().textContent).not.toContain("First decision");
     await view.rerender(group([think(1, "First decision"), tool, call(3)]));
-    expect(count()).toBe(S.chat.workGroupSteps(3));
+    expect(count()).toBe(S.chat.workGroupSteps(2));
     expect(header().textContent).toContain("确认 QQ 窗口已在前台");
     expect(header().textContent).not.toContain("private command payload");
     expect(header().textContent).not.toContain("Details for command 3");
+    const caption = header().querySelector("[data-step-summary]");
+    expect(caption?.hasAttribute("data-reveal")).toBe(true);
+    const metrics = header().querySelector("[data-step-metrics]");
+    tool.output = "One more output chunk";
+    await view.rerender(group([think(1, "First decision"), tool, call(3)]));
+    expect(header().querySelector("[data-step-summary]")).toBe(caption);
+    expect(header().querySelector("[data-step-metrics]")).toBe(metrics);
     expect(rows()).toHaveLength(0);
     await click(header());
     await click(stepToggle());
@@ -153,17 +162,19 @@ describe("work display modes", () => {
     expect(view.container.textContent).toContain("Output 2");
     await view.rerender(group(items));
     expect(rows()).toHaveLength(0);
-    expect(count()).toBe(S.chat.workGroupSteps(2));
+    expect(count()).toBe(S.chat.workGroupSteps(1));
     await click(header());
     expect(stepToggle().getAttribute("aria-expanded")).toBe("false");
   });
 
   it.each(["done", "failed", "stopped"] as const)(
-    "keeps two actual steps and the elapsed time after a %s outcome and reload",
+    "keeps the tool count and elapsed time after a %s outcome and reload",
     async (state) => {
       mode("compact");
       const last = call(2);
-      last.workOutcome = { state, durationMs: 2300 };
+      last.callStartedAtMs = 100;
+      last.durationMs = 2300;
+      last.workOutcome = { state };
       const finished = () =>
         group([think(1, "First decision"), last], { ...context, taskRunning: false });
       const view = await mount(group([think(1, "First decision"), call(2)]));
@@ -177,7 +188,7 @@ describe("work display modes", () => {
             : S.chat.workStopped;
       expect(header().textContent).toContain(label);
       expect(header().getAttribute("data-state")).toBe(state === "failed" ? "error" : "done");
-      expect(count()).toBe(S.chat.workGroupSteps(2));
+      expect(count()).toBe(S.chat.workGroupSteps(1));
       expect(shownText(header().querySelector("[data-step-elapsed]")!)).toBe("2.3s");
       await click(header());
       expect(rows()).toHaveLength(2);
