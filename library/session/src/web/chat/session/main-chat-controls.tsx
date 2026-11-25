@@ -1,20 +1,17 @@
 import { useCallback, useEffect } from "react";
 import type { ModelRefDto } from "@prismshadow/penguin-server/api";
 import { toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
+import { S, api, onPluginConfigSaved, toastApiError } from "@prismshadow/penguin-web/internal";
 import {
-  S,
-  api,
   compactionTally,
   heldThinkingSwitch,
   modelLabel,
   needsThinkingSwitchConfirm,
-  onPluginConfigSaved,
   sameModelRef,
   sessionThinkingLevel,
   thinkingLevelLabel,
-  toastApiError,
-} from "@prismshadow/penguin-web/internal";
-import type { StagedThinkingSwitch } from "@prismshadow/penguin-web/internal";
+} from "@prismshadow/penguin-web/internal-hub";
+import type { StagedThinkingSwitch } from "@prismshadow/penguin-web/internal-hub";
 
 import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from "../model-switch";
 

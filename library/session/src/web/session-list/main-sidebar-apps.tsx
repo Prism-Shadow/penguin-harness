@@ -22,10 +22,10 @@ import {
 import {
   PAGE_DRAG_TYPE,
   S,
-  TileIcon,
   agentSettingsPath,
   usePageWorkspace,
 } from "@prismshadow/penguin-web/internal";
+import { TileIcon } from "@prismshadow/penguin-web/internal-hub";
 
 import { useSidebarApps, type SidebarAppRow } from "./use-sidebar-apps";
 

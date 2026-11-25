@@ -10,10 +10,10 @@ import {
   api,
   latestConversation,
   machineForSession,
-  noteScheduleEvent,
   noteSessionSeen,
   withoutOrgSessions,
 } from "@prismshadow/penguin-web/internal";
+import { noteScheduleEvent } from "@prismshadow/penguin-web/internal-hub";
 
 import { DRAFT_SESSION_ID } from "../draft-sessions";
 import { routeSessionOutcome, sessionForProject } from "../session-project";

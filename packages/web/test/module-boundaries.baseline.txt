@@ -2,24 +2,24 @@
 # One line per edge, sorted: `importing-file -> imported-file` (paths relative to src/), or
 # `cycle: features/a -> features/b` for an edge between two feature directories that lies on a cycle.
 # This list only shrinks: never add a line; delete each line whose edge your change removes.
-# The `internal.ts -> features/...` lines are the internals hub's transition re-exports; they
+# The `internal-hub.ts -> features/...` lines are the internals hub's transition re-exports; they
 # leave as the features they name grow faces of their own.
 cycle: features/agents -> features/plugins
 cycle: features/plugins -> features/agents
 features/plugins/plugin-card.tsx -> features/agents/archive-download.ts
-internal.ts -> features/agents/index.ts
-internal.ts -> features/ai-create/index.ts
-internal.ts -> features/app-center/index.ts
-internal.ts -> features/company/index.ts
-internal.ts -> features/machines/index.ts
-internal.ts -> features/machines/machines-view.ts
-internal.ts -> features/messaging/index.ts
-internal.ts -> features/model-picker/index.ts
-internal.ts -> features/models/connection.ts
-internal.ts -> features/models/index.ts
-internal.ts -> features/schedules/index.ts
-internal.ts -> features/settings/index.ts
-internal.ts -> features/skills/index.ts
-internal.ts -> features/terminal/index.ts
-internal.ts -> features/workspace/index.ts
+internal-hub.ts -> features/agents/index.ts
+internal-hub.ts -> features/ai-create/index.ts
+internal-hub.ts -> features/app-center/index.ts
+internal-hub.ts -> features/company/index.ts
+internal-hub.ts -> features/machines/index.ts
+internal-hub.ts -> features/machines/machines-view.ts
+internal-hub.ts -> features/messaging/index.ts
+internal-hub.ts -> features/model-picker/index.ts
+internal-hub.ts -> features/models/connection.ts
+internal-hub.ts -> features/models/index.ts
+internal-hub.ts -> features/schedules/index.ts
+internal-hub.ts -> features/settings/index.ts
+internal-hub.ts -> features/skills/index.ts
+internal-hub.ts -> features/terminal/index.ts
+internal-hub.ts -> features/workspace/index.ts
 lib/strings.ts -> features/models/model-sort.ts

@@ -6,7 +6,6 @@ import {
   localizedText,
   nameOnMachine,
   systemAppKey,
-  systemShortcutsOf,
   useLocale,
   useMachines,
   usePageAgent,
@@ -14,6 +13,7 @@ import {
   useRunningAppRecords,
   useSystemApps,
 } from "@prismshadow/penguin-web/internal";
+import { systemShortcutsOf } from "@prismshadow/penguin-web/internal-hub";
 import type { OpenPage, SystemShortcut } from "@prismshadow/penguin-web/internal";
 
 export interface SidebarAppRow {

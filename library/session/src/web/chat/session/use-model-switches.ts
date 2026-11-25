@@ -7,9 +7,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ModelRefDto, ModelsResponse, SessionInfo } from "@prismshadow/penguin-server/api";
 import { toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
+import { S, api, toastApiError } from "@prismshadow/penguin-web/internal";
 import {
-  S,
-  api,
   compactionTally,
   heldThinkingSwitch,
   modelLabel,
@@ -17,9 +16,8 @@ import {
   sameModelRef,
   sessionThinkingLevel,
   thinkingLevelLabel,
-  toastApiError,
-} from "@prismshadow/penguin-web/internal";
-import type { StagedThinkingSwitch } from "@prismshadow/penguin-web/internal";
+} from "@prismshadow/penguin-web/internal-hub";
+import type { StagedThinkingSwitch } from "@prismshadow/penguin-web/internal-hub";
 
 import {
   sessionModelPickerDisabled,

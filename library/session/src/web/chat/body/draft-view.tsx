@@ -39,18 +39,14 @@
  * always survive.
  */
 import {
-  AgentSelect,
   GUIDE_MODEL_SELECTED,
   S,
   UNCONFINED,
-  WorkspaceSelect,
   api,
   apiErrorText,
   cachedMachineAgents,
-  defaultChatModel,
   draftSandboxAfter,
   draftUploads,
-  effectiveThinkingLevel,
   failureNode,
   isConversationAgent,
   machineLink,
@@ -59,7 +55,6 @@ import {
   rememberSessionMachine,
   remoteAgentsEmpty,
   requestDefaultModels,
-  sameModelRef,
   toastApiError,
   useAuth,
   useMachines,
@@ -67,6 +62,13 @@ import {
   useProject,
   useSessions,
 } from "@prismshadow/penguin-web/internal";
+import {
+  AgentSelect,
+  WorkspaceSelect,
+  defaultChatModel,
+  effectiveThinkingLevel,
+  sameModelRef,
+} from "@prismshadow/penguin-web/internal-hub";
 import type { MachineLink, PermissionPick } from "@prismshadow/penguin-web/internal";
 
 import { handOverSession } from "../session-handover";

@@ -4,7 +4,8 @@
  */
 import { useEffect, useState } from "react";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
-import { api, hasConfiguredKey, sameModelRef } from "@prismshadow/penguin-web/internal";
+import { api } from "@prismshadow/penguin-web/internal";
+import { hasConfiguredKey, sameModelRef } from "@prismshadow/penguin-web/internal-hub";
 
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
 

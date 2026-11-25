@@ -19,12 +19,11 @@ import {
   finalizeHistory,
   machineForSession,
   pushMessage,
-  switchDeskModel,
   toastApiError,
   toastFailure,
   toldFailure,
-  useCompany,
 } from "@prismshadow/penguin-web/internal";
+import { switchDeskModel, useCompany } from "@prismshadow/penguin-web/internal-hub";
 
 import { adoptDockScope } from "../../dock";
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";

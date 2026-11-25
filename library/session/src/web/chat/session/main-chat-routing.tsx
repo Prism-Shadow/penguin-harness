@@ -5,13 +5,12 @@ import {
   S,
   machineForSession,
   sessionAppPair,
-  subscribeTerminals,
-  terminalApiSupported,
   useDocumentTitle,
   useMachineModels,
   usePageWorkspace,
   usePaneFocus,
 } from "@prismshadow/penguin-web/internal";
+import { subscribeTerminals, terminalApiSupported } from "@prismshadow/penguin-web/internal-hub";
 import type { MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
 
 import { DRAFT_SESSION_ID, parkedDraftIdOf } from "../draft-sessions";

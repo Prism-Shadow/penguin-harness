@@ -3,17 +3,19 @@ import {
   S,
   api,
   configuredCompactionLimit,
-  hasConfiguredKey,
   humanizeTokens,
   latestConversation,
   machineForSession,
-  noteScheduleEvent,
   noteSessionSeen,
-  sameModelRef,
   scoped,
   toastApiError,
   withoutOrgSessions,
 } from "@prismshadow/penguin-web/internal";
+import {
+  hasConfiguredKey,
+  noteScheduleEvent,
+  sameModelRef,
+} from "@prismshadow/penguin-web/internal-hub";
 import { handOverSession } from "../session-handover";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";

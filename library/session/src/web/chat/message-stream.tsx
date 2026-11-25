@@ -33,9 +33,9 @@ import {
   FIND_MORE_ATTR,
   FindRevealContext,
   S,
-  WorkspaceLinksProvider,
   useRegionRevealed,
 } from "@prismshadow/penguin-web/internal";
+import { WorkspaceLinksProvider } from "@prismshadow/penguin-web/internal-hub";
 import type {
   ChatItem,
   ComposerReference,

@@ -8,7 +8,8 @@ import {
 } from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { MessagingBindingModal, S, workspaceLabel } from "@prismshadow/penguin-web/internal";
+import { S, workspaceLabel } from "@prismshadow/penguin-web/internal";
+import { MessagingBindingModal } from "@prismshadow/penguin-web/internal-hub";
 
 import { draftSessionTitle } from "../chat";
 import type { MainSidebarState } from "./main-sidebar-controller";

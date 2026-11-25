@@ -10,9 +10,9 @@ import {
   S,
   api,
   machineForSession,
-  switchDeskModel,
   toastApiError,
 } from "@prismshadow/penguin-web/internal";
+import { switchDeskModel } from "@prismshadow/penguin-web/internal-hub";
 
 import { discardUnstartedSession } from "../unstarted-session";
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";

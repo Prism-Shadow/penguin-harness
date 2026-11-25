@@ -17,7 +17,6 @@
  */
 import type { UiPrefs } from "@prismshadow/penguin-server/api";
 import { BACKGROUND_STORAGE_KEYS, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
-import { LAUNCHER_HIDDEN_KEY, STEER_MODE_KEY } from "@prismshadow/penguin-library-session/web";
 
 import {
   ACTIVITY_DISPLAY_MODE_KEY,
@@ -27,6 +26,16 @@ import {
 } from "../../state/theme-prefs";
 import { LANG_KEY } from "../../state/locale-pref";
 import { NOTIFICATIONS_KEY } from "../notification-pref";
+
+/**
+ * The browser-cache keys of the two preferences whose settings halves live in the session
+ * domain's web half (`penguin.dock.launcherHidden`, `penguin.steerMode`). This table is the one
+ * place that pairs every such key with the account field it syncs, so the constants are spelled
+ * here; the moved halves take them from the app's internals hub — a face import here would
+ * reach back into the moved halves and close the cycle the hub's shape exists to prevent.
+ */
+export const LAUNCHER_HIDDEN_KEY = "penguin.dock.launcherHidden";
+export const STEER_MODE_KEY = "penguin.steerMode";
 
 /** The `ui_prefs` fields this table syncs. */
 export type SyncedPrefField =
