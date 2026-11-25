@@ -239,8 +239,6 @@ export { FIND_LOAD_OLDER_EVENT, FIND_MORE_ATTR } from "./lib/find-dom";
 
 export { FindRevealContext, useRegionRevealed } from "./lib/find-expand";
 
-export { GUIDE_MODEL_SELECTED } from "./lib/first-workbench-entry";
-
 export {
   cacheHitRate,
   formatBytes,
