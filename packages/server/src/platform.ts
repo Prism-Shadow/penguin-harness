@@ -113,7 +113,10 @@ import {
   ProjectRuns,
   ShippedBuiltinBenchmarkSeeds,
 } from "./services/project-service.js";
-import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
+import {
+  AuthServiceProvider,
+  InitialProjectProvisioner,
+} from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
 import { AgentConfigServiceProvider } from "./services/agent-config-service.js";
@@ -348,7 +351,7 @@ export class RuntimeModule {}
     AuthSessionsRepo,
     ScryptHasher,
     LiveStreamRegistry,
-    AuthService,
+    AuthServiceProvider,
     AdminService,
     AdminRoutes,
     MeRoutes,

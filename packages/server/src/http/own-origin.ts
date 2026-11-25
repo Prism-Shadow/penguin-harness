@@ -19,7 +19,9 @@
 import { coversPath } from "./route-prefix.js";
 
 /** Whether a write to the path may reach a group that judges its callers' origin itself. */
-export type OwnOrigin = (path: string) => boolean;
+import type { OwnOrigin } from "@prismshadow/penguin-library-auth/middleware";
+
+export type { OwnOrigin };
 
 export interface OriginDeclaration {
   prefix: string;

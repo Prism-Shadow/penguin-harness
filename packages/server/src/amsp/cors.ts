@@ -11,8 +11,8 @@
  */
 import type { MiddlewareHandler } from "hono";
 
-/** Where the public group is mounted; the wire version is in the path. */
-export const AMSP_PREFIX = "/api/amsp/v1";
+/** Where the public group is mounted; the wire version is in the path (the Agent API contract's value, services+routes restack S21). */
+export { AMSP_PREFIX } from "@prismshadow/penguin-library-agent-api";
 
 const PREFLIGHT_HEADERS = {
   "Access-Control-Allow-Origin": "*",

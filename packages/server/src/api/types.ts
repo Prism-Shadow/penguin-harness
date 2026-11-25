@@ -3445,7 +3445,7 @@ export const DRAFT_SESSION_ID = "new";
  * desktop shell that mints its window's session. Shared so they all write the cookie the server
  * reads.
  */
-export const SESSION_COOKIE = "penguin_session";
+export { SESSION_COOKIE } from "@prismshadow/penguin-library-auth/middleware";
 
 /**
  * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
