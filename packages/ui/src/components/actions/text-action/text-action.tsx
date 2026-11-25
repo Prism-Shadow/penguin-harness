@@ -3,8 +3,8 @@
  * for an action that sits in a line of status words, where a boxed button would outweigh the line
  * it belongs to (the transcript's "[Aborted]: …" marker, a retry line, a load failure).
  *
- * The word in square brackets in the body ink, the transcript marker's own shape ("[重试]" beside
- * "[已中断]"), the word underlined on hover.
+ * The word in square brackets in the body ink (or the danger ink for a problem report), the
+ * transcript marker's own shape ("[重试]" beside "[已中断]"), the word underlined on hover.
  *
  * It is a real button: the keyboard reaches it, the shared focus ring draws round it, and it is
  * named by its word alone (the brackets are hidden from a screen reader). It takes the size
@@ -20,17 +20,21 @@ export interface TextActionProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
   busy?: boolean;
   /** What the spinner announces while busy; the interface's busy word when omitted. */
   busyLabel?: string;
+  /** The ink the press is set in: the body ink by default, or the danger ink (`ReportIssueAction`). */
+  tone?: "default" | "danger";
 }
 
 export function TextAction({
   busy = false,
   busyLabel,
+  tone = "default",
   disabled,
   className = "",
   children,
   ...rest
 }: TextActionProps) {
   const strings = useUiStrings();
+  const ink = tone === "danger" ? "text-tone-danger-fg" : "text-fg";
   return (
     <button
       type="button"
@@ -40,7 +44,7 @@ export function TextAction({
       data-text-action=""
       aria-busy={busy || undefined}
       disabled={disabled === true || busy}
-      className={`group/action inline-flex shrink-0 cursor-pointer items-baseline gap-1 whitespace-nowrap rounded-sm text-fg underline-offset-2 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
+      className={`group/action inline-flex shrink-0 cursor-pointer items-baseline gap-1 whitespace-nowrap rounded-sm ${ink} underline-offset-2 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
     >
       {busy && (
         <span className="self-center">

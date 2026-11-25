@@ -45,6 +45,7 @@ describe("the recovery panel", () => {
     expect(panel?.textContent).toContain("Cannot read properties of undefined (reading 'title')");
     const press = panel?.querySelector("[data-report-issue]");
     expect(press).not.toBeNull();
+    expect(press?.classList.contains("text-tone-danger-fg")).toBe(true);
     await click(press!);
     const report = document.querySelector("[data-report]")?.textContent ?? "";
     expect(report).toContain("- What happened: the page crashed while rendering");

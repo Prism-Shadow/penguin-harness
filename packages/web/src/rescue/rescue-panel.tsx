@@ -61,6 +61,7 @@ export function RescuePanel({
         >
           {messageOf(error)}{" "}
           <TextAction
+            tone="danger"
             data-report-issue=""
             onClick={() => setReport(exceptionReport(error, { what }))}
           >
