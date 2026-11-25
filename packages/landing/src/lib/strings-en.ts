@@ -58,7 +58,7 @@ export const en: Strings = {
       reachLead: "to ",
       reach: "Vibe-Finetuning",
     },
-    subtitle: "Open Foundation for Self-Evolving Enterprise AI.",
+    subtitle: "Unified Self-Evolving Foundation for Millions of AI Apps.",
     downloadCta: "Download desktop",
     productHuntBadge: "PenguinHarness on Product Hunt",
     watcha: "Watcha",
@@ -200,7 +200,7 @@ export const en: Strings = {
     optimize: "Optimize",
     title: "A unified self-evolution platform for any agent",
     subtitle:
-      "By default the General Agent runs the optimization Skill. Each round it makes one change to the tested agent. Evaluator subagents running the evaluation Skill score the changed agent on every case of the Benchmark.",
+      "Integrates RSI algorithms and domain Benchmarks into one framework — once you configure the tested agent, the Teacher Agent automatically evaluates, diagnoses, and tunes its prompts and Skills in a loop for higher accuracy, lower cost, and faster runs.",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Tested agent",
@@ -210,9 +210,9 @@ export const en: Strings = {
     edgeImprove: "edit AGENTS.md, a Skill or config",
     noteOld: "snapshot before editing",
     noteNew: "kept only if the score is higher",
-    sampleTrends: "Example trends",
+    sampleTrends: "Evolution trends",
     trends: [
-      { label: "Score", hint: "out of 100" },
+      { label: "Accuracy", hint: "out of 100" },
       { label: "Cost", hint: "per run" },
       { label: "Duration", hint: "per run" },
     ],
@@ -277,10 +277,67 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cases: {
-    os: "Build your first self-evolving Agent OS",
+    os: "Build your first self-evolving Harness OS",
+    subtitle:
+      "Turn any idea into an agent-powered app in one sentence, packed into one desktop Harness OS — upgrade any app through chat, or share and install from the community market in one click.",
     workspace: {
       title: "App Center",
-      project: "PenguinHarness demo",
+      project: "Harness OS",
+      builderLabel: "A2APP Builder",
+      generating: "Generating app…",
+      installing: "Installed in Harness OS",
+      newFolder: "New folder",
+      createWithAi: "Create with AI",
+      prompts: {
+        legal:
+          "Build a contract review app: upload agreements, flag risky clauses, and export reports",
+        docs: "Create a knowledge base app: index technical manuals and answer questions with citations",
+        investment:
+          "Build a market research app: parse filings, chart revenue trends, and summarize metrics",
+        slides:
+          "Create a presentation studio app: turn an outline into a polished bilingual slide deck",
+        images:
+          "Build an image studio app: generate pictures from a description and repaint selected areas",
+        support: "Create a support desk app: gather tickets from every channel and draft replies",
+        expenses: "Build an expense log app: read invoices from photos and fill in the claim form",
+        meetings:
+          "Create a meeting notes app: upload a recording and get key points and action items",
+        data: "Build a data analyst app: upload a spreadsheet, ask in plain language, and get charts",
+        board: "Create a project board app: track every task by owner and due date",
+        review: "Build a code review app: read a pull request, flag risks, and suggest fixes",
+        mail: "Create a mail assistant app: sort the inbox and draft the replies that are due",
+        sales: "Build a sales dashboard app: total orders by region and track progress to target",
+        hiring:
+          "Create a resume screening app: score resumes against the role and explain each score",
+        translate: "Build a translator app: keep the original layout and export a bilingual copy",
+        planner:
+          "Create a planner app: fit to-dos into the calendar and suggest changes on conflicts",
+        competitor:
+          "Build a competitor watch app: check rival sites daily and summarize what changed",
+        inventory: "Create an inventory app: scan items in and out and warn when stock runs low",
+        weekly:
+          "Build a weekly report app: read this week’s commits and tickets into a one-page report",
+        monitor: "Create a brand monitor app: follow brand keywords and alert on negative mentions",
+        quotes:
+          "Build a quote builder app: pick products and quantities and export the quote as a PDF",
+        audit: "Create a security audit app: scan dependencies on a schedule and list the fixes",
+        alerts: "Build an ops alerts app: group monitoring alerts and suggest likely causes",
+        tutor:
+          "Create a study coach app: turn missed questions into similar exercises with worked answers",
+        contracts:
+          "Build a contract ledger app: record each contract’s amount and end date and remind before renewal",
+        trips: "Create a trip planner app: gather flight and hotel bookings into a day-by-day plan",
+        followup:
+          "Build a customer follow-up app: draft talking points from the last call and log the outcome",
+        budget:
+          "Create a budget planner app: enter each expense, compare it with the budget, and flag overruns",
+        invoices:
+          "Build an invoice check app: upload invoices and verify the payer, tax ID, and amount",
+        quiz: "Create a quiz builder app: write questions from training material and track everyone’s scores",
+        assets: "Build an asset tracker app: scan devices in and list what the count is missing",
+        roster:
+          "Create a shift roster app: schedule shifts around people and leave and suggest swaps on conflicts",
+      },
       apps: {
         docs: "Document Q&A",
         investment: "Investment Analyst",
@@ -291,28 +348,37 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         expenses: "Expense log",
         terminal: "Terminal",
         browser: "Browser",
+        meetings: "Meeting Notes",
+        data: "Data Analyst",
+        board: "Project Board",
+        review: "Code Review",
+        mail: "Mail Assistant",
+        sales: "Sales Dashboard",
+        hiring: "Resume Screening",
+        translate: "Translator",
+        planner: "Planner",
+        competitor: "Competitor Watch",
+        inventory: "Inventory",
+        weekly: "Weekly Report",
+        monitor: "Brand Monitor",
+        quotes: "Quote Builder",
+        audit: "Security Audit",
+        alerts: "Ops Alerts",
+        tutor: "Study Coach",
+        models: "Models",
+        plugins: "Plugins",
+        machines: "Machines",
+        usage: "Cost Center",
+        contracts: "Contract Ledger",
+        trips: "Trip Planner",
+        followup: "Customer Follow-up",
+        budget: "Budget Planner",
+        invoices: "Invoice Check",
+        quiz: "Quiz Builder",
+        assets: "Asset Tracker",
+        roster: "Shift Roster",
       },
-      desk: "Contract desk",
-      file: "File",
-      status: "Status",
-      reviewed: "Reviewed",
-      analyzing: "Analyzing…",
-      files: [
-        "Employment Contract - Template v3.docx",
-        "Supplier Agreement - Kestrel Foods.pdf",
-        "Office Lease - Unit 1204.pdf",
-        "Mutual NDA - Helios Labs.docx",
-        "Master Services Agreement - Northwind Logistics.pdf",
-      ],
     },
-    title: "A2APP: one sentence and $0.10 build a legal agent app",
-    a2app:
-      "Every agent can have a workbench of its own. The agent builds it from what you ask and changes it the same way. It opens beside the chat and reloads as the agent edits it.",
-    subtitle:
-      "Describe what you need in one request. PenguinHarness builds a legal agent app that takes contract uploads, identifies risks and produces review reports to download.",
-    prompt:
-      "Build a legal review agent with a simple workspace where users upload contracts, track the review, and download a report with risky clauses, explanations, and suggested revisions.",
-    cost: "Five sample reviews cost $0.0423 in model calls.",
   },
 
   pillars: {

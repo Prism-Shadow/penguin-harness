@@ -4352,7 +4352,7 @@ export const zh = {
     newSessionInWorkspace: "在此工作区新建对话",
     /** The start page's dashboard (features/chat/start-dashboard.tsx): three counts beside the brand, and the examples block under the composer. */
     start: {
-      tagline: "创建你的第一个自进化 Agent OS",
+      tagline: "创建你的第一个自进化 Harness OS",
       shuffle: "换一组示例",
       moreExamples: "更多示例",
       examplesTitle: "示例与快捷指令",

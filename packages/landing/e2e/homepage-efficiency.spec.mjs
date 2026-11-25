@@ -20,14 +20,10 @@ for (const [width, lang, label] of [
       .scrollIntoViewIfNeeded();
     await expect(page.locator("iframe")).toHaveCount(1);
     await expect(page.locator(".neon-bg")).toHaveCount(1);
-    await expect(page.locator("#self-evolution animateMotion")).toHaveCount(0);
-    if (width >= 768) {
-      await page.locator('#self-evolution svg[role="img"]').scrollIntoViewIfNeeded();
-      await expect(page.locator("#self-evolution animateMotion")).toHaveCount(6);
-    } else {
-      await page.locator("#self-evolution").scrollIntoViewIfNeeded();
-      await expect(page.locator("#self-evolution animateMotion")).toHaveCount(0);
-    }
+    const evolution = page.locator("#self-evolution [data-story-diagram]");
+    await expect(evolution).toHaveAttribute("data-active", "false");
+    await evolution.scrollIntoViewIfNeeded();
+    await expect(evolution).toHaveAttribute("data-active", "true");
     await expect(top).toBeVisible();
     await expect(page.locator("iframe")).toHaveCount(1);
     await top.focus();
@@ -35,7 +31,7 @@ for (const [width, lang, label] of [
     await expect.poll(() => page.evaluate(() => scrollY)).toBe(0);
     await expect(page.locator("#home-top")).toBeFocused();
     await expect(top).toHaveCount(0);
-    await expect(page.locator("#self-evolution animateMotion")).toHaveCount(0);
+    await expect(evolution).toHaveAttribute("data-active", "false");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );

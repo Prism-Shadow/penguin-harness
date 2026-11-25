@@ -13,14 +13,11 @@
  * copies and reloads the page when a plugin's files change.
  */
 import type { Plugin } from "vite";
-import { createRequire } from "node:module";
 import { loadHub, PLUGINS_DIR } from "./hub/hub.mjs";
 import { fetchPublished } from "./hub/published.mjs";
 
 const INDEX = "virtual:penguin-hub";
 const FEATURED = "virtual:penguin-plugin-featured";
-const COUNTS = "virtual:penguin-catalog-counts";
-const coreRequire = createRequire(new URL("../../core/package.json", import.meta.url));
 const KINDS = ["plugin", "benchmark", "leaderboard"] as const;
 
 type Hub = ReturnType<typeof loadHub>;
@@ -58,22 +55,9 @@ export function hubData(): Plugin {
       await fetchPublished({ refresh });
     },
     resolveId(id) {
-      return id === COUNTS || id === FEATURED || id === INDEX || id.startsWith(`${INDEX}/`)
-        ? `\0${id}`
-        : null;
+      return id === FEATURED || id === INDEX || id.startsWith(`${INDEX}/`) ? `\0${id}` : null;
     },
     load(id) {
-      if (id === `\0${COUNTS}`) {
-        const { listSupportedModels } = coreRequire("@prismshadow/mmsp") as {
-          listSupportedModels(): { model: string }[];
-        };
-        const { plugins, benchmarks } = read().index;
-        return `export default ${json({
-          models: new Set(listSupportedModels().map((entry) => entry.model)).size,
-          algorithms: plugins.filter((entry) => entry.category === "rsi").length,
-          benchmarks: benchmarks.length,
-        })};`;
-      }
       if (id === `\0${FEATURED}`) {
         const { market, plugins } = read().index;
         const featured = market.selected.flatMap((id: string) =>
@@ -109,11 +93,7 @@ export function hubData(): Plugin {
         if (!file.startsWith(PLUGINS_DIR)) return;
         hub = undefined;
         for (const module of server.moduleGraph.idToModuleMap.values()) {
-          if (
-            module.id === `\0${COUNTS}` ||
-            module.id === `\0${FEATURED}` ||
-            module.id?.startsWith(`\0${INDEX}`)
-          )
+          if (module.id === `\0${FEATURED}` || module.id?.startsWith(`\0${INDEX}`))
             server.moduleGraph.invalidateModule(module);
         }
         server.ws.send({ type: "full-reload" });
