@@ -24,13 +24,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import table from "../src/ifaces.json" with { type: "json" };
+import { readHarnessInfo } from "../src/hmr/manifest.js";
+import { readPushedBuild } from "../src/hmr/pushed-build.js";
 import {
   HarnessHistoryStore,
   HISTORY_KEEP,
   KEEP_VERSIONS,
 } from "../src/services/harness-history.js";
 import zlib from "node:zlib";
-import { diffIfaces } from "@prismshadow/penguin-hmr";
+import { diffIfaces, summarizeTable } from "@prismshadow/penguin-hmr";
 import type { VersionHistoryDiffResponse, VersionHistoryResponse } from "../src/api/types.js";
 import {
   apiClient,
@@ -98,6 +100,16 @@ const storeAt = (root: string) =>
       },
     },
     channels: { broadcast: (...args: unknown[]) => broadcasts.push(args) },
+    builds: {
+      info: (r: string) => readHarnessInfo(r),
+      pushedBuild: (r: string) => readPushedBuild(r),
+    },
+    ownTable: {
+      own: () => ({
+        table: table as { hash: string; ifaces: object; types: object; modules: object },
+        summary: summarizeTable(table as unknown as Parameters<typeof summarizeTable>[0]),
+      }),
+    },
   });
 
 /** Boots the store the way the platform does: setup() defers the record to the commit. */

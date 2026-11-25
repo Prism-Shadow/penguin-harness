@@ -72,7 +72,7 @@ import {
   UpdateCheck,
 } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
-import { HarnessHistoryStore } from "./services/harness-history.js";
+import { HarnessHistoryServiceProvider } from "./services/harness-history.js";
 import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
 import { AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import { ServerSettingsRepo } from "@prismshadow/penguin-library-setting/repos/server-settings";
@@ -572,7 +572,7 @@ export class CompanyModule {}
     GlobalFetch,
     UpdateCheckService,
     UpdateJobService,
-    HarnessHistoryStore,
+    HarnessHistoryServiceProvider,
     HttpModule,
     StartPageModule,
     WebModule,

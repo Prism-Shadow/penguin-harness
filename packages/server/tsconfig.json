@@ -439,6 +439,9 @@
       "@prismshadow/penguin-library-trace/history-stream": [
         "../../library/trace/src/history-stream.ts"
       ],
+      "@prismshadow/penguin-library-trace/harness-history": [
+        "../../library/trace/src/harness-history.ts"
+      ],
       "@prismshadow/penguin-library-trace/ports": ["../../library/trace/src/ports.ts"],
       "@prismshadow/penguin-library-trace/trace-index": ["../../library/trace/src/trace-index.ts"],
       "@prismshadow/penguin-library-trace/trace-service": [
