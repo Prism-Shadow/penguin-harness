@@ -2,14 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
-      "@prismshadow/penguin-library-auth": ["../auth/src/index.ts"],
       "@prismshadow/penguin-library-db": ["../db/src/index.ts"],
       "@prismshadow/penguin-library-db/schema": ["../db/src/schema.ts"],
       "@prismshadow/penguin-library-http": ["../http/src/index.ts"],
       "@prismshadow/penguin-library-http/validate": ["../http/src/validate.ts"],
-      "@prismshadow/penguin-library-http/skill-import-limits": [
-        "../http/src/skill-import-limits.ts"
-      ],
       "@prismshadow/penguin-library-observability": ["../observability/src/index.ts"],
       "@prismshadow/penguin-library-project": ["../project/src/index.ts"],
       "@prismshadow/penguin-library-session": ["../session/src/index.ts"],
@@ -18,7 +14,6 @@
       "@prismshadow/penguin-library-setting/attachment-limits": [
         "../setting/src/attachment-limits.ts"
       ],
-      "@prismshadow/penguin-library-trace/listing": ["../trace/src/listing.ts"],
       "@prismshadow/penguin-library-workspace": ["../workspace/src/index.ts"],
       "@prismshadow/penguin-library-messaging": ["./src/index.ts"],
       "@prismshadow/penguin-library-messaging/repos/messaging-bindings": [
