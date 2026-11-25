@@ -108,15 +108,17 @@ describe("arrange", () => {
   });
 
   it("places available standard system apps first unless the viewer saved another position", () => {
-    const standard = ["benchmark", "usage", "machines", "plugins", "models"].map((id) => ({
+    const standard = ["usage", "machines", "plugins", "models"].map((id) => ({
       ...shortcut(id, "system_agent"),
       system: { glyph: id },
     }));
     const extra = shortcut("first");
-    const apps = [extra, ...standard];
-    const expected = ["models", "plugins", "machines", "usage", "benchmark"].map(
-      (id) => `system_agent/${id}`,
-    );
+    const evaluation = { ...shortcut("benchmark", "default_agent"), plugin: "agent-evaluation" };
+    const apps = [extra, evaluation, ...standard];
+    const expected = [
+      ...["models", "plugins", "machines", "usage"].map((id) => `system_agent/${id}`),
+      "default_agent/benchmark",
+    ];
     expect(outline(arrange(apps, null))).toEqual([...expected, "a1/first"]);
     const layout = stored([
       { type: "folder", id: "f", name: "Work", apps: ["a1/first", "system_agent/usage"] },

@@ -1,7 +1,6 @@
 /**
  * The App Center (/apps): the Project's home screen. The system Agent's system apps come first
- * (system-tiles.ts: Models, Plugins, Machines for an administrator, the Cost Center and the
- * Evaluation Center), then one tile per workbench of the Project's Agents whose manifest asks to
+ * (system-tiles.ts: Models, Plugins, Machines for an administrator, and the Cost Center), then one tile per workbench of the Project's Agents whose manifest asks to
  * be shown (`penguin.appCenter.show`), each the app's icon and name; the server reads them from
  * the files without loading anything, so opening this page starts no build. An administrator
  * sees the apps of the Project's machines too, after this server's, each with its machine's name

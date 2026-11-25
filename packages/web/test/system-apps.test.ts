@@ -2,25 +2,20 @@
  * The system apps as their readers see them (lib/system-apps.ts), over the features' own pages:
  * which apps a viewer has, and where the App Center's nav row stays lit besides its own page.
  *
- * - The apps are the pages contributed with `app`, in their order: Models, Plugins, Machines, the
- *   Cost Center and the Evaluation Center for an administrator; a member has no Machines.
- * - A page not offered yet (`released: false`) is no app, even with `app`.
- * - The App Center's row is lit on each app's page and on a page under one by its route (a
- *   Benchmark's detail page under the Evaluation Center), whatever the query; not on other pages,
- *   and not on Machines for a member, who has no such app.
+ * System apps come from released page declarations accessible to the viewer. Benchmark routes
+ * belong to the Agent Evaluation workbench.
  */
 import { describe, expect, it } from "vitest";
 import { onSystemApp, systemAppsOf } from "../src/lib/system-apps";
 import { SYSTEM_APP_PAGES } from "./helpers/system-app-pages";
 
 describe("systemAppsOf", () => {
-  it("gives an administrator the five system apps in their order", () => {
+  it("gives an administrator the system apps in their order", () => {
     expect(systemAppsOf(SYSTEM_APP_PAGES, true).map((app) => [app.key, app.path])).toEqual([
       ["models", "/models"],
       ["plugins", "/plugins"],
       ["machines", "/machines"],
       ["usage", "/usage"],
-      ["benchmark", "/benchmark"],
     ]);
   });
 
@@ -29,7 +24,6 @@ describe("systemAppsOf", () => {
       "models",
       "plugins",
       "usage",
-      "benchmark",
     ]);
   });
 
@@ -42,20 +36,27 @@ describe("systemAppsOf", () => {
 });
 
 describe("onSystemApp", () => {
-  it("is true on each system app's page and on a page under one", () => {
-    for (const path of [
-      "/models",
-      "/plugins",
-      "/machines",
-      "/usage",
-      "/benchmark",
-      "/benchmark/b1",
-    ])
+  it("is true on each system app's page", () => {
+    for (const path of ["/models", "/plugins", "/machines", "/usage"])
       expect(onSystemApp(path, SYSTEM_APP_PAGES, true)).toBe(true);
   });
 
+  it("recognizes a registered child route under a system app", () => {
+    const detail = SYSTEM_APP_PAGES.find((page) => page.key === "benchmark-detail")!;
+    const pages = [...SYSTEM_APP_PAGES, { ...detail, key: "model-detail", path: "/models/:id" }];
+    expect(onSystemApp("/models/sample", pages, true)).toBe(true);
+  });
+
   it("is false on the other pages", () => {
-    for (const path of ["/agents", "/agents/helper", "/apps", "/chat/s1", "/models/elsewhere"])
+    for (const path of [
+      "/agents",
+      "/agents/helper",
+      "/apps",
+      "/chat/s1",
+      "/models/elsewhere",
+      "/benchmark",
+      "/benchmark/b1",
+    ])
       expect(onSystemApp(path, SYSTEM_APP_PAGES, true)).toBe(false);
   });
 

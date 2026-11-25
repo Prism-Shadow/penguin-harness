@@ -16,6 +16,10 @@
  *   (written while A's Agents were on screen) asks nothing about it either, and neither does the
  *   cost center opened on A's Agent (`/usage?agentId=`) once the user switches to B.
  *
+ * - Given A's unsent draft and B's chosen model, creating a draft from B's standalone workbench
+ *   opens B's composer in the shell. A's draft and Session survive, and its in-shell handoff
+ *   continues to use A.
+ *
  * A Project is created with a display name different from the username: a newly registered
  * user's initial Project is named after the user, and the account button at the sidebar's foot
  * shows the username too, so locating by name would match both.
@@ -23,25 +27,24 @@
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
 import { watchSocket } from "./api-socket.mjs";
+import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
 const P = "password123";
 
 /** The mock model on a Project: one without credentials raises an onboarding overlay over every click. */
-async function configureModels(request, projectId) {
+async function configureModels(request, projectId, modelIds = ["claude-4-8"]) {
   const put = await request.put(`${BASE}/api/projects/${projectId}/models`, {
     data: {
       defaultModel: { provider: "custom", modelId: "claude-4-8" },
-      models: [
-        {
-          provider: "custom",
-          modelId: "claude-4-8",
-          apiKey: "sk-mock",
-          baseUrl: MOCK,
-          contextWindow: 200000,
-        },
-      ],
+      models: modelIds.map((modelId) => ({
+        provider: "custom",
+        modelId,
+        apiKey: "sk-mock",
+        baseUrl: MOCK,
+        contextWindow: 200000,
+      })),
     },
   });
   expect(put.ok(), `put models ${projectId}`).toBeTruthy();
@@ -426,4 +429,60 @@ test("on a slow machine, quick Project switches keep each Project's Agents and c
   await page.waitForTimeout(3_000);
 
   expect(bad).toEqual([]);
+});
+
+test("a standalone workbench opens its Project's draft while the shell keeps the other Project's work", async ({
+  page,
+}) => {
+  const user = userFor("workbenchhandoff");
+  const { a, b, sessions, agentsOf } = await twoProjects(page.request, user);
+  await configureModels(page.request, b, ["claude-4-8", "claude-4-8-mini"]);
+  await setAccountPrefs(page.request, { lang: "en", lastProjectId: a });
+  const saved = await page.request.patch("/api/me/drafts", {
+    data: {
+      drafts: {
+        [`chat:${a}`]: { agentId: "alpha_only", text: "Alpha unfinished draft" },
+        [`session:${sessions[a]}`]: { text: "Alpha unfinished reply" },
+        [`chat:${b}`]: { modelRef: { provider: "custom", modelId: "claude-4-8-mini" } },
+      },
+    },
+  });
+  expect(saved.status()).toBe(204);
+  const pairs = watchProjectAgentPairs(page, agentsOf, await watchSocket(page));
+  const composer = page.locator('[data-slot="composer"] textarea:visible');
+  const model = page.getByRole("button", { name: "Choose model" });
+  await page.goto("/chat/new");
+  await expect(page.getByRole("button", { name: "Alpha Project", exact: true })).toBeVisible();
+  const agent = page.getByRole("button", { name: "Choose agent" });
+  await expect(agent).toContainText("Alpha Agent");
+  await expect(composer).toHaveValue("Alpha unfinished draft");
+
+  const create = async (prompt) => {
+    await page.getByRole("button", { name: "Create with AI", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("textbox", { name: "Prompt" }).fill(prompt);
+    await dialog.getByRole("button", { name: "Edit in a new conversation" }).click();
+    await expect(page).toHaveURL(/\/chat\/new$/);
+  };
+
+  await page.goto(`/app/${b}/default_agent/benchmark`);
+  await create("Measure Beta repair time");
+  await expect(page.getByRole("button", { name: "Beta Project", exact: true })).toBeVisible();
+  await expect(composer).toHaveValue(/^Measure Beta repair time/);
+  await expect(model).toContainText("claude-4-8-mini");
+  await expect(agent).toContainText("General Agent");
+
+  await switchProject(page, "Beta Project", "Alpha Project");
+  await page.goto(`/chat/${sessions[a]}`);
+  await expect(composer).toHaveValue("Alpha unfinished reply");
+  await page.goto("/chat/new");
+  await expect(composer).toHaveValue("Alpha unfinished draft");
+
+  await page.goto("/benchmark");
+  await create("Measure Alpha completion time");
+  await expect(page.getByRole("button", { name: "Alpha Project", exact: true })).toBeVisible();
+  await expect(composer).toHaveValue(/^Measure Alpha completion time/);
+  await expect(model).toContainText("claude-4-8");
+  await expect(model).not.toContainText("mini");
+  expect(pairs).toEqual([]);
 });

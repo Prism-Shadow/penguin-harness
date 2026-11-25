@@ -21,7 +21,7 @@ const OrgProposalsPage = () => null;
  * - The main nav is Agents and the App Center, both released and open to members, each naming
  *   its nav title in both languages (the words the nav dictionary held) and a glyph in the icon
  *   registry.
- * - The system apps are Models, Plugins, Machines, the Cost Center and the Evaluation Center in
+ * - The system apps are Models, Plugins, Machines, and the Cost Center in
  *   that order, off the nav, each naming its title in both languages and a glyph; a member's drop
  *   Machines, the one admin-only app, and add nothing the admin lacks.
  * - The chat page is the chat page; the dashboard and one machine's ports are
@@ -248,12 +248,6 @@ describe("the booted page table", () => {
         icon: "server",
       },
       { key: "usage", title: en.nav.usage, titleZh: zh.nav.usage, icon: "barChart" },
-      {
-        key: "benchmark",
-        title: "Self-Evolution Workbench",
-        titleZh: "自进化工作台",
-        icon: "trophy",
-      },
     ]);
     for (const app of apps) expect(glyphOf(app.icon)).not.toBe("");
     for (const app of apps) expect(navPagesOf(pages).some((p) => p.key === app.key)).toBe(false);
@@ -284,8 +278,8 @@ describe("the booted page table", () => {
       Component: HomeRedirect,
     });
   });
-  it("keeps builtin renderer registration pluggable without restoring a retired owner", () => {
-    expect(pageRenderers).toEqual([]);
+  it("registers the Self-Evolution workbench renderer through its owning module", () => {
+    expect(pageRenderers.map(({ data }) => data.name)).toEqual(["SelfEvolutionWorkbench"]);
   });
 
   it("folds a contributed page in only under a key the app does not own, drawn by its module's renderer", () => {

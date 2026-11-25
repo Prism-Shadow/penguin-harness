@@ -1,8 +1,7 @@
 /**
  * The system apps: the pages the system Agent owns as its apps (PRFC-0033) — every page of the
- * table whose contribution carries `app` and names a `title`, the five the features contribute
- * (Models, Plugins, Machines, the Cost Center and the Evaluation Center) and any a server module
- * contributes. Nothing here names them: the App Center draws them as tiles, the system Agent's
+ * table whose contribution carries `app` and names a `title`, whether contributed by a Web App
+ * feature or a server module. Nothing here names them: the App Center draws them as tiles, the system Agent's
  * settings list them, and the nav keeps the App Center lit on their pages, all from this reading.
  *
  * - Only offered pages (`released`) whose role rule the viewer meets: an admin-only page

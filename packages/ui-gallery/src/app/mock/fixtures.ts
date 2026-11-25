@@ -1102,16 +1102,25 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
       ],
       hooks: [],
     },
-    // The default toolkit and evaluator, each Skill wearing its plugin's icon, as an install writes
-    // it; and the Q&A assistant, whose support workbench is on the App Center.
+    // The default Agent carries one toolkit and its evaluator. Support belongs to its own Agent.
     [IDS.agents.general]: {
       skills: [
-        ...toolkits.filter((p) => p.name === "default-rsi-toolkit"),
+        ...toolkits.filter((plugin) => plugin.name === "default-rsi-toolkit"),
         evaluationPlugin,
-        supportPlugin,
       ].flatMap((plugin) =>
         plugin.skills.map((s) => ({ ...s, ...(plugin.icon ? { icon: plugin.icon } : {}) })),
       ),
+      hooks: [],
+      pluginWorkbenches: (evaluationPlugin.workbenches ?? []).map((w) => ({
+        ...w,
+        plugin: evaluationPlugin.name,
+      })),
+    },
+    penguin_support: {
+      skills: supportPlugin.skills.map((s) => ({
+        ...s,
+        ...(supportPlugin.icon ? { icon: supportPlugin.icon } : {}),
+      })),
       hooks: [],
       pluginWorkbenches: (supportPlugin.workbenches ?? []).map((w) => ({
         ...w,

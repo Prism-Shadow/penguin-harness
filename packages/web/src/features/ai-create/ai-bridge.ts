@@ -15,7 +15,7 @@ import { useCallback } from "react";
 import { useNavigate } from "react-router";
 import type { ModelRefDto } from "@prismshadow/penguin-server/api";
 import { useAuth } from "../../state/auth";
-import { useProject } from "../../state/project";
+import { rememberProject, useProject } from "../../state/project";
 import {
   DRAFT_SESSION_ID,
   draftKey,
@@ -109,7 +109,12 @@ export function useAiBridge(): { openAiChat: (req: AiChatRequest) => void } {
       }
       // The current Agent is one of this server's: a machine's agent is named by the route alone.
       if (req.machineId === undefined || req.machineId === null) setCurrentAgentId(req.agentId);
-      navigate(`/chat/${DRAFT_SESSION_ID}`, { state: aiChatRouteState(req) });
+      // A standalone workbench has its own ProjectProvider. The new shell must open the
+      // Project whose draft was just saved, even if another tab changes the remembered choice.
+      if (projectId) rememberProject(projectId);
+      navigate(`/chat/${DRAFT_SESSION_ID}`, {
+        state: { ...aiChatRouteState(req), projectId },
+      });
     },
     [userId, projectId, setCurrentAgentId, navigate],
   );

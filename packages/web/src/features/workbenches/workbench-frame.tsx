@@ -23,23 +23,32 @@ import {
 } from "../../lib/workbench-theme";
 import { FILL_APP_MESSAGE, workbenchUiUrl, type WorkbenchTab } from "../../lib/workbench-tabs";
 import { useTheme } from "../../state/theme";
+import { NativeWorkbenchPage } from "./native-workbench-page";
 import { WorkbenchModelPicker } from "./workbench-model-picker";
 
 /** How long a page that never finishes loading stays hidden before it is shown as it is. */
 const FRAME_REVEAL_TIMEOUT_MS = 4000;
 
-export function WorkbenchFrame({
-  projectId,
-  agentId,
-  tab,
-  onFillApp,
-}: {
+interface FrameProps {
   projectId: string;
   agentId: string;
   tab: WorkbenchTab;
   /** The page asked to fill the app; absent where it already does (the full page). */
   onFillApp?: () => void;
-}) {
+}
+
+export function WorkbenchFrame({ tab, ...props }: FrameProps) {
+  if (tab.builtin !== undefined)
+    return <NativeWorkbenchPage name={tab.builtin} projectId={props.projectId} />;
+  return <WorkbenchIframe {...props} tab={tab} />;
+}
+
+function WorkbenchIframe({
+  projectId,
+  agentId,
+  tab,
+  onFillApp,
+}: Omit<FrameProps, "tab"> & { tab: WorkbenchTab & { src: string } }) {
   const { dark, appliedTheme, accent, textSize, fontLatin, fontCjk } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
 
