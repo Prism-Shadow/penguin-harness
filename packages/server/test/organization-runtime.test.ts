@@ -3659,6 +3659,147 @@ describe("organization runtime", () => {
       ]);
     });
 
+    it("migrates a cycle of legacy tickets, and everyone waiting on it, valid in one pass", async () => {
+      await createOrg();
+      // The shape the first real run left behind: a root that blocks on its child, and the
+      // child whose parent is that root. Neither parses until both references are
+      // rewritten, so each waited on the other forever — and the tickets that waited on
+      // them waited too, all of it left for a second repair pass. A cycle is admitted as a
+      // group, and everything that hangs off it follows.
+      await writeLegacy(
+        "2026-09-05-legacy-root",
+        "proposed",
+        serializeTicket(doc("Legacy root", { blockedBy: "2026-09-05-legacy-child" })),
+      );
+      await writeLegacy(
+        "2026-09-05-legacy-child",
+        "proposed",
+        serializeTicket(doc("Legacy child", { parent: "2026-09-05-legacy-root" })),
+      );
+      await writeLegacy(
+        "2026-09-05-legacy-grandchild",
+        "proposed",
+        serializeTicket(doc("Legacy grandchild", { parent: "2026-09-05-legacy-child" })),
+      );
+      await writeModern(
+        "ticket-2026-09-06-modern",
+        serializeTicket(doc("Modern follower", { parent: "2026-09-05-legacy-root" })),
+      );
+      errors.length = 0;
+
+      await scheduler.tickOnce();
+      const board = await service.tickets(P, ORG);
+      expect(board.columns.proposed.map((x) => x.ticketId).sort()).toEqual([
+        "ticket-2026-09-05-legacy-child",
+        "ticket-2026-09-05-legacy-grandchild",
+        "ticket-2026-09-05-legacy-root",
+        "ticket-2026-09-06-modern",
+      ]);
+      expect(board.invalidFiles).toEqual([]);
+      // Every reference followed, inside the cycle and outside it — parent and blocked_by
+      // alike.
+      expect(
+        await fs.readFile(
+          path.join(orgDir(), "tickets", "2026-09", "proposed", "ticket-2026-09-05-legacy-root.md"),
+          "utf8",
+        ),
+      ).toContain("blocked_by: ticket-2026-09-05-legacy-child");
+      expect(
+        await fs.readFile(
+          path.join(
+            orgDir(),
+            "tickets",
+            "2026-09",
+            "proposed",
+            "ticket-2026-09-05-legacy-child.md",
+          ),
+          "utf8",
+        ),
+      ).toContain("parent: ticket-2026-09-05-legacy-root");
+      expect(
+        await fs.readFile(
+          path.join(
+            orgDir(),
+            "tickets",
+            "2026-09",
+            "proposed",
+            "ticket-2026-09-05-legacy-grandchild.md",
+          ),
+          "utf8",
+        ),
+      ).toContain("parent: ticket-2026-09-05-legacy-child");
+      expect(
+        await fs.readFile(
+          path.join(orgDir(), "tickets", "2026-09", "proposed", "ticket-2026-09-06-modern.md"),
+          "utf8",
+        ),
+      ).toContain("parent: ticket-2026-09-05-legacy-root");
+      const notices = await noticesOf();
+      expect(notices.map((n) => n.kind)).toEqual(["ticket_ids_migrating", "ticket_ids_migrated"]);
+      expect(notices[0]!.params.count).toBe("3");
+      // One pass means one pass: a second one finds nothing to do — no second backup, no
+      // new notice, no second repair pass.
+      await scheduler.tickOnce();
+      expect(await backupDirs()).toHaveLength(1);
+      expect((await noticesOf()).map((n) => n.kind)).toEqual([
+        "ticket_ids_migrating",
+        "ticket_ids_migrated",
+      ]);
+    });
+
+    it("keeps a cycle migrating when a file that cannot parse hangs off it", async () => {
+      await createOrg();
+      await writeLegacy(
+        "2026-09-05-legacy-root",
+        "proposed",
+        serializeTicket(doc("Legacy root", { blockedBy: "2026-09-05-legacy-child" })),
+      );
+      await writeLegacy(
+        "2026-09-05-legacy-child",
+        "proposed",
+        serializeTicket(doc("Legacy child", { parent: "2026-09-05-legacy-root" })),
+      );
+      // Frontmatter that parses but fields that do not, naming the cycle as its parent: it
+      // can never migrate, and it must not keep the cycle from migrating either.
+      const broken =
+        "---\ntitle: Broken\nstatus: proposed\nparent: 2026-09-05-legacy-root\n---\nNo owner, so it never parses.\n";
+      await writeLegacy("2026-09-05-legacy-broken", "proposed", broken);
+      errors.length = 0;
+
+      await scheduler.tickOnce();
+      const board = await service.tickets(P, ORG);
+      expect(board.columns.proposed.map((x) => x.ticketId).sort()).toEqual([
+        "ticket-2026-09-05-legacy-child",
+        "ticket-2026-09-05-legacy-root",
+      ]);
+      expect(await fs.readFile(legacyPath("2026-09-05-legacy-broken", "proposed"), "utf8")).toBe(
+        broken,
+      );
+      expect(board.invalidFiles.map((f) => path.basename(f.path))).toEqual([
+        "2026-09-05-legacy-broken.md",
+      ]);
+    });
+
+    it("admits a legacy ticket that names itself as its own blocker", async () => {
+      await createOrg();
+      const raw = serializeTicket(doc("Self blocked", { blockedBy: "2026-09-05-legacy-self" }));
+      await writeLegacy("2026-09-05-legacy-self", "proposed", raw);
+      errors.length = 0;
+
+      await scheduler.tickOnce();
+      const board = await service.tickets(P, ORG);
+      expect(board.columns.proposed.map((x) => x.ticketId)).toEqual([
+        "ticket-2026-09-05-legacy-self",
+      ]);
+      expect(board.invalidFiles).toEqual([]);
+      expect(
+        await fs.readFile(
+          path.join(orgDir(), "tickets", "2026-09", "proposed", "ticket-2026-09-05-legacy-self.md"),
+          "utf8",
+        ),
+      ).toContain("blocked_by: ticket-2026-09-05-legacy-self");
+    });
+
     it("reports a filename that follows no ticket format and leaves it out of the migration", async () => {
       await createOrg();
       const weirdPath = path.join(

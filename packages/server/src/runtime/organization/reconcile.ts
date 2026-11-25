@@ -27,6 +27,7 @@ import {
   rewriteTicketRefs,
   serializeChannelMessageLine,
   slugSuffix,
+  ticketRefValues,
   ticketSessionIds,
   TICKET_ID_PATTERN,
 } from "../../organization/files.js";
@@ -117,6 +118,74 @@ function activeCopies(files: readonly TicketFile[]): Map<string, TicketFile> {
 }
 
 /**
+ * The groups of files that reference one another, in the order a migration can admit them:
+ * every group's members reference only each other and files outside the list, so a group's
+ * members parse once the group's own ids and the already-migrated ones are rewritten in. An
+ * edge runs from a file to a file its reference fields name; a group of one counts only
+ * when the file names itself. Groups come out dependencies-first, so a group whose members
+ * also wait on another group here is offered after it.
+ *
+ * Tarjan's strongly-connected components, iterated — a batch can chain deep enough that
+ * recursion is not free. This exists for the one-time id migration; compat(0.3.0) walks it
+ * out with `migrateLegacyTicketIds`.
+ */
+function referenceCycles(
+  files: readonly TicketFile[],
+  refValues: ReadonlyMap<string, readonly string[]>,
+): TicketFile[][] {
+  const indexOf = new Map<string, number>();
+  for (const [i, f] of files.entries()) indexOf.set(f.ticketId, i);
+  const edges: number[][] = files.map((f) =>
+    (refValues.get(f.ticketId) ?? [])
+      .map((id) => indexOf.get(id))
+      .filter((n): n is number => n !== undefined),
+  );
+  const groups: TicketFile[][] = [];
+  const disc = new Array<number>(files.length).fill(-1);
+  const low = new Array<number>(files.length);
+  const onStack = new Array<boolean>(files.length).fill(false);
+  const stack: number[] = [];
+  let counter = 0;
+  for (let start = 0; start < files.length; start++) {
+    if (disc[start] !== -1) continue;
+    const frames: Array<{ node: number; edge: number }> = [{ node: start, edge: 0 }];
+    disc[start] = low[start] = counter++;
+    stack.push(start);
+    onStack[start] = true;
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1]!;
+      if (frame.edge < edges[frame.node]!.length) {
+        const next = edges[frame.node]![frame.edge]!;
+        frame.edge++;
+        if (disc[next] === -1) {
+          disc[next] = low[next] = counter++;
+          stack.push(next);
+          onStack[next] = true;
+          frames.push({ node: next, edge: 0 });
+        } else if (onStack[next]) {
+          low[frame.node] = Math.min(low[frame.node]!, disc[next]!);
+        }
+        continue;
+      }
+      frames.pop();
+      const parent = frames[frames.length - 1];
+      if (parent !== undefined) low[parent.node] = Math.min(low[parent.node]!, low[frame.node]!);
+      if (low[frame.node] !== disc[frame.node]) continue;
+      const group: number[] = [];
+      for (;;) {
+        const node = stack.pop()!;
+        onStack[node] = false;
+        group.push(node);
+        if (node === frame.node) break;
+      }
+      const members = group.map((i) => files[i]!);
+      if (members.length > 1 || edges[group[0]!]!.includes(group[0]!)) groups.push(members);
+    }
+  }
+  return groups;
+}
+
+/**
  * One-time migration of legacy ticket ids. The id format requires the `ticket-` prefix
  * (`TICKET_ID_PATTERN`); files named `yyyy-mm-dd-slug` predate it. Runs only inside a
  * reconcile pass — always under the organization's lock, so it never interleaves with a
@@ -131,8 +200,12 @@ function activeCopies(files: readonly TicketFile[]): Map<string, TicketFile> {
  * takes a letter suffix, the way `createTicket` mints one — and a target is checked against
  * the disk and the ids reserved within this batch, so two legacy ids can never share one),
  * the id's stale copies go with it, and every other ticket file whose `parent` /
- * `blocked_by` named a migrated id is rewritten in place. The rewrite is raw text confined
- * to the frontmatter's two fields, so comments, layout and unknown fields survive, and a
+ * `blocked_by` named a migrated id is rewritten in place. Tickets that reference one another
+ * parse only once every reference among them is rewritten, so such a cycle joins the mapping
+ * as a group — a target for every member, and the whole group only when every member parses
+ * with it; a member that also waits on a file that cannot migrate keeps the group out. The
+ * rewrite is raw text confined to the frontmatter's two fields, so comments, layout and
+ * unknown fields survive, and a
  * ticket keeps its sessions — they ride on the doc's own `sessions` field — and nothing
  * else stores a ticket id. An organization whose root files are invalid is read-only and is
  * left alone. A legacy file that cannot migrate (its references name a file that cannot, or
@@ -195,6 +268,16 @@ async function migrateLegacyTicketIds(deps: OrgDeps, org: LoadedOrg): Promise<vo
   // rewritten and the ones that do not left as written, it parses — a fixed point, since a
   // file may become migratable only after the file it references does. A file that never
   // parses stays behind, and so do the references to it.
+  //
+  // The fixed point alone would never admit tickets that reference one another — a root
+  // that blocks on its child, and the child whose parent is that root — because each parses
+  // only once the other's id is in the mapping. Such a cycle is admitted as a group: a
+  // target is reserved for every member, and the whole group joins the mapping only when
+  // every member parses with the group's own targets rewritten in — all of them together,
+  // or none, so nothing is ever left pointing at an id whose file did not move. A member
+  // whose references also name a file outside the group that cannot migrate keeps the
+  // group out, and the group is retried on a later round of this loop, after whatever that
+  // member waits on has joined.
   const reserved = new Set<string>();
   const mapping = new Map<string, string>();
   const active = activeCopies(legacyNamed);
@@ -215,6 +298,35 @@ async function migrateLegacyTicketIds(deps: OrgDeps, org: LoadedOrg): Promise<vo
       }
       reserved.add(newId);
       mapping.set(f.ticketId, newId);
+      grew = true;
+    }
+    const pending = [...active.values()].filter((f) => !mapping.has(f.ticketId));
+    if (pending.length === 0) break;
+    const refValues = new Map(pending.map((f) => [f.ticketId, ticketRefValues(f.raw)]));
+    for (const group of referenceCycles(pending, refValues)) {
+      // The group's own targets, reserved within the batch exactly like the fixed point
+      // reserves them — and discarded whole when the group does not parse.
+      const tentative = new Map<string, string>();
+      const scratch = new Set(reserved);
+      for (const f of group) {
+        let newId = `ticket-${f.ticketId}`;
+        for (
+          let n = 2;
+          scratch.has(newId) || (await deps.store.findTicket(org.dir, newId)) !== null;
+          n++
+        ) {
+          newId = `ticket-${f.ticketId}-${slugSuffix(n)}`;
+        }
+        scratch.add(newId);
+        tentative.set(f.ticketId, newId);
+      }
+      const trial = new Map(mapping);
+      for (const [oldId, newId] of tentative) trial.set(oldId, newId);
+      if (!group.every((f) => parseTicket(rewriteTicketRefs(f.raw, trial)).ok)) continue;
+      for (const [oldId, newId] of tentative) {
+        reserved.add(newId);
+        mapping.set(oldId, newId);
+      }
       grew = true;
     }
   }

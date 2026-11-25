@@ -692,6 +692,58 @@ function splitFrontmatter(text: string): Frontmatter {
 }
 
 /**
+ * The ticket fields whose value names another ticket: every field a migration that changes
+ * ticket ids must rewrite. `blocked_by` may also hold a person principal, which no mapping
+ * of ticket ids ever contains, so a principal there is left as written.
+ */
+const TICKET_REF_FIELDS = ["parent", "blocked_by"] as const;
+
+/**
+ * The frontmatter block as the YAML document parser sees it, with the block's offset in the
+ * file; null when the file does not open with a closed `---` block. The offset lets a caller
+ * turn a node's span inside the block back into a span in the whole file, which is how
+ * `rewriteTicketRefs` replaces a value without touching anything around it.
+ */
+function parseTicketFrontmatter(raw: string): { doc: YamlDocument; offset: number } | null {
+  const lines = raw.split("\n");
+  let open = -1;
+  let close = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i]!.trim() === "---") {
+      if (open === -1) open = i;
+      else {
+        close = i;
+        break;
+      }
+    } else if (open === -1 && lines[i]!.trim() !== "") break;
+  }
+  if (open === -1 || close === -1) return null;
+  let fmStart = 0;
+  for (let i = 0; i <= open; i++) fmStart += lines[i]!.length + 1;
+  let fmLength = 0;
+  for (let i = open + 1; i < close; i++) fmLength += lines[i]!.length + 1;
+  if (close > open + 1) fmLength -= 1;
+  return { doc: parseDocument(raw.slice(fmStart, fmStart + fmLength)), offset: fmStart };
+}
+
+/**
+ * The values of the frontmatter's ticket-reference fields (`parent`, `blocked_by`), read
+ * from the same slice of the file `rewriteTicketRefs` rewrites and trimmed the way the
+ * ticket fields read them. A file whose frontmatter the parser rejects, or that names
+ * neither field, has no references to follow — an empty list.
+ */
+export function ticketRefValues(raw: string): string[] {
+  const frontmatter = parseTicketFrontmatter(raw);
+  if (frontmatter === null || frontmatter.doc.errors.length > 0) return [];
+  const out: string[] = [];
+  for (const key of TICKET_REF_FIELDS) {
+    const value = frontmatter.doc.get(key, true);
+    if (isScalar(value) && typeof value.value === "string") out.push(value.value.trim());
+  }
+  return out;
+}
+
+/**
  * Rewrites the ticket references (`parent: <id>`, `blocked_by: <id>`) in a ticket file's
  * frontmatter to follow a migration. The two fields are found by the YAML document parser,
  * not by line shape: quoting, spacing, a quoted key, a trailing comment — the parser hands
@@ -705,33 +757,19 @@ function splitFrontmatter(text: string): Frontmatter {
  */
 export function rewriteTicketRefs(raw: string, mapping: ReadonlyMap<string, string>): string {
   if (mapping.size === 0) return raw;
-  const lines = raw.split("\n");
-  let open = -1;
-  let close = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i]!.trim() === "---") {
-      if (open === -1) open = i;
-      else {
-        close = i;
-        break;
-      }
-    } else if (open === -1 && lines[i]!.trim() !== "") break;
-  }
-  if (open === -1 || close === -1) return raw;
-  let fmStart = 0;
-  for (let i = 0; i <= open; i++) fmStart += lines[i]!.length + 1;
-  let fmLength = 0;
-  for (let i = open + 1; i < close; i++) fmLength += lines[i]!.length + 1;
-  if (close > open + 1) fmLength -= 1;
-  const doc = parseDocument(raw.slice(fmStart, fmStart + fmLength));
-  if (doc.errors.length > 0) return raw;
+  const frontmatter = parseTicketFrontmatter(raw);
+  if (frontmatter === null || frontmatter.doc.errors.length > 0) return raw;
   const edits: Array<{ from: number; to: number; text: string }> = [];
-  for (const key of ["parent", "blocked_by"]) {
-    const value = doc.get(key, true);
+  for (const key of TICKET_REF_FIELDS) {
+    const value = frontmatter.doc.get(key, true);
     if (!isScalar(value) || typeof value.value !== "string" || !value.range) continue;
     const newId = mapping.get(value.value.trim());
     if (newId === undefined) continue;
-    edits.push({ from: fmStart + value.range[0], to: fmStart + value.range[1], text: newId });
+    edits.push({
+      from: frontmatter.offset + value.range[0],
+      to: frontmatter.offset + value.range[1],
+      text: newId,
+    });
   }
   if (edits.length === 0) return raw;
   edits.sort((a, b) => b.from - a.from);
