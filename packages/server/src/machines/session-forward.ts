@@ -14,6 +14,7 @@ import {
   sessionForwardRoutes,
   type MachineSessionForward,
 } from "@prismshadow/penguin-library-machine/session-forward";
+import type { Auth } from "@prismshadow/penguin-library-auth";
 import type { LiveStreams } from "../auth/live-streams.js";
 import { streamRevocation } from "../http/sse.js";
 

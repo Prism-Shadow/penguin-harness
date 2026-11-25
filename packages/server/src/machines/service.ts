@@ -25,9 +25,9 @@ import {
   machineHistory,
   machinesServerProxyRoutes,
   traceCacheAt,
-  type MachineSessionForward,
   type Machines,
 } from "@prismshadow/penguin-library-machine/service";
+import type { MachineSessionForward } from "@prismshadow/penguin-library-machine/session-forward";
 import { machinesRoutes } from "@prismshadow/penguin-library-machine/routes";
 import { machineSessionForward } from "@prismshadow/penguin-library-machine/session-forward";
 import { SESSION_GROUP, attachSessionRegistry } from "@prismshadow/penguin-library-machine/transport";

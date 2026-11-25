@@ -44,9 +44,13 @@ import { messagesPageQuery } from "./session-history.js";
  * What an HTTP stream is held against (packages/server `http/sse.ts`): the sign-in behind the
  * connection. The library only carries it — the registry is the server's (its `LiveStreams`).
  */
+export interface SseStreamRegistry {
+  add(userId: string, end: () => void): () => void;
+}
+
 export interface SseRevocation {
   userId: string;
-  streams: { add(userId: string, end: () => void): () => void };
+  streams: SseStreamRegistry;
   sessionIsLive(): boolean;
 }
 
