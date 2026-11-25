@@ -9,6 +9,8 @@
       "@prismshadow/penguin-server/api": ["../server/src/api/types.ts"],
       "@prismshadow/penguin-library-machine/web": ["../../library/machine/src/web/index.ts"],
       "@prismshadow/penguin-library-machine/web/*": ["../../library/machine/src/web/*"],
+      "@prismshadow/penguin-library-sandbox/web": ["../../library/sandbox/src/web/index.ts"],
+      "@prismshadow/penguin-library-sandbox/web/*": ["../../library/sandbox/src/web/*"],
       "@prismshadow/penguin-library-terminal/web": ["../../library/terminal/src/web/index.ts"],
       "@prismshadow/penguin-library-terminal/web/*": ["../../library/terminal/src/web/*"],
       "@prismshadow/penguin-library-workspace/web": ["../../library/workspace/src/web/index.ts"],

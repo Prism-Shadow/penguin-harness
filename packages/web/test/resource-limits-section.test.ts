@@ -2,7 +2,7 @@
 import { createElement } from "react";
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
-import { ResourceLimitsSection } from "../src/features/settings/resource-limits-section";
+import { ResourceLimitsSection } from "@prismshadow/penguin-library-sandbox/web";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { adminSettingsServer, STORED_SETTINGS } from "./helpers/admin-settings";

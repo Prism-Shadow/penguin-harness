@@ -12,10 +12,13 @@ import {
   useSaving,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import { adminGetSettings, adminPutSettings } from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { toastApiError } from "../../lib/toast-api-error";
-import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
+import {
+  S,
+  SETTINGS_SCOPE,
+  adminGetSettings,
+  adminPutSettings,
+  toastApiError,
+} from "@prismshadow/penguin-web/internal";
 
 const fields = ["terminalMaxOpen", "browserMaxOpen"] as const;
 type Limits = Pick<ServerSettings, (typeof fields)[number]>;

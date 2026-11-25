@@ -126,3 +126,5 @@ export { probeSession } from "./api/session-probe";
 export { ANSWER_TIMEOUT_MS } from "./api/socket";
 export { apiUrl } from "./lib/server-context";
 export { HttpStatusError, fetchJson, probeJson } from "./lib/terminal-http";
+export { adminGetSettings, adminPutSettings } from "./api/endpoints";
+export { SETTINGS_SCOPE } from "./lib/unsaved/scopes";

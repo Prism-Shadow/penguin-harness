@@ -61,7 +61,7 @@ import { ShortcutsSection } from "./shortcuts-section";
 import { ArchivedSessionsSection } from "./archived-sessions-section";
 import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
-import { ResourceLimitsSection } from "./resource-limits-section";
+import { ResourceLimitsSection } from "@prismshadow/penguin-library-sandbox/web";
 import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
 import { AgentApiSection } from "./agent-api-section";
