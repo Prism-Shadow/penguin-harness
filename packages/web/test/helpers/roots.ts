@@ -44,9 +44,7 @@ export const SOURCE_ROOTS: Readonly<Record<string, string>> = {
   web: fileURLToPath(new URL("../../src", import.meta.url)),
   ui: fileURLToPath(new URL("../../../ui/src", import.meta.url)),
   ...pluginWebRoots(fileURLToPath(new URL("../../../../", import.meta.url))),
-  "library:session": fileURLToPath(
-    new URL("../../../../library/session/src/web", import.meta.url),
-  ),
+  "library:session": fileURLToPath(new URL("../../../../library/session/src/web", import.meta.url)),
 };
 
 /** Whether the file is the app's: the web tree's own, or a web half compiled into it. */
@@ -66,9 +64,7 @@ export function appKeyOf(id: string): string {
 
 /** The repo-relative id of the app file a guard's list names (the inverse of {@link appKeyOf}). */
 export function appIdOf(key: string): string {
-  return key.startsWith("plugins/") || key.startsWith("library/")
-    ? key
-    : `packages/web/src/${key}`;
+  return key.startsWith("plugins/") || key.startsWith("library/") ? key : `packages/web/src/${key}`;
 }
 
 /** `.ts`, `.tsx` and `.css` under every root. */
