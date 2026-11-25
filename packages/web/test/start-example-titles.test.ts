@@ -2,7 +2,10 @@ import { expect, it } from "vitest";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import { EXAMPLE_TASKS } from "@prismshadow/penguin-library-session/web/chat/example-tasks";
 import { shortPromptTitle } from "@prismshadow/penguin-library-session/web/chat/prompt-action-row";
-import { appShortcutTitle, filterAppShortcuts } from "@prismshadow/penguin-library-session/web/chat/start-dashboard";
+import {
+  appShortcutTitle,
+  filterAppShortcuts,
+} from "@prismshadow/penguin-library-session/web/chat/start-dashboard";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
