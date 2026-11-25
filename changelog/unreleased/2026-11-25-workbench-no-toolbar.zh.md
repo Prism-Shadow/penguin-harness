@@ -3,6 +3,7 @@
 - **Date:** 2026-11-25
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#1871](https://github.com/Prism-Shadow/penguin-harness/pull/1871)
 
 [English](2026-11-25-workbench-no-toolbar.md)
 
