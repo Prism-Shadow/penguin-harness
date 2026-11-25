@@ -30,7 +30,6 @@ import {
   ICON_SIZE,
   Pager,
   StatusIcon,
-  Text,
 } from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
 import { abortSubagent, messageSubagent, patchSession } from "../../api/endpoints";
@@ -296,44 +295,39 @@ export function SubagentsView({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Call graph of the displayed Task — latest by default, a chip's Task when pinned (capped height; scrolls both ways for deep/wide trees). */}
+      {/* Call graph of the displayed Task — latest by default, a chip's Task when pinned. */}
       <div className="shrink-0 border-b border-gray-200 px-3 pb-2 pt-1.5 dark:border-gray-800">
-        <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2">
-          <Text variant="eyebrow" className="min-w-0 truncate">
-            {S.subagentPanel.topologyLabel}
-          </Text>
-          {history.turns.length > 1 && index >= 0 && (
-            <Pager
-              className="shrink-0"
-              page={history.turns.length - 1 - index}
-              pageCount={history.turns.length}
-              previousLabel={S.subagentPanel.previousTurn}
-              nextLabel={S.subagentPanel.nextTurn}
-              lastPageLabel={S.subagentPanel.latestTurn}
-              readout={S.subagentPanel.page(history.turns.length - index)}
-              onChange={(next) => chooseTurn(history.turns.length - 1 - next)}
-            />
-          )}
-        </div>
-        {history.error && (
-          <div role="status" className="text-xs text-fg-muted">
-            {history.error}{" "}
-            <button type="button" onClick={history.retry}>
-              {S.common.retry}
-            </button>
-          </div>
-        )}
-        {nodes.length > 1 && (
-          <div className="max-h-48 overflow-y-auto">
-            <AgentTopologyView
-              nodes={nodes}
-              selectedId={active?.sessionId ?? null}
-              labelFor={labelFor}
-              avatarFor={avatarFor}
-              onSelect={(node) => setSelected({ sessionId: node.sessionId, origin: node.origin })}
-            />
-          </div>
-        )}
+        <AgentTopologyView
+          nodes={nodes}
+          selectedId={active?.sessionId ?? null}
+          labelFor={labelFor}
+          avatarFor={avatarFor}
+          onSelect={(node) => setSelected({ sessionId: node.sessionId, origin: node.origin })}
+          pager={
+            history.turns.length > 1 && index >= 0 ? (
+              <Pager
+                className="shrink-0"
+                page={history.turns.length - 1 - index}
+                pageCount={history.turns.length}
+                previousLabel={S.subagentPanel.previousTurn}
+                nextLabel={S.subagentPanel.nextTurn}
+                lastPageLabel={S.subagentPanel.latestTurn}
+                readout={S.subagentPanel.page(history.turns.length - index)}
+                onChange={(next) => chooseTurn(history.turns.length - 1 - next)}
+              />
+            ) : null
+          }
+          notice={
+            history.error ? (
+              <div role="status" className="mb-1.5 text-xs text-fg-muted">
+                {history.error}{" "}
+                <button type="button" onClick={history.retry}>
+                  {S.common.retry}
+                </button>
+              </div>
+            ) : null
+          }
+        />
       </div>
 
       {/* Selected conversation (or the root note / empty state). */}
