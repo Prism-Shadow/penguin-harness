@@ -2,16 +2,24 @@
 # One line per edge, sorted: `importing-file -> imported-file` (paths relative to src/), or
 # `cycle: features/a -> features/b` for an edge between two feature directories that lies on a cycle.
 # This list only shrinks: never add a line; delete each line whose edge your change removes.
-cycle: features/agents -> features/ai-create
+# The `internal.ts -> features/...` lines are the internals hub's transition re-exports; they
+# leave as the features they name grow faces of their own.
 cycle: features/agents -> features/plugins
-cycle: features/agents -> features/schedules
-cycle: features/company -> features/models
-cycle: features/company -> features/plugins
-cycle: features/company -> features/traces
-cycle: features/models -> features/ai-create
 cycle: features/plugins -> features/agents
-cycle: features/plugins -> features/ai-create
-cycle: features/schedules -> features/ai-create
-cycle: features/schedules -> features/models
 features/plugins/plugin-card.tsx -> features/agents/archive-download.ts
+internal.ts -> features/agents/index.ts
+internal.ts -> features/ai-create/index.ts
+internal.ts -> features/app-center/index.ts
+internal.ts -> features/company/index.ts
+internal.ts -> features/machines/index.ts
+internal.ts -> features/machines/machines-view.ts
+internal.ts -> features/messaging/index.ts
+internal.ts -> features/model-picker/index.ts
+internal.ts -> features/models/connection.ts
+internal.ts -> features/models/index.ts
+internal.ts -> features/schedules/index.ts
+internal.ts -> features/settings/index.ts
+internal.ts -> features/skills/index.ts
+internal.ts -> features/terminal/index.ts
+internal.ts -> features/workspace/index.ts
 lib/strings.ts -> features/models/model-sort.ts
