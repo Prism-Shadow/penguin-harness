@@ -26,8 +26,8 @@ import {
   offeredCli,
   windowsShimScript,
   windowsStubScript,
-  checkoutRoot,
 } from "../src/services/cli-shim.js";
+import { checkoutRoot } from "@prismshadow/penguin-library-plugin/checkout-root";
 import { makeTempRoot } from "./helpers.js";
 
 const roots: string[] = [];

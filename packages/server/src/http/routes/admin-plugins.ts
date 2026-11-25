@@ -24,6 +24,7 @@ import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { PluginLibrary } from "../../plugin/library-module.js";
 import { PACKAGE_NAME, pluginBases, readPluginClosure } from "../../plugin/loader.js";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
+import { pluginUninstallWorkbenches } from "../../plugin/platform-ports.js";
 import { PluginServerUninstall } from "../../services/plugin-server-uninstall.js";
 import { HttpError } from "../errors.js";
 
@@ -97,7 +98,7 @@ export class AdminPluginRoutes {
         machineId,
         bases: () => pluginBases(root, hmr.assetsDir()),
         library: this.library,
-        workbenches: this.workbenches,
+        workbenches: pluginUninstallWorkbenches(this.workbenches),
         projectConfig: {
           getPluginTables: (projectId) => projectConfig.getPluginTables(projectId),
           setPluginTables: async (projectId, tables) => {
