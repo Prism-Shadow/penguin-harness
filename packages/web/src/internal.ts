@@ -311,6 +311,19 @@ export { PageIdentity, usePaneFocus } from "./lib/page-focus";
 export { PAGE_DRAG_TYPE, pageSessionId } from "./lib/page-layout";
 export type { OpenPage } from "./lib/page-layout";
 
+export {
+  ZOOM_MAX,
+  ZOOM_MIN,
+  ZOOM_STEP,
+  clampView,
+  fitView,
+  panBy,
+  viewTransform,
+  wheelZoomFactor,
+  zoomAt,
+} from "./lib/canvas-view";
+export type { CanvasSize, CanvasView } from "./lib/canvas-view";
+
 export { useNarrow } from "./lib/page-slot";
 
 export { usePageWorkspace } from "./lib/page-workspace-context";

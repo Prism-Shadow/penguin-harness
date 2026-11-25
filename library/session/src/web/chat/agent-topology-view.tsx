@@ -35,6 +35,7 @@ import {
   Text,
 } from "@prismshadow/penguin-ui";
 import {
+  S,
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_STEP,
@@ -46,8 +47,7 @@ import {
   zoomAt,
   type CanvasSize,
   type CanvasView,
-} from "../../lib/canvas-view";
-import { S } from "@prismshadow/penguin-web/internal";
+} from "@prismshadow/penguin-web/internal";
 import { layoutTopology, NODE_H, NODE_W, type TopologyNode } from "./agent-topology";
 
 /** Canvas height bounds (px): room for a 1-row tree to breathe, capped so the conversation below stays tall. */
