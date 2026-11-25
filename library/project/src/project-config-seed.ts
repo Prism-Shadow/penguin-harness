@@ -7,7 +7,10 @@
  */
 import { defaultProjectConfig } from "@prismshadow/penguin-core";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
-import { presetModelEntries, presetProviderTable } from "@prismshadow/penguin-library-model/model-catalog/seed";
+import {
+  presetModelEntries,
+  presetProviderTable,
+} from "@prismshadow/penguin-library-model/model-catalog/seed";
 
 /**
  * What a new Project's file holds, and what "Restore defaults" puts back: core's default config

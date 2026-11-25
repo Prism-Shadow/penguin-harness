@@ -553,7 +553,10 @@ function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
  * which builds on it when a caller wrote file attachments. Re-exported so the session
  * runtime's callers keep their spelling.
  */
-import { isPlainText, recallStoreOf as _recallStoreOf } from "@prismshadow/penguin-library-messaging/recall";
+import {
+  isPlainText,
+  recallStoreOf as _recallStoreOf,
+} from "@prismshadow/penguin-library-messaging/recall";
 export const recallStoreOf = _recallStoreOf;
 
 /** If msg is a run_subagent tool call carrying a `prompt`, return its id and prompt (for use as the subagent's title); otherwise null. */

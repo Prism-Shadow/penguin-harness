@@ -18,8 +18,9 @@ import type {
   ProjectConfigStore,
   ProjectLifecycle,
   Projects,
+  ProjectSummary,
+  MemberInfo,
 } from "./project.js";
-import type { ProjectSummary, MemberInfo } from "./project.js";
 import type { Users, UserDraftsStore } from "@prismshadow/penguin-library-auth";
 import fs from "node:fs/promises";
 import {

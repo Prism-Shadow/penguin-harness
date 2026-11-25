@@ -34,8 +34,8 @@ import type {
   ModelTestRequestSource,
   ProjectConfigStore,
   RawTable,
+  UtilityCompletion,
 } from "./project.js";
-import type { UtilityCompletion } from "./project.js";
 import type {
   DefaultModelOffer,
   ModelEffectiveConnection,
@@ -108,7 +108,10 @@ import {
   unroutableVendorModel,
   vendorClientType,
 } from "@prismshadow/penguin-library-model/model-catalog/catalog";
-import { clientEnvKey, modelEnvPreviewKey } from "@prismshadow/penguin-library-model/model-catalog/env-keys";
+import {
+  clientEnvKey,
+  modelEnvPreviewKey,
+} from "@prismshadow/penguin-library-model/model-catalog/env-keys";
 import {
   catalogGroupConnection,
   presetModelEntries,
