@@ -353,8 +353,8 @@
   --ui-page-exit: none;
   --ui-dur-reveal: 360ms;
   --ui-reveal-blur: 4px;
-  --ui-dur-layout: 320ms;
-  --ui-ease-layout: cubic-bezier(0.22, 1, 0.36, 1);
+  --ui-dur-layout: 280ms;
+  --ui-ease-layout: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Streaming: a reply surfaces word by word at about 220 characters a second — quick enough
      never to hold a fast model back for long, even enough to read as a calm flow — through

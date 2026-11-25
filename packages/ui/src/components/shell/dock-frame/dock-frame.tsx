@@ -4,9 +4,8 @@
  * band) or the right (a column beside the conversation).
  *
  * A closed frame stays mounted at size 0 and inert, preserving scroll, editors and terminals.
- * An open frame reserves its settled size. The content enters from the edge inside that frame,
- * following the theme's layout motion without shifting the divider or reflowing the content.
- * When the dock closes, the frame collapses and frees the space beside the conversation.
+ * While opening or closing, the frame and its content move together from the edge at `size`,
+ * while the inner layout stays at `contentSize` so nothing inside reflows mid-transition.
  *
  * The border belongs to the open state only: with border-box sizing a collapsed dock would still
  * paint its 1px, leaving a hairline where nothing is. The resize handle is the caller's too, shown
@@ -535,9 +534,9 @@ export function DockFrame({
         data-position="bottom"
         data-open={open}
         data-wallpaper-surface="canvas"
-        data-layout-motion={!open && animate ? "" : undefined}
+        data-layout-motion={animate ? "" : undefined}
         data-fullscreen={lifted ? phase : undefined}
-        style={{ height: open ? contentSize : 0 }}
+        style={{ height: size }}
         inert={!open}
         className={`relative flex w-full shrink-0 flex-col bg-canvas ${
           open ? "border-t border-line" : ""
@@ -559,9 +558,9 @@ export function DockFrame({
         data-position="right"
         data-open={open}
         data-wallpaper-surface="canvas"
-        data-layout-motion={!open && animate ? "" : undefined}
+        data-layout-motion={animate ? "" : undefined}
         data-fullscreen={lifted ? phase : undefined}
-        style={{ width: open ? contentSize : 0 }}
+        style={{ width: size }}
         inert={!open}
         className={`relative flex min-h-0 min-w-0 flex-col bg-canvas ${
           open ? "border-l border-line" : ""

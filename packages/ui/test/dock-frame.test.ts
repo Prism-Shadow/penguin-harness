@@ -48,10 +48,12 @@ describe("DockFrame", () => {
     expect(html).toContain("BODY");
   });
 
-  it("exposes one divider while the right dock starts opening", () => {
+  it("exposes one divider and starts the outer frame at size 0 while opening", () => {
     const html = render({ position: "right", open: true, size: 0, contentSize: 360 });
     expect(html.match(/data-testid="handle"/g)).toHaveLength(1);
-    expect(html).toContain('style="width:0"');
+    expect(html).toMatch(
+      /<div data-testid="dock" data-position="right" data-open="true" data-wallpaper-surface="canvas" data-layout-motion="" style="width:0"/,
+    );
     expect(html).toContain('style="width:360px"');
   });
 

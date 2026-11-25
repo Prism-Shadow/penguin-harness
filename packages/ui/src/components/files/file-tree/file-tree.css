@@ -6,17 +6,17 @@
 .tree-group {
   display: grid;
   grid-template-rows: 1fr;
+  overflow: clip;
 }
 .tree-group > div {
   min-height: 0;
-  overflow: hidden;
 }
 .tree-group-open {
-  animation: tree-group-open 200ms ease-out;
+  animation: tree-group-open 240ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .tree-group-close {
   grid-template-rows: 0fr;
-  animation: tree-group-close 200ms ease-in;
+  animation: tree-group-close 240ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 @keyframes tree-group-open {
   from {
