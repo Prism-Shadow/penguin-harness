@@ -16,7 +16,6 @@ import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "./peak-windows";
 import type { ProtocolClientType } from "./protocol-client-types";
 import type { ModelGroupSort } from "../features/models/model-sort";
-import { EVOLUTION_DEMO } from "./evolution-demo";
 import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
 import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";
 
@@ -4353,9 +4352,10 @@ export const zh = {
     /** The start page's dashboard (features/chat/start-dashboard.tsx): three counts beside the brand, and the examples block under the composer. */
     start: {
       tagline: "创建你的第一个自进化 Harness OS",
-      shuffle: "换一组示例",
-      moreExamples: "更多示例",
       examplesTitle: "示例与快捷指令",
+      appsSearchPlaceholder: "搜索应用…",
+      appsEmptyHint: "还没有应用，先点「构建新应用」做一个",
+      appsNoMatch: "没有匹配的应用",
     },
     shortcuts: {
       retry: "重新加载我的快捷指令",
@@ -4377,127 +4377,27 @@ export const zh = {
     },
     /** Choosing an example fills the editable composer. */
     exampleTasks: {
-      game: {
-        label: "企鹅滑雪",
-        desc: "滑雪大冒险式的 2D 小游戏：企鹅踩着滑雪板冲下陡坡，飞过坡顶在空中翻滚得分，摔倒了爬起来接着滑",
-        prompt: `做一个能离线打开的单文件 2D 滑雪游戏。企鹅踩着醒目的滑雪板，玩家能提前看清前方坡面。下坡加速，越过坡顶时带着原速度腾空；在空中按住空格或按住画面翻转。第一次跳跃要容易上手。平稳落地后显示完成的动作和得分，摔倒损失速度，企鹅爬起来接着滑。起跳、落地和摔倒有各自的动作与音效，可静音。不刷新页面就能暂停、继续和重开。
+      buildApp: {
+        label: "构建新应用",
+        desc: "为当前 Agent 构建一个上线到应用中心的工作台应用",
+        prompt: `为我构建一个新的工作台（Workbench）应用，安装到当前 Agent 并上线到应用中心（在 package.json 中开启 penguin.appCenter.show）。构建时应当采用最现代的设计，达到真实商业产品一样的质量，并在完成后验证应用能够正常加载运行：
+<输入你的想法>
 
-用现有工具分别走查键盘和触屏操作，试一次翻转落地、一次摔倒恢复，再重开一局。交付时说明打开方式、玩法及实际验证的动作。`,
+示例：构建一个 PenguinHarness 客服应用，类似一个工单系统，可以解答 PenguinHarness 相关的使用问题，并且给出问题引用来源。`,
       },
-      gamecenter: {
-        label: "迷你游戏厅",
-        desc: "十款玩法各异的离线小游戏，支持键盘和触屏，统一从游戏大厅进入",
-        prompt: `做一个离线迷你游戏厅，包含十个玩法不同的游戏，例如贪吃蛇、数字合并、下落方块、打砖块、扫雷、记忆翻牌、推箱子、太空射击、跳跃平台和节奏点击。每款都有独立可玩的页面，统一从大厅进入。开局说清目标和操作；输入立即影响游戏，根据各自规则显示分数或剩余步数、胜负结算和一键重开。
+      optimizeApp: {
+        label: "优化已有应用",
+        desc: "选择一个已有的工作台应用，改进它的界面设计、交互体验或功能",
+        promptFor: (appTitle: string, agentId: string, workbenchId: string): string =>
+          `优化当前应用「${appTitle}」（Agent \`${agentId}\` 下的工作台 \`${workbenchId}\`）的<输入你的需求>。如果没有对应的 benchmark，可以直接阅读现有工作台代码开始优化过程，完成后重新加载并验证效果。
 
-支持键盘和触屏，棋盘里的滑动与点击不会误滚页面，返回大厅始终可达，只有当前游戏继续计时或发声。资源随页面提供，断网也能打开。逐款从大厅进入，试其核心动作、结算、重开；在手机尺寸下返回大厅再换一款。交付启动文件并说明实际走查的结果。`,
+示例：优化当前应用的界面，让新手小白、不懂计算机的人也可以快速学会使用，必要时候添加引导教程。`,
       },
-      lol: {
-        label: "英雄联盟音乐",
-        desc: "用 SoundCloud Widget API 播放历届 Worlds 主题曲，单文件即开即用",
-        prompt: `用可见的 SoundCloud 官方播放器和 Widget API（https://developers.soundcloud.com/docs/api/html5-widget）做一个单文件 Worlds 主题曲播放器，保留以下八首官方链接：
-- Warriors (S4) — https://soundcloud.com/leagueoflegends/warriors
-- Worlds Collide (S5) — https://soundcloud.com/leagueoflegends/worlds-collide
-- Legends Never Die (S7) — https://soundcloud.com/leagueoflegends/legends-never-die
-- Phoenix (S9) — https://soundcloud.com/leagueoflegends/phoenix
-- Burn It All Down (S11) — https://soundcloud.com/leagueoflegends/burn-it-all-down
-- GODS (S13) — https://soundcloud.com/leagueoflegends/gods
-- Heavy Is The Crown (S14) — https://soundcloud.com/linkinpark/heavy-is-the-crown
-- Sacrifice (S15) — https://soundcloud.com/leagueoflegends/sacrifice
-
-手机与桌面都能选曲、播放暂停、拖进度、切歌、静音和调节音量。显示当前曲目、已播时间和总时长；键盘控制不影响正在操作的按钮或滑杆。读取 Widget 的 READY、PLAY、PAUSE、PLAY_PROGRESS、FINISH 和错误事件，确认真实播放后再切按钮状态和更新进度。嵌入加载慢、被拦或离线时显示当前状态、重试和所选曲目的官方链接；SDK 加载失败仍能浏览歌单。
-
-实际点击播放一首，确认官方上报的位置在增加，再试暂停、跳到指定位置和换歌；也测试阻断嵌入时去官方页面的入口。说明在当前网络下验证了哪些结果。`,
-      },
-      rhythmRunner: {
-        label: "节奏跑酷",
-        desc: "喵斯快跑式的节奏跑酷：接上方音符时企鹅飞起来，接下方音符时趴上雪橇贴地滑行",
-        prompt: `做一个单文件离线企鹅节奏跑酷。制作一段原创、确实能听到的器乐和对应谱面。玩家点开始后，音乐播放与两路音符判定使用同一个音频时钟。按上路立即展翅起飞，按下路立即趴上雪橇；准备两个按键和两块易点的触区。先用稀疏音符教会两路操作，再逐渐组合。Perfect、Great、Miss 有不同反馈，连击能累积也会中断，漏接仍能听完。支持静音、暂停、同步续播、结算与重玩。
-
-实际走完一首，确认音乐有声，两路都能命中，故意早按或晚按有对应判定，暂停后节拍对得上，第二局从头计分。交付文件、操作方式和验证结果。`,
-      },
-      ragDocsExpert: {
-        label: "文档问答",
-        desc: "新建文档专家智能体，在专属工作台检索文档、提问并查看来源引用",
-        prompt: `新建 Claude Code 文档专家 Agent，交付可安装的 PenguinHarness 工作台。索引 https://github.com/ericbuess/claude-code-docs，记录取得的版本与日期。支持检索、提问并从回答引用跳到支撑结论的具体标题或段落。无匹配要说明，下载失败可重试；离线仍可读上次成功的索引，显示其日期。首次取不到来源时可导入本地副本。
-
-在已有权限范围安装并打开工作台。用真实段落可回答的问题检索、追问并打开引用，再问一个缺乏依据的问题。走查键盘与手机导航，说明怎样进入 Agent 和工作台，以及实际验证的结果。`,
-      },
-      investmentCopilot: {
-        label: "投资分析",
-        desc: "新建投资分析智能体，在专属工作台看行情、查公司并追问市场因素",
-        prompt: `新建投资研究 Agent，交付可安装的 PenguinHarness 工作台。能按名称找上市公司，按相同区间与币种比较涨跌，从板块表现追到新闻或财报来源。使用已获授权的行情源，显示时间、币种、延迟情况，每五分钟或按需刷新。没有数据服务时允许导入用户提供的带时间样本，并明确标为样本。行情过期、缺失或公司未上市要说明；刷新失败保留上次结果，可重试。解释需能打开引用，把推断与事实区分开。
-
-安装工作台，用有出处的行情或用户样本实际比较一次，查一家找不到的公司，试失败重试，在窄屏与键盘下打开来源。说明入口及使用的数据。`,
-      },
-      legalDesk: {
-        label: "法务助手",
-        desc: "新建法务智能体，在专属工作台上传合同、查看处理状态并下载审阅报告",
-        prompt: `新建合同审阅 Agent，交付可安装的 PenguinHarness 工作台。能上传合同、查看每份文件的处理状态、重新打开结果并下载报告。每条意见引用原文，定位到页码、章节或段落，解释风险并给出供审阅的修改建议。不同文件的发现分别保存；不支持的格式或读不出的文件说明原因，可以替换或重试。只处理用户提供的文档，示例合同需注明。
-
-实际安装，用一份短样本走查上传、找到原文、下载报告并核对引文，再试无法读取的文件，重新打开第一份结果。明暗主题下均可用键盘和触屏上传及取回报告。说明入口与实际测试结果。`,
-      },
-      agentBenchmarkBuild: {
-        label: "决策评测",
-        desc: "创建一个通用决策 Agent，并用足球、售后和投资任务检验它",
-        prompt: `请依次使用 \`agent-initialization\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
-
-Agent：
-- id：\`${EVOLUTION_DEMO.agentId}\`
-- 能力：面对有限选项，在公开信息不足或冲突时仍能给出稳定、可解释的选择
-- installed_skills：\`[]\`
-
-Benchmark：
-- id：\`${EVOLUTION_DEMO.benchmarkId}\`
-- capability：从公开规则、历史案例和当前事实中形成并迁移稳定的有限选择决策过程
-- desired_baseline_score：\`<75\`
-- pilot_iteration_limit：\`5\`
-
-场景：
-1. 根据历史比赛与当前信息进行足球投注决策。
-2. 根据售后政策与工单事实选择处置动作。
-3. 根据投资策略、历史市场与当前指标选择投资动作。`,
-      },
-      agentOptimization: {
-        label: "优化智能体",
-        desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
-        prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
-
-- test_agent_id：\`${EVOLUTION_DEMO.agentId}\`
-- benchmark_id：\`${EVOLUTION_DEMO.benchmarkId}\`
-- capability_direction：提高信息不完整、规则冲突和有限选项决策中的稳定性
-- runs：\`3\`
-- desired_score：\`>=95\`
-- candidate_round_limit：\`5\``,
-      },
-      benchmarkImport: {
-        label: "导入工单评测",
-        desc: "导入 GDPEVO Essential 服务工单处理场景的训练集与测试集：在训练集上优化 Agent，再到没见过的测试题上检验提升",
-        prompt:
-          "用 `benchmark-design` 导入训练集及配对测试集：" +
-          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train ，" +
-          "本项目已有则告知，不要覆盖。",
-      },
-      dailyPlan: {
-        label: "每日计划",
-        desc: "每天 09:00 在同一个会话里聊当天计划，并回顾昨天的进展",
-        prompt:
-          "建一个定时任务：每天早上 9 点在这个会话里和我聊今天的计划。" +
-          "先回看上文说清昨天定的事做完了多少、哪些卡住，再给我一份排好序的今日候选、每条一句理由，" +
-          "我确认后写成清单。",
-      },
-      githubDigest: {
-        label: "GitHub简报",
-        desc: "定时跑一遍仓库的 Issue、PR 与 CI，日报结尾给出按优先级排序的建议",
-        prompt:
-          "建一个定时任务：每天早上用 gh 汇总一个 GitHub 仓库的 Issue、PR 与 CI 状态，" +
-          "挑出停滞的、待评审的和挂掉的，结尾给出按优先级排序的建议，每条说清为什么排在这个位置。",
-      },
-      memoryReview: {
-        label: "每周记忆回顾",
-        desc: "周五傍晚一起过一遍这周值得长期记住的事，确认后由你写进 Memory",
-        prompt:
-          "建一个定时任务：每周五傍晚在这个会话里和我过一遍这周值得长期记住的事。" +
-          "先看已有记忆索引避免重复，再逐条问我该记什么、要不要改已有的，我确认后你写进 Memory。",
+      publishApp: {
+        label: "发布应用",
+        desc: "选择一个已有的工作台应用，让 Agent 提交到公开的应用仓库和插件索引，供其他人安装",
+        promptFor: (appTitle: string, agentId: string, workbenchId: string): string =>
+          `把应用「${appTitle}」（Agent \`${agentId}\` 下的工作台 \`${workbenchId}\`）打包成插件公开发布。按各仓库自己的贡献说明提交两个 Pull Request：一个提交到应用仓库 https://github.com/Prism-Shadow/penguin-harness-apps 加入该应用，一个提交到插件索引 https://github.com/Prism-Shadow/penguin-harness-plugins 登记它。索引条目要指向已经发布、可以下载的安装包；如果应用仓库还没有发布它，就把索引的 Pull Request 开成草稿，并写明它在等什么。公开的内容里不要带个人数据或密钥；拿不准能不能公开的内容，以及许可证这类要由我决定的事，先问我。完成后把两个 Pull Request 的链接发给我。`,
       },
     },
     sessionList: "Session",

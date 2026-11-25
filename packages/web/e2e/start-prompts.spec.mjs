@@ -1,20 +1,11 @@
 /**
- * A saved account shortcut is directly usable on a fresh draft. Shuffling examples preserves
- * both the draft and that shortcut. The shortcut can be renamed, reloaded and deleted.
+ * A saved account shortcut is directly usable on a fresh draft alongside the built-in app
+ * shortcuts ("Build New App", "Optimize App" and "Publish App"). The shortcut can be renamed,
+ * reloaded and deleted.
  */
 import { expect, test } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
-
-async function action(page, group, name) {
-  const inline = group.getByRole("button", { name, exact: true });
-  if (await inline.count()) return inline;
-  const more = group.getByRole("button", { name: /More examples|更多示例/ });
-  await more.click();
-  return page
-    .getByRole("dialog", { name: /More examples|更多示例/ })
-    .getByRole("button", { name, exact: true });
-}
 
 async function fit(group) {
   await expect
@@ -30,7 +21,9 @@ async function fit(group) {
     .toEqual([]);
 }
 
-test("saved prompts survive a shuffle and can be managed from a phone", async ({ page }) => {
+test("saved prompts sit alongside the preset shortcuts and can be managed from a phone", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await provisionAndLogin(page.request, "startprompts", "password123");
   await setAccountPrefs(page.request, {
@@ -49,17 +42,17 @@ test("saved prompts survive a shuffle and can be managed from a phone", async ({
   ).toBeVisible();
   await expect(page.locator('[data-slot="count"]')).toHaveCount(0);
   await fit(shortcuts);
-  const draft = page.locator('[data-slot="composer"] textarea').first();
-  await (await action(page, shortcuts, "Reading notes")).click();
-  await expect(draft).toHaveValue("Summarize my reading notes.");
   const suggestions = shortcuts.locator('[data-slot="suggestion"]');
-  const before = await suggestions.allTextContents();
-  await (await action(page, shortcuts, "Shuffle suggestions")).click();
+  await expect(suggestions).toHaveCount(3);
+  expect(await suggestions.allTextContents()).toEqual([
+    "Build New App",
+    "Optimize App",
+    "Publish App",
+  ]);
+  const draft = page.locator('[data-slot="composer"] textarea').first();
+  await shortcuts.getByRole("button", { name: "Reading notes", exact: true }).click();
   await expect(draft).toHaveValue("Summarize my reading notes.");
-  expect((await suggestions.allTextContents()).every((label) => !before.includes(label))).toBe(
-    true,
-  );
-  await (await action(page, shortcuts, "Manage shortcuts")).click();
+  await shortcuts.getByRole("button", { name: "Manage shortcuts", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Edit" }).click();
   await page
     .getByRole("dialog")
@@ -73,14 +66,14 @@ test("saved prompts survive a shuffle and can be managed from a phone", async ({
   await expect(
     shortcuts.locator('[data-slot="saved-prompt"][aria-label="Book notes"]'),
   ).toHaveCount(1);
-  await (await action(page, shortcuts, "Manage shortcuts")).click();
+  await shortcuts.getByRole("button", { name: "Manage shortcuts", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
   await expect(shortcuts.getByRole("button", { name: "Book notes" })).toHaveCount(0);
-  await expect(await action(page, shortcuts, "New shortcut")).toBeVisible();
+  await expect(shortcuts.getByRole("button", { name: "New shortcut", exact: true })).toBeVisible();
 });
 
-test("long shortcut names fit one keyboard-accessible row on a desktop", async ({ page }) => {
+test("long shortcut names fit the keyboard-accessible row on a desktop", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 700 });
   await provisionAndLogin(page.request, "longshortcuts", "password123");
   const longName = "笔记".repeat(10) + " report";
@@ -99,14 +92,7 @@ test("long shortcut names fit one keyboard-accessible row on a desktop", async (
   await page.getByRole("dialog").getByRole("button", { name: "Later" }).click();
   const strip = page.getByRole("group", { name: "Examples and shortcuts" });
   await fit(strip);
-  const entry = strip.getByRole("button", { name: "More examples" });
-  if (await entry.count()) {
-    await entry.focus();
-    await page.keyboard.press("Enter");
-    await expect(page.getByRole("dialog", { name: "More examples" })).toBeVisible();
-    await page.keyboard.press("Escape");
-  }
-  const saved = await action(page, strip, longName);
+  const saved = strip.getByRole("button", { name: longName, exact: true });
   await saved.click();
   await expect(page.locator('[data-slot="composer"] textarea')).toHaveValue(
     "A longer Chinese shortcut",
@@ -146,11 +132,11 @@ for (const lang of ["zh", "en"]) {
       lang === "en"
         ? (await import("../src/lib/strings-en.ts")).en
         : (await import("../src/lib/strings.ts")).zh;
-    const label = await row.locator('[data-slot="suggestion"]').first().getAttribute("aria-label");
-    const expected = Object.values(chat.exampleTasks).find((option) => option.label === label);
-    await (await action(page, row, label)).click();
+    const firstSuggestion = row.locator('[data-slot="suggestion"]').first();
+    await expect(firstSuggestion).toHaveAccessibleName(chat.exampleTasks.buildApp.label);
+    await firstSuggestion.click();
     await expect(page.locator('[data-slot="composer"] textarea').first()).toHaveValue(
-      expected.prompt,
+      chat.exampleTasks.buildApp.prompt,
     );
     for (const width of [320, 375, 768, 1440]) {
       await page.setViewportSize({ width, height: 800 });
@@ -160,9 +146,11 @@ for (const lang of ["zh", "en"]) {
         document.documentElement.style.fontSize = "22px";
       });
       await fit(row);
-      const item = await action(page, row, second);
+      const item = row.getByRole("button", { name: second, exact: true });
       await expect(item).toHaveAccessibleName(second);
       await item.click();
+      // A fill over what an earlier fill put there, untouched, goes straight in.
+      await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(page.locator('[data-slot="composer"] textarea').first()).toHaveValue(prompt);
       await row.evaluate((el) => {
         el.parentElement.style.maxWidth = "";
@@ -171,53 +159,3 @@ for (const lang of ["zh", "en"]) {
     }
   });
 }
-
-test("saved actions take the shared positions and every overflow prompt is reachable", async ({
-  page,
-}) => {
-  await provisionAndLogin(page.request, "priorityshortcuts", "password123");
-  const saved = Array.from({ length: 3 }, (_, index) => ({
-    id: "plan-" + index,
-    title: "Weekly plan " + (index + 1),
-    prompt: "Draft the weekly plan for team " + (index + 1) + ".",
-  }));
-  await setAccountPrefs(page.request, { lang: "en", draftShortcuts: saved });
-  await page.goto("/chat/new");
-  await page.getByRole("dialog").getByRole("button", { name: "Later" }).click();
-  const row = page.getByRole("group", { name: "Examples and shortcuts" });
-  const draft = page.locator('[data-slot="composer"] textarea').first();
-  for (const [width, count] of [
-    [1280, 3],
-    [375, 2],
-    [320, 1],
-  ]) {
-    await page.setViewportSize({ width, height: 820 });
-    const direct = row.locator('[data-slot="saved-prompt"]');
-    await expect(direct).toHaveCount(count);
-    expect(await direct.allTextContents()).toEqual(saved.slice(0, count).map((item) => item.title));
-    await expect(row.locator('[data-slot="suggestion"]')).toHaveCount(0);
-    await fit(row);
-    await expect(row.getByRole("button", { name: "Manage shortcuts" })).toBeVisible();
-    const more = row.getByRole("button", { name: "More examples" });
-    await more.focus();
-    await page.keyboard.press("Enter");
-    const dialog = page.getByRole("dialog", { name: "More examples" });
-    for (const item of saved.slice(count))
-      await expect(dialog.getByRole("button", { name: item.title })).toBeVisible();
-    const examples = dialog
-      .locator("button")
-      .filter({ hasNotText: /Weekly plan|Shuffle suggestions/ });
-    const before = (await examples.allTextContents()).filter(Boolean);
-    await dialog.getByRole("button", { name: "Shuffle suggestions" }).click();
-    const after = (await examples.allTextContents()).filter(Boolean);
-    expect(before).toHaveLength(3);
-    expect(after.every((name) => !before.includes(name))).toBe(true);
-    if (count === saved.length) {
-      await page.keyboard.press("Escape");
-      await direct.last().click();
-    } else {
-      await dialog.getByRole("button", { name: saved[2].title }).click();
-    }
-    await expect(draft).toHaveValue(saved[2].prompt);
-  }
-});

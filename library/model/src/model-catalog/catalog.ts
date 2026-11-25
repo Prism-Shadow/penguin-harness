@@ -2293,6 +2293,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
+    // TokenDance's 2026-11-25 listing: text and image input, Chat Completions only, list price
+    // with no promotion.
+    modelId: "glm-5.4",
+    displayName: "GLM-5.4",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(2, 8, 28),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
     modelId: "hy4",
     displayName: "Hy4",
     provider: "tokendance",

@@ -37,13 +37,11 @@ import { toastApiError } from "../../lib/toast-api-error";
 import {
   workbenchAppPath,
   WORKBENCH_BUILDING_EVENT,
+  WORKBENCH_NEWS_SETTLE_MS,
   WORKBENCH_UPDATED_EVENT,
   type WorkbenchUpdatedDetail,
 } from "../../lib/workbench-tabs";
 import { failureNode } from "../../lib/failure";
-
-/** How long a burst of workbench news is gathered into one read (ms). */
-const NEWS_SETTLE_MS = 120;
 
 /** Each machine's shortcuts, kept for the tab: display data only, no icon and no path. */
 const remoteApps = createCatalogStore<AppCenterShortcut[]>(
@@ -164,7 +162,7 @@ export function useAppCenter(
           else catalogs.current.find((r) => r.machine.machineId === id)?.refresh();
         }
         machines.clear();
-      }, NEWS_SETTLE_MS);
+      }, WORKBENCH_NEWS_SETTLE_MS);
     };
     window.addEventListener(WORKBENCH_UPDATED_EVENT, news);
     window.addEventListener(WORKBENCH_BUILDING_EVENT, news);
