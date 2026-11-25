@@ -206,6 +206,7 @@ export class ManagedSubagentSession {
     // (the input_subagent call's own result, or the panel the user pressed stop on): the
     // settling round must not additionally fire a completion report at the parent.
     this.reportCurrentRun = false;
+    for (const req of [...this.approvals]) this.settle(req, "deny");
     this.runCtrl?.abort();
     return true;
   }

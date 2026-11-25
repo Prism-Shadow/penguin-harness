@@ -613,6 +613,56 @@ interface ChildSession {
   prompt: string;
 }
 
+/**
+ * Live state of a subagent child hosted inside a parent RuntimeEntry, so `/chat/:childSessionId`
+ * sees the child's own `statusOf`, `task_state`, `liveFragments`, and pre-request held inputs.
+ */
+interface HostedChildState {
+  parentSessionId: string;
+  publishedStatus: SessionStatus;
+  contextWindow?: SessionMetaPayload["model_context_window"];
+  taskOpen: boolean;
+  awaitingFirstRequest: boolean;
+  compacting: boolean;
+  pendingInputs: AmspRecord[];
+  pendingBootstrap: AmspRecord[];
+}
+
+/** Strips the outermost child session hop from an origin-tagged record. */
+function stripChildOrigin(msg: AmspRecord): { childSessionId: string; record: AmspRecord } | null {
+  if (!msg.origin || msg.origin.length === 0) return null;
+  const [childSessionId, ...restOrigin] = msg.origin;
+  if (!childSessionId) return null;
+  const { origin: _dropped, ...withoutOrigin } = msg;
+  return {
+    childSessionId,
+    record: restOrigin.length > 0 ? { ...withoutOrigin, origin: restOrigin } : withoutOrigin,
+  };
+}
+
+/** Strips the outermost child session hop from a pending approval request. */
+function stripApprovalOrigin(
+  pending: PendingApproval,
+): { childSessionId: string; pending: PendingApproval } | null {
+  const origin = pending.origin ?? pending.toolCall.origin;
+  if (!origin || origin.length === 0) return null;
+  const [childSessionId, ...restOrigin] = origin;
+  if (!childSessionId) return null;
+  const { origin: _dropped, ...toolCallWithoutOrigin } = pending.toolCall;
+  const toolCall =
+    restOrigin.length > 0
+      ? { ...toolCallWithoutOrigin, origin: restOrigin }
+      : toolCallWithoutOrigin;
+  return {
+    childSessionId,
+    pending: {
+      toolCall,
+      ...(restOrigin.length > 0 ? { origin: restOrigin } : {}),
+      ...(pending.reason !== undefined ? { reason: pending.reason } : {}),
+    },
+  };
+}
+
 /** Predicate for a plain-text message on the main session (no origin): title material is drawn only from user/model text. */
 function isPlainText(role: "user" | "assistant") {
   return (msg: AmspRecord): msg is AmspRecord<TextPayload> => {
@@ -662,6 +712,8 @@ export class SessionManager {
   >();
   /** Each Project's model config as last seen (see noticeModelConfigEdit). */
   private readonly modelConfigSeen = new Map<string, { table: unknown; models: string }>();
+  /** Hosted subagent children tracked while their parent entry is loaded. */
+  private readonly hostedChildren = new Map<string, HostedChildState>();
   /** Open streaming fragments and the current run's records (fed by drive, served to GET /messages; see live-tail.ts). */
   private readonly liveTail: LiveTail;
   private readonly sweepTimer: NodeJS.Timeout;
@@ -692,16 +744,68 @@ export class SessionManager {
 
   // —— Query surface (used by Session listing / Agent active-count / SSE subscription replay) ——
 
-  statusOf(sessionId: string): SessionStatus {
+  private entryStatusOf(sessionId: string): SessionStatus {
     return this.entries.get(sessionId)?.status ?? "idle";
   }
 
+  private runningChildOwner(
+    childSessionId: string,
+  ): { entry: RuntimeEntry; runtime: RuntimeSession } | undefined {
+    for (const entry of this.entries.values()) {
+      for (const old of entry.retired?.keys() ?? []) {
+        if (
+          old
+            .listBackgroundSubagents?.()
+            .some((child) => child.sessionId === childSessionId && child.running)
+        ) {
+          return { entry, runtime: old };
+        }
+      }
+      if (
+        entry.session
+          .listBackgroundSubagents?.()
+          .some((child) => child.sessionId === childSessionId && child.running)
+      ) {
+        return { entry, runtime: entry.session };
+      }
+    }
+    return undefined;
+  }
+
+  private isHostedChildRunning(sessionId: string): boolean {
+    if (this.runningChildOwner(sessionId) !== undefined) return true;
+    const hosted = this.hostedChildren.get(sessionId);
+    if (hosted?.taskOpen && this.entryStatusOf(hosted.parentSessionId) !== "idle") {
+      return true;
+    }
+    return false;
+  }
+
+  statusOf(sessionId: string): SessionStatus {
+    const direct = this.entryStatusOf(sessionId);
+    if (direct !== "idle") return direct;
+    return this.isHostedChildRunning(sessionId) ? "running" : "idle";
+  }
+
   pendingApprovalCount(sessionId: string): number {
-    return this.entries.get(sessionId)?.approvals.size ?? 0;
+    const direct = this.entries.get(sessionId)?.approvals.size ?? 0;
+    if (direct > 0) return direct;
+    return this.pendingApprovals(sessionId).length;
   }
 
   pendingApprovals(sessionId: string): PendingApproval[] {
-    return this.entries.get(sessionId)?.approvals.list() ?? [];
+    const direct = this.entries.get(sessionId)?.approvals.list() ?? [];
+    if (direct.length > 0) return direct;
+    const hosted: PendingApproval[] = [];
+    for (const entry of this.entries.values()) {
+      for (const pending of entry.approvals.list()) {
+        if (pending.origin?.[0] === sessionId) {
+          const stripped = stripApprovalOrigin(pending);
+          if (stripped) hosted.push(stripped.pending);
+        }
+      }
+    }
+    return hosted;
   }
 
   pendingModel(sessionId: string): ModelRefDto | undefined {
@@ -809,7 +913,7 @@ export class SessionManager {
     const parent = this.deps.sessions.findById(sessionId);
     let resume: { agentId: string; subagentId?: string } | undefined;
     const managed = this.childOwner(entry, childSessionId);
-    if (managed && this.statusOf(childSessionId) === "idle")
+    if (managed && this.entryStatusOf(childSessionId) === "idle")
       return (await managed.sendToBackgroundSubagent?.(childSessionId, messages)) ?? "gone";
     if (parent && this.entries.has(childSessionId)) {
       const owned = await this.deps.traces?.ownedSubagents(parent);
@@ -860,9 +964,11 @@ export class SessionManager {
     if (
       entry &&
       this.childOwner(entry, childSessionId)?.abortBackgroundSubagentRun?.(childSessionId)
-    )
+    ) {
+      this.denyChildApprovals(entry, childSessionId);
       return true;
-    if (this.statusOf(childSessionId) === "idle") return false;
+    }
+    if (this.entryStatusOf(childSessionId) === "idle") return false;
     const parent = this.deps.sessions.findById(sessionId);
     if (
       !parent ||
@@ -872,6 +978,14 @@ export class SessionManager {
     )
       return false;
     return this.abortTask(childSessionId);
+  }
+
+  private denyChildApprovals(entry: RuntimeEntry, childSessionId: string): void {
+    for (const pending of entry.approvals.list()) {
+      if (pending.origin?.[0] === childSessionId) {
+        entry.approvals.decide(pending.toolCall.payload.tool_call_id, "deny");
+      }
+    }
   }
 
   /** Queued follow-up tasks awaiting auto-start, as their display/recall info (id + content summary). */
@@ -907,12 +1021,20 @@ export class SessionManager {
    * (the draft flow subscribes only after the input publish) loses the user's own message.
    */
   pendingInputs(sessionId: string): AmspRecord[] {
-    return this.entries.get(sessionId)?.pendingInputs ?? [];
+    return (
+      this.entries.get(sessionId)?.pendingInputs ??
+      this.hostedChildren.get(sessionId)?.pendingInputs ??
+      []
+    );
   }
 
   /** The running Task's streamed bootstrap records (see RuntimeEntry.pendingBootstrap); empty when idle. */
   pendingBootstrap(sessionId: string): AmspRecord[] {
-    return this.entries.get(sessionId)?.pendingBootstrap ?? [];
+    return (
+      this.entries.get(sessionId)?.pendingBootstrap ??
+      this.hostedChildren.get(sessionId)?.pendingBootstrap ??
+      []
+    );
   }
 
   /** Number of Sessions for this Agent that are currently running / compacting. */
@@ -1023,7 +1145,25 @@ export class SessionManager {
     // session idle included. Core wraps the sink with the command policy, so a child's `ask`
     // hit routed there arrives with its policy reason and still reaches a person.
     const entry = this.entries.get(sessionId);
-    if (entry) session.setSubagentApprovalFallback?.(this.entryApprove(entry));
+    if (entry) {
+      session.setSubagentApprovalFallback?.(this.entryApprove(entry));
+      for (const child of this.subagentsOf(sessionId)) {
+        if (!this.hostedChildren.has(child.sessionId)) {
+          this.hostedChildren.set(child.sessionId, {
+            parentSessionId: sessionId,
+            publishedStatus: child.running ? "running" : "idle",
+            taskOpen: false,
+            awaitingFirstRequest: false,
+            compacting: false,
+            pendingInputs: [],
+            pendingBootstrap: [],
+          });
+        }
+        if (child.running && this.liveTail.run(child.sessionId) === null) {
+          this.liveTail.begin(child.sessionId);
+        }
+      }
+    }
   }
 
   private async resolveSubagent(callerId: string, address: string) {
@@ -1124,11 +1264,13 @@ export class SessionManager {
       }
     }
     const running = () =>
-      this.statusOf(id) !== "idle" ||
+      this.entryStatusOf(id) !== "idle" ||
       managed
         ?.listBackgroundSubagents?.()
         .some((child) => child.sessionId === id && child.running) === true;
-    const channel = this.deps.channels.get(this.statusOf(id) !== "idle" ? id : (ownerId ?? id));
+    const channel = this.deps.channels.get(
+      this.entryStatusOf(id) !== "idle" ? id : (ownerId ?? id),
+    );
     const wait = (timeout: number) =>
       new Promise<void>((resolve) => {
         const done = () => {
@@ -1147,7 +1289,9 @@ export class SessionManager {
       });
     let action: string | undefined;
     if (options.abort) {
-      const stopped = this.abortTask(id) || managed?.abortBackgroundSubagentRun?.(id);
+      const stopped =
+        (this.entryStatusOf(id) !== "idle" && this.abortTask(id)) ||
+        managed?.abortBackgroundSubagentRun?.(id);
       action = stopped
         ? "[subagent current run aborted]"
         : "[subagent was already idle; nothing to abort]";
@@ -1157,7 +1301,7 @@ export class SessionManager {
       if (options.abort && running())
         throw new Error("The original run is still stopping. Send the follow-up after it settles.");
       const input = [userText(options.prompt, "parent_agent")];
-      if (managed && this.statusOf(id) === "idle") {
+      if (managed && this.entryStatusOf(id) === "idle") {
         const sent = await managed.sendToBackgroundSubagent?.(id, input);
         if (sent !== "started" && sent !== "steered")
           throw new Error("The subagent cannot accept input right now.");
@@ -1215,13 +1359,30 @@ export class SessionManager {
       toolPermission: (name) => entry.session.toolPermission(name),
       registry: entry.approvals,
       unattended: () => this.deps.sessions.findById(entry.sessionId)?.client === "org",
-      publishRequest: (pending) =>
+      publishRequest: (pending) => {
         this.publishEvent(entry, {
           type: "approval_request",
           toolCall: pending.toolCall,
           ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
           ...(pending.reason !== undefined ? { reason: pending.reason } : {}),
-        }),
+        });
+        const childApproval = stripApprovalOrigin(pending);
+        if (childApproval) {
+          this.deps.channels.get(childApproval.childSessionId).publish(
+            {
+              type: "approval_request",
+              toolCall: childApproval.pending.toolCall,
+              ...(childApproval.pending.origin !== undefined
+                ? { origin: childApproval.pending.origin }
+                : {}),
+              ...(childApproval.pending.reason !== undefined
+                ? { reason: childApproval.pending.reason }
+                : {}),
+            },
+            "server_event",
+          );
+        }
+      },
     });
   }
 
@@ -1233,6 +1394,7 @@ export class SessionManager {
     // measures only the launching task, and a long background run ages into eviction.
     entry.lastActivityMs = Date.now();
     this.deps.channels.get(entry.sessionId).publish(msg);
+    this.publishChildStreamMessage(entry, msg);
     const ctx: UsageContext = {
       projectId: entry.projectId,
       agentId: entry.agentId,
@@ -1319,8 +1481,16 @@ export class SessionManager {
     this.assertAgentNotDeleting(sessionId);
     this.assertSessionNotDeleting(sessionId);
     const entry = this.entries.get(sessionId);
-    if (entry && !opts?.queueIfBusy && !opts?.interrupt && !opts?.steerIfBusy) {
-      this.assertIdle(entry);
+    if (!opts?.queueIfBusy && !opts?.interrupt && !opts?.steerIfBusy) {
+      if (entry) {
+        this.assertIdle(entry);
+      } else if (this.isHostedChildRunning(sessionId)) {
+        throw new HttpError(
+          409,
+          "task_in_progress",
+          "This Session already has a Task in progress.",
+        );
+      }
     }
   }
 
@@ -1337,6 +1507,13 @@ export class SessionManager {
       this.assertSessionNotDeleting(sessionId);
       const entry = this.entries.get(sessionId);
       if (entry) this.assertIdle(entry);
+      else if (this.isHostedChildRunning(sessionId)) {
+        throw new HttpError(
+          409,
+          "task_in_progress",
+          "This Session already has a Task in progress.",
+        );
+      }
       return operation();
     });
   }
@@ -1389,6 +1566,29 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
+      const hostedOwner = !this.entries.has(sessionId)
+        ? this.runningChildOwner(sessionId)
+        : undefined;
+      if (hostedOwner) {
+        if (opts?.steerIfBusy) {
+          const outcome = await hostedOwner.runtime.sendToBackgroundSubagent?.(sessionId, input);
+          if (outcome === "steered" || outcome === "started") {
+            hostedOwner.entry.lastActivityMs = Date.now();
+            return {
+              sessionId,
+              queued: false,
+              ...(outcome === "steered" ? { steered: true } : {}),
+            };
+          }
+        }
+        if (!opts?.queueIfBusy && !opts?.interrupt && !opts?.steerIfBusy) {
+          throw new HttpError(
+            409,
+            "task_in_progress",
+            "This Session already has a Task in progress.",
+          );
+        }
+      }
       const entry = await this.ensureEntry(sessionId);
       // Neither started nor queued on a runtime stranded on a model it cannot reach.
       assertNotStranded(entry);
@@ -1405,7 +1605,11 @@ export class SessionManager {
       // Each branch below adds the switches' contexts once it is known to take the input;
       // without a switch nothing is awaited, so a plain Task starts exactly as it always did.
       const hooks = opts?.promptHooks ?? [];
-      if (opts?.interrupt && (entry.status !== "idle" || entry.followUps.length > 0)) {
+      const hostedRunning = this.isHostedChildRunning(entry.sessionId);
+      if (
+        opts?.interrupt &&
+        (entry.status !== "idle" || hostedRunning || entry.followUps.length > 0)
+      ) {
         this.assertQueueRoom(entry);
         this.enqueueInterrupt(entry, {
           id: randomUUID(),
@@ -1416,7 +1620,7 @@ export class SessionManager {
         return { sessionId: entry.sessionId, queued: true };
       }
       if (
-        (entry.status !== "idle" || entry.queuedModel) &&
+        (entry.status !== "idle" || hostedRunning || entry.queuedModel) &&
         (opts?.queueIfBusy || opts?.steerIfBusy)
       ) {
         this.assertQueueRoom(entry);
@@ -1433,7 +1637,7 @@ export class SessionManager {
         entry.lastActivityMs = Date.now();
         // Re-publish the current state so subscribers pick up the new queued count (the
         // input itself is published when the follow-up actually starts).
-        this.publishState(entry, entry.status);
+        this.publishState(entry, this.statusOf(entry.sessionId));
         return { sessionId: entry.sessionId, queued: true };
       }
       this.assertIdle(entry);
@@ -2010,8 +2214,16 @@ export class SessionManager {
   /** Submit an approval decision; returns false if the pending approval doesn't exist (already decided/unknown). */
   decideApproval(sessionId: string, toolCallId: string, decision: "allow" | "deny"): boolean {
     const entry = this.entries.get(sessionId);
-    if (!entry) return false;
-    return entry.approvals.decide(toolCallId, decision);
+    if (entry?.approvals.decide(toolCallId, decision)) return true;
+    for (const parent of this.entries.values()) {
+      const pending = parent.approvals
+        .list()
+        .find((p) => p.toolCall.payload.tool_call_id === toolCallId && p.origin?.[0] === sessionId);
+      if (pending) {
+        return parent.approvals.decide(toolCallId, decision);
+      }
+    }
+    return false;
   }
 
   /**
@@ -2030,13 +2242,20 @@ export class SessionManager {
    */
   steer(sessionId: string, input: AmspRecord[], recall: RecallStore, driver?: string): void {
     const entry = this.entries.get(sessionId);
-    if (!entry || !this.steerRunning(entry, input, recall, driver)) {
-      throw new HttpError(
-        409,
-        "not_running",
-        "This Session has no Task in progress; send the message as a new task instead.",
-      );
+    if (entry && this.steerRunning(entry, input, recall, driver)) {
+      return;
     }
+    const hostedOwner = this.runningChildOwner(sessionId);
+    if (hostedOwner) {
+      void hostedOwner.runtime.sendToBackgroundSubagent?.(sessionId, input);
+      hostedOwner.entry.lastActivityMs = Date.now();
+      return;
+    }
+    throw new HttpError(
+      409,
+      "not_running",
+      "This Session has no Task in progress; send the message as a new task instead.",
+    );
   }
 
   /**
@@ -2194,10 +2413,15 @@ export class SessionManager {
       interrupt: true,
     });
     entry.lastActivityMs = Date.now();
-    this.publishState(entry, entry.status);
+    this.publishState(entry, this.statusOf(entry.sessionId));
     if (entry.abort) {
       entry.approvals.denyMain();
       entry.abort.abort();
+      return;
+    }
+    const hostedOwner = this.runningChildOwner(entry.sessionId);
+    if (hostedOwner && hostedOwner.runtime.abortBackgroundSubagentRun?.(entry.sessionId)) {
+      this.denyChildApprovals(hostedOwner.entry, entry.sessionId);
     }
   }
 
@@ -2239,12 +2463,19 @@ export class SessionManager {
    */
   abortTask(sessionId: string): boolean {
     const entry = this.entries.get(sessionId);
-    if (!entry || !entry.abort) return false;
-    // Deny only the MAIN session's pending approvals: an approval blocks the run the user is
-    // stopping. A subagent child survives the parent's stop, and so does its question.
-    entry.approvals.denyMain();
-    entry.abort.abort();
-    return true;
+    if (entry?.abort) {
+      // Deny only the MAIN session's pending approvals: an approval blocks the run the user is
+      // stopping. A subagent child survives the parent's stop, and so does its question.
+      entry.approvals.denyMain();
+      entry.abort.abort();
+      return true;
+    }
+    const hostedOwner = this.runningChildOwner(sessionId);
+    if (hostedOwner && hostedOwner.runtime.abortBackgroundSubagentRun?.(sessionId)) {
+      this.denyChildApprovals(hostedOwner.entry, sessionId);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -2349,6 +2580,15 @@ export class SessionManager {
       );
     }
     return Promise.allSettled(pending).then((results) => {
+      for (const [childSessionId, state] of [...this.hostedChildren]) {
+        if (state.parentSessionId !== entry.sessionId) continue;
+        this.liveTail.clear(childSessionId);
+        if (state.publishedStatus !== "idle" && this.entryStatusOf(childSessionId) === "idle") {
+          state.publishedStatus = "idle";
+          this.publishHostedChildState(childSessionId, state, "idle");
+        }
+        this.hostedChildren.delete(childSessionId);
+      }
       const failure = results.find((result) => result.status === "rejected");
       if (failure) throw failure.reason;
     });
@@ -2507,6 +2747,11 @@ export class SessionManager {
       // half hour would otherwise wait for a resume from the Trace (see keepLoaded).
       if (this.keptLoaded.has(key)) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
+      for (const [childSessionId, state] of [...this.hostedChildren]) {
+        if (state.parentSessionId !== entry.sessionId) continue;
+        this.liveTail.clear(childSessionId);
+        this.hostedChildren.delete(childSessionId);
+      }
       this.entries.delete(key);
     }
   }
@@ -2596,7 +2841,7 @@ export class SessionManager {
   }
 
   private assertIdle(entry: RuntimeEntry): void {
-    if (entry.status === "running") {
+    if (entry.status === "running" || this.isHostedChildRunning(entry.sessionId)) {
       throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
     }
     if (entry.status === "compacting" || entry.queuedModel) {
@@ -2994,6 +3239,9 @@ export class SessionManager {
         // endpoint captures "channel cursor + open fragments + the run's records" between
         // two publishes, so the capture is always a consistent snapshot (see live-tail.ts).
         this.liveTail.observe(entry.sessionId, msg, published);
+        if (msg.origin?.length) {
+          this.publishChildStreamMessage(entry, msg);
+        }
         echo.after(msg);
         watcher?.observe(msg);
         try {
@@ -3163,7 +3411,7 @@ export class SessionManager {
     // Every state flip also reports the queued follow-up count, the undelivered steering
     // mirror, and the live subagent children, so subscribers can render all three hints
     // without a dedicated event type.
-    const subagents = entry.session.listBackgroundSubagents?.() ?? [];
+    const subagents = this.subagentsOf(entry.sessionId);
     const meta = entry.session.metaMessage;
     this.publishEvent(entry, {
       type: "task_state",
@@ -3181,6 +3429,7 @@ export class SessionManager {
         : {}),
       ...(subagents.length > 0 ? { subagents } : {}),
     });
+    this.syncHostedChildrenState(entry);
     // The same flip again, this time on the user channel and carrying the Session id: a tab
     // subscribes to the ONE conversation it has open, so the event above can never move any
     // other row's badge. Only the queued/steering hints stay session-scoped — they belong to
@@ -3216,6 +3465,183 @@ export class SessionManager {
       lastActiveAt,
       hasTrace,
     });
+  }
+
+  private publishChildStreamMessage(entry: RuntimeEntry, msg: AmspRecord): void {
+    const stripped = stripChildOrigin(msg);
+    if (!stripped) return;
+    const { childSessionId, record } = stripped;
+    let state = this.hostedChildren.get(childSessionId);
+    if (!state) {
+      const running =
+        this.runningChildOwner(childSessionId) !== undefined ||
+        ((!record.origin || record.origin.length === 0) &&
+          (record.payload as { type?: string }).type !== "task_end");
+      state = {
+        parentSessionId: entry.sessionId,
+        publishedStatus: running ? "running" : "idle",
+        taskOpen: false,
+        awaitingFirstRequest: false,
+        compacting: false,
+        pendingInputs: [],
+        pendingBootstrap: [],
+      };
+      this.hostedChildren.set(childSessionId, state);
+      if (running && this.liveTail.run(childSessionId) === null) {
+        this.liveTail.begin(childSessionId);
+      }
+    } else {
+      state.parentSessionId = entry.sessionId;
+    }
+
+    if (!record.origin || record.origin.length === 0) {
+      const pt = (record.payload as { type?: string }).type;
+      if (isSessionMeta(record)) {
+        state.contextWindow = record.payload.model_context_window;
+      }
+      if (pt === "task_begin") {
+        state.taskOpen = true;
+        state.awaitingFirstRequest = true;
+        state.compacting = false;
+        state.pendingBootstrap = [];
+        if (this.liveTail.run(childSessionId) === null) {
+          this.liveTail.begin(childSessionId);
+        }
+        if (state.publishedStatus !== "running" && this.entryStatusOf(childSessionId) === "idle") {
+          state.publishedStatus = "running";
+          this.publishHostedChildState(childSessionId, state, "running");
+        }
+      } else if (pt === "task_end") {
+        state.taskOpen = false;
+        state.awaitingFirstRequest = false;
+        state.compacting = false;
+      } else {
+        if (
+          state.awaitingFirstRequest &&
+          record.type === "model_msg" &&
+          (pt === "text" || pt === "image") &&
+          (record.payload as { role?: string }).role === "user"
+        ) {
+          state.pendingInputs.push(record);
+        }
+        if (pt === "mcp_connect_begin" || pt === "mcp_connect_end" || pt === "tool_list_ready") {
+          state.pendingBootstrap.push(record);
+        }
+        if (pt === "compaction_begin") state.compacting = true;
+        else if (pt === "compaction_end") state.compacting = false;
+        if (pt === "request_begin" && !state.compacting) {
+          state.awaitingFirstRequest = false;
+          state.pendingInputs = [];
+          state.pendingBootstrap = [];
+        }
+      }
+    }
+
+    if (
+      state.publishedStatus === "running" &&
+      this.liveTail.run(childSessionId) === null &&
+      ((record.origin && record.origin.length > 0) ||
+        (record.payload as { type?: string }).type !== "task_end")
+    ) {
+      this.liveTail.begin(childSessionId);
+    }
+
+    const published = this.deps.channels.get(childSessionId).publish(record);
+    this.liveTail.observe(childSessionId, record, published);
+
+    if (
+      (!record.origin || record.origin.length === 0) &&
+      (record.payload as { type?: string }).type === "task_end"
+    ) {
+      if (!this.isHostedChildRunning(childSessionId)) {
+        this.liveTail.clear(childSessionId);
+        if (state.publishedStatus !== "idle" && this.entryStatusOf(childSessionId) === "idle") {
+          state.publishedStatus = "idle";
+          this.publishHostedChildState(childSessionId, state, "idle");
+        }
+        const childEntry = this.entries.get(childSessionId);
+        if (childEntry && (childEntry.queuedModel || childEntry.followUps.length > 0)) {
+          void this.state.current?.startQueuedFollowUp(childSessionId);
+        }
+      }
+    }
+  }
+
+  private syncHostedChildrenState(entry: RuntimeEntry): void {
+    for (const child of this.subagentsOf(entry.sessionId)) {
+      let state = this.hostedChildren.get(child.sessionId);
+      if (!state) {
+        state = {
+          parentSessionId: entry.sessionId,
+          publishedStatus: "idle",
+          taskOpen: false,
+          awaitingFirstRequest: false,
+          compacting: false,
+          pendingInputs: [],
+          pendingBootstrap: [],
+        };
+        this.hostedChildren.set(child.sessionId, state);
+      } else {
+        state.parentSessionId = entry.sessionId;
+      }
+    }
+    for (const [childSessionId, state] of this.hostedChildren) {
+      if (state.parentSessionId !== entry.sessionId) continue;
+      if (entry.status === "idle" && this.runningChildOwner(childSessionId) === undefined) {
+        state.taskOpen = false;
+        state.awaitingFirstRequest = false;
+        state.compacting = false;
+      }
+      if (this.entryStatusOf(childSessionId) !== "idle") continue;
+      const running = this.isHostedChildRunning(childSessionId);
+      if (running) {
+        if (this.liveTail.run(childSessionId) === null) {
+          this.liveTail.begin(childSessionId);
+        }
+        if (state.publishedStatus !== "running") {
+          state.publishedStatus = "running";
+          this.publishHostedChildState(childSessionId, state, "running");
+        }
+      } else {
+        this.liveTail.clear(childSessionId);
+        if (state.publishedStatus !== "idle") {
+          state.publishedStatus = "idle";
+          this.publishHostedChildState(childSessionId, state, "idle");
+          const childEntry = this.entries.get(childSessionId);
+          if (childEntry && (childEntry.queuedModel || childEntry.followUps.length > 0)) {
+            void this.state.current?.startQueuedFollowUp(childSessionId);
+          }
+        }
+      }
+    }
+  }
+
+  private publishHostedChildState(
+    childSessionId: string,
+    state: HostedChildState,
+    status: SessionStatus,
+  ): void {
+    const childEntry = this.entries.get(childSessionId);
+    const subagents = this.subagentsOf(childSessionId);
+    this.deps.channels.get(childSessionId).publish(
+      {
+        type: "task_state",
+        ...(state.contextWindow !== undefined ? { contextWindow: state.contextWindow } : {}),
+        state: status,
+        queued: childEntry?.followUps.length ?? 0,
+        ...(childEntry && childEntry.pendingSteering.length > 0
+          ? { pendingSteering: childEntry.pendingSteering.map((p) => p.info) }
+          : {}),
+        ...(childEntry && childEntry.returnedSteering.length > 0
+          ? { returnedSteering: childEntry.returnedSteering.map((p) => p.info) }
+          : {}),
+        ...(childEntry && childEntry.followUps.length > 0
+          ? { pendingFollowUps: childEntry.followUps.map(followUpInfo) }
+          : {}),
+        ...(subagents.length > 0 ? { subagents } : {}),
+      },
+      "server_event",
+    );
   }
 
   private publishEvent(entry: RuntimeEntry, event: ServerEvent): void {

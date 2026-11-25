@@ -1,0 +1,1 @@
+- Fixed jumping to a running subagent Session from the Agent panel wrongly displaying the conversation as finished (`idle`), and enabled live streaming, tool approvals, steering, and stop controls directly on the child Session view while it is hosted by a parent Session.
