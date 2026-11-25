@@ -335,6 +335,9 @@ importers:
       react-router:
         specifier: ^8.3.0
         version: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      zustand:
+        specifier: ^5.0.15
+        version: 5.0.15(@types/react@19.2.17)(react@19.2.7)
     devDependencies:
       '@types/react':
         specifier: ^19.1.0
@@ -8503,6 +8506,7 @@ snapshots:
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       react: 19.2.7
       react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - '@types/react'
@@ -8527,6 +8531,7 @@ snapshots:
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       react: 19.2.7
       react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - '@types/react'
