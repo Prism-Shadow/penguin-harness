@@ -72,7 +72,12 @@ export class AgentServiceProvider {
         // a library package's copy of core is an injected snapshot whose host was never
         // named. Two plugins carrying an MCP server of the same name: the creator's choice
         // to change, answered as the plugin routes answer it — not an internal error.
-        install: async (root: string, projectId: string, agentId: string, plugin: LibraryPlugin) => {
+        install: async (
+          root: string,
+          projectId: string,
+          agentId: string,
+          plugin: LibraryPlugin,
+        ) => {
           try {
             await installPlugin(root, projectId, agentId, plugin);
           } catch (err) {
