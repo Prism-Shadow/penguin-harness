@@ -190,7 +190,9 @@ function BrowserSurface({
   // workbench tab shown over the Chat window parks the page instead: the page is laid over the
   // slot from outside the window, so hiding the window does not hide it).
   const slotRef = useRef<HTMLDivElement | null>(null);
-  const [slotId] = useState(() => Symbol.for(`penguin-harness.browser-automation.slot:${slotSalt}:${++slotIds}`));
+  const [slotId] = useState(() =>
+    Symbol.for(`penguin-harness.browser-automation.slot:${slotSalt}:${++slotIds}`),
+  );
   const windowShown = useWindowShown();
   useLayoutEffect(() => {
     const element = slotRef.current;

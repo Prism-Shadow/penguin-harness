@@ -19,7 +19,9 @@ function apply(): void {
   dispatchBrowser({ type: "scope", ...target });
 }
 export function showWorkbenchGroup(sessionId: string, projectId: string): () => void {
-  const id = Symbol.for(`penguin-harness.browser-automation.workbench-group:${salt}:${++nextGroupId}`);
+  const id = Symbol.for(
+    `penguin-harness.browser-automation.workbench-group:${salt}:${++nextGroupId}`,
+  );
   active.set(id, { scope: sessionId, projectId });
   apply();
   return () => {

@@ -48,7 +48,8 @@ const inScope = (entry: { scope: string | null }, scope: string | undefined): bo
 // would load.
 let nextEntryId = 0;
 const salt = Math.random().toString(36).slice(2);
-const entryId = (): symbol => Symbol.for(`penguin-harness.ui.unsaved-entry:${salt}:${++nextEntryId}`);
+const entryId = (): symbol =>
+  Symbol.for(`penguin-harness.ui.unsaved-entry:${salt}:${++nextEntryId}`);
 
 /** Registers one dirty form; the handle is what {@link clearUnsaved} takes. */
 export function markUnsaved(scope: string | null, discard: (() => void) | null): symbol {
