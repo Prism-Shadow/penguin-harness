@@ -12,4 +12,5 @@ The contributor guide now explains when the development server runs the CLI from
 ## Details
 
 The launcher uses the checkout's TypeScript source when the server runs from source and
-can resolve `tsx`. The guide also explains the built CLI fallback and when to rebuild it.
+can resolve `tsx`. The guide explains when to regenerate command tables, when the launcher
+uses the built CLI, and when to rebuild it.

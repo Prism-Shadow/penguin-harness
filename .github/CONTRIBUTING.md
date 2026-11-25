@@ -46,8 +46,11 @@ The prestep builds `packages/cli` so the dev server has a built CLI to fall back
 A server started from TypeScript source writes a launcher in the data root's `bin/` directory
 and puts it first on the PATH of its Agents and terminals. The launcher prefers
 `packages/cli/src/penguin.ts` with the checkout's `tsx` loader, so the next CLI invocation
-picks up source edits without restarting the server. If source execution is unavailable,
-the launcher uses `packages/cli/dist/penguin.js`. A built server prefers that same built CLI.
+picks up command implementation edits without restarting the server. If you add a command
+or change its declaration metadata, run `pnpm --filter @prismshadow/penguin-cli gen:ifaces`
+to refresh the generated command tables before the next invocation.
+If source execution is unavailable, the launcher uses `packages/cli/dist/penguin.js`.
+A built server prefers that same built CLI.
 After editing the CLI for a built server, run `pnpm --filter @prismshadow/penguin-cli build`
 to refresh the build.
 

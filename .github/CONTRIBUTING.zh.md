@@ -40,7 +40,9 @@ Vite 依赖缓存（`packages/web/node_modules/.vite`）——该缓存仅以 lo
 预处理步骤会构建 `packages/cli`，为开发服务器准备备用的 CLI 构建产物。
 从 TypeScript 源码启动的服务器会在数据根目录的 `bin/` 下写入启动脚本，并把该目录放在
 Agent 和终端的 PATH 最前面。启动脚本优先通过当前检出的 `tsx` 加载器运行
-`packages/cli/src/penguin.ts`，因此下一次调用 CLI 就会读取修改后的源码，无需重启服务器。
+`packages/cli/src/penguin.ts`，因此修改命令实现后，下次调用 CLI 就会读取新源码，无需重启服务器。
+新增命令或修改命令声明的元数据后，请先运行 `pnpm --filter @prismshadow/penguin-cli gen:ifaces`
+更新生成的命令表，再调用 CLI。
 如果无法从源码运行，启动脚本会使用 `packages/cli/dist/penguin.js`。
 从构建产物启动的服务器优先使用同一份 CLI 构建产物。为这类服务器修改 CLI 后，
 运行 `pnpm --filter @prismshadow/penguin-cli build` 更新构建产物。
