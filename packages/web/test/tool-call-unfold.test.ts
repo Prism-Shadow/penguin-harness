@@ -25,7 +25,7 @@ import type { StreamRenderContext } from "../src/features/chat/message-stream";
 import { SessionToolCall, sessionBadgeIds } from "../src/features/chat/tool-call-card";
 import { createStreamController } from "../src/lib/amsp/stream-controller";
 import type { StreamController } from "../src/lib/amsp/stream-controller";
-import { findToolCard, type ToolCallItem } from "../src/lib/amsp/stream-model";
+import { createStreamModel, findToolCard, type ToolCallItem } from "../src/lib/amsp/stream-model";
 import { S } from "../src/lib/strings";
 import { ThemeProvider } from "../src/state/theme";
 import { button, click, mount, run, unmountAll } from "./helpers/dom";
@@ -208,6 +208,6 @@ describe("sessionBadgeIds", () => {
   });
 
   it("reads none from a bound subagent's card, whose chip already leads there", () => {
-    expect(sessionBadgeIds(item({ subagent: "myriad/penguin/dev" }))).toEqual([]);
+    expect(sessionBadgeIds(item({ subagent: createStreamModel() }))).toEqual([]);
   });
 });
