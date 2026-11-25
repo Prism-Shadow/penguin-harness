@@ -8,6 +8,7 @@
 import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
 import type { ModelPromotions, ModelProviderAuthTokens } from "@prismshadow/penguin-library-model";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import { ProjectConfigService } from "@prismshadow/penguin-library-project/project-config-service";
 
 export * from "@prismshadow/penguin-library-project/project-config-service";

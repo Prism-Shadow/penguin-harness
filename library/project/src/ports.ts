@@ -37,7 +37,8 @@ export interface ProjectChannel {
  * key, peeked at — never opened — so publishing reaches only a user who has the event stream
  * open (the server's `Channels` hub satisfies it).
  */
-export interface ProjectChannels {
+@Interface()
+export abstract class ProjectChannels {
   /** The user's open user-channel stream, or undefined when none is open. */
-  peekUser(userId: string): ProjectChannel | undefined;
+  abstract peekUser(userId: string): ProjectChannel | undefined;
 }
