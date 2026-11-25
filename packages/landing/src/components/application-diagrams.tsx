@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { ImageIcon, SiteGlyph, type SiteGlyphName } from "@prismshadow/penguin-ui/site";
 import { AppIconShape } from "../../../ui/src/components/icons/app-icon-shape/app-icon-shape";
 import { Spinner } from "../../../ui/src/components/icons/spinner/spinner";
@@ -6,58 +6,41 @@ import { sessionToolArt } from "../../../ui/src/components/icons/glyph-app-icon/
 import slidesIcon from "../../../../plugins/use-bento-slides/workbenches/slides/ui/icon.svg";
 import imagesIcon from "../../../../plugins/multimodal-tools/workbenches/images/ui/icon.svg";
 import supportIcon from "../../../../plugins/penguin-support/workbenches/support/ui/icon.svg";
+import benchmarkIcon from "../../../../plugins/agent-evaluation/workbenches/benchmark/ui/icon.svg";
 import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { useVisibleActivity } from "../lib/visible-activity";
 import { useWidth } from "../lib/use-width";
 import { S } from "../lib/strings";
 import "./application-diagrams.css";
 
-export function ScreenBar({
-  icon,
-  title,
-  count,
-  context,
-  contextIcon,
-}: {
-  icon: SiteGlyphName;
-  title: string;
-  /** How many items the screen lists, shown after its title as a list header does. */
-  count?: number;
-  context?: string;
-  contextIcon?: SiteGlyphName;
-}) {
+export function ScreenBar({ icon, title }: { icon: SiteGlyphName; title: string }) {
   return (
     <div className="scene-bar">
       <span className="scene-title">
         <SiteGlyph name={icon} width={19} height={19} />
         {title}
-        {count !== undefined && (
-          <span className="scene-count" data-app-count="">
-            <span key={count} className="scene-count-value">
-              {count}
-            </span>
-          </span>
-        )}
       </span>
-      {context && (
-        <span className="scene-context">
-          {contextIcon && <SiteGlyph name={contextIcon} width={15} height={15} />}
-          {context}
-        </span>
-      )}
     </div>
   );
 }
 
-type Tone = "brand" | "deep" | "soft" | "slate";
+/** A system app's tile: its page's glyph on the two-colour field the product gives that app. */
+function systemTile(glyph: SiteGlyphName, from: string, to: string) {
+  return { glyph, from, to };
+}
 
 /**
- * Every app the demo project can hold. The first nine are the start dashboard's three builder
- * examples, the shipped workbench art, the gallery's expense log and the session launcher's own
- * illustrations; the rest are line glyphs from the shared registry on tiles in the brand's blues,
- * so a generated app looks like one the App Center would draw for it.
+ * Every app the demo project can hold, drawn the way the App Center draws each kind: a system app
+ * wears its glyph on its own colour field, a shipped workbench and the session tools their own
+ * artwork, the start dashboard's three builder examples their glyph tiles, and an app with no
+ * icon of its own (`null`) the first letter of its name on a tinted tile.
  */
 const appTiles = {
+  models: systemTile("chip", "violet", "blue"),
+  plugins: systemTile("puzzle", "pink", "red"),
+  machines: systemTile("server", "teal", "blue"),
+  usage: systemTile("barChart", "green", "teal"),
+  evolution: benchmarkIcon,
   docs: <SiteGlyph name="bookOpen" />,
   investment: <SiteGlyph name="barChart" />,
   legal: <SiteGlyph name="file" />,
@@ -67,33 +50,43 @@ const appTiles = {
   expenses: null,
   terminal: sessionToolArt.get("session-tools-terminal"),
   browser: sessionToolArt.get("session-tools-builtin-browser"),
-  meetings: glyphTile("microphone", "brand"),
-  data: glyphTile("database", "deep"),
-  board: glyphTile("kanban", "soft"),
-  review: glyphTile("angleBrackets", "slate"),
-  mail: glyphTile("paperPlane", "soft"),
-  sales: glyphTile("dashboard", "brand"),
-  hiring: glyphTile("users", "deep"),
-  translate: glyphTile("globe", "soft"),
-  planner: glyphTile("calendar", "slate"),
-  competitor: glyphTile("eye", "brand"),
-  inventory: glyphTile("archive", "soft"),
-  weekly: glyphTile("penLine", "deep"),
-  monitor: glyphTile("pulse", "slate"),
-  quotes: glyphTile("coin", "soft"),
-  audit: glyphTile("shieldCheck", "brand"),
-  alerts: glyphTile("bell", "deep"),
-  tutor: glyphTile("lightbulb", "soft"),
+  meetings: null,
+  data: null,
+  board: null,
+  review: null,
+  mail: null,
+  sales: null,
+  hiring: null,
+  translate: null,
+  planner: null,
+  competitor: null,
+  inventory: null,
+  weekly: null,
+  monitor: null,
+  quotes: null,
+  audit: null,
+  alerts: null,
+  tutor: null,
+  contracts: null,
+  trips: null,
+  followup: null,
+  budget: null,
+  invoices: null,
+  quiz: null,
+  assets: null,
+  roster: null,
 };
 
 type AppKey = keyof typeof appTiles;
 
-function glyphTile(name: SiteGlyphName, tone: Tone) {
-  return { glyph: name, tone };
-}
-
-/** The apps the home screen opens on, in home-screen order. */
+/**
+ * The apps the home screen opens on, in home-screen order. The first twelve are what the
+ * narrowest screen shows at rest.
+ */
 const INSTALLED_APPS: readonly AppKey[] = [
+  "models",
+  "plugins",
+  "evolution",
   "docs",
   "investment",
   "legal",
@@ -103,12 +96,15 @@ const INSTALLED_APPS: readonly AppKey[] = [
   "expenses",
   "terminal",
   "browser",
+  "machines",
+  "usage",
 ];
 
 /**
- * What one sentence can generate, in the order the demo asks for it. The terminal and the browser
- * ship with the product, so they are never generated. The list must stay longer than the grid
- * shows at once: it repeats, and an app must have scrolled away before its name comes round again.
+ * What one sentence can generate, in the order the demo asks for it. System apps and the session
+ * tools ship with the product, so they are never generated. The list repeats, so it must stay
+ * longer than the widest screen shows at once, and the apps the screen opens on come last: an app
+ * must have scrolled away before its name comes round again.
  */
 const GENERATED_APPS = [
   "meetings",
@@ -128,9 +124,17 @@ const GENERATED_APPS = [
   "audit",
   "alerts",
   "tutor",
-  "legal",
+  "contracts",
+  "trips",
+  "followup",
+  "budget",
+  "invoices",
+  "quiz",
+  "assets",
+  "roster",
   "docs",
   "investment",
+  "legal",
   "slides",
   "images",
   "support",
@@ -147,84 +151,141 @@ function appAt(index: number): AppKey {
   );
 }
 
-function AppMark({ app, size = 52 }: { app: AppKey; size?: number }) {
+/** The name under a tile. The workbench the next section shows is one of the system apps. */
+function appName(app: AppKey): string {
+  return app === "evolution" ? S.selfImprove.workbench.title : S.cases.workspace.apps[app];
+}
+
+/** How many tints a letter tile can take: the product's palette for apps without an icon. */
+const LETTER_HUES = 8;
+
+/** Edge of a home-screen icon, and of the ring a building app wears just outside it, in px. */
+const ICON_PX = 56;
+const RING_PX = ICON_PX + 12;
+const RING_RADIUS = (RING_PX - 2) / 2;
+/** The arc's share of the ring, as the product's install ring draws it. */
+const RING_ARC = 0.28;
+
+function AppMark({ app }: { app: AppKey }) {
   const art = appTiles[app];
-  const drawn = typeof art === "object" && art !== null && "glyph" in art;
-  return (
-    <AppIconShape
-      size={size}
-      aria-hidden
-      className={`scene-app-mark ${drawn ? `scene-app-tone-${art.tone}` : `scene-app-${app}`}`}
-    >
-      {typeof art === "string" ? (
+  if (typeof art === "string")
+    return (
+      <AppIconShape size={ICON_PX} aria-hidden className="scene-app-mark">
         <ImageIcon
           icon={{ url: art, tint: false }}
-          size={size}
+          size={ICON_PX}
           fallback={<SiteGlyph name="layoutGrid" />}
         />
-      ) : drawn ? (
+      </AppIconShape>
+    );
+  if (art === null) {
+    // A stable tint per app, as the product derives one from the app's id.
+    const hue = Object.keys(appTiles).indexOf(app) % LETTER_HUES;
+    return (
+      <AppIconShape
+        size={ICON_PX}
+        aria-hidden
+        className={`scene-app-mark scene-app-letter scene-app-hue-${hue}`}
+      >
+        {[...appName(app)][0]?.toUpperCase()}
+      </AppIconShape>
+    );
+  }
+  if (typeof art === "object" && "from" in art)
+    return (
+      <AppIconShape
+        size={ICON_PX}
+        aria-hidden
+        className="scene-app-mark scene-app-system"
+        style={
+          {
+            "--system-from": `var(--ui-icon-tint-${art.from})`,
+            "--system-to": `var(--ui-icon-tint-${art.to})`,
+          } as CSSProperties
+        }
+      >
         <SiteGlyph name={art.glyph} />
-      ) : (
-        (art ?? S.cases.workspace.apps[app][0]?.toUpperCase())
-      )}
+      </AppIconShape>
+    );
+  return (
+    <AppIconShape size={ICON_PX} aria-hidden className={`scene-app-mark scene-app-${app}`}>
+      {art}
     </AppIconShape>
   );
 }
 
-/** Edge of a home-screen icon and of the ring an installing app wears just outside it, in px. */
-const ICON_PX = 52;
-const RING_PX = ICON_PX + 12;
-const RING_RADIUS = (RING_PX - 2) / 2;
+/** The grid's narrowest column and its gutter, in px: the App Center's own. */
+const COLUMN_PX = 112;
+const GUTTER_PX = 16;
+/** The room the home screen keeps clear on each side of its grid, in px. */
+const STAGE_INSET_PX = 24;
+/** A phone's three columns at the least, and no more than the generated list can keep distinct. */
+const MIN_COLUMNS = 3;
+const MAX_COLUMNS = 8;
+const ROWS = 4;
 
-/** A new sentence is sent this often, so a few apps are always generating at once. */
+/** A new sentence is sent this often, so a few apps are always building at once. */
 const SEND_MS = 700;
-/** How long each app takes to generate, by turn: uneven, so installs land out of step. */
-const GENERATE_MS = [2700, 3500, 2300, 3100] as const;
+/** How long each app takes to build, by turn: uneven, so installs land out of step. */
+const BUILD_MS = [2700, 3500, 2300, 3100] as const;
 
 /**
- * The Harness OS App Center as a home screen that keeps filling: one sentence after another goes
- * in, each becomes an app that installs in its own time, and the screen scrolls a row whenever
- * the last one fills. The count in the title is the number of installed apps.
+ * The Harness OS App Center, drawn after the product's own page: its header and actions, its home
+ * screen of icon-and-name tiles, and a composer docked under it. One sentence after another goes
+ * into the composer; each becomes an app that builds under the install ring in its own time, and
+ * the screen scrolls a row whenever the last one fills. The count beside the title is the number
+ * of installed apps.
  */
 export function AppGenerationDiagram() {
   const c = S.cases.workspace;
   const { ref, active } = useVisibleActivity<HTMLDivElement>();
   const reduced = usePrefersReducedMotion();
   const running = active && !reduced;
-  // The grid is laid out for the width it is shown at: a phone's four columns or a desktop's six.
-  const { ref: stage, width } = useWidth<HTMLDivElement>(640);
-  const columns = width < 480 ? 4 : 6;
-  const rows = columns === 4 ? 5 : 4;
+  // As many columns as fit at the product's tile width: the tiles keep their size at every width.
+  const { ref: stage, width } = useWidth<HTMLDivElement>(1100);
+  const columns = Math.min(
+    MAX_COLUMNS,
+    Math.max(
+      MIN_COLUMNS,
+      Math.floor((width - 2 * STAGE_INSET_PX + GUTTER_PX) / (COLUMN_PX + GUTTER_PX)),
+    ),
+  );
   // A run opens with the last row empty, so the first sentences visibly fill the screen.
-  const opening = columns * (rows - 1);
+  const opening = columns * (ROWS - 1);
 
-  /** Sentences sent so far, and the ones whose apps are still generating. */
+  /** Sentences sent so far, and the ones whose apps are still building. */
   const [sent, setSent] = useState(0);
-  const [pending, setPending] = useState<readonly number[]>([]);
+  const [building, setBuilding] = useState<readonly number[]>([]);
 
   useEffect(() => {
     setSent(0);
-    setPending([]);
+    setBuilding([]);
     if (!running) return;
     let turn = 0;
-    const timer = window.setInterval(() => {
-      const next = turn++;
-      setSent(next + 1);
-      setPending((list) => [...list, next]);
+    const timers = new Set<number>();
+    const send = window.setInterval(() => {
+      const mine = turn++;
+      setSent(mine + 1);
+      setBuilding((list) => [...list, mine]);
+      const done = window.setTimeout(
+        () => {
+          timers.delete(done);
+          setBuilding((list) => list.filter((item) => item !== mine));
+        },
+        BUILD_MS[mine % BUILD_MS.length],
+      );
+      timers.add(done);
     }, SEND_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(send);
+      for (const timer of timers) window.clearTimeout(timer);
+    };
   }, [running, columns]);
 
-  // An app is installed when its ring closes: the ring's own animation ends the generating state,
-  // so the two cannot drift apart.
-  const land = useCallback((turn: number) => {
-    setPending((list) => list.filter((item) => item !== turn));
-  }, []);
-
   // Still, the screen is full and everything on it is installed.
-  const total = reduced ? columns * rows : opening + sent;
-  const installed = total - pending.length;
-  const scrolled = Math.max(0, Math.ceil(total / columns) - rows);
+  const total = reduced ? columns * ROWS : opening + sent;
+  const installed = total - building.length;
+  const scrolled = Math.max(0, Math.ceil(total / columns) - ROWS);
   // One row above the screen stays mounted while it scrolls out of sight.
   const first = Math.max(0, scrolled - 1) * columns;
   // The sentence being typed is the one the next app will come from.
@@ -239,41 +300,30 @@ export function AppGenerationDiagram() {
       role="group"
       aria-label={c.title}
     >
-      <ScreenBar
-        icon="layoutGrid"
-        title={c.title}
-        count={installed}
-        context={c.project}
-        contextIcon="folderOpen"
-      />
-      <div className="scene-builder-bar" aria-hidden="true">
-        <span className="scene-builder-badge">
-          <SiteGlyph name="robot" width={13} height={13} />
-          {c.builderLabel}
-        </span>
-        <span className="scene-builder-prompt">
-          <span className="scene-builder-prompt-text" key={sent}>
-            {c.prompts[asking]}
+      <div className="scene-app-header">
+        <span className="scene-app-title">
+          {c.title}
+          <span className="scene-count" data-app-count="">
+            <span key={installed} className="scene-count-value">
+              {installed}
+            </span>
           </span>
         </span>
-        <span className="scene-builder-status">
-          {running ? (
-            <>
-              <Spinner className="scene-activity" label={c.generating} />
-              {c.generating}
-            </>
-          ) : (
-            <>
-              <SiteGlyph name="check" width={13} height={13} />
-              {c.installing}
-            </>
-          )}
+        <span className="scene-app-actions" aria-hidden="true">
+          <span className="scene-app-action">
+            <SiteGlyph name="folderPlus" width={14} height={14} />
+            {c.newFolder}
+          </span>
+          <span className="scene-app-action scene-app-action-primary">
+            <SiteGlyph name="sparkles" width={14} height={14} />
+            {c.createWithAi}
+          </span>
         </span>
       </div>
       <div
         ref={stage}
         className="scene-os-stage"
-        style={{ "--scene-columns": columns, "--scene-rows": rows } as CSSProperties}
+        style={{ "--scene-columns": columns, "--scene-rows": ROWS } as CSSProperties}
       >
         <ul
           className="scene-launcher"
@@ -287,8 +337,8 @@ export function AppGenerationDiagram() {
             const generated = running && turn >= 0;
             const state = !generated
               ? "installed"
-              : pending.includes(turn)
-                ? "generating"
+              : building.includes(turn)
+                ? "building"
                 : "landed";
             return (
               <li
@@ -303,7 +353,7 @@ export function AppGenerationDiagram() {
               >
                 <span className="scene-app-slot">
                   {state === "landed" && <span className="scene-app-ripple" aria-hidden="true" />}
-                  <AppMark app={app} size={ICON_PX} />
+                  <AppMark app={app} />
                   {generated && (
                     <svg
                       className="scene-install-ring"
@@ -318,18 +368,45 @@ export function AppGenerationDiagram() {
                         cy={RING_PX / 2}
                         r={RING_RADIUS}
                         pathLength={1}
-                        className="scene-install-progress"
-                        style={{ animationDuration: `${GENERATE_MS[turn % GENERATE_MS.length]}ms` }}
-                        onAnimationEnd={() => land(turn)}
+                        strokeDasharray={`${RING_ARC} 1`}
                       />
                     </svg>
                   )}
                 </span>
-                <span className="scene-app-label">{c.apps[app]}</span>
+                <span className="scene-app-label">{appName(app)}</span>
               </li>
             );
           })}
         </ul>
+      </div>
+      <div className="scene-composer-dock" aria-hidden="true">
+        <div className="scene-composer">
+          <span className="scene-composer-text" key={sent}>
+            {c.prompts[asking]}
+          </span>
+          <div className="scene-composer-row">
+            <span className="scene-composer-chip">
+              <SiteGlyph name="robot" width={13} height={13} />
+              {c.builderLabel}
+            </span>
+            <span className="scene-composer-status">
+              {running ? (
+                <>
+                  <Spinner className="scene-activity" label={c.generating} />
+                  {c.generating}
+                </>
+              ) : (
+                <>
+                  <SiteGlyph name="check" width={13} height={13} />
+                  {c.installing}
+                </>
+              )}
+            </span>
+            <span className="scene-composer-send">
+              <SiteGlyph name="arrowUp" width={14} height={14} />
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

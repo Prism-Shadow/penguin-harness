@@ -286,6 +286,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       builderLabel: "A2APP Builder",
       generating: "Generating app…",
       installing: "Installed in Harness OS",
+      newFolder: "New folder",
+      createWithAi: "Create with AI",
       prompts: {
         legal:
           "Build a contract review app: upload agreements, flag risky clauses, and export reports",
@@ -322,6 +324,19 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         alerts: "Build an ops alerts app: group monitoring alerts and suggest likely causes",
         tutor:
           "Create a study coach app: turn missed questions into similar exercises with worked answers",
+        contracts:
+          "Build a contract ledger app: record each contract’s amount and end date and remind before renewal",
+        trips: "Create a trip planner app: gather flight and hotel bookings into a day-by-day plan",
+        followup:
+          "Build a customer follow-up app: draft talking points from the last call and log the outcome",
+        budget:
+          "Create a budget planner app: enter each expense, compare it with the budget, and flag overruns",
+        invoices:
+          "Build an invoice check app: upload invoices and verify the payer, tax ID, and amount",
+        quiz: "Create a quiz builder app: write questions from training material and track everyone’s scores",
+        assets: "Build an asset tracker app: scan devices in and list what the count is missing",
+        roster:
+          "Create a shift roster app: schedule shifts around people and leave and suggest swaps on conflicts",
       },
       apps: {
         docs: "Document Q&A",
@@ -350,6 +365,18 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         audit: "Security Audit",
         alerts: "Ops Alerts",
         tutor: "Study Coach",
+        models: "Models",
+        plugins: "Plugins",
+        machines: "Machines",
+        usage: "Cost Center",
+        contracts: "Contract Ledger",
+        trips: "Trip Planner",
+        followup: "Customer Follow-up",
+        budget: "Budget Planner",
+        invoices: "Invoice Check",
+        quiz: "Quiz Builder",
+        assets: "Asset Tracker",
+        roster: "Shift Roster",
       },
     },
   },

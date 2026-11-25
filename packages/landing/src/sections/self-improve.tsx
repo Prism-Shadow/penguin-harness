@@ -7,6 +7,7 @@
  * three curves a notch, so accuracy rises and cost and duration fall as the loops turn.
  */
 import { useEffect, useState, type CSSProperties } from "react";
+import { SiteGlyph, type SiteGlyphName } from "@prismshadow/penguin-ui/site";
 import { ScreenBar } from "../components/application-diagrams";
 import { S } from "../lib/strings";
 import { useVisibleActivity } from "../lib/visible-activity";
@@ -161,9 +162,21 @@ const ARCS = Array.from({ length: STAGES }, (_, stage) => {
 });
 
 /**
- * One tested agent going round its loop. The arcs already walked this round stay drawn, the
- * current one draws itself over the tick, and closing the last arc clears the ring and bumps the
- * version in its centre.
+ * What tells one tested agent from the next, index-aligned with S.selfImprove.workbench.tasks: a
+ * glyph for its domain (coverage review, service tickets, financial control, court records) on a
+ * tile in one of the App Center's shades, so the four differ by shape and shade and share the hue.
+ */
+const AGENT_MARKS: ReadonlyArray<{ glyph: SiteGlyphName; tone: string }> = [
+  { glyph: "shieldCheck", tone: "brand" },
+  { glyph: "bubbleLines", tone: "soft" },
+  { glyph: "barChart", tone: "deep" },
+  { glyph: "folderOpen", tone: "slate" },
+];
+
+/**
+ * One tested agent going round its loop, its mark in the centre with the version under it. The
+ * arcs already walked this round stay drawn, the current one draws itself over the tick, and
+ * closing the last arc clears the ring and bumps the version.
  */
 function AgentLoop({ index, tick }: { index: number; tick: number }) {
   const c = S.selfImprove.workbench;
@@ -171,6 +184,7 @@ function AgentLoop({ index, tick }: { index: number; tick: number }) {
   const walked = tick + index;
   const stage = walked % STAGES;
   const version = 1 + Math.floor(walked / STAGES);
+  const mark = AGENT_MARKS[index % AGENT_MARKS.length]!;
   return (
     <li data-agent-loop={task.name}>
       <span className="evo-ring">
@@ -183,6 +197,9 @@ function AgentLoop({ index, tick }: { index: number; tick: number }) {
             </g>
           ))}
         </svg>
+        <span className={`evo-agent-mark scene-app-tone-${mark.tone}`} aria-hidden="true">
+          <SiteGlyph name={mark.glyph} />
+        </span>
         <span className="evo-version" key={version} data-agent-version="">
           {`v${version}`}
         </span>
