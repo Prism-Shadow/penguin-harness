@@ -16,6 +16,7 @@ export { DockModule } from "./dock/module";
 // preference storage reads.
 export {
   APPROVAL_MODES,
+  AgentTopologyView,
   ChatDrafts,
   DRAFT_SESSION_ID,
   HistoryFileLoading,
@@ -26,14 +27,16 @@ export {
   createStreamFollow,
   dispatchChatDefaultsChanged,
   draftKey,
+  layoutTopology,
   loadDraft,
   parkActiveDraft,
   prepareNewChatDraft,
   saveDraft,
   stickToBottom,
   useNewChat,
+  useProjectApps,
 } from "./chat";
-export type { ChatDefaultsChangedDetail, DraftCache, DraftStorage } from "./chat";
+export type { ChatDefaultsChangedDetail, DraftCache, DraftStorage, TopologyNode } from "./chat";
 
 // The session list's public face: the sidebar controller the frame binds and the rows and
 // dialogs it renders.
@@ -57,6 +60,7 @@ export {
   detachDockPage,
   dockActiveKey,
   dockVersion,
+  isNarrow,
   isTabShown,
   launcherHiddenVersion,
   openPanel,

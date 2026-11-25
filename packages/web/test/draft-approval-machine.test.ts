@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toastStore } from "@prismshadow/penguin-ui";
 import type { ChatDefaultsDto } from "@prismshadow/penguin-server/api";
 import { S } from "../src/lib/strings";
-import { draftKey, saveDraft } from "../src/features/chat/draft-cache";
+import { draftKey, saveDraft } from "@prismshadow/penguin-library-session/web";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { whereIs } from "./helpers/agent-app";
 import { button, click, hasButton, menuItem, run, type, unmountAll, waitFor } from "./helpers/dom";

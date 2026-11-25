@@ -27,7 +27,15 @@ export {
   localizedText,
 } from "@prismshadow/penguin-web/internal";
 export { createStreamFollow, stickToBottom } from "./stream-follow";
+
 export { shortSessionId } from "./agent-topology";
+
+export { layoutTopology } from "./agent-topology";
+export type { TopologyNode } from "./agent-topology";
+
+export { AgentTopologyView } from "./agent-topology-view";
+
+export { useProjectApps } from "./use-project-apps";
 
 export { draftSessionTitle } from "./draft-sessions";
 

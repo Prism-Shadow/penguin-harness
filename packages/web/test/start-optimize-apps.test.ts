@@ -10,7 +10,7 @@
 import { afterEach, expect, it } from "vitest";
 import { createElement as h } from "react";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
-import { useProjectApps } from "../src/features/chat/use-project-apps";
+import { useProjectApps } from "@prismshadow/penguin-library-session/web";
 import { WORKBENCH_NEWS_SETTLE_MS, WORKBENCH_UPDATED_EVENT } from "../src/lib/workbench-tabs";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import { mount, run, settle, unmountAll } from "./helpers/dom";

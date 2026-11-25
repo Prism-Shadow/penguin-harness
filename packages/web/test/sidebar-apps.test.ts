@@ -6,7 +6,7 @@ import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../src/api/endpoints";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
-import { detachDockPage, isTabShown } from "../src/features/dock";
+import { detachDockPage, isTabShown } from "@prismshadow/penguin-library-session/web";
 import { useAppDockDrop } from "../src/features/page-workspace/app-dock-drop";
 import { PAGE_DRAG_TYPE } from "../src/lib/page-layout";
 import { usePageWorkspace } from "../src/lib/page-workspace-context";

@@ -20,8 +20,11 @@ import { createElement as h } from "react";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { fitView, viewTransform, zoomAt, ZOOM_STEP } from "../src/lib/canvas-view";
-import { layoutTopology, type TopologyNode } from "../src/features/chat/agent-topology";
-import { AgentTopologyView } from "../src/features/chat/agent-topology-view";
+import {
+  AgentTopologyView,
+  layoutTopology,
+  type TopologyNode,
+} from "@prismshadow/penguin-library-session/web";
 import { button, click, hasButton, mount, run, unmountAll } from "./helpers/dom";
 
 const ROOT: TopologyNode = {
