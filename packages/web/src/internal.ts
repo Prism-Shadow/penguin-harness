@@ -10,6 +10,16 @@
  * Deliberately a re-export hub and nothing more: no logic, no defaults.
  */
 
+||||||| parent of d104c117c4 (fix(web): the hub's chord re-exports join the dock's load-time bindings at the top)
+// The dock's load-time calls come through here first: the moved dock modules call these two
+// bindings as their bodies run, and a face import inside the hub's own sources
+// (lib/account-sync/prefs) can loop back into them mid-load. Their re-exports are the hub's
+// first statements, so the bindings are in place however the cycle re-enters.
+
+export { subscribeAccountApplied, syncedStorage, writeCached } from "./lib/account-sync/cache";
+
+export { onCommand } from "./lib/shortcuts/dispatcher";
+
 export { ApiError } from "./api/client";
 
 export * as api from "./api/endpoints";
@@ -453,8 +463,6 @@ export {
   sessionWorkbenchPage,
 } from "./lib/session-workbenches";
 export type { SessionWorkbenchKind } from "./lib/session-workbenches";
-
-export { chordEquals, chordOf, parseChord } from "./lib/shortcuts/chord";
 
 export { currentPlatform } from "./lib/shortcuts/platform";
 
