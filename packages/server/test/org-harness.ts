@@ -20,6 +20,9 @@ import { DEFAULT_EMPLOYEE_PLUGINS } from "../src/runtime/organization/deps.js";
 import type { OrgDeps } from "../src/runtime/organization/deps.js";
 import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js";
 import { OrganizationService } from "../src/runtime/organization/service.js";
+import { SEMANTIC_ID_RULES } from "../src/services/semantic-id.js";
+import { suggestSemanticId } from "../src/services/semantic-id-suggest.js";
+import { isNewSemanticId } from "../src/services/ids.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import { makeTempRoot } from "./helpers.js";
 
@@ -210,6 +213,17 @@ export async function makeOrgHarness(opts: {
       dailyCostForSessions: async () => [],
     },
     messagingChannel: () => null,
+    // The semantic-id vocabulary is the server's own; the harness binds it the way the app's
+    // module does, minus the model ask (completeOnce stays unset, as the deps field allows).
+    semanticId: {
+      suggest: ({ projectId, name, kind, taken, completeOnce, recordFailure }) =>
+        suggestSemanticId(
+          { completeOnce, recordFailure },
+          projectId,
+          { name, kind, rule: SEMANTIC_ID_RULES[kind], taken },
+        ),
+      acceptsNew: isNewSemanticId,
+    },
     errors: { record: (e) => void errors.push(e) },
     notifyProject: (_p, event) => void events.push(event),
     companyModeEnabled: () => flags.companyMode,

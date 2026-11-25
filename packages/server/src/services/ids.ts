@@ -12,15 +12,14 @@
  * the server (randomHex8).
  */
 import { randomBytes } from "node:crypto";
-import { isWindowsReservedName } from "@prismshadow/penguin-core";
+import { isWindowsReservedName, SEMANTIC_ID_PATTERN } from "@prismshadow/penguin-core";
+
+export { SEMANTIC_ID_PATTERN };
 
 /** 8-character lowercase hex random string (used for server-generated ids like session_id / temporary workspace). */
 export function randomHex8(): string {
   return randomBytes(4).toString("hex");
 }
-
-/** General semantic id rule: starts with a lowercase letter, followed by lowercase letters, digits, or underscores only, 2-64 chars (no hyphen). */
-export const SEMANTIC_ID_PATTERN = /^[a-z][a-z0-9_]{1,63}$/;
 
 /**
  * Whether an id may be CREATED: the general rule, and not a name Windows reserves (`con`, `nul`,
