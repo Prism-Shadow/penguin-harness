@@ -16,6 +16,7 @@ export default defineConfig({
     "src/model-catalog/seed.ts",
     "src/repos/model-promotions.ts",
     "src/repos/model-provider-auth-tokens.ts",
+    "src/model-balance.ts",
   ],
   format: ["esm"],
   target: "node24",

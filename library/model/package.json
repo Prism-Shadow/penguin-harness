@@ -68,6 +68,10 @@
       "types": "./dist/model-catalog/seed.d.ts",
       "import": "./dist/model-catalog/seed.js"
     },
+    "./model-balance": {
+      "types": "./dist/model-balance.d.ts",
+      "import": "./dist/model-balance.js"
+    },
     "./repos/model-promotions": {
       "types": "./dist/repos/model-promotions.d.ts",
       "import": "./dist/repos/model-promotions.js"

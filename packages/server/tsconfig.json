@@ -199,6 +199,9 @@
       "@prismshadow/penguin-library-model/repos/model-provider-auth-tokens": [
         "../../library/model/src/repos/model-provider-auth-tokens.ts"
       ],
+      "@prismshadow/penguin-library-model/model-balance": [
+        "../../library/model/src/model-balance.ts"
+      ],
       "@prismshadow/penguin-library-machine": ["../../library/machine/src/index.ts"],
       "@prismshadow/penguin-library-machine/browser-extensions": [
         "../../library/machine/src/browser-extensions.ts"

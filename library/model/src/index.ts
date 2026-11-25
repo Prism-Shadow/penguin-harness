@@ -8,6 +8,7 @@
  * Subpaths:
  * - `.` - the vocabulary plus the mechanisms.
  * - `./model` - the vocabulary module on its own.
+ * - `./model-balance` - the group balance reader.
  * - `./repos/model-promotions`, `./repos/model-provider-auth-tokens` - the storing components.
  */
 export type {
@@ -48,6 +49,9 @@ export type {
   EndpointModelListResponse,
   ModelBalanceAmount,
   ModelBalanceErrorCode,
+  ModelBalanceFailure,
+  ModelBalanceReading,
+  ModelBalanceResponse,
   ModelOAuthErrorCode,
   ModelOAuthMode,
   ModelOAuthStartResult,
@@ -58,3 +62,5 @@ export type {
 export { ModelPromotions, ModelProviderAuthTokens, ModelOAuth } from "./model.js";
 export { ModelPromotionsRepo } from "./repos/model-promotions.js";
 export { ModelProviderAuthTokensRepo } from "./repos/model-provider-auth-tokens.js";
+export { ModelBalances, microToDecimal, readBalance } from "./model-balance.js";
+export type { BalanceFigures, ModelBalanceDeps } from "./model-balance.js";
