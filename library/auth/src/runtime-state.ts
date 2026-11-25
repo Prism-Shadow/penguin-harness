@@ -19,13 +19,13 @@ import { Interface } from "@prismshadow/penguin-core/kernel";
 @Interface()
 export abstract class AuthRuntimeState {
   /** The first-login link this boot printed, or null before one was minted. */
-  firstLoginToken: string | null;
+  firstLoginToken: string | null = null;
   /**
    * This boot's local API token (auth/api-token.ts), installed by the startup assembly.
    * Null in constructions that never minted one — they simply never authenticate a Bearer
    * header.
    */
-  apiToken: string | null;
+  apiToken: string | null = null;
 }
 
 export function newAuthRuntimeState(): AuthRuntimeState {
