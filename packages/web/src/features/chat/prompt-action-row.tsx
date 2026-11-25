@@ -30,7 +30,7 @@ export function PromptButton({ action }: { action: PromptAction }) {
   const button = (
     <Button
       size="sm"
-      variant="ghost"
+      variant="secondary"
       data-slot={action.slot}
       aria-current={action.current || undefined}
       aria-haspopup={action.menu ? "menu" : undefined}
@@ -39,14 +39,16 @@ export function PromptButton({ action }: { action: PromptAction }) {
       aria-label={action.label}
       title={action.hint ?? action.label}
       onClick={action.run}
-      className="h-9 min-w-0 max-w-full !justify-start gap-2 !px-2 text-start aria-current:text-accent"
+      className="h-9 min-w-0 max-w-full gap-2 rounded-[var(--ui-radius-pill)] !px-3.5 aria-current:border-accent aria-current:bg-accent-muted aria-current:text-accent aria-expanded:bg-control-hover"
       leading={
         action.glyph ? (
           <GlyphIcon
             d={action.glyph}
             size={ICON_SIZE.rowLead}
             className={
-              action.slot === "saved-prompt" ? "shrink-0 text-accent" : "shrink-0 text-fg-subtle"
+              action.current || action.slot === "saved-prompt"
+                ? "shrink-0 text-accent"
+                : "shrink-0 text-fg-muted"
             }
           />
         ) : undefined
@@ -73,7 +75,7 @@ export function PromptActionRow({
       role="group"
       aria-label={S.chat.start.examplesTitle}
       data-slot="examples"
-      className="mt-3 flex w-full min-w-0 flex-wrap items-center gap-1.5"
+      className="mt-4 flex w-full min-w-0 flex-wrap items-center justify-center gap-2"
     >
       {prompts.map((action) => (
         <PromptButton key={action.id} action={action} />
@@ -81,9 +83,9 @@ export function PromptActionRow({
       {manage && (
         <IconButton
           label={manage.label}
-          variant="ghost"
+          variant="secondary"
           onClick={manage.run}
-          className="min-h-9 min-w-8 shrink-0"
+          className="size-9 shrink-0 rounded-[var(--ui-radius-pill)] text-fg-muted hover:text-fg"
         >
           <GlyphIcon d={manage.glyph!} size={ICON_SIZE.rowLead} />
         </IconButton>

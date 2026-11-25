@@ -276,7 +276,7 @@ function OptimizeAppPickList({
     );
   return (
     <>
-      <div className="border-b border-gray-100 px-2 pb-1.5 pt-0.5 dark:border-gray-800">
+      <div className="border-b border-line-muted px-2 pb-1.5 pt-0.5">
         <SearchInput
           variant="menu"
           autoFocus
@@ -297,9 +297,9 @@ function OptimizeAppPickList({
       </div>
       <div ref={listRef} className="max-h-56 overflow-y-auto">
         {apps.length === 0 ? (
-          <p className="px-3 py-1.5 text-xs text-gray-400">{S.chat.start.appsEmptyHint}</p>
+          <p className="px-3 py-1.5 text-xs text-fg-subtle">{S.chat.start.appsEmptyHint}</p>
         ) : filtered.length === 0 ? (
-          <p className="px-3 py-1.5 text-xs text-gray-400">{S.chat.start.appsNoMatch}</p>
+          <p className="px-3 py-1.5 text-xs text-fg-subtle">{S.chat.start.appsNoMatch}</p>
         ) : (
           filtered.map((app) => {
             const title = appShortcutTitle(app, locale);
@@ -316,13 +316,13 @@ function OptimizeAppPickList({
                     icon={app.icon}
                     fallback={ICONS.appWindow}
                     size={ICON_SIZE.inlineGlyph}
-                    className="shrink-0 text-gray-400 dark:text-gray-500"
+                    className="shrink-0 text-fg-subtle"
                   />
                 }
                 label={
                   <>
                     <span>{title}</span>{" "}
-                    <span className="text-gray-400 dark:text-gray-500">
+                    <span className="text-fg-subtle">
                       {app.agentName} / {app.workbenchId}
                     </span>
                   </>
