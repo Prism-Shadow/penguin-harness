@@ -5,12 +5,23 @@
  * binds the service's paths port to the server's `Paths` capability and provides the
  * AgentSkills mechanism, and re-exports the moved shapes for the server's own import paths.
  */
-import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
-import { AgentSkills, InstalledAgentSkills } from "@prismshadow/penguin-library-agent/agent-skills";
+import { InstalledAgentSkills } from "@prismshadow/penguin-library-agent/agent-skills";
 
-export { AgentSkills, InstalledAgentSkills } from "@prismshadow/penguin-library-agent/agent-skills";
+export { InstalledAgentSkills } from "@prismshadow/penguin-library-agent/agent-skills";
+
+/** AgentSkills: what InstalledAgentSkills implements, and a server module reaches through the plugin face. */
+@Interface()
+export abstract class AgentSkills {
+  /**
+   * The names of the Skills installed on the Agent, sorted. 400 for an id that is not one plain
+   * segment, 404 `agent_not_found` for an Agent the Project does not have. Callers check the
+   * caller's access to the Project first; this does not.
+   */
+  abstract installedSkills(projectId: string, agentId: string): Promise<string[]>;
+}
 
 /** The installed-skills assembly: binds the service's paths port and its AgentConfig port. */
 @Module()

@@ -8,29 +8,20 @@
  * SKILL.md is opened, so the answer costs one directory listing and a check per folder.
  *
  * Moved from the server's services/agent-skills.ts beside the AgentConfig contract and the
- * agent config service it asks (services+http+cli restack S10).
+ * agent config service it asks (services+http+cli restack S10). The `AgentSkills` interface
+ * class stays on the server (services/agent-skills.ts): a plugin requires it under the host's
+ * own key, so the declaration is part of the host's face.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isValidId, skillsDir } from "@prismshadow/penguin-core";
-import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { badRequest } from "@prismshadow/penguin-library-http/validate";
 import type { AgentConfig } from "./contract.js";
 import type { AgentPaths } from "./ports.js";
 
-/** AgentSkills: what InstalledAgentSkills implements, and a server module reaches through the plugin face. */
-@Interface()
-export abstract class AgentSkills {
-  /**
-   * The names of the Skills installed on the Agent, sorted. 400 for an id that is not one plain
-   * segment, 404 `agent_not_found` for an Agent the Project does not have. Callers check the
-   * caller's access to the Project first; this does not.
-   */
-  abstract installedSkills(projectId: string, agentId: string): Promise<string[]>;
-}
-
 @Component()
-export class InstalledAgentSkills implements AgentSkills {
+export class InstalledAgentSkills {
   @Use() private readonly paths!: AgentPaths;
   @Use() private readonly agentConfig!: AgentConfig;
 

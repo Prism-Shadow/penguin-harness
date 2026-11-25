@@ -28,8 +28,8 @@ export {
 } from "./agent-vocab.js";
 export { AgentConfigService, maskApiKey } from "./agent-config-service.js";
 export { AgentService, refuseBuiltinDeletion } from "./agent-service.js";
-export { AgentSkills, InstalledAgentSkills } from "./agent-skills.js";
-export { AgentTasks, HostAgentTasks } from "./agent-tasks.js";
+export { InstalledAgentSkills } from "./agent-skills.js";
+export { HostAgentTasks } from "./agent-tasks.js";
 export type { AgentTaskStart, AgentTaskState, AgentTaskStatus } from "./agent-tasks.js";
 export { deleteAgentEverywhere, refuseUndeletable, removeAgents } from "./agent-deletion.js";
 export type { AgentDeletionDeps, AgentRemoval } from "./agent-deletion.js";

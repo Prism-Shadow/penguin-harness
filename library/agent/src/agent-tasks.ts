@@ -23,6 +23,8 @@
  * or failed — the latest task's outcome as a workbench reads it (the task-outcome port) — or null
  * for a Session that is gone or that the person cannot read.
  *
+ * The `AgentTasks` interface class stays on the server (services/agent-tasks.ts): a plugin
+ * requires it under the host's own key, so the declaration is part of the host's face.
  * Moved from the server's services/agent-tasks.ts beside the AgentConfig contract (services+http+cli
  * restack S10): the request vocabulary and the checks speak library vocabulary; the session
  * runtime it drives reaches it as structural ports the server's assembly binds.
@@ -35,7 +37,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core";
-import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { badRequest } from "@prismshadow/penguin-library-http/validate";
 import type { Access, ProjectEvents } from "@prismshadow/penguin-library-project";
 import type {
@@ -76,15 +78,6 @@ export interface AgentTaskStatus {
   title: string | null;
   /** Tool calls waiting on the person's approval (a command-policy `ask` step under any mode). */
   pendingApprovals: number;
-}
-
-/** AgentTasks: what HostAgentTasks implements, and a server module reaches through the plugin face. */
-@Interface()
-export abstract class AgentTasks {
-  /** Opens the conversation and starts the task in it (see the module header). */
-  abstract start(task: AgentTaskStart): Promise<{ sessionId: string }>;
-  /** The task's state for `userId`, or null when the Session is gone or theirs to read no longer. */
-  abstract status(userId: string, sessionId: string): Promise<AgentTaskStatus | null>;
 }
 
 /** A non-empty string, or the 400 naming the field. */
@@ -136,7 +129,7 @@ function checked(task: AgentTaskStart): AgentTaskStart {
 }
 
 @Component()
-export class HostAgentTasks implements AgentTasks {
+export class HostAgentTasks {
   @Use() private readonly access!: Access;
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly sessionService!: AgentTaskSessions;

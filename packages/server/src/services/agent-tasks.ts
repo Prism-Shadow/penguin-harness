@@ -7,21 +7,34 @@
  * and provides the AgentTasks mechanism, and re-exports the moved shapes for the server's own
  * import paths.
  */
-import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Access, ProjectEvents } from "@prismshadow/penguin-library-project";
 import type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Traces } from "@prismshadow/penguin-library-trace";
+import type {
+  AgentTaskStart,
+  AgentTaskStatus,
+} from "@prismshadow/penguin-library-agent/agent-tasks";
 import type { AgentConfig } from "../mechanisms/agents.js";
 import type { SessionServiceIface, Sessions } from "../runtime/session-manager.js";
 import { workbenchResult } from "../workbenches/result.js";
-import { AgentTasks, HostAgentTasks } from "@prismshadow/penguin-library-agent/agent-tasks";
+import { HostAgentTasks } from "@prismshadow/penguin-library-agent/agent-tasks";
 
-export { AgentTasks, HostAgentTasks } from "@prismshadow/penguin-library-agent/agent-tasks";
+export { HostAgentTasks } from "@prismshadow/penguin-library-agent/agent-tasks";
 export type {
   AgentTaskStart,
   AgentTaskState,
   AgentTaskStatus,
 } from "@prismshadow/penguin-library-agent/agent-tasks";
+
+/** AgentTasks: what HostAgentTasks implements, and a server module reaches through the plugin face. */
+@Interface()
+export abstract class AgentTasks {
+  /** Opens the conversation and starts the task in it (see the module header). */
+  abstract start(task: AgentTaskStart): Promise<{ sessionId: string }>;
+  /** The task's state for `userId`, or null when the Session is gone or theirs to read no longer. */
+  abstract status(userId: string, sessionId: string): Promise<AgentTaskStatus | null>;
+}
 
 /** The person's-tasks assembly: binds the service's session-runtime ports. */
 @Module()
