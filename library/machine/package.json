@@ -245,6 +245,7 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"
