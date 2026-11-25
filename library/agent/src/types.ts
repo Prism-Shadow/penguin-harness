@@ -12,6 +12,8 @@ import type {
 } from "@prismshadow/penguin-core";
 import type { AgentPackage } from "./contract.js";
 
+export type { AgentAuthor };
+
 /** Read-only vault entry display: key name + masked value; plaintext is never sent. */
 export interface VaultEntryInfo {
   key: string;
