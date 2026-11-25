@@ -1,80 +1,3 @@
-/**
- * The Web App's internals the session domain's web half compiles against, one surface: the
- * half under library/session/src/web consumes the web host through this subpath
- * (`@prismshadow/penguin-web/internal`), so its imports name one seam instead of reaching
- * into the host's file tree. Explicit named re-exports only — every name a consumer imports
- * is listed here once, and a name two modules export arrives under one of them aliased
- * (`useCompanyContext`).
- *
- * Deliberately a re-export hub and nothing more: no logic, no defaults.
- */
-
-export { ApiError } from "./api/client";
-
-export * as api from "./api/endpoints";
-export {
-  abortSubagent,
-  getAgentPlugins,
-  getChildSessions,
-  getGoal,
-  getSession,
-  getSessionContext,
-  getVoicePolish,
-  listSessions,
-  messageSubagent,
-  patchSession,
-  polishTranscript,
-  readReplyAloud,
-  transcribeRecording,
-} from "./api/endpoints";
-export type { ChildSessionEntry } from "./api/endpoints";
-
-export { probeSession } from "./api/session-probe";
-
-export { apiSocket } from "./api/socket";
-
-export {
-  openHistoryStream,
-  openSessionStream,
-  openTraceBodyStream,
-} from "./api/sse";
-
-export type { ToolBinding } from "./api/tool-types";
-
-export { VersionStamp } from "./components/account/version-stamp";
-
-export { chordKeys } from "./components/ui/chord-kbd";
-
-export {
-  GROUP_MODE_ICONS,
-  GroupPager,
-  Icon,
-  SORT_MODE_ICONS,
-  initialGroupMode,
-  newEntityForGroupMode,
-  storeGroupMode,
-} from "./components/ui/group-list";
-export type { GroupMode } from "./components/ui/group-list";
-
-export {
-  CONTEXT_MENU_ACTIONS,
-  HOVER_ROW_ACTIONS,
-  sessionRowActions,
-} from "./components/ui/session-row-menu";
-export type { SessionRowAction } from "./components/ui/session-row-menu";
-
-export {
-  CostPartsRows,
-  ElapsedSplitRows,
-  StatHint,
-  TokenPartsRows,
-} from "./components/ui/stat-hint";
-export type { UsageParts } from "./components/ui/stat-hint";
-
-export { restoreSelection } from "./components/ui/text-selection";
-
-export { Truncated } from "./components/ui/truncated";
-
 export {
   AgentSelect,
   dropsEmployeeGroup,
@@ -115,10 +38,7 @@ export {
   thinkingLevelLabel,
   trailingCompaction,
 } from "./features/model-picker/index";
-export type {
-  StagedThinkingSwitch,
-  ThinkingSwitchItem,
-} from "./features/model-picker/index";
+export type { StagedThinkingSwitch, ThinkingSwitchItem } from "./features/model-picker/index";
 
 export { groupShape } from "./features/models/connection";
 
@@ -133,11 +53,7 @@ export { noteScheduleEvent } from "./features/schedules/index";
 
 export { SettingsDialog } from "./features/settings/index";
 
-export {
-  SkillIcon,
-  SkillPickList,
-  toggleSkillName,
-} from "./features/skills/index";
+export { SkillIcon, SkillPickList, toggleSkillName } from "./features/skills/index";
 
 export {
   HttpStatusError,
@@ -159,16 +75,11 @@ export {
   WorkspaceLinksProvider,
   WorkspaceSelect,
 } from "./features/workspace/index";
-
 export { a2uiDrafts } from "./lib/a2ui-drafts";
 
 export { isDesktopShellWindow } from "./lib/account-menu";
 
-export {
-  subscribeAccountApplied,
-  syncedStorage,
-  writeCached,
-} from "./lib/account-sync/cache";
+export { subscribeAccountApplied, syncedStorage, writeCached } from "./lib/account-sync/cache";
 
 export { useAgentAvatarSrc } from "./lib/agent-avatar";
 
@@ -241,11 +152,7 @@ export {
   mergedIntervalMs,
   sessionElapsedBreakdown,
 } from "./lib/amsp/task-stats";
-export type {
-  BucketPricing,
-  TaskStats,
-  TaskStatsTracker,
-} from "./lib/amsp/task-stats";
+export type { BucketPricing, TaskStats, TaskStatsTracker } from "./lib/amsp/task-stats";
 
 export { apiErrorText } from "./lib/api-error";
 
@@ -294,11 +201,7 @@ export {
   useDockPanels,
   useSessionWorkbenchPanels,
 } from "./lib/dock-panel-registry";
-export type {
-  DockPanelBodyProps,
-  DockPanelDefinition,
-  PanelId,
-} from "./lib/dock-panel-registry";
+export type { DockPanelBodyProps, DockPanelDefinition, PanelId } from "./lib/dock-panel-registry";
 
 export {
   draftUploads,
@@ -310,11 +213,7 @@ export type { DraftUploads } from "./lib/draft-uploads";
 
 export { failureNode, toldFailure, toldNode } from "./lib/failure";
 
-export {
-  dropRegionAction,
-  isFileDrag,
-  splitDroppedFiles,
-} from "./lib/file-drop";
+export { dropRegionAction, isFileDrag, splitDroppedFiles } from "./lib/file-drop";
 export type { DragSignal, DropRegionAction } from "./lib/file-drop";
 
 export { isFilePathLike, toWorkspaceRelative } from "./lib/file-path";
@@ -343,10 +242,7 @@ export {
   humanizeTokens,
 } from "./lib/format";
 
-export {
-  elidedArgumentsPreview,
-  elidedPreview,
-} from "./lib/history/elided-preview";
+export { elidedArgumentsPreview, elidedPreview } from "./lib/history/elided-preview";
 
 export { readHistory } from "./lib/history/history-read";
 
@@ -356,10 +252,7 @@ export { isLongPaste, longPasteFileName } from "./lib/long-paste";
 
 export { mixAgents, useMachineAgents } from "./lib/machine-agent-lists";
 
-export {
-  cachedMachineAgents,
-  rememberMachineAgents,
-} from "./lib/machine-cache";
+export { cachedMachineAgents, rememberMachineAgents } from "./lib/machine-cache";
 
 export { machineLink, remoteAgentsEmpty } from "./lib/machine-link";
 export type { MachineLink } from "./lib/machine-link";
@@ -427,20 +320,11 @@ export {
   presetsOf,
   sandboxSwitchOff,
 } from "./lib/permission-level";
-export type {
-  PermissionLevel,
-  PermissionPick,
-  PresetBlock,
-} from "./lib/permission-level";
+export type { PermissionLevel, PermissionPick, PresetBlock } from "./lib/permission-level";
 
 export { onPluginConfigSaved } from "./lib/plugin-config-event";
 
-export {
-  ofProject,
-  scopeKey,
-  scoped,
-  scopedValue,
-} from "./lib/project-scope";
+export { ofProject, scopeKey, scoped, scopedValue } from "./lib/project-scope";
 export type { Scoped } from "./lib/project-scope";
 
 export { randomHex } from "./lib/random-id";
@@ -530,15 +414,9 @@ export {
   storeSessionSortMode,
   writeStringArray,
 } from "./lib/session-order";
-export type {
-  SessionOrderStorage,
-  SessionSortMode,
-} from "./lib/session-order";
+export type { SessionOrderStorage, SessionSortMode } from "./lib/session-order";
 
-export {
-  closeSessionResources,
-  listSessionResourceCounts,
-} from "./lib/session-resource-counts";
+export { closeSessionResources, listSessionResourceCounts } from "./lib/session-resource-counts";
 
 export type {
   RowAction,
@@ -550,21 +428,13 @@ export type {
   WorkspaceTarget,
 } from "./lib/session-row-contributions";
 
-export {
-  forgetSession,
-  noteSessionSeen,
-  useSessionSeen,
-} from "./lib/session-seen";
+export { forgetSession, noteSessionSeen, useSessionSeen } from "./lib/session-seen";
 
-export {
-  backgroundSourceMark,
-  programSource,
-} from "./lib/session-source-mark";
+export { backgroundSourceMark, programSource } from "./lib/session-source-mark";
 
 export {
   isSessionWorkbenchKind,
   parseSessionWorkbenchPage,
-  sessionWorkbenchAppKey,
   sessionWorkbenchEntries,
   sessionWorkbenchKindAt,
   sessionWorkbenchPage,
@@ -577,12 +447,7 @@ export { onCommand } from "./lib/shortcuts/dispatcher";
 
 export { currentPlatform } from "./lib/shortcuts/platform";
 
-export {
-  displayedBinding,
-  shortcutTitle,
-  useKeymap,
-  useShortcutTitle,
-} from "./lib/shortcuts/use-keymap";
+export { displayedBinding, useKeymap, useShortcutTitle } from "./lib/shortcuts/use-keymap";
 
 export type { SidebarSection } from "./lib/sidebar-contributions";
 
@@ -667,3 +532,80 @@ export { useSafeMode } from "./rescue/safe-mode";
 export { DRAFT_SESSION_ID } from "@prismshadow/penguin-server/api";
 
 export { modelCalledKeyless, providerInfo } from "@prismshadow/penguin-server/model-catalog";
+
+// The features' re-exports come last: a moved module reaches its host plumbing through this
+// hub, and a features import (through a face deep path) can loop back into a moved module
+// whose body calls a hub binding as it loads. The hub's own re-export of that binding must
+// already be in place by then, so the leaves are re-exported before the features.
+
+export {
+  AgentSelect,
+  dropsEmployeeGroup,
+  employeesLast,
+  employmentsOf,
+  isEmployee,
+} from "./features/agents/index";
+export { pickDefaultAgent } from "./features/ai-create/index";
+
+export { TileIcon, systemShortcutsOf } from "./features/app-center/index";
+
+export {
+  PathCapsulesProvider,
+  parseOrgKey,
+  switchDeskModel,
+  useCompany,
+} from "./features/company/index";
+
+export { retryStatus } from "./features/machines/index";
+
+export { readMachine, retryReading } from "./features/machines/machines-view";
+export type { RetryReading } from "./features/machines/machines-view";
+
+export { MessagingBindingModal } from "./features/messaging/index";
+
+export {
+  ModelCatalogSelect,
+  ModelPickerModal,
+  SELECTABLE_THINKING_LEVELS,
+  ThinkingLevelSelect,
+  compactionTally,
+  effectiveThinkingLevel,
+  heldThinkingSwitch,
+  modelLabel,
+  needsThinkingSwitchConfirm,
+  sessionThinkingLevel,
+  thinkingLevelLabel,
+  trailingCompaction,
+} from "./features/model-picker/index";
+export type { StagedThinkingSwitch, ThinkingSwitchItem } from "./features/model-picker/index";
+
+export { groupShape } from "./features/models/connection";
+
+export {
+  defaultChatModel,
+  hasConfiguredKey,
+  sameModelRef,
+  turnPricing,
+} from "./features/models/index";
+
+export { noteScheduleEvent } from "./features/schedules/index";
+
+export { SettingsDialog } from "./features/settings/index";
+
+export { SkillIcon, SkillPickList, toggleSkillName } from "./features/skills/index";
+
+export {
+  HttpStatusError,
+  fetchJson,
+  liveTerminals,
+  noteTerminalCreated,
+  noteTerminalReowned,
+  refreshTerminals,
+  subscribeTerminals,
+  terminalApiSupported,
+  terminalsOf,
+  watchTerminals,
+} from "./features/terminal/index";
+export type { TerminalInfo } from "./features/terminal/index";
+
+export { WorkspaceLinksProvider, WorkspaceSelect } from "./features/workspace/index";

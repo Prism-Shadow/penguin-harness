@@ -67,7 +67,6 @@ export function ArchivedSessionStub({
         <h2 className="max-w-full break-words text-base font-semibold text-fg">{title}</h2>
         <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-fg-muted">
           <span>{formatDateTime(session.lastActiveAt)}</span>
-          <span aria-hidden>·</span>
           <Pill tone="neutral">{S.chat.sessionSource[source]}</Pill>
         </p>
         <p className="text-sm text-fg-muted">{S.chat.archivedStub.note}</p>
