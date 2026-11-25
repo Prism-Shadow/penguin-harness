@@ -1,3 +1,18 @@
+||||||| parent of 571ad607cd (fix(web): the hub re-exports the dock's load-time bindings ahead of its face-reaching sources)
+/**
+ * The Web App's internals the session domain's web half compiles against, one surface: the
+ * half under library/session/src/web consumes the web host through this subpath
+ * (`@prismshadow/penguin-web/internal`), so its imports name one seam instead of reaching
+ * into the host's file tree. Explicit named re-exports only — every name a consumer imports
+ * is listed here once, and a name two modules export arrives under one of them aliased
+ * (`useCompanyContext`).
+ *
+ * Deliberately a re-export hub and nothing more: no logic, no defaults.
+ */
+
+export { ApiError } from "./api/client";
+
+export * as api from "./api/endpoints";
 export {
   AgentSelect,
   dropsEmployeeGroup,
@@ -78,8 +93,6 @@ export {
 export { a2uiDrafts } from "./lib/a2ui-drafts";
 
 export { isDesktopShellWindow } from "./lib/account-menu";
-
-export { subscribeAccountApplied, syncedStorage, writeCached } from "./lib/account-sync/cache";
 
 export { useAgentAvatarSrc } from "./lib/agent-avatar";
 
@@ -442,8 +455,6 @@ export {
 export type { SessionWorkbenchKind } from "./lib/session-workbenches";
 
 export { chordEquals, chordOf, parseChord } from "./lib/shortcuts/chord";
-
-export { onCommand } from "./lib/shortcuts/dispatcher";
 
 export { currentPlatform } from "./lib/shortcuts/platform";
 
