@@ -17,6 +17,7 @@ import { MessageStream, type StreamRenderContext } from "../src/features/chat/me
 
 import type { ChatItem } from "../src/lib/amsp/stream-model";
 import { forgetSessionMachines, rememberSessionMachine } from "../src/lib/session-machines";
+import { MemoryRouter } from "react-router";
 import { LocaleProvider } from "../src/state/locale";
 import { stubLocalStorage } from "./helpers/storage";
 
@@ -36,9 +37,13 @@ const ctx: StreamRenderContext = {
 function imgTags(items: ChatItem[]): string[] {
   const html = renderToStaticMarkup(
     createElement(
-      LocaleProvider,
-      null,
-      createElement(MessageStream, { items, version: 1, ctx, onAddExcerpt: () => {} }),
+      MemoryRouter,
+      { initialEntries: ["/"] },
+      createElement(
+        LocaleProvider,
+        null,
+        createElement(MessageStream, { items, version: 1, ctx, onAddExcerpt: () => {} }),
+      ),
     ),
   );
   return html.match(/<img\b[^>]*>/g) ?? [];

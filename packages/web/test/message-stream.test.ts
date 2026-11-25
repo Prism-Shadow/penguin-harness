@@ -320,15 +320,19 @@ describe("MessageStream session links", () => {
     };
     await mount(
       createElement(
-        MemoryRouter,
-        { initialEntries: ["/"] },
-        createElement(LocationSpy),
-        createElement(MessageStream, {
-          items: [{ kind: "user_text", id: 1, text: `open ${SID} later` } as ChatItem],
-          version: 1,
-          ctx,
-          onAddExcerpt: () => {},
-        }),
+        LocaleProvider,
+        null,
+        createElement(
+          MemoryRouter,
+          { initialEntries: ["/"] },
+          createElement(LocationSpy),
+          createElement(MessageStream, {
+            items: [{ kind: "user_text", id: 1, text: `open ${SID} later` } as ChatItem],
+            version: 1,
+            ctx,
+            onAddExcerpt: () => {},
+          }),
+        ),
       ),
     );
     const link = document.querySelector(`a[href="/chat/${SID}"]`);
