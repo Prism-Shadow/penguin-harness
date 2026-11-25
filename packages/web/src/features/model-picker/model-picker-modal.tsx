@@ -475,7 +475,7 @@ function ModelPickerBody({
             className="absolute inset-0 z-raised flex flex-col items-center justify-center gap-3 bg-surface/90 p-6 text-center"
           >
             <span aria-hidden="true" className="text-fg-subtle">
-              <GlyphIcon d={ICONS.keyOff} size={ICON_SIZE.sectionMark} decor="empty" />
+              <GlyphIcon d={ICONS.keyOff} size={ICON_SIZE.sectionMark} />
             </span>
             <div className="max-w-xs space-y-1">
               <p className="text-sm font-medium text-fg">{S.modelPicker.noKeyTitle}</p>

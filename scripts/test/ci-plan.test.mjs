@@ -38,6 +38,8 @@
  *   the packages that read the plugins, as a change to its files does.
  * - Given a lockfile change to the root's toolchain or settings, or a lockfile that cannot be read,
  *   when planning CI, then all run.
+ * - Given a dependency edit in a newer or invalid lockfile version, when planning CI, then
+ *   it validates the whole workspace.
  * - Given a shared config or unknown root input changes, when planning CI, then all run.
  * - Given the comparison base is absent or unusable, when planning CI, then all packages run.
  * - Given no changes or only changelog text, when planning CI, then no package jobs are needed.
@@ -752,6 +754,16 @@ describe("lockfile changes that reach every package", () => {
       assert.equal(answer.importers, undefined);
     });
   }
+  it("does not narrow checks for a change in an unsupported lockfile format", () => {
+    for (const version of ["'10.0'", "'8.0'", "not-a-version", '"\\x"']) {
+      const before = LOCKFILE.replace("'9.0'", version);
+      const after = before.replace("integrity: sha512-left-pad", "integrity: sha512-left-pad-new");
+      assert.notEqual(before, after, "the fixture contains the changed dependency");
+      const result = lockfileImporters(before, after);
+      assert.ok(result.whole, JSON.stringify(result));
+      assert.equal(result.importers, undefined);
+    }
+  });
   it("an unchanged lockfile reaches no package", () => {
     assert.deepEqual(lockfileImporters(LOCKFILE, LOCKFILE), { importers: [] });
   });

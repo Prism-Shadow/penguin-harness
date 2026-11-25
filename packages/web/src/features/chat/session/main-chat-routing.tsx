@@ -15,7 +15,7 @@ import { machineForSession } from "../../../lib/session-machines";
 import { useMachineModels } from "../../../lib/machine-models";
 import { setDockConversation, dockVersion, openPanel, panelDock, subscribeDock } from "../../dock";
 import { terminalApiSupported, subscribeTerminals } from "../../terminal";
-import { usePageWorkspace } from "../../../lib/page-workspace";
+import { usePageWorkspace } from "../../../lib/page-workspace-context";
 import { sessionAppPair } from "../../../lib/session-app-dock";
 import type { useMainChatInputs } from "./main-chat-inputs";
 

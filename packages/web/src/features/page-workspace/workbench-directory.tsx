@@ -4,7 +4,7 @@ import { EmptyState, MenuItem, Spinner } from "@prismshadow/penguin-ui";
 import { getWorkbenches } from "../../api/endpoints";
 import { locatedAppKey, appWindowPath } from "../../lib/app-center-path";
 import { sessionAppPair } from "../../lib/session-app-dock";
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { localizedText } from "../../lib/skill-use";
 import { S } from "../../lib/strings";
 import { launchApp, useRestoreApp, type RunningShortcut } from "../../lib/running-apps";

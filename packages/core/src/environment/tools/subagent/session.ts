@@ -257,9 +257,9 @@ export class ManagedSubagentSession {
     this.wakeSignal.notify();
   }
 
-  // Settle watcher (run_in_background completion reports): fires at the end of EVERY round of a
-  // background-launched session (later input_subagent rounds included), until disarmed. A kill
-  // by an explicit per-run abort stays silent — the aborter reads the outcome directly.
+  // Settle watcher (completion reports of a session left running unattended): once armed, fires
+  // at the end of EVERY round (later input_subagent rounds included), until disarmed. A round
+  // ended by an explicit per-run abort stays silent — the aborter reads the outcome directly.
   private settleWatcher: (() => void) | null = null;
 
   /** Arms the completion-report watcher (replacing any previous one); fires immediately (microtask) when the session is already idle with a terminal state. */

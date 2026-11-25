@@ -2,7 +2,7 @@ import { Activity, useSyncExternalStore, type CSSProperties, type ReactNode } fr
 import { layer } from "@prismshadow/penguin-ui";
 import { useDockBounds, sessionAppPair, slotDomId, contextualDockPage } from "./session-app-dock";
 import { PaneFocus, PageIdentity } from "./page-focus";
-import { usePageWorkspace } from "./page-workspace";
+import { usePageWorkspace } from "./page-workspace-context";
 
 const narrowQuery = "(max-width: 767px)";
 function listen(resize: () => void) {
