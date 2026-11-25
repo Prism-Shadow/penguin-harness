@@ -13,7 +13,9 @@
 import { useState, type ReactNode } from "react";
 
 import { Chevron, FormPickerTrigger, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import {
+  S,
+} from "@prismshadow/penguin-web/internal";
 import { WorkspaceFinder } from "./workspace-finder";
 import { baseName } from "./workspace-finder-model";
 

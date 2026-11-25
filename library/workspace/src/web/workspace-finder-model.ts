@@ -22,7 +22,7 @@ import {
   isTempWorkspace,
   workspaceGroupMachine,
   workspaceGroupPath,
-} from "../../lib/session-grouping";
+} from "@prismshadow/penguin-web/internal";
 
 /** A path the dirs API accepts as-is: posix absolute, a drive path, or a UNC share. */
 export function isAbsoluteDirPath(path: string): boolean {

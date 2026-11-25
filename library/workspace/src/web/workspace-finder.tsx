@@ -75,18 +75,26 @@ import {
   toastSuccess,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { writeClipboard } from "../../lib/clipboard";
-import { S } from "../../lib/strings";
-import { isElectronRenderer } from "../../lib/desktop-renderer";
-import { formatDateTime } from "../../lib/format";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { machineLabel, nameOnMachine, workspaceMachines } from "../../lib/workspace-machines";
-import type { WorkspaceMachine } from "../../lib/workspace-machines";
-import { newEntryName } from "../../lib/workspace-tree";
-import { useSessions } from "../../state/sessions";
-import { useMachines } from "../../state/machines";
+import { api } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  writeClipboard,
+  S,
+  isElectronRenderer,
+  formatDateTime,
+  STAT_ICONS,
+  machineLabel,
+  nameOnMachine,
+  workspaceMachines,
+  newEntryName,
+  useSessions,
+  useMachines,
+  toastApiError,
+  failureNode,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  WorkspaceMachine,
+} from "@prismshadow/penguin-web/internal";
 import {
   EMPTY_HISTORY,
   TYPE_SELECT_RESET_MS,
@@ -129,8 +137,6 @@ import type {
   NewFolderProblem,
   Place,
 } from "./workspace-finder-model";
-import { toastApiError } from "../../lib/toast-api-error";
-import { failureNode } from "../../lib/failure";
 
 /**
  * The registry has one storage drawing, the drive, so a fixed disk, a volume and a Linux root

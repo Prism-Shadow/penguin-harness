@@ -61,7 +61,7 @@ vi.mock("../src/features/schedules", () => ({
   pendingScheduleSessions: () => new Set(),
   useSchedulesAcross: () => null,
 }));
-vi.mock("../src/features/workspace", () => ({ WorkspaceSelect: () => null }));
+vi.mock("@prismshadow/penguin-library-workspace/web", () => ({ WorkspaceSelect: () => null }));
 vi.mock("../src/web-app/sidebar/user-menu", () => ({ UserMenu: () => null }));
 const rows = { sessionEntries: [], marks: [], workspaceEntries: [] };
 const Full = sessionListDeps.provide(

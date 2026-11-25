@@ -19,12 +19,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
 import { FileBrowser, type FileBrowserPreview, type TreeToggle } from "@prismshadow/penguin-ui";
-import { filesApi, filesScopeKey, type FilesScope } from "../../api/workspace-files";
-import { formatBytes } from "../../lib/format";
-import { useReaderFind } from "../../lib/reader-find";
-import { S } from "../../lib/strings";
-import { fetchTextPreview } from "../../lib/text-preview";
 import {
+  filesApi,
+  filesScopeKey,
+  formatBytes,
+  useReaderFind,
+  S,
+  fetchTextPreview,
   ancestorDirs,
   baseName,
   expandTo,
@@ -33,10 +34,13 @@ import {
   previewKindFor,
   resolveRelative,
   withExpanded,
-  type Listings,
-  type TreeRow,
-} from "../../lib/workspace-tree";
-import { failureNode } from "../../lib/failure";
+  failureNode,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  FilesScope,
+  Listings,
+  TreeRow,
+} from "@prismshadow/penguin-web/internal";
 
 export interface DirBrowserProps {
   /** The directory, as the Files panel addresses one. */

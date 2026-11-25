@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * A rendered Markdown file in the Files panel (features/workspace/workspace-browser.tsx), against
+ * A rendered Markdown file in the Files panel (library/workspace/src/web/workspace-browser.tsx), against
  * a Session's Workspace behind the package's fetch fake that keeps one Markdown file.
  *
  * - Given a rendered Markdown file with an image and a link, when the panel renders again for
@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import { AuthProvider } from "../src/state/auth";
-import { WorkspaceBrowser } from "../src/features/workspace/workspace-browser";
+import { WorkspaceBrowser } from "@prismshadow/penguin-library-workspace/web/workspace-browser";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { click, mount, unmountAll, waitFor } from "./helpers/dom";
 import { apiError, json, stubFetch } from "./helpers/fetch";

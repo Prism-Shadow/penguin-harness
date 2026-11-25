@@ -1,12 +1,17 @@
 import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { EmptyState, Spinner } from "@prismshadow/penguin-ui";
-import { getSession } from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { PageIdentity } from "../../lib/page-focus";
-import { pageSessionId, type OpenPage } from "../../lib/page-layout";
-import { focusSessionMachine } from "../../lib/session-machines";
-import { S } from "../../lib/strings";
-import { useProject } from "../../state/project";
+import {
+  getSession,
+  apiErrorText,
+  PageIdentity,
+  pageSessionId,
+  focusSessionMachine,
+  S,
+  useProject,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  OpenPage,
+} from "@prismshadow/penguin-web/internal";
 
 /** A full-page chat reached from a machine-qualified workbench can be reloaded on that same machine. */
 export function ScopedChat({ page, children }: { page: OpenPage; children: ReactNode }) {

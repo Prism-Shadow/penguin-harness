@@ -106,22 +106,23 @@ import {
 import type { Components } from "react-markdown";
 
 import type { WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
-import { ApiError } from "../../api/client";
-import { filesApi, filesScopeKey, type FilesScope } from "../../api/workspace-files";
-
-import { useAuth } from "../../state/auth";
-import { S } from "../../lib/strings";
-import { isDesktopShellWindow } from "../../lib/account-menu";
-import { useReaderFind } from "../../lib/reader-find";
-import { isShortcut } from "../../lib/shortcuts/match";
-import { currentPlatform } from "../../lib/shortcuts/platform";
-import { keymap } from "../../lib/shortcuts/store";
-import { joinWorkspacePath } from "../../lib/file-path";
-import { writeClipboard } from "../../lib/clipboard";
-import { dropRegionAction, isFileDrag, type DragSignal } from "../../lib/file-drop";
-
-import { MB_BYTES, splitBySize } from "../../lib/upload-limits";
 import {
+  ApiError,
+  filesApi,
+  filesScopeKey,
+  useAuth,
+  S,
+  isDesktopShellWindow,
+  useReaderFind,
+  isShortcut,
+  currentPlatform,
+  keymap,
+  joinWorkspacePath,
+  writeClipboard,
+  dropRegionAction,
+  isFileDrag,
+  MB_BYTES,
+  splitBySize,
   DEFAULT_TEXT_FILE_NAME,
   TEXT_PREVIEW_LIMIT,
   WORKSPACE_UPLOAD_LIMIT_MB,
@@ -153,19 +154,26 @@ import {
   writeWrapLines,
   writeTreeVisible,
   writeTreeWidth,
-  type ComposerReference,
-  type EditorState,
-  type Listings,
-} from "../../lib/workspace-tree";
-import { fetchTextPreview } from "../../lib/text-preview";
+  fetchTextPreview,
+  restoreSelection,
+  STAT_ICONS,
+  toneInk,
+  setCloseGuard,
+  tabKey,
+  toastApiError,
+  failureNode,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  FilesScope,
+  DragSignal,
+  ComposerReference,
+  EditorState,
+  Listings,
+} from "@prismshadow/penguin-web/internal";
 
-import { restoreSelection } from "../../components/ui/text-selection";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { toneInk } from "../../lib/tone";
-import { setCloseGuard, tabKey } from "../dock";
+
+
 import { WorkspaceTreeView } from "./workspace-tree-view";
-import { toastApiError } from "../../lib/toast-api-error";
-import { failureNode } from "../../lib/failure";
 
 /**
  * Above this, a Markdown file opens in the source view rather than rendered. Highlighting moved to

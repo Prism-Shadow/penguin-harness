@@ -2,8 +2,9 @@
  * No surface reads modifier keys itself. A shortcut is a chord in the registry, matched by
  * lib/shortcuts/ against the user's keymap with the platform's modifier mapping; a hand-written
  * `event.ctrlKey` check is a binding the settings page cannot see, and one that is wrong on a
- * Mac. This scans the web source for `.ctrlKey` and `.metaKey` reads and allows them only under
- * src/lib/shortcuts/, plus the few files named below. (`shiftKey` and `altKey` are not scanned:
+ * Mac. This scans the web source — the app's own tree and every domain library web half it
+ * compiles in — for `.ctrlKey` and `.metaKey` reads and allows them only under the app's
+ * lib/shortcuts/, plus the few files named below. (`shiftKey` and `altKey` are not scanned:
  * fixed interaction keys legitimately read them — Shift+Enter, Shift+F10, Shift-multiplied
  * arrows.)
  */
@@ -12,8 +13,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const WEB_SRC = fileURLToPath(new URL("../src", import.meta.url));
-const ALLOWED_DIR = "lib/shortcuts";
+const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+
+/** The scanned roots, as repo-relative id prefixes: the app and the library web halves it compiles in. */
+const ROOTS: ReadonlyArray<readonly [string, string]> = [
+  ["packages/web/src", fileURLToPath(new URL("../src", import.meta.url))],
+  ["library/workspace/src/web", path.join(REPO_ROOT, "library/workspace/src/web")],
+];
+const ALLOWED_DIR = "packages/web/src/lib/shortcuts";
 
 /**
  * Files that read the modifiers for something other than a chord of their own, and are
@@ -24,10 +31,10 @@ const ALLOWED_DIR = "lib/shortcuts";
  * would rebind. A new entry here needs a reason of the same kind.
  */
 const EXCUSED_FILES = new Set([
-  "features/workspace/workspace-finder-model.ts",
-  "features/model-picker/model-picker-logic.ts",
-  "features/model-picker/model-picker-modal.tsx",
-  "lib/workbench-theme.ts",
+  "library/workspace/src/web/workspace-finder-model.ts",
+  "packages/web/src/features/model-picker/model-picker-logic.ts",
+  "packages/web/src/features/model-picker/model-picker-modal.tsx",
+  "packages/web/src/lib/workbench-theme.ts",
 ]);
 
 /** Every `.ctrlKey` / `.metaKey` read outside a comment, as `file:line`. */
@@ -42,7 +49,7 @@ function modifierReads(): { allowed: string[]; elsewhere: string[] } {
         continue;
       }
       if (!/\.tsx?$/.test(entry.name)) continue;
-      const rel = path.relative(WEB_SRC, full).replaceAll(path.sep, "/");
+      const rel = path.relative(REPO_ROOT, full).replaceAll(path.sep, "/");
       if (EXCUSED_FILES.has(rel)) continue;
       const code = fs
         .readFileSync(full, "utf8")
@@ -53,11 +60,11 @@ function modifierReads(): { allowed: string[]; elsewhere: string[] } {
         );
       code.split("\n").forEach((line, i) => {
         if (!/\.(ctrlKey|metaKey)\b/.test(line)) return;
-        (rel.startsWith(ALLOWED_DIR) ? allowed : elsewhere).push(`src/${rel}:${i + 1}`);
+        (rel.startsWith(ALLOWED_DIR) ? allowed : elsewhere).push(`${rel}:${i + 1}`);
       });
     }
   };
-  walk(WEB_SRC);
+  for (const [, dir] of ROOTS) walk(dir);
   return { allowed, elsewhere };
 }
 

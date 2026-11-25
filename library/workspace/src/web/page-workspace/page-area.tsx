@@ -1,13 +1,15 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Outlet, useLocation, type Location } from "react-router";
-import { ErrorBoundary } from "../../rescue/error-boundary";
-import { RescuePanel } from "../../rescue/rescue-panel";
-import { S } from "../../lib/strings";
-import { PageSlot } from "../../lib/page-slot";
-import { useRunningAppRecords } from "../../lib/running-apps";
-import { usePageWorkspace } from "../../lib/page-workspace-context";
+import {
+  ErrorBoundary,
+  RescuePanel,
+  S,
+  PageSlot,
+  useRunningAppRecords,
+  usePageWorkspace,
+  WorkbenchExitBall,
+} from "@prismshadow/penguin-web/internal";
 import { ScopedChat } from "./scoped-chat";
-import { WorkbenchExitBall } from "../workbenches";
 import { useAppDockDrop } from "./app-dock-drop";
 import { WorkbenchDirectory } from "./workbench-directory";
 

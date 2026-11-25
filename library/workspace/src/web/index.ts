@@ -7,3 +7,4 @@ export { WorkspaceBrowser } from "./workspace-browser";
 export { DirBrowser } from "./dir-browser";
 export { WorkspaceSelect, pillClass } from "./workspace-select";
 export { WorkspaceLinksProvider } from "./workspace-links";
+export { WorkspaceModule } from "./module";

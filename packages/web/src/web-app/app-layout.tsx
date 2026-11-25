@@ -17,7 +17,7 @@ import type { ReactNode } from "react";
 import { PageWorkspace } from "../lib/page-workspace";
 import { usePageWorkspace } from "../lib/page-workspace-context";
 import * as dock from "../features/dock";
-import { PageArea } from "../features/page-workspace";
+import { PageArea } from "@prismshadow/penguin-library-workspace/web/page-workspace";
 import { AppShell, Drawer, MobileTopBar, Notice, UpdateDot } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { nagsAboutInitialPassword } from "../lib/account-menu";

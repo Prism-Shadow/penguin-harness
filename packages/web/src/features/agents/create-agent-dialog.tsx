@@ -59,7 +59,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { SemanticIdField } from "../semantic-id";
-import { WorkspaceSelect } from "../workspace";
+import { WorkspaceSelect } from "@prismshadow/penguin-library-workspace/web";
 import {
   SkillPickList,
   addSkillNames,

@@ -80,7 +80,7 @@ import { useCompany } from "./company-state";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { ModelCatalogSelect, modelLabel } from "../model-picker";
-import { WorkspaceSelect } from "../workspace";
+import { WorkspaceSelect } from "@prismshadow/penguin-library-workspace/web";
 import { sameModelRef } from "../models";
 import { ErrorLine, InfoFieldLabel, MoneyPerMonthInput, OrgStatusPill } from "./shared";
 import { orgCreatedTarget } from "../../lib/company-nav";

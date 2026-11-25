@@ -122,9 +122,9 @@ const TOKENS_ONLY: readonly string[] = [
   "features/settings/shortcuts-section.tsx",
   "features/settings/trace-import-row.tsx",
   "features/terminal/terminal-keybar.tsx",
-  "features/workspace/workspace-finder.tsx",
-  "features/workspace/workspace-finder-model.ts",
-  "features/workspace/workspace-select.tsx",
+  "library/workspace/src/web/workspace-finder.tsx",
+  "library/workspace/src/web/workspace-finder-model.ts",
+  "library/workspace/src/web/workspace-select.tsx",
 ];
 
 const WAVES = /^W(?:1a?|1b|10|[2-9])(?:\+W(?:1a?|1b|10|[2-9]))*$/;

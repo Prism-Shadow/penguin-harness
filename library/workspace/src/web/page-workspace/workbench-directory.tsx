@@ -1,20 +1,26 @@
-import { pageSessionId } from "../../lib/page-layout";
 import { useEffect, useState, type ReactNode } from "react";
 import { EmptyState, MenuItem, Spinner } from "@prismshadow/penguin-ui";
-import { getWorkbenches } from "../../api/endpoints";
-import { locatedAppKey, appWindowPath } from "../../lib/app-center-path";
-import { sessionAppPair } from "../../lib/session-app-dock";
-import { usePageWorkspace } from "../../lib/page-workspace-context";
-import { localizedText } from "../../lib/skill-use";
-import { S } from "../../lib/strings";
-import { launchApp, useRestoreApp, type RunningShortcut } from "../../lib/running-apps";
-import { shortcutOfWorkbench } from "../../lib/workbench-shortcut";
-import { runningWorkbenches, WORKBENCH_UPDATED_EVENT } from "../../lib/workbench-tabs";
-import { failureNode } from "../../lib/failure";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { TileIcon } from "../app-center";
-import { useSafeMode } from "../../rescue/safe-mode";
+import {
+  pageSessionId,
+  getWorkbenches,
+  locatedAppKey,
+  appWindowPath,
+  sessionAppPair,
+  usePageWorkspace,
+  localizedText,
+  S,
+  launchApp,
+  useRestoreApp,
+  shortcutOfWorkbench,
+  runningWorkbenches,
+  WORKBENCH_UPDATED_EVENT,
+  failureNode,
+  useLocale,
+  useProject,
+  TileIcon,
+  useSafeMode,
+  type RunningShortcut,
+} from "@prismshadow/penguin-web/internal";
 
 export function WorkbenchDirectory({ path }: { path: string }) {
   const { currentProject } = useProject();

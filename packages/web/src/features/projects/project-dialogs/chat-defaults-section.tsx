@@ -29,7 +29,7 @@ import {
 } from "../../chat";
 
 import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "../../model-picker";
-import { WorkspaceSelect } from "../../workspace";
+import { WorkspaceSelect } from "@prismshadow/penguin-library-workspace/web";
 import { sameModelRef } from "../../models";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 import { failureNode } from "../../../lib/failure";

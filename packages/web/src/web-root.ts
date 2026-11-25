@@ -51,7 +51,7 @@ import { SessionListModule } from "./features/session-list/module";
 import { ProjectsModule } from "./features/projects/module";
 import { MessagingModule } from "./features/messaging/module";
 import { DockModule } from "./features/dock/module";
-import { WorkspaceModule } from "./features/workspace/module";
+import { WorkspaceModule } from "@prismshadow/penguin-library-workspace/web";
 import { TracesModule } from "./features/traces/module";
 import { AudioModule } from "./features/audio/module";
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * New folder in the Workspace finder (features/workspace/workspace-finder.tsx), against a server
+ * New folder in the Workspace finder (library/workspace/src/web/workspace-finder.tsx), against a server
  * behind the package's fetch fake that keeps a small disk for this server and one for a machine.
  *
  * - Given a folder on screen, when New folder is picked from the menu on the list's empty space,
@@ -34,7 +34,7 @@ import { AuthProvider } from "../src/state/auth";
 import { ProjectProvider } from "../src/state/project";
 import { MachinesProvider } from "../src/state/machines";
 import { SessionsProvider } from "../src/state/sessions";
-import { WorkspaceFinder } from "../src/features/workspace/workspace-finder";
+import { WorkspaceFinder } from "@prismshadow/penguin-library-workspace/web/workspace-finder";
 import { S } from "../src/lib/strings";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import {
