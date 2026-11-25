@@ -50,6 +50,7 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { TraceFileRow, TraceSessionRow } from "./repos/trace-index.js";
 import { TraceIndexRepo } from "./repos/trace-index.js";
 import { cacheable, statMtime } from "@prismshadow/penguin-library-session/mtime-gate";
+import { traceFilePath } from "@prismshadow/penguin-library-session/trace-file-path";
 import { readTraceHead } from "./trace-head.js";
 import { fallbackTitle } from "./titles.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
@@ -60,7 +61,7 @@ import type { SessionOrigins } from "@prismshadow/penguin-library-session";
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
 /** Absolute path of an indexed shard (reconstructed — rows never store paths; the data root may move). */
-export { traceFilePath } from "@prismshadow/penguin-library-session/trace-file-path";
+export { traceFilePath };
 
 async function listDirs(dir: string): Promise<string[]> {
   try {
