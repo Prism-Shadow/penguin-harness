@@ -63,7 +63,7 @@ export class HostAgentTasksProvider {
       projectEvents: this.projectEvents,
       traces: this.traces,
       outcome: {
-        result: (status: string, messages: readonly Parameters<typeof workbenchResult>[1]) =>
+        result: (status: string, messages: Parameters<typeof workbenchResult>[1]) =>
           workbenchResult(status, messages),
       },
     });
