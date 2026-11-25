@@ -24,22 +24,20 @@ export function ScreenBar({ icon, title }: { icon: SiteGlyphName; title: string 
   );
 }
 
-/** A system app's tile: its page's glyph on the two-colour field the product gives that app. */
-function systemTile(glyph: SiteGlyphName, from: string, to: string) {
+/** A glyph on a two-colour field: the tile the product draws for a system app. */
+function glyphTile(glyph: SiteGlyphName, from: string, to: string) {
   return { glyph, from, to };
 }
 
 /**
- * Every app the demo project can hold, drawn the way the App Center draws each kind: a system app
- * wears its glyph on its own colour field, a shipped workbench and the session tools their own
- * artwork, the start dashboard's three builder examples their glyph tiles, and an app with no
- * icon of its own (`null`) the first letter of its name on a tinted tile.
+ * Every app the demo project holds, each with an icon of its own, as an app in the App Center has:
+ * a shipped workbench and the session tools wear their artwork, the start dashboard's three
+ * builder examples their glyph tiles, and every other app a glyph for what it does on a
+ * two-colour field, the way the product draws its system apps.
  */
 const appTiles = {
-  models: systemTile("chip", "violet", "blue"),
-  plugins: systemTile("puzzle", "pink", "red"),
-  machines: systemTile("server", "teal", "blue"),
-  usage: systemTile("barChart", "green", "teal"),
+  models: glyphTile("chip", "violet", "blue"),
+  plugins: glyphTile("puzzle", "pink", "red"),
   evolution: benchmarkIcon,
   docs: <SiteGlyph name="bookOpen" />,
   investment: <SiteGlyph name="barChart" />,
@@ -47,41 +45,36 @@ const appTiles = {
   slides: slidesIcon,
   images: imagesIcon,
   support: supportIcon,
-  expenses: null,
+  expenses: glyphTile("coin", "amber", "orange"),
   terminal: sessionToolArt.get("session-tools-terminal"),
   browser: sessionToolArt.get("session-tools-builtin-browser"),
-  meetings: null,
-  data: null,
-  board: null,
-  review: null,
-  mail: null,
-  sales: null,
-  hiring: null,
-  translate: null,
-  planner: null,
-  competitor: null,
-  inventory: null,
-  weekly: null,
-  monitor: null,
-  quotes: null,
-  audit: null,
-  alerts: null,
-  tutor: null,
-  contracts: null,
-  trips: null,
-  followup: null,
-  budget: null,
-  invoices: null,
-  quiz: null,
-  assets: null,
-  roster: null,
+  machines: glyphTile("server", "teal", "blue"),
+  usage: glyphTile("barChart", "green", "teal"),
+  meetings: glyphTile("microphone", "blue", "violet"),
+  data: glyphTile("database", "teal", "green"),
+  board: glyphTile("kanban", "violet", "pink"),
+  review: glyphTile("angleBrackets", "slate", "blue"),
+  mail: glyphTile("paperPlane", "blue", "teal"),
+  sales: glyphTile("dashboard", "orange", "red"),
+  hiring: glyphTile("users", "pink", "violet"),
+  translate: glyphTile("globe", "teal", "blue"),
+  planner: glyphTile("calendar", "red", "orange"),
+  competitor: glyphTile("eye", "violet", "blue"),
+  inventory: glyphTile("archive", "amber", "orange"),
+  weekly: glyphTile("penLine", "green", "teal"),
+  monitor: glyphTile("pulse", "red", "pink"),
+  quotes: glyphTile("percent", "green", "blue"),
+  audit: glyphTile("shieldCheck", "blue", "slate"),
+  alerts: glyphTile("bell", "orange", "amber"),
+  tutor: glyphTile("lightbulb", "amber", "red"),
+  contracts: glyphTile("rectangleCheck", "slate", "violet"),
 };
 
 type AppKey = keyof typeof appTiles;
 
 /**
- * The apps the home screen opens on, in home-screen order. The first twelve are what the
- * narrowest screen shows at rest.
+ * The apps already on the home screen when a run opens, in home-screen order. A run shows as many
+ * of them as leave room for the generated ones, so the list must fill the widest screen.
  */
 const INSTALLED_APPS: readonly AppKey[] = [
   "models",
@@ -98,15 +91,6 @@ const INSTALLED_APPS: readonly AppKey[] = [
   "browser",
   "machines",
   "usage",
-];
-
-/**
- * What one sentence can generate, in the order the demo asks for it. System apps and the session
- * tools ship with the product, so they are never generated. The list repeats, so it must stay
- * longer than the widest screen shows at once, and the apps the screen opens on come last: an app
- * must have scrolled away before its name comes round again.
- */
-const GENERATED_APPS = [
   "meetings",
   "data",
   "board",
@@ -116,6 +100,10 @@ const GENERATED_APPS = [
   "hiring",
   "translate",
   "planner",
+];
+
+/** What a run generates, one sentence each, in the order the demo asks for them. */
+const GENERATED_APPS = [
   "competitor",
   "inventory",
   "weekly",
@@ -125,39 +113,12 @@ const GENERATED_APPS = [
   "alerts",
   "tutor",
   "contracts",
-  "trips",
-  "followup",
-  "budget",
-  "invoices",
-  "quiz",
-  "assets",
-  "roster",
-  "docs",
-  "investment",
-  "legal",
-  "slides",
-  "images",
-  "support",
-  "expenses",
 ] as const satisfies readonly AppKey[];
-
-type GeneratedAppKey = (typeof GENERATED_APPS)[number];
-
-/** The app in a home-screen position: the opening ones, then the generated list over and over. */
-function appAt(index: number): AppKey {
-  return (
-    INSTALLED_APPS[index] ??
-    GENERATED_APPS[(index - INSTALLED_APPS.length) % GENERATED_APPS.length]!
-  );
-}
 
 /** The name under a tile. The workbench the next section shows is one of the system apps. */
 function appName(app: AppKey): string {
   return app === "evolution" ? S.selfImprove.workbench.title : S.cases.workspace.apps[app];
 }
-
-/** How many tints a letter tile can take: the product's palette for apps without an icon. */
-const LETTER_HUES = 8;
 
 /** Edge of a home-screen icon, and of the ring a building app wears just outside it, in px. */
 const ICON_PX = 56;
@@ -178,20 +139,7 @@ function AppMark({ app }: { app: AppKey }) {
         />
       </AppIconShape>
     );
-  if (art === null) {
-    // A stable tint per app, as the product derives one from the app's id.
-    const hue = Object.keys(appTiles).indexOf(app) % LETTER_HUES;
-    return (
-      <AppIconShape
-        size={ICON_PX}
-        aria-hidden
-        className={`scene-app-mark scene-app-letter scene-app-hue-${hue}`}
-      >
-        {[...appName(app)][0]?.toUpperCase()}
-      </AppIconShape>
-    );
-  }
-  if (typeof art === "object" && "from" in art)
+  if (typeof art === "object" && art !== null && "from" in art)
     return (
       <AppIconShape
         size={ICON_PX}
@@ -219,22 +167,25 @@ const COLUMN_PX = 112;
 const GUTTER_PX = 16;
 /** The room the home screen keeps clear on each side of its grid, in px. */
 const STAGE_INSET_PX = 24;
-/** A phone's three columns at the least, and no more than the generated list can keep distinct. */
+/** A phone's three columns at the least, and no more than the installed list can fill. */
 const MIN_COLUMNS = 3;
 const MAX_COLUMNS = 8;
 const ROWS = 4;
 
-/** A new sentence is sent this often, so a few apps are always building at once. */
-const SEND_MS = 700;
-/** How long each app takes to build, by turn: uneven, so installs land out of step. */
-const BUILD_MS = [2700, 3500, 2300, 3100] as const;
+/** A new sentence is sent this often: time to read it being typed and to see its app appear. */
+const SEND_MS = 2000;
+/** How long an app builds: a little over one send, so one or two are building at a time. */
+const BUILD_MS = 2800;
+/** The full screen rests this long, then the generated apps leave and the run starts over. */
+const REST_MS = 3200;
+const LEAVE_MS = 500;
 
 /**
  * The Harness OS App Center, drawn after the product's own page: its header and actions, its home
- * screen of icon-and-name tiles, and a composer docked under it. One sentence after another goes
- * into the composer; each becomes an app that builds under the install ring in its own time, and
- * the screen scrolls a row whenever the last one fills. The count beside the title is the number
- * of installed apps.
+ * screen of icon-and-name tiles, and a composer docked under it. A run types one sentence after
+ * another into the composer; each becomes an app that builds under the install ring and joins the
+ * home screen, until the generated apps have filled it. The screen rests, the generated apps
+ * leave, and the run starts over. The count beside the title is the number of installed apps.
  */
 export function AppGenerationDiagram() {
   const c = S.cases.workspace;
@@ -250,46 +201,58 @@ export function AppGenerationDiagram() {
       Math.floor((width - 2 * STAGE_INSET_PX + GUTTER_PX) / (COLUMN_PX + GUTTER_PX)),
     ),
   );
-  // A run opens with the last row empty, so the first sentences visibly fill the screen.
-  const opening = columns * (ROWS - 1);
+  // The generated apps take the last places on the screen, so a finished run fills it exactly.
+  const opening = columns * ROWS - GENERATED_APPS.length;
 
-  /** Sentences sent so far, and the ones whose apps are still building. */
+  /** Sentences sent in this run, the apps still building, and whether the run is being cleared. */
   const [sent, setSent] = useState(0);
   const [building, setBuilding] = useState<readonly number[]>([]);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
-    setSent(0);
-    setBuilding([]);
+    const reset = () => {
+      setSent(0);
+      setBuilding([]);
+      setLeaving(false);
+    };
+    reset();
     if (!running) return;
-    let turn = 0;
     const timers = new Set<number>();
-    const send = window.setInterval(() => {
-      const mine = turn++;
-      setSent(mine + 1);
-      setBuilding((list) => [...list, mine]);
-      const done = window.setTimeout(
-        () => {
-          timers.delete(done);
-          setBuilding((list) => list.filter((item) => item !== mine));
-        },
-        BUILD_MS[mine % BUILD_MS.length],
-      );
-      timers.add(done);
-    }, SEND_MS);
+    const after = (ms: number, run: () => void) => {
+      const timer = window.setTimeout(() => {
+        timers.delete(timer);
+        run();
+      }, ms);
+      timers.add(timer);
+    };
+    const start = () => {
+      reset();
+      GENERATED_APPS.forEach((_, turn) => {
+        const at = (turn + 1) * SEND_MS;
+        after(at, () => {
+          setSent(turn + 1);
+          setBuilding((list) => [...list, turn]);
+        });
+        after(at + BUILD_MS, () => setBuilding((list) => list.filter((item) => item !== turn)));
+      });
+      const done = GENERATED_APPS.length * SEND_MS + BUILD_MS + REST_MS;
+      after(done, () => setLeaving(true));
+      after(done + LEAVE_MS, start);
+    };
+    start();
     return () => {
-      window.clearInterval(send);
       for (const timer of timers) window.clearTimeout(timer);
     };
-  }, [running, columns]);
+  }, [running]);
 
-  // Still, the screen is full and everything on it is installed.
-  const total = reduced ? columns * ROWS : opening + sent;
-  const installed = total - building.length;
-  const scrolled = Math.max(0, Math.ceil(total / columns) - ROWS);
-  // One row above the screen stays mounted while it scrolls out of sight.
-  const first = Math.max(0, scrolled - 1) * columns;
-  // The sentence being typed is the one the next app will come from.
-  const asking = appAt(opening + sent) as GeneratedAppKey;
+  // Still, the run is finished: the screen is full and everything on it is installed.
+  const shown = reduced ? GENERATED_APPS.length : sent;
+  const installed = opening + (leaving ? 0 : shown - building.length);
+  // The sentence being typed is the one the next app will come from; a finished run keeps its last.
+  const asking = GENERATED_APPS[Math.min(shown, GENERATED_APPS.length - 1)]!;
+  const apps = [...INSTALLED_APPS.slice(0, opening), ...GENERATED_APPS.slice(0, shown)];
+  // Between the first sentence and the last install the composer says it is generating.
+  const working = running && !leaving && (shown < GENERATED_APPS.length || building.length > 0);
 
   return (
     <div
@@ -325,24 +288,20 @@ export function AppGenerationDiagram() {
         className="scene-os-stage"
         style={{ "--scene-columns": columns, "--scene-rows": ROWS } as CSSProperties}
       >
-        <ul
-          className="scene-launcher"
-          aria-label={c.title}
-          style={{ "--scene-scrolled": scrolled } as CSSProperties}
-        >
-          {Array.from({ length: total - first }, (_, offset) => {
-            const index = first + offset;
-            const app = appAt(index);
+        <ul className="scene-launcher" aria-label={c.title}>
+          {apps.map((app, index) => {
             const turn = index - opening;
             const generated = running && turn >= 0;
             const state = !generated
               ? "installed"
-              : building.includes(turn)
-                ? "building"
-                : "landed";
+              : leaving
+                ? "leaving"
+                : building.includes(turn)
+                  ? "building"
+                  : "landed";
             return (
               <li
-                key={index}
+                key={app}
                 data-app-state={state}
                 style={
                   {
@@ -381,7 +340,7 @@ export function AppGenerationDiagram() {
       </div>
       <div className="scene-composer-dock" aria-hidden="true">
         <div className="scene-composer">
-          <span className="scene-composer-text" key={sent}>
+          <span className="scene-composer-text" key={asking}>
             {c.prompts[asking]}
           </span>
           <div className="scene-composer-row">
@@ -390,7 +349,7 @@ export function AppGenerationDiagram() {
               {c.builderLabel}
             </span>
             <span className="scene-composer-status">
-              {running ? (
+              {working ? (
                 <>
                   <Spinner className="scene-activity" label={c.generating} />
                   {c.generating}

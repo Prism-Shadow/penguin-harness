@@ -1,5 +1,6 @@
 /** Site-specific icons and re-exports of the shared public-site set. */
 import type { ReactNode, SVGProps } from "react";
+import { ProviderLogo } from "../../../ui/src/components/icons/logos/provider-logo";
 
 type IconProps = SVGProps<SVGSVGElement>;
 
@@ -21,7 +22,19 @@ function Icon({ children, ...props }: IconProps & { children: ReactNode }) {
 }
 
 export type ModelProvider =
-  "openai" | "anthropic" | "gemini" | "deepseek" | "zai" | "moonshot" | "qwen" | "openrouter";
+  | "tokendance"
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "deepseek"
+  | "zai"
+  | "moonshot"
+  | "qwen"
+  | "openrouter"
+  | "opencode";
+
+/** Marks drawn by the shared provider-logo set under its own id: one currentColor shape each. */
+const SHARED_MARKS = { tokendance: "tokendance", opencode: "opencode-go" } as const;
 
 /** Compact model-provider marks reused from the Web App's provider glyph set. */
 export function ModelProviderLogo({
@@ -31,6 +44,14 @@ export function ModelProviderLogo({
   provider: ModelProvider;
   className?: string;
 }) {
+  if (provider === "tokendance" || provider === "opencode") {
+    return (
+      <ProviderLogo
+        provider={SHARED_MARKS[provider]}
+        className={`text-gray-900 dark:text-gray-100 ${className ?? ""}`}
+      />
+    );
+  }
   if (provider === "gemini") {
     return (
       <svg viewBox="0 0 24 24" className={className} aria-hidden="true">

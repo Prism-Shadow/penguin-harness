@@ -198,9 +198,9 @@ export const en: Strings = {
       "An RSI toolkit changes your agent’s harness (its prompts and Skills) while the model stays fixed, and measures every change on a Benchmark.",
     evaluate: "Evaluate",
     optimize: "Optimize",
-    title: "A unified self-evolution platform for any agent",
+    title: "Self-evolution for any agent",
     subtitle:
-      "Integrates RSI algorithms and domain Benchmarks into one framework — once you configure the tested agent, the Teacher Agent automatically evaluates, diagnoses, and tunes its prompts and Skills in a loop for higher accuracy, lower cost, and faster runs.",
+      "One sentence starts the loop: a Teacher Agent automatically evaluates and tunes other agents' prompts and Skills.",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Tested agent",
@@ -221,9 +221,9 @@ export const en: Strings = {
   },
 
   quickstart: {
-    title: "Install PenguinHarness, then pick how to start it",
+    title: "Install PenguinHarness",
     subtitle:
-      "The desktop app works as soon as it is installed. After a command-line install, open the Web UI or use it in the terminal.",
+      "The desktop app works as soon as it's installed; the command line gives the Web UI or terminal.",
     stepOne: "Step one",
     chooseInstall: "Choose an installation method",
     stepTwo: "Step two",
@@ -277,9 +277,9 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cases: {
-    os: "Build your first self-evolving Harness OS",
+    os: "Build a self-evolving Harness OS",
     subtitle:
-      "Turn any idea into an agent-powered app in one sentence, packed into one desktop Harness OS — upgrade any app through chat, or share and install from the community market in one click.",
+      "One sentence turns an idea into an app that keeps iterating, and can be shared through the app market.",
     workspace: {
       title: "App Center",
       project: "Harness OS",
@@ -289,29 +289,6 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       newFolder: "New folder",
       createWithAi: "Create with AI",
       prompts: {
-        legal:
-          "Build a contract review app: upload agreements, flag risky clauses, and export reports",
-        docs: "Create a knowledge base app: index technical manuals and answer questions with citations",
-        investment:
-          "Build a market research app: parse filings, chart revenue trends, and summarize metrics",
-        slides:
-          "Create a presentation studio app: turn an outline into a polished bilingual slide deck",
-        images:
-          "Build an image studio app: generate pictures from a description and repaint selected areas",
-        support: "Create a support desk app: gather tickets from every channel and draft replies",
-        expenses: "Build an expense log app: read invoices from photos and fill in the claim form",
-        meetings:
-          "Create a meeting notes app: upload a recording and get key points and action items",
-        data: "Build a data analyst app: upload a spreadsheet, ask in plain language, and get charts",
-        board: "Create a project board app: track every task by owner and due date",
-        review: "Build a code review app: read a pull request, flag risks, and suggest fixes",
-        mail: "Create a mail assistant app: sort the inbox and draft the replies that are due",
-        sales: "Build a sales dashboard app: total orders by region and track progress to target",
-        hiring:
-          "Create a resume screening app: score resumes against the role and explain each score",
-        translate: "Build a translator app: keep the original layout and export a bilingual copy",
-        planner:
-          "Create a planner app: fit to-dos into the calendar and suggest changes on conflicts",
         competitor:
           "Build a competitor watch app: check rival sites daily and summarize what changed",
         inventory: "Create an inventory app: scan items in and out and warn when stock runs low",
@@ -326,17 +303,6 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           "Create a study coach app: turn missed questions into similar exercises with worked answers",
         contracts:
           "Build a contract ledger app: record each contract’s amount and end date and remind before renewal",
-        trips: "Create a trip planner app: gather flight and hotel bookings into a day-by-day plan",
-        followup:
-          "Build a customer follow-up app: draft talking points from the last call and log the outcome",
-        budget:
-          "Create a budget planner app: enter each expense, compare it with the budget, and flag overruns",
-        invoices:
-          "Build an invoice check app: upload invoices and verify the payer, tax ID, and amount",
-        quiz: "Create a quiz builder app: write questions from training material and track everyone’s scores",
-        assets: "Build an asset tracker app: scan devices in and list what the count is missing",
-        roster:
-          "Create a shift roster app: schedule shifts around people and leave and suggest swaps on conflicts",
       },
       apps: {
         docs: "Document Q&A",
@@ -370,20 +336,13 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         machines: "Machines",
         usage: "Cost Center",
         contracts: "Contract Ledger",
-        trips: "Trip Planner",
-        followup: "Customer Follow-up",
-        budget: "Budget Planner",
-        invoices: "Invoice Check",
-        quiz: "Quiz Builder",
-        assets: "Asset Tracker",
-        roster: "Shift Roster",
       },
     },
   },
 
   pillars: {
-    title: "A minimal, file-centric agent architecture",
-    subtitle: "When an agent improves, its files change and the model does not.",
+    title: "Lean agent architecture",
+    subtitle: "When an agent improves, its files change, not the model.",
     root: "PenguinHarness",
     diagramLabel:
       "PenguinHarness branches into AMSP, the Penguin SDK and Agent State, each leading to one card below",
@@ -391,62 +350,60 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       {
         concept: "AMSP",
         title: "Simplest is the best",
-        desc: "The engine streams AMSP records, the Trace stores them, the Web App renders them and the Agent API serves them to your programs, with no second format in between. Models are reached over MMSP.",
+        desc: "The engine streams AMSP records, the Trace stores them, the Web App renders them, the Agent API serves them. No second format.",
         link: "AMSP records",
       },
       {
         concept: "Penguin SDK",
         title: "Harness for building agents",
-        desc: "Every Task in PenguinHarness runs on @prismshadow/penguin-core. You can install the same package from npm. With the penguin-sdk Skill, an agent builds a standalone app on it, such as a RAG app that cites its sources.",
+        desc: "Tasks run on @prismshadow/penguin-core, also on npm. With the penguin-sdk Skill an agent builds a standalone app, such as a RAG app.",
         link: "SDK quick start",
       },
       {
         concept: "Agent State",
         title: "Harness for recursive self-improvement",
-        desc: "Its prompt, Skills and settings are files in its Agent State. Self-evolution edits these files and snapshots each version before changing it.",
+        desc: "Its prompt, Skills and settings are files in its Agent State. Self-evolution edits them and snapshots each version first.",
         link: "Configuration reference",
       },
     ],
   },
 
   compare: {
-    title: "Build enterprise-grade agents fast",
-    subtitle:
-      "An agent library runs the loop that calls the model and its tools. Around that loop you still need an interface, a record of each run, a way to score the agent and an API to call it.",
+    title: "Every piece included",
+    subtitle: "An agent library runs only the loop that calls the model and its tools.",
     library: {
       name: "Agent library",
       mode: "You build each piece",
-      note: "Write each part yourself, or wire in a separate product for it.",
+      note: "You build the interface, run records, scoring and API.",
     },
     penguin: {
       name: "PenguinHarness",
       mode: "Already built",
-      note: "A Web App, Traces, the Evaluation Center with built-in Benchmarks, self-evolution toolkits, a sandbox and the Agent API.",
+      note: "Web App, Traces, Evaluation Center with built-in Benchmarks, self-evolution toolkits, Agent API, sandbox.",
     },
   },
 
   scenarios: {
-    title: "From screening centers to factory floors",
-    subtitle:
-      "Two companies had PenguinHarness build their agents. Both now run them in production.",
+    title: "Two agents in production",
+    subtitle: "Two companies had PenguinHarness build agents that now run in production.",
     items: [
       {
         title: "Screening-report QC",
         alt: "A CT scanner room at a health screening center",
-        body: "A health-screening group used PenguinHarness to automatically build a report-QC agent and deploy it into its production environment on a local Qwen3 14B, so data never leaves the facility. A review round that took 30 minutes by hand now clears 30 reports a minute, with findings in line with medical experts and several times the review capacity.",
+        body: "A health-screening group's report-QC agent runs on a local Qwen3 14B, so data never leaves the facility. A review round that took 30 minutes by hand now clears 30 reports a minute.",
       },
       {
         title: "Production-line inspection",
         alt: "An automated semiconductor production line",
-        body: "A manufacturer used PenguinHarness to automatically build a production-line inspection agent and deploy it across multiple live lines. The agent watches equipment around the clock and tries automated recovery first when something goes wrong; after deployment, downtime fell 65% and output roughly doubled.",
+        body: "A manufacturer's inspection agent runs across multiple live lines, watching equipment around the clock. It tries automated recovery first when something goes wrong. Downtime fell 65% and output roughly doubled.",
       },
     ],
   },
 
   benchmark: {
-    title: "Accuracy on par with Claude Code and Codex, at a fraction of the cost",
+    title: "Accuracy on par with Claude Code, OpenAI Codex, at a fraction of the cost",
     subtitle:
-      "Each product runs on the model it is usually paired with, on two task suites. We compare accuracy, Tokens used and cost.",
+      "Each product runs on the model it is usually paired with; we compare accuracy, Tokens used and cost.",
     higherBetter: "higher is better",
     lowerBetter: "lower is better",
     dimScore: "Accuracy",
@@ -454,12 +411,12 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     dimCost: "Cost",
     dataTitle: "Complex data analysis",
     dataDesc:
-      "Best accuracy of the three (66.67%, against 53.33% for both rivals), at 1/35 of OpenAI Codex's cost and 1/70 of Claude Code's.",
+      "Best accuracy: 66.67% against 53.33% for both rivals, at 1/35 of OpenAI Codex's cost and 1/70 of Claude Code's.",
     dataFootnote:
       "15 complex data-analysis tasks, one run each. Tokens and cost are suite totals, estimated at official pricing.",
     codeTitle: "Coding tasks",
     codeDesc:
-      "Ties OpenAI Codex on accuracy (71.25%) and trails Claude Code (86.25%) — at 1/58 and 1/39 of their cost.",
+      "Ties OpenAI Codex on accuracy (71.25%), trails Claude Code (86.25%), at 1/58 and 1/39 of their cost.",
     codeFootnote:
       "40 coding tasks, two runs each, with accuracy over all 80 outcomes. Tokens and cost are suite totals, estimated at official pricing.",
     colFramework: "Framework",
@@ -476,8 +433,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
 
   community: {
     title: "Join the community",
-    subtitle:
-      "Ask questions on Discord or in the WeChat group, or open an Issue or a PR on GitHub.",
+    subtitle: "Ask a question, or open an Issue or a PR.",
     items: {
       discord: { name: "Discord", desc: "Talk with the team and other developers." },
       x: { name: "X (Twitter)", desc: "Product updates and releases." },
@@ -487,8 +443,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cta: {
-    title: "Download PenguinHarness and run your first self-evolution round",
-    subtitle: "Every version is scored and snapshotted, so a worse one rolls back in one step.",
+    title: "Run your first self-evolution round",
+    subtitle: "Every version is scored and snapshotted; a worse one rolls back in one step.",
     download: "Download the desktop app",
     quickstart: "Get started",
     docs: "Read the docs",

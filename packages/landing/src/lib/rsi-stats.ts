@@ -6,6 +6,7 @@ import type { Strings } from "./strings";
 
 /** In the order the hero draws the logos; `name` is the brand's own casing (link label). */
 export const MODEL_PROVIDERS = [
+  { id: "tokendance", name: "TokenDance", href: "https://tokendance.space" },
   { id: "openai", name: "OpenAI", href: "https://openai.com" },
   { id: "anthropic", name: "Anthropic", href: "https://www.anthropic.com" },
   { id: "gemini", name: "Gemini", href: "https://deepmind.google/models/gemini/" },
@@ -14,6 +15,7 @@ export const MODEL_PROVIDERS = [
   { id: "moonshot", name: "Moonshot", href: "https://www.moonshot.cn" },
   { id: "qwen", name: "Qwen", href: "https://qwen.ai" },
   { id: "openrouter", name: "OpenRouter", href: "https://openrouter.ai" },
+  { id: "opencode", name: "OpenCode", href: "https://opencode.ai" },
 ] as const satisfies ReadonlyArray<{ id: ModelProvider; name: string; href: string }>;
 
 /**

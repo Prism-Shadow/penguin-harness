@@ -49,7 +49,7 @@ const TRENDS: ReadonlyArray<{
 const VERSIONS = TRENDS[0]!.points.length;
 const STAGES = S.selfImprove.workbench.stages.length;
 /** One tick is one stage of one round. */
-const TICK_MS = 700;
+const TICK_MS = 500;
 /** Ticks until every agent has reached the last version. */
 const RUN_TICKS = (VERSIONS - 1) * STAGES;
 /** The finished run rests this long, then the curves clear for one tick and the run starts over. */
@@ -67,11 +67,17 @@ function useEvolutionClock(running: boolean, reduced: boolean) {
   useEffect(() => {
     setCount(0);
     if (!running) return;
-    const timer = window.setInterval(() => setCount((n) => (n + 1) % CYCLE_TICKS), TICK_MS);
+    const timer = window.setInterval(() => setCount((n) => n + 1), TICK_MS);
     return () => window.clearInterval(timer);
   }, [running]);
-  if (reduced) return { tick: RUN_TICKS, clearing: false };
-  return { tick: Math.min(count, RUN_TICKS), clearing: running && count === CYCLE_TICKS - 1 };
+  if (reduced) return { tick: RUN_TICKS, turns: RUN_TICKS, clearing: false };
+  const tick = Math.min(count % CYCLE_TICKS, RUN_TICKS);
+  return {
+    tick,
+    // Every stage walked since the clock started: it only grows, so a loop's arrow never turns back.
+    turns: Math.floor(count / CYCLE_TICKS) * RUN_TICKS + tick,
+    clearing: running && count % CYCLE_TICKS === CYCLE_TICKS - 1,
+  };
 }
 
 /** A short arrow between the two roles, with the message that travels along it. */
@@ -88,12 +94,60 @@ function FlowArrow({ back = false }: { back?: boolean }) {
   );
 }
 
+/** Where the connectors turn and end, in px: the bus's corner, and an arrowhead's reach. */
+const LINK_CORNER = 8;
+const LINK_HEAD = 4.5;
+
+/**
+ * The lines from the two roles down to the loops, drawn at the size they are shown at so every
+ * corner and arrowhead keeps its shape: a trunk under each role, one bus across, and a drop that
+ * ends in an arrowhead over each column of loops.
+ */
+function Links({
+  className,
+  width,
+  height,
+  bus,
+  trunks,
+  drops,
+}: {
+  className: string;
+  width: number;
+  height: number;
+  /** How far down the bus runs, in px. */
+  bus: number;
+  /** Where the trunks and the drops stand, as fractions of the width. */
+  trunks: readonly number[];
+  drops: readonly number[];
+}) {
+  const at = (fraction: number) => Math.round(fraction * width) + 0.5;
+  const end = height - 1;
+  const first = at(drops[0]!);
+  const last = at(drops[drops.length - 1]!);
+  const d = [
+    ...trunks.map((x) => `M${at(x)},0 V${bus}`),
+    // The outer drops and the bus are one line, rounded where it turns.
+    `M${first},${end} V${bus + LINK_CORNER} Q${first},${bus} ${first + LINK_CORNER},${bus} H${last - LINK_CORNER} Q${last},${bus} ${last},${bus + LINK_CORNER} V${end}`,
+    ...drops.slice(1, -1).map((x) => `M${at(x)},${bus} V${end}`),
+    ...drops.map(
+      (x) =>
+        `M${at(x) - LINK_HEAD},${end - LINK_HEAD} L${at(x)},${end} L${at(x) + LINK_HEAD},${end - LINK_HEAD}`,
+    ),
+  ].join(" ");
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} className={className}>
+      <path d={d} />
+    </svg>
+  );
+}
+
 /**
  * The platform every tested agent shares: the Optimizer dispatches Evaluators and reads their
  * scores, and both reach down to each agent's loop through one bus.
  */
 function Platform() {
   const c = S.selfImprove;
+  const { ref, width } = useWidth<HTMLDivElement>(720);
   return (
     <div className="evo-platform" role="img" aria-label={c.diagramLabel}>
       <div className="evo-roles">
@@ -116,50 +170,56 @@ function Platform() {
           <code>{EVALUATOR_SKILL}</code>
         </div>
       </div>
-      <div className="evo-links">
-        {/* Stretched to the row of loops below: one drop per column, at the column's centre. */}
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="evo-links-wide">
-          <path d="M25,0 V50 M75,0 V50 M12.5,50 H87.5 M12.5,50 V100 M37.5,50 V100 M62.5,50 V100 M87.5,50 V100" />
-        </svg>
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="evo-links-narrow">
-          <path d="M50,0 V50 M25,50 H75 M25,50 V100 M75,50 V100" />
-        </svg>
-        <span className="evo-link-label evo-link-improve">{c.edgeImprove}</span>
-        <span className="evo-link-label evo-link-bench">{c.edgeBench}</span>
+      <div ref={ref} className="evo-links">
+        {/* Four loops in a row under two roles side by side, or two columns under the stack. */}
+        <Links
+          className="evo-links-wide"
+          width={width}
+          height={80}
+          bus={46}
+          trunks={[1 / 4, 3 / 4]}
+          drops={[1 / 8, 3 / 8, 5 / 8, 7 / 8]}
+        />
+        <Links
+          className="evo-links-narrow"
+          width={width}
+          height={104}
+          bus={70}
+          trunks={[1 / 2]}
+          drops={[1 / 4, 3 / 4]}
+        />
+        <span className="evo-link-labels">
+          <span>{c.edgeImprove}</span>
+          <span>{c.edgeBench}</span>
+        </span>
       </div>
     </div>
   );
 }
 
-/** Geometry of a loop: four arrow arcs round a circle, clockwise from the top. */
+/**
+ * Geometry of a loop: one arrow that goes most of the way round a circle, its head at the top
+ * pointing clockwise. Turning it a quarter is one stage; a full turn is one round.
+ */
 const RING = 96;
 const RING_RADIUS = 40;
-const ARC_GAP_DEG = 13;
-const HEAD_PX = 5.5;
-const HEAD_SPREAD_DEG = 34;
+const ARROW_SWEEP_DEG = 290;
+const HEAD_PX = 6;
+const HEAD_SPREAD_DEG = 36;
 
-function ringPoint(deg: number, radius = RING_RADIUS): [number, number] {
-  const rad = (deg * Math.PI) / 180;
-  return [RING / 2 + radius * Math.sin(rad), RING / 2 - radius * Math.cos(rad)];
-}
 const fixed = (n: number) => n.toFixed(2);
-
-const ARCS = Array.from({ length: STAGES }, (_, stage) => {
-  const span = 360 / STAGES;
-  const from = stage * span + ARC_GAP_DEG;
-  const to = (stage + 1) * span - ARC_GAP_DEG;
-  const [x1, y1] = ringPoint(from);
-  const [x2, y2] = ringPoint(to);
-  // The head opens backwards along the tangent at the arc's end.
-  const barb = (side: number) => {
-    const rad = ((to + side * HEAD_SPREAD_DEG) * Math.PI) / 180;
-    return `${fixed(x2 - HEAD_PX * Math.cos(rad))},${fixed(y2 - HEAD_PX * Math.sin(rad))}`;
-  };
+const LOOP_ARROW = (() => {
+  const centre = RING / 2;
+  const top = centre - RING_RADIUS;
+  const tail = ((360 - ARROW_SWEEP_DEG) * Math.PI) / 180;
+  const spread = (HEAD_SPREAD_DEG * Math.PI) / 180;
+  const barb = (side: number) =>
+    `${fixed(centre - HEAD_PX * Math.cos(spread))},${fixed(top + side * HEAD_PX * Math.sin(spread))}`;
   return {
-    line: `M${fixed(x1)},${fixed(y1)} A${RING_RADIUS},${RING_RADIUS} 0 0 1 ${fixed(x2)},${fixed(y2)}`,
-    head: `M${barb(-1)} L${fixed(x2)},${fixed(y2)} L${barb(1)}`,
+    line: `M${fixed(centre + RING_RADIUS * Math.sin(tail))},${fixed(centre - RING_RADIUS * Math.cos(tail))} A${RING_RADIUS},${RING_RADIUS} 0 1 1 ${centre},${top}`,
+    head: `M${barb(-1)} L${centre},${top} L${barb(1)}`,
   };
-});
+})();
 
 /**
  * What tells one tested agent from the next, index-aligned with S.selfImprove.workbench.tasks: a
@@ -175,10 +235,10 @@ const AGENT_MARKS: ReadonlyArray<{ glyph: SiteGlyphName; tone: string }> = [
 
 /**
  * One tested agent going round its loop, its mark in the centre with the version under it. The
- * arcs already walked this round stay drawn, the current one draws itself over the tick, and
- * closing the last arc clears the ring and bumps the version.
+ * arrow turns a quarter with every stage, and each time its head comes back to the top a round
+ * has closed and the version bumps.
  */
-function AgentLoop({ index, tick }: { index: number; tick: number }) {
+function AgentLoop({ index, tick, turns }: { index: number; tick: number; turns: number }) {
   const c = S.selfImprove.workbench;
   const task = c.tasks[index]!;
   const walked = tick + index;
@@ -189,13 +249,15 @@ function AgentLoop({ index, tick }: { index: number; tick: number }) {
     <li data-agent-loop={task.name}>
       <span className="evo-ring">
         <svg viewBox={`0 0 ${RING} ${RING}`} aria-hidden="true">
-          {ARCS.map((arc, i) => (
-            <g key={i} data-arc={i === stage ? "active" : i < stage ? "done" : "waiting"}>
-              <path d={arc.line} className="evo-arc-track" />
-              <path d={arc.line} pathLength={1} className="evo-arc" />
-              <path d={arc.head} className="evo-arc-head" />
-            </g>
-          ))}
+          <circle cx={RING / 2} cy={RING / 2} r={RING_RADIUS} className="evo-loop-track" />
+          <g
+            className="evo-loop-arrow"
+            // The head ends this stage a quarter further on than it began it.
+            style={{ transform: `rotate(${((turns + index + 1) * 360) / STAGES}deg)` }}
+          >
+            <path d={LOOP_ARROW.line} />
+            <path d={LOOP_ARROW.head} />
+          </g>
         </svg>
         <span className={`evo-agent-mark scene-app-tone-${mark.tone}`} aria-hidden="true">
           <SiteGlyph name={mark.glyph} />
@@ -319,7 +381,7 @@ export function SelfImprove() {
   const { ref, active } = useVisibleActivity<HTMLDivElement>();
   const reduced = usePrefersReducedMotion();
   const running = active && !reduced;
-  const { tick, clearing } = useEvolutionClock(running, reduced);
+  const { tick, turns, clearing } = useEvolutionClock(running, reduced);
   return (
     <Section id="self-evolution" title={c.title} subtitle={c.subtitle}>
       <div
@@ -340,7 +402,7 @@ export function SelfImprove() {
             <Platform />
             <ul className="evo-loops" aria-label={c.nodeTarget}>
               {c.workbench.tasks.map((task, index) => (
-                <AgentLoop key={task.name} index={index} tick={tick} />
+                <AgentLoop key={task.name} index={index} tick={tick} turns={turns} />
               ))}
             </ul>
             <p className="evo-notes">
