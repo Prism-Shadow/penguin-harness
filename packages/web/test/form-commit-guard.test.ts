@@ -62,14 +62,15 @@ const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
   ],
 ];
 
-/** Modules outside the model, each with the reason. */
+/** Modules outside the model, each with the reason. The paths are what {@link inReach}'s scan
+ * reports: under `packages/web/src` for the app's own, under the root for a compiled web half. */
 const EXCUSED_FILES: ReadonlyArray<readonly [string, string]> = [
   [
-    "library/session/src/web/chat/context-gauge.tsx",
+    "chat/context-gauge.tsx",
     "the compaction threshold is a confirmation whose confirm is the Save; nothing is left behind",
   ],
   [
-    "library/session/src/web/chat/workspace-browser.tsx",
+    "chat/workspace-browser.tsx",
     "the Workspace file editor keeps its own guard and its file-naming discard prompt",
   ],
 ];
