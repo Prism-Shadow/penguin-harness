@@ -233,6 +233,7 @@
   "dependencies": {
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-agent-api": "workspace:*",
     "@prismshadow/penguin-library-auth": "workspace:*",
     "@prismshadow/penguin-library-cli": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
