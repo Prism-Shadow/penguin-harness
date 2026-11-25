@@ -88,9 +88,17 @@ export default defineConfig({
         // theme-pack and the UI package's pack rules, whose package exports are TypeScript
         // sources; left external, the run's Node loader reaches them and refuses the
         // extension. Inlining the libraries lets vite transform the chain the way it
-        // transforms this package's own imports.
+        // transforms this package's own imports. The project and model domain libraries
+        // join them for a second reason: their sources import core, and an externalized
+        // package's imports are resolved by Node — which finds core inside the injected
+        // copy's own node_modules, a second core evaluation whose module state (the named
+        // plugin library host, the kernel's interface tables) the setup file's naming on
+        // the vite-resolved copy never reaches. Inline puts those imports back through
+        // vite's resolver, whose dedupe entry below keeps one core copy.
         inline: [
           /@prismshadow\/penguin-library-setting/,
+          /@prismshadow\/penguin-library-project/,
+          /@prismshadow\/penguin-library-model/,
           /@prismshadow\/penguin-theme-pack/,
           /@prismshadow\/penguin-ui/,
         ],
