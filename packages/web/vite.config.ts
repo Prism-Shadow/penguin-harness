@@ -122,7 +122,13 @@ export const libraryWebAliases = [
 ];
 
 export default defineConfig({
-  resolve: { alias: libraryWebAliases },
+  resolve: {
+    alias: libraryWebAliases,
+    // A shipped plugin's web half is compiled with the app (src/plugin-web.gen.ts): whichever
+    // directory it resolves its imports from, the app and every plugin share one React, one UI
+    // package (its toasts, tooltips and Esc layers) and one face holding the app's handed-over host.
+    dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
+  },
   plugins: [
     penguinManifest(),
     penguinUi({ workbenchRuntime: true }),
@@ -134,12 +140,6 @@ export default defineConfig({
   // runs yet. The production build lowers them for its browser target; the dev server
   // transforms for `esnext` by default and would pass them through as a syntax error.
   esbuild: { target: "es2022" },
-  // A shipped plugin's web half is compiled with the app (src/plugin-web.gen.ts): whichever
-  // directory it resolves its imports from, the app and every plugin share one React, one UI
-  // package (its toasts, tooltips and Esc layers) and one face holding the app's handed-over host.
-  resolve: {
-    dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
-  },
   build: {
     // Never inline a font. Vite turns any asset under 4 KB into a data: URI, and a font slice the
     // stylesheet references would then ride inside the one render-blocking CSS file for every
