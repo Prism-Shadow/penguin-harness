@@ -47,7 +47,6 @@ import {
   PERMISSION_LEVEL_GLYPH,
   PERMISSION_LEVEL_TONE,
   S,
-  SettingsDialog,
   approvalModePick,
   firstUnavailableBackend,
   localizedText,
@@ -64,6 +63,7 @@ import {
   useAuth,
   useLocale,
 } from "@prismshadow/penguin-web/internal";
+import { SettingsDialog } from "@prismshadow/penguin-web/internal-hub";
 import type {
   PermissionLevel,
   PermissionPick,

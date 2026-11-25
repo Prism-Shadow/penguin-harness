@@ -130,8 +130,8 @@ export default defineConfig({
         replacement: fileURLToPath(new URL("./src/internal.ts", import.meta.url)),
       },
       {
-        find: /^@prismshadow\/penguin-web\/internal\/(.*)$/,
-        replacement: `${fileURLToPath(new URL("./src", import.meta.url))}/$1`,
+        find: /^@prismshadow\/penguin-web\/internal-hub$/,
+        replacement: fileURLToPath(new URL("./src/internal-hub.ts", import.meta.url)),
       },
     ],
   },

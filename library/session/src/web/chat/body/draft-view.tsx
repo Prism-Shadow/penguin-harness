@@ -38,9 +38,37 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
-import { AgentSelect, S, UNCONFINED, WorkspaceSelect, api, apiErrorText, cachedMachineAgents, defaultChatModel, draftSandboxAfter, draftUploads, effectiveThinkingLevel, failureNode, isConversationAgent, machineLink, onPluginConfigSaved, rememberMachineAgents, rememberSessionMachine, remoteAgentsEmpty, requestDefaultModels, sameModelRef, toastApiError, useAuth, useMachines, usePaneFocus, useProject, useSessions } from "@prismshadow/penguin-web/internal";
-||||||| parent of 98e4e299b5 (fix(web): the session web half re-exports its types through export type and is formatted)
-import { AgentSelect, GUIDE_MODEL_SELECTED, S, UNCONFINED, WorkspaceSelect, api, apiErrorText, cachedMachineAgents, defaultChatModel, draftSandboxAfter, draftUploads, effectiveThinkingLevel, failureNode, isConversationAgent, machineLink, onPluginConfigSaved, rememberMachineAgents, rememberSessionMachine, remoteAgentsEmpty, requestDefaultModels, sameModelRef, toastApiError, useAuth, useMachines, usePaneFocus, useProject, useSessions } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  UNCONFINED,
+  api,
+  apiErrorText,
+  cachedMachineAgents,
+  draftSandboxAfter,
+  draftUploads,
+  failureNode,
+  isConversationAgent,
+  machineLink,
+  onPluginConfigSaved,
+  rememberMachineAgents,
+  rememberSessionMachine,
+  remoteAgentsEmpty,
+  requestDefaultModels,
+  toastApiError,
+  useAuth,
+  useMachines,
+  usePaneFocus,
+  useProject,
+  useSessions,
+} from "@prismshadow/penguin-web/internal";
+import {
+  AgentSelect,
+  WorkspaceSelect,
+  defaultChatModel,
+  effectiveThinkingLevel,
+  sameModelRef,
+} from "@prismshadow/penguin-web/internal-hub";
+import type { MachineLink, PermissionPick } from "@prismshadow/penguin-web/internal";
 import type { MachineLink, PermissionPick } from "@prismshadow/penguin-web/internal";
 
 import { handOverSession } from "../session-handover";

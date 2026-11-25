@@ -1,15 +1,14 @@
 import {
   currentModeIndex,
-  parseOrgKey,
   sectionsIn,
   useAgentAvatarSrc,
   useAuth,
-  useCompany,
   useLocale,
   useProject,
   useSessions,
   useUpdateBadges,
 } from "@prismshadow/penguin-web/internal";
+import { parseOrgKey, useCompany } from "@prismshadow/penguin-web/internal-hub";
 import type {
   MainSidebarProps,
   SidebarBindingReader,

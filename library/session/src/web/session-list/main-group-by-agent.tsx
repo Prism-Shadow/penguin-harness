@@ -1,11 +1,6 @@
 import { AgentAvatar, Fold, GroupHeader, ICONS, ICON_SIZE, Waiting } from "@prismshadow/penguin-ui";
-import {
-  GROUP_ACTION_CLASS,
-  Icon,
-  S,
-  agentDisplayName,
-  employmentsOf,
-} from "@prismshadow/penguin-web/internal";
+import { GROUP_ACTION_CLASS, Icon, S, agentDisplayName } from "@prismshadow/penguin-web/internal";
+import { employmentsOf } from "@prismshadow/penguin-web/internal-hub";
 
 import { GroupBlock } from "./main-group-block";
 import { GroupPinButton } from "./main-group-pin-button";

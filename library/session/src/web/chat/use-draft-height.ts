@@ -1,10 +1,10 @@
 import { useCallback, useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from "react";
-import { parseChord } from "@prismshadow/penguin-web/internal/lib/shortcuts/chord";
 import {
   chordEquals,
   chordOf,
   currentPlatform,
   fitTextarea,
+  parseChord,
 } from "@prismshadow/penguin-web/internal";
 
 const taller = parseChord("Alt+Shift+ArrowDown");

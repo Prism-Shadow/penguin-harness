@@ -13,22 +13,24 @@
  */
 import { useSyncExternalStore } from "react";
 import type { SessionWorkbenchScope } from "@prismshadow/penguin-web-plugin";
-import { onCommand } from "@prismshadow/penguin-web/internal/lib/shortcuts/dispatcher";
+import {
+  S,
+  onCommand,
+  rememberTerminalMachine,
+  toastApiError,
+} from "@prismshadow/penguin-web/internal";
 import {
   HttpStatusError,
-  S,
   fetchJson,
   liveTerminals,
   noteTerminalCreated,
   noteTerminalReowned,
   refreshTerminals,
-  rememberTerminalMachine,
   terminalApiSupported,
   terminalsOf,
-  toastApiError,
   watchTerminals,
-} from "@prismshadow/penguin-web/internal";
-import type { TerminalInfo } from "@prismshadow/penguin-web/internal";
+} from "@prismshadow/penguin-web/internal-hub";
+import type { TerminalInfo } from "@prismshadow/penguin-web/internal-hub";
 
 import {
   currentDockScope,

@@ -21,14 +21,14 @@ import type {
   SessionInfo,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
+import { modelCalledKeyless } from "@prismshadow/penguin-web/internal";
 import {
   groupShape,
   hasConfiguredKey,
-  modelCalledKeyless,
   sameModelRef,
   trailingCompaction,
-} from "@prismshadow/penguin-web/internal";
-import type { ThinkingSwitchItem } from "@prismshadow/penguin-web/internal";
+} from "@prismshadow/penguin-web/internal-hub";
+import type { ThinkingSwitchItem } from "@prismshadow/penguin-web/internal-hub";
 
 /**
  * Whether the picker is disabled: a switch compacts, and the server neither starts nor queues a

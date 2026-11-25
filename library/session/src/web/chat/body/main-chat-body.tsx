@@ -1,6 +1,7 @@
 import { Activity, type ReactNode } from "react";
 import { WallpaperSurface, Button, EmptyState, Skeleton } from "@prismshadow/penguin-ui";
-import { PathCapsulesProvider, S } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { PathCapsulesProvider } from "@prismshadow/penguin-web/internal-hub";
 import { MessageStream } from "../message-stream";
 import { ChatDropRegion } from "../drop-zone";
 import { ConversationOutline } from "../conversation-outline";

@@ -3,11 +3,11 @@ import {
   aggregateWorkspaceCounts,
   aggregateWorkspaceLatest,
   completeWorkspaceGroups,
-  dropsEmployeeGroup,
   groupSessionsByWorkspace,
   isConversationAgent,
   machineForSession,
 } from "@prismshadow/penguin-web/internal";
+import { dropsEmployeeGroup } from "@prismshadow/penguin-web/internal-hub";
 
 import { mergeRegisteredWorkspaces } from "./workspace-registry";
 import { orderGroups } from "./group-order";

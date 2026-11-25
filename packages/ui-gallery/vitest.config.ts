@@ -32,8 +32,8 @@ export default defineConfig({
         replacement: at("../web/src/internal.ts"),
       },
       {
-        find: /^@prismshadow\/penguin-web\/internal\/(.*)$/,
-        replacement: `${at("../web/src")}/$1`,
+        find: /^@prismshadow\/penguin-web\/internal-hub$/,
+        replacement: at("../web/src/internal-hub.ts"),
       },
     ],
   },

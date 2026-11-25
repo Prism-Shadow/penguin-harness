@@ -15,12 +15,16 @@
  * edge, negative when pulled into the conversation.
  */
 import { rubberband } from "@prismshadow/penguin-ui";
-import { subscribeAccountApplied, writeCached } from "@prismshadow/penguin-web/internal/cache";
+import {
+  LAUNCHER_HIDDEN_KEY,
+  subscribeAccountApplied,
+  writeCached,
+} from "@prismshadow/penguin-web/internal";
 
 /** localStorage key of the resting position: the ball's centre as a ratio of the body's height. */
 export const LAUNCHER_Y_KEY = "penguin.dock.launcherY";
 /** localStorage key of the put-it-away preference; only LAUNCHER_HIDDEN_ON counts as hidden. */
-export const LAUNCHER_HIDDEN_KEY = "penguin.dock.launcherHidden";
+export { LAUNCHER_HIDDEN_KEY };
 const LAUNCHER_HIDDEN_ON = "1";
 const LAUNCHER_HIDDEN_OFF = "0";
 /** The ball's diameter (px). Raised from 44 on 2026-09-15: the ball, its entries and the caption read too small. */

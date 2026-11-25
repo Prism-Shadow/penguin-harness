@@ -5,11 +5,11 @@
  * `penguin.steerMode` for the composer's first render (lib/account-sync); configurable from the
  * composer's "+" menu in draft state and active sessions alike.
  */
-import { writeCached } from "@prismshadow/penguin-web/internal";
+import { STEER_MODE_KEY, writeCached } from "@prismshadow/penguin-web/internal";
 
 export type SteerMode = "steer" | "followup" | "interrupt";
 
-export const STEER_MODE_KEY = "penguin.steerMode";
+export { STEER_MODE_KEY };
 
 /** The cached mode; anything but an explicit follow-up or interrupt — absent, unknown, unreadable — is steer, the default. */
 export function readSteerMode(storage?: Pick<Storage, "getItem">): SteerMode {

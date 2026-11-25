@@ -3,11 +3,10 @@ import {
   bucketCostUsd,
   machineForSession,
   refusalHandoff,
-  sameModelRef,
   sessionActivity,
   sessionBackgroundTasks,
-  sessionThinkingLevel,
 } from "@prismshadow/penguin-web/internal";
+import { sameModelRef, sessionThinkingLevel } from "@prismshadow/penguin-web/internal-hub";
 
 import { modelTaskStartCount } from "../agent-topology";
 import { ChatInput } from "../chat-input";

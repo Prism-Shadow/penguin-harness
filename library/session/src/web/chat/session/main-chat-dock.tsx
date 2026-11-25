@@ -1,7 +1,5 @@
-import {
-  agentSettingsPath as agentPagePath,
-  sessionThinkingLevel,
-} from "@prismshadow/penguin-web/internal";
+import { agentSettingsPath as agentPagePath } from "@prismshadow/penguin-web/internal";
+import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal-hub";
 import { useCallback } from "react";
 
 import { useDockMount, closedDockView, dockViews } from "../../dock";

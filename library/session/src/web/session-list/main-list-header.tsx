@@ -14,8 +14,8 @@ import {
   NEW_CHAT_ICON,
   S,
   SORT_MODE_ICONS,
-  WorkspaceSelect,
 } from "@prismshadow/penguin-web/internal";
+import { WorkspaceSelect } from "@prismshadow/penguin-web/internal-hub";
 
 import type { MainSidebarState } from "./main-sidebar-controller";
 

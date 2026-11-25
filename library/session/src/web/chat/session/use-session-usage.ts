@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionInfo, SessionProcessInfo } from "@prismshadow/penguin-server/api";
 import { api } from "@prismshadow/penguin-web/internal";
-import type { StagedThinkingSwitch } from "@prismshadow/penguin-web/internal";
+import type { StagedThinkingSwitch } from "@prismshadow/penguin-web/internal-hub";
 import { applyUsageFetch, createCostStatHold } from "../header-stats";
 
 import type { SessionStreamState } from "../use-session-stream";
