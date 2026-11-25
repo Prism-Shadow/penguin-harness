@@ -24,6 +24,7 @@ import type {
 import type { WorkbenchTabRenderer } from "@prismshadow/penguin-library-workbench";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { StartPage } from "./start-page.js";
+import { endpointOf } from "../app.js";
 
 export interface ContributionsRouteDeps {
   web: WebShell;
@@ -85,9 +86,11 @@ export interface WebShellSlots {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "web.contributions",
+        id: "web.contributions.list",
+        method: "GET",
         prefix: "/api/contributions",
         auth: "user",
+        role: "system.read",
         order: 65,
       },
     ],
@@ -98,7 +101,7 @@ export class WebModule {
   /** The start page's counts ride the same answer (routes/start-page.ts). */
   @Use() private readonly startPage!: StartPage;
   @Provide() web!: WebShell;
-  @Bind("web.contributions") contributionsRoutes!: Hono<AppEnv>;
+  @Bind("web.contributions.list") contributionsRoutes!: Hono<AppEnv>;
   setup({ contributions }: ClassCtx) {
     const hmr = this.hmr;
     // The kernel checked each contribution's data against its slot's type at boot.
@@ -124,6 +127,6 @@ export class WebModule {
       }),
     };
     this.web = web;
-    this.contributionsRoutes = contributionsRoutes({ web });
+    this.contributionsRoutes = endpointOf(contributionsRoutes({ web }), "GET", "/");
   }
 }

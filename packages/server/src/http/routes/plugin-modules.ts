@@ -108,20 +108,34 @@ export function adminPluginModuleRoutes(deps: PluginModuleRoutesDeps): Hono<AppE
   return app;
 }
 
+import { endpointOf } from "../app.js";
+
 @Component({
   contributes: {
     "HttpModule.routes": [
       {
-        id: "PluginModuleRoutes.project",
+        id: "plugin.modules.request",
+        method: "POST",
         prefix: "/api/projects/:projectId/plugins/modules",
         auth: "user",
         // Ahead of the Projects group, whose `/:projectId/…` would otherwise answer here.
         order: 61,
+        role: "plugin.maintain",
       },
       {
-        id: "PluginModuleRoutes.admin",
+        id: "admin.pluginModules.list",
+        method: "GET",
         prefix: "/api/admin/plugin-modules",
         auth: "user",
+        role: "admin.read",
+        order: 46,
+      },
+      {
+        id: "admin.pluginModules.decide",
+        method: "POST",
+        prefix: "/api/admin/plugin-modules/decide",
+        auth: "user",
+        role: "admin.maintain",
         order: 46,
       },
     ],
@@ -131,11 +145,15 @@ export class PluginModuleRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly library!: PluginLibrary;
   @Use() private readonly modules!: PluginModules;
-  @Bind("PluginModuleRoutes.project") projectRoutes!: Hono<AppEnv>;
-  @Bind("PluginModuleRoutes.admin") adminRoutes!: Hono<AppEnv>;
+  @Bind("plugin.modules.request") projectRequestRoute!: Hono<AppEnv>;
+  @Bind("admin.pluginModules.list") adminListRoute!: Hono<AppEnv>;
+  @Bind("admin.pluginModules.decide") adminDecideRoute!: Hono<AppEnv>;
   setup() {
     const deps = { access: this.access, library: this.library, modules: this.modules };
-    this.projectRoutes = projectPluginModuleRoutes(deps);
-    this.adminRoutes = adminPluginModuleRoutes(deps);
+    const projectGroup = projectPluginModuleRoutes(deps);
+    this.projectRequestRoute = endpointOf(projectGroup, "POST", "/");
+    const adminGroup = adminPluginModuleRoutes(deps);
+    this.adminListRoute = endpointOf(adminGroup, "GET", "/");
+    this.adminDecideRoute = endpointOf(adminGroup, "POST", "/decide");
   }
 }

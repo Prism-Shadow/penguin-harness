@@ -142,6 +142,7 @@ import type { HandshakeReading } from "./handshake.js";
 import { machineSessionForward } from "./session-forward.js";
 import type { MachineSessionForward } from "./session-forward.js";
 import { HttpError } from "../http/errors.js";
+import { endpointOf } from "../http/app.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
@@ -3624,19 +3625,195 @@ export abstract class Machines extends Interface<
 
 @Module({
   contributes: {
+    "AgentAuthPermissionProvider.roles": [
+      { id: "role.machine.read", parents: ["readonly"] },
+      { id: "role.machine.maintain", children: ["machine.read"], parents: ["system-maintainer"] },
+      { id: "role.machine.all", children: ["machine.maintain"], parents: ["admin"] },
+    ],
     "HttpModule.routes": [
       {
-        id: "MachinesModule.routes",
+        id: "machine.list",
+        method: "GET",
         prefix: "/api/projects/:projectId/machines",
         auth: "user",
+        role: "machine.read",
         order: 50,
       },
       {
-        id: "MachinesModule.server-proxy",
+        id: "machine.events",
+        method: "GET",
+        prefix: "/api/projects/:projectId/machines/events",
+        auth: "user",
+        role: "machine.read",
+        order: 50,
+      },
+      {
+        id: "machine.use",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/use",
+        auth: "user",
+        role: "machine.maintain",
+        order: 50,
+      },
+      {
+        id: "machine.stopUsing",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/stop-using",
+        auth: "user",
+        role: "machine.maintain",
+        order: 50,
+      },
+      {
+        id: "machine.listSshHosts",
+        method: "GET",
+        prefix: "/api/projects/:projectId/machines/ssh-hosts",
+        auth: "user",
+        role: "machine.read",
+        order: 50,
+      },
+      {
+        id: "machine.createSshHost",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/ssh-hosts",
+        auth: "user",
+        role: "machine.all",
+        order: 50,
+      },
+      {
+        id: "machine.getSshHost",
+        method: "GET",
+        prefix: "/api/projects/:projectId/machines/ssh-hosts/:alias",
+        auth: "user",
+        role: "machine.read",
+        order: 50,
+      },
+      {
+        id: "machine.updateSshHost",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/machines/ssh-hosts/:alias",
+        auth: "user",
+        role: "machine.all",
+        order: 50,
+      },
+      {
+        id: "machine.add",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/add",
+        auth: "user",
+        role: "machine.all",
+        order: 50,
+      },
+      {
+        id: "machine.probe",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/probe",
+        auth: "user",
+        role: "machine.read",
+        order: 50,
+      },
+      {
+        id: "machine.install",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/:machineId/install",
+        auth: "user",
+        role: "machine.all",
+        order: 50,
+      },
+      {
+        id: "machine.connect",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/:machineId/connect",
+        auth: "user",
+        role: "machine.maintain",
+        order: 50,
+      },
+      {
+        id: "machine.reconnect",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/:machineId/reconnect",
+        auth: "user",
+        role: "machine.maintain",
+        order: 50,
+      },
+      {
+        id: "machine.stopReconnecting",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/:machineId/stop-reconnecting",
+        auth: "user",
+        role: "machine.maintain",
+        order: 50,
+      },
+      {
+        id: "machine.listDirs",
+        method: "GET",
+        prefix: "/api/projects/:projectId/machines/:machineId/dirs",
+        auth: "user",
+        role: "machine.read",
+        order: 50,
+      },
+      {
+        id: "machine.release",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/:machineId/release",
+        auth: "user",
+        role: "machine.all",
+        order: 50,
+      },
+      {
+        id: "machine.restart",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/:machineId/restart",
+        auth: "user",
+        role: "machine.maintain",
+        order: 50,
+      },
+      {
+        id: "machine.stop",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/:machineId/stop",
+        auth: "user",
+        role: "machine.maintain",
+        order: 50,
+      },
+      {
+        id: "machine.uninstall",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/:machineId/uninstall",
+        auth: "user",
+        role: "machine.all",
+        order: 50,
+      },
+      {
+        id: "machine.sync",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/:machineId/sync",
+        auth: "user",
+        role: "machine.maintain",
+        order: 50,
+      },
+      {
+        id: "machine.diagnose",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/:machineId/diagnose",
+        auth: "user",
+        role: "machine.read",
+        order: 50,
+      },
+      {
+        id: "machine.disconnect",
+        method: "POST",
+        prefix: "/api/projects/:projectId/machines/:machineId/disconnect",
+        auth: "user",
+        role: "machine.maintain",
+        order: 50,
+      },
+      {
+        id: "machine.proxy",
         // The manifest is data: the literal, not machines/proxy.ts's SERVER_PROXY_PREFIX,
         // which the generator reads statically and cannot follow.
         prefix: "/server/",
         auth: "user",
+        role: "machine.all",
         order: 51,
       },
     ],
@@ -3659,8 +3836,29 @@ export class MachinesModule {
   @Provide() machines!: Machines;
   /** Session-level requests for a machine's Session, routed by its id (session-forward.ts). */
   @Provide() sessionForward!: MachineSessionForward;
-  @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
-  @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
+  @Bind("machine.list") listRoute!: Hono<AppEnv>;
+  @Bind("machine.events") eventsRoute!: Hono<AppEnv>;
+  @Bind("machine.use") useRoute!: Hono<AppEnv>;
+  @Bind("machine.stopUsing") stopUsingRoute!: Hono<AppEnv>;
+  @Bind("machine.listSshHosts") listSshHostsRoute!: Hono<AppEnv>;
+  @Bind("machine.createSshHost") createSshHostRoute!: Hono<AppEnv>;
+  @Bind("machine.getSshHost") getSshHostRoute!: Hono<AppEnv>;
+  @Bind("machine.updateSshHost") updateSshHostRoute!: Hono<AppEnv>;
+  @Bind("machine.add") addRoute!: Hono<AppEnv>;
+  @Bind("machine.probe") probeRoute!: Hono<AppEnv>;
+  @Bind("machine.install") installRoute!: Hono<AppEnv>;
+  @Bind("machine.connect") connectRoute!: Hono<AppEnv>;
+  @Bind("machine.reconnect") reconnectRoute!: Hono<AppEnv>;
+  @Bind("machine.stopReconnecting") stopReconnectingRoute!: Hono<AppEnv>;
+  @Bind("machine.listDirs") listDirsRoute!: Hono<AppEnv>;
+  @Bind("machine.release") releaseRoute!: Hono<AppEnv>;
+  @Bind("machine.restart") restartRoute!: Hono<AppEnv>;
+  @Bind("machine.stop") stopRoute!: Hono<AppEnv>;
+  @Bind("machine.uninstall") uninstallRoute!: Hono<AppEnv>;
+  @Bind("machine.sync") syncRoute!: Hono<AppEnv>;
+  @Bind("machine.diagnose") diagnoseRoute!: Hono<AppEnv>;
+  @Bind("machine.disconnect") disconnectRoute!: Hono<AppEnv>;
+  @Bind("machine.proxy") serverProxyRoutes!: Hono<AppEnv>;
   setup({ effect }: ClassCtx) {
     // This machine's own id is minted on the first boot of this data root and stable ever
     // after — every stored reference to this machine, here and on the machines it reaches,
@@ -3745,7 +3943,29 @@ export class MachinesModule {
         : {}),
       log: (line) => console.log(line),
     });
-    this.routes = machinesRoutes({ machines, access: this.access, events });
+    const group = machinesRoutes({ machines, access: this.access, events });
+    this.listRoute = endpointOf(group, "GET", "/");
+    this.eventsRoute = endpointOf(group, "GET", "/events");
+    this.useRoute = endpointOf(group, "POST", "/use");
+    this.stopUsingRoute = endpointOf(group, "POST", "/stop-using");
+    this.listSshHostsRoute = endpointOf(group, "GET", "/ssh-hosts");
+    this.createSshHostRoute = endpointOf(group, "POST", "/ssh-hosts");
+    this.getSshHostRoute = endpointOf(group, "GET", "/ssh-hosts/:alias");
+    this.updateSshHostRoute = endpointOf(group, "PUT", "/ssh-hosts/:alias");
+    this.addRoute = endpointOf(group, "POST", "/add");
+    this.probeRoute = endpointOf(group, "POST", "/probe");
+    this.installRoute = endpointOf(group, "POST", "/:machineId/install");
+    this.connectRoute = endpointOf(group, "POST", "/:machineId/connect");
+    this.reconnectRoute = endpointOf(group, "POST", "/:machineId/reconnect");
+    this.stopReconnectingRoute = endpointOf(group, "POST", "/:machineId/stop-reconnecting");
+    this.listDirsRoute = endpointOf(group, "GET", "/:machineId/dirs");
+    this.releaseRoute = endpointOf(group, "POST", "/:machineId/release");
+    this.restartRoute = endpointOf(group, "POST", "/:machineId/restart");
+    this.stopRoute = endpointOf(group, "POST", "/:machineId/stop");
+    this.uninstallRoute = endpointOf(group, "POST", "/:machineId/uninstall");
+    this.syncRoute = endpointOf(group, "POST", "/:machineId/sync");
+    this.diagnoseRoute = endpointOf(group, "POST", "/:machineId/diagnose");
+    this.disconnectRoute = endpointOf(group, "POST", "/:machineId/disconnect");
     this.serverProxyRoutes = machinesServerProxyRoutes(machines, {
       sockets,
       events,

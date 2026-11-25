@@ -81,6 +81,7 @@ import { WeChatScanTransportProvider } from "../src/runtime/messaging/wechat-sca
 import type { WeChatScanTransport } from "../src/runtime/messaging/wechat-scan.js";
 import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/service.js";
 import { OrganizationModule } from "../src/runtime/organization/service.js";
+import { endpointOf } from "../src/http/app.js";
 import { machinesRoutes } from "../src/http/routes/machines.js";
 import { MachineEventHub } from "../src/machines/event-hub.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
@@ -484,11 +485,33 @@ export function replacementsFor(
     const history = wired?.history;
     // Closed with the App, as the module's own generation closes it (test cleanup).
     if (wired !== null && root !== undefined) replacedHistorySyncs.set(root, wired.sync);
+    const group = machinesRoutes({ machines, access: accessDouble(), events });
     out.push([
       MachinesModule,
       {
         machines,
-        routes: machinesRoutes({ machines, access: accessDouble(), events }),
+        listRoute: endpointOf(group, "GET", "/"),
+        eventsRoute: endpointOf(group, "GET", "/events"),
+        useRoute: endpointOf(group, "POST", "/use"),
+        stopUsingRoute: endpointOf(group, "POST", "/stop-using"),
+        listSshHostsRoute: endpointOf(group, "GET", "/ssh-hosts"),
+        createSshHostRoute: endpointOf(group, "POST", "/ssh-hosts"),
+        getSshHostRoute: endpointOf(group, "GET", "/ssh-hosts/:alias"),
+        updateSshHostRoute: endpointOf(group, "PUT", "/ssh-hosts/:alias"),
+        addRoute: endpointOf(group, "POST", "/add"),
+        probeRoute: endpointOf(group, "POST", "/probe"),
+        installRoute: endpointOf(group, "POST", "/:machineId/install"),
+        connectRoute: endpointOf(group, "POST", "/:machineId/connect"),
+        reconnectRoute: endpointOf(group, "POST", "/:machineId/reconnect"),
+        stopReconnectingRoute: endpointOf(group, "POST", "/:machineId/stop-reconnecting"),
+        listDirsRoute: endpointOf(group, "GET", "/:machineId/dirs"),
+        releaseRoute: endpointOf(group, "POST", "/:machineId/release"),
+        restartRoute: endpointOf(group, "POST", "/:machineId/restart"),
+        stopRoute: endpointOf(group, "POST", "/:machineId/stop"),
+        uninstallRoute: endpointOf(group, "POST", "/:machineId/uninstall"),
+        syncRoute: endpointOf(group, "POST", "/:machineId/sync"),
+        diagnoseRoute: endpointOf(group, "POST", "/:machineId/diagnose"),
+        disconnectRoute: endpointOf(group, "POST", "/:machineId/disconnect"),
         serverProxyRoutes: machinesServerProxyRoutes(machines, { sockets, events, history }),
         sessionForward: machineSessionForward(machines, { sockets, events, history }),
       },

@@ -16,6 +16,7 @@ import {
   requireValidId,
 } from "../validate.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import { endpointOf } from "../app.js";
 import type { Desktop } from "../../hmr/capabilities.js";
 import type { DesktopService } from "../../services/desktop-service.js";
 import { membersRoutes } from "./members.js";
@@ -71,17 +72,66 @@ export function projectsRoutes(deps: ProjectsRouteDeps): Hono<AppEnv> {
 
 @Component({
   contributes: {
+    "AgentAuthPermissionProvider.roles": [
+      { id: "role.project.read", parents: ["readonly"] },
+      { id: "role.project.maintain", children: ["project.read"] },
+      { id: "role.project.all", children: ["project.maintain"], parents: ["admin"] },
+    ],
     "HttpModule.routes": [
       {
-        id: "project-admin.projects",
+        id: "project.list",
+        method: "GET",
         prefix: "/api/projects",
         auth: "user",
+        role: "project.read",
         order: 80,
       },
       {
-        id: "project-admin.members",
+        id: "project.create",
+        method: "POST",
+        prefix: "/api/projects",
+        auth: "user",
+        role: "project.maintain",
+        order: 80,
+      },
+      {
+        id: "project.update",
+        method: "PATCH",
+        prefix: "/api/projects/:projectId",
+        auth: "user",
+        role: "project.maintain",
+        order: 80,
+      },
+      {
+        id: "project.delete",
+        method: "DELETE",
+        prefix: "/api/projects/:projectId",
+        auth: "user",
+        role: "project.all",
+        order: 80,
+      },
+      {
+        id: "project.member.list",
+        method: "GET",
         prefix: "/api/projects/:projectId/members",
         auth: "user",
+        role: "project.read",
+        order: 90,
+      },
+      {
+        id: "project.member.add",
+        method: "POST",
+        prefix: "/api/projects/:projectId/members",
+        auth: "user",
+        role: "project.maintain",
+        order: 90,
+      },
+      {
+        id: "project.member.remove",
+        method: "DELETE",
+        prefix: "/api/projects/:projectId/members/:userId",
+        auth: "user",
+        role: "project.all",
         order: 90,
       },
     ],
@@ -91,16 +141,28 @@ export class ProjectAdminRoutes {
   @Use() private readonly projectService!: ProjectLifecycle;
   @Use() private readonly desktop!: Desktop;
   @Use() private readonly machines!: Machines;
-  @Bind("project-admin.projects") projectsRoutes!: Hono<AppEnv>;
-  @Bind("project-admin.members") membersRoutes!: Hono<AppEnv>;
+  @Bind("project.list") listRoute!: Hono<AppEnv>;
+  @Bind("project.create") createRoute!: Hono<AppEnv>;
+  @Bind("project.update") updateRoute!: Hono<AppEnv>;
+  @Bind("project.delete") deleteRoute!: Hono<AppEnv>;
+  @Bind("project.member.list") listMembersRoute!: Hono<AppEnv>;
+  @Bind("project.member.add") addMemberRoute!: Hono<AppEnv>;
+  @Bind("project.member.remove") removeMemberRoute!: Hono<AppEnv>;
   setup() {
-    this.projectsRoutes = projectsRoutes({
+    const pGroup = projectsRoutes({
       projectService: this.projectService,
       machines: this.machines,
     });
-    this.membersRoutes = membersRoutes({
+    this.listRoute = endpointOf(pGroup, "GET", "/");
+    this.createRoute = endpointOf(pGroup, "POST", "/");
+    this.updateRoute = endpointOf(pGroup, "PATCH", "/:projectId");
+    this.deleteRoute = endpointOf(pGroup, "DELETE", "/:projectId");
+    const mGroup = membersRoutes({
       projectService: this.projectService,
       desktop: this.desktop.current() as DesktopService | null,
     });
+    this.listMembersRoute = endpointOf(mGroup, "GET", "/");
+    this.addMemberRoute = endpointOf(mGroup, "POST", "/");
+    this.removeMemberRoute = endpointOf(mGroup, "DELETE", "/:userId");
   }
 }

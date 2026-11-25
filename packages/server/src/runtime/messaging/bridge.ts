@@ -114,6 +114,7 @@ import type { QQScanTransportHandle } from "./qq-scan.js";
 import { QQScanService, createQQScanTransport } from "./qq-scan.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Hono } from "hono";
+import { endpointOf } from "../../http/app.js";
 
 import { FeishuMessaging } from "./feishu-connector.js";
 import { TelegramMessaging } from "./telegram-connector.js";
@@ -2199,12 +2200,295 @@ export interface MessagingSlots {
 
 @Module({
   contributes: {
+    "AgentAuthPermissionProvider.roles": [
+      { id: "role.agents.messaging.read" },
+      { id: "role.agents.messaging.maintain", children: ["agents.messaging.read"] },
+      { id: "role.agents.messaging.all", children: ["agents.messaging.maintain"] },
+      { id: "role.messaging.read", children: ["agents.messaging.read"], parents: ["readonly"] },
+      {
+        id: "role.messaging.maintain",
+        children: ["messaging.read", "agents.messaging.maintain"],
+        parents: ["system-maintainer"],
+      },
+      {
+        id: "role.messaging.all",
+        children: ["messaging.maintain", "agents.messaging.all"],
+        parents: ["admin"],
+      },
+    ],
     "HttpModule.routes": [
       {
-        id: "messaging.session-routes",
-        prefix: "/api/sessions",
+        id: "messaging.session.list",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/messaging",
         auth: "user",
+        role: "messaging.read",
         order: 280,
+      },
+      {
+        id: "agents.messaging.feishu.get",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/messaging/feishu",
+        auth: "user",
+        role: "agents.messaging.read",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.feishu.update",
+        method: "PUT",
+        prefix: "/api/sessions/:sessionId/messaging/feishu",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.feishu.setState",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/feishu/state",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.feishu.delete",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId/messaging/feishu",
+        auth: "user",
+        role: "agents.messaging.all",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.feishu.test",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/feishu/test",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.feishu.testMessage",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/feishu/test-message",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.telegram.get",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/messaging/telegram",
+        auth: "user",
+        role: "agents.messaging.read",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.telegram.update",
+        method: "PUT",
+        prefix: "/api/sessions/:sessionId/messaging/telegram",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.telegram.setState",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/telegram/state",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.telegram.delete",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId/messaging/telegram",
+        auth: "user",
+        role: "agents.messaging.all",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.telegram.test",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/telegram/test",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.telegram.testMessage",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/telegram/test-message",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.qq.get",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/messaging/qq",
+        auth: "user",
+        role: "agents.messaging.read",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.qq.update",
+        method: "PUT",
+        prefix: "/api/sessions/:sessionId/messaging/qq",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.qq.setState",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/qq/state",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.qq.delete",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId/messaging/qq",
+        auth: "user",
+        role: "agents.messaging.all",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.qq.scanStart",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/qq/scan",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.qq.scanPoll",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/qq/scan/poll",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.qq.scanCancel",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/qq/scan/cancel",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.qq.test",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/qq/test",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.qq.testMessage",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/qq/test-message",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.wechat.get",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/messaging/wechat",
+        auth: "user",
+        role: "agents.messaging.read",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.wechat.update",
+        method: "PUT",
+        prefix: "/api/sessions/:sessionId/messaging/wechat",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.wechat.setState",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/wechat/state",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.wechat.delete",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId/messaging/wechat",
+        auth: "user",
+        role: "agents.messaging.all",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.wechat.scanStart",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/wechat/scan",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.wechat.scanPoll",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/wechat/scan/poll",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.wechat.scanVerify",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/wechat/scan/verify",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.wechat.scanCancel",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/wechat/scan/cancel",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.wechat.test",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/wechat/test",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+      {
+        id: "agents.messaging.wechat.testMessage",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/messaging/wechat/test-message",
+        auth: "user",
+        role: "agents.messaging.maintain",
+        order: 280,
+      },
+    ],
+    "AgentAuthPermissionProvider.roleBindings": [
+      {
+        id: "messaging.bindings",
+        aliases: {
+          "agents.feishu": "agents.messaging.feishu",
+          "agents.telegram": "agents.messaging.telegram",
+          "agents.qq": "agents.messaging.qq",
+          "agents.wechat": "agents.messaging.wechat",
+          "messaging.feishu": "agents.messaging.feishu",
+          "messaging.telegram": "agents.messaging.telegram",
+          "messaging.qq": "agents.messaging.qq",
+          "messaging.wechat": "agents.messaging.wechat",
+          "messaging.accounts": "messaging.listAccounts",
+          "messaging.account-holders": "messaging.listAccountHolders",
+        },
       },
     ],
   },
@@ -2227,7 +2511,38 @@ export class MessagingModule {
   @Use() private readonly access!: Access;
   @Provide() messaging!: Messaging;
   @Provide() qqScan!: QQScan;
-  @Bind("messaging.session-routes") sessionRoutesRoutes!: Hono<AppEnv>;
+  @Bind("messaging.session.list") sessionListRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.feishu.get") feishuGetRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.feishu.update") feishuUpdateRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.feishu.setState") feishuSetStateRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.feishu.delete") feishuDeleteRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.feishu.test") feishuTestRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.feishu.testMessage") feishuTestMessageRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.telegram.get") telegramGetRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.telegram.update") telegramUpdateRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.telegram.setState") telegramSetStateRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.telegram.delete") telegramDeleteRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.telegram.test") telegramTestRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.telegram.testMessage") telegramTestMessageRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.qq.get") qqGetRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.qq.update") qqUpdateRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.qq.setState") qqSetStateRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.qq.delete") qqDeleteRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.qq.scanStart") qqScanStartRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.qq.scanPoll") qqScanPollRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.qq.scanCancel") qqScanCancelRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.qq.test") qqTestRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.qq.testMessage") qqTestMessageRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.wechat.get") wechatGetRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.wechat.update") wechatUpdateRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.wechat.setState") wechatSetStateRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.wechat.delete") wechatDeleteRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.wechat.scanStart") wechatScanStartRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.wechat.scanPoll") wechatScanPollRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.wechat.scanVerify") wechatScanVerifyRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.wechat.scanCancel") wechatScanCancelRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.wechat.test") wechatTestRoute!: Hono<AppEnv>;
+  @Bind("agents.messaging.wechat.testMessage") wechatTestMessageRoute!: Hono<AppEnv>;
   async setup({ contributions, effect }: ClassCtx) {
     const { lineDelayMs, inboundImageBudgetBytes } = this.tuning;
     const now = () => this.clock.now().getTime();
@@ -2259,7 +2574,7 @@ export class MessagingModule {
     effect(() => messaging.stop());
     this.messaging = messaging;
     this.qqScan = qqScan;
-    this.sessionRoutesRoutes = sessionMessagingRoutes({
+    const group = sessionMessagingRoutes({
       messaging,
       messagingRepo,
       access: this.access,
@@ -2267,6 +2582,58 @@ export class MessagingModule {
       wechatScan,
       sessionsRepo,
     });
+    this.sessionListRoute = endpointOf(group, "GET", "/:sessionId/messaging");
+    this.feishuGetRoute = endpointOf(group, "GET", "/:sessionId/messaging/feishu");
+    this.feishuUpdateRoute = endpointOf(group, "PUT", "/:sessionId/messaging/feishu");
+    this.feishuSetStateRoute = endpointOf(group, "POST", "/:sessionId/messaging/feishu/state");
+    this.feishuDeleteRoute = endpointOf(group, "DELETE", "/:sessionId/messaging/feishu");
+    this.feishuTestRoute = endpointOf(group, "POST", "/:sessionId/messaging/feishu/test");
+    this.feishuTestMessageRoute = endpointOf(
+      group,
+      "POST",
+      "/:sessionId/messaging/feishu/test-message",
+    );
+    this.telegramGetRoute = endpointOf(group, "GET", "/:sessionId/messaging/telegram");
+    this.telegramUpdateRoute = endpointOf(group, "PUT", "/:sessionId/messaging/telegram");
+    this.telegramSetStateRoute = endpointOf(group, "POST", "/:sessionId/messaging/telegram/state");
+    this.telegramDeleteRoute = endpointOf(group, "DELETE", "/:sessionId/messaging/telegram");
+    this.telegramTestRoute = endpointOf(group, "POST", "/:sessionId/messaging/telegram/test");
+    this.telegramTestMessageRoute = endpointOf(
+      group,
+      "POST",
+      "/:sessionId/messaging/telegram/test-message",
+    );
+    this.qqGetRoute = endpointOf(group, "GET", "/:sessionId/messaging/qq");
+    this.qqUpdateRoute = endpointOf(group, "PUT", "/:sessionId/messaging/qq");
+    this.qqSetStateRoute = endpointOf(group, "POST", "/:sessionId/messaging/qq/state");
+    this.qqDeleteRoute = endpointOf(group, "DELETE", "/:sessionId/messaging/qq");
+    this.qqScanStartRoute = endpointOf(group, "POST", "/:sessionId/messaging/qq/scan");
+    this.qqScanPollRoute = endpointOf(group, "POST", "/:sessionId/messaging/qq/scan/poll");
+    this.qqScanCancelRoute = endpointOf(group, "POST", "/:sessionId/messaging/qq/scan/cancel");
+    this.qqTestRoute = endpointOf(group, "POST", "/:sessionId/messaging/qq/test");
+    this.qqTestMessageRoute = endpointOf(group, "POST", "/:sessionId/messaging/qq/test-message");
+    this.wechatGetRoute = endpointOf(group, "GET", "/:sessionId/messaging/wechat");
+    this.wechatUpdateRoute = endpointOf(group, "PUT", "/:sessionId/messaging/wechat");
+    this.wechatSetStateRoute = endpointOf(group, "POST", "/:sessionId/messaging/wechat/state");
+    this.wechatDeleteRoute = endpointOf(group, "DELETE", "/:sessionId/messaging/wechat");
+    this.wechatScanStartRoute = endpointOf(group, "POST", "/:sessionId/messaging/wechat/scan");
+    this.wechatScanPollRoute = endpointOf(group, "POST", "/:sessionId/messaging/wechat/scan/poll");
+    this.wechatScanVerifyRoute = endpointOf(
+      group,
+      "POST",
+      "/:sessionId/messaging/wechat/scan/verify",
+    );
+    this.wechatScanCancelRoute = endpointOf(
+      group,
+      "POST",
+      "/:sessionId/messaging/wechat/scan/cancel",
+    );
+    this.wechatTestRoute = endpointOf(group, "POST", "/:sessionId/messaging/wechat/test");
+    this.wechatTestMessageRoute = endpointOf(
+      group,
+      "POST",
+      "/:sessionId/messaging/wechat/test-message",
+    );
   }
 }
 

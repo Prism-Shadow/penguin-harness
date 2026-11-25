@@ -268,6 +268,8 @@ export function toolModelBindingsOver(
   };
 }
 
+import { endpointOf } from "../http/app.js";
+
 /**
  * Owns the slot; provides the interface and serves it at `/api/projects/:projectId/models/
  * tool-bindings`. The declarations are read off the slot at boot; each call attributes them to
@@ -278,10 +280,20 @@ export function toolModelBindingsOver(
   contributes: {
     "HttpModule.routes": [
       {
-        id: "ToolModelBindingsProvider.routes",
+        id: "model.toolBindings.list",
+        method: "GET",
         prefix: "/api/projects/:projectId/models/tool-bindings",
         auth: "user",
+        role: "model.read",
         // Before the models group (100), whose prefix is this one's parent.
+        order: 99,
+      },
+      {
+        id: "model.toolBindings.update",
+        method: "PATCH",
+        prefix: "/api/projects/:projectId/models/tool-bindings",
+        auth: "user",
+        role: "model.maintain",
         order: 99,
       },
     ],
@@ -294,7 +306,8 @@ export class ToolModelBindingsProvider {
   @Use() private readonly machines!: Machines;
   @Use() private readonly projectEvents!: ProjectEvents;
   @Provide() toolModelBindings!: ToolModelBindings;
-  @Bind("ToolModelBindingsProvider.routes") routes!: Hono<AppEnv>;
+  @Bind("model.toolBindings.list") listRoute!: Hono<AppEnv>;
+  @Bind("model.toolBindings.update") updateRoute!: Hono<AppEnv>;
 
   setup({ contributions }: ClassCtx) {
     // The kernel checked each entry against the slot's data type at boot, and resolved every
@@ -318,7 +331,7 @@ export class ToolModelBindingsProvider {
       );
     };
     this.toolModelBindings = toolModelBindingsOver(this.projectConfig, declared);
-    this.routes = toolModelBindingRoutes({
+    const group = toolModelBindingRoutes({
       bindings: this.toolModelBindings,
       access: this.access,
       changed: (projectId) => {
@@ -330,5 +343,7 @@ export class ToolModelBindingsProvider {
         void this.machines.syncConfigEverywhere(projectId);
       },
     });
+    this.listRoute = endpointOf(group, "GET", "/");
+    this.updateRoute = endpointOf(group, "PATCH", "/");
   }
 }

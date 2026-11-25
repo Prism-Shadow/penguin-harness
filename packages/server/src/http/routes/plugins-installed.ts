@@ -67,6 +67,7 @@ import type {
   UnsatisfiedPlugin,
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
+import { endpointOf } from "../app.js";
 import { eventStream } from "../event-stream.js";
 import { readJson, requireString, requireValidId } from "../validate.js";
 import type { DatabaseSync } from "node:sqlite";
@@ -1006,10 +1007,52 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   contributes: {
     "HttpModule.routes": [
       {
-        id: "InstalledPluginRoutes.routes",
+        id: "plugin.installed.list",
+        method: "GET",
         prefix: "/api/projects/:projectId/plugins/installed",
         auth: "user",
+        role: "plugin.read",
         // Ahead of the catalogue group, whose "/" would otherwise answer here.
+        order: 60,
+      },
+      {
+        id: "plugin.installed.install",
+        method: "POST",
+        prefix: "/api/projects/:projectId/plugins/installed",
+        auth: "user",
+        role: "plugin.maintain",
+        order: 60,
+      },
+      {
+        id: "plugin.installed.link",
+        method: "POST",
+        prefix: "/api/projects/:projectId/plugins/installed/link",
+        auth: "user",
+        role: "plugin.maintain",
+        order: 60,
+      },
+      {
+        id: "plugin.installed.importArchive",
+        method: "POST",
+        prefix: "/api/projects/:projectId/plugins/installed/archive",
+        auth: "user",
+        role: "plugin.maintain",
+        order: 60,
+      },
+      {
+        id: "plugin.installed.setEnabled",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/plugins/installed",
+        auth: "user",
+        role: "plugin.maintain",
+        order: 60,
+      },
+      {
+        id: "plugin.installed.uninstall",
+        method: "DELETE",
+        prefix: "/api/projects/:projectId/plugins/installed",
+        auth: "user",
+        role: "plugin.all",
         order: 60,
       },
     ],
@@ -1026,10 +1069,15 @@ export class InstalledPluginRoutes {
   @Use() private readonly db!: Db;
   @Use() private readonly packages!: PluginPackages;
   @Use() private readonly pluginModules!: PluginModules;
-  @Bind("InstalledPluginRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("plugin.installed.list") listRoute!: Hono<AppEnv>;
+  @Bind("plugin.installed.install") installRoute!: Hono<AppEnv>;
+  @Bind("plugin.installed.link") linkRoute!: Hono<AppEnv>;
+  @Bind("plugin.installed.importArchive") importArchiveRoute!: Hono<AppEnv>;
+  @Bind("plugin.installed.setEnabled") setEnabledRoute!: Hono<AppEnv>;
+  @Bind("plugin.installed.uninstall") uninstallRoute!: Hono<AppEnv>;
   setup() {
     const hmr = this.hmr;
-    this.routes = installedPluginRoutes({
+    const group = installedPluginRoutes({
       root: this.config.root,
       machineId: new MachinesRepo(this.db as unknown as DatabaseSync).ownId(),
       assetsDir: () => hmr.assetsDir(),
@@ -1064,5 +1112,11 @@ export class InstalledPluginRoutes {
       offline: () => offlineArchives(pluginBases(this.config.root, hmr.assetsDir())),
       registry: () => currentNpmRegistry(),
     });
+    this.listRoute = endpointOf(group, "GET", "/");
+    this.installRoute = endpointOf(group, "POST", "/");
+    this.linkRoute = endpointOf(group, "POST", "/link");
+    this.importArchiveRoute = endpointOf(group, "POST", "/archive");
+    this.setEnabledRoute = endpointOf(group, "PUT", "/");
+    this.uninstallRoute = endpointOf(group, "DELETE", "/");
   }
 }

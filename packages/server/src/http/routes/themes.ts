@@ -156,13 +156,49 @@ export function themeRoutes(deps: ThemeRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+import { endpointOf } from "../app.js";
+
 @Component({
   contributes: {
     "HttpModule.routes": [
       {
-        id: "ThemeRoutes.routes",
+        id: "themes.list",
+        method: "GET",
         prefix: "/api/themes",
         auth: "user",
+        role: "system.read",
+        order: 10,
+      },
+      {
+        id: "themes.getFile",
+        method: "GET",
+        prefix: "/api/themes/:id/files/*",
+        auth: "user",
+        role: "system.read",
+        order: 10,
+      },
+      {
+        id: "themes.create",
+        method: "POST",
+        prefix: "/api/themes",
+        auth: "user",
+        role: "system.maintain",
+        order: 10,
+      },
+      {
+        id: "themes.delete",
+        method: "DELETE",
+        prefix: "/api/themes/:id",
+        auth: "user",
+        role: "system.all",
+        order: 10,
+      },
+      {
+        id: "themes.export",
+        method: "GET",
+        prefix: "/api/themes/:id/export",
+        auth: "user",
+        role: "system.read",
         order: 10,
       },
     ],
@@ -174,7 +210,11 @@ export class ThemeRoutes {
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly channels!: Channels;
   @Use() private readonly clock!: Clock;
-  @Bind("ThemeRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("themes.list") listRoute!: Hono<AppEnv>;
+  @Bind("themes.getFile") getFileRoute!: Hono<AppEnv>;
+  @Bind("themes.create") createRoute!: Hono<AppEnv>;
+  @Bind("themes.delete") deleteRoute!: Hono<AppEnv>;
+  @Bind("themes.export") exportRoute!: Hono<AppEnv>;
   setup() {
     const store = new ThemeStore({
       root: this.paths.root,
@@ -182,9 +222,14 @@ export class ThemeRoutes {
       now: () => this.clock.now(),
     });
     const changed: ServerEvent = { type: "themes_changed" };
-    this.routes = themeRoutes({
+    const group = themeRoutes({
       store,
       announce: () => this.channels.broadcast("user:", changed, "server_event"),
     });
+    this.listRoute = endpointOf(group, "GET", "/");
+    this.getFileRoute = endpointOf(group, "GET", "/:id/files/*");
+    this.createRoute = endpointOf(group, "POST", "/");
+    this.deleteRoute = endpointOf(group, "DELETE", "/:id");
+    this.exportRoute = endpointOf(group, "GET", "/:id/export");
   }
 }

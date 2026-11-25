@@ -27,6 +27,7 @@ import type { SessionManager, Sessions, SessionServiceIface } from "../runtime/s
 import type { SessionService } from "../services/session-service.js";
 import { amspRoutes } from "./routes.js";
 import { agentApiTryRoutes } from "./try-route.js";
+import { endpointOf } from "../http/app.js";
 
 /**
  * The public `/api/amsp/v1` group: the gate, CORS, the run stream, the Session stream and the
@@ -36,11 +37,13 @@ import { agentApiTryRoutes } from "./try-route.js";
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "AmspRoutes.routes", prefix: "/api/amsp/v1", auth: "none", order: 5 },
+      { id: "amsp.routes", prefix: "/api/amsp/v1", auth: "none", order: 5 },
       {
-        id: "AmspRoutes.try",
+        id: "agent.api.try",
+        method: "POST",
         prefix: "/api/projects/:projectId/agents/:agentId/api/try",
         auth: "user",
+        role: "agent.maintain",
         order: 224,
       },
     ],
@@ -59,8 +62,8 @@ export class AmspRoutes {
   @Use() private readonly clock!: Clock;
   @Use() private readonly access!: Access;
   @Use() private readonly traces!: Traces;
-  @Bind("AmspRoutes.routes") routes!: Hono<AppEnv>;
-  @Bind("AmspRoutes.try") tryRoutes!: Hono<AppEnv>;
+  @Bind("amsp.routes") routes!: Hono<AppEnv>;
+  @Bind("agent.api.try") tryRoutes!: Hono<AppEnv>;
 
   setup() {
     const clock = this.clock;
@@ -78,7 +81,7 @@ export class AmspRoutes {
       now: () => clock.now(),
     };
     this.routes = amspRoutes(deps);
-    this.tryRoutes = agentApiTryRoutes({ ...deps, access: this.access });
+    this.tryRoutes = endpointOf(agentApiTryRoutes({ ...deps, access: this.access }), "POST", "/");
   }
 }
 
