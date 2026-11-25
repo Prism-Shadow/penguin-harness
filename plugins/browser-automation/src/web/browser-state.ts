@@ -93,8 +93,8 @@ export interface BrowserState {
   supported: boolean;
   /** The backend this user's agents drive: built-in until the server says otherwise. */
   backend: BrowserBackend;
-  /** Every backend the server offers this user; empty before the first status, or from a server too old to say. */
-  backends: readonly BrowserBackendInfo[];
+  /** Every backend the server offers this user; null while those capabilities are unknown. */
+  backends: readonly BrowserBackendInfo[] | null;
   /** The chosen backend can be driven now (built-in: the shell is there; Chrome: it is connected). */
   available: boolean;
   /** Why not, when the server said so. */
@@ -156,7 +156,7 @@ export const INITIAL_BROWSER_STATE: BrowserState = {
   openingByScope: {},
   supported: false,
   backend: "builtin",
-  backends: [],
+  backends: null,
   available: false,
   reason: null,
   tabs: [],
@@ -229,7 +229,8 @@ function applyTabs(
 
 /** The state with `backends`' entry for `info.backend` replaced, and the top-level availability following the chosen one. */
 function withBackendInfo(state: BrowserState, info: BrowserBackendInfo): BrowserState {
-  const backends = state.backends.map((entry) => (entry.backend === info.backend ? info : entry));
+  const backends =
+    state.backends?.map((entry) => (entry.backend === info.backend ? info : entry)) ?? null;
   return state.backend === info.backend
     ? { ...state, backends, available: info.available, reason: info.reason ?? null }
     : { ...state, backends };
@@ -355,7 +356,7 @@ function applyEvent(state: BrowserState, event: BuiltinBrowserServerEvent): Brow
     case "builtin_browser_backend": {
       if (event.backend === state.backend) return state;
       // Until the status read that follows, the new backend is as its entry last said.
-      const info = state.backends.find((entry) => entry.backend === event.backend);
+      const info = state.backends?.find((entry) => entry.backend === event.backend);
       return {
         ...state,
         backend: event.backend,
@@ -366,9 +367,9 @@ function applyEvent(state: BrowserState, event: BuiltinBrowserServerEvent): Brow
     }
     case "builtin_browser_extension": {
       const extension: ExtensionNews = { seq: state.extension.seq + 1, last: event.state };
-      const info = state.backends.find((entry) => entry.backend === "chrome");
+      const info = chromeInfo(state);
       const next = { ...state, extension };
-      return info === undefined ? next : withBackendInfo(next, chromeAfter(info, event));
+      return info === null ? next : withBackendInfo(next, chromeAfter(info, event));
     }
   }
 }
@@ -423,7 +424,7 @@ export function reduceBrowser(state: BrowserState, action: BrowserAction): Brows
           : applyTabs(moved, status.tabs, status.activeTabId);
       return {
         ...next,
-        backends: status.backends ?? [],
+        backends: status.backends ?? [{ backend, available: status.available }],
         available: status.available,
         reason: status.reason ?? null,
         metrics: status.metrics ?? next.metrics,
@@ -516,7 +517,7 @@ export function reduceBrowser(state: BrowserState, action: BrowserAction): Brows
 
 /** The chrome entry of the server's backends: whether this user's Chrome is offered, paired, connected. */
 export function chromeInfo(state: BrowserState): BrowserBackendInfo | null {
-  return state.backends.find((entry) => entry.backend === "chrome") ?? null;
+  return state.backends?.find((entry) => entry.backend === "chrome") ?? null;
 }
 
 /** Whether this window can show the built-in browser now: it hosts pages, and it is the chosen, running backend. */

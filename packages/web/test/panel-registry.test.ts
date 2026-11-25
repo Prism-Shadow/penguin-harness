@@ -53,6 +53,18 @@ function panel(
 const listedIds = (): string[] => dockPanels().map((definition) => definition.id);
 
 describe("the panel registry", () => {
+  it("offers a member's local tool only in the bound Session", () => {
+    const local = panel("test.local-browser", 10, {
+      offered: () => true,
+      availableFromAppCenter: ({ isAdmin }) => isAdmin,
+    });
+    register(local);
+    expect(dockPanels({ isAdmin: false, localSession: true })).toContain(local);
+    expect(dockPanels({ isAdmin: false })).not.toContain(local);
+    expect(dockPanels({ isAdmin: false, localSession: false })).not.toContain(local);
+    expect(dockPanels({ isAdmin: true })).toContain(local);
+  });
+
   it("registers a panel, replaces it by id, and unregisters it", () => {
     const first = panel("acme.kanban", 10);
     register(first);
