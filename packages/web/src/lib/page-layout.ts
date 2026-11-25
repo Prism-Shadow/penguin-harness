@@ -1,6 +1,10 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 export const PAGE_DRAG_TYPE = "application/x-penguin-open-page";
 
+/** Whether a drag carries one of this window's open pages, such as a running app's row. */
+export const isOpenPageDrag = (data: Pick<DataTransfer, "types"> | null | undefined) =>
+  !!data?.types.includes(PAGE_DRAG_TYPE);
+
 /** Page identity stays stable when the page changes its inner address or title. */
 export interface OpenPage {
   id: string;

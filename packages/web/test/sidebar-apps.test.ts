@@ -106,7 +106,7 @@ const HERE = "/chat/here";
 /** The page area's drop target, reduced to the drag it tracks and the drop it performs. */
 function DropTarget() {
   const workspace = usePageWorkspace()!;
-  const { draggingId } = useAppDockDrop(false);
+  const { draggingId } = useAppDockDrop();
   const pair = sessionAppPair(workspace.layout);
   return h(
     "button",

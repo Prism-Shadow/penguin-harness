@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
 import { usePageWorkspace } from "../../lib/page-workspace";
 import { sessionAppPair, slotDomId } from "../../lib/session-app-dock";
+import { isNarrow } from "../dock";
 
 /** During dragover the data store is protected. The ID was readable at the native dragstart. */
-export function useAppDockDrop(narrow: boolean) {
+export function useAppDockDrop() {
   const workspace = usePageWorkspace()!;
   const [preview, setPreview] = useState<DOMRect | null>(null);
   const [draggingId, setDraggingId] = useState("");
@@ -34,10 +35,12 @@ export function useAppDockDrop(narrow: boolean) {
   }, []);
   const app = draggingId ? workspace.pageForDrag(draggingId) : undefined;
   function receive(event: ReactDragEvent<HTMLElement>, dropping: boolean) {
+    // Where the docks merge into one bottom surface there is no right dock to preview, and
+    // the app would open somewhere the outline never showed.
     if (
       !app ||
       (app.kind !== "window" && app.kind !== "system") ||
-      narrow ||
+      isNarrow() ||
       workspace.exitFullScreen
     )
       return;

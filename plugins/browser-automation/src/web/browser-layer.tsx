@@ -80,6 +80,7 @@ import {
 import { watchGuestId } from "./guest-id";
 import { loadWarningText, newWarnings } from "./load";
 import { forgetOnScreenReport, reportOnScreenTab } from "./on-screen-report";
+import { yieldPointerToApp } from "./pointer-yield";
 import { hasVisibleSlot, slotsVersion, subscribeSlots, visibleSlot } from "./slot-registry";
 import { registerWebview, webviewSupported, type WebviewElement } from "./webview-registry";
 
@@ -416,34 +417,11 @@ function LayerHost() {
     return () => cancelAnimationFrame(frame);
   }, [slotShown]);
 
-  // A press in the app turns the pages transparent to the pointer until it is released, so a
-  // drag that starts outside a page (a dock resize, a tab drag, a text selection) keeps
-  // reaching the app while it crosses one — a page would otherwise take the pointer over.
+  // The pages let the pointer through while the app holds a press or drags one of its pages.
   useEffect(() => {
     const root = rootRef.current;
     if (root === null) return;
-    const release = () => {
-      root.style.pointerEvents = "";
-    };
-    const press = (event: PointerEvent) => {
-      if (event.button === 0) root.style.pointerEvents = "none";
-    };
-    // A release the window never saw (let go outside it) ends the press at the next move.
-    const move = (event: PointerEvent) => {
-      if (event.buttons === 0 && root.style.pointerEvents !== "") release();
-    };
-    window.addEventListener("pointerdown", press, true);
-    window.addEventListener("pointerup", release, true);
-    window.addEventListener("pointercancel", release, true);
-    window.addEventListener("pointermove", move, true);
-    window.addEventListener("blur", release);
-    return () => {
-      window.removeEventListener("pointerdown", press, true);
-      window.removeEventListener("pointerup", release, true);
-      window.removeEventListener("pointercancel", release, true);
-      window.removeEventListener("pointermove", move, true);
-      window.removeEventListener("blur", release);
-    };
+    return yieldPointerToApp(root);
   }, []);
 
   // The agent-at-work ring frames the page on screen while an agent acts in that tab.
