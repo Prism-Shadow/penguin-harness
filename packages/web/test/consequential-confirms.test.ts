@@ -30,12 +30,12 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/machines/machines-page.tsx", "stopServer"],
   ["features/machines/machines-page.tsx", "uninstall"],
   ["features/machines/machines-page.tsx", "reinstall"],
-  ["features/chat/session/main-chat-dialogs.tsx", "onKillProcess"],
+  ["library/session/src/web/chat/session/main-chat-dialogs.tsx", "onKillProcess"],
   ["features/company/org-dialogs.tsx", "dropDraft"],
   ["features/company/org-dialogs.tsx", "doDelete"],
   ["features/models/preset-sync.tsx", "runPresetSync"],
   ["plugins/browser-automation/src/web/browser-section.tsx", "revokeChrome"],
-  ["features/chat/archived-session-stub.tsx", "remove"],
+  ["library/session/src/web/chat/archived-session-stub.tsx", "remove"],
   ["features/settings/archived-sessions-section.tsx", "deletePending"],
 ];
 
