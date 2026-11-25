@@ -11,4 +11,5 @@
 - 测试守卫：helpers/roots.ts 增 library:<域> 扫描根；module-boundaries 基线随边消失删行
 
 ## 分支头
-- W10 agents → library/agent：本提交
+- W10 agents → library/agent：0105e42d80
+- W11 projects → library/project：本提交

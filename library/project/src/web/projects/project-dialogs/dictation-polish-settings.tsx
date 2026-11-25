@@ -14,10 +14,10 @@ import {
   useFormDraft,
   useSaving,
 } from "@prismshadow/penguin-ui";
-import { getVoicePolish, patchVoicePolish } from "../../../api/endpoints";
-import type { VoicePolishSettings, VoicePolishUpdate } from "../../../api/tool-types";
-import { apiErrorText } from "../../../lib/api-error";
-import { S } from "../../../lib/strings";
+import { getVoicePolish, patchVoicePolish } from "@prismshadow/penguin-web/internal";
+import type { VoicePolishSettings, VoicePolishUpdate } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 
 /**

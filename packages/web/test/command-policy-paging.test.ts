@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The security page's rule table, ten rules to a page
- * (features/projects/project-dialogs/security-policy-section.tsx, command-policy-table.tsx).
+ * (library/project/src/web/projects/project-dialogs/security-policy-section.tsx, command-policy-table.tsx).
  *
  * - Turning the page keeps every unsaved edit: Save sends the whole list, with the edits made
  *   on each page.
@@ -17,7 +17,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import type { CommandPolicyRuleDto } from "@prismshadow/penguin-server/api";
-import { ProjectSettingsDialog } from "../src/features/projects/project-dialogs/project-settings-dialog";
+import { ProjectSettingsDialog } from "@prismshadow/penguin-library-project/web/projects/project-dialogs/project-settings-dialog";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";

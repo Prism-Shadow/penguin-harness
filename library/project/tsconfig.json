@@ -60,5 +60,6 @@
       "@prismshadow/penguin-library-workbench/workbench": ["../workbench/src/workbench.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

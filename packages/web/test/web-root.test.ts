@@ -94,9 +94,9 @@ import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
 import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
-import { ProjectSettingsLayer } from "../src/features/projects/project-settings-layer";
+import { ProjectSettingsLayer } from "@prismshadow/penguin-library-project/web/projects/project-settings-layer";
 import { DefaultModelsLayer } from "../src/features/models/default-models-layer";
-import { ProjectSwitcher } from "../src/features/projects/project-switcher";
+import { ProjectSwitcher } from "@prismshadow/penguin-library-project/web/projects/project-switcher";
 import {
   companyChannels,
   companyDesks,

@@ -3,7 +3,7 @@
  * create and settings dialogs it opens.
  */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
-import type { SidebarSection } from "../../lib/sidebar-contributions";
+import type { SidebarSection } from "@prismshadow/penguin-web/internal";
 import { ProjectSettingsLayer } from "./project-settings-layer";
 import { ProjectSwitcher } from "./project-switcher";
 

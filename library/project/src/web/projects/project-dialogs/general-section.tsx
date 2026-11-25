@@ -8,12 +8,12 @@ import {
   useFormDraft,
   useSaving,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../../api/endpoints";
-import { S } from "../../../lib/strings";
-import { toastApiError } from "../../../lib/toast-api-error";
-import { projectDisplayName, useProject } from "../../../state/project";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
+import { projectDisplayName, useProject } from "@prismshadow/penguin-web/internal";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
-import { failureNode } from "../../../lib/failure";
+import { failureNode } from "@prismshadow/penguin-web/internal";
 
 export function GeneralSection({
   projectId,

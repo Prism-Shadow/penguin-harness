@@ -7,17 +7,17 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../../api/endpoints";
-import { S } from "../../../lib/strings";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import {
   PROJECT_ID_MAX_LENGTH,
   PROJECT_SUFFIX_PATTERN,
   SEMANTIC_ID_PATTERN,
-} from "../../../lib/semantic-id";
-import { useProject } from "../../../state/project";
-import { useAuth } from "../../../state/auth";
-import { SemanticIdField } from "../../semantic-id";
-import { failureNode } from "../../../lib/failure";
+} from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { SemanticIdField } from "@prismshadow/penguin-web/internal";
+import { failureNode } from "@prismshadow/penguin-web/internal";
 
 export function CreateProjectDialog({
   open,

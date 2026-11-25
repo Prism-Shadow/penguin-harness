@@ -48,7 +48,7 @@ import { CompanyModule } from "./features/company/module";
 import { SettingsModule } from "./features/settings/module";
 import { SchedulesModule } from "./features/schedules/module";
 import { SessionListModule } from "./features/session-list/module";
-import { ProjectsModule } from "./features/projects/module";
+import { ProjectsModule } from "@prismshadow/penguin-library-project/web";
 import { MessagingModule } from "./features/messaging/module";
 import { DockModule } from "./features/dock/module";
 import { WorkspaceModule } from "./features/workspace/module";

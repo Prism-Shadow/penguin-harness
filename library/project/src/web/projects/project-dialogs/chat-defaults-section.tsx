@@ -15,24 +15,24 @@ import {
   useSaving,
   Waiting,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../../api/endpoints";
-import { S } from "../../../lib/strings";
-import { isConversationAgent } from "../../../lib/builtin-agents";
-import { toastApiError } from "../../../lib/toast-api-error";
-import { agentDisplayName, useProject } from "../../../state/project";
-import { useAuth } from "../../../state/auth";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { isConversationAgent } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
 import {
   clearDraftChatDefaults,
   clearDraftModelRef,
   dispatchChatDefaultsChanged,
   type ChatDefaultsChangedDetail,
-} from "../../chat";
+} from "@prismshadow/penguin-web/internal";
 
 import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "../../model-picker";
-import { WorkspaceSelect } from "../../workspace";
+import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
 import { sameModelRef } from "../../models";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
-import { failureNode } from "../../../lib/failure";
+import { failureNode } from "@prismshadow/penguin-web/internal";
 
 export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "always-ask",

@@ -20,14 +20,14 @@ import {
   useSaving,
   Waiting,
 } from "@prismshadow/penguin-ui";
-import { ApiError } from "../../../api/client";
-import * as api from "../../../api/endpoints";
-import { S } from "../../../lib/strings";
-import { toastApiError } from "../../../lib/toast-api-error";
-import { useInstantSetting } from "../../../lib/instant-setting";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
+import { useInstantSetting } from "@prismshadow/penguin-web/internal";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 import { RuleTable, pageCountOf, pageOf, type RejectedRule } from "./command-policy-table";
-import { failureNode } from "../../../lib/failure";
+import { failureNode } from "@prismshadow/penguin-web/internal";
 
 /**
  * The row a refused Save is about: the server answers a pattern it cannot compile with that
