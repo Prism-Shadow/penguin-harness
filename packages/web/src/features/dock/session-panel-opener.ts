@@ -2,7 +2,7 @@ import { useContext, useEffect } from "react";
 import { ChatSessionContext } from "../../lib/chat-session";
 import { PageIdentity, usePaneFocus } from "../../lib/page-focus";
 import { sessionAppPair } from "../../lib/session-app-dock";
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { machineForSession } from "../../lib/session-machines";
 import { isSessionWorkbenchKind, sessionWorkbenchPage } from "../../lib/session-workbenches";
 import { currentDockScope, setSessionPanelOpener } from "./dock-state";

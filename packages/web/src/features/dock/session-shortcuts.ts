@@ -2,7 +2,7 @@ import { useContext, useSyncExternalStore } from "react";
 import { ICONS, toastInfo } from "@prismshadow/penguin-ui";
 import { ChatSessionContext } from "../../lib/chat-session";
 import { PageIdentity } from "../../lib/page-focus";
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { machineForSession } from "../../lib/session-machines";
 import { S } from "../../lib/strings";
 import {

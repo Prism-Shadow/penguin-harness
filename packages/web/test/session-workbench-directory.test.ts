@@ -48,7 +48,7 @@ vi.mock("../src/lib/machine-agent-lists", async (original) => ({
   ...(await original<typeof import("../src/lib/machine-agent-lists")>()),
   useMachineAgents: () => ({ lists: fixture.machines }),
 }));
-vi.mock("../src/lib/page-workspace", () => ({
+vi.mock("../src/lib/page-workspace-context", () => ({
   usePageWorkspace: () => ({ openBesideSession: fixture.open }),
 }));
 vi.mock("../src/features/dock/panel-registry", () => ({

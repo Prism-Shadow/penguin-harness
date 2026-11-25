@@ -5,7 +5,7 @@
  * (prepareNewChatDraft, which says why every entry point must), then open the draft page, which
  * starts on the Project's new-chat defaults.
  */
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { useCallback } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../../state/auth";

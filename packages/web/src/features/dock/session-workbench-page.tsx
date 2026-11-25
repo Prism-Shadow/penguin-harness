@@ -11,7 +11,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { getSession, listSessions } from "../../api/endpoints";
 import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import {
   closeSessionResources,
   listSessionResourceCounts,
