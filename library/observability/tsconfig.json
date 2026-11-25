@@ -25,5 +25,6 @@
       "@prismshadow/penguin-library-trace/repos": ["../trace/src/repos/index.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

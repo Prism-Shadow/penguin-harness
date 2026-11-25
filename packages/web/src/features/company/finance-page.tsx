@@ -72,7 +72,7 @@ import { useTheme, type Currency } from "../../state/theme";
 
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { EmployeeAvatar } from "./employee-avatar";
-import { TrendChart } from "../usage";
+import { TrendChart } from "@prismshadow/penguin-library-observability/web";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
   ErrorLine,

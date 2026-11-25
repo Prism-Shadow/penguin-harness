@@ -6,8 +6,8 @@
  * the Project's agents, and therefore the default agent the kit hands the prompt to, and the
  * one way out, which prefills a new conversation and leaves pressing Send to the reader.
  */
-import { useProject } from "../../state/project";
-import { AiCreateModal, type AiExample } from "../ai-create";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { AiCreateModal, type AiExample } from "@prismshadow/penguin-web/internal";
 
 export interface AskAiModalProps {
   open: boolean;

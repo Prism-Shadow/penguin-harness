@@ -37,15 +37,15 @@ import {
   type ChartPaint,
 } from "@prismshadow/penguin-ui";
 
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import type { MergedBenchmark, MergedCase, MergedEvaluation } from "../../lib/benchmark-merge";
-import { S } from "../../lib/strings";
-import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
-import { toneInk } from "../../lib/tone";
-import { useLocale } from "../../state/locale";
-import { useTheme, type Currency } from "../../state/theme";
+import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
+import type { MergedBenchmark, MergedCase, MergedEvaluation } from "../lib/benchmark-merge";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";
 
-import { NEUTRAL_SERIES } from "../../lib/category-colors";
+import { NEUTRAL_SERIES } from "@prismshadow/penguin-web/internal";
 import { AskAiModal } from "./ask-ai-modal";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
 import { watchBenchmarkCases } from "./benchmark-sources";
@@ -67,7 +67,7 @@ import {
 } from "./benchmark-prompts";
 
 import { EvaluationDetailModal } from "./evaluation-detail-modal";
-import { failureNode } from "../../lib/failure";
+import { failureNode } from "@prismshadow/penguin-web/internal";
 
 /** A score series' paint: palette slot i, or the neutral for the evaluations with no label. */
 const scoreSeriesPaint = (s: EvaluationSeries, i: number): ChartPaint =>

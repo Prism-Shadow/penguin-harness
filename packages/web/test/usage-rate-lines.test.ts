@@ -17,7 +17,7 @@
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UsageSeriesPoint } from "@prismshadow/penguin-server/api";
-import { RequestsChart, TokenBarChart } from "../src/features/usage/usage-charts";
+import { RequestsChart, TokenBarChart } from "@prismshadow/penguin-library-observability/web/usage/usage-charts";
 import { S } from "../src/lib/strings";
 import { mount, run, unmountAll } from "./helpers/dom";
 

@@ -24,12 +24,12 @@ import {
   type FileTreeRow,
   type TreeToggle,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { joinWorkspacePath } from "../../lib/file-path";
-import { formatBytes } from "../../lib/format";
-import { useReaderFind } from "../../lib/reader-find";
-import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
+import * as api from "@prismshadow/penguin-web/internal";
+import { joinWorkspacePath } from "@prismshadow/penguin-web/internal";
+import { formatBytes } from "@prismshadow/penguin-web/internal";
+import { useReaderFind } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
 import {
   ancestorDirs,
   baseName,
@@ -39,8 +39,8 @@ import {
   resolveRelative,
   withExpanded,
   type Listings,
-} from "../../lib/workspace-tree";
-import { failureNode } from "../../lib/failure";
+} from "@prismshadow/penguin-web/internal";
+import { failureNode } from "@prismshadow/penguin-web/internal";
 
 /** One row of the case tree: a shared tree row, which material it came from, and a file's size. */
 export interface CaseTreeRow extends FileTreeRow {

@@ -49,16 +49,16 @@ import {
   TodoNotice,
   Waiting,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
-import { formatMoney, humanizeTokens } from "../../lib/format";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "@prismshadow/penguin-web/internal";
+import { formatMoney, humanizeTokens } from "@prismshadow/penguin-web/internal";
 import { catalogEntryFor, providerInfo } from "@prismshadow/penguin-server/model-catalog";
-import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
-import { useOpenedInProject } from "../../lib/use-opened-in-project";
-import { useProject } from "../../state/project";
-import { useTheme } from "../../state/theme";
+import { scoped, scopedValue, type Scoped } from "@prismshadow/penguin-web/internal";
+import { useOpenedInProject } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useTheme } from "@prismshadow/penguin-web/internal";
 import { TrendChart } from "./trend-chart";
 import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "./usage-charts";
 import {
@@ -71,9 +71,9 @@ import {
   rangeDays,
   type EntityCounts,
   type RangePreset,
-} from "../../lib/usage-controls";
+} from "@prismshadow/penguin-web/internal";
 import { ErrorsPanel } from "./errors-panel";
-import { failureNode } from "../../lib/failure";
+import { failureNode } from "@prismshadow/penguin-web/internal";
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */
 function SummaryRow({

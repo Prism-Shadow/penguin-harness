@@ -19,7 +19,7 @@ import {
   benchmarkImportChat,
   buildBenchmarkImportPrompt,
   classifyBenchmarkSource,
-} from "../src/features/benchmark/benchmark-import-prompt";
+} from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-import-prompt";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

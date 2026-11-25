@@ -38,14 +38,14 @@ import {
   useGuardedClose,
   type Failure,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { agentDisplayName } from "../../state/project";
-import { AiExamples, PromptFold, pickDefaultAgent, useAiBridge } from "../ai-create";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName } from "@prismshadow/penguin-web/internal";
+import { AiExamples, PromptFold, pickDefaultAgent, useAiBridge } from "@prismshadow/penguin-web/internal";
 import { benchmarkImportChat, buildBenchmarkImportPrompt } from "./benchmark-import-prompt";
-import { failureOf } from "../../lib/failure";
+import { failureOf } from "@prismshadow/penguin-web/internal";
 
 /** What one upload came to: written, refused for a taken id (the confirm's question), or refused with a reason to show. */
 export type ArchiveUploadResult =

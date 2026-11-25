@@ -29,13 +29,13 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { SemanticIdField } from "../semantic-id";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { SemanticIdField } from "@prismshadow/penguin-web/internal";
 import { ID_PATTERN, caseId, isValidRuns } from "./benchmark-prompts";
-import { failureNode } from "../../lib/failure";
+import { failureNode } from "@prismshadow/penguin-web/internal";
 
 interface CaseDraft {
   /** Stable React key, independent of position, so removing a case keeps the others' state. */

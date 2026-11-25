@@ -16,13 +16,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { UsageErrorItem, UsageErrors } from "@prismshadow/penguin-server/api";
 import { Badge, ConfirmModal, Pager, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { formatDateTime } from "../../lib/format";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
 import { Empty } from "./usage-charts";
-import { toneInk } from "../../lib/tone";
-import { toastApiError } from "../../lib/toast-api-error";
-import { failureNode } from "../../lib/failure";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
+import { failureNode } from "@prismshadow/penguin-web/internal";
 
 /** The two error categories. */
 type ErrorKindKey = "unexpected" | "expected";

@@ -36,7 +36,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { AddMachineDialog } from "../src/features/machines/add-machine-dialog";
 import { SshHostDialog } from "../src/features/machines/ssh-host-dialog";
-import { CreateBenchmarkModal } from "../src/features/benchmark/create-benchmark-modal";
+import { CreateBenchmarkModal } from "@prismshadow/penguin-library-observability/web/benchmark/create-benchmark-modal";
 import { SavedPrompts } from "../src/features/chat/saved-prompts";
 import { HomepageDialog } from "../../../plugins/browser-automation/src/web/homepage-dialog";
 import { apiError, json, stubFetch } from "./helpers/fetch";

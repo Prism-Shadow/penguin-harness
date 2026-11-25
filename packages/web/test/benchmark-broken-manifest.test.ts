@@ -15,8 +15,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { BenchmarkSummary } from "@prismshadow/penguin-server/api";
-import { UnpublishedNotice } from "../src/features/benchmark/benchmark-detail-page";
-import { BenchmarkCard } from "../src/features/benchmark/benchmark-page";
+import { UnpublishedNotice } from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-detail-page";
+import { BenchmarkCard } from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-page";
 import { S } from "../src/lib/strings";
 
 const noop = () => {};

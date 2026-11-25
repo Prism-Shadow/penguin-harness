@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import { MemoryRouter } from "react-router";
 import type { ProjectSummary, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
-import { UsagePage } from "../src/features/usage/usage-page";
+import { UsagePage } from "@prismshadow/penguin-library-observability/web/usage/usage-page";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { ProjectProvider } from "../src/state/project";

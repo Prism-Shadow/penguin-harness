@@ -54,14 +54,14 @@ import {
   Select,
   Textarea,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { isConversationAgent } from "../../lib/builtin-agents";
-import { formatScore } from "../../lib/format";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
-import { ModelCatalogSelect } from "../model-picker";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { isConversationAgent } from "@prismshadow/penguin-web/internal";
+import { formatScore } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "@prismshadow/penguin-web/internal";
+import { ModelCatalogSelect } from "@prismshadow/penguin-web/internal";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import {
   DEFAULT_TEST_REPETITIONS,
@@ -78,8 +78,8 @@ import {
   OPTIMIZATION_SKILL,
   pickRsiMethod,
   rsiMethods,
-} from "../../lib/rsi-methods";
-import { useRsiToolkits } from "../../lib/use-rsi-toolkits";
+} from "@prismshadow/penguin-web/internal";
+import { useRsiToolkits } from "@prismshadow/penguin-web/internal";
 
 /** Which half of the dialog is on screen. */
 export type UseTab = "evaluate" | "optimize";

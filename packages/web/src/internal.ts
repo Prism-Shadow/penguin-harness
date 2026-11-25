@@ -4,9 +4,9 @@
  * consumes the host through this subpath (`@prismshadow/penguin-web/internal`), so its imports
  * name one seam instead of reaching into the host's file tree.
  *
- * Deliberately a re-export hub and nothing more: no logic, no defaults. Two kinds of member:
- * the host files the web halves read, and the pieces of those web halves the host reads back
- * (the faces' index exports, named one by one so a star collision can never drop one silently).
+ * Deliberately a re-export hub and nothing more: no logic, no defaults. The host reads a web
+ * half's own exports through the domain package's `./web` face; this surface is only what the
+ * web halves read back from the host.
  */
 export * from "./api/client";
 export * from "./api/endpoints";

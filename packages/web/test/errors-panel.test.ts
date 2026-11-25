@@ -19,7 +19,7 @@ import {
   ErrorsPanel,
   errorsClearScopeText,
   type ErrorsFilters,
-} from "../src/features/usage/errors-panel";
+} from "@prismshadow/penguin-library-observability/web/usage/errors-panel";
 
 import { formatDateTime } from "../src/lib/format";
 import { S, setActiveStrings, zh } from "../src/lib/strings";

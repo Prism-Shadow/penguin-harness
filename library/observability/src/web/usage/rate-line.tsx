@@ -6,7 +6,7 @@
  */
 import { ChartLine, ChartPoint, type ChartGeom, type ChartPaint } from "@prismshadow/penguin-ui";
 
-import { rateRuns } from "../../lib/usage-controls";
+import { rateRuns } from "@prismshadow/penguin-web/internal";
 
 export function RateLine({
   geom,

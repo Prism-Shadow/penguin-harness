@@ -43,7 +43,7 @@ import {
   evaluateTail,
   isValidRuns,
   optimizeTail,
-} from "../src/features/benchmark/benchmark-prompts";
+} from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-prompts";
 
 const FOLDER = "/data/projects/p/agents/system_agent/app/data/benchmark";
 const BENCH = `${FOLDER}/report-writing-v1`;

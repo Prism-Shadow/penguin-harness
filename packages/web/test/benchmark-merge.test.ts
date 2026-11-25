@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { BenchmarkEvaluation, BenchmarkSummary } from "@prismshadow/penguin-server/api";
-import { mergeBenchmarks, mergeBenchmarkCases } from "../src/lib/benchmark-merge";
+import { mergeBenchmarks, mergeBenchmarkCases } from "@prismshadow/penguin-library-observability/web/lib/benchmark-merge";
 
 const MACHINE = "noeSE0FFHhNXl2J5";
 

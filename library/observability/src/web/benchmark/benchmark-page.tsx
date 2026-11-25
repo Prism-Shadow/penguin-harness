@@ -40,21 +40,21 @@ import {
   Sparkline,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { S } from "../../lib/strings";
-import { isConversationAgent } from "../../lib/builtin-agents";
-import { cardBodyClick } from "../../lib/card-open";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { toneInk } from "../../lib/tone";
-import { agentDisplayName, useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
-import type { MergedBenchmark } from "../../lib/benchmark-merge";
-import { nameOnMachine } from "../../lib/workspace-machines";
-import { useLocale } from "../../state/locale";
-import { AiCreateModal, pickDefaultAgent, AiCreateButtons } from "../ai-create";
+import * as api from "@prismshadow/penguin-web/internal";
+import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { isConversationAgent } from "@prismshadow/penguin-web/internal";
+import { cardBodyClick } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { formatRelativeShort, formatScore, signedDelta } from "@prismshadow/penguin-web/internal";
+import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
+import type { MergedBenchmark } from "../lib/benchmark-merge";
+import { nameOnMachine } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { AiCreateModal, pickDefaultAgent, AiCreateButtons } from "@prismshadow/penguin-web/internal";
 import {
   benchmarkDescription,
   latestWithDelta,
@@ -71,8 +71,8 @@ import { benchmarkRoute } from "./benchmark-route";
 import { useBenchmarksAcross } from "./benchmark-sources";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
-import { toastApiError } from "../../lib/toast-api-error";
-import { failureNode } from "../../lib/failure";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
+import { failureNode } from "@prismshadow/penguin-web/internal";
 
 /** The Skills a design conversation is opened with (see the create modal below). */
 const BENCHMARK_DESIGN_SKILLS = ["benchmark-design", "agent-evaluation"];

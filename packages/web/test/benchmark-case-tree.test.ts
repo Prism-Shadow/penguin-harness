@@ -9,7 +9,7 @@ import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
 import {
   caseTreeRows,
   type CaseMaterialSpec,
-} from "../src/features/benchmark/benchmark-case-browser";
+} from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-case-browser";
 
 const MTIME = "2026-09-12T00:00:00.000Z";
 

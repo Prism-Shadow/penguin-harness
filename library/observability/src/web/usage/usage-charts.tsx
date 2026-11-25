@@ -60,9 +60,9 @@ import {
   type TokenBucketKey,
 } from "@prismshadow/penguin-ui";
 
-import { S } from "../../lib/strings";
-import { formatPercent, humanizeTokens } from "../../lib/format";
-import { NEUTRAL_SERIES } from "../../lib/category-colors";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatPercent, humanizeTokens } from "@prismshadow/penguin-web/internal";
+import { NEUTRAL_SERIES } from "@prismshadow/penguin-web/internal";
 import {
   bucketAxisLabel,
   bucketFullLabel,
@@ -72,7 +72,7 @@ import {
   sumCounts,
   type EntityCounts,
   type EntitySeries,
-} from "../../lib/usage-controls";
+} from "@prismshadow/penguin-web/internal";
 import { RateLine } from "./rate-line";
 
 /** Empty state for a chart card (defaults to "no usage records yet"; the errors chart passes its own copy). */

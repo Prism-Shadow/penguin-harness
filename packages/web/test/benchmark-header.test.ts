@@ -15,7 +15,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { BenchmarkSummary } from "@prismshadow/penguin-server/api";
-import { BenchmarkHeaderFacts } from "../src/features/benchmark/benchmark-detail-page";
+import { BenchmarkHeaderFacts } from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-detail-page";
 
 const FOLDER =
   "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/c12d65bc20beb5130ed57b3b7983c62d497b7d2f/packages/penguinharness-benchmark-sec-a";

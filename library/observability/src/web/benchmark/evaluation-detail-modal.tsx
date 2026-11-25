@@ -24,16 +24,16 @@ import {
   ICON_SIZE,
   Modal,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import { SettingsDialog } from "@prismshadow/penguin-library-setting/web";
-import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
-import type { Currency } from "../../state/theme";
+import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "@prismshadow/penguin-web/internal";
+import type { Currency } from "@prismshadow/penguin-web/internal";
 import { AskAiModal } from "./ask-ai-modal";
 import { evaluationLabel } from "./benchmark-metrics";
 import { askEvaluationExamples, askEvaluationTail } from "./benchmark-prompts";
 import type { AskEvaluationParams } from "./benchmark-prompts";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** How agent-evaluation records a Harbor trial in a run's `session_id`: it is no Session. */
 const TRIAL_PREFIX = "harbor:";

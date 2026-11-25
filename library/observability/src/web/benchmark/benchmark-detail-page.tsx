@@ -23,21 +23,21 @@ import {
   PageHeader,
   Waiting,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import type { MergedBenchmark } from "../../lib/benchmark-merge";
-import { nameOnMachine } from "../../lib/workspace-machines";
-import { useSessions } from "../../state/sessions";
-import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
-import { S } from "../../lib/strings";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useProject } from "../../state/project";
-import { downloadArchive } from "../agents";
+import * as api from "@prismshadow/penguin-web/internal";
+import type { MergedBenchmark } from "../lib/benchmark-merge";
+import { nameOnMachine } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
+import { useLeaveOnProjectSwitch } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { downloadArchive } from "@prismshadow/penguin-web/internal";
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
 import { useBenchmarksAcross } from "./benchmark-sources";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
-import { toastApiError } from "../../lib/toast-api-error";
-import { failureNode } from "../../lib/failure";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
+import { failureNode } from "@prismshadow/penguin-web/internal";
 
 /**
  * What stands in place of the detail for a Benchmark that is not published: still being built,
