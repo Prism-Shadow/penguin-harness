@@ -32,6 +32,10 @@
       "types": "./dist/access.d.ts",
       "import": "./dist/access.js"
     },
+    "./resources": {
+      "types": "./dist/resources.d.ts",
+      "import": "./dist/resources.js"
+    },
     "./repos/schedules": {
       "types": "./dist/repos/schedules.d.ts",
       "import": "./dist/repos/schedules.js"

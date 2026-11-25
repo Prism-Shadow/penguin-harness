@@ -1,0 +1,30 @@
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: [
+    "src/manager.ts",
+    "src/routes.ts",
+    "src/ws.ts",
+    "src/identity.ts",
+    "src/cookie.ts",
+    "src/socket-ref.ts",
+    "src/session.ts",
+    "src/stream.ts",
+    "src/frames.ts",
+    "src/snapshot.ts",
+    "src/input-mode.ts",
+    "src/link-quality.ts",
+    "src/output-coalescer.ts",
+    "src/size-ownership.ts",
+    "src/shell.ts",
+    "src/shell-startup.ts",
+    "src/spawn-helper.ts",
+    "src/pty-module.ts",
+    "src/cli-notice.ts",
+  ],
+  format: ["esm"],
+  target: "node24",
+  dts: true,
+  clean: true,
+  sourcemap: true,
+});
