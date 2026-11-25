@@ -8,7 +8,7 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
-import type { ApprovalMode } from "@prismshadow/penguin-library-session";
+import type { ApprovalMode, ModelRefDto } from "@prismshadow/penguin-library-session";
 
 /** The default for API admission, preserved for Agents configured before this setting existed. */
 export const DEFAULT_API_CONCURRENT_RUNS = 4;
@@ -45,7 +45,6 @@ export type AgentApiPatch = AgentApiUpdateRequest;
  * unchanged.
  */
 export { type ModelRefDto } from "@prismshadow/penguin-library-session";
-import type { ModelRefDto } from "@prismshadow/penguin-library-session";
 
 /** From packages/server (api/types.ts): the agent API tab's settings and the patch the
  * admin PATCH takes. The contract names them, so the types live with the contract. */

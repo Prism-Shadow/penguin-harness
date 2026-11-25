@@ -155,11 +155,11 @@ import type {
   ApprovalReason,
   ApprovalMode,
   SessionBackgroundTasks,
+  // The Session view moved to the session domain library (services+http+cli restack S14):
+  // imported for the DTOs below, re-exported where it was defined so
+  // `@prismshadow/penguin-server/api` keeps spelling it.
+  SessionInfo,
 } from "@prismshadow/penguin-library-session";
-// The Session view moved to the session domain library (services+http+cli restack S14):
-// imported for the DTOs below, re-exported where it was defined so
-// `@prismshadow/penguin-server/api` keeps spelling it.
-import type { SessionInfo } from "@prismshadow/penguin-library-session";
 import type {
   ArchivedSessionSource,
   ArchivedSessionsQuery,

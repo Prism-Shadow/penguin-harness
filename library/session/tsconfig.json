@@ -20,11 +20,11 @@
         "../workspace/src/workspace-group.ts"
       ],
       "@prismshadow/penguin-library-trace/repos/trace-index": ["../trace/src/repos/trace-index.ts"],
-      "@prismshadow/penguin-library-session": ["src/index.ts"],
-      "@prismshadow/penguin-library-session/repos/sessions": ["src/repos/sessions.ts"],
-      "@prismshadow/penguin-library-session/repos/schedules": ["src/repos/schedules.ts"],
-      "@prismshadow/penguin-library-session/access": ["src/access.ts"],
-      "@prismshadow/penguin-library-session/mtime-gate": ["src/mtime-gate.ts"]
+      "@prismshadow/penguin-library-session": ["./src/index.ts"],
+      "@prismshadow/penguin-library-session/repos/sessions": ["./src/repos/sessions.ts"],
+      "@prismshadow/penguin-library-session/repos/schedules": ["./src/repos/schedules.ts"],
+      "@prismshadow/penguin-library-session/access": ["./src/access.ts"],
+      "@prismshadow/penguin-library-session/mtime-gate": ["./src/mtime-gate.ts"]
     }
   },
   "include": ["src"]
