@@ -40,7 +40,7 @@ function toolsPlugin(): ModuleDef {
       name: "AcmeTools",
       requires: {
         requests: {
-          iface: "@prismshadow/penguin-server#ProjectModelRequests",
+          iface: "@prismshadow/penguin-library-project#ProjectModelRequests",
           from: "ModelToolsModule",
         },
       },
