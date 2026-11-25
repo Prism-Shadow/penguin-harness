@@ -525,25 +525,71 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   };
 
   /**
+   * Whether `msg` can arrive at the start of a newly spawned child's stream before its opening
+   * prompt settles which run_subagent card it belongs on: its own session_meta, task_begin, or
+   * that opening user text. Anything else (a mid-run output, a tool call, a deeper descendant's
+   * record) comes from a child that was already running before this window.
+   */
+  const canOpenSpawn = (msg: AmspRecord): boolean => {
+    if (msg.origin?.length !== 1) return false;
+    if (msg.type === "session_meta") return true;
+    if (msg.type === "event_msg") {
+      return (msg.payload as { type?: string }).type === "task_begin";
+    }
+    if (msg.type === "model_msg") {
+      const p = msg.payload as { type?: string; role?: string; text?: unknown; sender?: string };
+      return (
+        p.type === "text" &&
+        p.role === "user" &&
+        typeof p.text === "string" &&
+        (p.sender === undefined || p.sender === "parent_agent")
+      );
+    }
+    return false;
+  };
+
+  /**
    * A child of the live model whose opening prompt is the prompt of the run_subagent card of the
    * newest Task it is bound to is that Task's own (the exact binding, not the positional one):
-   * no older window holds it, and its log goes.
+   * no older window holds it, and its log goes. While a child remains in `liveOnlyChildren`
+   * (unconfirmed as this window's own), it never leaves a standalone SubagentItem in the newest
+   * Task, and a mid-run or non-matching message releases any positional binding on a run_subagent
+   * card so an older background child speaking past the backfilled tail cannot hijack the card
+   * or surface a stray subagent row.
    */
   const releaseIfNew = (msg: AmspRecord): void => {
     const head = msg.origin?.[0];
-    if (head === undefined || msg.origin!.length !== 1 || !liveOnlyChildren.has(head)) return;
-    const p = msg.payload as { type?: string; role?: string; text?: unknown };
-    if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user") return;
+    if (head === undefined || !liveOnlyChildren.has(head)) return;
     const live = model.subagents.get(head);
-    const card = model.items.find((i) => i.kind === "tool_call" && i.subagent === live);
-    if (card === undefined || card.kind !== "tool_call") return;
-    let prompt: unknown;
-    try {
-      prompt = (JSON.parse(card.argumentsText) as { prompt?: unknown } | null)?.prompt;
-    } catch {
-      return;
+    if (live === undefined) return;
+    if (msg.origin!.length === 1 && msg.type === "model_msg") {
+      const p = msg.payload as { type?: string; role?: string; text?: unknown };
+      if (p.type === "text" && p.role === "user" && typeof p.text === "string") {
+        const card = model.items.find((i) => i.kind === "tool_call" && i.subagent === live);
+        if (card !== undefined && card.kind === "tool_call") {
+          try {
+            const prompt = (JSON.parse(card.argumentsText) as { prompt?: unknown } | null)?.prompt;
+            if (prompt === p.text) {
+              liveOnlyChildren.delete(head);
+              return;
+            }
+          } catch {
+            // Malformed argumentsText cannot confirm the child; fall through.
+          }
+        }
+      }
     }
-    if (typeof p.text === "string" && prompt === p.text) liveOnlyChildren.delete(head);
+    const stray = model.items.findIndex((i) => i.kind === "subagent" && i.model === live);
+    if (stray >= 0) model.items.splice(stray, 1);
+    if (!canOpenSpawn(msg) || msg.type === "model_msg") {
+      for (const item of model.items) {
+        if (item.kind === "tool_call" && item.subagent === live) {
+          delete item.subagent;
+          delete item.subagentSessionId;
+        }
+      }
+      model.unconfirmedSubagents.delete(head);
+    }
   };
 
   /**
@@ -558,8 +604,13 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    */
   const takeOverLiveChildren = (window: StreamModel, records: readonly AmspRecord[]): void => {
     for (const [sid, child] of window.subagents) {
+      const strayById = model.items.findIndex((i) => i.kind === "subagent" && i.sessionId === sid);
+      if (strayById >= 0) model.items.splice(strayById, 1);
       const log = liveOnlyChildren.get(sid);
-      if (log === undefined) continue;
+      if (log === undefined) {
+        if (strayById >= 0) model.subagents.set(sid, child);
+        continue;
+      }
       liveOnlyChildren.delete(sid);
       const live = model.subagents.get(sid);
       if (live === undefined || live === child) continue;

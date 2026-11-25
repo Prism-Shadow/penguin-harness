@@ -2176,6 +2176,23 @@ describe("origin nested routing", () => {
     expect((items(m)[0] as ToolCallItem).subagent).toBeUndefined();
   });
 
+  it("a mid-run message from an older child does not lock a run_subagent card against the card's own child", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      toolCall({ name: "run_subagent", arguments: '{"prompt":"fresh task"}', toolCallId: "t1" }),
+    );
+    pushMessage(m, approvalDecision("allow", "t1"));
+    // An already-running background child emits a mid-run assistant reply before t1's child starts.
+    pushMessage(m, withOrigin(assistantText("older background reply"), "old-child"));
+    expect(m.unconfirmedSubagents.has("old-child")).toBe(true);
+    // Now t1's own child starts with its session_meta and opening prompt: it claims t1.
+    pushMessage(m, withOrigin(meta("new-child"), "new-child"));
+    pushMessage(m, withOrigin(userText("fresh task", "parent_agent"), "new-child"));
+    const card = items(m)[0] as ToolCallItem;
+    expect(card.subagentSessionId).toBe("new-child");
+  });
+
   it("child-session token_usage counts toward parent stats (tokens include child sessions, context does not)", () => {
     const m = createStreamModel();
     pushMessage(m, at(userText("task"), "2026-07-05T00:00:00.000Z"));
