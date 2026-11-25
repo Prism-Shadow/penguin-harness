@@ -138,6 +138,23 @@ export default defineConfig({
   ],
   resolve: {
     dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
+    // The framed Web App boots the session domain's web half through the same face specifiers
+    // the app's build aliases (packages/web/vite.config.ts): the face the composition root
+    // lists the moved modules through, and the app's internals the half consumes (src/internal.ts).
+    alias: [
+      {
+        find: /^@prismshadow\/penguin-library-session\/web$/,
+        replacement: at("../../library/session/src/web/index.ts"),
+      },
+      {
+        find: /^@prismshadow\/penguin-library-session\/web\/(.*)$/,
+        replacement: `${at("../../library/session/src/web")}/$1`,
+      },
+      {
+        find: /^@prismshadow\/penguin-web\/internal$/,
+        replacement: at("../web/src/internal.ts"),
+      },
+    ],
   },
   // The app's module classes use standard decorators; the dev server must lower them, as in
   // the app's own config.
