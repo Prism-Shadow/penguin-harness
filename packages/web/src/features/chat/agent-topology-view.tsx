@@ -94,15 +94,15 @@ export function AgentTopologyView({
   const [panning, setPanning] = useState(false);
   const [frameEl, setFrameEl] = useState<HTMLDivElement | null>(null);
 
-  // Switching to another Task turn re-fits the canvas to the newly displayed tree.
-  const turnAnchor = nodes[1]?.sessionId ?? null;
-  const prevAnchorRef = useRef(turnAnchor);
+  // Switching to another Task turn or spawning additional subagents re-fits the canvas to the tree.
+  const topologyKey = nodes.map((n) => `${n.parentId ?? ""}>${n.sessionId}`).join("\n");
+  const prevTopologyRef = useRef(topologyKey);
   useEffect(() => {
-    if (prevAnchorRef.current !== turnAnchor) {
-      prevAnchorRef.current = turnAnchor;
+    if (prevTopologyRef.current !== topologyKey) {
+      prevTopologyRef.current = topologyKey;
       setView(null);
     }
-  }, [turnAnchor]);
+  }, [topologyKey]);
 
   const fit = useMemo(() => fitView(frame, drawing), [frame, drawing]);
   const current = useMemo(
@@ -132,6 +132,7 @@ export function AgentTopologyView({
     const rect = frameEl.getBoundingClientRect();
     const width = frameEl.clientWidth || rect.width;
     const height = frameEl.clientHeight || rect.height || canvasHeight;
+    if (width <= 0 || height <= 0) return;
     setFrame((prev) =>
       Math.abs(prev.width - width) < 0.5 && Math.abs(prev.height - height) < 0.5
         ? prev

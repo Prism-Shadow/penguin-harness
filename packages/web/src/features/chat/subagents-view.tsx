@@ -141,7 +141,7 @@ export function SubagentsView({
   );
   const change = JSON.stringify([
     ...latest.filter((node) => node.depth === 1).map((node) => node.sessionId),
-    ...liveStates.keys(),
+    ...subagents.map((s) => `${s.sessionId}:${s.running}`),
     taskRunning,
   ]);
   const machine = machineForSession(session.sessionId);
@@ -187,7 +187,9 @@ export function SubagentsView({
         )
         .find(Boolean);
     for (const node of detailed?.slice(1) ?? []) {
-      if (ids.has(node.origin[0]!)) result.push(node);
+      if (ids.has(node.origin[0]!) || (!anchor && index === 0 && liveStates.has(node.origin[0]!))) {
+        result.push(node);
+      }
     }
     const visible = new Set(result.map((node) => node.sessionId));
     for (const child of turn) {

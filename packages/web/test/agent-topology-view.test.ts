@@ -147,6 +147,7 @@ describe("AgentTopologyView canvas", () => {
     );
     expect(zoomGroup).not.toBeNull();
     expect(document.querySelector('[data-testid="turn-pager"]')?.textContent).toBe("Page 2");
+    expect(zh.subagentPanel.page(3)).toBe("第 3 轮");
 
     // The call-graph group must contain only the topology node buttons (relied on by E2E locators).
     const graphButtons = canvasGroup().querySelectorAll("button");
@@ -268,7 +269,7 @@ describe("AgentTopologyView canvas", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("re-fits the canvas when switching to another Task turn", async () => {
+  it("re-fits the canvas when switching to another Task turn or spawning additional subagents", async () => {
     const view = await mount(
       h(AgentTopologyView, {
         nodes: [ROOT, CHILD_1],
@@ -279,12 +280,36 @@ describe("AgentTopologyView canvas", () => {
       }),
     );
 
-    await sizeCanvasFrame(400, 120);
+    const frame = { width: 400, height: 120 };
+    await sizeCanvasFrame(frame.width, frame.height);
     const fittedTransform = drawingLayer().style.transform;
 
     await click(button(en.subagentPanel.zoomIn));
     expect(drawingLayer().style.transform).not.toBe(fittedTransform);
 
+    // Spawning a second subagent in the same turn re-fits the canvas so all subagents appear.
+    const siblingChild: TopologyNode = {
+      ...CHILD_1,
+      sessionId: "session-2026-07-14-09-05-15-child003",
+      origin: ["session-2026-07-14-09-05-15-child003"],
+    };
+    const twoChildNodes = [ROOT, CHILD_1, siblingChild];
+    const twoChildLayout = layoutTopology(twoChildNodes);
+    await view.rerender(
+      h(AgentTopologyView, {
+        nodes: twoChildNodes,
+        selectedId: CHILD_1.sessionId,
+        labelFor: (n) => n.agentId ?? n.sessionId,
+        avatarFor: () => undefined,
+        onSelect: () => {},
+      }),
+    );
+    expect(drawingLayer().style.transform).toBe(
+      viewTransform(fitView(frame, { width: twoChildLayout.width, height: twoChildLayout.height })),
+    );
+
+    // Zooming again and switching to another Task turn also re-fits.
+    await click(button(en.subagentPanel.zoomIn));
     const otherTurnChild: TopologyNode = {
       ...CHILD_1,
       sessionId: "session-2026-07-14-09-06-00-otherturn",
