@@ -194,10 +194,15 @@
     "@larksuiteoapi/node-sdk": "^1.73.0"
   },
   "devDependencies": {
+    "@prismshadow/penguin-library-setting": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
     "@types/mdast": "^4.0.4",
     "@types/react": "^19.1.0",
     "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router": "^8.3.0",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
     "uqr": "^0.1.3",
