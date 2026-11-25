@@ -614,6 +614,9 @@ describe("fullscreen", () => {
           change = listener;
         },
       }),
+      // The shortcuts store subscribes to cross-tab storage events as its module loads.
+      addEventListener: () => {},
+      removeEventListener: () => {},
     });
     vi.resetModules();
     const responsive = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
