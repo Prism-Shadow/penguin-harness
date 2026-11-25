@@ -22,6 +22,25 @@
       "@prismshadow/penguin-library-agent/agent-config-service": [
         "../../library/agent/src/agent-config-service.ts"
       ],
+      "@prismshadow/penguin-library-agent/agent-service": [
+        "../../library/agent/src/agent-service.ts"
+      ],
+      "@prismshadow/penguin-library-agent/agent-skills": [
+        "../../library/agent/src/agent-skills.ts"
+      ],
+      "@prismshadow/penguin-library-agent/agent-tasks": [
+        "../../library/agent/src/agent-tasks.ts"
+      ],
+      "@prismshadow/penguin-library-agent/agent-deletion": [
+        "../../library/agent/src/agent-deletion.ts"
+      ],
+      "@prismshadow/penguin-library-agent/agent-author-migration": [
+        "../../library/agent/src/agent-author-migration.ts"
+      ],
+      "@prismshadow/penguin-library-agent/ids": ["../../library/agent/src/ids.ts"],
+      "@prismshadow/penguin-library-agent/tree-purge": [
+        "../../library/agent/src/tree-purge.ts"
+      ],
       "@prismshadow/penguin-library-agent/system-agent": [
         "../../library/agent/src/system-agent.ts"
       ],
@@ -396,6 +415,9 @@
       "@prismshadow/penguin-library-session/schedules": ["../../library/session/src/schedules.ts"],
       "@prismshadow/penguin-library-session/schedules-status": [
         "../../library/session/src/schedules-status.ts"
+      ],
+      "@prismshadow/penguin-library-session/session-title": [
+        "../../library/session/src/session-title.ts"
       ],
       "@prismshadow/penguin-library-setting": ["../../library/setting/src/index.ts"],
       "@prismshadow/penguin-library-setting/attachment-limits": [

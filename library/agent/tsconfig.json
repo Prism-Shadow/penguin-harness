@@ -11,6 +11,8 @@
         "../http/src/skill-import-limits.ts"
       ],
       "@prismshadow/penguin-library-session": ["../session/src/index.ts"],
+      "@prismshadow/penguin-library-session/session-title": ["../session/src/session-title.ts"],
+      "@prismshadow/penguin-library-project": ["../project/src/index.ts"],
       "@prismshadow/penguin-library-trace": ["../trace/src/index.ts"]
     }
   },

@@ -4,7 +4,13 @@
  * shapes so it never imports the server.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { IconImage, LibraryPlugin } from "@prismshadow/penguin-core";
+import type {
+  AmspRecord,
+  IconImage,
+  LibraryPlugin,
+  ThinkingLevelName,
+} from "@prismshadow/penguin-core";
+import type { ApprovalMode, SessionStatus } from "@prismshadow/penguin-library-session";
 import type { ModuleActor } from "./types.js";
 
 /** Where the harness root is. The server's `Paths` capability satisfies this structurally. */
@@ -70,4 +76,38 @@ export abstract class AgentDirectorySkills {
     dir: string,
     names: readonly string[],
   ): Promise<{ name: string; content: string; icon?: IconImage; files?: Record<string, string> }[]>;
+}
+
+/** The runtime's task runner, as starting a person's task needs it (the server's `Sessions` satisfies it structurally; the assembly binds it). */
+@Interface()
+export abstract class AgentTaskRunner {
+  abstract startTask(
+    sessionId: string,
+    input: AmspRecord[],
+    opts?: { driver?: string },
+  ): Promise<{ sessionId: string }>;
+  abstract statusOf(sessionId: string): SessionStatus;
+  abstract pendingApprovalCount(sessionId: string): number;
+}
+
+/** Opens the conversation a task runs in (the server's `SessionServiceIface.createSession` subset; the assembly binds it). */
+@Interface()
+export abstract class AgentTaskSessions {
+  abstract createSession(args: {
+    projectId: string;
+    agentId: string;
+    modelId?: string;
+    provider?: string;
+    thinkingLevel?: ThinkingLevelName;
+    approvalMode?: ApprovalMode;
+  }): Promise<{ sessionId: string }>;
+}
+
+/** The latest task's outcome, as a workbench reads it (the server's `workbenchResult`; the assembly binds it). */
+@Interface()
+export abstract class AgentTaskOutcome {
+  abstract result(
+    status: string,
+    messages: readonly AmspRecord[],
+  ): { status: "running" | "completed" | "failed"; text: string; error: string | null };
 }

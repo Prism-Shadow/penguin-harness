@@ -176,7 +176,7 @@ import { SemanticIdModule } from "./services/semantic-id-kinds.js";
 import { StartPageModule } from "./http/routes/start-page.js";
 import { AppData, SystemAgentAppData } from "./services/app-data.js";
 import { AppSeeds, HostAppSeeds } from "./services/app-seeds.js";
-import { AgentTasks, HostAgentTasks } from "./services/agent-tasks.js";
+import { AgentTasks, HostAgentTasksProvider } from "./services/agent-tasks.js";
 import { InstalledAgentSkillsProvider } from "./services/agent-skills.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
@@ -412,7 +412,7 @@ export class ProjectsModule {}
     SessionApiRoutes,
     SchedulerRoutes,
     EventsRoutes,
-    HostAgentTasks,
+    HostAgentTasksProvider,
   ],
   exports: [
     SessionIndex,

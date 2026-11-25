@@ -6,6 +6,7 @@ export default defineConfig({
     "src/repos/index.ts",
     "src/repos/schedules.ts",
     "src/repos/sessions.ts",
+    "src/session-title.ts",
     "src/session.ts",
     "src/access.ts",
     "src/schedule-file.ts",

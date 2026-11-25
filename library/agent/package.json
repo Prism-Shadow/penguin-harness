@@ -44,6 +44,10 @@
       "types": "./dist/agent-service.d.ts",
       "import": "./dist/agent-service.js"
     },
+    "./agent-tasks": {
+      "types": "./dist/agent-tasks.d.ts",
+      "import": "./dist/agent-tasks.js"
+    },
     "./agent-skills": {
       "types": "./dist/agent-skills.d.ts",
       "import": "./dist/agent-skills.js"

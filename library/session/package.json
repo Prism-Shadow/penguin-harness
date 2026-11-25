@@ -24,6 +24,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./session-title": {
+      "types": "./dist/session-title.d.ts",
+      "import": "./dist/session-title.js"
+    },
     "./session": {
       "types": "./dist/session.d.ts",
       "import": "./dist/session.js"
