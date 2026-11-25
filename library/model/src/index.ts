@@ -84,3 +84,10 @@ export type {
   ToolModelTestRequest,
   ToolModelTestSubject,
 } from "./tool-model-bindings.js";
+
+/**
+ * MMSP's stream event envelope, as the model-request contracts name it in their streams
+ * (Opaque<"UniEvent", …>): a host object compared by name, re-exported here so the
+ * packages that speak the model plumbing name it from this package.
+ */
+export type { UniEvent } from "@prismshadow/mmsp";
