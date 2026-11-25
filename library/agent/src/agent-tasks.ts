@@ -46,11 +46,7 @@ import type {
 import { sessionTitle } from "@prismshadow/penguin-library-session/session-title";
 import type { Traces } from "@prismshadow/penguin-library-trace";
 import type { AgentConfig } from "./contract.js";
-import type {
-  AgentTaskOutcome,
-  AgentTaskRunner,
-  AgentTaskSessions,
-} from "./ports.js";
+import type { AgentTaskOutcome, AgentTaskRunner, AgentTaskSessions } from "./ports.js";
 
 /** One task to start, as `userId` would start it from a new chat. */
 export interface AgentTaskStart {

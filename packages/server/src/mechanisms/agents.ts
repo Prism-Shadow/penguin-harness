@@ -17,7 +17,4 @@ export {
   AgentLifecycle,
 } from "@prismshadow/penguin-library-agent/contract";
 export type { AgentPackage } from "@prismshadow/penguin-library-agent/contract";
-export type {
-  AgentCreation,
-  AgentListItem,
-} from "@prismshadow/penguin-library-agent/types";
+export type { AgentCreation, AgentListItem } from "@prismshadow/penguin-library-agent/types";

@@ -19,12 +19,12 @@ import type { AgentConfig, Snapshots, AgentLifecycle } from "../mechanisms/agent
 import { AgentService } from "@prismshadow/penguin-library-agent/agent-service";
 
 export { AgentService } from "@prismshadow/penguin-library-agent/agent-service";
-export type { AgentListItem, AgentCreation } from "@prismshadow/penguin-library-agent/agent-service";
-export { refuseBuiltinDeletion } from "@prismshadow/penguin-library-agent/agent-service";
-export {
-  DELETING_DIR,
-  deletingDir,
+export type {
+  AgentListItem,
+  AgentCreation,
 } from "@prismshadow/penguin-library-agent/agent-service";
+export { refuseBuiltinDeletion } from "@prismshadow/penguin-library-agent/agent-service";
+export { DELETING_DIR, deletingDir } from "@prismshadow/penguin-library-agent/agent-service";
 
 /** The agent service assembly: binds the service's paths port and its server-mechanism ports. */
 @Module()
@@ -67,8 +67,7 @@ export class AgentServiceProvider {
         migrate: (agentDir: string) => migrateWorkbenches(agentDir),
       },
       directorySkills: {
-        resolve: (dir: string, names: readonly string[]) =>
-          resolveDirectorySkills(dir, names),
+        resolve: (dir: string, names: readonly string[]) => resolveDirectorySkills(dir, names),
       },
     });
     this.agentLifecycle = this.service;

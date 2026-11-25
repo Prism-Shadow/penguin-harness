@@ -46,7 +46,10 @@ export abstract class AgentPluginLibrary {
   /** Resolves plugin names to their entries, in the order given; 404 `unknown_plugin` on the first name the library does not carry (the server's `resolveLibraryPlugins`). */
   abstract resolve(names: readonly string[]): LibraryPlugin[];
   /** The picked names in pick order, then each default-install plugin's name not among them (the server's `seedPluginNames`). */
-  abstract seed(picked: readonly string[], defaults: readonly Pick<LibraryPlugin, "name">[]): string[];
+  abstract seed(
+    picked: readonly string[],
+    defaults: readonly Pick<LibraryPlugin, "name">[],
+  ): string[];
 }
 
 /** The plugins' server modules, brought along at the end of Agent creation (the server's `PluginModules.ensure`; the assembly binds it). */

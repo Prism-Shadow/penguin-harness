@@ -31,11 +31,7 @@ export { AgentService, refuseBuiltinDeletion } from "./agent-service.js";
 export { AgentSkills, InstalledAgentSkills } from "./agent-skills.js";
 export { AgentTasks, HostAgentTasks } from "./agent-tasks.js";
 export type { AgentTaskStart, AgentTaskState, AgentTaskStatus } from "./agent-tasks.js";
-export {
-  deleteAgentEverywhere,
-  refuseUndeletable,
-  removeAgents,
-} from "./agent-deletion.js";
+export { deleteAgentEverywhere, refuseUndeletable, removeAgents } from "./agent-deletion.js";
 export type { AgentDeletionDeps, AgentRemoval } from "./agent-deletion.js";
 export { migrateEmployeeAuthors } from "./agent-author-migration.js";
 export { FsLimiter, countEntries, purgeTree } from "./tree-purge.js";
