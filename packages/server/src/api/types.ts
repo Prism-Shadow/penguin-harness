@@ -509,12 +509,8 @@ export interface ProxyProbeResponse {
  * no Skill list — a saved prompt is not authored against a known Skill catalog the way a shipped
  * example is, and the Agent it will run under is picked after the click.
  */
-export interface DraftShortcut {
-  /** Stable client-generated id: what an edit or a delete addresses the row by. Unique per user. */
-  id: string;
-  title: string;
-  prompt: string;
-}
+export type { DraftShortcut } from "@prismshadow/penguin-library-workspace/drafts";
+import type { DraftShortcut } from "@prismshadow/penguin-library-workspace/drafts";
 
 /**
 
@@ -544,8 +540,8 @@ export interface UiPrefs {
   /**
    * The draft screen's user-defined shortcuts, in display order. Replaced whole on every write
    * (the merge is shallow, so the array is one field like any other) and bounded on write by
-   * services/draft-shortcuts.ts — count, title length and prompt length — because this is the one
-   * known key holding user-authored text rather than a flag or an id.
+   * the workspace library's draft-shortcuts module — count, title length and prompt length —
+   * because this is the one known key holding user-authored text rather than a flag or an id.
    */
   draftShortcuts?: DraftShortcut[];
   /** Keyboard shortcut overrides, replaced whole on every write and validated by the keybindings validator (the setting domain library). */
@@ -652,24 +648,10 @@ export interface BackgroundImagePutResponse {
   imageId: string | null;
 }
 
-/**
- * The kinds of draft the account keeps, as the first segment of a draft key
- * (`<kind>:<id>`). The id names what the draft belongs to, so the server can drop it with that
- * thing: `chat` — a Project's new-conversation draft (`chat:<projectId>`); `parked` — a
- * Project's parked draft conversations (`parked:<projectId>`); `org` — a Project's
- * create-organization form (`org:<projectId>`); `channel` — a company-mode channel's composer
- * (`channel:<projectId>.<orgId>.<channelId>`); `session` — a Session's composer
- * (`session:<sessionId>`); `a2ui` — a reply's form answers in progress
- * (`a2ui:<sessionId>:<block>`).
- */
-export const DRAFT_KINDS = ["chat", "parked", "org", "channel", "session", "a2ui"] as const;
-export type DraftKind = (typeof DRAFT_KINDS)[number];
-
-/** One draft's cap, in characters of its JSON text. */
-export const DRAFT_VALUE_MAX_CHARS = 256 * 1024;
-
-/** Draft writes one PATCH may carry. */
-export const DRAFTS_PATCH_MAX_ENTRIES = 50;
+// The drafts vocabulary moved to the workspace domain library (drafts.ts there); each is
+// imported and re-exported — the server→library direction only.
+export { DRAFT_KINDS, DRAFT_VALUE_MAX_CHARS, DRAFTS_PATCH_MAX_ENTRIES } from "@prismshadow/penguin-library-workspace/drafts";
+export type { DraftKind } from "@prismshadow/penguin-library-workspace/drafts";
 
 /** GET /api/me/drafts: every draft the account keeps, by key, as the JSON each was written with. */
 export interface DraftsResponse {

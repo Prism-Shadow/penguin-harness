@@ -47,6 +47,18 @@
     "./workspace-archive": {
       "types": "./dist/workspace-archive.d.ts",
       "import": "./dist/workspace-archive.js"
+    },
+    "./drafts": {
+      "types": "./dist/drafts.d.ts",
+      "import": "./dist/drafts.js"
+    },
+    "./user-drafts": {
+      "types": "./dist/user-drafts.d.ts",
+      "import": "./dist/user-drafts.js"
+    },
+    "./draft-shortcuts": {
+      "types": "./dist/draft-shortcuts.d.ts",
+      "import": "./dist/draft-shortcuts.js"
     }
   },
   "scripts": {
