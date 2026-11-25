@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** feature
 - **Scope:** `landing`
+- **PR:** [#1872](https://github.com/Prism-Shadow/penguin-harness/pull/1872)
 
 [English](2026-11-26-landing-narrative-polish.md)
 
