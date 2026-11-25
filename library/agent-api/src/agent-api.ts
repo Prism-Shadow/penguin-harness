@@ -39,11 +39,13 @@ export interface AgentApiKeyRow {
 export type AgentApiPatch = AgentApiUpdateRequest;
 
 /** AgentApi: the mechanism AgentApiRepo implements. */
-/** From packages/server (api/types.ts): a provider+model pair. */
-export interface ModelRefDto {
-  provider: string;
-  modelId: string;
-}
+/**
+ * From packages/server (api/types.ts): a provider+model pair. The definition lives with the
+ * session contract (SessionInfo names it, services+http+cli restack S14); re-exported here
+ * unchanged.
+ */
+export { type ModelRefDto } from "@prismshadow/penguin-library-session";
+import type { ModelRefDto } from "@prismshadow/penguin-library-session";
 
 /** From packages/server (api/types.ts): the agent API tab's settings and the patch the
  * admin PATCH takes. The contract names them, so the types live with the contract. */

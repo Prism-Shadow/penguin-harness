@@ -156,9 +156,9 @@ import type {
   ApprovalMode,
   SessionBackgroundTasks,
 } from "@prismshadow/penguin-library-session";
-// The Session view and the archive page's shapes moved to the session domain library
-// (services+http+cli restack S14): imported for the DTOs below, re-exported where they were
-// defined so `@prismshadow/penguin-server/api` keeps spelling them.
+// The Session view moved to the session domain library (services+http+cli restack S14):
+// imported for the DTOs below, re-exported where it was defined so
+// `@prismshadow/penguin-server/api` keeps spelling it.
 import type { SessionInfo } from "@prismshadow/penguin-library-session";
 import type {
   ArchivedSessionSource,

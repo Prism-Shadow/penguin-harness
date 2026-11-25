@@ -6,8 +6,8 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { ModelRef } from "@prismshadow/penguin-core";
 import type { SessionSource } from "@prismshadow/amsp";
-import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import type {
+  ModelRefDto,
   RuntimeSession,
   SessionBackgroundTasks,
   SessionStatus,

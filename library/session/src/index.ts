@@ -24,8 +24,7 @@ export {
   AgentState,
   Scheduling,
 } from "./session.js";
-export type { MessagingChannel } from "./session.js";
-export type { SessionInfo } from "./session.js";
+export type { MessagingChannel, ModelRefDto, SessionInfo } from "./session.js";
 export type {
   ApprovalMode,
   RunStarter,

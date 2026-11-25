@@ -28,11 +28,7 @@
 import type { SessionCategory, TraceIndexStore } from "@prismshadow/penguin-library-trace";
 import type { SessionSource } from "@prismshadow/amsp";
 import { HttpError, badRequest } from "@prismshadow/penguin-library-http/errors";
-import type {
-  SessionIndex,
-  SessionInfo,
-  SessionStatus,
-} from "./session.js";
+import type { SessionIndex, SessionInfo, SessionStatus } from "./session.js";
 import type { ArchiveProject, SessionServiceEvent } from "./ports.js";
 import type { SessionRow } from "./repos/sessions.js";
 import type { ListingView } from "./listing.js";

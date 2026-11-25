@@ -3,7 +3,6 @@
  */
 import { Interface, Opaque } from "@prismshadow/penguin-core/kernel";
 import type { SessionSource } from "@prismshadow/amsp";
-import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import type { SessionRow } from "./repos/sessions.js";
 import type {
   AmspRecord,
@@ -314,6 +313,16 @@ export interface SessionBackgroundTasks {
   processes: number;
   /** Background subagent sessions (promoted to a `subagent_id`) currently mid-round. */
   subagents: number;
+}
+
+/**
+ * A complete (provider, modelId) model reference (the agent API contract names it). The
+ * definition lives with the session contract (SessionInfo and the runtime port name it); the
+ * agent API domain re-exports it unchanged.
+ */
+export interface ModelRefDto {
+  provider: string;
+  modelId: string;
 }
 
 /**

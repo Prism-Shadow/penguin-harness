@@ -39,7 +39,11 @@ import type {
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
-import { HttpError, isMissingCredential, modelCredentialMissing } from "@prismshadow/penguin-library-http/errors";
+import {
+  HttpError,
+  isMissingCredential,
+  modelCredentialMissing,
+} from "@prismshadow/penguin-library-http/errors";
 import { badRequest } from "@prismshadow/penguin-library-http/validate";
 import type {
   ApprovalMode,
