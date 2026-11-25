@@ -1,0 +1,1 @@
+- 在 TokenDance 模型分组中新增 `tokendance/deepseek-tts`（`DeepSeek TTS`）语音合成工具模型预设（使用 `deepseek-speech` 协议，端点 `https://tokendance.space/gateway/deepseek`）。

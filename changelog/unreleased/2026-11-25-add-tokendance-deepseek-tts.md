@@ -1,0 +1,1 @@
+- Added the `tokendance/deepseek-tts` (`DeepSeek TTS`) tool model preset under TokenDance (`deepseek-speech` client at `https://tokendance.space/gateway/deepseek`).
