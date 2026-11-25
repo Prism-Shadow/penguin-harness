@@ -299,11 +299,13 @@ function extractOutputSessionIds(output: string): string[] {
 /**
  * The session ids this card's footer shows as jump badges: none for a bound subagent's card
  * (its chip already leads there), none while the output is folded — the preview's cut can split
- * a line and make half of one read as a line of its own, so only the whole output is read —
- * and otherwise the first five distinct ids that stand on a line of their own in it.
+ * a line and make half of one read as a line of its own — none while the output is still
+ * streaming (its buffer's end is not a line's end), and otherwise the first five distinct ids
+ * that stand on a line of their own in the whole output.
  */
 export function sessionBadgeIds(item: ToolCallItem): string[] {
   if (item.subagent) return [];
+  if (!item.outputComplete) return [];
   const folded = (item.elidedOutput?.entries ?? []).some(
     (e) => e.path === "payload.output" && e.head > 0 && e.head < item.output.length,
   );
@@ -340,7 +342,7 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
   const outputSessionIds = useMemo(
     () => sessionBadgeIds(item),
     // The read inputs, not the item's identity: the stream re-creates the item on every delta.
-    [item.subagent, item.output, item.elidedOutput],
+    [item.subagent, item.output, item.elidedOutput, item.outputComplete],
   );
   // A child's inline image that came folded has no picture to draw until it is fetched.
   const images = item.images?.filter((src) => src !== "") ?? [];

@@ -233,15 +233,14 @@ export function useTempSessions(
   return useSyncExternalStore(subscribe, read, read);
 }
 
-/** Adds a ticket session to the list, or moves it to the top; a desk session is left out. The caller navigates to it. */
+/** Adds a ticket session to the list, or moves it to the top. Whether a session is a desk is the sidebar's draw-time call (tempSessionRows filters by the live roster), so no desk ids are asked for here. The caller navigates to it. */
 export function openTempSession(
   userId: string | null,
   projectId: string,
   orgId: string,
   entry: TempSessionEntry,
-  deskSessionIds: Iterable<string | null>,
 ): void {
-  store.open(tempSessionsKey(userId, projectId, orgId), entry, deskSessionIds);
+  store.open(tempSessionsKey(userId, projectId, orgId), entry);
 }
 
 /** Removes one entry. Nothing navigates: the page stays where it is, even on that session. */
