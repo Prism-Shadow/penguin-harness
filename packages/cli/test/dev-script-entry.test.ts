@@ -12,12 +12,10 @@
  * - Given the CLI bin entry in `packages/cli/package.json`, when resolving the dev runner's
  *   source file, then both the root and `packages/cli` `penguin` scripts pass `src/penguin.ts`
  *   to `tsx`.
- * - Given `dev-server.mjs` on Windows (`win32`), when building the Node CLI arguments for the
- *   server entry, then it uses Node's native `--watch` with `--import <tsx loader URL>` instead
- *   of `tsx/cli watch` (which stalls on Windows before binding port 7368).
- * - Given `dev-server.mjs` on POSIX (`linux` or `darwin`), when building the Node CLI arguments
- *   for the server entry and data roots, then it runs `tsx/cli watch` with `--exclude` globs
- *   normalized to forward slashes for each root.
+ * - Given `dev-server.mjs` on any platform, Windows included, when building the Node CLI
+ *   arguments for the server entry and data roots, then it runs `tsx/cli watch` with one
+ *   `--exclude` glob per root, normalized to forward slashes, so a Workbench recompiling under
+ *   the data root never restarts the server.
  * - Given `dev-prebuild.mjs`'s pnpm filter set, when resolved against the workspace, then it
  *   selects every workspace dependency declared by `packages/server`, `packages/cli`, and
  *   `packages/web` (including `@prismshadow/amsp` and `@prismshadow/penguin-library-*`) while
@@ -64,41 +62,25 @@ describe("dev runner entry", () => {
 });
 
 describe("dev-server watcher arguments", () => {
-  const fakeTsxLoader = "file:///C:/repo/node_modules/tsx/dist/loader.mjs";
   const fakeTsxCliPath = path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs");
-  const fakeResolve = (specifier: string): string =>
-    specifier === "tsx" ? fakeTsxLoader : pathToFileURL(fakeTsxCliPath).href;
+  const fakeResolve = (): string => pathToFileURL(fakeTsxCliPath).href;
 
-  it("uses Node's native --watch with --import tsx on Windows instead of tsx watch", () => {
+  it("runs tsx/cli watch with forward-slash data-root exclusions on every platform", () => {
     const args = devServerArgs(
       ["src/index.ts"],
-      new Set(["C:\\Users\\dev\\.penguin\\dev-data"]),
-      "win32",
+      new Set(["/tmp/dev-data", "C:\\Users\\dev\\.penguin\\dev-data"]),
       fakeResolve,
     );
-    expect(args).toEqual(["--watch", "--import", fakeTsxLoader, "src/index.ts"]);
+    expect(args).toEqual([
+      fakeTsxCliPath,
+      "watch",
+      "--exclude",
+      "/tmp/dev-data/**",
+      "--exclude",
+      "C:/Users/dev/.penguin/dev-data/**",
+      "src/index.ts",
+    ]);
   });
-
-  it.each(["linux", "darwin"] as const)(
-    "runs tsx/cli watch with forward-slash data-root exclusions on %s",
-    (platform) => {
-      const args = devServerArgs(
-        ["src/index.ts"],
-        new Set(["/tmp/dev-data", "C:\\Users\\dev\\.penguin\\dev-data"]),
-        platform,
-        fakeResolve,
-      );
-      expect(args).toEqual([
-        fakeTsxCliPath,
-        "watch",
-        "--exclude",
-        "/tmp/dev-data/**",
-        "--exclude",
-        "C:/Users/dev/.penguin/dev-data/**",
-        "src/index.ts",
-      ]);
-    },
-  );
 });
 
 describe("dev-prebuild workspace selection", () => {
