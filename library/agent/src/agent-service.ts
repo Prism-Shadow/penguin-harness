@@ -33,9 +33,7 @@ import {
   createAgent as coreCreateAgent,
   provisionSystemAgent,
   SYSTEM_AGENT_ID,
-  installPlugin,
   installSkill,
-  McpServerNameTakenError,
   listInstalledHooks,
   listProjectDirs,
   isValidId,
@@ -71,6 +69,7 @@ import type { AgentIndex } from "@prismshadow/penguin-library-project";
 import type {
   AgentDirectorySkills,
   AgentPaths,
+  AgentPluginInstaller,
   AgentPluginLibrary,
   AgentPluginModules,
   AgentWorkbenches,
@@ -183,6 +182,7 @@ export class AgentService implements AgentLifecycle {
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly snapshots!: Snapshots;
   @Use() private readonly library!: AgentPluginLibrary;
+  @Use() private readonly pluginInstaller!: AgentPluginInstaller;
   @Use() private readonly pluginModules!: AgentPluginModules;
   @Use() private readonly workbenches!: AgentWorkbenches;
   @Use() private readonly directorySkills!: AgentDirectorySkills;
@@ -538,8 +538,9 @@ export class AgentService implements AgentLifecycle {
 
   /**
    * Reinstall one library plugin over an Agent's copy: the same whole-plugin update the
-   * Agents page performs, through the same `installPlugin` writer, which overwrites every
-   * skill the plugin ships and its hook package with library content. Throws 404
+   * Agents page performs, through the same plugin writer the plugin-installer port binds,
+   * which overwrites every skill the plugin ships and its hook package with library content.
+   * Throws 404
    * `unknown_plugin` when the library does not carry the name. Callers that may hold a cached
    * runtime for the Agent invalidate it afterwards — hook packages are bound when a core
    * Session is built, unlike skills, which are read from disk on demand. The plugin's server
@@ -550,7 +551,7 @@ export class AgentService implements AgentLifecycle {
     const plugins = this.library.resolve([pluginName]);
     await this.migrateWorkbenches(projectId, agentId);
     for (const plugin of plugins) {
-      await installPlugin(this.root, projectId, agentId, plugin);
+      await this.pluginInstaller.install(this.root, projectId, agentId, plugin);
     }
   }
 
@@ -824,7 +825,7 @@ export class AgentService implements AgentLifecycle {
         });
       }
       for (const plugin of librarySeed) {
-        await installPlugin(this.root, projectId, agentId, plugin);
+        await this.pluginInstaller.install(this.root, projectId, agentId, plugin);
       }
       for (const skill of directorySeed) {
         await installSkill(this.root, projectId, agentId, skill);
@@ -835,11 +836,6 @@ export class AgentService implements AgentLifecycle {
       await fs
         .rm(agentDir(this.root, projectId, agentId), { recursive: true, force: true })
         .catch(() => {});
-      // Two picked plugins carrying an MCP server of the same name: the creator's choice to
-      // change, answered as the plugin routes answer it — not an internal error.
-      if (err instanceof McpServerNameTakenError) {
-        throw new HttpError(409, "mcp_server_name_taken", err.message);
-      }
       throw err;
     }
     const createdAt = new Date().toISOString();

@@ -52,6 +52,17 @@ export abstract class AgentPluginLibrary {
   ): string[];
 }
 
+/** Writes a library plugin onto an Agent's Agent State — its skills, hook package, workbenches and MCP servers, whole or refused (the server binds core's installPlugin: it reads the plugin library through the host the server names, so the write runs on the server's own core copy). Throws 409 `mcp_server_name_taken` when a server name another owner holds. */
+@Interface()
+export abstract class AgentPluginInstaller {
+  abstract install(
+    root: string,
+    projectId: string,
+    agentId: string,
+    plugin: LibraryPlugin,
+  ): Promise<void>;
+}
+
 /** The plugins' server modules, brought along at the end of Agent creation (the server's `PluginModules.ensure`; the assembly binds it). */
 @Interface()
 export abstract class AgentPluginModules {

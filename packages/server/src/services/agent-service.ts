@@ -7,12 +7,15 @@
  * AgentLifecycle mechanism, and re-exports the moved shapes for the server's own import paths.
  */
 import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import { installPlugin, McpServerNameTakenError } from "@prismshadow/penguin-core";
+import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
 import type { AgentIndex } from "@prismshadow/penguin-library-project";
 import type { PluginLibrary } from "../plugin/library-module.js";
 import type { PluginModules } from "../mechanisms/plugins.js";
 import { migrateWorkbenches } from "../workbenches/migrate.js";
+import { HttpError } from "../http/errors.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
 import { resolveLibraryPlugins, seedPluginNames } from "./plugin-library.js";
 import type { AgentConfig, Snapshots, AgentLifecycle } from "../mechanisms/agents.js";
@@ -62,6 +65,23 @@ export class AgentServiceProvider {
           ask: "install",
           agentId?: string,
         ) => this.pluginModules.ensure(projectId, plugins, actor, ask, agentId),
+      },
+      pluginInstaller: {
+        // Core's installPlugin reads the plugin library through the host the server names
+        // (useLibraryHost at boot), so the write runs here, on the server's own core copy —
+        // a library package's copy of core is an injected snapshot whose host was never
+        // named. Two plugins carrying an MCP server of the same name: the creator's choice
+        // to change, answered as the plugin routes answer it — not an internal error.
+        install: async (root: string, projectId: string, agentId: string, plugin: LibraryPlugin) => {
+          try {
+            await installPlugin(root, projectId, agentId, plugin);
+          } catch (err) {
+            if (err instanceof McpServerNameTakenError) {
+              throw new HttpError(409, "mcp_server_name_taken", err.message);
+            }
+            throw err;
+          }
+        },
       },
       workbenches: {
         migrate: (agentDir: string) => migrateWorkbenches(agentDir),
