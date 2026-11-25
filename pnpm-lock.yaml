@@ -554,6 +554,9 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.2.7(react@19.2.7)
+      react-markdown:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/react@19.2.17)(react@19.2.7)(supports-color@10.2.2)
     devDependencies:
       '@types/react':
         specifier: ^19.1.0
@@ -8748,6 +8751,7 @@ snapshots:
       hono: 4.13.13
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
+      react-markdown: 10.1.0(@types/react@19.2.17)(react@19.2.7)(supports-color@10.2.2)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - '@types/react'
@@ -8773,6 +8777,7 @@ snapshots:
       hono: 4.13.13
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
+      react-markdown: 10.1.0(@types/react@19.2.17)(react@19.2.7)(supports-color@10.2.2)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - '@types/react'

@@ -134,7 +134,8 @@
     "hono": "^4.13.11",
     "@prismshadow/penguin-ui": "workspace:*",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "tsup": "^8.3.0",
