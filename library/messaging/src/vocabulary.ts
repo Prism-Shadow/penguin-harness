@@ -7,7 +7,13 @@
 // ---------------------------------------------------------------------------
 
 /** Messaging channels a Session can bind to. */
-export type MessagingChannel = "feishu" | "telegram" | "qq" | "wechat";
+/**
+ * The chat channels a Session can be bound to. The definition lives with the session contract
+ * (@prismshadow/penguin-library-session, services+http+cli restack S14 — SessionInfo names it);
+ * re-exported here unchanged for the messaging vocabulary's own consumers.
+ */
+export type { MessagingChannel } from "@prismshadow/penguin-library-session";
+import type { MessagingChannel } from "@prismshadow/penguin-library-session";
 
 /** Event-connection runtime state of one binding (kept in memory, not persisted). */
 export type MessagingRuntimeState = "disconnected" | "connecting" | "connected" | "error";

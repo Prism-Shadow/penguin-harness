@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-session",
   "version": "0.2.20",
-  "description": "The sessions domain: the SessionIndex, SessionDrivers, SessionOrigins and Schedules mechanisms, the ApprovalMode vocabulary, and the sessions/schedules repos. A library package - the server imports it; nothing here imports the server.",
+  "description": "The sessions domain: the SessionIndex, SessionDrivers, SessionOrigins and Schedules mechanisms, the ApprovalMode vocabulary, the SessionInfo view, the session index/deletion/archive-page services and the listing rule. A library package - the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -27,6 +27,22 @@
     "./session": {
       "types": "./dist/session.d.ts",
       "import": "./dist/session.js"
+    },
+    "./session-service": {
+      "types": "./dist/session-service.d.ts",
+      "import": "./dist/session-service.js"
+    },
+    "./session-deletion": {
+      "types": "./dist/session-deletion.d.ts",
+      "import": "./dist/session-deletion.js"
+    },
+    "./archived-sessions-service": {
+      "types": "./dist/archived-sessions-service.d.ts",
+      "import": "./dist/archived-sessions-service.js"
+    },
+    "./ports": {
+      "types": "./dist/ports.d.ts",
+      "import": "./dist/ports.js"
     },
     "./access": {
       "types": "./dist/access.d.ts",
@@ -63,6 +79,30 @@
     "./mtime-gate": {
       "types": "./dist/mtime-gate.d.ts",
       "import": "./dist/mtime-gate.js"
+    },
+    "./listing": {
+      "types": "./dist/listing.d.ts",
+      "import": "./dist/listing.js"
+    },
+    "./session-id": {
+      "types": "./dist/session-id.d.ts",
+      "import": "./dist/session-id.js"
+    },
+    "./trace-file-path": {
+      "types": "./dist/trace-file-path.d.ts",
+      "import": "./dist/trace-file-path.js"
+    },
+    "./system-agent": {
+      "types": "./dist/system-agent.d.ts",
+      "import": "./dist/system-agent.js"
+    },
+    "./sandbox-ceiling": {
+      "types": "./dist/sandbox-ceiling.d.ts",
+      "import": "./dist/sandbox-ceiling.js"
+    },
+    "./workspace-group": {
+      "types": "./dist/workspace-group.d.ts",
+      "import": "./dist/workspace-group.js"
     }
   },
   "scripts": {
