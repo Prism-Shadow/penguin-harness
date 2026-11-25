@@ -111,9 +111,21 @@ function DockAppAnchor({ id, active }: { id: string; active: boolean }) {
   useLayoutEffect(() => {
     const element = anchor.current;
     const host = element?.closest<HTMLElement>("[data-page-viewport]");
+    const content = element?.closest<HTMLElement>("[data-dock-content]");
     if (!element || !host || !active) return;
     function measure() {
       const rect = element!.getBoundingClientRect();
+      const frame = content?.getBoundingClientRect();
+      if (frame && (frame.width < 1 || frame.height < 1)) {
+        if (bounds.delete(id)) changed();
+        return;
+      }
+      if (
+        frame &&
+        !bounds.has(id) &&
+        (frame.width < rect.width - 2 || frame.height < rect.height - 2)
+      )
+        return;
       const root = host!.getBoundingClientRect();
       const next = {
         left: rect.left - root.left,
@@ -137,9 +149,12 @@ function DockAppAnchor({ id, active }: { id: string; active: boolean }) {
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     observer.observe(host);
+    if (content) observer.observe(content);
+    content?.addEventListener("transitionend", measure);
     window.addEventListener("resize", measure);
     return () => {
       observer.disconnect();
+      content?.removeEventListener("transitionend", measure);
       window.removeEventListener("resize", measure);
       bounds.delete(id);
       changed();
