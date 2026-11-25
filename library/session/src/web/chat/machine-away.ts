@@ -5,9 +5,8 @@
  * the Agent settings page take, so the chat never disagrees with the Machines page.
  */
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
-import { ApiError, S, machineLink } from "@prismshadow/penguin-web/internal";
+import { ApiError, MachineLink, S, machineLink } from "@prismshadow/penguin-web/internal";
 import { readMachine, retryReading } from "@prismshadow/penguin-web/internal-hub";
-import { MachineLink } from "@prismshadow/penguin-web/internal";
 import type { RetryReading } from "@prismshadow/penguin-web/internal-hub";
 
 export interface MachineAway {
