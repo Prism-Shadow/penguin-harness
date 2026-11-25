@@ -16,7 +16,12 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { compactionBegin, compactionEnd, toolCall } from "@prismshadow/penguin-core";
-import type { AmspRecord, ApprovalDecision, ApproveFn, PolicyDenial } from "@prismshadow/penguin-core";
+import type {
+  AmspRecord,
+  ApprovalDecision,
+  ApproveFn,
+  PolicyDenial,
+} from "@prismshadow/penguin-core";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

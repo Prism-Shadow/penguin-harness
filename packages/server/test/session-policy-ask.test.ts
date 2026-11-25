@@ -46,7 +46,10 @@ const mergeCall = (id: string) =>
   });
 
 /** A runtime whose Task makes one call an `ask` rule matched, and records the answer it got. */
-function askingSession(sessionId: string, answers: (ApprovalDecision | PolicyDenial)[]): RuntimeSession {
+function askingSession(
+  sessionId: string,
+  answers: (ApprovalDecision | PolicyDenial)[],
+): RuntimeSession {
   return fakeSession(sessionId, {
     async *run(_input: AmspRecord[], opts: RunOpts) {
       const tc = mergeCall("tc-ask");
@@ -172,7 +175,9 @@ describe("a command-policy ask hit in a real conversation", { timeout: 30_000 },
     await waitFor(() => t.deps.manager.statusOf(sessionId) === "idle", 20_000);
     // Nobody is asked, and the model reads which rule refused the call.
     expect(seen).toEqual([]);
-    const denied = records.find((m) => (m.payload as { type?: string }).type === "tool_call_output");
+    const denied = records.find(
+      (m) => (m.payload as { type?: string }).type === "tool_call_output",
+    );
     expect((denied?.payload as { status?: string } | undefined)?.status).toBe("aborted");
     expect((denied?.payload as { output?: string } | undefined)?.output).toBe(
       "Tool call denied by rule `gh-pr-merge-close`.",

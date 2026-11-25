@@ -545,7 +545,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(fedBack).toBeDefined();
   });
 
-  it("a policy denial naming its rule reads \"denied by rule\" and rides the event as its decision", async () => {
+  it('a policy denial naming its rule reads "denied by rule" and rides the event as its decision', async () => {
     // A denial that names the rule that caused it (PolicyDenial) — a `deny` rule's
     // "forbidden", or the deny a host that cannot ask a person answers a policy reason
     // with — renders so the model reads which rule refused the call rather than a person
