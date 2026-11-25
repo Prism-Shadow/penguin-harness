@@ -56,11 +56,11 @@ export default defineConfig({
     alias: [
       {
         find: /^@prismshadow\/penguin-library-session\/web$/,
-        replacement: `${resolve(here, "../../library/session/src/web")}index.ts`,
+        replacement: `${resolve(here, "../../library/session/src/web")}/index.ts`,
       },
       {
         find: /^@prismshadow\/penguin-library-session\/web\/(.*)$/,
-        replacement: `${resolve(here, "../../library/session/src/web")}$1`,
+        replacement: `${resolve(here, "../../library/session/src/web")}/$1`,
       },
       {
         find: /^@prismshadow\/penguin-web\/internal$/,
