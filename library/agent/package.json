@@ -40,6 +40,10 @@
       "types": "./dist/agent-vocab.d.ts",
       "import": "./dist/agent-vocab.js"
     },
+    "./agent-skills": {
+      "types": "./dist/agent-skills.d.ts",
+      "import": "./dist/agent-skills.js"
+    },
     "./agent-config-service": {
       "types": "./dist/agent-config-service.d.ts",
       "import": "./dist/agent-config-service.js"

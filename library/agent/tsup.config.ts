@@ -4,6 +4,7 @@ export default defineConfig({
   entry: [
     "src/agent-avatar.ts",
     "src/agent-config-service.ts",
+    "src/agent-skills.ts",
     "src/agent-app-data.ts",
     "src/agent-export.ts",
     "src/agent-vocab.ts",
