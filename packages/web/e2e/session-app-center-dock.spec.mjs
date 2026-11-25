@@ -170,6 +170,9 @@ for (const lang of ["en", "zh"]) {
   }) => {
     const session = await seed(page, "dock_actions_" + lang, lang);
     await page.setViewportSize({ width: 1280, height: 800 });
+    // The dock's width transition (theme layout motion) would still be running when the
+    // bounds below are read; reduced motion snaps the resize so the read sees the settled box.
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/chat/" + session.sessionId);
     const chat = page.locator('[data-workspace-page="chat:' + session.sessionId + '"]');
     const composer = chat.locator('[data-slot="composer"] textarea').first();
