@@ -49,6 +49,12 @@ export interface WorkbenchUpdatedDetail {
 }
 
 /**
+ * How long a listener gathers a burst of workbench news into one read (ms): a restart loads every
+ * workbench of an Agent, and each load is one event.
+ */
+export const WORKBENCH_NEWS_SETTLE_MS = 120;
+
+/**
  * Dispatched on `window` when the server starts loading a workbench's files (the watcher saw an
  * edit, or a list or a reload asked for it). The App Center listens, to show the tile building;
  * the end of the load is the WORKBENCH_UPDATED_EVENT above.
