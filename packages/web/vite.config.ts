@@ -119,11 +119,11 @@ export default defineConfig({
     alias: [
       {
         find: /^@prismshadow\/penguin-library-session\/web$/,
-        replacement: `${fileURLToPath(new URL("../../library/session/src/web", import.meta.url))}index.ts`,
+        replacement: `${fileURLToPath(new URL("../../library/session/src/web", import.meta.url))}/index.ts`,
       },
       {
         find: /^@prismshadow\/penguin-library-session\/web\/(.*)$/,
-        replacement: `${fileURLToPath(new URL("../../library/session/src/web", import.meta.url))}$1`,
+        replacement: `${fileURLToPath(new URL("../../library/session/src/web", import.meta.url))}/$1`,
       },
       {
         find: /^@prismshadow\/penguin-web\/internal$/,
