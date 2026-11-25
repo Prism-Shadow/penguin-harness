@@ -1,5 +1,5 @@
 /**
- * Which round the rounds button names (features/traces/round-in-view.ts): the first drawn round
+ * Which round the rounds button names (library/trace/src/web/traces/round-in-view.ts): the first drawn round
  * showing under the sticky toolbar whole, or by at least a head and a half.
  *
  * - Collapsed rows: the first row fully under the toolbar, not one half hidden behind it.
@@ -9,7 +9,7 @@
  * - With no round on screen yet, it is the first drawn round; with none drawn, there is none.
  */
 import { describe, expect, it } from "vitest";
-import { roundInView } from "../src/features/traces/round-in-view";
+import { roundInView } from "@prismshadow/penguin-library-trace/web/traces/round-in-view";
 
 const HEAD = 30;
 /** A row from `top`, `height` tall (a collapsed row is one head). */

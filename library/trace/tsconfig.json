@@ -9,5 +9,6 @@
       "@prismshadow/penguin-library-db/migrations/runner": ["../db/src/migrations/runner.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

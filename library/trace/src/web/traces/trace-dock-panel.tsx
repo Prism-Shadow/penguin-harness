@@ -2,8 +2,8 @@
  * The Trace panel (`DockModule.panels`, kind `trace`): the open conversation's Trace files,
  * started over per conversation (keyed by Session) and re-read on every settled turn.
  */
-import { DraftPanelEmpty } from "../../lib/dock-panel-empty";
-import { useChatSession } from "../../lib/chat-session";
+import { DraftPanelEmpty } from "@prismshadow/penguin-web/internal";
+import { useChatSession } from "@prismshadow/penguin-web/internal";
 import { TracePanel } from "./trace-panel";
 
 export function TraceDockPanel({ active }: { active: boolean }) {

@@ -1,5 +1,5 @@
 /**
- * The Trace panel's refresh rules (features/traces/trace-refresh.ts), decided by a pure tracker
+ * The Trace panel's refresh rules (library/trace/src/web/traces/trace-refresh.ts), decided by a pure tracker
  * the panel's effect applies.
  *
  * - The panel's own first render is no edge (the fetch effect already loads on mount).
@@ -16,7 +16,7 @@ import {
   advanceTraceRefresh,
   createTraceRefresh,
   sortTraceFiles,
-} from "../src/features/traces/trace-refresh";
+} from "@prismshadow/penguin-library-trace/web/traces/trace-refresh";
 
 const obs = (active: boolean, signal: number) => ({ active, signal });
 

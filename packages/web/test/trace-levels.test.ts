@@ -1,5 +1,5 @@
 /**
- * Where a Trace's thinking level changes (features/traces/trace-levels.ts), as the request rows
+ * Where a Trace's thinking level changes (library/trace/src/web/traces/trace-levels.ts), as the request rows
  * mark it.
  *
  * - The first level a file states is a change, from nothing.
@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { RequestSpan } from "@prismshadow/penguin-server/api";
-import { levelChangeText, thinkingLevelChanges } from "../src/features/traces/trace-levels";
+import { levelChangeText, thinkingLevelChanges } from "@prismshadow/penguin-library-trace/web/traces/trace-levels";
 
 let clock = 0;
 /** One request of round `taskIndex`, at `level` (undefined: none recorded). */

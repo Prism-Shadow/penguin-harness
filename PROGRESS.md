@@ -12,4 +12,5 @@
 
 ## 分支头
 - W10 agents → library/agent：0105e42d80
-- W11 projects → library/project：本提交
+- W11 projects → library/project：6a38ddcf51
+- W12 traces → library/trace：本提交

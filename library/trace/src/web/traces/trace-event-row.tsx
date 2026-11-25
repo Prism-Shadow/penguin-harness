@@ -28,11 +28,11 @@ import {
 } from "@prismshadow/penguin-ui";
 import type { ToneName } from "@prismshadow/penguin-ui";
 import ReactMarkdown from "react-markdown";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { updatedModel } from "@prismshadow/amsp";
 import type { AmspRecord } from "@prismshadow/amsp";
-import { formatTime, humanizeTokens } from "../../lib/format";
-import { statusTone } from "../../lib/status-tone";
+import { formatTime, humanizeTokens } from "@prismshadow/penguin-web/internal";
+import { statusTone } from "@prismshadow/penguin-web/internal";
 
 /**
  * A record family's pill tone, so the two families read apart at a glance down a round's rows:

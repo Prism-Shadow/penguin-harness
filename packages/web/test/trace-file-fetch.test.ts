@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The Trace panel while a machine's Trace file comes over before the panel reads it
- * (features/traces/trace-file-view.tsx).
+ * (library/trace/src/web/traces/trace-file-view.tsx).
  *
  * - Given the file made whole on this server and its analysis still on the way, the panel keeps
  *   the transfer row it showed: one loading state from the first byte to the analysis, never the
@@ -10,7 +10,7 @@
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HistoryProgress, TraceAnalysisResponse } from "@prismshadow/penguin-server/api";
-import { TraceFileView } from "../src/features/traces/trace-file-view";
+import { TraceFileView } from "@prismshadow/penguin-library-trace/web/traces/trace-file-view";
 import { ThemeProvider } from "../src/state/theme";
 import { mount, run, settle, unmountAll } from "./helpers/dom";
 import { json, stubFetch } from "./helpers/fetch";

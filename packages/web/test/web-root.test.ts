@@ -1,7 +1,7 @@
 import { mainPanelDefinition as mainAgents } from "../src/features/chat/main-agents-panel";
 import { mainPanelDefinition as mainMemory } from "../src/features/chat/main-memory-panel";
 import { mainPanelDefinition as mainWorkspace } from "../src/features/workspace/main-dock-panel";
-import { mainPanelDefinition as mainTrace } from "../src/features/traces/main-dock-panel";
+import { mainPanelDefinition as mainTrace } from "@prismshadow/penguin-library-trace/web/traces/main-dock-panel";
 import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/main-dock-panel";
 import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
 import { mainPanelDefinition as mainBrowser } from "../../../plugins/browser-automation/src/web/main-dock-panel";

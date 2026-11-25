@@ -9,7 +9,7 @@
  * `new Date(y, m, d)` reads the same in every timezone.
  */
 import type { OrgCalendarItem, OrgCalendarOutcome } from "@prismshadow/penguin-server/api";
-import { packToolLanes } from "../traces";
+import { packToolLanes } from "@prismshadow/penguin-web/internal";
 
 export type CalendarView = "month" | "week" | "day";
 

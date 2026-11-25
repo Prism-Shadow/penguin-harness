@@ -1,5 +1,5 @@
 /**
- * The Trace file view as drawn (features/traces/trace-file-view.tsx, `TraceFileBody`): what a
+ * The Trace file view as drawn (library/trace/src/web/traces/trace-file-view.tsx, `TraceFileBody`): what a
  * long file puts on screen once its analysis is in and its newest round is read. Rendered to
  * static markup, so each scenario hands the view the state it would hold.
  *
@@ -48,9 +48,9 @@ import {
   fileAfterAnalysis,
   type FileState,
   type RoundEntry,
-} from "../src/features/traces/trace-file-view";
+} from "@prismshadow/penguin-library-trace/web/traces/trace-file-view";
 
-import { TRACE_ROUNDS_PAGE } from "../src/features/traces/trace-rounds";
+import { TRACE_ROUNDS_PAGE } from "@prismshadow/penguin-library-trace/web/traces/trace-rounds";
 import { S } from "../src/lib/strings";
 
 /** Events per synthetic round: a prompt, a request, thinking, a tool call and its output, a reply… */

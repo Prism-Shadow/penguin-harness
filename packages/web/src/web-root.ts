@@ -52,7 +52,7 @@ import { ProjectsModule } from "@prismshadow/penguin-library-project/web";
 import { MessagingModule } from "./features/messaging/module";
 import { DockModule } from "./features/dock/module";
 import { WorkspaceModule } from "./features/workspace/module";
-import { TracesModule } from "./features/traces/module";
+import { TracesModule } from "@prismshadow/penguin-library-trace/web";
 import { AudioModule } from "./features/audio/module";
 
 @Module({

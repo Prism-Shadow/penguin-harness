@@ -11,7 +11,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { en } from "../src/lib/strings-en";
 import { setActiveStrings, zh } from "../src/lib/strings";
-import { compactionBadgeLabel } from "../src/features/traces/trace-file-view";
+import { compactionBadgeLabel } from "@prismshadow/penguin-library-trace/web/traces/trace-file-view";
 
 // S is a live binding shared across the suite: always hand it back the default.
 afterEach(() => setActiveStrings(zh));

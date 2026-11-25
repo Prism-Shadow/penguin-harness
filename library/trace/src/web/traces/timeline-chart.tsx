@@ -49,8 +49,8 @@ import {
   namedHint,
 } from "@prismshadow/penguin-ui";
 import type { ChartPaint, LegendItem } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { humanizeDuration } from "../../lib/format";
+import { S } from "@prismshadow/penguin-web/internal";
+import { humanizeDuration } from "@prismshadow/penguin-web/internal";
 import { packToolLanes, toolSpanBounds, type PackedLane } from "./lane-packing";
 
 /**

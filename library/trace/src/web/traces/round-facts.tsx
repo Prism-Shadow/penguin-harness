@@ -10,10 +10,10 @@
  */
 import { StatChip } from "@prismshadow/penguin-ui";
 import type { TraceTaskStats } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
-import { cacheHitRate, formatMoney, formatPercent, humanizeDuration } from "../../lib/format";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import type { Currency } from "../../state/theme";
+import { S } from "@prismshadow/penguin-web/internal";
+import { cacheHitRate, formatMoney, formatPercent, humanizeDuration } from "@prismshadow/penguin-web/internal";
+import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
+import type { Currency } from "@prismshadow/penguin-web/internal";
 
 /** The three Token buckets a round's figures are drawn from (token_usage.request, summed). */
 export interface Buckets {

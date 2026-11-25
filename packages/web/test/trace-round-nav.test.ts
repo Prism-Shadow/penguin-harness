@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The round navigator in use (features/traces/trace-round-nav.tsx, on the toolbar's dropdown in
+ * The round navigator in use (library/trace/src/web/traces/trace-round-nav.tsx, on the toolbar's dropdown in
  * trace-picker.tsx), on the real Trace view against a fake of the Trace endpoints, inside the
  * panel's scroll box. A 60-round file, so the view draws the newest 50 rounds and the early ones
  * are reachable only through the navigator.
@@ -24,7 +24,7 @@ import { act, createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AmspRecord } from "@prismshadow/amsp";
 import type { TraceAnalysisResponse, TraceTaskStats } from "@prismshadow/penguin-server/api";
-import { TraceFileView } from "../src/features/traces/trace-file-view";
+import { TraceFileView } from "@prismshadow/penguin-library-trace/web/traces/trace-file-view";
 import { S } from "../src/lib/strings";
 import { ThemeProvider } from "../src/state/theme";
 import { click, field, mount, pressEscape, run, type, unmountAll, waitFor } from "./helpers/dom";
