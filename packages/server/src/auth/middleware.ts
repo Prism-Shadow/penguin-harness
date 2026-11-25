@@ -102,10 +102,15 @@ export function currentUser(c: { var: { user: UserRow } }): UserRow {
   return c.var.user;
 }
 
+export interface AgentAuthMiddlewareHook {
+  authenticate(bearer: string, now: Date): AppEnv["Variables"]["agentAuth"] | null;
+  resolveUser?(projectId: string): UserRow | null;
+}
+
 export function authMiddleware(
   auth: Auth,
   trustProxy: boolean,
-  options: { apiTokenOnly?: boolean } = {},
+  options: { apiTokenOnly?: boolean; agentAuth?: AgentAuthMiddlewareHook } = {},
 ): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     // Bearer first: an explicit credential on the request outranks ambient cookies, and
@@ -113,13 +118,39 @@ export function authMiddleware(
     const bearer = bearerToken(c.req.header("authorization"));
     if (bearer !== null) {
       const viaToken = auth.authenticateApiToken(bearer);
-      if (!viaToken) {
-        throw new HttpError(401, "unauthorized", "Invalid API token.");
+      if (viaToken) {
+        c.set("user", viaToken.user);
+        c.set("sessionVia", viaToken.via);
+        await next();
+        return;
       }
-      c.set("user", viaToken.user);
-      c.set("sessionVia", viaToken.via);
-      await next();
-      return;
+      if (!options.apiTokenOnly && options.agentAuth !== undefined) {
+        const agentCtx = options.agentAuth.authenticate(bearer, new Date());
+        if (agentCtx !== null && agentCtx !== undefined) {
+          const resolved = options.agentAuth.resolveUser?.(agentCtx.projectId) ?? null;
+          const user: UserRow =
+            resolved !== null
+              ? {
+                  ...resolved,
+                  isAdmin: agentCtx.grant.allEndpoints ? resolved.isAdmin : false,
+                }
+              : {
+                  userId: `agent:${agentCtx.projectId}/${agentCtx.agentId}`,
+                  isAdmin: agentCtx.grant.allEndpoints,
+                  passwordIsInitial: false,
+                  passwordHash: "",
+                  displayName: null,
+                  avatar: null,
+                  createdAt: "",
+                };
+          c.set("user", user);
+          c.set("sessionVia", "token");
+          c.set("agentAuth", agentCtx);
+          await next();
+          return;
+        }
+      }
+      throw new HttpError(401, "unauthorized", "Invalid API token.");
     }
     const cookies = sessionCookies(getCookie(c), c.req.url);
     // Classify a refused cookie without renewing its session or setting a response cookie.

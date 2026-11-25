@@ -23,9 +23,15 @@
  * `@prismshadow/penguin-server/plugin`, and bundling it must not bring the whole middleware along.
  */
 import type { SessionVia } from "@prismshadow/penguin-library-auth";
+import type { AppEnv } from "@prismshadow/penguin-library-http/app-env";
 import { HttpError } from "../http/errors.js";
 
-export function requireHuman(c: { var: { sessionVia: SessionVia } }): void {
+export function requireHuman(c: {
+  var: { sessionVia: SessionVia; agentAuth?: AppEnv["Variables"]["agentAuth"] };
+}): void {
+  // An Agent session the agent auth service granted (its own token, scoped by its role) is a
+  // caller of its own, not the local API token: it passes where its grant allows.
+  if (c.var.agentAuth?.agentApi === true) return;
   if (c.var.sessionVia === "token") {
     throw new HttpError(
       403,
