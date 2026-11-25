@@ -95,7 +95,7 @@ import {
   mergeIndexes,
   withoutIcon,
 } from "../../plugin/registry.js";
-import { indexMirrorRules } from "../../plugin/mirror-settings.js";
+import { indexMirrorRules } from "@prismshadow/penguin-library-plugin/mirror-settings";
 import { offlineArchives, type OfflineArchive } from "../../plugin/offline-archives.js";
 import type {
   CachedRegistry,

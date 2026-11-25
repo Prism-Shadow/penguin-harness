@@ -109,3 +109,14 @@ pnpm-lock.yaml 未含。后果与已试路径：
   messaging/project/organization workspace 环，pnpm 对环上边用带 peer 后缀的 file
   实例；main 无 organization 故无此环），保留不手改。重生成 WARN 两条环依赖
   （agent-api/session/http/auth；messaging/project/organization）留观。
+
+- 验证轮修复 2（owner land 读数）：A 类 esbuild 3 条——platform.ts、http/routes/plugins.ts、
+  http/routes/plugin-market.ts 三处 mirror-settings 相对导入改指
+  @prismshadow/penguin-library-plugin/mirror-settings（face 两符号 indexMirrorRules/
+  PluginMirrorSettings 均在）；server tsconfig paths 补 mirror-settings 映射（exports 47
+  子路径里唯一缺的一条，DTS 免摸陈旧 dist）。全 server src 不可解析相对导入复扫净额
+  0（workbenches 三命中为模板字符串里的代码文本，非导入）。B 类 DTS 14 条 TS2304——
+  无 from 本地再导出块（约 1420–1555）要求名单在本地绑定：organization/types 导入扩
+  6 个 Org 名（face 已导出），新增 plugin/types 导入绑 7 名（AgentAuthor/SkillMetadataItem/
+  AgentMcpServerItem/HookItem/PluginConfigEntry/UnsatisfiedPlugin/PluginModuleStatus，
+  face 均已导出），原 from 再导出块不动、无双导出。

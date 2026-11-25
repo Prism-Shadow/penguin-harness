@@ -33,7 +33,7 @@ import type { MarketSnapshot, MarketSource } from "../../plugin/market.js";
 import { marketPictureDir, marketPictures } from "../../plugin/market-pictures.js";
 import type { MarketPicture, MarketPictures } from "../../plugin/market-pictures.js";
 import { bundledCoversDir, readBundledPicture } from "../../plugin/market-covers.js";
-import { indexMirrorRules } from "../../plugin/mirror-settings.js";
+import { indexMirrorRules } from "@prismshadow/penguin-library-plugin/mirror-settings";
 import { errorBody } from "../errors.js";
 
 /** The headers a picture is answered with, beside its content type. */
