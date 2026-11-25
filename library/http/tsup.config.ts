@@ -6,6 +6,7 @@ export default defineConfig({
     "src/attribution.ts",
     "src/errors.ts",
     "src/heartbeat.ts",
+    "src/icon-response.ts",
     "src/index.ts",
     "src/json-answer.ts",
     "src/json-compression.ts",

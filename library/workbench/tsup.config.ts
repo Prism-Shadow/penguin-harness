@@ -1,7 +1,27 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/workbench.ts"],
+  entry: [
+    "src/index.ts",
+    "src/workbench.ts",
+    "src/app-center.ts",
+    "src/app-center-layout.ts",
+    "src/archive.ts",
+    "src/compile.ts",
+    "src/compile-ui.ts",
+    "src/data-dirs.ts",
+    "src/git-identity.ts",
+    "src/leftovers.ts",
+    "src/manifest.ts",
+    "src/migrate.ts",
+    "src/migrate-state.ts",
+    "src/page-html.ts",
+    "src/page-sdk.ts",
+    "src/repo.ts",
+    "src/result.ts",
+    "src/store.ts",
+    "src/ui-runtime.ts",
+  ],
   format: ["esm"],
   target: "node24",
   dts: true,
