@@ -391,6 +391,34 @@
       "@prismshadow/penguin-library-setting/repos/ui-prefs": [
         "../../library/setting/src/repos/ui-prefs.ts"
       ],
+      "@prismshadow/penguin-library-terminal": ["../../library/terminal/src/manager.ts"],
+      "@prismshadow/penguin-library-terminal/manager": ["../../library/terminal/src/manager.ts"],
+      "@prismshadow/penguin-library-terminal/routes": ["../../library/terminal/src/routes.ts"],
+      "@prismshadow/penguin-library-terminal/ws": ["../../library/terminal/src/ws.ts"],
+      "@prismshadow/penguin-library-terminal/identity": ["../../library/terminal/src/identity.ts"],
+      "@prismshadow/penguin-library-terminal/cookie": ["../../library/terminal/src/cookie.ts"],
+      "@prismshadow/penguin-library-terminal/socket-ref": ["../../library/terminal/src/socket-ref.ts"],
+      "@prismshadow/penguin-library-terminal/session": ["../../library/terminal/src/session.ts"],
+      "@prismshadow/penguin-library-terminal/stream": ["../../library/terminal/src/stream.ts"],
+      "@prismshadow/penguin-library-terminal/frames": ["../../library/terminal/src/frames.ts"],
+      "@prismshadow/penguin-library-terminal/snapshot": ["../../library/terminal/src/snapshot.ts"],
+      "@prismshadow/penguin-library-terminal/input-mode": ["../../library/terminal/src/input-mode.ts"],
+      "@prismshadow/penguin-library-terminal/link-quality": ["../../library/terminal/src/link-quality.ts"],
+      "@prismshadow/penguin-library-terminal/output-coalescer": [
+        "../../library/terminal/src/output-coalescer.ts"
+      ],
+      "@prismshadow/penguin-library-terminal/size-ownership": [
+        "../../library/terminal/src/size-ownership.ts"
+      ],
+      "@prismshadow/penguin-library-terminal/shell": ["../../library/terminal/src/shell.ts"],
+      "@prismshadow/penguin-library-terminal/shell-startup": [
+        "../../library/terminal/src/shell-startup.ts"
+      ],
+      "@prismshadow/penguin-library-terminal/spawn-helper": [
+        "../../library/terminal/src/spawn-helper.ts"
+      ],
+      "@prismshadow/penguin-library-terminal/pty-module": ["../../library/terminal/src/pty-module.ts"],
+      "@prismshadow/penguin-library-terminal/cli-notice": ["../../library/terminal/src/cli-notice.ts"],
       "@prismshadow/penguin-library-trace": ["../../library/trace/src/index.ts"],
       "@prismshadow/penguin-library-trace/repos": ["../../library/trace/src/repos/index.ts"],
       "@prismshadow/penguin-library-trace/repos/trace-index": [

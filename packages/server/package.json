@@ -163,6 +163,7 @@
     "@prismshadow/penguin-library-project": "workspace:*",
     "@prismshadow/penguin-library-session": "workspace:*",
     "@prismshadow/penguin-library-setting": "workspace:*",
+    "@prismshadow/penguin-library-terminal": "workspace:*",
     "@prismshadow/penguin-library-trace": "workspace:*",
     "@prismshadow/penguin-library-workbench": "workspace:*",
     "@prismshadow/penguin-library-workspace": "workspace:*",

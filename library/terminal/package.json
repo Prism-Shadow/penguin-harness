@@ -1,0 +1,127 @@
+{
+  "name": "@prismshadow/penguin-library-terminal",
+  "version": "0.2.18",
+  "description": "The terminals domain: the TerminalManager mechanism and the Terminals vocabulary, the terminal stream protocol, the shell startup and CLI notice writers, and the runtime's WebSocket upgrade seam. A library package - the server imports it; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/terminal"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    "./manager": {
+      "types": "./dist/manager.d.ts",
+      "import": "./dist/manager.js"
+    },
+    "./routes": {
+      "types": "./dist/routes.d.ts",
+      "import": "./dist/routes.js"
+    },
+    "./ws": {
+      "types": "./dist/ws.d.ts",
+      "import": "./dist/ws.js"
+    },
+    "./identity": {
+      "types": "./dist/identity.d.ts",
+      "import": "./dist/identity.js"
+    },
+    "./cookie": {
+      "types": "./dist/cookie.d.ts",
+      "import": "./dist/cookie.js"
+    },
+    "./socket-ref": {
+      "types": "./dist/socket-ref.d.ts",
+      "import": "./dist/socket-ref.js"
+    },
+    "./session": {
+      "types": "./dist/session.d.ts",
+      "import": "./dist/session.js"
+    },
+    "./stream": {
+      "types": "./dist/stream.d.ts",
+      "import": "./dist/stream.js"
+    },
+    "./frames": {
+      "types": "./dist/frames.d.ts",
+      "import": "./dist/frames.js"
+    },
+    "./snapshot": {
+      "types": "./dist/snapshot.d.ts",
+      "import": "./dist/snapshot.js"
+    },
+    "./input-mode": {
+      "types": "./dist/input-mode.d.ts",
+      "import": "./dist/input-mode.js"
+    },
+    "./link-quality": {
+      "types": "./dist/link-quality.d.ts",
+      "import": "./dist/link-quality.js"
+    },
+    "./output-coalescer": {
+      "types": "./dist/output-coalescer.d.ts",
+      "import": "./dist/output-coalescer.js"
+    },
+    "./size-ownership": {
+      "types": "./dist/size-ownership.d.ts",
+      "import": "./dist/size-ownership.js"
+    },
+    "./shell": {
+      "types": "./dist/shell.d.ts",
+      "import": "./dist/shell.js"
+    },
+    "./shell-startup": {
+      "types": "./dist/shell-startup.d.ts",
+      "import": "./dist/shell-startup.js"
+    },
+    "./spawn-helper": {
+      "types": "./dist/spawn-helper.d.ts",
+      "import": "./dist/spawn-helper.js"
+    },
+    "./pty-module": {
+      "types": "./dist/pty-module.d.ts",
+      "import": "./dist/pty-module.js"
+    },
+    "./cli-notice": {
+      "types": "./dist/cli-notice.d.ts",
+      "import": "./dist/cli-notice.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-auth": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-library-machine": "workspace:*",
+    "@prismshadow/penguin-library-session": "workspace:*",
+    "@prismshadow/penguin-library-setting": "workspace:*",
+    "@xterm/headless": "^5.5.0",
+    "hono": "^4.13.11",
+    "node-pty": "^1.1.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true
+}
