@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `server`, `cli`, `desktop`, `landing`, `docs`
+- **PR:** [#1873](https://github.com/Prism-Shadow/penguin-harness/pull/1873)
 
 [中文版](2026-11-26-continual-learning-not-preinstalled.zh.md)
 
