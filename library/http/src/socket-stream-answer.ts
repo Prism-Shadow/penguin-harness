@@ -195,8 +195,13 @@ export class StreamAnswer {
   }
 }
 
-/** Where a call's answer rides its Request, from the platform's fetchStream into the route. */
-const ANSWER = Symbol("stream-answer");
+/** Where a call's answer rides its Request, from the platform's fetchStream into the route.
+ *
+ * A registry key, not a fresh symbol: `penguin-library-http` can load twice (a direct link
+ * and a pnpm virtual-store copy), and two module instances would carry two distinct symbols —
+ * the route's answer then never found and every socket stream fell back to a plain Response.
+ * A registered key is shared by every copy of the module, so the pair always matches. */
+const ANSWER = Symbol.for("penguin-harness.stream-answer");
 
 /** Carries the answer of the call `request` is, for the route to find. */
 export function carryStreamAnswer<T extends Request>(request: T, answer: StreamAnswer): T {
