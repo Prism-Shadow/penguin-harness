@@ -5,7 +5,6 @@ export default defineConfig({
     "src/index.ts",
     "src/project.ts",
     "src/ports.ts",
-    "src/ids.ts",
     "src/access.ts",
     "src/project-service.ts",
     "src/events.ts",

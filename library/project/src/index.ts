@@ -10,7 +10,6 @@
  * - `.` - the mechanism contracts and the DTOs they name.
  * - `./project` - the contracts module on its own.
  * - `./repos` (and per-file) - the storing components.
- * - `./ids` - the shared id vocabulary (project, member, agent, organization, admin).
  * - `./ports` - the ports the Project service takes: paths, preinstall plugins, app seeds.
  * - `./access` - the Access mechanism component.
  * - `./events` - the ProjectEvents component, publishing over a ProjectChannels port.

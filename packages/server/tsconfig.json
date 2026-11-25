@@ -352,7 +352,6 @@
       ],
       "@prismshadow/penguin-library-project": ["../../library/project/src/index.ts"],
       "@prismshadow/penguin-library-project/project": ["../../library/project/src/project.ts"],
-      "@prismshadow/penguin-library-project/ids": ["../../library/project/src/ids.ts"],
       "@prismshadow/penguin-library-project/ports": ["../../library/project/src/ports.ts"],
       "@prismshadow/penguin-library-project/access": ["../../library/project/src/access.ts"],
       "@prismshadow/penguin-library-project/events": ["../../library/project/src/events.ts"],

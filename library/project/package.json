@@ -32,10 +32,6 @@
       "types": "./dist/ports.d.ts",
       "import": "./dist/ports.js"
     },
-    "./ids": {
-      "types": "./dist/ids.d.ts",
-      "import": "./dist/ids.js"
-    },
     "./access": {
       "types": "./dist/access.d.ts",
       "import": "./dist/access.js"

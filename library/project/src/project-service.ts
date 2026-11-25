@@ -43,7 +43,7 @@ import {
   PROJECT_ID_MAX_LENGTH,
   PROJECT_SUFFIX_PATTERN,
   SEMANTIC_ID_RULE,
-} from "./ids.js";
+} from "@prismshadow/penguin-library-agent/ids";
 import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
 import type { ProjectPaths, ProjectPreinstall, ProjectAppSeeds } from "./ports.js";
 import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";

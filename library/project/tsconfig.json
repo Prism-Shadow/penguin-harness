@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
+      "@prismshadow/penguin-library-agent/ids": ["../agent/src/ids.ts"],
       "@prismshadow/penguin-library-agent-api": ["../agent-api/src/index.ts"],
       "@prismshadow/penguin-library-agent-api/agent-api-repo": [
         "../agent-api/src/agent-api-repo.ts"
