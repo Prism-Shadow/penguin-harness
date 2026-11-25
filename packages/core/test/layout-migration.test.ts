@@ -11,6 +11,8 @@
  *   junction) is re-pointed.
  * - A run cut short after the move is finished by the next; a second run changes nothing; a
  *   Project folder an older build made after the migration is moved by the next run.
+ * - A Project folder that cannot be moved (Windows refusing while a program holds it open) leaves
+ *   the root as it was, the other Projects included, and the next run moves them all.
  * - A Project called `projects` stops the run with nothing on disk changed, and so does a root
  *   that is another root's Projects folder.
  * - Benchmarks move into the Evaluation Center's data folder and their old absolute paths still
@@ -22,7 +24,7 @@ import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stringify as stringifyYaml } from "yaml";
 import { sessionMeta, userText } from "@prismshadow/amsp/records";
 import {
@@ -51,6 +53,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   restoreKeys();
   await fs.rm(root, { recursive: true, force: true });
 });
@@ -284,6 +287,34 @@ describe("the projects/ level", () => {
 
     expect(result.movedProjects).toEqual(["later"]);
     expect((await listProjectDirs(root)).map((p) => p.id)).toEqual(["acme", "later"]);
+  });
+
+  it("moves no Project when one cannot be moved, and the next run moves them all", async () => {
+    await oldProject("acme");
+    await oldAgent("acme", "writer");
+    await oldProject("default_project");
+    await write(old("web.db"), "");
+    const entries = await fs.readdir(root);
+    const before = await snapshot(root);
+    // What Windows answers while a terminal, an editor or a command holds the folder open.
+    const rename = fs.rename.bind(fs);
+    vi.spyOn(fs, "rename").mockImplementation((from, to) =>
+      String(from) === old("default_project")
+        ? Promise.reject(Object.assign(new Error("EPERM: injected"), { code: "EPERM" }))
+        : rename(from, to),
+    );
+
+    const run = migrateDataRootLayout(root);
+
+    await expect(run).rejects.toBeInstanceOf(LayoutMigrationError);
+    await expect(run).rejects.toThrow(/default_project.*Nothing was moved/s);
+    expect(await fs.readdir(root)).toEqual(entries);
+    expect(await snapshot(root)).toEqual(before);
+
+    vi.restoreAllMocks();
+    const again = await migrateDataRootLayout(root);
+
+    expect(again.movedProjects).toEqual(["acme", "default_project"]);
   });
 
   it("stops before anything moves when a Project is called projects", async () => {

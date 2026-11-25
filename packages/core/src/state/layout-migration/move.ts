@@ -29,6 +29,14 @@ export async function isRealDir(p: string): Promise<boolean> {
   return (await lstatOrNull(p))?.isDirectory() === true;
 }
 
+/**
+ * Whether `err` is Windows refusing a rename while something holds the folder, or a file in it,
+ * open.
+ */
+export function heldOpen(err: unknown, platform: NodeJS.Platform = process.platform): boolean {
+  return platform === "win32" && HELD.has((err as NodeJS.ErrnoException | null)?.code ?? "");
+}
+
 /** Renames the folder `from` to `to`, whose parent exists and which does not exist itself. */
 export async function moveDir(
   from: string,
@@ -40,8 +48,7 @@ export async function moveDir(
       await fs.rename(from, to);
       return;
     } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code ?? "";
-      if (platform !== "win32" || !HELD.has(code) || attempt >= ATTEMPTS) throw err;
+      if (!heldOpen(err, platform) || attempt >= ATTEMPTS) throw err;
       await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
     }
   }
