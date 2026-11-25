@@ -7,7 +7,8 @@
  */
 import type { AgentDeletionInfo } from "@prismshadow/penguin-library-agent/types";
 import type { MessagingChannel } from "@prismshadow/penguin-library-messaging/vocabulary";
-import type { ScheduleStatus, SessionStatus } from "@prismshadow/penguin-library-session/schedules";
+import type { ScheduleStatus } from "@prismshadow/penguin-library-session/schedules";
+import type { SessionStatus } from "@prismshadow/penguin-library-session/session";
 import type { OrgCalendarOutcome, OrgChannelMessage } from "./organization.js";
 
 export type {
