@@ -83,6 +83,8 @@ export interface WebHost {
   isTabShown(kind: string): boolean;
   /** The conversation the docks belong to now. */
   currentDockScope(): string;
+  /** Whether a drag carries one of the app's open pages, which only the app's own surfaces take. */
+  isOpenPageDrag(data: Pick<DataTransfer, "types"> | null | undefined): boolean;
   formatDateTime(iso: string): string;
   /** How long ago `iso` was, in the language on screen, in a row's few characters ("3d"). */
   formatRelativeShort(iso: string): string;
@@ -177,6 +179,10 @@ export function isTabShown(kind: string): boolean {
 
 export function currentDockScope(): string {
   return need("currentDockScope")();
+}
+
+export function isOpenPageDrag(data: Pick<DataTransfer, "types"> | null | undefined): boolean {
+  return need("isOpenPageDrag")(data);
 }
 
 export function formatDateTime(iso: string): string {

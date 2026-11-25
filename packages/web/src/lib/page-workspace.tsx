@@ -655,6 +655,10 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
             hosts.current.set(app.id, session);
             hosts.current.set(session.id, session);
           }
+          // The pair outlives its tab going out of sight: the dock hidden, or another tab
+          // chosen. Docking the same app again changes no address, so show its tab here.
+          if (pair?.app.id === app.id && pair.session.id === session.id)
+            openPanel(dockPageKey(app.id), "right");
           go(paired(ref.current, session, app));
         },
         close,

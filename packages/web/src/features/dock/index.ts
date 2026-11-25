@@ -56,6 +56,8 @@ export { subscribeDock } from "./dock-state";
 
 export { isDockVisible } from "./dock-state";
 
+export { isNarrow } from "./dock-state";
+
 export { toggleDock } from "./dock-state";
 
 export type { DockPosition } from "./dock-state";
