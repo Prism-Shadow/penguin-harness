@@ -8,7 +8,7 @@
  * The rule of what differs is plugin-status.ts `changedParts`; this module only draws it.
  */
 import type { PluginItem } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { changedParts, type AgentInstalls } from "./plugin-status";
 
 export function PluginUpdateParts({

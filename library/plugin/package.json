@@ -203,6 +203,8 @@
       "types": "./dist/version-pick.d.ts",
       "import": "./dist/version-pick.js"
     },
+    "./web": "./src/web/index.ts",
+    "./web/*": "./src/web/*",
     "./workspace-prefix": {
       "types": "./dist/workspace-prefix.d.ts",
       "import": "./dist/workspace-prefix.js"
@@ -234,7 +236,13 @@
     "which": "^5.0.0"
   },
   "devDependencies": {
+    "@prismshadow/penguin-server": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web": "workspace:*",
+    "@types/react": "^19.1.0",
     "@types/which": "^3.0.4",
+    "react": "^19.1.0",
+    "react-router": "^8.3.0",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"

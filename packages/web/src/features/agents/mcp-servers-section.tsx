@@ -53,7 +53,7 @@ import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../../lib/skill-use";
-import { McpServerMarks } from "../plugins";
+import { McpServerMarks } from "@prismshadow/penguin-library-plugin/web";
 import { permissionOf, transportOf } from "./mcp-servers-form";
 import { McpServerDialog } from "./mcp-server-dialog";
 import { toneInk } from "../../lib/tone";

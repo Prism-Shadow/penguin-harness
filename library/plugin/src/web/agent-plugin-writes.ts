@@ -26,16 +26,16 @@ import type {
   PluginUninstallResponse,
 } from "@prismshadow/penguin-server/api";
 import { toastAttention, toastError, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
 import {
   installWithModules,
   type AgentPluginInstall,
   type ModuleOutcome,
-} from "../../lib/agent-plugin-install";
-import { apiErrorText } from "../../lib/api-error";
-import { S } from "../../lib/strings";
-import { toastApiError } from "../../lib/toast-api-error";
+} from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 import { agentInstalls, installsKey, rereadInstalls, withoutPlugin } from "./agent-installs";
 
 /** The Agent a write is about, on the server it lives on. */

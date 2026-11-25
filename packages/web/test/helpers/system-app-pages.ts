@@ -9,7 +9,7 @@ import { AppCenterModule } from "../../src/features/app-center/module";
 import { BenchmarkModule } from "../@prismshadow/penguin-library-observability/web/benchmark/module";
 import { MachinesModule } from "../../src/features/machines/module";
 import { ModelsModule } from "../../src/features/models/module";
-import { PluginsModule } from "../../src/features/plugins/module";
+import { PluginsModule } from "@prismshadow/penguin-library-plugin/web";
 import { UsageModule } from "../@prismshadow/penguin-library-observability/web/usage/module";
 
 /** The pages the given modules contribute, as the shell's table holds them. */

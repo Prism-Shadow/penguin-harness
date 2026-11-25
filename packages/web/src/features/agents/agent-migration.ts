@@ -6,7 +6,7 @@
  */
 import { getAgentPlugins, getPluginLibrary } from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { installOnAgent } from "../plugins";
+import { installOnAgent } from "@prismshadow/penguin-library-plugin/web";
 
 /** The frameworks the dialog offers, in its order, each with the user directory it keeps its setup in. */
 export const MIGRATION_SOURCES = [

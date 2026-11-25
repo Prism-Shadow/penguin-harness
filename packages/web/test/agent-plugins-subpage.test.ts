@@ -34,7 +34,7 @@ import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { toastStore } from "@prismshadow/penguin-ui";
-import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { PluginsPage } from "@prismshadow/penguin-library-plugin/web/plugins-page";
 import * as api from "../src/api/endpoints";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

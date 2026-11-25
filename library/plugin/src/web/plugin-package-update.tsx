@@ -1,11 +1,11 @@
 import { useRef, useState } from "react";
 import { ConfirmModal, ICONS, toastSuccess } from "@prismshadow/penguin-ui";
 import type { PluginIndexEntry } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
-import { notifyPluginsChanged } from "../../lib/project-change-events";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { toastApiError } from "../../lib/toast-api-error";
+import * as api from "@prismshadow/penguin-web/internal";
+import { notifyPluginsChanged } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 import { InstallProgress } from "./install-bar";
 import { installAmount, installPlan, installStepWords } from "./install-progress";
 import {

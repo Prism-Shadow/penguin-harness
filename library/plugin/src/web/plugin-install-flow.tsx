@@ -27,9 +27,9 @@ import {
   Modal,
 } from "@prismshadow/penguin-ui";
 import type { Failure } from "@prismshadow/penguin-ui";
-import type { InstallStage } from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
+import type { InstallStage } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import { InstallProgress } from "./install-bar";
 import {
   installAmount,

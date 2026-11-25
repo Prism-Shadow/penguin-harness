@@ -67,15 +67,19 @@ import {
   type TreeToggle,
 } from "@prismshadow/penguin-ui";
 import type { PluginArt, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
-import { linkSegments } from "../../lib/link-segments";
-import { baseName } from "../../lib/workspace-tree";
-import { useReaderFind } from "../../lib/reader-find";
-import { BOOK_ICON, localizedText } from "../../lib/skill-use";
-import { useLocale } from "../../state/locale";
-import { getLibraryPluginReadme, getPluginFiles, getPluginReadme } from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { SkillTile } from "../skills";
+import { S } from "@prismshadow/penguin-web/internal";
+import { linkSegments } from "./lib/link-segments";
+import { baseName } from "@prismshadow/penguin-web/internal";
+import { useReaderFind } from "@prismshadow/penguin-web/internal";
+import { BOOK_ICON, localizedText } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import {
+  getLibraryPluginReadme,
+  getPluginFiles,
+  getPluginReadme,
+} from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { SkillTile } from "@prismshadow/penguin-web/internal";
 import { PluginCover } from "./plugin-cover";
 import { PluginMcpSection } from "./plugin-mcp";
 import type { ModulePart, PluginRow } from "./plugin-groups";
@@ -91,7 +95,7 @@ import {
   rowVersion,
 } from "./plugin-marks";
 import { marketIcon, rowPackage } from "./plugin-market";
-import { failureOf } from "../../lib/failure";
+import { failureOf } from "@prismshadow/penguin-web/internal";
 
 /** One collapsible group of installable files. */
 interface FileGroup {

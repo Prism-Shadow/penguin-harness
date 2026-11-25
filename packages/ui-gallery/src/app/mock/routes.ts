@@ -158,7 +158,7 @@ import type {
 import { isThemeId } from "@prismshadow/penguin-ui";
 // The catalog decides which groups publish a balance, as it does on the server.
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
-import { agentPluginGroups } from "../../../../web/src/features/plugins/agent-plugin-groups";
+import { agentPluginGroups } from "@prismshadow/penguin-library-plugin/web/agent-plugin-groups";
 import { declaredServerModules } from "../../../../web/src/lib/module-gate";
 import { MESSAGING_CHANNELS } from "../../../../web/src/features/messaging/channels/channel-ids";
 import { READ_ONLY } from "./errors";

@@ -1,5 +1,5 @@
 /**
- * A plugin's install status on the Plugins page (features/plugins/plugin-status.ts).
+ * A plugin's install status on the Plugins page (library/plugin/src/web/plugin-status.ts).
  *
  * - A plugin of Skills and hooks is installed once one Agent of the Project carries all of it;
  *   a partial copy is not — unless the server lists that Agent as behind on it, which is an
@@ -37,7 +37,7 @@ import {
   type InstalledMap,
   type ModuleState,
   type PluginParts,
-} from "../src/features/plugins/plugin-status";
+} from "@prismshadow/penguin-library-plugin/web/plugin-status";
 
 const skill = (name: string, version = "2026.10.04.1") => ({ name, description: "", version });
 

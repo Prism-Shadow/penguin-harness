@@ -39,6 +39,7 @@
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-observability": "workspace:*",
+    "@prismshadow/penguin-library-plugin": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
     "@prismshadow/penguin-web-plugin": "workspace:*",
     "@prismshadow/skills": "workspace:*",

@@ -39,5 +39,6 @@
       "@prismshadow/penguin-library-setting": ["../setting/src/index.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

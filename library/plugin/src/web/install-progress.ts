@@ -15,9 +15,9 @@
  * it stands is not drawn.
  */
 import type { ProgressStage, StagedProgressStatus } from "@prismshadow/penguin-ui";
-import type { InstallStage } from "../../api/endpoints";
-import { formatBytes } from "../../lib/format";
-import { S } from "../../lib/strings";
+import type { InstallStage } from "@prismshadow/penguin-web/internal";
+import { formatBytes } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 
 export type InstallStep = "check" | "fetch" | "start" | "agents";
 

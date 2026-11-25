@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The plugin market's form dialogs under the settings commit model: an MCP server's Set up
- * (features/plugins/plugin-mcp.tsx) and the import dialog (features/plugins/plugin-import-modal.tsx).
+ * (library/plugin/src/web/plugin-mcp.tsx) and the import dialog (library/plugin/src/web/plugin-import-modal.tsx).
  *
  * - Set up's Save waits for a value; it writes the vault with every key the vault holds kept,
  *   and the dialog closes without asking.
@@ -24,8 +24,8 @@ import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { ADMIN_ME } from "./helpers/admin-settings";
-import { McpSetUpModal } from "../src/features/plugins/plugin-mcp";
-import { ImportPluginModal } from "../src/features/plugins/plugin-import-modal";
+import { McpSetUpModal } from "@prismshadow/penguin-library-plugin/web/plugin-mcp";
+import { ImportPluginModal } from "@prismshadow/penguin-library-plugin/web/plugin-import-modal";
 import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp, whereIs } from "./helpers/agent-app";
 import {
   button,

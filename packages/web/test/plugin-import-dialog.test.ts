@@ -21,7 +21,7 @@ import {
   ImportPluginTabs,
   installFromTab,
   type ImportOpening,
-} from "../src/features/plugins/plugin-import-modal";
+} from "@prismshadow/penguin-library-plugin/web/plugin-import-modal";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { LocaleProvider } from "../src/state/locale";

@@ -8,7 +8,7 @@ import { useRef } from "react";
 
 import { StagedProgress } from "@prismshadow/penguin-ui";
 import type { ProgressBarSize } from "@prismshadow/penguin-ui";
-import type { InstallStage } from "../../api/endpoints";
+import type { InstallStage } from "@prismshadow/penguin-web/internal";
 import {
   furthest,
   installBar,

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The market card's install action names one state, on one line
- * (features/plugins/plugin-card.tsx, the `marketCard` branch). It used to key its word off the
+ * (library/plugin/src/web/plugin-card.tsx, the `marketCard` branch). It used to key its word off the
  * current Agent and add the Project-wide count on a second line, so a plugin some other Agent
  * had read "Install" over "Installed on 1 Agent".
  *
@@ -21,7 +21,7 @@ import type { PluginItem } from "@prismshadow/penguin-server/api";
 import * as api from "../src/api/endpoints";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { PluginsPage } from "@prismshadow/penguin-library-plugin/web/plugins-page";
 import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp, topDialog } from "./helpers/agent-app";
 import type { FakeMachine } from "./helpers/agent-app";
 import { button, click, unmountAll, waitFor, watchText } from "./helpers/dom";

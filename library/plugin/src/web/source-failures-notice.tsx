@@ -13,7 +13,7 @@
 import { useId, useMemo, useState } from "react";
 import type { PluginIndexResponse } from "@prismshadow/penguin-server/api";
 import { Notice, ReportIssueAction, TextAction, toldReport } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 export function SourceFailuresNotice({
   failures,

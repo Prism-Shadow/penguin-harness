@@ -46,11 +46,11 @@ vi.mock("../src/state/sessions", () => ({
 vi.mock("../src/lib/use-update-badges", () => ({
   useUpdateBadges: () => ({ todos: {} }),
 }));
-vi.mock("../src/features/plugins/plugin-repair", () => ({
+vi.mock("@prismshadow/penguin-library-plugin/web/plugin-repair", () => ({
   usePluginRepair: () => ({ repair: vi.fn(), modal: null }),
 }));
 vi.mock("@prismshadow/penguin-library-setting/web/settings-dialog", () => ({ SettingsDialog: () => null }));
-vi.mock("../src/features/plugins/plugin-import-modal", () => ({ ImportPluginModal: () => null }));
+vi.mock("@prismshadow/penguin-library-plugin/web/plugin-import-modal", () => ({ ImportPluginModal: () => null }));
 vi.mock("../src/features/chat/chat-page", () => ({ DRAFT_SESSION_ID: "draft" }));
 vi.mock("../src/features/machines/machine-picker", () => ({
   MachinePicker: (props: { choices: { value: string }[]; onChange: (id: string) => void }) =>
@@ -66,10 +66,10 @@ vi.mock("../src/features/machines/machine-picker", () => ({
       ),
     ),
 }));
-vi.mock("../src/features/plugins/plugin-card", () => ({
+vi.mock("@prismshadow/penguin-library-plugin/web/plugin-card", () => ({
   libraryQuickStart: () => null,
   ModuleApplyBody: () => null,
-  PluginCard: (props: import("../src/features/plugins/plugin-card").PluginCardProps) =>
+  PluginCard: (props: import("@prismshadow/penguin-library-plugin/web/plugin-card").PluginCardProps) =>
     h(
       "div",
       {
@@ -105,7 +105,7 @@ vi.mock("../src/api/endpoints", () => ({
   getPluginMarket: vi.fn(() => Promise.reject(new Error("not found"))),
 }));
 import * as api from "../src/api/endpoints";
-import { INDEX_RECHECK_MS, PluginsPage } from "../src/features/plugins/plugins-page";
+import { INDEX_RECHECK_MS, PluginsPage } from "@prismshadow/penguin-library-plugin/web/plugins-page";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

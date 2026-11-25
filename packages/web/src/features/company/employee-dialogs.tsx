@@ -64,7 +64,7 @@ import {
   type PickableItem,
 } from "../skills";
 
-import { StdioDisclosure, stdioServers } from "../plugins";
+import { StdioDisclosure, stdioServers } from "@prismshadow/penguin-library-plugin/web";
 import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";

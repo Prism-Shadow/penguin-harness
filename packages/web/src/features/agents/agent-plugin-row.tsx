@@ -52,7 +52,7 @@ import {
   type AgentPluginGroup,
   type AgentPluginStatus,
   type PluginRow,
-} from "../plugins";
+} from "@prismshadow/penguin-library-plugin/web";
 import { SkillTile } from "../skills";
 import type { AgentPluginActions } from "./agent-plugin-actions";
 

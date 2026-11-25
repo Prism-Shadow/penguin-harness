@@ -10,9 +10,9 @@ import type {
   PluginGroupItem,
   PluginIndexEntry,
 } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
-import { createCatalogStore } from "../../lib/catalog-storage";
-import { useMachineCatalogs } from "../../lib/machine-catalogs";
+import * as api from "@prismshadow/penguin-web/internal";
+import { createCatalogStore } from "@prismshadow/penguin-web/internal";
+import { useMachineCatalogs } from "@prismshadow/penguin-web/internal";
 import type { MachineMarketData } from "./market-rows";
 
 const libraries = createCatalogStore<PluginGroupItem[]>(

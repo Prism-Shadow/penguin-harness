@@ -24,8 +24,8 @@ import {
 } from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
 import type { IconRef } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
-import { localizedText } from "../../lib/skill-use";
+import { S } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
 import type { PluginRow } from "./plugin-groups";
 import type {
   AgentModuleMark,

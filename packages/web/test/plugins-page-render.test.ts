@@ -63,30 +63,30 @@ import {
   PluginCard,
   pluginArchiveUrl,
   type PluginCardProps,
-} from "../src/features/plugins/plugin-card";
+} from "@prismshadow/penguin-library-plugin/web/plugin-card";
 import {
   StdioDisclosure,
   StdioInstallBody,
   setUpVaultEntries,
-} from "../src/features/plugins/plugin-mcp";
+} from "@prismshadow/penguin-library-plugin/web/plugin-mcp";
 import {
   PluginDetailSections,
   type PluginDetailHead,
   type ReadmeState,
-} from "../src/features/plugins/plugin-detail";
+} from "@prismshadow/penguin-library-plugin/web/plugin-detail";
 import {
   groupRows,
   rowMatches,
   type PluginGroupBy,
   type PluginRow,
-} from "../src/features/plugins/plugin-groups";
-import { PluginStatusMark, rowTitle, webLink } from "../src/features/plugins/plugin-marks";
-import type { PluginStatus } from "../src/features/plugins/plugin-status";
+} from "@prismshadow/penguin-library-plugin/web/plugin-groups";
+import { PluginStatusMark, rowTitle, webLink } from "@prismshadow/penguin-library-plugin/web/plugin-marks";
+import type { PluginStatus } from "@prismshadow/penguin-library-plugin/web/plugin-status";
 import {
   IncompatibleNotice,
   PluginsHeaderActions,
   PluginsListControls,
-} from "../src/features/plugins/plugins-page";
+} from "@prismshadow/penguin-library-plugin/web/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { LocaleProvider } from "../src/state/locale";

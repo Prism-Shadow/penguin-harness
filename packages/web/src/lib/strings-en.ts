@@ -3224,7 +3224,7 @@ export const en: Strings = {
     },
   },
 
-  /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on agents as a whole. */
+  /** Plugin library page (library/plugin/src/web/plugins-page.tsx): one card per library plugin, installed on agents as a whole. */
   plugins: {
     builtin: "built in",
     builtinHint:

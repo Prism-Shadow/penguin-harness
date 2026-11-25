@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The plugin market's install status while a machine connects, answers slowly, fails or blinks
- * (features/plugins/plugins-page.tsx, agent-installs.ts). A card's status word and its "used by"
+ * (library/plugin/src/web/plugins-page.tsx, agent-installs.ts). A card's status word and its "used by"
  * count change only when an answer says something different — never because a read is in
  * flight, failed, or a machine went out of reach — so every scenario reads the whole sequence of
  * what the card showed, not only where it ended.
@@ -35,7 +35,7 @@ import {
   rememberMachineAgents,
 } from "../src/lib/machine-cache";
 import { publishMachinesChanged } from "../src/state/machines";
-import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { PluginsPage } from "@prismshadow/penguin-library-plugin/web/plugins-page";
 import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp, topDialog } from "./helpers/agent-app";
 import type { AgentServer, FakeMachine } from "./helpers/agent-app";
 import {

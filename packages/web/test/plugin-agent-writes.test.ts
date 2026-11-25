@@ -1,6 +1,6 @@
 /**
  * Installing and uninstalling a library plugin on one Agent, as the Plugins page and the Agent's
- * own settings both do it (features/plugins/agent-plugin-writes.ts): the request on the server
+ * own settings both do it (library/plugin/src/web/agent-plugin-writes.ts): the request on the server
  * the Agent lives on, and what its answer leaves in the shared installs store.
  *
  * - Given an Agent on a machine, an install goes to that machine, and what the machine answers
@@ -32,13 +32,13 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { toastStore } from "@prismshadow/penguin-ui";
 import { ApiError } from "../src/api/client";
-import { agentInstalls, installsKey } from "../src/features/plugins/agent-installs";
+import { agentInstalls, installsKey } from "@prismshadow/penguin-library-plugin/web/agent-installs";
 import {
   installOnAgent,
   isOutdatedMachine,
   toastWriteError,
   uninstallFromAgent,
-} from "../src/features/plugins/agent-plugin-writes";
+} from "@prismshadow/penguin-library-plugin/web/agent-plugin-writes";
 import { resetReadStores } from "../src/lib/read-store";
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch, type FetchRequest } from "./helpers/fetch";

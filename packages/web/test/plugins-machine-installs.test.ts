@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The plugin market's "Install on Agent" on a machine's Agents (features/plugins/plugins-page.tsx
+ * The plugin market's "Install on Agent" on a machine's Agents (library/plugin/src/web/plugins-page.tsx
  * and plugin-card.tsx): a connected machine's own Agents are install targets of their own, and
  * everything done to one happens on that machine (lib/agent-location.ts).
  *
@@ -21,7 +21,7 @@ import { createElement as h } from "react";
 import type { AgentSummary, PluginItem } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { PluginsPage } from "@prismshadow/penguin-library-plugin/web/plugins-page";
 import { rememberMachineAgents } from "../src/lib/machine-cache";
 import {
   AGENT_ID,

@@ -9,9 +9,13 @@ import { useState, type ReactNode } from "react";
 
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { ConfirmModal, ICONS, toastError } from "@prismshadow/penguin-ui";
-import { useAiBridge, pickDefaultAgent, type AiChatRequest } from "../ai-create";
+import {
+  useAiBridge,
+  pickDefaultAgent,
+  type AiChatRequest,
+} from "@prismshadow/penguin-web/internal";
 
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** The plugin to repair, as its row has it. */
 export interface RepairTarget {

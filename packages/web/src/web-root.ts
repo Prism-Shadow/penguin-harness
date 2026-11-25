@@ -38,7 +38,7 @@ import { ChatModule } from "./features/chat/module";
 import { AgentsModule } from "./features/agents/module";
 import { AppCenterModule } from "./features/app-center/module";
 import { ModelsModule } from "./features/models/module";
-import { PluginsModule } from "./features/plugins/module";
+import { PluginsModule } from "@prismshadow/penguin-library-plugin/web";
 import { MachinesModule } from "./features/machines/module";
 import { BenchmarkModule, UsageModule } from "@prismshadow/penguin-library-observability/web";
 import { TerminalModule } from "./features/terminal/module";

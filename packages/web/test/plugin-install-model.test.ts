@@ -22,8 +22,8 @@
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSummary, PluginIndexEntry, PluginItem } from "@prismshadow/penguin-server/api";
-import { PluginCard, type PluginCardProps } from "../src/features/plugins/plugin-card";
-import type { PluginRow } from "../src/features/plugins/plugin-groups";
+import { PluginCard, type PluginCardProps } from "@prismshadow/penguin-library-plugin/web/plugin-card";
+import type { PluginRow } from "@prismshadow/penguin-library-plugin/web/plugin-groups";
 import { LocaleProvider } from "../src/state/locale";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
