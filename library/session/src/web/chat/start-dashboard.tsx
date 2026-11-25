@@ -15,7 +15,6 @@ import {
 import {
   PENGUIN_LOGO_URL,
   S,
-  SkillIcon,
   VersionStamp,
   openAppInfo,
   useLocale,
@@ -24,6 +23,7 @@ import {
   useVersionInfo,
   versionBadgeFor,
 } from "@prismshadow/penguin-web/internal";
+import { SkillIcon } from "@prismshadow/penguin-web/internal-hub";
 
 import { EXAMPLE_TASKS, type ExampleTaskId } from "./example-tasks";
 import { PromptActionRow, type PromptAction } from "./prompt-action-row";
