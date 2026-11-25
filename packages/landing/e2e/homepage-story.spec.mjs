@@ -4,7 +4,7 @@ for (const [lang, headline, subtitle, apps, steps] of [
   [
     "en",
     "From Vibe-Coding to Vibe-Finetuning",
-    "Open Foundation for Self-Evolving Enterprise AI.",
+    "Unified Self-Evolving Foundation for Millions of AI Apps.",
     [
       "Document Q&A",
       "Investment Analyst",
@@ -21,7 +21,7 @@ for (const [lang, headline, subtitle, apps, steps] of [
   [
     "zh",
     "从 许愿式编程 到 许愿式调优",
-    "企业级 AI 应用的统一自进化底座",
+    "千万个 AI 应用的统一自进化底座",
     [
       "文档问答",
       "投资分析",
@@ -60,9 +60,7 @@ for (const [lang, headline, subtitle, apps, steps] of [
         lang === "en" ? "First self-improving harness" : "首个自进化 Harness",
       );
       const catalogue = hero.locator("dl").nth(1);
-      await expect(catalogue.locator("dt")).toHaveCount(3);
-      for (const metric of await catalogue.locator("dt").all())
-        await expect(metric).toHaveText(/^[1-9]\d*/);
+      await expect(catalogue.locator("dt")).toHaveText([/^1000\+/, /^10\+/, /^20\+/]);
       await expect(catalogue.locator('a[href="https://arxiv.org/abs/2309.03409"]')).toBeVisible();
       await expect(page.locator("main video")).toHaveCount(0);
       await expect(page.getByRole("button", { name: /Play demo|播放演示/ }).first()).toBeVisible();
@@ -78,6 +76,11 @@ for (const [lang, headline, subtitle, apps, steps] of [
       expect(right.x + right.width).toBeLessThanOrEqual(width);
       const appsDiagram = page.locator("#cases [data-story-diagram]");
       const platform = page.locator("#self-evolution [data-story-diagram]");
+      await expect(page.locator("#cases h2")).toHaveText(
+        lang === "en" ? "Build your first self-evolving Agent OS" : "构建你的第一个自进化 Agent OS",
+      );
+      await expect(platform.locator(".scene-workflow-pane")).toBeVisible();
+      await expect(page.locator("#self-evolution figure")).toHaveCount(3);
       for (const app of apps) {
         await expect(appsDiagram.getByText(app, { exact: true })).toBeVisible();
       }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { ImageIcon, SiteGlyph, type SiteGlyphName } from "@prismshadow/penguin-ui/site";
 import { AppIconShape } from "../../../ui/src/components/icons/app-icon-shape/app-icon-shape";
 import { Spinner } from "../../../ui/src/components/icons/spinner/spinner";
@@ -50,6 +50,19 @@ const appTiles = {
   browser: sessionToolArt.get("session-tools-builtin-browser"),
 };
 
+/** Radial Vectors (dx, dy) for the iOS-style home-screen convergence animation. */
+const tileConvergeOffsets: Record<keyof typeof appTiles, [string, string]> = {
+  docs: ["-18px", "-16px"],
+  investment: ["0px", "-20px"],
+  legal: ["18px", "-16px"],
+  slides: ["-22px", "0px"],
+  images: ["0px", "-10px"],
+  support: ["22px", "0px"],
+  expenses: ["-18px", "16px"],
+  terminal: ["0px", "20px"],
+  browser: ["18px", "16px"],
+};
+
 function AppMark({ app, size = 42 }: { app: keyof typeof appTiles; size?: number }) {
   const art = appTiles[app];
   return (
@@ -67,29 +80,87 @@ function AppMark({ app, size = 42 }: { app: keyof typeof appTiles; size?: number
   );
 }
 
-/** The contract desk and its files are from the bilingual 0.2.14 workbench demonstration. */
+/**
+ * The Agent OS App Center: an iOS-style springboard convergence animation packing every app into
+ * one desktop system while demonstrating one-sentence A2APP generation and live workbench loading.
+ */
 export function AppGenerationDiagram() {
   const c = S.cases.workspace;
   const { ref, active } = useVisibleActivity<HTMLDivElement>();
+  const reduced = usePrefersReducedMotion();
+  const running = active && !reduced;
+  const apps = Object.keys(appTiles) as (keyof typeof appTiles)[];
+
   return (
     <div
       ref={ref}
       className="product-scene"
       data-story-diagram=""
-      data-active={active}
+      data-active={running}
       role="group"
       aria-label={c.title}
     >
       <ScreenBar icon="layoutGrid" title={c.title} context={c.project} contextIcon="folderOpen" />
+      <div className="scene-builder-bar" aria-hidden="true">
+        <span className="scene-builder-badge">
+          <SiteGlyph name="robot" width={13} height={13} />
+          {c.builderLabel}
+        </span>
+        <span className="scene-builder-prompt">
+          <span className="scene-builder-prompt-text">{c.builderPrompt}</span>
+          <span className="scene-builder-progress" />
+        </span>
+        <span className="scene-builder-status">
+          <SiteGlyph name="check" width={13} height={13} />
+          {c.installing}
+        </span>
+      </div>
       <div className="scene-workspace">
-        <ul className="scene-launcher" aria-label={c.title}>
-          {(Object.keys(appTiles) as (keyof typeof appTiles)[]).map((app) => (
-            <li key={app} data-selected={app === "legal" || undefined}>
-              <AppMark app={app} />
-              <span>{c.apps[app]}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="scene-os-stage">
+          <ul className="scene-launcher" aria-label={c.title}>
+            {apps.map((app, index) => {
+              const [dx, dy] = tileConvergeOffsets[app];
+              const isGenerated = app === "legal";
+              return (
+                <li
+                  key={app}
+                  data-selected={isGenerated || undefined}
+                  data-generated={isGenerated || undefined}
+                  style={
+                    {
+                      "--tile-idx": index,
+                      "--tile-dx": dx,
+                      "--tile-dy": dy,
+                    } as CSSProperties
+                  }
+                >
+                  <div className="scene-app-slot">
+                    <AppMark app={app} />
+                    {isGenerated && (
+                      <svg className="scene-install-ring" viewBox="0 0 52 52" aria-hidden="true">
+                        <rect
+                          x="2"
+                          y="2"
+                          width="48"
+                          height="48"
+                          rx="13"
+                          fill="none"
+                          pathLength={100}
+                        />
+                      </svg>
+                    )}
+                  </div>
+                  <span>{c.apps[app]}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="scene-os-dock" aria-hidden="true">
+            <span className="scene-os-dot scene-os-dot-active" />
+            <span className="scene-os-dot" />
+            <span className="scene-os-dot" />
+          </div>
+        </div>
         <div className="scene-desk">
           <div className="scene-desk-title">
             <AppMark app="legal" size={32} />
@@ -196,21 +267,25 @@ function AgentRun({ index, running }: { index: number; running: boolean }) {
   );
 }
 
-/** Independent rounds on four task families from the GDPEVO Essential report. */
-export function AgentEvaluationDiagram() {
+/**
+ * Unified Self-Evolution Workbench: fuses the Optimizer/Evaluator loop diagram above with the
+ * independent multi-agent evolution rounds on the four GDPEVO Essential task families below.
+ */
+export function AgentEvaluationDiagram({ workflow }: { workflow?: ReactNode }) {
   const c = S.selfImprove.workbench;
   const { ref, active } = useVisibleActivity<HTMLDivElement>();
   const reduced = usePrefersReducedMotion();
   return (
     <div
       ref={ref}
-      className="product-scene"
+      className="product-scene product-scene-evolution"
       data-story-diagram=""
       data-active={active && !reduced}
       role="group"
       aria-label={c.title}
     >
       <ScreenBar icon="trophy" title={c.title} context="GDPEVO Essential" contextIcon="bookOpen" />
+      {workflow && <div className="scene-workflow-pane">{workflow}</div>}
       <table className="scene-runs">
         <thead>
           <tr>

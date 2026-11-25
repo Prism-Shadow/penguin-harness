@@ -4,20 +4,26 @@
  * the site works under the GitHub Pages subpath ("/<repo>/docs/"); a route change
  * scrolls to the top or to its hash target (useRouteScroll).
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { BrowserRouter, Outlet, Route, Routes, useLocation } from "react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BrowserRouter, Link, Outlet, Route, Routes, useLocation } from "react-router";
 import {
   SiteFooter,
+  SiteMobileNav,
+  SiteNav,
   useEscapeToClose,
   useRouteScroll,
   useSearchHotkey,
 } from "@prismshadow/penguin-ui/site";
-import { Nav, SiteMenu } from "./components/nav";
+import type { SiteLinkProps } from "@prismshadow/penguin-ui/site";
 import { Sidebar } from "./components/sidebar";
 import { DocSearch } from "./components/doc-search";
 import { S } from "./lib/strings";
 import { LICENSE_URL, REPO_URL, SITE_URL } from "./lib/links";
 import { DocPage } from "./pages/doc-page";
+
+function routeLink({ href, ...props }: SiteLinkProps) {
+  return <Link to={href} {...props} />;
+}
 
 function Layout() {
   const location = useLocation();
@@ -48,17 +54,31 @@ function Layout() {
   }, [pathname, hash, key]);
   useEscapeToClose(menuOpen, () => setMenuOpen(false));
 
+  const overrides = useMemo(() => ({ docs: { href: "/", render: routeLink } }), []);
+
   return (
     <div className="flex min-h-full flex-col">
-      <Nav
-        menuOpen={menuOpen}
-        onToggleMenu={() => setMenuOpen((v) => !v)}
-        menuButtonRef={menuButtonRef}
+      <SiteNav
+        siteRoot={SITE_URL}
+        logo={`${import.meta.env.BASE_URL}penguin-logo.svg`}
+        current="docs"
+        overrides={overrides}
+        menu={{
+          open: menuOpen,
+          onToggle: () => setMenuOpen((v) => !v),
+          buttonRef: menuButtonRef,
+          hiddenClass: "lg:hidden",
+        }}
       />
 
       {menuOpen && (
         <div className="anim-fade fixed inset-x-0 top-14 bottom-0 z-30 overflow-y-auto bg-white lg:hidden dark:bg-gray-950">
-          <SiteMenu onNavigate={() => setMenuOpen(false)} />
+          <SiteMobileNav
+            siteRoot={SITE_URL}
+            current="docs"
+            overrides={overrides}
+            onNavigate={() => setMenuOpen(false)}
+          />
           <div className="px-6 py-6">
             <Sidebar onNavigate={() => setMenuOpen(false)} onOpenSearch={openSearch} />
           </div>

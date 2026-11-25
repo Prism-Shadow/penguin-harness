@@ -58,7 +58,7 @@ export const zh = {
       reachLead: "到 ",
       reach: "许愿式调优",
     },
-    subtitle: "企业级 AI 应用的统一自进化底座",
+    subtitle: "千万个 AI 应用的统一自进化底座",
     downloadCta: "下载桌面版",
     productHuntBadge: "PenguinHarness Product Hunt 徽章",
     watcha: "观猹",
@@ -197,7 +197,7 @@ export const zh = {
     optimize: "优化",
     title: "任意 Agent 的统一自进化平台",
     subtitle:
-      "默认由 General Agent 运行优化 Skill，每一轮只改被测 Agent 的一处；Evaluator 子 Agent 运行评估 Skill，在 Benchmark 的每个题目上给修改后的 Agent 打分。",
+      "集成多种 RSI 算法与领域评估集，配置被测 Agent 后由 Teacher Agent 自动循环执行基准评测、归因诊断与提示词及 Skill 调优，实现用着更省、跑得更快、答得更准。",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "被测 Agent",
@@ -208,9 +208,9 @@ export const zh = {
     noteOld: "修改前先保存快照",
     noteNew: "只有分数更高才保留",
     /** Index-aligned with TRENDS in sections/self-improve.tsx. */
-    sampleTrends: "示例趋势",
+    sampleTrends: "进化趋势",
     trends: [
-      { label: "分数", hint: "满分 100" },
+      { label: "准确率", hint: "满分 100" },
       { label: "成本", hint: "每次运行" },
       { label: "耗时", hint: "每次运行" },
     ],
@@ -268,10 +268,15 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cases: {
-    os: "亲手构建你的第一个自进化 Agent OS",
+    os: "构建你的第一个自进化 Agent OS",
+    subtitle:
+      "输入一句话，将任意想法变为内嵌 Agent 能力的应用并装入桌面端 Agent OS；随时通过对话升级迭代，或与社区应用市场一键分享安装。",
     workspace: {
       title: "应用中心",
       project: "PenguinHarness 演示",
+      builderLabel: "A2APP 一句话生成",
+      builderPrompt: "生成法务审阅应用：上传协议文件、识别风险条款并输出审阅报告",
+      installing: "已装入 Agent OS",
       apps: {
         docs: "文档问答",
         investment: "投资分析",
@@ -296,15 +301,6 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         "主服务协议 - 北风物流.pdf",
       ],
     },
-    title: "A2APP：一句话 + 0.6 元构建法务应用",
-    /** The subtitle's first line, saying what A2APP is; `subtitle` is its second. */
-    a2app:
-      "每个 Agent 都能有自己的工作台。Agent 按你的要求把它搭出来，之后也照样开口修改。工作台显示在对话旁边，每次修改都会热更新到已打开的标签页。",
-    subtitle:
-      "用一句话描述需求，PenguinHarness 就能构建法务智能体应用：上传合同、识别风险并生成审阅报告。",
-    prompt:
-      "新建一个法务智能体，负责审阅合同、协议等法律文件：找出风险条款、说明理由并给出修改建议。再在法务智能体上做一个 Agent Workbench 标签页，当作它的工作台：我上传文件后，由它在后台分析，完成后生成一份分析报告供我下载。页面上只要上传、文件列表（每个文件的处理状态）和报告下载，不显示任何对话过程；颜色一律取自主题变量，明暗两种主题下都要好看。",
-    cost: "5 次样件审阅的模型花费：$0.0423。",
   },
 
   /**

@@ -58,7 +58,7 @@ export const en: Strings = {
       reachLead: "to ",
       reach: "Vibe-Finetuning",
     },
-    subtitle: "Open Foundation for Self-Evolving Enterprise AI.",
+    subtitle: "Unified Self-Evolving Foundation for Millions of AI Apps.",
     downloadCta: "Download desktop",
     productHuntBadge: "PenguinHarness on Product Hunt",
     watcha: "Watcha",
@@ -200,7 +200,7 @@ export const en: Strings = {
     optimize: "Optimize",
     title: "A unified self-evolution platform for any agent",
     subtitle:
-      "By default the General Agent runs the optimization Skill. Each round it makes one change to the tested agent. Evaluator subagents running the evaluation Skill score the changed agent on every case of the Benchmark.",
+      "Integrates RSI algorithms and domain Benchmarks into one framework — once you configure the tested agent, the Teacher Agent automatically evaluates, diagnoses, and tunes its prompts and Skills in a loop for higher accuracy, lower cost, and faster runs.",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Tested agent",
@@ -210,9 +210,9 @@ export const en: Strings = {
     edgeImprove: "edit AGENTS.md, a Skill or config",
     noteOld: "snapshot before editing",
     noteNew: "kept only if the score is higher",
-    sampleTrends: "Example trends",
+    sampleTrends: "Evolution trends",
     trends: [
-      { label: "Score", hint: "out of 100" },
+      { label: "Accuracy", hint: "out of 100" },
       { label: "Cost", hint: "per run" },
       { label: "Duration", hint: "per run" },
     ],
@@ -278,9 +278,15 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
 
   cases: {
     os: "Build your first self-evolving Agent OS",
+    subtitle:
+      "Turn any idea into an agent-powered app in one sentence, packed into one desktop Agent OS — upgrade any app through chat, or share and install from the community market in one click.",
     workspace: {
       title: "App Center",
       project: "PenguinHarness demo",
+      builderLabel: "A2APP Builder",
+      builderPrompt:
+        "Build a contract review workbench: upload files, flag risky clauses, and export reports",
+      installing: "Installed in Agent OS",
       apps: {
         docs: "Document Q&A",
         investment: "Investment Analyst",
@@ -305,14 +311,6 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         "Master Services Agreement - Northwind Logistics.pdf",
       ],
     },
-    title: "A2APP: one sentence and $0.10 build a legal agent app",
-    a2app:
-      "Every agent can have a workbench of its own. The agent builds it from what you ask and changes it the same way. It opens beside the chat and reloads as the agent edits it.",
-    subtitle:
-      "Describe what you need in one request. PenguinHarness builds a legal agent app that takes contract uploads, identifies risks and produces review reports to download.",
-    prompt:
-      "Build a legal review agent with a simple workspace where users upload contracts, track the review, and download a report with risky clauses, explanations, and suggested revisions.",
-    cost: "Five sample reviews cost $0.0423 in model calls.",
   },
 
   pillars: {

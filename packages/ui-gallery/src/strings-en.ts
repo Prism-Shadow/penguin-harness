@@ -14,6 +14,7 @@ export const en: GalleryStrings = {
       plugins: "Plugins",
       benchmarks: "Benchmarks",
       leaderboards: "Leaderboards",
+      rfcs: "RFCs",
       amsp: "AMSP",
       docs: "Docs",
       gallery: "Theme Packs",

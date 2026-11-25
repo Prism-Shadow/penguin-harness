@@ -112,6 +112,10 @@ export function SiteLocaleScope({ children }: { children: ReactNode }) {
   );
 }
 
+export function useOptionalSiteLocale(): SiteLocaleState | null {
+  return useContext(SiteLocaleContext);
+}
+
 export function useSiteLocale(): SiteLocaleState {
   const ctx = useContext(SiteLocaleContext);
   if (!ctx) throw new Error("useSiteLocale must be used inside SiteLocaleProvider");

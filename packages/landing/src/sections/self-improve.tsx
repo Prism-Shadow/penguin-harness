@@ -1,15 +1,11 @@
 /**
- * One self-evolution round, drawn as the loop it is. The Optimizer (an ordinary agent running the
+ * One self-evolution round and its multi-agent workbench, fused on the left column beside the three
+ * recorded evolution trends on the right. The Optimizer (an ordinary agent running the
  * agent-optimization Skill) dispatches Evaluator subagents (agent-evaluation), which run the
  * tested agent on each Benchmark case and score it; scores and Traces flow back, and the
- * Optimizer's change turns version N into N+1, drawn as the bold evolve arrow between the two
- * versions. Beside it, the three numbers the scoreboard records for every version, each line
- * growing from the left on a slow loop.
- *
- * The chart values are illustrative. Their shapes follow the rules, not a
- * wish: the score only rises because a version is kept only when it scores higher, while cost and
- * duration are recorded but never optimised, so they wander. Phones get the same loop as a stacked
- * reading. Reduced motion: the flow dots stay off and every line is drawn finished.
+ * Optimizer's change turns version N into N+1. Below the loop diagram in the same workbench frame,
+ * four domain agents advance through Evaluate, Improve, Retest and Next round. Beside it, accuracy
+ * rises across kept versions while cost and duration steadily decrease.
  */
 import { AgentEvaluationDiagram } from "../components/application-diagrams";
 import { useEffect, useRef } from "react";
@@ -31,7 +27,7 @@ function Node({
   x,
   y,
   w,
-  h = 56,
+  h = NODE_H,
   label,
   sub,
   kind = "neutral",
@@ -59,13 +55,13 @@ function Node({
       <rect x={x} y={y} width={w} height={h} rx={10} strokeWidth={1.5} className={rect} />
       <text
         x={x + w / 2}
-        y={y + 24}
+        y={y + 22}
         textAnchor="middle"
         className={`text-sm font-semibold ${title}`}
       >
         {label}
       </text>
-      <text x={x + w / 2} y={y + 42} textAnchor="middle" className={`font-mono text-xs ${subText}`}>
+      <text x={x + w / 2} y={y + 40} textAnchor="middle" className={`font-mono text-xs ${subText}`}>
         {sub}
       </text>
     </g>
@@ -138,17 +134,17 @@ function FlowDot({
  * versions of the tested agent at the bottom corners. Every arrow ends on its node's edge; the
  * viewBox is cropped to the drawn content so the diagram fills its column.
  */
-const OPT = { x: 270, y: 16, w: 180 };
-const EVAL = { x: 270, y: 150, w: 180 };
-const OLD = { x: 50, y: 300, w: 170 };
-const NEW = { x: 500, y: 300, w: 170 };
-const NODE_H = 56;
+const OPT = { x: 270, y: 12, w: 180 };
+const EVAL = { x: 270, y: 128, w: 180 };
+const OLD = { x: 50, y: 256, w: 170 };
+const NEW = { x: 500, y: 256, w: 170 };
+const NODE_H = 52;
 
-const EDGE_SPAWN = "M330,74 L330,149";
-const EDGE_FEEDBACK = "M390,150 L390,73";
-const EDGE_BENCH_OLD = "M300,208 L150,299";
-const EDGE_BENCH_NEW = "M420,208 L570,299";
-const EDGE_EVOLVE = "M226,328 L494,328";
+const EDGE_SPAWN = "M330,66 L330,127";
+const EDGE_FEEDBACK = "M390,128 L390,65";
+const EDGE_BENCH_OLD = "M300,182 L150,255";
+const EDGE_BENCH_NEW = "M420,182 L570,255";
+const EDGE_EVOLVE = "M226,282 L494,282";
 
 /** Draw-loop timing: grow, hold, fade, repeat. */
 const CYCLE_S = 4.6;
@@ -178,9 +174,9 @@ function TrendChart({
   format: (v: number) => string;
 }) {
   // Laid out at the width it is shown at, so the ticks and the value keep the page's small size.
-  const { ref: box, width: W } = useWidth<HTMLDivElement>(210);
-  const H = 96;
-  const M = { left: 34, right: 12, top: 16, bottom: 22 };
+  const { ref: box, width: W } = useWidth<HTMLDivElement>(220);
+  const H = 128;
+  const M = { left: 34, right: 12, top: 18, bottom: 24 };
   const yMax = Math.max(...yTicks);
   const yMin = Math.min(...yTicks);
   const last = points.length - 1;
@@ -240,12 +236,15 @@ function TrendChart({
   }, [points, phase, format, active, reduced, W]);
 
   return (
-    <figure ref={ref} className="min-w-0">
+    <figure
+      ref={ref}
+      className="min-w-0 rounded-xl border border-gray-200 bg-white p-3.5 dark:border-gray-800 dark:bg-gray-900"
+    >
       <figcaption className="flex items-baseline justify-between gap-3">
         <span className="text-sm font-semibold tracking-tight">{label}</span>
         <span className="text-xs text-gray-500 dark:text-gray-400">{hint}</span>
       </figcaption>
-      <div ref={box} className="mt-1">
+      <div ref={box} className="mt-1.5">
         <svg
           viewBox={`0 0 ${W} ${H}`}
           width={W}
@@ -312,7 +311,7 @@ function TrendChart({
               style={{ strokeDasharray: 1, strokeDashoffset: 1 }}
             />
             <g ref={headRef}>
-              <circle r={5} className="fill-gray-50 dark:fill-gray-900" />
+              <circle r={5} className="fill-white dark:fill-gray-900" />
               <circle r={3.5} className="fill-brand-600 dark:fill-brand-400" />
             </g>
             <text
@@ -328,8 +327,8 @@ function TrendChart({
 }
 
 /**
- * Illustrative values for seven kept versions, index-aligned with S.selfImprove.trends. The score
- * strictly rises (a version that does not score higher is never kept); cost and duration wander.
+ * Illustrative values for seven kept versions, index-aligned with S.selfImprove.trends:
+ * accuracy steadily rises while cost and duration gradually decrease across self-evolution rounds.
  */
 const TRENDS: ReadonlyArray<{
   points: readonly number[];
@@ -337,17 +336,17 @@ const TRENDS: ReadonlyArray<{
   format: (v: number) => string;
 }> = [
   {
-    points: [46, 52, 55, 61, 64, 69, 73],
+    points: [46, 53, 59, 65, 70, 75, 79],
     yTicks: [0, 50, 100],
     format: (v) => v.toFixed(1),
   },
   {
-    points: [0.31, 0.35, 0.3, 0.37, 0.33, 0.29, 0.34],
+    points: [0.42, 0.36, 0.31, 0.27, 0.23, 0.19, 0.16],
     yTicks: [0, 0.25, 0.5],
     format: (v) => `$${v.toFixed(2)}`,
   },
   {
-    points: [86, 97, 91, 104, 95, 89, 99],
+    points: [108, 94, 82, 72, 63, 55, 48],
     yTicks: [0, 60, 120],
     format: (v) => `${Math.round(v)}s`,
   },
@@ -430,10 +429,10 @@ function LoopDiagram() {
   return (
     <svg
       ref={ref}
-      viewBox="30 8 660 380"
+      viewBox="30 6 660 332"
       role="img"
       aria-label={c.diagramLabel}
-      className="mx-auto hidden w-full max-w-[760px] md:block"
+      className="mx-auto hidden w-full max-w-[740px] md:block"
     >
       <defs>
         <marker
@@ -492,17 +491,17 @@ function LoopDiagram() {
         </>
       )}
 
-      <EdgeLabel x={322} y={116} anchor="end">
+      <EdgeLabel x={322} y={100} anchor="end">
         {c.edgeSpawn}
       </EdgeLabel>
-      <EdgeLabel x={398} y={116} anchor="start">
+      <EdgeLabel x={398} y={100} anchor="start">
         {c.edgeFeedback}
       </EdgeLabel>
       {/* Between the two diagonals: every version is run on the same cases. */}
-      <EdgeLabel x={360} y={262}>
+      <EdgeLabel x={360} y={228}>
         {c.edgeBench}
       </EdgeLabel>
-      <EdgeLabel x={360} y={316} accent>
+      <EdgeLabel x={360} y={272} accent>
         {c.edgeImprove}
       </EdgeLabel>
 
@@ -528,10 +527,10 @@ function LoopDiagram() {
       <Node {...OLD} label={c.nodeTarget} sub={VERSION_OLD} />
       <Node {...NEW} label={c.nodeTarget} sub={VERSION_NEW} kind="target" />
 
-      <EdgeLabel x={OLD.x + OLD.w / 2} y={OLD.y + NODE_H + 20}>
+      <EdgeLabel x={OLD.x + OLD.w / 2} y={OLD.y + NODE_H + 18}>
         {c.noteOld}
       </EdgeLabel>
-      <EdgeLabel x={NEW.x + NEW.w / 2} y={NEW.y + NODE_H + 20}>
+      <EdgeLabel x={NEW.x + NEW.w / 2} y={NEW.y + NODE_H + 18}>
         {c.noteNew}
       </EdgeLabel>
     </svg>
@@ -542,34 +541,35 @@ export function SelfImprove() {
   const c = S.selfImprove;
   return (
     <Section id="self-evolution" title={c.title} subtitle={c.subtitle}>
-      <div className="rounded-2xl bg-gray-50 p-5 sm:p-8 dark:bg-gray-900">
-        <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-10">
-          <MobileEvolutionFlow />
-          <LoopDiagram />
-          <div className="grid gap-6 sm:grid-cols-3 lg:grid-cols-1 lg:gap-5">
-            <p className="-mb-3 text-xs text-gray-500 sm:col-span-3 lg:col-span-1 dark:text-gray-400">
-              {c.sampleTrends}
-            </p>
-            {c.trends.map((t, i) => {
-              const data = TRENDS[i];
-              if (!data) return null;
-              return (
-                <TrendChart
-                  key={t.label}
-                  label={t.label}
-                  hint={t.hint}
-                  points={data.points}
-                  yTicks={data.yTicks}
-                  phase={i * 1.4}
-                  format={data.format}
-                />
-              );
-            })}
-          </div>
+      <div className="grid items-stretch gap-6 lg:grid-cols-[minmax(0,1fr)_17.5rem] lg:gap-8">
+        <AgentEvaluationDiagram
+          workflow={
+            <>
+              <MobileEvolutionFlow />
+              <LoopDiagram />
+            </>
+          }
+        />
+        <div className="flex flex-col justify-between gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:grid sm:grid-cols-3 sm:gap-4 lg:flex lg:flex-col lg:p-5 dark:border-gray-800 dark:bg-gray-950">
+          <p className="-mb-1 text-xs font-medium text-gray-500 sm:col-span-3 lg:col-span-1 dark:text-gray-400">
+            {c.sampleTrends}
+          </p>
+          {c.trends.map((t, i) => {
+            const data = TRENDS[i];
+            if (!data) return null;
+            return (
+              <TrendChart
+                key={t.label}
+                label={t.label}
+                hint={t.hint}
+                points={data.points}
+                yTicks={data.yTicks}
+                phase={i * 1.4}
+                format={data.format}
+              />
+            );
+          })}
         </div>
-      </div>
-      <div className="mx-auto mt-10 max-w-5xl">
-        <AgentEvaluationDiagram />
       </div>
     </Section>
   );

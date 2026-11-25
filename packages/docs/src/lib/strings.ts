@@ -19,6 +19,7 @@ export const zh = {
     plugins: "插件",
     benchmarks: "评估集",
     leaderboards: "榜单",
+    rfcs: "RFCs",
     amsp: "AMSP",
     docs: "文档",
     gallery: "主题包",
