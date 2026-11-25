@@ -14,6 +14,7 @@ export const en: GalleryStrings = {
       plugins: "Plugins",
       benchmarks: "Benchmarks",
       leaderboards: "Leaderboards",
+      rfcs: "RFCs",
       amsp: "AMSP",
       docs: "Docs",
       gallery: "Theme Packs",
@@ -542,7 +543,8 @@ export const en: GalleryStrings = {
       },
       loading: {
         title: "Loading",
-        description: "The spinner, the waiting state, the progress bar and the transfer row.",
+        description:
+          "The spinner, the waiting state, the progress bar, the staged bar and the transfer row.",
       },
       streaming: {
         title: "Streaming",
@@ -1109,6 +1111,14 @@ export const en: GalleryStrings = {
       progressLabel: "Download progress",
       progressOver: "Over the limit",
       progressIndeterminate: "Indeterminate",
+      staged: "Staged progress bar",
+      stagedHint: "One segment per stage; only the current stage moves",
+      stagedLabel: "Install progress",
+      stagedLive: "Running, no amount reported",
+      stagedAmount: "Running, with an amount",
+      stagedWaiting: "Waiting for the person",
+      stagedStopped: "Failed in this stage",
+      stagedFinished: "Finished",
       transfer: "Transfer row",
       transferHint:
         "History coming over from a machine: the line that stands in for the conversation, the line over it, the line under an unfolded output",

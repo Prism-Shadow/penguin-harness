@@ -13,6 +13,8 @@ interface MarketAction {
   disabled: boolean;
   onClick: () => void;
   hint?: string | undefined;
+  /** The bar of the server install the action started, while it runs. */
+  progress?: ReactNode | undefined;
 }
 
 interface MarketPluginCardProps {

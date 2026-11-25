@@ -14,10 +14,14 @@
  * The navbar and its links in the drawer sit outside the `.g-chrome` subtree: they are the landing
  * page's Tailwind markup, and the chrome's base rules would outrank its utilities.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { SiteMenu, SiteNav } from "../site/nav";
-import { useSitePrefsSync } from "../site/prefs";
+import { SiteMobileNav, SiteNav } from "@prismshadow/penguin-ui/site";
+import { BASE } from "../lib/location";
+import { homeHref } from "../lib/routes";
+import { SITE_URL } from "../site/links";
+import { useLocale, useSitePrefsSync, useTheme } from "../site/prefs";
+import { useGallery } from "../state";
 import { GalleryBar } from "./gallery-bar";
 import type { SitePage } from "./gallery-bar";
 import { ChromeTooltips } from "./tooltip";
@@ -40,6 +44,10 @@ export function Site({
 }) {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
+  const { S, state } = useGallery();
+  const { lang, setLang } = useLocale();
+  const { mode, setMode } = useTheme();
+  const overrides = useMemo(() => ({ gallery: { href: homeHref(BASE, state) } }), [state]);
   useSitePrefsSync();
 
   useEffect(() => {
@@ -54,12 +62,30 @@ export function Site({
   return (
     <div className="g-site" data-nav={nav ? true : undefined} data-toc={toc ? true : undefined}>
       <div className="g-sitebar">
-        <SiteNav menuOpen={open} onToggleMenu={() => setOpen((current) => !current)} />
+        <SiteNav
+          siteRoot={SITE_URL}
+          logo={`${import.meta.env.BASE_URL}penguin-logo.svg`}
+          current="gallery"
+          overrides={overrides}
+          language={{ value: lang, onChange: setLang, labels: S.sitebar.lang }}
+          theme={{ mode, onChange: setMode, labels: S.sitebar.theme }}
+          menu={{
+            open,
+            onToggle: () => setOpen((current) => !current),
+            hiddenClass: "lg:hidden",
+          }}
+        />
       </div>
       {open && (
         <div className="g-drawer">
           <div className="g-sitebar">
-            <SiteMenu onNavigate={close} />
+            <SiteMobileNav
+              siteRoot={SITE_URL}
+              locale={state.lang}
+              current="gallery"
+              overrides={overrides}
+              onNavigate={close}
+            />
           </div>
           {nav && <div className="g-chrome g-drawer-list">{nav(close)}</div>}
         </div>

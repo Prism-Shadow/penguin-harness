@@ -24,6 +24,7 @@ import { requestSettingsPage } from "../lib/settings-request";
 import { toastApiError } from "../lib/toast-api-error";
 import { toneDot, toneInk, toneSurface } from "../lib/tone";
 import { currentDockScope, isTabShown, openPanel } from "../features/dock";
+import { isOpenPageDrag } from "../lib/page-layout";
 
 provideWebHost({
   ApiError,
@@ -36,6 +37,7 @@ provideWebHost({
   openPanel,
   isTabShown,
   currentDockScope,
+  isOpenPageDrag,
   formatDateTime,
   // In the language on screen, which the face is told of with every dictionary switch.
   formatRelativeShort: (iso) => formatRelativeShort(iso, webLocale()),

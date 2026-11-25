@@ -23,7 +23,7 @@ import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { PageSlot } from "../../lib/page-slot";
 import { sessionAppPair } from "../../lib/session-app-dock";
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { appTriggerId } from "./app-tile";
 import { AppCenterWindow } from "./app-center-window";
 

@@ -76,6 +76,14 @@ function readLockfile(text) {
     if (indent === 0) {
       const top = keyValue(line);
       if (!top) return null;
+      if (top.key === "lockfileVersion") {
+        // The dependency walk understands pnpm's version 9.0 schema only.
+        try {
+          if (scalar(top.value) !== "9.0") return null;
+        } catch {
+          return null;
+        }
+      }
       section = top.key;
       sections.set(section, [line]);
       entry = group = dependency = null;

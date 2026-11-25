@@ -108,6 +108,7 @@ export function provideTestHost(overrides: Partial<WebHost> = {}): TestHostRecor
     openPanel: (kind) => record.panels.push(kind),
     isTabShown: () => false,
     currentDockScope: () => "~none",
+    isOpenPageDrag: () => false,
     formatDateTime: (iso) => iso,
     formatRelativeShort: (iso) => iso,
     formatRelativeLong: (iso) => iso,

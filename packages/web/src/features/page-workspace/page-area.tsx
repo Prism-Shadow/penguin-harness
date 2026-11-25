@@ -3,9 +3,9 @@ import { Outlet, useLocation, type Location } from "react-router";
 import { ErrorBoundary } from "../../rescue/error-boundary";
 import { RescuePanel } from "../../rescue/rescue-panel";
 import { S } from "../../lib/strings";
-import { PageSlot, useNarrow } from "../../lib/page-slot";
+import { PageSlot } from "../../lib/page-slot";
 import { useRunningAppRecords } from "../../lib/running-apps";
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { ScopedChat } from "./scoped-chat";
 import { WorkbenchExitBall } from "../workbenches";
 import { useAppDockDrop } from "./app-dock-drop";
@@ -50,8 +50,7 @@ export function PageArea({
   const workspace = usePageWorkspace()!;
   const location = useLocation();
   const apps = useRunningAppRecords();
-  const narrow = useNarrow();
-  const appDrop = useAppDockDrop(narrow);
+  const appDrop = useAppDockDrop();
   const { current, layout } = workspace;
   // A pointer landing inside a live frame transfers focus to its browsing context, so
   // its pointer event never reaches the wrapper in this document.

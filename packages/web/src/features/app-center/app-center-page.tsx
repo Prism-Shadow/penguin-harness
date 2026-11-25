@@ -65,7 +65,7 @@ import {
 import * as api from "../../api/endpoints";
 import { agentSettingsPath } from "../../lib/agent-location";
 import { sessionAppPair } from "../../lib/session-app-dock";
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { APP_CENTER_PATH, appWindowPath } from "../../lib/app-center-path";
 import { windowEntryState, WINDOW_PARAM } from "../../lib/app-window-address";
 import { openFullPage, returnToHostEntry } from "../../lib/host-history";

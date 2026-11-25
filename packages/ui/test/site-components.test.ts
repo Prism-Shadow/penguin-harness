@@ -240,6 +240,7 @@ describe("the site bar", () => {
     plugins: "Plugins",
     benchmarks: "Benchmarks",
     leaderboards: "Leaderboards",
+    rfcs: "RFCs",
     amsp: "AMSP",
     docs: "Docs",
     gallery: "Theme Packs",
@@ -297,6 +298,7 @@ describe("the site bar", () => {
         attrs!.includes('aria-current="page"'),
       ]),
     ).toEqual([
+      ["RFCs", false],
       ["AMSP", true],
       ["Theme Packs", false],
     ]);

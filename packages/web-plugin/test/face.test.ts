@@ -58,6 +58,7 @@ function standInHost(calls: unknown[][]): WebHost {
     openPanel: record("openPanel"),
     isTabShown: () => false,
     currentDockScope: () => "~none",
+    isOpenPageDrag: () => false,
     formatDateTime: (iso) => iso,
     formatRelativeShort: (iso) => iso,
     formatRelativeLong: (iso) => iso,

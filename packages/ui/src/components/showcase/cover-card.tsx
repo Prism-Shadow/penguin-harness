@@ -14,7 +14,8 @@
  * the rest (the Web App's market: install and quick start). Each is one line of words with an
  * optional hover sentence (`hint`): only when the card cannot hold every label is the longer one
  * cut off with an ellipsis, never wrapped onto a second line. A disabled one stays in place in
- * muted ink.
+ * muted ink. An action whose job is under way may carry its bar (`progress`: the caller's
+ * progress bar), drawn under its words at the words' own width.
  *
  * The cover, the title and the description are one opener — a link when the host gives an
  * `href` (the public site, where the detail is a page), a button otherwise (the Web App, where
@@ -43,6 +44,8 @@ export interface CoverCardBarAction {
   hint?: string | undefined;
   disabled?: boolean | undefined;
   onClick?: (() => void) | undefined;
+  /** The bar of the job the action started, while it runs: drawn under the label. */
+  progress?: ReactNode | undefined;
 }
 
 export interface CoverCardProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
@@ -145,9 +148,17 @@ export function CoverCard({
               {...(action.hint !== undefined
                 ? { "data-tooltip": action.hint, "data-tooltip-content": "text" }
                 : {})}
+              {...(action.progress != null ? { "data-progress": "" } : {})}
               onClick={action.onClick}
             >
-              {action.label}
+              {action.progress != null ? (
+                <>
+                  <span className="showcase-card-bar-label">{action.label}</span>
+                  <span className="showcase-card-bar-progress">{action.progress}</span>
+                </>
+              ) : (
+                action.label
+              )}
             </button>
           ))}
         </div>

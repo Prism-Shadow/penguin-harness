@@ -4,6 +4,5 @@
 export declare function devServerArgs(
   entryArgs: readonly string[],
   roots: Iterable<string>,
-  platform?: NodeJS.Platform,
   resolve?: (specifier: string) => string,
 ): string[];

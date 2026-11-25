@@ -20,6 +20,7 @@ export {
   formatDateTime,
   formatRelativeLong,
   formatRelativeShort,
+  isOpenPageDrag,
   isTabShown,
   openPanel,
   requestSettings,

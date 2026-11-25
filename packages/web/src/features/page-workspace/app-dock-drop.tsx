@@ -1,24 +1,28 @@
 import { useEffect, useState, type DragEvent as ReactDragEvent } from "react";
 import { createPortal } from "react-dom";
 import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { sessionAppPair, slotDomId } from "../../lib/session-app-dock";
+import { isNarrow } from "../dock";
 
 /** During dragover the data store is protected. The ID was readable at the native dragstart. */
-export function useAppDockDrop(narrow: boolean) {
+export function useAppDockDrop() {
   const workspace = usePageWorkspace()!;
   const [preview, setPreview] = useState<DOMRect | null>(null);
   const [draggingId, setDraggingId] = useState("");
   useEffect(() => {
+    const end = () => {
+      setPreview(null);
+      setDraggingId("");
+    };
     const start = (event: DragEvent) => {
       if (event.dataTransfer?.types.includes(PAGE_DRAG_TYPE)) {
         setPreview(null);
         setDraggingId(event.dataTransfer.getData(PAGE_DRAG_TYPE));
+        // dragend is dispatched at the source node. A row removed from the list during
+        // the drag is no longer below the document, so its dragend never bubbles there.
+        event.target?.addEventListener("dragend", end, { once: true });
       }
-    };
-    const end = () => {
-      setPreview(null);
-      setDraggingId("");
     };
     document.addEventListener("dragstart", start);
     document.addEventListener("dragend", end);
@@ -31,10 +35,12 @@ export function useAppDockDrop(narrow: boolean) {
   }, []);
   const app = draggingId ? workspace.pageForDrag(draggingId) : undefined;
   function receive(event: ReactDragEvent<HTMLElement>, dropping: boolean) {
+    // Where the docks merge into one bottom surface there is no right dock to preview, and
+    // the app would open somewhere the outline never showed.
     if (
       !app ||
       (app.kind !== "window" && app.kind !== "system") ||
-      narrow ||
+      isNarrow() ||
       workspace.exitFullScreen
     )
       return;
@@ -81,7 +87,19 @@ export function useAppDockDrop(narrow: boolean) {
       setPreview(null);
       if (event.dataTransfer.getData(PAGE_DRAG_TYPE) === app.id)
         workspace.dockRunningApp(session, app);
-    } else setPreview(rect);
+    } else {
+      // dragover repeats many times a second. A new object for an unmoved target
+      // would render the whole page area on each one.
+      setPreview((shown) =>
+        shown &&
+        shown.x === rect.x &&
+        shown.y === rect.y &&
+        shown.width === rect.width &&
+        shown.height === rect.height
+          ? shown
+          : rect,
+      );
+    }
   }
   return {
     draggingId,

@@ -11,7 +11,7 @@ import {
   type SessionRowAction,
 } from "../../components/ui/session-row-menu";
 
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { type OpenPage } from "../../lib/page-layout";
 import { ICONS, SessionRow, toastSuccess } from "@prismshadow/penguin-ui";
 import { Truncated } from "../../components/ui/truncated";

@@ -17,14 +17,15 @@ import type { ToneName } from "../../../tokens";
 
 export type ProgressBarSize = "xs" | "sm" | "md";
 
-const HEIGHT: Readonly<Record<ProgressBarSize, string>> = {
+/** The bar's heights; a staged bar's segments stand on the same three. */
+export const PROGRESS_HEIGHT: Readonly<Record<ProgressBarSize, string>> = {
   xs: "h-1",
   sm: "h-1.5",
   md: "h-2",
 };
 
 /** The fill: the accent by default, a tone's solid fill when the reading is a judgement. */
-const FILL: Readonly<Record<ToneName | "accent", string>> = {
+export const PROGRESS_FILL: Readonly<Record<ToneName | "accent", string>> = {
   accent: "bg-accent",
   success: "bg-tone-success-emphasis",
   attention: "bg-tone-attention-emphasis",
@@ -66,12 +67,12 @@ export function ProgressBar({
       aria-valuemin={0}
       aria-valuemax={max}
       {...(known ? { "aria-valuenow": clamped } : {})}
-      className={`w-full overflow-hidden rounded-full bg-line-muted ${HEIGHT[size]} ${className}`}
+      className={`w-full overflow-hidden rounded-full bg-line-muted ${PROGRESS_HEIGHT[size]} ${className}`}
     >
       <div
         {...(known ? { "data-layout-motion": "" } : {})}
         data-live={known ? undefined : "bar"}
-        className={`h-full rounded-full ${FILL[tone]} ${known ? "" : "ui-live w-1/3 animate-pulse"}`}
+        className={`h-full rounded-full ${PROGRESS_FILL[tone]} ${known ? "" : "ui-live w-1/3 animate-pulse"}`}
         style={known ? { width: `${share}%` } : undefined}
       />
     </div>

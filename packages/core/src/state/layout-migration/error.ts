@@ -19,6 +19,8 @@ export type LayoutMigrationCode =
   | "migration_busy"
   /** The journal of an earlier run cannot be read. */
   | "journal_unreadable"
+  /** Windows would not move a Project folder: a program has it, or a file in it, open. */
+  | "folder_in_use"
   /** A step could not finish: a folder could not be moved or linked, a file not rewritten. */
   | "step_failed";
 
