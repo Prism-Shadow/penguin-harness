@@ -45,6 +45,7 @@ import {
 
 /** State that names the data root's Projects, Sessions, Workspaces and terminals. */
 const INSTALL_STATE: Record<string, string> = {
+  "penguin.firstWorkbench.reader-and-agent.closed": "true",
   "penguin.chatDraft.admin.default_project": '{"workspace":"/srv/app","agentId":"default_agent"}',
   "penguin.chatDraft.session.admin.session-1": '{"text":"half a sentence"}',
   "penguin.chatDrafts.admin.default_project": '[{"id":"draft-abcd1234"}]',

@@ -48,7 +48,12 @@ export function mockWebNetwork(): {
   const date = release?.match(/ — (\d{4}-\d{2}-\d{2})\./)?.[1] ?? null;
   return {
     name: "penguin:gallery-mock-web-network",
-    config: () => ({ define: { "import.meta.env.GALLERY_RELEASE_DATE": JSON.stringify(date) } }),
+    config: () => ({
+      define: {
+        "import.meta.env.GALLERY_RELEASE_DATE": JSON.stringify(date),
+        "import.meta.env.PUBLIC_PRODUCT_DEMO": "true",
+      },
+    }),
     enforce: "pre",
     resolveId: (source, importer) => swappedModuleFor(source, importer),
   };

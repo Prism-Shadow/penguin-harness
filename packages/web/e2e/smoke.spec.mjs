@@ -410,8 +410,13 @@ test("reopened ten-step history keeps its compact header together on desktop and
     await head.focus();
     await page.keyboard.press("Enter");
     await expect(rows).toHaveCount(20);
-    await rows.first().locator("button[aria-expanded]").first().click();
-    await expect(rows.first()).toContainText("Reviewing item 1.");
+    const firstThinking = rows.first().locator("button[aria-expanded]").first();
+    for (const height of [800, 740]) {
+      await page.setViewportSize({ width: 320, height });
+      await firstThinking.click();
+      await expect(rows.first()).toContainText("Reviewing item 1.");
+      await firstThinking.click();
+    }
     await expect(elapsed.locator(".font-mono")).toHaveText(time);
   }
 });

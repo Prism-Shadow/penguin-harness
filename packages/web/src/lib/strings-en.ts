@@ -15,6 +15,10 @@ import type { Strings } from "./strings";
 export const en: Strings = {
   appName: "PenguinHarness",
   firstWorkbench: {
+    askOwner: "Ask the project owner to connect a model provider, then refresh.",
+    remoteModels: (machine: string) => `Set up a model on ${machine}, then refresh.`,
+    newChecklist: "Start a new checklist",
+    choose: "Choose a chat model beside the message box.",
     updateNeeded:
       "This agent has an earlier guide. Update it to generate a checklist from a chat reply.",
     update: "Update guide on this agent",
@@ -29,8 +33,8 @@ export const en: Strings = {
     loading: "Loading…",
     generating: "Generating your checklist…",
     waitReply: "Wait for a completed reply in a chat with this agent.",
-    models: "Open Models to connect a provider, then choose a model in the chat composer.",
-    chat: "Choose a model in the composer. Send a task you want to turn into a checklist, then read its reply.",
+    models: "Connect a model provider to send your first message.",
+    chat: "Send a task you would like to turn into a checklist.",
     reply: "Reply to use",
     feedback: "Changes for the checklist",
     modelSettings: "Open Models",
@@ -44,6 +48,7 @@ export const en: Strings = {
     test: "Test checklist",
     testItem: "Onboarding test item",
     download: "Download plugin",
+    connect: "Connect a provider or add its API key on a model card.",
   },
 
   voice: {

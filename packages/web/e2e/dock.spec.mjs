@@ -361,6 +361,12 @@ test("the Session toolbar and bottom dock share the middle column; resizing neve
   const right = dockAt(page, "right");
   const bottom = dockAt(page, "bottom");
   await openViaPicker(page, "right", "trace");
+  // First entry into a regular Session keeps the guide in the conversation column.
+  const guide = page.getByRole("region", { name: "我的第一个工作台" });
+  await expect(guide).toBeVisible();
+  const guideBox = await guide.boundingBox();
+  expect(guideBox.x + guideBox.width).toBeLessThanOrEqual((await right.boundingBox()).x);
+
   await openViaPicker(page, "bottom", "memory");
 
   const edges = async (locator) =>

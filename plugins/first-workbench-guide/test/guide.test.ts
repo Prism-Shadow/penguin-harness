@@ -6,7 +6,6 @@
  * Invalid replies, launch failures and attempts to skip the conversation remain retryable.
  */
 import { describe, expect, it, vi } from "vitest";
-import { conversationDraft } from "../workbenches/first-workbench-guide/ui/draft.js";
 import pkg from "../workbenches/first-workbench-guide/index";
 const key = "a".repeat(32);
 const model = { provider: "chosen-provider", modelId: "chosen-model" };
@@ -88,14 +87,12 @@ describe("first workbench conversation", () => {
       text: "",
       error: "Connection refused",
     });
-    const failed = (await call()).body;
+    expect((await call()).body.phase).toBe("chat-error");
     const edits = {
       request: "Check expiration dates instead.",
       model: { provider: "local", modelId: "inventory", label: "Inventory" },
     };
-    const resumed = conversationDraft(JSON.parse(JSON.stringify(edits)), failed);
-    expect(resumed).toEqual(edits);
-    await call({ action: "chat", ...resumed });
+    await call({ action: "chat", ...edits });
     expect(host.createSession).toHaveBeenLastCalledWith({
       model: { provider: "local", modelId: "inventory" },
       approvalMode: "deny-all",

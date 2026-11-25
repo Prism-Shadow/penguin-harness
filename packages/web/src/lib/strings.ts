@@ -23,6 +23,10 @@ import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";
 export const zh = {
   appName: "PenguinHarness",
   firstWorkbench: {
+    askOwner: "请联系项目所有者连接模型服务商，然后重新读取。",
+    remoteModels: (machine: string) => `请在 ${machine} 上配置模型，然后重新读取。`,
+    newChecklist: "新建清单",
+    choose: "在消息输入框旁选择聊天模型。",
     updateNeeded: "此智能体安装的是旧版引导。更新后即可使用对话回复生成清单。",
     update: "更新此智能体的引导",
     updateWarning:
@@ -36,8 +40,8 @@ export const zh = {
     loading: "正在读取…",
     generating: "正在生成清单…",
     waitReply: "请等待此智能体的对话完成一条回复。",
-    models: "打开模型库配置服务商，然后在对话输入框旁选择模型。",
-    chat: "在输入框旁选择模型，发送你想做成清单的任务，读完回复后继续。",
+    models: "先连接模型服务商，再向智能体发送你的任务。",
+    chat: "把想做成清单的任务发给智能体。",
     reply: "用于生成的回复",
     feedback: "清单修改意见",
     modelSettings: "打开模型库",
@@ -51,6 +55,7 @@ export const zh = {
     test: "测试清单",
     testItem: "引导测试条目",
     download: "下载插件",
+    connect: "连接一个服务商，或在模型卡片中填写它的 API Key。",
   },
 
   voice: {

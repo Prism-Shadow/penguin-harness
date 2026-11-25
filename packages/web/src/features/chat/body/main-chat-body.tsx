@@ -70,6 +70,7 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
     input,
   } = scope;
   const showDocks = scope.hostsAppPanel || (scope.paneFocused && archivedRow === null);
+  const guideSlot = <div data-guide-chat="history" data-find-skip />;
   return (
     <>
       <ChatDockProvider value={chatDock}>
@@ -175,10 +176,13 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
                             --activity-head-reserve. */}
                           <div className="relative min-h-0 flex-1 max-sm:[--activity-head-reserve:62px]">
                             {emptyChat ? (
-                              <div className="flex h-full items-center justify-center px-4">
-                                <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
-                                  {S.chat.emptyGreeting}
-                                </p>
+                              <div className="flex h-full flex-col overflow-y-auto px-4">
+                                <div className="flex flex-1 items-center justify-center">
+                                  <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
+                                    {S.chat.emptyGreeting}
+                                  </p>
+                                </div>
+                                {guideSlot}
                               </div>
                             ) : (
                               // An organization's conversation cites the organization's files
@@ -191,6 +195,7 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
                                   version={stream.version}
                                   ctx={ctx}
                                   scrollElRef={streamScrollRef}
+                                  footer={guideSlot}
                                   // The selection menu's "Add to conversation": the excerpt is staged
                                   // in this composer as a chip, the same way the Files panel stages a
                                   // quoted range.

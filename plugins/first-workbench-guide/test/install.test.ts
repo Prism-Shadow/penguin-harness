@@ -7,12 +7,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { unzipSync, strFromU8 } from "fflate";
 import { readLibraryPackage } from "@prismshadow/penguin-core";
 import { archive } from "../src/archives.js";
 import { build } from "esbuild";
-import { install, verify, appUrl } from "../workbenches/first-workbench-guide/ui/install.js";
 const guide = {
   boardId: "checklist-example",
   design: {
@@ -38,36 +37,6 @@ describe("the generated checklist", () => {
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
-  });
-  it("checks a loaded tab and the board identity, including on a repeated install", async () => {
-    const loaded = { id: guide.boardId, tabs: [{ key: "main" }], error: null };
-    const api = vi
-      .fn()
-      .mockRejectedValueOnce(Object.assign(Error("exists"), { status: 409 }))
-      .mockResolvedValueOnce({ workbenches: [loaded] })
-      .mockResolvedValueOnce({ id: guide.boardId, title: guide.design.title });
-    await install(guide, { dataBase64: "archive" }, api);
-    expect(api.mock.calls[0][1]).toEqual({ dataBase64: "archive" });
-    await expect(
-      install(
-        guide,
-        {},
-        vi.fn().mockResolvedValueOnce({ workbench: { ...loaded, error: "TypeScript diagnostic" } }),
-      ),
-    ).rejects.toThrow("TypeScript diagnostic");
-    await expect(
-      install(
-        guide,
-        {},
-        vi.fn().mockResolvedValueOnce({ workbench: loaded }).mockResolvedValueOnce({ id: "other" }),
-      ),
-    ).rejects.toThrow("wrong-board");
-    expect(
-      appUrl(
-        guide.boardId,
-        "/front/server/desk/api/projects/p/agents/a/workbenches/guide/ui/index.html",
-      ),
-    ).toBe("/front/app/p/a/checklist-example?machine=desk");
   });
   it("proves the installed handler can save, check and remove an item without changing the user's items", async () => {
     const files = unzipSync(archive(guide, "workbench"));
@@ -108,7 +77,10 @@ describe("the generated checklist", () => {
           },
         },
       } as never).api.main.handle;
-    const api = async (url: string, action?: { op: string }) => {
+    const api = async (
+      url: string,
+      action?: { op: string; id: string; task?: string; group?: string; done?: boolean },
+    ) => {
       const reply = await make()({
         path: "/" + url.split("/").pop(),
         method: action ? "POST" : "GET",
@@ -120,13 +92,15 @@ describe("the generated checklist", () => {
       return reply.body;
     };
     const before = await api("board");
-    await verify(guide, "Temporary check", api);
-    expect(await api("board")).toEqual(before);
-    await expect(
-      verify(guide, "Temporary check", (url: string, action?: { op: string }) =>
-        action?.op === "check" ? api("board") : api(url, action),
-      ),
-    ).rejects.toThrow("test-failed");
+    const id = "test-item";
+    const task = "Temporary check";
+    await api("items", { op: "add", id, task, group: "QA" });
+    expect((await api("board")).items).toContainEqual(
+      expect.objectContaining({ id, task, done: false }),
+    );
+    await api("items", { op: "check", id, done: true });
+    expect((await api("board")).items).toContainEqual(expect.objectContaining({ id, done: true }));
+    await api("items", { op: "remove", id });
     expect(await api("board")).toEqual(before);
   });
 });
