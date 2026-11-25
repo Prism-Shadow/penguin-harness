@@ -1103,6 +1103,7 @@ export type {
   HostCommandMessage,
 } from "@prismshadow/penguin-library-setting/types";
 export { HOST_COMMANDS, LEGACY_HOST_COMMANDS } from "@prismshadow/penguin-library-setting/types";
+import type { AgentDeletionInfo, PluginUpdateRef } from "@prismshadow/penguin-library-agent/types";
 export type {
   AgentArchiveQuery,
   AgentCompactionConfigDto,
