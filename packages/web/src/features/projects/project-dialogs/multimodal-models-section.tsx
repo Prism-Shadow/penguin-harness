@@ -1,8 +1,8 @@
 import { useNavigate } from "react-router";
 import { Button, DefaultModelSections, Notice, Spinner, useSaving } from "@prismshadow/penguin-ui";
 import { MULTIMODAL_TOOLS_PACKAGE } from "../../../api/tool-types";
-import { modelLabel } from "../../model-picker";
-import { useDefaultModelRows } from "../../models";
+import { modelLabel } from "@prismshadow/penguin-library-model/web";
+import { useDefaultModelRows } from "@prismshadow/penguin-library-model/web";
 import { sameModelRef } from "../../../lib/model-grouping";
 import { S } from "../../../lib/strings";
 import { DictationPolishSettings } from "./dictation-polish-settings";

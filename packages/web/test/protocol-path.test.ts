@@ -12,7 +12,7 @@
  * - Client types and ids match whatever their case and the spaces around them.
  */
 import { describe, expect, it } from "vitest";
-import { protocolPathForModel } from "../src/features/models/protocol-path";
+import { protocolPathForModel } from "@prismshadow/penguin-library-model/web/models/protocol-path";
 
 describe("protocolPathForModel", () => {
   it("lets a pinned client type decide over the group and the id", () => {

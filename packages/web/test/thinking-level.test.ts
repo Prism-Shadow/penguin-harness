@@ -24,8 +24,8 @@ import {
   prefixCacheAtRisk,
   sessionThinkingLevel,
   thinkingLevelLabel,
-} from "../src/features/model-picker/thinking-level";
-import type { ThinkingSwitchItem } from "../src/features/model-picker/thinking-level";
+} from "@prismshadow/penguin-library-model/web/model-picker/thinking-level";
+import type { ThinkingSwitchItem } from "@prismshadow/penguin-library-model/web/model-picker/thinking-level";
 
 /** Mirrors the shape of S.chat.thinkingLevelNames. */
 const NAMES: Readonly<Record<string, string>> = {

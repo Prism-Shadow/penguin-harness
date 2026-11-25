@@ -45,22 +45,22 @@ import {
   groupHeaderActions,
   groupKeyFromEnv,
   groupKeyStored,
-} from "../src/features/models/group-header";
-import type { GroupHeaderFacts } from "../src/features/models/group-header";
+} from "@prismshadow/penguin-library-model/web/models/group-header";
+import type { GroupHeaderFacts } from "@prismshadow/penguin-library-model/web/models/group-header";
 import {
   ConnectionMenu,
   DisconnectConfirm,
   GroupConnection,
   NotConnectedButton,
   type DisconnectHost,
-} from "../src/features/models/group-connection";
+} from "@prismshadow/penguin-library-model/web/models/group-connection";
 
-import { BalanceMenu, balanceView } from "../src/features/models/group-balance";
+import { BalanceMenu, balanceView } from "@prismshadow/penguin-library-model/web/models/group-balance";
 import {
   GroupSettingsControl,
   GroupSettingsMenu,
-} from "../src/features/models/group-settings-menu";
-import type { ModelGroupSort } from "../src/features/models/model-sort";
+} from "@prismshadow/penguin-library-model/web/models/group-settings-menu";
+import type { ModelGroupSort } from "@prismshadow/penguin-library-model/web/models/model-sort";
 import { userProviderInfo } from "../src/lib/model-grouping";
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";

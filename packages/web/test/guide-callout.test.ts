@@ -2,7 +2,7 @@
 // With a guide open beside the composer, opening and closing a dialog yields and restores the hint.
 import { act, createElement as h } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import { GuideCallout } from "../src/features/models/guide-callout";
+import { GuideCallout } from "@prismshadow/penguin-library-model/web/models/guide-callout";
 import { mount, unmountAll } from "./helpers/dom";
 
 afterEach(async () => {

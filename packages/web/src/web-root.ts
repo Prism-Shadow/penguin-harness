@@ -1,4 +1,4 @@
-import { MainSidebarBadgesModule } from "./features/models/main-sidebar-badges.module";
+import { MainSidebarBadgesModule } from "@prismshadow/penguin-library-model/web";
 /**
  * The composition root: the one file that lists the module classes, the web app's counterpart
  * of the server's platform.ts. `bootWeb()` boots the tree once, before the first render
@@ -37,7 +37,7 @@ import { SessionsModule } from "./state/sessions.module";
 import { ChatModule } from "./features/chat/module";
 import { AgentsModule } from "./features/agents/module";
 import { AppCenterModule } from "./features/app-center/module";
-import { ModelsModule } from "./features/models/module";
+import { ModelsModule } from "@prismshadow/penguin-library-model/web";
 import { PluginsModule } from "./features/plugins/module";
 import { MachinesModule } from "./features/machines/module";
 import { UsageModule } from "./features/usage/module";

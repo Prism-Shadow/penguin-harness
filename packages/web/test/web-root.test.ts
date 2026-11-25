@@ -93,10 +93,10 @@ import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
 import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
-import { PinnedBalanceBadge } from "../src/features/models/group-balance";
+import { PinnedBalanceBadge } from "@prismshadow/penguin-library-model/web/models/group-balance";
 import { ProjectSettingsLayer } from "../src/features/projects/project-settings-layer";
-import { FirstWorkbenchLayer } from "../src/features/models/first-workbench-layer";
-import { DefaultModelsLayer } from "../src/features/models/default-models-layer";
+import { FirstWorkbenchLayer } from "@prismshadow/penguin-library-model/web/models/first-workbench-layer";
+import { DefaultModelsLayer } from "@prismshadow/penguin-library-model/web/models/default-models-layer";
 import { ProjectSwitcher } from "../src/features/projects/project-switcher";
 import {
   companyChannels,

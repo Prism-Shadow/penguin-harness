@@ -54,9 +54,9 @@ const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
     "CreateOrganizationDialog",
     "its draft is kept in the browser on every keystroke and restored on reopen (spec 06), so a close loses nothing",
   ],
-  ["features/models/models-page.tsx", "ModelsPage", "the speed-test confirmation: nothing typed"],
+  ["library/model/src/web/models/models-page.tsx", "ModelsPage", "the speed-test confirmation: nothing typed"],
   [
-    "features/models/models-page.tsx",
+    "library/model/src/web/models/models-page.tsx",
     "ModelOAuthDialog",
     "an authorization flow: closing abandons the flow, and its one code field is submitted by its own button",
   ],

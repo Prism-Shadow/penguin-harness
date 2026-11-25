@@ -28,9 +28,9 @@ import {
   type ChatDefaultsChangedDetail,
 } from "../../chat";
 
-import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "../../model-picker";
+import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "@prismshadow/penguin-library-model/web";
 import { WorkspaceSelect } from "../../workspace";
-import { sameModelRef } from "../../models";
+import { sameModelRef } from "@prismshadow/penguin-library-model/web";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 import { failureNode } from "../../../lib/failure";
 

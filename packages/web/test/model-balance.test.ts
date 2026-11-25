@@ -16,14 +16,14 @@ import {
   formatBalance,
   isPinned,
   parsePinnedBalance,
-} from "../src/features/models/balance";
-import { balanceView } from "../src/features/models/group-balance";
+} from "@prismshadow/penguin-library-model/web/models/balance";
+import { balanceView } from "@prismshadow/penguin-library-model/web/models/group-balance";
 import {
   TOKENDANCE_BANNER_DISMISSED_KEY,
   TokenDanceBanner,
   bannerDismissed,
   splitBrand,
-} from "../src/features/models/tokendance-banner";
+} from "@prismshadow/penguin-library-model/web/models/tokendance-banner";
 import { S } from "../src/lib/strings";
 import { elementsOf, readMarkup, seenText } from "./helpers/markup";
 

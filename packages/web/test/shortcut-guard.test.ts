@@ -13,7 +13,20 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const WEB_SRC = fileURLToPath(new URL("../src", import.meta.url));
+const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const ALLOWED_DIR = "lib/shortcuts";
+
+/** Every domain library web half that exists (`library/<domain>/src/web/`), repo-absolute. */
+function libraryWebDirs(repoRoot: string): string[] {
+  const libraries = path.join(repoRoot, "library");
+  if (!fs.existsSync(libraries)) return [];
+  const dirs: string[] = [];
+  for (const entry of fs.readdirSync(libraries, { withFileTypes: true })) {
+    const web = path.join(libraries, entry.name, "src", "web");
+    if (entry.isDirectory() && fs.existsSync(web)) dirs.push(web);
+  }
+  return dirs;
+}
 
 /**
  * Files that read the modifiers for something other than a chord of their own, and are
@@ -25,8 +38,8 @@ const ALLOWED_DIR = "lib/shortcuts";
  */
 const EXCUSED_FILES = new Set([
   "features/workspace/workspace-finder-model.ts",
-  "features/model-picker/model-picker-logic.ts",
-  "features/model-picker/model-picker-modal.tsx",
+  "library/model/src/web/model-picker/model-picker-logic.ts",
+  "library/model/src/web/model-picker/model-picker-modal.tsx",
   "lib/workbench-theme.ts",
 ]);
 
@@ -34,6 +47,8 @@ const EXCUSED_FILES = new Set([
 function modifierReads(): { allowed: string[]; elsewhere: string[] } {
   const allowed: string[] = [];
   const elsewhere: string[] = [];
+  /** The app's source, and every domain library web half the app compiles in. */
+  const roots = [WEB_SRC, ...libraryWebDirs(REPO_ROOT)];
   const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
@@ -42,8 +57,10 @@ function modifierReads(): { allowed: string[]; elsewhere: string[] } {
         continue;
       }
       if (!/\.tsx?$/.test(entry.name)) continue;
-      const rel = path.relative(WEB_SRC, full).replaceAll(path.sep, "/");
-      if (EXCUSED_FILES.has(rel)) continue;
+      const rel = path.relative(REPO_ROOT, full).replaceAll(path.sep, "/");
+      const inWeb = full.startsWith(WEB_SRC);
+      const id = inWeb ? path.relative(WEB_SRC, full).replaceAll(path.sep, "/") : rel;
+      if (EXCUSED_FILES.has(id)) continue;
       const code = fs
         .readFileSync(full, "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
@@ -53,11 +70,11 @@ function modifierReads(): { allowed: string[]; elsewhere: string[] } {
         );
       code.split("\n").forEach((line, i) => {
         if (!/\.(ctrlKey|metaKey)\b/.test(line)) return;
-        (rel.startsWith(ALLOWED_DIR) ? allowed : elsewhere).push(`src/${rel}:${i + 1}`);
+        (id.startsWith(ALLOWED_DIR) ? allowed : elsewhere).push(`${rel}:${i + 1}`);
       });
     }
   };
-  walk(WEB_SRC);
+  for (const root of roots) walk(root);
   return { allowed, elsewhere };
 }
 

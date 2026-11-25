@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-model",
   "version": "0.2.18",
-  "description": "The models domain: the model/credential plumbing vocabulary (the DTOs the models routes return and take), the ModelOAuth mechanism and its flow vocabulary, and the model promotions / provider auth token repos. A library package - the server imports it; nothing here imports the server.",
+  "description": "The models domain: the model/credential plumbing vocabulary (the DTOs the models routes return and take), the ModelOAuth mechanism and its flow vocabulary, and the model promotions / provider auth token repos. A library package - the server imports it; nothing here imports the server. Its web half (./web, the model pages and the model picker) is TypeScript source the Web App compiles with itself.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -20,6 +20,8 @@
   "main": "./dist/index.js",
   "exports": {
     "./package.json": "./package.json",
+    "./web": "./src/web/index.ts",
+    "./web/*": "./src/web/*",
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
@@ -87,9 +89,16 @@
     "@prismshadow/penguin-library-agent-api": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
-    "@prismshadow/mmsp": "^0.5.12"
+    "@prismshadow/penguin-web": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/mmsp": "^0.5.12",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router": "^8.3.0"
   },
   "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"

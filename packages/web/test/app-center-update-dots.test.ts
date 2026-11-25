@@ -20,7 +20,7 @@ import type { AppCenterLayout, UsageErrorItem } from "@prismshadow/penguin-serve
 import type { ChatDrafts } from "../src/features/chat";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { CompanyProvider } from "../src/features/company/company-state";
-import { MainSidebarBadgesModule } from "../src/features/models/main-sidebar-badges.module";
+import { MainSidebarBadgesModule } from "@prismshadow/penguin-library-model/web/models/main-sidebar-badges.module";
 import { UsagePage } from "../src/features/usage/usage-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

@@ -14,7 +14,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { MULTIMODAL_TOOLS_PACKAGE, type ToolBinding } from "../src/api/tool-types";
-import { usageTargets } from "../src/features/models/default-models";
+import { usageTargets } from "@prismshadow/penguin-library-model/web/models/default-models";
 import { defaultChatModel } from "../src/lib/model-grouping";
 import { modelTags } from "../src/lib/model-tags";
 import {

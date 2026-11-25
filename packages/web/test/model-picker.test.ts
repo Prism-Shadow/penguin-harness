@@ -28,7 +28,7 @@ import {
   pickerRowTags,
   searchPickerGroups,
   stepIndex,
-} from "../src/features/model-picker/model-picker-logic";
+} from "@prismshadow/penguin-library-model/web/model-picker/model-picker-logic";
 import { S } from "../src/lib/strings";
 
 const configured = (

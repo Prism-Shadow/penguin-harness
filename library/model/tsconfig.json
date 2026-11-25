@@ -17,5 +17,6 @@
       "@prismshadow/penguin-library-project": ["../project/src/index.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

@@ -15,7 +15,7 @@ import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "./peak-windows";
 import type { ProtocolClientType } from "./protocol-client-types";
-import type { ModelGroupSort } from "../features/models/model-sort";
+import type { ModelGroupSort } from "@prismshadow/penguin-library-model/web";
 import { EVOLUTION_DEMO } from "./evolution-demo";
 import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
 import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";

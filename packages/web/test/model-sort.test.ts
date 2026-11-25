@@ -36,7 +36,7 @@ import {
   sortModelGroups,
   storeModelGroupSorts,
   withModelGroupSort,
-} from "../src/features/models/model-sort";
+} from "@prismshadow/penguin-library-model/web/models/model-sort";
 import { listPriceRow, offPeakInstant, peakInstant, scheduledEntry } from "./helpers/off-peak";
 import { blockedStorage, memoryStorage, stubLocalStorage } from "./helpers/storage";
 

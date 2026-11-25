@@ -114,7 +114,7 @@ import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { AgentExportDialog } from "./agent-export-dialog";
 import { AgentImportDialog } from "./agent-import-dialog";
-import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
+import { ThinkingLevelSelect, effectiveThinkingLevel } from "@prismshadow/penguin-library-model/web";
 import { toastApiError } from "../../lib/toast-api-error";
 import { failureNode } from "../../lib/failure";
 

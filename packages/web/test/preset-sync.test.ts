@@ -21,7 +21,7 @@ import {
   AddNewModelsConfirm,
   RestoreDefaultsConfirm,
   type PresetSyncHost,
-} from "../src/features/models/preset-sync";
+} from "@prismshadow/penguin-library-model/web/models/preset-sync";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
 const ANSWER: PresetSyncResponse = {

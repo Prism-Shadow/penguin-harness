@@ -18,7 +18,7 @@ import type { ModelsResponse, ProviderConnectionDto } from "@prismshadow/penguin
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
-import { ProviderSettingsDialog } from "../src/features/models/provider-settings-dialog";
+import { ProviderSettingsDialog } from "@prismshadow/penguin-library-model/web/models/provider-settings-dialog";
 import { userProviderInfo } from "../src/lib/model-grouping";
 import { json, stubFetch } from "./helpers/fetch";
 import {
