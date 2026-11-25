@@ -25,7 +25,7 @@ import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { closeReport, reportStore } from "@prismshadow/penguin-ui";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";

@@ -16,7 +16,7 @@ import { createElement as h } from "react";
 import type { AgentApiKeyInfo } from "@prismshadow/penguin-server/api";
 // The browser reaches the app's own helpers through the plugin face; this hands them over.
 import "../src/web-app/plugin-host";
-import { ApiTab } from "../src/features/agents/api-tab";
+import { ApiTab } from "@prismshadow/penguin-library-agent/web/agents/api-tab";
 import { AgentApiSection } from "../src/features/settings/agent-api-section";
 import { ChromeExtensionSection } from "../../../plugins/browser-automation/src/web/chrome-extension-section";
 import { CompanySection } from "../src/features/settings/company-section";

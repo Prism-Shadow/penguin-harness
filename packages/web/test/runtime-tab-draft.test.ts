@@ -33,14 +33,14 @@ import { createElement as h } from "react";
 import { hasUnsaved, sameDraft, toastStore } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import {
   normalizeRuntime,
   runtimeDraftOf,
   runtimeErrors,
   runtimeUpdateOf,
   type RuntimeDraft,
-} from "../src/features/agents/runtime-form";
+} from "@prismshadow/penguin-library-agent/web/agents/runtime-form";
 
 import { AGENT_ID, agentConfig, agentServer, mountAgentApp } from "./helpers/agent-app";
 import { button, click, dialogs, field, type, unmountAll, waitFor } from "./helpers/dom";

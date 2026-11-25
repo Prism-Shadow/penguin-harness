@@ -26,9 +26,9 @@ import { createElement as h } from "react";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { AgentsPage } from "../src/features/agents/agents-page";
-import { AGENTS_GROUP_BY_KEY } from "../src/features/agents/agent-groups";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentsPage } from "@prismshadow/penguin-library-agent/web/agents/agents-page";
+import { AGENTS_GROUP_BY_KEY } from "@prismshadow/penguin-library-agent/web/agents/agent-groups";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { PluginsPage } from "../src/features/plugins/plugins-page";
 import {
   AGENT_ID,

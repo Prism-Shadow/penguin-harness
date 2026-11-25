@@ -16,7 +16,7 @@ import { createElement as h } from "react";
 import type { ScheduleItem } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { AGENT_ID, agentConfig, agentServer, mountAgentApp } from "./helpers/agent-app";
 import { button, click, field, hasButton, unmountAll, waitFor } from "./helpers/dom";
 

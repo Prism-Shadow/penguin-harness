@@ -17,7 +17,7 @@ import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { toastStore } from "@prismshadow/penguin-ui";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import {

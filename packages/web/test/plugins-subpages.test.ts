@@ -6,7 +6,7 @@
  * - Given no value, another tab's, a wrong-cased or an unknown one, it opens on its first.
  */
 import { describe, expect, it } from "vitest";
-import { resolvePluginsSubPage } from "../src/features/agents/plugins-subpages";
+import { resolvePluginsSubPage } from "@prismshadow/penguin-library-agent/web/agents/plugins-subpages";
 
 describe("the Plugins tab's sub-page in the address", () => {
   it.each(["plugins", "skills", "hooks", "workbenches"] as const)(

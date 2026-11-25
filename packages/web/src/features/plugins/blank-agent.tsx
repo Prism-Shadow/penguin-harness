@@ -16,8 +16,8 @@ import type { AgentSummary, PluginItem } from "@prismshadow/penguin-server/api";
 import { Button, GlyphIcon, ICONS, ICON_SIZE, toastSuccess } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
-import { CreateAgentDialog, defaultPicks } from "../agents";
-import type { CreateAgentDraft, PluginPickItem } from "../agents";
+import { CreateAgentDialog, defaultPicks } from "@prismshadow/penguin-web/internal";
+import type { CreateAgentDraft, PluginPickItem } from "@prismshadow/penguin-web/internal";
 
 /** What the page hands a card for the row: the picker's library, and how a new Agent joins the list. */
 export interface BlankAgentSource {

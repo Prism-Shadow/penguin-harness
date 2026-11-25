@@ -118,7 +118,7 @@ import {
 import { viewedMachine } from "./viewed-machine";
 import { SettingsDialog } from "../settings";
 import { pickDefaultAgent } from "../ai-create";
-import { pluginPickItems } from "../agents";
+import { pluginPickItems } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "../../lib/tone";
 import { appWindowPath } from "../../lib/app-center-path";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";

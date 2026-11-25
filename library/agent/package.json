@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-agent",
   "version": "0.2.20",
-  "description": "The agent domain: the AgentConfig and Memory mechanisms and their services (the Web App's Agent config, vault, skills/schedules prompt templates and Memory tabs), the Agent package import/export/zip caps, the avatar plumbing and the API vocabulary. One package, no server dependencies — the server imports these; nothing here imports the server.",
+  "description": "The agent domain: the AgentConfig and Memory mechanisms and their services (the Web App's Agent config, vault, skills/schedules prompt templates and Memory tabs), the Agent package import/export/zip caps, the avatar plumbing and the API vocabulary. One package, no server dependencies — the server imports these; nothing here imports the server. Its web half (./web, the Agent settings pages) is TypeScript source the Web App compiles with itself.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -20,6 +20,8 @@
   "main": "./dist/index.js",
   "exports": {
     "./package.json": "./package.json",
+    "./web": "./src/web/index.ts",
+    "./web/*": "./src/web/*",
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
@@ -103,11 +105,16 @@
     "@prismshadow/penguin-library-trace": "workspace:*",
     "fflate": "^0.8.3",
     "yaml": "^2.5.0",
-    "tar": "^7.5.21"
+    "tar": "^7.5.21",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/amsp": "workspace:*",
+    "react": "^19.1.0",
+    "react-router": "^8.3.0"
   },
   "devDependencies": {
     "@types/node": "^24",
-    "tsup": "^8"
+    "tsup": "^8",
+    "@types/react": "^19.1.0"
   },
   "private": true
 }

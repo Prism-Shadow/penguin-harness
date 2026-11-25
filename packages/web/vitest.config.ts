@@ -8,6 +8,7 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vitest/config";
+import { libraryWebAliases } from "./vite.config";
 
 /**
  * A path in vite's spelling: forward slashes on every OS. vite hands `resolveId` its importers
@@ -48,6 +49,9 @@ const socketStandInPlugin: Plugin = {
 };
 
 export default defineConfig({
+  // The library web halves' faces resolve to their TypeScript source, like the app build's
+  // (vite.config.ts, which owns the table; keep the two in step through that export).
+  resolve: { alias: libraryWebAliases },
   plugins: [socketStandInPlugin],
   test: {
     environment: "node",

@@ -29,8 +29,8 @@ import { useNavigate } from "react-router";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { CreateAgentDialog, pluginPickItems } from "../src/features/agents/create-agent-dialog";
-import type { LocationChoice, PluginPickItem } from "../src/features/agents/create-agent-dialog";
+import { CreateAgentDialog, pluginPickItems } from "@prismshadow/penguin-library-agent/web/agents/create-agent-dialog";
+import type { LocationChoice, PluginPickItem } from "@prismshadow/penguin-library-agent/web/agents/create-agent-dialog";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import {
   PROJECT_ID,

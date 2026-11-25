@@ -56,6 +56,9 @@ importers:
 
   library/agent:
     dependencies:
+      '@prismshadow/amsp':
+        specifier: workspace:*
+        version: link:../../packages/amsp
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -68,9 +71,18 @@ importers:
       '@prismshadow/penguin-library-trace':
         specifier: workspace:*
         version: link:../trace
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
+      react:
+        specifier: ^19.1.0
+        version: 19.2.7
+      react-router:
+        specifier: ^8.3.0
+        version: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       tar:
         specifier: ^7.5.21
         version: 7.5.22
@@ -81,6 +93,9 @@ importers:
       '@types/node':
         specifier: ^24
         version: 24.13.3
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.17
       tsup:
         specifier: ^8
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -1264,7 +1279,7 @@ importers:
         version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-agent':
         specifier: workspace:*
-        version: file:library/agent(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:library/agent(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-agent-api':
         specifier: workspace:*
         version: file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -8241,19 +8256,29 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-library-agent@file:library/agent(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@prismshadow/penguin-library-agent@file:library/agent(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
+      '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-trace': file:library/trace(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       fflate: 0.8.3
+      react: 19.2.7
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       tar: 7.5.22
       yaml: 2.9.0
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
+      - '@types/react'
       - bufferutil
+      - immer
+      - micromark
+      - micromark-util-types
+      - react-dom
       - supports-color
+      - use-sync-external-store
       - utf-8-validate
       - ws
       - zod

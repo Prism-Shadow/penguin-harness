@@ -1,16 +1,16 @@
 /**
- * workbench-import unit tests (src/features/agents/workbench-import.ts): each kind of pasted
+ * workbench-import unit tests (library/agent/src/web/agents/workbench-import.ts): each kind of pasted
  * source — a web page, a repository or directory, a local path, an install command, a reference
  * or description — leads the prompt with that kind's sentence, in either language, with the
  * source trimmed; the whole prompt opens with that lead and names the Project and agent it installs
  * into.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { ImportSourceKind } from "../src/features/agents/skill-import-source";
+import type { ImportSourceKind } from "@prismshadow/penguin-library-agent/web/agents/skill-import-source";
 import {
   buildWorkbenchImportPrompt,
   workbenchImportLead,
-} from "../src/features/agents/workbench-import";
+} from "@prismshadow/penguin-library-agent/web/agents/workbench-import";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

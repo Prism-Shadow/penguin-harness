@@ -22,7 +22,7 @@ import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { McpServersSection } from "../src/features/agents/mcp-servers-section";
+import { McpServersSection } from "@prismshadow/penguin-library-agent/web/agents/mcp-servers-section";
 import {
   AGENT_ID,
   agentServer,

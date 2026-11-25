@@ -16,7 +16,7 @@ import {
   MemoryDocumentError,
   importConfirmPlan,
   memoryUploadOf,
-} from "../src/features/agents/memory-transfer";
+} from "@prismshadow/penguin-library-agent/web/agents/memory-transfer";
 
 afterEach(() => setActiveStrings(zh));
 

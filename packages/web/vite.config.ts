@@ -21,6 +21,7 @@
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import { dropNonWoff2FontSources, penguinUi } from "../ui/src/vite-plugin";
@@ -93,7 +94,35 @@ function katexWoff2Only(): Plugin {
   };
 }
 
+/**
+ * The domain library packages' web halves, resolved to their TypeScript source: the packages sit
+ * outside this one's dependency graph (their web halves are compiled by this app, not installed
+ * into node_modules), so both bundlers resolve the faces — `@prismshadow/penguin-web/internal`
+ * and each package's `./web` entry and deep files — through this table. TypeScript resolves the
+ * same specifiers through the matching `paths` in tsconfig.json; keep the two in step.
+ */
+const LIBRARY_WEB_DOMAINS = ["agent", "model", "project", "trace"] as const;
+
+/** The alias table above, as vite's `resolve.alias` entries (shared with vitest.config.ts). */
+export const libraryWebAliases = [
+  {
+    find: /^@prismshadow\/penguin-web\/internal$/,
+    replacement: fileURLToPath(new URL("./src/internal.ts", import.meta.url)),
+  },
+  ...LIBRARY_WEB_DOMAINS.flatMap((domain) => [
+    {
+      find: new RegExp(`^@prismshadow/penguin-library-${domain}/web$`),
+      replacement: fileURLToPath(new URL(`../../library/${domain}/src/web/index.ts`, import.meta.url)),
+    },
+    {
+      find: new RegExp(`^@prismshadow/penguin-library-${domain}/web/(.*)$`),
+      replacement: fileURLToPath(new URL(`../../library/${domain}/src/web/$1`, import.meta.url)),
+    },
+  ]),
+];
+
 export default defineConfig({
+  resolve: { alias: libraryWebAliases },
   plugins: [
     penguinManifest(),
     penguinUi({ workbenchRuntime: true }),

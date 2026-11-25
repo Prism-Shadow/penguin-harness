@@ -5,7 +5,7 @@
  * - An unknown key (a tab a newer server manages) falls back to the raw key.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { kernelTabLabel } from "../src/features/agents/kernel-labels";
+import { kernelTabLabel } from "@prismshadow/penguin-library-agent/web/agents/kernel-labels";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

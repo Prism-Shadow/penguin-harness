@@ -1,5 +1,5 @@
 /**
- * hook-import unit tests (src/features/agents/hook-import.ts): the lead sentence wraps a
+ * hook-import unit tests (library/agent/src/web/agents/hook-import.ts): the lead sentence wraps a
  * fetchable source (URL / repo / local path) in an import instruction and passes free text
  * through verbatim; the tail names the install target by Project and Agent id and states the
  * script contract the agent writes against, identically in both dictionaries, so a language
@@ -10,7 +10,7 @@ import {
   buildHookImportPrompt,
   hookImportLead,
   hookImportTail,
-} from "../src/features/agents/hook-import";
+} from "@prismshadow/penguin-library-agent/web/agents/hook-import";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

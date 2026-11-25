@@ -1,0 +1,23 @@
+/**
+ * Display names for the settings tabs a kernel update reports in `advanced` / `kept`: a known
+ * tab key renders as that tab's own label, and an unknown key (a tab a newer server manages
+ * and this build does not know) falls back to the raw key — never hidden, never crashing. The
+ * skills section (its switch and prompt) is edited on the Plugins tab's Skills sub-page, under its
+ * prompt's title.
+ *
+ * Built per call rather than at module scope: `S` is swapped on a language change.
+ */
+import { S } from "@prismshadow/penguin-web/internal";
+
+export function kernelTabLabel(tab: string): string {
+  const labels: Record<string, string> = {
+    prompt: S.agent.tabPrompt,
+    runtime: S.agent.tabRuntime,
+    tools: S.agent.tabTools,
+    skills: S.skills.injection.promptSection,
+    memory: S.agent.tabMemory,
+    vault: S.agent.tabVault,
+    schedules: S.agent.tabSchedules,
+  };
+  return labels[tab] ?? tab;
+}

@@ -19,8 +19,8 @@ import { createElement as h } from "react";
 import type { Employment } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { AgentsPage } from "../src/features/agents/agents-page";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentsPage } from "@prismshadow/penguin-library-agent/web/agents/agents-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp } from "./helpers/agent-app";
 import { button, click, type, unmountAll, waitFor } from "./helpers/dom";
 

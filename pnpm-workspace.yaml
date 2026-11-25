@@ -68,6 +68,9 @@ overrides:
 # `supports-color` devDependency keeps them matching (vitest 3's `debug` used to bring it in).
 # After a dependency change, `readlink packages/web/node_modules/@prismshadow/penguin-ui` must
 # still print ../../../ui.
+# The domain libraries' web halves (library/*/src/web) are consumed as source by the Web App the
+# same way, and a copy carries only the package's `files` (dist) — so packages/web opts out of the
+# injection per dependency (`dependenciesMeta.<name>.injected: false`).
 injectWorkspacePackages: true
 syncInjectedDepsAfterScripts:
   - build

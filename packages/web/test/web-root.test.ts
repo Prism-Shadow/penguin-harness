@@ -80,7 +80,7 @@ import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { glyphOf } from "../src/lib/nav-icons";
 import { systemAppsOf } from "../src/lib/system-apps";
-import { AgentsPage } from "../src/features/agents/agents-page";
+import { AgentsPage } from "@prismshadow/penguin-library-agent/web/agents/agents-page";
 import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
 import { OrgRoutes } from "../src/features/company/org-routes";
 import { HomeRedirect } from "../src/features/company/home-redirect";

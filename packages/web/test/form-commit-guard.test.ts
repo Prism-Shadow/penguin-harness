@@ -45,7 +45,7 @@ const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
     "a two-step confirmation with nothing typed",
   ],
   [
-    "features/agents/memory-tab.tsx",
+    "library/agent/src/web/agents/memory-tab.tsx",
     "MemoryTab",
     "its dialogs build a chat prompt (edit, add) or pick an import mode; none of them writes config",
   ],

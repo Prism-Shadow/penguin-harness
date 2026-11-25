@@ -32,8 +32,8 @@ import type {
   OrganizationSummary,
 } from "@prismshadow/penguin-server/api";
 import { hasUnsaved, toastStore } from "@prismshadow/penguin-ui";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
-import { AgentSelect } from "../src/features/agents/agent-select";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
+import { AgentSelect } from "@prismshadow/penguin-library-agent/web/agents/agent-select";
 import { EmployeeAvatar } from "../src/features/company/employee-avatar";
 import { CompanyContext, type CompanyContextValue } from "../src/lib/company-context";
 import { setActiveStrings, zh } from "../src/lib/strings";

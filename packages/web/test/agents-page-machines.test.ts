@@ -25,7 +25,7 @@ import { createElement as h } from "react";
 import type { AgentSummary, SessionsBatchRequest } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { AgentsPage } from "../src/features/agents/agents-page";
+import { AgentsPage } from "@prismshadow/penguin-library-agent/web/agents/agents-page";
 import { rememberMachineAgents } from "../src/lib/machine-cache";
 import { PROJECT_ID, agentServer, mountAgentApp, topDialog, whereIs } from "./helpers/agent-app";
 import type { FakeMachine } from "./helpers/agent-app";

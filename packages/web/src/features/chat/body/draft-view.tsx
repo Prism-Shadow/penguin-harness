@@ -63,7 +63,7 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 
-import { AgentSelect } from "../../agents";
+import { AgentSelect } from "@prismshadow/penguin-web/internal";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
 import { UNCONFINED, draftSandboxAfter, type PermissionPick } from "../../../lib/permission-level";

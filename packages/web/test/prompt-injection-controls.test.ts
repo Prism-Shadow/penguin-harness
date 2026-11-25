@@ -17,7 +17,7 @@ import { createElement as h } from "react";
 import { hasUnsaved, toastStore } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { VaultTab } from "../src/features/agents/vault-tab";
+import { VaultTab } from "@prismshadow/penguin-library-agent/web/agents/vault-tab";
 import { AGENT_ID, agentServer, mountAgentApp } from "./helpers/agent-app";
 import {
   button,

@@ -7,7 +7,7 @@
  *   hard-coded one.
  */
 import { describe, expect, it } from "vitest";
-import { resolveTabKey } from "../src/features/agents/agent-settings-page";
+import { resolveTabKey } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 
 const TABS = [{ key: "overview" }, { key: "tools" }, { key: "vault" }] as const;
 

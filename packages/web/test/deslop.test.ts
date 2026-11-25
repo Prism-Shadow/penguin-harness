@@ -66,7 +66,7 @@ const POLICY: DeslopPolicy = {
 const ALLOWLIST: DeslopAllowlist = {
   "features/terminal/terminal-appearance.ts": { 9: [1, "W10"] },
   "components/account/app-info-dialog.tsx": { 24: [1, "W10"] },
-  "features/agents/agent-settings-page.tsx": { 24: [3, "W10"] },
+  "library/agent/src/web/agents/agent-settings-page.tsx": { 24: [3, "W10"] },
   "features/benchmark/benchmark-detail.tsx": { 24: [1, "W10"] },
   "plugins/browser-automation/src/web/strings.ts": { 24: [6, "W10"] },
   "features/chat/archived-session-stub.tsx": { 24: [1, "W10"] },
