@@ -10,15 +10,18 @@ export function useAppDockDrop(narrow: boolean) {
   const [preview, setPreview] = useState<DOMRect | null>(null);
   const [draggingId, setDraggingId] = useState("");
   useEffect(() => {
+    const end = () => {
+      setPreview(null);
+      setDraggingId("");
+    };
     const start = (event: DragEvent) => {
       if (event.dataTransfer?.types.includes(PAGE_DRAG_TYPE)) {
         setPreview(null);
         setDraggingId(event.dataTransfer.getData(PAGE_DRAG_TYPE));
+        // dragend is dispatched at the source node. A row removed from the list during
+        // the drag is no longer below the document, so its dragend never bubbles there.
+        event.target?.addEventListener("dragend", end, { once: true });
       }
-    };
-    const end = () => {
-      setPreview(null);
-      setDraggingId("");
     };
     document.addEventListener("dragstart", start);
     document.addEventListener("dragend", end);
@@ -81,7 +84,19 @@ export function useAppDockDrop(narrow: boolean) {
       setPreview(null);
       if (event.dataTransfer.getData(PAGE_DRAG_TYPE) === app.id)
         workspace.dockRunningApp(session, app);
-    } else setPreview(rect);
+    } else {
+      // dragover repeats many times a second. A new object for an unmoved target
+      // would render the whole page area on each one.
+      setPreview((shown) =>
+        shown &&
+        shown.x === rect.x &&
+        shown.y === rect.y &&
+        shown.width === rect.width &&
+        shown.height === rect.height
+          ? shown
+          : rect,
+      );
+    }
   }
   return {
     draggingId,

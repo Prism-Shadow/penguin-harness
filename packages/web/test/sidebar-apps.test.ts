@@ -6,6 +6,11 @@ import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../src/api/endpoints";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
+import { detachDockPage, isTabShown } from "../src/features/dock";
+import { useAppDockDrop } from "../src/features/page-workspace/app-dock-drop";
+import { PAGE_DRAG_TYPE } from "../src/lib/page-layout";
+import { usePageWorkspace } from "../src/lib/page-workspace";
+import { dockPageKey, sessionAppPair } from "../src/lib/session-app-dock";
 import { useRestoreApp } from "../src/lib/running-apps";
 import { shortcutOfWorkbench } from "../src/lib/workbench-shortcut";
 import { locatedAppKey } from "../src/lib/app-center-path";
@@ -98,6 +103,23 @@ function Conversation({ agentId, machineId }: { agentId: string; machineId: stri
 }
 const HERE = "/chat/here";
 
+/** The page area's drop target, reduced to the drag it tracks and the drop it performs. */
+function DropTarget() {
+  const workspace = usePageWorkspace()!;
+  const { draggingId } = useAppDockDrop(false);
+  const pair = sessionAppPair(workspace.layout);
+  return h(
+    "button",
+    {
+      type: "button",
+      "data-dragging": draggingId,
+      onClick: () => pair && workspace.dockRunningApp(pair.session, pair.app),
+    },
+    "Drop on its conversation",
+  );
+}
+const dragging = () => button("Drop on its conversation").dataset.dragging;
+
 async function open(
   workbenches: WorkbenchInfo[],
   options: { second?: WorkbenchInfo[]; at?: string; admin?: boolean } = {},
@@ -130,7 +152,7 @@ async function open(
     ],
     // Beside every page, as the shell mounts them: the windows' layer and the sidebar.
     layers: [
-      h(ThemeProvider, null, h(WorkspaceWindows)),
+      h(ThemeProvider, null, h(WorkspaceWindows, null, h(DropTarget))),
       h(SwitchAgent),
       h(Launchers, { items: workbenches }),
     ],
@@ -446,4 +468,46 @@ it("jumps to the hosting conversation's docked view when clicking a sidebar tab 
   expect(whereIs(router)).toBe(dockedBoard);
   await click(row(key("notes"))!);
   expect(whereIs(router)).toBe(dockedNotes);
+});
+
+it("ends a drag whose row left the list before the pointer was released", async () => {
+  await open([workbench("board")]);
+  await launch(key("board"));
+  await until(() => row(key("board")) !== null);
+  const source = row(key("board"))!;
+  const data = new Map<string, string>();
+  const start = Object.assign(new Event("dragstart", { bubbles: true }), {
+    dataTransfer: {
+      effectAllowed: "",
+      setData: (type: string, value: string) => data.set(type, value),
+      getData: (type: string) => data.get(type) ?? "",
+      get types() {
+        return [...data.keys()];
+      },
+    },
+  });
+  await run(() => source.dispatchEvent(start));
+  expect(data.get(PAGE_DRAG_TYPE)).toBe("app:" + key("board"));
+  expect(dragging()).toBe("app:" + key("board"));
+
+  await pageAction("Board", en.common.close);
+  expect(source.isConnected).toBe(false);
+  await run(() => source.dispatchEvent(new Event("dragend", { bubbles: true })));
+  expect(dragging()).toBe("");
+});
+
+it("brings the tab forward when an app is dropped on the conversation it is already beside", async () => {
+  const { router } = await open([workbench("board")]);
+  await run(() => router.navigate("/apps?beside=here&fromCatalog=1"));
+  await until(() => document.querySelector(`li[data-app="${key("board")}"] > button`) !== null);
+  await click(
+    document.querySelector<HTMLButtonElement>(`li[data-app="${key("board")}"] > button`)!,
+  );
+  await until(() => frameOf("Board") !== null);
+  const tab = dockPageKey("app:" + key("board"));
+  // Nothing in this harness opens the tab, as when its dock was hidden after the app docked.
+  expect(isTabShown(tab)).toBe(false);
+  await click(button("Drop on its conversation"));
+  expect(isTabShown(tab)).toBe(true);
+  detachDockPage(tab);
 });
