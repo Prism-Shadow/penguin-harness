@@ -21,5 +21,6 @@ internal-hub.ts -> features/schedules/index.ts
 internal-hub.ts -> features/settings/index.ts
 internal-hub.ts -> features/skills/index.ts
 internal-hub.ts -> features/terminal/index.ts
+internal-hub.ts -> features/workbenches/index.ts
 internal-hub.ts -> features/workspace/index.ts
 lib/strings.ts -> features/models/model-sort.ts
