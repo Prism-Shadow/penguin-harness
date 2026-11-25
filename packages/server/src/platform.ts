@@ -98,7 +98,7 @@ import { SessionDriverRegistry } from "./runtime/session-drivers.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageServiceProvider } from "./services/usage-service.js";
-import { ProjectConfigService } from "./services/project-config-service.js";
+import { ProjectConfigServiceProvider } from "./services/project-config-service.js";
 import { ModelOAuthProvider } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
@@ -107,10 +107,10 @@ import { TraceServiceProvider } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
-import { ProjectNotifier } from "./services/project-events.js";
+import { ProjectNotifierProvider } from "./services/project-events.js";
 import {
-  ProjectService,
   ProjectRuns,
+  ProjectServiceProvider,
   ShippedBuiltinBenchmarkSeeds,
 } from "./services/project-service.js";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
@@ -367,12 +367,12 @@ export class IdentityModule {}
     MembersRepo,
     AgentsRepo,
     ProjectAccess,
-    ProjectNotifier,
+    ProjectNotifierProvider,
     ShippedBuiltinBenchmarkSeeds,
     SystemAgentAppData,
     HostAppSeeds,
-    ProjectService,
-    ProjectConfigService,
+    ProjectServiceProvider,
+    ProjectConfigServiceProvider,
     ModelOAuthProvider,
     PlatformAuthProvider,
     ModelScopeAuthProvider,
