@@ -3,6 +3,7 @@
 - **Date:** 2026-11-25
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#1864](https://github.com/Prism-Shadow/penguin-harness/pull/1864)
 - **Issue:** [#1861](https://github.com/Prism-Shadow/penguin-harness/issues/1861)
 
 [中文版](2026-11-25-input-subagent-done-report.zh.md)
