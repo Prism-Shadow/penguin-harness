@@ -90,14 +90,12 @@ for (const [lang, headline, subtitle, apps, steps] of [
       await expect(
         appsDiagram.getByText(lang === "en" ? "Installed in Harness OS" : "已装入 Harness OS"),
       ).toBeVisible();
-      const phases = platform.locator('td[aria-current="step"]');
-      for (const [index, stage] of steps.entries()) {
-        await expect(phases.nth(index)).toHaveText(stage);
-        await expect(phases.nth(index).locator("[data-live=spinner]")).toHaveCSS(
-          "animation-name",
-          "none",
-        );
-      }
+      const phases = platform.locator('[data-agent-loop] [aria-current="step"]');
+      await expect(phases).toHaveText(steps);
+      await expect(platform.locator('[data-arc="active"] .evo-arc').first()).toHaveCSS(
+        "animation-name",
+        "none",
+      );
       await expect(platform.locator("[data-agent-loop]")).toHaveCount(4);
       await expect(platform.locator("animateMotion")).toHaveCount(0);
       for (const diagram of [appsDiagram, platform]) {
@@ -165,51 +163,57 @@ test("listing badges share the hero entrance and reserve their bounds through sl
   }
 });
 
-// In view the runs advance on independent schedules. After the final stage, a new
-// evaluation begins. Switching to reduced motion leaves one still run in each stage.
-test("task agents advance independently and start a new round", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.addInitScript(() => localStorage.setItem("penguin-site.lang", "en"));
-  await page.goto("/");
-  const workbench = page.getByRole("group", { name: "Self-Evolution Workbench", exact: true });
-  await workbench.scrollIntoViewIfNeeded();
-  const phases = workbench.locator('td[aria-current="step"]');
-  await expect(phases).toHaveText(["Evaluating", "Improving", "Retesting", "Next round"]);
-  await page.clock.install();
-  await page.emulateMedia({ reducedMotion: "no-preference" });
-  await expect(workbench).toHaveAttribute("data-active", "true");
-  await page.clock.runFor(1650);
-  await expect(phases).toHaveText(["Improving", "Improving", "Retesting", "Next round"]);
-  await page.clock.runFor(8500);
-  await expect(phases.first()).toHaveText("Evaluating");
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.clock.runFor(5500);
-  await expect(phases).toHaveText(["Evaluating", "Improving", "Retesting", "Next round"]);
-});
-
-test("app center cycles through converge, generating, and installed stages across apps", async ({
+// In view one clock turns every loop, each a stage apart, and the round a loop closes bumps its
+// version and moves the curves. Switching to reduced motion leaves the finished run.
+test("agent loops turn out of step, and each closed round bumps a version and the curves", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => localStorage.setItem("penguin-site.lang", "en"));
   await page.goto("/");
-  const appCenter = page.getByRole("group", { name: "App Center", exact: true });
-  await appCenter.scrollIntoViewIfNeeded();
-  await expect(appCenter).toHaveAttribute("data-stage", "installed");
+  const workbench = page.getByRole("group", { name: "Self-Evolution Workbench", exact: true });
+  await workbench.scrollIntoViewIfNeeded();
+  const phases = workbench.locator('[data-agent-loop] [aria-current="step"]');
+  const versions = workbench.locator("[data-agent-version]");
+  const accuracy = workbench.locator("figure").first().locator(".evo-chart-value");
+  await expect(phases).toHaveText(["Evaluating", "Improving", "Retesting", "Next round"]);
+  await expect(versions).toHaveText(["v7", "v7", "v7", "v7"]);
+  await expect(accuracy).toHaveText("79.0");
   await page.clock.install();
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await expect(appCenter).toHaveAttribute("data-active", "true");
-  await expect(appCenter).toHaveAttribute("data-stage", "converge");
-  await page.clock.runFor(900);
-  await expect(appCenter).toHaveAttribute("data-stage", "generating");
-  await expect(appCenter.getByText("Generating app…")).toBeVisible();
-  await page.clock.runFor(1400);
-  await expect(appCenter).toHaveAttribute("data-stage", "installed");
+  await expect(workbench).toHaveAttribute("data-active", "true");
+  await expect(versions).toHaveText(["v1", "v1", "v1", "v1"]);
+  await expect(accuracy).toHaveText("46.0");
+  await page.clock.runFor(750);
+  await expect(phases).toHaveText(["Improving", "Retesting", "Next round", "Evaluating"]);
+  await expect(versions).toHaveText(["v1", "v1", "v1", "v2"]);
+  await expect(accuracy).toHaveText("47.8");
+  await page.clock.runFor(2100);
+  await expect(phases).toHaveText(["Evaluating", "Improving", "Retesting", "Next round"]);
+  await expect(versions).toHaveText(["v2", "v2", "v2", "v2"]);
+  await expect(accuracy).toHaveText("53.0");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.runFor(5500);
+  await expect(versions).toHaveText(["v7", "v7", "v7", "v7"]);
+});
+
+// Each sentence becomes an app that installs when its ring closes, so the count only grows.
+test("app center keeps generating and installing apps", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => localStorage.setItem("penguin-site.lang", "en"));
+  await page.goto("/");
+  const appCenter = page.getByRole("group", { name: "App Center", exact: true });
+  await appCenter.scrollIntoViewIfNeeded();
+  const count = appCenter.locator("[data-app-count]");
+  await expect(count).toHaveText("24");
+  await expect(appCenter.locator('[data-app-state="generating"]')).toHaveCount(0);
   await expect(appCenter.getByText("Installed in Harness OS")).toBeVisible();
-  await page.clock.runFor(1600);
-  await expect(
-    appCenter.getByText(
-      "Create a knowledge base app: index technical manuals and answer questions with citations",
-    ),
-  ).toBeVisible();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(appCenter).toHaveAttribute("data-active", "true");
+  await expect(count).toHaveText("18");
+  await expect(appCenter.getByText("Generating app…")).toBeVisible();
+  await expect(appCenter.getByText("Competitor Watch", { exact: true })).toBeVisible();
+  await expect(appCenter.locator('[data-app-state="generating"]')).not.toHaveCount(0);
+  await expect(appCenter.locator('[data-app-state="landed"]')).not.toHaveCount(0);
+  await expect.poll(async () => Number(await count.textContent())).toBeGreaterThan(20);
 });

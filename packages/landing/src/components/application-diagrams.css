@@ -10,6 +10,7 @@
   --scene-blue: var(--color-brand-500);
   --scene-blue-ink: var(--color-brand-700);
   --scene-blue-wash: var(--color-brand-50);
+  --scene-ring-track: var(--color-gray-300);
   --ui-radius-lg: 14px;
   --ui-icon-tint-blue: var(--color-brand-500);
   --ui-icon-tint-slate: var(--color-slate-500);
@@ -27,7 +28,7 @@
   text-align: start;
 }
 .product-scene-apps {
-  max-width: 44rem;
+  max-width: 46rem;
 }
 .product-scene-evolution {
   max-width: none;
@@ -43,12 +44,11 @@
   --scene-blue: var(--color-brand-400);
   --scene-blue-ink: var(--color-brand-300);
   --scene-blue-wash: var(--color-brand-950);
+  --scene-ring-track: var(--color-gray-600);
 }
 .scene-bar,
 .scene-title,
-.scene-context,
-.scene-agent,
-.scene-phase {
+.scene-context {
   display: flex;
   align-items: center;
 }
@@ -70,6 +70,19 @@
   gap: 0.375rem;
   color: var(--scene-muted);
   font-size: var(--text-xs);
+}
+
+/* The number of items a screen lists, after its title. Each new value rises into place. */
+.scene-count {
+  display: inline-block;
+  overflow: hidden;
+  min-width: 1.5em;
+  color: var(--scene-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.scene-count-value {
+  display: inline-block;
 }
 
 /* One-sentence A2APP generator strip */
@@ -95,15 +108,13 @@
   white-space: nowrap;
 }
 .scene-builder-prompt {
-  position: relative;
   flex: 1 1 14rem;
   min-width: 0;
-  padding: 0.3125rem 0.625rem 0.4375rem;
+  padding: 0.3125rem 0.625rem;
   border-radius: 8px;
   border: 1px solid var(--scene-line);
   background: var(--scene-surface);
   color: var(--scene-ink);
-  overflow: hidden;
 }
 .scene-builder-prompt-text {
   display: block;
@@ -111,21 +122,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.scene-builder-progress {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2.5px;
-  background: var(--scene-blue);
-  transform-origin: left center;
-}
 .scene-builder-status {
   display: inline-flex;
   align-items: center;
   gap: 0.3125rem;
-  min-width: 8.25rem;
-  justify-content: flex-end;
   color: var(--scene-blue-ink);
   font-weight: 600;
   white-space: nowrap;
@@ -135,79 +135,46 @@
   height: 14px;
 }
 
-/* Pure Harness OS App Center springboard stage */
+/* The home screen: a window of whole rows over a grid that grows downwards. Every tile is placed
+   by its own row and column, so a new app never moves the ones already there, and the screen
+   scrolls by moving the grid as one layer. */
 .scene-os-stage {
+  --scene-row: 6.5rem;
   position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 44%, var(--scene-blue-wash), transparent 68%), var(--scene-panel);
+  height: calc(var(--scene-rows) * var(--scene-row) + 1.75rem);
+  background: var(--scene-panel);
 }
-.scene-os-network {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-.scene-os-grid-lines line {
-  stroke: var(--scene-line);
-  stroke-width: 1;
-  stroke-dasharray: 4 5;
-  opacity: 0.7;
-}
-.scene-os-beam {
-  fill: none;
-  stroke: var(--scene-blue);
-  stroke-width: 1.75;
-  stroke-dasharray: 5 5;
-  opacity: 0.45;
-}
-.scene-os-pulse-dot {
-  fill: var(--scene-blue);
-}
-
 .scene-launcher {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-content: space-evenly;
-  gap: 1.25rem 0.75rem;
+  position: absolute;
+  inset: 1.25rem 1rem 0;
   margin: 0;
-  padding: 1.625rem 1.25rem 1rem;
+  padding: 0;
   list-style: none;
+  transform: translate3d(0, calc(var(--scene-scrolled, 0) * var(--scene-row) * -1), 0);
 }
 .scene-launcher li {
+  position: absolute;
+  top: calc(var(--tile-row) * var(--scene-row));
+  left: calc(var(--tile-column) * 100% / var(--scene-columns));
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.625rem 0.375rem;
-  border-radius: 12px;
-  border: 1px solid transparent;
+  width: calc(100% / var(--scene-columns));
+  height: var(--scene-row);
+  padding: 0 0.25rem;
   color: var(--scene-ink);
   font-size: var(--text-xs);
   font-weight: 500;
+  line-height: 1.3;
   text-align: center;
   text-wrap: balance;
-  transition:
-    background-color 240ms ease,
-    border-color 240ms ease;
-}
-.scene-launcher li[data-selected] {
-  background: color-mix(in srgb, var(--scene-surface) 82%, var(--scene-blue-wash));
-  border-color: color-mix(in srgb, var(--scene-blue) 38%, var(--scene-line));
-  color: var(--scene-blue-ink);
-  font-weight: 600;
 }
 .scene-app-slot {
   position: relative;
   display: grid;
   place-items: center;
-  will-change: transform;
 }
 .scene-app-mark {
   position: relative;
@@ -216,84 +183,48 @@
   place-items: center;
   overflow: hidden;
   box-shadow: 0 6px 16px -4px rgb(15 23 42 / 0.16);
+  transition: opacity 240ms ease;
 }
 .dark .scene-app-mark {
   box-shadow: 0 6px 18px -4px rgb(0 0 0 / 0.55);
 }
-.scene-ios-sweep {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border-radius: 14px;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg 230deg,
-    rgb(15 23 42 / 0.48) 230deg 360deg
-  );
-  pointer-events: none;
+.scene-app-label {
+  transition: opacity 240ms ease;
+}
+/* An app that is still generating: the dimmed icon and ring an installing app wears. */
+.scene-launcher li[data-app-state="generating"] :is(.scene-app-mark, .scene-app-label) {
+  opacity: 0.5;
 }
 .scene-install-ring {
   position: absolute;
   inset: -6px;
-  z-index: 3;
-  width: calc(100% + 12px);
-  height: calc(100% + 12px);
+  z-index: 2;
+  fill: none;
+  stroke: var(--scene-ring-track);
+  stroke-width: 2;
+  opacity: 0;
   pointer-events: none;
+  /* The ring fills clockwise from the top. */
+  transform: rotate(-90deg);
+  transition: opacity 240ms ease;
 }
-.scene-install-ring rect {
+.scene-launcher li[data-app-state="generating"] .scene-install-ring {
+  opacity: 1;
+}
+.scene-install-progress {
   stroke: var(--scene-blue);
-  stroke-width: 2.5;
   stroke-linecap: round;
-  stroke-dasharray: 100;
-  stroke-dashoffset: 0;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
 }
 .scene-app-ripple {
   position: absolute;
-  inset: -4px;
+  inset: 0;
   z-index: 0;
-  border-radius: 16px;
+  border-radius: calc(min(12px, var(--ui-radius-lg)) * 52 / 56);
   border: 2px solid var(--scene-blue);
   opacity: 0;
   pointer-events: none;
-}
-.scene-app-badge {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  z-index: 4;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--scene-blue);
-  color: white;
-  box-shadow: 0 2px 6px rgb(15 23 42 / 0.25);
-}
-.scene-os-dock {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 0.4375rem;
-  padding: 0.25rem 0 1rem;
-}
-.scene-os-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--scene-faint);
-  opacity: 0.45;
-  transition:
-    width 240ms cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 240ms ease,
-    opacity 240ms ease;
-}
-.scene-os-dot-active {
-  width: 22px;
-  background: var(--scene-blue);
-  opacity: 0.95;
 }
 .scene-app-expenses {
   background: var(--color-amber-50);
@@ -313,36 +244,31 @@
   background: var(--color-teal-700);
   color: white;
 }
-.scene-app-legal {
+.scene-app-legal,
+.scene-app-tone-brand {
   background: var(--color-brand-600);
   color: white;
 }
-:is(.scene-app-docs, .scene-app-investment, .scene-app-legal) svg {
-  width: 56%;
-  height: 56%;
+/* A generated app's tile: one of four shades, all within the brand's blues and its slate. */
+.scene-app-tone-deep {
+  background: var(--color-brand-800);
+  color: white;
+}
+.scene-app-tone-soft {
+  background: var(--color-brand-100);
+  color: var(--color-brand-700);
+}
+.scene-app-tone-slate {
+  background: var(--color-slate-700);
+  color: white;
+}
+:is(.scene-app-docs, .scene-app-investment, .scene-app-legal, [class*="scene-app-tone-"]) svg {
+  width: 54%;
+  height: 54%;
   stroke-width: 1.7;
 }
 .product-scene strong {
   font-weight: 600;
-}
-.scene-runs {
-  width: 100%;
-  border-collapse: collapse;
-}
-.product-scene th {
-  text-align: start;
-}
-.product-scene thead th {
-  color: var(--scene-muted);
-  font-size: var(--text-xs);
-  font-weight: 500;
-}
-.scene-agent small {
-  display: block;
-  color: var(--scene-muted);
-  font-size: var(--text-xs);
-  font-weight: 400;
-  margin-top: 0.125rem;
 }
 .scene-activity {
   color: var(--scene-blue);
@@ -352,65 +278,460 @@
   display: none;
 }
 
-/* Harness OS App Icon springboard convergence, radial install sweep & shockwave pop */
+/* Self-evolution workbench: the loops and the trends are two panes of one surface, split by the
+   same hairline as its title bar. */
+.evo-body {
+  display: grid;
+}
+.scene-workflow-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.evo-platform {
+  margin-top: auto;
+  padding: 1.5rem 1.25rem 0;
+}
+.evo-roles {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-items: center;
+}
+.evo-node {
+  display: grid;
+  gap: 0.125rem;
+  width: 11.5rem;
+  max-width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1.5px solid var(--scene-ring-track);
+  border-radius: 10px;
+  background: var(--scene-surface);
+  text-align: center;
+}
+.evo-node code {
+  color: var(--scene-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.evo-node-accent {
+  border-color: var(--scene-blue);
+}
+/* Evaluator × N: two more cards showing behind the front one. */
+.evo-node-stack {
+  box-shadow:
+    4px 4px 0 -1.5px var(--scene-panel),
+    4px 4px 0 0 var(--scene-line),
+    8px 8px 0 -1.5px var(--scene-panel),
+    8px 8px 0 0 var(--scene-line);
+}
+.evo-exchange {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  gap: 0.25rem;
+  color: var(--scene-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+.evo-exchange span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+}
+.evo-flow {
+  flex: none;
+  width: 2.75rem;
+  height: 0.625rem;
+  fill: none;
+  stroke: var(--scene-faint);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.evo-flow-back {
+  transform: scaleX(-1);
+}
+.evo-flow circle {
+  fill: var(--scene-blue);
+  stroke: none;
+  opacity: 0;
+}
+.evo-links {
+  position: relative;
+  height: 5rem;
+}
+.evo-links svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: var(--scene-ring-track);
+  stroke-width: 1.5;
+}
+.evo-links path {
+  vector-effect: non-scaling-stroke;
+}
+.evo-links-narrow {
+  display: none;
+}
+.evo-link-label {
+  position: absolute;
+  top: 0.5625rem;
+  max-width: 46%;
+  padding: 0 0.5rem;
+  background: var(--scene-surface);
+  color: var(--scene-muted);
+  font-size: var(--text-xs);
+  line-height: 1.25rem;
+  text-align: center;
+  text-wrap: balance;
+  transform: translateX(-50%);
+}
+.evo-link-improve {
+  left: 25%;
+}
+.evo-link-bench {
+  left: 75%;
+}
+.evo-loops {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 0 1.25rem 1.5rem;
+  list-style: none;
+}
+.evo-loops li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  padding: 0.75rem 0.375rem 0;
+  text-align: center;
+  text-wrap: balance;
+}
+/* The bus's drop ends in an arrowhead on each loop: a square's two edges, turned so that its
+   corner lands on the end of the line. */
+.evo-loops li::before {
+  content: "";
+  position: absolute;
+  top: -8.5px;
+  left: calc(50% - 3.5px);
+  width: 7px;
+  height: 7px;
+  border: solid var(--scene-ring-track);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+.evo-ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 7.5rem;
+  height: 7.5rem;
+  margin-bottom: 0.625rem;
+}
+.evo-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.evo-arc-track,
+.evo-arc-head {
+  stroke: var(--scene-ring-track);
+  stroke-width: 1.5;
+}
+/* A closed round clears the ring at once, line and head together. */
+.evo-arc {
+  stroke: var(--scene-blue);
+  stroke-width: 2;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+}
+:is([data-arc="active"], [data-arc="done"]) .evo-arc {
+  stroke-dashoffset: 0;
+  opacity: 1;
+}
+:is([data-arc="active"], [data-arc="done"]) .evo-arc-head {
+  stroke: var(--scene-blue);
+  stroke-width: 2;
+}
+.evo-version {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.evo-loops small {
+  display: block;
+  min-height: 2lh;
+  margin-top: 0.125rem;
+  color: var(--scene-muted);
+  font-size: var(--text-xs);
+}
+.evo-stage {
+  margin-top: 0.5rem;
+  padding: 0.125rem 0.625rem;
+  border-radius: 6px;
+  background: var(--scene-blue-wash);
+  color: var(--scene-blue-ink);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.evo-notes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.25rem 2rem;
+  margin: auto 0 0;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--scene-line);
+  background: var(--scene-panel);
+  color: var(--scene-muted);
+  font-size: var(--text-xs);
+}
+
+.evo-trends {
+  display: grid;
+  min-width: 0;
+  border-top: 1px solid var(--scene-line);
+}
+.evo-trends-title {
+  margin: 0;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--scene-line);
+  background: var(--scene-panel);
+  color: var(--scene-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+.evo-trend {
+  min-width: 0;
+  margin: 0;
+  padding: 0.875rem 1.25rem 0.75rem;
+}
+.evo-trend + .evo-trend {
+  border-top: 1px solid var(--scene-line);
+}
+.evo-trend figcaption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+.evo-trend figcaption span {
+  color: var(--scene-muted);
+  font-size: var(--text-xs);
+}
+.evo-trend svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.evo-chart-axis {
+  fill: none;
+  stroke: var(--scene-line);
+  stroke-width: 1;
+}
+.evo-chart-tick {
+  fill: var(--scene-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* The whole recorded trend is the track, as a loop's ring is; the run so far is drawn over it. */
+.evo-chart-track {
+  fill: none;
+  stroke: var(--scene-ring-track);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.evo-chart-line {
+  fill: none;
+  stroke: var(--scene-blue);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+}
+.evo-chart-head circle:first-child {
+  fill: var(--scene-surface);
+}
+.evo-chart-head circle:last-child {
+  fill: var(--scene-blue);
+}
+.evo-chart-value text {
+  fill: var(--scene-blue-ink);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 640px) {
+  .evo-trends {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .evo-trends-title {
+    grid-column: 1 / -1;
+  }
+  .evo-trend + .evo-trend {
+    border-top: 0;
+    border-left: 1px solid var(--scene-line);
+  }
+}
+@media (min-width: 1024px) {
+  .evo-body {
+    grid-template-columns: minmax(0, 1fr) 19rem;
+  }
+  .evo-trends {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-auto-rows: 1fr;
+    border-top: 0;
+    border-left: 1px solid var(--scene-line);
+  }
+  .evo-trend {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .evo-trend + .evo-trend {
+    border-top: 1px solid var(--scene-line);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 639.98px) {
+  .scene-bar,
+  .scene-builder-bar {
+    padding: 0.625rem 0.875rem;
+  }
+  .scene-launcher {
+    inset: 1.25rem 0.375rem 0;
+  }
+  .evo-platform {
+    padding: 1.25rem 0.875rem 0;
+  }
+  /* The two roles stack, with their exchange between them and one trunk down to the loops. */
+  .evo-roles {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+  .evo-exchange {
+    position: static;
+    grid-template-columns: repeat(2, auto);
+    justify-content: center;
+    gap: 1.25rem;
+    transform: none;
+  }
+  /* Turned upright, the arrow still takes its row's width: the margin gives its length room. */
+  .evo-flow {
+    width: 1.75rem;
+    height: 0.4rem;
+    margin-block: 0.75rem;
+    transform: rotate(90deg);
+  }
+  .evo-flow-back {
+    transform: rotate(-90deg);
+  }
+  .evo-links {
+    height: 6.5rem;
+  }
+  .evo-links-wide {
+    display: none;
+  }
+  .evo-links-narrow {
+    display: block;
+  }
+  .evo-link-label {
+    left: 50%;
+    max-width: 100%;
+    width: max-content;
+  }
+  .evo-link-bench {
+    top: 2rem;
+  }
+  .evo-loops {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 1.25rem;
+    padding: 0 0.875rem 1.25rem;
+  }
+  .evo-loops li:nth-child(n + 3)::before {
+    display: none;
+  }
+  .evo-notes,
+  .evo-trends-title,
+  .evo-trend {
+    padding-inline: 0.875rem;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .product-scene[data-active="true"] .scene-activity {
     animation: scene-ring-turn 1.2s linear infinite;
   }
-  .product-scene[data-active="true"]
-    .scene-launcher
-    li[data-tile-state="converge"]
-    .scene-app-slot {
-    animation: scene-tile-converge 820ms cubic-bezier(0.22, 1.35, 0.36, 1) both;
-    animation-delay: calc(var(--tile-idx, 0) * 42ms);
+  .product-scene[data-active="true"] .scene-count-value {
+    animation: scene-count-rise 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
-  .product-scene[data-active="true"] .scene-launcher li[data-tile-state="idle"] .scene-app-slot {
-    animation: scene-tile-float 2.6s ease-in-out infinite;
-    animation-delay: calc(var(--tile-idx, 0) * -260ms);
+  /* The sentence is typed in, left to right, in the time before it is sent. */
+  .product-scene[data-active="true"] .scene-builder-prompt-text {
+    animation: scene-prompt-type 460ms steps(20, end) both;
   }
-  .product-scene[data-active="true"][data-stage="installed"]
-    .scene-launcher
-    li:not([data-selected])
-    .scene-app-slot {
-    animation: scene-neighbor-wave 950ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    animation-delay: calc(var(--tile-idx, 0) * 35ms);
+  .product-scene[data-active="true"] .scene-launcher {
+    transition: transform 720ms cubic-bezier(0.22, 1, 0.36, 1);
   }
-  .product-scene[data-active="true"]
-    .scene-launcher
-    li[data-tile-state="generating"]
-    .scene-app-slot {
-    animation: scene-tile-generating 1.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  .product-scene[data-active="true"] li[data-app-state="generating"] .scene-app-slot {
+    animation: scene-tile-arrive 360ms cubic-bezier(0.22, 1.3, 0.36, 1) both;
   }
-  .product-scene[data-active="true"] .scene-ios-sweep {
-    animation: scene-ring-turn 1.1s linear infinite;
+  /* Its duration is each app's own, set on the element; the end of it installs the app. */
+  .product-scene[data-active="true"] .scene-install-progress {
+    animation: scene-install-fill linear both;
   }
-  .product-scene[data-active="true"]
-    .scene-launcher
-    li[data-tile-state="generating"]
-    .scene-install-ring
-    rect {
-    animation: scene-install-sweep 1.3s cubic-bezier(0.4, 0, 0.2, 1) both;
-  }
-  .product-scene[data-active="true"]
-    .scene-launcher
-    li[data-tile-state="installed"]
-    .scene-app-slot {
-    animation: scene-ios-generate-pop 920ms cubic-bezier(0.22, 1.4, 0.36, 1) both;
+  .product-scene[data-active="true"] li[data-app-state="landed"] .scene-app-slot {
+    animation: scene-tile-land 560ms cubic-bezier(0.22, 1.4, 0.36, 1) both;
   }
   .product-scene[data-active="true"] .scene-app-ripple {
-    animation: scene-ripple-expand 1.15s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: scene-ripple-expand 760ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
-  .product-scene[data-active="true"] .scene-app-ripple-outer {
-    animation-delay: 180ms;
+
+  .product-scene[data-active="true"] .evo-flow circle {
+    animation: evo-flow-travel 1.6s linear infinite;
   }
-  .product-scene[data-active="true"] .scene-app-badge {
-    animation: scene-badge-pop 520ms cubic-bezier(0.22, 1.5, 0.36, 1) 120ms both;
+  .product-scene[data-active="true"] .evo-flow-back circle {
+    animation-delay: -0.8s;
   }
-  .product-scene[data-active="true"] .scene-builder-progress {
-    animation: scene-builder-fill 2.2s cubic-bezier(0.25, 0.8, 0.25, 1) both;
+  /* The current stage draws itself over exactly one tick of the shared clock. */
+  .product-scene[data-active="true"] [data-arc="active"] .evo-arc {
+    animation: evo-arc-draw var(--evo-tick) linear both;
   }
-  .product-scene[data-active="true"] .scene-builder-prompt-text {
-    animation: scene-prompt-enter 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  .product-scene[data-active="true"] .evo-version {
+    animation: evo-version-bump 420ms cubic-bezier(0.22, 1.4, 0.36, 1) both;
+  }
+  .product-scene[data-active="true"] .evo-chart-plot {
+    transition: opacity 320ms ease;
+  }
+  .product-scene[data-advancing] .evo-chart-line {
+    transition: stroke-dashoffset 520ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .product-scene[data-advancing] :is(.evo-chart-head, .evo-chart-value) {
+    transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .product-scene[data-clearing] .evo-chart-plot {
+    opacity: 0;
   }
 }
 
@@ -419,274 +740,68 @@
     transform: rotate(1turn);
   }
 }
-@keyframes scene-tile-converge {
-  0% {
-    opacity: 0.25;
-    transform: translate3d(var(--tile-dx, 0px), var(--tile-dy, 0px), 0) scale(0.48)
-      rotate(var(--tile-rot, 0deg));
-  }
-  68% {
-    opacity: 1;
-    transform: translate3d(0, -4px, 0) scale(1.08) rotate(0deg);
-  }
-  100% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+@keyframes scene-count-rise {
+  from {
+    opacity: 0;
+    transform: translateY(60%);
   }
 }
-@keyframes scene-tile-float {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
+@keyframes scene-prompt-type {
+  from {
+    clip-path: inset(0 100% 0 0);
   }
-  50% {
-    transform: translate3d(0, -5px, 0) scale(1.03);
-  }
-}
-@keyframes scene-neighbor-wave {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  32% {
-    transform: translate3d(calc(var(--tile-dx, 0px) * 0.16), calc(var(--tile-dy, 0px) * 0.16), 0)
-      scale(0.92);
-  }
-  70% {
-    transform: translate3d(0, -3px, 0) scale(1.04);
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
+  to {
+    clip-path: inset(0);
   }
 }
-@keyframes scene-tile-generating {
-  0% {
-    transform: scale(0.76);
-  }
-  50% {
-    transform: translateY(-6px) scale(1.1);
-  }
-  100% {
-    transform: translateY(-3px) scale(1.04);
+@keyframes scene-tile-arrive {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
   }
 }
-@keyframes scene-ios-generate-pop {
-  0% {
-    transform: scale(0.74);
-  }
-  42% {
-    transform: translateY(-7px) scale(1.26);
-  }
-  72% {
-    transform: translateY(1px) scale(0.95);
-  }
-  100% {
-    transform: translateY(0) scale(1.06);
-  }
-}
-@keyframes scene-install-sweep {
-  0% {
-    stroke-dashoffset: 100;
-    opacity: 0.4;
-  }
-  100% {
+@keyframes scene-install-fill {
+  to {
     stroke-dashoffset: 0;
-    opacity: 1;
+  }
+}
+@keyframes scene-tile-land {
+  40% {
+    transform: scale(1.14);
   }
 }
 @keyframes scene-ripple-expand {
-  0% {
-    transform: scale(0.82);
-    opacity: 0.85;
-  }
-  100% {
-    transform: scale(1.95);
-    opacity: 0;
-  }
-}
-@keyframes scene-badge-pop {
-  0% {
-    transform: scale(0);
-    opacity: 0;
-  }
-  65% {
-    transform: scale(1.24);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-@keyframes scene-builder-fill {
-  0% {
-    transform: scaleX(0.06);
-    opacity: 0.85;
-  }
-  60% {
-    transform: scaleX(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scaleX(1);
-    opacity: 0.45;
-  }
-}
-@keyframes scene-prompt-enter {
   from {
-    opacity: 0;
-    transform: translateY(4px);
+    opacity: 0.8;
+    transform: scale(1);
   }
   to {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+@keyframes evo-flow-travel {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  15%,
+  80% {
     opacity: 1;
-    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(32px);
   }
 }
-
-/* Fused workflow pane inside Self-Evolution Workbench */
-.scene-workflow-pane {
-  padding: 1rem 1.25rem 0.75rem;
-  border-bottom: 1px solid var(--scene-line);
-  background: var(--scene-surface);
-}
-
-.scene-runs {
-  table-layout: fixed;
-}
-.scene-runs thead {
-  background: var(--scene-panel);
-}
-.scene-runs th:first-child {
-  width: 38%;
-  padding-left: 1.25rem;
-}
-.scene-runs thead th {
-  padding: 0.5rem 0.125rem;
-}
-.scene-runs thead th:not(:first-child) {
-  text-align: center;
-}
-.scene-runs tbody tr {
-  border-top: 1px solid var(--scene-line);
-}
-.scene-runs tbody th,
-.scene-runs td {
-  padding: 0.75rem 0.25rem;
-}
-.scene-runs :is(td, th):last-child {
-  padding-right: 1rem;
-}
-.scene-agent {
-  gap: 0.75rem;
-}
-.scene-agent-icon {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: var(--scene-panel);
-  border: 1px solid var(--scene-line);
-  color: var(--scene-muted);
-}
-.scene-agent-icon svg {
-  width: 18px;
-  height: 18px;
-}
-.scene-phase {
-  justify-content: center;
-  gap: 0.375rem;
-  text-align: center;
-  max-width: 7.75rem;
-  min-height: 2rem;
-  margin: 0 auto;
-  color: var(--scene-muted);
-  font-size: var(--text-xs);
-}
-.scene-phase svg {
-  width: 17px;
-  height: 17px;
-  flex: none;
-}
-.scene-phase .scene-activity {
-  width: 19px;
-  height: 19px;
-}
-.scene-runs [data-phase="active"] .scene-phase {
-  border-radius: 6px;
-  background: var(--scene-blue-wash);
-  color: var(--scene-blue-ink);
-  font-weight: 600;
-}
-.scene-runs td:not([data-phase="active"]) .scene-stage-label {
-  display: none;
-}
-.scene-wait {
-  width: 12px;
-  height: 1px;
-  background: var(--scene-faint);
-}
-
-@media (max-width: 680px) {
-  .scene-launcher {
-    gap: 0.875rem 0.375rem;
-    padding: 1.125rem 0.625rem 0.75rem;
+@keyframes evo-arc-draw {
+  from {
+    stroke-dashoffset: 1;
   }
-  .scene-launcher li {
-    padding: 0.375rem 0.25rem;
-  }
-  .scene-bar,
-  .scene-builder-bar {
-    padding: 0.625rem 0.875rem;
-  }
-  .scene-builder-status {
-    min-width: 0;
-  }
-  .scene-workflow-pane {
-    padding: 0.875rem;
-  }
-  .scene-runs,
-  .scene-runs tbody {
-    display: block;
-  }
-  .scene-runs thead {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-  .scene-runs tbody tr {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.5rem 0.25rem;
-    padding: 0.875rem;
-  }
-  .scene-runs tbody tr:first-child {
-    border-top: 0;
-  }
-  .scene-runs th:first-child {
-    grid-column: 1 / -1;
-    width: auto;
-  }
-  .scene-runs tbody :is(th:first-child, td, td:last-child) {
-    padding: 0;
-  }
-  .scene-phase {
-    flex-direction: column;
-    justify-content: flex-start;
-    height: 100%;
-    gap: 0.25rem;
-    padding: 0.325rem 0;
-    line-height: 1.25;
-  }
-  .scene-phase :is(.scene-activity, svg) {
-    height: 16px;
-  }
-  .scene-runs td:not([data-phase="active"]) .scene-stage-label {
-    display: inline;
-  }
-  .scene-wait {
-    margin: 7.5px 0;
+}
+@keyframes evo-version-bump {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
   }
 }

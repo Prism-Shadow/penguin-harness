@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { ImageIcon, SiteGlyph, type SiteGlyphName } from "@prismshadow/penguin-ui/site";
 import { AppIconShape } from "../../../ui/src/components/icons/app-icon-shape/app-icon-shape";
 import { Spinner } from "../../../ui/src/components/icons/spinner/spinner";
@@ -8,17 +8,21 @@ import imagesIcon from "../../../../plugins/multimodal-tools/workbenches/images/
 import supportIcon from "../../../../plugins/penguin-support/workbenches/support/ui/icon.svg";
 import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { useVisibleActivity } from "../lib/visible-activity";
+import { useWidth } from "../lib/use-width";
 import { S } from "../lib/strings";
 import "./application-diagrams.css";
 
-function ScreenBar({
+export function ScreenBar({
   icon,
   title,
+  count,
   context,
   contextIcon,
 }: {
   icon: SiteGlyphName;
   title: string;
+  /** How many items the screen lists, shown after its title as a list header does. */
+  count?: number;
   context?: string;
   contextIcon?: SiteGlyphName;
 }) {
@@ -27,6 +31,13 @@ function ScreenBar({
       <span className="scene-title">
         <SiteGlyph name={icon} width={19} height={19} />
         {title}
+        {count !== undefined && (
+          <span className="scene-count" data-app-count="">
+            <span key={count} className="scene-count-value">
+              {count}
+            </span>
+          </span>
+        )}
       </span>
       {context && (
         <span className="scene-context">
@@ -38,8 +49,14 @@ function ScreenBar({
   );
 }
 
-// The start dashboard's three builder examples, the shipped workbench art, the gallery's
-// expense log and the session launcher's own illustrations. The combination belongs to this demo project.
+type Tone = "brand" | "deep" | "soft" | "slate";
+
+/**
+ * Every app the demo project can hold. The first nine are the start dashboard's three builder
+ * examples, the shipped workbench art, the gallery's expense log and the session launcher's own
+ * illustrations; the rest are line glyphs from the shared registry on tiles in the brand's blues,
+ * so a generated app looks like one the App Center would draw for it.
+ */
 const appTiles = {
   docs: <SiteGlyph name="bookOpen" />,
   investment: <SiteGlyph name="barChart" />,
@@ -50,49 +67,103 @@ const appTiles = {
   expenses: null,
   terminal: sessionToolArt.get("session-tools-terminal"),
   browser: sessionToolArt.get("session-tools-builtin-browser"),
+  meetings: glyphTile("microphone", "brand"),
+  data: glyphTile("database", "deep"),
+  board: glyphTile("kanban", "soft"),
+  review: glyphTile("angleBrackets", "slate"),
+  mail: glyphTile("paperPlane", "soft"),
+  sales: glyphTile("dashboard", "brand"),
+  hiring: glyphTile("users", "deep"),
+  translate: glyphTile("globe", "soft"),
+  planner: glyphTile("calendar", "slate"),
+  competitor: glyphTile("eye", "brand"),
+  inventory: glyphTile("archive", "soft"),
+  weekly: glyphTile("penLine", "deep"),
+  monitor: glyphTile("pulse", "slate"),
+  quotes: glyphTile("coin", "soft"),
+  audit: glyphTile("shieldCheck", "brand"),
+  alerts: glyphTile("bell", "deep"),
+  tutor: glyphTile("lightbulb", "soft"),
 };
 
 type AppKey = keyof typeof appTiles;
 
-const FEATURED_APPS = ["legal", "docs", "investment", "slides"] as const;
-type FeaturedAppKey = (typeof FEATURED_APPS)[number];
+function glyphTile(name: SiteGlyphName, tone: Tone) {
+  return { glyph: name, tone };
+}
 
-/** Radial vectors (dx, dy, rotation) for the Harness OS springboard convergence & shockwave choreography. */
-const tileConvergeVectors: Record<AppKey, [string, string, string]> = {
-  docs: ["-56px", "-38px", "-12deg"],
-  investment: ["0px", "-48px", "6deg"],
-  legal: ["56px", "-38px", "12deg"],
-  slides: ["-68px", "0px", "-9deg"],
-  images: ["0px", "-26px", "0deg"],
-  support: ["68px", "0px", "9deg"],
-  expenses: ["-56px", "38px", "10deg"],
-  terminal: ["0px", "48px", "-6deg"],
-  browser: ["56px", "38px", "-12deg"],
-};
+/** The apps the home screen opens on, in home-screen order. */
+const INSTALLED_APPS: readonly AppKey[] = [
+  "docs",
+  "investment",
+  "legal",
+  "slides",
+  "images",
+  "support",
+  "expenses",
+  "terminal",
+  "browser",
+];
 
-/** SVG coordinates (in a 600x300 viewBox) of the 3x3 app slots for the background energy network. */
-const tileNodeCoords: Record<AppKey, [number, number]> = {
-  docs: [110, 62],
-  investment: [300, 62],
-  legal: [490, 62],
-  slides: [110, 152],
-  images: [300, 152],
-  support: [490, 152],
-  expenses: [110, 242],
-  terminal: [300, 242],
-  browser: [490, 242],
-};
+/**
+ * What one sentence can generate, in the order the demo asks for it. The terminal and the browser
+ * ship with the product, so they are never generated. The list must stay longer than the grid
+ * shows at once: it repeats, and an app must have scrolled away before its name comes round again.
+ */
+const GENERATED_APPS = [
+  "meetings",
+  "data",
+  "board",
+  "review",
+  "mail",
+  "sales",
+  "hiring",
+  "translate",
+  "planner",
+  "competitor",
+  "inventory",
+  "weekly",
+  "monitor",
+  "quotes",
+  "audit",
+  "alerts",
+  "tutor",
+  "legal",
+  "docs",
+  "investment",
+  "slides",
+  "images",
+  "support",
+  "expenses",
+] as const satisfies readonly AppKey[];
+
+type GeneratedAppKey = (typeof GENERATED_APPS)[number];
+
+/** The app in a home-screen position: the opening ones, then the generated list over and over. */
+function appAt(index: number): AppKey {
+  return (
+    INSTALLED_APPS[index] ??
+    GENERATED_APPS[(index - INSTALLED_APPS.length) % GENERATED_APPS.length]!
+  );
+}
 
 function AppMark({ app, size = 52 }: { app: AppKey; size?: number }) {
   const art = appTiles[app];
+  const drawn = typeof art === "object" && art !== null && "glyph" in art;
   return (
-    <AppIconShape size={size} aria-hidden className={`scene-app-mark scene-app-${app}`}>
+    <AppIconShape
+      size={size}
+      aria-hidden
+      className={`scene-app-mark ${drawn ? `scene-app-tone-${art.tone}` : `scene-app-${app}`}`}
+    >
       {typeof art === "string" ? (
         <ImageIcon
           icon={{ url: art, tint: false }}
           size={size}
           fallback={<SiteGlyph name="layoutGrid" />}
         />
+      ) : drawn ? (
+        <SiteGlyph name={art.glyph} />
       ) : (
         (art ?? S.cases.workspace.apps[app][0]?.toUpperCase())
       )}
@@ -100,53 +171,64 @@ function AppMark({ app, size = 52 }: { app: AppKey; size?: number }) {
   );
 }
 
-type BuilderStage = "converge" | "generating" | "installed";
+/** Edge of a home-screen icon and of the ring an installing app wears just outside it, in px. */
+const ICON_PX = 52;
+const RING_PX = ICON_PX + 12;
+const RING_RADIUS = (RING_PX - 2) / 2;
+
+/** A new sentence is sent this often, so a few apps are always generating at once. */
+const SEND_MS = 700;
+/** How long each app takes to generate, by turn: uneven, so installs land out of step. */
+const GENERATE_MS = [2700, 3500, 2300, 3100] as const;
 
 /**
- * The Harness OS App Center: a pure app-icon springboard animation demonstrating how one sentence
- * turns into an agent-powered app and packs into one desktop Harness OS alongside every other app.
+ * The Harness OS App Center as a home screen that keeps filling: one sentence after another goes
+ * in, each becomes an app that installs in its own time, and the screen scrolls a row whenever
+ * the last one fills. The count in the title is the number of installed apps.
  */
 export function AppGenerationDiagram() {
   const c = S.cases.workspace;
   const { ref, active } = useVisibleActivity<HTMLDivElement>();
   const reduced = usePrefersReducedMotion();
   const running = active && !reduced;
-  const apps = Object.keys(appTiles) as AppKey[];
+  // The grid is laid out for the width it is shown at: a phone's four columns or a desktop's six.
+  const { ref: stage, width } = useWidth<HTMLDivElement>(640);
+  const columns = width < 480 ? 4 : 6;
+  const rows = columns === 4 ? 5 : 4;
+  // A run opens with the last row empty, so the first sentences visibly fill the screen.
+  const opening = columns * (rows - 1);
 
-  const [round, setRound] = useState(0);
-  const [stage, setStage] = useState<BuilderStage>("installed");
+  /** Sentences sent so far, and the ones whose apps are still generating. */
+  const [sent, setSent] = useState(0);
+  const [pending, setPending] = useState<readonly number[]>([]);
 
   useEffect(() => {
-    if (!running) {
-      setRound(0);
-      setStage("installed");
-      return;
-    }
-    setStage("converge");
-    let timer: number;
-    const stepConverge = () => {
-      timer = window.setTimeout(() => {
-        setStage("generating");
-        timer = window.setTimeout(() => {
-          setStage("installed");
-          timer = window.setTimeout(() => {
-            setRound((r) => r + 1);
-            setStage("converge");
-            stepConverge();
-          }, 1500);
-        }, 1350);
-      }, 850);
-    };
-    stepConverge();
-    return () => window.clearTimeout(timer);
-  }, [running]);
+    setSent(0);
+    setPending([]);
+    if (!running) return;
+    let turn = 0;
+    const timer = window.setInterval(() => {
+      const next = turn++;
+      setSent(next + 1);
+      setPending((list) => [...list, next]);
+    }, SEND_MS);
+    return () => window.clearInterval(timer);
+  }, [running, columns]);
 
-  const currentFeatured: FeaturedAppKey = running
-    ? FEATURED_APPS[round % FEATURED_APPS.length]!
-    : "legal";
-  const currentStage: BuilderStage = running ? stage : "installed";
-  const [targetX, targetY] = tileNodeCoords[currentFeatured];
-  const beamPath = `M300,8 Q300,${Math.round(targetY * 0.45)} ${targetX},${targetY}`;
+  // An app is installed when its ring closes: the ring's own animation ends the generating state,
+  // so the two cannot drift apart.
+  const land = useCallback((turn: number) => {
+    setPending((list) => list.filter((item) => item !== turn));
+  }, []);
+
+  // Still, the screen is full and everything on it is installed.
+  const total = reduced ? columns * rows : opening + sent;
+  const installed = total - pending.length;
+  const scrolled = Math.max(0, Math.ceil(total / columns) - rows);
+  // One row above the screen stays mounted while it scrolls out of sight.
+  const first = Math.max(0, scrolled - 1) * columns;
+  // The sentence being typed is the one the next app will come from.
+  const asking = appAt(opening + sent) as GeneratedAppKey;
 
   return (
     <div
@@ -154,25 +236,28 @@ export function AppGenerationDiagram() {
       className="product-scene product-scene-apps"
       data-story-diagram=""
       data-active={running}
-      data-stage={currentStage}
       role="group"
       aria-label={c.title}
     >
-      <ScreenBar icon="layoutGrid" title={c.title} context={c.project} contextIcon="folderOpen" />
+      <ScreenBar
+        icon="layoutGrid"
+        title={c.title}
+        count={installed}
+        context={c.project}
+        contextIcon="folderOpen"
+      />
       <div className="scene-builder-bar" aria-hidden="true">
         <span className="scene-builder-badge">
           <SiteGlyph name="robot" width={13} height={13} />
           {c.builderLabel}
         </span>
-        <span className="scene-builder-prompt" key={`prompt-${currentFeatured}-${round}`}>
-          <span className="scene-builder-prompt-text">{c.prompts[currentFeatured]}</span>
-          <span className="scene-builder-progress" />
+        <span className="scene-builder-prompt">
+          <span className="scene-builder-prompt-text" key={sent}>
+            {c.prompts[asking]}
+          </span>
         </span>
-        <span
-          className="scene-builder-status"
-          data-generating={currentStage === "generating" || undefined}
-        >
-          {currentStage === "generating" ? (
+        <span className="scene-builder-status">
+          {running ? (
             <>
               <Spinner className="scene-activity" label={c.generating} />
               {c.generating}
@@ -185,203 +270,67 @@ export function AppGenerationDiagram() {
           )}
         </span>
       </div>
-      <div className="scene-os-stage">
-        <svg
-          className="scene-os-network"
-          viewBox="0 0 600 300"
-          preserveAspectRatio="none"
-          aria-hidden="true"
+      <div
+        ref={stage}
+        className="scene-os-stage"
+        style={{ "--scene-columns": columns, "--scene-rows": rows } as CSSProperties}
+      >
+        <ul
+          className="scene-launcher"
+          aria-label={c.title}
+          style={{ "--scene-scrolled": scrolled } as CSSProperties}
         >
-          <g className="scene-os-grid-lines">
-            <line x1="110" y1="62" x2="490" y2="62" />
-            <line x1="110" y1="152" x2="490" y2="152" />
-            <line x1="110" y1="242" x2="490" y2="242" />
-            <line x1="110" y1="62" x2="110" y2="242" />
-            <line x1="300" y1="62" x2="300" y2="242" />
-            <line x1="490" y1="62" x2="490" y2="242" />
-          </g>
-          <path d={beamPath} className="scene-os-beam" />
-          {running && (
-            <>
-              <circle r="3.5" className="scene-os-pulse-dot">
-                <animateMotion dur="1.1s" repeatCount="indefinite" path={beamPath} />
-              </circle>
-              <circle r="2.5" className="scene-os-pulse-dot" opacity="0.65">
-                <animateMotion dur="1.1s" begin="0.55s" repeatCount="indefinite" path={beamPath} />
-              </circle>
-            </>
-          )}
-        </svg>
-        <ul className="scene-launcher" aria-label={c.title}>
-          {apps.map((app, index) => {
-            const [dx, dy, rot] = tileConvergeVectors[app];
-            const isTarget = app === currentFeatured;
-            const tileState = isTarget
-              ? currentStage
-              : currentStage === "converge"
-                ? "converge"
-                : "idle";
+          {Array.from({ length: total - first }, (_, offset) => {
+            const index = first + offset;
+            const app = appAt(index);
+            const turn = index - opening;
+            const generated = running && turn >= 0;
+            const state = !generated
+              ? "installed"
+              : pending.includes(turn)
+                ? "generating"
+                : "landed";
             return (
               <li
-                key={app}
-                data-selected={isTarget || undefined}
-                data-generated={isTarget || undefined}
-                data-tile-state={tileState}
+                key={index}
+                data-app-state={state}
                 style={
                   {
-                    "--tile-idx": index,
-                    "--tile-dx": dx,
-                    "--tile-dy": dy,
-                    "--tile-rot": rot,
+                    "--tile-column": index % columns,
+                    "--tile-row": Math.floor(index / columns),
                   } as CSSProperties
                 }
               >
-                <div
-                  className="scene-app-slot"
-                  key={isTarget ? `${app}-${round}-${currentStage}` : `${app}-${round}`}
-                >
-                  {isTarget && currentStage === "installed" && (
-                    <>
-                      <span className="scene-app-ripple" aria-hidden="true" />
-                      <span
-                        className="scene-app-ripple scene-app-ripple-outer"
-                        aria-hidden="true"
-                      />
-                    </>
-                  )}
-                  <AppMark app={app} />
-                  {isTarget && currentStage === "generating" && (
-                    <span className="scene-ios-sweep" aria-hidden="true" />
-                  )}
-                  {isTarget && (
-                    <svg className="scene-install-ring" viewBox="0 0 64 64" aria-hidden="true">
-                      <rect
-                        x="2.5"
-                        y="2.5"
-                        width="59"
-                        height="59"
-                        rx="15"
-                        fill="none"
-                        pathLength={100}
+                <span className="scene-app-slot">
+                  {state === "landed" && <span className="scene-app-ripple" aria-hidden="true" />}
+                  <AppMark app={app} size={ICON_PX} />
+                  {generated && (
+                    <svg
+                      className="scene-install-ring"
+                      viewBox={`0 0 ${RING_PX} ${RING_PX}`}
+                      width={RING_PX}
+                      height={RING_PX}
+                      aria-hidden="true"
+                    >
+                      <circle cx={RING_PX / 2} cy={RING_PX / 2} r={RING_RADIUS} />
+                      <circle
+                        cx={RING_PX / 2}
+                        cy={RING_PX / 2}
+                        r={RING_RADIUS}
+                        pathLength={1}
+                        className="scene-install-progress"
+                        style={{ animationDuration: `${GENERATE_MS[turn % GENERATE_MS.length]}ms` }}
+                        onAnimationEnd={() => land(turn)}
                       />
                     </svg>
                   )}
-                  {isTarget && currentStage === "installed" && (
-                    <span className="scene-app-badge" aria-hidden="true">
-                      <SiteGlyph name="check" width={11} height={11} />
-                    </span>
-                  )}
-                </div>
+                </span>
                 <span className="scene-app-label">{c.apps[app]}</span>
               </li>
             );
           })}
         </ul>
-        <div className="scene-os-dock" aria-hidden="true">
-          {FEATURED_APPS.map((featured) => (
-            <span
-              key={featured}
-              className={`scene-os-dot ${featured === currentFeatured ? "scene-os-dot-active" : ""}`}
-            />
-          ))}
-        </div>
       </div>
-    </div>
-  );
-}
-
-const taskMarks: SiteGlyphName[] = ["shieldCheck", "bubbleLines", "barChart", "folderOpen"];
-
-/** Separate schedules keep a busy run from moving in lockstep with another agent. */
-function AgentRun({ index, running }: { index: number; running: boolean }) {
-  const c = S.selfImprove.workbench;
-  const task = c.tasks[index]!;
-  const [phase, setPhase] = useState(index);
-  useEffect(() => {
-    setPhase(index);
-    if (!running) return;
-    const period = 2850 + index * 190;
-    let timer: number;
-    function advance() {
-      setPhase((current) => (current + 1) % c.stages.length);
-      timer = window.setTimeout(advance, period);
-    }
-    timer = window.setTimeout(advance, 1400 + index * 650);
-    return () => window.clearTimeout(timer);
-  }, [running, index, c.stages.length]);
-  const current = running ? phase : index;
-  return (
-    <tr data-agent-loop={task.name}>
-      <th scope="row">
-        <div className="scene-agent">
-          <span className="scene-agent-icon">
-            <SiteGlyph name={taskMarks[index]!} />
-          </span>
-          <span>
-            <strong>{task.name}</strong>
-            <small>{task.task}</small>
-          </span>
-        </div>
-      </th>
-      {c.stages.map((stage, i) => {
-        const state = current === i ? "active" : current > i ? "done" : "waiting";
-        return (
-          <td key={stage} data-phase={state} aria-current={state === "active" ? "step" : undefined}>
-            <span className="scene-phase">
-              {state === "active" ? (
-                <Spinner className="scene-activity" label={c.activeStages[i]!} />
-              ) : state === "done" ? (
-                <SiteGlyph name="check" />
-              ) : (
-                <span className="scene-wait" />
-              )}
-              <span className="scene-stage-label">
-                {state === "active" ? c.activeStages[i] : stage}
-              </span>
-            </span>
-          </td>
-        );
-      })}
-    </tr>
-  );
-}
-
-/**
- * Unified Self-Evolution Workbench: fuses the Optimizer/Evaluator loop diagram above with the
- * independent multi-agent evolution rounds below.
- */
-export function AgentEvaluationDiagram({ workflow }: { workflow?: ReactNode }) {
-  const c = S.selfImprove.workbench;
-  const { ref, active } = useVisibleActivity<HTMLDivElement>();
-  const reduced = usePrefersReducedMotion();
-  return (
-    <div
-      ref={ref}
-      className="product-scene product-scene-evolution"
-      data-story-diagram=""
-      data-active={active && !reduced}
-      role="group"
-      aria-label={c.title}
-    >
-      <ScreenBar icon="trophy" title={c.title} />
-      {workflow && <div className="scene-workflow-pane">{workflow}</div>}
-      <table className="scene-runs">
-        <thead>
-          <tr>
-            <th scope="col">{c.agents}</th>
-            {c.stages.map((stage) => (
-              <th scope="col" key={stage}>
-                {stage}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {c.tasks.map((task, index) => (
-            <AgentRun key={task.name} index={index} running={active && !reduced} />
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
