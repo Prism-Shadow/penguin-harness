@@ -78,7 +78,7 @@ async function revealChip(page) {
   const chip = chipOf(page);
   await expect(async () => {
     if (await chip.isVisible()) return;
-    const done = page.getByRole("button", { name: /已完成/ }).first();
+    const done = page.getByRole("button", { name: /运行完毕/ }).first();
     if (await done.isVisible()) await done.click();
     expect(await chip.isVisible()).toBeTruthy();
   }).toPass({ timeout: 15_000 });
@@ -97,7 +97,7 @@ async function openPanelViaChip(page) {
   const chip = chipOf(page);
   await expect(async () => {
     if (!(await chip.isVisible())) {
-      const done = page.getByRole("button", { name: /已完成/ }).first();
+      const done = page.getByRole("button", { name: /运行完毕/ }).first();
       if (await done.isVisible()) await done.click();
     }
     await chip.click({ timeout: 2000 });

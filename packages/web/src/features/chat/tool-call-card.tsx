@@ -26,7 +26,7 @@ import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { elidedArgumentsPreview, elidedPreview } from "../../lib/history/elided-preview";
 import { routedUrl } from "../../lib/session-machines";
-import { approvalKey, type ToolCallItem } from "../../lib/amsp/stream-model";
+import { approvalKey, localWorkTime, type ToolCallItem } from "../../lib/amsp/stream-model";
 
 import { useTheme } from "../../state/theme";
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
@@ -320,7 +320,9 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
   // lands. Local-first also keeps the value from ever moving again, and it is the clock the
   // gate compares against.
   const executedPastDelay = useElapsedPast(
-    executing ? (item.localApprovalAtMs ?? item.approvalAtMs ?? item.callStartedAtMs) : undefined,
+    executing
+      ? (item.localApprovalAtMs ?? localWorkTime(item, item.approvalAtMs ?? item.callStartedAtMs))
+      : undefined,
     BACKGROUND_ACTION_DELAY_MS,
   );
   const { state, stateLabel, duration } = toolActivity(item, !!pending);

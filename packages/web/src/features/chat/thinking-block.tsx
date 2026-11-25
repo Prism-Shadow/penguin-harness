@@ -8,7 +8,7 @@
 import { ThinkingBlock } from "@prismshadow/penguin-ui";
 import { elidedPreview } from "../../lib/history/elided-preview";
 import { S } from "../../lib/strings";
-import type { ThinkingItem } from "../../lib/amsp/stream-model";
+import { localWorkTime, type ThinkingItem } from "../../lib/amsp/stream-model";
 import { ElidedBodyNote, hasElidedNote } from "./elided-body";
 
 export function SessionThinking({ item }: { item: ThinkingItem }) {
@@ -18,7 +18,7 @@ export function SessionThinking({ item }: { item: ThinkingItem }) {
       stateLabel={item.streaming ? S.chat.workRunning : S.chat.workDone}
       label={S.chat.thinking}
       text={elidedPreview(item.thinking, item.elided, "payload.thinking", "\n\n…\n\n")}
-      startedAtMs={item.startedAtMs}
+      startedAtMs={localWorkTime(item, item.startedAtMs)}
       durationMs={item.durationMs}
       bodyNote={hasElidedNote(item) ? <ElidedBodyNote item={item} /> : undefined}
     />

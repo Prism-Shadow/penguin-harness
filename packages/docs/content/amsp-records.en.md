@@ -92,6 +92,7 @@ interface TextPayload {
 interface ThinkingPayload {
   type: "thinking";
   role: "assistant";
+  started_at?: string;
   thinking: string;
   fidelity?: Fidelity;        // required by some models to replay history
 }
@@ -107,6 +108,7 @@ interface InlineThinkingPayload {
 interface ToolCallPayload {
   type: "tool_call";
   role: "assistant";
+  started_at?: string;
   name: string;
   arguments: string;          // arguments as a JSON string
   tool_call_id: string;
@@ -138,6 +140,8 @@ interface InlineDataPayload {
 ```
 
 `sender` separates the human user (`user`) from the parent agent driving a subagent (`parent_agent`), the harness's automatic injections such as background-task completion reports, stop-hook continues and user-prompt hook contexts (`harness`), and the server's own triggers such as scheduled tasks (`server`). It is never sent to the provider.
+
+For a streamed thinking block or tool call, `started_at` is the UTC timestamp of its first fragment. The complete record’s timestamp closes the interval. A complete item received without fragments has no recorded start.
 
 `tool_call` and `tool_call_output` pair strictly via `tool_call_id`. The calls of a turn form one batch, and outputs are re-fed in the original call order (see [The Agent Loop](/agent-loop)).
 

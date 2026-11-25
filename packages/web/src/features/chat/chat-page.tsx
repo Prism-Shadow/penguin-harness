@@ -46,14 +46,13 @@ export function ChatPage() {
             bands, drop preview and the bottom dock's height ratio all measure it
             (dock-drag.tsx / dock-panel.tsx). */}
         <AppWindow shown data-dock-host>
-          {renderMainChatToolbar(view)}
           <VoiceScope
             projectId={projectId}
             server={pageMachineId}
             sessionId={controller.draft ? undefined : controller.selected?.sessionId}
             active={focused}
           >
-            {renderMainChatBody(view)}
+            {renderMainChatBody(view, renderMainChatToolbar(view))}
           </VoiceScope>
         </AppWindow>
       </WindowStack>

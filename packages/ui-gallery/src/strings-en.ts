@@ -1142,7 +1142,7 @@ export const en: GalleryStrings = {
       thinking: "Thinking",
       plan: "I’ll read the meeting notes and collect the action items.",
       read: "Read meeting notes",
-      navigation: { count: "1 step", elapsed: "Total time" },
+      navigation: { count: "1 step", elapsed: "Activity time" },
       reply: "Assistant reply",
       output: "Tool output",
       receiving: "Receiving…",

@@ -15,15 +15,8 @@
  * so the conversation measures the same under every surface).
  *
  * A surface can go FULLSCREEN — grown as far as its own edge goes, which is the element the
- * caller names: the right dock's row (the conversation beside it; the toolbar above and the
- * bottom dock below stay in view), the bottom dock's area up to the toolbar (the row and itself,
- * over the right dock). The box in the flow keeps its size as a placeholder — the conversation
- * beside or above it does not reflow, so nothing under the cover scrolls or refits — and only the
- * content box inside it lifts off (`fixed`, on the `dock` layer); the bodies are the same
- * elements, so a terminal, a file preview or an editor draft carries over untouched. The resize
- * handle moves to the lifted box's LEADING edge (the right dock's left, the bottom dock's top),
- * where a pull back inward is the way out by drag, while the placeholder keeps the handle's
- * footprint without a second bar; the header's own toggle is the other way back.
+ * caller names. The box in the flow keeps its size while its content lifts; the terminal,
+ * file preview or editor draft stays mounted. Only a docked surface offers a resize handle.
  *
  * The flip is the theme's layout motion, in three phases the root announces as
  * `data-fullscreen` (absent in the flow): ENTERING lifts the box at its docked rect and sends it
@@ -48,9 +41,9 @@ import type {
   Ref,
   RefObject,
 } from "react";
+import { RESIZE_HANDLE_PX } from "../../layout/resize-handle/resize-handle";
 import { layer } from "../../../layers";
 import { WallpaperLayer } from "../app-shell/wallpaper";
-import { RESIZE_HANDLE_PX } from "../../layout/resize-handle/resize-handle";
 
 export type DockEdge = "right" | "bottom";
 
@@ -334,6 +327,23 @@ function useFullscreenPhase(
     };
   }, [phase, host]);
 
+  // Keep the covered part of this host out of keyboard navigation until the surface
+  // rejoins the flow. The application navigation and other uncovered hosts stay reachable.
+  const lifted = phase !== "docked";
+  useLayoutEffect(() => {
+    if (!lifted) return;
+    const frame = boxRef.current?.parentElement;
+    const cover = hostRef.current?.();
+    if (!frame || !cover || frame.parentElement !== cover) return;
+    const background = Array.from(cover.children).filter(
+      (node): node is HTMLElement => node instanceof HTMLElement && node !== frame && !node.inert,
+    );
+    for (const node of background) node.inert = true;
+    return () => {
+      for (const node of background) node.inert = false;
+    };
+  }, [lifted, boxRef]);
+
   // Report each phase once it is in the DOM (the attribute and the lifted box exist from this
   // commit on), never the initial docked state.
   const reported = useRef<DockFullscreenPhase | null>(null);
@@ -374,8 +384,7 @@ export interface DockFrameProps {
   /**
    * The resize handle (a `ResizeHandle`), rendered only while open. The frame seats it: the right
    * dock's, given without `edge`, sits in the 6px gap before the box; the bottom dock's, given
-   * with `edge: "start"`, straddles the box's top edge. While the surface is lifted the same
-   * element sits on the lifted box's leading edge instead, and the spacer keeps its footprint.
+   * with `edge: "start"`, straddles the box's top edge. While fullscreen the spacer keeps its footprint.
    */
   handle?: ReactNode;
   /** Layers that belong to the dock but float over the page (a drag overlay, a confirmation). */
@@ -460,38 +469,12 @@ export function DockFrame({
   const lifted = phase !== "docked";
   const moving = animate && (phase === "entering" || phase === "exiting");
 
-  // The divider sits on the frame's border. Content enters inside that frame, leaving
-  // the conversation and its controls on the other side of the divider.
-  // A lifted divider stays on the cover and keeps its pointer through the fullscreen flip.
-  const seatStyle: CSSProperties | undefined =
-    lifted && box !== null
-      ? position === "right"
-        ? {
-            top: box.top,
-            left: box.left - RESIZE_HANDLE_PX / 2,
-            width: RESIZE_HANDLE_PX,
-            height: box.height,
-            zIndex: layer("dock-handle"),
-          }
-        : {
-            top: box.top,
-            left: box.left,
-            width: box.width,
-            height: 0,
-            zIndex: layer("dock-handle"),
-          }
-      : undefined;
-  const seat = open ? (
-    <div
-      ref={attachResizeSeat}
-      data-dock-resize-seat={lifted ? undefined : position}
-      data-layout-motion={moving ? "" : undefined}
-      style={seatStyle}
-      className={lifted ? (position === "right" ? "fixed flex" : "fixed") : undefined}
-    >
-      {handle}
-    </div>
-  ) : null;
+  const seat =
+    open && !lifted ? (
+      <div ref={attachResizeSeat} data-dock-resize-seat={position}>
+        {handle}
+      </div>
+    ) : null;
 
   // Lifted: a fixed box at the rect the phase machine gives it, transitioning its place and size
   // through the theme's layout motion while it enters or exits, clipping what the inside lays out
@@ -580,7 +563,7 @@ export function DockFrame({
         data-fullscreen={lifted ? phase : undefined}
         style={{ width: open ? contentSize : 0 }}
         inert={!open}
-        className={`relative flex min-h-0 shrink-0 flex-col bg-canvas ${
+        className={`relative flex min-h-0 min-w-0 flex-col bg-canvas ${
           open ? "border-l border-line" : ""
         }`}
       >

@@ -127,7 +127,7 @@ describe("work display modes", () => {
     });
     const view = await mount(group([first]));
     expect(header().textContent).toContain(S.chat.thinking);
-    expect(count()).toBe(S.chat.workGroupSteps(0));
+    expect(count()).toBeUndefined();
     expect(header().querySelector("[data-step-summary]")?.hasAttribute("data-reveal")).toBe(false);
     expect(header().textContent).not.toContain("First decision");
     await view.rerender(group([think(1, "First decision"), tool, call(3)]));
@@ -172,7 +172,9 @@ describe("work display modes", () => {
     async (state) => {
       mode("compact");
       const last = call(2);
-      last.workOutcome = { state, durationMs: 2300 };
+      last.callStartedAtMs = 100;
+      last.durationMs = 2300;
+      last.workOutcome = { state };
       const finished = () =>
         group([think(1, "First decision"), last], { ...context, taskRunning: false });
       const view = await mount(group([think(1, "First decision"), call(2)]));
