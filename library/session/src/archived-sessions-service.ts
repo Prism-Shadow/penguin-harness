@@ -34,7 +34,11 @@ import type { SessionRow } from "./repos/sessions.js";
 import type { ListingView } from "./listing.js";
 import { compareActivityDesc } from "./session-service.js";
 import type { ActivityCursor, ArchivedRow } from "./session-service.js";
-import { TEMP_WORKSPACE_GROUP, isTempWorkspace, matchesWorkspaceGroup } from "@prismshadow/penguin-library-workspace/workspace-group";
+import {
+  TEMP_WORKSPACE_GROUP,
+  isTempWorkspace,
+  matchesWorkspaceGroup,
+} from "@prismshadow/penguin-library-workspace/workspace-group";
 
 /**
  * The archive page's source filter: `user` is a conversation archived by hand (source

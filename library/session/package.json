@@ -99,10 +99,6 @@
     "./sandbox-ceiling": {
       "types": "./dist/sandbox-ceiling.d.ts",
       "import": "./dist/sandbox-ceiling.js"
-    },
-    "./workspace-group": {
-      "types": "./dist/workspace-group.d.ts",
-      "import": "./dist/workspace-group.js"
     }
   },
   "scripts": {
