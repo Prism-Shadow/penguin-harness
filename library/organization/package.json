@@ -31,6 +31,98 @@
     "./organizations": {
       "types": "./dist/organizations.d.ts",
       "import": "./dist/organizations.js"
+    },
+    "./avatars": {
+      "types": "./dist/avatars.d.ts",
+      "import": "./dist/avatars.js"
+    },
+    "./files": {
+      "types": "./dist/files.d.ts",
+      "import": "./dist/files.js"
+    },
+    "./handbook": {
+      "types": "./dist/handbook.d.ts",
+      "import": "./dist/handbook.js"
+    },
+    "./names": {
+      "types": "./dist/names.d.ts",
+      "import": "./dist/names.js"
+    },
+    "./paths": {
+      "types": "./dist/paths.d.ts",
+      "import": "./dist/paths.js"
+    },
+    "./principal": {
+      "types": "./dist/principal.d.ts",
+      "import": "./dist/principal.js"
+    },
+    "./store": {
+      "types": "./dist/store.d.ts",
+      "import": "./dist/store.js"
+    },
+    "./ticket-id": {
+      "types": "./dist/ticket-id.d.ts",
+      "import": "./dist/ticket-id.js"
+    },
+    "./zoned": {
+      "types": "./dist/zoned.d.ts",
+      "import": "./dist/zoned.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    },
+    "./routes": {
+      "types": "./dist/routes.d.ts",
+      "import": "./dist/routes.js"
+    },
+    "./organization-deletion": {
+      "types": "./dist/organization-deletion.d.ts",
+      "import": "./dist/organization-deletion.js"
+    },
+    "./runtime/service": {
+      "types": "./dist/runtime/service.d.ts",
+      "import": "./dist/runtime/service.js"
+    },
+    "./runtime/deps": {
+      "types": "./dist/runtime/deps.d.ts",
+      "import": "./dist/runtime/deps.js"
+    },
+    "./runtime/budget": {
+      "types": "./dist/runtime/budget.d.ts",
+      "import": "./dist/runtime/budget.js"
+    },
+    "./runtime/digest": {
+      "types": "./dist/runtime/digest.d.ts",
+      "import": "./dist/runtime/digest.js"
+    },
+    "./runtime/locks": {
+      "types": "./dist/runtime/locks.d.ts",
+      "import": "./dist/runtime/locks.js"
+    },
+    "./runtime/model": {
+      "types": "./dist/runtime/model.d.ts",
+      "import": "./dist/runtime/model.js"
+    },
+    "./runtime/notices": {
+      "types": "./dist/runtime/notices.d.ts",
+      "import": "./dist/runtime/notices.js"
+    },
+    "./runtime/reconcile": {
+      "types": "./dist/runtime/reconcile.d.ts",
+      "import": "./dist/runtime/reconcile.js"
+    },
+    "./runtime/rota": {
+      "types": "./dist/runtime/rota.d.ts",
+      "import": "./dist/runtime/rota.js"
+    },
+    "./runtime/scheduler": {
+      "types": "./dist/runtime/scheduler.d.ts",
+      "import": "./dist/runtime/scheduler.js"
+    },
+    "./runtime/triggers": {
+      "types": "./dist/runtime/triggers.d.ts",
+      "import": "./dist/runtime/triggers.js"
     }
   },
   "scripts": {
@@ -40,7 +132,18 @@
   },
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
-    "@prismshadow/penguin-library-db": "workspace:*"
+    "@prismshadow/penguin-library-db": "workspace:*",
+    "@prismshadow/penguin-library-agent": "workspace:*",
+    "@prismshadow/penguin-library-session": "workspace:*",
+    "@prismshadow/penguin-library-messaging": "workspace:*",
+    "@prismshadow/penguin-library-auth": "workspace:*",
+    "@prismshadow/penguin-library-setting": "workspace:*",
+    "@prismshadow/penguin-library-project": "workspace:*",
+    "@prismshadow/penguin-library-observability": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-library-agent-api": "workspace:*",
+    "@prismshadow/penguin-library-trace": "workspace:*",
+    "hono": "^4.13.11"
   },
   "devDependencies": {
     "tsup": "^8.3.0",
