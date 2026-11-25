@@ -17,6 +17,8 @@
 // (@prismshadow/penguin-library-machine/contract, machines restack S16); these re-exports keep
 // the server's own import paths and every reader of this file unchanged.
 import type {
+  CommandPolicyActionDto,
+  CommandPolicyRuleDto,
   DirEntryInfo,
   DirListResponse,
   MachineCheck,
@@ -38,9 +40,16 @@ import type {
   MachinesCheckoutImage,
   MachinesResponse,
   MachinesStopUsingRequest,
+  InstalledPlugin,
+  InstalledPluginsResponse,
   MachinesUseRequest,
   MachinesUseResponse,
+  PluginInstallOutcome,
+  PluginModuleRequestView,
+  PluginModuleState,
+  PluginModuleStatus,
   SshHostRequest,
+  UnsatisfiedPlugin,
   SshHostResponse,
   SshHostSummary,
   SshHostsResponse,
@@ -52,6 +61,8 @@ import {
   apiSocketPath,
 } from "@prismshadow/penguin-library-machine/contract";
 export type {
+  CommandPolicyActionDto,
+  CommandPolicyRuleDto,
   DirEntryInfo,
   DirLocation,
   DirStandardFolders,
@@ -75,9 +86,16 @@ export type {
   MachinesCheckoutImage,
   MachinesResponse,
   MachinesStopUsingRequest,
+  InstalledPlugin,
+  InstalledPluginsResponse,
   MachinesUseRequest,
   MachinesUseResponse,
+  PluginInstallOutcome,
+  PluginModuleRequestView,
+  PluginModuleState,
+  PluginModuleStatus,
   SshHostRequest,
+  UnsatisfiedPlugin,
   SshHostResponse,
   SshHostSummary,
   SshHostsResponse,
@@ -1122,35 +1140,6 @@ export interface PlatformModelSyncResponse extends ModelsResponse {
 // ---------------------------------------------------------------------------
 
 /**
- * What a command-policy hit does: `deny` refuses the call outright; `ask` puts it to a person
- * whatever the approval mode (deny-all still denies).
- */
-export type CommandPolicyActionDto = "deny" | "ask";
-
-/**
- * One rule of the sandbox command policy — plain project-editable data. The factory rules
- * are seeded into new projects and carry no special status thereafter: every rule can be
- * edited, disabled, or deleted.
- */
-export interface CommandPolicyRuleDto {
-  name: string;
-  /** JavaScript regex source, matched against the whitespace-normalized command. */
-  pattern: string;
-  /** What the rule catches (free text). */
-  description?: string;
-  /** Per-rule switch, effective value (defaults on). */
-  enabled: boolean;
-  /** What a hit does; absent = `deny` (served only for an `ask` rule, as it is stored). */
-  action?: CommandPolicyActionDto;
-  /**
-   * Read-only, served only for a stored rule whose pattern this server's engine cannot
-   * compile: the engine's reason. Such a rule is skipped when commands are matched, so the
-   * settings page marks it; a PUT ignores the field (and refuses the pattern).
-   */
-  patternError?: string;
-}
-
-/**
  * Per-Project sandbox command policy: rules for shell commands, evaluated ahead of the
  * approval mode (a `deny` hit is refused and an `ask` hit is put to a person even under
  * allow-all). Serves as the GET response and the PUT response. The PUT request body carries
@@ -1967,7 +1956,6 @@ export interface SessionsArchiveResponse {
   /** Sessions this call archived. */
   done: number;
 }
-
 
 /** One Skill found in a picked directory: metadata plus which of the two layouts it came from. */
 export interface DirectorySkillItem extends SkillMetadataItem {
@@ -2832,44 +2820,6 @@ export interface AgentPluginsInstallResponse {
   moduleActions?: PluginModuleAction[];
 }
 
-/** How a library plugin's server module stands on this server (PRFC-0031). */
-export type PluginModuleState =
-  /** Loaded in this server's module tree. */
-  | "running"
-  /** Loaded, and this build cannot run it, or runs it without part of itself (`reason`). */
-  | "unsatisfied"
-  /** Some Project lists it for this server and the load failed (`reason`). */
-  | "failed"
-  /** Listed for this server, neither loaded nor failed: waiting for a restart. */
-  | "restart"
-  /** No Project lists it for this server. */
-  | "off";
-
-/** The standing ask to run a module on this server, as a Project member sees it. */
-export interface PluginModuleRequestView {
-  /** `pending`: waiting for the administrator; `declined`: the administrator stopped it, and installs do not bring it back. */
-  status: "pending" | "declined";
-  /** Whether the caller made it. */
-  mine: boolean;
-  requestedAt: string;
-}
-
-/** One library plugin that carries server modules, on this server and for this Project. */
-export interface PluginModuleStatus {
-  /** The library plugin's name: what `names` installs. */
-  plugin: string;
-  /** The npm package name: the specifier a plugin table lists. */
-  package: string;
-  /** Resolves from a prefix this build ships and only adds modules: the automatic path applies. */
-  builtin: boolean;
-  state: PluginModuleState;
-  /** Whether this Project lists it for this server (its shared table, or this server's own). */
-  listed: boolean;
-  /** Why, for `failed` and `unsatisfied`. */
-  reason?: string;
-  request?: PluginModuleRequestView;
-}
-
 /** What one install, or one explicit ask, did about a plugin's server module. */
 export interface PluginModuleAction {
   plugin: string;
@@ -3460,8 +3410,6 @@ export interface UpdateCheckResponse {
  */
 export const DRAFT_SESSION_ID = "new";
 
-
-
 /**
  * Paths whose answer depends on the KIND of session behind the request — the desktop shell's
  * own window (`sessionVia === "desktop"`: its update, tray and privacy relays, folder access,
@@ -3549,32 +3497,6 @@ export interface RestartResponse {
   restarting: boolean;
   reason?: "no_supervisor";
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // ---------------------------------------------------------------------------
 // Company mode: organizations (files are the truth; every DTO here is a projection)
@@ -4871,87 +4793,6 @@ export interface PluginConfigUpdateRequest {
   values: Record<string, unknown>;
 }
 
-/**
- * An installed plugin the running build cannot fully run (plugin/unsatisfied.ts): it
- * contributes to a slot, or wires to a module or interface, that this build does not have.
- * Also what a refused push names (`plugins_unsatisfied`) and a confirmed one reports.
- */
-export interface UnsatisfiedPlugin {
-  /** The package specifier, as the installed-plugins list spells it. */
-  specifier: string;
-  /** True when the whole plugin is left out of this generation; false when only the contributions this build has no slot for were dropped and the rest of it runs. */
-  disabled: boolean;
-  /** What this build lacks, in the platform's own words. */
-  reason: string;
-}
-
-/** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
-export interface InstalledPlugin {
-  /** The package specifier as written in the file. */
-  specifier: string;
-  /** Whether the running process holds this package — its modules are in the tree. */
-  active: boolean;
-  /**
-   * Where the package came from: shipped with the build (a hot push's assets, or the
-   * installation's own `plugins/`) rather than fetched from npm. A tag on an installed
-   * plugin — being shipped is not being installed.
-   */
-  builtin: boolean;
-  /** Module names the package declares it adds. */
-  modules: string[];
-  /** Node names the package declares it stands in for. */
-  replaces: string[];
-  /**
-   * The prefix resolves this name through a link `penguin plugin link` parked: the package is
-   * the author's directory, read fresh from disk every time.
-   */
-  linked?: true;
-  /** The author directory the link points at (when `linked`). */
-  linkPath?: string;
-  /**
-   * Why the package is not running: unresolvable, or a load that
-   * failed (an import that threw, a module name another plugin already took). Only ever
-   * reported for a plugin this server is asked to run (`here`).
-   */
-  error?: string;
-  /**
-   * Present when this build cannot fully run the package (see {@link UnsatisfiedPlugin}).
-   * With `disabled`, `active` is false and a restart would not load it; without, the package
-   * runs minus the contributions this build has no slot for. Only reported for a plugin this
-   * server is asked to run (`here`).
-   */
-  unsatisfied?: Pick<UnsatisfiedPlugin, "disabled" | "reason">;
-  /** Listed in the shared `[plugins]` table: every machine runs it. */
-  everywhere: boolean;
-  /** The machines whose own `[plugins.<machineId>]` table lists it, by machine id. */
-  machines: string[];
-  /**
-   * Whether THIS server is asked to run it — shared, or listed for this server's own id. A
-   * plugin listed only for other machines is neither installed nor loaded here, so `active`
-   * is false and no `error` is reported for it.
-   */
-  here: boolean;
-}
-
-/** What an install put on this server (POST …/plugins/installed and …/installed/archive). */
-export interface PluginInstallOutcome {
-  /** The package name npm installed — for a link, the name its package.json carries. */
-  name: string;
-  version: string | null;
-  /** It carries skills, a hook package or MCP servers: the library lists it, and nothing loads it. */
-  library: boolean;
-  /** It carries server modules: the Project's list loads it. */
-  modules: boolean;
-  /** The zip held the version already installed: nothing was installed. */
-  unchanged?: boolean;
-  /**
-   * Where the package came from, for an install by name or link: the npm registry, the link npm
-   * fetched, the published index's github channel, or the offline archive the build carries
-   * (05 「插件库」 「安装从不卡住」). Absent for a zip import and on older servers.
-   */
-  from?: "registry" | "link" | "channel" | "offline";
-}
-
 /** One Agent that carries a plugin, as the server-uninstall confirm names it. */
 export interface PluginHolder {
   projectId: string;
@@ -4994,30 +4835,6 @@ export interface PluginArchiveImportRequest {
   dataBase64: string;
   /** Replace another installed version of the package (the 409 `plugin_exists` question). */
   overwrite?: boolean;
-}
-
-export interface InstalledPluginsResponse {
-  plugins: InstalledPlugin[];
-  /** After an install: what landed on this server. */
-  installed?: PluginInstallOutcome;
-  /**
-   * After an install: the App was still re-assembling on what it listed when the answer stopped
-   * waiting (60 s) — a module is starting; its row says how it stands once it has.
-   */
-  loading?: true;
-  /**
-   * Specifiers this build SHIPS (the hot push's assets, or the installation's own
-   * `plugins/`): installable without a download, and not installed until listed.
-   */
-  shipped: string[];
-  /** The file the list lives in, named for the page that explains where to edit it by hand. */
-  file: string;
-  /** This server's own machine id — the key of its `[plugins.<machineId>]` table. */
-  machineId: string;
-  /** A listed plugin neither runs, nor failed to load, nor is one this build cannot run: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
-  restartPending: boolean;
-  /** Every library plugin that ships server modules, as it stands on this server for this Project (PRFC-0031); absent from a server older than that. */
-  modules?: PluginModuleStatus[];
 }
 
 /**
