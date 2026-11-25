@@ -6,24 +6,37 @@
  * document's own directory, the community repository's `assets/plugins/`; the pages resolve them
  * (src/lib/community-assets.ts).
  *
- * The rules are the server's (packages/server/src/plugin/market.ts, `parseMarketDocument`),
- * restated here because a build script cannot import the server's TypeScript: a document that
+ * The rules are the plugin library's (library/plugin/src/market.ts, `parseMarketDocument`),
+ * restated here because a build script cannot import the library's TypeScript: a document that
  * breaks one is not used at all. Where the document comes from is published.mjs.
  *
  * Optional popularity figures remain part of the shared market document. A package the
  * document names that the site doesn't carry is skipped.
  */
+import fs from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+/**
+ * The repository's root, found by walking up from this module's own URL until a directory that
+ * has `pnpm-workspace.yaml`. A fixed hop count breaks when vite bundles the config chain into
+ * one temporary file under `.vite-temp/`: `import.meta.url` then names that file, and the three
+ * hops that end at the repository root from `scripts/hub/` end at `packages/` from there. The
+ * workspace marker is the anchor that holds for the direct run and the bundle alike.
+ */
+function repoRoot() {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (; ; dir = dirname(dir)) {
+    if (fs.existsSync(join(dir, "pnpm-workspace.yaml"))) return dir;
+    if (dirname(dir) === dir) {
+      throw new Error(`could not locate the repository root above ${import.meta.url}`);
+    }
+  }
+}
 
 /** The document embedded beside the server, copied from the community master at release time. */
 export const EMBEDDED_MARKET_DOC = join(
-  HERE,
-  "..",
-  "..",
-  "..",
+  repoRoot(),
   "library",
   "plugin",
   "src",

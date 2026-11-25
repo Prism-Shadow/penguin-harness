@@ -5,14 +5,14 @@
  *   node scripts/sync-market-assets.mjs <penguin-harness-community checkout>
  *
  * Copies the market document, `assets/plugins/market.json`, over
- * packages/server/src/plugin/builtin-market.json. Then, for every built-in plugin (a package under
+ * library/plugin/src/builtin-market.json. Then, for every built-in plugin (a package under
  * plugins/, by the name its package.json gives) whose cover the document names, copies that cover
- * and its thumbnail into packages/server/src/plugin/market-covers/ at the path the document names
+ * and its thumbnail into library/plugin/src/market-covers/ at the path the document names
  * them by (scripts/market-covers.mjs), after emptying the folder, so a cover the document no
  * longer names does not linger. Screenshots stay in the community repository: the server fetches
  * and keeps those. Prints each file and the total bytes the build now carries.
  *
- * Afterwards: `pnpm exec prettier --write packages/server/src/plugin/builtin-market.json`, then
+ * Afterwards: `pnpm exec prettier --write library/plugin/src/builtin-market.json`, then
  * the server's plugin-market suite, which fails on a copy the server would refuse.
  */
 import fs from "node:fs";
@@ -61,14 +61,14 @@ for (const [name, entry] of Object.entries(doc.plugins ?? {})) {
 }
 fs.copyFileSync(
   documentFile,
-  path.join(ROOT, "packages", "server", "src", "plugin", "builtin-market.json"),
+  path.join(ROOT, "library", "plugin", "src", "builtin-market.json"),
 );
 
 let bytes = 0;
 const files = marketCoverFiles(ROOT);
 for (const rel of files) bytes += fs.statSync(path.join(covers, ...rel.split("/"))).size;
 const uncovered = [...builtIn].filter((name) => doc.plugins?.[name]?.cover === undefined).sort();
-console.log(`sync-market-assets: market.json -> packages/server/src/plugin/builtin-market.json`);
+console.log(`sync-market-assets: market.json -> library/plugin/src/builtin-market.json`);
 console.log(
   `sync-market-assets: ${files.length} cover files, ${bytes} bytes -> ${MARKET_COVERS_SOURCE}`,
 );
