@@ -9,7 +9,7 @@ import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
 import { detachDockPage, isTabShown } from "../src/features/dock";
 import { useAppDockDrop } from "../src/features/page-workspace/app-dock-drop";
 import { PAGE_DRAG_TYPE } from "../src/lib/page-layout";
-import { usePageWorkspace } from "../src/lib/page-workspace";
+import { usePageWorkspace } from "../src/lib/page-workspace-context";
 import { dockPageKey, sessionAppPair } from "../src/lib/session-app-dock";
 import { useRestoreApp } from "../src/lib/running-apps";
 import { shortcutOfWorkbench } from "../src/lib/workbench-shortcut";
