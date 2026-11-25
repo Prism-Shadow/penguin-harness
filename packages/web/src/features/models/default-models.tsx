@@ -205,6 +205,7 @@ export function useDefaultModelRows({
               emptyLabel={options.emptyLabel ?? S.voice.unbound}
               disabled={busy}
               onChange={onPick}
+              onOpenModels={onOpenModels}
               {...(options.onClear && owner ? { onClear: options.onClear } : {})}
               {...(options.clearLabel !== undefined ? { clearLabel: options.clearLabel } : {})}
             />
