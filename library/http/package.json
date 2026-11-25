@@ -43,6 +43,10 @@
       "types": "./dist/heartbeat.d.ts",
       "import": "./dist/heartbeat.js"
     },
+    "./icon-response": {
+      "types": "./dist/icon-response.d.ts",
+      "import": "./dist/icon-response.js"
+    },
     "./json-answer": {
       "types": "./dist/json-answer.d.ts",
       "import": "./dist/json-answer.js"

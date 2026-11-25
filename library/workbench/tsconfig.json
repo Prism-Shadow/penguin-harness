@@ -1,5 +1,19 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": {},
+  "compilerOptions": {
+    "paths": {
+      "@prismshadow/penguin-library-agent": ["../agent/src/index.ts"],
+      "@prismshadow/penguin-library-agent/agent-vocab": ["../agent/src/agent-vocab.ts"],
+      "@prismshadow/penguin-library-agent/workbench-dirs": ["../agent/src/workbench-dirs.ts"],
+      "@prismshadow/penguin-library-http": ["../http/src/index.ts"],
+      "@prismshadow/penguin-library-http/errors": ["../http/src/errors.ts"],
+      "@prismshadow/penguin-library-http/icon-response": ["../http/src/icon-response.ts"],
+      "@prismshadow/penguin-library-http/skill-import-limits": [
+        "../http/src/skill-import-limits.ts"
+      ],
+      "@prismshadow/penguin-library-http/zip-entries": ["../http/src/zip-entries.ts"],
+      "@prismshadow/penguin-library-setting": ["../setting/src/index.ts"]
+    }
+  },
   "include": ["src"]
 }

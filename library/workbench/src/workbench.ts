@@ -288,3 +288,68 @@ export interface IconRef {
   /** A monochrome SVG (every paint `currentColor` or `none`): drawn as a mask in the text colour. Otherwise drawn as itself. */
   tint: boolean;
 }
+
+/**
+ * The approval modes a workbench may open a Session with: two of a Session's existing modes,
+ * the two that decide every tool call by themselves. Nobody watches a workbench Session, so a
+ * mode that puts a call to a person (`read-only`, `always-ask`) is not offered.
+ */
+export type WorkbenchApprovalMode = "allow-all" | "deny-all";
+
+/**
+ * Who shares a workbench's folders:
+ *
+ * - `agent` (the default): this Agent's copy of the app alone. Its `dataDir` travels in the
+ *   Agent export with the workbench's data; all three go when the workbench is removed.
+ * - `server`: every copy of the same app (the same plugin's workbench) on this data root, across
+ *   its Projects and Agents — a model's weights, a tool's binaries. Never exported, never removed
+ *   with a workbench.
+ * - `machine`: every data root of this OS user on this computer (the installed app, a dev
+ *   instance) — a small local server one computer runs once. Never exported, never removed.
+ *
+ * The shared levels belong to apps installed from a plugin: the plugin's name is what makes two
+ * copies one app. Only the handler writes them; the Agent's sandboxed commands may not.
+ */
+export type WorkbenchDataLevel = "agent" | "server" | "machine";
+
+/**
+ * Where a workbench's own folders are on the server's machine. The handler reads and writes them
+ * with Node's own `fs` (`node:fs`, `node:path`, `node:net` are typed for it) and serves what its
+ * page needs from its own routes; the host offers no file API.
+ */
+export interface WorkbenchDataPaths {
+  /**
+   * Files kept for good: at the agent level what the handler and the Agent both write, the Agent
+   * with its own file tools (`<agentDir>/app/data/<id>`, exported with the workbench's data); at
+   * a shared level what every copy of the app reads, such as a model's weights.
+   */
+  dataDir: string;
+  /** Files that can be made again. Never exported. */
+  cacheDir: string;
+  /**
+   * Runtime-only files — Unix sockets, pipes, locks — at a short path, since a Unix socket path
+   * holds at most 103 bytes: name a socket with `socketPath`. Never exported; kept across
+   * restarts (unlink a stale socket before listening).
+   */
+  stateDir: string;
+}
+
+/**
+ * One viewer's arrangement of a Project's App Center: the grid in order, each item an app by its
+ * `<agentId>/<workbenchId>` key or a folder of apps. Kept per account in
+ * `ui_prefs.appCenterLayouts`, by Project id, and written only through
+ * PUT /api/projects/:projectId/app-center/layout.
+ */
+export interface AppCenterLayout {
+  v: 1;
+  items: AppCenterLayoutItem[];
+}
+export type AppCenterLayoutItem =
+  { type: "app"; app: string } | { type: "folder"; id: string; name: string; apps: string[] };
+
+export interface AppCenterUnavailable {
+  /** The catalog could not read these Agents or their workbench switch is off. */
+  agents: string[];
+  /** Installed workbenches temporarily unable to contribute a tile. */
+  apps: string[];
+}

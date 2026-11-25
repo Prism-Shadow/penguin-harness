@@ -129,7 +129,14 @@ import type {
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
-import type { AppCenterShortcut, WorkbenchInfo } from "@prismshadow/penguin-library-workbench";
+import type {
+  AppCenterLayout,
+  AppCenterLayoutItem,
+  AppCenterShortcut,
+  AppCenterUnavailable,
+  WorkbenchInfo,
+} from "@prismshadow/penguin-library-workbench";
+import type { IconRef } from "@prismshadow/penguin-library-http/icon-response";
 // Vocabulary this file's own DTOs reference and the setting domain library owns (re-exported below).
 import type { StoredKeybindings } from "@prismshadow/penguin-library-setting/types";
 // The vocabulary whose ownership moved to the domain libraries (the contracts name it):
@@ -2640,11 +2647,7 @@ export type {
  * the type its bytes say, sandboxed (`Content-Security-Policy: …; sandbox`, `nosniff`). Draw it
  * with `<img>`, or — when `tint` is set — as a CSS mask filled with the text colour.
  */
-export interface IconRef {
-  url: string;
-  /** A monochrome SVG (every paint `currentColor` or `none`): drawn as a mask in the text colour. Otherwise drawn as itself. */
-  tint: boolean;
-}
+export type { IconRef } from "@prismshadow/penguin-library-http/icon-response";
 
 export interface SkillMetadataItem {
   /** Skill directory name (the identity key for install / uninstall / Prompt addressing). */
@@ -3028,26 +3031,6 @@ export interface WorkbenchAppCenterResponse {
 }
 
 /**
- * One viewer's arrangement of a Project's App Center: the grid in order, each item an app by its
- * `<agentId>/<workbenchId>` key or a folder of apps. Kept per account in
- * `ui_prefs.appCenterLayouts`, by Project id, and written only through
- * PUT /api/projects/:projectId/app-center/layout.
- */
-export interface AppCenterLayout {
-  v: 1;
-  items: AppCenterLayoutItem[];
-}
-export type AppCenterLayoutItem =
-  { type: "app"; app: string } | { type: "folder"; id: string; name: string; apps: string[] };
-
-export interface AppCenterUnavailable {
-  /** The catalog could not read these Agents or their workbench switch is off. */
-  agents: string[];
-  /** Installed workbenches temporarily unable to contribute a tile. */
-  apps: string[];
-}
-
-/**
  * GET /api/projects/:p/app-center: a shortcut for every workbench of the Project's Agents on this
  * server whose manifest asks to be shown, in Agent list order and by title within an Agent. Read
  * from the manifests, load status and the loads under way; nothing is compiled.
@@ -3353,7 +3336,10 @@ export type VersionResponse = VersionReport;
 
 export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-core";
 export type {
+  AppCenterLayout,
+  AppCenterLayoutItem,
   AppCenterShortcut,
+  AppCenterUnavailable,
   WorkbenchAppCenter,
   WorkbenchInfo,
   WorkbenchVersion,

@@ -136,7 +136,53 @@
         "../../library/http/src/socket-sse-text.ts"
       ],
       "@prismshadow/penguin-library-http/event-stream": ["../../library/http/src/event-stream.ts"],
+      "@prismshadow/penguin-library-http/icon-response": [
+        "../../library/http/src/icon-response.ts"
+      ],
       "@prismshadow/penguin-library-workbench": ["../../library/workbench/src/index.ts"],
+      "@prismshadow/penguin-library-workbench/app-center": [
+        "../../library/workbench/src/app-center.ts"
+      ],
+      "@prismshadow/penguin-library-workbench/app-center-layout": [
+        "../../library/workbench/src/app-center-layout.ts"
+      ],
+      "@prismshadow/penguin-library-workbench/archive": ["../../library/workbench/src/archive.ts"],
+      "@prismshadow/penguin-library-workbench/compile": [
+        "../../library/workbench/src/compile.ts"
+      ],
+      "@prismshadow/penguin-library-workbench/compile-ui": [
+        "../../library/workbench/src/compile-ui.ts"
+      ],
+      "@prismshadow/penguin-library-workbench/data-dirs": [
+        "../../library/workbench/src/data-dirs.ts"
+      ],
+      "@prismshadow/penguin-library-workbench/git-identity": [
+        "../../library/workbench/src/git-identity.ts"
+      ],
+      "@prismshadow/penguin-library-workbench/leftovers": [
+        "../../library/workbench/src/leftovers.ts"
+      ],
+      "@prismshadow/penguin-library-workbench/manifest": [
+        "../../library/workbench/src/manifest.ts"
+      ],
+      "@prismshadow/penguin-library-workbench/migrate": [
+        "../../library/workbench/src/migrate.ts"
+      ],
+      "@prismshadow/penguin-library-workbench/migrate-state": [
+        "../../library/workbench/src/migrate-state.ts"
+      ],
+      "@prismshadow/penguin-library-workbench/page-html": [
+        "../../library/workbench/src/page-html.ts"
+      ],
+      "@prismshadow/penguin-library-workbench/page-sdk": [
+        "../../library/workbench/src/page-sdk.ts"
+      ],
+      "@prismshadow/penguin-library-workbench/repo": ["../../library/workbench/src/repo.ts"],
+      "@prismshadow/penguin-library-workbench/result": ["../../library/workbench/src/result.ts"],
+      "@prismshadow/penguin-library-workbench/store": ["../../library/workbench/src/store.ts"],
+      "@prismshadow/penguin-library-workbench/ui-runtime": [
+        "../../library/workbench/src/ui-runtime.ts"
+      ],
       "@prismshadow/penguin-library-workspace": ["../../library/workspace/src/index.ts"],
       "@prismshadow/penguin-library-workspace/contract": [
         "../../library/workspace/src/contract.ts"

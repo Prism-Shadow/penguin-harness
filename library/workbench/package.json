@@ -24,6 +24,74 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./app-center": {
+      "types": "./dist/app-center.d.ts",
+      "import": "./dist/app-center.js"
+    },
+    "./app-center-layout": {
+      "types": "./dist/app-center-layout.d.ts",
+      "import": "./dist/app-center-layout.js"
+    },
+    "./archive": {
+      "types": "./dist/archive.d.ts",
+      "import": "./dist/archive.js"
+    },
+    "./compile": {
+      "types": "./dist/compile.d.ts",
+      "import": "./dist/compile.js"
+    },
+    "./compile-ui": {
+      "types": "./dist/compile-ui.d.ts",
+      "import": "./dist/compile-ui.js"
+    },
+    "./data-dirs": {
+      "types": "./dist/data-dirs.d.ts",
+      "import": "./dist/data-dirs.js"
+    },
+    "./git-identity": {
+      "types": "./dist/git-identity.d.ts",
+      "import": "./dist/git-identity.js"
+    },
+    "./leftovers": {
+      "types": "./dist/leftovers.d.ts",
+      "import": "./dist/leftovers.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "import": "./dist/manifest.js"
+    },
+    "./migrate": {
+      "types": "./dist/migrate.d.ts",
+      "import": "./dist/migrate.js"
+    },
+    "./migrate-state": {
+      "types": "./dist/migrate-state.d.ts",
+      "import": "./dist/migrate-state.js"
+    },
+    "./page-html": {
+      "types": "./dist/page-html.d.ts",
+      "import": "./dist/page-html.js"
+    },
+    "./page-sdk": {
+      "types": "./dist/page-sdk.d.ts",
+      "import": "./dist/page-sdk.js"
+    },
+    "./repo": {
+      "types": "./dist/repo.d.ts",
+      "import": "./dist/repo.js"
+    },
+    "./result": {
+      "types": "./dist/result.d.ts",
+      "import": "./dist/result.js"
+    },
+    "./store": {
+      "types": "./dist/store.d.ts",
+      "import": "./dist/store.js"
+    },
+    "./ui-runtime": {
+      "types": "./dist/ui-runtime.d.ts",
+      "import": "./dist/ui-runtime.js"
+    },
     "./workbench": {
       "types": "./dist/workbench.d.ts",
       "import": "./dist/workbench.js"
@@ -34,7 +102,14 @@
     "test": "vitest run --passWithNoTests",
     "build": "tsup"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-agent": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-library-setting": "workspace:*",
+    "fflate": "^0.8.3",
+    "isomorphic-git": "^1.44.0"
+  },
   "devDependencies": {
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
