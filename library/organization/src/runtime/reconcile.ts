@@ -11,10 +11,7 @@
  */
 import { createHash } from "node:crypto";
 import { comparePluginVersions } from "@prismshadow/penguin-core";
-import type {
-  OrgCalendarOutcome,
-  OrgTicketChange,
-} from "@prismshadow/penguin-library-organization";
+import type { OrgCalendarOutcome, OrgTicketChange } from "../organization.js";
 import type { OrgChannelMessage } from "../types.js";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { ChannelConfig, TicketDoc } from "../files.js";

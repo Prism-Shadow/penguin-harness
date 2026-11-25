@@ -52,7 +52,7 @@ import type {
 } from "../types.js";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "@prismshadow/penguin-library-http/errors";
-import type { OrgCache } from "@prismshadow/penguin-library-organization";
+import type { OrgCache } from "../organization.js";
 import { badRequest } from "@prismshadow/penguin-library-http/validate";
 import type { ChannelConfig, OrgConfig, OrgEmployee, TicketDoc } from "../files.js";
 import {
