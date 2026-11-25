@@ -234,6 +234,7 @@
     "which": "^5.0.0"
   },
   "devDependencies": {
+    "@types/which": "^3.0.4",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"
