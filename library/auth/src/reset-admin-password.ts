@@ -8,8 +8,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { hashPassword } from "./auth/password.js";
-import { ADMIN_USER_ID, generateInitialAdminPassword } from "./auth/service.js";
+import { hashPassword } from "./password.js";
+import { ADMIN_USER_ID, generateInitialAdminPassword } from "./service.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { UsersRepo } from "./repos/users.js";
 import { AuthSessionsRepo } from "./repos/auth-sessions.js";
