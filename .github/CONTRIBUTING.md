@@ -42,17 +42,17 @@ skills/core output, the prestep also clears the web app's Vite dep cache
 otherwise keep serving the browser the previous core. `dev:docs` / `dev:landing`
 run the install check only (`--install-only`).
 
-The prestep builds `packages/cli` so the dev server has a built CLI to fall back to.
-A server started from TypeScript source writes a launcher in the data root's `bin/` directory
-and puts it first on the PATH of its Agents and terminals. The launcher prefers
-`packages/cli/src/penguin.ts` with the checkout's `tsx` loader, so the next CLI invocation
-picks up command implementation edits without restarting the server. If you add a command
-or change its declaration metadata, run `pnpm --filter @prismshadow/penguin-cli gen:ifaces`
-to refresh the generated command tables before the next invocation.
-If source execution is unavailable, the launcher uses `packages/cli/dist/penguin.js`.
-A built server prefers that same built CLI.
-After editing the CLI for a built server, run `pnpm --filter @prismshadow/penguin-cli build`
-to refresh the build.
+The prestep builds `packages/cli`: the build generates the command tables the CLI reads and
+leaves a built CLI to fall back to. The dev server writes a launcher in the data root's `bin/`
+directory and puts that directory first on the PATH of its Agents and terminals. Because the
+server runs from TypeScript source, the launcher prefers `packages/cli/src/penguin.ts` with the
+checkout's `tsx` loader, so the next CLI invocation picks up edits under `packages/cli/src`
+without restarting the server; code the CLI imports from `packages/server` or `packages/core`
+still comes from their builds. If you add a command or change its `contributes` entry, run
+`pnpm --filter @prismshadow/penguin-cli gen:ifaces` to refresh the generated command tables
+before the next invocation. If source execution is unavailable, the launcher uses
+`packages/cli/dist/penguin.js`. A built server prefers that same built CLI; after editing the
+CLI for one, run `pnpm --filter @prismshadow/penguin-cli build`.
 
 One rule when bypassing the dev commands: **rebuild skills/core through pnpm, in that
 order** (`pnpm build`, or restart `pnpm dev`) — the workspace uses injected dependencies

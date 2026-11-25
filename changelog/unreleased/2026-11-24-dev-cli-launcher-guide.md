@@ -7,10 +7,4 @@
 
 [中文版](2026-11-24-dev-cli-launcher-guide.zh.md)
 
-The contributor guide now explains when the development server runs the CLI from source.
-
-## Details
-
-The launcher uses the checkout's TypeScript source when the server runs from source and
-can resolve `tsx`. The guide explains when to regenerate command tables, when the launcher
-uses the built CLI, and when to rebuild it.
+Corrected the contributor guide's paragraph on the dev server's `penguin` launcher, which said it always ran the built CLI, to describe the source run through `tsx`, the fallback to the build, when to run `gen:ifaces`, and when to rebuild the CLI.

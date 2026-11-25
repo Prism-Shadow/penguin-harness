@@ -37,15 +37,15 @@ BASE_PATH=/ pnpm build:site   # 完全按 Pages 部署的方式组装落地页 +
 Vite 依赖缓存（`packages/web/node_modules/.vite`）——该缓存仅以 lockfile/配置为键，否则会继续把
 上一版 core 喂给浏览器。`dev:docs` / `dev:landing` 只跑安装检查（`--install-only`）。
 
-预处理步骤会构建 `packages/cli`，为开发服务器准备备用的 CLI 构建产物。
-从 TypeScript 源码启动的服务器会在数据根目录的 `bin/` 下写入启动脚本，并把该目录放在
-Agent 和终端的 PATH 最前面。启动脚本优先通过当前检出的 `tsx` 加载器运行
-`packages/cli/src/penguin.ts`，因此修改命令实现后，下次调用 CLI 就会读取新源码，无需重启服务器。
-新增命令或修改命令声明的元数据后，请先运行 `pnpm --filter @prismshadow/penguin-cli gen:ifaces`
-更新生成的命令表，再调用 CLI。
-如果无法从源码运行，启动脚本会使用 `packages/cli/dist/penguin.js`。
-从构建产物启动的服务器优先使用同一份 CLI 构建产物。为这类服务器修改 CLI 后，
-运行 `pnpm --filter @prismshadow/penguin-cli build` 更新构建产物。
+预处理步骤会构建 `packages/cli`：构建会生成 CLI 读取的命令表，也留下一份备用的 CLI 构建产物。
+dev server 会在数据根目录的 `bin/` 下写入启动脚本，并把该目录放在 Agent 和终端的 PATH 最前面。
+server 从 TypeScript 源码运行，所以启动脚本优先通过当前检出的 `tsx` 加载器运行
+`packages/cli/src/penguin.ts`：改动 `packages/cli/src` 后，下次调用 CLI 就会读到新源码，无需重启
+server；CLI 从 `packages/server`、`packages/core` 引入的代码仍来自它们的构建产物。
+新增命令或修改命令的 `contributes` 条目后，先运行 `pnpm --filter @prismshadow/penguin-cli gen:ifaces`
+更新生成的命令表，再调用 CLI。无法从源码运行时，启动脚本改用 `packages/cli/dist/penguin.js`；
+从构建产物启动的 server 也优先用它，这时改完 CLI 要运行 `pnpm --filter @prismshadow/penguin-cli build`
+重新构建。
 
 绕开 dev 命令时有一条规则：**通过 pnpm 重新构建 skills/core，并按此顺序**（`pnpm build`，或重启
 `pnpm dev`）——工作区使用注入式依赖（pnpm-workspace.yaml 中的 `injectWorkspacePackages`），因此
