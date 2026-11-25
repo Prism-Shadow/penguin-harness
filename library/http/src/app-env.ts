@@ -7,10 +7,25 @@
 import type { SessionVia } from "@prismshadow/penguin-library-auth";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 
+export interface AgentRequestAuth {
+  projectId: string;
+  agentId: string;
+  grant: {
+    role: string;
+    generation: number;
+    allEndpoints: boolean;
+    apiIds: ReadonlySet<string>;
+  };
+  agentApi: boolean;
+  tokenHash?: string;
+}
+
 export type AppEnv = {
   Variables: {
     user: UserRow;
     /** How the current session was established — see {@link SessionVia}. */
     sessionVia: SessionVia;
+    /** Present when the request was authenticated via an Agent auth session Bearer token. */
+    agentAuth?: AgentRequestAuth;
   };
 };
