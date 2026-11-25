@@ -6,15 +6,15 @@ for (const [lang, headline, subtitle, apps, steps] of [
     "From Vibe-Coding to Vibe-Finetuning",
     "Unified Self-Evolving Foundation for Millions of AI Apps.",
     [
-      "Document Q&A",
-      "Investment Analyst",
-      "Legal Assistant",
-      "Image Studio",
-      "AI Slides",
-      "Support",
-      "Expense log",
-      "Terminal",
-      "Browser",
+      "Competitor Watch",
+      "Inventory",
+      "Weekly Report",
+      "Brand Monitor",
+      "Quote Builder",
+      "Security Audit",
+      "Ops Alerts",
+      "Study Coach",
+      "Contract Ledger",
     ],
     ["Evaluating", "Improving", "Retesting", "Next round"],
   ],
@@ -23,15 +23,15 @@ for (const [lang, headline, subtitle, apps, steps] of [
     "从 许愿式编程 到 许愿式调优",
     "千万个 AI 应用的统一自进化底座",
     [
-      "文档问答",
-      "投资分析",
-      "法务助手",
-      "图像工作室",
-      "AI PPT",
-      "客服工作台",
-      "报销登记",
-      "命令行终端",
-      "浏览器",
+      "竞品监测",
+      "库存管理",
+      "周报生成",
+      "舆情监控",
+      "报价单",
+      "安全巡检",
+      "运维告警",
+      "错题本",
+      "合同台账",
     ],
     ["评估中", "改进中", "复测中", "下一轮"],
   ],
@@ -77,9 +77,7 @@ for (const [lang, headline, subtitle, apps, steps] of [
       const appsDiagram = page.locator("#cases [data-story-diagram]");
       const platform = page.locator("#self-evolution [data-story-diagram]");
       await expect(page.locator("#cases h2")).toHaveText(
-        lang === "en"
-          ? "Build your first self-evolving Harness OS"
-          : "构建你的第一个自进化 Harness OS",
+        lang === "en" ? "Build a self-evolving Harness OS" : "搭建自进化的 Harness OS",
       );
       await expect(platform.locator(".scene-workflow-pane")).toBeVisible();
       await expect(platform).not.toContainText("GDPEVO Essential");
@@ -92,9 +90,9 @@ for (const [lang, headline, subtitle, apps, steps] of [
       ).toBeVisible();
       const phases = platform.locator('[data-agent-loop] [aria-current="step"]');
       await expect(phases).toHaveText(steps);
-      await expect(platform.locator('[data-arc="active"] .evo-arc').first()).toHaveCSS(
-        "animation-name",
-        "none",
+      await expect(platform.locator(".evo-loop-arrow").first()).toHaveCSS(
+        "transition-duration",
+        "0s",
       );
       await expect(platform.locator("[data-agent-loop]")).toHaveCount(4);
       await expect(platform.locator("animateMotion")).toHaveCount(0);
@@ -184,11 +182,11 @@ test("agent loops turn out of step, and each closed round bumps a version and th
   await expect(workbench).toHaveAttribute("data-active", "true");
   await expect(versions).toHaveText(["v1", "v1", "v1", "v1"]);
   await expect(accuracy).toHaveText("46.0");
-  await page.clock.runFor(750);
+  await page.clock.runFor(550);
   await expect(phases).toHaveText(["Improving", "Retesting", "Next round", "Evaluating"]);
   await expect(versions).toHaveText(["v1", "v1", "v1", "v2"]);
   await expect(accuracy).toHaveText("47.8");
-  await page.clock.runFor(2100);
+  await page.clock.runFor(1500);
   await expect(phases).toHaveText(["Evaluating", "Improving", "Retesting", "Next round"]);
   await expect(versions).toHaveText(["v2", "v2", "v2", "v2"]);
   await expect(accuracy).toHaveText("53.0");
@@ -197,8 +195,8 @@ test("agent loops turn out of step, and each closed round bumps a version and th
   await expect(versions).toHaveText(["v7", "v7", "v7", "v7"]);
 });
 
-// Each sentence becomes an app that installs when its ring closes, so the count only grows.
-test("app center keeps generating and installing apps", async ({ page }) => {
+// A run opens with room for the generated apps: each sentence adds one, building, then installed.
+test("app center generates a run of apps and installs each", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => localStorage.setItem("penguin-site.lang", "en"));
   await page.goto("/");
@@ -210,10 +208,10 @@ test("app center keeps generating and installing apps", async ({ page }) => {
   await expect(appCenter.getByText("Installed in Harness OS")).toBeVisible();
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await expect(appCenter).toHaveAttribute("data-active", "true");
-  await expect(count).toHaveText("24");
+  await expect(count).toHaveText("23");
   await expect(appCenter.getByText("Generating app…")).toBeVisible();
-  await expect(appCenter.getByText("Inventory", { exact: true })).toBeVisible();
+  await expect(appCenter.getByText("Competitor Watch", { exact: true })).toBeVisible();
   await expect(appCenter.locator('[data-app-state="building"]')).not.toHaveCount(0);
   await expect(appCenter.locator('[data-app-state="landed"]')).not.toHaveCount(0);
-  await expect.poll(async () => Number(await count.textContent())).toBeGreaterThan(26);
+  await expect.poll(async () => Number(await count.textContent())).toBeGreaterThan(24);
 });

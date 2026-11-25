@@ -19,6 +19,8 @@
   --ui-icon-tint-violet: var(--color-violet-500);
   --ui-icon-tint-pink: var(--color-pink-500);
   --ui-icon-tint-teal: var(--color-teal-500);
+  --ui-icon-tint-amber: var(--color-amber-500);
+  --ui-icon-tint-orange: var(--color-orange-500);
   max-width: 56rem;
   margin: 0 auto 1.25rem;
   overflow: hidden;
@@ -117,10 +119,9 @@
   color: var(--scene-surface);
 }
 
-/* The home screen: a window of whole rows over a grid that grows downwards. Every tile is placed
-   by its own row and column, so a new app never moves the ones already there, and the screen
-   scrolls by moving the grid as one layer. A row is a tile (the product's 56px icon, a two-line
-   name and its padding) and the gutter under it. */
+/* The home screen: whole rows of tiles, each placed by its own row and column, so a new app
+   never moves the ones already there. A row is a tile (the product's 56px icon, a two-line name
+   and its padding) and the gutter under it. */
 .scene-os-stage {
   --scene-row: 8.5rem;
   position: relative;
@@ -134,7 +135,6 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  transform: translate3d(0, calc(var(--scene-scrolled, 0) * var(--scene-row) * -1), 0);
 }
 .scene-launcher li {
   position: absolute;
@@ -197,6 +197,11 @@
 .scene-launcher li[data-app-state="building"] .scene-install-ring {
   opacity: 1;
 }
+/* A finished run is cleared: its generated apps fade out together before the next run opens. */
+.scene-launcher li[data-app-state="leaving"] {
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
 .scene-app-ripple {
   position: absolute;
   inset: 0;
@@ -206,67 +211,8 @@
   opacity: 0;
   pointer-events: none;
 }
-/* An app with no icon of its own: the first letter of its name, in one of the product's tints. */
-.scene-app-letter {
-  background: var(--letter-wash);
-  color: var(--letter-ink);
-  font-size: var(--text-2xl);
-  font-weight: 600;
-}
-.scene-app-hue-0 {
-  --letter-wash: var(--color-sky-50);
-  --letter-ink: var(--color-sky-600);
-  --letter-wash-dark: var(--color-sky-950);
-  --letter-ink-dark: var(--color-sky-400);
-}
-.scene-app-hue-1 {
-  --letter-wash: var(--color-emerald-50);
-  --letter-ink: var(--color-emerald-600);
-  --letter-wash-dark: var(--color-emerald-950);
-  --letter-ink-dark: var(--color-emerald-400);
-}
-.scene-app-hue-2 {
-  --letter-wash: var(--color-violet-50);
-  --letter-ink: var(--color-violet-600);
-  --letter-wash-dark: var(--color-violet-950);
-  --letter-ink-dark: var(--color-violet-400);
-}
-.scene-app-hue-3 {
-  --letter-wash: var(--color-amber-50);
-  --letter-ink: var(--color-amber-600);
-  --letter-wash-dark: var(--color-amber-950);
-  --letter-ink-dark: var(--color-amber-400);
-}
-.scene-app-hue-4 {
-  --letter-wash: var(--color-rose-50);
-  --letter-ink: var(--color-rose-600);
-  --letter-wash-dark: var(--color-rose-950);
-  --letter-ink-dark: var(--color-rose-400);
-}
-.scene-app-hue-5 {
-  --letter-wash: var(--color-cyan-50);
-  --letter-ink: var(--color-cyan-600);
-  --letter-wash-dark: var(--color-cyan-950);
-  --letter-ink-dark: var(--color-cyan-400);
-}
-.scene-app-hue-6 {
-  --letter-wash: var(--color-indigo-50);
-  --letter-ink: var(--color-indigo-600);
-  --letter-wash-dark: var(--color-indigo-950);
-  --letter-ink-dark: var(--color-indigo-400);
-}
-.scene-app-hue-7 {
-  --letter-wash: var(--color-teal-50);
-  --letter-ink: var(--color-teal-600);
-  --letter-wash-dark: var(--color-teal-950);
-  --letter-ink-dark: var(--color-teal-400);
-}
-.dark .scene-app-letter {
-  background: color-mix(in srgb, var(--letter-wash-dark) 60%, transparent);
-  color: var(--letter-ink-dark);
-}
-/* A system app's tile is that app's own artwork: its glyph on the two-colour field the product
-   draws for it, each colour pulled towards the accent. */
+/* A glyph tile, as the product draws a system app's: the glyph on a two-colour field, each
+   colour pulled towards the accent. */
 .scene-app-system {
   background: linear-gradient(
     155deg,
@@ -478,39 +424,36 @@
   position: relative;
   height: 5rem;
 }
+/* Drawn at the size it is shown at, so the bus's corners and the arrowheads keep their shape. */
 .evo-links svg {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: 0;
+  left: 0;
   fill: none;
   stroke: var(--scene-ring-track);
   stroke-width: 1.5;
-}
-.evo-links path {
-  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .evo-links-narrow {
   display: none;
 }
-.evo-link-label {
+/* What each trunk carries, written between the two trunks so that neither line is interrupted. */
+.evo-link-labels {
   position: absolute;
-  top: 0.5625rem;
-  max-width: 46%;
-  padding: 0 0.5rem;
-  background: var(--scene-surface);
+  top: 0.75rem;
+  right: calc(25% + 0.75rem);
+  left: calc(25% + 0.75rem);
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
   color: var(--scene-muted);
   font-size: var(--text-xs);
-  line-height: 1.25rem;
-  text-align: center;
+  line-height: 1.25;
   text-wrap: balance;
-  transform: translateX(-50%);
 }
-.evo-link-improve {
-  left: 25%;
-}
-.evo-link-bench {
-  left: 75%;
+.evo-link-labels span:last-child {
+  text-align: end;
 }
 .evo-loops {
   display: grid;
@@ -528,19 +471,6 @@
   padding: 0.75rem 0.375rem 0;
   text-align: center;
   text-wrap: balance;
-}
-/* The bus's drop ends in an arrowhead on each loop: a square's two edges, turned so that its
-   corner lands on the end of the line. */
-.evo-loops li::before {
-  content: "";
-  position: absolute;
-  top: -8.5px;
-  left: calc(50% - 3.5px);
-  width: 7px;
-  height: 7px;
-  border: solid var(--scene-ring-track);
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
 }
 .evo-ring {
   position: relative;
@@ -561,26 +491,16 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.evo-arc-track,
-.evo-arc-head {
+/* The loop: a faint whole circle, and on it one arrow that goes most of the way round. */
+.evo-loop-track {
   stroke: var(--scene-ring-track);
   stroke-width: 1.5;
 }
-/* A closed round clears the ring at once, line and head together. */
-.evo-arc {
+.evo-loop-arrow {
   stroke: var(--scene-blue);
   stroke-width: 2;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  opacity: 0;
-}
-:is([data-arc="active"], [data-arc="done"]) .evo-arc {
-  stroke-dashoffset: 0;
-  opacity: 1;
-}
-:is([data-arc="active"], [data-arc="done"]) .evo-arc-head {
-  stroke: var(--scene-blue);
-  stroke-width: 2;
+  transform-box: view-box;
+  transform-origin: center;
 }
 /* The agent's own mark is the ring's subject: a round tile, as an avatar is, with its version
    under it. Together they stay clear of the arcs. */
@@ -790,13 +710,20 @@
   .evo-links-narrow {
     display: block;
   }
-  .evo-link-label {
-    left: 50%;
-    max-width: 100%;
-    width: max-content;
+  /* One trunk in the middle: its two labels stand on either side of it. */
+  .evo-link-labels {
+    top: 1rem;
+    right: 0;
+    left: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
   }
-  .evo-link-bench {
-    top: 2rem;
+  .evo-link-labels span:first-child {
+    text-align: end;
+  }
+  .evo-link-labels span:last-child {
+    text-align: start;
   }
   .evo-loops {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -822,10 +749,7 @@
   }
   /* The sentence is typed in, left to right, in the time before it is sent. */
   .product-scene[data-active="true"] .scene-composer-text {
-    animation: scene-prompt-type 460ms steps(20, end) both;
-  }
-  .product-scene[data-active="true"] .scene-launcher {
-    transition: transform 720ms cubic-bezier(0.22, 1, 0.36, 1);
+    animation: scene-prompt-type 900ms steps(28, end) both;
   }
   .product-scene[data-active="true"] li[data-app-state="building"] .scene-app-slot {
     animation: scene-tile-arrive 360ms cubic-bezier(0.22, 1.3, 0.36, 1) both;
@@ -847,9 +771,9 @@
   .product-scene[data-active="true"] .evo-flow-back circle {
     animation-delay: -0.8s;
   }
-  /* The current stage draws itself over exactly one tick of the shared clock. */
-  .product-scene[data-active="true"] [data-arc="active"] .evo-arc {
-    animation: evo-arc-draw var(--evo-tick) linear both;
+  /* The arrow turns a quarter over exactly one tick of the shared clock, so it never pauses. */
+  .product-scene[data-advancing] .evo-loop-arrow {
+    transition: transform var(--evo-tick) linear;
   }
   .product-scene[data-active="true"] .evo-version {
     animation: evo-version-bump 420ms cubic-bezier(0.22, 1.4, 0.36, 1) both;
@@ -920,11 +844,6 @@
   100% {
     opacity: 0;
     transform: translateX(32px);
-  }
-}
-@keyframes evo-arc-draw {
-  from {
-    stroke-dashoffset: 1;
   }
 }
 @keyframes evo-version-bump {
