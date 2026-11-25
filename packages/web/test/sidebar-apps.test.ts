@@ -408,3 +408,42 @@ it("limits native Apps rows to the viewer's released pages even on direct naviga
   expect(row("system_agent/models")).not.toBeNull();
   expect(row("system_agent/machines")).toBeNull();
 });
+
+it("jumps to the hosting conversation's docked view when clicking a sidebar tab opened beside a session", async () => {
+  const { router } = await open([workbench("board"), workbench("notes")]);
+  await run(() => router.navigate("/apps?beside=here&fromCatalog=1"));
+  await until(() => document.querySelector(`li[data-app="${key("board")}"] > button`) !== null);
+  await click(
+    document.querySelector<HTMLButtonElement>(`li[data-app="${key("board")}"] > button`)!,
+  );
+  const dockedBoard = `/apps?app=${encodeURIComponent(key("board"))}&beside=here&fromCatalog=1`;
+  await until(() => frameOf("Board") !== null);
+  const frame = frameOf("Board")!;
+
+  // Clicking the active sidebar tab while already in the session keeps the docked view.
+  await click(row(key("board"))!);
+  expect(whereIs(router)).toBe(dockedBoard);
+  expect(frameOf("Board")).toBe(frame);
+
+  // Switching to another conversation and clicking the sidebar tab jumps back to the docked session view.
+  await run(() => router.navigate("/chat/second"));
+  expect(whereIs(router)).toBe("/chat/second");
+  await click(row(key("board"))!);
+  expect(whereIs(router)).toBe(dockedBoard);
+  expect(frameOf("Board")).toBe(frame);
+  expect(reachable(frame)).toBe(true);
+
+  // Opening a second app in the same session dock allows switching between both docked apps via sidebar tabs.
+  await run(() => router.navigate("/apps?beside=here&fromCatalog=1"));
+  await until(() => document.querySelector(`li[data-app="${key("notes")}"] > button`) !== null);
+  await click(
+    document.querySelector<HTMLButtonElement>(`li[data-app="${key("notes")}"] > button`)!,
+  );
+  const dockedNotes = `/apps?app=${encodeURIComponent(key("notes"))}&beside=here&fromCatalog=1`;
+  await until(() => frameOf("Notes") !== null);
+  await run(() => router.navigate("/chat/second"));
+  await click(row(key("board"))!);
+  expect(whereIs(router)).toBe(dockedBoard);
+  await click(row(key("notes"))!);
+  expect(whereIs(router)).toBe(dockedNotes);
+});

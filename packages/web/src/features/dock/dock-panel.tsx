@@ -257,7 +257,11 @@ export function DockPanel({
   const selectTab = (key: string) => {
     const page = pageOf(key);
     const session = workspace && sessionAppPair(workspace.layout)?.session;
-    if (page && session && workspace) workspace.openBesideSession(pageSessionId(session), page);
+    if (page && session && workspace)
+      workspace.openBesideSession(
+        pageSessionId(session),
+        page.kind === "catalog" ? { ...page, catalogDock: true } : page,
+      );
     activateTab(key);
   };
   // Hiding puts the surface away and nothing else — every body stays mounted at zero size —
@@ -357,7 +361,7 @@ export function DockPanel({
       // A tap resolves to select here: pointer capture retargets the browser click to the
       // strip, so the tab's own click handler never fires from a mouse press.
       if (!dragged) {
-        activateTab(id);
+        selectTab(id);
         return;
       }
       if (!active || !candidate || candidate === tabHome(id)) return;
