@@ -15,7 +15,7 @@
  * edge, negative when pulled into the conversation.
  */
 import { rubberband } from "@prismshadow/penguin-ui";
-import { subscribeAccountApplied, writeCached } from "@prismshadow/penguin-web/internal";
+import { subscribeAccountApplied, writeCached } from "@prismshadow/penguin-web/internal/cache";
 
 /** localStorage key of the resting position: the ball's centre as a ratio of the body's height. */
 export const LAUNCHER_Y_KEY = "penguin.dock.launcherY";

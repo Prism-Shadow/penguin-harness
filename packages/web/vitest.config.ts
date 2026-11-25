@@ -71,6 +71,10 @@ export default defineConfig({
         find: /^@prismshadow\/penguin-web\/internal$/,
         replacement: resolve(here, "src/internal.ts"),
       },
+      {
+        find: /^@prismshadow\/penguin-web\/internal\/(.*)$/,
+        replacement: `${resolve(here, "src")}/$1`,
+      },
     ],
   },
   test: {

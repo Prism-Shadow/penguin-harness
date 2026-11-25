@@ -154,6 +154,10 @@ export default defineConfig({
         find: /^@prismshadow\/penguin-web\/internal$/,
         replacement: at("../web/src/internal.ts"),
       },
+      {
+        find: /^@prismshadow\/penguin-web\/internal\/(.*)$/,
+        replacement: `${at("../web/src")}/$1`,
+      },
     ],
   },
   // The app's module classes use standard decorators; the dev server must lower them, as in

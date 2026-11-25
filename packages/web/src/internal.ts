@@ -6,20 +6,14 @@
  * is listed here once, and a name two modules export arrives under one of them aliased
  * (`useCompanyContext`).
  *
+ * A name a moved module's body reads or calls while it loads (`subscribeAccountApplied`,
+ * `onCommand`, `parseChord`) comes through a leaf subpath (`@prismshadow/penguin-web/internal/<path>`
+ * → the app's own file) instead of through this hub: the host sources this hub forwards from can
+ * reach back into the moved halves through their face, and under the suites' transform a hub
+ * binding is not defined until the hub has finished loading — a leaf import cannot cycle.
+ *
  * Deliberately a re-export hub and nothing more: no logic, no defaults.
  */
-
-// The moved modules call these three bindings as their bodies load (the dock's command
-// handlers, the launcher's account hook, the draft heights' chords), and a face import inside
-// the hub's own sources (lib/account-sync/prefs) can loop back into them mid-load. Their
-// re-exports are the hub's first statements, so the bindings are in place however the cycle
-// re-enters.
-
-export { subscribeAccountApplied, syncedStorage, writeCached } from "./lib/account-sync/cache";
-
-export { onCommand } from "./lib/shortcuts/dispatcher";
-
-export { chordEquals, chordOf, parseChord } from "./lib/shortcuts/chord";
 
 export { ApiError } from "./api/client";
 
@@ -83,9 +77,84 @@ export { restoreSelection } from "./components/ui/text-selection";
 
 export { Truncated } from "./components/ui/truncated";
 
+export {
+  AgentSelect,
+  dropsEmployeeGroup,
+  employeesLast,
+  employmentsOf,
+  isEmployee,
+} from "./features/agents/index";
+
+export { pickDefaultAgent } from "./features/ai-create/index";
+
+export { TileIcon, systemShortcutsOf } from "./features/app-center/index";
+
+export {
+  PathCapsulesProvider,
+  parseOrgKey,
+  switchDeskModel,
+  useCompany,
+} from "./features/company/index";
+
+export { retryStatus } from "./features/machines/index";
+
+export { readMachine, retryReading } from "./features/machines/machines-view";
+export type { RetryReading } from "./features/machines/machines-view";
+
+export { MessagingBindingModal } from "./features/messaging/index";
+
+export {
+  ModelCatalogSelect,
+  ModelPickerModal,
+  SELECTABLE_THINKING_LEVELS,
+  ThinkingLevelSelect,
+  compactionTally,
+  effectiveThinkingLevel,
+  heldThinkingSwitch,
+  modelLabel,
+  needsThinkingSwitchConfirm,
+  sessionThinkingLevel,
+  thinkingLevelLabel,
+  trailingCompaction,
+} from "./features/model-picker/index";
+export type { StagedThinkingSwitch, ThinkingSwitchItem } from "./features/model-picker/index";
+
+export { groupShape } from "./features/models/connection";
+
+export {
+  defaultChatModel,
+  hasConfiguredKey,
+  sameModelRef,
+  turnPricing,
+} from "./features/models/index";
+
+export { noteScheduleEvent } from "./features/schedules/index";
+
+export { SettingsDialog } from "./features/settings/index";
+
+export { SkillIcon, SkillPickList, toggleSkillName } from "./features/skills/index";
+
+export {
+  HttpStatusError,
+  fetchJson,
+  liveTerminals,
+  noteTerminalCreated,
+  noteTerminalReowned,
+  refreshTerminals,
+  subscribeTerminals,
+  terminalApiSupported,
+  terminalsOf,
+  watchTerminals,
+} from "./features/terminal/index";
+export type { TerminalInfo } from "./features/terminal/index";
+
+export { WorkspaceLinksProvider, WorkspaceSelect } from "./features/workspace/index";
+
 export { a2uiDrafts } from "./lib/a2ui-drafts";
 
 export { isDesktopShellWindow } from "./lib/account-menu";
+
+export { subscribeAccountApplied, syncedStorage, writeCached } from "./lib/account-sync/cache";
 
 export { useAgentAvatarSrc } from "./lib/agent-avatar";
 
@@ -447,6 +516,10 @@ export {
 } from "./lib/session-workbenches";
 export type { SessionWorkbenchKind } from "./lib/session-workbenches";
 
+export { chordEquals, chordOf, parseChord } from "./lib/shortcuts/chord";
+
+export { onCommand } from "./lib/shortcuts/dispatcher";
+
 export { currentPlatform } from "./lib/shortcuts/platform";
 
 export { displayedBinding, useKeymap, useShortcutTitle } from "./lib/shortcuts/use-keymap";
@@ -529,80 +602,3 @@ export { boundToolModel, useToolBindings } from "./state/use-tool-bindings";
 export { DRAFT_SESSION_ID } from "@prismshadow/penguin-server/api";
 
 export { modelCalledKeyless, providerInfo } from "@prismshadow/penguin-server/model-catalog";
-
-// The features' re-exports come last: a moved module reaches its host plumbing through this
-// hub, and a features import (through a face deep path) can loop back into a moved module
-// whose body calls a hub binding as it loads. The hub's own re-export of that binding must
-// already be in place by then, so the leaves are re-exported before the features.
-
-export {
-  AgentSelect,
-  dropsEmployeeGroup,
-  employeesLast,
-  employmentsOf,
-  isEmployee,
-} from "./features/agents/index";
-export { pickDefaultAgent } from "./features/ai-create/index";
-
-export { TileIcon, systemShortcutsOf } from "./features/app-center/index";
-
-export {
-  PathCapsulesProvider,
-  parseOrgKey,
-  switchDeskModel,
-  useCompany,
-} from "./features/company/index";
-
-export { retryStatus } from "./features/machines/index";
-
-export { readMachine, retryReading } from "./features/machines/machines-view";
-export type { RetryReading } from "./features/machines/machines-view";
-
-export { MessagingBindingModal } from "./features/messaging/index";
-
-export {
-  ModelCatalogSelect,
-  ModelPickerModal,
-  SELECTABLE_THINKING_LEVELS,
-  ThinkingLevelSelect,
-  compactionTally,
-  effectiveThinkingLevel,
-  heldThinkingSwitch,
-  modelLabel,
-  needsThinkingSwitchConfirm,
-  sessionThinkingLevel,
-  thinkingLevelLabel,
-  trailingCompaction,
-} from "./features/model-picker/index";
-export type { StagedThinkingSwitch, ThinkingSwitchItem } from "./features/model-picker/index";
-
-export { groupShape } from "./features/models/connection";
-
-export {
-  defaultChatModel,
-  hasConfiguredKey,
-  sameModelRef,
-  turnPricing,
-} from "./features/models/index";
-
-export { noteScheduleEvent } from "./features/schedules/index";
-
-export { SettingsDialog } from "./features/settings/index";
-
-export { SkillIcon, SkillPickList, toggleSkillName } from "./features/skills/index";
-
-export {
-  HttpStatusError,
-  fetchJson,
-  liveTerminals,
-  noteTerminalCreated,
-  noteTerminalReowned,
-  refreshTerminals,
-  subscribeTerminals,
-  terminalApiSupported,
-  terminalsOf,
-  watchTerminals,
-} from "./features/terminal/index";
-export type { TerminalInfo } from "./features/terminal/index";
-
-export { WorkspaceLinksProvider, WorkspaceSelect } from "./features/workspace/index";

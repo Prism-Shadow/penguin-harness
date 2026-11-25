@@ -13,6 +13,7 @@
  */
 import { useSyncExternalStore } from "react";
 import type { SessionWorkbenchScope } from "@prismshadow/penguin-web-plugin";
+import { onCommand } from "@prismshadow/penguin-web/internal/lib/shortcuts/dispatcher";
 import {
   HttpStatusError,
   S,
@@ -20,7 +21,6 @@ import {
   liveTerminals,
   noteTerminalCreated,
   noteTerminalReowned,
-  onCommand,
   refreshTerminals,
   rememberTerminalMachine,
   terminalApiSupported,

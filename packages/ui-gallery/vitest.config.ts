@@ -31,6 +31,10 @@ export default defineConfig({
         find: /^@prismshadow\/penguin-web\/internal$/,
         replacement: at("../web/src/internal.ts"),
       },
+      {
+        find: /^@prismshadow\/penguin-web\/internal\/(.*)$/,
+        replacement: `${at("../web/src")}/$1`,
+      },
     ],
   },
   test: { environment: "node", include: ["test/**/*.test.ts"] },
