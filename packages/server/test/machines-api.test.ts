@@ -101,7 +101,7 @@ import type { RemoteLayout } from "../src/machines/layout.js";
 import type { PushPlan, RemoteInstallOutcome } from "../src/machines/install-server.js";
 import type { RemoteIdentity } from "../src/machines/detect.js";
 import type { CheckoutPacker } from "../src/machines/checkout-image.js";
-import { readPushedBuild } from "../src/hmr/pushed-build.js";
+import { readPushedBuild, writePushedBuild } from "../src/hmr/pushed-build.js";
 import { readHarnessMeta } from "../src/harness-meta.js";
 import { noPlatformResponse, startingResponse } from "../src/hmr/starting.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
@@ -174,6 +174,8 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
     detect: async () => ({ error: "the fake machine said nothing" }),
     listAliases: () => ["build-box", "nas"],
     resolvePlan: () => ({ baseVersion: "9.9.9", harness: null, hmrDir: null, version: "9.9.9" }),
+    // The images are laid from the server's own push seam, as the assembly binds it.
+    writeBuild: writePushedBuild,
     now: () => new Date("2026-08-24T12:00:00.000Z"),
     startServer: async () => ({ ok: true }),
     stopServer: async () => ({ ok: true as const }),

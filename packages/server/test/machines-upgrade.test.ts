@@ -4,6 +4,7 @@
  * for a plugin of its own that this one cannot run (hmr/push-plugins.ts).
  */
 import fs from "node:fs";
+import { readPushedBuild } from "../src/hmr/pushed-build.js";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -58,6 +59,7 @@ describe("handing a build over to a machine", () => {
       port: (server.address() as AddressInfo).port,
       cookie: "penguin_session=x",
       dataRoot: root,
+      readBuild: readPushedBuild,
     });
 
   it("sends the push with the acceptance on it", async () => {
