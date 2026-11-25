@@ -75,6 +75,11 @@ export default defineConfig({
         new URL("./src/api/types.ts", import.meta.url),
       ),
     },
+    // The moved domain services live in workspace packages whose injected copies carry their
+    // own node_modules: without this, a library import of core evaluates a second copy beside
+    // the one the test setup names the plugin library's host on, and the two copies' module
+    // state (the named host, the kernel's interface tables) stops being shared.
+    dedupe: ["@prismshadow/penguin-core"],
   },
   test: {
     server: {
