@@ -2,11 +2,11 @@
  * The plugin market's covers that ship inside the build: each built-in plugin's `cover.webp` and
  * `cover-640.webp`, as the community repository's `assets/plugins/<plugin>/` has them, so every
  * reader sees the real covers from the first second, offline included. Screenshots do not ship;
- * the server fetches and keeps those (packages/server/src/plugin/market-pictures.ts).
+ * the server fetches and keeps those (library/plugin/src/market-pictures.ts).
  *
- * The files live in the server's source tree, `packages/server/src/plugin/market-covers/`, which
+ * The files live in the plugin library's source tree, `library/plugin/src/market-covers/`, which
  * is where a run from source finds them: beside the module that reads them
- * (packages/server/src/plugin/market-covers.ts). Every other build has to put the same folder
+ * (library/plugin/src/market-covers.ts). Every other build has to put the same folder
  * beside its bundle, as the far-side scripts are (scripts/far-side-scripts.mjs):
  * packages/server/tsup.config.ts copies it into dist/ (npm's `files: ["dist"]` ships it, and so
  * does the Docker image's `pnpm deploy`), packages/desktop/scripts/build-assets.mjs into the
@@ -22,7 +22,7 @@ import path from "node:path";
 export const MARKET_COVERS_NAME = "market-covers";
 
 /** Where the folder lives in the repository, relative to its root. */
-export const MARKET_COVERS_SOURCE = "packages/server/src/plugin/market-covers";
+export const MARKET_COVERS_SOURCE = "library/plugin/src/market-covers";
 
 /** Every file in the folder, as `<plugin>/<file>` paths, sorted; empty when it is missing. */
 export function marketCoverFiles(repoRoot) {

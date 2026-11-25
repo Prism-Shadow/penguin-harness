@@ -120,3 +120,17 @@ pnpm-lock.yaml 未含。后果与已试路径：
   6 个 Org 名（face 已导出），新增 plugin/types 导入绑 7 名（AgentAuthor/SkillMetadataItem/
   AgentMcpServerItem/HookItem/PluginConfigEntry/UnsatisfiedPlugin/PluginModuleStatus，
   face 均已导出），原 from 再导出块不动、无双导出。
+
+- 验证轮修复 3（owner land 读数 2）：① scripts/market-covers.mjs MARKET_COVERS_SOURCE 改
+  "library/plugin/src/market-covers"——四消费方全走常量（server tsup.config.ts onSuccess、
+  desktop build-assets.mjs、scripts/deploy.mjs、sync-market-assets.mjs），一处改全好；
+  注释段同步改指 library 面。成类扫出同字面量净额并一并修净：sync-market-assets.mjs
+  文档写入目标是活代码硬编码旧路径（join "packages/server/src/plugin/builtin-market.json"，
+  release-prep 会把文档复活写旧址）改 library 面；ui-gallery fixtures 的 covers
+  import.meta.glob／取用键／注释同病（旧目录静默空集靠 fallback）改净。全仓
+  'server/src/plugin/market*' 字面量复扫 0。② landing market.mjs EMBEDDED_MARKET_DOC
+  三级上跳在 vite 把 config 链（hub-plugin.ts→published.mjs→market.mjs）打成 .vite-temp
+  timestamp 单文件后落到 packages/ 而非仓根——改为从 import.meta.url 向上找
+  pnpm-workspace.yaml 作仓根再 join library/plugin/src/builtin-market.json；直跑与打包
+  两形态实测解析同一路径且文件在（.vite-temp 探针模拟打包位）。同链 source.mjs 的两级
+  上跳在 .vite-temp 位恰好落点不变未动；hub.mjs 的 createRequire 不在打包链。
