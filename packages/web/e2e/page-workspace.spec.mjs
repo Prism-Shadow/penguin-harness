@@ -184,7 +184,7 @@ test("a workbench shares the session viewport and its iframe survives changing p
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  const [id] = await start(page, ADMIN_ID);
+  const [id, second] = await start(page, ADMIN_ID);
   const chat = slot(page, id);
   await chat.locator(composer).fill("Keep the support conversation");
   const shortcuts = chat.getByRole("button", { name: "Shortcuts", exact: true });
@@ -208,10 +208,12 @@ test("a workbench shares the session viewport and its iframe survives changing p
   const node = await frame.elementHandle();
   const original = await node.contentFrame();
   await original.evaluate(() => (window.workspaceContinuity = "initial frame"));
-  await apps(page).locator('[data-app-row="penguin_support/support"]').click();
-  await expect(app).toHaveAttribute("data-pane", "full");
+  await sessionRow(page, second).click();
+  await expect(slot(page, second)).toHaveAttribute("data-pane", "full");
   await expect(chat).not.toBeVisible();
-  await page.goBack();
+  await expect(frame).not.toBeVisible();
+  await apps(page).locator('[data-app-row="penguin_support/support"]').click();
+  await expect(chat).toHaveAttribute("data-pane", "left");
   await expect(app).toHaveAttribute("data-pane", "right");
   await expect(frame).toBeVisible();
   expect(await original.evaluate(() => window.workspaceContinuity)).toBe("initial frame");

@@ -19,6 +19,7 @@ import { sessionAppPair, dockPageKey, existingDockPanel } from "../../lib/sessio
 import {
   setDockScope,
   openDockPage,
+  activateTab,
   panelDock,
   detachDockPage,
   setDockFullscreen,
@@ -66,6 +67,7 @@ export function DockScope() {
     const key = dockPageKey(appId);
     detachDockPage(key, owner!);
     if (!panelDock(key) || sameScope) openDockPage(key, existingPanel);
+    else activateTab(key);
   }, [appId, existingPanel, scope, windowKey]);
   useLayoutEffect(() => {
     if (!appId || location.state?.fullScreenSessionTool !== appId) return;

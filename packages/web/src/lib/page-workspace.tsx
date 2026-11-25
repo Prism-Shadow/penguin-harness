@@ -174,6 +174,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
   // A global visit can open the same catalog or app in another folder or without
   // its dock metadata. Keep the address and ownership attached to this conversation.
   const bySession = useRef(new Map<string, OpenPage>());
+  const byApp = useRef(new Map<string, { session: OpenPage; app: OpenPage }>());
   const readNumber = useRef(0);
   const ref = useRef(layout);
   ref.current = layout;
@@ -203,6 +204,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     if (changed) {
       pending.current = null;
       bySession.current.clear();
+      byApp.current.clear();
       hosts.current.clear();
       resourceOwners.current.clear();
       readNumber.current++;
@@ -217,6 +219,10 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
   }, [lifetime.scope]);
   const currentId = current?.id;
   const title = current?.title;
+  const nativeFullScreen =
+    current?.kind === "system" && location.state?.nativeAppFullScreen === current.id;
+  const dockedFullScreen =
+    current?.kind === "window" && location.state?.dockedFullScreen === current.id;
   useLayoutEffect(() => {
     const request = pending.current;
     const arrived =
@@ -251,6 +257,8 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       } else if (current.kind === "session") {
         const attached = bySession.current.get(current.id);
         if (attached) next = paired(next, current, attached);
+      } else if (!nativeFullScreen && !dockedFullScreen && !toolSession) {
+        byApp.current.delete(current.id);
       }
       publish(next);
     }
@@ -340,6 +348,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     );
   }
   function paired(base: PageLayout, session: OpenPage, app: OpenPage): PageLayout {
+    if (app.kind !== "catalog") byApp.current.set(app.id, { session, app });
     const visited = visitPage(visitPage(base, session), app);
     return {
       ...visited,
@@ -353,6 +362,8 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       for (const [id, attached] of bySession.current)
         if (attached.id === pair.app.id && id !== pair.session.id) bySession.current.delete(id);
       bySession.current.set(pair.session.id, pair.app);
+      if (pair.app.kind !== "catalog")
+        byApp.current.set(pair.app.id, { session: pair.session, app: pair.app });
     }
   }, [pair?.session.id, pair?.app]);
   const owner = pair?.session.sessionHost;
@@ -370,7 +381,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       !id ||
       page.kind === "session" ||
       (page.kind === "catalog" && !page.catalogDock) ||
-      (target != null && target !== id)
+      (!page.resourceHost && target != null && target !== id)
     )
       return;
     // A directory opened from a conversation selects the resource owner, while its
@@ -535,12 +546,17 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     const pair = sessionAppPair(before);
     if (page.kind !== "session") {
       detachDockPage(dockPageKey(id));
+      if (!keepOpen) byApp.current.delete(id);
       for (const [sid, attached] of bySession.current)
         if (attached.id === id) bySession.current.delete(sid);
     }
     if (pair && pair.app.id === id) {
       const active = dockPageId(dockActiveKey("right") ?? "");
-      const prior = next.pages.find((p) => p.id === active);
+      const found = next.pages.find((p) => p.id === active);
+      const prior =
+        found &&
+        (byApp.current.get(found.id)?.app ??
+          (found.kind === "catalog" ? { ...found, catalogDock: true } : found));
       next = prior
         ? paired(next, pair.session, prior)
         : { ...next, visible: [pair.session.id], focus: pair.session.id };
@@ -571,10 +587,6 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       publish(next);
     }
   };
-  const nativeFullScreen =
-    current?.kind === "system" && location.state?.nativeAppFullScreen === current.id;
-  const dockedFullScreen =
-    current?.kind === "window" && location.state?.dockedFullScreen === current.id;
   function fullScreen(page: OpenPage) {
     if (contextualDockPage(page.path)) {
       void navigate(page.path, { state: { fullScreenSessionTool: page.id } });
@@ -620,6 +632,16 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
   };
   const minimize = (id: string) => dismiss(id, true);
   const openPage = (page: OpenPage) => {
+    const docked = byApp.current.get(page.id);
+    if (docked) {
+      const session =
+        ref.current.pages.find((entry) => entry.id === docked.session.id) ?? docked.session;
+      const app = { ...docked.app, path: page.path, title: page.title };
+      if (pair?.app.id === page.id && pair.session.id === session.id)
+        openPanel(dockPageKey(page.id), "right");
+      go(paired(ref.current, session, app));
+      return;
+    }
     // A bound tool renders in its authorized Session's dock. Its canonical address
     // resolves that scope even when another Session or resource currently has focus.
     if (contextualDockPage(page.path)) {
@@ -668,7 +690,12 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
         openPage,
         canDockRunningApp,
         dockRunningApp: (session, app) => {
-          if (canDockRunningApp(session, app)) go(paired(ref.current, session, app));
+          if (!canDockRunningApp(session, app)) return;
+          if (session.sessionHost) {
+            hosts.current.set(app.id, session);
+            hosts.current.set(session.id, session);
+          }
+          go(paired(ref.current, session, app));
         },
         close,
         minimize,
