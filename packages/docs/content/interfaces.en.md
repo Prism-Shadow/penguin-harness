@@ -214,7 +214,7 @@ type ApprovalReason = { kind: "policy"; rule: string }; // a command-policy `ask
 
 The second argument is optional, so a callback written for the one-argument signature still compiles; it then decides an `ask` hit like any other call. A child Session forwards nothing extra: the callback it inherits is the parent's policy wrapper, and the child's reason travels with the call through it.
 
-Either denial produces one fixed `aborted` output line: "Tool call denied by user." for `"deny"`, and "Tool call denied by policy." for `"forbidden"`. The decision value itself rides the `approval_decision` event, so the Trace names the decider without an extra field. An existing callback that returns only `"allow"` or `"deny"` needs no change.
+A denial that names the rule that caused it — a `deny` rule's `"forbidden"`, or the `"deny"` a host that cannot ask a person (an unattended session) answers a policy reason with — renders as ``Tool call denied by rule `<rule>`.``. A bare `"deny"` still reads "Tool call denied by user.", and a bare `"forbidden"` reads "Tool call denied by policy.". The decision value itself rides the `approval_decision` event, so the Trace names the decider without an extra field. An existing callback that returns only `"allow"` or `"deny"` needs no change.
 
 ## EnvironmentInterface
 

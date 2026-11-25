@@ -214,7 +214,7 @@ type ApprovalReason = { kind: "policy"; rule: string }; // a command-policy `ask
 
 第二个参数是可选的，按单参数签名写的回调照样能通过编译，只是会像对待其他调用一样决定 `ask` 命中。子 Session 无需额外转发：它继承的回调就是父 Session 的策略包装，子 Session 给出的原因随调用一起经过它。
 
-两种拒绝都只产生一行固定的 `aborted` 输出：`"deny"` 对应「Tool call denied by user.」，`"forbidden"` 对应「Tool call denied by policy.」。决定值本身随 `approval_decision` 事件传递，Trace 不用额外字段就能记录决策者。已有回调如果只返回 `"allow"` 或 `"deny"`，无需任何改动。
+带规则名的拒批——`deny` 规则的 `"forbidden"`，以及无法向人请示的宿主（无人值守会话）对策略原因给出的 `"deny"`——渲染为 ``Tool call denied by rule `<rule>`.``。裸的 `"deny"` 仍是「Tool call denied by user.」，裸的 `"forbidden"` 仍是「Tool call denied by policy.」。决定值本身随 `approval_decision` 事件传递，Trace 不用额外字段就能记录决策者。已有回调如果只返回 `"allow"` 或 `"deny"`，无需任何改动。
 
 ## EnvironmentInterface
 

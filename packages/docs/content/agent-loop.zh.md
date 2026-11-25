@@ -105,7 +105,7 @@ Task 由若干连续的 Request（轮）组成。每一轮：
 | 拒绝方 | 模型收到的工具输出 |
 | --- | --- |
 | 审批回调 | `Tool call denied by user.` |
-| [命令策略](/configuration#命令策略)的 `forbidden` 决策（见 [ApproveFn](/interfaces#approvefn)） | `Tool call denied by policy.` |
+| [命令策略](/configuration#命令策略)的 `forbidden` 决策（见 [ApproveFn](/interfaces#approvefn)） | ``Tool call denied by rule `<rule>`.`` |
 | `pre_tool_use` 钩子 | `Tool call denied by the <name> hook: <reason>.` |
 
 ## 中断与补发

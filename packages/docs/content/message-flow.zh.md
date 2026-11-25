@@ -76,7 +76,7 @@ Human ──run(newMessages)──► engine
 | 拒绝方 | `approval_decision` | 合成输出 |
 | --- | --- | --- |
 | 审批回调 | `deny` | "Tool call denied by user." |
-| 命令策略 | `forbidden` | "Tool call denied by policy." |
+| 命令策略 | `forbidden` | ``Tool call denied by rule `<rule>`.`` |
 | `pre_tool_use` 钩子 | `deny` | "Tool call denied by the <name> hook: <reason>." |
 
 钩子作答时，`approval_decision` 之前会紧挨着记录一条 `hook` 事件。
