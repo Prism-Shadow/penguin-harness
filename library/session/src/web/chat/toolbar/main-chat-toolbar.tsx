@@ -9,7 +9,17 @@ import {
   ICON_SIZE,
   StatChip,
 } from "@prismshadow/penguin-ui";
-import { CostPartsRows, S, STAT_ICONS, StatHint, Truncated, formatDateTime, nameOnMachine, providerInfo, toneInk } from "@prismshadow/penguin-web/internal";
+import {
+  CostPartsRows,
+  S,
+  STAT_ICONS,
+  StatHint,
+  Truncated,
+  formatDateTime,
+  nameOnMachine,
+  providerInfo,
+  toneInk,
+} from "@prismshadow/penguin-web/internal";
 
 import { OutlineMenuButton } from "../conversation-outline";
 

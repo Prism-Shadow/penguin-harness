@@ -1,7 +1,24 @@
 import { useContext, useState, type DragEvent as ReactDragEvent } from "react";
 import { withEntries, MainRowExtensions } from "./index";
-import { CONTEXT_MENU_ACTIONS, HOVER_ROW_ACTIONS, S, Truncated, backgroundSourceMark, glyphOf, machineForSession, sessionActivityLabel, sessionRowActions, useAgentAvatarSrc, usePageWorkspace, writeClipboard } from "@prismshadow/penguin-web/internal";
-import type { OpenPage, SessionActivity, SessionRowAction } from "@prismshadow/penguin-web/internal";
+import {
+  CONTEXT_MENU_ACTIONS,
+  HOVER_ROW_ACTIONS,
+  S,
+  Truncated,
+  backgroundSourceMark,
+  glyphOf,
+  machineForSession,
+  sessionActivityLabel,
+  sessionRowActions,
+  useAgentAvatarSrc,
+  usePageWorkspace,
+  writeClipboard,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  OpenPage,
+  SessionActivity,
+  SessionRowAction,
+} from "@prismshadow/penguin-web/internal";
 
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 

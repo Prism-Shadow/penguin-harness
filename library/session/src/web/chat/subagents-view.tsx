@@ -31,8 +31,26 @@ import {
   Pager,
   StatusIcon,
 } from "@prismshadow/penguin-ui";
-import { ApiError, S, abortSubagent, machineForSession, messageSubagent, noteSessionSeen, patchSession, rememberSessionMachine, toastApiError, useAgentAvatarSrc, useProject, useSessions } from "@prismshadow/penguin-web/internal";
-import type { ComposerReference, NestedSessionMeta, PermissionPick, StreamModel } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  S,
+  abortSubagent,
+  machineForSession,
+  messageSubagent,
+  noteSessionSeen,
+  patchSession,
+  rememberSessionMachine,
+  toastApiError,
+  useAgentAvatarSrc,
+  useProject,
+  useSessions,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  ComposerReference,
+  NestedSessionMeta,
+  PermissionPick,
+  StreamModel,
+} from "@prismshadow/penguin-web/internal";
 
 import { ChatInput, type ComposerControl } from "./chat-input";
 

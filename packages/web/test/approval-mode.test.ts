@@ -8,7 +8,10 @@
  *   the menu showing nothing selected, and goes once another mode is picked.
  */
 import { describe, expect, it } from "vitest";
-import { APPROVAL_MODES, approvalModeChoices } from "@prismshadow/penguin-library-session/web/chat/approval-mode";
+import {
+  APPROVAL_MODES,
+  approvalModeChoices,
+} from "@prismshadow/penguin-library-session/web/chat/approval-mode";
 
 describe("approvalModeChoices", () => {
   it("lists every mode for a Session the organization runtime did not open", () => {

@@ -2,7 +2,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { loadPinnedSessions } from "./pinned-sessions";
 import { loadWorkspaceRegistry } from "./workspace-registry";
-import { DRAG_POINTER_QUERY, loadGroupSet, loadSessionOrder } from "@prismshadow/penguin-web/internal";
+import {
+  DRAG_POINTER_QUERY,
+  loadGroupSet,
+  loadSessionOrder,
+} from "@prismshadow/penguin-web/internal";
 import { loadGroupOrder } from "./group-order";
 import { useDraftSessions, type DraftSessionEntry } from "../chat";
 

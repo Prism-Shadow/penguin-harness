@@ -22,7 +22,13 @@ import {
   type ActivityStepSummary,
 } from "@prismshadow/penguin-ui";
 
-import { FindRevealContext, S, approvalKey, toolDisplayName, useActivityAppearance } from "@prismshadow/penguin-web/internal";
+import {
+  FindRevealContext,
+  S,
+  approvalKey,
+  toolDisplayName,
+  useActivityAppearance,
+} from "@prismshadow/penguin-web/internal";
 import type { ChatItem } from "@prismshadow/penguin-web/internal";
 
 import { toolHeaderDetails } from "./tool-call-card";

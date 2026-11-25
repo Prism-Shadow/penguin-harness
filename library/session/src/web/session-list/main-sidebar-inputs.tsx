@@ -1,5 +1,21 @@
-import { currentModeIndex, parseOrgKey, sectionsIn, useAgentAvatarSrc, useAuth, useCompany, useLocale, useProject, useSessions, useUpdateBadges } from "@prismshadow/penguin-web/internal";
-import type { MainSidebarProps, SidebarBindingReader, SidebarNavSelector, SidebarPagesReader } from "@prismshadow/penguin-web/internal";
+import {
+  currentModeIndex,
+  parseOrgKey,
+  sectionsIn,
+  useAgentAvatarSrc,
+  useAuth,
+  useCompany,
+  useLocale,
+  useProject,
+  useSessions,
+  useUpdateBadges,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  MainSidebarProps,
+  SidebarBindingReader,
+  SidebarNavSelector,
+  SidebarPagesReader,
+} from "@prismshadow/penguin-web/internal";
 import { useLocation, useMatch, useNavigate } from "react-router";
 
 /** Consecutive live main statements 0..18, called once in original hook order. */

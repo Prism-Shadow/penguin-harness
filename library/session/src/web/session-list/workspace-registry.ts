@@ -1,4 +1,9 @@
-import { isTempWorkspace, workspaceGroupKey, workspaceGroupPath, workspaceLabel } from "@prismshadow/penguin-web/internal";
+import {
+  isTempWorkspace,
+  workspaceGroupKey,
+  workspaceGroupPath,
+  workspaceLabel,
+} from "@prismshadow/penguin-web/internal";
 import type { WorkspaceGroup } from "@prismshadow/penguin-web/internal";
 
 /** One registered Workspace: the normalized path, plus an optional display alias. */

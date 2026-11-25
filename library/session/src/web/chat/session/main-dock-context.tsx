@@ -1,5 +1,11 @@
 import { ChatSessionContext } from "@prismshadow/penguin-web/internal";
-import type { ComposerReference, MemoryChangeRow, MemoryLocateTarget, PermissionPick, StreamModel } from "@prismshadow/penguin-web/internal";
+import type {
+  ComposerReference,
+  MemoryChangeRow,
+  MemoryLocateTarget,
+  PermissionPick,
+  StreamModel,
+} from "@prismshadow/penguin-web/internal";
 /**
  * What the chat page hands its dock panels. A dock renders every panel the same way — the
  * registered Body with its `active` flag and nothing else — but the built-in bodies

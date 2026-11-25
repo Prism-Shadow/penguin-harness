@@ -1,6 +1,12 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { MoreRow, Waiting } from "@prismshadow/penguin-ui";
-import { S, SIDEBAR_PAGE_SIZE, cutAtWatermark, orderSessionRows, revealPlan } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  SIDEBAR_PAGE_SIZE,
+  cutAtWatermark,
+  orderSessionRows,
+  revealPlan,
+} from "@prismshadow/penguin-web/internal";
 
 import type { useMainSidebarShowMore } from "./main-sidebar-show-more";
 

@@ -75,14 +75,23 @@ import {
 import { pageTableOf } from "../src/web-app/page-table";
 import { setRunningServerModules } from "../src/lib/module-gate";
 import { visibleSettingsSections } from "../src/lib/settings-sections";
-import { dockPanelDefinition, dockPanels } from "@prismshadow/penguin-library-session/web/dock/panel-registry";
-import { announceDockLayout, announceDockScope } from "@prismshadow/penguin-library-session/web/dock/dock-listeners";
+import {
+  dockPanelDefinition,
+  dockPanels,
+} from "@prismshadow/penguin-library-session/web/dock/panel-registry";
+import {
+  announceDockLayout,
+  announceDockScope,
+} from "@prismshadow/penguin-library-session/web/dock/dock-listeners";
 import {
   contributedSections,
   setContributedSections,
   shownSections,
 } from "../src/features/settings/contributed-sections";
-import { linkActionRows, setLinkActions } from "@prismshadow/penguin-library-session/web/chat/link-actions";
+import {
+  linkActionRows,
+  setLinkActions,
+} from "@prismshadow/penguin-library-session/web/chat/link-actions";
 import { handOverSession } from "@prismshadow/penguin-library-session/web/chat/session-handover";
 import { seen } from "./fixtures/web-plugin/src/web/module";
 

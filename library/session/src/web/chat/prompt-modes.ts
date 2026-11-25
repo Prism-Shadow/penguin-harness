@@ -23,7 +23,13 @@ import type {
   PluginItem,
   PluginLibraryResponse,
 } from "@prismshadow/penguin-server/api";
-import { api, localizedText, toastApiError, useFreshRead, useLocale } from "@prismshadow/penguin-web/internal";
+import {
+  api,
+  localizedText,
+  toastApiError,
+  useFreshRead,
+  useLocale,
+} from "@prismshadow/penguin-web/internal";
 
 import { hookPluginInstall } from "./hook-plugin-install";
 

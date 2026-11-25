@@ -9,7 +9,21 @@ import {
   EmptyState,
   SearchInput,
 } from "@prismshadow/penguin-ui";
-import { S, closeSessionResources, getSession, isSessionWorkbenchKind, listSessionResourceCounts, listSessions, mixAgents, parseSessionWorkbenchPage, sessionWorkbenchEntries, sessionWorkbenchPage, useMachineAgents, usePageWorkspace, useProject } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  closeSessionResources,
+  getSession,
+  isSessionWorkbenchKind,
+  listSessionResourceCounts,
+  listSessions,
+  mixAgents,
+  parseSessionWorkbenchPage,
+  sessionWorkbenchEntries,
+  sessionWorkbenchPage,
+  useMachineAgents,
+  usePageWorkspace,
+  useProject,
+} from "@prismshadow/penguin-web/internal";
 import type { SessionWorkbenchKind } from "@prismshadow/penguin-web/internal";
 
 import { useSessionWorkbenchPanels } from "./panel-registry";

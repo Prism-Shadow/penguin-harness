@@ -1,4 +1,12 @@
-import { dockPageKey, existingDockPanel, pageSessionId, sessionAppPair, useNarrow, usePageWorkspace, useProject } from "@prismshadow/penguin-web/internal";
+import {
+  dockPageKey,
+  existingDockPanel,
+  pageSessionId,
+  sessionAppPair,
+  useNarrow,
+  usePageWorkspace,
+  useProject,
+} from "@prismshadow/penguin-web/internal";
 /**
  * Keeps the dock's scope on the conversation on screen (`WebAppModule.layers`, mounted once beside
  * every page). The docks belong to the conversation they were arranged in, so switching Sessions

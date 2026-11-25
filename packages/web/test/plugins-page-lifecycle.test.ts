@@ -51,7 +51,9 @@ vi.mock("../src/features/plugins/plugin-repair", () => ({
 }));
 vi.mock("../src/features/settings/settings-dialog", () => ({ SettingsDialog: () => null }));
 vi.mock("../src/features/plugins/plugin-import-modal", () => ({ ImportPluginModal: () => null }));
-vi.mock("@prismshadow/penguin-library-session/web/chat/chat-page", () => ({ DRAFT_SESSION_ID: "draft" }));
+vi.mock("@prismshadow/penguin-library-session/web/chat/chat-page", () => ({
+  DRAFT_SESSION_ID: "draft",
+}));
 vi.mock("../src/features/machines/machine-picker", () => ({
   MachinePicker: (props: { choices: { value: string }[]; onChange: (id: string) => void }) =>
     h(

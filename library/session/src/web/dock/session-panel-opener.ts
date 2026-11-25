@@ -1,5 +1,14 @@
 import { useContext, useEffect } from "react";
-import { ChatSessionContext, PageIdentity, isSessionWorkbenchKind, machineForSession, sessionAppPair, sessionWorkbenchPage, usePageWorkspace, usePaneFocus } from "@prismshadow/penguin-web/internal";
+import {
+  ChatSessionContext,
+  PageIdentity,
+  isSessionWorkbenchKind,
+  machineForSession,
+  sessionAppPair,
+  sessionWorkbenchPage,
+  usePageWorkspace,
+  usePaneFocus,
+} from "@prismshadow/penguin-web/internal";
 
 import { currentDockScope, setSessionPanelOpener } from "./dock-state";
 import { dockPanelDefinition } from "./panel-registry";

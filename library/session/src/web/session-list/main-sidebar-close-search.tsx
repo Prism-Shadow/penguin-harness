@@ -1,5 +1,11 @@
 import type { DragEvent as ReactDragEvent } from "react";
-import { GROUP_DRAG_MIME, applyManualReorder, isGroupDrag, moveInSequence, saveSessionOrder } from "@prismshadow/penguin-web/internal";
+import {
+  GROUP_DRAG_MIME,
+  applyManualReorder,
+  isGroupDrag,
+  moveInSequence,
+  saveSessionOrder,
+} from "@prismshadow/penguin-web/internal";
 import { commitGroupOrder, isOrderableGroupMode, saveGroupOrder } from "./group-order";
 
 import type { useMainSidebarToggleGroup } from "./main-sidebar-toggle-group";

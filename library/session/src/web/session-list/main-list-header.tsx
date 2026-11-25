@@ -9,7 +9,13 @@ import {
   SidebarControl,
   SidebarListHeader,
 } from "@prismshadow/penguin-ui";
-import { GROUP_MODE_ICONS, NEW_CHAT_ICON, S, SORT_MODE_ICONS, WorkspaceSelect } from "@prismshadow/penguin-web/internal";
+import {
+  GROUP_MODE_ICONS,
+  NEW_CHAT_ICON,
+  S,
+  SORT_MODE_ICONS,
+  WorkspaceSelect,
+} from "@prismshadow/penguin-web/internal";
 
 import type { MainSidebarState } from "./main-sidebar-controller";
 

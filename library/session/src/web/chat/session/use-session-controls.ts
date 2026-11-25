@@ -5,7 +5,15 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionInfo, SessionPatchRequest } from "@prismshadow/penguin-server/api";
-import { ApiError, a2uiDrafts, api, approvalKey, onPluginConfigSaved, toastApiError, useLocale } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  a2uiDrafts,
+  api,
+  approvalKey,
+  onPluginConfigSaved,
+  toastApiError,
+  useLocale,
+} from "@prismshadow/penguin-web/internal";
 import type { ComposerReference, PermissionPick } from "@prismshadow/penguin-web/internal";
 
 import type { ComposerControl } from "../chat-input";

@@ -11,7 +11,11 @@
  * - A parked draft is titled by its first non-empty line, trimmed and capped.
  */
 import { describe, expect, it } from "vitest";
-import { draftKey, loadDraft, saveDraft } from "@prismshadow/penguin-library-session/web/chat/draft-cache";
+import {
+  draftKey,
+  loadDraft,
+  saveDraft,
+} from "@prismshadow/penguin-library-session/web/chat/draft-cache";
 import {
   draftSessionsKey,
   draftSessionTitle,

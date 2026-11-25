@@ -3,7 +3,10 @@
  * boundary, no URL/path false positives) and token removal on command run.
  */
 import { describe, expect, it } from "vitest";
-import { matchSlash, removeSlashToken } from "@prismshadow/penguin-library-session/web/chat/slash-token";
+import {
+  matchSlash,
+  removeSlashToken,
+} from "@prismshadow/penguin-library-session/web/chat/slash-token";
 
 describe("matchSlash", () => {
   it("matches at the start of the text", () => {

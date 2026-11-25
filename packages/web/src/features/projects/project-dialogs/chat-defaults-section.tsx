@@ -21,7 +21,11 @@ import { isConversationAgent } from "../../../lib/builtin-agents";
 import { toastApiError } from "../../../lib/toast-api-error";
 import { agentDisplayName, useProject } from "../../../state/project";
 import { useAuth } from "../../../state/auth";
-import { clearDraftChatDefaults, clearDraftModelRef, dispatchChatDefaultsChanged } from "@prismshadow/penguin-library-session/web";
+import {
+  clearDraftChatDefaults,
+  clearDraftModelRef,
+  dispatchChatDefaultsChanged,
+} from "@prismshadow/penguin-library-session/web";
 import type { ChatDefaultsChangedDetail } from "@prismshadow/penguin-library-session/web";
 
 import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "../../model-picker";

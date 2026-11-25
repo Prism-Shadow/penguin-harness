@@ -1,4 +1,10 @@
-import { GROUP_MODE_ICONS, S, SIDEBAR_PAGE_SIZE, TIME_LIST_KEY, sectionWindow } from "@prismshadow/penguin-web/internal";
+import {
+  GROUP_MODE_ICONS,
+  S,
+  SIDEBAR_PAGE_SIZE,
+  TIME_LIST_KEY,
+  sectionWindow,
+} from "@prismshadow/penguin-web/internal";
 import { Fold, GroupHeader, MoreRow, Waiting } from "@prismshadow/penguin-ui";
 
 import type { MainSidebarState } from "./main-sidebar-controller";

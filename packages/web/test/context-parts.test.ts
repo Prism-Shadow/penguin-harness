@@ -11,7 +11,10 @@
  */
 import { describe, expect, it } from "vitest";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
-import { contextComposition, splitFilePath } from "@prismshadow/penguin-library-session/web/chat/context-parts";
+import {
+  contextComposition,
+  splitFilePath,
+} from "@prismshadow/penguin-library-session/web/chat/context-parts";
 
 function response(over: Partial<SessionContextResponse> = {}): SessionContextResponse {
   const base = {

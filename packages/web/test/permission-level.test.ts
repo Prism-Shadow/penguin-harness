@@ -29,7 +29,10 @@ import {
   type PermissionMenuRow,
 } from "../src/lib/permission-level";
 
-import { APPROVAL_MODES, approvalModeChoices } from "@prismshadow/penguin-library-session/web/chat/approval-mode";
+import {
+  APPROVAL_MODES,
+  approvalModeChoices,
+} from "@prismshadow/penguin-library-session/web/chat/approval-mode";
 
 const FULL: SessionSandbox = { mode: "danger-full-access", network: "open" };
 

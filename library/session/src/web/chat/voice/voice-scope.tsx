@@ -10,7 +10,15 @@ import {
   type ReactNode,
 } from "react";
 import { GlyphIcon, ICONS, InlineIconButton, Spinner, toastError } from "@prismshadow/penguin-ui";
-import { S, apiErrorText, apiUrl, boundToolModel, readReplyAloud, useAuth, useToolBindings } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  apiErrorText,
+  apiUrl,
+  boundToolModel,
+  readReplyAloud,
+  useAuth,
+  useToolBindings,
+} from "@prismshadow/penguin-web/internal";
 import type { ToolBinding } from "@prismshadow/penguin-web/internal";
 
 /**

@@ -13,7 +13,12 @@ import type {
   SessionInfo,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
-import { machineForSession, refusalHandoff, sameModelRef, sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
+import {
+  machineForSession,
+  refusalHandoff,
+  sameModelRef,
+  sessionThinkingLevel,
+} from "@prismshadow/penguin-web/internal";
 
 import { ChatInput, type ComposerControl } from "../chat-input";
 

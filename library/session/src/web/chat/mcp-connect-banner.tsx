@@ -17,7 +17,11 @@
  */
 import { ActivityGroup, DisclosureRow, StatusIcon } from "@prismshadow/penguin-ui";
 import { S, humanizeDuration, toldNode } from "@prismshadow/penguin-web/internal";
-import type { McpConnectItem, McpServerOutcome, McpToolSummary } from "@prismshadow/penguin-web/internal";
+import type {
+  McpConnectItem,
+  McpServerOutcome,
+  McpToolSummary,
+} from "@prismshadow/penguin-web/internal";
 
 /**
  * Owner server of a prefixed tool name (`mcp__<server>__<tool>`), matched against the

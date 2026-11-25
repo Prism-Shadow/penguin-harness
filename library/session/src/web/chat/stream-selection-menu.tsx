@@ -49,7 +49,23 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import type { LinkRow } from "@prismshadow/penguin-web-plugin";
-import { LINK_MENU_ITEMS, S, SELECTION_MENU_ITEMS, STAT_ICONS, excerptReference, inEditable, isDesktopShellWindow, linkAnchor, menuLinkHref, restoreSelection, selectionEndAnchor, streamMenuContent, useAuth, writeClipboard, writeSelectionCopy } from "@prismshadow/penguin-web/internal";
+import {
+  LINK_MENU_ITEMS,
+  S,
+  SELECTION_MENU_ITEMS,
+  STAT_ICONS,
+  excerptReference,
+  inEditable,
+  isDesktopShellWindow,
+  linkAnchor,
+  menuLinkHref,
+  restoreSelection,
+  selectionEndAnchor,
+  streamMenuContent,
+  useAuth,
+  writeClipboard,
+  writeSelectionCopy,
+} from "@prismshadow/penguin-web/internal";
 import type { ComposerReference } from "@prismshadow/penguin-web/internal";
 
 import { useLinkActionRows } from "./link-actions";

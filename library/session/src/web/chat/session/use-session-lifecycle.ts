@@ -5,7 +5,15 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
-import { ApiError, api, latestConversation, machineForSession, noteScheduleEvent, noteSessionSeen, withoutOrgSessions } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  api,
+  latestConversation,
+  machineForSession,
+  noteScheduleEvent,
+  noteSessionSeen,
+  withoutOrgSessions,
+} from "@prismshadow/penguin-web/internal";
 
 import { DRAFT_SESSION_ID } from "../draft-sessions";
 import { routeSessionOutcome, sessionForProject } from "../session-project";

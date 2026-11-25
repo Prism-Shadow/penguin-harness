@@ -1,5 +1,10 @@
 import type { ReactNode } from "react";
-import { DRAFT_SESSION_ID, MainSidebarFragments, renderMainSessionDialogs, renderMainSessionList } from "@prismshadow/penguin-library-session/web";
+import {
+  DRAFT_SESSION_ID,
+  MainSidebarFragments,
+  renderMainSessionDialogs,
+  renderMainSessionList,
+} from "@prismshadow/penguin-library-session/web";
 import { sectionsIn } from "../../lib/sidebar-modes";
 import { NavRow, Segmented, SidebarFrame, SidebarNavArea } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";

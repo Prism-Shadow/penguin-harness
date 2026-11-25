@@ -10,7 +10,13 @@ import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import type { RowActionItem } from "@prismshadow/penguin-ui";
 import type { Contributed } from "@prismshadow/penguin-core/kernel";
 import { contributionShown, useContributionShown } from "@prismshadow/penguin-web/internal";
-import type { RowAction, SessionRowEntry, SessionRowMark, SessionRowMarkKind, WorkspaceGroupEntry } from "@prismshadow/penguin-web/internal";
+import type {
+  RowAction,
+  SessionRowEntry,
+  SessionRowMark,
+  SessionRowMarkKind,
+  WorkspaceGroupEntry,
+} from "@prismshadow/penguin-web/internal";
 import type { RowActionData } from "./iface";
 
 /** What a row's marks say, by kind; an absent kind draws no mark. */

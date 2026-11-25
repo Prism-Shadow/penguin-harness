@@ -1,6 +1,12 @@
 import { useContext, useSyncExternalStore } from "react";
 import { ICONS, toastInfo } from "@prismshadow/penguin-ui";
-import { ChatSessionContext, PageIdentity, S, machineForSession, usePageWorkspace } from "@prismshadow/penguin-web/internal";
+import {
+  ChatSessionContext,
+  PageIdentity,
+  S,
+  machineForSession,
+  usePageWorkspace,
+} from "@prismshadow/penguin-web/internal";
 
 import {
   launcherHiddenVersion,

@@ -6,7 +6,10 @@ import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/
 import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
 import { mainPanelDefinition as mainBrowser } from "../../../plugins/browser-automation/src/web/main-dock-panel";
 import { TerminalModule } from "../src/features/terminal/module";
-import { dockPanelDefinition, type DockPanelDefinition } from "@prismshadow/penguin-library-session/web/dock/panel-registry";
+import {
+  dockPanelDefinition,
+  type DockPanelDefinition,
+} from "@prismshadow/penguin-library-session/web/dock/panel-registry";
 
 const mainTerminal = new TerminalModule().panel.mainDefinitions[0]!;
 
@@ -74,7 +77,10 @@ import { navKeysFor } from "../src/lib/nav-pages";
 import { SidebarModule } from "../src/web-app/sidebar/module";
 import { badgesOf, marksFor, modesOf, sectionsIn, sectionsOf } from "../src/web-app/sidebar/modes";
 import { SessionListModule } from "@prismshadow/penguin-library-session/web/session-list/module";
-import { rowExtensionsOf, type RowExtensions } from "@prismshadow/penguin-library-session/web/session-list/row-actions";
+import {
+  rowExtensionsOf,
+  type RowExtensions,
+} from "@prismshadow/penguin-library-session/web/session-list/row-actions";
 
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

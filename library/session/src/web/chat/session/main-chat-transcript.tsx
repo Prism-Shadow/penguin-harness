@@ -1,5 +1,10 @@
 import { useMemo, useRef } from "react";
-import { aggregateMemoryChanges, machineForSession, sameMemoryChanges, sessionKnownHere } from "@prismshadow/penguin-web/internal";
+import {
+  aggregateMemoryChanges,
+  machineForSession,
+  sameMemoryChanges,
+  sessionKnownHere,
+} from "@prismshadow/penguin-web/internal";
 import type { StreamModel } from "@prismshadow/penguin-web/internal";
 
 import { useOutlineRailFit } from "../conversation-outline";

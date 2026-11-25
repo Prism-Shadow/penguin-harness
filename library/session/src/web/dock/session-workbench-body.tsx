@@ -1,5 +1,11 @@
 import { useContext } from "react";
-import { PageIdentity, S, machineForSession, parseSessionWorkbenchPage, useChatSession } from "@prismshadow/penguin-web/internal";
+import {
+  PageIdentity,
+  S,
+  machineForSession,
+  parseSessionWorkbenchPage,
+  useChatSession,
+} from "@prismshadow/penguin-web/internal";
 import type { OpenPage } from "@prismshadow/penguin-web/internal";
 
 import { useSessionWorkbenchPanels } from "./panel-registry";

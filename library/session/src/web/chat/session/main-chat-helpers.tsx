@@ -2,7 +2,14 @@ import { SessionElapsed, sessionElapsedSplit } from "../session-stats";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { CopyButton } from "@prismshadow/penguin-ui";
-import { S, humanizeDuration, humanizeDurationLive, humanizeTokens, liveSessionElapsedMs, sessionElapsedBreakdown } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  humanizeDuration,
+  humanizeDurationLive,
+  humanizeTokens,
+  liveSessionElapsedMs,
+  sessionElapsedBreakdown,
+} from "@prismshadow/penguin-web/internal";
 import type { StreamModel, TaskStatsTracker } from "@prismshadow/penguin-web/internal";
 
 import type { CostStatDisplay } from "../header-stats";

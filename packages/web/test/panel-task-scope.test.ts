@@ -10,7 +10,10 @@
  * the previous Session's live spawn never opens the panel in the one switched to.
  */
 import { describe, expect, it } from "vitest";
-import { advancePanelTaskScope, createPanelTaskScope } from "@prismshadow/penguin-library-session/web/chat/panel-task-scope";
+import {
+  advancePanelTaskScope,
+  createPanelTaskScope,
+} from "@prismshadow/penguin-library-session/web/chat/panel-task-scope";
 
 const obs = (
   sessionId: string | null,

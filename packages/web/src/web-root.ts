@@ -34,7 +34,11 @@ import { WebAppModule, type WebApp } from "./web-app/module";
 import { SidebarModule } from "./web-app/sidebar/module";
 import type { AppRouterProps } from "./web-app/router";
 import { SessionsModule } from "./state/sessions.module";
-import { ChatModule, DockModule, SessionListModule } from "@prismshadow/penguin-library-session/web";
+import {
+  ChatModule,
+  DockModule,
+  SessionListModule,
+} from "@prismshadow/penguin-library-session/web";
 import { AgentsModule } from "./features/agents/module";
 import { AppCenterModule } from "./features/app-center/module";
 import { ModelsModule } from "./features/models/module";

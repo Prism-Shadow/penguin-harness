@@ -1,5 +1,9 @@
 import { useEffect } from "react";
-import { SIDEBAR_PAGE_SIZE, cutAtWatermark, groupPageSlice } from "@prismshadow/penguin-web/internal";
+import {
+  SIDEBAR_PAGE_SIZE,
+  cutAtWatermark,
+  groupPageSlice,
+} from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarShownDrafts } from "./main-sidebar-shown-drafts";
 
 /** Consecutive live main statements 113..115, called once in original hook order. */

@@ -1,6 +1,11 @@
 import type { DragEvent as ReactDragEvent } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { SESSION_DRAG_MIME, formatRelativeShort, sessionBackgroundTasks, sessionRowActivity } from "@prismshadow/penguin-web/internal";
+import {
+  SESSION_DRAG_MIME,
+  formatRelativeShort,
+  sessionBackgroundTasks,
+  sessionRowActivity,
+} from "@prismshadow/penguin-web/internal";
 
 import { SidebarSessionRow } from "./main-session-row";
 import type { useMainSidebarAgentNameById } from "./main-sidebar-agent-name-by-id";

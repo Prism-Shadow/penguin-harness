@@ -21,7 +21,17 @@ import { useMemo } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
 import { ToolCallCard, useElapsedPast } from "@prismshadow/penguin-ui";
 
-import { S, approvalKey, elidedArgumentsPreview, elidedPreview, localWorkTime, routedUrl, stripAnsi, toolDisplayName, useTheme } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  approvalKey,
+  elidedArgumentsPreview,
+  elidedPreview,
+  localWorkTime,
+  routedUrl,
+  stripAnsi,
+  toolDisplayName,
+  useTheme,
+} from "@prismshadow/penguin-web/internal";
 import type { ToolCallItem } from "@prismshadow/penguin-web/internal";
 
 import { agentIdFromRunSubagentArgs } from "./agent-topology";

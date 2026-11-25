@@ -31,7 +31,10 @@ import { sameModelRef } from "../../lib/model-grouping";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { useToolBindings } from "../../state/use-tool-bindings";
-import { clearDraftModelRef, dispatchChatDefaultsChanged } from "@prismshadow/penguin-library-session/web";
+import {
+  clearDraftModelRef,
+  dispatchChatDefaultsChanged,
+} from "@prismshadow/penguin-library-session/web";
 import { ModelCatalogSelect, modelLabel } from "../model-picker";
 import { putVisionModel } from "./vision-model";
 

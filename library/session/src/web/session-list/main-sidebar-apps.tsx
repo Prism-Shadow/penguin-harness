@@ -22,6 +22,9 @@ import {
   type RowActionItem,
 } from "@prismshadow/penguin-ui";
 import { PAGE_DRAG_TYPE, S, TileIcon, agentSettingsPath, usePageWorkspace, useProject, useWorkbenchActions } from "@prismshadow/penguin-web/internal";
+||||||| parent of 98e4e299b5 (fix(web): the session web half re-exports its types through export type and is formatted)
+import { PAGE_DRAG_TYPE, S, TileIcon, agentSettingsPath, usePageWorkspace } from "@prismshadow/penguin-web/internal";
+
 import { useSidebarApps, type SidebarAppRow } from "./use-sidebar-apps";
 
 /** Whether the group is folded, per browser: a viewer's convenience, kept through a reload. */

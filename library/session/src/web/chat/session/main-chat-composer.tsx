@@ -1,6 +1,13 @@
 import { useCallback, useMemo, useRef } from "react";
 import type { SessionInfo, SessionPatchRequest } from "@prismshadow/penguin-server/api";
-import { ApiError, a2uiDrafts, api, approvalKey, toastApiError, useLocale } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  a2uiDrafts,
+  api,
+  approvalKey,
+  toastApiError,
+  useLocale,
+} from "@prismshadow/penguin-web/internal";
 import type { ComposerReference, PermissionPick } from "@prismshadow/penguin-web/internal";
 
 import type { A2uiActions } from "../message-stream";

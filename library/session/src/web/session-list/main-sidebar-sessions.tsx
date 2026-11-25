@@ -1,6 +1,11 @@
 import { useMemo } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { collapsedGroupsKey, isSidebarRow, pinnedGroupsKey, useSessionSeen } from "@prismshadow/penguin-web/internal";
+import {
+  collapsedGroupsKey,
+  isSidebarRow,
+  pinnedGroupsKey,
+  useSessionSeen,
+} from "@prismshadow/penguin-web/internal";
 
 import type { useMainSidebarInputs } from "./main-sidebar-inputs";
 

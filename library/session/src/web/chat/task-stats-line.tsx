@@ -37,7 +37,18 @@ import {
   Spinner,
   StatChip,
 } from "@prismshadow/penguin-ui";
-import { S, STAT_ICONS, formatMessageTime, formatMoney, formatTaskStats, formatTps, humanizeDuration, humanizeTokens, useLocale, useTheme } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  STAT_ICONS,
+  formatMessageTime,
+  formatMoney,
+  formatTaskStats,
+  formatTps,
+  humanizeDuration,
+  humanizeTokens,
+  useLocale,
+  useTheme,
+} from "@prismshadow/penguin-web/internal";
 import type { TaskStats } from "@prismshadow/penguin-web/internal";
 
 import { ReadReply } from "./voice/voice-scope";

@@ -15,7 +15,15 @@ import {
   ICON_SIZE,
   StatChip,
 } from "@prismshadow/penguin-ui";
-import { S, STAT_ICONS, Truncated, sessionActivity, sessionActivityLabel, sessionBackgroundTasks, toneInk } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  STAT_ICONS,
+  Truncated,
+  sessionActivity,
+  sessionActivityLabel,
+  sessionBackgroundTasks,
+  toneInk,
+} from "@prismshadow/penguin-web/internal";
 
 import { OutlineMenuButton } from "../conversation-outline";
 import type { OutlineEntry } from "../outline-model";

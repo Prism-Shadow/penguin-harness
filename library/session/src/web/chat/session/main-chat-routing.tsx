@@ -1,6 +1,17 @@
 import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { PageIdentity, S, machineForSession, sessionAppPair, subscribeTerminals, terminalApiSupported, useDocumentTitle, useMachineModels, usePageWorkspace, usePaneFocus } from "@prismshadow/penguin-web/internal";
+import {
+  PageIdentity,
+  S,
+  machineForSession,
+  sessionAppPair,
+  subscribeTerminals,
+  terminalApiSupported,
+  useDocumentTitle,
+  useMachineModels,
+  usePageWorkspace,
+  usePaneFocus,
+} from "@prismshadow/penguin-web/internal";
 import type { MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
 
 import { DRAFT_SESSION_ID, parkedDraftIdOf } from "../draft-sessions";
