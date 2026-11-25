@@ -43,8 +43,7 @@
  *   language, it shows the same answers.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createElement, type ComponentProps } from "react";
-import type { MouseEvent } from "react";
+import { createElement, type ComponentProps, type MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter, useLocation } from "react-router";
 import { MessageStream } from "../src/features/chat/message-stream";
