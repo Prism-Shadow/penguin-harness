@@ -554,6 +554,9 @@
       "@prismshadow/penguin-library-plugin/mechanisms": [
         "../../library/plugin/src/mechanisms.ts"
       ],
+      "@prismshadow/penguin-library-plugin/mirror-settings": [
+        "../../library/plugin/src/mirror-settings.ts"
+      ],
       "@prismshadow/penguin-library-plugin/module-rule": [
         "../../library/plugin/src/module-rule.ts"
       ],

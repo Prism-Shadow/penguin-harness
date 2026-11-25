@@ -157,8 +157,26 @@ import type {
   SessionBackgroundTasks,
 } from "@prismshadow/penguin-library-session";
 import type { MessagingChannel } from "@prismshadow/penguin-library-messaging/vocabulary";
-import type { Employment, UnreadableChart } from "@prismshadow/penguin-library-organization/types";
+import type {
+  Employment,
+  UnreadableChart,
+  OrgCalendarOutcome,
+  OrgChannelMessage,
+  OrgChannelNotice,
+  OrgChannelNoticeKind,
+  OrgTicketChange,
+  OrgTriggerKind,
+} from "@prismshadow/penguin-library-organization/types";
 import type { AgentDeletionInfo } from "@prismshadow/penguin-library-agent/types";
+import type {
+  AgentAuthor,
+  AgentMcpServerItem,
+  HookItem,
+  PluginConfigEntry,
+  PluginModuleStatus,
+  SkillMetadataItem,
+  UnsatisfiedPlugin,
+} from "@prismshadow/penguin-library-plugin/types";
 
 // Company mode and the Agent deletions: the DTOs moved to their domain packages, re-exported
 // so every import path here keeps resolving (services+routes restack S20).

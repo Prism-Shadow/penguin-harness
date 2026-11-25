@@ -161,7 +161,7 @@ import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { AdminPluginRoutes } from "./http/routes/admin-plugins.js";
 import { NpmPluginPackages } from "./plugin/packages.js";
 import { PluginSourceSettings } from "./plugin/source-settings.js";
-import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
+import { PluginMirrorSettings } from "@prismshadow/penguin-library-plugin/mirror-settings";
 import { PluginLibraryModule } from "./plugin/library-module.js";
 import { SystemAppModule } from "./plugin/system-app-modules.js";
 import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
