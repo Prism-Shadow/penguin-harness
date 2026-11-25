@@ -22,7 +22,7 @@ import {
   savePinnedSessions,
   togglePinnedSession,
   type PinnedSessionsStorage,
-} from "../src/features/session-list/pinned-sessions";
+} from "@prismshadow/penguin-library-session/web/session-list/pinned-sessions";
 
 import { isSidebarRow, pinnedFirst } from "../src/lib/session-grouping";
 import { blockedStorage, memoryStorage } from "./helpers/storage";

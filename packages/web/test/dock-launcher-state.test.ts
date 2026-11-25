@@ -42,7 +42,7 @@ import {
   writeLauncherRatio,
   type FanSlot,
   type LauncherVisibility,
-} from "../src/features/dock/dock-launcher-state";
+} from "@prismshadow/penguin-library-session/web/dock/dock-launcher-state";
 
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 

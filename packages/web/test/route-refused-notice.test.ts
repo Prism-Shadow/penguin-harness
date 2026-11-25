@@ -8,7 +8,7 @@
  */
 import { createElement as h } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { RouteRefusedNotice } from "../src/features/chat/route-refused-notice";
+import { RouteRefusedNotice } from "@prismshadow/penguin-library-session/web/chat/route-refused-notice";
 import { S } from "../src/lib/strings";
 import { mount, unmountAll } from "./helpers/dom";
 

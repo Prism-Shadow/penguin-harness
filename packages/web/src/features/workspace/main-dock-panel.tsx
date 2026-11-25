@@ -2,7 +2,8 @@ import { useContext } from "react";
 import { PageIdentity } from "../../lib/page-focus";
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { panelLabel, type DockPanelBodyProps, type PanelId } from "../dock/index";
+import { panelLabel } from "@prismshadow/penguin-library-session/web";
+import type { DockPanelBodyProps, PanelId } from "@prismshadow/penguin-library-session/web";
 
 import { WorkspaceBrowser } from "./index";
 import { useChatSession } from "../../lib/chat-session";

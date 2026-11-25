@@ -10,9 +10,9 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
-import { draftKey, loadDraft, saveDraft } from "../src/features/chat/draft-cache";
-import { getDraftSession } from "../src/features/chat/draft-sessions";
-import { newChatAgentId, prepareNewChatDraft } from "../src/features/chat/new-chat";
+import { draftKey, loadDraft, saveDraft } from "@prismshadow/penguin-library-session/web/chat/draft-cache";
+import { getDraftSession } from "@prismshadow/penguin-library-session/web/chat/draft-sessions";
+import { newChatAgentId, prepareNewChatDraft } from "@prismshadow/penguin-library-session/web/chat/new-chat";
 import { memoryStorage } from "./helpers/storage";
 
 const agent = (agentId: string) => ({ agentId }) as AgentSummary;

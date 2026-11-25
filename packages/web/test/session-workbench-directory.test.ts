@@ -9,7 +9,7 @@
 import { act, createElement as h } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
-import { SessionWorkbenchPage } from "../src/features/dock/session-workbench-page";
+import { SessionWorkbenchPage } from "@prismshadow/penguin-library-session/web/dock/session-workbench-page";
 import { en } from "../src/lib/strings-en";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { button, click, field, mount, run, type, unmountAll, waitFor } from "./helpers/dom";
@@ -51,7 +51,7 @@ vi.mock("../src/lib/machine-agent-lists", async (original) => ({
 vi.mock("../src/lib/page-workspace", () => ({
   usePageWorkspace: () => ({ openBesideSession: fixture.open }),
 }));
-vi.mock("../src/features/dock/panel-registry", () => ({
+vi.mock("@prismshadow/penguin-library-session/web/dock/panel-registry", () => ({
   useSessionWorkbenchPanels: () => [
     { id: "terminal", label: () => "Terminal" },
     { id: "builtin-browser", label: () => "Browser" },

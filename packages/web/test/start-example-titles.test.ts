@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { EXAMPLE_TASKS } from "../src/features/chat/example-tasks";
-import { shortPromptTitle } from "../src/features/chat/prompt-action-row";
+import { EXAMPLE_TASKS } from "@prismshadow/penguin-library-session/web/chat/example-tasks";
+import { shortPromptTitle } from "@prismshadow/penguin-library-session/web/chat/prompt-action-row";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

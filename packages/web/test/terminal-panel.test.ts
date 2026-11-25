@@ -12,10 +12,10 @@
  */
 import { createElement as h } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import * as dock from "../src/features/dock/dock-state";
-import * as terminal from "../src/features/dock/dock-terminal";
-import { DockPanelProvider } from "../src/features/dock/panel-context";
-import type { DockPanelHandle } from "../src/features/dock/panel-context";
+import * as dock from "@prismshadow/penguin-library-session/web/dock/dock-state";
+import * as terminal from "@prismshadow/penguin-library-session/web/dock/dock-terminal";
+import { DockPanelProvider } from "@prismshadow/penguin-library-session/web/dock/panel-context";
+import type { DockPanelHandle } from "@prismshadow/penguin-library-session/web/dock/panel-context";
 import { TerminalPanel } from "../src/features/terminal";
 import * as list from "../src/features/terminal";
 import * as machines from "../src/lib/terminal-machines";

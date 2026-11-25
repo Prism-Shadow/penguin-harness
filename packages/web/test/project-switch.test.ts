@@ -48,7 +48,7 @@ import { ThemeProvider } from "../src/state/theme";
 import { ProjectProvider, useProject } from "../src/state/project";
 import { SessionsProvider, createSessionsStore, useSessions } from "../src/state/sessions";
 import { createCompanyStore } from "../src/features/company/company-state";
-import { useMemoryListing } from "../src/features/chat/use-memory-listing";
+import { useMemoryListing } from "@prismshadow/penguin-library-session/web/chat/use-memory-listing";
 import { useMachineAgents } from "../src/lib/machine-agent-lists";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
 import { UsagePage } from "../src/features/usage/usage-page";

@@ -21,7 +21,7 @@ import { MessagingPanel } from "../src/features/messaging/messaging-panel";
 import { MessagingBindingModal } from "../src/features/messaging/messaging-binding-modal";
 import { ProjectProvider } from "../src/state/project";
 import { confirmClose } from "../src/lib/dock-close-guard";
-import { tabKey } from "../src/features/dock/dock-state";
+import { tabKey } from "@prismshadow/penguin-library-session/web/dock/dock-state";
 import { json, stubFetch } from "./helpers/fetch";
 import {
   button,

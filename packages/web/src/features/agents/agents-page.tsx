@@ -93,7 +93,7 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { DRAFT_SESSION_ID, prepareNewChatDraft } from "../chat";
+import { DRAFT_SESSION_ID, prepareNewChatDraft } from "@prismshadow/penguin-library-session/web";
 import { AiCreateModal, AiCreateButtons } from "../ai-create";
 import { agentKey, agentSettingsPath } from "../../lib/agent-location";
 import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";

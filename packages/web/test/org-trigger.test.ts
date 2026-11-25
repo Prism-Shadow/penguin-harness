@@ -10,8 +10,8 @@ import {
   orgTriggerAgentId,
   parseOrgTriggerMessage,
   summarizeOrgTrigger,
-} from "../src/features/chat/org-trigger";
-import { parseUserMessageBody } from "../src/features/chat/user-message-body";
+} from "@prismshadow/penguin-library-session/web/chat/org-trigger";
+import { parseUserMessageBody } from "@prismshadow/penguin-library-session/web/chat/user-message-body";
 
 describe("summarizeOrgTrigger", () => {
   it("names the event and its fire time for a calendar trigger", () => {

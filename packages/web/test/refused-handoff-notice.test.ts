@@ -15,7 +15,7 @@
  */
 import { createElement as h } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RefusedHandoffNotice } from "../src/features/chat/refused-handoff-notice";
+import { RefusedHandoffNotice } from "@prismshadow/penguin-library-session/web/chat/refused-handoff-notice";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { click, mount, unmountAll } from "./helpers/dom";

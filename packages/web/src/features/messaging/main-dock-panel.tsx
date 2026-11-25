@@ -1,6 +1,7 @@
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { panelLabel, type DockPanelBodyProps, type PanelId } from "../dock/index";
+import { panelLabel } from "@prismshadow/penguin-library-session/web";
+import type { DockPanelBodyProps, PanelId } from "@prismshadow/penguin-library-session/web";
 
 import { MessagingPanel } from "./messaging-panel";
 import { useChatSession } from "../../lib/chat-session";

@@ -49,6 +49,25 @@ const socketStandInPlugin: Plugin = {
 
 export default defineConfig({
   plugins: [socketStandInPlugin],
+  // The session domain's web half resolves through the same two face specifiers the app's
+  // build aliases (vite.config.ts): the suite imports the moved sources by the face's deep
+  // paths, and the moved sources consume the app through src/internal.ts.
+  resolve: {
+    alias: [
+      {
+        find: /^@prismshadow\/penguin-library-session\/web$/,
+        replacement: `${resolve(here, "../../library/session/src/web")}index.ts`,
+      },
+      {
+        find: /^@prismshadow\/penguin-library-session\/web\/(.*)$/,
+        replacement: `${resolve(here, "../../library/session/src/web")}$1`,
+      },
+      {
+        find: /^@prismshadow\/penguin-web\/internal$/,
+        replacement: resolve(here, "src/internal.ts"),
+      },
+    ],
+  },
   test: {
     environment: "node",
     // The scroll-driven component tests simulate a run of animation frames over a tall trace;

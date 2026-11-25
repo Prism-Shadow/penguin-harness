@@ -17,7 +17,7 @@
 import { createElement as h, type ReactElement } from "react";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import type { AppCenterLayout, UsageErrorItem } from "@prismshadow/penguin-server/api";
-import type { ChatDrafts } from "../src/features/chat";
+import type { ChatDrafts } from "@prismshadow/penguin-library-session/web/chat";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { CompanyProvider } from "../src/features/company/company-state";
 import { MainSidebarBadgesModule } from "../src/features/models/main-sidebar-badges.module";

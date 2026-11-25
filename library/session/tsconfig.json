@@ -12,5 +12,6 @@
       "@prismshadow/penguin-library-http/validate": ["../http/src/validate.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

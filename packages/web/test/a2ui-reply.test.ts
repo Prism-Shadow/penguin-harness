@@ -4,7 +4,7 @@
  * reply's choices and forms render read-only.
  */
 import { describe, expect, it } from "vitest";
-import { interactiveReplyIndex } from "../src/features/chat/a2ui-reply";
+import { interactiveReplyIndex } from "@prismshadow/penguin-library-session/web/chat/a2ui-reply";
 import type { ChatItem } from "../src/lib/amsp/stream-model";
 
 /** The main conversation's origin chain; a subagent's conversation has its own ids in it. */

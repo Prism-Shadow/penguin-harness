@@ -34,7 +34,7 @@ import {
   openPanel,
   setDockScope,
   subscribeDock,
-} from "../src/features/dock/dock-state";
+} from "@prismshadow/penguin-library-session/web/dock/dock-state";
 import { mount, unmountAll } from "./helpers/dom";
 import { json, stubFetch } from "./helpers/fetch";
 

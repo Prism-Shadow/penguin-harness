@@ -34,7 +34,7 @@ import { WebAppModule, type WebApp } from "./web-app/module";
 import { SidebarModule } from "./web-app/sidebar/module";
 import type { AppRouterProps } from "./web-app/router";
 import { SessionsModule } from "./state/sessions.module";
-import { ChatModule } from "./features/chat/module";
+import { ChatModule, DockModule, SessionListModule } from "@prismshadow/penguin-library-session/web";
 import { AgentsModule } from "./features/agents/module";
 import { AppCenterModule } from "./features/app-center/module";
 import { ModelsModule } from "./features/models/module";
@@ -47,10 +47,10 @@ import { WorkbenchesModule } from "./features/workbenches/module";
 import { CompanyModule } from "./features/company/module";
 import { SettingsModule } from "./features/settings/module";
 import { SchedulesModule } from "./features/schedules/module";
-import { SessionListModule } from "./features/session-list/module";
+
 import { ProjectsModule } from "./features/projects/module";
 import { MessagingModule } from "./features/messaging/module";
-import { DockModule } from "./features/dock/module";
+
 import { WorkspaceModule } from "./features/workspace/module";
 import { TracesModule } from "./features/traces/module";
 import { AudioModule } from "./features/audio/module";

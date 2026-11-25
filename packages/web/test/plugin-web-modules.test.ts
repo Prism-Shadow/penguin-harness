@@ -65,25 +65,25 @@ import {
   pageRenderersOf,
   sessionProvidersOf,
 } from "../src/web-app/gated-slots";
-import { gatedChatContributions } from "../src/features/chat/deps";
+import { gatedChatContributions } from "@prismshadow/penguin-library-session/web/chat/deps";
 import { gatedBadges, gatedModes, gatedSections } from "../src/web-app/sidebar/gated";
 import {
   gatedRowActions,
   rowExtensionsOf,
   shownRows,
-} from "../src/features/session-list/row-actions";
+} from "@prismshadow/penguin-library-session/web/session-list/row-actions";
 import { pageTableOf } from "../src/web-app/page-table";
 import { setRunningServerModules } from "../src/lib/module-gate";
 import { visibleSettingsSections } from "../src/lib/settings-sections";
-import { dockPanelDefinition, dockPanels } from "../src/features/dock/panel-registry";
-import { announceDockLayout, announceDockScope } from "../src/features/dock/dock-listeners";
+import { dockPanelDefinition, dockPanels } from "@prismshadow/penguin-library-session/web/dock/panel-registry";
+import { announceDockLayout, announceDockScope } from "@prismshadow/penguin-library-session/web/dock/dock-listeners";
 import {
   contributedSections,
   setContributedSections,
   shownSections,
 } from "../src/features/settings/contributed-sections";
-import { linkActionRows, setLinkActions } from "../src/features/chat/link-actions";
-import { handOverSession } from "../src/features/chat/session-handover";
+import { linkActionRows, setLinkActions } from "@prismshadow/penguin-library-session/web/chat/link-actions";
+import { handOverSession } from "@prismshadow/penguin-library-session/web/chat/session-handover";
 import { seen } from "./fixtures/web-plugin/src/web/module";
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/web-plugin", import.meta.url));

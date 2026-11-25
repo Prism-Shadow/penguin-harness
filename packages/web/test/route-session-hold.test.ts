@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { heldRouteSession } from "../src/features/chat/session-project";
+import { heldRouteSession } from "@prismshadow/penguin-library-session/web/chat/session-project";
 
 const row = (sessionId: string) => ({ sessionId, projectId: "p1" }) as SessionInfo;
 

@@ -37,7 +37,7 @@ import {
   pageRenderersOf,
   sessionProvidersOf,
 } from "./gated-slots";
-import type { ChatDrafts } from "../features/chat";
+import type { ChatDrafts } from "@prismshadow/penguin-library-session/web";
 import type { Sidebar } from "./sidebar/iface";
 import { webAppDeps, type WebAppLayer, type WebAppSessionProvider } from "./deps";
 

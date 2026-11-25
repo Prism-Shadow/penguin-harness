@@ -25,8 +25,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { memoryStorage } from "./helpers/storage";
 import { apiError, json, stubFetch, type FetchRequest } from "./helpers/fetch";
 
-let dock: typeof import("../src/features/dock/dock-state");
-let terminal: typeof import("../src/features/dock/dock-terminal");
+let dock: typeof import("@prismshadow/penguin-library-session/web/dock/dock-state");
+let terminal: typeof import("@prismshadow/penguin-library-session/web/dock/dock-terminal");
 let list: typeof import("../src/features/terminal");
 let machines: typeof import("../src/lib/terminal-machines");
 let commands: typeof import("../src/lib/shortcuts/dispatcher");
@@ -38,8 +38,8 @@ beforeAll(async () => {
     configurable: true,
     value: memoryStorage(),
   });
-  dock = await import("../src/features/dock/dock-state");
-  terminal = await import("../src/features/dock/dock-terminal");
+  dock = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
+  terminal = await import("@prismshadow/penguin-library-session/web/dock/dock-terminal");
   list = await import("../src/features/terminal");
   machines = await import("../src/lib/terminal-machines");
   commands = await import("../src/lib/shortcuts/dispatcher");

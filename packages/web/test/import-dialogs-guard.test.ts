@@ -22,7 +22,7 @@ import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
+import { draftKey, loadDraft } from "@prismshadow/penguin-library-session/web/chat/draft-cache";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { PluginsTab } from "../src/features/agents/plugins-tab";
 import type { PluginsSubPage } from "../src/features/agents/plugins-subpages";

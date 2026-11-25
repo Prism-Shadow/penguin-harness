@@ -33,7 +33,7 @@ import {
   workspaceRegistryKey,
   type WorkspaceEntry,
   type WorkspaceRegistryStorage,
-} from "../src/features/session-list/workspace-registry";
+} from "@prismshadow/penguin-library-session/web/session-list/workspace-registry";
 
 import { TEMP_WORKSPACE_GROUP_KEY, type WorkspaceGroup } from "../src/lib/session-grouping";
 

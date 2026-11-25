@@ -22,7 +22,7 @@ import {
   promptModeSources,
   toggled,
   type PromptMode,
-} from "../src/features/chat/prompt-modes";
+} from "@prismshadow/penguin-library-session/web/chat/prompt-modes";
 
 const plugin = (name: string, fields: Partial<PluginItem> = {}): PluginItem => ({
   name,

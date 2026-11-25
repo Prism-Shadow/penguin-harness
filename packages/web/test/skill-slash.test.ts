@@ -18,7 +18,7 @@ import {
   localizedShortText,
   localizedText,
   skillSlashItems,
-} from "../src/features/chat/skill-use";
+} from "@prismshadow/penguin-library-session/web/chat/skill-use";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

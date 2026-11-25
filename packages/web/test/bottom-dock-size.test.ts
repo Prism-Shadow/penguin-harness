@@ -17,8 +17,8 @@ import {
   bottomDockHeight,
   bottomDockMaxHeight,
   type BottomDockSpace,
-} from "../src/features/dock/bottom-dock-size";
-import { launcherBounds } from "../src/features/dock/dock-launcher-state";
+} from "@prismshadow/penguin-library-session/web/dock/bottom-dock-size";
+import { launcherBounds } from "@prismshadow/penguin-library-session/web/dock/dock-launcher-state";
 
 /** A column with a toolbar of this height above the area the row and the dock share. */
 const TOOLBAR = 45;
