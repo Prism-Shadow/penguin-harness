@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1869](https://github.com/Prism-Shadow/penguin-harness/pull/1869)
 
 [中文版](2026-11-26-stray-agent-row.zh.md)
 
