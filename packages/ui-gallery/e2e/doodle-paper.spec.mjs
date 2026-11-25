@@ -170,13 +170,14 @@ for (const [lang, mode, width] of [
   ["zh", "light", 1280],
   ["en", "dark", 390],
 ]) {
-  test(`Doodle shuffles suggested prompts without changing the draft (${lang})`, async ({
+  test(`Doodle preset shortcuts fill the draft and pick an existing app to optimize (${lang})`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 850 });
     await page.goto(`/app.html?route=/chat/new&theme=doodle&mode=${mode}&lang=${lang}`);
     const box = page.locator('.ui-start [data-slot="examples"]');
     const examples = box.locator('[data-slot="suggestion"]');
+    await expect(examples).toHaveCount(2);
     const first = examples.first();
     // Suggestions accept keyboard focus after the Agent’s Skills have loaded.
     await expect(first).toBeEnabled();
@@ -186,24 +187,14 @@ for (const [lang, mode, width] of [
     const draft = page.locator(".ui-start textarea").first();
     const text = await draft.inputValue();
     expect(text).not.toBe("");
-    const previous = await examples.allTextContents();
-    async function exampleAction(name) {
-      const inline = box.getByRole("button", { name }).first();
-      if (await inline.count()) return inline;
-      await box.getByRole("button", { name: /More examples|更多示例/ }).click();
-      return page
-        .getByRole("dialog", { name: /More examples|更多示例/ })
-        .getByRole("button", { name });
-    }
-    await (await exampleAction(/Shuffle suggestions|换一组示例/)).click();
-    const next = await examples.allTextContents();
-    expect(next.length).toBe(previous.length);
-    expect(next.every((label) => !previous.includes(label))).toBe(true);
-    await expect(draft).toHaveValue(text);
     await draft.fill(text + "!");
     await expect(box.locator('[aria-current="true"]')).toHaveCount(0);
-    const nextName = await examples.nth(1).getAttribute("aria-label");
-    await (await exampleAction(nextName)).click();
+    const optimizeBtn = examples.nth(1);
+    await optimizeBtn.click();
+    const search = page.getByRole("searchbox", { name: /Search apps|搜索应用/ });
+    await expect(search).toBeVisible();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
     const confirmation = page.getByRole("dialog");
     await expect(confirmation).toBeVisible();
     await confirmation.getByRole("button", { name: /^(Cancel|取消)$/ }).click();

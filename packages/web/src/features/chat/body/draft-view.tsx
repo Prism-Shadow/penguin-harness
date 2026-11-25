@@ -1061,6 +1061,8 @@ export function DraftView({
       fill={fillComposer}
       exampleText={exampleText}
       readComposerText={readComposerText}
+      projectId={projectId}
+      machineId={workspaceMachine}
     />
   );
 }
