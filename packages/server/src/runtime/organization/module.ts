@@ -10,7 +10,8 @@ import type { Channels, Clock, Config, Log } from "../../hmr/capabilities.js";
 import type { ChannelHub } from "../channel.js";
 import { userChannelKey } from "../../http/routes/events.js";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
-import type { AgentConfig, AgentLifecycle, AgentIndex } from "../../mechanisms/agents.js";
+import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
+import type { AgentIndex } from "@prismshadow/penguin-library-project";
 import type { ModuleActor, PluginModules } from "../../mechanisms/plugins.js";
 import type {
   Members,
@@ -29,6 +30,7 @@ import { isNewSemanticId } from "../../services/ids.js";
 import type {
   OrganizationService,
   OrgScheduler,
+  OrgService,
 } from "@prismshadow/penguin-library-organization/runtime/service";
 import type { OrgDeps, OrgRuns, OrgSessions } from "@prismshadow/penguin-library-organization/runtime/deps";
 import { OrganizationScheduler } from "@prismshadow/penguin-library-organization/runtime/scheduler";

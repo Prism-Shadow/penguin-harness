@@ -15,7 +15,8 @@ import type { UserDraftsStore } from "@prismshadow/penguin-library-auth";
 import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
 import type { ErrorLog } from "@prismshadow/penguin-library-observability";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
-import type { OrgService } from "../../runtime/organization/service.js";
+import type { OrgService } from "@prismshadow/penguin-library-organization/runtime/service";
+import type { TraceIndex } from "@prismshadow/penguin-library-trace/trace";
 import { organizationRoutes } from "@prismshadow/penguin-library-organization/routes";
 import {
   refuseUndeletable,
