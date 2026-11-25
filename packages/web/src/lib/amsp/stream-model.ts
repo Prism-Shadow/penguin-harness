@@ -2466,11 +2466,16 @@ function routeNested(model: StreamModel, msg: AmspRecord, nowMs: number): void {
   // The child's first model message is the opening prompt its spawning call handed it — right
   // behind its session_meta, live and in its spliced Trace alike — and that prompt settles which
   // card it belongs on. A deeper descendant's message reaching it first means the prompt was
-  // missed, and the binding by position stands.
+  // missed, and the binding by position stands; a mid-run message from the child itself leaves
+  // the binding unconfirmed so an older background child speaking does not lock the card.
   if (model.unconfirmedSubagents.has(head) && isModelMessage(msg)) {
-    model.unconfirmedSubagents.delete(head);
     const prompt = msg.origin!.length === 1 ? openingPrompt(msg) : null;
-    if (prompt !== null) moveToSpawningCard(model, head, sub, prompt);
+    if (prompt !== null) {
+      model.unconfirmedSubagents.delete(head);
+      moveToSpawningCard(model, head, sub, prompt);
+    } else if (msg.origin!.length > 1) {
+      model.unconfirmedSubagents.delete(head);
+    }
   }
   // Elapsed-time stamps (see the StreamModel field docs): every message routed into this child's
   // subtree — its own or a deeper descendant's — counts as its activity; the recursive pushMessage
@@ -2538,19 +2543,34 @@ function moveToSpawningCard(
     (item): item is ToolCallItem =>
       item.kind === "tool_call" && item.subagentSessionId === sessionId,
   );
-  if (!from) return;
+  const standaloneIdx = model.items.findIndex(
+    (item) => item.kind === "subagent" && item.sessionId === sessionId,
+  );
   const target = spawningCard(model, sessionId, prompt, sub.meta);
   if (target === null || target === from) return;
   const displacedId = target.subagentSessionId;
   const displaced = target.subagent;
   target.subagent = sub;
   target.subagentSessionId = sessionId;
-  if (displaced !== undefined && displacedId !== undefined) {
-    from.subagent = displaced;
-    from.subagentSessionId = displacedId;
-  } else {
-    delete from.subagent;
-    delete from.subagentSessionId;
+  if (from !== undefined) {
+    if (displaced !== undefined && displacedId !== undefined) {
+      from.subagent = displaced;
+      from.subagentSessionId = displacedId;
+    } else {
+      delete from.subagent;
+      delete from.subagentSessionId;
+    }
+  } else if (standaloneIdx >= 0) {
+    if (displaced !== undefined && displacedId !== undefined) {
+      model.items[standaloneIdx] = {
+        ...model.items[standaloneIdx]!,
+        kind: "subagent",
+        sessionId: displacedId,
+        model: displaced,
+      };
+    } else {
+      model.items.splice(standaloneIdx, 1);
+    }
   }
 }
 

@@ -1313,7 +1313,7 @@ export class Agent {
                 ...(parentAgent.assembly ? { assembly: parentAgent.assembly } : {}),
               });
         const childSession = await childAgent.resumeSession({ sessionId });
-        return subagentHandleFor(childSession);
+        return subagentHandleFor(childSession, true);
       },
     };
 
@@ -1323,11 +1323,14 @@ export class Agent {
      * one hop from outer to inner); the first turn forwards the child's session_meta first
      * (including agent_state and other metadata) so the parent frontend can recognize the
      * nested session (for rendering, stats, approval visibility); the parent Trace skips
-     * these accordingly (the child Session has its own Trace, linked by session id).
+     * these accordingly (the child Session has its own Trace, linked by session id). A
+     * resumed child has already recorded its pointer in the parent Trace at spawn time, so
+     * it skips re-sending session_meta to avoid recording a duplicate subagent pointer in a
+     * later Task.
      */
-    function subagentHandleFor(childSession: Session): SubagentHandle {
+    function subagentHandleFor(childSession: Session, resumed = false): SubagentHandle {
       const hop: MessageOrigin = childSession.sessionId;
-      let metaSent = false;
+      let metaSent = resumed;
       return {
         sessionId: hop,
         // One-shot upfront meta for background launches (see SubagentHandle.takeMeta):
