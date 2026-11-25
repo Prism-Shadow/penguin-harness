@@ -16,7 +16,7 @@ import {
   ModelPickerModal,
   modelLabel,
   SELECTABLE_THINKING_LEVELS,
-} from "../model-picker";
+} from "@prismshadow/penguin-web/internal";
 
 type Choice = ModelRefDto & { label: string };
 type Request = { id: string; op: "choose" | "get"; current: ModelRefDto | null };

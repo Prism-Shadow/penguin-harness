@@ -61,7 +61,7 @@ import { formatScore } from "../../lib/format";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
-import { ModelCatalogSelect } from "../model-picker";
+import { ModelCatalogSelect } from "@prismshadow/penguin-web/internal";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import {
   DEFAULT_TEST_REPETITIONS,

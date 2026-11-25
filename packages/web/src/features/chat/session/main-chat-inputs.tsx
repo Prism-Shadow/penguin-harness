@@ -12,7 +12,7 @@ import { useAuth } from "../../../state/auth";
 import { useTheme } from "../../../state/theme";
 import { useProject } from "../../../state/project";
 import { useSessions } from "../../../state/sessions";
-import type { StagedThinkingSwitch } from "../../model-picker";
+import { type StagedThinkingSwitch } from "@prismshadow/penguin-web/internal";
 import { createCostStatHold } from "../header-stats";
 import type { SwitchContextShape } from "../model-switch";
 
