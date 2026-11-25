@@ -386,3 +386,127 @@ export interface AgentArchiveQuery {
    */
   traces?: "none" | `last:${number}` | `${string}..${string}`;
 }
+
+// ---------------------------------------------------------------------------
+// The Agent lifecycle: the list card, the creation request and a deletion's state
+// ---------------------------------------------------------------------------
+
+/** One library plugin an Agent's installed copy is behind on — one of its skills or its hook package carries an older dated version than the library's same part (see {@link AgentListItem.pluginUpdates}). */
+export interface PluginUpdateRef {
+  /** Plugin name — what `POST …/plugins` reinstalls to bring the Agent up to date. */
+  name: string;
+  /**
+   * The LIBRARY's content version: the newest dated version (`YYYY.MM.DD.N`) among the plugin's
+   * parts, i.e. the date of what installing again would bring, not what is on disk. A label —
+   * it moves whenever any part changes, so a dismissed update comes back for the next one.
+   */
+  version: string;
+}
+
+/** One Agent as the list carries it (the service's answer, the list route's projection). */
+export interface AgentListItem {
+  agentId: string;
+  name?: string;
+  description?: string;
+  /** Who made the Agent (system_config.yaml `author`; missing or unknown = `user`). */
+  author: AgentAuthor;
+  createdAt?: string;
+  /** Last config modification time: the later of system_config.yaml / AGENTS.md mtime. */
+  updatedAt?: string;
+  /** Tool count: number of tools.builtin + tools.mcpServers entries (MCP counted per server). */
+  toolCount: number;
+  /** Agent State version number (missing field treated as 1). */
+  version: number;
+  /** Whether the config's kernel stamp is behind the current defaults generation (missing stamp = outdated) — the list card's update hint. */
+  kernelOutdated: boolean;
+  /** Number of vault keys. */
+  vaultKeyCount: number;
+  /** Number of scheduled tasks (count of .toml files directly under schedule/, including invalid ones; archived files under schedule/expired/ are not counted). */
+  scheduleCount: number;
+  /** Workbench folders with a manifest, including ones with a load error. */
+  workbenchCount: number;
+  /** Distinct packages with at least one installed Agent part. */
+  pluginCount?: number;
+  /** Number of installed Skills (count of skills/<name>/ directories that contain a SKILL.md). */
+  skillCount: number;
+  /** Number of installed hook packages (hooks/<name>/ directories with a hooks.json). */
+  hookCount: number;
+  /** Installed skills and hook packages the library has a newer version of, by plugin, each carrying that library version. */
+  pluginUpdates: PluginUpdateRef[];
+  /** Number of memory topic files across every scope directory under memory/ (independent of the memory switch, like skillCount). */
+  memoryCount: number;
+  /** The content revision of the Agent's own picture (the agent domain library's agent-avatar); absent when it has none. */
+  avatarRev?: string;
+  /** Present on the system Agent only (core state/system-agent.ts). */
+  system?: true;
+}
+
+/** Who acts on a plugin's server module: a signed-in user, and whether that user is the administrator. */
+export interface ModuleActor {
+  userId: string;
+  isAdmin: boolean;
+}
+
+/** What a new Agent starts with, besides its id. Every field is optional. */
+export interface AgentCreation {
+  /** Display name; the id when omitted (an imported package keeps its own instead). */
+  name?: string;
+  description?: string;
+  /** Who is creating it; `user` when omitted. An imported package keeps its own. */
+  author?: AgentAuthor;
+  /** Library plugin names to install into it. */
+  plugins?: readonly string[];
+  /**
+   * Whether the library's default-install plugins (cards with `defaultInstall`) join `plugins`;
+   * omitted = true. An Agent made from a package (`archive`) never gets them: an import moves an
+   * existing Agent, with the plugins it already has.
+   */
+  defaultPlugins?: boolean;
+  /** Skills to import from a directory the creator picked. */
+  directory?: { path: string; names: readonly string[] };
+  /** An Agent package (the import route's) to start from instead of the default template. */
+  archive?: AgentPackage;
+  /**
+   * Who creates it, for the `plugins`' server modules (PRFC-0031): once the Agent exists, they
+   * are brought along as this actor would bring them, and that is the last thing creation does —
+   * it may re-assemble the App. `null` is the system (built-in modules only, never a request).
+   * Absent, creation leaves the modules to its caller: company mode brings them along at the end
+   * of its own flow, which goes on with this generation's services after the Agent exists.
+   */
+  actor?: ModuleActor | null;
+}
+
+/**
+ * Where a deleted Agent's files stand. The Agent itself is gone the moment DELETE answers: its
+ * folder was moved out of the Project's agents directory in one rename, and every list and route
+ * stopped seeing it. What follows is the removal of that folder's contents in the background,
+ * which this reports.
+ */
+export interface AgentDeletionInfo {
+  /** Names this deletion (GET /api/projects/:projectId/agent-deletions/:deletionId). */
+  deletionId: string;
+  agentId: string;
+  /**
+   * `counting`: the folder is walked to learn how many entries it holds (`total` grows);
+   * `removing`: they are removed (`removed` grows towards `total`); `done`: nothing is left;
+   * `failed`: some entries could not be removed (`error` says why). What is left is tried again
+   * when the server next starts.
+   */
+  phase: "counting" | "removing" | "done" | "failed";
+  /** Entries found: so far while counting, then in all. Files and folders alike. */
+  total: number;
+  /** Entries removed so far. */
+  removed: number;
+  /** The first error the removal met, as the operating system worded it (`failed` only). */
+  error?: string;
+}
+
+/** One organization employing an Agent, as the Agent list and a deletion's guard carry it. */
+export interface AgentEmployment {
+  orgId: string;
+  /** The organization's display name (`org_config.toml`), the id when the config does not parse. */
+  orgName: string;
+  /** The Agent's title in that organization's chart; "CEO" for the CEO of a chart that does not parse. */
+  title: string;
+  status: "active" | "paused";
+}

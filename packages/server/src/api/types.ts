@@ -1106,6 +1106,7 @@ export { HOST_COMMANDS, LEGACY_HOST_COMMANDS } from "@prismshadow/penguin-librar
 export type {
   AgentArchiveQuery,
   AgentCompactionConfigDto,
+  AgentDeletionInfo,
   AgentConfigDto,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
@@ -1127,6 +1128,7 @@ export type {
   MemoryScopeExport,
   MemoryScopeInfo,
   MemoryTransferFile,
+  PluginUpdateRef,
   VaultEntryInfo,
   VaultEntryUpdate,
   VaultResponse,
@@ -1135,16 +1137,7 @@ export type {
 export { AVATAR_MAX_CHARS } from "@prismshadow/penguin-library-agent/types";
 
 /** One library plugin an Agent's installed copy is behind on — one of its skills or its hook package carries an older dated version than the library's same part (see {@link AgentSummary.pluginUpdates}). */
-export interface PluginUpdateRef {
-  /** Plugin name — what `POST …/plugins` reinstalls to bring the Agent up to date. */
-  name: string;
-  /**
-   * The LIBRARY's content version: the newest dated version (`YYYY.MM.DD.N`) among the plugin's
-   * parts, i.e. the date of what installing again would bring, not what is on disk. A label —
-   * it moves whenever any part changes, so a dismissed update comes back for the next one.
-   */
-  version: string;
-}
+export type { PluginUpdateRef } from "@prismshadow/penguin-library-agent/types";
 
 /**
  * Who made an Agent (`author` in system_config.yaml): a person in the Web App (`user`), an
@@ -1289,30 +1282,7 @@ export interface AgentCreateResponse {
   agent: AgentSummary;
 }
 
-/**
- * Where a deleted Agent's files stand. The Agent itself is gone the moment DELETE answers: its
- * folder was moved out of the Project's agents directory in one rename, and every list and route
- * stopped seeing it. What follows is the removal of that folder's contents in the background,
- * which this reports.
- */
-export interface AgentDeletionInfo {
-  /** Names this deletion (GET /api/projects/:projectId/agent-deletions/:deletionId). */
-  deletionId: string;
-  agentId: string;
-  /**
-   * `counting`: the folder is walked to learn how many entries it holds (`total` grows);
-   * `removing`: they are removed (`removed` grows towards `total`); `done`: nothing is left;
-   * `failed`: some entries could not be removed (`error` says why). What is left is tried again
-   * when the server next starts.
-   */
-  phase: "counting" | "removing" | "done" | "failed";
-  /** Entries found: so far while counting, then in all. Files and folders alike. */
-  total: number;
-  /** Entries removed so far. */
-  removed: number;
-  /** The first error the removal met, as the operating system worded it (`failed` only). */
-  error?: string;
-}
+export type { AgentDeletionInfo } from "@prismshadow/penguin-library-agent/types";
 
 /** DELETE /api/projects/:projectId/agents/:agentId (202). */
 export interface AgentDeleteResponse {
