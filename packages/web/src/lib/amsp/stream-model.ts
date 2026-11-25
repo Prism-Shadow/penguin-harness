@@ -680,6 +680,12 @@ export interface StreamModel {
    * moveToSpawningCard).
    */
   unconfirmedSubagents: Set<string>;
+  /**
+   * Sessions a stop hook spawned from this one, by the id its `hook` event names. Such a child
+   * runs detached: this Session's Trace keeps no subagent pointer to it and its stream is
+   * dropped, so the Agent panel never lists it and it gets no nested model and no row here.
+   */
+  detachedChildren: Set<string>;
   /** toolCallIds whose approval was clicked on this end (shares the reference with nested models, labeled "manual"). */
   localDecisions: Set<string>;
   /** Approval decisions that arrived before their tool card (backfilled when the card is created). */
@@ -817,6 +823,7 @@ function newModel(
     toolCards: new Map(),
     subagents: new Map(),
     unconfirmedSubagents: new Set(),
+    detachedChildren: new Set(),
     localDecisions,
     pendingDecisions: new Map(),
     pendingDecisionTs: new Map(),
@@ -860,6 +867,9 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
   const tsMs = tsOf(msg.timestamp);
   if (!model.nested && tsMs !== undefined) observeServerTime(model.workClock, tsMs, nowMs);
   if (msg.origin && msg.origin.length > 0) {
+    // A stop hook's child sends its session_meta behind the hook's event so a host can register
+    // the Session; it is not a subagent of this one (see StreamModel.detachedChildren).
+    if (model.detachedChildren.has(msg.origin[0]!)) return;
     routeNested(model, msg, nowMs);
     return;
   }
@@ -1969,6 +1979,12 @@ function createToolCard(
 
 function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?: number): void {
   switch (p.type) {
+    case "hook": {
+      // The event names the child before any of the child's records arrive.
+      const spawned = p.hook === "stop" ? p.output?.session_id : undefined;
+      if (typeof spawned === "string") model.detachedChildren.add(spawned);
+      return;
+    }
     case "approval_decision": {
       const card = model.toolCards.get(p.tool_call_id);
       if (card) {
