@@ -254,7 +254,7 @@ The branch is decided by the `VisionDescriberService` that the SDK injects into 
 
 Every `input_subagent` call returns the child's **most recent complete reply** to the model: an idempotent snapshot of what it last said, not an incremental drain.
 
-With `run_in_background: true`, the launch returns the `subagent_id` immediately, and the completion of every round the model started arrives as an automatic user message. Rounds started from the panel and rounds ended by an explicit abort stay silent (see [Background completion reports](#background-completion-reports)).
+With `run_in_background: true`, the launch returns the `subagent_id` immediately, and the completion of every round the model started arrives as an automatic user message. A follow-up round that `input_subagent` starts on any other subagent is reported the same way when it is still running as that call returns. Rounds started from the panel and rounds ended by an explicit abort stay silent (see [Background completion reports](#background-completion-reports)).
 
 There is **no kill for subagents**. Like the main agent's session, a subagent session is never destroyed. Releasing an idle one only frees its slot, and a released `subagent_id` **revives automatically** when it is messaged again; the model and the panel share the same resume path.
 
