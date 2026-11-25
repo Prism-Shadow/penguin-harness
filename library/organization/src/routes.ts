@@ -4,6 +4,7 @@
  * that contributes it stay in the server. Each factory takes its deps as plain shapes — the
  * module that builds the routes binds them to its own capabilities.
  */
+
 /**
  * Company-mode routes, nested under a Project:
  *   GET|POST      /api/projects/:p/organizations
@@ -1011,3 +1012,4 @@ function parseModel(
     provider: requireString(m, "provider", { minLen: 1, maxLen: 64, label: "model.provider" }),
     modelId: requireString(m, "modelId", { minLen: 1, maxLen: 200, label: "model.modelId" }),
   };
+}
