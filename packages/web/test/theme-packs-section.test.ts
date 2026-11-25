@@ -24,8 +24,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { MeResponse, ThemePackDto } from "@prismshadow/penguin-server/api";
 import { BUILTIN_PACKS, builtinPack, toastStore, type ThemeId } from "@prismshadow/penguin-ui";
 import { THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
-import { AppearanceSection } from "../src/features/settings/appearance-section";
-import { ThemePacksSection } from "../src/features/settings/theme-packs-section";
+import { AppearanceSection } from "@prismshadow/penguin-library-setting/web/appearance-section";
+import { ThemePacksSection } from "@prismshadow/penguin-library-setting/web/theme-packs-section";
 import { publishUserEvent } from "../src/lib/amsp/user-events";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

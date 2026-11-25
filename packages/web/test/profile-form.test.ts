@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { UserInfo } from "@prismshadow/penguin-server/api";
-import { profileControls } from "../src/lib/profile-form";
+import { profileControls } from "@prismshadow/penguin-library-setting/web/lib/profile-form";
 
 /** An account with nothing set: the state every account predating the Profile page is in. */
 const bare: UserInfo = {

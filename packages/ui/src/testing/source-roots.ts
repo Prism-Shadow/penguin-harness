@@ -163,6 +163,25 @@ export function pluginWebRoots(repoRoot: string): Record<string, string> {
   return roots;
 }
 
+/**
+ * The web half of every library domain package that has one (`library/<domain>/src/web/`), keyed
+ * `library:<domain>`: TypeScript the Web App compiles in with the app's own program, so every
+ * guard over the app's source scans it too. Only the directories that exist are named, so a
+ * domain without a web half adds no root (and no root that yields nothing).
+ */
+export function libraryWebRoots(repoRoot: string): Record<string, string> {
+  const libraries = join(repoRoot, "library");
+  if (!existsSync(libraries)) return {};
+  const roots: Record<string, string> = {};
+  for (const entry of readdirSync(libraries, { withFileTypes: true })) {
+    const web = join(libraries, entry.name, "src", "web");
+    if (entry.isDirectory() && existsSync(web) && statSync(web).isDirectory()) {
+      roots[`library:${entry.name}`] = web;
+    }
+  }
+  return roots;
+}
+
 /** The scanned file with this repo-relative id, or `undefined`. */
 export function findSourceFile(scan: SourceScan, id: string): SourceFile | undefined {
   return scan.files.find((file) => file.id === id);

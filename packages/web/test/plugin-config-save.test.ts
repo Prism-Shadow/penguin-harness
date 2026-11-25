@@ -29,8 +29,8 @@ import {
   PluginCard,
   cardDraftOf,
   unparsedNumbers,
-} from "../src/features/settings/plugin-config-card";
-import { ConfigMachinePicker } from "../src/features/settings/plugins-section";
+} from "@prismshadow/penguin-library-setting/web/plugin-config-card";
+import { ConfigMachinePicker } from "@prismshadow/penguin-library-setting/web/plugins-section";
 import { apiError, json, stubFetch, type FakeFetch } from "./helpers/fetch";
 
 import { button, click, field, mount, run, switchNamed, type, unmountAll } from "./helpers/dom";

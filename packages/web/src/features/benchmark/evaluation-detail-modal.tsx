@@ -26,7 +26,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { SettingsDialog } from "../settings";
+import { SettingsDialog } from "@prismshadow/penguin-library-setting/web";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import type { Currency } from "../../state/theme";
 import { AskAiModal } from "./ask-ai-modal";

@@ -49,7 +49,7 @@ vi.mock("../src/lib/use-update-badges", () => ({
 vi.mock("../src/features/plugins/plugin-repair", () => ({
   usePluginRepair: () => ({ repair: vi.fn(), modal: null }),
 }));
-vi.mock("../src/features/settings/settings-dialog", () => ({ SettingsDialog: () => null }));
+vi.mock("@prismshadow/penguin-library-setting/web/settings-dialog", () => ({ SettingsDialog: () => null }));
 vi.mock("../src/features/plugins/plugin-import-modal", () => ({ ImportPluginModal: () => null }));
 vi.mock("../src/features/chat/chat-page", () => ({ DRAFT_SESSION_ID: "draft" }));
 vi.mock("../src/features/machines/machine-picker", () => ({

@@ -17,7 +17,7 @@ import { createElement as h } from "react";
 import { hasUnsaved, toastStore } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { ProxySection } from "../src/features/settings/proxy-section";
+import { ProxySection } from "@prismshadow/penguin-library-setting/web/proxy-section";
 import { adminSettingsServer } from "./helpers/admin-settings";
 import { button, click, field, mount, switchNamed, type, unmountAll, waitFor } from "./helpers/dom";
 

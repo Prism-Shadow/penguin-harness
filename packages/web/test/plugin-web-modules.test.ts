@@ -81,7 +81,7 @@ import {
   contributedSections,
   setContributedSections,
   shownSections,
-} from "../src/features/settings/contributed-sections";
+} from "@prismshadow/penguin-library-setting/web/contributed-sections";
 import { linkActionRows, setLinkActions } from "../src/features/chat/link-actions";
 import { handOverSession } from "../src/features/chat/session-handover";
 import { seen } from "./fixtures/web-plugin/src/web/module";

@@ -83,7 +83,9 @@
     "./repos": {
       "types": "./dist/repos/index.d.ts",
       "import": "./dist/repos/index.js"
-    }
+    },
+    "./web": "./src/web/index.ts",
+    "./web/*": "./src/web/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -98,9 +100,15 @@
   },
   "devDependencies": {
     "@types/node": "^24",
+    "@types/react": "^19.1.0",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web": "workspace:*",
+    "@prismshadow/penguin-web-plugin": "workspace:*",
+    "react": "^19.1.0",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "zustand": "^5.0.15"
   },
   "engines": {
     "node": ">=24"

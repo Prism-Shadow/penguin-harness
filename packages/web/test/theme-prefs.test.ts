@@ -29,7 +29,7 @@ import {
 } from "@prismshadow/penguin-ui/boot";
 import { shownTheme } from "../src/state/theme-entries";
 import { effectiveAccent, readThemePrefs } from "../src/state/theme-prefs";
-import { fontChoices } from "../src/features/settings/appearance-section";
+import { fontChoices } from "@prismshadow/penguin-library-setting/web/appearance-section";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { memoryStorage } from "./helpers/storage";

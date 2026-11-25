@@ -13,5 +13,6 @@
       "@prismshadow/penguin-theme-pack": ["../../packages/theme-pack/src/index.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

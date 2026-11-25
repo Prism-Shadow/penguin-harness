@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 import type { BenchmarkSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
 import { UnpublishedNotice } from "../src/features/benchmark/benchmark-detail-page";
 import { BenchmarkCard, BenchmarkCreateButtons } from "../src/features/benchmark/benchmark-page";
-import { traceImportTargets } from "../src/features/settings/trace-import-row";
+import { traceImportTargets } from "@prismshadow/penguin-library-setting/web/trace-import-row";
 import { S, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

@@ -13,7 +13,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ShortcutsSection } from "../src/features/settings/shortcuts-section";
+import { ShortcutsSection } from "@prismshadow/penguin-library-setting/web/shortcuts-section";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { parseChord } from "../src/lib/shortcuts/chord";

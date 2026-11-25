@@ -33,8 +33,8 @@ import {
   pluginPageTarget,
   pluginPages,
   type PluginSectionRef,
-} from "../src/lib/plugin-pages";
-import { cardsOn } from "../src/features/settings/plugin-config-groups";
+} from "@prismshadow/penguin-library-setting/web/lib/plugin-pages";
+import { cardsOn } from "@prismshadow/penguin-library-setting/web/plugin-config-groups";
 
 type Code = { label: () => string };
 const section = (data: Partial<SettingsSectionData> & { key: string }, name: string) =>

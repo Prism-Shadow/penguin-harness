@@ -58,8 +58,8 @@ import {
   shownRows,
   wholeGroupChosen,
   type ArchiveFilters,
-} from "../src/features/settings/archived-sessions-state";
-import { pageCountOf } from "../src/features/settings/archived-sessions-paging";
+} from "@prismshadow/penguin-library-setting/web/archived-sessions-state";
+import { pageCountOf } from "@prismshadow/penguin-library-setting/web/archived-sessions-paging";
 import { apiError, json, stubFetch, type FakeFetch, type FetchRequest } from "./helpers/fetch";
 
 const ALL: ArchiveFilters = { q: "", source: null, projectId: null };

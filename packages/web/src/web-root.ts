@@ -45,7 +45,7 @@ import { BenchmarkModule } from "./features/benchmark/module";
 import { TerminalModule } from "./features/terminal/module";
 import { WorkbenchesModule } from "./features/workbenches/module";
 import { CompanyModule } from "./features/company/module";
-import { SettingsModule } from "./features/settings/module";
+import { SettingsModule } from "@prismshadow/penguin-library-setting/web";
 import { SchedulesModule } from "./features/schedules/module";
 import { SessionListModule } from "./features/session-list/module";
 import { ProjectsModule } from "./features/projects/module";

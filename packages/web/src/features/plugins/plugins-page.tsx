@@ -116,7 +116,7 @@ import {
   rowTargets,
 } from "./market-rows";
 import { viewedMachine } from "./viewed-machine";
-import { SettingsDialog } from "../settings";
+import { SettingsDialog } from "@prismshadow/penguin-library-setting/web";
 import { pickDefaultAgent } from "../ai-create";
 import { pluginPickItems } from "../agents";
 import { toneInk } from "../../lib/tone";

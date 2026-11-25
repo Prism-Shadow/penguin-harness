@@ -24,7 +24,7 @@ import type {
   PluginModuleRequestsResponse,
 } from "@prismshadow/penguin-server/api";
 import { toastStore } from "@prismshadow/penguin-ui";
-import { PluginModuleRequests } from "../src/features/settings/plugin-module-requests";
+import { PluginModuleRequests } from "@prismshadow/penguin-library-setting/web/plugin-module-requests";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { LocaleProvider } from "../src/state/locale";

@@ -76,6 +76,10 @@ export function pluginWebEntries(webDir, { pluginsDir = null } = {}) {
   const manifest = JSON.parse(fs.readFileSync(path.join(webDir, "package.json"), "utf8"));
   const entries = [];
   for (const name of Object.keys(manifest.dependencies ?? {})) {
+    // A library package's web half (library/<domain>, its `./web` entry) is not a shipped
+    // plugin's: the host compiles it with its own program and boots its module classes from
+    // web-root's children, so it never joins the generated plugin list.
+    if (name.startsWith("@prismshadow/penguin-library-")) continue;
     const installed = path.join(webDir, "node_modules", name, "package.json");
     if (!fs.existsSync(installed)) {
       throw new Error(

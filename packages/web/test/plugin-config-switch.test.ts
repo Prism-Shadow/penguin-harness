@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { ConfigField } from "../src/features/settings/plugin-config-field";
+import { ConfigField } from "@prismshadow/penguin-library-setting/web/plugin-config-field";
 
 const FIELD: PluginConfigField = { type: "boolean", title: "Temporary directory writable" };
 const REASON = "the sandbox backend in use here (dsh-local) cannot close the temporary directory";

@@ -2,7 +2,7 @@
 // locked or refused cells read as declared; malformed added rows are dropped.
 import { describe, expect, it } from "vitest";
 import type { PluginConfigField } from "@prismshadow/penguin-server/api";
-import { tableDraftOf } from "../src/features/settings/plugin-config-draft";
+import { tableDraftOf } from "@prismshadow/penguin-library-setting/web/plugin-config-draft";
 
 const FIELD: PluginConfigField = {
   type: "table",

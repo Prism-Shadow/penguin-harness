@@ -21,7 +21,7 @@ import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
-import { SettingsDialog } from "../src/features/settings/settings-dialog";
+import { SettingsDialog } from "@prismshadow/penguin-library-setting/web/settings-dialog";
 import { AuthProvider } from "../src/state/auth";
 import { adminSettingsServer } from "./helpers/admin-settings";
 import {

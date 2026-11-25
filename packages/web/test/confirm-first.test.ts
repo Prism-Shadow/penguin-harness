@@ -17,9 +17,9 @@ import type { AgentApiKeyInfo } from "@prismshadow/penguin-server/api";
 // The browser reaches the app's own helpers through the plugin face; this hands them over.
 import "../src/web-app/plugin-host";
 import { ApiTab } from "../src/features/agents/api-tab";
-import { AgentApiSection } from "../src/features/settings/agent-api-section";
+import { AgentApiSection } from "@prismshadow/penguin-library-setting/web/agent-api-section";
 import { ChromeExtensionSection } from "../../../plugins/browser-automation/src/web/chrome-extension-section";
-import { CompanySection } from "../src/features/settings/company-section";
+import { CompanySection } from "@prismshadow/penguin-library-setting/web/company-section";
 import { AuthProvider } from "../src/state/auth";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en as browserEn } from "../../../plugins/browser-automation/src/web/strings";

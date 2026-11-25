@@ -14,7 +14,7 @@
 import { AppShell } from "@prismshadow/penguin-ui";
 import { createElement as h } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BackgroundControls } from "../src/features/settings/background-controls";
+import { BackgroundControls } from "@prismshadow/penguin-library-setting/web/background-controls";
 import {
   BACKGROUND_IMAGE_KEY,
   BACKGROUND_SETTINGS_KEY,

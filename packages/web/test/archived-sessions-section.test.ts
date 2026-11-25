@@ -15,7 +15,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import type { SessionInfo, SessionSource } from "@prismshadow/penguin-server/api";
-import { ArchivedSessionsSection } from "../src/features/settings/archived-sessions-section";
+import { ArchivedSessionsSection } from "@prismshadow/penguin-library-setting/web/archived-sessions-section";
 import { AuthProvider } from "../src/state/auth";
 import { LocaleProvider } from "../src/state/locale";
 import { ProjectProvider } from "../src/state/project";
