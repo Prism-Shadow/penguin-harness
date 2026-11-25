@@ -1,0 +1,1 @@
+- Simplified the `/chat/new` home page prompt shortcuts to two centered pill actions: `Build New App` and `Optimize Existing App` (with an app picker menu for non-system apps).
