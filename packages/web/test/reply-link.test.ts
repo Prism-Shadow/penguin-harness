@@ -219,14 +219,16 @@ describe("replyLinkBehavior", () => {
 
   it("an href with nowhere to go neither navigates nor opens anything", () => {
     const openFile = vi.fn();
+    const openRoute = vi.fn();
     for (const href of ["../secret.txt", "/etc/hosts", ""]) {
-      const behavior = replyLinkBehavior(href, { workspace: WS, openFile });
+      const behavior = replyLinkBehavior(href, { workspace: WS, openFile, openRoute });
       expect(behavior.target).toBeUndefined();
       const event = click();
       behavior.onClick!(event);
       expect(event.preventDefault).toHaveBeenCalledOnce();
     }
     expect(openFile).not.toHaveBeenCalled();
+    expect(openRoute).not.toHaveBeenCalled();
   });
 
   it("an anchor scrolls to the nearest element with that id, without navigating", () => {

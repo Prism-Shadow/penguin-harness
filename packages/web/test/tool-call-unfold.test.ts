@@ -139,7 +139,7 @@ describe("unfolding a folded tool output", () => {
 });
 
 describe("sessionBadgeIds", () => {
-  const SID = "session-2026-11-25-10-00-00-4a5b6c7d";
+  const sid = (n: number) => `session-2026-11-25-10-00-00-${n.toString(16).padStart(8, "0")}`;
   const item = (over: Partial<ToolCallItem>): ToolCallItem => ({
     kind: "tool_call",
     id: 1,
@@ -148,14 +148,22 @@ describe("sessionBadgeIds", () => {
     argumentsText: "{}",
     callStreaming: false,
     callComplete: true,
-    output: `done\n${SID}\n`,
+    output: `done\n${sid(0x4a5b6c7d)}\n`,
     outputStreaming: false,
     outputComplete: true,
     ...over,
   });
 
-  it("reads the whole output, and takes the first five distinct ids on a line of their own", () => {
-    expect(sessionBadgeIds(item({}))).toEqual([SID]);
+  it("takes the first five distinct ids on a line of their own; a duplicate does not spend the quota", () => {
+    const output = [sid(1), sid(2), sid(1), sid(3), sid(4), sid(5), sid(6)]
+      .map((id) => `${id}\n`)
+      .join("");
+    expect(sessionBadgeIds(item({ output }))).toEqual([sid(1), sid(2), sid(3), sid(4), sid(5)]);
+  });
+
+  it("reads none while the output is still streaming: its buffer's end is not a line's end", () => {
+    const streaming = item({ output: `done\n${sid(0x4a5b6c7d)}`, outputComplete: false });
+    expect(sessionBadgeIds(streaming)).toEqual([]);
   });
 
   it("reads nothing while the output is folded: a cut can split a line into a fake one", () => {
