@@ -20,7 +20,7 @@ import {
   type RowActionItem,
 } from "@prismshadow/penguin-ui";
 import { agentSettingsPath } from "../../lib/agent-location";
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
 import { S } from "../../lib/strings";
 import { TileIcon } from "../app-center";

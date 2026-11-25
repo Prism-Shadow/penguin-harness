@@ -14,7 +14,10 @@ import { armCommandDoneReport } from "../src/environment/tools/exec-command.js";
 import { ManagedSession } from "../src/environment/tools/command/index.js";
 import { createSubagentTool } from "../src/environment/tools/run-subagent.js";
 import { createInputSubagentTool } from "../src/environment/tools/input-subagent.js";
-import { SubagentSessionManager } from "../src/environment/tools/subagent/index.js";
+import {
+  ManagedSubagentSession,
+  SubagentSessionManager,
+} from "../src/environment/tools/subagent/index.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import {
   requestEnd,
@@ -1205,5 +1208,151 @@ describe("sibling background subagents survive a completion notice (issue #581)"
     expect(last).toHaveLength(1);
     expect(statusOf(last[0]!)).toBe("completed");
     expect(running()).toHaveLength(0);
+  });
+});
+
+/**
+ * A runner whose children can be resumed after their slot was freed: every spawn is a
+ * distinct child, a resume hands back a new handle on the same child Session, and each round
+ * answers once its gate is released. A prompt starting with "guarded" asks for approval
+ * before it answers, so the answer records who decided.
+ */
+function revivableRunner(gates: Map<string, () => void>): SubagentRunner {
+  let spawned = 0;
+  const handleFor = (hop: string): SubagentHandle => ({
+    sessionId: hop,
+    async *run({ messages, approve }): AsyncGenerator<AmspRecord, null> {
+      const prompt = promptOf(messages);
+      await new Promise<void>((resolve) => gates.set(prompt, resolve));
+      const decision = prompt.startsWith("guarded")
+        ? await approve?.(
+            toolCall({ name: "exec_command", arguments: "{}", toolCallId: "call_child" }),
+          )
+        : undefined;
+      const suffix = decision ? ` (${decision})` : "";
+      yield { ...assistantText(`answer to: ${prompt}${suffix}`), origin: [hop] };
+      return null;
+    },
+    dispose() {},
+  });
+  return {
+    async spawn() {
+      spawned += 1;
+      return handleFor(`session-child-${String(spawned).padStart(8, "0")}`);
+    },
+    async resume({ sessionId }) {
+      return handleFor(sessionId);
+    },
+  };
+}
+
+describe("input_subagent follow-up rounds that outlive the window", () => {
+  function setup() {
+    const manager = new SubagentSessionManager();
+    cleanups.push(() => manager.dispose());
+    const gates = new Map<string, () => void>();
+    const events: BackgroundTaskDoneEvent[] = [];
+    const tapped: AmspRecord[] = [];
+    const services = {
+      subagentRunner: revivableRunner(gates),
+      subagentSessions: manager,
+      backgroundDone: (e: BackgroundTaskDoneEvent) => events.push(e),
+      backgroundForward: (m: AmspRecord) => tapped.push(m),
+    };
+    const release = async (prompt: string): Promise<void> => {
+      await waitFor(() => gates.has(prompt));
+      gates.get(prompt)!();
+    };
+    return {
+      manager,
+      events,
+      tapped,
+      release,
+      run: createSubagentTool(SUB_DEF, services),
+      input: createInputSubagentTool(SUB_INPUT_DEF, services),
+    };
+  }
+  const textsOf = (messages: AmspRecord[]): string[] =>
+    messages.map((m) => (m.payload as { text?: string }).text ?? "");
+
+  it("a child resumed after its slot was freed reports the round once, streams it live and gets its approvals answered", async () => {
+    const { manager, events, tapped, release, run, input } = setup();
+    const launched = await drive(run, { prompt: "launch", run_in_background: true });
+    const id = extractSubagentId(launched.note);
+    await release("launch");
+    await waitFor(() => events.length === 1);
+    // Fill the registry with idle children: the settled launch is the first one evicted.
+    for (let index = 0; index < 8; index += 1) {
+      manager.register(
+        new ManagedSubagentSession({
+          sessionId: `session-filler-ffff000${index}`,
+          // eslint-disable-next-line require-yield
+          async *run() {
+            return null;
+          },
+          dispose() {},
+        }),
+      );
+    }
+    expect(manager.get(id)).toBeUndefined();
+    tapped.length = 0;
+
+    const approvals: string[] = [];
+    const approve: ApproveFn = async (call) => {
+      approvals.push(call.payload.tool_call_id);
+      return "allow";
+    };
+    const follow = await drive(
+      input,
+      { subagent_id: id, prompt: "guarded follow-up", yield_time_ms: 100 },
+      { ...CTX, approve },
+    );
+    expect(follow.output).toContain(`[subagent ${id} resumed]`);
+    expect(follow.note).toContain(`still running with subagent_id ${id}`);
+    expect(follow.note).toContain("will arrive as a [background_task_done] user message");
+    expect(events).toHaveLength(1);
+
+    // The call has returned: the approval the child now asks for has no window to go
+    // through, and its answer and completion reach the parent on their own.
+    await release("guarded follow-up");
+    await waitFor(() => events.length === 2);
+    expect(approvals).toEqual(["call_child"]);
+    expect(events[1]).toMatchObject({
+      kind: "subagent",
+      id,
+      label: "guarded follow-up",
+      status: "completed",
+    });
+    expect(events[1]!.output).toContain("answer to: guarded follow-up (allow)");
+    expect(textsOf(tapped)).toContain("answer to: guarded follow-up (allow)");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(events).toHaveLength(2);
+  });
+
+  it("a polled child reports only a follow-up round its call did not wait out", async () => {
+    const { manager, events, release, run, input } = setup();
+    // Promoted when the launch window expired: the model polls this child, nothing reports.
+    const started = await drive(run, { prompt: "first", yield_time_ms: 100 });
+    const id = extractSubagentId(started.note);
+    await release("first");
+    await waitFor(() => !manager.hasRunning());
+
+    // A follow-up that settles inside its window is this call's own result, never a notice.
+    const waited = drive(input, { subagent_id: id, prompt: "second", yield_time_ms: 3000 });
+    await release("second");
+    const inside = await waited;
+    expect(inside.output).toContain("answer to: second");
+    expect(inside.note).toContain(`subagent idle with subagent_id ${id}`);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(events).toHaveLength(0);
+
+    const follow = await drive(input, { subagent_id: id, prompt: "third", yield_time_ms: 100 });
+    expect(follow.note).toContain(`still running with subagent_id ${id}`);
+    await release("third");
+    await waitFor(() => events.length === 1);
+    expect(events[0]).toMatchObject({ kind: "subagent", id, label: "third", status: "completed" });
+    expect(events[0]!.output).toContain("answer to: third");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(events).toHaveLength(1);
   });
 });

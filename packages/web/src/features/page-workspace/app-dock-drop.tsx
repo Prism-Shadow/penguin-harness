@@ -1,7 +1,7 @@
 import { useEffect, useState, type DragEvent as ReactDragEvent } from "react";
 import { createPortal } from "react-dom";
 import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { sessionAppPair, slotDomId } from "../../lib/session-app-dock";
 import { isNarrow } from "../dock";
 

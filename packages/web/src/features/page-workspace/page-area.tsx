@@ -5,7 +5,7 @@ import { RescuePanel } from "../../rescue/rescue-panel";
 import { S } from "../../lib/strings";
 import { PageSlot } from "../../lib/page-slot";
 import { useRunningAppRecords } from "../../lib/running-apps";
-import { usePageWorkspace } from "../../lib/page-workspace";
+import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { ScopedChat } from "./scoped-chat";
 import { WorkbenchExitBall } from "../workbenches";
 import { useAppDockDrop } from "./app-dock-drop";

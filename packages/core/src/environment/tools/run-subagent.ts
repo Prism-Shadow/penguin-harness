@@ -31,6 +31,7 @@ import { partialToolCallOutput, userText } from "@prismshadow/amsp/records";
 import type { AmspRecord } from "@prismshadow/amsp/records";
 import { DETACHED_TOOL_NOTE_PREFIX, SUBAGENT_THINKING_LEVELS } from "../../interfaces/index.js";
 import type {
+  ApproveFn,
   EnvironmentServices,
   ThinkingLevelName,
   ToolDefinitionConfig,
@@ -172,16 +173,10 @@ export function createSubagentTool(
       // forwarding tap below (its own Trace stays the durable record).
       if (background) {
         const id = manager.register(session);
-        armSubagentDoneReport(session, id, prompt, services);
-        // Decouple the child's lifecycle from this call: a standing approval sink (this
-        // call's own ctx.approve — without it the child's first read-write tool would park
-        // at the approval queue forever, since no collect window ever attaches one) and a
-        // live message tap, so the child streams to the frontend past this turn's end. The
+        // Decouple the child's lifecycle from this call (see leaveSubagentUnattended). The
         // child's abort signal is its own (ManagedSubagentSession.abortCtrl) — only
         // dispose or registry eviction ends it (and a released session can be revived).
-        if (approve) session.setPersistentApprovalSink(approve);
-        const forward = services?.backgroundForward;
-        if (forward) session.setMessageTap(forward);
+        leaveSubagentUnattended(session, id, prompt, services, approve);
         // Forward the child's session_meta upfront (run skips its own copy): the frontend's
         // subagents panel and the server's subagent registry learn of the child at launch,
         // not at the first input_subagent access.
@@ -228,13 +223,9 @@ export function createSubagentTool(
           if (forward) session.setMessageTap(forward);
           if (detachSignal?.aborted) {
             // Detached by the user mid-window. The child now outlives this call, so it needs
-            // everything the collect window was giving it: a standing approval sink (without
-            // one its next read-write tool parks at the approval queue forever, since no
-            // window will ever attach another) and a live message tap, so it keeps streaming
-            // to the frontend past this turn's end. Its completion is reported like a
-            // run_in_background launch's — nobody is going to poll for it.
-            armSubagentDoneReport(session, id, prompt, services);
-            if (approve) session.setPersistentApprovalSink(approve);
+            // everything the collect window was giving it, and its completion is reported
+            // like a run_in_background launch's — nobody is going to poll for it.
+            leaveSubagentUnattended(session, id, prompt, services, approve);
             // No approval hint here, exactly as on a run_in_background launch: the standing
             // sink just attached carries a queued request to the user itself, so "poll to
             // review" would send the model after work it is not doing — the deadline
@@ -272,7 +263,34 @@ export function createSubagentTool(
 }
 
 /**
- * Arms the completion report of a background-launched subagent: at the end of every
+ * Everything a child needs once the call that started its round returns while the round is
+ * still running and nobody is going to poll for it — a run_in_background launch, a detached
+ * foreground run, an input_subagent follow-up that outlives its window:
+ * - the completion report (see armSubagentDoneReport), labelled with this round's prompt;
+ * - a standing approval sink, the call's own `approve` — without one the child's next
+ *   read-write tool parks at the approval queue forever, since no collect window is
+ *   attached to consult anyone;
+ * - a live message tap, so the child keeps streaming to the frontend past this turn's end.
+ *
+ * Safe to repeat on the same session: the report and the sink each replace the previous one
+ * (a session never holds two reports, so a round is reported at most once), and a tap
+ * already attached stays.
+ */
+export function leaveSubagentUnattended(
+  session: ManagedSubagentSession,
+  subagentId: string,
+  prompt: string,
+  services?: EnvironmentServices,
+  approve?: ApproveFn,
+): void {
+  armSubagentDoneReport(session, subagentId, prompt, services);
+  if (approve) session.setPersistentApprovalSink(approve);
+  const forward = services?.backgroundForward;
+  if (forward && !session.hasMessageTap) session.setMessageTap(forward);
+}
+
+/**
+ * Arms the completion report of a subagent left running unattended: at the end of every
  * MODEL-initiated round (the launch itself and input_subagent follow-ups) the report — id,
  * terminal status, tail of the yet-undelivered answer text — goes to
  * `services.backgroundDone`, which the Session turns into a harness user message. Rounds the
