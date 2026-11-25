@@ -132,10 +132,10 @@
 
 /* Drawer slide-in. */
 .anim-drawer-left {
-  animation: drawer-in-left 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation: drawer-in-left 280ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 .anim-drawer-right {
-  animation: drawer-in-right 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation: drawer-in-right 280ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
 /* No motion, under the gallery's switch on the root or the user's system preference, as for the

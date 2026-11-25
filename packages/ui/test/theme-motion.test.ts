@@ -53,6 +53,16 @@ describe("a fold's track", () => {
       for (const d of rule.declarations) expect(d.value, rule.selector).toMatch(/^[01]fr$/);
     }
   });
+
+  it("slides the inner sheet with the track on the layout timing tokens and reverses on close", () => {
+    expect(declared(':root:not([data-motion="reduced"]) [data-sheet-phase]', plain)).toEqual([
+      "transform-origin: top center",
+      "animation: var(--_fold-sheet-animation, ui-fold-slide) var(--ui-dur-layout) var(--ui-ease-layout) both",
+    ]);
+    expect(
+      declared(':root:not([data-motion="reduced"]) [data-sheet-phase="closing"]', plain),
+    ).toEqual(["animation-direction: reverse"]);
+  });
 });
 
 describe("a run settling", () => {

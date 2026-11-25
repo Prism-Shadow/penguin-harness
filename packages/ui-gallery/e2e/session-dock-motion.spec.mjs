@@ -43,8 +43,8 @@ for (const [width, reducedMotion] of [
   });
 }
 
-// The pointer targets a separator on one painted frame and presses on a later frame.
-// The content continues its entrance while the divider stays on the visible frame.
+// While the dock and its content slide in together, dragging the separator
+// on an intermediate frame interrupts the entrance and locks the chosen size.
 for (const phone of [false, true]) {
   test.describe(phone ? "phone touch" : "desktop mouse", () => {
     test.use({ viewport: { width: phone ? 390 : 1280, height: 900 }, hasTouch: phone });
@@ -57,7 +57,7 @@ for (const phone of [false, true]) {
       const handle = page.getByTestId("dock-resizer").filter({ visible: true });
       await page.evaluate(() => {
         document.addEventListener("transitionrun", (event) => {
-          if (!event.target.matches("[data-dock-content]")) return;
+          if (!event.target.matches('[data-testid="dock"], [data-dock-content]')) return;
           const entry = event.target
             .getAnimations()
             .find((a) => a.transitionProperty === event.propertyName);
@@ -72,17 +72,19 @@ for (const phone of [false, true]) {
       await expect
         .poll(() => surface.evaluate((el) => el.getAnimations()[0]?.playState))
         .toBe("paused");
-      const grip = await handle.boundingBox();
-      const x = Math.round(grip.x + grip.width / 2);
-      const y = Math.round(grip.y + grip.height / 2);
       const before = await surface.boundingBox();
-      await surface.evaluate((el) => {
-        const entry = el.getAnimations()[0];
-        entry.currentTime = entry.effect.getTiming().duration * 0.55;
+      await dock.evaluate((el) => {
+        for (const node of [el, ...el.querySelectorAll("[data-dock-content]")]) {
+          const entry = node.getAnimations()[0];
+          if (entry) entry.currentTime = entry.effect.getTiming().duration * 0.55;
+        }
       });
       const later = await surface.boundingBox();
       const axis = phone ? "height" : "width";
       expect(later[axis] - before[axis]).toBeGreaterThan(10);
+      const grip = await handle.boundingBox();
+      const x = Math.round(grip.x + grip.width / 2);
+      const y = Math.round(grip.y + grip.height / 2);
       const frame = await dock.boundingBox();
       const separation = phone ? Math.abs(frame.y - y) : Math.abs(frame.x - grip.x - grip.width);
       expect(separation).toBeLessThan(2);
@@ -110,12 +112,12 @@ for (const phone of [false, true]) {
       } else {
         await page.mouse.move(x, y);
         await page.mouse.down();
-        await page.mouse.move(x + 90, y, { steps: 3 });
+        await page.mouse.move(x - 90, y, { steps: 3 });
         await page.mouse.up();
       }
       const after = await dock.boundingBox();
       const boundary = phone ? after.y : after.x;
-      expect(Math.abs(boundary - (phone ? y + 45 : x + 90))).toBeLessThan(2);
+      expect(Math.abs(boundary - (phone ? y + 45 : x - 90))).toBeLessThan(2);
       if (phone) {
         await dock.getByTestId("dock-fullscreen").tap();
         await expect(dock).toHaveAttribute("data-fullscreen", "full");
@@ -142,21 +144,29 @@ test("widening an open dock leaves the Session info button clickable", async ({ 
   await page.mouse.up();
   await page.setViewportSize({ width: 1024, height: 900 });
   await expect.poll(async () => (await dock.boundingBox()).width).toBeLessThan(500);
-  await surface.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
-  await surface.evaluate((el) => {
-    el.addEventListener(
-      "transitionrun",
-      (event) => {
-        const animation = el
-          .getAnimations()
-          .find((a) => a.transitionProperty === event.propertyName);
-        if (animation) {
-          animation.pause();
-          animation.currentTime = animation.effect.getTiming().duration * 0.3;
-        }
-      },
-      { once: true },
-    );
+  await dock.evaluate((el) =>
+    Promise.all(
+      [el, ...el.querySelectorAll("[data-dock-content]")].flatMap((node) =>
+        node.getAnimations().map((a) => a.finished),
+      ),
+    ),
+  );
+  await dock.evaluate((el) => {
+    for (const node of [el, ...el.querySelectorAll("[data-dock-content]")]) {
+      node.addEventListener(
+        "transitionrun",
+        (event) => {
+          const animation = node
+            .getAnimations()
+            .find((a) => a.transitionProperty === event.propertyName);
+          if (animation) {
+            animation.pause();
+            animation.currentTime = animation.effect.getTiming().duration * 0.3;
+          }
+        },
+        { once: true },
+      );
+    }
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect
