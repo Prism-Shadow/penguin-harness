@@ -17,16 +17,16 @@ import type { Traces } from "@prismshadow/penguin-library-trace";
 import type { AppEnv } from "@prismshadow/penguin-library-http/app-env";
 import type { Hono } from "hono";
 import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
+import { MachineAnswers } from "@prismshadow/penguin-library-machine/answer-cache";
+import { MachineEventHub } from "@prismshadow/penguin-library-machine/event-hub";
+import { machineHistory } from "@prismshadow/penguin-library-machine/history-routes";
+import { MachineSockets } from "@prismshadow/penguin-library-machine/machine-sockets";
 import {
-  MachineAnswers,
-  MachineEventHub,
-  MachineSockets,
   MachinesService,
-  machineHistory,
   machinesServerProxyRoutes,
-  traceCacheAt,
   type Machines,
 } from "@prismshadow/penguin-library-machine/service";
+import { traceCacheAt } from "@prismshadow/penguin-library-machine/trace-cache";
 import type { MachineSessionForward } from "@prismshadow/penguin-library-machine/session-forward";
 import { machinesRoutes } from "@prismshadow/penguin-library-machine/routes";
 import { machineSessionForward } from "@prismshadow/penguin-library-machine/session-forward";
