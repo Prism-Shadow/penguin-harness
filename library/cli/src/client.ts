@@ -56,7 +56,7 @@ function readTokenFile(root: string): string | null {
  * sign-in to a server elsewhere, whose session must not be sent to this one.
  */
 function readStoredSignIn(root: string): string | null {
-  if (process.env.PENGUIN_SESSION_ID?.trim()) return null;
+  if (process.env.PENGUIN_SESSION_ID?.trim() || process.env.PENGUIN_AGENT_ID?.trim()) return null;
   const session = readSession(root);
   if (session === null) return null;
   try {
@@ -114,7 +114,7 @@ export class ServerClient {
     readonly conn: Connection,
     private readonly t: ClientMessages,
   ) {
-    const envToken = process.env.PENGUIN_API_TOKEN?.trim();
+    const envToken = conn.explicitRoot ? undefined : process.env.PENGUIN_API_TOKEN?.trim();
     if (envToken) {
       this.token = envToken;
       this.tokenSource = "env";
@@ -201,7 +201,7 @@ export class ServerClient {
     init: RequestInit,
     refused: Response,
   ): Promise<Response> {
-    if (!this.conn.loopback) return refused;
+    if (!this.conn.loopback || this.tokenSource === "env") return refused;
     const signIn = readStoredSignIn(this.conn.root);
     if (signIn === null) return refused;
     if ((await errorCodeOf(refused.clone())) !== HUMAN_REQUIRED) return refused;

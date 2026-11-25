@@ -5,12 +5,14 @@
  * constants before it runs these tests, and a hardcoded version would only fail there.
  */
 import fsp from "node:fs/promises";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { Command } from "commander";
 import { buildInfo } from "@prismshadow/penguin-core";
 import type { VersionReport } from "@prismshadow/penguin-core";
+import { serverLockPath } from "@prismshadow/penguin-server/lock";
 import { versionReport } from "@prismshadow/penguin-server/version-report";
 import { registerVersionCommand } from "../src/commands/version.js";
 import { cli } from "../src/index.js";
@@ -34,11 +36,44 @@ async function captureStdout<T>(body: () => Promise<T>): Promise<{ out: string; 
 
 /** Runs one argv through a bare program carrying only the version command; returns stdout. */
 async function run(argv: string[]): Promise<string> {
-  const program = new Command();
-  program.exitOverride();
-  registerVersionCommand(program.command("version"), getMessages("en"));
-  const { out } = await captureStdout(() => program.parseAsync(argv, { from: "user" }));
-  return out;
+  const rootIdx = argv.indexOf("--root");
+  const root = rootIdx >= 0 ? argv[rootIdx + 1] : undefined;
+  let listener: net.Server | undefined;
+  const prevFetch = globalThis.fetch;
+  if (root) {
+    listener = net.createServer();
+    await new Promise<void>((resolve) => listener!.listen(0, "127.0.0.1", resolve));
+    const port = (listener.address() as net.AddressInfo).port;
+    const baseUrl = `http://localhost:${port}`;
+    await fsp.writeFile(
+      serverLockPath(root),
+      `${JSON.stringify({ pid: process.pid, port, startedAt: new Date().toISOString() })}\n`,
+    );
+    await fsp.writeFile(path.join(root, "api-token"), "test-version-token\n", { mode: 0o600 });
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.startsWith(baseUrl) && new URL(url).pathname === "/api/version") {
+        const body = JSON.stringify(await versionReport(root));
+        return new Response(body, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return prevFetch(input, init);
+    }) as typeof globalThis.fetch;
+  }
+  try {
+    const program = new Command();
+    program.exitOverride();
+    registerVersionCommand(program.command("version"), getMessages("en"));
+    const { out } = await captureStdout(() => program.parseAsync(argv, { from: "user" }));
+    return out;
+  } finally {
+    globalThis.fetch = prevFetch;
+    if (listener) {
+      await new Promise<void>((resolve) => listener!.close(() => resolve()));
+    }
+  }
 }
 
 describe("penguin version", () => {

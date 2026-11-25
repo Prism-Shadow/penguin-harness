@@ -1,24 +1,19 @@
 /**
  * `penguin config model` subcommands: add (a model or, without `--model-id`, the group's
- * connection), default, vision, list, remove — the parts of the command that reach the config
- * file through core's model/group operations.
+ * connection), default, vision, list, remove — reaching the server's `/api/projects/:p/models`
+ * HTTP routes via `ServerClient`.
  */
 import type { Command } from "commander";
 import {
   DEFAULT_PROJECT_ID,
-  type ModelPricing,
   type ModelRef,
-  addModel,
+  canonicalClientType,
   effectiveConnection,
   formatModelRef,
   getModel,
-  loadProjectConfig,
   providerConnectionShape,
-  removeModel,
-  setDefaultModel,
-  setProviderConnection,
-  setVisionModel,
 } from "@prismshadow/penguin-core";
+import type { ModelsResponse, ModelUpdateEntry } from "@prismshadow/penguin-library-model";
 import { fastModeProtocol } from "../../model-catalog/client-protocols.js";
 import {
   fixedClientType,
@@ -28,15 +23,19 @@ import {
   unroutableVendorModel,
 } from "../../model-catalog/catalog.js";
 import type { Messages } from "../i18n.js";
-import { resolveProjectRoot } from "../root-option.js";
 import {
-  type ConnectionFlags,
   addGroupConnection,
+  configClient,
   connectionPatch,
+  projectConfigFromModelsResponse,
   refuse,
+  refuseErr,
   removeGroupConnection,
+  toModelUpdateEntry,
 } from "./config-group.js";
 import { formatGroupRows, formatModelRows } from "./config-format.js";
+
+const enc = encodeURIComponent;
 
 function parseIntArg(value: string): number {
   const n = Number.parseInt(value, 10);
@@ -80,6 +79,7 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
     .option("--price-output <n>", t.config.addPriceOutput, parseFloatArg)
     .option("--project-id <id>", t.common.projectId, DEFAULT_PROJECT_ID)
     .option("--set-default", t.config.addSetDefault)
+    .option("--server <url>", t.common.server)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
       // No --model-id: the command sets the group's connection instead of one model's.
@@ -99,15 +99,18 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
         return;
       }
       const { patch } = parsed;
-      const root = await resolveProjectRoot(opts.root);
-      // --model-id takes the upstream id, paired with the required --provider as a
-      // reference; the group is never guessed, so --api-key can only ever land on the
-      // vendor the user named. No concatenation is performed.
+      const client = await configClient(opts, t);
+      const modelsPath = `/api/projects/${enc(opts.projectId)}/models`;
+      const beforeRes = await client.request<ModelsResponse>("GET", modelsPath);
+      const before = projectConfigFromModelsResponse(beforeRes);
+
       const modelId: string = opts.modelId;
       const provider: string = opts.provider;
       const ref: ModelRef = { provider, model_id: modelId };
-      const before = await loadProjectConfig(root, opts.projectId);
-      const existed = getModel(before, ref) !== undefined;
+      const existingInfo = beforeRes.models.find(
+        (m) => m.provider === provider && m.modelId === modelId,
+      );
+      const existed = existingInfo !== undefined;
       const group = providerConnectionShape(before.providers?.[provider]);
       // Penguin Go's protocol is fixed: the models route refuses another one too.
       if (
@@ -125,16 +128,6 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
         );
         return;
       }
-      // A new entry stores a client_type / base_url only when one is given: left out, it
-      // follows its group's [providers.<id>] (effectiveConnection), so a later change to the
-      // group reaches it too, and with no group value it gets the client's default — the
-      // catalog is not asked. The one default still written is openai-chat, for a custom /
-      // user-defined entry whose group sets no protocol, which would otherwise be routed by
-      // its id (the id says nothing about a custom endpoint). An entry already stored gets no
-      // default either way: updating it never overrides its config. --clear-client-type asks
-      // for no protocol of its own, so it gets no default either. (An explicit --client-type /
-      // --base-url always passes through; core's addModel normalizes the deprecated bare
-      // "openai" alias.)
       const pInfo = providerInfo(provider);
       const customLike = provider === "custom" || pInfo === undefined;
       const defaultClientType =
@@ -147,15 +140,6 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
           : !existed
             ? defaultClientType
             : undefined;
-      // This command writes the config file directly rather than through the server's models
-      // route, so the rule that route enforces is enforced again here — otherwise the door
-      // the Web App closed is still open from the shell, and an agent following the
-      // "add models with AI" prompt walks straight through it. A first-party vendor group
-      // persists no client_type, so MMSP places its entries by the vendor family their id
-      // begins with; an id of no known family is refused before anything is written. Judged on
-      // the protocol the entry would actually be used with — its own, else its group's — so an
-      // explicit --client-type MMSP has passes. An entry that is already stored is left alone:
-      // updating it is not the act that put it there.
       const used = effectiveConnection(
         { provider, modelId, clientType: clientType ?? undefined },
         group,
@@ -164,47 +148,81 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
         refuse(t, t.modelNotRoutable(formatModelRef(ref)));
         return;
       }
-      // The route's second rule, enforced here for the same reason: only the groups that take
-      // hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud,
-      // Runcrate and user-defined groups) do, and every other built-in group carries its
-      // catalog presets. A preset may be added back; an entry already stored is left alone.
       if (!existed && unaddableModel(provider, modelId)) {
         refuse(t, t.modelNotAddable(formatModelRef(ref), pInfo?.label ?? provider));
         return;
       }
-      // Only collect explicitly given price fields, letting addModel merge them with the existing pricing per-field.
-      const pricing: Partial<ModelPricing> = {};
-      if (opts.priceCacheRead !== undefined) pricing.cache_read = opts.priceCacheRead;
-      if (opts.priceCacheWrite !== undefined) pricing.cache_write = opts.priceCacheWrite;
-      if (opts.priceOutput !== undefined) pricing.output = opts.priceOutput;
-      const cfg = await addModel(
-        root,
-        opts.projectId,
-        {
-          provider,
-          model_id: modelId,
-          ...(opts.contextWindow !== undefined ? { context_window: opts.contextWindow } : {}),
-          ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
-          ...(clientType !== undefined ? { client_type: clientType } : {}),
-          ...(opts.vision !== undefined ? { vision: opts.vision } : {}),
-          ...(opts.fastMode !== undefined ? { fast_mode: opts.fastMode } : {}),
-          ...(Object.keys(pricing).length > 0 ? { pricing } : {}),
-          ...(patch.api_key !== undefined ? { api_key: patch.api_key } : {}),
-          ...(patch.base_url !== undefined ? { base_url: patch.base_url } : {}),
-        },
-        { setDefault: Boolean(opts.setDefault) },
-      );
+
+      const contextWindow = opts.contextWindow ?? existingInfo?.contextWindow;
+      const mergedMaxTokens = maxTokens ?? existingInfo?.maxTokens;
+      const mergedClientType =
+        clientType === null
+          ? undefined
+          : canonicalClientType((clientType ?? existingInfo?.clientType)?.trim());
+      const vision = opts.vision ?? existingInfo?.vision;
+      const fastMode = (opts.fastMode ?? existingInfo?.fastMode) === true ? true : undefined;
+      const hasPriceFlag =
+        opts.priceCacheRead !== undefined ||
+        opts.priceCacheWrite !== undefined ||
+        opts.priceOutput !== undefined;
+      const mergedPricing =
+        hasPriceFlag || existingInfo?.pricing !== undefined
+          ? {
+              cacheRead: opts.priceCacheRead ?? existingInfo?.pricing?.cacheRead ?? 0,
+              cacheWrite: opts.priceCacheWrite ?? existingInfo?.pricing?.cacheWrite ?? 0,
+              output: opts.priceOutput ?? existingInfo?.pricing?.output ?? 0,
+            }
+          : undefined;
+      const baseUrl =
+        patch.base_url !== undefined
+          ? patch.base_url === null || patch.base_url.trim() === ""
+            ? null
+            : patch.base_url.trim()
+          : existingInfo?.credential?.baseUrl;
+
+      const updatedEntry: ModelUpdateEntry = {
+        provider,
+        modelId,
+        ...(existingInfo?.displayName !== undefined
+          ? { displayName: existingInfo.displayName }
+          : {}),
+        ...(contextWindow !== undefined ? { contextWindow } : {}),
+        ...(mergedClientType !== undefined ? { clientType: mergedClientType } : {}),
+        ...(vision !== undefined ? { vision } : {}),
+        ...(mergedMaxTokens !== undefined ? { maxTokens: mergedMaxTokens } : {}),
+        ...(fastMode !== undefined ? { fastMode } : {}),
+        ...(mergedPricing !== undefined ? { pricing: mergedPricing } : {}),
+        ...(existingInfo?.discount !== undefined ? { discount: existingInfo.discount } : {}),
+        ...(patch.api_key !== undefined
+          ? patch.api_key === null || patch.api_key.trim() === ""
+            ? { clearApiKey: true }
+            : { apiKey: patch.api_key.trim() }
+          : {}),
+        ...(baseUrl !== undefined ? { baseUrl } : {}),
+      };
+
+      const nextModels: ModelUpdateEntry[] = existed
+        ? beforeRes.models.map((m) =>
+            m.provider === provider && m.modelId === modelId ? updatedEntry : toModelUpdateEntry(m),
+          )
+        : [...beforeRes.models.map(toModelUpdateEntry), updatedEntry];
+
+      let afterRes: ModelsResponse;
+      try {
+        afterRes = await client.request<ModelsResponse>("PUT", modelsPath, {
+          models: nextModels,
+          ...(opts.setDefault ? { defaultModel: { provider, modelId } } : {}),
+        });
+      } catch (err) {
+        refuseErr(t, err);
+        return;
+      }
+      const cfg = projectConfigFromModelsResponse(afterRes);
       const defaultRef = cfg.default_model && formatModelRef(cfg.default_model);
       const line = existed
         ? t.modelUpdated(formatModelRef(ref), defaultRef)
         : t.modelAdded(formatModelRef(ref), defaultRef);
       process.stdout.write(`${line}\n`);
-      // Fast mode on a model whose MMSP client cannot carry it makes every session
-      // request fail. The Web dialog does not offer the switch there at all, so this flag is
-      // the remaining way into that state: warn rather than silently write a config that only
-      // reveals itself at request time. A warning, not a refusal — the entry may point at an
-      // endpoint whose capability we cannot see from here (see fastModeProtocol). Judged on the
-      // protocol and endpoint the entry is used with, which may be its group's.
       const saved = getModel(cfg, ref);
       if (opts.fastMode === true && saved !== undefined) {
         const effective = effectiveConnection(
@@ -230,17 +248,27 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
     .requiredOption("--model-id <id>", t.config.refModelId)
     .requiredOption("--provider <group>", t.config.refProvider)
     .option("--project-id <id>", t.common.projectId, DEFAULT_PROJECT_ID)
+    .option("--server <url>", t.common.server)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      const root = await resolveProjectRoot(opts.root);
-      // --model-id takes the upstream id, paired with the required --provider as a
-      // reference (no concatenation, no fuzzy matching); setDefaultModel raises an error
-      // when the reference is not found in models.
       const ref: ModelRef = { provider: opts.provider, model_id: opts.modelId };
       try {
-        await setDefaultModel(root, opts.projectId, ref);
+        const client = await configClient(opts, t);
+        const modelsPath = `/api/projects/${enc(opts.projectId)}/models`;
+        const before = await client.request<ModelsResponse>("GET", modelsPath);
+        if (!before.models.some((m) => m.provider === ref.provider && m.modelId === ref.model_id)) {
+          refuse(
+            t,
+            `default_model must point to a configured model: ${formatModelRef(ref)} is not in models. Use \`penguin config model list\` to see the configured models.`,
+          );
+          return;
+        }
+        await client.request("PUT", `${modelsPath}/default`, {
+          provider: ref.provider,
+          modelId: ref.model_id,
+        });
       } catch (err) {
-        refuse(t, err instanceof Error ? err.message : String(err));
+        refuseErr(t, err);
         return;
       }
       process.stdout.write(`${t.defaultModelSet(formatModelRef(ref))}\n`);
@@ -252,15 +280,37 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
     .requiredOption("--model-id <id>", t.config.refModelId)
     .requiredOption("--provider <group>", t.config.refProvider)
     .option("--project-id <id>", t.common.projectId, DEFAULT_PROJECT_ID)
+    .option("--server <url>", t.common.server)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      const root = await resolveProjectRoot(opts.root);
-      // Paired reference semantics match `model default`; existence and vision=false semantics validation is handled by setVisionModel.
       const ref: ModelRef = { provider: opts.provider, model_id: opts.modelId };
       try {
-        await setVisionModel(root, opts.projectId, ref);
+        const client = await configClient(opts, t);
+        const modelsPath = `/api/projects/${enc(opts.projectId)}/models`;
+        const before = await client.request<ModelsResponse>("GET", modelsPath);
+        const entry = before.models.find(
+          (m) => m.provider === ref.provider && m.modelId === ref.model_id,
+        );
+        if (!entry) {
+          refuse(
+            t,
+            `vision_model must point to a configured model: ${formatModelRef(ref)} is not in models. Use \`penguin config model list\` to see the configured models.`,
+          );
+          return;
+        }
+        if (entry.vision === false) {
+          refuse(
+            t,
+            `vision_model cannot point to a model tagged as not supporting images: ${formatModelRef(ref)}.`,
+          );
+          return;
+        }
+        await client.request<ModelsResponse>("PUT", modelsPath, {
+          models: before.models.map(toModelUpdateEntry),
+          visionModel: { provider: ref.provider, modelId: ref.model_id },
+        });
       } catch (err) {
-        refuse(t, err instanceof Error ? err.message : String(err));
+        refuseErr(t, err);
         return;
       }
       process.stdout.write(`${t.visionModelSet(formatModelRef(ref))}\n`);
@@ -270,12 +320,15 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
     .command("list")
     .description(t.config.listDesc)
     .option("--project-id <id>", t.common.projectId, DEFAULT_PROJECT_ID)
+    .option("--server <url>", t.common.server)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      const root = await resolveProjectRoot(opts.root);
-      const cfg = await loadProjectConfig(root, opts.projectId);
-      // The groups' stored connections first, since the models' (provider) values come from
-      // them; then the models with what each one is used with.
+      const client = await configClient(opts, t);
+      const res = await client.request<ModelsResponse>(
+        "GET",
+        `/api/projects/${enc(opts.projectId)}/models`,
+      );
+      const cfg = projectConfigFromModelsResponse(res);
       const groups = formatGroupRows(cfg);
       if (groups.length > 0) {
         process.stdout.write(`${t.groupListTitle()}\n`);
@@ -298,46 +351,35 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
     .option("--model-id <id>", t.config.removeModelId)
     .requiredOption("--provider <group>", t.config.refProvider)
     .option("--project-id <id>", t.common.projectId, DEFAULT_PROJECT_ID)
+    .option("--server <url>", t.common.server)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      // No --model-id: the command removes the group's connection, never a model.
       if (opts.modelId === undefined) {
         await removeGroupConnection(opts, t);
         return;
       }
-      const root = await resolveProjectRoot(opts.root);
-      // Paired reference semantics match `model default` / `model vision`. removeModel is
-      // idempotent, so whether a missing entry is worth reporting is decided here — same
-      // shape as `vault remove`, which also checks first and exits non-zero.
       const ref: ModelRef = { provider: opts.provider, model_id: opts.modelId };
-      const before = await loadProjectConfig(root, opts.projectId);
-      if (getModel(before, ref) === undefined) {
+      const client = await configClient(opts, t);
+      const modelsPath = `/api/projects/${enc(opts.projectId)}/models`;
+      const beforeRes = await client.request<ModelsResponse>("GET", modelsPath);
+      if (
+        !beforeRes.models.some((m) => m.provider === ref.provider && m.modelId === ref.model_id)
+      ) {
         process.stderr.write(`${t.modelNotConfigured(formatModelRef(ref))}\n`);
         process.exitCode = 1;
         return;
       }
-      const cfg = await removeModel(root, opts.projectId, ref);
-      // A group of the user's own exists only through its models, so its connection goes with
-      // the last of them, as it does when the models page saves the table without them.
-      if (
-        providerInfo(ref.provider) === undefined &&
-        cfg.providers?.[ref.provider] !== undefined &&
-        !cfg.models.some((m) => m.provider === ref.provider)
-      ) {
-        await setProviderConnection(root, opts.projectId, ref.provider, {
-          api_key: null,
-          base_url: null,
-          client_type: null,
-        });
-      }
-      // The default model rides along on the confirmation (as it does for add/update) because
-      // removing the model it named leaves it unset, and the next run would otherwise fail with
-      // a config error nobody would connect to this command. The vision pointer is rarer, so it
-      // only speaks up when this removal is what cleared it.
+      const nextModels = beforeRes.models
+        .filter((m) => !(m.provider === ref.provider && m.modelId === ref.model_id))
+        .map(toModelUpdateEntry);
+      const afterRes = await client.request<ModelsResponse>("PUT", modelsPath, {
+        models: nextModels,
+      });
+      const cfg = projectConfigFromModelsResponse(afterRes);
       process.stdout.write(
         `${t.modelRemoved(formatModelRef(ref), cfg.default_model && formatModelRef(cfg.default_model))}\n`,
       );
-      if (before.vision_model !== undefined && cfg.vision_model === undefined) {
+      if (beforeRes.visionModel !== undefined && afterRes.visionModel === undefined) {
         process.stdout.write(`${t.visionModelCleared()}\n`);
       }
     });

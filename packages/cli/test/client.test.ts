@@ -262,4 +262,77 @@ describe("a plugin command that runs for a Session's driver, called outside a Se
     });
     expect(sent.map((h) => h.authorization ?? h.cookie)).toEqual(["Bearer boot-token"]);
   });
+
+  it("never switches from an env-sourced PENGUIN_API_TOKEN to the person's stored sign-in on 403 human_required", async () => {
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      sent.push(headers);
+      return headers.authorization !== undefined
+        ? new Response(
+            JSON.stringify({ error: { code: "human_required", message: "human only" } }),
+            {
+              status: 403,
+            },
+          )
+        : new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as typeof fetch;
+
+    const client = new ServerClient(
+      {
+        baseUrl: "http://localhost:7399",
+        root,
+        autoStarted: false,
+        loopback: true,
+        fromRoot: true,
+      },
+      t,
+    );
+    await expect(client.request("PUT", "/api/admin/settings", {})).rejects.toMatchObject({
+      status: 403,
+      code: "human_required",
+    });
+    expect(sent.map((h) => h.authorization ?? h.cookie)).toEqual(["Bearer boot-token"]);
+  });
+
+  it("pairs explicit --root with that root's api-token file instead of an ambient PENGUIN_API_TOKEN", async () => {
+    const explicitRootDir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-explicit-root-"));
+    const listener = net.createServer();
+    await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+    const port = (listener.address() as net.AddressInfo).port;
+    fs.writeFileSync(
+      path.join(explicitRootDir, "server.lock"),
+      `${JSON.stringify({ pid: process.pid, port, startedAt: "now" })}\n`,
+    );
+    fs.writeFileSync(path.join(explicitRootDir, "api-token"), "explicit-root-token\n");
+    process.env.PENGUIN_API_URL = "http://127.0.0.1:7001";
+    process.env.PENGUIN_API_TOKEN = "ambient-env-token";
+
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      sent.push(headers);
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const conn = await resolveConnection({ root: explicitRootDir }, t);
+      expect(conn.baseUrl).toBe(`http://localhost:${port}`);
+      expect(conn.explicitRoot).toBe(true);
+      const client = new ServerClient(conn, t);
+      await client.request("GET", "/api/projects");
+      expect(sent.map((h) => h.authorization)).toEqual(["Bearer explicit-root-token"]);
+
+      sent.length = 0;
+      const connWithLoopbackServer = await resolveConnection(
+        { root: explicitRootDir, server: `http://127.0.0.1:${port}` },
+        t,
+      );
+      expect(connWithLoopbackServer.explicitRoot).toBe(true);
+      const clientWithLoopbackServer = new ServerClient(connWithLoopbackServer, t);
+      await clientWithLoopbackServer.request("GET", "/api/projects");
+      expect(sent.map((h) => h.authorization)).toEqual(["Bearer explicit-root-token"]);
+    } finally {
+      listener.close();
+      fs.rmSync(explicitRootDir, { recursive: true, force: true });
+    }
+  });
 });

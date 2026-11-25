@@ -8,7 +8,8 @@
 import { Hono } from "hono";
 import type { VaultEntryUpdate, VaultUpdateRequest } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
+import { HttpError } from "../errors.js";
+import { badRequest, pathParam, readJson, requireString, requireValidId } from "../validate.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Access } from "@prismshadow/penguin-library-project";
@@ -63,6 +64,31 @@ export function vaultRoutes(deps: VaultRouteDeps): Hono<AppEnv> {
     // running Session at its next compaction (core reads the vault into each model
     // context), and a new Session immediately — the same timing the CLI has.
     return c.json(res);
+  });
+
+  app.put("/entries/:key", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    const key = pathParam(c, "key");
+    const body = await readJson(c);
+    if (typeof body.value !== "string" || body.value.length === 0) {
+      throw badRequest("value must be a non-empty string.");
+    }
+    await deps.agentConfigService.setVaultEntry(projectId, agentId, key, body.value);
+    return c.body(null, 204);
+  });
+
+  app.delete("/entries/:key", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    const key = pathParam(c, "key");
+    const removed = await deps.agentConfigService.removeVaultEntry(projectId, agentId, key);
+    if (!removed) {
+      throw new HttpError(404, "vault_key_not_found", `Vault entry ${key} does not exist.`);
+    }
+    return c.body(null, 204);
   });
 
   // Insert (or migrate a legacy hardcoded # Vault section to) the {{VAULT}} placeholder —
