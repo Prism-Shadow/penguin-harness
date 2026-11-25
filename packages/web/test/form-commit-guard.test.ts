@@ -65,11 +65,11 @@ const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
 /** Modules outside the model, each with the reason. */
 const EXCUSED_FILES: ReadonlyArray<readonly [string, string]> = [
   [
-    "features/chat/context-gauge.tsx",
+    "library/session/src/web/chat/context-gauge.tsx",
     "the compaction threshold is a confirmation whose confirm is the Save; nothing is left behind",
   ],
   [
-    "features/chat/workspace-browser.tsx",
+    "library/session/src/web/chat/workspace-browser.tsx",
     "the Workspace file editor keeps its own guard and its file-naming discard prompt",
   ],
 ];
@@ -77,9 +77,13 @@ const EXCUSED_FILES: ReadonlyArray<readonly [string, string]> = [
 const TYPED = new Set(["Input", "Textarea", "PasswordInput", "TagInput"]);
 const COMMITS = /^(?:save|persist|write|submit|put|post|send|commit|onSave|onSubmit|onCommit)/;
 
-/** The files check 1 and 2 read: everything under features/, and the project dialogs. */
+/** The files check 1 and 2 read: everything under features/, the project dialogs, and the
+ * session library's web half the app compiles in. */
 const inReach = (file: SourceFile) =>
-  file.root === "web" && file.rel.endsWith(".tsx") && file.rel.startsWith("features/");
+  file.rel.endsWith(".tsx") &&
+  (file.root === "web"
+    ? file.rel.startsWith("features/")
+    : file.id.startsWith("library/session/src/web/"));
 
 /** Each file is parsed once, however many checks read it. */
 const parsed = new WeakMap<SourceFile, ts.SourceFile>();

@@ -49,6 +49,11 @@ const socketStandInPlugin: Plugin = {
 
 export default defineConfig({
   plugins: [socketStandInPlugin],
+  // The session domain's web half (library/session/src/web) sits outside the tsconfig whose
+  // `jsx` setting covers the app's own sources, and vite/esbuild would lower its JSX with the
+  // classic runtime there. Every suite transform gets the automatic runtime instead, whatever
+  // root the file sits under.
+  esbuild: { jsx: "automatic" },
   // The session domain's web half resolves through the same two face specifiers the app's
   // build aliases (vite.config.ts): the suite imports the moved sources by the face's deep
   // paths, and the moved sources consume the app through src/internal.ts.

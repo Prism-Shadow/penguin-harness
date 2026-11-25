@@ -27,7 +27,7 @@ describe("use-portal-panel consumers", () => {
     // ring is the panel the failure was reported against: it is opened to watch the context
     // fill while a run streams, which is exactly when the message list scrolls itself.
     expect(consumers.length).toBeGreaterThanOrEqual(4);
-    expect(consumers).toContain("packages/web/src/features/chat/context-gauge.tsx");
+    expect(consumers).toContain("library/session/src/web/chat/context-gauge.tsx");
   });
 
   it("each attaches the hook's triggerRef, so the ownership test has an element to read", () => {
