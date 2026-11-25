@@ -72,16 +72,29 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
-import { scopeKey, scoped, scopedValue, type Scoped } from "@prismshadow/penguin-web/internal";
-import { useLeaveOnProjectSwitch } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { useMachines } from "@prismshadow/penguin-web/internal";
-import { AgentLocationContext, machineInSearch, useAgentLocation } from "@prismshadow/penguin-web/internal";
-import { machineLink, remoteAgentsEmpty } from "@prismshadow/penguin-web/internal";
-import { publishMachineAgentsChanged, readMachineAgents } from "@prismshadow/penguin-web/internal";
-import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  useDocumentTitle,
+  scopeKey,
+  scoped,
+  scopedValue,
+  type Scoped,
+  useLeaveOnProjectSwitch,
+  useProject,
+  useMachines,
+  AgentLocationContext,
+  machineInSearch,
+  useAgentLocation,
+  machineLink,
+  remoteAgentsEmpty,
+  publishMachineAgentsChanged,
+  readMachineAgents,
+  useAgentAvatarSrc,
+  toastApiError,
+  failureNode,
+  ThinkingLevelSelect,
+  effectiveThinkingLevel,
+} from "@prismshadow/penguin-web/internal";
 import { AGENT_AVATAR_PREVIEW_PX, AgentAvatarField } from "./agent-avatar-field";
 import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
 import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
@@ -114,10 +127,6 @@ import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { AgentExportDialog } from "./agent-export-dialog";
 import { AgentImportDialog } from "./agent-import-dialog";
-import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-import { failureNode } from "@prismshadow/penguin-web/internal";
-
 type TabKey =
   | "overview"
   | "prompt"

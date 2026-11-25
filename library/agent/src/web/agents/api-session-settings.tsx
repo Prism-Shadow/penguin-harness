@@ -15,14 +15,17 @@ import {
   useSaving,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { useInstantSetting } from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-import { ModelCatalogSelect, effectiveThinkingLevel, ThinkingLevelSelect } from "../model-picker";
-import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
-import { failureNode } from "@prismshadow/penguin-web/internal";
-
+import {
+  useInstantSetting,
+  useAgentLocation,
+  S,
+  toneInk,
+  WorkspaceSelect,
+  failureNode,
+  ModelCatalogSelect,
+  effectiveThinkingLevel,
+  ThinkingLevelSelect,
+} from "@prismshadow/penguin-web/internal";
 interface ApiSettingsProps {
   projectId: string;
   agentId: string;

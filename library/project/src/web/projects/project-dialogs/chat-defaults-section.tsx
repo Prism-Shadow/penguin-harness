@@ -16,24 +16,25 @@ import {
   Waiting,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { isConversationAgent } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
 import {
+  S,
+  isConversationAgent,
+  toastApiError,
+  agentDisplayName,
+  useProject,
+  useAuth,
   clearDraftChatDefaults,
   clearDraftModelRef,
   dispatchChatDefaultsChanged,
   type ChatDefaultsChangedDetail,
+  WorkspaceSelect,
+  failureNode,
+  ModelCatalogSelect,
+  modelLabel,
+  SELECTABLE_THINKING_LEVELS,
+  sameModelRef,
 } from "@prismshadow/penguin-web/internal";
-
-import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "../../model-picker";
-import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
-import { sameModelRef } from "../../models";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
-import { failureNode } from "@prismshadow/penguin-web/internal";
-
 export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "always-ask",
   "read-only",
