@@ -2907,7 +2907,7 @@ export const zh = {
      */
     connectDefaultSwitchTitle: "更换默认模型",
     connectDefaultOffer: (group: string, current: string, model: string): string =>
-      `已连接 ${group}。当前默认模型 ${current} 不在这个分组里，要换成 ${model} 吗？更换后，新建的 Session 将默认使用它。`,
+      `已连接 ${group}。当前默认模型 ${current} 不在这个分组里，要换成 ${model}吗？更换后，新建的 Session 将默认使用它。`,
     connectDefaultOfferUnset: (group: string, model: string): string =>
       `已连接 ${group}。要把 ${model} 设为默认模型吗？新建的 Session 将默认使用它。`,
     connectDefaultSwitch: "更换",
