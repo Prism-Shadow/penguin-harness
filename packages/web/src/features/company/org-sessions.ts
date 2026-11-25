@@ -153,22 +153,6 @@ export function withDeskMessagingChannel(
 }
 
 /**
- * The desk session ids of one organization's roster, or undefined while the roster is not
- * there yet. The chart is kept only for the organization the shell has open, and the sessions
- * route is read per organization; until one of the two names the organization, a desk session
- * cannot be told from a ticket session — which is exactly the wait the Temporary group's
- * deep-link registration holds for. When both are there, `deskRows` reads them together (the
- * chart is the roster; the snapshot fills in the run state and the bindings).
- */
-export function deskSessionIdsWhenLoaded(
-  chart: OrgChartResponse | null,
-  sessions: OrgSessionsResponse | undefined,
-): readonly (string | null)[] | undefined {
-  if (chart === null && sessions === undefined) return undefined;
-  return deskRows(chart, sessions).map((d) => d.sessionId);
-}
-
-/**
  * The title the organization gives each of its ticket sessions, by Session id — what the
  * sidebar's Temporary group draws. The organization's own sessions route is the source because
  * the development list excludes organization rows and cannot be asked (see the session list's
