@@ -8,8 +8,7 @@
 import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
-import { AgentSkills } from "@prismshadow/penguin-library-agent/agent-skills";
-import { InstalledAgentSkills } from "@prismshadow/penguin-library-agent/agent-skills";
+import { AgentSkills, InstalledAgentSkills } from "@prismshadow/penguin-library-agent/agent-skills";
 
 export { AgentSkills, InstalledAgentSkills } from "@prismshadow/penguin-library-agent/agent-skills";
 
