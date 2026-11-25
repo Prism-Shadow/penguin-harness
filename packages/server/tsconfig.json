@@ -103,6 +103,10 @@
       "@prismshadow/penguin-library-http/zip-entries": ["../../library/http/src/zip-entries.ts"],
       "@prismshadow/penguin-library-http/errors": ["../../library/http/src/errors.ts"],
       "@prismshadow/penguin-library-http/json-answer": ["../../library/http/src/json-answer.ts"],
+      "@prismshadow/penguin-library-http/heartbeat": ["../../library/http/src/heartbeat.ts"],
+      "@prismshadow/penguin-library-http/socket-compression": [
+        "../../library/http/src/socket-compression.ts"
+      ],
       "@prismshadow/penguin-library-http/json-compression": [
         "../../library/http/src/json-compression.ts"
       ],
@@ -185,6 +189,19 @@
         "../../library/machine/src/browser-extensions.ts"
       ],
       "@prismshadow/penguin-library-machine/machine": ["../../library/machine/src/machine.ts"],
+      "@prismshadow/penguin-library-machine/aggregate-stream": ["../../library/machine/src/aggregate-stream.ts"],
+      "@prismshadow/penguin-library-machine/answer-cache": ["../../library/machine/src/answer-cache.ts"],
+      "@prismshadow/penguin-library-machine/carried-store": ["../../library/machine/src/carried-store.ts"],
+      "@prismshadow/penguin-library-machine/checkout-image": ["../../library/machine/src/checkout-image.ts"],
+      "@prismshadow/penguin-library-machine/contract": ["../../library/machine/src/contract.ts"],
+      "@prismshadow/penguin-library-machine/event-hub": ["../../library/machine/src/event-hub.ts"],
+      "@prismshadow/penguin-library-machine/install-server": ["../../library/machine/src/install-server.ts"],
+      "@prismshadow/penguin-library-machine/machine-status": ["../../library/machine/src/machine-status.ts"],
+      "@prismshadow/penguin-library-machine/routes": ["../../library/machine/src/routes.ts"],
+      "@prismshadow/penguin-library-machine/secret-file": ["../../library/machine/src/secret-file.ts"],
+      "@prismshadow/penguin-library-machine/service": ["../../library/machine/src/service.ts"],
+      "@prismshadow/penguin-library-machine/session-forward": ["../../library/machine/src/session-forward.ts"],
+      "@prismshadow/penguin-library-machine/transport": ["../../library/machine/src/transport/index.ts"],
       "@prismshadow/penguin-library-messaging": ["../../library/messaging/src/index.ts"],
       "@prismshadow/penguin-library-messaging/messaging": [
         "../../library/messaging/src/messaging.ts"

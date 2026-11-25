@@ -15,15 +15,9 @@
  * must not learn (a Trace's secrets, another user's frames on the hub's socket to a machine)
  * with text an attacker can influence (CRIME/BREACH). It costs a few percent of the ratio.
  */
-import type { PerMessageDeflateOptions } from "ws";
 
 /** The deflate both ends offer and accept: level 6, no context takeover, nothing under 1 KiB. */
-export const API_SOCKET_DEFLATE: PerMessageDeflateOptions = {
-  threshold: 1024,
-  zlibDeflateOptions: { level: 6 },
-  serverNoContextTakeover: true,
-  clientNoContextTakeover: true,
-};
+export { API_SOCKET_DEFLATE } from "@prismshadow/penguin-library-http/socket-compression";
 
 /** Whether `hostname` (a URL's, brackets kept for IPv6) names this computer. */
 function isLoopbackHost(hostname: string): boolean {

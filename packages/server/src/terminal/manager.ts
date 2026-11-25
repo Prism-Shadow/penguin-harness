@@ -423,7 +423,7 @@ export class TerminalModule {
       // A pushed bundle's node-pty binaries live where the host materialized them.
       assets: () => this.hmr.assetsDir() ?? null,
       maxOpen: () => readResourceLimit(this.settings, "terminalMaxOpen"),
-      beyond: (id) => this.remote.get(id),
+      beyond: (id) => this.remote.get(id) as TerminalSession | undefined,
       // `penguin` in a terminal is the one the Agent's commands get: this harness's own.
       pathFirst: () => {
         const dirs = this.sessionEnv.pathPrepend();

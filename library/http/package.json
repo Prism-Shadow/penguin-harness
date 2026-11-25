@@ -19,26 +19,29 @@
   "type": "module",
   "main": "./dist/index.js",
   "exports": {
-    "./package.json": "./package.json",
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./errors": {
-      "types": "./dist/errors.d.ts",
-      "import": "./dist/errors.js"
     },
     "./app-env": {
       "types": "./dist/app-env.d.ts",
       "import": "./dist/app-env.js"
     },
-    "./validate": {
-      "types": "./dist/validate.d.ts",
-      "import": "./dist/validate.js"
+    "./attribution": {
+      "types": "./dist/attribution.d.ts",
+      "import": "./dist/attribution.js"
     },
-    "./media-type": {
-      "types": "./dist/media-type.d.ts",
-      "import": "./dist/media-type.js"
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js"
+    },
+    "./event-stream": {
+      "types": "./dist/event-stream.d.ts",
+      "import": "./dist/event-stream.js"
+    },
+    "./heartbeat": {
+      "types": "./dist/heartbeat.d.ts",
+      "import": "./dist/heartbeat.js"
     },
     "./json-answer": {
       "types": "./dist/json-answer.d.ts",
@@ -52,29 +55,38 @@
       "types": "./dist/json-validators.d.ts",
       "import": "./dist/json-validators.js"
     },
-    "./public-origin": {
-      "types": "./dist/public-origin.d.ts",
-      "import": "./dist/public-origin.js"
+    "./media-type": {
+      "types": "./dist/media-type.d.ts",
+      "import": "./dist/media-type.js"
     },
+    "./package.json": "./package.json",
     "./page-csp": {
       "types": "./dist/page-csp.d.ts",
       "import": "./dist/page-csp.js"
+    },
+    "./public-origin": {
+      "types": "./dist/public-origin.d.ts",
+      "import": "./dist/public-origin.js"
     },
     "./settle": {
       "types": "./dist/settle.d.ts",
       "import": "./dist/settle.js"
     },
-    "./socket-frames": {
-      "types": "./dist/socket-frames.d.ts",
-      "import": "./dist/socket-frames.js"
+    "./skill-import-limits": {
+      "types": "./dist/skill-import-limits.d.ts",
+      "import": "./dist/skill-import-limits.js"
+    },
+    "./socket-compression": {
+      "types": "./dist/socket-compression.d.ts",
+      "import": "./dist/socket-compression.js"
     },
     "./socket-credit-window": {
       "types": "./dist/socket-credit-window.d.ts",
       "import": "./dist/socket-credit-window.js"
     },
-    "./socket-stream-answer": {
-      "types": "./dist/socket-stream-answer.d.ts",
-      "import": "./dist/socket-stream-answer.js"
+    "./socket-frames": {
+      "types": "./dist/socket-frames.d.ts",
+      "import": "./dist/socket-frames.js"
     },
     "./socket-line-frames": {
       "types": "./dist/socket-line-frames.d.ts",
@@ -84,17 +96,13 @@
       "types": "./dist/socket-sse-text.d.ts",
       "import": "./dist/socket-sse-text.js"
     },
-    "./event-stream": {
-      "types": "./dist/event-stream.d.ts",
-      "import": "./dist/event-stream.js"
+    "./socket-stream-answer": {
+      "types": "./dist/socket-stream-answer.d.ts",
+      "import": "./dist/socket-stream-answer.js"
     },
-    "./attribution": {
-      "types": "./dist/attribution.d.ts",
-      "import": "./dist/attribution.js"
-    },
-    "./skill-import-limits": {
-      "types": "./dist/skill-import-limits.d.ts",
-      "import": "./dist/skill-import-limits.js"
+    "./validate": {
+      "types": "./dist/validate.d.ts",
+      "import": "./dist/validate.js"
     },
     "./zip-entries": {
       "types": "./dist/zip-entries.d.ts",
@@ -115,7 +123,8 @@
   "devDependencies": {
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "ws": "^8.18.3"
   },
   "engines": {
     "node": ">=24"
