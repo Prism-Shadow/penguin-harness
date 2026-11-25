@@ -824,6 +824,17 @@ export function projectConfigFromTable(
 }
 
 /**
+ * Parses the whole `.project_config.toml` text into its raw table — unknown fields included,
+ * which core's typed loader (loadProjectConfig) drops. Consumers that read and rewrite the
+ * complete file (the server's project config store) parse through this so every reader of the
+ * file shares one TOML parser without each declaring its own.
+ */
+export function parseProjectConfigToml(text: string): Record<string, unknown> {
+  // Defensive: parseToml may return null/undefined for an empty file, and destructuring it would throw a TypeError.
+  return (parseToml(text) ?? {}) as Record<string, unknown>;
+}
+
+/**
  * Loads the Project config; returns the default config (without writing to disk) if
  * `.project_config.toml` doesn't exist. Returns plaintext (masking is applied at the interface
  * layer); reports a clear error when the old format (a string reference / an entry missing
