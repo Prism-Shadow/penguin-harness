@@ -17,10 +17,7 @@ export { DockModule } from "./dock/module";
 export {
   APPROVAL_MODES,
   ChatDrafts,
-  ChatDefaultsChangedDetail,
   DRAFT_SESSION_ID,
-  DraftCache,
-  DraftStorage,
   HistoryFileLoading,
   STEER_MODE_KEY,
   clearDraft,
@@ -36,23 +33,22 @@ export {
   stickToBottom,
   useNewChat,
 } from "./chat";
+export type { ChatDefaultsChangedDetail, DraftCache, DraftStorage } from "./chat";
 
 // The session list's public face: the sidebar controller the frame binds and the rows and
 // dialogs it renders.
 export {
   MainSidebarFragments,
-  MainSidebarState,
   renderMainSessionDialogs,
   renderMainSessionList,
   useMainSidebarController,
 } from "./session-list";
+export type { MainSidebarState } from "./session-list";
 
 // The dock's public face: the panel registry the other modules' panels register through, the
 // state the app's own surfaces subscribe to, and the terminal the dock hosts.
 export {
-  DockPanelBodyProps,
   LAUNCHER_HIDDEN_KEY,
-  PanelId,
   TERMINAL_PANEL,
   createShell,
   currentDockScope,
@@ -74,3 +70,4 @@ export {
   useDockSessionId,
   writeLauncherHidden,
 } from "./dock";
+export type { DockPanelBodyProps, PanelId } from "./dock";
