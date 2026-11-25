@@ -194,7 +194,11 @@ describe("replyLinkBehavior", () => {
 
   it("a Workspace file opens in the Files panel instead of a new tab", () => {
     const openFile = vi.fn();
-    const behavior = replyLinkBehavior("./pelican-bike.html", { workspace: WS, openFile, openRoute: vi.fn() });
+    const behavior = replyLinkBehavior("./pelican-bike.html", {
+      workspace: WS,
+      openFile,
+      openRoute: vi.fn(),
+    });
     expect(behavior.target).toBeUndefined();
     expect(behavior.rel).toBeUndefined();
     const event = click();
@@ -206,13 +210,18 @@ describe("replyLinkBehavior", () => {
   it("a file that may not exist still opens the panel on its path", () => {
     // No existence check on the way: the panel's own state reports a missing file.
     const openFile = vi.fn();
-    replyLinkBehavior("missing/nowhere.html", { workspace: WS, openFile, openRoute: vi.fn() }).onClick!(click());
+    replyLinkBehavior("missing/nowhere.html", { workspace: WS, openFile, openRoute: vi.fn() })
+      .onClick!(click());
     expect(openFile).toHaveBeenCalledExactlyOnceWith("missing/nowhere.html");
   });
 
   it("an external link keeps the new tab and no click handler", () => {
     const openFile = vi.fn();
-    const behavior = replyLinkBehavior("https://example.com", { workspace: WS, openFile, openRoute: vi.fn() });
+    const behavior = replyLinkBehavior("https://example.com", {
+      workspace: WS,
+      openFile,
+      openRoute: vi.fn(),
+    });
     expect(behavior).toBe(NEW_TAB);
     expect(behavior.onClick).toBeUndefined();
   });
@@ -247,7 +256,11 @@ describe("replyLinkBehavior", () => {
       querySelector: (selector: string) => (selector === "#user-content-fn-1" ? inReply : null),
     };
     const paragraph = { parentElement: reply, querySelector: () => null };
-    const behavior = replyLinkBehavior("#user-content-fn-1", { workspace: WS, openFile, openRoute: vi.fn() });
+    const behavior = replyLinkBehavior("#user-content-fn-1", {
+      workspace: WS,
+      openFile,
+      openRoute: vi.fn(),
+    });
     expect(behavior.target).toBeUndefined();
     const event = click({ parentElement: paragraph });
     behavior.onClick!(event);
@@ -288,5 +301,4 @@ describe("replyLinkBehavior", () => {
     expect(modified.preventDefault).not.toHaveBeenCalled();
     expect(openRoute).toHaveBeenCalledOnce();
   });
-
 });

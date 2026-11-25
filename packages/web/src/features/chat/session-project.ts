@@ -25,9 +25,7 @@ export function resolveRoutedSession(
   if (sessionId === null) return null;
   const row = sessions.find((s) => s.sessionId === sessionId);
   if (row !== undefined) return ofProject(row, projectId) ? row : null;
-  return fetched !== null &&
-    fetched.sessionId === sessionId &&
-    ofProject(fetched, projectId)
+  return fetched !== null && fetched.sessionId === sessionId && ofProject(fetched, projectId)
     ? fetched
     : null;
 }

@@ -199,7 +199,10 @@ describe("sessionBadgeIds", () => {
 
   it("reads nothing while the output is folded: a cut can split a line into a fake one", () => {
     const folded = item({
-      elidedOutput: { record: {} as HistoryRecordLike, entries: [{ path: "payload.output", bytes: 1, head: 9, ref: "r1" }] },
+      elidedOutput: {
+        record: {} as HistoryRecordLike,
+        entries: [{ path: "payload.output", bytes: 1, head: 9, ref: "r1" }],
+      },
     });
     expect(sessionBadgeIds(folded)).toEqual([]);
   });

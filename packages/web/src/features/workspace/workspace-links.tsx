@@ -28,9 +28,8 @@ export function WorkspaceLinksProvider({
   children: ReactNode;
 }) {
   const resolve = useMemo<ProseLinkResolver | null>(
-    () =>
-      (href) =>
-        replyLinkBehavior(href, { workspace, openFile: onOpenFile, openRoute: navigate }),
+    () => (href) =>
+      replyLinkBehavior(href, { workspace, openFile: onOpenFile, openRoute: navigate }),
     [workspace, onOpenFile, navigate],
   );
   return <ProseLinksProvider resolve={resolve}>{children}</ProseLinksProvider>;
