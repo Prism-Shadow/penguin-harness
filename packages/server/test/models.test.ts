@@ -276,7 +276,7 @@ describe("models preset & catalog enrichment", () => {
       clientType: "ant-messages",
       baseUrl: "https://opencode.ai/inference/go/anthropic",
     });
-    for (const modelId of ["hy4-flash", "qwen4-max"]) {
+    for (const modelId of ["hy4-flash", "qwen4-max", "glm-5.4"]) {
       expect(pick(body, "tokendance", modelId)).toMatchObject({
         contextWindow: 1_000_000,
         effective: {

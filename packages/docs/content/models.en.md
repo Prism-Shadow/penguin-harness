@@ -572,7 +572,7 @@ The preset catalog includes, among others:
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` / `gpt-5.6` / `gpt-5.5`
-- `glm-5.3` / `glm-5.3-flash`
+- `glm-5.4` / `glm-5.3` / `glm-5.3-flash`
 - `kimi-k3.1-pro` / `kimi-k3.1-pro-highspeed` / `kimi-k3` (the high-speed variant on Moonshot only)
 - `qwen4-max` / `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
