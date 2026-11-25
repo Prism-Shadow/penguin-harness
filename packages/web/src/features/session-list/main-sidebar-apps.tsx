@@ -225,7 +225,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
         {visible.length === 0 && (
           <p className="px-2.5 pt-2 text-xs text-fg-muted">{S.sidebarApps.noMatches}</p>
         )}
-        <ul ref={list} aria-label={S.sidebarApps.title} className="space-y-px">
+        <ul ref={list} aria-label={S.sidebarApps.title} className="space-y-px pt-0.5">
           {visible.map((row) => {
             const actions = menuOf(row);
             const state = S.appCenter.running;

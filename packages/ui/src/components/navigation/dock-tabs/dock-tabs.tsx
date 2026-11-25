@@ -60,7 +60,7 @@ export function DockTabButton({
       data-testid="dock-tab"
       data-tab-id={tab.key}
       data-active={active}
-      className={`flex ${coarse ? "h-8" : "h-6"} max-w-44 items-center rounded-md pr-0.5 transition-colors duration-150 ${
+      className={`flex ${coarse ? "h-8" : "h-7"} max-w-44 items-center rounded-md pr-0.5 transition-colors duration-150 ${
         active
           ? "bg-control-selected text-fg"
           : "text-fg-muted hover:bg-control-hover hover:text-fg"
@@ -91,7 +91,7 @@ export function DockTabButton({
         aria-label={`${tab.closeLabel}: ${tab.label}`}
         data-testid="dock-tab-close"
         onClick={onClose}
-        className={`flex ${coarse ? "h-6 w-6" : "h-4 w-4"} shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:text-fg`}
+        className={`flex ${coarse ? "h-6 w-6" : "h-5 w-5"} shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:text-fg`}
       >
         <CloseIcon size={10} />
       </button>

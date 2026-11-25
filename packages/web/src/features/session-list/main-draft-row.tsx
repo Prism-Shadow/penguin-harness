@@ -22,14 +22,14 @@ export function DraftRow({
       <div
         // Same truncated-title scroll reveal as the session rows (#309).
         data-title-reveal
-        className={`group flex items-center rounded-md pr-1 transition-colors duration-150 ${
+        className={`group flex h-8 items-center rounded-md pr-1 transition-colors duration-150 ${
           active ? NAV_FILL.selected : NAV_FILL.hover
         }`}
       >
         <button
           type="button"
           onClick={onOpen}
-          className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
+          className="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2.5 text-left"
         >
           <Truncated
             scrollReveal

@@ -100,8 +100,8 @@ export function NavList({
 }
 
 const DENSITY: Record<NavRowDensity, string> = {
-  md: `${ICON_GAP.menu} px-2.5 py-1.5 text-sm`,
-  sm: `${ICON_GAP.row} px-2 py-1 text-xs`,
+  md: `${ICON_GAP.menu} h-8 px-2.5 text-sm`,
+  sm: `${ICON_GAP.row} h-7 px-2 text-xs`,
 };
 
 const GLYPH_SIZE: Record<NavRowDensity, number> = {
