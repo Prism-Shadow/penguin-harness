@@ -57,6 +57,41 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
 
+-- Role-bound server-side sessions for both Agents and human users: the token is a 32-byte
+-- random Bearer, and the row stores only its sha256. Each request re-derives the session's
+-- permission set from the principal's CURRENT generation row in auth_generations below —
+-- never from the stamped role alone — so a role change hot-reloads without re-issue and no
+-- dangling permission set from an older generation survives a request.
+CREATE TABLE IF NOT EXISTS auth_role_sessions (
+  token_hash   TEXT NOT NULL PRIMARY KEY,      -- sha256(token) hex; caller stores only the raw token
+  subject_id   TEXT NOT NULL,                  -- principal key ('agent:<projectId>/<agentId>' or 'user:<userId>')
+  subject_kind TEXT NOT NULL DEFAULT 'agent',  -- 'agent' | 'user'
+  user_id      TEXT,                           -- human user_id when issued to a person; NULL for Agent sessions
+  project_id   TEXT,                           -- Project scope when bound to a Project or Agent; NULL for global user sessions
+  agent_id     TEXT,                           -- Agent id when issued to an Agent; NULL for human sessions
+  role         TEXT NOT NULL,                  -- the role template at issue time; re-derivation reads auth_generations.role
+  generation   INTEGER NOT NULL,               -- the permission generation at issue time; a stale one re-derives
+  created_at   TEXT NOT NULL,
+  expires_at   TEXT NOT NULL,
+  last_used_at TEXT                            -- stamped once per authenticated request; NULL = never used
+);
+CREATE INDEX IF NOT EXISTS idx_auth_role_sessions_subject ON auth_role_sessions(subject_id);
+CREATE INDEX IF NOT EXISTS idx_auth_role_sessions_agent ON auth_role_sessions(project_id, agent_id);
+CREATE INDEX IF NOT EXISTS idx_auth_role_sessions_user ON auth_role_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_role_sessions_expires ON auth_role_sessions(expires_at);
+CREATE TABLE IF NOT EXISTS auth_generations ( -- one row per principal (Agent or human user): the CURRENT permission generation; bumping it re-derives every live session's permission set on its next request
+  subject_id   TEXT NOT NULL PRIMARY KEY,      -- principal key matching auth_role_sessions.subject_id
+  subject_kind TEXT NOT NULL DEFAULT 'agent',  -- 'agent' | 'user'
+  user_id      TEXT,                           -- human user_id when principal is a person; NULL for Agents
+  project_id   TEXT,                           -- Project scope when bound to a Project or Agent
+  agent_id     TEXT,                           -- Agent id when principal is an Agent; NULL for human principals
+  generation   INTEGER NOT NULL,
+  role         TEXT NOT NULL,                  -- current role template: 'readonly'|'general'|'agent-creator'|'plugin-maintainer'|'workbench-maintainer'|'system-maintainer'|'admin'|'full-permissions' or custom role
+  allowed_apis TEXT NOT NULL DEFAULT '[]'      -- persisted grant expressions (route ids, role ids, and <roleOrRoute>@<refinerId> specs), JSON array
+);
+CREATE INDEX IF NOT EXISTS idx_auth_generations_agent ON auth_generations(project_id, agent_id);
+CREATE INDEX IF NOT EXISTS idx_auth_generations_user ON auth_generations(user_id);
+
 CREATE TABLE IF NOT EXISTS projects (
   project_id    TEXT PRIMARY KEY,            -- directory name doubles as id; display name lives in project_config.toml
   owner_user_id TEXT NOT NULL REFERENCES users(user_id),
