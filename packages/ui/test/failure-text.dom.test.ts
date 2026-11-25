@@ -38,6 +38,7 @@ describe("FailureText", () => {
     expect(shown?.textContent?.startsWith("The machine did not answer")).toBe(true);
     const press = shown?.querySelector("[data-report-issue]");
     expect(press).not.toBeNull();
+    expect(press?.classList.contains("text-tone-danger-fg")).toBe(true);
     await fire(press!, new MouseEvent("click", { bubbles: true }));
     const opened = reportStore.getState().open;
     expect(opened?.facts).toContainEqual(["Error code", "machine_unanswered"]);
