@@ -397,9 +397,6 @@
       "@prismshadow/penguin-library-session/schedules-status": [
         "../../library/session/src/schedules-status.ts"
       ],
-      "@prismshadow/penguin-library-session/mtime-gate": [
-        "../../library/session/src/mtime-gate.ts"
-      ],
       "@prismshadow/penguin-library-setting": ["../../library/setting/src/index.ts"],
       "@prismshadow/penguin-library-setting/attachment-limits": [
         "../../library/setting/src/attachment-limits.ts"
