@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { ICON_CONTENT_TYPES } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import type { IconRef } from "./types.js";
-import { HttpError } from "./errors.js";
+import { HttpError } from "@prismshadow/penguin-library-http/errors";
 
 /** The headers every icon is answered with, beside its content type. */
 export const ICON_HEADERS: Readonly<Record<string, string>> = {

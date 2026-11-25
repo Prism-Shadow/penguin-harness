@@ -85,3 +85,10 @@ pnpm-lock.yaml 未含。后果与已试路径：
 ## 时间线（续）
 
 - S22 头：本提交；三片齐后分支头即 PR3 的 head。
+
+- 验证轮修复（owner 读数）：library/auth/src/reset-admin-password.ts 的 "./auth/password.js"
+  与 "./auth/service.js" 改 "./password.js"/"./service.js"（S21 机械改路径漏改的两处）；
+  顺手全 library+server 相对 import 可解析性扫描，另揪出同病一处——
+  library/plugin/src/icon-response.ts 原 http/ 目录内 "./errors.js" 改
+  @prismshadow/penguin-library-http/errors。其余 9 条扫描命中均为误报（json/模板字符串/
+  shim/index）。
