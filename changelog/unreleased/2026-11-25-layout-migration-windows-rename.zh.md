@@ -3,6 +3,7 @@
 - **Date:** 2026-11-25
 - **Type:** fix
 - **Scope:** `core`, `server`
+- **PR:** [#1865](https://github.com/Prism-Shadow/penguin-harness/pull/1865)
 
 [English](2026-11-25-layout-migration-windows-rename.md)
 
