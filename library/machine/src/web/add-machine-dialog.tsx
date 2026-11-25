@@ -43,9 +43,12 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
+import { api } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  S,
+  failureNode,
+} from "@prismshadow/penguin-web/internal";
 import { ADD_TABS, addPlan, hostRows, type AddTab, type HostRow } from "./add-machine-view";
 import { highlightSegments } from "./machines-match";
 import {
@@ -62,7 +65,6 @@ import {
   type HostForm,
   type SignIn,
 } from "./ssh-host-dialog";
-import { failureNode } from "../../lib/failure";
 
 export interface AddMachineBodyProps {
   tab: AddTab;

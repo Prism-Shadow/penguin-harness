@@ -1,5 +1,5 @@
 /**
- * The add dialog (features/machines/add-machine-dialog.tsx, add-machine-view.ts).
+ * The add dialog (library/machine/src/web/add-machine-dialog.tsx, add-machine-view.ts).
  *
  * - From the ssh config, it offers the hosts not on the page yet — not this server, not on this
  *   Project's list — in the config's order, each with how its own block reaches it beside the
@@ -31,14 +31,14 @@ import {
   AddMachineFooter,
   type AddMachineBodyProps,
   type AddMachineFooterProps,
-} from "../src/features/machines/add-machine-dialog";
+} from "@prismshadow/penguin-library-machine/web/add-machine-dialog";
 
-import { addPlan, hostRows, reachLine } from "../src/features/machines/add-machine-view";
+import { addPlan, hostRows, reachLine } from "@prismshadow/penguin-library-machine/web/add-machine-view";
 import {
   NEW_HOST_FORM,
   hostRequest,
   validateHostForm,
-} from "../src/features/machines/ssh-host-dialog";
+} from "@prismshadow/penguin-library-machine/web/ssh-host-dialog";
 import { S } from "../src/lib/strings";
 import { elementsOf, readMarkup, seenText } from "./helpers/markup";
 

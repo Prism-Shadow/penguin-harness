@@ -58,8 +58,8 @@ import {
   canUse,
   useWaitsBecause,
   socketReading,
-} from "../src/features/machines/machines-view";
-import type { MachineReading } from "../src/features/machines/machines-view";
+} from "@prismshadow/penguin-library-machine/web/machines-view";
+import type { MachineReading } from "@prismshadow/penguin-library-machine/web/machines-view";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

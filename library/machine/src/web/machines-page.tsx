@@ -50,12 +50,17 @@ import {
   TodoNotice,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { useProject } from "../../state/project";
-import { useLocale } from "../../state/locale";
-import { useMachines } from "../../state/machines";
-import { S } from "../../lib/strings";
-import { useDocumentTitle } from "../../lib/use-document-title";
+import { api } from "@prismshadow/penguin-web/internal";
+import {
+  useProject,
+  useLocale,
+  useMachines,
+  S,
+  useDocumentTitle,
+  toastApiError,
+  failureNode,
+  toldNode,
+} from "@prismshadow/penguin-web/internal";
 import {
   anyJobPending,
   imageNotice,
@@ -72,8 +77,6 @@ import { MachineCard } from "./machine-card";
 import { MachineDetailDialog, type MachineVerb } from "./machine-detail-dialog";
 
 import { programDirOf } from "./machine-detail-view";
-import { toastApiError } from "../../lib/toast-api-error";
-import { failureNode, toldNode } from "../../lib/failure";
 
 /** While a job is on its way, the page reads the list this often too: a net under the server's word. */
 const FALLBACK_POLL_MS = 5_000;

@@ -10,7 +10,7 @@ import {
   highlightSegments,
   matchMachines,
   type MachineLike,
-} from "../src/features/machines/machines-match";
+} from "@prismshadow/penguin-library-machine/web/machines-match";
 
 const machine = (alias: string): MachineLike => ({ id: `ssh:${alias}`, alias });
 

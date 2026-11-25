@@ -34,8 +34,8 @@ import type {
   MachinesResponse,
   SshHostResponse,
 } from "@prismshadow/penguin-server/api";
-import { AddMachineDialog } from "../src/features/machines/add-machine-dialog";
-import { SshHostDialog } from "../src/features/machines/ssh-host-dialog";
+import { AddMachineDialog } from "@prismshadow/penguin-library-machine/web/add-machine-dialog";
+import { SshHostDialog } from "@prismshadow/penguin-library-machine/web/ssh-host-dialog";
 import { CreateBenchmarkModal } from "../src/features/benchmark/create-benchmark-modal";
 import { SavedPrompts } from "../src/features/chat/saved-prompts";
 import { HomepageDialog } from "../../../plugins/browser-automation/src/web/homepage-dialog";

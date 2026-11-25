@@ -27,11 +27,14 @@ export {
   type PanelId,
 } from "./features/dock/index";
 export { filesApi, filesScopeKey, type FilesScope } from "./api/workspace-files";
-export { formatBytes, formatDateTime } from "./lib/format";
+export { formatBytes, formatDateTime, formatRelativeLong, formatRelativeShort, formatShortDateTime, formatSpan } from "./lib/format";
+export { cardBodyClick } from "./lib/card-open";
+export { dismissNotice, envOnlyNoticeId, skippedNoticeId, useNoticeDismissed } from "./lib/notice-dismissals";
+export { useDocumentTitle } from "./lib/use-document-title";
 export { useReaderFind } from "./lib/reader-find";
 export { fetchTextPreview } from "./lib/text-preview";
 export * from "./lib/workspace-tree";
-export { failureNode } from "./lib/failure";
+export { failureNode, toldFailure, toldNode } from "./lib/failure";
 export { ApiError } from "./api/client";
 export { useAuth } from "./state/auth";
 export { isDesktopShellWindow } from "./lib/account-menu";
@@ -44,7 +47,7 @@ export { dropRegionAction, isFileDrag, type DragSignal } from "./lib/file-drop";
 export { MB_BYTES, splitBySize } from "./lib/upload-limits";
 export { restoreSelection } from "./components/ui/text-selection";
 export { STAT_ICONS } from "./lib/stat-icons";
-export { toneInk } from "./lib/tone";
+export { toneInk, type Tone } from "./lib/tone";
 export { toastApiError } from "./lib/toast-api-error";
 export { isElectronRenderer } from "./lib/desktop-renderer";
 export {

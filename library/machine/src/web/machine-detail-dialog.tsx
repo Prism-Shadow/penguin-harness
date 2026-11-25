@@ -65,17 +65,18 @@ import {
   RuledSection,
   Spinner,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
+import { api } from "@prismshadow/penguin-web/internal";
 import {
   dismissNotice,
   envOnlyNoticeId,
   skippedNoticeId,
   useNoticeDismissed,
-} from "../../lib/notice-dismissals";
-import { formatDateTime, formatRelativeShort } from "../../lib/format";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { toldFailure } from "../../lib/failure";
+  formatDateTime,
+  formatRelativeShort,
+  S,
+  toneInk,
+  toldFailure,
+} from "@prismshadow/penguin-web/internal";
 import {
   machineConfigSyncFailure,
   machineJobFailure,

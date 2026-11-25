@@ -18,8 +18,12 @@ import type {
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
 import type { RetryPhase } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import type { Tone } from "../../lib/tone";
+import {
+  S,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  Tone,
+} from "@prismshadow/penguin-web/internal";
 
 export type MachineReading =
   /** Waiting its turn behind another machine's job. */

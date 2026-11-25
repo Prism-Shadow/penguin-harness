@@ -1,5 +1,5 @@
 /**
- * What a machine's failure puts in its problem report (features/machines/machine-failure-report.ts).
+ * What a machine's failure puts in its problem report (library/machine/src/web/machine-failure-report.ts).
  *
  * - Given a job that failed because ssh refused the sign-in, its report names the job, the step and
  *   the reason ssh's words were read as, and carries ssh's words and the log's last lines masked:
@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { UNKNOWN_ENVIRONMENT, buildReport, toldReport } from "@prismshadow/penguin-ui";
 import type { MachineJob, SshHostResponse } from "@prismshadow/penguin-server/api";
-import { machineJobFailure } from "../src/features/machines/machine-failure-report";
+import { machineJobFailure } from "@prismshadow/penguin-library-machine/web/machine-failure-report";
 
 const SSH_WORDS =
   "ssh refused the sign-in (ssh: deploy@10.20.30.40: Permission denied (publickey). Loaded key /home/alice/.ssh/lab-key from gpu-box.lab.example.com)";

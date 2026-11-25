@@ -21,9 +21,11 @@ import {
   formatRelativeLong,
   formatShortDateTime,
   formatSpan,
-} from "../../lib/format";
-import { S } from "../../lib/strings";
-import type { Tone } from "../../lib/tone";
+  S,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  Tone,
+} from "@prismshadow/penguin-web/internal";
 import { reasonText } from "./machine-card";
 import {
   canSyncConfig,

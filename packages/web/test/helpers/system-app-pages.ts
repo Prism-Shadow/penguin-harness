@@ -7,7 +7,7 @@ import { pageTableOf, type WebAppPage } from "../../src/web-app/page-table";
 import { AgentsModule } from "../../src/features/agents/module";
 import { AppCenterModule } from "../../src/features/app-center/module";
 import { BenchmarkModule } from "../../src/features/benchmark/module";
-import { MachinesModule } from "../../src/features/machines/module";
+import { MachinesModule } from "@prismshadow/penguin-library-machine/web";
 import { ModelsModule } from "../../src/features/models/module";
 import { PluginsModule } from "../../src/features/plugins/module";
 import { UsageModule } from "../../src/features/usage/module";

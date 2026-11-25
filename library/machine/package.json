@@ -259,7 +259,9 @@
     "./builtin-browser-vocab": {
       "types": "./dist/builtin-browser-vocab.d.ts",
       "import": "./dist/builtin-browser-vocab.js"
-    }
+    },
+    "./web": "./src/web/index.ts",
+    "./web/*": "./src/web/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -284,7 +286,12 @@
   },
   "devDependencies": {
     "@prismshadow/penguin-hmr": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web": "workspace:*",
+    "@types/react": "^19.1.0",
     "@types/ws": "^8.18.1",
+    "react": "^19.1.0",
+    "react-router": "^8.3.0",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"

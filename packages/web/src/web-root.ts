@@ -39,7 +39,7 @@ import { AgentsModule } from "./features/agents/module";
 import { AppCenterModule } from "./features/app-center/module";
 import { ModelsModule } from "./features/models/module";
 import { PluginsModule } from "./features/plugins/module";
-import { MachinesModule } from "./features/machines/module";
+import { MachinesModule } from "@prismshadow/penguin-library-machine/web";
 import { UsageModule } from "./features/usage/module";
 import { BenchmarkModule } from "./features/benchmark/module";
 import { TerminalModule } from "./features/terminal/module";

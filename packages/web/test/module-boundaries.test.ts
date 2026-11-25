@@ -4,9 +4,11 @@
  * is invisible to it, so these rules are held here, over every file under `src/`:
  *
  * 1. A library — anything outside `features/` and `web-app/` (`lib/`, `api/`, `state/`, `rescue/`,
- *    `components/`, the root files) — imports nothing under `features/`. The one exception is the
+ *    `components/`, the root files) — imports nothing under `features/`. The exceptions are the
  *    composition root, `web-root.ts`, which imports each feature's `module.ts` to list it in the
- *    tree.
+ *    tree, and the internal hub, `internal.ts`, which re-exports the app's internals — the
+ *    features that have not grown a package face yet included — for the web halves it compiles
+ *    in from the domain libraries.
  * 2. A file of one module directory — `features/<a>/`, or `web-app/`, the frame's module — reaches
  *    another only through its `index.ts` (or `index.tsx`), never one of its inner files.
  * 3. No import cycle between module directories. An edge `features/a -> features/b` is reported
@@ -64,6 +66,9 @@ function resolveImport(
 
 /** The composition root: the one file that lists module classes. */
 const COMPOSITION_ROOT = "web-root.ts";
+
+/** The internal hub: the one file that re-exports the app's internals to its web halves. */
+const INTERNAL_HUB = "internal.ts";
 
 /** Whether a file declares a module class. */
 const isModuleFile = (file: string): boolean => /(^|\/|\.)module\.ts$/.test(file);
@@ -148,8 +153,9 @@ function scan(
       if (other === null || other === own) continue;
       if (file === COMPOSITION_ROOT && isModuleFile(target)) continue;
       if (own === null) {
-        // A library may use WebApp's public surface (the router's types); never a feature.
-        if (other !== "web-app") violations.add(`${file} -> ${target}`);
+        // A library may use WebApp's public surface (the router's types) and the internal hub may
+        // re-export a feature whose package face has not landed yet; never anything else.
+        if (other !== "web-app" && file !== INTERNAL_HUB) violations.add(`${file} -> ${target}`);
         continue;
       }
       if (!/^(features\/[^/]+|web-app)\/index\.tsx?$/.test(target)) {

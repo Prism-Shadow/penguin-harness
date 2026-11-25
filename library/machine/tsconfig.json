@@ -41,5 +41,6 @@
       "@prismshadow/penguin-library-trace/trace-images": ["../trace/src/trace-images.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

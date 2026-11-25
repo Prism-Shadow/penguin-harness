@@ -9,8 +9,8 @@ import { ApiError } from "../../api/client";
 import { machineLink } from "../../lib/machine-link";
 import type { MachineLink } from "../../lib/machine-link";
 import { S } from "../../lib/strings";
-import { readMachine, retryReading } from "../machines/machines-view";
-import type { RetryReading } from "../machines/machines-view";
+import { readMachine, retryReading } from "@prismshadow/penguin-library-machine/web";
+import type { RetryReading } from "@prismshadow/penguin-library-machine/web";
 
 export interface MachineAway {
   link: Exclude<MachineLink, "connected" | "unknown">;

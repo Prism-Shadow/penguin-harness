@@ -1,6 +1,6 @@
 /**
  * The Machines page's cards, the Machine dialog they open, and the update notice
- * (features/machines/machine-card.tsx, machine-detail-dialog.tsx, machines-view.ts `updateNotice`).
+ * (library/machine/src/web/machine-card.tsx, machine-detail-dialog.tsx, machines-view.ts `updateNotice`).
  *
  * A card
  * - opens its machine's dialog on a click anywhere on its body, and from its title, which says a
@@ -69,17 +69,17 @@ import {
   MachineCard,
   machineMark,
   type MachineCardProps,
-} from "../src/features/machines/machine-card";
+} from "@prismshadow/penguin-library-machine/web/machine-card";
 import {
   JobSteps,
   LogFold,
   MachineDetailBody,
   type MachineDetailBodyProps,
   type MachineVerb,
-} from "../src/features/machines/machine-detail-dialog";
+} from "@prismshadow/penguin-library-machine/web/machine-detail-dialog";
 
-import { machineChip } from "../src/features/machines/machine-detail-view";
-import { readMachine, updateNotice } from "../src/features/machines/machines-view";
+import { machineChip } from "@prismshadow/penguin-library-machine/web/machine-detail-view";
+import { readMachine, updateNotice } from "@prismshadow/penguin-library-machine/web/machines-view";
 import { formatShortDateTime } from "../src/lib/format";
 import { S } from "../src/lib/strings";
 import { clickOn, fakeElement } from "./helpers/fake-dom";

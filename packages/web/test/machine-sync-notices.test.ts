@@ -118,7 +118,7 @@ function server(initial: UiPrefs, { unreadable = false } = {}) {
 /** A fresh page: new modules (an unread store), the dialog open on `info` in `projectId`. */
 async function page(info: MachineInfo, projectId = "p1") {
   vi.resetModules();
-  const { MachineDetailDialog } = await import("../src/features/machines/machine-detail-dialog");
+  const { MachineDetailDialog } = await import("@prismshadow/penguin-library-machine/web/machine-detail-dialog");
   const { setActiveStrings } = await import("../src/lib/strings");
   const { en } = await import("../src/lib/strings-en");
   setActiveStrings(en);
