@@ -92,3 +92,20 @@ pnpm-lock.yaml 未含。后果与已试路径：
   library/plugin/src/icon-response.ts 原 http/ 目录内 "./errors.js" 改
   @prismshadow/penguin-library-http/errors。其余 9 条扫描命中均为误报（json/模板字符串/
   shim/index）。
+
+- 重基（owner 直令）：rebase onto origin/main 93b9d50562（落后 19 笔），19/19 零冲突。
+  重命名侧合并逐文件核验：builtin-market.json/builtin-index.json/preinstall.ts/
+  system-app-modules.ts/install.ts/module-rule.ts 与 main 版一致（#1873 钉版语义折进
+  搬移后文件）；registry/offline-archives/market/loader/host 五处 DIFF 仅端口形态替换行；
+  api/types.ts main 侧 19 笔内零净代码改动；server package.json 只剩字母序 churn＋
+  我们的 plugin/safe-regex；market.mjs 除路径行外与 main 零差异。changelog 三对双语
+  （organization-runtime/auth/plugin）重基后在位。
+- lockfile：重基合并产物为混合态（旧 rc URL＋新钉版 URL 并存；server 快照残留
+  first-workbench-guide 孤儿行——#1841 已在 main 删插件与全部引用，重基自动合并把
+  旧 base 侧快照行带了回来）。pnpm 11.18.0 全量重生成收敛为钉版一致态（github.com
+  tarball 计数 140＝main 一致）；孤儿行 pnpm 懒重生成不剪，手工删 1 行后复跑重生成
+  验证为不动点（diff 恰 1 删，孤儿不回）。messaging→observability/project 的
+  link→file 翻转是 pnpm 对本树的真实输出（S20 新增 organization 造成
+  messaging/project/organization workspace 环，pnpm 对环上边用带 peer 后缀的 file
+  实例；main 无 organization 故无此环），保留不手改。重生成 WARN 两条环依赖
+  （agent-api/session/http/auth；messaging/project/organization）留观。

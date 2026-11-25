@@ -10283,7 +10283,6 @@ snapshots:
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/computer-use': file:plugins/computer-use
       '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
