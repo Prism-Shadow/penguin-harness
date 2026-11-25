@@ -43,7 +43,7 @@ import { useProject } from "@prismshadow/penguin-web/internal";
 import { useAgentLocation } from "@prismshadow/penguin-web/internal";
 import { localizedText } from "@prismshadow/penguin-web/internal";
 import { SkillTile } from "@prismshadow/penguin-web/internal";
-import { downloadArchive } from "./archive-download";
+import { downloadArchive } from "@prismshadow/penguin-web/internal";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildHookImportPrompt } from "./hook-import";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
