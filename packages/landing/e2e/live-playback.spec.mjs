@@ -119,7 +119,7 @@ test("the live homepage preview uses the new chat header and shortcut strip", as
   await page.emulateMedia({ reducedMotion: "reduce" });
   const { frame } = await openHero(page, "en");
   await expect(
-    frame.getByText("Create your first self-evolving agent OS.", { exact: true }),
+    frame.getByText("Create your first self-evolving Harness OS.", { exact: true }),
   ).toBeVisible();
   await expect(frame.locator('[data-slot="counts"]')).toHaveCount(0);
   await expect(frame.locator('[data-slot="examples"]')).toBeVisible();

@@ -77,17 +77,19 @@ for (const [lang, headline, subtitle, apps, steps] of [
       const appsDiagram = page.locator("#cases [data-story-diagram]");
       const platform = page.locator("#self-evolution [data-story-diagram]");
       await expect(page.locator("#cases h2")).toHaveText(
-        lang === "en" ? "Build your first self-evolving Agent OS" : "构建你的第一个自进化 Agent OS",
+        lang === "en"
+          ? "Build your first self-evolving Harness OS"
+          : "构建你的第一个自进化 Harness OS",
       );
       await expect(platform.locator(".scene-workflow-pane")).toBeVisible();
+      await expect(platform).not.toContainText("GDPEVO Essential");
       await expect(page.locator("#self-evolution figure")).toHaveCount(3);
       for (const app of apps) {
         await expect(appsDiagram.getByText(app, { exact: true })).toBeVisible();
       }
       await expect(
-        appsDiagram.getByText(lang === "en" ? "Contract desk" : "合同工作台"),
+        appsDiagram.getByText(lang === "en" ? "Installed in Harness OS" : "已装入 Harness OS"),
       ).toBeVisible();
-      await expect(appsDiagram.getByText(lang === "en" ? "Analyzing…" : "分析中…")).toBeVisible();
       const phases = platform.locator('td[aria-current="step"]');
       for (const [index, stage] of steps.entries()) {
         await expect(phases.nth(index)).toHaveText(stage);
@@ -183,4 +185,31 @@ test("task agents advance independently and start a new round", async ({ page })
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.clock.runFor(5500);
   await expect(phases).toHaveText(["Evaluating", "Improving", "Retesting", "Next round"]);
+});
+
+test("app center cycles through converge, generating, and installed stages across apps", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => localStorage.setItem("penguin-site.lang", "en"));
+  await page.goto("/");
+  const appCenter = page.getByRole("group", { name: "App Center", exact: true });
+  await appCenter.scrollIntoViewIfNeeded();
+  await expect(appCenter).toHaveAttribute("data-stage", "installed");
+  await page.clock.install();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(appCenter).toHaveAttribute("data-active", "true");
+  await expect(appCenter).toHaveAttribute("data-stage", "converge");
+  await page.clock.runFor(900);
+  await expect(appCenter).toHaveAttribute("data-stage", "generating");
+  await expect(appCenter.getByText("Generating app…")).toBeVisible();
+  await page.clock.runFor(1400);
+  await expect(appCenter).toHaveAttribute("data-stage", "installed");
+  await expect(appCenter.getByText("Installed in Harness OS")).toBeVisible();
+  await page.clock.runFor(1600);
+  await expect(
+    appCenter.getByText(
+      "Create a knowledge base app: index technical manuals and answer questions with citations",
+    ),
+  ).toBeVisible();
 });

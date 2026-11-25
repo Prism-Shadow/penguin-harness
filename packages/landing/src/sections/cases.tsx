@@ -1,4 +1,4 @@
-/** The desktop Agent OS and its one-sentence A2APP app center. */
+/** The desktop Harness OS and its one-sentence A2APP app center. */
 import { AppGenerationDiagram } from "../components/application-diagrams";
 import { S } from "../lib/strings";
 import { Section } from "../components/section";

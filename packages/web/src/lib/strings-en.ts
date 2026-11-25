@@ -4129,7 +4129,7 @@ export const en: Strings = {
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
     start: {
-      tagline: "Create your first self-evolving agent OS.",
+      tagline: "Create your first self-evolving Harness OS.",
       shuffle: "Shuffle suggestions",
       moreExamples: "More examples",
       examplesTitle: "Examples and shortcuts",

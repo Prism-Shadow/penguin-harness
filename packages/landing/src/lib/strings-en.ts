@@ -277,16 +277,24 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cases: {
-    os: "Build your first self-evolving Agent OS",
+    os: "Build your first self-evolving Harness OS",
     subtitle:
-      "Turn any idea into an agent-powered app in one sentence, packed into one desktop Agent OS — upgrade any app through chat, or share and install from the community market in one click.",
+      "Turn any idea into an agent-powered app in one sentence, packed into one desktop Harness OS — upgrade any app through chat, or share and install from the community market in one click.",
     workspace: {
       title: "App Center",
-      project: "PenguinHarness demo",
+      project: "Harness OS",
       builderLabel: "A2APP Builder",
-      builderPrompt:
-        "Build a contract review workbench: upload files, flag risky clauses, and export reports",
-      installing: "Installed in Agent OS",
+      generating: "Generating app…",
+      installing: "Installed in Harness OS",
+      prompts: {
+        legal:
+          "Build a contract review app: upload agreements, flag risky clauses, and export reports",
+        docs: "Create a knowledge base app: index technical manuals and answer questions with citations",
+        investment:
+          "Build a market research app: parse filings, chart revenue trends, and summarize metrics",
+        slides:
+          "Create a presentation studio app: turn an outline into a polished bilingual slide deck",
+      },
       apps: {
         docs: "Document Q&A",
         investment: "Investment Analyst",
@@ -298,18 +306,6 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         terminal: "Terminal",
         browser: "Browser",
       },
-      desk: "Contract desk",
-      file: "File",
-      status: "Status",
-      reviewed: "Reviewed",
-      analyzing: "Analyzing…",
-      files: [
-        "Employment Contract - Template v3.docx",
-        "Supplier Agreement - Kestrel Foods.pdf",
-        "Office Lease - Unit 1204.pdf",
-        "Mutual NDA - Helios Labs.docx",
-        "Master Services Agreement - Northwind Logistics.pdf",
-      ],
     },
   },
 

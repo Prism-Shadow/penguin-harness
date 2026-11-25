@@ -19,8 +19,8 @@ function ScreenBar({
 }: {
   icon: SiteGlyphName;
   title: string;
-  context: string;
-  contextIcon: SiteGlyphName;
+  context?: string;
+  contextIcon?: SiteGlyphName;
 }) {
   return (
     <div className="scene-bar">
@@ -28,10 +28,12 @@ function ScreenBar({
         <SiteGlyph name={icon} width={19} height={19} />
         {title}
       </span>
-      <span className="scene-context">
-        <SiteGlyph name={contextIcon} width={15} height={15} />
-        {context}
-      </span>
+      {context && (
+        <span className="scene-context">
+          {contextIcon && <SiteGlyph name={contextIcon} width={15} height={15} />}
+          {context}
+        </span>
+      )}
     </div>
   );
 }
@@ -50,20 +52,38 @@ const appTiles = {
   browser: sessionToolArt.get("session-tools-builtin-browser"),
 };
 
-/** Radial Vectors (dx, dy) for the iOS-style home-screen convergence animation. */
-const tileConvergeOffsets: Record<keyof typeof appTiles, [string, string]> = {
-  docs: ["-18px", "-16px"],
-  investment: ["0px", "-20px"],
-  legal: ["18px", "-16px"],
-  slides: ["-22px", "0px"],
-  images: ["0px", "-10px"],
-  support: ["22px", "0px"],
-  expenses: ["-18px", "16px"],
-  terminal: ["0px", "20px"],
-  browser: ["18px", "16px"],
+type AppKey = keyof typeof appTiles;
+
+const FEATURED_APPS = ["legal", "docs", "investment", "slides"] as const;
+type FeaturedAppKey = (typeof FEATURED_APPS)[number];
+
+/** Radial vectors (dx, dy, rotation) for the Harness OS springboard convergence & shockwave choreography. */
+const tileConvergeVectors: Record<AppKey, [string, string, string]> = {
+  docs: ["-56px", "-38px", "-12deg"],
+  investment: ["0px", "-48px", "6deg"],
+  legal: ["56px", "-38px", "12deg"],
+  slides: ["-68px", "0px", "-9deg"],
+  images: ["0px", "-26px", "0deg"],
+  support: ["68px", "0px", "9deg"],
+  expenses: ["-56px", "38px", "10deg"],
+  terminal: ["0px", "48px", "-6deg"],
+  browser: ["56px", "38px", "-12deg"],
 };
 
-function AppMark({ app, size = 42 }: { app: keyof typeof appTiles; size?: number }) {
+/** SVG coordinates (in a 600x300 viewBox) of the 3x3 app slots for the background energy network. */
+const tileNodeCoords: Record<AppKey, [number, number]> = {
+  docs: [110, 62],
+  investment: [300, 62],
+  legal: [490, 62],
+  slides: [110, 152],
+  images: [300, 152],
+  support: [490, 152],
+  expenses: [110, 242],
+  terminal: [300, 242],
+  browser: [490, 242],
+};
+
+function AppMark({ app, size = 52 }: { app: AppKey; size?: number }) {
   const art = appTiles[app];
   return (
     <AppIconShape size={size} aria-hidden className={`scene-app-mark scene-app-${app}`}>
@@ -80,23 +100,61 @@ function AppMark({ app, size = 42 }: { app: keyof typeof appTiles; size?: number
   );
 }
 
+type BuilderStage = "converge" | "generating" | "installed";
+
 /**
- * The Agent OS App Center: an iOS-style springboard convergence animation packing every app into
- * one desktop system while demonstrating one-sentence A2APP generation and live workbench loading.
+ * The Harness OS App Center: a pure app-icon springboard animation demonstrating how one sentence
+ * turns into an agent-powered app and packs into one desktop Harness OS alongside every other app.
  */
 export function AppGenerationDiagram() {
   const c = S.cases.workspace;
   const { ref, active } = useVisibleActivity<HTMLDivElement>();
   const reduced = usePrefersReducedMotion();
   const running = active && !reduced;
-  const apps = Object.keys(appTiles) as (keyof typeof appTiles)[];
+  const apps = Object.keys(appTiles) as AppKey[];
+
+  const [round, setRound] = useState(0);
+  const [stage, setStage] = useState<BuilderStage>("installed");
+
+  useEffect(() => {
+    if (!running) {
+      setRound(0);
+      setStage("installed");
+      return;
+    }
+    setStage("converge");
+    let timer: number;
+    const stepConverge = () => {
+      timer = window.setTimeout(() => {
+        setStage("generating");
+        timer = window.setTimeout(() => {
+          setStage("installed");
+          timer = window.setTimeout(() => {
+            setRound((r) => r + 1);
+            setStage("converge");
+            stepConverge();
+          }, 1500);
+        }, 1350);
+      }, 850);
+    };
+    stepConverge();
+    return () => window.clearTimeout(timer);
+  }, [running]);
+
+  const currentFeatured: FeaturedAppKey = running
+    ? FEATURED_APPS[round % FEATURED_APPS.length]!
+    : "legal";
+  const currentStage: BuilderStage = running ? stage : "installed";
+  const [targetX, targetY] = tileNodeCoords[currentFeatured];
+  const beamPath = `M300,8 Q300,${Math.round(targetY * 0.45)} ${targetX},${targetY}`;
 
   return (
     <div
       ref={ref}
-      className="product-scene"
+      className="product-scene product-scene-apps"
       data-story-diagram=""
       data-active={running}
+      data-stage={currentStage}
       role="group"
       aria-label={c.title}
     >
@@ -106,105 +164,126 @@ export function AppGenerationDiagram() {
           <SiteGlyph name="robot" width={13} height={13} />
           {c.builderLabel}
         </span>
-        <span className="scene-builder-prompt">
-          <span className="scene-builder-prompt-text">{c.builderPrompt}</span>
+        <span className="scene-builder-prompt" key={`prompt-${currentFeatured}-${round}`}>
+          <span className="scene-builder-prompt-text">{c.prompts[currentFeatured]}</span>
           <span className="scene-builder-progress" />
         </span>
-        <span className="scene-builder-status">
-          <SiteGlyph name="check" width={13} height={13} />
-          {c.installing}
+        <span
+          className="scene-builder-status"
+          data-generating={currentStage === "generating" || undefined}
+        >
+          {currentStage === "generating" ? (
+            <>
+              <Spinner className="scene-activity" label={c.generating} />
+              {c.generating}
+            </>
+          ) : (
+            <>
+              <SiteGlyph name="check" width={13} height={13} />
+              {c.installing}
+            </>
+          )}
         </span>
       </div>
-      <div className="scene-workspace">
-        <div className="scene-os-stage">
-          <ul className="scene-launcher" aria-label={c.title}>
-            {apps.map((app, index) => {
-              const [dx, dy] = tileConvergeOffsets[app];
-              const isGenerated = app === "legal";
-              return (
-                <li
-                  key={app}
-                  data-selected={isGenerated || undefined}
-                  data-generated={isGenerated || undefined}
-                  style={
-                    {
-                      "--tile-idx": index,
-                      "--tile-dx": dx,
-                      "--tile-dy": dy,
-                    } as CSSProperties
-                  }
+      <div className="scene-os-stage">
+        <svg
+          className="scene-os-network"
+          viewBox="0 0 600 300"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <g className="scene-os-grid-lines">
+            <line x1="110" y1="62" x2="490" y2="62" />
+            <line x1="110" y1="152" x2="490" y2="152" />
+            <line x1="110" y1="242" x2="490" y2="242" />
+            <line x1="110" y1="62" x2="110" y2="242" />
+            <line x1="300" y1="62" x2="300" y2="242" />
+            <line x1="490" y1="62" x2="490" y2="242" />
+          </g>
+          <path d={beamPath} className="scene-os-beam" />
+          {running && (
+            <>
+              <circle r="3.5" className="scene-os-pulse-dot">
+                <animateMotion dur="1.1s" repeatCount="indefinite" path={beamPath} />
+              </circle>
+              <circle r="2.5" className="scene-os-pulse-dot" opacity="0.65">
+                <animateMotion dur="1.1s" begin="0.55s" repeatCount="indefinite" path={beamPath} />
+              </circle>
+            </>
+          )}
+        </svg>
+        <ul className="scene-launcher" aria-label={c.title}>
+          {apps.map((app, index) => {
+            const [dx, dy, rot] = tileConvergeVectors[app];
+            const isTarget = app === currentFeatured;
+            const tileState = isTarget
+              ? currentStage
+              : currentStage === "converge"
+                ? "converge"
+                : "idle";
+            return (
+              <li
+                key={app}
+                data-selected={isTarget || undefined}
+                data-generated={isTarget || undefined}
+                data-tile-state={tileState}
+                style={
+                  {
+                    "--tile-idx": index,
+                    "--tile-dx": dx,
+                    "--tile-dy": dy,
+                    "--tile-rot": rot,
+                  } as CSSProperties
+                }
+              >
+                <div
+                  className="scene-app-slot"
+                  key={isTarget ? `${app}-${round}-${currentStage}` : `${app}-${round}`}
                 >
-                  <div className="scene-app-slot">
-                    <AppMark app={app} />
-                    {isGenerated && (
-                      <svg className="scene-install-ring" viewBox="0 0 52 52" aria-hidden="true">
-                        <rect
-                          x="2"
-                          y="2"
-                          width="48"
-                          height="48"
-                          rx="13"
-                          fill="none"
-                          pathLength={100}
-                        />
-                      </svg>
-                    )}
-                  </div>
-                  <span>{c.apps[app]}</span>
-                </li>
-              );
-            })}
-          </ul>
-          <div className="scene-os-dock" aria-hidden="true">
-            <span className="scene-os-dot scene-os-dot-active" />
-            <span className="scene-os-dot" />
-            <span className="scene-os-dot" />
-          </div>
-        </div>
-        <div className="scene-desk">
-          <div className="scene-desk-title">
-            <AppMark app="legal" size={32} />
-            <div>
-              <strong>{c.desk}</strong>
-              <div className="scene-address">legal_agent / legal-desk</div>
-            </div>
-          </div>
-          <table className="scene-files">
-            <thead>
-              <tr>
-                <th scope="col">{c.file}</th>
-                <th scope="col">{c.status}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {c.files.map((file, i) => {
-                const [title, source] = file.split(" - ");
-                return (
-                  <tr key={file}>
-                    <td>
-                      <div className="scene-filename">
-                        <SiteGlyph name="file" width={16} height={16} />
-                        <span>
-                          {title}
-                          {source && <small>{source}</small>}
-                        </span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="scene-file-state" data-reviewing={i === 0 || undefined}>
-                        {i === 0 ? (
-                          <Spinner className="scene-activity" label={c.analyzing} />
-                        ) : (
-                          <SiteGlyph name="check" />
-                        )}
-                        {i === 0 ? c.analyzing : c.reviewed}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                  {isTarget && currentStage === "installed" && (
+                    <>
+                      <span className="scene-app-ripple" aria-hidden="true" />
+                      <span
+                        className="scene-app-ripple scene-app-ripple-outer"
+                        aria-hidden="true"
+                      />
+                    </>
+                  )}
+                  <AppMark app={app} />
+                  {isTarget && currentStage === "generating" && (
+                    <span className="scene-ios-sweep" aria-hidden="true" />
+                  )}
+                  {isTarget && (
+                    <svg className="scene-install-ring" viewBox="0 0 64 64" aria-hidden="true">
+                      <rect
+                        x="2.5"
+                        y="2.5"
+                        width="59"
+                        height="59"
+                        rx="15"
+                        fill="none"
+                        pathLength={100}
+                      />
+                    </svg>
+                  )}
+                  {isTarget && currentStage === "installed" && (
+                    <span className="scene-app-badge" aria-hidden="true">
+                      <SiteGlyph name="check" width={11} height={11} />
+                    </span>
+                  )}
+                </div>
+                <span className="scene-app-label">{c.apps[app]}</span>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="scene-os-dock" aria-hidden="true">
+          {FEATURED_APPS.map((featured) => (
+            <span
+              key={featured}
+              className={`scene-os-dot ${featured === currentFeatured ? "scene-os-dot-active" : ""}`}
+            />
+          ))}
         </div>
       </div>
     </div>
@@ -269,7 +348,7 @@ function AgentRun({ index, running }: { index: number; running: boolean }) {
 
 /**
  * Unified Self-Evolution Workbench: fuses the Optimizer/Evaluator loop diagram above with the
- * independent multi-agent evolution rounds on the four GDPEVO Essential task families below.
+ * independent multi-agent evolution rounds below.
  */
 export function AgentEvaluationDiagram({ workflow }: { workflow?: ReactNode }) {
   const c = S.selfImprove.workbench;
@@ -284,7 +363,7 @@ export function AgentEvaluationDiagram({ workflow }: { workflow?: ReactNode }) {
       role="group"
       aria-label={c.title}
     >
-      <ScreenBar icon="trophy" title={c.title} context="GDPEVO Essential" contextIcon="bookOpen" />
+      <ScreenBar icon="trophy" title={c.title} />
       {workflow && <div className="scene-workflow-pane">{workflow}</div>}
       <table className="scene-runs">
         <thead>
