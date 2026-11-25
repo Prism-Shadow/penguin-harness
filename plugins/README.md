@@ -10,7 +10,6 @@ Plugins by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/categories
 | --- | --- |
 | Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
 | Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `storage`, `use-bento-slides`, `goal`, `plan`, `trace-lookup`, `agent-company`, `penguin-support`, `multimodal-tools` |
-| Utilities | `first-workbench-guide` |
 | Software Development | `software-development` |
 | AI App Development | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
 
@@ -74,5 +73,3 @@ pnpm --filter @prismshadow/penguin-core test        # loader, the hook scripts a
 `use-bento-slides` carries the `bento-slides` Skill and the `workbenches/slides/` app, the AI PPT workbench: Bento's slide editor in a sandboxed frame beside the Agent's chat, where the person and the Agent edit one deck file (`decks/<id>.bento.json` in the workbench's data folder, `app/data/slides/`, which the handler reads and writes with `node:fs` and the Agent with its file tools) and the page replays the person's unsaved edits on the Agent's version, element by element. It is preinstalled, so `default_agent` has a Slides tab and an AI PPT tile in the App Center. It ships the Bento runtime unmodified as `ui/vendor/bento-slides-1.2.13.runtime.txt` (MIT, 736 KB) and Bento's agent guide as the Skill's `references/bento-agents.md`; `THIRD-PARTY-NOTICES.md` records both. `test/slides-sync.test.ts` holds the merge to its cases and `test/handler.test.ts` the handler, against a host whose data and cache folders are temporary folders on disk.
 
 Each plugin that ships skills also has its own `test/skills.test.ts`: it runs every `skills/<name>/` through [`@prismshadow/skills`](../packages/skills) (its `SKILL.md` must pass the parser vendored from vercel-labs/skills), so `pnpm -r test` covers them. The loader's own rules on top of that — a one-line description, skill names unique across the library — are core's test.
-
-`first-workbench-guide` is preinstalled on new default Agents. It uses the native model picker and a conversation to build a checklist for the user's own task. The guide installs the workbench on the current Agent and exports the same workbench inside a complete library plugin.

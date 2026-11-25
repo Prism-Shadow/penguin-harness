@@ -343,7 +343,6 @@ export function MessageStream({
   ctx,
   scrollElRef,
   outline,
-  footer,
   older,
   onAddExcerpt,
   findRegion = "conversation",
@@ -360,8 +359,6 @@ export function MessageStream({
    * and anchor its absolute positioning to this wrapper, which only this component owns.
    */
   outline?: ReactNode;
-  /** Content following the latest reply in the same scroll container. */
-  footer?: ReactNode;
   /** Scroll-up backfill of older history windows; omitted = the whole transcript is loaded (no top affordance). */
   older?: OlderHistoryControls;
   /** Stages a selection in the composer. Read-only transcripts offer Copy alone. */
@@ -724,7 +721,6 @@ export function MessageStream({
               </FindRevealContext.Provider>
             </WorkspaceLinksProvider>
           )}
-          {footer}
         </div>
       </div>
       {outline}

@@ -98,7 +98,6 @@
     "@penguinharness/browser-automation": "workspace:*",
     "@penguinharness/computer-use": "workspace:*",
     "@penguinharness/data-analysis": "workspace:*",
-    "@penguinharness/first-workbench-guide": "workspace:*",
     "@penguinharness/goal": "workspace:*",
     "@penguinharness/plan": "workspace:*",
     "@penguinharness/multimodal-tools": "workspace:*",

@@ -112,7 +112,6 @@ export function NotConnectedButton({
   return (
     <button
       type="button"
-      data-guide-anchor="connect-provider"
       aria-label={`${S.models.notConnectedStatus} · ${connect}`}
       data-tooltip={connect}
       disabled={busy}

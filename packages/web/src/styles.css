@@ -47,12 +47,6 @@
   --color-brand-950: #041e49;
 }
 
-/* Highlight the control in its own scroll and stacking context as the dock resizes. */
-[data-guide-highlight] {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
 @layer base {
   :root {
     /* The body font stack under a name of the app's own, which the workbench frame reads off the

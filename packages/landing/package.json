@@ -39,7 +39,6 @@
     "@penguinharness/continual-learning": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz",
     "@penguinharness/data-analysis": "workspace:*",
     "@penguinharness/default-rsi-toolkit": "https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz",
-    "@penguinharness/first-workbench-guide": "workspace:*",
     "@penguinharness/goal": "workspace:*",
     "@penguinharness/model-development": "workspace:*",
     "@penguinharness/multimodal-tools": "workspace:*",

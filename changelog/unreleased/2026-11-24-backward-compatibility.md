@@ -16,7 +16,3 @@ The server and clients keep reading date-first IDs for as long as existing files
 ## Existing traces
 
 The activity header reads existing conversations directly. When a thinking block or tool call has no recorded starting fragment, its generation time is unknown. A recorded tool execution still contributes its measured time. No migration or user action is required. The optional start time must remain supported while clients can open traces that omit it.
-
-## First-workbench guide bookmarks and progress
-
-Existing guide bookmarks reopen the guide in chat for the same agent and machine. The guide reads the progress already saved in the current tab. Checklist workbenches and their contents stay on the agent. No migration is required. Maintainers can retire the bookmark and tab-storage handling only after a separate decision to end support for those links and saved sessions.

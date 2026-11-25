@@ -95,7 +95,6 @@ import { DockScope } from "../src/features/dock/dock-scope";
 import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
 import { ProjectSettingsLayer } from "../src/features/projects/project-settings-layer";
-import { FirstWorkbenchLayer } from "../src/features/models/first-workbench-layer";
 import { DefaultModelsLayer } from "../src/features/models/default-models-layer";
 import { ProjectSwitcher } from "../src/features/projects/project-switcher";
 import {
@@ -342,7 +341,6 @@ describe("the booted shell slots", () => {
       SettingsLayer,
       ProjectSettingsLayer,
       DefaultModelsLayer,
-      FirstWorkbenchLayer,
       BuiltinBrowserLayer,
       DockScope,
     ]);

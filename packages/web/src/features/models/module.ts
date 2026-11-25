@@ -7,7 +7,6 @@ import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import type { NavBadge } from "../../lib/sidebar-contributions";
 import { ModelsPage } from "./models-page";
 import { PinnedBalanceBadge } from "./group-balance";
-import { FirstWorkbenchLayer } from "./first-workbench-layer";
 import { DefaultModelsLayer } from "./default-models-layer";
 
 @Module({
@@ -29,14 +28,10 @@ import { DefaultModelsLayer } from "./default-models-layer";
       },
     ],
     "SidebarModule.navBadges": [{ id: "models.balance", anchor: "account", order: 20 }],
-    "WebAppModule.layers": [
-      { id: "models.defaults", order: 27 },
-      { id: "models.first-workbench", order: 28 },
-    ],
+    "WebAppModule.layers": [{ id: "models.defaults", order: 27 }],
   },
 })
 export class ModelsModule {
-  @Bind("models.first-workbench") firstWorkbench = FirstWorkbenchLayer;
   @Bind("models.page") page = ModelsPage;
   @Bind("models.balance") balance: NavBadge = { Mark: PinnedBalanceBadge };
   @Bind("models.defaults") defaults = DefaultModelsLayer;
