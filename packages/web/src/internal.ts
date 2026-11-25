@@ -1,28 +1,3 @@
-||||||| parent of 571ad607cd (fix(web): the hub re-exports the dock's load-time bindings ahead of its face-reaching sources)
-/**
- * The Web App's internals the session domain's web half compiles against, one surface: the
- * half under library/session/src/web consumes the web host through this subpath
- * (`@prismshadow/penguin-web/internal`), so its imports name one seam instead of reaching
- * into the host's file tree. Explicit named re-exports only — every name a consumer imports
- * is listed here once, and a name two modules export arrives under one of them aliased
- * (`useCompanyContext`).
- *
- * Deliberately a re-export hub and nothing more: no logic, no defaults.
- */
-
-||||||| parent of d104c117c4 (fix(web): the hub's chord re-exports join the dock's load-time bindings at the top)
-// The dock's load-time calls come through here first: the moved dock modules call these two
-// bindings as their bodies run, and a face import inside the hub's own sources
-// (lib/account-sync/prefs) can loop back into them mid-load. Their re-exports are the hub's
-// first statements, so the bindings are in place however the cycle re-enters.
-
-export { subscribeAccountApplied, syncedStorage, writeCached } from "./lib/account-sync/cache";
-
-export { onCommand } from "./lib/shortcuts/dispatcher";
-
-export { ApiError } from "./api/client";
-
-export * as api from "./api/endpoints";
 export {
   AgentSelect,
   dropsEmployeeGroup,
@@ -103,6 +78,8 @@ export {
 export { a2uiDrafts } from "./lib/a2ui-drafts";
 
 export { isDesktopShellWindow } from "./lib/account-menu";
+
+export { subscribeAccountApplied, syncedStorage, writeCached } from "./lib/account-sync/cache";
 
 export { useAgentAvatarSrc } from "./lib/agent-avatar";
 
@@ -463,6 +440,10 @@ export {
   sessionWorkbenchPage,
 } from "./lib/session-workbenches";
 export type { SessionWorkbenchKind } from "./lib/session-workbenches";
+
+export { chordEquals, chordOf, parseChord } from "./lib/shortcuts/chord";
+
+export { onCommand } from "./lib/shortcuts/dispatcher";
 
 export { currentPlatform } from "./lib/shortcuts/platform";
 
