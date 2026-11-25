@@ -12,10 +12,18 @@ import {
   SearchInput,
   TextAction,
 } from "@prismshadow/penguin-ui";
-import { PENGUIN_LOGO_URL, S, SkillIcon, VersionStamp, openAppInfo, useLocale, useProject, useUpdateFlow, useVersionInfo, versionBadgeFor } from "@prismshadow/penguin-web/internal";
-||||||| parent of 98e4e299b5 (fix(web): the session web half re-exports its types through export type and is formatted)
-import { Heading, ICONS, PenguinLogo } from "@prismshadow/penguin-ui";
-import { PENGUIN_LOGO_URL, S, VersionStamp, openAppInfo, useLocale, useUpdateFlow, useVersionInfo, versionBadgeFor } from "@prismshadow/penguin-web/internal";
+import {
+  PENGUIN_LOGO_URL,
+  S,
+  SkillIcon,
+  VersionStamp,
+  openAppInfo,
+  useLocale,
+  useProject,
+  useUpdateFlow,
+  useVersionInfo,
+  versionBadgeFor,
+} from "@prismshadow/penguin-web/internal";
 
 import { EXAMPLE_TASKS, type ExampleTaskId } from "./example-tasks";
 import { PromptActionRow, type PromptAction } from "./prompt-action-row";
