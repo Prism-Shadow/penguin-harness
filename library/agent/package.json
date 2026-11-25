@@ -44,6 +44,14 @@
       "types": "./dist/agent-service.d.ts",
       "import": "./dist/agent-service.js"
     },
+    "./agent-deletion": {
+      "types": "./dist/agent-deletion.d.ts",
+      "import": "./dist/agent-deletion.js"
+    },
+    "./agent-author-migration": {
+      "types": "./dist/agent-author-migration.d.ts",
+      "import": "./dist/agent-author-migration.js"
+    },
     "./agent-tasks": {
       "types": "./dist/agent-tasks.d.ts",
       "import": "./dist/agent-tasks.js"

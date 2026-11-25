@@ -5,6 +5,8 @@ export default defineConfig({
     "src/agent-avatar.ts",
     "src/agent-config-service.ts",
     "src/agent-service.ts",
+    "src/agent-author-migration.ts",
+    "src/agent-deletion.ts",
     "src/agent-skills.ts",
     "src/agent-tasks.ts",
     "src/agent-app-data.ts",
