@@ -21,7 +21,14 @@ const child = spawn(
     ...[...roots].flatMap((dir) => ["--exclude", `${dir.replaceAll("\\", "/")}/**`]),
     ...process.argv.slice(2),
   ],
-  { stdio: "inherit" },
+  {
+    // Only a terminal's stdin is passed through: tsx watch listens on it for the Return
+    // key, the one thing a non-terminal stdin could provide. Handing on a PIPE instead
+    // deadlocks the server on Windows — tsx's listener and the server's `import
+    // "node:process"` both wait on the same handle, so the server never boots — and
+    // `pnpm dev` hands every command a pipe through concurrently. See tsx#623.
+    stdio: [process.stdin.isTTY ? "inherit" : "ignore", "inherit", "inherit"],
+  },
 );
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => child.kill(signal));
