@@ -35,11 +35,12 @@ import {
 import { Session } from "../src/index.js";
 import type {
   AmspRecord,
+  ApprovalDecision,
+  PolicyDenial,
   SessionMetaPayload,
   TextPayload,
   ToolCallPayload,
 } from "@prismshadow/amsp/records";
-import type { ApprovalDecision, PolicyDenial } from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   BackgroundTaskDoneEvent,
