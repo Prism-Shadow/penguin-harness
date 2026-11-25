@@ -28,6 +28,7 @@ import {
   exceptionReport,
   isReportable,
 } from "@prismshadow/penguin-ui";
+import { useNavigate } from "react-router";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/amsp/stream-model";
 import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
@@ -375,6 +376,9 @@ export function MessageStream({
   findRegion?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The Router's navigate, handed to the rendered links: an internal route (/chat/<sessionId>,
+  // /org…) is one the Router made, with its history entry and its unsaved-form guard.
+  const navigate = useNavigate();
   // A search of this region opens its collapsed work groups (lib/find-expand.ts).
   const revealedForFind = useRegionRevealed(scrollRef);
   const selectionMenu = useStreamSelectionMenu(onAddExcerpt);
@@ -717,7 +721,11 @@ export function MessageStream({
           ) : (
             // Links in replies, reasoning and compaction summaries name files of this Session's
             // Workspace: they open in its Files panel rather than a new tab (see workspace-links.tsx).
-            <WorkspaceLinksProvider workspace={ctx.workspace ?? null} onOpenFile={ctx.onOpenFile}>
+            <WorkspaceLinksProvider
+              workspace={ctx.workspace ?? null}
+              onOpenFile={ctx.onOpenFile}
+              navigate={navigate}
+            >
               <FindRevealContext.Provider value={revealedForFind}>
                 <ElidedBodiesContext.Provider value={ctx.bodies ?? null}>
                   <MessageItems items={items} ctx={ctx} />

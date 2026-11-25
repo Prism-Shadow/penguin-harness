@@ -14,13 +14,14 @@ import { createElement as h, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assistantText, toolCall, toolCallOutput, userText } from "@prismshadow/amsp";
 import type { AmspRecord } from "@prismshadow/amsp";
+import type { HistoryRecordLike } from "@prismshadow/penguin-core/interfaces";
 import type { HistoryMessage } from "@prismshadow/penguin-server/api";
 import { ElidedBodiesContext } from "../src/features/chat/elided-body";
 import type { StreamRenderContext } from "../src/features/chat/message-stream";
-import { SessionToolCall } from "../src/features/chat/tool-call-card";
+import { SessionToolCall, sessionBadgeIds } from "../src/features/chat/tool-call-card";
 import { createStreamController } from "../src/lib/amsp/stream-controller";
 import type { StreamController } from "../src/lib/amsp/stream-controller";
-import { findToolCard } from "../src/lib/amsp/stream-model";
+import { findToolCard, type ToolCallItem } from "../src/lib/amsp/stream-model";
 import { ThemeProvider } from "../src/state/theme";
 import { click, mount, run, unmountAll } from "./helpers/dom";
 import { FakeHistoryStream } from "./helpers/history-stream";
@@ -134,5 +135,37 @@ describe("unfolding a folded tool output", () => {
     });
     expect(container.textContent).toContain(WHOLE);
     expect(container.textContent).not.toContain(`${HEAD}\n…`);
+  });
+});
+
+describe("sessionBadgeIds", () => {
+  const SID = "session-2026-11-25-10-00-00-4a5b6c7d";
+  const item = (over: Partial<ToolCallItem>): ToolCallItem => ({
+    kind: "tool_call",
+    id: 1,
+    toolCallId: "call_1",
+    name: "exec_command",
+    argumentsText: "{}",
+    callStreaming: false,
+    callComplete: true,
+    output: `done\n${SID}\n`,
+    outputStreaming: false,
+    outputComplete: true,
+    ...over,
+  });
+
+  it("reads the whole output, and takes the first five distinct ids on a line of their own", () => {
+    expect(sessionBadgeIds(item({}))).toEqual([SID]);
+  });
+
+  it("reads nothing while the output is folded: a cut can split a line into a fake one", () => {
+    const folded = item({
+      elidedOutput: { record: {} as HistoryRecordLike, entries: [{ path: "payload.output", bytes: 1, head: 9, ref: "r1" }] },
+    });
+    expect(sessionBadgeIds(folded)).toEqual([]);
+  });
+
+  it("reads none from a bound subagent's card, whose chip already leads there", () => {
+    expect(sessionBadgeIds(item({ subagent: "myriad/penguin/dev" }))).toEqual([]);
   });
 });

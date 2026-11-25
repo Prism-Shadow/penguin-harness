@@ -38,6 +38,7 @@ const renderWithOpener = (
     createElement(WorkspaceLinksProvider, {
       workspace: WS,
       onOpenFile,
+      navigate: () => {},
       children: createElement(Md, { text, streaming }),
     }),
   );
@@ -118,7 +119,7 @@ describe("Md links inside a conversation", () => {
     // this anchor, fed the href the renderer actually produced.
     const openFile = vi.fn();
     const preventDefault = vi.fn();
-    replyLinkBehavior(hrefOf(tags[0]), { workspace: WS, openFile }).onClick!({
+    replyLinkBehavior(hrefOf(tags[0]), { workspace: WS, openFile, openRoute: vi.fn() }).onClick!({
       preventDefault,
     } as unknown as MouseEvent<HTMLAnchorElement>);
     expect(preventDefault).toHaveBeenCalledOnce();

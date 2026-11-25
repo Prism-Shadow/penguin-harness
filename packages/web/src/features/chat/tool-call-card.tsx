@@ -17,8 +17,8 @@
  * then shows that instead. An approval never shows a folded value: its block reads the call the
  * pending approval carries, which the server always sends whole.
  */
-import { isPlainClick } from "../../lib/shortcuts/plain-click";
 import { useMemo } from "react";
+import { Link } from "react-router";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
 import {
   ToolCallCard,
@@ -321,6 +321,21 @@ function extractOutputSessionIds(output: string): string[] {
   return ids;
 }
 
+/**
+ * The session ids this card's footer shows as jump badges: none for a bound subagent's card
+ * (its chip already leads there), none while the output is folded — the preview's cut can split
+ * a line and make half of one read as a line of its own, so only the whole output is read —
+ * and otherwise the first five distinct ids that stand on a line of their own in it.
+ */
+export function sessionBadgeIds(item: ToolCallItem): string[] {
+  if (item.subagent) return [];
+  const folded = (item.elidedOutput?.entries ?? []).some(
+    (e) => e.path === "payload.output" && e.head > 0 && e.head < item.output.length,
+  );
+  if (folded) return [];
+  return extractOutputSessionIds(stripAnsi(item.output));
+}
+
 export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: StreamRenderContext }) {
   const { toolAliases } = useTheme();
   // Matched by the current origin chain + toolCallId: prevents parent/child session tool_call_id collisions from lighting each other up.
@@ -343,8 +358,9 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
     [item.output, item.elidedOutput],
   );
   const outputSessionIds = useMemo(
-    () => (item.subagent ? [] : extractOutputSessionIds(output)),
-    [item.subagent, output],
+    () => sessionBadgeIds(item),
+    // The read inputs, not the item's identity: the stream re-creates the item on every delta.
+    [item.subagent, item.output, item.elidedOutput],
   );
   // A child's inline image that came folded has no picture to draw until it is fetched.
   const images = item.images?.filter((src) => src !== "") ?? [];
@@ -504,22 +520,16 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
         ) : outputSessionIds.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {outputSessionIds.map((sid) => (
-              <a
+              // The Router's own link: an internal navigation with the history entry and the
+              // unsaved-form guard; a modified or middle click keeps the browser's default.
+              <Link
                 key={sid}
-                href={`/chat/${sid}`}
-                onClick={(event) => {
-                  if (!isPlainClick(event)) return;
-                  event.preventDefault();
-                  if (typeof window !== "undefined") {
-                    window.history.pushState({}, "", `/chat/${sid}`);
-                    window.dispatchEvent(new PopStateEvent("popstate"));
-                  }
-                }}
+                to={`/chat/${sid}`}
                 className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-raised px-2.5 py-1 font-mono text-xs text-fg transition-colors hover:bg-surface-hover"
               >
                 <span>↗</span>
                 <span>{sid}</span>
-              </a>
+              </Link>
             ))}
           </div>
         ) : undefined
