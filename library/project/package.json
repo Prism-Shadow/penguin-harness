@@ -28,6 +28,54 @@
       "types": "./dist/project.d.ts",
       "import": "./dist/project.js"
     },
+    "./ports": {
+      "types": "./dist/ports.d.ts",
+      "import": "./dist/ports.js"
+    },
+    "./ids": {
+      "types": "./dist/ids.d.ts",
+      "import": "./dist/ids.js"
+    },
+    "./access": {
+      "types": "./dist/access.d.ts",
+      "import": "./dist/access.js"
+    },
+    "./project-service": {
+      "types": "./dist/project-service.d.ts",
+      "import": "./dist/project-service.js"
+    },
+    "./events": {
+      "types": "./dist/events.d.ts",
+      "import": "./dist/events.js"
+    },
+    "./model-requests": {
+      "types": "./dist/model-requests.d.ts",
+      "import": "./dist/model-requests.js"
+    },
+    "./project-config-service": {
+      "types": "./dist/project-config-service.d.ts",
+      "import": "./dist/project-config-service.js"
+    },
+    "./project-config-migrations": {
+      "types": "./dist/project-config-migrations.d.ts",
+      "import": "./dist/project-config-migrations.js"
+    },
+    "./project-config-seed": {
+      "types": "./dist/project-config-seed.d.ts",
+      "import": "./dist/project-config-seed.js"
+    },
+    "./connect-default-offer": {
+      "types": "./dist/connect-default-offer.d.ts",
+      "import": "./dist/connect-default-offer.js"
+    },
+    "./protocol-detect": {
+      "types": "./dist/protocol-detect.d.ts",
+      "import": "./dist/protocol-detect.js"
+    },
+    "./vision-detect": {
+      "types": "./dist/vision-detect.d.ts",
+      "import": "./dist/vision-detect.js"
+    },
     "./repos/agents": {
       "types": "./dist/repos/agents.d.ts",
       "import": "./dist/repos/agents.js"

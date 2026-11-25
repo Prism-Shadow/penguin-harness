@@ -34,12 +34,31 @@
       "@prismshadow/penguin-library-machine/machine": ["../machine/src/machine.ts"],
       "@prismshadow/penguin-library-model": ["../model/src/index.ts"],
       "@prismshadow/penguin-library-model/model": ["../model/src/model.ts"],
+      "@prismshadow/penguin-library-model/tool-model-test": ["../model/src/tool-model-test.ts"],
+      "@prismshadow/penguin-library-model/platform-auth-flow": [
+        "../model/src/platform-auth-flow.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-catalog": ["../model/src/model-catalog/index.ts"],
+      "@prismshadow/penguin-library-model/model-catalog/catalog": [
+        "../model/src/model-catalog/catalog.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-catalog/env-keys": [
+        "../model/src/model-catalog/env-keys.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-catalog/seed": [
+        "../model/src/model-catalog/seed.ts"
+      ],
       "@prismshadow/penguin-library-model/repos/model-promotions": [
         "../model/src/repos/model-promotions.ts"
       ],
       "@prismshadow/penguin-library-model/repos/model-provider-auth-tokens": [
         "../model/src/repos/model-provider-auth-tokens.ts"
       ],
+      "@prismshadow/penguin-library-http/errors": ["../http/src/errors.ts"],
+      "@prismshadow/penguin-library-messaging/mask": ["../messaging/src/mask.ts"],
+      "@prismshadow/penguin-library-agent/workbench-dirs": ["../agent/src/workbench-dirs.ts"],
+      "@prismshadow/penguin-library-observability": ["../observability/src/index.ts"],
+      "@prismshadow/penguin-library-session/mtime-gate": ["../session/src/mtime-gate.ts"],
       "@prismshadow/penguin-library-organization": ["../organization/src/index.ts"],
       "@prismshadow/penguin-library-organization/organization": [
         "../organization/src/organization.ts"

@@ -2,8 +2,8 @@
  * `.project_config.toml` read/write (single hidden config file).
  *
  * Doesn't reuse core's loadProjectConfig/saveProjectConfig (they only keep known
- * fields): reads and writes the complete object directly via smol-toml, preserving
- * extension fields like `name`. Connection values (api_key / base_url / client_type) live in
+ * fields): reads and writes the complete object directly via core's raw TOML parser
+ * (parseProjectConfigToml), preserving extension fields like `name`. Connection values (api_key / base_url / client_type) live in
  * two layers of the same file: once per group in `[providers.<id>]`, and on a model entry
  * only where that model overrides its group (core's effectiveConnection resolves them, row ->
  * group -> none, per field). The built-in catalog is a reference written into the file — a new
@@ -30,9 +30,12 @@
 import type {
   ChatDefaultsDto,
   CommandPolicyDto,
+  CommandPolicyRuleDto,
   ModelTestRequestSource,
   ProjectConfigStore,
-} from "@prismshadow/penguin-library-project";
+  RawTable,
+} from "./project.js";
+import type { UtilityCompletion } from "./project.js";
 import type {
   DefaultModelOffer,
   ModelEffectiveConnection,
@@ -63,7 +66,6 @@ import type {
 } from "@prismshadow/penguin-library-model";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parse as parseToml } from "smol-toml";
 import {
   CHAT_APPROVAL_MODES,
   atomicWriteFile,
@@ -84,6 +86,7 @@ import {
   listProjectDirs,
   metaMaxTokens,
   migrateProjectConfigTable,
+  parseProjectConfigToml,
   parseProviderTable,
   parseToolModelTable,
   projectConfigFromTable,
@@ -104,13 +107,13 @@ import {
   unaddableModel,
   unroutableVendorModel,
   vendorClientType,
-} from "../model-catalog/catalog.js";
-import { clientEnvKey, modelEnvPreviewKey } from "../model-catalog/env-keys.js";
+} from "@prismshadow/penguin-library-model/model-catalog/catalog";
+import { clientEnvKey, modelEnvPreviewKey } from "@prismshadow/penguin-library-model/model-catalog/env-keys";
 import {
   catalogGroupConnection,
   presetModelEntries,
   presetPromotions,
-} from "../model-catalog/seed.js";
+} from "@prismshadow/penguin-library-model/model-catalog/seed";
 import { sameClientType, sameEndpoint } from "@prismshadow/penguin-core/model-connection";
 import type {
   PluginTables,
@@ -126,11 +129,9 @@ import type {
   ProviderConnectionShape,
   ProviderTable,
 } from "@prismshadow/penguin-core";
-import type { CommandPolicyRuleDto } from "../api/types.js";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
-import { badRequest } from "../http/validate.js";
-import { HttpError } from "../http/errors.js";
-import { cacheable } from "../internal/mtime-gate.js";
+import { HttpError, badRequest } from "@prismshadow/penguin-library-http/errors";
+import { cacheable } from "@prismshadow/penguin-library-session/mtime-gate";
 import { connectDefaultOffer } from "./connect-default-offer.js";
 import type {
   PlatformCatalogPricing,
@@ -138,7 +139,7 @@ import type {
   PlatformModelCatalog,
 } from "@prismshadow/penguin-library-model/platform-auth-flow";
 import { detectModelProtocol } from "./protocol-detect.js";
-import { testToolModel } from "./tool-model-test.js";
+import { testToolModel } from "@prismshadow/penguin-library-model/tool-model-test";
 import { migratePenguinGoRoutes } from "./project-config-migrations.js";
 import { presetProjectConfig } from "./project-config-seed.js";
 import {
@@ -150,9 +151,7 @@ import {
   classifyVisionProbeError,
 } from "./vision-detect.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config, Paths } from "../hmr/capabilities.js";
-
-export type RawTable = Record<string, unknown>;
+import type { ProjectPaths } from "./ports.js";
 
 // The one api-key masking rule lives in the messaging library (messaging restack S6); this
 // re-export keeps the server's own import paths stable.
@@ -730,15 +729,10 @@ const UTILITY_COMPLETION_TIMEOUT_MS = 15_000;
  * would say "no answer" and nothing else — and every one of these failures (no model
  * configured, a missing credential, a provider rejection, a timeout, an answer that was all
  * thinking) is one the user can act on, so the reason travels to the caller, which records it.
+ *
+ * Declared with the contract (project.ts); re-exported here beside the code that produces it.
  */
-export type UtilityCompletion =
-  | { ok: true; text: string }
-  | {
-      ok: false;
-      /** `no_model`: the Project names no default model, or names one it has no entry for — nothing was asked. `failed`: the model was asked and produced no text. */
-      cause: "no_model" | "failed";
-      error: string;
-    };
+export type { UtilityCompletion } from "./project.js";
 
 /** How much of a failure detail is kept for display; the error recorder truncates again at its own bound. */
 const MAX_FAILURE_DETAIL = 300;
@@ -834,7 +828,7 @@ export class ProjectConfigService implements ProjectConfigStore {
   private modelApiKeyResolver:
     ((context: ModelRequestContext) => Promise<string | undefined>) | undefined;
 
-  @Use() private readonly paths!: Paths;
+  @Use() private readonly paths!: ProjectPaths;
   /** Optional for narrow service tests; the production Projects module always provides it. */
   @Use() private readonly promotions?: ModelPromotions;
   /** Optional for narrow service tests; OAuth refresh metadata lives in web.db, not TOML. */
@@ -951,7 +945,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       this.cache.delete(projectId); // Vanished between stat and read: same as never existing.
       return null;
     }
-    const table = asTable(parseToml(raw));
+    const table = parseProjectConfigToml(raw);
     // The one-time migrations, both run on every call (`||` would skip the second whenever the
     // first changed something): core's first (MMSP 0.5.0's client types, the group-level hoist),
     // then the server's, which needs the catalog (project-config-migrations.ts): Penguin Go's

@@ -16,8 +16,8 @@
  *   chat-eligible row, offers nothing, even when the write that brings the key adds it (Penguin
  *   Go's delivery adds the models its group lacks).
  */
-import { providerInfo } from "../model-catalog/catalog.js";
-import type { DefaultModelOffer } from "../api/types.js";
+import { providerInfo } from "@prismshadow/penguin-library-model/model-catalog/catalog";
+import type { DefaultModelOffer } from "@prismshadow/penguin-library-model";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 
 /** What the rule reads of one write: the group, its key before and after, and the rows before. */

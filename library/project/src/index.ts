@@ -10,5 +10,14 @@
  * - `.` - the mechanism contracts and the DTOs they name.
  * - `./project` - the contracts module on its own.
  * - `./repos` (and per-file) - the storing components.
+ * - `./ids` - the shared id vocabulary (project, member, agent, organization, admin).
+ * - `./ports` - the ports the Project service takes: paths, preinstall plugins, app seeds.
+ * - `./access` - the Access mechanism component.
+ * - `./events` - the ProjectEvents component, publishing over a ProjectChannels port.
+ * - `./project-service` - the Project service, the ProjectRuns vocabulary and the benchmark seeds.
+ * - `./model-requests` - the project model request vocabulary and its component.
+ * - `./project-config-service` - the ProjectConfigStore component (read, write, test, TOML seed).
+ * - `./project-config-migrations` / `./project-config-seed` - config migrations and seeding.
+ * - `./connect-default-offer`, `./protocol-detect`, `./vision-detect` - the connect/protocol/vision helpers.
  */
 export * from "./project.js";

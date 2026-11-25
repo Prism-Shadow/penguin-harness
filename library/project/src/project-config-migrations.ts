@@ -5,7 +5,10 @@
  * loader does not run, so a file read by the CLI or the SDK alone is not migrated by it.
  * Temporary, like core's: it names its removal.
  */
-import { PENGUIN_GO_BASE_URL, PENGUIN_GO_PROVIDER_ID } from "../model-catalog/catalog.js";
+import {
+  PENGUIN_GO_BASE_URL,
+  PENGUIN_GO_PROVIDER_ID,
+} from "@prismshadow/penguin-library-model/model-catalog/catalog";
 
 /** A TOML table: a plain object, not an array. */
 function isTable(value: unknown): value is Record<string, unknown> {
