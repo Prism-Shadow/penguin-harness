@@ -6,7 +6,9 @@
  * what a window's "Open full screen" (or the page's own request to fill the app) navigates to. A
  * floating exit ball (exit-ball.tsx: it drags to either edge and tucks away into a handle there)
  * and the command palette (the `palette.toggle` chord, re-raised from inside the page by
- * forwardFrameKeys) both offer the exit. It goes back to where the page was opened from: the
+ * forwardFrameKeys) both offer the exit; the palette also reloads the workbench, lists its
+ * versions and downloads it, since the page draws nothing above the app. The exit goes back to
+ * where the page was opened from: the
  * App Center's grid or folder for a tile's "Open full screen", and the app's window, at the page
  * shown, for the window's — the window, too, when nothing opened it (a link, `penguin web
  * --app`). Leaving the shell ended the running apps, so the exit starts this one again before it
@@ -31,8 +33,9 @@ import { usePaletteActions } from "../../lib/palette-actions";
 import { WorkbenchExitBall } from "./exit-ball";
 import { useAppPageTab } from "./use-app-page-tab";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { RunningWorkbenchActions } from "./workbench-actions";
+import { useWorkbenchPaletteActions } from "./workbench-actions";
 import { WorkbenchFrame } from "./workbench-frame";
+import { WorkbenchPageStatus } from "./workbench-page-status";
 
 export function WorkbenchAppPage() {
   const safe = useSafeMode();
@@ -71,6 +74,14 @@ export function WorkbenchAppPage() {
   // that href is already a workbench manifest — keeping it would leave the install surface
   // on the workbench). The hook lives in lib/workbench-tabs with the rest of the face.
   useInstallManifest(projectId, agentId, workbenchId, tabKey, machineId);
+
+  // Registered ahead of the exit, which the palette therefore lists first.
+  const modals = useWorkbenchPaletteActions(
+    { projectId, agentId, machineId },
+    safe ? null : workbench,
+    tab?.title ?? workbench?.name ?? "",
+    !off,
+  );
 
   const exit = useMemo<PaletteAction[]>(
     () => [
@@ -128,33 +139,25 @@ export function WorkbenchAppPage() {
           {failure}
         </div>
       )}
-      {workbench && (
-        <div className="flex shrink-0 justify-end px-2 py-1">
-          <RunningWorkbenchActions
-            running={!off}
-            projectId={projectId}
-            agentId={agentId}
-            machineId={machineId}
-            workbench={workbench}
-            title={tab?.title ?? workbench.name}
-          />
-        </div>
-      )}
       <div className="relative min-h-0 flex-1">
         {tab ? (
           <WorkbenchFrame projectId={projectId} agentId={agentId} tab={tab} />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-            <span>
-              {tab === undefined && failure === null
-                ? S.workbenches.loadingPage
-                : (failure ?? (off ? S.workbenches.offPage : S.workbenches.noSuchPage))}
-            </span>
+          <WorkbenchPageStatus
+            projectId={projectId}
+            agentId={agentId}
+            machineId={machineId}
+            workbench={workbench}
+            loading={tab === undefined && failure === null}
+            off={off}
+            failure={failure}
+          >
             <span>{S.workbenches.exitHint(paletteShortcut)}</span>
-          </div>
+          </WorkbenchPageStatus>
         )}
       </div>
       <WorkbenchExitBall label={S.workbenches.exitFullPageButton} onExit={() => exit[0]!.run()} />
+      {modals}
     </div>
   );
 }

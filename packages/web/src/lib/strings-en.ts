@@ -1197,6 +1197,10 @@ export const en: Strings = {
     more: "More",
     /** The More menu's row that lists the recorded versions. */
     historyAction: "Version history",
+    /** Removal in a running app's row menu, where a bare "remove" would read as closing the app. */
+    removeWorkbench: "Remove workbench",
+    /** A full page's command in the palette: the app, then what it does. */
+    paletteAction: (app: string, action: string): string => `${app}: ${action}`,
     /** The full page's way out when it was opened from the App Center. */
     exitToAppCenter: "Exit full page (back to the App Center)",
   },

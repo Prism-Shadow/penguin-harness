@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { Segmented } from "@prismshadow/penguin-ui";
 import type { LocatedShortcut } from "./arrangement";
 import { S } from "../../lib/strings";
@@ -7,7 +8,12 @@ import { useInstallManifest, workbenchAppPath } from "../../lib/workbench-tabs";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { usePaletteActions } from "../../lib/palette-actions";
 import { useLocale } from "../../state/locale";
-import { useAppPageTab, WorkbenchFrame, RunningWorkbenchActions } from "../workbenches";
+import {
+  useAppPageTab,
+  useWorkbenchPaletteActions,
+  WorkbenchFrame,
+  WorkbenchPageStatus,
+} from "../workbenches";
 import { FrameAppBody } from "./frame-app-body";
 import { setSelectedAppPath } from "../../lib/running-apps";
 
@@ -23,7 +29,8 @@ interface WindowProps {
   onGone: () => void;
 }
 
-function FullScreenActions({ title, exit }: { title: string; exit: () => void }) {
+/** A full-screen window names the page and offers its way out in the palette. */
+function useFullScreenExit(title: string, exit: () => void) {
   useDocumentTitle(title);
   const actions = useMemo(
     () => [
@@ -37,7 +44,39 @@ function FullScreenActions({ title, exit }: { title: string; exit: () => void })
     [exit],
   );
   usePaletteActions(actions);
+}
+
+/** A system app has no versions: its full screen adds the exit alone. */
+function SystemFullScreenActions({ title, exit }: { title: string; exit: () => void }) {
+  useFullScreenExit(title, exit);
   return null;
+}
+
+/**
+ * A workbench's full screen hides the sidebar row that carries its menu, so the palette also
+ * offers its reload, version history and download while it is shown.
+ */
+function FullScreenActions({
+  title,
+  exit,
+  projectId,
+  shortcut,
+  workbench,
+  running,
+}: Pick<WindowProps, "title" | "projectId" | "shortcut"> & {
+  exit: () => void;
+  workbench: WorkbenchInfo | null;
+  running: boolean;
+}) {
+  // Registered ahead of the exit, which the palette therefore lists first.
+  const modals = useWorkbenchPaletteActions(
+    { projectId, agentId: shortcut.agentId, machineId: shortcut.machineId ?? null },
+    workbench,
+    title,
+    running,
+  );
+  useFullScreenExit(title, exit);
+  return modals;
 }
 
 function InstallManifest({
@@ -61,7 +100,7 @@ export function AppCenterWindow(props: WindowProps) {
   return (
     <section aria-label={props.title} className="relative h-full min-h-0">
       {props.exitFullScreen && (
-        <FullScreenActions title={props.title} exit={props.exitFullScreen} />
+        <SystemFullScreenActions title={props.title} exit={props.exitFullScreen} />
       )}
       <FrameAppBody
         appKey={props.appKey}
@@ -101,32 +140,29 @@ function AgentWorkbenchWindow(props: WindowProps) {
     <section aria-label={props.title} className="flex h-full min-h-0 flex-col">
       {props.exitFullScreen && (
         <>
-          <FullScreenActions title={shown?.title ?? props.title} exit={props.exitFullScreen} />
+          <FullScreenActions
+            title={shown?.title ?? props.title}
+            exit={props.exitFullScreen}
+            projectId={projectId}
+            shortcut={shortcut}
+            workbench={workbench}
+            running={!off}
+          />
           <InstallManifest projectId={projectId} shortcut={shortcut} tab={shown?.key} />
         </>
       )}
-      {workbench && (
-        <div className="flex shrink-0 items-center justify-end gap-2 px-2 py-1">
-          {!props.exitFullScreen && pages.length >= 2 && shown && (
-            <div className="min-w-0 flex-1 overflow-x-auto">
-              <Segmented
-                options={pages.map((page) => ({
-                  value: page.key,
-                  label: localizedText(locale, page.title, page.titleZh),
-                }))}
-                value={shown.key}
-                onChange={setPicked}
-                cols={Math.min(pages.length, 5) as 2 | 3 | 4 | 5}
-              />
-            </div>
-          )}
-          <RunningWorkbenchActions
-            running={!off}
-            projectId={projectId}
-            agentId={shortcut.agentId}
-            machineId={machineId}
-            workbench={workbench}
-            title={props.title}
+      {/* Only a workbench of several pages draws anything above its content: the switch between
+          them. The app's own actions are in its sidebar row's menu. */}
+      {!props.exitFullScreen && pages.length >= 2 && shown && (
+        <div className="shrink-0 overflow-x-auto px-2 py-1">
+          <Segmented
+            options={pages.map((page) => ({
+              value: page.key,
+              label: localizedText(locale, page.title, page.titleZh),
+            }))}
+            value={shown.key}
+            onChange={setPicked}
+            cols={Math.min(pages.length, 5) as 2 | 3 | 4 | 5}
           />
         </div>
       )}
@@ -141,14 +177,15 @@ function AgentWorkbenchWindow(props: WindowProps) {
             onFillApp={() => onFullScreen(path)}
           />
         ) : (
-          <p
-            role="status"
-            className="flex h-full items-center justify-center px-6 text-sm text-fg-muted"
-          >
-            {tab === undefined && failure === null
-              ? S.workbenches.loadingPage
-              : (failure ?? (off ? S.workbenches.offPage : S.workbenches.noSuchPage))}
-          </p>
+          <WorkbenchPageStatus
+            projectId={projectId}
+            agentId={shortcut.agentId}
+            machineId={machineId}
+            workbench={workbench}
+            loading={tab === undefined && failure === null}
+            off={off}
+            failure={failure}
+          />
         )}
       </div>
     </section>

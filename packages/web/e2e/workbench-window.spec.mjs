@@ -106,8 +106,8 @@ test.beforeAll(async ({ browser }) => {
 const dockAt = (page, position) =>
   page.locator(`[data-testid="dock"][data-position="${position}"][data-open="true"]`);
 const KEY = "default_agent/window-demo";
-const row = (page) =>
-  page.getByRole("navigation", { name: "应用", exact: true }).locator(`[data-app-row="${KEY}"]`);
+const row = (page, key = KEY) =>
+  page.getByRole("navigation", { name: "应用", exact: true }).locator(`[data-app-row="${key}"]`);
 async function launchFromChat(page) {
   await page.getByRole("button", { name: "快捷方式", exact: true }).click();
   await page.getByRole("button", { name: "打开应用中心", exact: true }).click();
@@ -117,8 +117,8 @@ async function launchFromChat(page) {
     .first()
     .click();
 }
-async function action(page, name) {
-  const item = row(page);
+async function action(page, name, key = KEY) {
+  const item = row(page, key);
   await item.hover();
   await item.locator("xpath=ancestor::li").getByRole("button", { name: "更多操作" }).click();
   await page.getByRole("menuitem", { name, exact: true }).click();
@@ -301,19 +301,20 @@ test("opening a workbench in a second window leaves the first window's Apps list
   await settings.close();
 });
 
-test("a docked workbench and its standalone copy expose versions, a portable download and scoped removal", async ({
+test("a running workbench's Apps row exposes versions, a portable download and scoped removal", async ({
   page,
 }) => {
   await openChat(page);
   await launchFromChat(page);
   const window = appWindow(page);
-  const more = window.getByRole("button", { name: "更多 Window demo" });
-  await more.click();
-  await page.getByRole("menuitem", { name: "历史版本" }).click();
+  // The pane draws the page switcher and nothing else above the app.
+  await expect(window.getByRole("button", { name: /更多/ })).toHaveCount(0);
+  await action(page, "历史版本");
   const history = page.getByRole("dialog");
   await expect(history.getByText("当前", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  await more.click();
+  await row(page).hover();
+  await row(page).locator("xpath=ancestor::li").getByRole("button", { name: "更多操作" }).click();
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.getByRole("menuitem", { name: "下载到本地（ZIP）" }).click(),
@@ -331,12 +332,6 @@ test("a docked workbench and its standalone copy expose versions, a portable dow
     data: { dataBase64: body.toString("base64") },
   });
   expect(imported.ok(), await imported.text()).toBeTruthy();
-  await page.setViewportSize({ width: 375, height: 720 });
-  await page.goto(`${BASE}/app/${projectId}/${agent}/window-demo/clear`);
-  await expect(
-    page.frameLocator("iframe[title]").getByRole("heading", { name: "Board" }),
-  ).toBeVisible();
-  const standalone = page.getByRole("button", { name: "更多 Clear" });
   const changed = await page.request.post(`${copy}/archive`, {
     data: {
       overwrite: true,
@@ -349,29 +344,23 @@ test("a docked workbench and its standalone copy expose versions, a portable dow
     },
   });
   expect(changed.ok(), await changed.text()).toBeTruthy();
-  await page.reload();
-  await expect(
-    page.frameLocator("iframe[title]").getByRole("heading", { name: "Second edition" }),
-  ).toBeVisible();
-  await standalone.click();
-  await page.getByRole("menuitem", { name: "历史版本" }).click();
+  const copyKey = `${agent}/window-demo`;
+  await page.goto(`${BASE}/apps`);
+  await page.locator(`li[data-app="${copyKey}"] > button`).first().click();
+  const board = (name) => page.frameLocator("iframe[title='Clear']").getByRole("heading", { name });
+  await expect(board("Second edition")).toBeVisible();
+  await action(page, "历史版本", copyKey);
   await page.getByRole("dialog").getByRole("button", { name: "恢复", exact: true }).last().click();
   await page
     .getByRole("dialog", { name: "恢复版本" })
     .getByRole("button", { name: "恢复", exact: true })
     .click();
-  await expect(
-    page.frameLocator("iframe[title]").getByRole("heading", { name: "Board" }),
-  ).toBeVisible();
-  await standalone.click();
-  await page.getByRole("menuitem", { name: "移除", exact: true }).click();
+  await expect(board("Board")).toBeVisible();
+  await action(page, "移除工作台", copyKey);
   await expect(page.getByRole("dialog")).toContainText(agent);
   await page.keyboard.press("Escape");
-  await expect(
-    page.frameLocator("iframe[title]").getByRole("heading", { name: "Board" }),
-  ).toBeVisible();
-  await standalone.click();
-  await page.getByRole("menuitem", { name: "移除", exact: true }).click();
+  await expect(board("Board")).toBeVisible();
+  await action(page, "移除工作台", copyKey);
   await page.getByRole("dialog").getByRole("button", { name: "确认移除" }).click();
   await expect
     .poll(
@@ -379,6 +368,7 @@ test("a docked workbench and its standalone copy expose versions, a portable dow
         (await (await page.request.get(`${copy}?id=window-demo`)).json()).workbenches.length,
     )
     .toBe(0);
+  await expect(row(page, copyKey)).toHaveCount(0);
   expect(
     (await (await page.request.get(`${agentRoot}/default_agent/workbenches?id=window-demo`)).json())
       .workbenches,
