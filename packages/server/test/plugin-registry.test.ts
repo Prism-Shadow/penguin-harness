@@ -124,14 +124,28 @@ describe("parsePluginIndex", () => {
       { ...VALID_ENTRY, integrity: "md5-abc" },
       { ...VALID_ENTRY, integrity: 7 },
       { ...VALID_ENTRY, channels: "github" },
-      { ...VALID_ENTRY, channels: [{ kind: "github" }] },
       { ...VALID_ENTRY, channels: [{ url: "https://x" }] },
       { ...VALID_ENTRY, channels: [null] },
+      { ...VALID_ENTRY, channels: [{ kind: "" }] },
+      { ...VALID_ENTRY, channels: [{ kind: "npm", url: 7 }] },
     ]) {
       expect(() => parsePluginIndex([VALID_ENTRY, bad], "test")).toThrow(
         /malformed entry at index 1/,
       );
     }
+  });
+
+  it("takes a channel without a url — the npm kind carries none", () => {
+    const npmOnly: IndexDocumentEntry = {
+      ...VALID_ENTRY,
+      channels: [{ kind: "npm" }],
+    };
+    const both: IndexDocumentEntry = {
+      ...VALID_ENTRY,
+      channels: [{ kind: "github", url: "https://github.com/o/r/releases/download/v1/x.tgz" }, { kind: "npm" }],
+    };
+    expect(parsePluginIndex([npmOnly], "test")).toEqual([npmOnly]);
+    expect(parsePluginIndex([both], "test")).toEqual([both]);
   });
 
   it("passes an entry's integrity and channels through instead of dropping them", () => {
@@ -911,6 +925,20 @@ describe("selectIndexChannel", () => {
     expect(next.channel).toBeNull();
     expect(next.fault).toMatch(/by version only/);
     expect(selectIndexChannel(versions, "1.x").channel).toBeNull();
+  });
+
+  it("a github channel that names no address refuses the install instead of crashing", () => {
+    // The npm kind carries no url, and a row may list both kinds — the github one the install
+    // face reads must say so rather than throw on a missing address.
+    const addressed = entry("1.0.0");
+    const urlless: IndexDocumentEntry = {
+      ...addressed,
+      channels: [{ kind: "github" }, { kind: "npm" }],
+    };
+    const resolved = selectIndexChannel([urlless], undefined);
+    expect(resolved.channel).toBeNull();
+    expect(resolved.fault).toMatch(/names no address/);
+    expect(selectIndexChannel([addressed], undefined).channel).not.toBeNull();
   });
 });
 

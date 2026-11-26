@@ -9,7 +9,8 @@
 /** One place a version's release asset is served from (`github`: a release asset tarball). */
 export interface IndexDocumentChannel {
   kind: string;
-  url: string;
+  /** The tarball's address. An `npm` channel carries none: the registry itself is the place. */
+  url?: string;
 }
 
 /**
@@ -94,7 +95,12 @@ function asIndexEntry(value: unknown): IndexDocumentEntry | null {
     for (const channel of e.channels) {
       if (typeof channel !== "object" || channel === null) return null;
       const c = channel as Record<string, unknown>;
-      if (typeof c.kind !== "string" || c.kind === "" || typeof c.url !== "string") return null;
+      // `kind` names the channel; `url` rides it when the channel serves a tarball. An npm
+      // channel carries no url — the registry itself is the place (the index format's
+      // Channels: url is required "unless kind=npm", where it must be absent) — and which
+      // kinds need an address is the install face's call, not the document check's.
+      if (typeof c.kind !== "string" || c.kind === "") return null;
+      if (c.url !== undefined && typeof c.url !== "string") return null;
     }
   }
   // Only the serving machine can report an installed version, even when the index is self-hosted.
@@ -169,6 +175,12 @@ export function indexChannelOf(entry: IndexDocumentEntry): {
     return {
       channel: null,
       fault: `${entry.name}'s index entry lists a github release channel but pins no sha512 integrity, so its bytes cannot be verified; it is not installable.`,
+    };
+  }
+  if (typeof listed.url !== "string") {
+    return {
+      channel: null,
+      fault: `${entry.name}'s github channel names no address; it is not installable.`,
     };
   }
   // Plain http is refused everywhere but the loopback: a self-hosted index on this very
