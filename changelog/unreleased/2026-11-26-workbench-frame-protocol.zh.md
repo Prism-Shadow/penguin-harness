@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** feature
 - **Scope:** `web`, `docs`, `plugins`
+- **PR:** [#1898](https://github.com/Prism-Shadow/penguin-harness/pull/1898)
 
 [English](2026-11-26-workbench-frame-protocol.md)
 
