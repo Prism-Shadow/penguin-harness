@@ -88,8 +88,8 @@ subject.
 ## The catalogue
 
 Vendored verbatim from [yetone/kill-ai-slop](https://github.com/yetone/kill-ai-slop) (`skill/`,
-commit `f6e2ae32b304`, Apache-2.0 — `ai-slop/LICENSE`). The three references still say
-`references/` and `scripts/` for their own layout; here they all sit in `ai-slop/`.
+commit `f6e2ae32b304`, Apache-2.0 — `ai-slop/LICENSE`). `detection.md` and `scan.mjs`'s header
+still say `references/` and `scripts/` for their own layout; here they all sit in `ai-slop/`.
 
 | Read | For |
 | --- | --- |

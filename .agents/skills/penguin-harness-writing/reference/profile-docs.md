@@ -1,10 +1,12 @@
 # Profile: docs pages
 
-Loaded for `--profile docs`: a page of `packages/docs/content/<slug>.<en|zh>.md`. The `prompt`
-block is sent to the model as `{{PROFILE}}` after the style guide; `## Check settings` is read by
-`prose.mjs check` and never sent. TERMS for a docs page carries the UI labels exactly as the
-product's dictionaries spell them (`packages/web/src/lib/strings-en.ts` and `strings.ts`, the
-shared `ui-strings.ts`), one row per label with its en and zh form.
+Loaded for `--profile docs`: a **task page** under `packages/docs/content/<slug>.<en|zh>.md`. The
+long reference pages (`server-api`, `cli`, `configuration`, `models`, …) are outside this profile's
+budgets; they are not written through it. The `prompt` block is sent to the model as `{{PROFILE}}`
+after the style guide; `## Check settings` is read by `prose.mjs check` and never sent. TERMS for a
+docs page carries the UI labels exactly as the product's dictionaries spell them
+(`packages/web/src/lib/strings-en.ts` and `strings.ts`, the shared `ui-strings.ts`), one row per
+label with its en and zh form.
 
 <!-- prompt -->
 A docs page helps a reader get one kind of task done in the product, in the manner of Obsidian Help: task-first, exact, short.

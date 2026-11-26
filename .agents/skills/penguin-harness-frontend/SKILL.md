@@ -12,7 +12,7 @@ description: >-
 
 `packages/web` is React 19 + Vite + Tailwind CSS 4, with no `cn`/`clsx`, no `tailwind-merge`, and no
 variants library. Classes are composed with template literals, and a component's variants are a
-`Record<Key, string>` next to it (`button.tsx`'s `variantClass`, `input.tsx`'s `sizeClass`). Match
+`Record<Key, string>` next to it (`button.tsx`'s `VARIANT`, `input.tsx`'s `sizeClass`). Match
 that shape; do not introduce a styling dependency.
 
 This file records the decisions that already exist so they are not re-litigated per PR. Read
@@ -77,9 +77,9 @@ dark ramp), never as palette utilities, `dark:` variants or literal font sizes i
 Public-site controls keep their fixed visual identity through the gallery's theme changes.
 Their shared recipes live in `packages/ui/src/site.css`; landing content, marketing sections and
 docs prose retain their own layout. Reuse app primitives underneath (the language picker uses
-`Dropdown` and `MenuRadioItem`, mobile disclosure uses `Fold`). Native title hints remain allowed
-on this public-site chrome, which does not mount the app's `TooltipLayer`. The app conventions
-below still apply to app-themed controls and previews.
+`Dropdown` and `Menu`/`MenuRow` with `role="menuitemradio"` and `CheckLineIcon`, mobile disclosure
+uses `Fold`). Native title hints remain allowed on this public-site chrome, which does not mount
+the app's `TooltipLayer`. The app conventions below still apply to app-themed controls and previews.
 
 ### Cursors belong to the control
 
@@ -92,13 +92,14 @@ interactive cards and table rows use their shared UI component's cursor behavior
 
 ## Status colour: pick a tone, never a palette class
 
-`src/lib/tone.ts` is the only place a status colour is spelled. Five tones, chosen by **meaning**:
+`src/lib/tone.ts` is the only place a status colour is spelled. Six tones, chosen by **meaning**:
 
 | tone | meaning | when |
 | --- | --- | --- |
 | `busy` | executing right now | spinners, live titles, running dots |
 | `attention` | unfinished — waiting on time, a queue, or the user | hourglass glyphs, pending-approval marks, near-limit rings, warning strips |
-| `success` | finished well, connected, healthy | completed badges, connected servers |
+| `success` | finished well, healthy | completed badges |
+| `link` | a live connection held right now — in contact, not a verdict | connected machines, a live link |
 | `danger` | failed, destructive, over a limit | errors, delete affordances |
 | `muted` | settled; the mark should recede | a done row's glyph |
 
@@ -130,8 +131,8 @@ Rules:
   solid weight a design asks for, a superscript mark.
 - **Contrast is measured, not assumed.** The ratios in `tone.ts` are WCAG 2.x against the four
   surfaces marks actually sit on — white and gray-50 in light, and the values Primer
-  *overrides* for dark (`packages/ui/src/themes/github/tokens.css`: gray-950 is `#000000`, gray-900 is
-  `#0d0d0d`, not Tailwind's stock values). Recompute if you change a tone; a graphical mark needs 3:1, and `muted` is the one tone
+  *overrides* for dark (`packages/ui/src/themes/github/tokens.css`: gray-950 is `#121212`, gray-900 is
+  `#1a1a1a`, not Tailwind's stock values). Recompute if you change a tone; a graphical mark needs 3:1, and `muted` is the one tone
   allowed below it because its meaning is always already in text.
 - **What is out of scope**, and must not be folded in: categorical palettes where colour is an
   identity rather than a judgement (`category-colors.ts`, `token-colors.ts`, the timeline phase
@@ -280,7 +281,7 @@ Do not hand-write an `<svg>` or a `const *_ICON = "M…"` for a line icon — th
 registry, `ICONS` (`packages/ui/src/components/icons/icons.ts`), keyed by the drawing (`robot`,
 `alarmClock`), and the app's manifests say which drawing stands for what (`lib/nav-icons.ts`,
 `lib/stat-icons.ts`, `GROUP_MODE_ICONS`). A new glyph is a registry entry; `test/icon-registry.test.ts`
-holds the feature files' leftovers to a shrinking list.
+holds every feature file to the registry, and its `ALLOWLIST` is empty and stays empty.
 
 **A glyph says what the state means, not a metaphor that happens to fit.** "Keep this out of the
 fold" is a favorite: `ICONS.star`, outline when off, `filled` when on (nav entries and model groups,
@@ -294,12 +295,14 @@ render size disagree: `ChevronDown` (12×12, stroke 1.5) and `CloseIcon` (14×14
 sparklines, the topology view, the ring gauges and the login background draw their own geometry and
 are outside the family entirely.
 
-Sizes come from `ICON_SIZE` (`packages/ui/src/icon-scale.ts`), named by role, not by number — `inlineGlyph` 13,
-`rowLead` 14, `iconButton` / `groupHeaderGlyph` 15, `navRow` / `groupHeaderAction` 16,
-`groupHeaderAvatar` / `sectionMark` 18, `chevron` 14 / `chevronDense` 12, `caret` 12 /
-`caretDense` 10. Pick the rung whose role matches; if none does, the honest move is to add a rung
-with a sentence saying what it is for, not to type a bare number. An avatar sits one rung above a
-line glyph in the same slot, because a tile fills its box and a glyph only draws inside it.
+Sizes come from `ICON_SIZE` (`packages/ui/src/icon-scale.ts`), named by role, not by number —
+`rowMark` 12, `inlineGlyph` 13, `rowLead` 14, `iconButton` / `groupHeaderGlyph` 15,
+`navRow` / `groupHeaderAction` 16, `groupHeaderAvatar` / `sectionMark` 18, `launcherBall` 22 /
+`launcherEntry` 19 / `launcherDismiss` 10 / `launcherHandle` 12, `chevron` 14 / `chevronDense` 12,
+`caret` 12 / `caretDense` 10. Pick the rung whose role matches; if none does, the honest move is to
+add a rung with a sentence saying what it is for, not to type a bare number. An avatar sits one
+rung above a line glyph in the same slot, because a tile fills its box and a glyph only draws
+inside it.
 
 Gaps come from `ICON_GAP` in the same module and track text size: `tight` (`gap-1`) for a glyph
 welded to a number, `row` (`gap-1.5`) for a list row, `menu` (`gap-2`) for menu/nav rows and
@@ -315,10 +318,11 @@ One record: `sizeTextClass` in the UI package's `components/forms/input/input.ts
 menu rows, `OptionMenu`'s row titles, `Textarea` and `FormPicker` all read it, so a rung moves the
 whole family at once.
 
-The rungs are **relative, not the pixel values their names suggest**. `FONT_SCALE_PX` (in
+The rungs are **relative, not the pixel values their names suggest**. `TEXT_SIZE_PX` (in
 `@prismshadow/penguin-ui/boot`, applied before first paint and by `theme.tsx`) sets the root font
-size per tier (16/18/20px, default 18) and no stylesheet overrides a `--text-*`, so
-`text-xs` is 13.5px at the default tier rather than 12px, and every rung tracks the user's setting.
+size in five tiers — 14/15/16/18/20px, default `m` at 16px — and `theme.css` bridges `--text-xs`
+and `--text-sm` to the theme's own small and body sizes, so `text-xs` is 12–13px at the default
+tier rather than a fixed px, and every rung tracks the user's setting.
 
 **A call site passes `size`; it never spells a `text-*` class.** The caller's class and the
 component's own rung are both single-class font-size utilities of equal specificity, so which one
@@ -336,8 +340,8 @@ A form field takes `sm`: dense forms, dialogs and filter bars, which is near eno
 `base` is for a standalone page holding two controls and nothing else, and is **passed by name** —
 the login card is its only caller, and an unopted `base` is what four dialog fields had drifted into.
 Every control defaults to `sm` so a forgotten prop lands where its neighbours already are (the old
-`base` default put it at the roomiest rung in the densest place), but **name the rung anyway** — all
-112 call sites do, and the default is the safety net, not the habit. The two full-height typing
+`base` default put it at the roomiest rung in the densest place), but **name the rung anyway**:
+the default is the safety net, not the habit. The two full-height typing
 surfaces are outside the family entirely: the chat composer is `text-base` because it holds prose,
 the file editor `font-mono text-xs` because it holds code.
 
@@ -357,8 +361,9 @@ controls it takes theirs — `sm`:
   modules and nothing in one says it renders inside a Modal, which is how four of them kept the `md`
   default and stood a rung above their own fields.
 - a page header's toolbar that also holds a search box. The Models and Agents headers pair an
-  `Input size="sm"` with a `size="sm"` action in the same `min-w-0 flex-1 sm:w-56 sm:flex-none`
-  shape; a `md` button beside a `sm` box reads as a mistake rather than as emphasis.
+  `Input size="sm"` with a `size="sm"` action; their search wrappers differ (`w-full shrink-0
+  sm:w-56` on Models, `min-w-0 flex-1 sm:w-56 sm:flex-none` on Agents), but the box and the button
+  share the `sm` rung. A `md` button beside a `sm` box reads as a mistake rather than as emphasis.
 
 `test/control-size.test.ts` parses the JSX and fails, naming file and line, on a font-size class in
 a `className` passed to `Input` / `Textarea` / `Select` / `OptionMenu` / `PasswordInput` /
@@ -379,7 +384,7 @@ mode, machines, workflows:
   swatches, pin/star marks, the shortcut recorder — and a `Segmented`, `RadioGroup`,
   `Select`/`OptionMenu` that is the only control in its `PrefRow`. Render the new value at once,
   write only that value, settle on the server's answer; on failure roll back **and**
-  `toastError(apiErrorText(e))` (or the row's hint slot) — `useInstantSetting`
+  `toastApiError(e)` (or the row's hint slot) — `useInstantSetting`
   (`lib/instant-setting.ts`) does all three. The one exception is a personal preference that
   follows the account (`lib/account-sync`: theme, language, background, notifications…): it is
   written to the browser's cache through `writeCached` and applies at once, and its server write
@@ -440,9 +445,12 @@ Checklist for a new settings surface:
    success hands off to a navigation (open the new record, switch Project, re-read the session)
    calls `discardUnsaved(form.scope)` once the write lands: its form is still mounted and dirty
    when the caller navigates, and the router would hold that navigation behind the prompt.
-4. Add the module to `FORM_MODULES` in `test/form-commit-guard.test.ts`; it fails on an `onBlur`
-   save, a Save form that does not register, a `Modal` in a form module whose `onClose` is not
-   the guarded one, and a Save form in the Settings or Project settings scope without `useSaving`.
+4. Nothing to register: `test/form-commit-guard.test.ts` derives `FORM_MODULES` by scanning the
+   web modules that call `useFormDraft` / `useUnsavedChanges` / `useGuardedClose`. It fails on an
+   `onBlur` save, a Save form that does not register, a `Modal` in a form module whose `onClose`
+   is not the guarded one, and a Save form in the Settings or Project settings scope without
+   `useSaving`. A module that closes a dialog without the guard needs an `EXCUSED_DIALOGS` entry
+   with its reason.
 5. Scenarios (a `@vitest-environment jsdom` suite on `test/helpers/dom.ts`): asks on each leave
    path when dirty, not when clean; Save held while clean or invalid; a failed save stays dirty;
    the switch beside the form writes alone and rolls back with a toast.
@@ -494,13 +502,15 @@ languages — that is where a row runs out of room first.
 
 Components declare motion; the theme times it. Never write a duration, an easing or a keyframe in
 a component — put `data-presence` / `data-reveal` / `data-layout-motion` on the element and let
-`theme.css` and the theme's tokens decide (Frost long and soft, Primer short, Console in steps;
-reduced motion instant). Three rules the owner has had to repeat:
+`theme.css` and the theme's tokens decide (Frost long and soft, Primer short, Console in steps,
+Doodle 320 ms with a springy enter curve; reduced motion instant). Three rules the owner has had
+to repeat:
 
 - **Every disclosure body folds through `Fold`, the inner ones too.** A work group folding while the
   tool call, thinking step or settings section inside it snaps open (`{open && <div>…}`) reads as
-  half a job (owner, 2026-10-03: "只有外层的有动画，里面还是没有"). `DisclosureRow`,
-  `CollapsibleSection`, nav and session groups all fold; a new collapsible uses `Fold` from day one.
+  half a job (owner, 2026-10-03: "只有外层的有动画，里面还是没有"). `DisclosureRow`, nav and session
+  groups all fold through `Fold`; `CollapsibleSection` draws the same grid fold itself; a new
+  collapsible uses `Fold` from day one.
   A body that mounts open does not tween (a page load moves nothing), and content growing inside an
   open fold is not a transition.
 - **A surface that changes size or place moves through the theme's layout motion**, with its content
@@ -514,9 +524,9 @@ reduced motion instant). Three rules the owner has had to repeat:
 
 Check motion in motion. A resting screenshot proves nothing about a fold: slow every transition
 with CDP (`Animation.enable` + `Animation.setPlaybackRate` 0.1) or pause and seek
-`document.getAnimations()`, and look at the frames in between in all three themes — and walk the
-interaction states a resting shot never shows (drag previews, hover hand-offs between a badge and a
-toggle, nested radii, an edge painted over by a neighbour), zoomed 3–4×.
+`document.getAnimations()`, and look at the frames in between in every built-in theme pack (all
+four) — and walk the interaction states a resting shot never shows (drag previews, hover hand-offs
+between a badge and a toggle, nested radii, an edge painted over by a neighbour), zoomed 3–4×.
 
 ## Gradients: only where they have a job
 
@@ -574,8 +584,10 @@ decides:
   output, a job's log, an MCP server's error) go in `detail` with `mask: { hosts: true }`, plus the
   values the page knows are private (a machine's alias) in `mask.values`. A surface over a
   directory passes it as `privatePaths`.
-- The Agent's own work (a tool's failed output, a workbench's build error), a state, and an echo of
-  a failure said in full elsewhere (a tooltip, a badge) carry no action.
+- The Agent's own work (a tool's failed output), a state, and an echo of a failure said in full
+  elsewhere (a tooltip, a badge) carry no action. A workbench that fails to load is not its Agent's
+  private failure: `FailureText` reports it (`workbench-page-status.tsx`), and the window adds
+  "Fix with AI" (`workbench-repair.tsx`).
 
 ## Popups: portal, do not absolutely position
 
@@ -628,6 +640,7 @@ is a number. A class names it (`z-sticky`, `z-modal`), a stylesheet reads it
 | `modal` | dialogs, drawers, sheets, the lightbox, the command palette, with their scrim |
 | `popover` | a portaled menu, select, picker or popover |
 | `toast` | toasts and progress cards |
+| `window-controls` | the desktop window's own title-band buttons, above every dialog so the window can always be minimized, maximized or closed |
 | `tooltip` | the hover hint |
 | `drag-preview` | what follows the pointer through a drag |
 
@@ -636,8 +649,10 @@ chat page's tab strip (`WindowStack`, `AppWindow`), and the full-page workbench 
 each is `isolation: isolate`, so `behind` through `menu` order things only inside their window, and
 nothing inside one rises over the other window, the navigation column or an overlay. A hidden
 window stays mounted, `invisible` and `inert`; what it holds reads `useWindowShown()` for whatever
-a hidden ancestor does not stop by itself. `modal` and up live in the one portal root,
-`document.body`, where they order against each other above every window.
+a hidden ancestor does not stop by itself. `modal`, `popover`, `toast`, `tooltip` and
+`drag-preview` live in the one portal root, `document.body`, where they order against each other
+above every window; `window-controls` is the window's own chrome, fixed inside the shell above
+every dialog.
 
 So: a popup that may cross its window's edge or sit over a dock portals (`popover`); something laid
 over a window from outside it by coordinates (the built-in browser's page) paints over the whole

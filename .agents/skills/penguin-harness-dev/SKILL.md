@@ -1,17 +1,23 @@
 ---
 name: penguin-harness-dev
-description: Use when developing PenguinHarness itself — changing packages/{core,server,web,cli,desktop,landing,docs,skills}, the built-in model catalog, the installers or the release workflow; writing or auditing changelog entries; writing a blog post or capturing release screenshots; running the test suite here or, when asked, on another machine; reading a prompt-cache regression out of the core suites; deciding what to do about data already on disk; auditing prose that reads like a leaked authoring session; or changing anything a user sees or reads — a component, a style, UI strings, docs, landing copy — which must not read as AI slop. Covers the two-repo symlink layout, the CI-parity verification chain, the record-and-ship contract, where blog media is hosted, and the seams that are intentional.
+description: Use when developing PenguinHarness itself — changing any package under packages/ or library/ (core, server, web, cli, desktop, the sites, the shared UI, the domain libraries), the built-in model catalog, the installers or the release workflow; writing or auditing changelog entries; writing a blog post or capturing release screenshots; running the test suite here or, when asked, on another machine; reading a prompt-cache regression out of the core suites; deciding what to do about data already on disk; auditing prose that reads like a leaked authoring session; or changing anything a user sees or reads — a component, a style, UI strings, docs, landing copy — which must not read as AI slop. Covers the two-repo symlink layout, the CI-parity verification chain, the record-and-ship contract, where blog media is hosted, and the seams that are intentional.
 ---
 
 # Developing PenguinHarness
 
-PenguinHarness is a TypeScript monorepo: an Agent SDK (`packages/core`), an HTTP server
-(`packages/server`), a Web App (`packages/web`), a CLI (`packages/cli`), an Electron shell
-(`packages/desktop`), the landing and docs sites, and the shipped plugin library — one npm package
-per plugin under the repo root's `plugins/`, each declaring what it carries in `src/index.ts`, which
-its `build` turns into the `ifaces.json` core's loader reads; the server is the host package that
-depends on them all. It **consumes** LLM providers through `@prismshadow/mmsp` (MMSP, formerly
-`@prismshadow/agenthub`) and implements no provider clients of its own.
+PenguinHarness is a TypeScript monorepo. `packages/` holds the Agent SDK (`core`), the HTTP server
+(`server`), the Web App (`web`), the CLI (`cli`), the Electron shell (`desktop`), the landing and
+docs sites, the shared UI (`ui`, `ui-gallery`), the message protocol (`amsp`), the A2UI grammar,
+the theme packs, the web and browser plugin faces, and the supporting packages (`skills`, `hmr`);
+`library/` holds the domain packages the server imports (auth, db, http, model,
+project, session, trace, workspace, …), one way: a library package never imports the server. The
+shipped plugin library is one npm package per plugin under the repo root's `plugins/` for the
+plugins developed here, plus external built-ins pinned from the plugin index (they have no
+directory here); each declares what it carries in `src/index.ts`, which its `build` turns into the
+`ifaces.json` core's loader reads. The server, CLI and desktop are the host packages — not every
+plugin is a server dependency, and the sandbox backends load through the built-in index. It
+**consumes** LLM providers through `@prismshadow/mmsp` (MMSP, formerly `@prismshadow/agenthub`)
+and implements no provider clients of its own.
 
 This page is the part that applies to every change. The reference files carry the detail, read
 them when the task reaches them:
@@ -58,6 +64,10 @@ implementation-repo PR. A fresh clone has none of the three links; recreate them
 with no design repo beside it — the normal state for a remote or throwaway environment — has
 nothing to link to, so it carries no `AGENTS.md` at all and these skills are its whole contract.
 
+`.claude` is a committed symlink to `.agents` (not one of the three), so Claude Code and every
+other agent read the same `.agents/skills/` without a copy; a checkout that does not materialise
+symlinks gets a plain file instead, so `.agents/skills/` remains the only copy to edit.
+
 Both repos take changes through branch + PR against `main`, squash-merged. Do not push to `main`,
 and `gh pr create --base main` — not `dev`, whatever a sibling repo does.
 
@@ -96,10 +106,12 @@ the rules and the checklist.
 
 Node must be >= 24. In each worktree, `pnpm install --frozen-lockfile` first.
 
-The full chain CI runs is `pnpm build`, `pnpm format:check`, `pnpm typecheck`, `pnpm test`,
-`sh scripts/test-installer.sh`. **Do not reach for `pnpm test` by reflex** — it is nine packages and
-~2500 tests, minutes per run, and for a docs-only diff it proves nothing the narrow run does not.
-Pick the narrowest evidence that would actually fail for this change's regression:
+The full chain CI runs is `pnpm build`, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`,
+`pnpm test`, `sh scripts/test-installer.sh`; the style job also runs `actionlint` over
+`.github/workflows/**`. **Do not reach for `pnpm test` by reflex** — it is the whole workspace,
+every package with a test script, minutes per run, and for a docs-only diff it proves nothing the
+narrow run does not. Pick the narrowest evidence that would actually fail for this change's
+regression:
 
 ```sh
 pnpm --filter @prismshadow/penguin-server exec vitest run test/model-catalog.test.ts # one file, ~2s
@@ -108,21 +120,21 @@ pnpm --filter @prismshadow/penguin-web test                                     
 
 | Changed | Run |
 | --- | --- |
-| Markdown only — changelog, `.github/CONTRIBUTING.md`, `.agents/`, README | `pnpm format:check` |
-| `packages/docs/content/**`, blog posts under `packages/landing/content/**` | `format:check` + the `docs` and `landing` package tests (search index, blog fixtures) |
-| `plugins/**` (repo root) | that plugin's `build` (a change to `src/index.ts` reaches the library only through the `ifaces.json` it writes) and its own `test` where it has one, the server's `plugin-library.test.ts` (every shipped package reads clean), core's `goal-hooks.test.ts` / `continual-learning-hook.test.ts` / `plugin-porting.test.ts` when those scripts changed, and `node scripts/check-plugin-versions.mjs origin/main` |
+| Markdown only — changelog, `.github/CONTRIBUTING.md`, `.agents/`, README | `git diff --check`, then read it: prettier ignores `*.md` repo-wide, so `format:check` proves nothing here |
+| `packages/docs/content/**`, blog posts under `packages/landing/content/**` | the `docs` and `landing` package tests (search index, blog fixtures) + the writing skill's `check` for prose; prettier does not see the Markdown |
+| `plugins/**` (repo root) | that plugin's `build` (a change to `src/index.ts` reaches the library only through the `ifaces.json` it writes) and its own `test` where it has one, the server's `plugin-library.test.ts` (every shipped package reads clean), core's `goal-hooks.test.ts` / `hook-packages.test.ts` / `plugin-porting.test.ts` when those scripts changed, and `node scripts/check-plugin-versions.mjs origin/main` |
 | The model catalog | server `model-catalog.test.ts` and `models.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts` |
 | The credential rule or a row's effective connection | core `model-connection.test.ts`, server `models.test.ts` and `models-balance.test.ts` |
 | Request assembly, history rebuild, compaction, the system prompt, a tool's description or schema | core's three `prompt-cache-*` suites — read the section below before you touch what they report |
 | One package's source | that package's `test`, plus `typecheck` |
 | Exported core types, or anything downstream imports | `pnpm build` + `pnpm typecheck` before any test |
-| Anything that opens, folds, resizes or animates in the Web App or `packages/ui` | the `ui` and `web` tests + frames captured mid-transition in all three themes (`penguin-harness-frontend`, "Motion"); a resting screenshot is not evidence |
+| Anything that opens, folds, resizes or animates in the Web App or `packages/ui` | the `ui` and `web` tests + frames captured mid-transition in every built-in theme pack (`modern`/Frost, `github`/Primer, `geek`/Console, `doodle`/Doodle; `penguin-harness-frontend`, "Motion"); a resting screenshot is not evidence |
 | A remote test tree after `main` moved (a merge, a rebase) | rebuild `@prismshadow/penguin-server...` there first: a stale core `dist` reads as dozens of TS2305 "no exported member" errors in web and the gallery |
 | `package.json`, the lockfile, `pnpm-workspace.yaml` | `pnpm install --frozen-lockfile` + `pnpm build` |
 | Installers, `release.yml` | `sh scripts/test-installer.sh` |
 
-Always cheap, always worth it: `git diff --check`, and `pnpm format` + `format:check` on any diff at
-all.
+Always cheap, always worth it: `git diff --check`, `pnpm lint`, and `pnpm format` + `format:check`
+on any diff at all (prettier skips Markdown).
 
 Run the whole chain in exactly three cases: the change spans the repo widely enough that nothing
 narrower is credible, you are diagnosing a CI failure, or you are asked to. There are no coverage
@@ -196,9 +208,10 @@ that file instead of re-telling it. A batch with no compatibility handling has n
 ## Core never special-cases a model, provider or gateway
 
 `packages/core/src` contains no model ids, provider ids, vendor hostnames or endpoints, and no
-catalog data. Model knowledge lives in the server's catalog (`packages/server/src/model-catalog/`,
-published as the browser-safe `@prismshadow/penguin-server/model-catalog`, which the Web App, the
-CLI and the gallery import) and reaches core only through the Project config the server seeds —
+catalog data. Model knowledge lives in `library/model/src/model-catalog/`; the server's
+`packages/server/src/model-catalog/` re-exports it, and the browser-safe
+`@prismshadow/penguin-server/model-catalog` subpath is the stable entry the Web App imports. It
+reaches core only through the Project config the server seeds —
 `[providers.<id>]`, `[[models]]`, `default_model` — or through host hooks
 (`AgentAssembly`). Nor does any package keep environment or refusal logic: which variable a
 keyless model reads, and which base URL is refused without a key, is MMSP's rule. Core passes the
