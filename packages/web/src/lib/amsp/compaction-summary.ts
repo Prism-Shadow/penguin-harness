@@ -1,6 +1,7 @@
 /**
  * Display text for a compaction row's expandable body: the summary the compaction request
- * wrote, with the `[summary]` tags stripped; and what the row reads off its end.
+ * wrote, with the `[summary]` tags stripped, or the Trace hand-over a model switch opened the
+ * next context with in its place; and what the row reads off its end.
  *
  * Split out of the banner component so it can be unit-tested (the Web test suite runs in a
  * node environment and renders no React). Extraction uses core's own lenient extractor, so
@@ -9,8 +10,13 @@
  * mid-stream (opening tag written, closing tag not yet) therefore reads as plain text
  * rather than disappearing until the model closes the block.
  */
-import { extractSummary } from "@prismshadow/amsp/markers";
-import type { ChatItem, CompactionItem } from "./stream-model";
+import {
+  dualFormPatterns,
+  extractSummary,
+  MARKER_TAGS,
+  matchDualForm,
+} from "@prismshadow/amsp/markers";
+import type { ChatItem, CompactionHandover, CompactionItem } from "./stream-model";
 
 /**
  * Whether the row's result section is on screen yet. It appears only once the request has
@@ -22,7 +28,13 @@ import type { ChatItem, CompactionItem } from "./stream-model";
 export function compactionResultVisible(
   item: Pick<
     CompactionItem,
-    "summaryText" | "summaryStartedAtMs" | "running" | "status" | "errorCode" | "errorMessage"
+    | "summaryText"
+    | "summaryStartedAtMs"
+    | "running"
+    | "status"
+    | "errorCode"
+    | "errorMessage"
+    | "handover"
   >,
 ): boolean {
   if (compactionSummaryText(item) !== "") return true;
@@ -36,13 +48,44 @@ export function compactionSummaryText(item: Pick<CompactionItem, "summaryText">)
   return extractSummary(raw).trim();
 }
 
-/** A compaction that completed without a full summary: a `completed` end carrying the error pair. */
+/**
+ * A compaction that completed without a full summary: a `completed` end carrying the error pair,
+ * or a model switch's Trace hand-over standing in the summary's place — the row of a switch whose
+ * current model could not be reached is that hand-over alone, with no end to carry a pair.
+ */
 export function compactionDegraded(
-  item: Pick<CompactionItem, "status" | "errorCode" | "errorMessage">,
+  item: Pick<CompactionItem, "status" | "errorCode" | "errorMessage" | "handover">,
 ): boolean {
   return (
-    item.status === "completed" && (item.errorCode !== undefined || item.errorMessage !== undefined)
+    item.status === "completed" &&
+    (item.errorCode !== undefined || item.errorMessage !== undefined || item.handover !== undefined)
   );
+}
+
+/**
+ * For a row that completed without a full summary (compactionDegraded): whether the model it
+ * left was asked for one. Such a row with no error pair is a switch's hand-over that sent that
+ * model no compaction request.
+ */
+export function compactionSummaryAsked(
+  item: Pick<CompactionItem, "errorCode" | "errorMessage">,
+): boolean {
+  return item.errorCode !== undefined || item.errorMessage !== undefined;
+}
+
+const HANDOVER_BLOCK = dualFormPatterns(MARKER_TAGS.modelSwitchFrom, "\\n([\\s\\S]*)\\n");
+
+/**
+ * The note a model switch's Trace hand-over opened the next context with, as its section shows
+ * it: the `[model_switch_from]` block's own lines, its tags stripped as the result section strips
+ * the summary's. The reducer only folds a text that is one whole block; anything else reads as
+ * written.
+ */
+export function compactionHandoverNote(handover: Pick<CompactionHandover, "text">): string {
+  const text = handover.text.trim();
+  const block = matchDualForm(HANDOVER_BLOCK, text);
+  const whole = block !== null && block.index === 0 && block[0].length === text.length;
+  return whole ? block[1]!.trim() : text;
 }
 
 /**
@@ -51,7 +94,7 @@ export function compactionDegraded(
  * mark then advises.
  */
 export function compactionShortOfRoom(
-  item: Pick<CompactionItem, "status" | "errorCode" | "errorMessage">,
+  item: Pick<CompactionItem, "status" | "errorCode" | "errorMessage" | "handover">,
 ): boolean {
   return (
     compactionDegraded(item) &&

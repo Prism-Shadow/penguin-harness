@@ -108,6 +108,7 @@ import {
   type MemoryChangeEntry,
   type MemoryChangeRow,
 } from "./memory-changes";
+import { compactionDegraded } from "./compaction-summary";
 
 // ---------------------------------------------------------------------------
 // View model types
@@ -472,6 +473,23 @@ export interface CompactionItem extends RequestFailureFacts {
   summaryStartedAtMs?: number;
   /** Settled result wall time (boundaries: see thinkingStartedAtMs). */
   summaryDurationMs?: number;
+  /**
+   * The Trace hand-over an in-session model switch opened the next context with in the summary's
+   * place: the row's hand-over section, and with it a completion without a full summary. A switch
+   * whose compaction gave no summary hands it to that compaction's own row. One whose current model
+   * could not be reached sent no compaction request and wrote no compaction pair, so its row is
+   * the hand-over's alone: settled `completed`, with no error pair and no times (see
+   * foldTraceHandover).
+   */
+  handover?: CompactionHandover;
+}
+
+/** A model switch's Trace hand-over, as the compaction row above its marker shows it. */
+export interface CompactionHandover {
+  /** The whole `[model_switch_from]` block the next context opens with, raw (the section strips its tags). */
+  text: string;
+  /** The Trace file it hands over, as the block names it. */
+  tracePath?: string;
 }
 
 /**
@@ -493,7 +511,8 @@ export interface ModelChangeItem {
   /**
    * The switch handed the history over by its Trace path instead of a summary: the
    * `[model_switch_from]` handoff naming this Session that followed the marker's record (folded
-   * into this marker rather than shown as a message), with the file it named.
+   * into this marker rather than shown as a message), with the file it named. The marker only says
+   * so; the hand-over itself shows on the compaction row above it (CompactionItem.handover).
    */
   handover?: { tracePath?: string };
 }
@@ -635,6 +654,13 @@ export interface StreamModel {
    * when the two disagree (see `sessionRowStale`).
    */
   contextModel: { sessionId: string; provider: string; modelId: string } | null;
+  /**
+   * The raw text of the last Trace hand-over folded into a marker. A switch made before the
+   * context it left completed a turn rewrites that context's opening at the next file's head, so
+   * the same hand-over arrives again behind the later marker: that marker says it was handed over
+   * by Trace, but that switch ran no compaction and gets no row of its own (see foldTraceHandover).
+   */
+  lastHandoverText: string | null;
   /** `contextModel` as the open Task began: a switch only happens between Tasks, so this is the model the whole Task runs on (see `TaskStatsItem.model`). */
   taskModel: { provider: string; modelId: string } | null;
   /**
@@ -813,6 +839,7 @@ function newModel(
     meta: null,
     agentState: null,
     contextModel: null,
+    lastHandoverText: null,
     taskModel: null,
     stats: createTaskStatsTracker(),
     openText: null,
@@ -1551,17 +1578,15 @@ function handleComplete(
         }
         // The Trace handoff an in-session model switch opened the context with instead of a
         // summary (a whole `[model_switch_from]` block naming this Session — a `/model` new
-        // conversation's names its source): no bubble and no Task either; it marks the switch.
+        // conversation's names its source): no bubble and no Task either; it marks the switch
+        // and shows on the compaction row above the marker.
         const handover = parseInPlaceModelSwitch(p.text, model.contextModel?.sessionId);
         if (handover !== null) {
           touchTask(model, timestamp);
-          const marker = model.items.findLast(
-            (i): i is ModelChangeItem => i.kind === "model_change",
-          );
-          if (marker) {
-            marker.handover =
-              handover.tracePath !== undefined ? { tracePath: handover.tracePath } : {};
-          }
+          foldTraceHandover(model, {
+            text: p.text,
+            ...(handover.tracePath !== undefined ? { tracePath: handover.tracePath } : {}),
+          });
           return;
         }
         // Mid-run steering (`[user_steering]`-wrapped user text, delivered between turns):
@@ -2345,6 +2370,45 @@ function findLastRunningCompaction(model: StreamModel): CompactionItem | null {
     if (item.kind === "compaction" && item.running) return item;
   }
   return null;
+}
+
+/**
+ * Folds a model switch's Trace hand-over into the switch it opened the context for. The latest
+ * marker says the switch was handed over by Trace, and the compaction row above it shows the
+ * hand-over. A switch whose compaction gave no summary already has that row: the degraded one
+ * its compaction ended in, with at most the next context's MCP connect row between it and the
+ * marker. A switch whose current model could not be reached wrote no compaction pair, so the row
+ * is made here, in the marker's place above it. A hand-over the model already holds is that same
+ * opening, carried on by a switch with nothing to compact: only its marker changes.
+ */
+function foldTraceHandover(model: StreamModel, handover: CompactionHandover): void {
+  const at = model.items.findLastIndex((i) => i.kind === "model_change");
+  if (at === -1) return;
+  const marker = model.items[at] as ModelChangeItem;
+  marker.handover = handover.tracePath !== undefined ? { tracePath: handover.tracePath } : {};
+  if (model.lastHandoverText === handover.text) return;
+  model.lastHandoverText = handover.text;
+  let before = at - 1;
+  while (before >= 0 && model.items[before]!.kind === "mcp_connect") before--;
+  const own = model.items[before];
+  if (
+    own?.kind === "compaction" &&
+    !own.running &&
+    own.handover === undefined &&
+    compactionDegraded(own)
+  ) {
+    own.handover = handover;
+    return;
+  }
+  model.items.splice(at, 0, {
+    kind: "compaction",
+    id: nextId(model),
+    reason: "manual",
+    mode: "summarize",
+    running: false,
+    status: "completed",
+    handover,
+  });
 }
 
 /**

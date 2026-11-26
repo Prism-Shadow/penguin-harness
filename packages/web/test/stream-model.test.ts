@@ -56,8 +56,11 @@
  * - A Session's first message streams its session_meta ahead of task_begin: it renders nothing
  *   and marks no model change.
  * - A model switch that hands over by Trace path folds its `[model_switch_from]` handoff (naming
- *   this Session) into the model-change marker; a `/model` block naming another Session stays a
- *   Prompt.
+ *   this Session) into the model-change marker and shows it on the compaction row above: the
+ *   degraded row its compaction ended in, or, when the current model could not be reached and no
+ *   compaction ran, a settled row made from the hand-over alone. The same hand-over carried on by
+ *   a switch with nothing to compact marks that marker and adds no second row; a `/model` block
+ *   naming another Session stays a Prompt.
  * - A switch's `session_update` draws the model-change marker under the Session held (one per
  *   record, several in a row included), and the context's same-model session_meta that follows
  *   draws none; a Trace without the record still draws it from two metas. A nested child's
@@ -674,29 +677,54 @@ describe("approvals and events", () => {
     expect(m.contextModel).toEqual({ sessionId: "s1", provider: "openai", modelId: "b-2" });
   });
 
-  it("a switch that hands over by Trace path folds its handoff into the marker: no bubble, no Task; a /model block naming another Session is still the user's message", () => {
+  it("a switch whose compaction gave no summary shows its Trace hand-over on that compaction's row and marks the marker: no bubble, no Task, no second row; a /model block naming another Session is still the user's message", () => {
     const onModel = (modelId: string) => sessionMeta({ ...meta("s1").payload, model_id: modelId });
-    const handoff = (sessionId: string) =>
-      userText(
-        buildModelSwitchMessage({
-          sessionId,
-          tracePath: "/data/traces/s1_001.jsonl",
-          prevModelId: "a-1",
-        }),
-      );
+    const handoffText = (sessionId: string) =>
+      buildModelSwitchMessage({
+        sessionId,
+        tracePath: "/data/traces/s1_001.jsonl",
+        prevModelId: "a-1",
+      });
+    const handoff = (sessionId: string) => userText(handoffText(sessionId));
     const m = createStreamModel();
     pushMessage(m, onModel("a-1"));
     pushMessage(
       m,
       compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
     );
-    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "fatal" }));
-    pushMessage(m, toolListReady([]));
+    // The summary could not be had: the compaction completes with the error pair, and the next
+    // context, on the new model, opens with the hand-over instead.
+    pushMessage(
+      m,
+      compactionEnd({
+        reason: "manual",
+        mode: "summarize",
+        status: "completed",
+        errorCode: "malformed",
+        errorMessage: "the response contained no usable summary",
+      }),
+    );
+    pushMessage(m, mcpConnectBegin(["docs"]));
+    pushMessage(
+      m,
+      mcpConnectEnd({
+        status: "completed",
+        results: [
+          { server: "docs", transport: "stdio", status: "completed", duration_ms: 5, tools: 1 },
+        ],
+      }),
+    );
     pushMessage(m, onModel("b-2"));
     pushMessage(m, handoff("s1"));
 
-    expect(items(m).map((i) => i.kind)).toEqual(["compaction", "model_change"]);
-    expect(items(m)[1]).toMatchObject({ handover: { tracePath: "/data/traces/s1_001.jsonl" } });
+    expect(items(m).map((i) => i.kind)).toEqual(["compaction", "mcp_connect", "model_change"]);
+    expect(items(m)[0]).toMatchObject({
+      running: false,
+      status: "completed",
+      errorCode: "malformed",
+      handover: { text: handoffText("s1"), tracePath: "/data/traces/s1_001.jsonl" },
+    });
+    expect(items(m)[2]).toMatchObject({ handover: { tracePath: "/data/traces/s1_001.jsonl" } });
     expect(m.taskOpen).toBe(false);
 
     // A conversation /model opened names the Session it came from: that block is a Prompt.
@@ -850,14 +878,13 @@ describe("approvals and events", () => {
       expect(bare.contextModel).toEqual({ sessionId: "s1", ...B });
     });
 
-    it("folds the [model_switch_from] hand-off that follows it into its marker, streamed at once or read back from the next file's head", () => {
-      const handoff = userText(
-        buildModelSwitchMessage({
-          sessionId: "s1",
-          tracePath: "/data/traces/s1_001.jsonl",
-          prevModelId: A.modelId,
-        }),
-      );
+    it("a switch whose current model could not be reached writes no compaction, so its hand-over makes a settled compaction row above the marker, streamed at once or read back from the next file's head", () => {
+      const text = buildModelSwitchMessage({
+        sessionId: "s1",
+        tracePath: "/data/traces/s1_001.jsonl",
+        prevModelId: A.modelId,
+      });
+      const handoff = userText(text);
       // Live: the switch streams the record, then the block.
       const live = createStreamModel();
       pushMessage(live, metaOn(A));
@@ -876,19 +903,65 @@ describe("approvals and events", () => {
 
       for (const m of [live, history]) {
         finalizeHistory(m);
-        // No bubble and no Task of its own: one Task, settled above the marker.
+        // No bubble and no Task of its own: one Task, settled above the switch's two rows.
         expect(items(m).map((i) => i.kind)).toEqual([
           "user_text",
           "assistant_text",
           "task_stats",
+          "compaction",
           "model_change",
         ]);
+        // Settled as a completion without a summary: no error pair, since nothing was asked,
+        // and no times, since nothing ran.
+        expect(items(m)[3]).toEqual({
+          kind: "compaction",
+          id: expect.any(Number),
+          reason: "manual",
+          mode: "summarize",
+          running: false,
+          status: "completed",
+          handover: { text, tracePath: "/data/traces/s1_001.jsonl" },
+        });
         expect(markers(m)[0]).toMatchObject({
           from: A,
           to: B,
           handover: { tracePath: "/data/traces/s1_001.jsonl" },
         });
       }
+    });
+
+    it("a hand-over a later switch carries on, before its context completed a turn, marks that switch's marker too but adds no row: that switch ran no compaction", () => {
+      const C = { provider: "zhipu", modelId: "glm-5" };
+      const handoff = userText(
+        buildModelSwitchMessage({
+          sessionId: "s1",
+          tracePath: "/data/traces/s1_001.jsonl",
+          prevModelId: A.modelId,
+        }),
+      );
+      const m = createStreamModel();
+      pushMessage(m, metaOn(A));
+      round(m, "task 1", first);
+      pushMessage(m, update(B));
+      pushMessage(m, taskBegin());
+      pushMessage(m, metaOn(B));
+      pushMessage(m, handoff);
+      // A Task on B that never completed a request, then the switch to C: the next file opens
+      // with the same hand-over rewritten at its head.
+      pushMessage(m, at(userText("task 2"), second(1)));
+      pushMessage(m, at(requestBegin(), second(2)));
+      pushMessage(m, at(abortEvent(), second(3)));
+      pushMessage(m, update(C));
+      pushMessage(m, taskBegin());
+      pushMessage(m, metaOn(C));
+      pushMessage(m, handoff);
+      finalizeHistory(m);
+
+      expect(items(m).filter((i) => i.kind === "compaction")).toHaveLength(1);
+      expect(markers(m).map((i) => [i.from, i.to, i.handover])).toEqual([
+        [A, B, { tracePath: "/data/traces/s1_001.jsonl" }],
+        [B, C, { tracePath: "/data/traces/s1_001.jsonl" }],
+      ]);
     });
 
     it("prices the Task after the switch on the target and the Task before it on the model it ran on", () => {

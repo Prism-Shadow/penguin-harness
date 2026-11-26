@@ -39,6 +39,12 @@
  * half-written drafts (see stream-model's compaction_end handling), so there is nothing left
  * to show.
  *
+ * A model switch that could not summarize opens the next context with a Trace hand-over
+ * instead, and its row is where that hand-over shows: a "Hand-off note" section in the result's
+ * place (see CompactionHandoverSection), under the same 压缩完毕 head with the degraded mark. A
+ * switch whose current model could not be reached ran no compaction at all; its row is made from
+ * the hand-over alone, so it settles without a wall time.
+ *
  * Doesn't show Tokens: the row only needs to state whether compaction happened and whether it
  * succeeded. Compaction's cost lands in different places depending on when it occurs — compaction
  * that happens **mid-turn** counts toward that turn's stats line and cost; compaction **after a
@@ -67,11 +73,11 @@ import type { CompactionItem, ToolCallItem } from "../../lib/amsp/stream-model";
 import {
   compactionDegraded,
   compactionResultVisible,
-  compactionShortOfRoom,
   compactionSummaryText,
 } from "../../lib/amsp/compaction-summary";
+import { compactionDegradedText } from "./compaction-degraded-hint";
+import { CompactionHandoverSection } from "./compaction-handover";
 import type { StreamRenderContext } from "./message-stream";
-import { httpStatusOf } from "./provider-error";
 import { SessionToolCall } from "./tool-call-card";
 
 /**
@@ -173,17 +179,6 @@ function CompactionWork({
   );
 }
 
-/**
- * The degraded mark's tooltip and accessible name. The cause comes from the dictionary the retry
- * line uses, so the row and the line above it name a refusal the same way.
- */
-function degradedMarkHint(item: CompactionItem): string {
-  const t = S.chat.requestRetry;
-  const cause = t.cause(item.errorCode);
-  const why = cause === null ? null : t.why(cause, httpStatusOf(item.errorMessage));
-  return S.chat.compactionDegradedHint(why, item.errorMessage, compactionShortOfRoom(item));
-}
-
 export function CompactionBanner({
   item,
   ctx,
@@ -203,6 +198,7 @@ export function CompactionBanner({
     summary !== "" ||
     thinking !== "" ||
     work.length > 0 ||
+    item.handover !== undefined ||
     (item.running && item.mode === "summarize");
   // The sections hang off the banner's head as its rows, the work group's steps' anatomy.
   const rows: ActivityGroupRow[] = [];
@@ -225,6 +221,14 @@ export function CompactionBanner({
     rows.push({
       key: "work",
       content: <CompactionWork cards={work} ctx={ctx} pending={pending} />,
+    });
+  }
+  // A switch's Trace hand-over stands in the result's place: a row that has one completed
+  // without a full summary, so it never shows a result section too.
+  if (item.handover !== undefined) {
+    rows.push({
+      key: "handover",
+      content: <CompactionHandoverSection item={item} handover={item.handover} />,
     });
   }
   if (compactionResultVisible(item)) {
@@ -261,9 +265,9 @@ export function CompactionBanner({
   const ok = item.status === "completed";
   // A completion without a full summary is still a completion: only the head's mark changes, to
   // the attention ink, its tooltip and accessible name saying why first — the cause in the retry
-  // line's words, with the HTTP status, and the error's own words — then what was done, and, short
-  // of room, what to correct.
-  const degradedHint = compactionDegraded(item) ? degradedMarkHint(item) : undefined;
+  // line's words, with the HTTP status, and the error's own words, or that a switch asked the model
+  // it left for nothing — then what was done, and, short of room, what to correct.
+  const degradedHint = compactionDegraded(item) ? compactionDegradedText(item) : undefined;
   return (
     <ActivityGroup
       kind="event"
