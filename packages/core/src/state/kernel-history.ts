@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
  * change without it moving. (The reverse — moving it with no default change — is inert rather
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-11-25";
+export const KERNEL_VERSION = "2026-11-26";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -255,12 +255,15 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   harness lists the tool calls it ran under the summary. The runtime tab moved.
  * - `2026-11-23` — the subagent tools describe addressing an authorized child
  *   Session by its full ID or an unambiguous suffix. The tools tab moved.
- * - `2026-11-25` (current) — `# Suggested workflows` asks the agent, before coding in a git
+ * - `2026-11-25` — `# Suggested workflows` asks the agent, before coding in a git
  *   repository, to check whether it is behind its remote and stop to ask the user whether to
  *   update to the latest commit before making changes. The prompt tab moved.
+ * - `2026-11-26` (current) — `# Success criteria`, `# Stop rules` and `# Tool use` refine
+ *   deliverable verification, low-cost failure narrowing, early candidate saving, unattended
+ *   Debian installs, independent services and background command completion. The prompt tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
-  prompt: "9b5d45852b04fe8a7edbd6a32692215a23b21ea4599bd3af756ba24c857a2595",
+  prompt: "737cebfe1ff5a46dc7dd5670713285f09b10741f9f6fa4e42f90b569e41f180b",
   runtime: "9ab165938ad24e6f4471495826c0fcf941fbf706fad1d598eefe5deee80f5045",
   tools: "8a5bc6ee7233d992aa09448e71533234b306daa637d2018d9a5785b950d743cc",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
@@ -291,6 +294,7 @@ export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
     "07392a2f034d869c4e1d42a1668378d267dca68a10a84605441d9c2afb4d038e", // before concise file delivery and separate framework guidance
     "c1ce239d2ef23ef533b5f00d3ed453e98bd7eb66ac8af9916fd0a5281455effb", // before the go-ahead rule in # Tool use
     "3ab519fe2fb0394ffe061eb239d70dfbd21fa27e413f25cebaf73e9b307d0077", // before the git-freshness check in # Suggested workflows
+    "9b5d45852b04fe8a7edbd6a32692215a23b21ea4599bd3af756ba24c857a2595", // before the deliverable-verification and tool-execution refinements
   ],
   runtime: [
     "808ae1d1b544f46daff4f59f1e62357b89a61f60803061e86b10635616e0102c", // compaction.max_context_length was 128000, before the rise to 256000
