@@ -16,7 +16,10 @@
  *   more `*` right after `. , : ; ! ? ) ] }` may close whatever follows (emphasis.ts), so
  *   `**Confirmed.**Next` is bold too.
  *
- * Strikethrough is still parsed: each host shows its tildes as written, in a pass of its own.
+ * Strikethrough is still parsed, `~~` only: each host shows its tildes as written, in a pass of its
+ * own, so no reply is ever struck through. A single `~` stays text — parsed as a strikethrough it
+ * would only swallow the markup inside it, leaving `耗时 3~5 天，进度 **10~20%**` with its bold as
+ * asterisks.
  *
  * Browser-safe: the server inlines this entry, and the UI build includes it in its
  * published modules. remark-parse is the host's; this only registers extensions on it.
@@ -51,7 +54,7 @@ export function remarkChatMarkdown(this: { data(): ProcessorData }): undefined {
   const data = this.data();
   (data.micromarkExtensions ??= []).push(
     gfmFootnote(),
-    gfmStrikethrough(),
+    gfmStrikethrough({ singleTilde: false }),
     gfmTable(),
     gfmTaskListItem(),
     // Before the URL constructs, so that at `_` an email address is tried before emphasis, as

@@ -17,6 +17,8 @@
  *   (`**Confirmed.**Next`), the span is bold, and it stays bold while the reply streams in past
  *   the `**`; a run after an opening bracket or a quote, a single `*` and `_` parse as under
  *   CommonMark.
+ * - Given a single tilde, it stays text: two ranges in one paragraph (`3~5 天 … **10~20%**`) no
+ *   longer pair into a strikethrough that swallows the bold between them, while `~~` still parses.
  * - Given English, the links GFM made are unchanged: trailing sentence punctuation, `**` and a
  *   trailing `&name;` are left out, `_`, `*`, `&` and balanced parentheses or brackets inside the
  *   URL stay in, a `]` the URL did not open ends it, `www.` links over `http://`, an email links
@@ -275,6 +277,23 @@ describe("the rest of GFM", () => {
       "footnoteDefinition",
       "paragraph",
     ]);
+    expect(render("~~gone~~")).toBe("<del>gone</del>");
+  });
+});
+
+describe("a single tilde is not strikethrough", () => {
+  it("keeps two ranges in one paragraph from swallowing the bold between them", () => {
+    expect(render("alpha 0.3~0.8 → **0.45~1.0**，新增**脉冲金环描边**；Theme")).toBe(
+      "alpha 0.3~0.8 → <strong>0.45~1.0</strong>，新增<strong>脉冲金环描边</strong>；Theme",
+    );
+    expect(render("耗时 3~5 天，进度 **10~20%**，其余照旧")).toBe(
+      "耗时 3~5 天，进度 <strong>10~20%</strong>，其余照旧",
+    );
+  });
+
+  it("leaves `~30 秒` and `~d~` as text, and still reads `~~` as strikethrough", () => {
+    expect(render("大约 ~30 秒")).toBe("大约 ~30 秒");
+    expect(render("a ~d~ b")).toBe("a ~d~ b");
     expect(render("~~gone~~")).toBe("<del>gone</del>");
   });
 });
