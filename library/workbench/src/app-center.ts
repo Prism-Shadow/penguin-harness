@@ -30,9 +30,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { iconImage, MAX_ICON_BYTES } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
-import type { AppCenterUnavailable, IconRef } from "./workbench.js";
+import type {
+  AppCenterShortcut,
+  AppCenterUnavailable,
+  IconRef,
+  WorkbenchAppCenter,
+} from "./workbench.js";
 import { iconRev } from "@prismshadow/penguin-library-http/icon-response";
-import type { AppCenterShortcut, WorkbenchAppCenter } from "./workbench.js";
 import { readLoadStatus } from "./compile.js";
 import {
   HIDDEN_FROM_SIDEBAR,
