@@ -17,8 +17,8 @@ type AnnouncementTarget =
  * freshest news goes at the front.
  */
 export const ANNOUNCEMENTS = [
-  { key: "release0217", to: "/blog/penguinharness-0-2-17" },
-  { key: "penguinGo", href: "https://token.penguin.ooo/" },
+  { key: "release0220", to: "/blog/penguinharness-0-2-20" },
+  { key: "penguinGo", href: "https://go.penguin.ooo/" },
 ] as const satisfies ReadonlyArray<{ key: string } & AnnouncementTarget>;
 
 /**
