@@ -13,9 +13,13 @@
  *   is not an error: the call reports `{ reloaded: true }`, as TMWebDriver's `closed` does.
  * - A script that throws is a PageScriptError carrying the page's own message.
  */
-import type { BrowserBackend } from "@prismshadow/penguin-server/api";
+import type {
+  BrowserBackend,
+  BuiltinBrowserUnavailableReason,
+} from "@prismshadow/penguin-server/api";
 import { HttpError } from "@prismshadow/penguin-server/plugin";
 import {
+  isUnavailableReason,
   BrowserLinkError,
   BrowserUnavailableError,
   browserLabel,
@@ -94,11 +98,16 @@ export function keyboardFocusError(tabId: number): HttpError {
   );
 }
 
-/** What a failed link request means to the route that asked. */
+/**
+ * What a failed link request means to the route that asked. `downReason` is the link's own
+ * (BrowserLink): a hub's socket that closed mid-request reads as the hub being gone, and a hub
+ * whose browser cannot be driven over there says why with `unavailable:<reason>`.
+ */
 export function mapLinkError(
   err: unknown,
   tabId: number,
   backend: BrowserBackend = "builtin",
+  downReason?: BuiltinBrowserUnavailableReason,
 ): Error {
   if (!(err instanceof BrowserLinkError)) {
     return err instanceof Error ? err : new Error(String(err));
@@ -107,15 +116,20 @@ export function mapLinkError(
     case "timeout":
       return new HttpError(504, "timeout", err.message);
     case "closed":
-      // Chrome's socket closed mid-request: the extension reconnects on its own, so the
-      // agent's answer is the same as for a call made while it is away.
+      // Chrome's (or a hub's) socket closed mid-request: the far side reconnects on its own, so
+      // the agent's answer is the same as for a call made while it is away.
+      if (downReason === "hub_disconnected") return new BrowserUnavailableError(downReason);
       if (backend === "chrome") return new BrowserUnavailableError("extension_disconnected");
       return new HttpError(
         503,
         "browser_unavailable",
         "The built-in browser's link closed; retry.",
       );
-    case "refused":
+    case "refused": {
+      const unavailable = /^unavailable:([a-z_]+)$/.exec(err.message)?.[1];
+      if (unavailable !== undefined && isUnavailableReason(unavailable)) {
+        return new BrowserUnavailableError(unavailable);
+      }
       if (err.message === "no_such_tab") {
         return new HttpError(
           404,
@@ -162,6 +176,7 @@ export function mapLinkError(
         );
       }
       return new HttpError(422, "cdp_error", err.message);
+    }
   }
 }
 
@@ -205,7 +220,7 @@ export class BrowserDriver {
         timeoutMs,
       );
     } catch (err) {
-      throw mapLinkError(err, tabId, this.link.backend);
+      throw mapLinkError(err, tabId, this.link.backend, this.link.downReason);
     }
   }
 
@@ -252,7 +267,7 @@ export class BrowserDriver {
       ) {
         return { reloaded: true };
       }
-      throw mapLinkError(err, tabId, this.link.backend);
+      throw mapLinkError(err, tabId, this.link.backend, this.link.downReason);
     }
     const res = (raw ?? {}) as { result?: RemoteObject; exceptionDetails?: ExceptionDetails };
     if (res.exceptionDetails !== undefined) {

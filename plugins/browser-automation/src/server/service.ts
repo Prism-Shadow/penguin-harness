@@ -244,6 +244,7 @@ export class BuiltinBrowser {
   private readonly hubLink: HubLink | null;
   /** A hub has connected since this server started: it is a machine even without the flag. */
   private hubSeen = false;
+  private readonly backendListeners = new Set<(userId: string, backend: BrowserBackend) => void>();
   private readonly importer: Importer;
   private disposed = false;
 
@@ -393,6 +394,13 @@ export class BuiltinBrowser {
       }
       this.deps.prefs.set(actor.userId, backend);
       this.deps.chrome?.publishTo(actor.userId, { type: "builtin_browser_backend", backend });
+      for (const listener of this.backendListeners) {
+        try {
+          listener(actor.userId, backend);
+        } catch (err) {
+          this.deps.log(`builtin browser: a backend listener failed: ${messageOf(err)}`);
+        }
+      }
     }
     return this.backendChoice(actor);
   }
@@ -489,9 +497,30 @@ export class BuiltinBrowser {
   /** POST /tabs. */
   openTab(
     actor: Actor,
-    opts: { url?: unknown; sessionId?: string; projectId?: string; activate?: boolean },
+    opts: {
+      url?: unknown;
+      sessionId?: string;
+      projectId?: string;
+      /** The machine `sessionId` runs on (the panel of a machine's conversation, or its relay). */
+      machineId?: string;
+      activate?: boolean;
+    },
   ): Promise<BuiltinBrowserTab> {
     return this.runtime(actor).openTab(opts);
+  }
+
+  /**
+   * For the machine relay (machine-relay.ts): the browser the actor drives now — the built-in one
+   * or their Chrome — or why it cannot be driven (503 with the reason).
+   */
+  relayRuntime(actor: Actor): BrowserBackendRuntime {
+    return this.runtime(actor);
+  }
+
+  /** Runs `listener` after a user switched backend (PUT /backend). Returns the unsubscribe. */
+  onBackendChange(listener: (userId: string, backend: BrowserBackend) => void): () => void {
+    this.backendListeners.add(listener);
+    return () => this.backendListeners.delete(listener);
   }
 
   /** POST /tabs/claim: a built-in browser window names the <webview> it created. */

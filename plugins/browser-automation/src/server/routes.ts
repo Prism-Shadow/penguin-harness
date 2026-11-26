@@ -159,6 +159,12 @@ export interface BrowserRouteDeps {
   pairing?: ExtensionPairing;
   /** Whether the forwarded headers name the public origin (config.trustProxy). */
   trustProxy?: boolean;
+  /**
+   * The machine of the Project that holds `sessionId` — only `machineId` asked when it is given —
+   * or null when none does: a conversation on a machine, whose pages this server holds (the
+   * machine relay), is the machine's to vouch for.
+   */
+  sessionMachine?(projectId: string, sessionId: string, machineId?: string): Promise<string | null>;
 }
 
 const adminRequired = () =>
@@ -196,6 +202,36 @@ export function builtinBrowserRoutes(
     }
     return actor;
   };
+  /**
+   * A person's call about a conversation on a machine: the machine, when the call names one or
+   * names a Session this server does not hold; null when no machine of the Project holds it;
+   * undefined for any other call (this server's own Sessions, drafts, the agents' token).
+   */
+  const machineOfCall = async (
+    c: Context<AppEnv>,
+    sessionId: string | undefined,
+    projectId: string | undefined,
+    named: string | undefined,
+  ): Promise<string | null | undefined> => {
+    if (c.var.sessionVia === "token" || sessionId === undefined) return undefined;
+    const lookup = deps.sessionMachine;
+    if (named === undefined) {
+      const resources = deps.resourceAccess;
+      if (resources === undefined || lookup === undefined || projectId === undefined) {
+        return undefined;
+      }
+      if (resources.sessions.findById(sessionId) !== null) return undefined;
+      if (draftProject(sessionId) !== undefined) return undefined;
+    }
+    // Machines are for this server's admins: a member's unknown Session stays this server's 404.
+    if (!c.var.user.isAdmin) {
+      if (named === undefined) return undefined;
+      throw adminRequired();
+    }
+    if (lookup === undefined || projectId === undefined) return null;
+    return lookup(projectId, sessionId, named);
+  };
+  const sessionNotFound = () => new HttpError(404, "session_not_found", "Session is unavailable.");
   const queryActor = (c: Context<AppEnv>) => actorOf(c, sessionIdQuery(c));
   const bodyActor = (c: Context<AppEnv>, body: Body) =>
     actorOf(c, sessionIdOf(body) ?? sessionIdQuery(c));
@@ -326,6 +362,26 @@ export function builtinBrowserRoutes(
     const activate = optBool(body, "activate");
     const sessionId = sessionIdOf(body);
     const projectId = c.var.sessionVia === "token" ? undefined : optString(body, "projectId");
+    const machineId = await machineOfCall(
+      c,
+      sessionId,
+      projectId,
+      c.var.sessionVia === "token" ? undefined : optString(body, "machineId"),
+    );
+    if (machineId === null) throw sessionNotFound();
+    if (machineId !== undefined) {
+      // A conversation on a machine (its panel, a link in it): the page is held here for that
+      // machine's Session, which the machine vouched for rather than this server's index.
+      const actor = { userId: c.var.user.userId, isAdmin: c.var.user.isAdmin };
+      const tab = await browser.openTab(actor, {
+        ...(url !== undefined ? { url } : {}),
+        ...(activate !== undefined ? { activate } : {}),
+        sessionId,
+        projectId,
+        machineId,
+      });
+      return c.json({ tab } satisfies { tab: BuiltinBrowserTab });
+    }
     const actor = bodyActor(c, body);
     if (projectId !== undefined && management) {
       management.access.requireProjectAccess(actor.userId, projectId);
@@ -608,11 +664,17 @@ export function builtinBrowserRoutes(
     ) {
       throw badRequest('storages is a non-empty list of "cookies", "cache" and "storage".');
     }
+    const projectId = c.var.sessionVia === "token" ? undefined : optString(body, "projectId");
+    // A conversation on a machine clears its Project's partition here, as one on this server does.
+    const machineId = await machineOfCall(c, sessionIdOf(body), projectId, undefined);
+    if (machineId === null) throw sessionNotFound();
     await browser.clearData(
-      bodyActor(c, body),
+      machineId === undefined
+        ? bodyActor(c, body)
+        : { userId: c.var.user.userId, isAdmin: c.var.user.isAdmin },
       storages as ("cookies" | "cache" | "storage")[],
       sessionIdOf(body),
-      c.var.sessionVia === "token" ? undefined : optString(body, "projectId"),
+      projectId,
     );
     return c.body(null, 204);
   });

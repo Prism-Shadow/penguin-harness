@@ -105,8 +105,13 @@ const UNAVAILABLE: Record<BuiltinBrowserUnavailableReason, string> = {
   extension_disabled:
     "An admin has switched off Chrome connections on this server; the user's own Chrome cannot be driven.",
   hub_disconnected:
-    "This session runs on a machine. Its browser is the one in PenguinHarness on the computer this machine was added from, and it cannot be reached from this machine now. Tell the user so; do not ask them to pair a Chrome with this machine.",
+    "This session runs on a machine. Its browser is the one in PenguinHarness on the computer this machine was added from, and that app is not connected to this machine now. Ask the user to keep PenguinHarness open there and this machine connected on its Machines page; do not ask them to pair a Chrome with this machine.",
 };
+
+/** Whether `reason` is one of the reasons the agent browser names (a hub's `unavailable:<reason>`). */
+export function isUnavailableReason(reason: string): reason is BuiltinBrowserUnavailableReason {
+  return Object.hasOwn(UNAVAILABLE, reason);
+}
 
 /** 503 `browser_unavailable`, with the reason the routes put beside the code. */
 export class BrowserUnavailableError extends HttpError {

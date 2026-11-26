@@ -123,7 +123,8 @@ export type {
   SemanticIdKindSource,
 } from "../services/semantic-id-kinds.js";
 export type { StartPage, StartPageSlots } from "../http/routes/start-page.js";
-export type { ProjectMachines, ProjectModels } from "./views.js";
+export type { MachineDial, ProjectMachines, ProjectModels } from "./views.js";
+export type { ProxyTarget } from "../machines/proxy.js";
 export type { MachineApi } from "../machines/machine-api.js";
 export type { WorkspaceFiles } from "../mechanisms/workspace.js";
 export { containedFile, isSafeRelPath, uiFileResponse } from "../http/static-files.js";

@@ -88,6 +88,11 @@ export interface BuiltinBrowserTab {
   id: number;
   /** The built-in tab belongs to this conversation; absent for pages opened outside a conversation. */
   sessionId?: string;
+  /**
+   * The machine that conversation runs on, for a page this server opened for a machine's Session
+   * (relayed over that machine's channel); absent for this server's own conversations.
+   */
+  machineId?: string;
   /** Electron storage partition, shared only within this tab's Project. */
   partition?: string;
   url: string;

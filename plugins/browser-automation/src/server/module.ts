@@ -9,7 +9,9 @@
  *   that port, and the users' own Chromes through the extension hub — mounts the routes, and
  *   contributes the extension's WebSocket endpoint (`HttpModule.upgrades`, extension-ws.ts),
  *   which the runtime hands the upgrade to, and — for a machine — the endpoint of the channel the
- *   server that added it opens (hub-ws.ts), over which the person's own browser is relayed. The browser (and with it the port listener and
+ *   server that added it opens (hub-ws.ts), over which the person's own browser is relayed. On
+ *   every other server it keeps those channels to its own machines (machine-relay.ts), through
+ *   the host's dial to them (`MachineDial`, `ProjectMachines`). The browser (and with it the port listener and
  *   every extension socket) is disposed with the App: a hot swap hands the port to the next
  *   generation's link, and the extensions reconnect to the next generation's hub (close 1012).
  * - It reaches the host only through the plugin face (`@prismshadow/penguin-server/plugin`), the
@@ -47,7 +49,9 @@ import type {
   Db,
   Desktop,
   Log,
+  MachineDial,
   Paths,
+  ProjectMachines,
   SessionDrivers,
   SessionIndex,
   Settings,
@@ -60,9 +64,13 @@ import type { ExtensionSocket } from "./extension-link.js";
 import { ExtensionPairing } from "./extension-pairing.js";
 import { extensionUpgrade } from "./extension-ws.js";
 import { hubUpgrade } from "./hub-ws.js";
+import { MachineRelays } from "./machine-relay.js";
 import { builtinBrowserRoutes, extensionPairRoutes } from "./routes.js";
 import { BuiltinBrowser } from "./service.js";
 import type { BrowserShellPort } from "./shell-link.js";
+
+/** The built-in administrator: the desktop window's account, whom a machine's channel acts for. */
+const ADMIN_USER_ID = "admin";
 
 /**
  * The version a paired extension is told it paired with: this package's, which a release sets with
@@ -186,6 +194,8 @@ export class BuiltinBrowserRoutes {
   @Use() private readonly sessions!: SessionIndex;
   @Use() private readonly access!: Access;
   @Use() private readonly config!: Config;
+  @Use() private readonly machineDial!: MachineDial;
+  @Use() private readonly projectMachines!: ProjectMachines;
   @Provide() gate!: BrowserExtensionGate;
   @Bind("BuiltinBrowserRoutes.routes") routes!: Hono<AppEnv>;
   @Bind("BuiltinBrowserRoutes.pair") pairRoutes!: Hono<AppEnv>;
@@ -250,8 +260,47 @@ export class BuiltinBrowserRoutes {
       serverVersion: SERVER_VERSION,
       now: () => clock.now().getTime(),
     });
+    const projectMachines = this.projectMachines;
+    const machineDial = this.machineDial;
+    const access = this.access;
+    // The person's browser for the Sessions on this server's machines: each machine the built-in
+    // admin's Projects use gets a channel while it is connected. A machine relays to none.
+    const admin = { userId: ADMIN_USER_ID, isAdmin: true };
+    const relays = machine
+      ? null
+      : new MachineRelays({
+          browser,
+          admin,
+          projectIds: () => access.accessibleProjectIds(admin.userId),
+          machines: async (projectId) =>
+            (await projectMachines.projectApis(projectId)).map(({ machineId, api }) => ({
+              machineId,
+              connected: api !== null,
+            })),
+          dial: async (machineId) => {
+            const target = await machineDial.proxyTarget(machineId);
+            return target === null
+              ? null
+              : { agent: target.agent, port: target.port, cookie: target.cookie };
+          },
+          log: (line) => log.line(line),
+        });
+    relays?.start();
     this.routes = builtinBrowserRoutes(browser, {
       resourceAccess: { access: this.access, sessions: this.sessions },
+      // A conversation on a machine is the machine's to vouch for (its panel opens pages here).
+      sessionMachine: async (projectId, sessionId, named) => {
+        for (const machine of await projectMachines.projectApis(projectId)) {
+          if (machine.api === null || (named !== undefined && machine.machineId !== named))
+            continue;
+          const answer = await machine.api.request(
+            "GET",
+            `/api/sessions/${encodeURIComponent(sessionId)}`,
+          );
+          if (answer.status === 200) return machine.machineId;
+        }
+        return null;
+      },
       // The human an agent's session acts for, as the browser knows people: by id and role.
       driverOf: (sessionId) => {
         const userId = drivers.driverOf(sessionId);
@@ -277,6 +326,7 @@ export class BuiltinBrowserRoutes {
     });
     effect(() => {
       unwatch();
+      relays?.dispose();
       browser.dispose();
     });
   }
