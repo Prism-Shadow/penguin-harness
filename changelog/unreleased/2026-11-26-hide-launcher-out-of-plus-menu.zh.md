@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [1907](https://github.com/Prism-Shadow/penguin-harness/pull/1907)
 
 [English](2026-11-26-hide-launcher-out-of-plus-menu.md)
 
