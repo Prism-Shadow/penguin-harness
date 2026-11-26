@@ -32,4 +32,3 @@ export function compressesApiSocket(origin: string | undefined): boolean {
   }
   return !isLoopbackHost(hostname);
 }
-

@@ -28,9 +28,7 @@ import {
 } from "./session.js";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { TerminalPathFirst } from "./shell-startup.js";
-import {
-  DEFAULT_TERMINAL_LIMIT,
-} from "@prismshadow/penguin-library-setting/resource-limits";
+import { DEFAULT_TERMINAL_LIMIT } from "@prismshadow/penguin-library-setting/resource-limits";
 import type { UnpackAssets } from "./pty-module.js";
 
 /** How long an exited session stays listable/attachable before it is disposed. */
