@@ -165,6 +165,7 @@ import { PluginLibraryModule } from "./plugin/library-module.js";
 import { SystemAppModule } from "./plugin/system-app-modules.js";
 import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
 import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls";
+import { ProjectDataMigrationsRepo } from "@prismshadow/penguin-library-setting/repos/project-data-migrations";
 import { PluginModules } from "./mechanisms/plugins.js";
 import { PluginModulesService } from "./services/plugin-modules.js";
 import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
@@ -368,6 +369,7 @@ export class IdentityModule {}
     ProjectNotifier,
     SystemAgentAppData,
     HostAppSeeds,
+    ProjectDataMigrationsRepo,
     ProjectService,
     ProjectConfigService,
     ModelOAuthProvider,

@@ -3107,7 +3107,7 @@ packages:
     version: 0.2.19-rc.2
 
   '@penguinharness/rsi-workbench@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.2.0/penguinharness-rsi-workbench-0.2.0.tgz':
-    resolution: {integrity: sha512-L7w56bOe8UwrlXCMnduMXPeMOb7x/ASsGll7L7VwkVM7cHPkFOxb7xmUoSEys2jXlBeOO0wcj7Qhj9xj9U990g==, tarball: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.2.0/penguinharness-rsi-workbench-0.2.0.tgz}
+    resolution: {integrity: sha512-y4c8POQX0bn/qERM8jxxI/j9A8I4CQN6xBAoJmhSg2PeFHOmB8U8hoLvE27KqOTAsLnBbtJNw9d6BdmNeKfYYQ==, tarball: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.2.0/penguinharness-rsi-workbench-0.2.0.tgz}
     version: 0.2.0
     engines: {node: '>=24'}
 
