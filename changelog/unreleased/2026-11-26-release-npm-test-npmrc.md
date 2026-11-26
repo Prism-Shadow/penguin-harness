@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** process
 - **Scope:** `ci`
+- **PR:** [#1881](https://github.com/Prism-Shadow/penguin-harness/pull/1881)
 
 [中文版](2026-11-26-release-npm-test-npmrc.zh.md)
 
