@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `chat-markdown`
+- **PR:** [#1884](https://github.com/Prism-Shadow/penguin-harness/pull/1884)
 
 [English](2026-11-26-single-tilde-not-strikethrough.md)
 
