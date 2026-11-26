@@ -65,7 +65,16 @@ const WORKERS =
 export default defineConfig({
   // The browser suites that boot the App load the browser-automation plugin from its sources
   // (test/builtin-browser/plugin.ts), which reach this package through its published face; a
-  // package cannot resolve its own name, so the two subpaths point at their sources.
+  // package cannot resolve its own name, so the two subpaths point at their sources. The
+  // library packages point at their sources for a different reason: each ships to this package
+  // as an injected snapshot — a file: copy under .pnpm, not a symlink into its sources — so
+  // left to node resolution, their dist runs under the raw Node loader beside the run's module
+  // graph, and every workspace package they import is a second physical copy under .pnpm too.
+  // Shared module state then splits in two: the plugin library host the setup file names
+  // (test/setup/library-host.ts) is invisible to that copy, and every Agent creation fails
+  // with "No plugin library". Pointing the imports at the sources keeps the whole library on
+  // the run's one module graph, where the symlinked workspace packages (core among them)
+  // already are.
   resolve: {
     alias: {
       "@prismshadow/penguin-server/plugin": fileURLToPath(
@@ -73,6 +82,63 @@ export default defineConfig({
       ),
       "@prismshadow/penguin-server/api": fileURLToPath(
         new URL("./src/api/types.ts", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-agent-api": fileURLToPath(
+        new URL("../../library/agent-api/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-benchmark": fileURLToPath(
+        new URL("../../library/benchmark/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-messaging": fileURLToPath(
+        new URL("../../library/messaging/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-observability": fileURLToPath(
+        new URL("../../library/observability/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-organization": fileURLToPath(
+        new URL("../../library/organization/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-workbench": fileURLToPath(
+        new URL("../../library/workbench/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-workspace": fileURLToPath(
+        new URL("../../library/workspace/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-machine": fileURLToPath(
+        new URL("../../library/machine/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-project": fileURLToPath(
+        new URL("../../library/project/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-session": fileURLToPath(
+        new URL("../../library/session/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-setting": fileURLToPath(
+        new URL("../../library/setting/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-trace": fileURLToPath(
+        new URL("../../library/trace/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-plugin": fileURLToPath(
+        new URL("../../library/plugin/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-model": fileURLToPath(
+        new URL("../../library/model/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-agent": fileURLToPath(
+        new URL("../../library/agent/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-http": fileURLToPath(
+        new URL("../../library/http/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-cli": fileURLToPath(
+        new URL("../../library/cli/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-auth": fileURLToPath(
+        new URL("../../library/auth/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-db": fileURLToPath(
+        new URL("../../library/db/src", import.meta.url),
       ),
     },
   },
@@ -84,18 +150,8 @@ export default defineConfig({
         // sources; left external, the run's Node loader reaches them and refuses the
         // extension. Inlining the libraries lets vite transform the chain the way it
         // transforms this package's own imports.
-        //
-        // The plugin domain library ships to this package as an injected snapshot — a file:
-        // copy under .pnpm, not a symlink into its sources — so left external, its dist runs
-        // under the raw Node loader, and the core it imports is a second copy of core outside
-        // the module registry the run shares: the plugin library host the setup file names
-        // (test/setup/library-host.ts) is invisible to it, and every Agent creation fails
-        // with "No plugin library". Inlining brings the snapshot onto the same module graph
-        // as the rest of the run, the way a checkout's symlinked workspace packages already
-        // are.
         inline: [
           /@prismshadow\/penguin-library-setting/,
-          /@prismshadow\/penguin-library-plugin/,
           /@prismshadow\/penguin-theme-pack/,
           /@prismshadow\/penguin-ui/,
         ],
