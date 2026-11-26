@@ -1,8 +1,12 @@
 /** The last displayed tail of a remote Session, scoped to the signed-in reader. */
 import { HttpError } from "@prismshadow/penguin-library-http/errors";
-import { openHistoryOut, sendError, sendWindow } from "@prismshadow/penguin-library-trace/history-stream";
-import type { HistoryWindow } from "@prismshadow/penguin-library-trace/history-stream";
-import type { SseRevocation } from "@prismshadow/penguin-library-trace/history-stream";
+import {
+  openHistoryOut,
+  sendError,
+  sendWindow,
+  type HistoryWindow,
+  type SseRevocation,
+} from "@prismshadow/penguin-library-trace/history-stream";
 
 export interface OfflineReader {
   userId: string;

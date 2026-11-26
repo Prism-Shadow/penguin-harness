@@ -31,6 +31,8 @@ import type { TerminalNotice } from "./session.js";
 export interface TerminalCliLaunch {
   /** The checkout this server runs from — a development instance — or null for an installation. */
   checkout?: string | null;
+  /** Interpreter options the shim puts before `entry`: the TypeScript loader for a source run. */
+  execArgs?: string[];
   /** Where the shim's entry came from; null when there is no entry. */
   origin?: "env" | "source" | "build" | null;
   /** Why a checkout's own CLI cannot be offered; null otherwise. */

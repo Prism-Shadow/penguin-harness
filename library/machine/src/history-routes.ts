@@ -36,10 +36,11 @@ import type {
   TraceEventsResponse,
 } from "@prismshadow/penguin-library-trace";
 import { HttpError, errorBody } from "@prismshadow/penguin-library-http/errors";
-import type { SseRevocation } from "@prismshadow/penguin-library-trace/history-stream";
 import {
   HeldWindows,
+  HistoryOut,
   ProgressOut,
+  SseRevocation,
   openHistoryOut,
   parseHistoryQuery,
   resumePoint,
@@ -48,7 +49,6 @@ import {
   sendWindow,
   serializeWindow,
 } from "@prismshadow/penguin-library-trace/history-stream";
-import type { HistoryOut } from "@prismshadow/penguin-library-trace/history-stream";
 import { historyFileKey } from "@prismshadow/penguin-library-trace/history-wire";
 import { traceRecordImage } from "@prismshadow/penguin-library-trace/trace-images";
 import { AGENT_EVENTS, SESSION_EVENTS, SESSION_READ } from "./history-paths.js";
