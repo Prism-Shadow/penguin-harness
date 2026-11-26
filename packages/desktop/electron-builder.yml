@@ -150,7 +150,10 @@ win:
     - from: build/minigit
       to: git
 
-afterPack: build/windows-program-inventory.cjs
+# One hook, two platform steps: on macOS the Agent State Git plugin's own-architecture Git is
+# unpacked so the signing pass below reaches it (build/mac-native-git.cjs); on Windows the
+# uninstaller's list of program files is written (build/windows-program-inventory.cjs).
+afterPack: build/after-pack.cjs
 
 nsis:
   oneClick: false
