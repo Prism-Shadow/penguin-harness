@@ -341,7 +341,10 @@ async function moveBenchmarks(deps: RsiWorkbenchMigrationDeps, projectId: string
     const move = ledger.get(MOVE, projectId);
     if (move !== null && move.finishedAt === null) {
       // A run cut short between moving the folder and linking it: the link is still owed.
-      if (at === null && (await isRealDir(target))) await linkDir(source, target);
+      if (at === null && (await isRealDir(target))) {
+        await fs.mkdir(path.dirname(source), { recursive: true, mode: 0o700 });
+        await linkDir(source, target);
+      }
       ledger.finish(MOVE, projectId, now());
     }
     return true;

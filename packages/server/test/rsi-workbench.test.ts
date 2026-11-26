@@ -183,6 +183,7 @@ describe("the Self-Evolution Workbench of a new Project", { timeout: 120_000 }, 
       benchmarkId: "example-benchmark",
       targetAgentId: "default_agent",
       runs: 1,
+      testedModel: { provider: "custom", modelId: MOCK_MODEL_ID },
     });
     expect(prompt.status, await prompt.clone().text()).toBe(200);
     const built = (await prompt.json()) as { prompt: string; skills: string[] };

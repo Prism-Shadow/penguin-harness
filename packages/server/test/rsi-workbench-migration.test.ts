@@ -166,8 +166,9 @@ describe("the startup migration to the Self-Evolution Workbench", { timeout: 120
     await fs.rm(workbenchOf(root, "lacking", DEFAULT), { recursive: true, force: true });
     await benchmark(sourceOf(root, "lacking"), "epsilon");
 
-    // cut: a run that stopped after moving the folder, before leaving the link.
+    // cut: a run that stopped after moving the folder, before leaving the link in the folder's place.
     await benchmark(targetOf(root, "cut"), "zeta");
+    await fs.mkdir(path.dirname(sourceOf(root, "cut")), { recursive: true });
 
     const db = first.deps.db;
     db.prepare("DELETE FROM project_data_migrations WHERE project_id != 'fresh'").run();
