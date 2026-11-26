@@ -92,7 +92,9 @@ class Inbox<T> {
   }
 }
 
-const PING = Symbol("ping");
+// A registry key: the server process can load this package twice (a direct link and a pnpm
+// virtual-store copy), and the heartbeat marker must stay identical across every copy.
+const PING = Symbol.for("penguin-harness.server.amsp.run-stream.ping");
 
 /** The run state a `task_state` server event reports; null for any other channel event. */
 function taskState(evt: ChannelEvent): string | null {

@@ -26,9 +26,12 @@
 import path from "node:path";
 import { Minimatch } from "minimatch";
 
-/** The synthetic rule sets npm-packlist injects, beside the ignore files read from disk. */
-const DEFAULT_RULES = Symbol("default rules");
-const STRICT_RULES = Symbol("strict rules");
+/** The synthetic rule sets npm-packlist injects, beside the ignore files read from disk.
+ *
+ * Registry keys: the server process can load this package twice (a direct link and a pnpm
+ * virtual-store copy), and the rule identities must stay the same across every copy. */
+const DEFAULT_RULES = Symbol.for("penguin-harness.server.plugin.packlist.default-rules");
+const STRICT_RULES = Symbol.for("penguin-harness.server.plugin.packlist.strict-rules");
 type RuleSet = string | symbol;
 
 const DEFAULTS = [
