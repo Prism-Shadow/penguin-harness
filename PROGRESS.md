@@ -289,3 +289,15 @@ pnpm-lock.yaml 未含。后果与已试路径：
   @prismshadow/penguin-server#PluginConfig；sandbox-settings 两处夹具字符串还原基线。
   全仓审计：本分支仅此一键搬家（ProjectModelRequests 仍在 server、WorkflowHost 仅存在于
   专测拒绝行为的迁移夹具，无类属预期）。npmReason 的 warn 过滤（修复 13②）不变。
+- 调度席更正后裁定（2026-11-26）：更正确认键随声明包走、测试字符串跟表自洽，钉键非必需；
+  但钉键保留——外部已发布插件按基线文档点名 @prismshadow/penguin-server#PluginConfig，
+  无钉则本分支发布后其 manifest 被 check 整代剔除（平台哲学明载兼容旧插件面），机制为
+  生成器侧静态投影、零运行时成本，故保留 d9bc8f1d31 的钉键与基线夹具字符串。
+- 验证轮修复 15（钉键机制的第二个推导点）：gen-ifaces 有两条键路径——keyOf（已钉）与
+  ifaceKeyOfType（@Use/@Provide 字段的类型投影，1249 行直接 moduleNameOf 推导，绕过
+  keyOf）。快测证据：表 ifaces 节已带钉键（penguin-server#PluginConfig 1 处），但
+  PluginConfigProvider/PluginConfigPage/PluginSourceSettings 等平台自有节点的
+  @Provide() pluginConfig!: PluginConfig manifest requires 仍写库前缀键 → '…which the
+  table does not carry' → 模块树整树拒绝（ModuleBootError 7 行）。修＝ifaceKeyOfType
+  尾部同样先查 ifaceKeyBySymbol。grep 全文件确认其余 moduleNameOf 推导点仅剩
+  namedKeyOf（数据类型 $ref，无接口类语义）与 component 键（不受影响）。
