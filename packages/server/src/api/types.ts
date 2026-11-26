@@ -3222,8 +3222,12 @@ export interface PluginIndexChannel {
    * the ones it does not fetch.
    */
   kind: string;
-  /** The https URL the asset is served at. */
-  url: string;
+  /**
+   * The https URL the asset is served at. An `npm` channel carries none: the registry
+   * itself is the place, per the index format's Channels rule (url required unless
+   * `kind="npm"`, where it must be absent).
+   */
+  url?: string;
 }
 
 /** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */
