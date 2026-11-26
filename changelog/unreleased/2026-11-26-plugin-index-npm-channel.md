@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `core`, `server`, `web`
+- **PR:** [#1892](https://github.com/Prism-Shadow/penguin-harness/pull/1892)
 
 [中文版](2026-11-26-plugin-index-npm-channel.zh.md)
 
