@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `release`, `desktop`, `ci`, `server`
+- **PR:** [#1911](https://github.com/Prism-Shadow/penguin-harness/pull/1911)
 - **Issue:** [#1900](https://github.com/Prism-Shadow/penguin-harness/issues/1900)
 
 [中文版](2026-11-26-linux-pty-old-glibc.zh.md)
