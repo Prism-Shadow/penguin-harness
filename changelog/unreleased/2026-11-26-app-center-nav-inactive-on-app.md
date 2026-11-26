@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1902](https://github.com/Prism-Shadow/penguin-harness/pull/1902)
 
 [中文版](2026-11-26-app-center-nav-inactive-on-app.zh.md)
 
