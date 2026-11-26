@@ -21,10 +21,17 @@
  *
  * Nothing the extension sends can take the server down: a frame that is not JSON, not text, or
  * not a reply or event of the protocol is dropped, and a listener that throws is logged.
+ *
+ * The protocol is the socket's, not Chrome's: `SocketLink` speaks it with any far side a profile
+ * describes — its hello, its capabilities, the reason it is down, how it is named. `ExtensionLink`
+ * is the extension's profile; a machine's link to the server that added it (hub-link.ts) is another.
  */
 import { randomUUID } from "node:crypto";
 import type {
+  BrowserBackend,
   BrowserHello,
+  BrowserLinkCapabilities,
+  BuiltinBrowserUnavailableReason,
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
   DesktopBrowserEvent,
@@ -98,6 +105,33 @@ export function parseChromeHello(value: unknown): BrowserHello | null {
   };
 }
 
+/** What one kind of far side of a socket link is: how it greets, what it does, how it is named. */
+export interface SocketLinkProfile {
+  readonly capabilities: BrowserLinkCapabilities;
+  /** Why the backend cannot be driven while no far side is connected. */
+  readonly downReason: BuiltinBrowserUnavailableReason;
+  /** The far side's hello, validated; null when it is not one this server speaks. */
+  parseHello(value: unknown): BrowserHello | null;
+  /** The backend before the first hello, and for a hello that names none. */
+  readonly backend: BrowserBackend;
+  /** How errors name the far side, at the start of a sentence: "Chrome's extension". */
+  readonly name: string;
+  /** How a log line names it mid-sentence: "the extension". */
+  readonly peer: string;
+  /** How a log line starts: "chrome browser". */
+  readonly logName: string;
+}
+
+export const CHROME_LINK_PROFILE: SocketLinkProfile = {
+  capabilities: CHROME_CAPABILITIES,
+  downReason: "extension_disconnected",
+  parseHello: parseChromeHello,
+  backend: "chrome",
+  name: "Chrome's extension",
+  peer: "the extension",
+  logName: "chrome browser",
+};
+
 interface Pending {
   resolve(result: unknown): void;
   reject(err: BrowserLinkError): void;
@@ -116,9 +150,9 @@ interface Attachment {
   missed: number;
 }
 
-export class ExtensionLink implements BrowserLink {
-  readonly backend = "chrome" as const;
-  readonly capabilities = CHROME_CAPABILITIES;
+export class SocketLink implements BrowserLink {
+  readonly capabilities: BrowserLinkCapabilities;
+  readonly downReason: BuiltinBrowserUnavailableReason;
   private readonly timing: ExtensionLinkTiming;
   private readonly pending = new Map<string, Pending>();
   private readonly eventListeners = new Set<(event: DesktopBrowserEvent) => void>();
@@ -128,12 +162,22 @@ export class ExtensionLink implements BrowserLink {
   private seq = 0;
   private current: Attachment | null = null;
   private disposed = false;
+  /** The backend the latest hello named; it stays while no socket is connected. */
+  private latestBackend: BrowserBackend;
 
   constructor(
+    private readonly profile: SocketLinkProfile,
     timing: Partial<ExtensionLinkTiming> = {},
     private readonly log: (line: string) => void = () => {},
   ) {
+    this.capabilities = profile.capabilities;
+    this.downReason = profile.downReason;
+    this.latestBackend = profile.backend;
     this.timing = { ...DEFAULT_EXTENSION_LINK_TIMING, ...timing };
+  }
+
+  get backend(): BrowserBackend {
+    return this.latestBackend;
   }
 
   /**
@@ -193,7 +237,9 @@ export class ExtensionLink implements BrowserLink {
   ): Promise<unknown> {
     const attachment = this.current;
     if (this.disposed || attachment === null) {
-      return Promise.reject(new BrowserLinkError("closed", "Chrome's extension is not connected."));
+      return Promise.reject(
+        new BrowserLinkError("closed", `${this.profile.name} is not connected.`),
+      );
     }
     this.seq += 1;
     const id = `${this.prefix}-${this.seq}`;
@@ -203,7 +249,7 @@ export class ExtensionLink implements BrowserLink {
         reject(
           new BrowserLinkError(
             "timeout",
-            `Chrome's extension did not answer '${command.op}' within ${Math.round(timeoutMs / 1000)}s.`,
+            `${this.profile.name} did not answer '${command.op}' within ${Math.round(timeoutMs / 1000)}s.`,
           ),
         );
       }, timeoutMs);
@@ -274,12 +320,13 @@ export class ExtensionLink implements BrowserLink {
       return false;
     }
     if (this.current !== attachment) return false;
-    const hello = parseChromeHello(answer);
+    const hello = this.profile.parseHello(answer);
     if (hello === null) {
       this.detach(CLOSE.protocolMismatch, "protocol_mismatch", true);
       return false;
     }
     attachment.hello = hello;
+    this.latestBackend = hello.backend ?? this.profile.backend;
     for (const listener of this.connectListeners) {
       try {
         await listener();
@@ -317,7 +364,9 @@ export class ExtensionLink implements BrowserLink {
       }
       event = parseBrowserEvent(data);
     } catch (err) {
-      this.log(`chrome browser: dropped a frame from the extension: ${messageOf(err)}`);
+      this.log(
+        `${this.profile.logName}: dropped a frame from ${this.profile.peer}: ${messageOf(err)}`,
+      );
       return;
     }
     if (event === null) return;
@@ -326,7 +375,7 @@ export class ExtensionLink implements BrowserLink {
         listener(event);
       } catch (err) {
         this.log(
-          `chrome browser: a '${event.kind}' event from the extension failed: ${messageOf(err)}`,
+          `${this.profile.logName}: a '${event.kind}' event from ${this.profile.peer} failed: ${messageOf(err)}`,
         );
       }
     }
@@ -340,7 +389,7 @@ export class ExtensionLink implements BrowserLink {
     if (reply.ok) pending.resolve(reply.result);
     else {
       pending.reject(
-        new BrowserLinkError("refused", reply.error ?? "The extension refused the command."),
+        new BrowserLinkError("refused", reply.error ?? `${this.profile.name} refused the command.`),
       );
     }
   }
@@ -361,7 +410,7 @@ export class ExtensionLink implements BrowserLink {
     if (attachment.pingTimer !== null) clearInterval(attachment.pingTimer);
     for (const [id, pending] of this.pending) {
       clearTimeout(pending.timer);
-      pending.reject(new BrowserLinkError("closed", "Chrome's extension disconnected."));
+      pending.reject(new BrowserLinkError("closed", `${this.profile.name} disconnected.`));
       this.pending.delete(id);
     }
     if (!announce) return;
@@ -369,9 +418,16 @@ export class ExtensionLink implements BrowserLink {
       try {
         listener(code);
       } catch (err) {
-        this.log(`chrome browser: a disconnect listener failed: ${messageOf(err)}`);
+        this.log(`${this.profile.logName}: a disconnect listener failed: ${messageOf(err)}`);
       }
     }
+  }
+}
+
+/** The chrome backend's link: one user's extension (see the module doc). */
+export class ExtensionLink extends SocketLink {
+  constructor(timing: Partial<ExtensionLinkTiming> = {}, log: (line: string) => void = () => {}) {
+    super(CHROME_LINK_PROFILE, timing, log);
   }
 }
 

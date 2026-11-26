@@ -8,7 +8,8 @@
  * - `BuiltinBrowserRoutes` builds the generation's BuiltinBrowser — the built-in browser over
  *   that port, and the users' own Chromes through the extension hub — mounts the routes, and
  *   contributes the extension's WebSocket endpoint (`HttpModule.upgrades`, extension-ws.ts),
- *   which the runtime hands the upgrade to. The browser (and with it the port listener and
+ *   which the runtime hands the upgrade to, and — for a machine — the endpoint of the channel the
+ *   server that added it opens (hub-ws.ts), over which the person's own browser is relayed. The browser (and with it the port listener and
  *   every extension socket) is disposed with the App: a hot swap hands the port to the next
  *   generation's link, and the extensions reconnect to the next generation's hub (close 1012).
  * - It reaches the host only through the plugin face (`@prismshadow/penguin-server/plugin`), the
@@ -58,6 +59,7 @@ import type { BrowserExtensionAdmission } from "./extension-hub.js";
 import type { ExtensionSocket } from "./extension-link.js";
 import { ExtensionPairing } from "./extension-pairing.js";
 import { extensionUpgrade } from "./extension-ws.js";
+import { hubUpgrade } from "./hub-ws.js";
 import { builtinBrowserRoutes, extensionPairRoutes } from "./routes.js";
 import { BuiltinBrowser } from "./service.js";
 import type { BrowserShellPort } from "./shell-link.js";
@@ -148,6 +150,13 @@ function backendPrefs(store: UiPrefsStore) {
         prefix: "/api/builtin-browser/extension/ws",
         auth: "none",
       },
+      {
+        // On a machine: the channel the server that added it opens through its ssh connection,
+        // signed in with the admin session it minted here (hub-ws.ts refuses any Origin).
+        id: "BuiltinBrowserRoutes.hubSocket",
+        prefix: "/api/builtin-browser/hub/ws",
+        auth: "user",
+      },
     ],
     "MeRoutes.ownedPrefs": [
       {
@@ -181,6 +190,7 @@ export class BuiltinBrowserRoutes {
   @Bind("BuiltinBrowserRoutes.routes") routes!: Hono<AppEnv>;
   @Bind("BuiltinBrowserRoutes.pair") pairRoutes!: Hono<AppEnv>;
   @Bind("BuiltinBrowserRoutes.extensionSocket") extensionSocket!: WebSocketUpgrade;
+  @Bind("BuiltinBrowserRoutes.hubSocket") hubSocket!: WebSocketUpgrade;
 
   setup({ effect }: ClassCtx) {
     const users = this.users;
@@ -258,6 +268,7 @@ export class BuiltinBrowserRoutes {
     };
     const gate = this.gate;
     this.extensionSocket = extensionUpgrade({ gate: () => gate, log: (line) => log.line(line) });
+    this.hubSocket = hubUpgrade({ gate: () => browser, log: (line) => log.line(line) });
     // The admin's switch acts at once: off closes every connected Chrome (4009).
     const unwatch = settings.watch((key) => {
       if (key === BROWSER_EXTENSIONS_KEY && !settings.getBrowserExtensionsEnabled()) {

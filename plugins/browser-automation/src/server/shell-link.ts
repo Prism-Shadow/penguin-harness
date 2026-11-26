@@ -88,6 +88,11 @@ export function parseTab(value: unknown): BuiltinBrowserTab | null {
   if (typeof canGoBack !== "boolean" || typeof canGoForward !== "boolean") return null;
   const favicon = faviconOf(value.favicon);
   const crashed = crashReasonOf(value.crashed);
+  // Only a hub names a tab's Session (the runtime ignores it from any other far side).
+  const sessionId =
+    typeof value.sessionId === "string" && /^[\x21-\x7e]{1,200}$/.test(value.sessionId)
+      ? value.sessionId
+      : undefined;
   return {
     id,
     url,
@@ -97,6 +102,7 @@ export function parseTab(value: unknown): BuiltinBrowserTab | null {
     canGoForward,
     ...(favicon !== undefined ? { favicon } : {}),
     ...(crashed !== undefined ? { crashed } : {}),
+    ...(sessionId !== undefined ? { sessionId } : {}),
   };
 }
 
@@ -193,6 +199,7 @@ interface Pending {
 export class ShellLink implements BrowserLink {
   readonly backend = "builtin" as const;
   readonly capabilities = BUILTIN_CAPABILITIES;
+  readonly downReason = "shell_unsupported" as const;
   private readonly timing: ShellLinkTiming;
   private readonly pending = new Map<string, Pending>();
   private readonly eventListeners = new Set<(event: DesktopBrowserEvent) => void>();
