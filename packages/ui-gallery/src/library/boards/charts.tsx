@@ -24,7 +24,10 @@ import type {
 import { ContextRing, Legend, Ring, Sparkline, TokenDonut } from "@prismshadow/penguin-ui";
 import type { LegendItem, RingSegment, ToneName } from "@prismshadow/penguin-ui";
 import { humanizeTokens } from "../../../../web/src/lib/format";
-import { TimelineChart, type TraceHighlight } from "@prismshadow/penguin-library-trace/web/traces/timeline-chart";
+import {
+  TimelineChart,
+  type TraceHighlight,
+} from "@prismshadow/penguin-library-trace/web/traces/timeline-chart";
 import { TrendChart } from "../../../../web/src/features/usage/trend-chart";
 import {
   RequestsChart,

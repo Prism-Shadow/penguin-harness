@@ -7,7 +7,10 @@
  * footprint a single call claims, including timestamps recorded out of order.
  */
 import { describe, expect, it } from "vitest";
-import { packToolLanes, toolSpanBounds } from "@prismshadow/penguin-library-trace/web/traces/lane-packing";
+import {
+  packToolLanes,
+  toolSpanBounds,
+} from "@prismshadow/penguin-library-trace/web/traces/lane-packing";
 
 interface Span {
   name: string;

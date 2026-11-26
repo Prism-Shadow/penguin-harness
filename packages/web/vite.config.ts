@@ -112,7 +112,9 @@ export const libraryWebAliases = [
   ...LIBRARY_WEB_DOMAINS.flatMap((domain) => [
     {
       find: new RegExp(`^@prismshadow/penguin-library-${domain}/web$`),
-      replacement: fileURLToPath(new URL(`../../library/${domain}/src/web/index.ts`, import.meta.url)),
+      replacement: fileURLToPath(
+        new URL(`../../library/${domain}/src/web/index.ts`, import.meta.url),
+      ),
     },
     {
       find: new RegExp(`^@prismshadow/penguin-library-${domain}/web/(.*)$`),

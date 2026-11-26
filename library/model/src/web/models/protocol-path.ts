@@ -34,11 +34,7 @@
  * Custom-model detection can select OpenAI Responses, Anthropic Messages, OpenAI Chat
  * Completions or Google GenAI. The suffix menu also offers MMSP.
  */
-import {
-  CLIENT_PROTOCOLS,
-  routedClientType,
-  vendorClientType,
-} from "../../model-catalog/index";
+import { CLIENT_PROTOCOLS, routedClientType, vendorClientType } from "../../model-catalog/index";
 
 /**
  * The protocol path appended to the base URL for a model entry. An explicit client type

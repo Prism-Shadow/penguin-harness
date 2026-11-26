@@ -13,7 +13,10 @@
  */
 import { describe, expect, it } from "vitest";
 import type { RequestSpan } from "@prismshadow/penguin-server/api";
-import { levelChangeText, thinkingLevelChanges } from "@prismshadow/penguin-library-trace/web/traces/trace-levels";
+import {
+  levelChangeText,
+  thinkingLevelChanges,
+} from "@prismshadow/penguin-library-trace/web/traces/trace-levels";
 
 let clock = 0;
 /** One request of round `taskIndex`, at `level` (undefined: none recorded). */

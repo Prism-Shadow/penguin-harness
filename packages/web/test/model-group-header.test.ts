@@ -55,7 +55,10 @@ import {
   type DisconnectHost,
 } from "@prismshadow/penguin-library-model/web/models/group-connection";
 
-import { BalanceMenu, balanceView } from "@prismshadow/penguin-library-model/web/models/group-balance";
+import {
+  BalanceMenu,
+  balanceView,
+} from "@prismshadow/penguin-library-model/web/models/group-balance";
 import {
   GroupSettingsControl,
   GroupSettingsMenu,

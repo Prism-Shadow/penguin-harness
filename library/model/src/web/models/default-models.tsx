@@ -24,7 +24,20 @@ import type { ModelInfo, ModelRefDto, ModelsResponse } from "@prismshadow/pengui
 import { DefaultModelsDialog, toastError } from "@prismshadow/penguin-ui";
 import type { DefaultModelRow, DefaultModelSection } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { MULTIMODAL_TOOLS_PACKAGE, type ToolBinding, apiErrorText, notifyModelsChanged, sameModelRef, S, useLocale, useToolBindings, clearDraftModelRef, dispatchChatDefaultsChanged, ModelCatalogSelect, modelLabel } from "@prismshadow/penguin-web/internal";
+import {
+  MULTIMODAL_TOOLS_PACKAGE,
+  type ToolBinding,
+  apiErrorText,
+  notifyModelsChanged,
+  sameModelRef,
+  S,
+  useLocale,
+  useToolBindings,
+  clearDraftModelRef,
+  dispatchChatDefaultsChanged,
+  ModelCatalogSelect,
+  modelLabel,
+} from "@prismshadow/penguin-web/internal";
 import { putVisionModel } from "./vision-model";
 
 /** Image understanding's row: the vision model. No binding key has a colon, so none collides. */

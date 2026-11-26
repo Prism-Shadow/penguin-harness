@@ -69,9 +69,7 @@ function libraryWebRoots(repoRoot: string): Record<string, string> {
 
 /** Whether the file is the app's: the web tree's own, a plugin web half or a library web half compiled into it. */
 export function isAppFile(file: SourceFile): boolean {
-  return (
-    file.root === "web" || file.root.startsWith("plugin:") || file.root.startsWith("library:")
-  );
+  return file.root === "web" || file.root.startsWith("plugin:") || file.root.startsWith("library:");
 }
 
 /**
@@ -85,9 +83,7 @@ export function appKeyOf(id: string): string {
 
 /** The repo-relative id of the app file a guard's list names (the inverse of {@link appKeyOf}). */
 export function appIdOf(key: string): string {
-  return key.startsWith("plugins/") || key.startsWith("library/")
-    ? key
-    : `packages/web/src/${key}`;
+  return key.startsWith("plugins/") || key.startsWith("library/") ? key : `packages/web/src/${key}`;
 }
 
 /** `.ts`, `.tsx` and `.css` under every root. */

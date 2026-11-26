@@ -25,7 +25,10 @@ const SCAN = scanSources();
  */
 const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["library/project/src/web/projects/project-dialogs/members-section.tsx", "doRemove"],
-  ["library/project/src/web/projects/project-dialogs/security-policy-section.tsx", "restoreDefaults"],
+  [
+    "library/project/src/web/projects/project-dialogs/security-policy-section.tsx",
+    "restoreDefaults",
+  ],
   ["features/machines/machines-page.tsx", "deleteMachine"],
   ["features/machines/machines-page.tsx", "stopServer"],
   ["features/machines/machines-page.tsx", "uninstall"],

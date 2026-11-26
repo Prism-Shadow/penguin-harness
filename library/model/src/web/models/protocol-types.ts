@@ -6,11 +6,7 @@
  * The probing itself is server-side (packages/server/src/services/protocol-detect.ts); these
  * only decide what the dialog shows and what is worth sending there.
  */
-import {
-  modelCalledKeyless,
-  modelEnvironment,
-  providerInfo,
-} from "../../model-catalog/index";
+import { modelCalledKeyless, modelEnvironment, providerInfo } from "../../model-catalog/index";
 import type { ModelEnvironment } from "../../model-catalog/index";
 import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-connection";
 import { PROTOCOL_CLIENT_TYPES, type ProtocolClientType } from "@prismshadow/penguin-web/internal";

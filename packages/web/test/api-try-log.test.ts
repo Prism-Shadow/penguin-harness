@@ -48,7 +48,10 @@ import {
   type TryState,
 } from "@prismshadow/penguin-library-agent/web/agents/api-try-log";
 
-import { ApiTryView, type ApiTryViewProps } from "@prismshadow/penguin-library-agent/web/agents/api-try-panel";
+import {
+  ApiTryView,
+  type ApiTryViewProps,
+} from "@prismshadow/penguin-library-agent/web/agents/api-try-panel";
 
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
