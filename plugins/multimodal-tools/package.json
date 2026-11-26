@@ -56,7 +56,7 @@
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/skills": "workspace:*",
     "commander": "^13.0.0",
-    "hono": "^4.13.11",
+    "hono": "4.13.13",
     "tsup": "^8.3.0",
     "vitest": "^4.1.12"
   }
