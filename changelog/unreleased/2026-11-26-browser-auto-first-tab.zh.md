@@ -2,6 +2,7 @@
 
 - **Date:** 2026-11-26
 - **Type:** fix
+- **PR:** [PR](https://github.com/Prism-Shadow/penguin-harness/pull/1905)
 - **Scope:** `web`, `browser`
 
 [English](2026-11-26-browser-auto-first-tab.md)
