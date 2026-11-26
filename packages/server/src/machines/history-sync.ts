@@ -17,9 +17,15 @@
  * another channel of the same ssh session is on a busy link, not a dead one), a preemption —
  * reopens from the copy,
  * never from 0: at once when the cut stream had moved (bytes committed, its window delivered, its
- * end reached), else after a wait that grows 1 s doubling to 30 s. A machine that is not connected, or that cannot be reached, is
- * waited for the same way, for as long as a reader waits, and each reader is told
+ * end reached), else after a wait that grows 1 s doubling. A machine that is not connected, or
+ * whose server cannot be reached, is waited for the same way, and each reader is told why
  * (`progress.waiting`). There is no deadline per stream.
+ *
+ * WAITING HAS AN END. Five retries in a row that move nothing end the wait: every reader of the
+ * job hears 503 `machine_unreachable`, and the sync remembers the machine as out of reach, so a
+ * later read of it — the same conversation opened again, another one on that machine — is tried
+ * once and not retried, until a stream from that machine moves again. A page that holds a cached
+ * copy shows it instead, and reads again when the machine comes back.
  *
  * A COPY THAT CANNOT BE KEPT IS NO REASON NOT TO READ. When this server's copy fails (a disk that
  * refuses writes, a directory that cannot open), the job stops using it: the window is assembled
@@ -71,6 +77,11 @@ export const MACHINE_STREAM_WATCHDOG_MS = 15_000;
 /** The first wait before trying a machine again, doubled per attempt up to RETRY_MAX_MS. */
 export const RETRY_FIRST_MS = 1_000;
 export const RETRY_MAX_MS = 30_000;
+/**
+ * The most retries in a row that move nothing before a job stops waiting (1 + 2 + 4 + 8 + 16 s
+ * of waits): its readers end with `machine_unreachable`, and the machine reads as out of reach.
+ */
+export const RETRY_MAX_ATTEMPTS = 5;
 /**
  * How long a machine's word that a Session is still there stands before a read the copy answers
  * on its own (an image, the Trace panel) asks again: a deletion this server never heard of (made
@@ -162,6 +173,8 @@ export interface HistorySyncDeps {
   factsKept?: number;
   retryFirstMs?: number;
   retryMaxMs?: number;
+  /** The most retries in a row that move nothing (RETRY_MAX_ATTEMPTS). */
+  retryMaxAttempts?: number;
   /** Test observability: each run of Trace bytes a machine stream delivered, as it was handled. */
   observe?: (event: {
     machineId: string;
@@ -217,6 +230,8 @@ export class GenerationClosed extends Error {
 export type ProgressListener = (progress: HistoryProgress) => void;
 type Phase = HistoryProgress["phase"];
 type Waiting = HistoryProgress["waiting"];
+/** Why an attempt that moved nothing is retried (HistoryProgress.waiting's retried reasons). */
+type Wait = "not_connected" | "unreachable" | "retrying";
 
 /** One reader's progress, kept monotone across the streams that serve it. */
 class Track {
@@ -473,6 +488,11 @@ class HistoryJob {
     private readonly onIdle: (job: HistoryJob) => void,
     /** The `<machineId>\0<sessionId>` directories every open job uses. */
     private readonly held: () => Set<string>,
+    /**
+     * The machines a job stopped waiting for and nothing has moved from since (the sync's,
+     * shared by every job): a read of one is tried once and not retried.
+     */
+    private readonly outOfReach: Set<string>,
   ) {
     this.#clock = deps.clock ?? realClock;
     this.#group = [sessionId];
@@ -683,7 +703,7 @@ class HistoryJob {
     };
     this.#stream = stream;
     this.#whole = false;
-    let wait: "not_connected" | "retrying" | null = null;
+    let wait: Wait | null = null;
     try {
       const target = await this.deps.target(this.machineId);
       if (stream.cancelled) return;
@@ -704,7 +724,7 @@ class HistoryJob {
         return;
       }
       if (this.#older) {
-        await this.#readOverHttp(stream, target);
+        wait = await this.#readOverHttp(stream, target);
         return;
       }
       const got = await this.deps.socket(this.machineId, target);
@@ -714,7 +734,7 @@ class HistoryJob {
         const verdict = socketVerdict(body);
         if (verdict === "older") this.#older = true;
         if (verdict === "older" || verdict === "http") {
-          await this.#readOverHttp(stream, target);
+          wait = await this.#readOverHttp(stream, target);
         } else if (verdict === "refused") {
           this.#failAll(this.#refusedError(messageOf(body)));
         } else if (verdict === "closed") {
@@ -741,7 +761,7 @@ class HistoryJob {
       if (stream.answer !== null && isOlderBuild(stream.answer.status, stream.answer.body)) {
         this.#older = true;
         stream.answer = null;
-        await this.#readOverHttp(stream, target);
+        wait = await this.#readOverHttp(stream, target);
         return;
       }
       wait = this.#outcome(stream);
@@ -870,8 +890,10 @@ class HistoryJob {
     }
   }
 
-  #afterStream(stream: MachineStream, wait: "not_connected" | "retrying" | null): void {
+  #afterStream(stream: MachineStream, wait: Wait | null): void {
     const op = stream.op;
+    // A stream that moved is the machine in reach again: its next wait gets every retry.
+    if (stream.progressed) this.outOfReach.delete(this.machineId);
     // An op its stream did not get to the end of goes back to the front, unless its reader left
     // or it was settled (an error).
     if (op !== null && !op.settled && this.#readers.has(op.reader)) this.#queue.unshift(op);
@@ -881,18 +903,65 @@ class HistoryJob {
     this.#pump();
   }
 
-  #backoff(reason: "not_connected" | "retrying"): void {
+  /**
+   * An attempt moved nothing: the next one after a wait that doubles, while retries are left —
+   * none for a machine already out of reach, which is tried once per read — and then the end.
+   */
+  #backoff(reason: Wait): void {
+    const most = this.outOfReach.has(this.machineId)
+      ? 0
+      : (this.deps.retryMaxAttempts ?? RETRY_MAX_ATTEMPTS);
+    if (this.#attempt >= most) {
+      this.#giveUp(reason, most);
+      return;
+    }
     this.#attempt += 1;
     const first = this.deps.retryFirstMs ?? RETRY_FIRST_MS;
     const max = this.deps.retryMaxMs ?? RETRY_MAX_MS;
     const delay = Math.min(max, first * 2 ** (this.#attempt - 1));
-    const waiting: Waiting = { reason, attempt: this.#attempt, nextAt: this.#clock.now() + delay };
+    const waiting: Waiting = {
+      reason,
+      attempt: this.#attempt,
+      maxAttempts: most,
+      nextAt: this.#clock.now() + delay,
+    };
     for (const op of this.#queue) op.track.wait(waiting);
     for (const waiter of this.#fillWaiters) waiter.track.wait(waiting);
     this.#retry = this.#clock.setTimeout(() => {
       this.#retry = null;
       this.#pump();
     }, delay);
+  }
+
+  /**
+   * The retries are spent: every read waiting on the machine ends with `machine_unreachable`,
+   * saying why the last attempt failed, and the machine reads as out of reach until a stream from
+   * it moves: until then a read of it is tried once and ends the same way, and after that the
+   * streak starts over. A reader with a cached copy shows that instead, and asks again when the
+   * machine is back.
+   */
+  #giveUp(reason: Wait, retries: number): void {
+    this.#attempt = 0;
+    const known = this.outOfReach.has(this.machineId);
+    this.outOfReach.add(this.machineId);
+    if (!known) {
+      this.deps.log(
+        `[machines] history of ${this.sessionId} on ${this.machineId}: ${retries} retries moved nothing (${reason}); its readers stop waiting, and its next reads are tried once`,
+      );
+    }
+    this.#failAll(
+      new HttpError(
+        503,
+        "machine_unreachable",
+        reason === "not_connected"
+          ? "This server holds no connection to the machine holding this conversation."
+          : reason === "unreachable"
+            ? "The server on the machine holding this conversation cannot be reached."
+            : "The machine holding this conversation does not answer.",
+        undefined,
+        { machineId: this.machineId, reason },
+      ),
+    );
   }
 
   /**
@@ -928,7 +997,9 @@ class HistoryJob {
       let unacked = 0;
       const slow = (said: boolean): void => {
         slowSaid = said;
-        const waiting: Waiting = said ? { reason: "slow", attempt: 0, nextAt: 0 } : null;
+        const waiting: Waiting = said
+          ? { reason: "slow", attempt: 0, maxAttempts: 0, nextAt: 0 }
+          : null;
         for (const track of this.#tracks(stream, stream.phase)) track.wait(waiting);
       };
       const finish = (): void => {
@@ -1241,14 +1312,14 @@ class HistoryJob {
    * a machine this server holds no socket to); a fill or a file has nothing to bring, since
    * nothing of such a read is kept; a body cannot be had this way.
    */
-  async #readOverHttp(stream: MachineStream, target: ProxyTarget): Promise<void> {
+  async #readOverHttp(stream: MachineStream, target: ProxyTarget): Promise<Wait | null> {
     this.#resolveFill();
     const op = stream.op;
-    if (op === null) return;
+    if (op === null) return null;
     if (op.kind === "file") {
       stream.delivered = true;
       this.#settle(op, null);
-      return;
+      return null;
     }
     if (op.kind === "body" || op.read === null) {
       this.#settle(
@@ -1259,7 +1330,7 @@ class HistoryJob {
           "This machine's build cannot send the whole value; update it from the Machines page.",
         ),
       );
-      return;
+      return null;
     }
     const abort = new AbortController();
     const prev = stream.stop;
@@ -1281,9 +1352,13 @@ class HistoryJob {
         .then((bytes) => decodedWhole(Buffer.from(bytes), encoding))
         .then((bytes) => JSON.parse(bytes.toString("utf8")) as unknown)
         .catch(() => null);
+      // The forward had nowhere to deliver (proxy.ts's own 502): the connection is held and the
+      // machine's server is not reached — no answer from the machine, so not a machine that is
+      // silent either.
+      if (res.status === 502 && codeOf(said) === "server_unreachable") return "unreachable";
       stream.answer = { status: res.status, body: said };
       if (this.#outcome(stream) !== null) throw new Error(`the machine answered ${res.status}`);
-      return;
+      return null;
     }
     const total = Number(res.headers.get("content-length") ?? "0") || 0;
     stream.left.window = { bytes: total, lines: 0 };
@@ -1297,18 +1372,21 @@ class HistoryJob {
       stream.progressed = true;
       op.track.add(value.byteLength, 0);
     }
-    if (stream.cancelled) return;
+    if (stream.cancelled) return null;
     // An older build's page has no `units`: counted here, as a newer machine's cut counts it.
     const page = await decodedWhole(Buffer.concat(chunks), encoding);
     const response = await withWindowUnits(JSON.parse(page.toString("utf8")) as MessagesResponse);
-    if (stream.cancelled) return;
+    if (stream.cancelled) return null;
     const date = Date.parse(res.headers.get("date") ?? "");
     stream.delivered = true;
+    // Answered whole: the streak of attempts that moved nothing is over.
+    this.#attempt = 0;
     this.#settle(op, {
       response,
       sources: response.messages.map(() => null),
       serverNowMs: Number.isFinite(date) ? date : null,
     } satisfies AssembledWindow);
+    return null;
   }
 }
 
@@ -1438,6 +1516,8 @@ export class HistorySync {
   /** What each machine said of a Session lately (sessionOn), by `<machineId>\0<sessionId>`. */
   readonly #facts = new Map<string, { at: number; fact: SessionFact }>();
   readonly #asking = new Map<string, Promise<SessionFact>>();
+  /** The machines a job stopped waiting for, until a stream from one moves (HistoryJob.#giveUp). */
+  readonly #outOfReach = new Set<string>();
   readonly #clock: SyncClock;
   #closed = false;
   /** The next pass over the copies' retention. */
@@ -1471,6 +1551,7 @@ export class HistorySync {
           if (this.#jobs.get(key) === idle) this.#jobs.delete(key);
         },
         () => this.held(),
+        this.#outOfReach,
       );
       // A generation already replaced runs nothing: its reader's every ask ends at once.
       if (this.#closed) job.close();

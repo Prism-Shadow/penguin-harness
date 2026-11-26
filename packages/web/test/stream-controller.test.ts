@@ -1899,7 +1899,12 @@ describe("history over the stream", () => {
     const first = h.stream.reads[0]!;
     h.stream.progress(
       first,
-      progressOf("window", 0, 0, { reason: "retrying", attempt: 2, nextAt: 1_006_000 }),
+      progressOf("window", 0, 0, {
+        reason: "retrying",
+        attempt: 2,
+        maxAttempts: 5,
+        nextAt: 1_006_000,
+      }),
     );
     h.controller.retryNow();
     expect(first.closed).toBe(true);
