@@ -2,7 +2,8 @@
 
 - **Date:** 2026-11-26
 - **Type:** fix
-- **Scope:** `server`
+- **Scope:** `server`, `docs`
+- **PR:** [#1891](https://github.com/Prism-Shadow/penguin-harness/pull/1891)
 
 [中文版](2026-11-26-machine-version-503.zh.md)
 
