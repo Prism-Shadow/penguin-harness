@@ -37,7 +37,9 @@
  * not committed: `pnpm typecheck`, the server's `build` and `test`, and deploy.mjs all
  * regenerate it; `--check` remains for a CI that wants to assert a committed copy). Keys are `<module>#<Export>`, where the
  * module is the package name for an interface class (its identity is its structure; the
- * key only has to agree between provider and consumer) and a component's own name.
+ * key only has to agree between provider and consumer) and a component's own name —
+ * unless the class pins its key (`@Interface("<module>#<Name>")`), which a moved
+ * interface carries so the keys its consumers' manifests already name stay stable.
  *
  * Projection rules — the generator REFUSES what it does not recognize rather than guess:
  *   data types (primitives, literals, unions, arrays, tuples, plain objects, records)
@@ -510,6 +512,29 @@ for (const project of projects) {
     if (kind === "component")
       componentKeyBySymbol.set(sym, `${moduleNameOf(node.getSourceFile().fileName)}#${className}`);
   }
+  /** Explicit interface keys (`@Interface("<module>#<Name>")`), by class symbol. */
+  const ifaceKeyBySymbol = new Map();
+  for (const sf of program.getSourceFiles()) {
+    if (!projectsFile(sf)) continue;
+    const file = path.relative(process.cwd(), sf.fileName);
+    const visit = (node) => {
+      if (ts.isClassDeclaration(node) && node.name) {
+        const call = decoratorCall(node, "Interface");
+        if (call && call.arguments.length > 0) {
+          const arg = call.arguments[0];
+          if (!ts.isStringLiteralLike(arg))
+            errors.push(
+              `${file}: @Interface key must be a string literal (got '${arg.getText()}')`,
+            );
+          else if (!arg.text.includes("#"))
+            errors.push(`${file}: @Interface key must be '<module>#<Name>' (got '${arg.text}')`);
+          else ifaceKeyBySymbol.set(checker.getSymbolAtLocation(node.name), arg.text);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
   // The plugin declaration: `export default { modules: [...], replaces: [...] }`, or a
   // default-exported binding initialized to that literal (`const plugin: Plugin = {...}`).
   // Each element must be a module class of this package; anything else is refused. Only the
@@ -578,7 +603,9 @@ for (const project of projects) {
     if (keys.has(symbol)) return keys.get(symbol);
     const owner = exportingFile ?? decl.getSourceFile();
     const key =
-      componentKeyBySymbol.get(symbol) ?? `${moduleNameOf(owner.fileName)}#${symbol.getName()}`;
+      componentKeyBySymbol.get(symbol) ??
+      ifaceKeyBySymbol.get(symbol) ??
+      `${moduleNameOf(owner.fileName)}#${symbol.getName()}`;
     keys.set(symbol, key);
     pending.push({ symbol, decl, key });
     return key;

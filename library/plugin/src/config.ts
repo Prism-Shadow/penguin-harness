@@ -831,7 +831,7 @@ export interface SettingsGroup {
 }
 
 /** What a module reads: the group it declared, and a watch on it. */
-@Interface()
+@Interface("@prismshadow/penguin-server#PluginConfig")
 export abstract class PluginConfig {
   /** The stored values merged onto the declared defaults; `{}` for a name no group answers to. */
   abstract get(name: string): Record<string, unknown>;
