@@ -99,6 +99,41 @@ try {
   if ([IO.File]::ReadAllText((Join-Path $next 'data\desktop.ini')) -cne '[.ShellClassInfo]' -or [IO.File]::ReadAllText((Join-Path $next 'desktop\.hidden-profile')) -cne 'hidden desktop entry') { throw 'Repeated moves did not preserve hidden/system files.' }
   $history = [IO.File]::ReadAllText((Join-Path $next 'windows-data-roots.json')) | ConvertFrom-Json
   if ($history.to -ne (Join-Path $next 'data') -or $history.from.Count -ne 2 -or $history.from -notcontains $old -or $history.from -notcontains (Join-Path $destination 'data')) { throw 'Repeated moves lost the path needed to reopen an older Session.' }
+  # Moving back to a previously used (now cleared) folder, even with different casing, must drop
+  # the new active data root from `from` so startup validation does not reject it as self-referential.
+  $destLink = Join-Path $destination 'data\previous-project'
+  if ([IO.Directory]::Exists($destLink)) { [IO.Directory]::Delete($destLink) }
+  Remove-Item -LiteralPath $destination -Recurse -Force
+  $returned = Join-Path $base ('volume ' + [char]0x96ea)
+  Run $returned $true
+  $returnedRaw = [IO.File]::ReadAllText((Join-Path $returned 'windows-data-roots.json'))
+  $returnedHistory = $returnedRaw | ConvertFrom-Json
+  $returnedData = Join-Path $returned 'data'
+  if (
+    $returnedHistory.to -ne $returnedData -or
+    $returnedHistory.from -isnot [object[]] -or
+    $returnedHistory.from.Count -ne 2 -or
+    $returnedHistory.from -notcontains $old -or
+    $returnedHistory.from -notcontains (Join-Path $next 'data') -or
+    $returnedHistory.from -contains $returnedData
+  ) { throw "Moving back to a prior location wrote invalid relocation history: $returnedRaw" }
+  # Also verify a single-entry history after filtering still serializes `from` as a JSON array.
+  [IO.File]::WriteAllText((Join-Path $returned 'windows-data-roots.json'), (@{from=@((Join-Path $next 'data'));to=$returnedData} | ConvertTo-Json -Compress))
+  $nextLink = Join-Path $next 'data\previous-project'
+  if ([IO.Directory]::Exists($nextLink)) { [IO.Directory]::Delete($nextLink) }
+  Remove-Item -LiteralPath $next -Recurse -Force
+  Run $next $true
+  $singleRaw = [IO.File]::ReadAllText((Join-Path $next 'windows-data-roots.json'))
+  $singleHistory = $singleRaw | ConvertFrom-Json
+  $nextData = Join-Path $next 'data'
+  if (
+    $singleRaw -notmatch '"from":\[' -or
+    $singleHistory.to -ne $nextData -or
+    $singleHistory.from -isnot [object[]] -or
+    $singleHistory.from.Count -ne 1 -or
+    $singleHistory.from -notcontains $returnedData -or
+    $singleHistory.from -contains $nextData
+  ) { throw "Moving back with a single-entry history wrote invalid relocation history: $singleRaw" }
   Write-Output 'Windows data selection, relocation, recovery and profile verification passed.'
 } finally {
   # Never recurse through even a synthetic junction during cleanup.
