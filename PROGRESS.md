@@ -260,3 +260,14 @@ pnpm-lock.yaml 未含。后果与已试路径：
   形状绑定真实 suggestSemanticId+SEMANTIC_ID_RULES+isNewSemanticId（行为断言走的正是这个
   共享 suggester 的 prompt/NO_MODEL 语义）。④sandbox-settings 4 例与 plugin-source-settings
   1 例待本轮修后单文件定位。提交 fc96888a24 之后的增量。
+- 验证轮修复 13（五文件定向快测：themes/organization-runtime/plugin-cdn-failover 三文件
+  转绿，剩 sandbox-settings 4 例＋plugin-source-settings 1 例）：①sandbox-settings 根因＝
+  测试 manifest 里的接口 id 字符串 "@prismshadow/penguin-server#PluginConfig" 过期——接口
+  类已随搬域落进 library/plugin（@Interface() 声明在 config.ts:834），id 按声明包推导为
+  "@prismshadow/penguin-library-plugin#PluginConfig"，平台报 'config' names interface …
+  which the table does not carry → test-backend/probed-backend 两个模块整代剔除 → 无
+  sandbox backend（其余三个文件的三类修法各自生效已证）。修＝两处 iface 字符串改为库包
+  前缀（33/322 行）。②plugin-source-settings 的 npm registry 断言＝npmReason 取 stderr
+  首条长行，而 vps 环境 ~/.npmrc 含 npm 不认识的键（"Unknown user config network…"），
+  warn 行抢在 error 行前 → 消息不含 registry.invalid；修＝npmReason 过滤 npm warn 噪声行，
+  理由优先取 error 行，只剩 warn 时落 err.message（命令行带 --registry 仍点名）。待快测。
