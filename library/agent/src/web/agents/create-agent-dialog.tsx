@@ -56,9 +56,8 @@ import {
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
+import { S, SEMANTIC_ID_PATTERN, failureNode } from "@prismshadow/penguin-web/internal";
 import {
-  S,
-  SEMANTIC_ID_PATTERN,
   SemanticIdField,
   WorkspaceSelect,
   SkillPickList,
@@ -68,8 +67,7 @@ import {
   PickableItem,
   StdioDisclosure,
   stdioServers,
-  failureNode,
-} from "@prismshadow/penguin-web/internal";
+} from "@prismshadow/penguin-web/internal-hub";
 /** A library plugin as a picker row, keeping what the create confirmation reads: its title and its MCP servers. */
 export type PluginPickItem = PickableItem &
   Pick<PluginItem, "title" | "titleZh" | "mcpServers" | "defaultInstall">;

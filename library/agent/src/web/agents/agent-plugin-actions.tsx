@@ -28,6 +28,10 @@ import {
   toastInstall,
   S,
   localizedText,
+  toastFailure,
+  toldFailure,
+} from "@prismshadow/penguin-web/internal";
+import {
   PluginUpdateParts,
   StdioInstallBody,
   askModuleOnAgent,
@@ -42,9 +46,7 @@ import {
   AgentTarget,
   PackageUpdateDialog,
   PackageUpdate,
-  toastFailure,
-  toldFailure,
-} from "@prismshadow/penguin-web/internal";
+} from "@prismshadow/penguin-web/internal-hub";
 /** What a plugin is called on this page: the library's display name, else its name. */
 export function agentPluginTitle(entry: AgentPluginGroup, locale: "zh" | "en"): string {
   return entry.plugin === null

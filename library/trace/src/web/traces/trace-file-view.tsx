@@ -79,7 +79,6 @@ import {
   ElapsedSplitRows,
   StatHint,
   readHistory,
-  HistoryFileLoading,
   S,
   computeTps,
   formatAverage,
@@ -94,6 +93,7 @@ import {
   Currency,
   failureNode,
 } from "@prismshadow/penguin-web/internal";
+import { HistoryFileLoading } from "@prismshadow/penguin-web/internal-hub";
 import {
   TRACE_ROUNDS_PAGE,
   expandedAfterAnalysis,

@@ -43,11 +43,11 @@ import {
   useProject,
   useAgentLocation,
   localizedText,
-  SkillTile,
   downloadArchive,
   toastApiError,
   cardBodyClick,
 } from "@prismshadow/penguin-web/internal";
+import { SkillTile } from "@prismshadow/penguin-web/internal-hub";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildHookImportPrompt } from "./hook-import";
 import type { PartRef, PartSource } from "./plugins-subpages";

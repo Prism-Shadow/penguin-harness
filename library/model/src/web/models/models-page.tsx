@@ -134,8 +134,6 @@ import {
   USD_TO_CNY,
   useTheme,
   Currency,
-  AiCreateModal,
-  AiCreateButtons,
   formatDateTime,
   humanizeTokens,
   allGroupKeys,
@@ -151,7 +149,6 @@ import {
   TAG_TONE,
   inUseTag,
   modelTags,
-  clearDraftModelRef,
   useUpdateBadges,
   dismissTodo,
   refreshProjectTodos,
@@ -165,6 +162,11 @@ import {
   toldFailure,
   toldNode,
 } from "@prismshadow/penguin-web/internal";
+import {
+  AiCreateModal,
+  AiCreateButtons,
+  clearDraftModelRef,
+} from "@prismshadow/penguin-web/internal-hub";
 import {
   MODEL_PROVIDERS,
   PENGUIN_GO_PROVIDER_ID,

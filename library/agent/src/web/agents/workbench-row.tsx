@@ -11,7 +11,7 @@
 import type { ReactNode } from "react";
 import type { IconRef, WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { ICONS, ImageIcon } from "@prismshadow/penguin-ui";
-import { SkillTile } from "@prismshadow/penguin-web/internal";
+import { SkillTile } from "@prismshadow/penguin-web/internal-hub";
 
 /** Edge of the row's mark, in px: the tile every settings row leads with. */
 const MARK_PX = 36;

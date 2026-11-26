@@ -6,7 +6,8 @@
  * at call time (live binding), so both follow language switches like every other string
  * consumer.
  */
-import { S, composeAiPrompt } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { composeAiPrompt } from "@prismshadow/penguin-web/internal-hub";
 import { classifyImportSource } from "./skill-import-source";
 
 /**

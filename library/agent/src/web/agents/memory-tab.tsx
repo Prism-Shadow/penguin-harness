@@ -95,11 +95,11 @@ import {
   useProject,
   agentKey,
   useAgentLocation,
-  useAiBridge,
   toastApiError,
   downloadArchive,
   failureNode,
 } from "@prismshadow/penguin-web/internal";
+import { useAiBridge } from "@prismshadow/penguin-web/internal-hub";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
   MemoryDocumentError,

@@ -37,9 +37,8 @@ import {
   StatusMark,
 } from "@prismshadow/penguin-ui";
 import type { ToneName } from "@prismshadow/penguin-ui";
+import { cardBodyClick, S } from "@prismshadow/penguin-web/internal";
 import {
-  cardBodyClick,
-  S,
   McpServerMarks,
   ModuleStatusMark,
   pluginMcpState,
@@ -53,7 +52,7 @@ import {
   AgentPluginStatus,
   PluginRow,
   SkillTile,
-} from "@prismshadow/penguin-web/internal";
+} from "@prismshadow/penguin-web/internal-hub";
 import type { AgentPluginActions } from "./agent-plugin-actions";
 
 /** Each status's glyph, and its tone; a status without one recedes. */

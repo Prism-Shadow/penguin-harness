@@ -10,7 +10,7 @@
 import type { ReactNode } from "react";
 import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
 import { Modal } from "@prismshadow/penguin-ui";
-import { DirBrowser } from "@prismshadow/penguin-web/internal";
+import { DirBrowser } from "@prismshadow/penguin-web/internal-hub";
 import { PART_LEAD, partDir, type PartRef } from "./plugins-subpages";
 
 /** Not listed: dot entries (the server's own `.build`, `.harness`, `.disabled`) and installed dependencies. */

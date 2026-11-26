@@ -54,11 +54,11 @@ import {
   useProject,
   useAgentLocation,
   localizedText,
-  McpServerMarks,
   toneInk,
   toastFailure,
   failureOf,
 } from "@prismshadow/penguin-web/internal";
+import { McpServerMarks } from "@prismshadow/penguin-web/internal-hub";
 import { permissionOf, transportOf } from "./mcp-servers-form";
 import { McpServerDialog } from "./mcp-server-dialog";
 import type { Failure } from "@prismshadow/penguin-ui";

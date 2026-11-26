@@ -5,10 +5,10 @@ import {
   useAgentAvatarSrc,
   S,
   agentDisplayName,
-  pillClass,
   employeesLast,
   isEmployee,
 } from "@prismshadow/penguin-web/internal";
+import { pillClass } from "@prismshadow/penguin-web/internal-hub";
 /** A searchable Agent chooser; the dialog owns its background, scroll and focus. */
 export function AgentSelect({
   agents,

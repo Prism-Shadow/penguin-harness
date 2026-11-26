@@ -57,10 +57,10 @@ import {
   useProject,
   useAgentLocation,
   useMachineInfo,
-  APPROVAL_MODES,
   toastApiError,
   failureNode,
 } from "@prismshadow/penguin-web/internal";
+import { APPROVAL_MODES } from "@prismshadow/penguin-web/internal-hub";
 import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
 export const AGENT_API_DOCS_URL = "https://penguin.ooo/docs/agent-api";

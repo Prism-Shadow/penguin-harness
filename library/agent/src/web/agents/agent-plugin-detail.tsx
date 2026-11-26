@@ -38,6 +38,8 @@ import {
   BOOK_ICON,
   localizedText,
   workbenchTabsOf,
+} from "@prismshadow/penguin-web/internal";
+import {
   MARKET_KEY,
   McpServerMarks,
   McpSetUpModal,
@@ -50,7 +52,7 @@ import {
   AgentPluginGroup,
   AgentTarget,
   PluginRow,
-} from "@prismshadow/penguin-web/internal";
+} from "@prismshadow/penguin-web/internal-hub";
 import type { AgentPluginActions } from "./agent-plugin-actions";
 import {
   AgentStatusMark,

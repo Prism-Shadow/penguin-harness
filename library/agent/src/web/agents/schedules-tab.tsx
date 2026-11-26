@@ -48,15 +48,17 @@ import {
   useProject,
   useAgentLocation,
   useAgentsOn,
+  toastApiError,
+  failureNode,
+} from "@prismshadow/penguin-web/internal";
+import {
   AiCreateModal,
   AiCreateButtons,
   ScheduleFormModal,
   ScheduleSuggestions,
   scheduleExamples,
   toggleBody,
-  toastApiError,
-  failureNode,
-} from "@prismshadow/penguin-web/internal";
+} from "@prismshadow/penguin-web/internal-hub";
 import { usePromptInjection } from "./prompt-injection-controls";
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
 const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {

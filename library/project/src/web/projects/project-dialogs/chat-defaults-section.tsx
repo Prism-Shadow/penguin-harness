@@ -23,17 +23,19 @@ import {
   agentDisplayName,
   useProject,
   useAuth,
-  clearDraftChatDefaults,
-  clearDraftModelRef,
-  dispatchChatDefaultsChanged,
-  type ChatDefaultsChangedDetail,
-  WorkspaceSelect,
   failureNode,
   ModelCatalogSelect,
   modelLabel,
   SELECTABLE_THINKING_LEVELS,
   sameModelRef,
 } from "@prismshadow/penguin-web/internal";
+import {
+  clearDraftChatDefaults,
+  clearDraftModelRef,
+  dispatchChatDefaultsChanged,
+  type ChatDefaultsChangedDetail,
+  WorkspaceSelect,
+} from "@prismshadow/penguin-web/internal-hub";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "always-ask",

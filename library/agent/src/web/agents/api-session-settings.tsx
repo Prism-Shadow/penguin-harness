@@ -20,12 +20,12 @@ import {
   useAgentLocation,
   S,
   toneInk,
-  WorkspaceSelect,
   failureNode,
   ModelCatalogSelect,
   effectiveThinkingLevel,
   ThinkingLevelSelect,
 } from "@prismshadow/penguin-web/internal";
+import { WorkspaceSelect } from "@prismshadow/penguin-web/internal-hub";
 interface ApiSettingsProps {
   projectId: string;
   agentId: string;

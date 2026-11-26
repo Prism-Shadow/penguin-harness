@@ -15,9 +15,9 @@ import {
   SEMANTIC_ID_PATTERN,
   useProject,
   useAuth,
-  SemanticIdField,
   failureNode,
 } from "@prismshadow/penguin-web/internal";
+import { SemanticIdField } from "@prismshadow/penguin-web/internal-hub";
 export function CreateProjectDialog({
   open,
   onClose,

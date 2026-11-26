@@ -33,9 +33,8 @@ import {
   useProject,
   useAgentLocation,
   useAgentsOn,
-  AiCreateModal,
-  AiCreateButtons,
 } from "@prismshadow/penguin-web/internal";
+import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal-hub";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { VaultAddDialog } from "./vault-add-dialog";
 import type { Failure } from "@prismshadow/penguin-ui";

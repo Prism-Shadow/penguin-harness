@@ -4,6 +4,17 @@
  * (`@prismshadow/penguin-web/internal`), so its imports name one seam instead of reaching into
  * the host's file tree.
  *
+ * Leaf sources only: every file a statement here forwards from is free of runtime imports of the
+ * moved halves' faces, so loading this hub can never loop back into a moved module. (The one face
+ * mention, lib/strings.ts's model group sort, is a type-only import and compiles away.) The
+ * forwards from the app's feature modules — whose pages import the moved halves' faces — live in
+ * the sibling hub (`@prismshadow/penguin-web/internal-hub`, src/internal-hub.ts), which the moved
+ * halves read their feature names through only where the name is read after loading.
+ *
+ * The re-export order is the load cycle's protection: the library-face re-exports below pull the
+ * moved code back in while this file is still loading, and a moved module's body can run then —
+ * so every leaf a moved module's body reads is re-exported above those faces.
+ *
  * Deliberately a re-export hub and nothing more: no logic, no defaults.
  */
 export * from "./api/client";
@@ -74,15 +85,3 @@ export * from "@prismshadow/penguin-library-agent/web";
 export * from "@prismshadow/penguin-library-model/web";
 export * from "@prismshadow/penguin-library-project/web";
 export * from "@prismshadow/penguin-library-trace/web";
-
-export * from "./features/ai-create";
-export * from "./features/chat";
-export * from "./features/chat/history-loading";
-export * from "./features/dock";
-export * from "./features/plugins";
-export * from "./features/schedules";
-export * from "./features/semantic-id";
-export * from "./features/skills";
-export * from "./features/todos";
-export * from "./features/workbenches";
-export * from "./features/workspace";

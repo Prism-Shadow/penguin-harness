@@ -30,10 +30,8 @@ import {
   toastApiError,
   agentDisplayName,
   useProject,
-  PromptFold,
-  pickDefaultAgent,
-  useAiBridge,
 } from "@prismshadow/penguin-web/internal";
+import { PromptFold, pickDefaultAgent, useAiBridge } from "@prismshadow/penguin-web/internal-hub";
 import { ARCHIVE_ACCEPT, ARCHIVE_BUTTON_CLASS, agentIdFromArchiveName } from "./archive-file";
 import {
   MIGRATION_SOURCES,

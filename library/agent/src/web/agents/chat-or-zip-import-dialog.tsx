@@ -39,9 +39,9 @@ import {
   useAgentLocation,
   S,
   toneInk,
-  useAiBridge,
   failureNode,
 } from "@prismshadow/penguin-web/internal";
+import { useAiBridge } from "@prismshadow/penguin-web/internal-hub";
 /** The Button look on the upload `<label>`. */
 const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");
 

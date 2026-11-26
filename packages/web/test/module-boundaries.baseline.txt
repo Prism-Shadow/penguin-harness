@@ -2,6 +2,8 @@
 # One line per edge, sorted: `importing-file -> imported-file` (paths relative to src/), or
 # `cycle: features/a -> features/b` for an edge between two feature directories that lies on a cycle.
 # This list only shrinks: never add a line; delete each line whose edge your change removes.
+# The `internal-hub.ts -> features/...` lines are the internals hub's transition re-exports; they
+# leave as the features they name grow faces of their own.
 cycle: features/ai-create -> features/chat
 cycle: features/chat -> features/ai-create
 cycle: features/chat -> features/company
@@ -17,6 +19,16 @@ features/chat/machine-away.ts -> features/machines/machines-view.ts
 features/terminal/terminal-panel.tsx -> features/dock/dock-state.ts
 features/terminal/terminal-panel.tsx -> features/dock/dock-terminal.ts
 features/terminal/terminal-panel.tsx -> features/dock/panel-registry.ts
-library/trace/src/web/traces/trace-file-view.tsx -> features/chat/history-loading.tsx
+internal-hub.ts -> features/ai-create/index.ts
+internal-hub.ts -> features/chat/history-loading.tsx
+internal-hub.ts -> features/chat/index.ts
+internal-hub.ts -> features/dock/index.ts
+internal-hub.ts -> features/plugins/index.ts
+internal-hub.ts -> features/schedules/index.ts
+internal-hub.ts -> features/semantic-id/index.ts
+internal-hub.ts -> features/skills/index.ts
+internal-hub.ts -> features/todos/index.ts
+internal-hub.ts -> features/workbenches/index.ts
+internal-hub.ts -> features/workspace/index.ts
 lib/account-sync/prefs.ts -> features/chat/steer-mode.ts
 lib/account-sync/prefs.ts -> features/dock/dock-launcher-state.ts

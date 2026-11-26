@@ -67,17 +67,19 @@ import {
   useMachines,
   agentDisplayName,
   useProject,
+  failureNode,
+  toldFailure,
+  toastFailure,
+} from "@prismshadow/penguin-web/internal";
+import {
   LIBRARY_KEY,
   agentInstalls,
   agentPluginGroups,
   installsKey,
   pluginLibrary,
   AgentPluginGroups,
-  failureNode,
-  toldFailure,
-  toastFailure,
-  workbenchLoadFailure,
-} from "@prismshadow/penguin-web/internal";
+} from "@prismshadow/penguin-web/internal-hub";
+import { workbenchLoadFailure } from "@prismshadow/penguin-web/internal-hub";
 import { agentPluginTitle } from "./agent-plugin-actions";
 import { AgentPluginsPage } from "./agent-plugins-page";
 import { HookImportDialog, useHookRows } from "./agent-hooks";

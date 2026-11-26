@@ -33,11 +33,13 @@ import {
   S,
   useLocale,
   useToolBindings,
-  clearDraftModelRef,
-  dispatchChatDefaultsChanged,
   ModelCatalogSelect,
   modelLabel,
 } from "@prismshadow/penguin-web/internal";
+import {
+  clearDraftModelRef,
+  dispatchChatDefaultsChanged,
+} from "@prismshadow/penguin-web/internal-hub";
 import { putVisionModel } from "./vision-model";
 
 /** Image understanding's row: the vision model. No binding key has a colon, so none collides. */

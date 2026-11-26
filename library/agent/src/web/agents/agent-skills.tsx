@@ -40,12 +40,12 @@ import {
   useLocale,
   useProject,
   useAgentLocation,
-  SkillTile,
   localizedShortText,
   downloadArchive,
   toastApiError,
   cardBodyClick,
 } from "@prismshadow/penguin-web/internal";
+import { SkillTile } from "@prismshadow/penguin-web/internal-hub";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildImportPrompt } from "./skill-import-source";
 import type { PartRef, PartSource } from "./plugins-subpages";

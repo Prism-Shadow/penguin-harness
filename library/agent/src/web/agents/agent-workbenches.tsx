@@ -43,12 +43,14 @@ import {
   useProject,
   useAgentLocation,
   localizedText,
+  cardBodyClick,
+} from "@prismshadow/penguin-web/internal";
+import {
   useWorkbenchRepair,
   useWorkbenchActions,
   workbenchLoadFailure,
-  cardBodyClick,
-} from "@prismshadow/penguin-web/internal";
-import type { LoadFailedActions } from "@prismshadow/penguin-web/internal";
+} from "@prismshadow/penguin-web/internal-hub";
+import type { LoadFailedActions } from "@prismshadow/penguin-web/internal-hub";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import {
   Button,
