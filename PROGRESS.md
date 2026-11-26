@@ -174,3 +174,10 @@ pnpm-lock.yaml 未含。后果与已试路径：
   main 无 ports.ts 故无撞名。修＝端口类改名 PluginProcessConfig（iface 名即类名；
   绑定按属性名 config 走 Object.assign，不受影响），plugin-modules.ts 类型标注同步；
   内核面 PluginConfig 恢复本名独占，回到 main 的表形态。仅 library 两文件，server 零改。
+- 验证轮修复 7（server 套件三轮主错换岗）：organization module.ts 把 OrganizationService
+  放在 import type 块里却在 setup() 中 new 它——tsup 的 esbuild 不做类型检查，type-only
+  擦除后 dist 裸标识符报 ReferenceError（tsc typecheck 能抓而 land 的 compile 不跑
+  typecheck）。改值导入，OrgScheduler/OrgService 仅类型位保持 type-only。成类扫描
+  （new/instanceof 对 import type 名）server src 除本例外净 0（terminal-relay 的
+  WebSocket 命中为别名误报，25 行本有 ws 值导入），library＋cli 净 0。上轮读数：
+  PluginConfigProvider root 红已随端口改名消失。
