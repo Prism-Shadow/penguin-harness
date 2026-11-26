@@ -16,6 +16,9 @@ import { ProseLinksProvider, type ProseLinkResolver } from "@prismshadow/penguin
 
 import { replyLinkBehavior } from "../../lib/reply-link";
 
+/** The page's origin in a browser; absent elsewhere (tests), where no host-bearing URL is claimed. */
+const pageOrigin: string | null = typeof location === "undefined" ? null : location.origin;
+
 export function WorkspaceLinksProvider({
   workspace,
   onOpenFile,
@@ -29,7 +32,14 @@ export function WorkspaceLinksProvider({
 }) {
   const resolve = useMemo<ProseLinkResolver | null>(
     () => (href) =>
-      replyLinkBehavior(href, { workspace, openFile: onOpenFile, openRoute: navigate }),
+      replyLinkBehavior(href, {
+        workspace,
+        // A URL carrying its own host is a route only on exactly this origin, so another
+        // deployment on this machine (another port on localhost) keeps its own new tab.
+        origin: pageOrigin,
+        openFile: onOpenFile,
+        openRoute: navigate,
+      }),
     [workspace, onOpenFile, navigate],
   );
   return <ProseLinksProvider resolve={resolve}>{children}</ProseLinksProvider>;

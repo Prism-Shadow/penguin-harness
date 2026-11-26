@@ -104,7 +104,7 @@ describe("resolveReplyLink", () => {
     expect(resolveReplyLink("%E9%B9", WS)).toEqual({ kind: "none" });
   });
 
-  it("an internal /chat/:sessionId or /org route (or localhost equivalent) resolves as a route", () => {
+  it("an internal /chat/:sessionId or /org route resolves as a route", () => {
     expect(resolveReplyLink("/chat/session-2026-11-19-09-52-07-48a86320", WS)).toEqual({
       kind: "route",
       to: "/chat/session-2026-11-19-09-52-07-48a86320",
@@ -119,29 +119,61 @@ describe("resolveReplyLink", () => {
       kind: "route",
       to: "/org/tickets?state=open#top",
     });
-    // Localhost forms: the URL parser's normalization is what the host check reads, so case,
-    // default ports and protocol-relative spellings all land on the route; query and hash ride.
-    expect(resolveReplyLink("http://localhost:17469/chat/2556a209", WS)).toEqual({
+  });
+
+  it("an absolute URL on the page's own origin resolves as a route", () => {
+    const origin = "http://localhost:17469";
+    // The URL parser's normalization is what the origin comparison reads, so case, default
+    // ports and protocol-relative spellings all land on the route; query and hash ride.
+    expect(resolveReplyLink("http://localhost:17469/chat/2556a209", WS, origin)).toEqual({
       kind: "route",
       to: "/chat/2556a209",
     });
-    expect(
-      resolveReplyLink("http://127.0.0.1:17469/chat/session-2026-11-19-09-52-07-48a86320", WS),
-    ).toEqual({
-      kind: "route",
-      to: "/chat/session-2026-11-19-09-52-07-48a86320",
-    });
-    expect(resolveReplyLink("HTTP://LOCALHOST/chat/x?y=1#z", WS)).toEqual({
+    expect(resolveReplyLink("HTTP://LOCALHOST:17469/chat/x?y=1#z", WS, origin)).toEqual({
       kind: "route",
       to: "/chat/x?y=1#z",
     });
-    expect(resolveReplyLink("http://localhost/chat/../chat/x", WS)).toEqual({
+    expect(resolveReplyLink("//localhost:17469/org/tickets", WS, origin)).toEqual({
+      kind: "route",
+      to: "/org/tickets",
+    });
+    expect(resolveReplyLink("http://localhost:17469/chat/../chat/x", WS, origin)).toEqual({
       kind: "route",
       to: "/chat/x",
     });
-    expect(resolveReplyLink("//localhost:17469/org/tickets", WS)).toEqual({
+    expect(resolveReplyLink("HTTP://LOCALHOST/chat/x?y=1#z", WS, "http://localhost")).toEqual({
       kind: "route",
-      to: "/org/tickets",
+      to: "/chat/x?y=1#z",
+    });
+    expect(resolveReplyLink("http://localhost:80/chat/x", WS, "http://localhost")).toEqual({
+      kind: "route",
+      to: "/chat/x",
+    });
+  });
+
+  it("an absolute URL on another origin — another deployment's port included — stays external", () => {
+    const origin = "http://localhost:17469";
+    // Same host, another port: another deployment on this machine is not this app.
+    expect(resolveReplyLink("http://localhost:9200/chat/2556a209", WS, origin)).toEqual({
+      kind: "external",
+    });
+    expect(resolveReplyLink("http://localhost:9200/org/tickets", WS, origin)).toEqual({
+      kind: "external",
+    });
+    // A different spelling of the same machine is a different origin, not this app.
+    expect(resolveReplyLink("http://127.0.0.1:17469/chat/2556a209", WS, origin)).toEqual({
+      kind: "external",
+    });
+    // Another scheme, or no page origin known: a URL carrying its own host is never claimed.
+    expect(resolveReplyLink("https://localhost:17469/chat/2556a209", WS, origin)).toEqual({
+      kind: "external",
+    });
+    expect(resolveReplyLink("http://localhost:17469/chat/2556a209", WS)).toEqual({
+      kind: "external",
+    });
+    // On its own origin, a URL that is not a route path is still just another page.
+    expect(resolveReplyLink("http://localhost:17469/file.md", WS, origin)).toEqual({
+      kind: "external",
     });
   });
 
@@ -286,10 +318,15 @@ describe("replyLinkBehavior", () => {
     expect(openFile).not.toHaveBeenCalled();
   });
 
-  it("a localhost route navigates in-place on a plain click and is the browser's on a modified one", () => {
+  it("a route on the page's own origin navigates in-place on a plain click and is the browser's on a modified one", () => {
     const openRoute = vi.fn();
     const href = "http://localhost:17469/chat/2556a209";
-    const behavior = replyLinkBehavior(href, { workspace: WS, openFile: vi.fn(), openRoute });
+    const behavior = replyLinkBehavior(href, {
+      workspace: WS,
+      origin: "http://localhost:17469",
+      openFile: vi.fn(),
+      openRoute,
+    });
     // Plain: in place, on the path the URL parser normalized out of the href.
     const plain = click();
     behavior.onClick!(plain);
@@ -300,5 +337,18 @@ describe("replyLinkBehavior", () => {
     behavior.onClick!(modified);
     expect(modified.preventDefault).not.toHaveBeenCalled();
     expect(openRoute).toHaveBeenCalledOnce();
+  });
+
+  it("a route on another deployment's origin keeps the browser's own new tab", () => {
+    const openRoute = vi.fn();
+    const behavior = replyLinkBehavior("http://localhost:9200/chat/2556a209", {
+      workspace: WS,
+      origin: "http://localhost:17469",
+      openFile: vi.fn(),
+      openRoute,
+    });
+    expect(behavior).toBe(NEW_TAB);
+    expect(behavior.onClick).toBeUndefined();
+    expect(openRoute).not.toHaveBeenCalled();
   });
 });
