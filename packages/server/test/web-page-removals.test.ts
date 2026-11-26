@@ -70,9 +70,7 @@ describe("web page removals", () => {
     const res = await admin.get("/api/contributions");
     expect(res.status).toBe(200);
     const body = (await res.json()) as ContributionsResponse;
-    expect(body.pageRemovals).toEqual([
-      { id: "removal.0", from: "NoUsagePage", key: "usage" },
-    ]);
+    expect(body.pageRemovals).toEqual([{ id: "removal.0", from: "NoUsagePage", key: "usage" }]);
   });
 
   it("drops a removal whose key is not a string, and boots without it", async () => {
