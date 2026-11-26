@@ -42,7 +42,8 @@ export class PluginModulesServiceProvider {
 
   setup() {
     const channels = this.channels;
-    const pluginModules = Object.assign(new PluginModulesService(), {
+    const pluginModules: PluginModulesService = new PluginModulesService();
+    Object.assign(pluginModules, {
       config: this.config,
       hmr: this.hmr,
       reassembly: this.reassembly,
