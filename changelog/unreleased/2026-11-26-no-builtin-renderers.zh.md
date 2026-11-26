@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** refactor
 - **Scope:** `server`, `web`, `library/workbench`, `plugins`, `ui-gallery`
+- **PR:** [#1914](https://github.com/Prism-Shadow/penguin-harness/pull/1914)
 - **Breaking:** yes — 写 `builtin` 渲染器的工作台标签页或服务端页面不再加载或显示，文件渲染规则与 `audio` 渲染器已删除
 
 [English](2026-11-26-no-builtin-renderers.md)

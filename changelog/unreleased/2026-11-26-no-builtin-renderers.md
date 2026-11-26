@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** refactor
 - **Scope:** `server`, `web`, `library/workbench`, `plugins`, `ui-gallery`
+- **PR:** [#1914](https://github.com/Prism-Shadow/penguin-harness/pull/1914)
 - **Breaking:** yes — a workbench tab or server page naming a `builtin` renderer no longer loads or draws, and file renderer rules and the `audio` renderer were removed
 
 [中文版](2026-11-26-no-builtin-renderers.zh.md)
