@@ -242,7 +242,8 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 
 | 分类 | 插件 | 用途 |
 | --- | --- | --- |
-| Agent 自进化 | `default-rsi-toolkit` | Default RSI Toolkit：用一个 Skill `agent-optimization`（根据实测结果改进 Agent）构成「试跑 → 反思 → 提升」的循环，测量经由 `agent-evaluation` 插件。此前以 `agent-tuning` 之名发布，其余三个 Skill 名称不变，分别移到 `agent-development` 与 `agent-evaluation` |
+| Agent 自进化 | `rsi-workbench` | [自进化工作台](/self-evolution-workbench)：用于创建、导入 Benchmark 并以它评估、优化 Agent 的[工作台](#workbench-插件)，包含两个 Skill：`benchmark-design`（设计和校准能力 Benchmark，或导入已发布的 Benchmark 包）和 `agent-evaluation`（隔离执行单个题目并打分）。RSI 工具包经由它测量。预装在新建的 `default_agent` 上 |
+| | `default-rsi-toolkit` | Default RSI Toolkit：用一个 Skill `agent-optimization`（根据实测结果改进 Agent）构成「试跑 → 反思 → 提升」的循环，测量经由 `rsi-workbench` 插件。此前以 `agent-tuning` 之名发布，其余三个 Skill 名称不变，分别移到 `agent-development` 与 `rsi-workbench` |
 | | `opro-rsi-toolkit` | OPRO，出自 [Large Language Models as Optimizers](https://arxiv.org/abs/2309.03409)（Yang 等，2023）：依据历史指令与分数提出新指令，保留得分最高的一条。自成一体：自带初始化与评测参考，另附一个演示任务 |
 | | `ape-rsi-toolkit` | APE，出自 [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910)（Zhou 等，2022）：从输入 / 输出示例归纳候选指令，保留最优者。自成一体：自带初始化与评测参考，另附一个演示任务 |
 | | `ace-rsi-toolkit` | ACE，出自 [Agentic Context Engineering](https://arxiv.org/abs/2510.04618)（Zhang 等，2025）：从训练轨迹进化出一本规则手册（playbook）。自成一体：自带初始化与评测参考 |
@@ -273,7 +274,6 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | 软件开发 | `software-development` | 端到端的软件开发，包含两个 Skill：`software-engineering`（在最小范围内调查、实现和验证）和 `web-design`（生成 Web UI 用的 Penguin 视觉语言） |
 | | `use-claude-code` | 通过 SSH 在远程主机上运行 Claude Code：持久 expect 会话、带 stdin 修复的无头 `-p` 模式、tmux 驱动的交互式 TUI，以及多轮连续性（不预装：需要时从插件库安装） |
 | AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含六个 Skill：`agent-initialization`（根据需求搭建 Agent：它的 `AGENTS.md`、Skill 与钩子）、`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`penguin-plugin`（搭建 Agent 在对话旁自己维护的 Workbench；构建、测试、分享与提交插件包——见[插件](/plugins#分享插件)）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
-| | `agent-evaluation` | Agent Evaluation，包含两个 Skill：`benchmark-design`（设计和校准能力 Benchmark，或导入已发布的 Benchmark 包）和 `agent-evaluation`（隔离执行单个题目并打分）。Default RSI Toolkit 经由它测量 |
 | | `model-development` | 在自己的硬件上做模型开发，包含三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）和 `vllm`（在 OpenAI 兼容端点后面提供服务） |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent；也可以用其中的 `plugin-porting` Skill 把整个 Codex 或 Claude Code 插件转成 PenguinHarness 插件包，安装到服务端；或用其中的 `agent-porting` Skill 把 Claude Code、Codex、DeepSeek Harness、Qoder、Qwen Code 或 WorkBuddy 的 Agent 迁移成新的 Agent（见[导入 Agent](/agents#导入-agent)） |
 | Agent 运行沙箱 | `sandbox-bwrap`、`sandbox-seatbelt`、`sandbox-wsl`、`sandbox-dsh` | 服务端插件，不属于插件库内容：封禁 Agent 执行的每条命令的后端，由管理员安装到服务端。见[服务端插件](#服务端插件)和[设置](/settings#沙盒) |
@@ -536,5 +536,7 @@ createRoot(document.getElementById("root")!).render(<App />);
 工作台页面是透明的：页面自己不设背景时，透出应用在它下面的底色——主题的页面色或你设置的自定义背景，与对话页一致。想要不透明的页面，就写 `body { background: var(--wb-canvas); }`（TSX 页面在自己的样式表里用 `var(--ui-canvas)`）。
 
 内置 `penguin-support` 插件为默认 Project 的客服 Agent 安装 `penguin-support` Skill 和客服工作台：居中的问题列表、新建问题弹窗，以及支持追问的对话详情。问题运行时，对话框里会随生成显示回答和 Agent 正在做的事，并提供**停止**按钮。新版本以插件更新的形式提供，已安装的副本只在你更新时才被替换。也可以把该插件安装到其他 Agent。
+
+内置 `rsi-workbench` 插件为新 Project 的 `default_agent` 安装 `benchmark-design` 与 `agent-evaluation` 两个 Skill 和自进化工作台，即管理 Benchmark 的应用：创建、导入和导出 Benchmark，用它评估 Agent，再根据分数优化 Agent，每个任务都作为你自己的对话立即发起。它的 Benchmark 是工作台数据，位于 Agent 目录下的 `app/data/benchmark/`，所以装了它的每个 Agent 各有一套。见[自进化工作台](/self-evolution-workbench)。
 
 内置的 `use-bento-slides` 插件提供对话旁的**幻灯片**标签页和应用中心的 **AI PPT**。在首页打开或重命名已有文稿。你与 Agent 可同时修改工作台数据目录（Agent 目录下的 `app/data/slides/`）中的同一份 JSON 文稿，编辑器在接收 Agent 的修改时保留你的待保存内容。可从**历史版本**恢复文稿、导出可编辑的 PowerPoint 文件，或下载能重新导入的独立 Bento HTML 文件。

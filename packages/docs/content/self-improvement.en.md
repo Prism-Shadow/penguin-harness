@@ -18,7 +18,7 @@ This loop is the Default RSI Toolkit; [RSI toolkits](#rsi-toolkits) covers the o
 | Evaluator | `agent-evaluation` | A leaf subagent created through `run_subagent` | Runs the Target Agent on one Case once and scores that run |
 | Optimizer | `agent-optimization` | A separate top-level Session | Changes the Target Agent under a falsifiable hypothesis and keeps a new version only when its score strictly improves |
 
-No built-in agent is reserved for a role: each role is a Skill. The loop itself, `agent-optimization`, is the `default-rsi-toolkit` plugin (the Default RSI Toolkit); it measures through the `agent-evaluation` plugin (Agent Evaluation), which carries `benchmark-design` and `agent-evaluation`, and `agent-initialization` ships in `agent-development`. All four are preinstalled. The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
+No built-in agent is reserved for a role: each role is a Skill. The loop itself, `agent-optimization`, is the `default-rsi-toolkit` plugin (the Default RSI Toolkit); it measures through the `rsi-workbench` plugin (the Self-Evolution Workbench), which carries `benchmark-design` and `agent-evaluation`, and `agent-initialization` ships in `agent-development`. All four are preinstalled. The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
 
 ### How the roles call each other
 
@@ -125,22 +125,24 @@ OPRO and APE each ship a small demo task: ask for it, and the Skill builds a fre
 
 The toolkits depend neither on each other nor on `default-rsi-toolkit`, so any one of them runs with no other plugin installed. OPRO, APE, ACE and AWM initialize their own learning slot in the tested agent: a Skill of the agent's own that holds what the method learns (an instruction, a playbook, workflows or a modular skill bank), and one fixed line in its `AGENTS.md` telling it to read that Skill before it starts a task. The method's loop edits only what that Skill holds. Final Benchmark measurements follow the toolkit's own `references/evaluation.md` and write the existing Scoreboard schema. OPRO, APE, ACE and AWM share the generic one-cell evaluation protocol; continuous-training toolkits describe their training launch, artifact handoff and independent testing separately. Built-in Benchmark cases run by their statements' **How this case is run** section, as they do under `agent-evaluation`.
 
-Every candidate OPRO, APE, ACE or AWM measures gets a new Agent State `version`. As in the Default loop, a version is snapshotted before the toolkit changes it, and the run ends on the version the method selects. The evaluations go into `scoreboard.yaml` under the usual label, so a Default run and an OPRO run of the same agent on the same model and thinking level share one line of the chart: each point's version tells them apart, and each evaluation's summary title names the method. In the Web App, the **Method** field of the Evaluation Center's **Optimize** tab picks the toolkit; see [Evaluation Center](/evaluation-center#optimize-an-agent).
+Every candidate OPRO, APE, ACE or AWM measures gets a new Agent State `version`. As in the Default loop, a version is snapshotted before the toolkit changes it, and the run ends on the version the method selects. The evaluations go into `scoreboard.yaml` under the usual label, so a Default run and an OPRO run of the same agent on the same model and thinking level share one line of the chart: each point's version tells them apart, and each evaluation's summary title names the method. In the Web App, the **Method** field of the Self-Evolution Workbench's **Optimize** tab picks the toolkit; see [Self-Evolution Workbench](/self-evolution-workbench#optimize-an-agent).
 
 ## Reproduced Benchmarks
 
-Reproducing a published benchmark is not a toolkit's job. A reproduced Benchmark is a package in the public repository [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark), under `packages/<id>/`, and it enters a Project by import: ask an agent to import the package's folder, and the copy records the commit it came from (origin `git`; see [The manifest](#the-manifest)). The import procedure is the `benchmark-design` Skill's (`reference/package.md`, *Importing a package*): it pins the commit, reads every file, brings a companion train/test package along, verifies the copy and offers a one-case smoke probe before anything runs. Whatever is special about running it is written in the Benchmark itself, in each statement's **How this case is run** section and in the repository's README, never in a plugin or a Skill, so every RSI toolkit runs it the same way. The built-in Benchmarks, Sec A to Sec E and the GDPevo pair, are reproductions of this kind, written into every new Project.
+Reproducing a published benchmark is not a toolkit's job. A reproduced Benchmark is a package in the public repository [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark), under `packages/<id>/`, and it enters a Self-Evolution Workbench by import: ask an agent to import the package's folder, and the copy records the commit it came from (origin `git`; see [The manifest](#the-manifest)). The import procedure is the `benchmark-design` Skill's (`reference/package.md`, *Importing a package*): it pins the commit, reads every file, brings a companion train/test package along, verifies the copy and offers a one-case smoke probe before anything runs. Whatever is special about running it is written in the Benchmark itself, in each statement's **How this case is run** section and in the repository's README, never in a plugin or a Skill, so every RSI toolkit runs it the same way. The built-in Benchmarks, Sec A to Sec E and the GDPevo pairs, are reproductions of this kind, which the workbench writes into its data folder on its first load.
 
 ## Starting from the Web App
 
-The Web App's [Evaluation Center](/evaluation-center) starts the same two top-level Sessions without a hand-written prompt. Its dialogs prefill the request, with the matching Skills selected, into a new conversation, and nothing runs until you send it. The dialogs never choose the Target Agent's evaluation runtime. For the steps, see [Evaluation Center](/evaluation-center).
+The [Self-Evolution Workbench](/self-evolution-workbench) starts the same two top-level Sessions without a hand-written prompt. Its forms write the request and, on **Start**, send it at once in a new conversation of yours, with the matching Skills selected and the approval mode the form names. The forms never choose the Target Agent's evaluation runtime. For the steps, see [Self-Evolution Workbench](/self-evolution-workbench).
 
 ## Benchmark storage
 
-Benchmarks belong to the Project. Each one is stored in the Evaluation Center's data folder, `<root>/projects/<project>/agents/system_agent/app/data/benchmark/<id>/`: the system Agent's, which is never deleted or exported, so the folder lives as long as the Project. The Evaluation Center's prompts name that folder to the agent (`BENCHMARK_DIR`). Benchmarks and agents are peers rather than owner and owned: one Benchmark can evaluate several agents, and one agent can be evaluated by several Benchmarks. So `benchmark_config.toml` names no agent; each evaluation records the agent it tested.
+A Benchmark belongs to the Self-Evolution Workbench it is in: each agent that has the workbench keeps its own Benchmarks in that workbench's data folder, `<root>/projects/<project>/agents/<agent>/app/data/benchmark/<id>/`, the default agent's at `agents/default_agent/app/data/benchmark/`. Removing the workbench deletes them, and exporting the agent with its workbenches' data carries them. The workbench's prompts name the folder to the agent (`BENCHMARK_DIR`); a request that names none means the default agent's. Within the Project, Benchmarks and agents are peers rather than owner and owned: one Benchmark can evaluate several agents, and one agent can be evaluated by several Benchmarks. So `benchmark_config.toml` names no agent; each evaluation records the agent it tested.
+
+Earlier releases kept a Project's Benchmarks at `agents/system_agent/app/data/benchmark/` (before November 2026, `benchmarks/`). The first start of this release moves them into the default agent's folder and leaves a link at the old one; see [After an upgrade](/self-evolution-workbench#after-an-upgrade).
 
 ```text
-<project>/agents/system_agent/app/data/benchmark/<id>/
+<project>/agents/<agent>/app/data/benchmark/<id>/
 ├── benchmark_config.toml       # the manifest: id, title, description, description_zh, version, status, runs (Builder runs is fixed at 1), [origin]
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
@@ -151,11 +153,11 @@ Benchmarks belong to the Project. Each one is stored in the Evaluation Center's 
 
 `rubric/` is kept apart from `statement/` on purpose: the Target Agent receives only the task statement and never the scoring rubric.
 
-`benchmark_config.toml` is what makes a directory a Benchmark: a directory under `benchmarks/` without one is not listed. A Benchmark that has never been evaluated still has its manifest and is listed as usual. Deleting a Benchmark while an evaluation is still running leaves such a manifest-less directory behind, because the running evaluation keeps writing to its paths; it is safe to delete by hand.
+`benchmark_config.toml` is what makes a directory a Benchmark: a directory in the data folder without one is not listed. A Benchmark that has never been evaluated still has its manifest and is listed as usual. Deleting a Benchmark while an evaluation is still running leaves such a manifest-less directory behind, because the running evaluation keeps writing to its paths; it is safe to delete by hand.
 
 ### The manifest
 
-`benchmark_config.toml` describes a Benchmark the way `plugin.json` describes a plugin:
+`benchmark_config.toml` describes a Benchmark the way `package.json` describes a plugin. `@penguinharness/rsi-workbench/format` reads and writes it, and `scoreboard.yaml`:
 
 ```toml
 id = "report-writing-v1"
@@ -179,9 +181,11 @@ kind = "agent"
 | `version` | `"x.y.z"` for Benchmark packages; existing `"YYYY.MM.DD.N"` date versions are also accepted |
 | `last_update` | Package update time, in ISO 8601 format |
 | `[author]` | Package author: `name`, with optional `email` and `homepage` |
+| `data_url` | Optional: the http(s) link of the repository that holds the tasks' data, as the built-in Benchmarks give it |
+| `references` | Optional: a list of http(s) links to the work the Benchmark draws on |
 | `status` | `draft`, `published` or `failed`; see [Benchmark status](#benchmark-status) |
 | `runs` | Runs per case, a positive integer, 1 when absent; at most 1,000 when the server writes it |
-| `[origin]` | Where this copy came from, in `kind`: `builtin` (seeded with the Project), `manual` (the create form), `agent` (written by `benchmark-design`), `git` (an agent imported a repository folder: `url`, the 40-character commit `ref` it resolved to, `path` and `imported_at`) or `zip` (an uploaded package: `imported_at`) |
+| `[origin]` | Where this copy came from, in `kind`: `builtin` (seeded by the workbench), `manual` (the create form), `agent` (written by `benchmark-design`), `git` (an agent imported a repository folder: `url`, the 40-character commit `ref` it resolved to, `path` and `imported_at`) or `zip` (an uploaded package: `imported_at`) |
 
 `id`, `version` and `[origin]` are new in this release, and every one of them is optional when the file is read. A manifest written by an earlier release has none of them and is read as it is: under its directory name, unversioned, and with no origin. Nothing rewrites it, and nothing has to be done by hand. An `id`, `version` or `[origin]` that is present but out of shape makes the manifest unreadable (see [Benchmark status](#benchmark-status)). An earlier release that reads a manifest written by this one ignores the keys it does not know.
 
@@ -201,14 +205,14 @@ A Benchmark's **package** is `benchmark_config.toml` and its case directories. `
 | `published` | The Formal Baseline is recorded | Usable |
 | `failed` | `benchmark-design` reports `calibration_failed` | Masked as a failed creation, with a request to delete it and create it again |
 
-A failed Benchmark cannot be used. A Benchmark created by hand, the built-in example and the built-in Benchmarks are published from the start. A manifest without the key, or with any value other than `draft` or `failed`, reads as published. A Benchmark whose manifest the server cannot use (not TOML, an `id` that is not its directory's, or a `version` or `[origin]` out of shape) still lists under its directory name, as failed: the Evaluation Center masks it and shows why, and it cannot be used until the file is fixed.
+A failed Benchmark cannot be used. A Benchmark created by hand, the built-in example and the built-in Benchmarks are published from the start. A manifest without the key, or with any value other than `draft` or `failed`, reads as published. A Benchmark whose manifest the server cannot use (not TOML, an `id` that is not its directory's, or a `version` or `[origin]` out of shape) still lists under its directory name, as failed: the Self-Evolution Workbench masks it and shows why, and it cannot be used until the file is fixed.
 
 ### Evaluation records
 
 Each evaluation record in `scoreboard.yaml` is timestamped and carries:
 
 - `agent_id`, the agent the evaluation tested. Together with `model_id` and `thinking_level`, it forms the record's **label**. The trend chart plots score against time with one series per label, and only scores under the same label are comparable. The Agent State `version` is not part of the label: successive versions of one agent on one runtime are the trend the chart exists to show, so they share a line, and each point names its version on hover. A record written before evaluations carried an agent reads as unlabelled and falls into the chart's grey series.
-- The evaluation runtime: `provider`, `model_id` and `thinking_level`. For the baseline, a `(provider, model_id)` pair the user specifies takes priority; otherwise the pair is inherited from the Builder Session. An evaluation from the Evaluation Center's **Evaluate** tab uses the pair its **Tested agent's model** names, which the prompt carries. An optimization reuses the Reference's runtime; one started from the **Optimize** tab names the tested model, and its Reference is the evaluation on that pair. `thinking_level` is read from the Target Agent's config, not from Trace metadata.
+- The evaluation runtime: `provider`, `model_id` and `thinking_level`. For the baseline, a `(provider, model_id)` pair the user specifies takes priority; otherwise the pair is inherited from the Builder Session. An evaluation from the Self-Evolution Workbench's **Evaluate** tab uses the pair its **Tested agent's model** names, which the prompt carries. An optimization reuses the Reference's runtime; one started from the **Optimize** tab names the tested model, and its Reference is the evaluation on that pair. `thinking_level` is read from the Target Agent's config, not from Trace metadata.
 - `summary_title` and `summary`: the round's conclusion and the hypothesis for the next one.
 - Score, cost and duration averages, written by the model. Case-level values average the runs, and evaluation-level values average the Cases. Run cost keeps its recorded precision. Cost averages ignore `null` inputs and are `null` only when every contributing cost is unknown. Scores use two decimals, cost averages six, and `duration_ms` is an integer.
 - Per-Case run details: each run records `score`, `cost`, `duration_ms` and `session_id`.
@@ -217,9 +221,9 @@ Every run and every Case is scored out of 100, so Scoreboard entries carry no `m
 
 ### The example Benchmark
 
-Creating a Project writes an example Benchmark at the Project level (`packages/core/src/state/example-benchmark.ts`). Its three sample evaluations are labelled `agent_id: default_agent`, so the evaluation pages have data out of the box. The whole directory can be deleted or replaced at any time.
+The workbench writes an example Benchmark, `example-benchmark`, into its data folder. Its three sample evaluations are labelled `agent_id: default_agent`, so the evaluation pages have data out of the box. The whole directory can be deleted or replaced at any time.
 
-The example and the built-in Benchmarks are written once, when the Project is created (`packages/core/src/state/project-benchmarks.ts`): by the server when it creates a Project, and for `default_project` at a fresh install's first start. Each is written into a temporary directory under `benchmarks/.seeding/` and renamed into place; a write that fails fails the Project's creation, which is rolled back. An id whose directory already exists is skipped and never written into, so a `default_project` the server adopts from an existing data root keeps its own Benchmarks and is given only the missing ones. Nothing writes them again afterwards: initializing or loading `default_agent` never touches `benchmarks/`, so a deleted one stays deleted. A Project from an earlier release is left as it is: it is not given the built-in Benchmarks, and its example stays, or stays deleted.
+The example and the built-in Benchmarks are written once, the first time the workbench loads: when the data folder holds no `.seeded` marker, each seed is staged under `.seeding/` and renamed into place, an id whose directory already exists is skipped and never written into, and `.seeded` is written once they are all in. A seed that fails leaves the marker unwritten, and the next load tries again. Nothing writes them afterwards, so a deleted one stays deleted. The marker travels with the workbench's data in an export, and the upgrade that moves an earlier release's Benchmarks in writes it too, so an upgraded Project is not given built-in Benchmarks it never had.
 
 ## Snapshots and versions
 
@@ -235,7 +239,7 @@ A zip package may hold no links at all. A `.tar.gz` package is accepted only if 
 
 - Every Evaluator run and every Test Session is an ordinary Session with a full Trace.
 - Scoreboard records link back to the Test Sessions through `session_id`. See [Sessions & Traces](/sessions-and-traces).
-- The Web App's evaluation pages are read-only views of these files. The trend chart shows Score only; the evaluation table shows the tested agent, the model ID and the thinking level in separate columns. See [Evaluation Center](/evaluation-center).
+- The Self-Evolution Workbench's pages are read-only views of these files. The trend chart shows Score only; the evaluation table shows the tested agent, the model ID and the thinking level in separate columns. See [Self-Evolution Workbench](/self-evolution-workbench).
 
 Every score can be traced back to the run that produced it.
 
@@ -244,8 +248,8 @@ Every score can be traced back to the run that produced it.
 | Skill | Plugin | Purpose |
 | --- | --- | --- |
 | `agent-initialization` | `agent-development` | Turn a requirement into a working agent: write its `AGENTS.md` and install the Skills it needs |
-| `benchmark-design` | `agent-evaluation` | Design and calibrate a multi-Case capability Benchmark |
-| `agent-evaluation` | `agent-evaluation` | Run and score one isolated Benchmark Case run |
+| `benchmark-design` | `rsi-workbench` | Design and calibrate a multi-Case capability Benchmark |
+| `agent-evaluation` | `rsi-workbench` | Run and score one isolated Benchmark Case run |
 | `agent-optimization` | `default-rsi-toolkit` | Improve an agent from Benchmark results |
 | `opro-rsi-toolkit` | `opro-rsi-toolkit` | Run OPRO: optimize an instruction from its scored history |
 | `ape-rsi-toolkit` | `ape-rsi-toolkit` | Run APE: induce an instruction from input/output demonstrations |

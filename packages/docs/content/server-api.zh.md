@@ -450,12 +450,12 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 
 ### 语义化 id 提议
 
-`POST /api/projects/:projectId/suggest-id` 接收 `{name, kind, taken?}`，返回 `{id, source, reason?}`。`kind` 取 `project`、`agent`、`org` 或 `channel`，或服务端模块经数据槽 `SemanticIdModule.kinds` 贡献的种类——评估中心的 `benchmark` 即是其一；`taken` 是提议必须避开的一批 id。没有模块贡献的种类返回 `400`。id 输入框旁边的**用 AI 生成**按钮，背后都是这一条路由。
+`POST /api/projects/:projectId/suggest-id` 接收 `{name, kind, taken?}`，返回 `{id, source, reason?}`。`kind` 取 `project`、`agent`、`org` 或 `channel`，或服务端模块经数据槽 `SemanticIdModule.kinds` 贡献的种类；`taken` 是提议必须避开的一批 id。没有模块贡献的种类返回 `400`。id 输入框旁边的**用 AI 生成**按钮，背后都是这一条路由。
 
 - 路径里这个 Project 的默认模型把名称翻译成一个符合该 kind 拼写风格的英文 id（`source: model`）；**新建 Project** 对话框借用的是打开它时所在的那个 Project。回答没有得出 id 时，会带着明确的格式要求再问模型一次。
 - 没有配置模型，或两次回答都不可用时，改用名称生成的 ASCII slug（`source: fallback`）。
-- 两条路径都生成不出 id 时，给出一个带日期的占位 id（`source: placeholder`），`reason` 为 `no_default_model`、`model_failed`、`unusable_answer` 或 `no_ascii`：`project_<yyyymmdd>`、`agent_<yyyymmdd>`、贡献的种类为 `<kind>-<yyyymmdd>`（如 `benchmark-<yyyymmdd>`）、`co_org_<yyyymmdd>` 或 `ch_channel_<yyyymmdd>`；非管理员的 Project id 前面还带用户名。
-- 各个 kind 的差别只有三处：id 的形状、服务端自己要避开的 id，以及谁可以请求。`project` 对管理员是 snake_case，对其他人是 `<username>-<后缀>`，要避开服务器上的每一个 Project id；`agent` 是 snake_case，要避开这个 Project 的 Agent；贡献的种类是 kebab-case（字母、数字、`_` 与 `-`，至多 100 个字符），要避开该贡献报告为已占用的 id，贡献写明 `access: "owner"` 时仅限所有者（`benchmark` 即如此）；`org` 和 `channel` 带 `co_`、`ch_` 前缀，回答里已有前缀时不会重复添加，公司模式关闭时返回 `404` `company_mode_off`。其余情况下调用者必须是这个 Project 的成员。
+- 两条路径都生成不出 id 时，给出一个带日期的占位 id（`source: placeholder`），`reason` 为 `no_default_model`、`model_failed`、`unusable_answer` 或 `no_ascii`：`project_<yyyymmdd>`、`agent_<yyyymmdd>`、贡献的种类为 `<kind>-<yyyymmdd>`、`co_org_<yyyymmdd>` 或 `ch_channel_<yyyymmdd>`；非管理员的 Project id 前面还带用户名。
+- 各个 kind 的差别只有三处：id 的形状、服务端自己要避开的 id，以及谁可以请求。`project` 对管理员是 snake_case，对其他人是 `<username>-<后缀>`，要避开服务器上的每一个 Project id；`agent` 是 snake_case，要避开这个 Project 的 Agent；贡献的种类是 kebab-case（字母、数字、`_` 与 `-`，至多 100 个字符），要避开该贡献报告为已占用的 id，贡献写明 `access: "owner"` 时仅限所有者；`org` 和 `channel` 带 `co_`、`ch_` 前缀，回答里已有前缀时不会重复添加，公司模式关闭时返回 `404` `company_mode_off`。其余情况下调用者必须是这个 Project 的成员。
 - 服务端自己要避开的，是该 kind 的创建路由会以「已占用」拒绝的那些名称，包括任何列表都不显示的残留目录。它们不会进入提示词；发生冲突时只会加上 `_2` / `-2` 后缀。核心词因为以数字开头或只有一个字符而被该 kind 的规则拒绝时，会放到这个 kind 的名词后面再试一次（`3D Viewer` → `agent_3d_viewer`）。
 - 名称翻译不出来时路由也不会失败，因此请求 id 的对话框总能拿到结果。模型侧的每一次失败都会记录为 `id_suggest_failed` 错误，`org` 和 `channel` 记在 `organization` 来源下，其余记在 `id_suggest` 下。这次补全关闭思考运行，使用共享的元请求预算，不属于任何 Session，也不计量。
 
@@ -738,26 +738,33 @@ CLI 自己就按这份列表分派：首个词不属于 CLI 自有命令时，�
 
 ## Benchmark
 
-Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估任意多个 Agent，每次评估都会记录它测试的 Agent（`agentId`；没有对应 Agent 的记录为 `null`）。汇总中的 `agentIds` 按这些 Agent 首次出现的顺序排列。下面的路径同样省略了 `/api/projects/:projectId` 前缀。
+Benchmark 接口属于[自进化工作台](/self-evolution-workbench)，由它的处理器提供，挂在装有该工作台的 Agent 的工作台接口下：`/api/projects/:projectId/agents/:agentId/workbenches/benchmark/api/`（新 Project 为 `default_agent`）。下面的路径省略了这个前缀。Project 的任何成员都可以调用每一条路由。每个装有该工作台的 Agent 各有一套 Benchmark，存放在这个工作台的数据目录里。在一个工作台内，一个 Benchmark 可以评估任意多个 Agent，每次评估都会记录它测试的 Agent（`agentId`；没有对应 Agent 的记录为 `null`）。汇总中的 `agentIds` 按这些 Agent 首次出现的顺序排列。
+
+> [!WARNING]
+> **不兼容变更。** Project 级的路由 `/api/projects/:projectId/benchmarks…` 已删除。工作台路由接受相同的请求，给出相同的应答与错误码，客户端改换前缀即可迁移，创建与删除也不再要求所有者身份。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/benchmarks` | Benchmark 的分数数据 |
-| POST | `/benchmarks` | 手动创建 Benchmark（仅所有者） |
-| DELETE | `/benchmarks/:benchmarkId` | 删除 Benchmark 目录，包括其中的题目、清单和计分板（仅所有者；返回 204，不存在时返回 404） |
-| POST | `/benchmarks/archive` | 从 zip 导入一个 Benchmark 包：`{dataBase64, overwrite?, origin?}` → 201 `{benchmark}`（任意成员） |
-| GET | `/benchmarks/:benchmarkId/archive` | 把已发布 Benchmark 的包导出为 zip（任意成员） |
-| GET | `/benchmarks/:benchmarkId/cases` | Benchmark 的题目：每道题的 id 和题干 README 的标题。评分标准永远不会返回 |
+| POST | `/benchmarks` | 手动创建 Benchmark |
+| DELETE | `/benchmarks/:benchmarkId` | 删除 Benchmark 目录，包括其中的题目、清单和计分板（返回 204，不存在时返回 404） |
+| POST | `/benchmarks/archive` | 从 zip 导入一个 Benchmark 包：`{dataBase64, overwrite?, origin?}`，或以 zip 本身为请求体并带 `?overwrite=1` → 201 `{benchmark}` |
+| GET | `/benchmarks/:benchmarkId/archive` | 把已发布 Benchmark 的包导出为 zip |
+| GET | `/benchmarks/:benchmarkId/cases` | Benchmark 的题目：每道题的 id 和题干 README 的标题；带 `?page=` 时每次读五道，并附 `total`。评分标准永远不会返回 |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files` | 浏览一道题的 `statement/` 目录 |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files/content` | 读取题干中的一个文件（`?path=`、`?preview=1`、`?download=1`） |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files` | 浏览一道题的 `rubric/` 目录 |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content` | 读取评分标准中的一个文件，参数与上一条相同 |
+| POST | `/prompt` | 任务要发出的请求：`{kind, …}` → `{prompt, skills, required}`；`GET /prompt?kind=…` 以查询串接受同样的字段 |
+| GET / POST | `/tasks` | 工作台页面发起的任务，从新到旧（`?benchmarkId=` 筛选）/ 记录一条：`{sessionId, kind, benchmarkId?, agentId, approvalMode}` → 201 `{task}` |
 
-- `GET /benchmarks` 只列出含有 `benchmark_config.toml` 的目录；评估过程中删除 Benchmark 留下的目录没有这个文件，因此不会出现在列表里。每个条目都带 `status`（Skill 还在构建 Benchmark 时为 `draft`，校准未能完成时为 `failed`，其余情况为 `published`），清单里有的话还带日期版本 `version` 与来源 `origin`（`{kind, url?, ref?, path?, importedAt?}`，`kind` 取 `builtin`、`manual`、`agent`、`git`、`zip` 之一）；早先版本写下的清单两者都没有。清单不可用的 Benchmark 以目录名列出，按 `failed` 处理，带 `manifestError`（`{code, message}`，`code` 为 `benchmark_manifest_invalid` 或 `benchmark_id_mismatch`），不带 `version` 与 `origin`。文件系统层面读不了清单时，请求失败。
-- `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。服务器会写入 `benchmark_config.toml`（含 `id`、`status = "published"`、当天的第一个版本与来源 `manual`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 Agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
-- `POST /benchmarks/archive` 接受不超过 14MB 的 zip，`benchmark_config.toml` 与各个 `CASE-*` 目录放在 zip 根目录，或放在唯一一个以清单 `id` 命名的顶层目录里；清单放在根目录时没有目录替它命名，必须写明 `id`。顶层另有别的东西（包括 `scoreboard.yaml` 与 `.jobs/`）、顶层有以 `.` 开头的条目、含符号链接、条目名含控制字符或与另一条目只差大小写、某道题缺少 `statement/README.md` 或 `rubric/README.md`、清单会被列表判为不可用，或超出服务端写入时的上限（标题 1 到 200 个字符、描述不超过 2,000 个字符、每题运行次数不超过 1,000）时，返回 400（`benchmark_archive_invalid`、`benchmark_case_invalid` 或清单自己的错误码）；`status` 不是 `published` 时返回 400 `benchmark_not_published`。超过 14MB、1000 个文件、单个文件 5MB 或合计 20MB 时返回 413 `benchmark_too_large`。服务器原样写入各题，清单写明 `id`、来源改写为 `{kind: "zip", imported_at}`、版本保持包里的值（包里没有就不带版本），并写入一份 `evaluations: []` 的 `scoreboard.yaml`。请求若用 `origin: {kind: "git", url, ref, path}` 指明包所取自的仓库文件夹（http(s) 链接、它解析到的 40 位提交号与文件夹路径），来源改记为带这些字段与 `imported_at` 的 `git`；其他形式的 `origin` 返回 400。id 已被占用时返回 409 `benchmark_exists`（`details.benchmarkId` 给出该 id），除非 `overwrite` 为 true——覆盖会替换整个目录，连同记分板与 `.jobs/`。`.jobs/` 里有还没有 `result.json` 的 trial，或有为 trial 打包的被测 Agent State（`*.agent-state.tar.gz`）时，评估仍在往那里写，覆盖改为返回 409 `benchmark_busy`。
+- `GET /benchmarks` 返回 `{benchmarks, dir}`：`dir` 是数据目录的绝对路径，每个条目另带自己的绝对路径 `dir`。它只列出含有 `benchmark_config.toml` 的目录；评估过程中删除 Benchmark 留下的目录没有这个文件，因此不会出现在列表里。每个条目都带 `status`（Skill 还在构建 Benchmark 时为 `draft`，校准未能完成时为 `failed`，其余情况为 `published`），清单里有的话还带日期版本 `version` 与来源 `origin`（`{kind, url?, ref?, path?, importedAt?}`，`kind` 取 `builtin`、`manual`、`agent`、`git`、`zip` 之一）；早先版本写下的清单两者都没有。清单不可用的 Benchmark 以目录名列出，按 `failed` 处理，带 `manifestError`（`{code, message}`，`code` 为 `benchmark_manifest_invalid` 或 `benchmark_id_mismatch`），不带 `version` 与 `origin`。文件系统层面读不了清单时，请求失败。
+- `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。处理器会写入 `benchmark_config.toml`（含 `id`、`status = "published"`、当天的第一个版本与来源 `manual`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 Agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
+- `POST /benchmarks/archive` 接受不超过 14MB 的 zip，`benchmark_config.toml` 与各个 `CASE-*` 目录放在 zip 根目录，或放在唯一一个以清单 `id` 命名的顶层目录里；清单放在根目录时没有目录替它命名，必须写明 `id`。顶层另有别的东西（包括 `scoreboard.yaml` 与 `.jobs/`）、顶层有以 `.` 开头的条目、含符号链接、条目名含控制字符或与另一条目只差大小写、某道题缺少 `statement/README.md` 或 `rubric/README.md`、清单会被列表判为不可用，或超出处理器写入时的上限（标题 1 到 200 个字符、描述不超过 2,000 个字符、每题运行次数不超过 1,000）时，返回 400（`benchmark_archive_invalid`、`benchmark_case_invalid` 或清单自己的错误码）；`status` 不是 `published` 时返回 400 `benchmark_not_published`。超过 14MB、单个文件 5MB 或合计 20MB 时返回 413 `benchmark_too_large`。处理器原样写入各题，清单写明 `id`、来源改写为 `{kind: "zip", imported_at}`、版本保持包里的值（包里没有就不带版本），并写入一份 `evaluations: []` 的 `scoreboard.yaml`。请求若用 `origin: {kind: "git", url, ref, path}` 指明包所取自的仓库文件夹（http(s) 链接、它解析到的 40 位提交号与文件夹路径），来源改记为带这些字段与 `imported_at` 的 `git`；其他形式的 `origin` 返回 400。id 已被占用时返回 409 `benchmark_exists`（`details.benchmarkId` 给出该 id），除非 `overwrite` 为 true——覆盖会替换整个目录，连同记分板与 `.jobs/`。`.jobs/` 里有还没有 `result.json` 的 trial，或有为 trial 打包的被测 Agent State（`*.agent-state.tar.gz`）时，评估仍在往那里写，覆盖改为返回 409 `benchmark_busy`。
 - `GET /benchmarks/:benchmarkId/archive` 的文件名为 `<id>-v<version>.zip`（没有版本的 Benchmark 为 `<id>.zip`），内容是磁盘上原样的 `<id>/benchmark_config.toml` 与全部 `CASE-*` 子树，不含记分板、`.jobs/`、其他以 `.` 开头的条目与符号链接；这个 zip 可以原样经 `POST /benchmarks/archive` 导回。每个条目都带同一个固定时间，未改动的 Benchmark 再次导出得到的字节完全相同。`draft` 或 `failed` 的 Benchmark 返回 409 `benchmark_not_published`；清单不可用或超出导入所守上限的返回 409 与清单自己的错误码；不存在的返回 404，超出导入大小上限的返回 413 `benchmark_too_large`。
 - 这些读取文件内容的路由采用与 Workspace 文件相同的内联加固；参见 [Workspace 文件响应](#workspace-文件响应)。
+- `POST /prompt` 接受工作台某个表单的字段，`kind` 取 `create`、`import`、`evaluate`、`optimize` 或 `ask`，`language` 取 `en` 或 `zh`，它本身什么都不发出。`prompt` 写明 Benchmark 的绝对目录；`skills` 是要预选的 Skill，`required` 是任务离不开的那些。任务由页面自己经 `POST …/agents/:agentId/sessions` 与 `POST /api/sessions/:sessionId/tasks` 发起（见 [Session 创建与目录浏览](#session-创建与目录浏览)与 [Task 与插话](#task-与插话)）。也可以用 `GET /prompt`，但较长的请求可能放不进 URL。
+- `GET /tasks` 只返回记录；各个对话的状态从 `GET /api/sessions/:sessionId` 读取。
 
 ## 组织（公司模式）
 

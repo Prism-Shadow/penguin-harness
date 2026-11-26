@@ -13,7 +13,7 @@ Work through these pages in order:
 2. [Key concepts](/concepts): learn the terms these docs use, such as Project, Session, Task and Workspace.
 3. [Conversations](/chat): work with an agent in a conversation and follow what it does.
 4. [Agents](/agents): create agents and configure their prompts, Skills, memory and tools.
-5. [Evaluation Center](/evaluation-center): measure an agent against a Benchmark and improve it with the self-evolution algorithm of your choice.
+5. [Self-Evolution Workbench](/self-evolution-workbench): measure an agent against a Benchmark and improve it with the self-evolution algorithm of your choice.
 
 ## What ships in the box
 
@@ -24,7 +24,7 @@ PenguinHarness is made of these components. They share one data root and one mes
 | SDK | `@prismshadow/penguin-core` | The core engine: the ReAct loop, [AMSP records](/amsp-records) (from `@prismshadow/amsp`), the LLM and Environment [interface contracts](/interfaces), Agent State and Trace. |
 | CLI | `@prismshadow/penguin-cli` | The `penguin` command: an interactive REPL, one-shot Task runs, and model and Vault configuration. |
 | Server | `@prismshadow/penguin-server` | The Web backend: the HTTP [API and SSE streaming](/server-api), multi-user auth, Project authorization and usage statistics. |
-| Web App | `@prismshadow/penguin-web` | The browser UI: multi-session chat, agent management, the plugin library, model configuration, Trace observability and the Evaluation Center. |
+| Web App | `@prismshadow/penguin-web` | The browser UI: multi-session chat, agent management, the plugin library, model configuration, Trace observability and the App Center. |
 | Desktop app | `@prismshadow/penguin-desktop` | The Web App as a standalone application for macOS, Windows and Linux. It embeds the server and installs the `penguin` command. |
 
 ## The three pillars

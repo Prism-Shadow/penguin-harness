@@ -13,7 +13,7 @@ description: PenguinHarness 是什么，它由哪些部分组成，以及从哪�
 2. [核心概念](/concepts)：了解文档里用到的术语，例如 Project、Session、Task 和 Workspace。
 3. [对话](/chat)：在对话中与 Agent 协作，随时看到它在做什么。
 4. [Agent](/agents)：创建 Agent，配置它的提示词、Skill、记忆和工具。
-5. [评估中心](/evaluation-center)：用 Benchmark 衡量 Agent 的表现，再用你选择的自进化算法改进它。
+5. [自进化工作台](/self-evolution-workbench)：用 Benchmark 衡量 Agent 的表现，再用你选择的自进化算法改进它。
 
 ## 产品组成
 
@@ -24,7 +24,7 @@ PenguinHarness 由下面这些组件构成。它们共用同一个数据目录�
 | SDK | `@prismshadow/penguin-core` | 核心引擎：ReAct 循环、[AMSP 记录](/amsp-records)（来自 `@prismshadow/amsp`）、LLM 与 Environment 的[接口契约](/interfaces)、Agent State 与 Trace。 |
 | CLI | `@prismshadow/penguin-cli` | `penguin` 命令：交互式 REPL、单次 Task 运行，以及模型与 Vault 配置。 |
 | Server | `@prismshadow/penguin-server` | Web 服务端：HTTP [API 与 SSE 流式通道](/server-api)、多用户认证、Project 授权和用量统计。 |
-| Web App | `@prismshadow/penguin-web` | 浏览器界面：多会话对话、Agent 管理、插件库、模型配置、Trace 观测和评估中心。 |
+| Web App | `@prismshadow/penguin-web` | 浏览器界面：多会话对话、Agent 管理、插件库、模型配置、Trace 观测和应用中心。 |
 | 桌面应用 | `@prismshadow/penguin-desktop` | 把 Web App 做成独立应用，支持 macOS、Windows 和 Linux。它内嵌服务端，并会装好 `penguin` 命令。 |
 
 ## 三大支柱

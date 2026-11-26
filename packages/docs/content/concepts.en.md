@@ -16,7 +16,7 @@ PenguinHarness uses a small set of terms with specific meanings. This page defin
 
 ### Project
 
-A Project is the top-level unit that groups agents. It holds the model table and credentials its agents use, and its Benchmarks. Every user starts with an initial Project and can create more, and several users can share a Project.
+A Project is the top-level unit that groups agents. It holds the model table and credentials its agents use. Every user starts with an initial Project and can create more, and several users can share a Project.
 
 See [Web App](/web-app).
 
@@ -136,9 +136,9 @@ See [Scheduled tasks](/schedules).
 
 ### Benchmark
 
-A Benchmark is a set of cases that measures how well an agent handles a kind of work. It belongs to the Project, not to one agent, so it can evaluate any agent in the Project.
+A Benchmark is a set of cases that measures how well an agent handles a kind of work. It is kept in the Self-Evolution Workbench of an agent, the default agent's unless you install the workbench elsewhere, and it can evaluate any agent in the Project.
 
-See [Evaluation Center](/evaluation-center).
+See [Self-Evolution Workbench](/self-evolution-workbench).
 
 ### Case
 
@@ -150,7 +150,7 @@ See [Self-Improvement](/self-improvement#benchmark-storage).
 
 An evaluation runs an agent through every case of a Benchmark, a set number of times per case, and records the scores, cost and duration on the Benchmark's scoreboard. Scores are comparable only when the agent, the model and the thinking level are the same.
 
-See [Evaluation Center](/evaluation-center).
+See [Self-Evolution Workbench](/self-evolution-workbench).
 
 ### Optimization
 

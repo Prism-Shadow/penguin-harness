@@ -57,7 +57,7 @@ PenguinHarness 是开源的 Agent 自进化（recursive self-improvement, RSI）
 
 ## 自进化
 
-选一个算法，选一个 Benchmark，一个 Agent 就能一轮一轮地优化另一个 Agent。每个候选版本都是一个新版本，改动前先存快照；每个分数都会进入评估中心。
+选一个算法，选一个 Benchmark，一个 Agent 就能一轮一轮地优化另一个 Agent。每个候选版本都是一个新版本，改动前先存快照；每个分数都会进入自进化工作台。
 
 | 工具包 | 算法 |
 | --- | --- |
@@ -72,7 +72,7 @@ PenguinHarness 是开源的 Agent 自进化（recursive self-improvement, RSI）
 | `trace-rsi-toolkit` | [TRACE](https://arxiv.org/abs/2608.22793)：对比成功与失败轨迹，进化技能库并测量一致性 |
 | `rrsi-rsi-toolkit` | [RRSI](https://arxiv.org/abs/2609.24972)：退火收紧修改预算，测量前先由 Critic 过滤基准过拟合，Pruner 报告不再挣得位置的组件，选择只看噪声下限与 token 成本 |
 
-每个新建的 Project 都自带十七个 Benchmark，以 Harbor 任务的形式跑在 Docker 里：PenguinHarness Benchmark Sec A 到 Sec E（来自 rag-bench-essential、DeepSWE、AutomationBench、Terminal-Bench-Science 和 Terminal-Bench），以及 GDPEVO Essential 六个场景各自的 Train/Test 对，共十二个 GDPEVO Essential 条目。更多 Benchmark 见 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)。
+每个新建 Project 的默认 Agent 的自进化工作台都自带十八个 Benchmark，以 Harbor 任务的形式跑在 Docker 里：PenguinHarness Benchmark Sec A 到 Sec E（来自 rag-bench-essential、DeepSWE、AutomationBench、Terminal-Bench-Science 和 Terminal-Bench），GDPEVO Essential 六个场景各自的 Train/Test 对（共十二个 GDPEVO Essential 条目），以及一个生物医学预测 Benchmark。更多 Benchmark 见 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-benchmark-detail-zh.png" alt="一个 Benchmark 的分数图：三个 Agent 随版本一路攀升" width="820" />
@@ -140,10 +140,10 @@ Agent 还能编写并优化自己的 Skill（[文档](https://penguin.ooo/docs/s
 
 | 分类 | 插件                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
-| Agent 自进化 | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
+| Agent 自进化 | `rsi-workbench`, `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
 | 办公效率 | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `goal`, `trace-lookup`, `agent-company`, `penguin-support` |
 | 软件开发 | `software-development` |
-| AI 应用开发 | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
+| AI 应用开发 | `agent-development`, `model-development`, `skill-porting` |
 
 A2UI、外部插件移植和 Firecrawl 从 [PenguinHarness Apps](https://github.com/Prism-Shadow/penguin-harness-apps) 随产品分发。其他来自该仓库的工作台和技能可在插件市场按需安装。
 

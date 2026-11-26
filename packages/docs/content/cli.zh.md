@@ -7,7 +7,7 @@ description: 所有 penguin 命令和子命令的选项、默认值、输出结�
 
 CLI 以 npm 包 `@prismshadow/penguin-cli` 发布，命令名为 `penguin`。直接运行 `penguin` 会打印帮助。`-v, --version` 打印当前构建的一行标识信息，`penguin version --json` 则打印完整信息。启动时，CLI 会从工作目录加载 `.env` 文件。
 
-CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`、`session`、`agent`、`project`、`cost`、`schedule`、`benchmark`、`org`、`browser`）都向 PenguinHarness 服务器发送 HTTP 请求，并渲染返回结果。Task 在服务器上运行，Session 存放在服务器的索引里；CLI 创建的一切 Web App 都能看到，反过来也一样。只有 `config` 仍直接编辑 Project 的文件，`server` / `web` 则负责启动服务本身。
+CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`、`session`、`agent`、`project`、`cost`、`schedule`、`org`、`browser`）都向 PenguinHarness 服务器发送 HTTP 请求，并渲染返回结果。Task 在服务器上运行，Session 存放在服务器的索引里；CLI 创建的一切 Web App 都能看到，反过来也一样。只有 `config` 仍直接编辑 Project 的文件，`server` / `web` 则负责启动服务本身。
 
 ## 服务器连接
 

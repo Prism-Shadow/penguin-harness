@@ -16,7 +16,7 @@ PenguinHarness 用到一组含义明确的术语。本页按主题分组给出�
 
 ### Project
 
-Project 是组织 Agent 的顶层单位，保存其下 Agent 共用的模型表与凭据，以及属于它的 Benchmark。每个用户都自带一个初始 Project，还可以创建更多；一个 Project 也可以由多个用户共同使用。
+Project 是组织 Agent 的顶层单位，保存其下 Agent 共用的模型表与凭据。每个用户都自带一个初始 Project，还可以创建更多；一个 Project 也可以由多个用户共同使用。
 
 见 [Web App](/web-app)。
 
@@ -136,9 +136,9 @@ Vault 以环境变量的形式保存 Agent 的密钥等机密。变量值只会�
 
 ### Benchmark
 
-Benchmark 是一组题目，用来衡量 Agent 处理某类工作的能力。Benchmark 属于 Project 而不属于某个 Agent，因此可以评估 Project 里的任何 Agent。
+Benchmark 是一组题目，用来衡量 Agent 处理某类工作的能力。它存放在某个 Agent 的自进化工作台里（除非你把工作台装到别处，否则是默认 Agent 的），可以评估 Project 里的任何 Agent。
 
-见[评估中心](/evaluation-center)。
+见[自进化工作台](/self-evolution-workbench)。
 
 ### 题目
 
@@ -150,7 +150,7 @@ Benchmark 是一组题目，用来衡量 Agent 处理某类工作的能力。Ben
 
 评估让 Agent 把 Benchmark 的每道题目按设定的次数跑完，并把分数、成本和耗时记录到 Benchmark 的记分板上。只有 Agent、模型和思考等级都相同时，分数之间才可以比较。
 
-见[评估中心](/evaluation-center)。
+见[自进化工作台](/self-evolution-workbench)。
 
 ### 优化
 

@@ -18,7 +18,7 @@ PenguinHarness 的自我进化是一个循环：为 Agent 构建 Benchmark，在
 | Evaluator | `agent-evaluation` | 通过 `run_subagent` 创建的叶子子 Agent | 让 Target Agent 在一道题目上运行一次，并为这次运行打分 |
 | Optimizer | `agent-optimization` | 另一个独立的顶层 Session | 按可证伪的假设修改 Target Agent，分数严格提升才保留新版本 |
 
-没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill。循环本身 `agent-optimization` 就是 `default-rsi-toolkit` 插件（Default RSI Toolkit），它经由 `agent-evaluation` 插件（Agent Evaluation）测量，后者包含 `benchmark-design` 与 `agent-evaluation`；`agent-initialization` 随 `agent-development` 提供。四者都是预装的。在 Web App 界面里，Target Agent 叫作**被测智能体**。
+没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill。循环本身 `agent-optimization` 就是 `default-rsi-toolkit` 插件（Default RSI Toolkit），它经由 `rsi-workbench` 插件（自进化工作台）测量，后者包含 `benchmark-design` 与 `agent-evaluation`；`agent-initialization` 随 `agent-development` 提供。四者都是预装的。在 Web App 界面里，Target Agent 叫作**被测智能体**。
 
 ### 角色之间的调用
 
@@ -125,22 +125,24 @@ OPRO 与 APE 各自带一个小型演示任务：只要提出来，Skill 会先�
 
 工具包之间互不依赖，也不依赖 `default-rsi-toolkit`，任何一个单独安装即可运行。OPRO、APE、ACE 和 AWM 在被测 Agent 里自行初始化学习槽：一个 Agent 自有的 Skill，存放方法学到的内容（指令、规则手册、工作流或模块化技能库），再在它的 `AGENTS.md` 里加一行固定指令，要求它开始任务前先读这个 Skill。方法的循环只改这个 Skill 存放的内容。最终 Benchmark 评测遵循工具包自带的 `references/evaluation.md`，写入现有记分板格式。OPRO、APE、ACE 和 AWM 共用通用单格评测协议；连续训练工具包分别说明训练启动、产物交接与独立测试流程。内置 Benchmark 的题目按题干的 **How this case is run** 一节运行，与 `agent-evaluation` 一致。
 
-OPRO、APE、ACE 和 AWM 测量的每个候选都取一个新的 Agent State `version`。与默认循环相同，每个版本在被改动之前先打快照；运行结束时停在方法选定的版本上。这些评估照常写入 `scoreboard.yaml`，标签规则不变，因此同一个 Agent 在同一模型与思考等级下的默认循环与 OPRO 共用图表上的一条线：各点的版本号区分它们，每条评估的摘要标题写明所用的方法。在 Web App 中，用评估中心**优化**标签页的**方法**字段选择工具包，见[评估中心](/evaluation-center#优化-agent)。
+OPRO、APE、ACE 和 AWM 测量的每个候选都取一个新的 Agent State `version`。与默认循环相同，每个版本在被改动之前先打快照；运行结束时停在方法选定的版本上。这些评估照常写入 `scoreboard.yaml`，标签规则不变，因此同一个 Agent 在同一模型与思考等级下的默认循环与 OPRO 共用图表上的一条线：各点的版本号区分它们，每条评估的摘要标题写明所用的方法。在 Web App 中，用自进化工作台**优化**标签页的**方法**字段选择工具包，见[自进化工作台](/self-evolution-workbench#优化-agent)。
 
 ## 复现的 Benchmark
 
-复现一个已发表的 benchmark 不是工具包的事。复现的 Benchmark 是公开仓库 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) 中 `packages/<id>/` 下的一个包，经导入进入 Project：让 Agent 导入这个包的文件夹，副本会记下它来自哪个提交（来源为 `git`，见[清单](#清单)）。导入流程属于 `benchmark-design` Skill（`reference/package.md`「Importing a package」一节）：固定提交、读完每个文件、把配对的 train / test 包一并带入、核对副本，并在运行任何东西之前先提议一题的冒烟探测。运行它的特殊流程写在 Benchmark 自身，即各题题干的 **How this case is run** 一节和仓库的 README，从不写进插件或 Skill，因此每个 RSI 工具包都以同样的方式运行它。内置 Benchmark（Sec A 到 Sec E 与 GDPevo 的一对）就是这样的复现，随每个新 Project 一起写入。
+复现一个已发表的 benchmark 不是工具包的事。复现的 Benchmark 是公开仓库 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) 中 `packages/<id>/` 下的一个包，经导入进入自进化工作台：让 Agent 导入这个包的文件夹，副本会记下它来自哪个提交（来源为 `git`，见[清单](#清单)）。导入流程属于 `benchmark-design` Skill（`reference/package.md`「Importing a package」一节）：固定提交、读完每个文件、把配对的 train / test 包一并带入、核对副本，并在运行任何东西之前先提议一题的冒烟探测。运行它的特殊流程写在 Benchmark 自身，即各题题干的 **How this case is run** 一节和仓库的 README，从不写进插件或 Skill，因此每个 RSI 工具包都以同样的方式运行它。内置 Benchmark（Sec A 到 Sec E 与 GDPevo 的各对）就是这样的复现，由工作台在首次加载时写入它的数据目录。
 
 ## 从 Web App 发起
 
-Web App 的[评估中心](/evaluation-center)不需要手写 Prompt，就能启动同样的两个顶层 Session。它的对话框把请求预填进一个新对话，并选好对应的 Skill；你发送之前，什么都不会运行。对话框从不选择 Target Agent 的评估 Runtime。具体步骤见[评估中心](/evaluation-center)。
+[自进化工作台](/self-evolution-workbench)不需要手写 Prompt，就能启动同样的两个顶层 Session。它的表单写好请求，按**开始**即在你的一个新对话中立即发出，并选好对应的 Skill，审批方式取表单所选的审批模式。表单从不选择 Target Agent 的评估 Runtime。具体步骤见[自进化工作台](/self-evolution-workbench)。
 
 ## Benchmark 存储
 
-Benchmark 属于 Project，每个 Benchmark 存放在评估中心的数据目录 `<root>/projects/<project>/agents/system_agent/app/data/benchmark/<id>/`：它属于系统 Agent，系统 Agent 不会被删除或导出，这个目录因此与 Project 同寿。评估中心的提示词会把这个目录告诉 Agent（`BENCHMARK_DIR`）。Benchmark 与 Agent 是平级关系，谁也不隶属于谁：一个 Benchmark 可以评估多个 Agent，一个 Agent 也可以接受多个 Benchmark 的评估。因此 `benchmark_config.toml` 不记录任何 Agent，被测的 Agent 记在每一条评估上。
+Benchmark 属于它所在的自进化工作台：每个装有该工作台的 Agent 都把自己的 Benchmark 存放在这个工作台的数据目录 `<root>/projects/<project>/agents/<agent>/app/data/benchmark/<id>/` 中，默认 Agent 的即 `agents/default_agent/app/data/benchmark/`。移除工作台即删除它们，导出 Agent 时带上工作台数据即一并带走。工作台的提示词会把这个目录告诉 Agent（`BENCHMARK_DIR`）；请求没有写明时，指默认 Agent 的目录。在 Project 内，Benchmark 与 Agent 是平级关系，谁也不隶属于谁：一个 Benchmark 可以评估多个 Agent，一个 Agent 也可以接受多个 Benchmark 的评估。因此 `benchmark_config.toml` 不记录任何 Agent，被测的 Agent 记在每一条评估上。
+
+早先版本把一个 Project 的 Benchmark 放在 `agents/system_agent/app/data/benchmark/`（2026 年 11 月之前为 `benchmarks/`）。本版本第一次启动时把它们移进默认 Agent 的目录，并在原目录处留一个链接，见[升级之后](/self-evolution-workbench#升级之后)。
 
 ```text
-<project>/agents/system_agent/app/data/benchmark/<id>/
+<project>/agents/<agent>/app/data/benchmark/<id>/
 ├── benchmark_config.toml       # the manifest: id, title, description, description_zh, version, status, runs (Builder runs is fixed at 1), [origin]
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
@@ -151,11 +153,11 @@ Benchmark 属于 Project，每个 Benchmark 存放在评估中心的数据目录
 
 `rubric/` 与 `statement/` 刻意分开存放：Target Agent 只拿到题干，永远拿不到评分细则。
 
-有 `benchmark_config.toml` 的目录才算 Benchmark：`benchmarks/` 下缺少这个文件的目录不会列出。从未评估过的 Benchmark 照样有清单，照常列出。评估还在运行时删除 Benchmark，会留下这样一个没有清单的目录，因为运行中的评估还在往原来的路径里写；这种残留目录可以放心手动删除。
+有 `benchmark_config.toml` 的目录才算 Benchmark：数据目录中缺少这个文件的目录不会列出。从未评估过的 Benchmark 照样有清单，照常列出。评估还在运行时删除 Benchmark，会留下这样一个没有清单的目录，因为运行中的评估还在往原来的路径里写；这种残留目录可以放心手动删除。
 
 ### 清单
 
-`benchmark_config.toml` 描述一个 Benchmark，就像 `plugin.json` 描述一个插件：
+`benchmark_config.toml` 描述一个 Benchmark，就像 `package.json` 描述一个插件。它与 `scoreboard.yaml` 都由 `@penguinharness/rsi-workbench/format` 读取与写出：
 
 ```toml
 id = "report-writing-v1"
@@ -179,9 +181,11 @@ kind = "agent"
 | `version` | Benchmark 包使用 `"x.y.z"`，也接受原有日期版本 `"YYYY.MM.DD.N"` |
 | `last_update` | 包的更新时间，使用 ISO 8601 格式 |
 | `[author]` | 包作者：`name`，以及选填的 `email` 和 `homepage` |
+| `data_url` | 选填：存放任务数据的仓库的 http(s) 链接，内置 Benchmark 都写有这一项 |
+| `references` | 选填：Benchmark 所依据工作的 http(s) 链接列表 |
 | `status` | `draft`、`published` 或 `failed`，见 [Benchmark 状态](#benchmark-状态) |
 | `runs` | 每题运行次数，正整数，缺省为 1；由服务端写入时不超过 1,000 |
-| `[origin]` | 这份副本的来源，记在 `kind` 里：`builtin`（随 Project 预置）、`manual`（手动创建表单）、`agent`（由 `benchmark-design` 写入）、`git`（Agent 从仓库文件夹导入：带 `url`、解析到的 40 位提交 `ref`、`path` 与 `imported_at`）或 `zip`（上传的包：带 `imported_at`） |
+| `[origin]` | 这份副本的来源，记在 `kind` 里：`builtin`（由工作台写入的种子）、`manual`（手动创建表单）、`agent`（由 `benchmark-design` 写入）、`git`（Agent 从仓库文件夹导入：带 `url`、解析到的 40 位提交 `ref`、`path` 与 `imported_at`）或 `zip`（上传的包：带 `imported_at`） |
 
 `id`、`version` 与 `[origin]` 是本版本新增的键，读取时都可以省略。早先版本写下的清单一个都没有，照原样读取：以目录名为 id，没有版本，也没有来源。没有任何东西改写它，也不需要手动处理。`id`、`version` 或 `[origin]` 出现了却不合规，清单就读不了（见 [Benchmark 状态](#benchmark-状态)）。早先版本读到本版本写下的清单时，会忽略它不认识的键。
 
@@ -201,14 +205,14 @@ Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard
 | `published` | Formal Baseline 已经记录 | 可以使用 |
 | `failed` | `benchmark-design` 报告了 `calibration_failed` | 遮罩显示为创建失败，并提示删除后重新创建 |
 
-`failed` 的 Benchmark 不能使用。手动创建的 Benchmark、内置示例和内置 Benchmark 一开始就是 `published`。清单里没有这个键，或者取值既不是 `draft` 也不是 `failed`，都按 `published` 读取。清单不可用（不是合法的 TOML、`id` 与所在目录不符，或 `version`、`[origin]` 不合规）的 Benchmark 仍以目录名列出，按 `failed` 处理：评估中心把它遮罩并说明原因，修好文件之前不能使用。
+`failed` 的 Benchmark 不能使用。手动创建的 Benchmark、内置示例和内置 Benchmark 一开始就是 `published`。清单里没有这个键，或者取值既不是 `draft` 也不是 `failed`，都按 `published` 读取。清单不可用（不是合法的 TOML、`id` 与所在目录不符，或 `version`、`[origin]` 不合规）的 Benchmark 仍以目录名列出，按 `failed` 处理：自进化工作台把它遮罩并说明原因，修好文件之前不能使用。
 
 ### 评估记录
 
 `scoreboard.yaml` 里的每条评估记录都带时间戳，并包含：
 
 - `agent_id`：这次评估测试的 Agent。它与 `model_id`、`thinking_level` 一起组成这条记录的**标签**。趋势图以时间为横轴、分数为纵轴，每个标签画一条线，只有同一标签下的分数才可比。Agent State 的 `version` 不属于标签：同一个 Agent 在同一 Runtime 下的历次版本，正是这张图要展示的趋势，所以它们共用一条线，每个点的悬停提示里写着对应的版本。评估记录还不带 Agent 的时期写下的记录，读作未标注，归入图表的灰色系列。
-- 评估 Runtime：`provider`、`model_id` 和 `thinking_level`。对于基线，用户指定的 `(provider, model_id)` 模型对优先，否则沿用 Builder Session 的模型对；评估中心**评估**标签页发起的评估用**被测智能体使用的模型**选定的模型对，由提示词带上；优化则沿用 Reference 的 Runtime，从**优化**标签页发起时提示词点名被测模型，Reference 取这个模型对上的评估。`thinking_level` 从 Target Agent 的配置读取，不依赖 Trace 元数据。
+- 评估 Runtime：`provider`、`model_id` 和 `thinking_level`。对于基线，用户指定的 `(provider, model_id)` 模型对优先，否则沿用 Builder Session 的模型对；自进化工作台**评估**标签页发起的评估用**被测智能体使用的模型**选定的模型对，由提示词带上；优化则沿用 Reference 的 Runtime，从**优化**标签页发起时提示词点名被测模型，Reference 取这个模型对上的评估。`thinking_level` 从 Target Agent 的配置读取，不依赖 Trace 元数据。
 - `summary_title` 和 `summary`：这一轮的结论和下一轮的假设。
 - 由模型写入的分数、成本和耗时平均值。题目级的值是各次运行的平均，评估级的值是各道题目的平均。单次运行的成本保留记录时的精度。成本平均值忽略 `null`，只有所有参与计算的成本都未知时才为 `null`。分数保留两位小数，成本平均值保留六位小数，`duration_ms` 为整数。
 - 每道题目的逐次运行明细：每次运行记录 `score`、`cost`、`duration_ms` 和 `session_id`。
@@ -217,9 +221,9 @@ Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard
 
 ### 示例 Benchmark
 
-创建 Project 时，会在 Project 层级预置一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`）。它的三条示例评估都标注为 `agent_id: default_agent`，所以评估页面开箱就有数据。整个目录随时可以删除或替换。
+工作台会在它的数据目录里写入一个示例 Benchmark `example-benchmark`。它的三条示例评估都标注为 `agent_id: default_agent`，所以评估页面开箱就有数据。整个目录随时可以删除或替换。
 
-示例与内置 Benchmark 只在 Project 创建时写入一次（`packages/core/src/state/project-benchmarks.ts`）：服务端创建 Project 时写入，`default_project` 则在全新安装首次启动时写入。每个都先写进 `benchmarks/.seeding/` 下的临时目录，再改名就位；写入失败即 Project 创建失败，并整体回滚。目录已存在的 id 直接跳过、从不往里写，因此服务端沿用已有数据根里的 `default_project` 时，它自己的 Benchmark 原样保留，只补上缺少的。此后不再写入：初始化或加载 `default_agent` 都不碰 `benchmarks/`，删掉的不会再出现。早先版本的 Project 保持原样：不会得到内置 Benchmark，示例在的仍在，删掉的也不会回来。
+示例与内置 Benchmark 只在工作台首次加载时写入一次：数据目录中没有 `.seeded` 标记时，每个种子先写进 `.seeding/` 下的临时目录，再改名就位；目录已存在的 id 直接跳过、从不往里写；全部就位后写下 `.seeded`。有种子写入失败时不写标记，下次加载再试。此后不再写入，删掉的不会再出现。这个标记随工作台数据一起导出；升级时把早先版本的 Benchmark 移进来的迁移也会写下它，所以升级上来的 Project 不会得到它原本没有的内置 Benchmark。
 
 ## 快照与版本
 
@@ -235,7 +239,7 @@ zip 包不能含任何链接。`.tar.gz` 包只有在 `agent_state/` 是真实�
 
 - 每次 Evaluator 运行和每个被测会话，都是带完整 Trace 的普通 Session。
 - 记分板记录通过 `session_id` 关联到对应的被测会话，见 [Session 与 Trace](/sessions-and-traces)。
-- Web App 的评估页面是这些文件的只读视图。趋势图只显示分数；评估明细表把被测 Agent、模型 ID 和推理强度分列显示。见[评估中心](/evaluation-center)。
+- 自进化工作台的页面是这些文件的只读视图。趋势图只显示分数；评估明细表把被测 Agent、模型 ID 和推理强度分列显示。见[自进化工作台](/self-evolution-workbench)。
 
 每一个分数都能追溯到产生它的那次运行。
 
@@ -244,8 +248,8 @@ zip 包不能含任何链接。`.tar.gz` 包只有在 `agent_state/` 是真实�
 | Skill | 插件 | 用途 |
 | --- | --- | --- |
 | `agent-initialization` | `agent-development` | 把需求变成可用的 Agent：编写它的 `AGENTS.md`，安装它需要的 Skill |
-| `benchmark-design` | `agent-evaluation` | 设计并校准包含多道题目的能力 Benchmark |
-| `agent-evaluation` | `agent-evaluation` | 隔离地运行一道 Benchmark 题目一次，并为这次运行打分 |
+| `benchmark-design` | `rsi-workbench` | 设计并校准包含多道题目的能力 Benchmark |
+| `agent-evaluation` | `rsi-workbench` | 隔离地运行一道 Benchmark 题目一次，并为这次运行打分 |
 | `agent-optimization` | `default-rsi-toolkit` | 根据 Benchmark 的结果改进 Agent |
 | `opro-rsi-toolkit` | `opro-rsi-toolkit` | 运行 OPRO：依据历史分数优化指令 |
 | `ape-rsi-toolkit` | `ape-rsi-toolkit` | 运行 APE：从输入 / 输出示例归纳指令 |
