@@ -16,6 +16,9 @@
  * (chrome-surface.tsx): the built-in pages stay alive out of sight, since nothing registers a
  * slot for them. Which of the two the agents drive is chosen in Settings › Browser; the panel's
  * menu does not offer it.
+ *
+ * A Session on a machine says so rather than asking that machine for pages: a machine runs a
+ * plain server with no desktop app, so it has no browser of its own to show.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button, EmptyState, Waiting, useWindowShown } from "@prismshadow/penguin-ui";
@@ -115,10 +118,20 @@ export function BuiltinBrowserPanel({
     if (native && active && windowShown && sessionId && projectId)
       return showWorkbenchGroup(sessionId, projectId);
   }, [native, active, windowShown, sessionId, projectId]);
-  // Remote groups belong to their machine. A local group needs the server's desktop capability
-  // before reading native tabs; standalone servers use the account's Chrome surface below.
+  if (scope !== undefined && scope.machineId !== null) {
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
+        <EmptyState
+          title={S.builtinBrowser.unavailableTitle}
+          description={S.builtinBrowser.unavailableOnMachine}
+        />
+      </div>
+    );
+  }
+  // A local group needs the server's desktop capability before reading native tabs; standalone
+  // servers use the account's Chrome surface below.
   if (scope?.machineId === null && desktop === undefined) return <Waiting />;
-  if (scope && !native && (scope.machineId !== null || desktop))
+  if (scope && !native && desktop)
     return (
       <ManagedBrowserPages
         key={JSON.stringify([scope.machineId, scope.projectId, scope.sessionId])}

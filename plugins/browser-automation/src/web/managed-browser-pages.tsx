@@ -5,7 +5,10 @@ import { apiErrorText, type SessionWorkbenchScope } from "@prismshadow/penguin-w
 import { listManagedPages, openManagedPage, closeManagedPage } from "./api";
 import { S } from "./strings";
 
-/** The native guests live on the machine that owns the Session. Other windows control its group here. */
+/**
+ * The native guests live in the desktop app this server runs in. A window that cannot host them
+ * (a browser tab on the same server) lists and controls the Session's group here.
+ */
 export function ManagedBrowserPages({
   scope,
   active,

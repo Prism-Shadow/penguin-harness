@@ -20,6 +20,10 @@
  * Import, history and clearing data belong to the built-in browser: on chrome they answer 405
  * `not_supported` (Chrome keeps its own). The import may read through the user's connected
  * extension, though: it hands over its Chrome's cookies once the user allows it in Chrome.
+ *
+ * A machine (a server another one started as its machine, `machine`) has no browser of its own
+ * and offers no Chrome pairing: a Session there uses the person's own browser on the server that
+ * added it. Until that server reaches this one, an admin's call answers `hub_disconnected`.
  */
 import { createHash } from "node:crypto";
 import type {
@@ -208,6 +212,11 @@ export interface BuiltinBrowserDeps {
   };
   /** The users' backend choice; absent, nobody can switch. */
   prefs?: BackendPrefs;
+  /**
+   * This server runs as another server's machine (it was started with PENGUIN_MACHINE=1). It
+   * counts only without a shell: a desktop app is never anyone's machine.
+   */
+  machine?: boolean;
 }
 
 export class BuiltinBrowser {
@@ -219,12 +228,15 @@ export class BuiltinBrowser {
   private readonly builtin: BrowserBackendRuntime | null;
   /** What `tabs` answers on a server without the built-in browser. */
   private readonly noTabs: TabRegistry;
+  /** This server is another one's machine: its Sessions' browser is the person's, over there. */
+  private readonly machine: boolean;
   private readonly importer: Importer;
   private disposed = false;
 
   constructor(private readonly deps: BuiltinBrowserDeps) {
     const now = deps.now ?? Date.now;
     this.importer = deps.importer ?? { listImportSources, readCookies, readHistory };
+    this.machine = deps.port === null && deps.machine === true;
     this.noTabs = new TabRegistry(now);
     this.history = new HistoryStore(historyFile(deps.root), { now, log: deps.log });
     this.settings = new SettingsStore(settingsFile(deps.root), deps.log);
@@ -274,6 +286,8 @@ export class BuiltinBrowser {
   /** The backends the actor may choose: built-in for an admin on the desktop, chrome where offered. */
   choices(actor: Actor): BrowserBackend[] {
     const choices: BrowserBackend[] = [];
+    // The person chooses on the server that added this machine; there is nothing to pick here.
+    if (this.machine) return choices;
     if (this.builtin !== null && actor.isAdmin) choices.push("builtin");
     if (this.extensions !== null) choices.push("chrome");
     return choices;
@@ -281,6 +295,7 @@ export class BuiltinBrowser {
 
   /** The backend the actor's calls go to; see the module doc. */
   backendOf(actor: Actor): BrowserBackend {
+    if (this.machine) return "builtin";
     if (this.builtin === null) return this.extensions !== null ? "chrome" : "builtin";
     if (this.extensions === null) return "builtin";
     const chosen = this.deps.prefs?.get(actor.userId) ?? null;
@@ -325,6 +340,7 @@ export class BuiltinBrowser {
 
   /** GET /status: never 503 — an unavailable backend says why. Retries a failed shell handshake. */
   async status(actor: Actor, sessionId?: string): Promise<BuiltinBrowserStatus> {
+    if (this.machine) return this.machineStatus(actor);
     const backend = this.backendOf(actor);
     if (backend === "builtin" && this.builtin !== null && !actor.isAdmin) throw adminRequired();
     const backends: BrowserBackendInfo[] = [];
@@ -351,6 +367,20 @@ export class BuiltinBrowser {
       tabs: runtime?.tabs.list(backend === "builtin" ? sessionId : undefined) ?? [],
       activeTabId: runtime?.tabs.activeFor(backend === "builtin" ? sessionId : undefined) ?? null,
       ...(metrics !== null ? { metrics } : {}),
+    };
+  }
+
+  /** GET /status on a machine: the one backend there is, the person's, out of reach for now. */
+  private machineStatus(actor: Actor): BuiltinBrowserStatus {
+    if (!actor.isAdmin) throw adminRequired();
+    const backend = this.backendOf(actor);
+    return {
+      available: false,
+      reason: "hub_disconnected",
+      backend,
+      backends: [{ backend, available: false, reason: "hub_disconnected" }],
+      tabs: [],
+      activeTabId: null,
     };
   }
 
@@ -728,6 +758,7 @@ export class BuiltinBrowser {
 
   /** The actor's backend's runtime, or why it cannot be driven (503 with the reason, 403). */
   private runtime(actor: Actor): BrowserBackendRuntime {
+    if (this.machine) return this.machineRuntime(actor);
     const backend = this.backendOf(actor);
     if (backend === "builtin") return this.builtinRuntime(actor);
     const hub = this.extensions;
@@ -741,8 +772,15 @@ export class BuiltinBrowser {
     return runtime;
   }
 
+  /** On a machine: the person's browser, for an admin, which is out of reach until it is relayed. */
+  private machineRuntime(actor: Actor): BrowserBackendRuntime {
+    if (!actor.isAdmin) throw adminRequired();
+    throw new BrowserUnavailableError("hub_disconnected");
+  }
+
   /** The built-in browser, for an admin. */
   private builtinRuntime(actor: Actor): BrowserBackendRuntime {
+    if (this.machine) return this.machineRuntime(actor);
     if (this.builtin === null) throw new BrowserUnavailableError("not_desktop");
     if (!actor.isAdmin) throw adminRequired();
     return this.builtin;
@@ -756,6 +794,13 @@ export class BuiltinBrowser {
 
   /** What only the built-in browser has: refused on chrome (405), and to a non-admin (403). */
   private builtinOnly(actor: Actor, what: string): void {
+    if (this.machine) {
+      throw new HttpError(
+        405,
+        "not_supported",
+        `${what} belongs to the browser on the server this machine was added from; do it there.`,
+      );
+    }
     if (this.backendOf(actor) === "chrome") {
       throw new HttpError(
         405,

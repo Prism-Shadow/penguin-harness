@@ -82,6 +82,8 @@ const UNAVAILABLE: Record<BuiltinBrowserUnavailableReason, string> = {
     "Chrome is not connected. Ask the user to open Chrome with the PenguinHarness Browser extension, or to pair it again in the Browser panel.",
   extension_disabled:
     "An admin has switched off Chrome connections on this server; the user's own Chrome cannot be driven.",
+  hub_disconnected:
+    "This session runs on a machine. Its browser is the one in PenguinHarness on the computer this machine was added from, and it cannot be reached from this machine now. Tell the user so; do not ask them to pair a Chrome with this machine.",
 };
 
 /** 503 `browser_unavailable`, with the reason the routes put beside the code. */

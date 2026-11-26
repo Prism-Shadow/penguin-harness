@@ -203,6 +203,24 @@ describe("status and tabs", () => {
     },
   );
 
+  it("status on a machine says where the session's browser is, and asks for no Chrome pairing", async () => {
+    routes["GET /status"] = () => ({
+      body: {
+        available: false,
+        reason: "hub_disconnected",
+        backend: "builtin",
+        backends: [{ backend: "builtin", available: false, reason: "hub_disconnected" }],
+        tabs: [],
+        activeTabId: null,
+      },
+    });
+    expect(await cli(["browser", "status"])).toBe(1);
+    const [statusLine, note] = out().trimEnd().split("\n");
+    expect(statusLine).toBe("status: unavailable (hub_disconnected) · backend: builtin");
+    expect(note).toBe(`note: ${t.browser.unavailableHint("hub_disconnected")}`);
+    expect(note).not.toMatch(/Connect your Chrome|desktop app/);
+  });
+
   it("status prints the browser's memory, and the server's load warning with what to do", async () => {
     const GB = 1024 * 1024;
     routes["GET /status"] = () => ({
