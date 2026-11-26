@@ -7,7 +7,7 @@
  * - An admin creates a Project under a valid id (its display name defaulting to the id) and is
  *   refused an invalid one; a DB-taken, directory-only-taken or reserved id is a 409.
  * - A non-admin's Project id must carry their own prefix and a valid suffix.
- * - A Project creation that fails midway — writing its config, or its Benchmarks — rolls back
+ * - A Project creation that fails midway — writing its config, or its built-in Agents — rolls back
  *   its row and directory, so the same id can be retried; an Agent creation that fails midway
  *   rolls back its directory the same way.
  * - An Agent id is validated the same way, initializes the Agent, collides within its Project
@@ -18,7 +18,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { benchmarksDir } from "@prismshadow/penguin-core";
+import { agentsDir } from "@prismshadow/penguin-core";
 import type { AgentCreateResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -105,31 +105,29 @@ describe("semantic ids", () => {
     expect((await admin.post("/api/projects", { projectId: "flaky", name: "x" })).status).toBe(201);
   });
 
-  it("rolls back a Project creation whose Benchmarks cannot be written, so the same id can be retried", async () => {
+  it("rolls back a Project creation whose built-in Agents cannot be written, so the same id can be retried", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const config = t.deps.projectConfigService;
     const original = config.seedPresetPromotions;
-    // The step right before the Benchmarks are written leaves a file where the folder that holds
-    // them (the system Agent's app/) goes.
+    // The step right before the built-in Agents are written leaves a file where the folder that
+    // holds them (the Project's agents/) goes.
     config.seedPresetPromotions = async (projectId: string) => {
       await original.call(config, projectId);
-      const app = path.dirname(path.dirname(benchmarksDir(t.root, projectId)));
-      await fs.mkdir(path.dirname(app), { recursive: true });
-      await fs.writeFile(app, "");
+      await fs.writeFile(agentsDir(t.root, projectId), "");
     };
     try {
       expect(
-        (await admin.post("/api/projects", { projectId: "flaky_bench", name: "x" })).status,
+        (await admin.post("/api/projects", { projectId: "flaky_agents", name: "x" })).status,
       ).toBe(500);
     } finally {
       config.seedPresetPromotions = original;
     }
-    await expect(fs.access(path.join(t.root, "projects", "flaky_bench"))).rejects.toThrow();
+    await expect(fs.access(path.join(t.root, "projects", "flaky_agents"))).rejects.toThrow();
     expect(
-      t.deps.db.prepare("SELECT 1 AS x FROM projects WHERE project_id = ?").get("flaky_bench"),
+      t.deps.db.prepare("SELECT 1 AS x FROM projects WHERE project_id = ?").get("flaky_agents"),
     ).toBeUndefined();
     expect(
-      (await admin.post("/api/projects", { projectId: "flaky_bench", name: "x" })).status,
+      (await admin.post("/api/projects", { projectId: "flaky_agents", name: "x" })).status,
     ).toBe(201);
   });
 

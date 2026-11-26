@@ -1,7 +1,7 @@
 /**
  * Semantic ids (services/semantic-id.ts): how a create dialog's name becomes the id of an
- * organization, a channel, a Project, an Agent or a Benchmark, when the model is not asked or
- * its answer is unusable.
+ * organization, a channel, a Project, an Agent or a kind a server module contributes, when the
+ * model is not asked or its answer is unusable.
  *
  * - A name folds to a lowercase id behind the kind's prefix: diacritics folded, words joined,
  *   the prefix never doubled; a name with no ASCII letter or digit yields nothing; the ASCII
@@ -12,12 +12,13 @@
  *   prefixed once; an answer with no ASCII yields nothing.
  * - A placeholder is a valid, dated, obviously temporary id that avoids the taken ones.
  * - Projects and Agents take a bare snake_case id, repaired behind the noun when it would start
- *   with a digit or be one letter; a Benchmark takes a kebab-case id; a non-admin's Project
- *   lives in the owner's namespace; every kind accepts its own placeholder.
+ *   with a digit or be one letter; a contributed kind takes a kebab-case id; a non-admin's
+ *   Project lives in the owner's namespace; every kind accepts its own placeholder.
  */
 import { describe, expect, it } from "vitest";
 import {
   SEMANTIC_ID_RULES,
+  contributedIdRule,
   fallbackSemanticId,
   placeholderSemanticId,
   prefixSemanticId,
@@ -27,6 +28,8 @@ import {
 } from "../src/services/semantic-id.js";
 
 const { org, channel } = SEMANTIC_ID_RULES;
+/** A kind a server module contributes, as `POST …/suggest-id` rules it. */
+const deck = contributedIdRule("deck");
 
 describe("fallbackSemanticId", () => {
   it("folds a name to a lowercase id behind the kind's prefix", () => {
@@ -122,22 +125,16 @@ describe("the kind table", () => {
     }
   });
 
-  it("gives a Benchmark a kebab-case id, suffixed with a hyphen", () => {
-    expect(fallbackSemanticId("Report Writing (hard) v1", SEMANTIC_ID_RULES.benchmark)).toBe(
-      "report-writing-hard-v1",
-    );
+  it("gives a contributed kind a kebab-case id, suffixed with a hyphen", () => {
+    expect(fallbackSemanticId("Report Writing (hard) v1", deck)).toBe("report-writing-hard-v1");
     // A model that answers in snake_case is folded into the kind's spelling.
-    expect(sanitizeSuggestedId("`report_writing`", SEMANTIC_ID_RULES.benchmark)).toBe(
-      "report-writing",
-    );
-    // Nothing to repair: a Benchmark id may start with a digit.
-    expect(fallbackSemanticId("2026 eval", SEMANTIC_ID_RULES.benchmark)).toBe("2026-eval");
-    expect(
-      fallbackSemanticId("Report Writing", SEMANTIC_ID_RULES.benchmark, ["report-writing"]),
-    ).toBe("report-writing-2");
+    expect(sanitizeSuggestedId("`report_writing`", deck)).toBe("report-writing");
+    // Nothing to repair: a contributed kind's id may start with a digit.
+    expect(fallbackSemanticId("2026 eval", deck)).toBe("2026-eval");
+    expect(fallbackSemanticId("Report Writing", deck, ["report-writing"])).toBe("report-writing-2");
     expect(uniqueSemanticId("a".repeat(64), ["a".repeat(64)], "-", 64)).toBe(`${"a".repeat(62)}-2`);
-    expect(SEMANTIC_ID_RULES.benchmark.accepts("Report_writing-v1")).toBe(true);
-    expect(SEMANTIC_ID_RULES.benchmark.accepts("../escape")).toBe(false);
+    expect(deck.accepts("Report_writing-v1")).toBe(true);
+    expect(deck.accepts("../escape")).toBe(false);
   });
 
   it("puts a non-admin's Project in the owner's namespace, and leaves the admin's bare", () => {
@@ -163,14 +160,9 @@ describe("the kind table", () => {
     expect(placeholderSemanticId(SEMANTIC_ID_RULES.agent, ["agent_20260909"], day)).toBe(
       "agent_20260909_2",
     );
-    expect(placeholderSemanticId(SEMANTIC_ID_RULES.benchmark, ["benchmark-20260909"], day)).toBe(
-      "benchmark-20260909-2",
-    );
-    for (const kind of ["org", "channel", "project", "agent", "benchmark"] as const) {
-      expect(
-        SEMANTIC_ID_RULES[kind].accepts(placeholderSemanticId(SEMANTIC_ID_RULES[kind], [], day)),
-        kind,
-      ).toBe(true);
+    expect(placeholderSemanticId(deck, ["deck-20260909"], day)).toBe("deck-20260909-2");
+    for (const [kind, rule] of [...Object.entries(SEMANTIC_ID_RULES), ["deck", deck] as const]) {
+      expect(rule.accepts(placeholderSemanticId(rule, [], day)), kind).toBe(true);
     }
   });
 });

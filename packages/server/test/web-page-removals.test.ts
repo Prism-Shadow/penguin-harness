@@ -18,7 +18,7 @@ import type { TestApp } from "./helpers.js";
 function removing(entries: Array<Record<string, unknown>>): PluginHost {
   const def: ModuleDef = {
     manifest: parseManifest({
-      name: "NoEvaluationCenter",
+      name: "NoUsagePage",
       requires: {},
       provides: {},
       contributes: {
@@ -65,13 +65,13 @@ describe("web page removals", () => {
     expect(none.pageRemovals).toEqual([]);
     await t.cleanup();
 
-    t = await createTestApp({ plugins: removing([{ key: "benchmark" }]) });
+    t = await createTestApp({ plugins: removing([{ key: "usage" }]) });
     const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     const res = await admin.get("/api/contributions");
     expect(res.status).toBe(200);
     const body = (await res.json()) as ContributionsResponse;
     expect(body.pageRemovals).toEqual([
-      { id: "removal.0", from: "NoEvaluationCenter", key: "benchmark" },
+      { id: "removal.0", from: "NoUsagePage", key: "usage" },
     ]);
   });
 
@@ -80,16 +80,16 @@ describe("web page removals", () => {
     t = booted.t;
     expect(booted.removals).toEqual([]);
     expect(booted.logged).toMatch(
-      /plugin 'test-removal' runs without .*NoEvaluationCenter: contribution 'removal\.0' to 'WebModule\.pageRemovals'/,
+      /plugin 'test-removal' runs without .*NoUsagePage: contribution 'removal\.0' to 'WebModule\.pageRemovals'/,
     );
   });
 
   it("drops a removal carrying a field the slot does not declare", async () => {
-    const booted = await bootedWith(removing([{ key: "benchmark", path: "/benchmark" }]));
+    const booted = await bootedWith(removing([{ key: "usage", path: "/usage" }]));
     t = booted.t;
     expect(booted.removals).toEqual([]);
     expect(booted.logged).toMatch(
-      /plugin 'test-removal' runs without .*NoEvaluationCenter: contribution 'removal\.0' to 'WebModule\.pageRemovals'/,
+      /plugin 'test-removal' runs without .*NoUsagePage: contribution 'removal\.0' to 'WebModule\.pageRemovals'/,
     );
   });
 });

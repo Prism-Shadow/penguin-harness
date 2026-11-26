@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { Hono } from "hono";
-import type { AmspRecord, BuiltinBenchmark } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { bootAppDeps, createApp } from "../src/app.js";
 import type { ServerBoot } from "../src/app.js";
 import type { ModuleTree, ModuleClass } from "@prismshadow/penguin-core/kernel";
@@ -19,7 +19,6 @@ import type { DesktopService } from "../src/services/desktop-service.js";
 import type { AuthService } from "../src/auth/service.js";
 import type { AdminService } from "../src/services/admin-service.js";
 import type { ProjectService } from "../src/services/project-service.js";
-import { ShippedBuiltinBenchmarkSeeds } from "../src/services/project-service.js";
 import type { ProjectAccess } from "../src/services/project-access.js";
 import type { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ModelOAuthService } from "../src/services/model-oauth-service.js";
@@ -33,7 +32,6 @@ import type {
 } from "@prismshadow/penguin-library-observability/usage-service";
 import type { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import type { PreviewTokenSigner } from "../src/services/preview-token.js";
-import type { BenchmarkService } from "@prismshadow/penguin-library-benchmark/benchmark-service";
 import type { SnapshotService } from "../src/services/snapshot-service.js";
 import type { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs";
@@ -231,7 +229,6 @@ export interface TestDeps {
   updateCheck: UpdateCheckService;
   workspaceFiles: WorkspaceFilesService;
   previewTokens: PreviewTokenSigner;
-  benchmarks: BenchmarkService;
   snapshots: SnapshotService;
   schedulesRepo: SchedulesRepo;
   errorsRepo: ErrorsRepo;
@@ -280,7 +277,6 @@ export function flattenForTests(boot: ServerBoot): TestDeps {
     updateCheck: api("ApiModule", "UpdateCheck"),
     workspaceFiles: api("WorkspaceModule", "WorkspaceFiles"),
     previewTokens: api("WorkspaceModule", "PreviewTokens"),
-    benchmarks: api("AgentsModule", "Benchmarks"),
     snapshots: api("AgentsModule", "Snapshots"),
     schedulesRepo: api("SessionRuntimeModule", "Schedules"),
     errorsRepo: api("ObservabilityModule", "ErrorLog"),
@@ -360,13 +356,6 @@ export interface TestAppOptions {
   nodes?: ReadonlyArray<readonly [ModuleClass, object]>;
   /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
   passwordHashCost?: number;
-  /**
-   * Write the shipped built-in Benchmarks into every Project the app creates, as production
-   * does. Off by default: they are several hundred files and directories per Project — most
-   * of what a boot or a provisioned user writes — and only the scenarios about them read them.
-   * A list stands in for the shipped catalog: the packages a scenario wrote itself.
-   */
-  builtinBenchmarks?: boolean | readonly BuiltinBenchmark[];
   log?: (line: string) => void;
   now?: () => Date;
   /** The plugins this app boots with (their modules and replacements), as the runtime would have loaded them. */
@@ -417,9 +406,6 @@ export function replacementsFor(
   const out: Array<readonly [ModuleClass, object]> = [];
   if (o.log) out.push([ConsoleLog, { line: o.log }]);
   if (o.now) out.push([SystemClock, { now: o.now }]);
-  if (o.builtinBenchmarks !== true) {
-    out.push([ShippedBuiltinBenchmarkSeeds, { benchmarks: o.builtinBenchmarks || [] }]);
-  }
   if (o.passwordHashCost !== undefined) {
     const cost = o.passwordHashCost;
     out.push([ScryptHasher, { hash: (password: string) => hashPassword(password, cost) }]);
