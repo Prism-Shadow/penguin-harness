@@ -17,13 +17,15 @@ import {
 import { WorkbenchRepairButton } from "../ai-create";
 import { FrameAppBody } from "./frame-app-body";
 import { setSelectedAppPath } from "../../lib/running-apps";
+import { pathWithAt } from "../../lib/app-window-address";
+import { useWindowFrameAddress } from "../../lib/frame-address";
 
 interface WindowProps {
   appKey: string;
   projectId: string;
   shortcut: LocatedShortcut;
   title: string;
-  /** Opens the full page at `path`: the page the window shows. */
+  /** Opens the full page at `path`: the page the window shows, at the place it is. */
   onFullScreen: (path: string) => void;
   exitFullScreen?: () => void;
   /** The app's workbench is gone (removed, or its Agent with it). */
@@ -137,6 +139,8 @@ function AgentWorkbenchWindow(props: WindowProps) {
     ? workbenchAppPath(projectId, shortcut.agentId, shortcut.workbenchId, shown.key, machineId)
     : shortcut.path;
   useEffect(() => setSelectedAppPath(props.appKey, path), [props.appKey, path]);
+  // The window's address keeps where the page is, per page of the workbench.
+  const { at, onLocation, onNavigate, place } = useWindowFrameAddress(props.appKey, shown?.key);
   return (
     <section aria-label={props.title} className="flex h-full min-h-0 flex-col">
       {props.exitFullScreen && (
@@ -175,7 +179,10 @@ function AgentWorkbenchWindow(props: WindowProps) {
             projectId={projectId}
             agentId={shortcut.agentId}
             tab={shown}
-            onFillApp={() => onFullScreen(path)}
+            at={at}
+            onLocation={onLocation}
+            onNavigate={onNavigate}
+            onFillApp={() => onFullScreen(pathWithAt(path, place()))}
           />
         ) : (
           <WorkbenchPageStatus

@@ -49,6 +49,8 @@ A server module contributes Web App pages through `WebModule.pages`. A page draw
   - The host takes a message only from its window's own frame. A page should take one only from `window.parent`.
 - **Context.** The frame's root element carries `lang` (`zh-CN` or `en`) and `data-project-id`, updated when the interface language or the current Project changes. They sit beside the theme the host writes into every workbench page. The frame paints no background of its own.
 
+An agent's workbench page keeps the same address, messages and context, in its window (`/apps?app=<agentId>/<workbenchId>&at=…`) and on its full page (`/app/<projectId>/<agentId>/<workbenchId>[/<tab key>]?at=…`); see [Workbench plugins](/skills#workbench-plugins).
+
 A contributed iframe page without `app` opens as a page at its `path`, framed the same way. Safe mode draws no server contribution, so the app is absent there.
 
 ## Checking the format
