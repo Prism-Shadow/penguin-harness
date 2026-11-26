@@ -20,6 +20,7 @@ import {
   usePushedPluginLibrary,
 } from "@prismshadow/penguin-core";
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { serverPackageDir } from "../../src/plugin/library-host.js";
 
 const host = serverPackageDir();
@@ -32,13 +33,20 @@ useLibraryHost(host);
 // used because this file belongs to the run's module graph: an `import` here would resolve
 // through the graph again and reach the same copy the line above named. Node loads ESM
 // modules through require since 22.12, so this works on the run's Node without flags.
+// The copy is required by its absolute dist path, not by its package name: core's exports
+// map carries no `require` condition, so a named require throws ERR_PACKAGE_PATH_NOT_EXPORTED
+// before Node reads any file, while an absolute file path bypasses the exports map entirely.
+// dist/index.js is the file the map's "." import condition points at, so requiring it lands
+// on the same module instance the snapshot's dist import resolves to.
 try {
   const requireOf = createRequire(import.meta.url);
   const pluginPackageJson = requireOf.resolve(
     "@prismshadow/penguin-library-plugin/package.json",
   );
   const snapshotRequire = createRequire(pluginPackageJson);
-  const nodeCopy = snapshotRequire("@prismshadow/penguin-core") as {
+  const nodeCopy = snapshotRequire(
+    join(dirname(pluginPackageJson), "..", "penguin-core", "dist", "index.js"),
+  ) as {
     usePushedPluginLibrary(dir: string | null): void;
     useInstalledPluginPrefix(prefix: string | null): void;
     useLibraryHost(dir: string | null): void;
