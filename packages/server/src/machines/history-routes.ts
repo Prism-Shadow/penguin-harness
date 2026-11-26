@@ -147,6 +147,7 @@ export function machineHistory(deps: {
     | "stallMs"
     | "retryFirstMs"
     | "retryMaxMs"
+    | "retryMaxAttempts"
     | "observe"
   >;
 }): { history: MachineHistory; sync: HistorySync } {

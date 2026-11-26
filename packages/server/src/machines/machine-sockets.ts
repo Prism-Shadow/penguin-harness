@@ -429,7 +429,8 @@ export class MachineSockets {
       /**
        * Told when a machine starts or stops reading `unanswered` — the one socket fact the
        * Machines page shows as the machine's own state, which must not wait for the page's
-       * next read of the list.
+       * next read of the list — and when its socket comes up or goes down, which a conversation
+       * whose history stopped waiting for the machine reads again on.
        */
       announce?: () => void;
       settle?: (machineId: string) => StreamSettle | null;
@@ -477,7 +478,16 @@ export class MachineSockets {
       since: new Date().toISOString(),
       ...(detail !== undefined ? { detail } : {}),
     });
-    if ((was === "unanswered") !== (state === "unanswered")) this.#announce();
+    // Told on entering and leaving `unanswered` (the Machines page's restart reading) and on
+    // the socket coming up or going down — what a conversation that stopped waiting for the
+    // machine reads again on. A dial that fails again and again (dialling, failed, dialling, …)
+    // is neither, and tells nothing.
+    if (
+      (was === "unanswered") !== (state === "unanswered") ||
+      (was === "connected") !== (state === "connected")
+    ) {
+      this.#announce();
+    }
   }
 
   /**

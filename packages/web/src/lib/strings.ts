@@ -4773,6 +4773,12 @@ export const zh = {
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
     offlineHistory: {
       disconnected: (alias: string) => `${alias} 未连接。`,
+      /**
+       * The read stopped retrying (machine_unreachable) while the connection is held: the
+       * machine's server did not take the call, or the machine took it and sent nothing.
+       */
+      unreachable: (alias: string) => `${alias} 上的服务没有响应。`,
+      silent: (alias: string) => `${alias} 没有回应。`,
       cached: "正在显示上次同步的对话记录。",
       miss: "本地没有这段对话的缓存。连接恢复后会自动打开。",
       empty: "上次同步时还没有消息。",
@@ -4860,14 +4866,24 @@ export const zh = {
       /** The Trace panel bringing a machine's Trace file over before it opens it. */
       trace: (alias: string | null) =>
         alias === null ? "正在获取 Trace" : `正在从 ${alias} 获取 Trace`,
-      /** The machine is not connected and the server reconnects: the attempt, then the seconds. */
-      reconnecting: (attempt: number) => `与机器的连接已断开，正在重连（第 ${attempt} 次）`,
-      reconnectIn: (seconds: number, attempt: number) =>
-        `与机器的连接已断开，${seconds} 秒后重连（第 ${attempt} 次）`,
-      /** Connected, but the machine sent nothing for a while: the server asks it again. */
-      asking: (attempt: number) => `机器没有回应，正在重新请求（第 ${attempt} 次）`,
-      askIn: (seconds: number, attempt: number) =>
-        `机器没有回应，${seconds} 秒后重新请求（第 ${attempt} 次）`,
+      /**
+       * The server retries the machine, each sentence with the attempt out of the most it makes,
+       * then the seconds: not connected (it reconnects); connected, but the machine's server is
+       * not reached (`alias` null while the machine list has not answered); connected, and the
+       * machine sent nothing for a while (it asks again).
+       */
+      reconnecting: (attempt: number, max: number) =>
+        `与机器的连接已断开，正在重连（第 ${attempt}/${max} 次）`,
+      reconnectIn: (seconds: number, attempt: number, max: number) =>
+        `与机器的连接已断开，${seconds} 秒后重连（第 ${attempt}/${max} 次）`,
+      unreachable: (alias: string | null, attempt: number, max: number) =>
+        `连不上${alias === null ? "机器" : ` ${alias} `}上的服务，正在重试（第 ${attempt}/${max} 次）`,
+      unreachableIn: (alias: string | null, seconds: number, attempt: number, max: number) =>
+        `连不上${alias === null ? "机器" : ` ${alias} `}上的服务，${seconds} 秒后重试（第 ${attempt}/${max} 次）`,
+      asking: (attempt: number, max: number) =>
+        `机器没有回应，正在重新请求（第 ${attempt}/${max} 次）`,
+      askIn: (seconds: number, attempt: number, max: number) =>
+        `机器没有回应，${seconds} 秒后重新请求（第 ${attempt}/${max} 次）`,
       /**
        * Connected and beating, but nothing else from the machine for a minute (a route stuck over
        * there): nothing is retried, so no attempt and no countdown.
@@ -7303,6 +7319,7 @@ export const zh = {
       trace_body_not_found: "这段内容已不在这个对话的 Trace 中。",
       machine_refused: "机器拒绝了这次读取。",
       machine_no_answer: "机器没有回应。",
+      machine_unreachable: "连不上这台机器，已停止自动重试。",
       machine_not_found: "这台机器不在当前 Project 的机器列表中。",
       machine_outdated: "这台机器上的版本较旧，请在「机器管理」更新它。",
       plugin_not_installed: "这个 Agent 上已经没有这个插件的任何部件。",

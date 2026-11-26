@@ -9,7 +9,7 @@ import { deletedChangeKeys } from "../memory-nav";
 import { panelDock } from "../../dock";
 import { machineForSession, sessionKnownHere } from "../../../lib/session-machines";
 import { useSessionDraft } from "../use-session-draft";
-import { useOfflineSessionHistory } from "../offline-session-history";
+import { useMachineHold, useOfflineSessionHistory } from "../offline-session-history";
 import { useSessionStream } from "../use-session-stream";
 import type { useMainChatRouting } from "./main-chat-routing";
 
@@ -39,6 +39,15 @@ export function useMainChatTranscript(scope: ReturnType<typeof useMainChatRoutin
     };
   }
 
+  // A conversation whose machine the machines account reads as away opens nothing until it is
+  // back: the offline view shows the hub's cached copy meanwhile, and no read retries against a
+  // machine known to be down.
+  const hold = useMachineHold(
+    projectId,
+    scope.user?.userId ?? null,
+    sessionId,
+    scope.offlineOwner?.machineId ?? null,
+  );
   // No handler for the sub-session registration the parent's channel announces: a subagent
   // Session is in no list (its parent's Agent panel opens it), so nothing here has to refresh.
   const stream = useSessionStream(
@@ -46,6 +55,7 @@ export function useMainChatTranscript(scope: ReturnType<typeof useMainChatRoutin
     selected?.status ?? "idle",
     setTitle,
     JSON.stringify([scopeKey, route.current.generation]),
+    hold,
   );
 
   // Chat input area draft: caches text, both staged switch chips (`/agent` target, `/model`

@@ -7,9 +7,14 @@
  *   where the copy came from. Another Session whose history the hub never read says so.
  * - Once the machine reconnects, a tab showing cached history catches up with messages
  *   written on the machine while it was away. The reader stays on the same conversation.
+ * - When the machine's server stops answering behind a connection the hub still holds, a tab
+ *   opening its conversation waits through a bounded round of retries, then shows the cached copy
+ *   with a Retry; a tab opened after that falls back at once. When the machine's socket is up
+ *   again, the tab reads the conversation again by itself.
  */
 import { test, expect } from "@playwright/test";
 import { Agent } from "node:http";
+import { createServer } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,7 +28,17 @@ const machineId = "QS7J4YVgSovi-Z2c";
 const prefix = "/server/" + machineId;
 const base = process.env.BASE_URL;
 
-async function fixture(context, sessions) {
+/** A loopback port nothing listens on: the machine's server, stopped. */
+async function deadPort() {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
+
+/** `tuning`: the history sync's knobs (history-routes.ts), as a spec that waits through retries sets them. */
+async function fixture(context, sessions, tuning = undefined) {
   // The server bundles its routes into the executable. Compile the same routes for this
   // isolated hub, beside their actual dependencies, then dispose of the bundle with it.
   const server = fileURLToPath(new URL("../../server/", import.meta.url));
@@ -91,6 +106,7 @@ async function fixture(context, sessions) {
     sockets,
     target: resolve,
     log: () => {},
+    ...(tuning === undefined ? {} : { tuning }),
   });
   const remote = machinesProxy(resolve, undefined, undefined, { history, sockets });
   const index = new SessionMachineIndex();
@@ -195,6 +211,19 @@ async function fixture(context, sessions) {
       });
     },
   );
+  /** What the hub pushes when the machines list changes: every tab reads it again. */
+  const announce = () => {
+    for (const [ws, id] of subscribers) {
+      ws.send(
+        JSON.stringify({
+          id,
+          event: "server_event",
+          data: JSON.stringify({ type: "machines_changed" }),
+        }),
+      );
+    }
+  };
+  const livePort = target.port;
   return {
     async setConnected(connected) {
       if (!connected) {
@@ -205,15 +234,24 @@ async function fixture(context, sessions) {
       } else {
         machine.connection = { pid: ++target.session };
       }
-      for (const [ws, id] of subscribers) {
-        ws.send(
-          JSON.stringify({
-            id,
-            event: "server_event",
-            data: JSON.stringify({ type: "machines_changed" }),
-          }),
-        );
+      announce();
+    },
+    /**
+     * The machine's server stops answering while the connection to the machine stays held, or
+     * answers again — its API socket up once more, as the hub's socket fact says and pushes.
+     */
+    async setServerDown(down) {
+      if (down) {
+        const held = await sockets.socketFor(machineId, target);
+        target.port = await deadPort();
+        held.socket?.terminate();
+        agent.destroy();
+        machine.socket = { state: "failed", since: new Date().toISOString() };
+      } else {
+        target.port = livePort;
+        machine.socket = { state: "connected", since: new Date().toISOString() };
       }
+      announce();
     },
     async close() {
       await context.close();
@@ -238,10 +276,8 @@ async function message(request, id, text) {
     .toBe("idle");
 }
 
-test("cached remote history opens in another tab while disconnected and catches up on reconnect", async ({
-  context,
-  page,
-}) => {
+/** Signs in, points the default model at the mock, and answers a maker of finished Sessions. */
+async function prepare(page) {
   await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
   await setAccountPrefs(page.request, { lang: "en" });
   const model = { provider: "custom", modelId: "claude-4-8" };
@@ -254,7 +290,7 @@ test("cached remote history opens in another tab while disconnected and catches 
     },
   });
   expect(config.ok(), await config.text()).toBeTruthy();
-  const create = async (text) => {
+  return async (text) => {
     const res = await page.request.post(project + "/agents/default_agent/sessions", {
       data: model,
     });
@@ -263,6 +299,16 @@ test("cached remote history opens in another tab while disconnected and catches 
     await message(page.request, sid, text);
     return sid;
   };
+}
+
+const transcript = (p, text) =>
+  p.locator('[data-find-region="conversation"]').getByText(text, { exact: true });
+
+test("cached remote history opens in another tab while disconnected and catches up on reconnect", async ({
+  context,
+  page,
+}) => {
+  const create = await prepare(page);
   const old = "Inspect the archived contract before publishing";
   const fresh = "New material recorded while the machine was away";
   const cold = "A previous task that the hub has never opened";
@@ -270,8 +316,6 @@ test("cached remote history opens in another tab while disconnected and catches 
   const coldId = await create(cold);
   const hub = await fixture(context, [warmId, coldId]);
   const offline = (p) => p.getByRole("status").filter({ hasText: /Office is not connected/i });
-  const transcript = (p, text) =>
-    p.locator('[data-find-region="conversation"]').getByText(text, { exact: true });
   try {
     // /chat would first open the most recent Session and already warm the cold fixture.
     await page.goto("/chat/new");
@@ -307,6 +351,47 @@ test("cached remote history opens in another tab while disconnected and catches 
     await expect(transcript(direct, fresh)).toBeVisible();
     await expect(offline(direct)).toHaveCount(0);
     await expect(transcript(page, cold)).toBeVisible();
+  } finally {
+    await hub.close();
+  }
+});
+
+test("a machine whose server stops answering behind a held connection: bounded retries, the cached copy, and a read again once its socket is back", async ({
+  context,
+  page,
+}) => {
+  const create = await prepare(page);
+  const text = "Notes written while the server on the machine still answered";
+  const sid = await create(text);
+  // Retries 0.4 s apart, doubling: the round of five runs out in about 12 s.
+  const hub = await fixture(context, [sid], { retryFirstMs: 400 });
+  const stopped = (p) =>
+    p.getByRole("status").filter({ hasText: /The server on Office isn't responding/i });
+  try {
+    // Read once while the machine answers, which is what the hub keeps a copy of.
+    await page.goto("/chat/new");
+    await page.locator("[data-session-id='" + sid + "']").click();
+    await expect(transcript(page, text)).toBeVisible();
+    await hub.setServerDown(true);
+
+    const second = await context.newPage();
+    await second.goto("/chat/" + sid);
+    await expect(second.getByText(/Can't reach the server on Office/)).toBeVisible();
+    await expect(stopped(second)).toBeVisible({ timeout: 30_000 });
+    await expect(stopped(second)).toContainText(/last sync/i);
+    await expect(transcript(second, text)).toBeVisible();
+    await expect(second.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+
+    // The hub gave up on the machine: a conversation opened now falls back after one attempt,
+    // well inside the round of retries it would otherwise wait through.
+    const third = await context.newPage();
+    await third.goto("/chat/" + sid);
+    await expect(stopped(third)).toBeVisible({ timeout: 6_000 });
+
+    await hub.setServerDown(false);
+    await expect(stopped(second)).toHaveCount(0);
+    await expect(transcript(second, text)).toBeVisible();
+    await expect(second.getByRole("button", { name: "Send", exact: true })).toBeVisible();
   } finally {
     await hub.close();
   }

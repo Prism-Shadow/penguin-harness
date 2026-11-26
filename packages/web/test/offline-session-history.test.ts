@@ -31,7 +31,10 @@ const streamFor = (sessionId: string): Stream => ({
   historyMachineId: null,
   loading: true,
   error: null,
+  errorCause: null,
   reconnect,
+  retry: () => {},
+  held: false,
   transfer,
 });
 
@@ -61,7 +64,7 @@ it("believes a session's confirmed disconnect even while the machine list still 
     totalBytes: 0,
     doneLines: 0,
     totalLines: 0,
-    waiting: { reason: "not_connected", attempt: 1, nextAt: 0 },
+    waiting: { reason: "not_connected", attempt: 1, maxAttempts: 5, nextAt: 0 },
   };
   await ui.rerender(
     createElement(Display, {

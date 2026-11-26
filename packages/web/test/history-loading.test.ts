@@ -10,8 +10,10 @@
  *   that follows names the machine from its first frame: its words never change when the name
  *   arrives.
  * - Given the hub waiting for a machine that is not connected, the row under the transfer row
- *   says the connection was lost and is being made again; given a machine that is connected but
- *   silent, it says the machine is being asked again. Retry now reads the window again.
+ *   says the connection was lost and is being made again; given a connected machine whose server
+ *   cannot be reached, it says that server cannot be reached; given a machine that is connected
+ *   but silent, it says the machine is being asked again — each with the attempt out of the most
+ *   the hub makes. Retry now reads the window again.
  * - Given a conversation on this server, whose reads report no progress, the skeleton stays.
  * - Given an older window read behind the transcript, the line at its top says nothing for its
  *   first second, then how far the window has come, and goes when the read does.
@@ -135,14 +137,15 @@ describe("the transcript's place while history loads", () => {
   });
 
   it.each([
-    ["not_connected", words.reconnecting(2), words.asking(2)],
-    ["retrying", words.asking(2), words.reconnecting(2)],
+    ["not_connected", words.reconnecting(2, 5), words.asking(2, 5)],
+    ["unreachable", words.unreachable("box", 2, 5), words.asking(2, 5)],
+    ["retrying", words.asking(2, 5), words.reconnecting(2, 5)],
   ] as const)(
-    "says how the link stands while the hub waits (%s), and Retry now reads the window again",
+    "says how the link stands while the hub waits (%s), the attempt out of the most, and Retry now reads the window again",
     async (reason, said, notSaid) => {
       const onRetryNow = vi.fn();
       // The attempt is due: the row says what it is doing rather than counting down.
-      const waiting = { reason, attempt: 2, nextAt: Date.now() - 1 };
+      const waiting = { reason, attempt: 2, maxAttempts: 5, nextAt: Date.now() - 1 };
       const { container } = await mount(
         h(HistoryLoading, {
           projectId: "p",
@@ -189,9 +192,11 @@ describe("the line at the transcript's top while a read runs behind it", () => {
     await run(() => vi.advanceTimersByTime(1_000));
     const transfer = () => container.querySelector("[data-transfer]");
     const before = transfer();
-    await rerender(line({ reason: "retrying", attempt: 2, nextAt: Date.now() - 1 }));
+    await rerender(
+      line({ reason: "retrying", attempt: 2, maxAttempts: 5, nextAt: Date.now() - 1 }),
+    );
     expect(transfer()).toBe(before);
-    expect(container.textContent).toContain(words.asking(2));
+    expect(container.textContent).toContain(words.asking(2, 5));
     expect(container.textContent).toContain("120 / 380 KB");
     expect(bar(container)?.getAttribute("aria-valuenow")).toBe(String(120 * KIB));
     expect(container.querySelector("[data-retry-phase]")).toBeNull();
@@ -203,10 +208,10 @@ describe("the line at the transcript's top while a read runs behind it", () => {
     const { container, rerender } = await mount(line(null));
     await run(() => vi.advanceTimersByTime(1_000));
     const before = container.querySelector("[data-transfer]");
-    await rerender(line({ reason: "slow", attempt: 0, nextAt: 0 }));
+    await rerender(line({ reason: "slow", attempt: 0, maxAttempts: 0, nextAt: 0 }));
     expect(container.querySelector("[data-transfer]")).toBe(before);
     expect(container.textContent).toContain(words.slow("box"));
-    expect(container.textContent).not.toContain(words.asking(0));
+    expect(container.textContent).not.toContain(words.asking(0, 0));
     await rerender(line(null));
     expect(container.querySelector("[data-transfer]")).toBe(before);
     expect(container.textContent).not.toContain(words.slow("box"));
@@ -220,7 +225,7 @@ describe("the line names the machine only once the machines list has answered", 
     const line = () =>
       h(HistoryTransferLine, {
         loading: true,
-        older: progress({ reason: "slow", attempt: 0, nextAt: 0 }),
+        older: progress({ reason: "slow", attempt: 0, maxAttempts: 0, nextAt: 0 }),
         fill: null,
       });
     const { container, rerender } = await mount(line());
@@ -238,7 +243,7 @@ describe("waits that retry nothing", () => {
       h(HistoryLoading, {
         projectId: "p",
         sessionId: "s1",
-        progress: progress({ reason: "slow", attempt: 0, nextAt: 0 }),
+        progress: progress({ reason: "slow", attempt: 0, maxAttempts: 0, nextAt: 0 }),
         onRetryNow: () => {},
       }),
     );
@@ -249,9 +254,12 @@ describe("waits that retry nothing", () => {
   });
 
   it("say a reason this build does not know in neutral words", async () => {
-    const unknown = { reason: "rebalancing", attempt: 0, nextAt: 0 } as unknown as NonNullable<
-      HistoryProgress["waiting"]
-    >;
+    const unknown = {
+      reason: "rebalancing",
+      attempt: 0,
+      maxAttempts: 0,
+      nextAt: 0,
+    } as unknown as NonNullable<HistoryProgress["waiting"]>;
     const { container } = await mount(
       h(HistoryLoading, {
         projectId: "p",
@@ -262,6 +270,6 @@ describe("waits that retry nothing", () => {
     );
     await run(() => vi.advanceTimersByTime(1_000));
     expect(container.textContent).toContain(words.waitingOther);
-    expect(container.textContent).not.toContain(words.asking(0));
+    expect(container.textContent).not.toContain(words.asking(0, 0));
   });
 });
