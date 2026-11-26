@@ -1225,6 +1225,33 @@ export const zh = {
     searchAgents: "搜索智能体",
 
     reload: "重新加载",
+    /**
+     * 「用 AI 修复」's prompt for a workbench whose files do not load, written into the new chat's
+     * composer; the user reads and sends it. `machine` is null on this server, else the machine
+     * with its alias (null when the page does not know it).
+     */
+    repairPrompt: (w: {
+      id: string;
+      name: string;
+      agentId: string;
+      machine: { label: string | null } | null;
+      error: string;
+    }): string =>
+      [
+        `Agent \`${w.agentId}\` 的工作台 \`${w.id}\`${w.name === w.id ? "" : `（「${w.name}」）`}加载失败${
+          w.machine === null
+            ? ""
+            : w.machine.label === null
+              ? "（它在一台已连接的机器上，本对话也在那台机器上运行）"
+              : `（它在已连接的机器「${w.machine.label}」上，本对话也在那台机器上运行）`
+        }。它的目录是 \`<app_data_dir>/agents/${w.agentId}/agent_state/workbenches/${w.id}/\`。`,
+        `加载错误原文：\n${w.error}`,
+        "加载是指服务端在宿主固定的选项下严格检查工作台的 `index.ts` 及其引入的全部文件（含 `ui/` 下的 TSX 页面）：`strict`、NodeNext，`@types` 只用服务端随附的 `@types/node`，不读目录里的 `tsconfig.json`。任何一条诊断都会使加载失败，上次加载成功的版本继续提供服务。保存目录里的任一文件即重新加载；目录里的 `.build/status.json` 记录最近一次加载的结果（`ok`、`error`、`hints`），每次改动后都要读它确认。工作台的目录布局与宿主接口见 `penguin-plugin` Skill。",
+        "请查明它为什么加载不了。如果错误出自平台提供的部分，而不是工作台自己的代码——缺少 Node 或 TypeScript 的声明（例如 TS2688，找不到 `node` 的类型定义文件）、宿主类型（`.harness/plugin.d.ts`）、PenguinHarness 的打包——请直接说明，不要改动任何东西，并建议我把它作为 PenguinHarness 的问题报告。",
+        "否则请修复工作台的代码。改动它的文件之前，先告诉我你打算改什么。",
+      ].join("\n\n"),
+    /** 「用 AI 修复」 could not read the Agents it picks the default one from: the failure's words follow. */
+    repairAgentsFailed: (reason: string) => `没能读取接手修复的 Agent：${reason}`,
     history: "历史",
     /** The full-page route while it is still finding out which page it should show. */
     loadingPage: "正在打开页面…",
@@ -5026,16 +5053,17 @@ export const zh = {
     compactionWork: "工作",
     /** The summarize row's last body section (the first reuses `thinking`): the summary the compaction request wrote. */
     compactionResult: "压缩结果",
+    /** The section in the result's place when a compaction completed without a full summary (a model switch's Trace hand-over included): why there is no summary, the Trace file the note names, and the note the next context opens with. */
+    compactionHandover: "交接说明",
+    /** Its line naming the Trace file the new model reads the earlier history from. */
+    compactionHandoverTrace: (tracePath: string): string => `Trace 文件：${tracePath}`,
+    /** The degraded reason's first line for a switch whose current model could not be reached: it sent no compaction request. */
+    compactionHandoverUnasked: "原模型不可用，没有请求摘要",
     /** The marker between two contexts on different models (an in-session model switch), naming both by model id. */
     modelChanged: (from: string, to: string): string => `模型已切换 · ${from} → ${to}`,
-    /** The same marker when the switch handed the history over by Trace path instead of a summary. */
+    /** The same marker when the switch handed the history over by Trace path instead of a summary; the compaction row above it holds the hand-over (`compactionHandover`). */
     modelChangedByTrace: (from: string, to: string): string =>
       `模型已切换 · ${from} → ${to} · 经 Trace 交接`,
-    /** Its hover: why there is no summary, and the file the new model reads the history from. */
-    modelChangedByTraceHint: (tracePath?: string): string =>
-      tracePath
-        ? `没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件：${tracePath}`
-        : "没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件",
     /**
      * The settled row's status-mark tooltip and accessible name when the compaction completed without
      * a full summary: the title stays 压缩完毕, only the mark says it. Why first — the cause in words

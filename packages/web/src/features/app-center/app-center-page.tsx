@@ -663,7 +663,13 @@ export function AppCenterPage() {
         error={
           errorOf === null
             ? null
-            : { title: titleOf(errorOf.shortcut), message: errorOf.shortcut.error }
+            : {
+                title: titleOf(errorOf.shortcut),
+                message: errorOf.shortcut.error,
+                agentId: errorOf.shortcut.agentId,
+                workbenchId: errorOf.shortcut.workbenchId,
+                machineId: errorOf.shortcut.machineId ?? null,
+              }
         }
         onClose={() => setErrorOf(null)}
       />

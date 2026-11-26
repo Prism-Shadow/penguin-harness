@@ -100,12 +100,19 @@ export function useWorkbenchActions(
     });
   };
 
-  function menu(workbench: WorkbenchInfo, title: string, running: boolean, sourceTitle?: string) {
+  function menu(
+    workbench: WorkbenchInfo,
+    title: string,
+    running: boolean,
+    sourceTitle?: string,
+    failed?: LoadFailedActions,
+  ) {
     if (projectId === null) return null;
     return (
       <WorkbenchRowMenu
         title={title}
         disabled={busy}
+        failed={failed}
         onReload={running ? () => reload(workbench) : undefined}
         onHistory={() => showHistory(workbench)}
         onExport={() => void exportWorkbench(workbench)}
@@ -266,9 +273,20 @@ export function useWorkbenchPaletteActions(
   return modals;
 }
 
+/**
+ * What a row offers while the workbench's files do not load, beside Reload: "Fix with AI" hands
+ * the error to the default Agent, and the report entry opens the error's report — the row's line
+ * is too short to carry 「[报告问题]」 after the error, so the menu does.
+ */
+export interface LoadFailedActions {
+  onRepair: () => void;
+  onReport: () => void;
+}
+
 function WorkbenchRowMenu({
   title,
   disabled,
+  failed,
   onReload,
   onHistory,
   onExport,
@@ -277,6 +295,8 @@ function WorkbenchRowMenu({
   /** The row's title, for the button's and the menu's accessible name. */
   title: string;
   disabled: boolean;
+  /** Present while the workbench's files do not load. */
+  failed?: LoadFailedActions | undefined;
   /** Absent while the workbench does not run: there is nothing to reload. */
   onReload?: (() => void) | undefined;
   onHistory: () => void;
@@ -315,6 +335,20 @@ function WorkbenchRowMenu({
       <Menu label={label} density="sm" className="py-1">
         {onReload !== undefined && (
           <MenuItem glyph={ICONS.refresh} label={S.workbenches.reload} onSelect={pick(onReload)} />
+        )}
+        {failed !== undefined && (
+          <>
+            <MenuItem
+              glyph={ICONS.sparkles}
+              label={S.plugins.repair}
+              onSelect={pick(failed.onRepair)}
+            />
+            <MenuItem
+              glyph={ICONS.alertCircle}
+              label={S.report.action}
+              onSelect={pick(failed.onReport)}
+            />
+          </>
         )}
         <MenuItem
           glyph={ICONS.history}

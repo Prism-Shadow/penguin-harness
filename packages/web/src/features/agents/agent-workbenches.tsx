@@ -17,7 +17,9 @@
  *   list open (lib/running-apps.ts): the same live window when the app runs, and closing or
  *   minimizing it comes back here.
  * - A workbench without a page has no window to show what its load said, so its row does: the
- *   load error, else the first hint, with every hint in the row's hint.
+ *   load error, else the first hint, with every hint in the row's hint. While its files do not
+ *   load, the More menu also offers "Fix with AI" (features/ai-create/workbench-repair.tsx) and the
+ *   error's report.
  *
  * Everything but the Enable switch is member-level, matching the workbench routes, and goes to
  * the server the Agent lives on.
@@ -33,7 +35,15 @@ import { locatedAppKey } from "../../lib/app-center-path";
 import { useRestoreApp } from "../../lib/running-apps";
 import { shortcutOfWorkbench } from "../../lib/workbench-shortcut";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
-import { Button, GlyphAction, ICONS, ListRow, Switch } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  GlyphAction,
+  ICONS,
+  ListRow,
+  Switch,
+  openReport,
+  toldReport,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useInstantSetting } from "../../lib/instant-setting";
 import { S } from "../../lib/strings";
@@ -42,7 +52,9 @@ import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../../lib/skill-use";
-import { useWorkbenchActions } from "../workbenches";
+import { useWorkbenchRepair } from "../ai-create";
+import { useWorkbenchActions, workbenchLoadFailure } from "../workbenches";
+import type { LoadFailedActions } from "../workbenches";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildWorkbenchImportPrompt } from "./workbench-import";
 import { cardBodyClick } from "../../lib/card-open";
@@ -150,7 +162,33 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
   const restore = useRestoreApp();
   const local = agents.find((agent) => agent.agentId === agentId);
   const agentName = machineId === null && local ? agentDisplayName(local) : agentId;
-  const { menu, modals } = useWorkbenchActions({ projectId, agentId, machineId }, onChanged);
+  const { menu, modals: actionModals } = useWorkbenchActions(
+    { projectId, agentId, machineId },
+    onChanged,
+  );
+  const { repair, modal: repairModal } = useWorkbenchRepair();
+  const modals = (
+    <>
+      {actionModals}
+      {repairModal}
+    </>
+  );
+  /**
+   * The More menu's two extra rows while the files do not load. The report is made when it is
+   * asked for: the row shows the error long after the load that wrote it.
+   */
+  const failedActions = (
+    workbench: WorkbenchInfo,
+    title: string,
+  ): LoadFailedActions | undefined => {
+    const error = workbench.error;
+    if (error === null) return undefined;
+    const failure = { workbenchId: workbench.id, machineId, error };
+    return {
+      onRepair: () => repair({ ...failure, name: title, agentId }),
+      onReport: () => openReport(toldReport(workbenchLoadFailure(failure))()),
+    };
+  };
 
   const row = (workbench: WorkbenchInfo) => {
     const first = workbenchTabsOf([workbench])[0];
@@ -180,7 +218,7 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
             {S.workbenches.openAction}
           </Button>
         )}
-        {menu(workbench, title, running, source?.title)}
+        {menu(workbench, title, running, source?.title, failedActions(workbench, title))}
       </>
     );
     return (
@@ -210,7 +248,7 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
             onClick={() => onShowPlugin(source.name)}
           />
         )}
-        {menu(workbench, title, running, source?.title)}
+        {menu(workbench, title, running, source?.title, failedActions(workbench, title))}
       </>
     );
   };

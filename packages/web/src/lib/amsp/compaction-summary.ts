@@ -1,6 +1,7 @@
 /**
  * Display text for a compaction row's expandable body: the summary the compaction request
- * wrote, with the `[summary]` tags stripped; and what the row reads off its end.
+ * wrote, with the `[summary]` tags stripped (the hand-over a row shows in its place is
+ * context-opening.ts's); and what the row reads off its end.
  *
  * Split out of the banner component so it can be unit-tested (the Web test suite runs in a
  * node environment and renders no React). Extraction uses core's own lenient extractor, so
@@ -22,7 +23,13 @@ import type { ChatItem, CompactionItem } from "./stream-model";
 export function compactionResultVisible(
   item: Pick<
     CompactionItem,
-    "summaryText" | "summaryStartedAtMs" | "running" | "status" | "errorCode" | "errorMessage"
+    | "summaryText"
+    | "summaryStartedAtMs"
+    | "running"
+    | "status"
+    | "errorCode"
+    | "errorMessage"
+    | "handover"
   >,
 ): boolean {
   if (compactionSummaryText(item) !== "") return true;
@@ -36,13 +43,29 @@ export function compactionSummaryText(item: Pick<CompactionItem, "summaryText">)
   return extractSummary(raw).trim();
 }
 
-/** A compaction that completed without a full summary: a `completed` end carrying the error pair. */
+/**
+ * A compaction that completed without a full summary: a `completed` end carrying the error pair,
+ * or a row holding a hand-over in the summary's place — the row of a switch whose current model
+ * could not be reached is that hand-over alone, with no end to carry a pair.
+ */
 export function compactionDegraded(
-  item: Pick<CompactionItem, "status" | "errorCode" | "errorMessage">,
+  item: Pick<CompactionItem, "status" | "errorCode" | "errorMessage" | "handover">,
 ): boolean {
   return (
-    item.status === "completed" && (item.errorCode !== undefined || item.errorMessage !== undefined)
+    item.status === "completed" &&
+    (item.errorCode !== undefined || item.errorMessage !== undefined || item.handover !== undefined)
   );
+}
+
+/**
+ * For a row that completed without a full summary (compactionDegraded): whether the model it
+ * left was asked for one. Such a row with no error pair is a switch's hand-over that sent that
+ * model no compaction request.
+ */
+export function compactionSummaryAsked(
+  item: Pick<CompactionItem, "errorCode" | "errorMessage">,
+): boolean {
+  return item.errorCode !== undefined || item.errorMessage !== undefined;
 }
 
 /**
@@ -51,7 +74,7 @@ export function compactionDegraded(
  * mark then advises.
  */
 export function compactionShortOfRoom(
-  item: Pick<CompactionItem, "status" | "errorCode" | "errorMessage">,
+  item: Pick<CompactionItem, "status" | "errorCode" | "errorMessage" | "handover">,
 ): boolean {
   return (
     compactionDegraded(item) &&
