@@ -16,6 +16,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assistantText,
+  buildModelSwitchMessage,
   compactionBegin,
   compactionEnd,
   hookEvent,
@@ -323,6 +324,32 @@ describe("penguin session log", () => {
     stdout.length = 0;
     await cli([...args, "--json"]);
     expect(JSON.parse(out())).toEqual(server.history.slice(-3));
+  });
+
+  it("renders in-place model switch handoffs in history without leading session_meta and while following live", async () => {
+    const sid = "session-2026-08-25-10-00-00-10990002";
+    const historyTrace = "/traces/10990002_001.jsonl";
+    const liveTrace = "/traces/10990002_002.jsonl";
+    server.addSession({ sessionId: sid });
+    server.history = [
+      userText("earlier prompt"),
+      userText(buildModelSwitchMessage({ sessionId: sid, tracePath: historyTrace })),
+    ];
+
+    expect(await cli(["session", "log", "10990002", "--tail", "1"])).toBe(0);
+    expect(out()).toContain(t.switchModelHandedOver(historyTrace));
+    expect(out()).not.toContain("> [model_switch_from]");
+
+    stdout.length = 0;
+    server.history = [];
+    const running = cli(["session", "log", "10990002", "-f", "--timeout", "1s"]);
+    await vi.waitFor(() => {
+      expect(server.requests.some((r) => r.path.endsWith(`/${sid}/stream`))).toBe(true);
+    });
+    server.emit(sid, userText(buildModelSwitchMessage({ sessionId: sid, tracePath: liveTrace })));
+    expect(await running).toBe(0);
+    expect(out()).toContain(t.switchModelHandedOver(liveTrace));
+    expect(out()).not.toContain("> [model_switch_from]");
   });
 });
 

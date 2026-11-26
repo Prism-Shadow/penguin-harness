@@ -83,7 +83,7 @@ export function registerLogCommand(session: Command, t: Messages): void {
         out.write(`${JSON.stringify(tail === undefined ? messages : messages.slice(-tail))}\n`);
         if (opts.follow !== true) return;
       } else {
-        renderHistory(messages, out, t, { tail });
+        renderHistory(messages, out, t, { tail, sessionId });
       }
 
       if (opts.follow !== true) return;
@@ -93,6 +93,7 @@ export function registerLogCommand(session: Command, t: Messages): void {
       // the same orphan-delta rule every stream client applies.
       const stream = new SessionStream(client, sessionId, t);
       const renderer = new StreamRenderer(out, t);
+      renderer.followSession(sessionId);
       const deadlineMs = timeoutMs !== undefined ? Date.now() + timeoutMs : undefined;
       const onSigint = () => {
         stream.close();

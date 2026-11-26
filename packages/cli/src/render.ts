@@ -229,10 +229,11 @@ export function renderHistory(
   messages: AmspRecord[],
   out: NodeJS.WritableStream,
   t: Messages = defaultMessages(),
-  opts: RenderOptions & { tail?: number } = {},
+  opts: RenderOptions & { tail?: number; sessionId?: string } = {},
 ): void {
   const c = paletteFor(out);
   const first = opts.tail === undefined ? 0 : Math.max(0, messages.length - opts.tail);
+  let sessionId = opts.sessionId;
   // tool_call_id -> tool name (keyed with the origin chain: parent/child ids may collide),
   // so output lines can be labeled with the tool name of their preceding call.
   const toolNames = new Map<string, string>();
@@ -245,6 +246,7 @@ export function renderHistory(
   for (const [index, msg] of messages.entries()) {
     const origin = originKey(msg);
     if (msg.type === "session_meta") {
+      if (origin === "") sessionId = (msg.payload as SessionMetaPayload).session_id;
       if (compactions.get(origin) === "rotating") compactions.set(origin, "opening");
       else compactions.delete(origin);
       continue;
@@ -289,6 +291,13 @@ export function renderHistory(
               (text.startsWith("<context_summary>") && text.endsWith("</context_summary>")))
           )
             break;
+          // In-place model switch Trace handoff: render the same single line as streaming,
+          // rather than echoing the raw [model_switch_from] prompt block.
+          const handover = origin === "" ? parseInPlaceModelSwitch(text, sessionId) : null;
+          if (handover !== null) {
+            out.write(`${dim(t.switchModelHandedOver(handover.tracePath), c)}\n`);
+            break;
+          }
           // Mid-run steering ([user_steering]-wrapped user text delivered between turns):
           // rendered as distinct user-speech lines instead of a raw marker block or a prompt.
           const steering = parseUserSteeringText(text);

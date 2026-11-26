@@ -318,7 +318,10 @@ export function registerChatCommand(chat: Command, t: Messages): void {
         const { view: joinedView, joined } = await SessionView.join(viewOptions(session.sessionId));
         view = joinedView;
         out.write(`${t.resumedBanner(session.sessionId, joined.count)}\n`);
-        renderHistory(joined.messages, out, t, { collapseToolOutput: !verbose });
+        renderHistory(joined.messages, out, t, {
+          collapseToolOutput: !verbose,
+          sessionId: session.sessionId,
+        });
         if (joined.running) {
           if (joined.legacy) out.write(`${dim(t.chatServerTooOld())}\n`);
           out.write(`${dim(t.chatFollowingResumed())}\n`);

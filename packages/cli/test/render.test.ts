@@ -10,6 +10,7 @@ import {
   approvalDecision,
   abortEvent,
   assistantText,
+  buildModelSwitchMessage,
   compactionBegin,
   compactionEnd,
   requestBegin,
@@ -1416,6 +1417,75 @@ describe("renderHistory (resume)", () => {
     expect(plain).toContain("> visible parent prompt");
     expect(plain).toContain("visible parent reply");
     expect(plain).toContain("> after new context");
+  });
+
+  it("renders in-place [model_switch_from] handoffs as the switch line, while keeping cross-session and nested ones as prompts", () => {
+    const inPlace = buildModelSwitchMessage({
+      sessionId: "sess-1",
+      tracePath: "/traces/sess-1_001.jsonl",
+    });
+    const fromOther = buildModelSwitchMessage({
+      sessionId: "sess-other",
+      tracePath: "/traces/sess-other_001.jsonl",
+    });
+    const childMeta = withOrigin(
+      sessionMeta({
+        session_id: "child-1",
+        provider: "custom",
+        model_id: "m",
+        model_context_window: 64000,
+        system_prompt: "",
+        agent_state: "/a",
+        workspace: "/w",
+        source: "subagent",
+      }),
+      "child-1",
+    );
+    const parentMeta = sessionMeta({
+      session_id: "sess-1",
+      provider: "custom",
+      model_id: "m",
+      model_context_window: 64000,
+      system_prompt: "",
+      agent_state: "/a",
+      workspace: "/w",
+      source: "user",
+    });
+    const { stream, text } = collector();
+    renderHistory(
+      [
+        parentMeta,
+        childMeta,
+        userText(inPlace),
+        userText(fromOther),
+        withOrigin(userText(inPlace), "child-1"),
+      ],
+      stream,
+      t,
+    );
+    const plain = stripAnsi(text());
+    expect(plain.startsWith(`${t.switchModelHandedOver("/traces/sess-1_001.jsonl")}\n`)).toBe(true);
+    expect(plain).toContain(`\n> ${fromOther}\n`);
+    expect(plain).toContain(`\n> ${inPlace}\n`);
+    expect(plain.split("> [model_switch_from]")).toHaveLength(3);
+    expect(plain.split(t.switchModelHandedOver("/traces/sess-1_001.jsonl"))).toHaveLength(2);
+
+    // Without a leading session_meta, opts.sessionId still identifies an in-place switch.
+    const noMeta = collector();
+    renderHistory([userText(inPlace)], noMeta.stream, t, { sessionId: "sess-1" });
+    const noMetaPlain = stripAnsi(noMeta.text());
+    expect(noMetaPlain).toContain(t.switchModelHandedOver("/traces/sess-1_001.jsonl"));
+    expect(noMetaPlain).not.toContain("> [model_switch_from]");
+
+    // --tail cutting off the leading session_meta still inherits the parent sessionId.
+    const tailed = collector();
+    renderHistory([parentMeta, userText("dropped prompt"), userText(inPlace)], tailed.stream, t, {
+      tail: 1,
+    });
+    const tailedPlain = stripAnsi(tailed.text());
+    expect(tailedPlain).toContain(t.switchModelHandedOver("/traces/sess-1_001.jsonl"));
+    expect(tailedPlain).not.toContain("> [model_switch_from]");
+    expect(tailedPlain).not.toContain("dropped prompt");
   });
 
   it("echoes another surface's literal summary markers and deduplicates the local input", () => {
