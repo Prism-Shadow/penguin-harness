@@ -12,6 +12,7 @@ import {
   DEFAULT_LIBRARIES,
   TypeScriptUnavailable,
   compilerFile,
+  nodeTypesFrom,
 } from "../src/plugin/typescript.js";
 
 describe("the compiler the server takes", () => {
@@ -78,5 +79,53 @@ describe("the compiler the server takes", () => {
     expect(message).toContain("the archive could not be unpacked");
     expect(message).toContain(`has no ${DEFAULT_LIBRARIES[0]} beside it`);
     expect(message).toMatch(/nowhere.*Cannot find module 'typescript'/);
+  });
+});
+
+describe("the Node declarations the server takes", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-node-types-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  /** A place holding `@types/node` and `undici-types`; `declarations` false keeps the manifests only. */
+  const place = (name: string, declarations: boolean) => {
+    const modules = path.join(root, name, "node_modules");
+    for (const pkg of ["@types/node", "undici-types"]) {
+      const dir = path.join(modules, pkg);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, "package.json"),
+        JSON.stringify({ name: pkg, types: "index.d.ts" }),
+      );
+      if (declarations) fs.writeFileSync(path.join(dir, "index.d.ts"), "export {};\n");
+    }
+    return {
+      base: () => path.join(root, name, "index.mjs"),
+      types: path.join(modules, "@types"),
+    };
+  };
+
+  it("a complete copy is taken", () => {
+    const whole = place("whole", true);
+    expect(fs.realpathSync(nodeTypesFrom([whole.base])!)).toBe(fs.realpathSync(whole.types));
+  });
+
+  it("a copy whose declarations were stripped is passed over for the next place", () => {
+    const stripped = place("stripped", false);
+    const whole = place("whole", true);
+    expect(fs.realpathSync(nodeTypesFrom([stripped.base, whole.base])!)).toBe(
+      fs.realpathSync(whole.types),
+    );
+  });
+
+  it("answers null when no place has a complete copy", () => {
+    const stripped = place("stripped", false);
+    expect(nodeTypesFrom([stripped.base])).toBeNull();
   });
 });

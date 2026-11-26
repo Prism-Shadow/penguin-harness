@@ -149,6 +149,13 @@ for (const app of dirs) {
     "web-dist/index.html",
     ...pluginFiles,
     ...compilerFiles,
+    // The Node declarations workbench code is checked with: `*.d.ts` that travel as extra
+    // resources like the compiler's libraries. Without them the manifest alone is left and
+    // every workbench fails to load with TS2688.
+    "dist/node_modules/@types/node/package.json",
+    "dist/node_modules/@types/node/index.d.ts",
+    "dist/node_modules/undici-types/package.json",
+    "dist/node_modules/undici-types/index.d.ts",
   ]) {
     const file = path.join(app, ...rel.split("/"));
     if (!fs.existsSync(file)) {
