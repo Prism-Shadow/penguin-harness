@@ -11,6 +11,6 @@ When a command-policy rule refused a tool call, the model read "Tool call denied
 
 ## Details
 
-- A `deny` rule's `"forbidden"` and the unattended deny of a policy-reasoned call carry the matched rule's name to the engine, which renders ``Tool call denied by rule `<rule>`.``.
+- A `deny` rule's `"forbidden"` and the unattended deny of a policy-reasoned call carry the matched rule's name to the engine, which renders ``Tool call denied by policy under rule `<rule>`.`` for the `"forbidden"` and ``Tool call denied by rule `<rule>`.`` for the `"deny"`.
 - A person's own denial still reads "Tool call denied by user.", a bare `"forbidden"` reads "Tool call denied by policy.", and a `pre_tool_use` hook denial still names the hook and its reason.
 - The `approval_decision` event is unchanged: it carries the plain decision string, and the rule is named where the model reads it, in the denied call's output.

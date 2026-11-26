@@ -545,11 +545,11 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(fedBack).toBeDefined();
   });
 
-  it('a policy denial naming its rule reads "denied by rule" and rides the event as its decision', async () => {
+  it('a policy denial naming its rule reads "denied by policy under rule" and rides the event as its decision', async () => {
     // A denial that names the rule that caused it (PolicyDenial) — a `deny` rule's
     // "forbidden", or the deny a host that cannot ask a person answers a policy reason
     // with — renders so the model reads which rule refused the call rather than a person
-    // who never saw it.
+    // who never saw it. A "forbidden" keeps its policy line with the rule under it.
     const llm = new FakeLLM();
     const environment = new Environment({
       workspaceDir: workspace,
@@ -567,7 +567,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
     expect((output.payload as { status?: string }).status).toBe("aborted");
     expect((output.payload as { output: string }).output).toBe(
-      "Tool call denied by rule `no-rm-rf`.",
+      "Tool call denied by policy under rule `no-rm-rf`.",
     );
     // Fed back to the model like any other tool result.
     const fedBack = llm.receivedSecondInput?.find(

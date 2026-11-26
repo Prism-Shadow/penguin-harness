@@ -108,8 +108,10 @@ export type ApprovalDecision = "allow" | "deny" | "forbidden";
 /**
  * A denial that names the rule that caused it: the command policy's own answers — a `deny`
  * rule's `"forbidden"`, and the `"deny"` a host that cannot ask a person (an unattended
- * Session) answers a policy-reasoned call with. The engine renders it as
- * ``Tool call denied by rule `<rule>`.``; the `approval_decision` event still carries the
+ * Session) answers a policy-reasoned call with. A `"forbidden"` renders as
+ * ``Tool call denied by policy under rule `<rule>`.`` (the policy keeps its own line, the
+ * rule rides under it); a `"deny"` renders as ``Tool call denied by rule `<rule>`.``; the
+ * `approval_decision` event still carries the
  * plain decision string (an {@link approvalDecision} builder normalizes it).
  */
 export interface PolicyDenial {

@@ -105,7 +105,7 @@ A denial produces a synthetic `aborted` tool output that the model reacts to. Th
 | Denial source | Tool output the model receives |
 | --- | --- |
 | The approval callback | `Tool call denied by user.` |
-| The [command policy](/configuration#command-policy)'s `forbidden` decision (see [ApproveFn](/interfaces#approvefn)) | ``Tool call denied by rule `<rule>`.`` |
+| The [command policy](/configuration#command-policy)'s `forbidden` decision (see [ApproveFn](/interfaces#approvefn)) | ``Tool call denied by policy under rule `<rule>`.`` |
 | A `pre_tool_use` hook | `Tool call denied by the <name> hook: <reason>.` |
 
 ## Interruption and carry-over

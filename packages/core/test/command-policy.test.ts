@@ -693,12 +693,12 @@ describe("Session applies the policy at the approval boundary", () => {
     )!;
     // The decision value itself separates a policy veto from a human denial in the Trace.
     expect((decision.payload as { decision?: string }).decision).toBe("forbidden");
-    // The denial names the rule that refused the command (not "by user": no person saw
-    // this), so the model changes course instead of treating it as a cancellation.
+    // The denial keeps the policy line and names the rule under it (not "by user": no
+    // person saw this), so the model changes course instead of treating it as a cancellation.
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
     expect((output.payload as { status?: string }).status).toBe("aborted");
     expect((output.payload as { output: string }).output).toBe(
-      "Tool call denied by rule `no-rm-rf`.",
+      "Tool call denied by policy under rule `no-rm-rf`.",
     );
     // The denial is fed back to the model, so the next turn can route around it.
     expect(
@@ -782,9 +782,9 @@ describe("Session applies the policy at the approval boundary", () => {
             (m.payload as { tool_call_id?: string }).tool_call_id === id,
         )!.payload as { decision?: string }
       ).decision;
-    // A `deny` rule refuses in its own name.
+    // A `deny` rule refuses in its own name, under the policy's line.
     expect(decisionOf("call_veto")).toBe("forbidden");
-    expect(outputOf("call_veto")).toBe("Tool call denied by rule `no-rm-rf`.");
+    expect(outputOf("call_veto")).toBe("Tool call denied by policy under rule `no-rm-rf`.");
     // An `ask` hit is denied naming its rule too: nobody is there to put it to a person.
     expect(decisionOf("call_ask")).toBe("deny");
     expect(outputOf("call_ask")).toBe("Tool call denied by rule `gh-pr-merge`.");

@@ -67,8 +67,9 @@ export interface ApprovalContext {
 /**
  * A denial that names the rule that caused it (see {@link PolicyDenial} — defined with the
  * records): the command policy's own answers, rendered by the engine as
- * ``Tool call denied by rule `<rule>`.`` so the model reads which rule refused the call
- * rather than a person who never saw it.
+ * ``Tool call denied by policy under rule `<rule>`.`` (a `"forbidden"`) or
+ * ``Tool call denied by rule `<rule>`.`` (a `"deny"`), so the model reads which rule
+ * refused the call rather than a person who never saw it.
  */
 export type { PolicyDenial };
 

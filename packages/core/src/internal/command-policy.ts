@@ -207,7 +207,7 @@ export type CommandPolicySource = () => CommandPolicyConfig | undefined;
  * Wraps an approval callback with the policy. A call a `deny` rule matches answers
  * `"forbidden"` here — naming the rule (see {@link PolicyDenial}) — and `approve` is never
  * reached, so no approval mode — and no Human implementation — can let it through. The engine
- * renders that denial as ``Tool call denied by rule `<rule>`.`` and the `approval_decision`
+ * renders that denial as ``Tool call denied by policy under rule `<rule>`.`` and the `approval_decision`
  * event still carries `"forbidden"` — the model's text and the Trace both name the decider.
  * A call an `ask` rule matches goes to `approve` with
  * `{ reason: { kind: "policy", rule } }`, which tells the host the mode alone may not answer

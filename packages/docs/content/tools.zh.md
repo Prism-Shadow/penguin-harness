@@ -367,7 +367,7 @@ type ApproveFn = (
 | 决策方 | 输出 |
 | --- | --- |
 | 人工或审批模式（`deny`） | `Tool call denied by user.` |
-| 命令策略（`forbidden`） | `Tool call denied by policy.` |
+| 命令策略（`forbidden`） | ``Tool call denied by policy under rule `<rule>`.`` |
 | pre-tool-use 钩子 | `Tool call denied by the <hook> hook[: <reason>].` |
 
 因此，命中策略绝不会在文案上显得像人工取消。参见 [ApproveFn](/interfaces#approvefn)。每次决策都会以 `approval_decision` 事件写入 Trace，策略否决记录为 `forbidden`，因此 Trace 就是一份完整的审计记录。审批发生在 [Agent 运行循环](/agent-loop)的工具执行阶段。

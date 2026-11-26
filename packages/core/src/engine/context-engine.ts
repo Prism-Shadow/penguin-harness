@@ -1629,10 +1629,12 @@ export class ContextEngine {
       output:
         hooked?.decision === "deny"
           ? `Tool call denied by the ${hooked.name ?? "pre_tool_use"} hook${hooked.reason ? `: ${hooked.reason}` : ""}.`
-          : denialRule !== undefined
-            ? `Tool call denied by rule \`${denialRule}\`.`
-            : decision === "forbidden"
-              ? "Tool call denied by policy."
+          : decision === "forbidden"
+            ? denialRule !== undefined
+              ? `Tool call denied by policy under rule \`${denialRule}\`.`
+              : "Tool call denied by policy."
+            : denialRule !== undefined
+              ? `Tool call denied by rule \`${denialRule}\`.`
               : "Tool call denied by user.",
       toolCallId,
       status: "aborted",
