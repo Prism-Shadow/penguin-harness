@@ -37,6 +37,10 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * second, and waiting out the full timeout would only delay the failure reaching a person. "A
  * server answers" is not "on this port" — the data root admits one server, so a slower
  * start still holding it is what answers; the caller reads the port from its own probe.
+ *
+ * Nor is it "its App answers": the probe calls a server running once its pid lives and its port
+ * accepts, and the port is bound before the App behind it is built — until then every request
+ * gets the starting 503. The questions asked next wait that out (starting-wait.ts).
  */
 export async function startRemoteServer(
   target: RemoteTarget,

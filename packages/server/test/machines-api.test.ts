@@ -22,7 +22,7 @@
  *   nothing; a machine already on this build is a result, and still gets pushed state.
  * - Given installed machines, status is probed only when asked, once per round, and a stopped
  *   server or an unreachable machine is an answer; a restart follows an install only where a
- *   server was running.
+ *   server was running, and is done when its App answers, not when its port does.
  * - Given a connect, the remembered port is the one used, a dead server is started, a live one
  *   is left alone, and a held session is re-held at start() and at the App's boot — never
  *   after a disconnect.
@@ -33,7 +33,8 @@
  *   and a value from this server's environment is named as not carried; a part the machine refuses
  *   is said and the rest still lands. Sync config checks the build first and refuses a machine on
  *   another build, writing nothing, and one not connected; a command policy saved here reaches the
- *   Project's machines.
+ *   Project's machines. A server still starting is waited for; one whose platform did not boot is
+ *   handed nothing, and the sync says the reason that server gave.
  * - Given a connected machine, its directories are listed through the alias holding it.
  * - Given a probe, the machine's own id is learned and kept; this machine's id is minted once.
  *   A machine is adopted when this server first records it (hearing its id later changes nothing),
@@ -102,6 +103,7 @@ import type { RemoteIdentity } from "../src/machines/detect.js";
 import type { CheckoutPacker } from "../src/machines/checkout-image.js";
 import { readPushedBuild } from "../src/hmr/pushed-build.js";
 import { readHarnessMeta } from "../src/harness-meta.js";
+import { noPlatformResponse, startingResponse } from "../src/hmr/starting.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import {
   apiClient,
@@ -210,6 +212,12 @@ async function quietPort(): Promise<number> {
   const port = (server.address() as AddressInfo).port;
   await new Promise<void>((resolve) => server.close(() => resolve()));
   return port;
+}
+
+/** Writes one of the server entry's own answers (hmr/starting.ts) onto a raw node response. */
+async function answerWith(response: Response, res: http.ServerResponse): Promise<void> {
+  res.writeHead(response.status, Object.fromEntries(response.headers));
+  res.end(await response.text());
 }
 
 describe("machines API", () => {
@@ -959,6 +967,45 @@ describe("machines API", () => {
       expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, installed: "installed" });
       expect(calls).toEqual(["stop", "start:7364"]);
       expect(t.deps.machines.job()?.log.join(" ")).toContain("Stopping its server");
+    });
+
+    it("a restart is done when its server's App answers, not when its port does", async () => {
+      // A server binds its port, and its status says running, before the App behind it is
+      // built: until then the port answers that it is starting.
+      const answers: string[] = [];
+      let starting = 1;
+      const far = http.createServer((req, res) => {
+        if (starting > 0) {
+          starting -= 1;
+          answers.push(`${req.url} starting`);
+          void answerWith(startingResponse(), res);
+          return;
+        }
+        answers.push(`${req.url} the App`);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ version: "9.9.9" }));
+      });
+      const port = await new Promise<number>((resolve) =>
+        far.listen(0, "127.0.0.1", () => resolve((far.address() as AddressInfo).port)),
+      );
+      try {
+        await boot({
+          probe: async () => ({ state: { kind: "running", port, pid: 99 }, machineId: null }),
+        });
+        machinesRepo.patch("ssh:nas", {
+          version: "9.9.9",
+          installedAt: "2026-08-01T00:00:00.000Z",
+        });
+
+        await admin.post("/api/projects/default_project/machines/ssh:nas/restart");
+        await waitFor(() => t.deps.machines.job()?.running === false, 4000);
+
+        expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+        expect(answers).toEqual(["/api/version starting", "/api/version the App"]);
+        expect(t.deps.machines.job()?.log.at(-1)).toBe(`Restarted on port ${port}.`);
+      } finally {
+        far.close();
+      }
     });
 
     it("leaves a machine that was NOT running down — installing is not a decision to serve", async () => {
@@ -1716,13 +1763,34 @@ describe("machines API", () => {
       opts: {
         runs?: string;
         refuse?: (method: string, url: string, body: unknown) => unknown;
+        /**
+         * What its process answers before its App does: the starting response to the first
+         * `starting` requests, or — a platform that could not boot — `noPlatform`'s to every one.
+         */
+        entry?: { starting: number } | { noPlatform: string };
       } = {},
     ) => {
       const writes: Array<{ method: string; url: string; body: unknown }> = [];
+      /** Every request, and what answered it: the process's entry, or the App. */
+      const answers: Array<{ asked: string; by: "starting" | "no platform" | "the App" }> = [];
+      let starting = opts.entry !== undefined && "starting" in opts.entry ? opts.entry.starting : 0;
       const server = http.createServer((req, res) => {
         let text = "";
         req.on("data", (chunk: Buffer) => (text += chunk.toString("utf8")));
         req.on("end", () => {
+          const asked = `${req.method ?? "GET"} ${req.url ?? ""}`;
+          if (opts.entry !== undefined && "noPlatform" in opts.entry) {
+            answers.push({ asked, by: "no platform" });
+            void answerWith(noPlatformResponse(opts.entry.noPlatform), res);
+            return;
+          }
+          if (starting > 0) {
+            starting -= 1;
+            answers.push({ asked, by: "starting" });
+            void answerWith(startingResponse(), res);
+            return;
+          }
+          answers.push({ asked, by: "the App" });
           const url = req.url ?? "";
           const method = req.method ?? "GET";
           const body: unknown = text === "" ? undefined : JSON.parse(text);
@@ -1749,7 +1817,7 @@ describe("machines API", () => {
       const port = await new Promise<number>((resolve) =>
         server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port)),
       );
-      return { writes, port, close: () => server.close() };
+      return { writes, answers, port, close: () => server.close() };
     };
     /** This server's Project: a model keyed from its environment, a policy and new-chat defaults of its own. */
     const bootOn = async (remote: Awaited<ReturnType<typeof machineServer>>) => {
@@ -1894,6 +1962,54 @@ describe("machines API", () => {
         expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
           "not_connected",
         );
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("Sync config on a machine whose server is still starting waits for its App, then syncs", async () => {
+      // The report: its server had bound its port, so it read as running, and its App was not
+      // built yet. The version question met the starting answer, and nothing was synced.
+      const remote = await machineServer({ entry: { starting: 1 } });
+      try {
+        await bootOn(remote);
+
+        const res = await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/sync`);
+        expect(res.status).toBe(202);
+        await waitFor(() => t.deps.machines.job()?.running === false, 4000);
+        const job = t.deps.machines.job()!;
+
+        expect(job.result).toEqual({ ok: true, synced: true });
+        expect(remote.answers.slice(0, 2)).toEqual([
+          { asked: "GET /api/version", by: "starting" },
+          { asked: "GET /api/version", by: "the App" },
+        ]);
+        expect(remote.writes.map((w) => w.url)).toContain(`/api/projects/${PROJECT}/models`);
+        expect(nas().configSync).toMatchObject({ ok: true });
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a machine whose platform did not boot is handed nothing, and its sync says the reason its server gave", async () => {
+      const why = "Cannot find module '/srv/penguin/hmr/store/platform/cafe0123456789ab.mjs'";
+      const remote = await machineServer({ entry: { noPlatform: why } });
+      try {
+        await bootOn(remote);
+
+        await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/connect`);
+        await waitFor(() => t.deps.machines.job()?.running === false);
+        const job = t.deps.machines.job()!;
+
+        const said = `Config not synced — could not ask that machine what it runs: it answered 503 when asked its version: penguin-server has no running platform: ${why}`;
+        expect(nas().configSync).toMatchObject({ ok: false, detail: said });
+        expect(job.log.join("\n")).toContain(said);
+        // Asked once each, not waited for — a platform that could not boot does not come up by
+        // itself — and nothing written.
+        expect(remote.answers).toEqual([
+          { asked: "GET /api/handshake", by: "no platform" },
+          { asked: "GET /api/version", by: "no platform" },
+        ]);
       } finally {
         remote.close();
       }
