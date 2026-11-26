@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `browser-automation`, `server`, `web`
+- **PR:** [#1910](https://github.com/Prism-Shadow/penguin-harness/pull/1910)
 
 [中文版](2026-11-26-machine-session-browser-reason.zh.md)
 
