@@ -9,6 +9,24 @@ import type { ReleaseNote } from "./release-notes";
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.2.20",
+    date: "2026-11-26",
+    zh: [
+      "桌面应用里的工作台恢复正常加载。",
+      "工作台加载失败时，除了「重新加载」，还可以「用 AI 修复」：确认后会打开一个新对话，修复说明已填好，由你决定是否发送。也可以直接报告问题。",
+      "压缩或切换模型没能生成完整摘要时，展开「压缩完毕」一行即可查看交接说明：没有摘要的原因、Trace 文件和新上下文开头的交接内容。",
+      "插件市场恢复列出发布的插件索引。有插件来源读取失败时，点「详情」可以看到每个来源的地址和失败原因。",
+      "连接远程机器时会等它的服务端启动完成，提示气泡里的长路径会在气泡内折行。",
+    ],
+    en: [
+      "Workbenches load again in the desktop app.",
+      "A workbench that fails to load offers Fix with AI beside Reload: after you confirm, it opens a new chat with the repair request filled in, for you to send. You can also report the problem directly.",
+      "When a compaction or a model switch could not produce a full summary, its Compacted row opens to the hand-off note: why there is no summary, the Trace file, and the text the next context starts with.",
+      "The plugin market lists the published plugin index again. When a plugin source cannot be read, Details shows each source's address and the reason.",
+      "Connecting a remote machine waits for its server to finish starting, and long paths wrap inside tooltips.",
+    ],
+  },
+  {
     version: "0.2.19",
     date: "2026-11-26",
     zh: [
