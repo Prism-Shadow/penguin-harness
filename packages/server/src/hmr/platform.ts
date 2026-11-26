@@ -87,6 +87,8 @@ import { loadPluginHost, pluginBases } from "../plugin/loader.js";
 import { listPreinstalledOnce } from "../services/preinstall-once.js";
 import { relistSystemAppModules } from "../services/system-app-relist.js";
 import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls";
+import { ProjectDataMigrationsRepo } from "@prismshadow/penguin-library-setting/repos/project-data-migrations";
+import { migrateToRsiWorkbench } from "../services/rsi-workbench-migration.js";
 import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
 import {
   LayoutMigrationError,
@@ -486,6 +488,17 @@ async function createInner(
     });
     // A module behind a system app is listed again wherever a hand edit took it out, every boot.
     await relistSystemAppModules({ ledger, root: caps.config.root, bases, machineId, now, log });
+  }
+  // The Projects from before the Self-Evolution Workbench came from its own package: their
+  // in-repo workbench copies and their Benchmarks move to it, once per Project. After the layout
+  // migration and the library above, before any workbench loads and seeds an empty data folder.
+  if (caps !== null) {
+    await migrateToRsiWorkbench({
+      ledger: wire(ProjectDataMigrationsRepo, { db: caps.db }),
+      root: caps.config.root,
+      now: () => new Date().toISOString(),
+      log: (line) => console.log(line),
+    });
   }
 
   // Plugins are modules (see ../plugin/), and WHICH ones this App runs is configuration it

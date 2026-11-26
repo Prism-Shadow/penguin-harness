@@ -51,6 +51,8 @@ import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { PluginModules } from "../mechanisms/plugins.js";
 import type { AppSeeds } from "./app-seeds.js";
+import type { ProjectDataMigrations } from "@prismshadow/penguin-library-setting";
+import { recordMigrated } from "./rsi-workbench-migration.js";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -94,6 +96,8 @@ export class ProjectService implements ProjectLifecycle {
   @Use() private readonly pluginModules!: PluginModules;
   /** The seeds built-in plugins ship for their system apps' data, written once at creation. */
   @Use() private readonly appSeeds!: AppSeeds;
+  /** The one-time migrations of a Project's files: a Project created here has nothing to migrate. */
+  @Use() private readonly dataMigrations!: ProjectDataMigrations;
 
   // Access control lives in ProjectAccess (services/project-access.ts); these delegate so
   // in-package callers keep one entry point.
@@ -197,6 +201,9 @@ export class ProjectService implements ProjectLifecycle {
         .catch(() => {});
       throw err;
     }
+    // Made by this build, so already in the Self-Evolution Workbench's shape: the startup migration
+    // (rsi-workbench-migration.ts) never acts on it, so a removal of the workbench stands.
+    recordMigrated(this.dataMigrations, projectId, createdAt);
     await this.pluginModules.preinstall(projectId);
     // Last, with the Project in place and its preinstalled modules listed: never a reason to roll
     // it back (services/app-seeds.ts).
@@ -239,9 +246,13 @@ export class ProjectService implements ProjectLifecycle {
       return;
     }
     const projectId = DEFAULT_PROJECT_ID;
+    const adopted = await dirExists(projectDir(this.root, projectId));
     // Initialize the built-in Agent (loaded without overwriting if it already exists); this also
     // ensures the directory exists.
     await this.provisionProjectDefaults(projectId);
+    // A directory made just now is in the Self-Evolution Workbench's shape; an adopted one may be
+    // older, and the startup migration looks at it (rsi-workbench-migration.ts).
+    if (!adopted) recordMigrated(this.dataMigrations, projectId, new Date().toISOString());
     // Adopting an existing directory doesn't go through writeInitialConfig: preset
     // models and the default model are backfilled instead (only when there are no
     // models at all; a default_project already configured via the CLI is left
