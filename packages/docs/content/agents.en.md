@@ -55,7 +55,7 @@ The fixed instructions tell that agent to use the `agent-initialization` Skill a
 - copy only the Skills the new agent needs from the plugin library, and leave every other agent untouched;
 - report the new agent's id, the Skills it installed, and how to start a conversation with it.
 
-The **Report-writing agent** example creates an agent with the id `report-writer`. The [Evaluation Center](/evaluation-center) has a matching Benchmark example, so you can go on to evaluate and optimize it.
+The **Report-writing agent** example creates an agent with the id `report-writer`. The [Self-Evolution Workbench](/self-evolution-workbench) has a matching Benchmark example, so you can go on to evaluate and optimize it.
 
 ## Create an agent manually
 

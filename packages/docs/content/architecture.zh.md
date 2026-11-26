@@ -95,7 +95,7 @@ CLI 和 Web App 经 HTTP 与 SSE 同 Server 通信。随产品交付的各个应
 | 密钥 | 文件层 | Vault：`agent_state/.vault.toml`；模型凭据：`.project_config.toml`（两者权限均为 0600） |
 | 模型表与默认模型 | 文件层 | `<project>/.project_config.toml` |
 | 运行历史（恢复的唯一事实来源） | 文件层 | `traces/<date>/<session>_<index>.jsonl`，见 [Session 与 Trace](/sessions-and-traces) |
-| Benchmark 题目与分数 | 文件层 | `<project>/agents/system_agent/app/data/benchmark/<id>/`，见[自我进化](/self-improvement) |
+| Benchmark 题目与分数 | 文件层 | 自进化工作台的数据目录，默认 Agent 的为 `<project>/agents/default_agent/app/data/benchmark/<id>/`，见[自我进化](/self-improvement) |
 | 快照 | 文件层 | `snapshots/v<version>.tar.gz`；导出/导入服务由 Server 提供 |
 | 流式渲染、审批 UI、图表 | CLI / Web | `cli/src`、`web/src`（纯渲染，不含引擎逻辑） |
 
@@ -152,7 +152,7 @@ packages/web/src
 ├── lib/amsp/     # AmspRecord stream → view-model reducer; connect-first + dedup stream controller
 ├── components/   # ui primitives (modal / drawer / select …) and the app layout
 ├── pages/        # the login pages
-└── features/     # chat / agents / skills / plugins / models / usage / traces / benchmark / schedules / company / settings / admin … pages
+└── features/     # chat / agents / skills / plugins / models / usage / traces / app-center / schedules / company / settings / admin … pages
 ```
 
 Server 的路由与投递保证见 [Server API](/server-api)，Server 进程如何组装各个子系统见 [Server 启动与子系统](/server-boot)。

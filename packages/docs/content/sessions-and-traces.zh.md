@@ -28,9 +28,7 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
 <root>/projects/<project>/
 ├── .project_config.toml          # Project-level models & credentials (hidden file, 0600)
 └── agents/
-    ├── system_agent/             # the system Agent; its app/data/benchmark/ holds the
-    │                             # Benchmark cases and scores, one directory per Benchmark —
-    │                             # a peer of the Agents, evaluating any of them
+    ├── system_agent/             # the system Agent, host of the App Center's system apps
     └── <agent>/
         ├── agent_state/              # system_config.yaml, AGENTS.md, .vault.toml,
         │                             # tools/, skills/, hooks/, schedule/
@@ -39,7 +37,9 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
         │   └── workbenches/          # one folder per workbench: source, ui/, state.json
         ├── agent_state.git/          # bare git repository the server writes: workbench versions
         ├── app/                      # workbench folders beside the Agent State: data/<workbench>/
-        │                             # (exported with the workbench's data) and cache/<workbench>/
+        │                             # (exported with the workbench's data) and cache/<workbench>/;
+        │                             # data/benchmark/ holds the Self-Evolution Workbench's
+        │                             # Benchmarks, one directory per Benchmark
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
         ├── scratchpad/               # temp files, one subdirectory per Session id (e.g. pasted images)
@@ -54,7 +54,7 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
 
 工作台的运行时文件（Unix socket、管道、锁）另放在 `<root>/run/<project>/<agent>/<workbench>/`，每一级是其 id 的 10 位哈希，使 socket 路径不超过 Unix socket 路径的 103 字节上限。它们从不导出，随所属的工作台、Agent 或 Project 一并删除。 从插件安装的工作台还可以存放由该应用所有副本共用的文件：本服务器上位于 `<root>/app/{data,cache}/<plugin>/<workbench>/`（状态在 `<root>/run/server/` 下），这台电脑上本 OS 用户的位于 `~/.penguin/machine/`（或 `PENGUIN_MACHINE_HOME`）。两者都不导出，也不随工作台删除。
 
-2026 年 11 月之前的数据根把 Project 直接放在顶层（`<root>/<project>/`），Benchmark 放在 `<project>/benchmarks/`。新版本第一次启动时、开始服务之前把它们移到新位置，并在每个旧位置留一个链接，移动前记录下的路径（Trace 里的、仍开着的对话里的）照样指向同一批文件。链接保留到 1.0。名为 `projects` 的 Project 会让迁移停下：服务端不启动，提示里写明如何用上一个版本处理这个 Project。
+2026 年 11 月之前的数据根把 Project 直接放在顶层（`<root>/<project>/`），Benchmark 放在 `<project>/benchmarks/`。新版本第一次启动时、开始服务之前把它们移到新位置，并在每个旧位置留一个链接，移动前记录下的路径（Trace 里的、仍开着的对话里的）照样指向同一批文件。链接保留到 1.0。那次移动把 Benchmark 放进了系统 Agent 的 `app/data/benchmark/`；如今它们属于默认 Agent 的自进化工作台：带有这个工作台的版本第一次启动时，把它们移进 `agents/default_agent/app/data/benchmark/`，原处同样留一个链接（见[升级之后](/self-evolution-workbench#升级之后)）。名为 `projects` 的 Project 会让迁移停下：服务端不启动，提示里写明如何用上一个版本处理这个 Project。
 
 各配置文件的字段见[配置参考](/configuration)。
 

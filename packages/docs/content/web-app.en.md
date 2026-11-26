@@ -97,7 +97,6 @@ From top to bottom, the sidebar holds:
 | **Plugins** | Browse plugins, install their Skills and hook packages onto agents, and add server plugins to the Project | [Skills](/skills) |
 | **Machines** | Install this PenguinHarness build on other hosts over ssh and manage the connections to them (admins only) | [Security Model](/security#manage-remote-machines-over-ssh) |
 | **Cost Center** | Token usage, cost and server errors by agent, model and time range | [Cost Center](/usage) |
-| **Evaluation Center** | Benchmarks: evaluate agents and optimize them against a Benchmark | [Evaluation Center](/evaluation-center) |
 
 - The conversation list, with search and grouping by Workspace, agent or time. See [Chat](/chat).
 - Your user row at the bottom. It opens the account menu:
@@ -165,7 +164,7 @@ The App Center lists the agents of the server you are signed in to. Workbenches 
 
 ## Projects and members
 
-A Project holds its agents, models, Benchmarks, and conversations. The Project switcher at the top of the sidebar lists the Projects you own or belong to, each with its role (`owner` or `member`), and switches between them. The same menu has **New Project** and **Project settings**.
+A Project holds its agents, models and conversations. The Project switcher at the top of the sidebar lists the Projects you own or belong to, each with its role (`owner` or `member`), and switches between them. The same menu has **New Project** and **Project settings**.
 
 ### Create a Project
 
@@ -201,7 +200,7 @@ The owner alone can:
 
 - Rename or delete the Project, manage its members, and change **Defaults** and **Security policy**. Members see these pages read-only.
 - Change models, Vault, and scheduled tasks.
-- Create and delete Benchmarks, delete agents, clear Cost Center errors, and set up remote control.
+- Delete agents, clear Cost Center errors, and set up remote control.
 - Overwrite or replace an agent from a file, and import memory and Traces.
 
 Members can still create agents and conversations, and delete conversations, Skills, hook packages, and memory files.
@@ -217,7 +216,7 @@ Many things the Web App creates from a form can also be described to an agent in
 | --- | --- |
 | An agent | The Agents page. Its **Import agent** dialog pairs the two paths for an agent from elsewhere: migrate another framework's agent in a conversation, or import an exported file |
 | A model group | The Models page |
-| A Benchmark | The Evaluation Center |
+| A Benchmark | The Self-Evolution Workbench |
 | A vault secret | An agent's Vault tab |
 | A scheduled task | An agent's Schedules tab, or a conversation's Scheduled tasks panel |
 
@@ -228,7 +227,7 @@ Some of these are for Project owners only:
 
 The prompt box comes with clickable examples that fill the draft. When the page adds fixed instructions to what you type, a folded **Full prompt** preview shows them, with **Copy prompt**.
 
-There is one way out: **Edit in a new conversation**. It opens a new conversation with the Project's `default_agent`, or the first agent when there is none, and prefills the composer with the prompt. Whether to send it is yours to decide.
+There is one way out: **Edit in a new conversation**. It opens a new conversation with the Project's `default_agent`, or the first agent when there is none, and prefills the composer with the prompt. Whether to send it is yours to decide. The Self-Evolution Workbench is the exception: its **Create with AI** ends in **Start**, which sends the request at once in a new conversation of yours; see [Start a task](/self-evolution-workbench#start-a-task).
 
 - The prompt survives a reload of that new-chat page.
 - Leave the page without editing or sending it, and the prompt is dropped. It cannot resurface in a later conversation.

@@ -199,7 +199,7 @@ The first section, **This server** for an admin and **My Projects** for a member
 | **Caches** | Each agent's tool environments in `shared_env/` and its apps' disposable files in `app/cache/`, and the server's `.cache/` |
 | **Logs** | The server's `logs/`, measured but never cleaned here |
 | **Plugins** | The installed plugin packages, measured but never cleaned here |
-| **Other** | Everything else: Benchmarks, organizations, the database, the hot-update store, machines and theme packs |
+| **Other** | Everything else: the workbenches' data folders (the Self-Evolution Workbench's Benchmarks among them), organizations, the database, the hot-update store, machines and theme packs |
 
 **By Project** lists each Project with its size, largest first; expand one to see its agents. **By folder** shows the data root's path (an admin) or each Project's folder (a member), with **Copy path** and, in the desktop app's own window, **Show in folder**. An admin also has **Server files**, which lists the data root's top-level entries that are not Projects.
 
