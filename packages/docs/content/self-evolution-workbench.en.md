@@ -18,7 +18,7 @@ For how evaluation and optimization work behind these pages, see [Self-Improveme
 
 In **App Center**, select **Self-Evolution Workbench**. It opens in the app window over the grid, which you minimize, open full screen and close as for any other app, and while it is open the sidebar's **Apps** group lists it. The window's address is `/apps?app=default_agent/benchmark`; `at` in it carries the place inside the workbench. The page lists the workbench's Benchmarks as cards.
 
-Old addresses, `/benchmark` and `/benchmark/<id>` with their query, open the same place in the window: the default agent's workbench, else another agent's in the Project that has one. When no agent has it, the App Center opens and offers to install it on the default agent.
+Old addresses, `/benchmark` and `/benchmark/<id>` with their query, open the same place in the window: the default agent's workbench, else another agent's in the Project that has one. When no agent has it, the App Center opens with **Install on the default Agent**.
 
 Like any workbench, it can be taken off the App Center, turned off or removed on the default agent's [Workbenches](/agents#workbenches) sub-page, and installed on another agent from the plugin library; see [Install a plugin on an agent](/skills#install-a-plugin-on-an-agent).
 
