@@ -20,6 +20,7 @@ export * from "./lib/agent-plugin-install";
 export * from "./lib/api-error";
 export * from "./lib/app-center-path";
 export * from "./lib/archive-download";
+export * from "./lib/builtin-agents";
 export * from "./lib/card-open";
 export * from "./lib/chat-session";
 export * from "./lib/context";
@@ -73,6 +74,7 @@ export * from "@prismshadow/penguin-library-model/web";
 
 export * from "./features/ai-create";
 export * from "./features/chat";
+export * from "./features/chat/history-loading";
 export * from "./features/dock";
 export * from "./features/plugins";
 export * from "./features/schedules";
