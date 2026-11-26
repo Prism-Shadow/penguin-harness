@@ -46,7 +46,13 @@ export function benchmarksDirOf(agentId: string): string {
 
 const ID = /^[A-Za-z0-9_-]+$/;
 const CASE_ID = /^CASE-[A-Za-z0-9_-]+$/;
-const TASK_KINDS: readonly WorkbenchTaskKind[] = ["create", "import", "evaluate", "optimize", "ask"];
+const TASK_KINDS: readonly WorkbenchTaskKind[] = [
+  "create",
+  "import",
+  "evaluate",
+  "optimize",
+  "ask",
+];
 
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -224,7 +230,11 @@ function specOf(body: Record<string, unknown>, benchmarkDir: string, runs: numbe
         benchmarkDir,
         question: text(body.question),
         ...(body.evaluation !== undefined
-          ? { evaluation: body.evaluation as NonNullable<Extract<TaskSpec, { kind: "ask" }>["evaluation"]> }
+          ? {
+              evaluation: body.evaluation as NonNullable<
+                Extract<TaskSpec, { kind: "ask" }>["evaluation"]
+              >,
+            }
           : { case: body.case as NonNullable<Extract<TaskSpec, { kind: "ask" }>["case"]> }),
       };
     default:

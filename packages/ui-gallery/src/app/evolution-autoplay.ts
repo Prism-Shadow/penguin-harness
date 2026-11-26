@@ -230,7 +230,9 @@ export function installEvolutionAutoplay(
           "[data-session-id]",
           (row) => row.dataset.sessionId === resultSessionId,
         )?.closest<HTMLElement>('[draggable="true"]');
-        const pane = shownPage.frame.closest<HTMLElement>('[data-workspace-page][data-pane="full"]');
+        const pane = shownPage.frame.closest<HTMLElement>(
+          '[data-workspace-page][data-pane="full"]',
+        );
         if (
           pane &&
           session?.getBoundingClientRect().width &&

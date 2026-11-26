@@ -161,9 +161,7 @@ describe("the Self-Evolution Workbench's handler", () => {
         `${mount()}/tasks?benchmarkId=${IDS.benchmarks.docs}`,
       );
       expect(listed.body.tasks[0]).toMatchObject({ sessionId, kind: "optimize" });
-      expect(listed.body.tasks.map((t) => t.sessionId)).toContain(
-        IDS.sessions.optimize,
-      );
+      expect(listed.body.tasks.map((t) => t.sessionId)).toContain(IDS.sessions.optimize);
     } finally {
       await send("POST", `/api/sessions/${sessionId}/abort`);
     }

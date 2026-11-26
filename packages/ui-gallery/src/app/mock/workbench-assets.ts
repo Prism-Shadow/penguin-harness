@@ -8,7 +8,8 @@ import { EARLY_SUPPORT } from "./workbench-revisions";
 import { pageSdkFile } from "../../../../server/src/workbenches/page-sdk";
 
 const root = fileURLToPath(new URL("../../../../../", import.meta.url));
-const shipped = (plugin: string, id: string) => join(root, "plugins", plugin, "workbenches", id, "ui");
+const shipped = (plugin: string, id: string) =>
+  join(root, "plugins", plugin, "workbenches", id, "ui");
 /** The pinned Self-Evolution Workbench's built page, which its package exports no path to. */
 const rsiWorkbench = dirname(
   createRequire(import.meta.url).resolve("@penguinharness/rsi-workbench/package.json"),
@@ -54,10 +55,18 @@ function addPages(
       // app (lib/workbench-theme.ts): its unlayered rules would beat the components' layered ones.
       const baseSheet = /<link\b[^>]*\bdata-penguin-ui\b/.test(document)
         ? ""
-        : '<link rel="stylesheet" data-workbench-base href="' + base + prefix + '/workbench-ui.css">';
+        : '<link rel="stylesheet" data-workbench-base href="' +
+          base +
+          prefix +
+          '/workbench-ui.css">';
       content = document.replace(
         "<head>",
-        "<head>" + baseSheet + '<script src="' + base + prefix + '/workbench-requests.js"></script>',
+        "<head>" +
+          baseSheet +
+          '<script src="' +
+          base +
+          prefix +
+          '/workbench-requests.js"></script>',
       );
     }
     files.set(name === "index.html" ? entryPage : assetDir + "/" + name, content);

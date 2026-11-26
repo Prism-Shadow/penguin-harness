@@ -27,7 +27,8 @@ const measure = (page) =>
       titles.map((title) => {
         const info = title.closest("button");
         const style = getComputedStyle(info);
-        const room = info.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+        const room =
+          info.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
         return {
           title: title.textContent,
           cut: title.scrollWidth > title.clientWidth,
