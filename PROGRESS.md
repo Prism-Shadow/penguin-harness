@@ -14,4 +14,7 @@
 - W10 agents → library/agent：0105e42d80
 - W11 projects → library/project：6a38ddcf51
 - W12 traces → library/trace：42547b90a6
-- W13 models+model-picker → library/model：本提交
+- W13 models+model-picker → library/model：5b6e542779
+- changelog 双语条目：de23713b79；其上为一串收尾修复（vite resolve 合并、宿主/库内残留导入改走 internal、
+  trace 补 react-markdown、model 补 zustand、internal 循环 shim 清理、internal 缺口补齐、ui-gallery/core
+  旧路径清理），最终头以推送的 restack3/W10-W13-r2 为准。

@@ -1183,7 +1183,7 @@ export const en: Strings = {
     /** Preview placeholder shown in the generated prompt before a source is entered. */
     importSourceToken: "<source>",
     importPromptLabel: "Prompt to send to the agent (preview)",
-    /** Per-source lead sentence of the generated import prompt; composed with importPromptTail by buildWorkbenchImportPrompt (features/agents/workbench-import.ts). */
+    /** Per-source lead sentence of the generated import prompt; composed with importPromptTail by buildWorkbenchImportPrompt (the agents feature's workbench-import.ts). */
     importPromptLead: {
       webUrl: (s: string): string =>
         `Please read this page and import the workbench it describes: ${s}.`,
@@ -1196,7 +1196,7 @@ export const en: Strings = {
       reference: (s: string): string =>
         `Please resolve this reference or description to its source (repository, marketplace, or docs page) and import it as a workbench: ${s}.`,
     },
-    /** The fixed tail joined after the lead (features/agents/workbench-import.ts): the review step, the package layout and the install target, named by Project and Agent id. */
+    /** The fixed tail joined after the lead (the agents feature's workbench-import.ts): the review step, the package layout and the install target, named by Project and Agent id. */
     importPromptTail: (projectId: string, agentId: string): string =>
       [
         "Read every file of the source in full before installing anything. A workbench's pages run inside the app and its server handlers run on this server, so review it for anything that sends data out, runs commands it does not need, or reaches outside its own directory; if anything looks wrong, stop and tell me instead of installing it.",
@@ -3704,7 +3704,7 @@ export const en: Strings = {
       "A plugin may carry MCP servers: a stdio server is a command that runs on this server when an agent session starts, and a remote one is an address this server connects to.",
   },
 
-  /** The Agent settings "Plugins" tab (features/agents/plugins-tab.tsx): the agent's plugins and the parts each brought, the agent's own parts last. */
+  /** The Agent settings "Plugins" tab (the agents feature's plugins-tab.tsx): the agent's plugins and the parts each brought, the agent's own parts last. */
   agentPlugins: {
     /** The Plugins tab's sub-page switch: its accessible name, and each sub-page's label. */
     subNav: "Plugin sub-pages",
@@ -3843,7 +3843,7 @@ export const en: Strings = {
     workbenchesEmpty: "No workbenches on this agent yet.",
   },
 
-  /** An agent's hook packages on its Plugins tab's Hooks sub-page (features/agents/agent-hooks.tsx): the rows, the enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
+  /** An agent's hook packages on its Plugins tab's Hooks sub-page (the agents feature's agent-hooks.tsx): the rows, the enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => (n === 1 ? "1 hook package" : `${n} hook packages`),
@@ -3860,7 +3860,7 @@ export const en: Strings = {
     /** Preview placeholder shown in the generated prompt before a source is entered. */
     importSourceToken: "<source>",
     importPromptLabel: "Prompt to send to the agent (preview)",
-    /** Lead sentence for a URL / repo / path source; free text (a description, a pasted hooks config) is used verbatim as the lead instead. Composed with importPromptTail by buildHookImportPrompt (features/agents/hook-import.ts). */
+    /** Lead sentence for a URL / repo / path source; free text (a description, a pasted hooks config) is used verbatim as the lead instead. Composed with importPromptTail by buildHookImportPrompt (the agents feature's hook-import.ts). */
     importPromptLead: (s: string): string => `Import ${s} as a hook package.`,
     importCopyPrompt: "Copy prompt",
     importOpenChat: "Open a new chat",
@@ -3874,7 +3874,7 @@ export const en: Strings = {
     importOverwriteBody: (name: string): string =>
       `The hook package "${name}" is already installed. Overwriting replaces all of its files (local edits included) and cannot be undone. Continue?`,
     importOverwriteAction: "Overwrite",
-    /** The fixed tail joined after the lead (features/agents/hook-import.ts): the review step, the package format, the script contract and the install target, named by Project and Agent id. */
+    /** The fixed tail joined after the lead (the agents feature's hook-import.ts): the review step, the package format, the script contract and the install target, named by Project and Agent id. */
     importPromptTail: (projectId: string, agentId: string): string =>
       [
         "Read the source in full first and review every script for malicious behavior (exfiltrating data, touching files outside its source, running unknown commands); continue only once it is safe.",
@@ -3949,7 +3949,7 @@ export const en: Strings = {
     /** Preview placeholder shown in the generated prompt before a source is entered. */
     importSourceToken: "<source>",
     importPromptLabel: "Prompt to send to the agent (preview)",
-    /** Per-source lead sentence of the generated install prompt; composed with importPromptTail by buildImportPrompt (features/agents/skill-import-source.ts). */
+    /** Per-source lead sentence of the generated install prompt; composed with importPromptTail by buildImportPrompt (the agents feature's skill-import-source.ts). */
     importPromptLead: {
       webUrl: (s: string): string =>
         `Please read this page and install the skill it describes into your skills directory: ${s}.`,

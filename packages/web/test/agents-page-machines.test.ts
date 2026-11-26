@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * A machine's Agents on the Agents page (features/agents/agents-page.tsx): that machine's own,
+ * A machine's Agents on the Agents page (the agents feature's agents-page.tsx): that machine's own,
  * never folded into this server's (lib/agent-location.ts), and listed beside them in one list
  * (lib/machine-agent-lists.ts), the way the sidebar mixes machine Workspaces with local ones.
  *

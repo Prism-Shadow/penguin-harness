@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Agents page's Create Agent dialog (features/agents/create-agent-dialog.tsx) as one record
+ * The Agents page's Create Agent dialog (the agents feature's create-agent-dialog.tsx) as one record
  * form under the settings commit model.
  *
  * - Create waits for something to be filled in and an id that keeps the naming rule; a broken id

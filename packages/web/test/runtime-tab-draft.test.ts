@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Runtime tab of the Agent settings page (features/agents/runtime-form.ts and the tab in
+ * The Runtime tab of the Agent settings page (the agents feature's runtime-form.ts and the tab in
  * agent-settings-page.tsx) under the settings commit model.
  *
  * The form's rules:

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 /**
  * The workbench chat import on the Agent settings Plugins tab's Workbenches sub-page (its Import
- * workbench button, the dialog in features/agents/agent-workbenches.tsx, through the shared
+ * workbench button, the dialog in the agents feature's agent-workbenches.tsx, through the shared
  * chat-or-zip-import-dialog.tsx and workbench-import.ts). The zip path is
  * agent-workbench-archive.test.ts's, and closing with a source typed is import-dialogs-guard's.
  *

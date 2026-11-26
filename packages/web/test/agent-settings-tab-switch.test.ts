@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Switching tabs on the Agent settings page (features/agents/agent-settings-page.tsx): one rule
+ * Switching tabs on the Agent settings page (the agents feature's agent-settings-page.tsx): one rule
  * for every tab, and no placeholder for data the page already has.
  *
  * - Given the page holds the Agent's config, the tabs drawn from it — Overview, System Prompt,

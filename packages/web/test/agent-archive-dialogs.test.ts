@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Agent export and import dialogs (features/agents/agent-export-dialog.tsx and
+ * The Agent export and import dialogs (the agents feature's agent-export-dialog.tsx and
  * agent-import-dialog.tsx), opened where a user opens them.
  *
  * - Export, from a card: the parts and conversations chosen are the query of one download,

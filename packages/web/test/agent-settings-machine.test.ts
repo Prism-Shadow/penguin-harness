@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * A machine's Agent on the Agent settings page (features/agents/agent-settings-page.tsx at
+ * A machine's Agent on the Agent settings page (the agents feature's agent-settings-page.tsx at
  * `?machine=<id>`): every read and write goes to that machine, never to this server's Agent of
  * the same id (lib/agent-location.ts).
  *

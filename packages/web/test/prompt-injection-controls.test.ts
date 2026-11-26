@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The prompt-injection controls shared by the Skills, Vault and Schedules tabs
- * (features/agents/prompt-injection-controls.tsx), on the Vault tab: an enable switch that writes
+ * (the agents feature's prompt-injection-controls.tsx), on the Vault tab: an enable switch that writes
  * at once, and a prompt that is a typed form.
  *
  * - Save is held until the prompt differs from the stored one; the stored text typed back holds

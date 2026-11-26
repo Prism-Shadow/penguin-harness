@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * An Agent's author on the Agents page and in Agent settings (features/agents/agents-page.tsx,
+ * An Agent's author on the Agents page and in Agent settings (the agents feature's agents-page.tsx,
  * agent-groups.ts, the Overview tab of agent-settings-page.tsx).
  *
  * - Given Agents made by people, by agents and by company mode, the page groups them by author

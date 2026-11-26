@@ -1,6 +1,6 @@
 /**
  * An Agent's card opens the Agent's settings page, a full page of its own
- * (features/agents/agents-page.tsx `AgentCard` and `AgentNameLink`, on the rule in
+ * (the agents feature's agents-page.tsx `AgentCard` and `AgentNameLink`, on the rule in
  * lib/card-open.ts).
  *
  * - A click anywhere on the card's body opens the Agent's settings page.

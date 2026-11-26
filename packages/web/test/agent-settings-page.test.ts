@@ -1,5 +1,5 @@
 /**
- * The Agent settings page's pure helpers (features/agents/agent-settings-page.tsx). One file,
+ * The Agent settings page's pure helpers (the agents feature's agent-settings-page.tsx). One file,
  * so the page module is imported once.
  *
  * - The `?tab=` deep link passes a known tab key through and falls back to the default for an

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Leaving the Agent settings page (features/agents/agent-settings-page.tsx) with unsaved edits,
+ * Leaving the Agent settings page (the agents feature's agent-settings-page.tsx) with unsaved edits,
  * on the app's leave guard: the open tab lives in `?tab=`, so every way off the tab is a
  * navigation the router holds while a form on it is dirty.
  *

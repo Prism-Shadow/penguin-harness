@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The Skills, Hooks and Workbenches sub-pages of the Agent settings Plugins tab
- * (features/agents/plugins-tab.tsx with agent-skills.tsx, agent-hooks.tsx and
+ * (the agents feature's plugins-tab.tsx with agent-skills.tsx, agent-hooks.tsx and
  * agent-workbenches.tsx): one kind each, a plugin's parts and the user's own in one list.
  *
  * - Given an old `?tab=hooks` address, the Plugins tab is selected on its Hooks sub-page: the hook

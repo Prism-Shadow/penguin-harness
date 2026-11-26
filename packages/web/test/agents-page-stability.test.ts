@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Agents page holds still while machines answer (features/agents/agents-page.tsx over
+ * The Agents page holds still while machines answer (the agents feature's agents-page.tsx over
  * lib/machine-agent-lists.ts): what it shows changes only when the data does.
  *
  * - Given a connected machine whose list an earlier page load remembered, its cards are on the

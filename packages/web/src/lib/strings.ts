@@ -1287,7 +1287,7 @@ export const zh = {
     /** Preview placeholder shown in the generated prompt before a source is entered. */
     importSourceToken: "<来源>",
     importPromptLabel: "发送给 Agent 的 Prompt（预览）",
-    /** Per-source lead sentence of the generated import prompt; composed with importPromptTail by buildWorkbenchImportPrompt (features/agents/workbench-import.ts). */
+    /** Per-source lead sentence of the generated import prompt; composed with importPromptTail by buildWorkbenchImportPrompt (the agents feature's workbench-import.ts). */
     importPromptLead: {
       webUrl: (s: string): string => `请阅读这个网页，并导入其中的工作台：${s}。`,
       repoUrl: (s: string): string =>
@@ -1298,7 +1298,7 @@ export const zh = {
       reference: (s: string): string =>
         `请根据这个引用或描述找到对应的来源（仓库、插件市场或文档页），并导入为工作台：${s}。`,
     },
-    /** The fixed tail joined after the lead (features/agents/workbench-import.ts): the review step, the package layout and the install target, named by Project and Agent id. */
+    /** The fixed tail joined after the lead (the agents feature's workbench-import.ts): the review step, the package layout and the install target, named by Project and Agent id. */
     importPromptTail: (projectId: string, agentId: string): string =>
       [
         "安装前先完整阅读来源中的每一个文件。工作台的页面在应用内运行，服务端处理器在本服务器上运行，所以要审查它有没有外传数据、运行用不到的命令或访问自身目录之外的内容；发现任何可疑之处就停下来告诉我，不要安装。",
@@ -3893,7 +3893,7 @@ export const zh = {
       "插件可能带有 MCP 服务器：stdio 服务器是 Agent 会话开始时在本服务器上运行的命令，远程服务器是本服务器会去连接的地址。",
   },
 
-  /** The Agent settings "Plugins" tab (features/agents/plugins-tab.tsx): the Agent's plugins and the parts each brought, the Agent's own parts last. */
+  /** The Agent settings "Plugins" tab (the agents feature's plugins-tab.tsx): the Agent's plugins and the parts each brought, the Agent's own parts last. */
   agentPlugins: {
     /** The Plugins tab's sub-page switch: its accessible name, and each sub-page's label. */
     subNav: "插件的子页面",
@@ -4025,7 +4025,7 @@ export const zh = {
     workbenchesEmpty: "这个 Agent 还没有工作台。",
   },
 
-  /** An Agent's hook packages on its Plugins tab's Hooks sub-page (features/agents/agent-hooks.tsx): the rows, the enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
+  /** An Agent's hook packages on its Plugins tab's Hooks sub-page (the agents feature's agent-hooks.tsx): the rows, the enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => `${n} 个钩子包`,
@@ -4041,7 +4041,7 @@ export const zh = {
     /** Preview placeholder shown in the generated prompt before a source is entered. */
     importSourceToken: "<来源>",
     importPromptLabel: "发送给 Agent 的 Prompt（预览）",
-    /** Lead sentence for a URL / repo / path source; free text (a description, a pasted hooks config) is used verbatim as the lead instead. Composed with importPromptTail by buildHookImportPrompt (features/agents/hook-import.ts). */
+    /** Lead sentence for a URL / repo / path source; free text (a description, a pasted hooks config) is used verbatim as the lead instead. Composed with importPromptTail by buildHookImportPrompt (the agents feature's hook-import.ts). */
     importPromptLead: (s: string): string => `把 ${s} 导入为钩子包。`,
     importCopyPrompt: "复制 Prompt",
     importOpenChat: "打开新对话",
@@ -4055,7 +4055,7 @@ export const zh = {
     importOverwriteBody: (name: string): string =>
       `钩子包「${name}」已存在，覆盖安装将替换其全部文件（含本地改动），不可恢复。确认继续？`,
     importOverwriteAction: "覆盖安装",
-    /** The fixed tail joined after the lead (features/agents/hook-import.ts): the review step, the package format, the script contract and the install target, named by Project and Agent id. */
+    /** The fixed tail joined after the lead (the agents feature's hook-import.ts): the review step, the package format, the script contract and the install target, named by Project and Agent id. */
     importPromptTail: (projectId: string, agentId: string): string =>
       [
         "先完整阅读来源，逐个审查脚本有没有恶意行为（外传数据、改动来源之外的文件、执行来路不明的命令等），确认安全后再继续。",
@@ -4135,7 +4135,7 @@ export const zh = {
     /** Preview placeholder shown in the generated prompt before a source is entered. */
     importSourceToken: "<来源>",
     importPromptLabel: "发送给 Agent 的 Prompt（预览）",
-    /** Per-source lead sentence of the generated install prompt; composed with importPromptTail by buildImportPrompt (features/agents/skill-import-source.ts). */
+    /** Per-source lead sentence of the generated install prompt; composed with importPromptTail by buildImportPrompt (the agents feature's skill-import-source.ts). */
     importPromptLead: {
       webUrl: (s: string): string => `请阅读这个网页，并把其中的 Skill 安装到你的技能目录：${s}。`,
       repoUrl: (s: string): string =>

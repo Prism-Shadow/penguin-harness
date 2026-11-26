@@ -1,5 +1,5 @@
 /**
- * An Agent's public API in the Web App: the Agent page's API tab (features/agents/api-tab.tsx),
+ * An Agent's public API in the Web App: the Agent page's API tab (the agents feature's api-tab.tsx),
  * the Agents list's mark (agents-page.tsx) and the admin's server-wide switch
  * (features/settings/agent-api-section.tsx). The views render to static markup and the
  * confirmations are driven through their handlers against the fetch fake (node env, no DOM).

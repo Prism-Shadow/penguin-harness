@@ -1,6 +1,6 @@
 /**
  * Which sub-page of the Agent settings Plugins tab an address opens
- * (features/agents/plugins-subpages.ts).
+ * (the agents feature's plugins-subpages.ts).
  *
  * - Given the `?tab=` value of a sub-page, the tab opens on that sub-page.
  * - Given no value, another tab's, a wrong-cased or an unknown one, it opens on its first.

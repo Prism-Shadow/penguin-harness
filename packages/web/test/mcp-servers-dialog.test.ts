@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The MCP Server add / edit dialog (features/agents/mcp-server-dialog.tsx, opened from the
+ * The MCP Server add / edit dialog (the agents feature's mcp-server-dialog.tsx, opened from the
  * Tools tab's MCP section) as one record form under the settings commit model.
  *
  * - Save waits for a name and an address; a broken address is named as soon as it is typed,
