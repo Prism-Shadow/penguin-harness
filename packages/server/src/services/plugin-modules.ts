@@ -39,7 +39,7 @@ export class PluginModulesServiceProvider {
 
   setup() {
     const channels = this.channels;
-    this.pluginModules = Object.assign(new PluginModulesService(), {
+    const pluginModules = Object.assign(new PluginModulesService(), {
       config: this.config,
       hmr: this.hmr,
       reassembly: this.reassembly,
@@ -57,6 +57,7 @@ export class PluginModulesServiceProvider {
       log: this.log,
       clock: this.clock,
     });
-    this.pluginModules.setup();
+    pluginModules.setup();
+    this.pluginModules = pluginModules;
   }
 }

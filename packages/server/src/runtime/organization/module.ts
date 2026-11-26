@@ -11,9 +11,9 @@ import type { ChannelHub } from "../channel.js";
 import { userChannelKey } from "../../http/routes/events.js";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { AgentIndex } from "@prismshadow/penguin-library-project";
 import type { ModuleActor, PluginModules } from "../../mechanisms/plugins.js";
 import type {
+  AgentIndex,
   Members,
   ProjectConfigStore,
   Projects,
