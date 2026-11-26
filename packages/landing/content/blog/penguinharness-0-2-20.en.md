@@ -39,6 +39,7 @@ The row is folded by default. Its **Hand-off note** section gives the reason, th
 
 - **Desktop**: Workbenches load again in the desktop app. 0.2.19's packed app lacked the `@types/node` declarations, and every workbench failed with `TS2688`.
 - **Remote machines**: Connecting a machine no longer fails at the Sync config step while the machine's server is still starting; the Machines jobs wait up to a minute for it, and a refusal names the server's reason.
+- **Plugins**: A failed plugin install names npm's own error, not a warning npm printed first such as `npm warn Unknown user config "always-auth"`.
 - **Agents**: The default system prompt gains six refinements on verifying deliverables, narrowing failures cheaply and running long commands and services (kernel version `2026-11-26`).
 - **Interface**: Tooltips wrap a long path inside the panel instead of running past its edge.
 
