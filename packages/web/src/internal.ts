@@ -10,6 +10,7 @@ export * from "./api/client";
 export * from "./api/endpoints";
 export * from "./api/tool-types";
 export * from "./api/sse";
+export { useMachines } from "./state/machines";
 export * from "./components/ui/avatar-picker";
 export * from "./components/ui/stat-hint";
 export * from "./lib/agent-avatar";
