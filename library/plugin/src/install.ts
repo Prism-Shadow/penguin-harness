@@ -747,7 +747,15 @@ function npmReason(stderr: string | undefined, err: Error): string {
   const lines = (stderr ?? "")
     .split("\n")
     .map((l) => l.replace(/^npm (error|ERR!)\s*/, "").trim())
-    .filter((l) => l !== "" && !/^A complete log/.test(l) && !/^code [A-Z0-9]+$/.test(l));
+    .filter(
+      (l) =>
+        l !== "" &&
+        !/^A complete log/.test(l) &&
+        !/^code [A-Z0-9]+$/.test(l) &&
+        // A config key npm does not know is noise it prints before its answer; the reason
+        // is one of its error lines, never a warning about the user's own npmrc.
+        !/^npm warn\b/.test(l),
+    );
   const reason = lines.find((l) => l.length > 8);
   return reason ?? err.message;
 }
