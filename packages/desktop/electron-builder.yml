@@ -64,11 +64,23 @@ files:
 # the packed app would carry `typescript.js` alone, and every workflow would fail for want of
 # `lib.es2022.full.d.ts`. Extra resources are not filtered that way; asar is off, so `app/…`
 # under the resources directory is the app's own tree and they land beside the entry again.
+# The same goes for the Node declarations workbench code is checked with (@types/node and the
+# undici-types it references, staged by the same script): without their `*.d.ts` the packed app
+# holds a package.json with nothing behind it, and every workbench fails to load with TS2688.
+# Their package.json files ride along in `files` (dist/node_modules/**/*).
 extraResources:
   - from: dist/node_modules/typescript/lib
     to: app/dist/node_modules/typescript/lib
     filter:
       - "lib.*.d.ts"
+  - from: dist/node_modules/@types/node
+    to: app/dist/node_modules/@types/node
+    filter:
+      - "**/*.d.ts"
+  - from: dist/node_modules/undici-types
+    to: app/dist/node_modules/undici-types
+    filter:
+      - "**/*.d.ts"
 # The app's own metadata, which the workspace package.json cannot carry: deb and AppImage
 # derive package and executable names from `name`, where "@prismshadow/…" is invalid, and
 # fpm refuses to build without a homepage. It does NOT decide the app data directory: the
