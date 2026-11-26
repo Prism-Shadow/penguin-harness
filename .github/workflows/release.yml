@@ -687,7 +687,13 @@ jobs:
           # harness.json from its first boot, pushed CLI included.
           node scripts/pack-carried-store.mjs packages/server/dist/hmr
           test -s packages/server/dist/hmr/harness.json
-          bash scripts/release-npm.sh test
+          # The suites run with an empty npm user config, as CI's test jobs run them. setup-node's
+          # registry-url points NPM_CONFIG_USERCONFIG at a file written for the publish steps,
+          # and the `always-auth` line in it makes current npm print a warning first on every
+          # run; a suite that checks npm's failure text then got the warning instead (v0.2.19).
+          # Only this command sees the empty file: the steps below keep setup-node's.
+          : > "$RUNNER_TEMP/suites.npmrc"
+          NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/suites.npmrc" bash scripts/release-npm.sh test
 
       # Copy LICENSE into the package dirs (the files allowlist includes it, so artifacts ship the license)
       # and the built web assets into the server package (web-dist/, in its files allowlist: an npm install
