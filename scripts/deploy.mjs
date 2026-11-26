@@ -332,6 +332,11 @@ const quoteForCmd = (a) => (/[\s"^&|<>;,()%!]/.test(a) ? `"${a.replace(/"/g, '\\
  *
  * `exec` carries the files whose exec bit must survive the trip: base64 has no mode, and a
  * spawn-helper without it makes every terminal fail to start on macOS.
+ *
+ * The Linux bindings are whatever this checkout's node-pty holds: the one its install compiled
+ * for this machine, if it is Linux, and in `prebuilds/linux-*` the portable ones when the
+ * checkout was staged with scripts/stage-linux-pty.mjs — as every image the release, the
+ * desktop build and CI pack is, so a Mac's install image opens terminals on a Linux machine.
  */
 async function readNativeAssets() {
   const ptyDir = path.dirname(

@@ -79,6 +79,36 @@ credential, by design.
 A name that is not ready to be public is marked `"private": true` instead. The release skips it,
 and `check-publishable.mjs` fails if a published package depends on it.
 
+## The runner image is a build input
+
+`ubuntu-latest` is a label, and it moves. node-pty publishes prebuilt bindings for darwin and
+win32 only, so on Linux its binding is compiled when it is installed, against the installing
+machine's glibc — and the release used to ship the copy its runner compiled. Through 0.2.18 that
+runner was Ubuntu 24.04 and the binding needed GLIBC_2.34. For 0.2.19 the label had become Ubuntu
+26.04, whose glibc 2.42 versions `cfsetispeed` and `cfsetospeed` anew, and the binding needed
+GLIBC_2.42: every terminal on a Linux machine with an older glibc failed with "version
+`GLIBC_2.42' not found" ([#1900](https://github.com/Prism-Shadow/penguin-harness/issues/1900)).
+0.2.19 and 0.2.20 shipped it, and nothing failed, because every runner that built or tested it had
+that glibc. The desktop's install image was the other half: packed on macOS, it carried no Linux
+binding at all.
+
+Since then:
+
+- `scripts/build-linux-pty.sh` builds both Linux bindings in a pinned
+  `quay.io/pypa/manylinux_2_28_<machine>` image (glibc 2.28, the floor nodejs.org's Node 24
+  needs), once per run, through `.github/workflows/linux-pty.yml`.
+- Every job that packs node-pty stages them first (`scripts/stage-linux-pty.mjs`): into
+  `prebuilds/linux-x64` and `prebuilds/linux-arm64`, and in place of the runner-built
+  `build/Release` binding — before the carried store, the install image or `lib/` is packed.
+- `scripts/check-native-glibc.mjs` reads what ships — the payload tarballs, the carried store, the
+  desktop's `dist/` and plugins — and fails the release, the desktop build and CI's npm packaging
+  when a Linux `*.node` needs glibc newer than 2.28, or when a carrier lacks either binding.
+
+So: check the property that matters on the artifact itself, never by its passing on a runner that
+happens to satisfy it. A new native dependency goes through the same check. Raising the floor is
+a decision with three places to move together: `GLIBC_FLOOR` in the check, the manylinux image in
+the build script, and `TERMINAL_GLIBC` in `packages/server/src/machines/diagnose.ts`.
+
 ## Order
 
 1. Branch `release/<version>` off `main`, in a worktree.
