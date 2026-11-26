@@ -83,10 +83,16 @@ function get(
 ): Promise<{ status: number; retryAfter: string | undefined }> {
   return new Promise((resolve, reject) => {
     http
-      .get({ host: "127.0.0.1", port, path, headers: { host: `localhost:${port}`, cookie } }, (res) => {
-        res.resume();
-        resolve({ status: res.statusCode ?? 0, retryAfter: res.headers["retry-after"] as string });
-      })
+      .get(
+        { host: "127.0.0.1", port, path, headers: { host: `localhost:${port}`, cookie } },
+        (res) => {
+          res.resume();
+          resolve({
+            status: res.statusCode ?? 0,
+            retryAfter: res.headers["retry-after"] as string,
+          });
+        },
+      )
       .on("error", reject);
   });
 }
