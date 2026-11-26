@@ -3,6 +3,7 @@
 - **Date:** 2026-11-27
 - **Type:** process
 - **Scope:** `skills`
+- **PR:** [#1901](https://github.com/Prism-Shadow/penguin-harness/pull/1901)
 
 [English](2026-11-27-refresh-agent-skills.md)
 
