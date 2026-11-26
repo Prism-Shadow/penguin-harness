@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** feature
 - **Scope:** `browser-automation`
+- **PR:** [#1912](https://github.com/Prism-Shadow/penguin-harness/pull/1912)
 
 [English](2026-11-26-machine-browser-hub-link.md)
 
