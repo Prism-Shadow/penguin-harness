@@ -234,3 +234,17 @@ pnpm-lock.yaml 未含。后果与已试路径：
   同 Node ESM 实例。路径推导：pnpm file: 拷贝把插件直接依赖平铺在同一 node_modules
   层，core 拷贝是插件包目录的同级（../penguin-core）。只改 library-host.ts 的 require
   目标与注释，import 补 node:path。待 land 读数。
+- 验证轮修复 11（修复 10 后 63→22 文件红，"No plugin library" 0 次；新主错＝测试 push 的
+  fixture 库与跨拷贝 instanceof）：28 处 POST 安装 404（unknown_plugin）——plugin-fixtures
+  等测试侧从 vite 图 core 调 usePushedPluginLibrary/useInstalledPluginPrefix，而路由持有的
+  DiskPluginLibrary 读快照 core 的状态 → fixture 不可见；另有 ModuleBootError 未被判为
+  UnsatisfiedPluginsError、404 应为 409（routes catch 的是 server 侧类，throw 的是快照侧
+  类）——状态与类身份双双跨拷贝失配，桥接状态盖不住，必须整体坍缩注册表。修＝
+  vitest.config.ts 把第二轮 alias 清单（19 个 library 包 → src 目录）恢复，并补上它缺的
+  两条：core 裸名 → packages/core/src（library src 的 core import 不再 externalize，
+  第二轮正是缺这条所以读数纹丝不动）与 penguin-hmr → packages/hmr/src（config 只指路，
+  hmr 文件零改动，红线未触碰）；core 两个非镜像子路径（/plugin-index → src/plugin/
+  index-document.ts、/model-connection → src/state/model-connection.ts）显式条目并排在
+  裸名之前（alias 按序首匹配，裸名的前缀语义会吞掉它们）。全部 19 包子路径落点已程序化
+  核验（唯一非镜像的就是 core 那两条）；theme-pack/ui 维持 inline 不 alias（它们的
+  /chat-markdown、/pack-rules 非镜像，inline 链已工作）。待 wt 单文件快测后 land 读数。
