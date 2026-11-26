@@ -2,8 +2,8 @@
 
 - **Date:** 2026-11-26
 - **Type:** fix
-- **PR:** [PR](https://github.com/Prism-Shadow/penguin-harness/pull/1905)
 - **Scope:** `web`, `browser`
+- **PR:** [#1905](https://github.com/Prism-Shadow/penguin-harness/pull/1905)
 
 [中文版](2026-11-26-browser-auto-first-tab.zh.md)
 
