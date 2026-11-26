@@ -226,9 +226,6 @@
       "@prismshadow/penguin-library-model/model-modalities": [
         "../../library/model/src/model-modalities.ts"
       ],
-      "@prismshadow/penguin-library-model/tool-model-test": [
-        "../../library/model/src/tool-model-test.ts"
-      ],
       "@prismshadow/penguin-library-model/tool-model-bindings": [
         "../../library/model/src/tool-model-bindings.ts"
       ],
@@ -400,6 +397,7 @@
       "@prismshadow/penguin-library-session/repos/sessions": [
         "../../library/session/src/repos/sessions.ts"
       ],
+      "@prismshadow/penguin-library-session/listing": ["../../library/session/src/listing.ts"],
       "@prismshadow/penguin-library-session/session": ["../../library/session/src/session.ts"],
       "@prismshadow/penguin-library-session/schedule-file": [
         "../../library/session/src/schedule-file.ts"

@@ -4,18 +4,19 @@
  * shapes so it never imports the server.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
+import type {
+  IfaceDecl,
+  Instance,
+  ManifestTable,
+  Park,
+  TypeTable,
+} from "@prismshadow/penguin-core/kernel";
 import type { HarnessInfo, IfacesSummary } from "@prismshadow/penguin-core";
 import type { TieredRates } from "@prismshadow/penguin-library-model";
 
 /** Where the harness root is. The server's `Paths` capability satisfies this structurally. */
 @Interface()
 export abstract class TracePaths {
-  abstract root: string;
-}
-
-/** Where the harness root is, for the harness history (the server's `Paths` satisfies it). */
-@Interface()
-export abstract class HarnessHistoryPaths {
   abstract root: string;
 }
 
@@ -43,8 +44,8 @@ export abstract class HarnessHistoryChannels {
  */
 @Interface()
 export abstract class HarnessHistoryRuntime {
-  /** Resolves when the swap that booted this platform is over — the runtime's commit included. */
-  abstract current(): Promise<unknown>;
+  /** Resolves when the swap that booted this platform is over — the runtime's commit included. The instance's api face is the server's PlatformApi, which stays server-side; the history only waits for the swap, it never reads the tree. */
+  abstract current(): Promise<Instance<Park>>;
   /** The runtime's own upgrade endpoint, minus the network: no bind address, scheme gate or token. */
   abstract endpoint(request: Request): Promise<Response>;
 }
@@ -61,9 +62,9 @@ export abstract class HarnessHistoryBuilds {
 /** An interface table as this platform was built from it: a hash plus its members, carried as written. */
 export type HarnessTable = {
   hash: string;
-  ifaces: unknown;
-  types: unknown;
-  modules: unknown;
+  ifaces: Record<string, IfaceDecl>;
+  types: TypeTable;
+  modules: ManifestTable;
 };
 
 /** This platform's own interface table, as compiled into it. */

@@ -20,6 +20,7 @@ import {
 import type {
   HarnessHistoryBuilds,
   HarnessHistoryRuntime,
+  HarnessTable,
 } from "@prismshadow/penguin-library-trace/ports";
 
 export {
@@ -32,24 +33,27 @@ export {
 export type { HarnessInfo } from "@prismshadow/penguin-core";
 
 /** The harness-history assembly: binds the store's ports to the server's capabilities. */
-@Module()
+@Module({ name: "HarnessHistoryStore" })
 export class HarnessHistoryServiceProvider {
   @Use() private readonly paths!: Paths;
   @Use() private readonly clock!: Clock;
   @Use() private readonly log!: Log;
   @Use() private readonly hmrControl!: HmrControl;
   @Use() private readonly channels!: Channels;
-  @Provide() store!: HarnessHistoryStore;
-  @Provide() history!: HarnessHistoryIface;
+  @Provide() HarnessHistoryStore!: HarnessHistoryStore;
+  @Provide() HarnessHistoryIface!: HarnessHistoryIface;
 
   setup(ctx: ClassCtx): void {
     // The store's ports are decorator-injected fields; the server binds them by hand here.
-    const own = table as { hash: string; ifaces: object; types: object; modules: object };
-    this.store = Object.assign(new HarnessHistoryStore(), {
+    const own = table as unknown as HarnessTable;
+    this.HarnessHistoryStore = Object.assign(new HarnessHistoryStore(), {
       paths: this.paths,
       clock: this.clock,
       log: this.log,
-      hmrControl: this.hmrControl as unknown as HarnessHistoryRuntime,
+      hmrControl: {
+        current: () => this.hmrControl.current(),
+        endpoint: (request: Request) => this.hmrControl.endpoint(request),
+      } satisfies HarnessHistoryRuntime,
       channels: this.channels,
       builds: {
         info: (root: string) => readHarnessInfo(root),
@@ -62,9 +66,9 @@ export class HarnessHistoryServiceProvider {
         }),
       },
     });
-    this.history = this.store;
+    this.HarnessHistoryIface = this.HarnessHistoryStore;
     // The store's boot record: setup defers it to the commit landing (the swap that is
     // booting this platform), and its disposed effect rides the provider's own effects.
-    this.store.setup(ctx);
+    this.HarnessHistoryStore.setup(ctx);
   }
 }

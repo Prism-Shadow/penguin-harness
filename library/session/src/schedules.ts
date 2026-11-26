@@ -19,6 +19,7 @@
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
+import type { AgentConfigView } from "@prismshadow/penguin-library-agent/types";
 import { HttpError } from "@prismshadow/penguin-library-http";
 import {
   badRequest,
@@ -124,44 +125,20 @@ export interface ScheduleUpsertRequest {
 // Structural ports (the server binds them to its own mechanisms)
 // ---------------------------------------------------------------------------
 
-/** What the routes need of the agent-config surface — the agent domain's `AgentConfig` contract, whole. */
-import type { AgentConfig } from "@prismshadow/penguin-library-agent/contract";
-
-/**
- * The Project row an access check hands back (server `ProjectRow`, the project repos' row): a
- * structural mirror — this package must not import the project library, which itself reads the
- * session one.
- */
-export interface SchedulesProjectRow {
-  projectId: string;
-  ownerUserId: string;
-  createdAt: string;
+/** What the routes need of the agent-config surface (the server's `AgentConfig` satisfies this). */
+export interface SchedulesAgentConfig {
+  requireExists(projectId: string, agentId: string): Promise<void>;
+  insertTemplatePlaceholder(
+    projectId: string,
+    agentId: string,
+    feature: "vault" | "skills" | "schedules",
+  ): Promise<AgentConfigView>;
 }
 
-/** The row with the caller's standing in it (server `ProjectRow & { role: ProjectRole }`). */
-export interface SchedulesAccessibleProjectRow extends SchedulesProjectRow {
-  role: "owner" | "member";
-}
-
-/** A Project as the lists carry it (server `ProjectSummary`). */
-export interface SchedulesProjectSummary {
-  projectId: string;
-  /** Display name (the `name` in project_config.toml); frontend falls back to projectId when unset. */
-  name?: string;
-  /** Current user's role in this Project. */
-  role: "owner" | "member";
-  ownerUserId: string;
-  createdAt: string;
-}
-
-/** Who may read and who may write — the server's `Access` contract, whole (the server's `Access` satisfies this). */
+/** Who may read and who may write (the server's `Access` satisfies this). */
 export interface SchedulesAccess {
-  find(userId: string, projectId: string): SchedulesAccessibleProjectRow | null;
-  requireProjectAccess(userId: string, projectId: string): SchedulesAccessibleProjectRow;
-  canAccess(userId: string, projectId: string): boolean;
-  requireProjectOwner(userId: string, projectId: string): SchedulesProjectRow;
-  accessibleProjectIds(userId: string): string[];
-  listProjects(userId: string): Promise<SchedulesProjectSummary[]>;
+  requireProjectAccess(userId: string, projectId: string): void;
+  requireProjectOwner(userId: string, projectId: string): void;
 }
 
 /** The data root, as the schedule file paths want it (the server's `Config`/`ServerConfig` satisfies this). */
@@ -171,7 +148,7 @@ export interface SchedulesRoot {
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface SchedulesRouteDeps {
-  agentConfigService: AgentConfig;
+  agentConfigService: SchedulesAgentConfig;
   config: SchedulesRoot;
   projectConfigService: ScheduleConfigSource;
   access: SchedulesAccess;

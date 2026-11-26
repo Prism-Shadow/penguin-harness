@@ -206,12 +206,21 @@ function compactUnavailable(why: Exclude<CompactAvailability, "ok">): HttpError 
  * dressed up as a target problem.
  */
 function switchRefusal(err: unknown, ref: ModelRefDto): HttpError {
-  if (!(err instanceof ModelSwitchRefusedError)) throw err;
+  // `instanceof` matches this bundle's own class; the tagged name matches a Session object
+  // built by another core instance (a hot-pushed platform's injected copy, e.g. reached
+  // through the session package's published entry): the class is per-bundle, the name is one.
+  const refusal =
+    err instanceof ModelSwitchRefusedError
+      ? err
+      : err instanceof Error && err.name === "ModelSwitchRefusedError"
+        ? (err as ModelSwitchRefusedError)
+        : null;
+  if (!refusal) throw err;
   const message =
-    err.reason === "model_unavailable" && isMissingCredential(err)
+    refusal.reason === "model_unavailable" && isMissingCredential(refusal)
       ? `Model ${ref.modelId} has no API key yet. Configure it on the Models page first.`
-      : err.message;
-  return new HttpError(409, err.reason, message);
+      : refusal.message;
+  return new HttpError(409, refusal.reason, message);
 }
 
 /** Finish the accepted switch's stream and retain its outcome before the driver announces idle. */
@@ -4538,6 +4547,7 @@ export class SessionsModule {
     });
     const sessionService = new SessionService({
       root: config.root,
+      createAgent,
       sessions: sessionsRepo,
       manager,
       projectConfig,

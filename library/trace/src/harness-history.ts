@@ -30,7 +30,7 @@ import type {
   HarnessHistoryChannels,
   HarnessHistoryClock,
   HarnessHistoryLog,
-  HarnessHistoryPaths,
+  TracePaths,
   HarnessHistoryRuntime,
   HarnessHistoryTable,
 } from "./ports.js";
@@ -38,7 +38,7 @@ import type {
 /** How many versions the history remembers; the newest are kept. */
 export const HISTORY_KEEP = 100;
 
-@Interface()
+@Interface("@prismshadow/penguin-server#HarnessHistoryIface")
 export abstract class HarnessHistoryIface {
   /** The recorded versions, newest first, with the runtime's current commit and the last rollback that failed. */
   abstract list(): Promise<HarnessHistory>;
@@ -114,9 +114,12 @@ function sameVersion(a: HarnessHistoryEntry, b: HarnessHistoryEntry): boolean {
 /** The file a kept version's upgrade body is stored as: exactly what pushing it back sends. */
 const BUILD_FILE = "build.gz";
 
-@Component()
+@Component({
+  name: "HarnessHistoryStoreImpl",
+  key: "@prismshadow/penguin-server#HarnessHistoryStore",
+})
 export class HarnessHistoryStore implements HarnessHistoryIface {
-  @Use() private readonly paths!: HarnessHistoryPaths;
+  @Use() private readonly paths!: TracePaths;
   @Use() private readonly clock!: HarnessHistoryClock;
   @Use() private readonly log!: HarnessHistoryLog;
   @Use() private readonly hmrControl!: HarnessHistoryRuntime;

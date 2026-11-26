@@ -8,6 +8,8 @@ import type {
   PluginModuleStatus,
 } from "../api/types.js";
 import type { InstalledPackage } from "../plugin/install.js";
+import type { ModuleActor } from "@prismshadow/penguin-library-agent/types";
+export type { ModuleActor } from "@prismshadow/penguin-library-agent/types";
 import type { IndexChannel } from "../plugin/registry.js";
 
 /**
@@ -35,12 +37,6 @@ export abstract class PluginPackages {
     opts?: { onProgress?: (received: number, total: number | null) => void },
   ): Promise<InstalledPackage>;
   abstract remove(root: string, name: string): Promise<void>;
-}
-
-/** Who acts on a plugin's server module: a signed-in user, and whether that user is the administrator. */
-export interface ModuleActor {
-  userId: string;
-  isAdmin: boolean;
 }
 
 /**

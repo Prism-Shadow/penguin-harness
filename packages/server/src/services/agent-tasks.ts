@@ -37,7 +37,7 @@ export abstract class AgentTasks {
 }
 
 /** The person's-tasks assembly: binds the service's session-runtime ports. */
-@Module()
+@Module({ name: "HostAgentTasks" })
 export class HostAgentTasksProvider {
   @Use() private readonly access!: Access;
   @Use() private readonly agentConfig!: AgentConfig;
@@ -47,27 +47,26 @@ export class HostAgentTasksProvider {
   @Use() private readonly traces!: Traces;
   @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly manager!: Sessions;
-  @Provide() agentTasks!: AgentTasks;
-  @Provide() service!: HostAgentTasks;
+  @Provide() AgentTasks!: AgentTasks;
+  @Provide() HostAgentTasks!: HostAgentTasks;
 
   setup() {
     // The service's ports are decorator-injected fields; the server binds them by hand here.
     const sessionService = this.sessionService;
     const manager = this.manager;
-    this.service = Object.assign(new HostAgentTasks(), {
+    this.HostAgentTasks = Object.assign(new HostAgentTasks(), {
       access: this.access,
       agentConfig: this.agentConfig,
       sessionService: {
-        createSession: (
-          args: Parameters<SessionServiceIface["createSession"]>[0],
-        ): Promise<{ sessionId: string }> => sessionService.createSession(args),
+        createSession: (args: Parameters<SessionServiceIface["createSession"]>[0]) =>
+          sessionService.createSession(args),
       },
       manager: {
         startTask: (
           sessionId: string,
           input: Parameters<Sessions["startTask"]>[1],
-          opts?: { driver?: string },
-        ): Promise<{ sessionId: string }> => manager.startTask(sessionId, input, opts),
+          opts?: Parameters<Sessions["startTask"]>[2],
+        ) => manager.startTask(sessionId, input, opts),
         statusOf: (sessionId: string) => manager.statusOf(sessionId),
         pendingApprovalCount: (sessionId: string) => manager.pendingApprovalCount(sessionId),
       },
@@ -80,6 +79,6 @@ export class HostAgentTasksProvider {
           workbenchResult(status, messages),
       },
     });
-    this.agentTasks = this.service;
+    this.AgentTasks = this.HostAgentTasks;
   }
 }

@@ -519,10 +519,8 @@ export interface ProxyProbeResponse {
 }
 
 /**
- * One draft-screen shortcut: a prompt the user wrote, filed under a name they chose. Clicking it
- * fills the composer exactly like a built-in example does, and sends nothing. Deliberately holds
- * no Skill list — a saved prompt is not authored against a known Skill catalog the way a shipped
- * example is, and the Agent it will run under is picked after the click.
+ * One draft-screen shortcut: the canonical declaration is the workspace library's drafts
+ * (a prompt the user wrote, filed under a name they chose).
  */
 export type { DraftShortcut } from "@prismshadow/penguin-library-workspace/drafts";
 import type { DraftShortcut } from "@prismshadow/penguin-library-workspace/drafts";
@@ -1103,7 +1101,12 @@ export type {
   HostCommandMessage,
 } from "@prismshadow/penguin-library-setting/types";
 export { HOST_COMMANDS, LEGACY_HOST_COMMANDS } from "@prismshadow/penguin-library-setting/types";
-import type { AgentDeletionInfo, PluginUpdateRef } from "@prismshadow/penguin-library-agent/types";
+import type {
+  AgentDeletionInfo,
+  PluginUpdateRef,
+  Employment,
+  OrgStatus,
+} from "@prismshadow/penguin-library-agent/types";
 export type {
   AgentArchiveQuery,
   AgentCompactionConfigDto,
@@ -1214,14 +1217,7 @@ export interface AgentSummary {
 }
 
 /** One organization employing an Agent, as the Agent list carries it (see {@link AgentSummary.employments}). */
-export interface Employment {
-  orgId: string;
-  /** The organization's display name (`org_config.toml`), the id when the config does not parse. */
-  orgName: string;
-  /** The Agent's title in that organization's chart; "CEO" for the CEO of a chart that does not parse. */
-  title: string;
-  status: OrgStatus;
-}
+export type { Employment } from "@prismshadow/penguin-library-agent/types";
 
 export interface AgentsResponse {
   agents: AgentSummary[];
@@ -1552,11 +1548,6 @@ export interface SessionsResponse {
 }
 
 /**
- * The archive page's source filter: `user` is a conversation the user archived by hand (source
- * `user`, or a row whose Trace has not been read yet); the other three are what a program
- * opened. `subagent` and `company` Sessions are never archived, so never listed.
- */
-/**
  * The archive page's query and response shapes live with the archive-page service
  * (@prismshadow/penguin-library-session/archived-sessions-service, services+http+cli restack
  * S14); re-exported here so the API contract keeps spelling them.
@@ -1564,6 +1555,7 @@ export interface SessionsResponse {
 export type {
   ArchivedSessionSource,
   ArchivedSessionsQuery,
+  ArchivedSessionsRowsQuery,
   ArchivedSessionGroupServers,
   ArchivedSessionGroup,
   ArchivedSessionGroupsResponse,
@@ -2577,18 +2569,9 @@ export interface PluginModuleStatus {
   request?: PluginModuleRequestView;
 }
 
-/** What one install, or one explicit ask, did about a plugin's server module. */
-export interface PluginModuleAction {
-  plugin: string;
-  /**
-   * `enabled`: listed for this Project on this server, and running (or waiting for a restart);
-   * `requested`: an administrator is asked; `blocked`: the administrator stopped this module;
-   * `failed`: listed, and the module did not start (`reason`) — when the App would not boot with
-   * it, the listing was undone.
-   */
-  action: "enabled" | "requested" | "blocked" | "failed";
-  reason?: string;
-}
+/** What one install, or one explicit ask, did about a plugin's server module (the agent library's `AgentPluginModuleAction`). */
+export type { AgentPluginModuleAction as PluginModuleAction } from "@prismshadow/penguin-library-agent/ports";
+import type { AgentPluginModuleAction as PluginModuleAction } from "@prismshadow/penguin-library-agent/ports";
 
 /** POST /api/projects/:p/plugins/modules `{ plugin }` (any member): enable a plugin's server module, or ask the administrator to. */
 export interface PluginModuleAskRequest {
@@ -3841,12 +3824,8 @@ export interface MachinesStopUsingRequest {
 // Company mode: organizations (files are the truth; every DTO here is a projection)
 // ---------------------------------------------------------------------------
 
-/**
- * Organization status: `paused` stops every automatic trigger; humans can still talk to any
- * desk. These two values are the whole lifecycle — no route deletes an organization, so a
- * paused one keeps its conversations, employees, desks and tickets.
- */
-export type OrgStatus = "active" | "paused";
+/** Organization status (see the agent library's `Employment.status` for the lifecycle). */
+export type { OrgStatus } from "@prismshadow/penguin-library-agent/types";
 /** Approval mode for desk and ticket sessions; unattended runs never get always-ask. */
 export type OrgApprovalMode = "allow-all" | "read-only" | "deny-all";
 /** The five kanban columns, each a directory under `tickets/<yyyy-mm>/`. */

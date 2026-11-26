@@ -14,20 +14,20 @@ import { userChannelKey } from "../http/user-channel.js";
 export * from "@prismshadow/penguin-library-project/events";
 
 /** The events assembly: binds the notifier's channels port (the user-channel key mapping is the server's own). */
-@Module()
+@Module({ name: "ProjectNotifier" })
 export class ProjectNotifierProvider {
   @Use() private readonly projects!: Projects;
   @Use() private readonly members!: Members;
   @Use() private readonly channels!: Channels;
-  @Provide() events!: ProjectEvents;
-  @Provide() notifier!: ProjectNotifier;
+  @Provide() ProjectEvents!: ProjectEvents;
+  @Provide() ProjectNotifier!: ProjectNotifier;
 
   setup() {
-    this.notifier = Object.assign(new ProjectNotifier(), {
+    this.ProjectNotifier = Object.assign(new ProjectNotifier(), {
       projects: this.projects,
       members: this.members,
       channels: { peekUser: (userId: string) => this.channels.peek(userChannelKey(userId)) },
     });
-    this.events = this.notifier;
+    this.ProjectEvents = this.ProjectNotifier;
   }
 }

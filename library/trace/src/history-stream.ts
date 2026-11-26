@@ -49,14 +49,9 @@ export interface SseRevocation {
   userId: string;
   /**
    * Holds the stream for as long as it is open (the server's `LiveStreams`): `add` returns the
-   * call that removes the entry again, `endForUser` ends every stream a user holds, `countFor`
-   * answers how many.
+   * call that removes the entry again.
    */
-  streams: {
-    add(userId: string, end: () => void): () => void;
-    endForUser(userId: string): number;
-    countFor(userId: string): number;
-  };
+  streams: { add(userId: string, end: () => void): () => void };
   /** Whether the session behind this connection still exists and has not expired. Never renews it. */
   sessionIsLive(): boolean;
 }

@@ -27,12 +27,12 @@ import type { ErrorLog } from "@prismshadow/penguin-library-observability";
 import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
 import type { TraceIndex } from "@prismshadow/penguin-library-trace";
 import type { AgentConfig, AgentLifecycle } from "./contract.js";
-import type { AgentDeletionInfo, AgentEmployment } from "./types.js";
+import type { AgentDeletionInfo, Employment } from "./types.js";
 import { refuseBuiltinDeletion } from "./agent-service.js";
 
 /** The organization runtime's employment lookup, as a deletion's guard asks it. */
 export interface AgentEmployers {
-  employersOf(projectId: string, agentId: string): Promise<AgentEmployment[]>;
+  employersOf(projectId: string, agentId: string): Promise<Employment[]>;
 }
 
 /** What an aborted run's wind-down needs: the deleting flag and its drain. */
@@ -66,7 +66,7 @@ export interface AgentDeletionDeps {
 const RUNS_SETTLE_MS = 5000;
 
 /** The refusal of a delete while organizations employ the Agent: each one by name, id and title. */
-export function employedError(agentId: string, employers: readonly AgentEmployment[]): HttpError {
+export function employedError(agentId: string, employers: readonly Employment[]): HttpError {
   const where = employers
     .map((e) => `organization "${e.orgName}" (${e.orgId}) as ${e.title}`)
     .join("; ");

@@ -14,20 +14,20 @@ import { ProjectConfigService } from "@prismshadow/penguin-library-project/proje
 export * from "@prismshadow/penguin-library-project/project-config-service";
 
 /** The config assembly: the store's decorator-injected fields are bound by hand here (the kernel does not inject @Use on a hand-built instance). */
-@Module()
+@Module({ name: "ProjectConfigService" })
 export class ProjectConfigServiceProvider {
   @Use() private readonly paths!: Paths;
   @Use() private readonly promotions?: ModelPromotions;
   @Use() private readonly providerAuthTokens?: ModelProviderAuthTokens;
-  @Provide() config!: ProjectConfigStore;
-  @Provide() service!: ProjectConfigService;
+  @Provide() ProjectConfigStore!: ProjectConfigStore;
+  @Provide() ProjectConfigService!: ProjectConfigService;
 
   setup() {
-    this.service = Object.assign(new ProjectConfigService(), {
+    this.ProjectConfigService = Object.assign(new ProjectConfigService(), {
       paths: this.paths,
       promotions: this.promotions,
       providerAuthTokens: this.providerAuthTokens,
     });
-    this.config = this.service;
+    this.ProjectConfigStore = this.ProjectConfigService;
   }
 }

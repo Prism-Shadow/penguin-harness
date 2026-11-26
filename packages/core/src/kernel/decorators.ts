@@ -26,6 +26,13 @@ export type ModuleClass = abstract new (...args: any[]) => object;
  * the name, the contributions (pure data), the parked context and the child classes.
  */
 export interface ModuleMeta {
+  /**
+   * An explicit node name, for a module whose assembly node keeps a name its class no longer
+   * carries (a moved implementation wrapped in a provider): the name the node boots and is
+   * replaced under. Absent = the class's own name, which is the default and keeps the name
+   * and the class from drifting.
+   */
+  readonly name?: string;
   readonly contributes?: Readonly<
     Record<string, ReadonlyArray<{ readonly id: string } & JsonObject>>
   >;
@@ -35,8 +42,13 @@ export interface ModuleMeta {
   readonly exports?: ReadonlyArray<IfaceClass>;
 }
 
-/** What a @Component declares: a module's meta minus children — a component exports itself. */
-export type ComponentMeta = Omit<ModuleMeta, "children">;
+/**
+ * What a @Component declares: a module's meta minus children — a component exports itself.
+ * `name` (an explicit node name) and `key` (an explicit manifest key, `pkg#Name`, for a
+ * component whose declaration moved packages) are read by the generator; at boot only the
+ * name takes effect.
+ */
+export type ComponentMeta = Omit<ModuleMeta, "children"> & { readonly key?: string };
 export type Meta = ModuleMeta & { readonly name: string; readonly kind: "module" | "component" };
 
 export interface ClassFields {
@@ -94,7 +106,7 @@ function nodeName(context: ClassDecoratorContext): string {
  */
 export function Module(meta: ModuleMeta = {}) {
   return (target: ModuleClass, context: ClassDecoratorContext): void => {
-    setMeta(target, { ...meta, name: nodeName(context), kind: "module" });
+    setMeta(target, { ...meta, name: meta.name ?? nodeName(context), kind: "module" });
   };
 }
 
@@ -108,7 +120,7 @@ export function Module(meta: ModuleMeta = {}) {
  */
 export function Component(meta: ComponentMeta = {}) {
   return (target: ModuleClass, context: ClassDecoratorContext): void => {
-    setMeta(target, { ...meta, name: nodeName(context), kind: "component" });
+    setMeta(target, { ...meta, name: meta.name ?? nodeName(context), kind: "component" });
   };
 }
 

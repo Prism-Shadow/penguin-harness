@@ -5,7 +5,11 @@
       "@prismshadow/penguin-library-auth": ["../auth/src/index.ts"],
       "@prismshadow/penguin-library-auth/repos/users": ["../auth/src/repos/users.ts"],
       "@prismshadow/penguin-library-http": ["../http/src/index.ts"],
-      "@prismshadow/penguin-library-http/validate": ["../http/src/validate.ts"]
+      "@prismshadow/penguin-library-http/validate": ["../http/src/validate.ts"],
+      "@prismshadow/penguin-library-session": ["../session/src/index.ts"],
+      "@prismshadow/penguin-library-session/repos/sessions": ["../session/src/repos/sessions.ts"],
+      "@prismshadow/penguin-library-session/listing": ["../session/src/listing.ts"],
+      "@prismshadow/penguin-library-trace": ["../trace/src/trace.ts"]
     }
   },
   "include": ["src"]

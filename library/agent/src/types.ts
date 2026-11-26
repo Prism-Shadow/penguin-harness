@@ -504,12 +504,19 @@ export interface AgentDeletionInfo {
   error?: string;
 }
 
+/**
+ * Organization status: `paused` stops every automatic trigger; humans can still talk to any
+ * desk. These two values are the whole lifecycle — no route deletes an organization, so a
+ * paused one keeps its conversations, employees, desks and tickets.
+ */
+export type OrgStatus = "active" | "paused";
+
 /** One organization employing an Agent, as the Agent list and a deletion's guard carry it. */
-export interface AgentEmployment {
+export interface Employment {
   orgId: string;
   /** The organization's display name (`org_config.toml`), the id when the config does not parse. */
   orgName: string;
   /** The Agent's title in that organization's chart; "CEO" for the CEO of a chart that does not parse. */
   title: string;
-  status: "active" | "paused";
+  status: OrgStatus;
 }

@@ -32,7 +32,6 @@ import { FRAME_TEXT_BUDGET } from "@prismshadow/penguin-library-http/socket-line
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import { readableSession } from "@prismshadow/penguin-library-session/access";
-import type { AgentConfig } from "@prismshadow/penguin-library-agent/contract";
 import type {
   HistoryProgress,
   HistoryRecords,
@@ -62,41 +61,15 @@ import {
 } from "./history-lines.js";
 import type { HistoryLinesDeps } from "./history-lines.js";
 
-/**
- * The Project row an access check hands back (server `ProjectRow`, the project repos' row): a
- * structural mirror — this package must not import the project library, which itself reads the
- * trace one.
- */
-export interface TraceProjectRow {
-  projectId: string;
-  ownerUserId: string;
-  createdAt: string;
-}
-
-/** The row with the caller's standing in it (server `ProjectRow & { role: ProjectRole }`). */
-export interface TraceAccessibleProjectRow extends TraceProjectRow {
-  role: "owner" | "member";
-}
-
-/** A Project as the lists carry it (server `ProjectSummary`). */
-export interface TraceProjectSummary {
-  projectId: string;
-  /** Display name (the `name` in project_config.toml); frontend falls back to projectId when unset. */
-  name?: string;
-  /** Current user's role in this Project. */
-  role: "owner" | "member";
-  ownerUserId: string;
-  createdAt: string;
-}
-
-/** The access check the route groups reach — the server's `Access` contract, whole (server `Access`). */
+/** The access check the route groups reach: one call each, answers not read (server `Access`). */
 export interface TraceAccess {
-  find(userId: string, projectId: string): TraceAccessibleProjectRow | null;
-  requireProjectAccess(userId: string, projectId: string): TraceAccessibleProjectRow;
-  canAccess(userId: string, projectId: string): boolean;
-  requireProjectOwner(userId: string, projectId: string): TraceProjectRow;
-  accessibleProjectIds(userId: string): string[];
-  listProjects(userId: string): Promise<TraceProjectSummary[]>;
+  requireProjectAccess(userId: string, projectId: string): unknown;
+  requireProjectOwner(userId: string, projectId: string): unknown;
+}
+
+/** The agent-config surface the import route checks (server `AgentConfig`). */
+export interface TraceAgentConfig {
+  requireExists(projectId: string, agentId: string): Promise<void>;
 }
 
 /**
@@ -131,9 +104,12 @@ const MAX_TRACE_BYTES = 14 * 1024 * 1024;
 const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "archived"];
 
 export interface AgentTracesRouteDeps {
-  agentConfigService: AgentConfig;
+  agentConfigService: TraceAgentConfig;
   access: TraceAccess;
-  traceService: Traces;
+  traceService: Pick<
+    Traces,
+    "agentTraces" | "readEvents" | "analyze" | "readFileRaw" | "importTraceFile"
+  >;
 }
 
 export function agentTracesRoutes(deps: AgentTracesRouteDeps): Hono<AppEnv> {

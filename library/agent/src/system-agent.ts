@@ -21,7 +21,7 @@ import { HttpError } from "@prismshadow/penguin-library-http";
 import type { AgentConfig } from "./contract.js";
 
 /** What every refusal asks: the AgentConfig mechanism's predicate. */
-type SystemAgentLookup = Pick<AgentConfig, "isSystemAgent">;
+export type SystemAgentLookup = Pick<AgentConfig, "isSystemAgent">;
 
 export { refuseSystemAgentSessions } from "@prismshadow/penguin-library-session/system-agent";
 

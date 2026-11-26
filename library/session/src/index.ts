@@ -54,3 +54,13 @@ export type {
   SessionBackgroundTasks,
   SwitchModelOpts,
 } from "./session.js";
+export type { SessionServiceEvent, ProjectSummary, ProjectRole } from "./ports.js";
+export type {
+  SessionCreatedEvent,
+  SessionArchivedEvent,
+  SessionDeletedEvent,
+  SessionTitleEvent,
+  SessionStateEvent,
+  SessionBackgroundEvent,
+  SessionApprovalsEvent,
+} from "./ports.js";

@@ -29,7 +29,7 @@ import type { SessionCategory, TraceIndexStore } from "@prismshadow/penguin-libr
 import type { SessionSource } from "@prismshadow/amsp";
 import { HttpError, badRequest } from "@prismshadow/penguin-library-http/errors";
 import type { SessionIndex, SessionInfo, SessionStatus } from "./session.js";
-import type { ArchiveProject, SessionServiceEvent } from "./ports.js";
+import type { ProjectSummary, SessionServiceEvent } from "./ports.js";
 import type { SessionRow } from "./repos/sessions.js";
 import type { ListingView } from "./listing.js";
 import { compareActivityDesc } from "./session-service.js";
@@ -54,6 +54,19 @@ export interface ArchivedSessionsQuery {
   source?: ArchivedSessionSource;
   /** One Project the user can open (404 `project_not_found` otherwise); absent = every Project they own or are a member of. */
   projectId?: string;
+}
+
+/** Query of GET /api/me/archived-sessions: one group's page, newest activity first. */
+export interface ArchivedSessionsRowsQuery extends ArchivedSessionsQuery {
+  projectId: string;
+  /** The group's `workspace` (a path, or `temp`). */
+  workspace: string;
+  /** 1–100. */
+  limit: number;
+  /** `<lastActiveAt>,<sessionId>` of the last row held, as the Session list's cursor. */
+  before?: string;
+  /** The group's machine (`ArchivedSessionGroup.machineId`): the page is read from it. */
+  machineId?: string;
 }
 
 /**
@@ -137,7 +150,7 @@ export interface ArchivedSessionsBatchResponse {
 /** What the archive page reaches. */
 export interface ArchivedSessionsDeps {
   /** The Projects the user owns or is a member of, with their display names. */
-  listProjects(userId: string): Promise<ArchiveProject[]>;
+  listProjects(userId: string): Promise<ProjectSummary[]>;
   /** Whether the user may open the Project (owner or member). */
   canAccess(userId: string, projectId: string): boolean;
   sessions: Pick<SessionIndex, "listByProject" | "findById" | "setListing">;
@@ -591,7 +604,7 @@ export class ArchivedSessionsService {
   private async projectsFor(
     userId: string,
     projectId: string | undefined,
-  ): Promise<ArchiveProject[]> {
+  ): Promise<ProjectSummary[]> {
     const projects = await this.deps.listProjects(userId);
     if (projectId === undefined) return projects;
     const project = projects.find((p) => p.projectId === projectId);

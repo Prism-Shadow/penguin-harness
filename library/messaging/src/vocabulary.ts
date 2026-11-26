@@ -6,7 +6,6 @@
 // (/api/messaging/accounts, /api/projects/:projectId/messaging/account-holders)
 // ---------------------------------------------------------------------------
 
-/** Messaging channels a Session can bind to. */
 /**
  * The chat channels a Session can be bound to. The definition lives with the session contract
  * (@prismshadow/penguin-library-session, services+http+cli restack S14 — SessionInfo names it);

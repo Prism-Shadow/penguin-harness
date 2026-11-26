@@ -40,7 +40,8 @@ export {
   draftOwnerOf,
   parseDraftsPatch,
 } from "./user-drafts.js";
-export type { DraftOwner, DraftWrite } from "./user-drafts.js";
+export type { DraftOwner } from "./user-drafts.js";
+export type { DraftWrite } from "@prismshadow/penguin-library-auth";
 export {
   DRAFT_SHORTCUT_MAX_COUNT,
   DRAFT_SHORTCUT_TITLE_MAX,

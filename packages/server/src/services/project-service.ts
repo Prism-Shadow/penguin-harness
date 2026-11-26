@@ -6,6 +6,7 @@
  * and ports by hand and re-exports the moved shapes for the server's own import paths.
  */
 import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import { provisionProjectAgents, provisionProjectBenchmarks } from "@prismshadow/penguin-core";
 import type { Paths } from "../hmr/capabilities.js";
 import type { PluginModules } from "../mechanisms/plugins.js";
 import type { AppSeeds } from "./app-seeds.js";
@@ -32,7 +33,7 @@ import {
 export * from "@prismshadow/penguin-library-project/project-service";
 
 /** The projects assembly: the service's ports and decorator-injected fields are bound by hand here (the kernel does not inject @Use on a hand-built instance). */
-@Module()
+@Module({ name: "ProjectService" })
 export class ProjectServiceProvider {
   @Use() private readonly paths!: Paths;
   @Use() private readonly access!: Access;
@@ -60,11 +61,11 @@ export class ProjectServiceProvider {
   @Use() private readonly pluginModules!: PluginModules;
   /** The seeds built-in plugins ship for their system apps' data, written once at creation. */
   @Use() private readonly appSeeds!: AppSeeds;
-  @Provide() lifecycle!: ProjectLifecycle;
-  @Provide() service!: ProjectService;
+  @Provide() ProjectLifecycle!: ProjectLifecycle;
+  @Provide() ProjectService!: ProjectService;
 
   setup() {
-    this.service = Object.assign(new ProjectService(), {
+    this.ProjectService = Object.assign(new ProjectService(), {
       paths: this.paths,
       access: this.access,
       users: this.users,
@@ -84,7 +85,9 @@ export class ProjectServiceProvider {
       benchmarkSeeds: this.benchmarkSeeds,
       pluginModules: this.pluginModules,
       appSeeds: this.appSeeds,
+      provisionAgents: provisionProjectAgents,
+      provisionBenchmarks: provisionProjectBenchmarks,
     });
-    this.lifecycle = this.service;
+    this.ProjectLifecycle = this.ProjectService;
   }
 }

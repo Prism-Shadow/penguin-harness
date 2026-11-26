@@ -16,7 +16,12 @@
       "@prismshadow/penguin-library-project": ["../project/src/index.ts"],
       "@prismshadow/penguin-library-observability": ["../observability/src/index.ts"],
       "@prismshadow/penguin-library-agent-api": ["../agent-api/src/index.ts"],
-      "@prismshadow/penguin-library-trace": ["../trace/src/index.ts"]
+      "@prismshadow/penguin-library-workbench": ["../workbench/src/index.ts"],
+      "@prismshadow/penguin-library-trace": ["../trace/src/index.ts"],
+      "@prismshadow/penguin-library-workspace": ["../workspace/src/index.ts"],
+      "@prismshadow/penguin-library-workspace/directory-skills": [
+        "../workspace/src/directory-skills.ts"
+      ]
     }
   },
   "include": ["src"]

@@ -20,3 +20,4 @@
  * - `./connect-default-offer`, `./protocol-detect`, `./vision-detect` - the connect/protocol/vision helpers.
  */
 export * from "./project.js";
+export type { ProjectSummary } from "@prismshadow/penguin-library-session";

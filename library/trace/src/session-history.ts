@@ -19,12 +19,7 @@
 import { createHash } from "node:crypto";
 import type { Context } from "hono";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type {
-  ChannelEvent,
-  SessionStatus,
-  LiveRun,
-  RunStart,
-} from "@prismshadow/penguin-library-session";
+import type { SessionStatus, LiveRun, RunStart } from "@prismshadow/penguin-library-session";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { badRequest, parseNonNegativeInt } from "@prismshadow/penguin-library-http/validate";
 import type {
@@ -51,25 +46,13 @@ export interface HistorySessions {
   pendingBootstrap(sessionId: string): AmspRecord[];
 }
 
-/** A channel event listener, as the SSE channel's subscribe takes it (server `ChannelListener`). */
-export type HistoryChannelListener = (evt: ChannelEvent) => void;
-
 /**
- * One Session's SSE channel, as a history read may reach it: the same surface main's
- * `ChannelApi` (what server `Channels.get` returns) carries — publish, a direct send, subscribe,
- * replay after a cursor, and the cursor the channel publishes its events under (the server's
- * `Channels` hub satisfies this structurally).
+ * The channel hub's cursor surface: the one thing a history read takes from a Session's SSE
+ * channel is the cursor the channel publishes its events under (server `Channels` satisfies
+ * this structurally).
  */
-export interface HistoryChannelApi {
-  publish(data: unknown, event?: string): ChannelEvent;
-  sendTo(listener: HistoryChannelListener, data: unknown, event?: string): ChannelEvent;
-  subscribe(listener: HistoryChannelListener): () => void;
-  replayAfter(lastEventId: string): { hit: boolean; events: ChannelEvent[] };
-  readonly lastEventId: string;
-}
-
 export interface HistoryChannels {
-  get(key: string): HistoryChannelApi;
+  get(key: string): { readonly lastEventId: string };
 }
 
 export interface SessionHistoryDeps {

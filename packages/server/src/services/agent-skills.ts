@@ -24,19 +24,19 @@ export abstract class AgentSkills {
 }
 
 /** The installed-skills assembly: binds the service's paths port and its AgentConfig port. */
-@Module()
+@Module({ name: "InstalledAgentSkills" })
 export class InstalledAgentSkillsProvider {
   @Use() private readonly paths!: Paths;
   @Use() private readonly agentConfig!: AgentConfig;
-  @Provide() agentSkills!: AgentSkills;
-  @Provide() service!: InstalledAgentSkills;
+  @Provide() AgentSkills!: AgentSkills;
+  @Provide() InstalledAgentSkills!: InstalledAgentSkills;
 
   setup() {
     // The service's ports are decorator-injected fields; the server binds them by hand here.
-    this.service = Object.assign(new InstalledAgentSkills(), {
+    this.InstalledAgentSkills = Object.assign(new InstalledAgentSkills(), {
       paths: this.paths,
       agentConfig: this.agentConfig,
     });
-    this.agentSkills = this.service;
+    this.AgentSkills = this.InstalledAgentSkills;
   }
 }

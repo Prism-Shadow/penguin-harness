@@ -7,4 +7,5 @@ export {
   agentTracesRoutes,
   type AgentTracesRouteDeps,
   type TraceAccess,
+  type TraceAgentConfig,
 } from "@prismshadow/penguin-library-trace/routes";

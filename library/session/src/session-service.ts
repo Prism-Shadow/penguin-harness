@@ -25,7 +25,6 @@ import type { SessionSource } from "@prismshadow/amsp";
 import fs from "node:fs/promises";
 import {
   agentsDir,
-  createAgent,
   isSessionMeta,
   listProjectDirs,
   isSystemAgent,
@@ -37,6 +36,7 @@ import type {
   ProxyEnvPolicy,
   SpawnConfiner,
   ThinkingLevelName,
+  createAgent,
 } from "@prismshadow/penguin-core";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import {
@@ -228,6 +228,12 @@ export type SessionListPaging =
 export interface SessionServiceDeps {
   root: string;
   sessions: SessionIndex;
+  /**
+   * The host's Agent factory, injected by the assembly: the host's core instance owns the
+   * plugin library a hot-pushed platform configures — a library-bundled core would initialize
+   * a default Agent without one from its own unconfigured defaults.
+   */
+  createAgent: typeof createAgent;
   manager: SessionRuntimes;
   projectConfig: SessionDefaultModel;
   /** In-process origin registry derived from session_meta (the DB stores no source column). */
@@ -867,7 +873,7 @@ export class SessionService {
     // The runtime adopted below is built on the config as of this look, so a later edit is
     // told apart from it (see noticeModelConfigEdit).
     await this.deps.manager.noticeModelConfigEdit(args.projectId);
-    const agent = await createAgent({
+    const agent = await this.deps.createAgent({
       root: this.deps.root,
       projectId: args.projectId,
       agentId: args.agentId,

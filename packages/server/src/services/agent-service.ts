@@ -29,8 +29,8 @@ export type {
 export { refuseBuiltinDeletion } from "@prismshadow/penguin-library-agent/agent-service";
 export { DELETING_DIR, deletingDir } from "@prismshadow/penguin-library-agent/agent-service";
 
-/** The agent service assembly: binds the service's paths port and its server-mechanism ports. */
-@Module()
+/** The agent service assembly: binds the service's paths port and its server-mechanism ports. The node keeps the service's name (`AgentService`), the one plugins require and replace by. */
+@Module({ name: "AgentService" })
 export class AgentServiceProvider {
   @Use() private readonly paths!: Paths;
   @Use() private readonly agents!: AgentIndex;
@@ -38,13 +38,13 @@ export class AgentServiceProvider {
   @Use() private readonly snapshots!: Snapshots;
   @Use() private readonly pluginLibrary!: PluginLibrary;
   @Use() private readonly pluginModules!: PluginModules;
-  @Provide() agentLifecycle!: AgentLifecycle;
-  @Provide() service!: AgentService;
+  @Provide() AgentLifecycle!: AgentLifecycle;
+  @Provide() AgentService!: AgentService;
 
   async setup(ctx: ClassCtx) {
     // The service's ports are decorator-injected fields; the server binds them by hand here.
     const library = this.pluginLibrary;
-    this.service = Object.assign(new AgentService(), {
+    this.AgentService = Object.assign(new AgentService(), {
       paths: this.paths,
       agents: this.agents,
       agentConfig: this.agentConfig,
@@ -62,7 +62,7 @@ export class AgentServiceProvider {
           projectId: string,
           plugins: readonly string[],
           actor: Parameters<PluginModules["ensure"]>[2],
-          ask: "install",
+          ask: Parameters<PluginModules["ensure"]>[3],
           agentId?: string,
         ) => this.pluginModules.ensure(projectId, plugins, actor, ask, agentId),
       },
@@ -87,6 +87,12 @@ export class AgentServiceProvider {
             throw err;
           }
         },
+        installBare: async (
+          root: string,
+          projectId: string,
+          agentId: string,
+          plugin: LibraryPlugin,
+        ) => installPlugin(root, projectId, agentId, plugin),
       },
       workbenches: {
         migrate: (agentDir: string) => migrateWorkbenches(agentDir),
@@ -95,9 +101,9 @@ export class AgentServiceProvider {
         resolve: (dir: string, names: readonly string[]) => resolveDirectorySkills(dir, names),
       },
     });
-    this.agentLifecycle = this.service;
+    this.AgentLifecycle = this.AgentService;
     // The service's own setup ran on its node before the move; its dispose effect (ending the
     // generation's removals) rides this node's context now.
-    await this.service.setup(ctx);
+    await this.AgentService.setup(ctx);
   }
 }

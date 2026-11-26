@@ -11,7 +11,7 @@ import type { ServerEvent, Members, ProjectEvents, Projects } from "./project.js
 import type { ProjectChannels } from "./ports.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 
-@Component()
+@Component({ name: "ProjectNotifierImpl", key: "@prismshadow/penguin-server#ProjectNotifier" })
 export class ProjectNotifier implements ProjectEvents {
   @Use() private readonly projects!: Projects;
   @Use() private readonly members!: Members;

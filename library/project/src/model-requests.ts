@@ -53,7 +53,7 @@ export interface ProjectModelScope {
  */
 export type { ProjectModelRequest };
 
-@Interface()
+@Interface("@prismshadow/penguin-server#ProjectModelRequests")
 export abstract class ProjectModelRequests {
   /**
    * Streams one request to a configured model of the Project, MMSP's events as they arrive.
@@ -73,7 +73,7 @@ function stopReasonOf(end: ProjectModelRequestEnd): StopReason {
   return end.status === "aborted" ? "aborted" : "fatal";
 }
 
-@Component()
+@Component({ key: "@prismshadow/penguin-server#ProjectModelRequestsService" })
 export class ProjectModelRequestsService implements ProjectModelRequests {
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly usage!: UsageRecording;

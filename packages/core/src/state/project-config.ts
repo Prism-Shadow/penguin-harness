@@ -849,8 +849,7 @@ export async function loadProjectConfig(root: string, projectId: string): Promis
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return defaultProjectConfig();
     throw err;
   }
-  // Defensive: parseToml may return null/undefined for an empty file, and destructuring it would throw a TypeError.
-  const table = (parseToml(raw) ?? {}) as Record<string, unknown>;
+  const table = parseProjectConfigToml(raw);
   // The raw table is written back, not the typed config, so every key the file carries
   // survives the rewrite (this loader keeps known keys only).
   if (migrateProjectConfigTable(table)) {

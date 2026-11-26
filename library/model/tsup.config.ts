@@ -20,7 +20,6 @@ export default defineConfig({
     "src/model-balance.ts",
     "src/tool-binding-key.ts",
     "src/model-modalities.ts",
-    "src/tool-model-test.ts",
     "src/tool-model-bindings.ts",
   ],
   format: ["esm"],

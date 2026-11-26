@@ -36,6 +36,9 @@ import type {
   RawTable,
   UtilityCompletion,
 } from "./project.js";
+
+export type { RawTable } from "./project.js";
+
 import type {
   DefaultModelOffer,
   ModelEffectiveConnection,
@@ -817,7 +820,10 @@ export async function collectUtilityCompletion(
   }
 }
 
-@Component()
+@Component({
+  name: "ProjectConfigServiceImpl",
+  key: "@prismshadow/penguin-server#ProjectConfigService",
+})
 export class ProjectConfigService implements ProjectConfigStore {
   /**
    * Parsed-table cache, one entry per Project, keyed by the config file's mtime as

@@ -172,7 +172,13 @@ function indexAgentPlugins(library: readonly LibraryPlugin[]) {
 
 export type { AgentListItem, AgentCreation } from "./types.js";
 
-@Component()
+/**
+ * The agent service's component declaration: it keeps the server's manifest key
+ * (`@prismshadow/penguin-server#AgentService`, the one plugins require) while the class lives
+ * in this package; the server's provider node — named `AgentService`, as the component was —
+ * builds and binds it, so this declaration is not itself an assembled node.
+ */
+@Component({ name: "AgentServiceImpl", key: "@prismshadow/penguin-server#AgentService" })
 export class AgentService implements AgentLifecycle {
   @Use() private readonly paths!: AgentPaths;
   private get root(): string {
@@ -540,7 +546,10 @@ export class AgentService implements AgentLifecycle {
    * Reinstall one library plugin over an Agent's copy: the same whole-plugin update the
    * Agents page performs, through the same plugin writer the plugin-installer port binds,
    * which overwrites every skill the plugin ships and its hook package with library content.
-   * Throws 404
+   * A server name another
+   * owner holds refuses the write with core's own `McpServerNameTakenError` — the holder's
+   * server, agent and ownership ride the error, untranslated, for the org's reconcile to
+   * record. Throws 404
    * `unknown_plugin` when the library does not carry the name. Callers that may hold a cached
    * runtime for the Agent invalidate it afterwards — hook packages are bound when a core
    * Session is built, unlike skills, which are read from disk on demand. The plugin's server
@@ -551,7 +560,7 @@ export class AgentService implements AgentLifecycle {
     const plugins = this.library.resolve([pluginName]);
     await this.migrateWorkbenches(projectId, agentId);
     for (const plugin of plugins) {
-      await this.pluginInstaller.install(this.root, projectId, agentId, plugin);
+      await this.pluginInstaller.installBare(this.root, projectId, agentId, plugin);
     }
   }
 

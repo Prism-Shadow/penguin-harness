@@ -18,7 +18,6 @@ import type {
   ProjectConfigStore,
   ProjectLifecycle,
   Projects,
-  ProjectSummary,
   MemberInfo,
 } from "./project.js";
 import type { Users, UserDraftsStore } from "@prismshadow/penguin-library-auth";
@@ -29,8 +28,6 @@ import {
   projectRunDir,
   projectsDir,
   RESERVED_PROJECT_IDS,
-  provisionProjectAgents,
-  provisionProjectBenchmarks,
   type BuiltinBenchmark,
 } from "@prismshadow/penguin-core";
 import { HttpError } from "@prismshadow/penguin-library-http/errors";
@@ -46,7 +43,7 @@ import {
 } from "@prismshadow/penguin-library-agent/ids";
 import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
 import type { ProjectPaths, ProjectPreinstall, ProjectAppSeeds } from "./ports.js";
-import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
+import type { Schedules, SessionIndex, ProjectSummary } from "@prismshadow/penguin-library-session";
 import type { ErrorLog, UsageStore } from "@prismshadow/penguin-library-observability";
 import type { TraceIndex } from "@prismshadow/penguin-library-trace";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
@@ -64,7 +61,7 @@ async function dirExists(path: string): Promise<boolean> {
   }
 }
 
-@Component()
+@Component({ name: "ProjectServiceImpl", key: "@prismshadow/penguin-server#ProjectService" })
 export class ProjectService implements ProjectLifecycle {
   @Use() private readonly paths!: ProjectPaths;
   private get root(): string {
@@ -95,6 +92,18 @@ export class ProjectService implements ProjectLifecycle {
   @Use() private readonly pluginModules!: ProjectPreinstall;
   /** The seeds built-in plugins ship for their system apps' data, written once at creation. */
   @Use() private readonly appSeeds!: ProjectAppSeeds;
+  /**
+   * The Project preset writers, injected by the assembly: the host's core instance owns the
+   * plugin library host and the pushed benchmark directory a hot-pushed platform configures —
+   * a library-bundled core would preset from its own unconfigured defaults (`No plugin
+   * library`, an unpushed benchmark directory).
+   */
+  provisionAgents!: (opts: { root: string; projectId: string }) => Promise<string[]>;
+  provisionBenchmarks!: (
+    root: string,
+    projectId: string,
+    builtins?: readonly BuiltinBenchmark[],
+  ) => Promise<void>;
 
   // Access control lives in ProjectAccess (access.ts); these delegate so
   // in-package callers keep one entry point.
@@ -403,7 +412,7 @@ export class ProjectService implements ProjectLifecycle {
    * — the one time they are written; a failure reaches the caller.
    */
   private async provisionProjectDefaults(projectId: string): Promise<void> {
-    const agentIds = await provisionProjectAgents({ root: this.root, projectId });
+    const agentIds = await this.provisionAgents({ root: this.root, projectId });
     const base = Date.now();
     agentIds.forEach((agentId, i) => {
       this.agents.insertOrIgnore({
@@ -412,7 +421,7 @@ export class ProjectService implements ProjectLifecycle {
         createdAt: new Date(base + i).toISOString(),
       });
     });
-    await provisionProjectBenchmarks(this.root, projectId, this.benchmarkSeeds.benchmarks);
+    await this.provisionBenchmarks(this.root, projectId, this.benchmarkSeeds.benchmarks);
   }
 }
 
@@ -421,16 +430,16 @@ export class ProjectService implements ProjectLifecycle {
  * shipped catalog. A test stands in none: they are most of the files a Project is created with
  * (several hundred), and only the scenarios about them read them.
  */
-@Interface()
+@Interface("@prismshadow/penguin-server#BuiltinBenchmarkSeeds")
 export abstract class BuiltinBenchmarkSeeds {
   abstract benchmarks?: readonly BuiltinBenchmark[];
 }
 
-@Component()
+@Component({ key: "@prismshadow/penguin-server#ShippedBuiltinBenchmarkSeeds" })
 export class ShippedBuiltinBenchmarkSeeds implements BuiltinBenchmarkSeeds {}
 
 /** What destroying a Project needs of the session runtime — declared at the consumer. */
-@Interface()
+@Interface("@prismshadow/penguin-server#ProjectRuns")
 export abstract class ProjectRuns {
   abstract abortProject(projectId: string): Promise<void>[];
 }

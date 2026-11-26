@@ -131,7 +131,7 @@ export abstract class Snapshots {
 }
 
 /** AgentLifecycle: the mechanism AgentService implements — the list, the creation, the delete and the plugin update surface. */
-@Interface()
+@Interface("@prismshadow/penguin-server#AgentLifecycle")
 export abstract class AgentLifecycle {
   abstract listAgents(projectId: string): Promise<AgentListItem[]>;
   /** Every id `createAgent` refuses as taken, as names only, including a folder that does not list. */

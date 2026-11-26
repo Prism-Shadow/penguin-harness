@@ -102,7 +102,7 @@ export type {
   AgentDeletionInfo,
   PluginUpdateRef,
   ModuleActor,
-  AgentEmployment,
+  Employment,
   MemoryScopeInfo,
   MemoryFolderFile,
   MemoryFileInfo,

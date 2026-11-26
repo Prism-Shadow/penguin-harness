@@ -494,14 +494,6 @@ export interface ModelBalanceAmount {
  * - `upstream_failed`: the vendor could not be reached in time, refused the request, or answered
  *   without a readable balance.
  */
-/**
- * Why a group's balance could not be read:
- * - `unsupported`: the group publishes no balance endpoint (no `balance` descriptor in the catalog);
- * - `no_key`: the group has no API key to ask with — none stored, and no vendor variable that
- *   MMSP's vendor client reads for the group's base URL;
- * - `upstream_failed`: the vendor could not be reached in time, refused the request, or answered
- *   without a readable balance.
- */
 export type ModelBalanceErrorCode = "unsupported" | "no_key" | "upstream_failed";
 
 /**

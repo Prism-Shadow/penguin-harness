@@ -20,7 +20,10 @@ import { badRequest } from "@prismshadow/penguin-library-http/validate";
 import type { AgentConfig } from "./contract.js";
 import type { AgentPaths } from "./ports.js";
 
-@Component()
+@Component({
+  name: "InstalledAgentSkillsImpl",
+  key: "@prismshadow/penguin-server#InstalledAgentSkills",
+})
 export class InstalledAgentSkills {
   @Use() private readonly paths!: AgentPaths;
   @Use() private readonly agentConfig!: AgentConfig;

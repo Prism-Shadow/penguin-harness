@@ -91,7 +91,7 @@ export interface ToolModelBindingsSlots {
 }
 
 /** What a plugin reads and the routes serve: the declared bindings and a Project's choices. */
-@Interface()
+@Interface("@prismshadow/penguin-server#ToolModelBindings")
 export abstract class ToolModelBindings {
   /** Every declared binding, in load order, with this Project's model and its candidates. */
   abstract list(projectId: string): Promise<ToolModelBindingView[]>;
@@ -141,9 +141,13 @@ export interface Collected {
  * (see the model OAuth assembly's note in the server), so this package does not import it.
  */
 export interface ToolModelBindingsConfig {
-  getModels(projectId: string): Promise<Pick<ModelsResponse, "models">>;
+  getModels(projectId: string): Promise<ModelsResponse>;
   getToolModels(projectId: string): Promise<Record<string, ModelRefDto>>;
-  setToolModel(projectId: string, key: string, model: ModelRefDto | null): Promise<unknown>;
+  setToolModel(
+    projectId: string,
+    key: string,
+    model: ModelRefDto | null,
+  ): Promise<Record<string, ModelRefDto>>;
 }
 
 /** Attributes each declaration to its package and drops what cannot stand (see the module comment). */

@@ -128,7 +128,7 @@ function checked(task: AgentTaskStart): AgentTaskStart {
   return out;
 }
 
-@Component()
+@Component({ name: "HostAgentTasksImpl", key: "@prismshadow/penguin-server#HostAgentTasks" })
 export class HostAgentTasks {
   @Use() private readonly access!: Access;
   @Use() private readonly agentConfig!: AgentConfig;

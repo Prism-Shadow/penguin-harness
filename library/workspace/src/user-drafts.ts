@@ -11,26 +11,13 @@
  * convenience, and a browser that saves one must never be refused because older ones piled up.
  */
 import { badRequest } from "@prismshadow/penguin-library-http";
+import type { DraftWrite } from "@prismshadow/penguin-library-auth";
 import {
   DRAFT_KINDS,
   DRAFT_VALUE_MAX_CHARS,
   DRAFTS_PATCH_MAX_ENTRIES,
   type DraftKind,
 } from "./drafts.js";
-
-/**
- * One draft write: the value to keep, or null to remove the key (the auth library's DraftWrite,
- * structurally — the repo that applies it takes this shape as-is).
- */
-export interface DraftWrite {
-  key: string;
-  /** The draft's JSON text; null removes it. */
-  valueJson: string | null;
-  /** The Session the key names, so the draft goes with it; null when it names none. */
-  sessionId: string | null;
-  /** The Project the key names, so the draft goes with it; null when it names none. */
-  projectId: string | null;
-}
 
 /** The most drafts one account keeps; past it, the least recently written go. */
 export const DRAFTS_MAX_COUNT = 200;

@@ -4,6 +4,7 @@
  * shapes so it never imports the server.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { ChannelEvent } from "@prismshadow/penguin-library-session";
 
 /** Where the harness root is. The server's `Paths` capability satisfies this structurally. */
 @Interface()
@@ -29,7 +30,7 @@ export abstract class ProjectAppSeeds {
  * the server's hub hands out (server `Channel`).
  */
 export interface ProjectChannel {
-  publish(data: unknown, event?: string): void;
+  publish(data: unknown, event?: string): ChannelEvent;
 }
 
 /**

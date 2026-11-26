@@ -75,12 +75,7 @@ import {
 } from "./session-history.js";
 import { withImagesByReference } from "./trace-images.js";
 
-export type {
-  HistorySessions,
-  HistoryChannels,
-  HistoryChannelApi,
-  HistoryChannelListener,
-} from "./session-history.js";
+export type { HistorySessions, HistoryChannels } from "./session-history.js";
 import type { HistorySessions, HistoryChannels } from "./session-history.js";
 
 /** A machine-leg stream beats this often while it waits on credit or disk. */
