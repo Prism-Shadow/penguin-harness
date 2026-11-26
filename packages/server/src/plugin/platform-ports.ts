@@ -8,7 +8,7 @@ import { bindPluginPlatformPorts, type PluginUninstallWorkbenches } from "@prism
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
 import { profileFromEnv } from "../machines/layout.js";
 import type { Workbenches } from "../mechanisms/workbenches.js";
-import { WorkbenchNotFound } from "../workbenches/service.js";
+import { WorkbenchNotFound } from "../workbenches/errors.js";
 import platformTable from "../ifaces.json" with { type: "json" };
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 
