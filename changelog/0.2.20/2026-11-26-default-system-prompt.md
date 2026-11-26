@@ -1,9 +1,9 @@
 # Refine default system prompt for deliverable verification and tool execution
 
 - **Date:** 2026-11-26
-- **Type:** feat
+- **Type:** feature
 - **Scope:** `core`
-- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1880
+- **PR:** [#1880](https://github.com/Prism-Shadow/penguin-harness/pull/1880)
 
 [中文版](2026-11-26-default-system-prompt.zh.md)
 

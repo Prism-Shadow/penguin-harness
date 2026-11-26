@@ -1,6 +1,6 @@
 {
   "name": "penguin-harness",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "private": true,
   "type": "module",
   "description": "PenguinHarness — Unified and Stable RSI Framework (TypeScript SDK, CLI, server and Web App). Fully automatic optimization: any model, any algorithm, any benchmark.",

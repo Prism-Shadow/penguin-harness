@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-workspace",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "description": "The workspace domain: the WorkspaceFiles mechanism and its service (the Files panel's list / read / write / create / move / delete / search over a Workspace's directory) and the API vocabulary they speak. One package, no server dependencies \u2014 the server imports these; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {

@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-messaging",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "description": "The messaging domain: the MessagingBindings and MessagingConversations mechanisms and their repos, the chat-channel bridge and the channel connectors (feishu, telegram, qq, wechat), and the messaging HTTP surface. A library package - the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {
