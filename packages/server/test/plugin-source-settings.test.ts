@@ -7,7 +7,8 @@
  *   the behavior before the group existed. A mirror's URL passes as is; a value that is
  *   neither passes nothing rather than something malformed.
  * - A set registry rides the npm command line: an install pointed at a registry that does
- *   not exist fails naming it, which is how the wire shows the flag arrived.
+ *   not exist fails naming it, which is how the wire shows the flag arrived. A warning npm
+ *   prints ahead of the error does not take the error's place in the failure.
  */
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
@@ -50,33 +51,42 @@ describe("the registry flag rides the installer's npm runs", () => {
   // to install a name it cannot answer for. Set to a registry that does not exist, the
   // failure names that registry — how the wire shows the flag arrived and was honored.
   // Windows is left out: npm.cmd needs the shell there (the offline wire test's reason too).
+  const failsNamingTheRegistry = async (extra: Record<string, string> = {}) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-registry-"));
+    const vars: Record<string, string> = {
+      npm_config_offline: "true",
+      npm_config_cache: path.join(root, ".npm-cache"),
+      npm_config_update_notifier: "false",
+      ...extra,
+    };
+    const env = Object.fromEntries(Object.keys(vars).map((key) => [key, process.env[key]]));
+    try {
+      Object.assign(process.env, vars);
+      saved.push(undefined);
+      setNpmRegistry("https://registry.invalid");
+      // npm fails naming the registry it was pointed at: the flag reached the command line.
+      await expect(installPluginSource(root, "@acme/notes")).rejects.toThrow(/registry\.invalid/);
+    } finally {
+      for (const [key, value] of Object.entries(env)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  };
+
   it.skipIf(process.platform === "win32")(
     "set, the failure names the registry npm was pointed at",
     { timeout: 120_000 },
-    async () => {
-      const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-registry-"));
-      try {
-        const env = {
-          npm_config_offline: process.env.npm_config_offline,
-          npm_config_cache: process.env.npm_config_cache,
-          npm_config_update_notifier: process.env.npm_config_update_notifier,
-        };
-        process.env.npm_config_offline = "true";
-        process.env.npm_config_cache = path.join(root, ".npm-cache");
-        process.env.npm_config_update_notifier = "false";
+    () => failsNamingTheRegistry(),
+  );
 
-        saved.push(undefined);
-        setNpmRegistry("https://registry.invalid");
-        // npm fails naming the registry it was pointed at: the flag reached the command line.
-        await expect(installPluginSource(root, "@acme/notes")).rejects.toThrow(/registry\.invalid/);
-        for (const [key, value] of Object.entries(env)) {
-          if (value === undefined) delete process.env[key];
-          else process.env[key] = value;
-        }
-      } finally {
-        await fs.rm(root, { recursive: true, force: true });
-      }
-    },
+  // A config key npm does not know (here the `always-auth` actions/setup-node writes) makes
+  // npm print a warning before anything else, on every run.
+  it.skipIf(process.platform === "win32")(
+    "a warning npm prints first does not stand in for its error",
+    { timeout: 120_000 },
+    () => failsNamingTheRegistry({ npm_config_always_auth: "false" }),
   );
 });
 

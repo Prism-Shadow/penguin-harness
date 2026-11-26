@@ -738,18 +738,27 @@ export async function readInstalledVersion(prefix: string, name: string): Promis
 }
 
 /**
+ * The lines npm logs below its error level, by the level npm prefixes each line with: `warn`
+ * and `notice`, and the `http`, `info`, `verbose`, `silly` and `timing` lines a raised loglevel
+ * adds (npm 8 and older wrote `WARN`, `verb` and `sill`). They come first when they come at
+ * all (a key npm does not know in an .npmrc warns on every run) and never say why a run failed.
+ */
+const NPM_BELOW_ERROR = /^npm (?:warn|WARN|notice|http|info|verb|verbose|sill|silly|timing)\b/;
+
+/**
  * The line of npm's stderr worth showing. npm ends every failure with "A complete log of this
  * run can be found in …", so the last line is the one line that never says anything; the
  * reason is the first `npm error` line that is not that pointer, not a bare code, and not the
- * empty continuation lines npm pads the block with.
+ * empty continuation lines npm pads the block with. Lines logged below the error level are
+ * passed over; one of them is shown only when npm printed nothing else.
  */
 function npmReason(stderr: string | undefined, err: Error): string {
-  const lines = (stderr ?? "")
-    .split("\n")
-    .map((l) => l.replace(/^npm (error|ERR!)\s*/, "").trim())
-    .filter((l) => l !== "" && !/^A complete log/.test(l) && !/^code [A-Z0-9]+$/.test(l));
-  const reason = lines.find((l) => l.length > 8);
-  return reason ?? err.message;
+  const lines = (stderr ?? "").split("\n");
+  const first = (from: readonly string[]) =>
+    from
+      .map((l) => l.replace(/^npm (error|ERR!)\s*/, "").trim())
+      .find((l) => l.length > 8 && !/^A complete log/.test(l) && !/^code [A-Z0-9]+$/.test(l));
+  return first(lines.filter((l) => !NPM_BELOW_ERROR.test(l))) ?? first(lines) ?? err.message;
 }
 
 /**
