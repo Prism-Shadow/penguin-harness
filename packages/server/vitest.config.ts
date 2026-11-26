@@ -84,8 +84,18 @@ export default defineConfig({
         // sources; left external, the run's Node loader reaches them and refuses the
         // extension. Inlining the libraries lets vite transform the chain the way it
         // transforms this package's own imports.
+        //
+        // The plugin domain library ships to this package as an injected snapshot — a file:
+        // copy under .pnpm, not a symlink into its sources — so left external, its dist runs
+        // under the raw Node loader, and the core it imports is a second copy of core outside
+        // the module registry the run shares: the plugin library host the setup file names
+        // (test/setup/library-host.ts) is invisible to it, and every Agent creation fails
+        // with "No plugin library". Inlining brings the snapshot onto the same module graph
+        // as the rest of the run, the way a checkout's symlinked workspace packages already
+        // are.
         inline: [
           /@prismshadow\/penguin-library-setting/,
+          /@prismshadow\/penguin-library-plugin/,
           /@prismshadow\/penguin-theme-pack/,
           /@prismshadow\/penguin-ui/,
         ],
