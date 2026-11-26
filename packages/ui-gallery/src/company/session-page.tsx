@@ -12,7 +12,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Button, MessageBubble, Textarea } from "@prismshadow/penguin-ui";
-import { FIXTURES } from "./fixtures";
 import type { SessionMessage, SessionStatus, Ticket, WorkSession } from "./model";
 import { Deliverable, NeedsYou, SessionStatusPill } from "./needs-you";
 import type { TicketActions } from "./needs-you";
@@ -20,6 +19,7 @@ import {
   acceptanceOf,
   findingOf,
   gistOf,
+  money,
   optionsOf,
   progressOf,
   questionOf,
@@ -36,12 +36,15 @@ const BODY = "text-sm leading-relaxed text-fg";
 export function SessionConversation({
   session,
   ticket,
+  cost,
   status,
   actions,
   onSay,
 }: {
   session: WorkSession;
   ticket: Ticket;
+  /** What the ticket's sessions have cost so far. */
+  cost: number;
   status: SessionStatus;
   actions: TicketActions;
   onSay: (text: string) => void;
@@ -81,13 +84,23 @@ export function SessionConversation({
           {status !== "running" && (
             <p className={`text-xs ${QUIET}`}>
               {status === "answer"
-                ? W.session.waitingAnswer
+                ? ticket.halt !== null
+                  ? W.session.waitingLimit
+                  : W.session.waitingAnswer
                 : status === "review"
                   ? W.session.waitingReview
                   : W.session.ended}
             </p>
           )}
-          {wait !== null && <NeedsYou key={wait} ticket={ticket} wait={wait} actions={actions} />}
+          {wait !== null && (
+            <NeedsYou
+              key={`${wait}-${ticket.halt}`}
+              ticket={ticket}
+              wait={wait}
+              spent={cost}
+              actions={actions}
+            />
+          )}
           <div ref={end} />
         </div>
       </div>
@@ -134,13 +147,12 @@ function Message({
   superseded: boolean;
 }) {
   const W = useWords();
-  const deliverable = ticket.fixture === null ? undefined : FIXTURES[ticket.fixture].deliverable;
   const person = usePerson();
   const verifier = ticket.verifier === null ? "" : person(ticket.verifier).name;
   const delivery = (
     <>
       <p>{superseded ? W.ticket.saidResult : resultOf(ticket, W)}</p>
-      {deliverable !== undefined && <Deliverable path={deliverable} />}
+      <Deliverable ticket={ticket} />
     </>
   );
   if (message.from === "brief") {
@@ -178,9 +190,23 @@ function Message({
       </div>
     );
   }
+  if (message.from === "server") {
+    return (
+      <p className={`border-l-2 border-line pl-3 text-xs ${QUIET}`}>
+        {message.halt === "budget"
+          ? W.session.halted.budget(money(message.limit))
+          : W.session.halted.rounds(message.limit)}
+      </p>
+    );
+  }
   if (message.from === "person") {
     let text: string;
-    if ("answer" in message) {
+    if ("halt" in message) {
+      text =
+        message.halt === "budget"
+          ? W.session.decided.budget(message.to === null ? null : money(message.to))
+          : W.session.decided.rounds(message.to);
+    } else if ("answer" in message) {
       const label = optionsOf(ticket, W)[message.answer]?.label ?? "";
       text = [W.session.answered(label), message.note].filter((part) => part !== "").join(" ");
     } else if ("sendBack" in message) {

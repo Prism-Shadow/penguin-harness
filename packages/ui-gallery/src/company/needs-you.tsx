@@ -1,8 +1,9 @@
 /**
  * What a ticket needs from the reader, as one block wherever the ticket is read (its record, or
  * the work session waiting on the reader): accept or reject a proposal, pick an option of its one
- * question, accept a delivery or send it back with a note. And the one pill a session's state is
- * read by: running, waiting on the reader for what, or over.
+ * question, decide on a ticket the server stopped at a limit, accept a delivery (and with it what
+ * the delivery does outside the company) or send it back with a note. And the one pill a
+ * session's state is read by: running, waiting on the reader for what, or over.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -10,13 +11,15 @@ import { Button, Pill, RadioGroup, Textarea } from "@prismshadow/penguin-ui";
 import { FIXTURES } from "./fixtures";
 import type { SessionStatus, Ticket } from "./model";
 import type { Wait } from "./spec";
-import { optionsOf, questionOf, resultOf } from "./text";
+import { limitAskOf, money, optionsOf, questionOf, resultOf } from "./text";
 import { useWords } from "./use-words";
 
 export interface TicketActions {
   accept: (id: string) => void;
   reject: (id: string) => void;
   answer: (id: string, option: number, note: string) => void;
+  /** On a ticket the server stopped: give it more, or stop it there. */
+  limit: (id: string, more: boolean) => void;
   approve: (id: string) => void;
   sendBack: (id: string, note: string) => void;
   triage: (id: string, action: "snooze" | "archive" | "restore") => void;
@@ -25,11 +28,19 @@ export interface TicketActions {
 const QUIET = "text-fg-muted";
 const BODY = "text-sm leading-relaxed text-fg";
 
-export function Deliverable({ path }: { path: string }) {
+/** A delivery's path, and where what it does outside the company stands. */
+export function Deliverable({ ticket }: { ticket: Ticket }) {
   const W = useWords();
+  if (ticket.fixture === null) return null;
+  const { deliverable, outward } = FIXTURES[ticket.fixture];
+  if (deliverable === undefined) return null;
+  let stands: "pending" | "done" | "dropped" = "pending";
+  if (ticket.status === "done") stands = "done";
+  else if (ticket.status === "rejected") stands = "dropped";
   return (
     <p className={`mt-2 text-xs ${QUIET}`}>
-      {W.ticket.deliverable} <span className="font-mono text-fg">{path}</span>
+      {W.ticket.deliverable} <span className="font-mono text-fg">{deliverable}</span>
+      {outward !== undefined && <> · {W.ticket.outward[outward][stands]}</>}
     </p>
   );
 }
@@ -47,21 +58,54 @@ export function SessionStatusPill({ status }: { status: SessionStatus }) {
 export function NeedsYou({
   ticket,
   wait,
+  spent,
   actions,
 }: {
   ticket: Ticket;
   wait: Wait;
+  /** What its sessions have cost so far. */
+  spent: number;
   actions: TicketActions;
 }) {
   const W = useWords();
   const options = optionsOf(ticket, W);
   const recommended = ticket.fixture === null ? 0 : (FIXTURES[ticket.fixture].recommended ?? 0);
   const [choice, setChoice] = useState(String(recommended));
+  const [more, setMore] = useState("more");
   const [note, setNote] = useState("");
-  const deliverable = ticket.fixture === null ? undefined : FIXTURES[ticket.fixture].deliverable;
+  const fixture = ticket.fixture === null ? undefined : FIXTURES[ticket.fixture];
+  const deliverable = fixture?.deliverable;
+  const outward = fixture?.outward;
+  const L = W.ticket.limits;
 
   let body: ReactNode;
-  if (wait === "accept") {
+  if (wait === "answer" && ticket.halt !== null) {
+    const raised =
+      ticket.halt === "budget" ? L.more.budget(money(ticket.budget * 2)) : L.more.rounds;
+    body = (
+      <>
+        <RadioGroup
+          label={<span className={`font-medium ${BODY}`}>{limitAskOf(ticket, spent, W)}</span>}
+          size="sm"
+          value={more}
+          onChange={setMore}
+          options={[
+            { value: "more", label: raised, hint: L.moreHint[ticket.halt] },
+            { value: "stop", label: L.stop, hint: L.stopHint },
+          ]}
+        />
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => actions.limit(ticket.id, more === "more")}
+          >
+            {L.decide}
+          </Button>
+        </div>
+      </>
+    );
+  } else if (wait === "accept") {
     body = (
       <>
         <p className={`font-medium ${BODY}`}>{W.ticket.asks.accept}</p>
@@ -115,7 +159,10 @@ export function NeedsYou({
       <>
         <p className={`font-medium ${BODY}`}>{W.ticket.asks.review}</p>
         <p className={`mt-1 ${BODY}`}>{resultOf(ticket, W)}</p>
-        {deliverable !== undefined && <Deliverable path={deliverable} />}
+        <Deliverable ticket={ticket} />
+        {outward !== undefined && deliverable !== undefined && (
+          <p className={`mt-1 text-xs ${QUIET}`}>{W.ticket.outwardAsk[outward](deliverable)}</p>
+        )}
         <Textarea
           size="sm"
           rows={2}
@@ -127,7 +174,7 @@ export function NeedsYou({
         />
         <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" variant="primary" onClick={() => actions.approve(ticket.id)}>
-            {W.ticket.approve}
+            {outward === undefined ? W.ticket.approve : W.ticket.approveAnd[outward]}
           </Button>
           <Button
             size="sm"

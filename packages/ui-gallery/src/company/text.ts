@@ -4,7 +4,7 @@
  */
 import { USD_PER_MILLION_TOKENS } from "./fixtures";
 import type { Role } from "./fixtures";
-import type { Ticket } from "./model";
+import type { Overrun, Ticket } from "./model";
 import type { TicketWords, Words } from "./words";
 
 const sample = (ticket: Ticket, W: Words): TicketWords | null =>
@@ -43,10 +43,27 @@ export const findingOf = (ticket: Ticket, note: string, W: Words): string =>
 
 /** The one line the inbox shows under a title: what it asks, what it delivered, or what it is. */
 export function lineOf(ticket: Ticket, W: Words): string {
+  if (ticket.halt === "budget") return W.ticket.limits.line.budget(money(ticket.budget));
+  if (ticket.halt === "rounds") return W.ticket.limits.line.rounds(ticket.rounds);
   if (ticket.asked) return questionOf(ticket, W);
   if (ticket.delivered) return resultOf(ticket, W);
   return gistOf(ticket, W);
 }
+
+/** What the server's stop of a ticket asks the person, with what it has spent so far. */
+export const limitAskOf = (ticket: Ticket, spent: number, W: Words): string =>
+  ticket.halt === "rounds"
+    ? W.ticket.limits.ask.rounds(ticket.rounds)
+    : W.ticket.limits.ask.budget(money(spent), money(ticket.budget));
+
+/** A decision on a stopped ticket, as its record says it. */
+export const overrunOf = (overrun: Overrun, W: Words): string =>
+  overrun.halt === "budget"
+    ? W.ticket.limits.record.budget(
+        money(overrun.from),
+        overrun.to === null ? null : money(overrun.to),
+      )
+    : W.ticket.limits.record.rounds(overrun.from, overrun.to);
 
 /** A sum of money, in dollars to the cent. */
 export const money = (usd: number) => `$${usd.toFixed(2)}`;

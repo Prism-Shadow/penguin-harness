@@ -1,7 +1,8 @@
 /**
- * How the company gets better, with no scores and no test runs: the person's verdicts are the
- * measure. Two loops side by side from `md` up, stacked on a phone, each a ruled list (every
- * ticket, automatic; every N closed tickets, a retrospective that proposes); then the four
+ * How the company gets better, with no scores and no test runs day to day: the person's verdicts
+ * are the measure. Three loops side by side from `md` up, stacked on a phone, each a ruled list
+ * (every ticket, automatic; every week, a retrospective that proposes; and, only if the reader
+ * opts in, the company's template scored on the community's public scenarios); then the four
  * numbers a retrospective reads, as ruled two-column rows (the measure, the trend expected), with
  * a note and the rule that keeps the handbook short under them. The words are the dictionaries'
  * `company.evolution`.
@@ -18,7 +19,7 @@ export function CompanyEvolution() {
   return (
     <Section id="evolution" title={E.title} subtitle={E.subtitle}>
       <div className="mx-auto max-w-5xl space-y-14">
-        <div className="grid gap-10 md:grid-cols-2">
+        <div className="grid gap-10 md:grid-cols-3">
           {E.loops.map((loop) => (
             <div key={loop.title}>
               <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">

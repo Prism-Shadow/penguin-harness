@@ -30,6 +30,7 @@ import type { CompanyStart } from "./frame";
 import {
   acceptTicket,
   acceptTickets,
+  answerLimit,
   answerTicket,
   approveTicket,
   costOf,
@@ -43,6 +44,7 @@ import {
   sayToLead,
   sessionsOf,
   sessionStatus,
+  setEvents,
   setPatrol,
   startCompany,
   ticketsIn,
@@ -143,6 +145,7 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     accept: (id) => setState((current) => acceptTicket(current, id)),
     reject: (id) => setState((current) => rejectTicket(current, id)),
     answer: (id, option, note) => setState((current) => answerTicket(current, id, option, note)),
+    limit: (id, more) => setState((current) => answerLimit(current, id, more)),
     approve: (id) => setState((current) => approveTicket(current, id)),
     sendBack: (id, note) => setState((current) => returnTicket(current, id, note)),
     triage: (id, action) => setState((current) => triageTicket(current, id, action)),
@@ -242,6 +245,7 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     body = (
       <SchedulesPage
         state={state}
+        onEvents={(on) => setState((current) => setEvents(current, on))}
         onPatrol={(mode) => setState((current) => setPatrol(current, mode))}
       />
     );

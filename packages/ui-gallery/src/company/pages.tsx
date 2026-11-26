@@ -1,7 +1,8 @@
 /**
  * The prototype's pages, in the shipped company mode's page frame and with its controls.
  *
- * - The schedules: the daily patrol and the weekly retrospective, each filing tickets on its own.
+ * - The schedules: events as they arrive, the daily patrol and the weekly retrospective, each
+ *   filing tickets on its own.
  * - The lead is the one conversation: what the reader says becomes a ticket, and the lead's
  *   lines name tickets, never the work.
  * - The board is the shipped five columns, unchanged; a card that waits says what for.
@@ -17,6 +18,7 @@ import {
   PageFrame,
   PageHeader,
   Segmented,
+  Switch,
   Textarea,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../../web/src/lib/strings";
@@ -33,33 +35,50 @@ import { useWords } from "./use-words";
 const QUIET = "text-fg-muted";
 
 /**
- * The schedules, where the inbox column's schedule rows open: when each runs, and how the patrol
- * runs, the same three ways the setup offered (off, proposing, or starting work). A
- * retrospective's proposals always wait for the reader.
+ * The schedules, where the inbox column's schedule rows open: whether events file tickets as they
+ * arrive, when each schedule runs, and how the patrol runs, the same three ways the setup offered
+ * (off, proposing, or starting work). A retrospective's proposals always wait for the reader.
  */
 export function SchedulesPage({
   state,
+  onEvents,
   onPatrol,
 }: {
   state: CompanyState;
+  onEvents: (on: boolean) => void;
   onPatrol: (mode: PatrolMode) => void;
 }) {
   const W = useWords();
-  const row = (id: ScheduleId, control: ReactNode) => (
-    <li key={id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5 text-sm">
+  const row = (key: string, name: string, when: string, control: ReactNode) => (
+    <li key={key} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5 text-sm">
       <span className="min-w-0 flex-1">
-        <span className="block truncate">{W.schedule.names[id]}</span>
-        <span className={`block text-xs ${QUIET}`}>{W.schedule.when[id]}</span>
+        <span className="block truncate">{name}</span>
+        <span className={`block text-xs ${QUIET}`}>{when}</span>
       </span>
       {control}
     </li>
   );
+  const schedule = (id: ScheduleId, control: ReactNode) =>
+    row(id, W.schedule.names[id], W.schedule.when[id], control);
   return (
     <PageFrame width="lg">
       <PageHeader title={W.inbox.schedules} info={W.schedule.info} />
       <ul className="divide-y divide-line">
-        {row("retro", <span className={`shrink-0 text-xs ${QUIET}`}>{W.schedule.autoOff}</span>)}
         {row(
+          "events",
+          W.schedule.events,
+          W.schedule.eventsWhen,
+          <Switch
+            checked={state.settings.events}
+            onChange={onEvents}
+            aria-label={W.setup.schedules.eventsLabel}
+          />,
+        )}
+        {schedule(
+          "retro",
+          <span className={`shrink-0 text-xs ${QUIET}`}>{W.schedule.autoOff}</span>,
+        )}
+        {schedule(
           "patrol",
           <div className="w-full sm:w-72">
             <Segmented<PatrolMode>

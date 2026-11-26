@@ -95,6 +95,7 @@ export const en: Words = {
   sources: {
     person: "Your request",
     patrol: "Daily patrol",
+    event: "Event",
     lead: "Lead proposal",
     retro: "Retrospective",
   },
@@ -137,11 +138,57 @@ export const en: Words = {
     recommended: (label: string) => `${label} (recommended)`,
     notePlaceholder: "Optional comments",
     approve: "Approve",
+    approveAnd: { merge: "Approve and merge", publish: "Approve and publish" },
+    outwardAsk: {
+      merge: (path: string) =>
+        `Approving has the server merge ${path}. Until you approve, it is only a draft.`,
+      publish: (path: string) =>
+        `Approving has the server publish ${path}. Until you approve, it is only a draft.`,
+    },
+    outward: {
+      merge: { pending: "merged once approved", done: "merged", dropped: "not merged" },
+      publish: { pending: "published once approved", done: "published", dropped: "not published" },
+    },
     sendBack: "Send back",
     sendBackPlaceholder: "Describe required changes before sending back",
     deliverable: "Deliverables",
     source: "Source",
     usage: (tokens: string, cost: string) => `${tokens} Tokens · ${cost}`,
+    budget: (budget: string) => `Budget ${budget}`,
+    rounds: (used: number, limit: number) => `Verifier hand-backs ${used} / ${limit}`,
+    limits: {
+      ask: {
+        budget: (spent: string, budget: string) =>
+          `It has spent ${spent}, past this ticket's ${budget} budget, and the server has stopped it. Raise the budget and carry on, or stop here?`,
+        rounds: (limit: number) =>
+          `The verifier has handed the work back ${limit} times on its own, the limit, and the server has stopped it. One more round, or stop here?`,
+      },
+      more: {
+        budget: (to: string) => `Raise the budget to ${to} and carry on`,
+        rounds: "One more round",
+      },
+      moreHint: {
+        budget: "At its pace so far, twice the budget should see it through",
+        rounds: "The verifier checks again; if it still fails, it stops and asks you again",
+      },
+      line: {
+        budget: (budget: string) => `Over its ${budget} budget; waiting for your decision`,
+        rounds: (limit: number) => `Handed back ${limit} times; waiting for your decision`,
+      },
+      stop: "Stop here and close the ticket",
+      stopHint: "What was done stays on record; the delivery is not merged or published",
+      decide: "Decide",
+      record: {
+        budget: (from: string, to: string | null) =>
+          to === null
+            ? `Over its ${from} budget: stopped here.`
+            : `Over its ${from} budget: raised to ${to}.`,
+        rounds: (from: number, to: number | null) =>
+          to === null
+            ? `Handed back ${from} times, the limit: stopped here.`
+            : `Handed back ${from} times, the limit: one more round.`,
+      },
+    },
     decisions: "Decisions",
     handbook: "Handbook record",
     returned: "Sent back",
@@ -237,7 +284,7 @@ export const en: Words = {
       mission: "Mission",
       team: "Team",
       flow: "Tickets",
-      schedules: "Schedules",
+      schedules: "Intake",
       style: "Writing",
     },
     next: "Next",
@@ -265,10 +312,27 @@ export const en: Words = {
         title: "Review",
         body: "You accept it, or send it back with a note. The reason goes into the handbook, to be checked next time.",
       },
+      limits: {
+        title: "Limits",
+        body: "Every ticket starts with these two limits. The server enforces them, and an employee cannot change them. At a limit, the ticket stops and asks you: give it more, or stop it there.",
+        budget: "Budget per ticket",
+        rounds: "Verifier hand-backs",
+        roundsOff: "With verification off, nothing is handed back on its own.",
+        times: (n: number) => (n === 1 ? "1 time" : `${n} times`),
+      },
+      outward:
+        "Merging a PR, publishing, or sending a message outside stays a draft until you approve the delivery.",
     },
     schedules: {
-      title: "When the lead looks for work",
-      body: "The lead looks over each part's sources on a schedule, without being asked. You decide what happens to what the patrol finds.",
+      title: "Where work comes from",
+      body: "An event is filed as a ticket the moment it arrives, without waiting for the patrol; the patrol looks over what events do not cover, on a schedule. You decide what happens to what the patrol finds.",
+      events: "Events",
+      eventsWhen: "Any time: a failed CI run, a new issue, a webhook",
+      eventsLabel: "File events as tickets",
+      eventsHint: {
+        on: "An event is filed as a ticket as it arrives, and waits for you to accept it.",
+        off: "Events are ignored; anything new waits for the next patrol.",
+      },
       patrol: "Daily patrol",
       patrolWhen: (sources: string) => `Daily at 09:00: ${sources}`,
       patrolHint: {
@@ -349,7 +413,19 @@ export const en: Words = {
     answered: (label: string) => `Selected “${label}”.`,
     sentBack: (note: string) => `Sent back: ${note}`,
     noted: "Acknowledged; recorded on the ticket.",
+    halted: {
+      budget: (budget: string) =>
+        `Spent past its ${budget} budget; the server stopped this session.`,
+      rounds: (limit: number) =>
+        `Handed back ${limit} times by the verifier; the server stopped this session.`,
+    },
+    decided: {
+      budget: (to: string | null) =>
+        to === null ? "Stop here." : `Raise the budget to ${to} and carry on.`,
+      rounds: (to: number | null) => (to === null ? "Stop here." : "One more round; carry on."),
+    },
     waitingAnswer: "Session paused until you answer.",
+    waitingLimit: "Session stopped at a limit until you decide.",
     waitingReview: "Execution complete; awaiting review.",
     ended: "Session ended. Final output is recorded on the ticket.",
     placeholder: "Send message directly to this session, Enter to send",
@@ -362,6 +438,8 @@ export const en: Words = {
       retro: "Weekly retrospective: last week's closed tickets",
     },
     when: { patrol: "Daily at 09:00", retro: "Mondays at 09:00" },
+    events: "Events: a failed CI run, a new issue, a webhook",
+    eventsWhen: "Any time, filed as they arrive",
     modes: { off: "Off", propose: "Propose only", auto: "Auto-start" },
     autoOn: "Auto-start",
     autoOff: "Proposal only",
@@ -374,6 +452,8 @@ export const en: Words = {
       progress: (title: string) => `“${title}” updated progress`,
       asked: (title: string) => `“${title}” has an open question`,
       delivered: (title: string) => `“${title}” ready for review`,
+      halted: (title: string) => `“${title}” reached a limit and waits for you`,
+      event: (title: string) => `An event filed “${title}”`,
       proposed: (title: string) => `Patrol proposed “${title}”`,
       started: (title: string) => `Patrol started “${title}”`,
       retro: (n: string) => `Lead completed retrospective ${n}; proposals sent to inbox`,
@@ -540,6 +620,15 @@ export const en: Words = {
       result:
         "The report is written. Whether to add it to the model catalog is a ticket of its own for you.",
     },
+    ciRed: {
+      title: "Fix the failing CI on main",
+      gist: "The latest CI run on main failed installing dependencies: an upstream package pulled the version the lockfile pins. The failure filed this ticket at once, without waiting for the next patrol.",
+      acceptance: ["CI on main passes again", "The lockfile changes for this one package only"],
+      progress: [
+        "Pinned the upstream patch release that still exists; install and tests pass locally.",
+      ],
+      result: "The lockfile is updated and CI passes again.",
+    },
   },
   handbook: {
     title: "Handbook",
@@ -596,6 +685,16 @@ export const en: Words = {
       },
       retro:
         "A retrospective every Monday; what it wants to change is filed as tickets for you to accept.",
+      limits: (budget: string, rounds: number, verify: boolean) =>
+        verify
+          ? `Every ticket has a ${budget} budget, and the verifier hands work back on its own at most ${rounds} times. At a limit, the server stops the ticket and asks you.`
+          : `Every ticket has a ${budget} budget. Past it, the server stops the ticket and asks you.`,
+      events: {
+        on: "An event such as a failed CI run or a new issue is filed as a ticket as it arrives, and waits for you to accept it.",
+        off: "Events are ignored; the patrol finds what is new.",
+      },
+      outward:
+        "Merging, publishing and messages outside the company run on the server only once you approve the delivery.",
       record: {
         points: "Ticket records are written as points.",
         prose: "Ticket records are written as full paragraphs.",

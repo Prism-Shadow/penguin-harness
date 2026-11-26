@@ -10,9 +10,10 @@
  *    rewrites their duties, drops them or adds their own. The lead is always on; the verifier is
  *    set in the next step, where it sits on a ticket's way.
  * 3. How a ticket goes: its four stops, with the one stop the reader can switch (verification)
- *    where it sits, and the rule of when the company reaches them.
- * 4. Schedules: what the daily patrol does with what it finds in the parts' sources; the weekly
- *    retrospective.
+ *    where it sits, the rule of when the company reaches them, and the two limits the server
+ *    holds every ticket to (its budget, and how often its verifier hands work back on its own).
+ * 4. Where work comes from: events filed as they arrive; what the daily patrol does with what it
+ *    finds in the parts' sources; the weekly retrospective.
  * 5. How the agents write to the reader, beside a sample ticket written that way.
  *
  * Steps 3 to 5 go into the handbook's how-we-work.md, which every employee reads. Each step keeps
@@ -364,10 +365,24 @@ function Stop({
   );
 }
 
-/** A writing setting: its name in a column of its own, so the three controls line up. */
-function StyleRow({ label, children }: { label: string; children: ReactNode }) {
+/**
+ * A setting: its name in a column of its own, so the controls line up. A wide row gives longer
+ * names (the limits') room on one line.
+ */
+function StyleRow({
+  label,
+  wide = false,
+  children,
+}: {
+  label: string;
+  wide?: boolean;
+  children: ReactNode;
+}) {
+  const columns = wide
+    ? "sm:grid-cols-[10rem_minmax(0,1fr)]"
+    : "sm:grid-cols-[6.5rem_minmax(0,1fr)]";
   return (
-    <div className="grid items-center gap-x-3 gap-y-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)]">
+    <div className={`grid items-center gap-x-3 gap-y-1.5 ${columns}`}>
       <span className="text-sm text-fg">{label}</span>
       {children}
     </div>
@@ -426,9 +441,14 @@ interface SettingsStep {
   onNext: () => void;
 }
 
+/** The budgets and hand-back counts a company can start its tickets with. */
+const BUDGETS = [2, 5, 10] as const;
+const ROUNDS = [1, 2, 3] as const;
+
 function FlowStep({ settings, set, onBack, onNext }: SettingsStep) {
   const W = useWords();
   const F = W.setup.flow;
+  const L = F.limits;
   return (
     <StepForm onSubmit={onNext}>
       <Intro step="flow" title={F.title} body={F.body} focus />
@@ -453,9 +473,34 @@ function FlowStep({ settings, set, onBack, onNext }: SettingsStep) {
         </Stop>
         <Stop n={4} title={F.review.title} last>
           {F.review.body}
+          <span className="mt-1 block">{F.outward}</span>
         </Stop>
       </ol>
       <p className="mt-5 border-l-2 border-line pl-3 text-sm text-fg">{F.note}</p>
+      <section aria-label={L.title} className="mt-6 space-y-3">
+        <h2 className={LABEL}>{L.title}</h2>
+        <p className={`text-sm ${QUIET}`}>{L.body}</p>
+        <StyleRow label={L.budget} wide>
+          <Segmented<string>
+            cols={3}
+            value={String(settings.budget)}
+            onChange={(budget) => set({ budget: Number(budget) })}
+            options={BUDGETS.map((usd) => ({ value: String(usd), label: `$${usd}` }))}
+          />
+        </StyleRow>
+        <StyleRow label={L.rounds} wide>
+          {settings.verify ? (
+            <Segmented<string>
+              cols={3}
+              value={String(settings.rounds)}
+              onChange={(rounds) => set({ rounds: Number(rounds) })}
+              options={ROUNDS.map((n) => ({ value: String(n), label: L.times(n) }))}
+            />
+          ) : (
+            <span className={`text-sm ${QUIET}`}>{L.roundsOff}</span>
+          )}
+        </StyleRow>
+      </section>
       <Foot onBack={onBack} next={W.setup.next} />
     </StepForm>
   );
@@ -469,6 +514,19 @@ function SchedulesStep({ settings, staff, set, onBack, onNext }: SettingsStep) {
     <StepForm onSubmit={onNext}>
       <Intro step="schedules" title={S.title} body={S.body} focus />
       <div className="mt-8 space-y-6">
+        <section aria-label={S.events}>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 className={LABEL}>
+              {S.events}
+              <span className="ml-2 font-normal">{S.eventsWhen}</span>
+            </h2>
+            <label className={`flex items-center gap-2 text-xs ${QUIET}`}>
+              {S.eventsLabel}
+              <Switch checked={settings.events} onChange={(events) => set({ events })} />
+            </label>
+          </div>
+          <p className={`mt-1 text-sm ${QUIET}`}>{S.eventsHint[settings.events ? "on" : "off"]}</p>
+        </section>
         <section>
           <h2 id={patrolId} className={LABEL}>
             {S.patrol}

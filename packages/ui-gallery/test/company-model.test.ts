@@ -59,12 +59,24 @@
  *   to automatic, its find starts work directly and reaches the person only at its delivery;
  *   switched off, it finds nothing, and switching it back resumes it. Setting the patrol never
  *   touches the retrospective, and does nothing before the company starts.
+ * - Given a ticket that has spent past its budget, the server stops it before its next step and
+ *   it waits on the person, unread; time passing does not move it, and it cannot be snoozed.
+ *   Given more, it carries on in the session it stopped in with twice the budget; stopped there,
+ *   it closes undone. Either decision is on the ticket and in that session, and opens none.
+ * - Given a verifier that would hand work back once more than the ticket's rounds allow, the
+ *   server stops the ticket in the verifying session; one more round lets the hand-back through.
+ * - Given a ticket's steps, its cost grows with each one, and rework costs more on top.
+ * - Given an event due, the next pass files its ticket as a proposal, with no session; with events
+ *   off nothing arrives, and switching them back on resumes it; a team with no one to do an
+ *   event's work never receives it.
  */
 import { describe, expect, it } from "vitest";
 import {
   acceptTicket,
   acceptTickets,
+  answerLimit,
   answerTicket,
+  costOf,
   approveTicket,
   metricsOf,
   windowOf,
@@ -78,6 +90,7 @@ import {
   sayToLead,
   sessionsOf,
   sessionStatus,
+  setEvents,
   setPatrol,
   startCompany,
   ticketsIn,
@@ -150,7 +163,12 @@ describe("the waiting rule and the inbox views", () => {
 });
 
 describe("setting a company up", () => {
-  const quietCompany = { ...DEFAULT_SETTINGS, verify: false, patrol: "off" } as const;
+  const quietCompany = {
+    ...DEFAULT_SETTINGS,
+    verify: false,
+    events: false,
+    patrol: "off",
+  } as const;
 
   it("starts nothing on an empty sentence", () => {
     expect(startCompany(freshState(), "   ")).toEqual(freshState());
@@ -627,16 +645,24 @@ describe("an employee learning on its own", () => {
   });
 });
 
-/** The week with everything open settled and accepted, so the next pass runs a schedule. */
+/**
+ * The week with everything open settled and accepted, and no event still to arrive, so the next
+ * pass runs a schedule. The evaluation runs past its budget on the way and is given more.
+ */
 function quiet(): CompanyState {
-  let state = approveTicket(approveTicket(weekState(), "connection"), "release");
+  let state = approveTicket(
+    approveTicket({ ...weekState(), inbound: [] }, "connection"),
+    "release",
+  );
   state = rejectTicket(state, "flaky");
   state = answerTicket(state, "csv", 0);
   const working = ["csv", "jitter", "evals"];
   // Only until every delivery is in: one more pass would run a schedule.
-  while (working.some((id) => get(state, id).status !== "review")) {
+  for (let i = 0; i < 40 && working.some((id) => get(state, id).status !== "review"); i++) {
     state = letTimePass(state).state;
+    if (get(state, "evals").halt !== null) state = answerLimit(state, "evals", true);
   }
+  expect(working.map((id) => get(state, id).status)).toEqual(["review", "review", "review"]);
   // One find left for the patrol, so a run after it has nothing to do.
   return { ...working.reduce((done, id) => approveTicket(done, id), state), pool: ["lint"] };
 }
@@ -742,5 +768,112 @@ describe("the order of a view", () => {
       "verifier",
       "patrol",
     ]);
+  });
+});
+
+/** The sample week, its time passed until the evaluation runs past its budget. */
+function overBudget(): CompanyState {
+  let state: CompanyState = { ...weekState(), inbound: [] };
+  for (let i = 0; i < 10 && get(state, "evals").halt === null; i++) {
+    state = letTimePass(state).state;
+  }
+  return state;
+}
+
+describe("limits the server holds a ticket to", () => {
+  it("stops a ticket past its budget before its next step, waiting on the person", () => {
+    const { events } = settle({ ...weekState(), inbound: [] });
+    expect(events).toContainEqual({ kind: "halted", id: "evals" });
+    const state = overBudget();
+    const evals = get(state, "evals");
+    expect(evals).toMatchObject({ halt: "budget", status: "in_progress", unread: true });
+    expect(waitOf(evals)).toBe("answer");
+    expect(costOf(state, evals)).toBeGreaterThan(evals.budget);
+    expect(ticketsIn(state, "waiting").map((ticket) => ticket.id)).toContain("evals");
+    expect(get(letTimePass(state).state, "evals").step).toBe(evals.step);
+    expect(triageTicket(state, "evals", "snooze")).toEqual(state);
+    expect(transcript(state, "evals", "verify").at(-1)).toBe("server");
+    expect(sessionStatus(state, sessionsOf(state, "evals").at(-1)!)).toBe("answer");
+  });
+
+  it("carries on with twice the budget, in the session it stopped in", () => {
+    const stopped = overBudget();
+    const state = answerLimit(stopped, "evals", true);
+    expect(get(state, "evals")).toMatchObject({ halt: null, budget: 10, unread: false });
+    expect(get(state, "evals").overruns).toEqual([{ halt: "budget", from: 5, to: 10 }]);
+    expect(sessionCount(state, "evals")).toBe(sessionCount(stopped, "evals"));
+    expect(transcript(state, "evals", "verify").slice(-2)).toEqual(["server", "person"]);
+    expect(get(settle(state).state, "evals").status).toBe("review");
+  });
+
+  it("closes undone when stopped there, with the decision on record", () => {
+    const state = answerLimit(overBudget(), "evals", false);
+    expect(get(state, "evals")).toMatchObject({ status: "rejected", halt: null });
+    expect(get(state, "evals").overruns).toEqual([{ halt: "budget", from: 5, to: null }]);
+    expect(state.closed.at(-1)).toBe("evals");
+    expect(sessionsOf(state, "evals").map((session) => sessionStatus(state, session))).toEqual([
+      "ended",
+      "ended",
+    ]);
+  });
+
+  it("stops a verifier's hand-back past the ticket's rounds, and one more round lets it through", () => {
+    const week = weekState();
+    const tight: CompanyState = {
+      ...answerTicket(week, "csv", 0),
+      inbound: [],
+      tickets: answerTicket(week, "csv", 0).tickets.map((ticket) =>
+        ticket.id === "csv" ? { ...ticket, rounds: 0 } : ticket,
+      ),
+    };
+    const stopped = settle(tight).state;
+    expect(get(stopped, "csv")).toMatchObject({ halt: "rounds", findings: [] });
+    expect(sessionStatus(stopped, sessionsOf(stopped, "csv").at(-1)!)).toBe("answer");
+    const given = answerLimit(stopped, "csv", true);
+    expect(get(given, "csv").rounds).toBe(1);
+    const done = settle(given).state;
+    expect(get(done, "csv")).toMatchObject({ status: "review", findings: [""] });
+  });
+
+  it("changes nothing on a ticket the server has not stopped", () => {
+    expect(answerLimit(weekState(), "csv", true)).toEqual(weekState());
+    expect(answerLimit(weekState(), "connection", false)).toEqual(weekState());
+  });
+
+  it("counts cost by the steps taken, rework on top", () => {
+    const week = weekState();
+    expect(costOf(week, get(week, "jitter"))).toBeCloseTo(0.4);
+    const before = costOf(week, get(week, "connection"));
+    const reworked = settle(returnTicket(week, "connection", "Name the proxy case too")).state;
+    expect(costOf(reworked, get(reworked, "connection"))).toBeGreaterThan(before);
+  });
+});
+
+describe("events", () => {
+  it("files an event's ticket as a proposal on the next pass, with no session", () => {
+    const { state, events } = letTimePass(weekState());
+    expect(events).toContainEqual({ kind: "event", id: "ciRed" });
+    expect(get(state, "ciRed")).toMatchObject({
+      status: "proposed",
+      source: "event",
+      unread: true,
+    });
+    expect(sessionCount(state, "ciRed")).toBe(0);
+    expect(state.inbound).toEqual([]);
+  });
+
+  it("files nothing while events are off, and resumes once they are on", () => {
+    const off = setEvents(weekState(), false);
+    expect(letTimePass(off).events).not.toContainEqual({ kind: "event", id: "ciRed" });
+    const back = setEvents(letTimePass(off).state, true);
+    expect(letTimePass(back).events).toContainEqual({ kind: "event", id: "ciRed" });
+    expect(setEvents(freshState(), false)).toEqual(freshState());
+  });
+
+  it("never brings an event to a team with no one to do its work", () => {
+    const content = startCompany(freshState(), "Run the blog", staffFrom(["editor", "community"]));
+    expect(content.inbound).toEqual([]);
+    const code = startCompany(freshState(), "Look after the repository");
+    expect(code.inbound).toEqual(["ciRed"]);
   });
 });

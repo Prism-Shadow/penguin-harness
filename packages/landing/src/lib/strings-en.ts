@@ -1026,9 +1026,24 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           spec: "Several employees can relay one ticket: a delivery goes to verification first, and reaches you once it passes",
         },
         {
+          topic: "Triggers",
+          now: "Assignment and status changes wait for the scheduled patrol; files edited by hand sync on a 30-second poll; no way in for outside events",
+          spec: "A failed CI run, a new issue or a webhook is filed as a ticket as it arrives; a change to a ticket wakes its owner at once, and the patrol covers only what events do not",
+        },
+        {
+          topic: "Spend and rework",
+          now: "Each employee has a monthly budget, with a warning at 80% and a pause at 100%; no limit per ticket, and none on rework",
+          spec: "Every ticket carries a budget and a limit on how often its verifier hands work back, held by the server; at a limit the ticket stops and asks you to give it more or to stop",
+        },
+        {
+          topic: "Outward actions",
+          now: "Merging and publishing are tool calls like any other, under the organization's approval mode",
+          spec: "Merging a PR, publishing, or sending a message outside is drafted on the ticket and run by the server only once you approve the delivery",
+        },
+        {
           topic: "Setup",
           now: "CEO posts a setup proposal in the all-hands channel",
-          spec: 'Five steps, one per screen: a broad direction and then the mission, the team (the roles the lead drafts from the mission, as few as it can, each renamed, rewritten, dropped or added to), how a ticket goes (whether deliveries are verified), the patrol, and how the agents write to you, with a preview. Everything has a default, and the last three are written to "How we work" in the handbook. The lead\'s proposed tickets are accepted in its conversation, one by one or all at once',
+          spec: 'Five steps, one per screen: a broad direction and then the mission, the team (the roles the lead drafts from the mission, as few as it can, each renamed, rewritten, dropped or added to), how a ticket goes (whether deliveries are verified, and its two limits: budget and hand-backs), where work comes from (events and the patrol), and how the agents write to you, with a preview. Everything has a default, and the last three are written to "How we work" in the handbook. The lead\'s proposed tickets are accepted in its conversation, one by one or all at once',
         },
         {
           topic: "Calendar and finance",
@@ -1038,10 +1053,62 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       ],
     },
 
+    scope: {
+      title: "What it does, and what it does not",
+      subtitle:
+        "This version does one thing well: you tell the lead once, the ticket runs its course by the rules, and it comes to you only for a decision.",
+      out: {
+        title: "Not doing",
+        items: [
+          {
+            name: "A shell around coding tools",
+            text: "Branch isolation and PR diffs belong to a development plugin, not to the shape of company mode. Research, contract and finance tickets run the same way.",
+          },
+          {
+            name: "One big group chat",
+            text: "Work that spans weeks gets lost in a chat: to-dos slip and the context keeps growing. Channels step back; tickets and the inbox take the stage.",
+          },
+          {
+            name: "Mirroring a real company",
+            text: "Putting colleagues and their digital twins on Feishu, WeChat or Telegram to relay and answer questions needs a chat front end. It becomes a mode or plugin of its own, not part of this one.",
+          },
+          {
+            name: "Hosting as a black box",
+            text: "Models, skills, permissions and every run are files in the Project: what you can see you can change, and audit.",
+          },
+          {
+            name: "A big company's org chart",
+            text: "No CEO, HR, finance or VPs by default. One lead, one to three doing the work, one verifier.",
+          },
+        ],
+      },
+      later: {
+        title: "Later",
+        items: [
+          {
+            name: "Review workbenches by field",
+            text: "A ticket keeps the work split, its state and its approvals. Code diffs, experiment curves, contract ledgers and long documents with versions and comments by paragraph get an A2APP workbench the company generates for the delivery, one click from the ticket.",
+          },
+          {
+            name: "Outside CLIs as a way to run",
+            text: "The native runtime stays; a role can work in an outside harness such as Claude Code or Codex when it needs to. Today the plugin market has only use-claude-code, which drives Claude Code over SSH.",
+          },
+          {
+            name: "Company templates",
+            text: 'Roles, machines, permissions and "How we work" packed into one file, exported and imported in one step.',
+          },
+          {
+            name: "Approvals on the phone",
+            text: "A ticket that waits on you is pushed to your phone, to accept, answer or review from the notification.",
+          },
+        ],
+      },
+    },
+
     evolution: {
       title: "Self-improvement from reviews",
       subtitle:
-        "No Benchmark and no scoring. The company learns from your reviews, send-backs and answers.",
+        "Day to day, no Benchmark and no scoring: the company learns from your reviews, send-backs and answers. To compare with other companies, take the template to the community's evaluation.",
       loops: [
         {
           title: "Every ticket",
@@ -1059,6 +1126,15 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
             "Compares the share accepted at first review, send-backs, questions and cost against the last one.",
             "Records observed outcomes from previously accepted changes.",
             "Files proposed changes as tickets for you; once you accept, snapshots before applying.",
+          ],
+        },
+        {
+          title: "Community evaluation",
+          when: "Optional; you decide whether to take part",
+          items: [
+            'Exports the roles, "How we work" and the skills as a company template.',
+            "Scores it on Shared RSI Community's public team-delivery scenarios, against other templates and model mixes.",
+            "Only the public scenarios run; your tickets and handbook are not uploaded.",
           ],
         },
       ],
@@ -1095,6 +1171,8 @@ verifier: agent:org-verifier
 source: user:alice
 notify: [user:alice]
 priority: P1
+budget: {usd: 5, spent: 1.05}
+rounds: {limit: 2, used: 0}
 blocked: Waiting on a decision
 blocked_by: user:alice
 ask:
@@ -1152,15 +1230,20 @@ The export page offers CSV as well as JSON.
         owner:
           "The one principal responsible for it: it builds, and it starts every session of the ticket.",
         verifier: "Verifies each delivery first; only what it passes reaches you.",
-        source: "Ticket origin: a person, a schedule, or another ticket.",
+        source: "Ticket origin: a person, a schedule, an event, or another ticket.",
         parent: "Parent ticket for rolling up costs.",
         notify: "Recipients notified upon ticket closure.",
         priority: "Priority level.",
         due: "Target completion date.",
         blocked: "Reason for blockage.",
         blocked_by: "Who can unblock it; when that is a person, the ticket waits on them.",
-        ask: "Open question, choices, and recommended option; cleared once answered.",
+        budget:
+          "What the ticket may spend in US dollars, and what it has spent, counted by the server from the Trace.",
+        rounds: "How often the verifier may hand the work back on its own, and how often it has.",
+        ask: "Open question, choices, and recommended option; cleared once answered. The server writes one too when the ticket reaches a limit.",
         deliverables: "Paths or URLs to deliverables (e.g. pull requests).",
+        outward:
+          "What the server does outside the company once the delivery is approved: merge, publish or send.",
         sessions: "The sessions that worked on it: who, and whether to build or verify.",
         history: "Chronological audit log.",
         "## Goal": "What is to be achieved.",
@@ -1195,6 +1278,16 @@ The export page offers CSV as well as JSON.
         own_skill_kept: "An employee's own Skill survives plugin updates.",
         verified_first: "On a ticket with a verifier, a delivery reaches you only once verified.",
         snapshot_first: "The employees a change touches are snapshotted before it is applied.",
+        budget_capped:
+          "A ticket that has spent past its budget cannot move on; the server asks you whether to raise the budget or stop.",
+        rounds_capped:
+          "Once the verifier has handed work back as often as allowed, it cannot hand it back again; the server stops the ticket and asks you whether to give it one more round or stop.",
+        outward_approved:
+          "Merging, publishing and messages outside the company run on the server only once you approve the delivery; an employee cannot do them directly.",
+        delegation_bounded:
+          "Sub-tickets nest at most two levels deep and never point back at a ticket above them.",
+        events_wake:
+          "A change to a ticket, or an event as it arrives, wakes the employee it concerns without waiting for a poll.",
       },
     },
   },

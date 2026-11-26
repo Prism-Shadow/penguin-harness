@@ -112,6 +112,7 @@ export const zh = {
   sources: {
     person: "你提出",
     patrol: "每日巡检",
+    event: "外部事件",
     lead: "主理提议",
     retro: "复盘提议",
   },
@@ -147,11 +148,55 @@ export const zh = {
     recommended: (label: string) => `${label}（推荐）`,
     notePlaceholder: "补充说明（可选）",
     approve: "验收通过",
+    /** The approve button, when accepting the delivery also acts outside the company. */
+    approveAnd: { merge: "通过并合并", publish: "通过并发布" },
+    /** What accepting a delivery does outside the company, said before it is accepted. */
+    outwardAsk: {
+      merge: (path: string) => `通过后由服务端合并 ${path}。你通过之前，它只是一份草稿。`,
+      publish: (path: string) => `通过后由服务端发布 ${path}。你通过之前，它只是一份草稿。`,
+    },
+    /** Where a delivery's outward action stands: waiting on the review, done, or not done. */
+    outward: {
+      merge: { pending: "通过后合并", done: "已合并", dropped: "未合并" },
+      publish: { pending: "通过后发布", done: "已发布", dropped: "未发布" },
+    },
     sendBack: "打回",
     sendBackPlaceholder: "填写修改意见后打回",
     deliverable: "交付物",
     source: "来源",
     usage: (tokens: string, cost: string) => `${tokens} Token · ${cost}`,
+    budget: (budget: string) => `预算 ${budget}`,
+    rounds: (used: number, limit: number) => `验证退回 ${used} / ${limit} 次`,
+    /** A ticket the server stopped at a limit: what it asks, the two answers, and the record. */
+    limits: {
+      ask: {
+        budget: (spent: string, budget: string) =>
+          `已花 ${spent}，超过了这张工单的预算 ${budget}，服务端已让它停下。加预算继续，还是停在这里？`,
+        rounds: (limit: number) =>
+          `验证已经自动退回 ${limit} 次，到了上限，服务端已让它停下。再给一轮，还是停在这里？`,
+      },
+      more: { budget: (to: string) => `预算加到 ${to}，继续`, rounds: "再给一轮" },
+      moreHint: {
+        budget: "按现在的进度，加一倍应该够做完",
+        rounds: "验证再查一遍；还不通过，会再停下来问你",
+      },
+      /** The one line the inbox shows under its title. */
+      line: {
+        budget: (budget: string) => `超出预算 ${budget}，停下等你决定`,
+        rounds: (limit: number) => `验证已退回 ${limit} 次，停下等你决定`,
+      },
+      stop: "停在这里，关闭工单",
+      stopHint: "已做的部分留在记录里，交付物不合并、不发布",
+      decide: "确定",
+      record: {
+        budget: (from: string, to: string | null) =>
+          to === null ? `超出预算 ${from}：停在这里。` : `超出预算 ${from}：加到 ${to} 继续。`,
+        rounds: (from: number, to: number | null) =>
+          to === null
+            ? `验证自动退回到上限 ${from} 次：停在这里。`
+            : `验证自动退回到上限 ${from} 次：再给一轮。`,
+      },
+    },
     decisions: "决定",
     handbook: "记入手册",
     returned: "打回",
@@ -247,7 +292,7 @@ export const zh = {
       mission: "做什么",
       team: "团队",
       flow: "工单怎么走",
-      schedules: "日程",
+      schedules: "活从哪来",
       style: "说话方式",
     },
     next: "下一步",
@@ -269,10 +314,26 @@ export const zh = {
         off: "交付不经验证，直接交给你验收。",
       },
       review: { title: "验收", body: "你接受，或附一句话打回。打回的原因记进手册，下次先检查。" },
+      limits: {
+        title: "上限",
+        body: "每张工单开工时带上这两个上限，由服务端强制，员工自己改不了。到了上限，工单停下来问你：多给一些，还是停在这里。",
+        budget: "单张预算",
+        rounds: "验证自动退回",
+        roundsOff: "关掉验证后，没有自动退回。",
+        times: (n: number) => `${n} 次`,
+      },
+      outward: "合并 PR、发布、对外发消息这类动作，在你验收通过之前都只是草稿。",
     },
     schedules: {
-      title: "主理自己找事做",
-      body: "主理按日程看各块的来源，不用你开口。巡检的发现怎么处理由你定。",
+      title: "活从哪来",
+      body: "外部事件一到就提成工单，不等巡检；巡检按日程看事件覆盖不到的来源。巡检的发现怎么处理由你定。",
+      events: "外部事件",
+      eventsWhen: "随时：CI 失败、新 issue、Webhook 回调",
+      eventsLabel: "事件提成工单",
+      eventsHint: {
+        on: "事件一到就提成工单，等你接受。",
+        off: "不看事件，新情况等第二天的巡检。",
+      },
       patrol: "每日巡检",
       patrolWhen: (sources: string) => `每天 09:00，来源：${sources}`,
       patrolHint: {
@@ -347,7 +408,18 @@ export const zh = {
     answered: (label: string) => `选「${label}」。`,
     sentBack: (note: string) => `打回：${note}`,
     noted: "收到，已同步记录至工单。",
+    /** The server's line when it stops the session at a limit. */
+    halted: {
+      budget: (budget: string) => `花费超过预算 ${budget}，服务端已停下这个会话。`,
+      rounds: (limit: number) => `验证已自动退回 ${limit} 次，服务端已停下这个会话。`,
+    },
+    /** The person's decision on a stopped session, as their message. */
+    decided: {
+      budget: (to: string | null) => (to === null ? "停在这里。" : `预算加到 ${to}，继续。`),
+      rounds: (to: number | null): string => (to === null ? "停在这里。" : "再给一轮，继续。"),
+    },
     waitingAnswer: "会话停在问题上，等你回答。",
+    waitingLimit: "会话停在上限上，等你决定。",
     waitingReview: "执行完毕，等待验收。",
     ended: "会话已结束，最终结论已记录在工单中。",
     placeholder: "直接和这个会话说，Enter 发送",
@@ -357,6 +429,8 @@ export const zh = {
     info: "日程定期生成工单。巡检可以关掉、只提议，或直接开工；复盘只提议。",
     names: { patrol: "每日巡检：看各块有什么新情况", retro: "每周复盘：回看上周关闭的工单" },
     when: { patrol: "每天 09:00", retro: "每周一 09:00" },
+    events: "外部事件：CI 失败、新 issue、Webhook 回调",
+    eventsWhen: "随时，一到就提成工单",
     modes: { off: "不巡检", propose: "仅提议", auto: "直接开工" },
     autoOn: "直接开工",
     autoOff: "仅提议",
@@ -369,6 +443,8 @@ export const zh = {
       progress: (title: string) => `「${title}」更新进展`,
       asked: (title: string) => `「${title}」等待回答提问`,
       delivered: (title: string) => `「${title}」已完成，等待验收`,
+      halted: (title: string) => `「${title}」到了上限，停下等你决定`,
+      event: (title: string) => `事件提成工单：「${title}」`,
       proposed: (title: string) => `巡检提议：「${title}」`,
       started: (title: string) => `巡检自动开工：「${title}」`,
       retro: (n: string) => `主理完成第 ${n} 次复盘，提议已发至收件箱`,
@@ -515,6 +591,13 @@ export const zh = {
       ],
       result: "报告写完了。要不要加进模型目录，另提工单给你定。",
     },
+    ciRed: {
+      title: "修复 main 上失败的 CI",
+      gist: "main 上最新一次 CI 在安装依赖时失败：上游包撤回了锁定的版本。CI 一失败就提成了这张工单，不等第二天的巡检。",
+      acceptance: ["main 上的 CI 恢复通过", "锁文件只改这一个包"],
+      progress: ["已改锁到上游仍在的补丁版本，本地安装和测试都通过。"],
+      result: "锁文件已更新，CI 恢复通过。",
+    },
   } satisfies Record<FixtureId, TicketWords>,
   handbook: {
     title: "手册",
@@ -567,6 +650,15 @@ export const zh = {
         auto: "每日巡检发现的问题直接开工，做完才找你验收。",
       },
       retro: "每周一复盘，要改的提成工单，等你接受。",
+      limits: (budget: string, rounds: number, verify: boolean) =>
+        verify
+          ? `每张工单预算 ${budget}，验证最多自动退回 ${rounds} 次。到了上限，服务端让工单停下问你。`
+          : `每张工单预算 ${budget}。超出时，服务端让工单停下问你。`,
+      events: {
+        on: "CI 失败、新 issue 等外部事件一到就提成工单，等你接受。",
+        off: "不看外部事件，新情况由巡检发现。",
+      },
+      outward: "合并、发布、对外发消息，都要等你验收通过后由服务端执行。",
       record: { points: "工单记录写成要点。", prose: "工单记录写成完整的段落。" },
       ask: {
         options: "提问时给两三个选项，标出推荐的那个。",

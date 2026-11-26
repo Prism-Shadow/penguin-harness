@@ -1,7 +1,7 @@
 /**
  * The company-mode spec on one page (/company): the prototype first, live, then what the spec
- * changes against the shipped mode, how the company gets better, what the server enforces, and
- * the ticket file field by field.
+ * changes against the shipped mode, where it draws its edges, how the company gets better, what
+ * the server enforces, and the ticket file field by field.
  * It specifies the next company mode; the shipped one is the docs' company-mode page. Its own
  * chunk (see router.tsx). The tab title and description follow the reader's language while it is
  * open.
@@ -12,6 +12,7 @@ import { CompanyPrototypeSection } from "../sections/company/prototype";
 import { CompanyChanges } from "../sections/company/changes";
 import { CompanyEvolution } from "../sections/company/evolution";
 import { CompanyInvariants } from "../sections/company/invariants";
+import { CompanyScope } from "../sections/company/scope";
 import { CompanyTicket } from "../sections/company/ticket";
 
 export function CompanyPage() {
@@ -20,6 +21,7 @@ export function CompanyPage() {
     <>
       <CompanyPrototypeSection />
       <CompanyChanges />
+      <CompanyScope />
       <CompanyEvolution />
       <CompanyInvariants />
       <CompanyTicket />

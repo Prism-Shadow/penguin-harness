@@ -24,7 +24,12 @@
  * - a schedule's ticket gets no session before a person accepts it, unless the person has
  *   switched that schedule to automatic;
  * - triage never changes the work, and a ticket that waits on the person cannot be snoozed or
- *   archived.
+ *   archived;
+ * - a ticket that has spent past its budget, or whose verifier would hand its work back once more
+ *   than its rounds allow, takes no further step: the server stops it and asks the person to give
+ *   it more or to stop it there, and the answer is written to the ticket like any other;
+ * - an event (a failed CI run, a new issue) files its ticket as it arrives, proposed like a
+ *   patrol's find, without waiting for the patrol.
  *
  * The company gets better in two loops, and the person's own verdicts are the only measure:
  *
@@ -38,7 +43,15 @@
  *   Nothing about the company changes until the person accepts it; a skill accepted absorbs the
  *   lesson it came from, so the handbook every employee reads stays short.
  */
-import { FIRST_TASK, FIXTURES, PARTS, RETRO_PROPOSALS, SAID_SCRIPT, WEEK_STAFF } from "./fixtures";
+import {
+  EVENTS,
+  FIRST_TASK,
+  FIXTURES,
+  PARTS,
+  RETRO_PROPOSALS,
+  SAID_SCRIPT,
+  WEEK_STAFF,
+} from "./fixtures";
 import type {
   Byline,
   FixtureId,
@@ -55,10 +68,22 @@ import type { InboxView, TicketState, Triage } from "./spec";
 export const PERSON = "user:you";
 
 /**
- * Where a ticket came from: something the reader said, a patrol's find, the lead's own proposal,
- * or a retrospective's.
+ * Where a ticket came from: something the reader said, a patrol's find, an event as it arrived,
+ * the lead's own proposal, or a retrospective's.
  */
-export type Source = "person" | "patrol" | "lead" | "retro";
+export type Source = "person" | "patrol" | "event" | "lead" | "retro";
+
+/** Why the server stopped a ticket: it spent past its budget, or ran out of rework rounds. */
+export type Halt = "budget" | "rounds";
+
+/** What the person decided when a ticket was stopped: give it more (to this much), or stop it. */
+export interface Overrun {
+  halt: Halt;
+  /** The limit it was stopped at. */
+  from: number;
+  /** The limit it was given; null when the person stopped it there. */
+  to: number | null;
+}
 
 export interface Ticket extends TicketState, Triage {
   id: string;
@@ -91,6 +116,14 @@ export interface Ticket extends TicketState, Triage {
   /** What the person said to its work session, oldest first. */
   notes: string[];
   unread: boolean;
+  /** What it may spend, in US dollars; the server stops it past this. */
+  budget: number;
+  /** How many times its verifier may hand its work back on its own before the server stops it. */
+  rounds: number;
+  /** Why the server has stopped it, while it waits on the person for that; else null. */
+  halt: Halt | null;
+  /** Each time it was stopped and what the person decided, oldest first. */
+  overruns: Overrun[];
 }
 
 /** A line of a work session's conversation. */
@@ -113,6 +146,10 @@ export type SessionMessage =
   | { from: "agent"; step: "verified" }
   /** The agent's reply to something the person said in the session. */
   | { from: "agent"; step: "noted" }
+  /** The server stopping the session at a limit. */
+  | { from: "server"; halt: Halt; limit: number }
+  /** The person's decision on a stopped session: the limit it was given, or null to stop it. */
+  | { from: "person"; halt: Halt; to: number | null }
   | { from: "person"; answer: number; note: string }
   | { from: "person"; sendBack: string }
   | { from: "person"; text: string };
@@ -231,14 +268,20 @@ export type PatrolMode = "off" | "propose" | "auto";
 
 /**
  * How the company works and how its agents write to the person, chosen when it is set up and
- * written to the handbook's how-we-work.md, which every employee reads. The flow's two choices
- * shape the company itself: whether a verifier checks every delivery before the person reviews
- * it, and how the patrol runs. The other three are how the agents write: a ticket's record as
- * points or as prose, a question with options and a recommendation or as a plain question, and
- * progress noted at milestones or at every step.
+ * written to the handbook's how-we-work.md, which every employee reads. The first choices shape
+ * the company itself: whether a verifier checks every delivery before the person reviews it, the
+ * limits every ticket starts with, whether events file tickets as they arrive, and how the patrol
+ * runs. The other three are how the agents write: a ticket's record as points or as prose, a
+ * question with options and a recommendation or as a plain question, and progress noted at
+ * milestones or at every step.
  */
 export interface CompanySettings {
   verify: boolean;
+  /** What a ticket may spend, in US dollars. */
+  budget: number;
+  /** How many times a verifier may hand a ticket's work back on its own. */
+  rounds: number;
+  events: boolean;
   patrol: PatrolMode;
   record: "points" | "prose";
   ask: "options" | "open";
@@ -248,6 +291,9 @@ export interface CompanySettings {
 /** What a new company is offered: the choices that keep the person in charge with the least noise. */
 export const DEFAULT_SETTINGS: CompanySettings = {
   verify: true,
+  budget: 5,
+  rounds: 2,
+  events: true,
   patrol: "propose",
   record: "points",
   ask: "options",
@@ -293,13 +339,25 @@ export interface CompanyState {
   chat: ChatLine[];
   /** What a patrol can still find, in the order it finds it. */
   pool: FixtureId[];
+  /** The events still to arrive, in the order they arrive. */
+  inbound: FixtureId[];
   /** How many tickets the person has asked for in their own words. */
   said: number;
 }
 
 /** What letting time pass did to a ticket, for the note the prototype raises. */
 export interface PassEvent {
-  kind: "progress" | "handed" | "found" | "asked" | "delivered" | "proposed" | "started" | "retro";
+  kind:
+    | "progress"
+    | "handed"
+    | "found"
+    | "asked"
+    | "delivered"
+    | "halted"
+    | "event"
+    | "proposed"
+    | "started"
+    | "retro";
   id: string;
 }
 
@@ -312,6 +370,12 @@ function ownerOn(staff: readonly Role[], owner: FixtureOwner): Byline | null {
 /** Someone on the team can do this sample ticket. */
 const doable = (staff: readonly Role[], id: FixtureId): boolean =>
   ownerOn(staff, FIXTURES[id].owner) !== null;
+
+/** The limits a ticket starts with: the company's. */
+const limitsOf = (settings: CompanySettings): Pick<Ticket, "budget" | "rounds"> => ({
+  budget: settings.budget,
+  rounds: settings.rounds,
+});
 
 function ticketOf(
   id: FixtureId,
@@ -342,6 +406,9 @@ function ticketOf(
     unread: true,
     snoozed: false,
     archived: false,
+    ...limitsOf(DEFAULT_SETTINGS),
+    halt: null,
+    overruns: [],
     ...patch,
   };
 }
@@ -370,7 +437,10 @@ function replay(target: Ticket, roles: Byline[]): WorkSession[] {
     returns: [],
     findings: [],
     blockedBy: undefined,
+    halt: null,
+    overruns: [],
   };
+  let overran = 0;
   let state = openSession(
     { ...freshState(), stage: "running", roles, tickets: [start] },
     target.id,
@@ -381,7 +451,9 @@ function replay(target: Ticket, roles: Byline[]): WorkSession[] {
     const ticket = find(state, target.id)!;
     if (ticket.step >= target.step) break;
     const wait = waitOf(ticket);
-    if (wait === "answer") {
+    if (wait === "answer" && ticket.halt !== null) {
+      state = answerLimit(state, target.id, (target.overruns[overran++]?.to ?? null) !== null);
+    } else if (wait === "answer") {
       state = answerTicket(state, target.id, target.answer ?? 0, target.answerNote);
     } else if (wait === "review") {
       state = sendBack(state, target.id, target.returns[returned++] ?? "");
@@ -411,6 +483,7 @@ export function freshState(): CompanyState {
     learned: [],
     chat: [],
     pool: ["flaky", "lint", "discussion"],
+    inbound: [...EVENTS],
     said: 0,
   };
 }
@@ -512,6 +585,7 @@ export function weekState(): CompanyState {
       { from: "lead", line: "filed", tickets: ["csv"] },
     ],
     pool: ["lint", "discussion"],
+    inbound: [...EVENTS],
     said: 0,
   };
 }
@@ -527,10 +601,14 @@ const withTicket = (state: CompanyState, id: string, patch: Partial<Ticket>): Co
 export const sessionsOf = (state: CompanyState, ticketId: string): WorkSession[] =>
   state.sessions.filter((session) => session.ticket === ticketId);
 
-/** Whose turn a ticket's work is: the verifier's while it checks a delivery, else the builder's. */
+/**
+ * Whose turn a ticket's work is: the verifier's while it checks a delivery, else the builder's. A
+ * ticket the server stopped stays in the turn it was stopped in.
+ */
 function turnOf(ticket: Ticket): SessionRole {
   const next = scriptOf(ticket)[ticket.step];
-  return waitOf(ticket) === null && (next === "found" || next === "verified") ? "verify" : "build";
+  const free = waitOf(ticket) === null || ticket.halt !== null;
+  return free && (next === "found" || next === "verified") ? "verify" : "build";
 }
 
 /**
@@ -548,10 +626,14 @@ export function sessionStatus(state: CompanyState, session: WorkSession): Sessio
     .at(-1);
   if (latest?.id !== session.id) return "ended";
   const turn = turnOf(ticket);
-  if (session.role === "verify") return turn === "verify" ? "running" : "ended";
+  if (session.role === "verify") {
+    if (turn !== "verify") return "ended";
+    return ticket.halt !== null ? "answer" : "running";
+  }
+  if (turn === "verify") return "verifying";
   const wait = waitOf(ticket);
   if (wait === "answer" || wait === "review") return wait;
-  return turn === "verify" ? "verifying" : "running";
+  return "running";
 }
 
 /** The sessions that are not over, oldest first. */
@@ -647,6 +729,7 @@ export function startCompany(
   const roles: Byline[] = settings.verify ? [...ids, "verifier"] : ids;
   const kinds = PARTS.filter((part) => staff.some((role) => role.part === part));
   const proposals: FixtureId[] = ["survey", ...kinds.map((part) => FIRST_TASK[part])];
+  const limits = limitsOf(settings);
   return {
     ...state,
     stage: "running",
@@ -656,9 +739,10 @@ export function startCompany(
     staff: [...staff],
     schedules: patrolled(state.schedules, settings.patrol),
     handbook: [...state.handbook, fixedEntry("howWeWork", null)],
-    tickets: proposals.map((id) => ticketOf(id, "lead", {}, staff)),
-    // The patrol finds what is left, and only what someone on the team can do.
+    tickets: proposals.map((id) => ticketOf(id, "lead", limits, staff)),
+    // The patrol finds what is left, and only what someone on the team can do; so do events.
     pool: state.pool.filter((id) => !proposals.includes(id) && doable(staff, id)),
+    inbound: state.inbound.filter((id) => doable(staff, id)),
     chat: [
       { from: "person", text: said },
       { from: "lead", line: "proposals", tickets: proposals },
@@ -670,6 +754,12 @@ export function startCompany(
 function patrolled(schedules: readonly Schedule[], mode: PatrolMode): Schedule[] {
   const others = schedules.filter((schedule) => schedule.id !== "patrol");
   return mode === "off" ? others : [...others, { id: "patrol", auto: mode === "auto" }];
+}
+
+/** Whether events file tickets as they arrive, as the person sets it on the schedules page. */
+export function setEvents(state: CompanyState, events: boolean): CompanyState {
+  if (state.stage !== "running") return state;
+  return { ...state, settings: { ...state.settings, events } };
 }
 
 /** How the patrol runs, as the person sets it on the schedules page; how-we-work.md follows. */
@@ -793,6 +883,37 @@ export function answerTicket(
   return tell(recorded, id, "build", { from: "person", answer: option, note: said });
 }
 
+/**
+ * Decide on a ticket the server stopped: give it more (twice the budget, or one more round) and
+ * it carries on in the session it was stopped in, or stop it there and it closes undone. Either
+ * way the decision is written to the ticket and goes into that session as the person's message.
+ */
+export function answerLimit(state: CompanyState, id: string, more: boolean): CompanyState {
+  const ticket = find(state, id);
+  if (ticket === undefined || ticket.halt === null || waitOf(ticket) !== "answer") return state;
+  const halt = ticket.halt;
+  const role = turnOf(ticket);
+  const from = halt === "budget" ? ticket.budget : ticket.rounds;
+  const to = more ? (halt === "budget" ? ticket.budget * 2 : ticket.rounds + 1) : null;
+  const decided: Partial<Ticket> = {
+    halt: null,
+    blockedBy: undefined,
+    unread: false,
+    overruns: [...ticket.overruns, { halt, from, to }],
+  };
+  const said: SessionMessage = { from: "person", halt, to };
+  if (to === null) {
+    return tell(
+      close(withTicket(state, id, { ...decided, status: "rejected" }), id),
+      id,
+      role,
+      said,
+    );
+  }
+  const raised = halt === "budget" ? { budget: to } : { rounds: to };
+  return tell(withTicket(state, id, { ...decided, ...raised }), id, role, said);
+}
+
 /** Accept a delivery: the ticket is done and its session is over. */
 export function approveTicket(state: CompanyState, id: string): CompanyState {
   const ticket = find(state, id);
@@ -890,7 +1011,7 @@ export function sayToLead(state: CompanyState, text: string): CompanyState {
   if (state.stage !== "running" || said === "") return state;
   const id = `said-${state.said + 1}`;
   const ticket: Ticket = {
-    ...ticketOf("csv", "person", working()),
+    ...ticketOf("csv", "person", working(limitsOf(state.settings))),
     id,
     fixture: null,
     title: said,
@@ -930,6 +1051,9 @@ function stepOne(
     return null;
   const step = scriptOf(ticket)[ticket.step];
   if (step === undefined) return null;
+  if (costOf(state, ticket) > ticket.budget) return stop(state, ticket, "budget");
+  if (step === "found" && ticket.findings.length >= ticket.rounds)
+    return stop(state, ticket, "rounds");
   const next = { step: ticket.step + 1 };
   // The steps that leave the ticket waiting on the person: it turns unread, and comes back from "later".
   const waiting = { ...next, unread: true, snoozed: false, archived: false };
@@ -1012,15 +1136,55 @@ function stepOne(
 }
 
 /**
- * Time passes: every work session takes one step. When none had a step to take, time runs on to
- * the next schedule's run, the schedules taking turns: the patrol files what it finds, proposed,
- * or already in progress when it is automatic; the retrospective looks back over what closed
- * since the last one. A run with nothing to do is skipped.
+ * The server stops a ticket at a limit, before the step that would go past it: the session whose
+ * turn it is says so, and the ticket waits on the person, unread and back from "later".
+ */
+function stop(
+  state: CompanyState,
+  ticket: Ticket,
+  halt: Halt,
+): { state: CompanyState; event: PassEvent } {
+  const stopped = withTicket(state, ticket.id, {
+    halt,
+    blockedBy: PERSON,
+    unread: true,
+    snoozed: false,
+    archived: false,
+  });
+  const limit = halt === "budget" ? ticket.budget : ticket.rounds;
+  return {
+    state: tell(stopped, ticket.id, turnOf(ticket), { from: "server", halt, limit }),
+    event: { kind: "halted", id: ticket.id },
+  };
+}
+
+/** An event arrives, when one is due and events are on: its ticket is filed as a proposal. */
+function arrive(state: CompanyState): { state: CompanyState; event: PassEvent } | null {
+  const arrived = state.inbound[0];
+  if (!state.settings.events || arrived === undefined) return null;
+  const filed = ticketOf(arrived, "event", limitsOf(state.settings), state.staff);
+  return {
+    state: { ...state, tickets: [...state.tickets, filed], inbound: state.inbound.slice(1) },
+    event: { kind: "event", id: arrived },
+  };
+}
+
+/**
+ * Time passes: an event that is due arrives, and every work session takes one step, or is stopped
+ * at a limit. When nothing happened, time runs on to the next schedule's run, the schedules taking
+ * turns: the patrol files what it finds, proposed, or already in progress when it is automatic;
+ * the retrospective looks back over what closed since the last one. A run with nothing to do is
+ * skipped.
  */
 export function letTimePass(state: CompanyState): { state: CompanyState; events: PassEvent[] } {
   if (state.stage !== "running") return { state, events: [] };
   const events: PassEvent[] = [];
   let moved = state;
+  const arrived = arrive(state);
+  if (arrived !== null) {
+    events.push(arrived.event);
+    moved = arrived.state;
+  }
   for (const ticket of state.tickets) {
     const stepped = stepOne(moved, ticket.id);
     if (stepped === null) continue;
@@ -1051,7 +1215,7 @@ function runSchedule(
   }
   const found = state.pool[0];
   if (found === undefined) return null;
-  const proposed = ticketOf(found, "patrol", {}, state.staff);
+  const proposed = ticketOf(found, "patrol", limitsOf(state.settings), state.staff);
   const filed = schedule.auto ? { ...staffed(state, proposed), ...working() } : proposed;
   const next = { ...state, tickets: [...state.tickets, filed], pool: state.pool.slice(1) };
   return {
@@ -1070,7 +1234,10 @@ function lookBack(state: CompanyState): CompanyState {
   const proposals = (RETRO_PROPOSALS[n - 1] ?? []).filter((id) => find(state, id) === undefined);
   return {
     ...state,
-    tickets: [...state.tickets, ...proposals.map((id) => ticketOf(id, "retro", {}, state.staff))],
+    tickets: [
+      ...state.tickets,
+      ...proposals.map((id) => ticketOf(id, "retro", limitsOf(state.settings), state.staff)),
+    ],
     retros: [...state.retros, { n, from, upTo: state.closed.length, proposals }],
     handbook: [
       ...state.handbook,
@@ -1124,11 +1291,14 @@ export function inboxCounts(state: CompanyState): Record<InboxView, number> {
   return counts;
 }
 
-/** What a ticket's sessions have cost so far: its sample's figure once work has started. */
+/**
+ * What a ticket's sessions have cost so far: each step it has taken costs an equal share of its
+ * sample's figure, so rework costs more on top. One the reader asked for costs a flat sum a session.
+ */
 export function costOf(state: CompanyState, ticket: Ticket): number {
-  const sessions = sessionsOf(state, ticket.id).length;
-  if (sessions === 0) return 0;
-  return ticket.fixture === null ? 0.5 * sessions : FIXTURES[ticket.fixture].cost;
+  if (ticket.fixture === null) return 0.5 * sessionsOf(state, ticket.id).length;
+  const own = scriptOf({ ...ticket, returns: [] }).length;
+  return own === 0 ? 0 : (FIXTURES[ticket.fixture].cost * ticket.step) / own;
 }
 
 /** What the company has spent: every ticket's cost. */

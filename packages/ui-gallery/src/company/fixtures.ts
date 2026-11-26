@@ -1,7 +1,7 @@
 /**
  * The sample company, a week in, keeps up PenguinHarness: its code, its docs, blog and community,
  * and the evaluation of new models, one employee to each part. The sample work it is staged with is
- * seventeen tickets' worth of facts that are not
+ * eighteen tickets' worth of facts that are not
  * language (what kind of thing each is, who does it, the steps its work session takes when the
  * reader lets time pass). Their words are the dictionaries' `tickets`, keyed by the same ids.
  * Everything is fictional; no agent runs.
@@ -23,7 +23,8 @@ export type FixtureId =
   | "release"
   | "community"
   | "discussion"
-  | "evals";
+  | "evals"
+  | "ciRed";
 
 /**
  * What accepting a ticket sets going: work, a skill the lead distilled, installed for the employee
@@ -189,6 +190,12 @@ export const FIRST_TASK: Record<Part, FixtureId> = {
 export const USD_PER_MILLION_TOKENS = 3;
 
 /**
+ * What accepting a delivery does outside the company, drafted on the ticket until then: merge the
+ * pull request it opened, or publish the document it wrote. A delivery with none is only read.
+ */
+export type Outward = "merge" | "publish";
+
+/**
  * One step a ticket's work takes. The building session notes progress, stops on its one question,
  * and delivers: straight to the person's review, or, on a ticket with a verifier, handed to a
  * verifying session, which either finds something and hands it back to the building session, or
@@ -213,7 +220,12 @@ export interface Fixture {
   recommended?: number;
   /** What it hands over. */
   deliverable?: string;
-  /** What its sessions have cost so far, in US dollars, once work has started. */
+  /** What accepting its delivery does outside the company. */
+  outward?: Outward;
+  /**
+   * What its work costs in US dollars, its own steps taken once; each step costs an equal share,
+   * so a round of rework costs more on top.
+   */
   cost: number;
   /** The handbook document it adds once it is done. */
   handbook?: HandbookDocId;
@@ -235,6 +247,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     script: ["progress", "ask", "progress", "deliver"],
     recommended: 0,
     deliverable: "pull/128",
+    outward: "merge",
     cost: 4.2,
     verified: true,
     finds: true,
@@ -245,6 +258,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P1",
     script: ["progress", "progress", "deliver"],
     deliverable: "pull/126",
+    outward: "merge",
     cost: 3.1,
     verified: true,
   },
@@ -254,6 +268,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P1",
     script: ["progress", "deliver"],
     deliverable: "pull/129",
+    outward: "merge",
     cost: 1.8,
     verified: true,
   },
@@ -278,6 +293,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P2",
     script: ["progress", "deliver"],
     deliverable: "pull/121",
+    outward: "merge",
     cost: 0.9,
   },
   timeout: {
@@ -286,6 +302,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P2",
     script: ["progress", "deliver"],
     deliverable: "pull/119",
+    outward: "merge",
     cost: 1.4,
   },
   lint: {
@@ -294,6 +311,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P2",
     script: ["progress", "deliver"],
     deliverable: "pull/130",
+    outward: "merge",
     cost: 0.7,
   },
   survey: {
@@ -324,6 +342,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P1",
     script: ["progress", "progress", "deliver"],
     deliverable: "changelog/0.3.md",
+    outward: "publish",
     cost: 2.3,
     verified: true,
     finds: true,
@@ -349,10 +368,23 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P1",
     script: ["progress", "progress", "deliver"],
     deliverable: "reports/new-models-eval.md",
-    cost: 6.4,
+    cost: 9.6,
+    verified: true,
+  },
+  ciRed: {
+    kind: "task",
+    owner: "engineer",
+    priority: "P0",
+    script: ["progress", "deliver"],
+    deliverable: "pull/131",
+    outward: "merge",
+    cost: 1.5,
     verified: true,
   },
 };
+
+/** What the sample's events file, in the order they arrive: a failed CI run on main. */
+export const EVENTS: readonly FixtureId[] = ["ciRed"];
 
 /** What the sample's retrospectives propose, by retrospective: the first, then the second. */
 export const RETRO_PROPOSALS: readonly (readonly FixtureId[])[] = [["skill"], ["patrolScope"]];

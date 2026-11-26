@@ -4,8 +4,9 @@
  * waits for, or else where it stands), then who owns it, where it came from and what it has cost.
  *
  * The record tab opens on what the ticket needs from the reader, when it needs anything: accept or
- * reject a proposal, pick an option of its one question, accept a delivery or send it back with a
- * note. The answer stays on the ticket, under Decisions. Under that come the shipped ticket's
+ * reject a proposal, pick an option of its one question, decide on a ticket the server stopped at
+ * its budget or its rounds, accept a delivery or send it back with a note. The answer stays on the
+ * ticket, under Decisions. Under that come the shipped ticket's
  * sections, what it gave the handbook, and at the foot the reader's own triage.
  *
  * A session tab is the conversation behind the record (session-page.tsx). A ticket that waits on
@@ -18,7 +19,6 @@ import {
   TicketStatusBadge,
   TitleButton,
 } from "../../../web/src/features/company/shared";
-import { FIXTURES } from "./fixtures";
 import type { SessionStatus, Ticket, WorkSession } from "./model";
 import { Deliverable, NeedsYou } from "./needs-you";
 import type { TicketActions } from "./needs-you";
@@ -31,6 +31,7 @@ import {
   gistOf,
   money,
   optionsOf,
+  overrunOf,
   progressOf,
   questionOf,
   resultOf,
@@ -112,6 +113,12 @@ export function TicketPane({
             {T.cost}{" "}
             <span className="font-medium text-fg">{W.ticket.usage(tokens(cost), money(cost))}</span>
           </span>
+          <span className="tabular-nums">{W.ticket.budget(money(ticket.budget))}</span>
+          {ticket.verifier !== null && (
+            <span className="tabular-nums">
+              {W.ticket.rounds(ticket.findings.length, ticket.rounds)}
+            </span>
+          )}
         </p>
         <div className="mt-3">
           <Tabs
@@ -133,12 +140,19 @@ export function TicketPane({
         </div>
       </header>
       {shown === undefined ? (
-        <Record ticket={ticket} filed={filed} actions={actions} onOpenHandbook={onOpenHandbook} />
+        <Record
+          ticket={ticket}
+          cost={cost}
+          filed={filed}
+          actions={actions}
+          onOpenHandbook={onOpenHandbook}
+        />
       ) : (
         <SessionConversation
           key={shown.id}
           session={shown}
           ticket={ticket}
+          cost={cost}
           status={statusOf(shown)}
           actions={actions}
           onSay={(text) => onSay(shown.id, text)}
@@ -150,11 +164,13 @@ export function TicketPane({
 
 function Record({
   ticket,
+  cost,
   filed,
   actions,
   onOpenHandbook,
 }: {
   ticket: Ticket;
+  cost: number;
   filed: readonly { path: string; title: string }[];
   actions: TicketActions;
   onOpenHandbook: (path: string) => void;
@@ -164,7 +180,6 @@ function Record({
   const wait = waitOf(ticket);
   const progress = progressOf(ticket, W);
   const acceptance = acceptanceOf(ticket, W);
-  const deliverable = ticket.fixture === null ? undefined : FIXTURES[ticket.fixture].deliverable;
   const aside = ticket.snoozed || ticket.archived;
   return (
     <>
@@ -172,7 +187,13 @@ function Record({
         <div className="max-w-3xl space-y-6 px-4 py-5 sm:px-6">
           {wait !== null && (
             // Remounted for each reason it waits, so a note typed for one is not left in the next.
-            <NeedsYou key={wait} ticket={ticket} wait={wait} actions={actions} />
+            <NeedsYou
+              key={`${wait}-${ticket.halt}`}
+              ticket={ticket}
+              wait={wait}
+              spent={cost}
+              actions={actions}
+            />
           )}
 
           <RuledSection level={3} title={T.goal}>
@@ -193,7 +214,7 @@ function Record({
             )}
           </RuledSection>
 
-          {(ticket.answer !== null || ticket.notes.length > 0) && (
+          {(ticket.answer !== null || ticket.notes.length > 0 || ticket.overruns.length > 0) && (
             <RuledSection level={3} title={W.ticket.decisions}>
               {ticket.answer !== null && (
                 <>
@@ -211,6 +232,11 @@ function Record({
               {ticket.notes.map((note, i) => (
                 <p key={i} className={`mt-1 ${BODY}`}>
                   <span className={QUIET}>{W.ticket.saidInSession}</span> {note}
+                </p>
+              ))}
+              {ticket.overruns.map((overrun, i) => (
+                <p key={`overrun-${i}`} className={`mt-1 ${BODY}`}>
+                  {overrunOf(overrun, W)}
                 </p>
               ))}
             </RuledSection>
@@ -231,7 +257,7 @@ function Record({
           {ticket.delivered && (
             <RuledSection level={3} title={T.result}>
               <p className={BODY}>{resultOf(ticket, W)}</p>
-              {deliverable !== undefined && <Deliverable path={deliverable} />}
+              <Deliverable ticket={ticket} />
             </RuledSection>
           )}
 

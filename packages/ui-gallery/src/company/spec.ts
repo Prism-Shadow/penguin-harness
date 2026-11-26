@@ -87,7 +87,7 @@ export const FRONTMATTER_FIELDS = [
   field("status", TICKET_STATUSES.join(" | "), ["person", "agent"], { required: true }),
   field("owner", "agent:<id> | user:<id>", ["person", "agent"], { required: true }),
   field("verifier", "agent:<id>", ["person", "agent"], { isNew: true }),
-  field("source", "user:<id> | schedule:<event> | agent:<id>", ["server"], {
+  field("source", "user:<id> | schedule:<id> | event:<kind> | agent:<id>", ["server"], {
     required: true,
     isNew: true,
   }),
@@ -97,8 +97,11 @@ export const FRONTMATTER_FIELDS = [
   field("due", "date", ["person", "agent"]),
   field("blocked", "string", ["person", "agent"]),
   field("blocked_by", "ticket id | principal", ["person", "agent"]),
-  field("ask", "{ question, options[], recommended }", ["agent"], { isNew: true }),
+  field("budget", "{ usd, spent }", ["person", "server"], { required: true, isNew: true }),
+  field("rounds", "{ limit, used }", ["person", "server"], { isNew: true }),
+  field("ask", "{ question, options[], recommended }", ["agent", "server"], { isNew: true }),
   field("deliverables", "string[]", ["agent"], { isNew: true }),
+  field("outward", "{ action: merge | publish | send, target }", ["agent"], { isNew: true }),
   field("sessions", "{ id, by, as: build | verify }[]", ["server"], { required: true }),
   field("history", "{ at, by, action, note? }[]", ["server"], { required: true }),
 ] as const satisfies readonly FieldDoc[];
@@ -138,6 +141,11 @@ export const INVARIANTS = [
   { id: "observe_first", refusal: "409 ticket_not_accepted", isNew: true },
   { id: "triage_apart", refusal: "409 ticket_waiting", isNew: true },
   { id: "verified_first", refusal: "409 not_verified", isNew: true },
+  { id: "budget_capped", refusal: "409 over_budget", isNew: true },
+  { id: "rounds_capped", refusal: "409 round_limit", isNew: true },
+  { id: "outward_approved", refusal: "403 outward_needs_approval", isNew: true },
+  { id: "delegation_bounded", refusal: "409 delegation_loop", isNew: true },
+  { id: "events_wake", refusal: null, isNew: true },
   { id: "own_skill_kept", refusal: null, isNew: true },
   { id: "snapshot_first", refusal: null, isNew: true },
 ] as const;

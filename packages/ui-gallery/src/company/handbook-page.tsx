@@ -63,6 +63,9 @@ function howWeWork(state: CompanyState, W: Words): { title: string; body: string
     title: W.handbook.docs.howWeWork.title,
     body: [
       s.verify ? H.verify.on(W.species.chinstrap) : H.verify.off,
+      H.limits(money(s.budget), s.rounds, s.verify),
+      H.outward,
+      s.events ? H.events.on : H.events.off,
       H.patrol[s.patrol],
       H.retro,
       H.record[s.record],
