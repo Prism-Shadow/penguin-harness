@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1909](https://github.com/Prism-Shadow/penguin-harness/pull/1909)
 
 [English](2026-11-26-boot-race-no-crash.md)
 
