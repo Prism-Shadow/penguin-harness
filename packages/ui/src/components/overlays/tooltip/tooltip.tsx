@@ -84,13 +84,16 @@ export type TooltipPlacement = "right" | "bottom";
  *   breaks, so a multi-line command reads the way it was written.
  * - `text`: prose a row truncated (a title, a description, an error). As wide as `code`, set
  *   in the interface face, wrapping at words and keeping its own line breaks.
+ *
+ * Every kind breaks a run that has no break opportunity (a file path in a hint) at the panel's
+ * edge, so text never runs past the rounded panel; ordinary words stay whole.
  */
 export type TooltipContent = "label" | "code" | "text";
 
 const contentClass: Record<TooltipContent, string> = {
-  label: "",
+  label: "wrap-anywhere",
   code: "whitespace-pre-wrap wrap-anywhere font-mono",
-  text: "whitespace-pre-wrap wrap-break-word",
+  text: "whitespace-pre-wrap wrap-anywhere",
 };
 
 /** The width each kind wraps at, before the room left on screen caps it further. */

@@ -9,6 +9,10 @@ const COPY =
 const GEAR =
   "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z";
 
+// A path has no break opportunity but "-"; the panel must wrap it inside itself.
+const LONG_PATH =
+  "/Users/me/.penguin/data/projects/default_project/agents/default_agent/traces/2026-08-27/session-2026-08-27-05-58-16-58a4474f_007.jsonl";
+
 function Glyph({ d }: { d: string }) {
   return (
     <svg
@@ -69,6 +73,14 @@ export function TooltipsBoard() {
             tabIndex={0}
           >
             {t.command}
+          </span>
+          <span
+            className="lib-truncated px-3 py-2"
+            data-tooltip={LONG_PATH}
+            data-tooltip-extra
+            tabIndex={0}
+          >
+            {LONG_PATH}
           </span>
         </div>
       </BoardGroup>
