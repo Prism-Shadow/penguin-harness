@@ -8,7 +8,7 @@ import type { IfaceTable, Resources } from "@prismshadow/penguin-core/kernel";
 
 /** The process configuration, as far as the plugin domain reads it (the server's `Config` satisfies this structurally). */
 @Interface()
-export abstract class PluginConfig {
+export abstract class PluginProcessConfig {
   /** Local data root directory. */
   abstract root: string;
 }

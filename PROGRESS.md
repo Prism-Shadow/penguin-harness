@@ -166,3 +166,11 @@ pnpm-lock.yaml 未含。后果与已试路径：
   platform-ports.ts 改引 errors.js。platform-ports 传递闭包复核全叶（library ports、
   node-only asset-archives、core+leaf profile、errors、json、kernel type）——四 shim
   的 import 即绑从此无再入路径。hmr 红线未触碰（asset-archives 仅读）。
+- 验证轮修复 6（server 套件二轮：213 文件红单根因）：gen-ifaces 的 iface 表按名字归并，
+  ports.ts 给 PluginModulesService 声明的端口面 PluginConfig（fields.root，server 的
+  Config 结构性满足）与 config.ts 的内核 iface PluginConfig（get/watch/saved/schema，
+  settings store 的 api 面）撞名，生成表被端口版占据，PluginConfigProvider 的 store
+  校验报 missing [root]，createTestApp 全数起不来（afterEach 的 t.cleanup 掩盖主错）。
+  main 无 ports.ts 故无撞名。修＝端口类改名 PluginProcessConfig（iface 名即类名；
+  绑定按属性名 config 走 Object.assign，不受影响），plugin-modules.ts 类型标注同步；
+  内核面 PluginConfig 恢复本名独占，回到 main 的表形态。仅 library 两文件，server 零改。
