@@ -73,12 +73,25 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
   const plain = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
-    const match = STREAM_PATH.exec(url.pathname);
-    const apiSocket = url.pathname === API_SOCKET_PATH;
-    // Not ours: leave the socket alone so another upgrade handler (or the default
-    // "no handler -> destroy" behaviour) can deal with it.
-    if (!match && !apiSocket) return;
+    // A throw out of an 'upgrade' listener is not this request's failure but the process's:
+    // Node emits the event from the connection's data handler, where nothing catches it. So
+    // whatever the handshake trips over is caught here, logged, and answered as a 500.
+    try {
+      handshake(req, socket, head);
+    } catch (err) {
+      deps.log(`[terminal] upgrade failed: ${err instanceof Error ? err.message : String(err)}`);
+      refuse(socket, 500, "Internal Server Error");
+    }
+  });
+
+  function handshake(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+    const url = upgradeTarget(req);
+    const match = url === null ? null : STREAM_PATH.exec(url.pathname);
+    const apiSocket = url?.pathname === API_SOCKET_PATH;
+    // Not ours — another handler's path, or a request target that is no path at all: leave the
+    // socket alone so another upgrade handler (or the default "no handler -> destroy"
+    // behaviour) can deal with it.
+    if (url === null || (!match && !apiSocket)) return;
 
     let target: URL;
     let streamUrl: URL;
@@ -148,12 +161,25 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
         deps.log(`[terminal] stream upgrade failed: ${err instanceof Error ? err.message : err}`);
         refuse(socket, 500, "Internal Server Error");
       });
-  });
+  }
 }
 
 function refuse(socket: Duplex, status: number, text: string): void {
+  if (socket.destroyed) return;
   socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\n\r\n`);
   socket.destroy();
+}
+
+/**
+ * The upgrade's path and query, or null when its request target is not one: Node passes an
+ * absolute-form target through as it came (`GET http://[ HTTP/1.1`), and `new URL` throws on it.
+ */
+export function upgradeTarget(req: IncomingMessage): URL | null {
+  try {
+    return new URL(req.url ?? "/", "http://localhost");
+  } catch {
+    return null;
+  }
 }
 
 /**
