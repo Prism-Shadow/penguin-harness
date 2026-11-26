@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `core`, `server`
+- **PR:** [#1886](https://github.com/Prism-Shadow/penguin-harness/pull/1886)
 
 [中文版](2026-11-26-windows-relocate-legacy-projects.zh.md)
 
