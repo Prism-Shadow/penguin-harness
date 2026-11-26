@@ -72,12 +72,17 @@ function fakeRegistry(): {
 
 /**
  * The transport's session module imported afresh, as a hot push re-imports the platform bundle
- * (hmr/host.ts): a generation with its own map of sessions and its own listeners.
+ * (hmr/host.ts): a generation with its own map of sessions and its own listeners. The query
+ * busts the cache of the REAL module — the server's own path is a re-export of the machines
+ * domain package, and busting the shim alone would leave every generation one shared instance.
  */
 async function generation(
   n: number,
 ): Promise<typeof import("../src/machines/transport/ssh-session.js")> {
-  const file = path.join(import.meta.dirname, "../src/machines/transport/ssh-session.ts");
+  const file = path.join(
+    import.meta.dirname,
+    "../../../library/machine/src/transport/ssh-session.ts",
+  );
   return import(/* @vite-ignore */ `${file}?generation=${n}`);
 }
 
