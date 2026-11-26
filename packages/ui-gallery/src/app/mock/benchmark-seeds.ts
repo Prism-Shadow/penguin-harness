@@ -5,21 +5,27 @@
  * seed folder holds the manifest and every case's statement and rubric READMEs. The demo lists
  * them as the workbench's handler lists a freshly seeded folder.
  *
- * The package exports none of these files, so they are read by path. Only the manifest's
- * top-level scalars are read here (the description, the version, the run count and the status):
- * the format's own reader runs on Node only, and the tables after them say nothing the list shows.
+ * The package exports them as its published files (`./workbenches/*`): the catalog by its
+ * subpath, the seed folders through the `@rsi-workbench-seeds` alias the gallery's Vite and
+ * Vitest configs resolve from that same subpath, since a glob takes no package name. Only the
+ * manifest's top-level scalars are read here (the description, the version, the run count and the
+ * status): the format's own reader runs on Node only, and the tables after them say nothing the
+ * list shows.
  */
-import catalog from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/seeds/catalog.json";
+import catalog from "@penguinharness/rsi-workbench/workbenches/benchmark/seeds/catalog.json";
 import type { BenchmarkStatus } from "./rsi-workbench-contract";
 
 const SEED_FILES = import.meta.glob<string>(
-  "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/seeds/*/{benchmark_config.toml,CASE-*/statement/README.md,CASE-*/rubric/README.md}",
+  "@rsi-workbench-seeds/*/{benchmark_config.toml,CASE-*/statement/README.md,CASE-*/rubric/README.md}",
   { query: "?raw", import: "default", eager: true, exhaustive: true },
 );
 
 /** The same files by their path below `seeds/`: `<id>/benchmark_config.toml`, `<id>/CASE-…/…`. */
 const BY_SEED_PATH = new Map(
-  Object.entries(SEED_FILES).map(([file, text]) => [file.slice(file.indexOf("/seeds/") + 7), text]),
+  Object.entries(SEED_FILES).map(([file, text]) => [
+    file.replace(/^.*?(?:\/seeds\/|@rsi-workbench-seeds\/)/, ""),
+    text,
+  ]),
 );
 
 /** One case of a seed: the title its list shows and the two READMEs its browser opens. */

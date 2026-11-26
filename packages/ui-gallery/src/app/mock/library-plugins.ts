@@ -16,9 +16,9 @@
 import type { IconRef, PluginItem, SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import aceIcon from "@penguinharness/ace-rsi-toolkit/icon.svg?raw";
 import acePkg from "@penguinharness/ace-rsi-toolkit/package.json";
-// The package exports none of its workbench files, so its workbench manifest is read by path.
-import rsiWorkbenchManifest from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/package.json";
-import rsiWorkbenchIcon from "../../../node_modules/@penguinharness/rsi-workbench/icon.svg?raw";
+// The package's workbench manifest and icon, through its `./workbenches/*` and `./icon.svg` exports.
+import rsiWorkbenchManifest from "@penguinharness/rsi-workbench/workbenches/benchmark/package.json";
+import rsiWorkbenchIcon from "@penguinharness/rsi-workbench/icon.svg?raw";
 import rsiWorkbenchPkg from "@penguinharness/rsi-workbench/package.json";
 import apeIcon from "@penguinharness/ape-rsi-toolkit/icon.svg?raw";
 import apePkg from "@penguinharness/ape-rsi-toolkit/package.json";

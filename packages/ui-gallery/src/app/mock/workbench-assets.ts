@@ -10,14 +10,16 @@ import { pageSdkFile } from "../../../../server/src/workbenches/page-sdk";
 const root = fileURLToPath(new URL("../../../../../", import.meta.url));
 const shipped = (plugin: string, id: string) =>
   join(root, "plugins", plugin, "workbenches", id, "ui");
-/** The pinned Self-Evolution Workbench's built page, which its package exports no path to. */
-const rsiWorkbench = dirname(
-  createRequire(import.meta.url).resolve("@penguinharness/rsi-workbench/package.json"),
+/** The pinned Self-Evolution Workbench's built page, through the package's `./workbenches/*` export. */
+const rsiWorkbenchUi = dirname(
+  createRequire(import.meta.url).resolve(
+    "@penguinharness/rsi-workbench/workbenches/benchmark/ui/index.html",
+  ),
 );
 const apps = [
   ["default_agent", "slides", shipped("use-bento-slides", "slides")],
   ["default_agent", "images", shipped("multimodal-tools", "images")],
-  ["default_agent", "benchmark", join(rsiWorkbench, "workbenches", "benchmark", "ui")],
+  ["default_agent", "benchmark", rsiWorkbenchUi],
   ["penguin_support", "support", shipped("penguin-support", "support")],
 ] as const;
 const modelControl = join(root, "plugins/use-bento-slides/workbenches/slides/ui/model-control.tsx");

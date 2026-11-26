@@ -6,8 +6,8 @@ import { sessionToolArt } from "../../../ui/src/components/icons/glyph-app-icon/
 import slidesIcon from "../../../../plugins/use-bento-slides/workbenches/slides/ui/icon.svg";
 import imagesIcon from "../../../../plugins/multimodal-tools/workbenches/images/ui/icon.svg";
 import supportIcon from "../../../../plugins/penguin-support/workbenches/support/ui/icon.svg";
-// The pinned package exports no workbench files, so its icon is read by path.
-import benchmarkIcon from "../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/ui/icon.svg";
+// The pinned package's workbench icon, through its `./workbenches/*` export.
+import benchmarkIcon from "@penguinharness/rsi-workbench/workbenches/benchmark/ui/icon.svg";
 import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { useVisibleActivity } from "../lib/visible-activity";
 import { useWidth } from "../lib/use-width";

@@ -4,8 +4,8 @@
  * package's page calls — the Benchmarks (the list, a hand-made one, a delete, the package
  * download, the cases whole or by page, a case's statement and rubric files with their preview),
  * the prompt Start sends, and the tasks the page started. The paths, answers and error codes are
- * the handler's (the package's `lib/routes.ts`), and so is the prompt: it is built by the
- * handler's own `buildRequest`, so a Start in the demo sends the request a server's would.
+ * the handler's, and so is the prompt: it is built by the package's own `buildRequest`
+ * (`./prompts`), so a Start in the demo sends the request a server's would.
  *
  * The page's other requests are the Web App's own routes (the Agents, their Skills, the models,
  * a new conversation and its first message, a conversation's state), which routes.ts answers.

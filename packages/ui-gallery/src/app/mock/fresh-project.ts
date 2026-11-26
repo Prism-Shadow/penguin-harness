@@ -2,9 +2,9 @@
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import type { BenchmarkSummary } from "./rsi-workbench-contract";
 import { version } from "../../../../web/package.json";
-// The pinned package exports none of its workbench files, so they are read by path.
-import benchmark from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/package.json";
-import benchmarkIcon from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/ui/icon.svg?url";
+// The pinned package's workbench files, through its `./workbenches/*` export.
+import benchmark from "@penguinharness/rsi-workbench/workbenches/benchmark/package.json";
+import benchmarkIcon from "@penguinharness/rsi-workbench/workbenches/benchmark/ui/icon.svg?url";
 import images from "../../../../../plugins/multimodal-tools/workbenches/images/package.json";
 import imagesIcon from "../../../../../plugins/multimodal-tools/workbenches/images/ui/icon.svg?url";
 import slides from "../../../../../plugins/use-bento-slides/workbenches/slides/package.json";

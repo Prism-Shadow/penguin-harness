@@ -7,16 +7,14 @@
  */
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BENCHMARKS } from "../src/lib/rsi-stats";
 
 /** The seeds the pinned workbench writes on its first load, as its catalog lists them. */
 function seedCatalog(): Array<{ id: string; data_url?: string }> {
-  const manifest = createRequire(import.meta.url).resolve(
-    "@penguinharness/rsi-workbench/package.json",
+  const file = createRequire(import.meta.url).resolve(
+    "@penguinharness/rsi-workbench/workbenches/benchmark/seeds/catalog.json",
   );
-  const file = join(dirname(manifest), "workbenches", "benchmark", "seeds", "catalog.json");
   return JSON.parse(readFileSync(file, "utf8")) as Array<{ id: string; data_url?: string }>;
 }
 
