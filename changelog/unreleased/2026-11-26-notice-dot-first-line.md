@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `ui`
+- **PR:** [#1897](https://github.com/Prism-Shadow/penguin-harness/pull/1897)
 
 [中文版](2026-11-26-notice-dot-first-line.zh.md)
 
