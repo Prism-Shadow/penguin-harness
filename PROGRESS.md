@@ -248,3 +248,15 @@ pnpm-lock.yaml 未含。后果与已试路径：
   裸名之前（alias 按序首匹配，裸名的前缀语义会吞掉它们）。全部 19 包子路径落点已程序化
   核验（唯一非镜像的就是 core 那两条）；theme-pack/ui 维持 inline 不 alias（它们的
   /chat-markdown、/pack-rules 非镜像，inline 链已工作）。待 wt 单文件快测后 land 读数。
+- 验证轮修复 12（注册表坍缩后 22→5 文件红，五个红文件分四类）：①themes 11 例＝本轮新引
+  入——setting alias 进图后其 theme-pack import 走快照物理拷贝（inline regex 匹配但物理
+  路径不同，vite 按 real path 视作两个模块记录）→ 两份 ThemePackError → routes instanceof
+  失配 → 500 非 400；修＝config 补 theme-pack/ui alias（ui 的 /chat-markdown、/pack-rules
+  非镜像子路径显式条目排在裸名前，落点 src/markdown/index.ts、src/testing/pack-rules.ts）。
+  ②plugin-cdn-failover 整文件红＝测试还在 import 已搬走的 ../src/plugin/mirror-settings
+  （server 侧无转发文件，搬域时漏改），改用库包 specifier。③organization-runtime 6 例＝
+  restack 把服务搬进 library 并引入必填 deps.semanticId（boot 在 runtime/organization/
+  module.ts:118 绑定），测试 deps 没绑 → suggest undefined；修＝测试 beforeEach 照 boot
+  形状绑定真实 suggestSemanticId+SEMANTIC_ID_RULES+isNewSemanticId（行为断言走的正是这个
+  共享 suggester 的 prompt/NO_MODEL 语义）。④sandbox-settings 4 例与 plugin-source-settings
+  1 例待本轮修后单文件定位。提交 fc96888a24 之后的增量。

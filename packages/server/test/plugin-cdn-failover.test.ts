@@ -59,7 +59,7 @@ import {
   indexMirrorRules,
   mirrorRulesOf,
   setIndexMirrors,
-} from "../src/plugin/mirror-settings.js";
+} from "@prismshadow/penguin-library-plugin/mirror-settings";
 
 const noWait = async () => undefined;
 
