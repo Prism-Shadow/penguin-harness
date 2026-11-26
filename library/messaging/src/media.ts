@@ -126,10 +126,10 @@ export class MessagingPermissionError extends Error {
  * A transfer the channel cannot carry at all — a permanent shape of the platform, not a fault.
  *
  * Its own class because it is the one failure here that nothing will ever clear: no permission
- * to grant, no smaller file to send, no retry that behaves differently. QQ's outbound media is
- * the case it exists for — the platform's rich-media path registers bytes against a PUBLICLY
- * REACHABLE https URL, which is the same requirement that ruled webhook mode out, and this
- * server has no such address to offer.
+ * to grant, no smaller file to send, no retry that behaves differently. QQ's reply cap is
+ * the case it exists for — every file takes one of the few passive-reply slots one inbound
+ * message funds, so a reply that has used them all cannot carry another file, and nothing the
+ * operator does changes that.
  *
  * It matters beyond the wording: `error-kind.ts` files it as `expected`, so a channel refusing
  * what it was never able to do stops being counted among the errors that need someone to look.
