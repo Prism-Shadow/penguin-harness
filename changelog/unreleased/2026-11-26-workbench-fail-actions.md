@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1895](https://github.com/Prism-Shadow/penguin-harness/pull/1895)
 
 [中文版](2026-11-26-workbench-fail-actions.zh.md)
 
