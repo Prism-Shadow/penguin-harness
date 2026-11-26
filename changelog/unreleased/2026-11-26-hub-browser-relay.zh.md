@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** feature
 - **Scope:** `browser-automation`, `server`, `web`
+- **PR:** [#1913](https://github.com/Prism-Shadow/penguin-harness/pull/1913)
 
 [English](2026-11-26-hub-browser-relay.md)
 
