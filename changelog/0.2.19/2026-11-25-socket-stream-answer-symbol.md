@@ -3,6 +3,7 @@
 - **Date:** 2026-11-25
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1866](https://github.com/Prism-Shadow/penguin-harness/pull/1866)
 
 [中文版](2026-11-25-socket-stream-answer-symbol.zh.md)
 

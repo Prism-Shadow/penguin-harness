@@ -3,6 +3,7 @@
 - **Date:** 2026-11-25
 - **Type:** fix
 - **Scope:** `server`, `cli`
+- **PR:** [#1870](https://github.com/Prism-Shadow/penguin-harness/pull/1870)
 
 [中文版](2026-11-25-module-symbols-registry-keys.zh.md)
 
