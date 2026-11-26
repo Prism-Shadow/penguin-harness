@@ -6,11 +6,14 @@
  *   and a host it lacks (musl is reported as plain Linux; FreeBSD, Linux on s390x) has none.
  * - A Git an operator names with `LOCAL_GIT_DIRECTORY`, in dugite's layout, is used as it is,
  *   with nothing fetched.
+ * - A payload a host ships as files (the macOS desktop app, which has to sign every program it
+ *   carries) runs from where it lies; nothing is extracted.
  */
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { locateGit, pinFor } from "../src/binary.js";
+import { keptFiles, locateGit, pinFor } from "../src/binary.js";
 
 describe("the Git a host gets", () => {
   it.each([
@@ -44,5 +47,28 @@ describe("the Git a host gets", () => {
 
     expect(found?.source).toBe("LOCAL_GIT_DIRECTORY");
     expect(found?.git.program.startsWith(own)).toBe(true);
+  });
+
+  it.skipIf(pinFor() === null)("runs a payload shipped as files in place", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-unpacked-git-"));
+    try {
+      const target = process.platform + "-" + process.arch;
+      const program = path.join(
+        root,
+        "native",
+        target,
+        keptFiles(process.platform, process.arch)[0]!,
+      );
+      await fs.mkdir(path.dirname(program), { recursive: true });
+      await fs.writeFile(program, "");
+      const cacheDir = path.join(root, "cache");
+
+      const found = await locateGit({ cacheDir, env: {}, nativeDir: path.join(root, "native") });
+
+      expect(found?.git).toEqual({ program, execPath: path.dirname(program) });
+      await expect(fs.access(cacheDir)).rejects.toThrow();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });

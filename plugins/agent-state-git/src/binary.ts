@@ -1,4 +1,4 @@
-/** Choose an explicit Git or unpack the current platform's copy from this plugin. */
+/** Choose an explicit Git, the current platform's copy shipped as files, or unpack it from this plugin. */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,15 +23,32 @@ export async function locateGit(opts: {
   cacheDir: string;
   env?: Readonly<Record<string, string | undefined>>;
   log?: (line: string) => void;
+  /** Where this package's payloads are; its own `dist/native/` unless a test names another. */
+  nativeDir?: string;
 }): Promise<{ git: GitProgram; source: string } | null> {
   const custom = (opts.env ?? process.env).LOCAL_GIT_DIRECTORY;
   if (custom) return { git: operatorGit(custom), source: "LOCAL_GIT_DIRECTORY" };
   const pin = pinFor();
   if (!pin) return null;
   const target = process.platform + "-" + process.arch;
-  const archive = fileURLToPath(new URL("../dist/native/" + target + ".tar", import.meta.url));
+  const native = opts.nativeDir ?? fileURLToPath(new URL("../dist/native/", import.meta.url));
+  const kept = keptFiles(process.platform, process.arch)[0]!;
+  // A host that has to sign every program it carries cannot leave one inside an archive: the
+  // macOS desktop app ships this platform's payload as files, signed with the app, and it runs
+  // from there. Extracting a copy would only produce the same program a second time.
+  const unpacked = path.join(native, target, kept);
+  try {
+    await fs.access(unpacked);
+    return {
+      git: { program: unpacked, execPath: path.dirname(unpacked) },
+      source: "bundled " + target + ", unpacked",
+    };
+  } catch {
+    // The package as published: the payload is an archive.
+  }
+  const archive = path.join(native, target + ".tar");
   const destination = path.join(opts.cacheDir, "bundled-" + pin.checksum);
-  const program = path.join(destination, keptFiles(process.platform, process.arch)[0]!);
+  const program = path.join(destination, kept);
   try {
     await fs.access(program);
   } catch {
