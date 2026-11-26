@@ -151,3 +151,9 @@ pnpm-lock.yaml 未含。后果与已试路径：
   （TS2552 ×4）。改 import { SESSION_COOKIE } from "./cookie-name.js" +
   export { SESSION_COOKIE }; 两行，绑定与导出面同时在。教训与 types.ts 14 名同坑：
   再导出无本地绑定。
+- 验证轮修复 4 补 2：ui-gallery build 红——fixtures.ts 的 builtin-market.json 导入与
+  covers glob 取 4 级上跳（14a28d263c 沿用了旧 server 路径的 4 级；library 在仓根需要
+  5 级，本文件 73 行 node_modules/.cache 的现成 5 级可证），server test
+  plugin-market.test.ts 同字面量在 packages/server/test/ 只需 3 级。四处全按各自深度
+  修净（python normpath 机械复核落点）。上轮 compile 读数：web 包已绿（cookie-name
+  达效）、auth DTS 过、desktop 过。
