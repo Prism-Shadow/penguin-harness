@@ -3,3 +3,4 @@
  * machines restack S16). Re-exported so the server's existing importers keep their spelling.
  */
 export * from "@prismshadow/penguin-library-machine/upgrade";
+export { readPushedBuild } from "../hmr/pushed-build.js";
