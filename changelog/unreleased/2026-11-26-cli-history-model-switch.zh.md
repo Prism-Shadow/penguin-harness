@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `cli`
+- **PR:** [#1890](https://github.com/Prism-Shadow/penguin-harness/pull/1890)
 
 [English](2026-11-26-cli-history-model-switch.md)
 
