@@ -1,5 +1,5 @@
 /**
- * `unzipBounded`, the caps every zip import of Skills and Benchmarks reads off the central
+ * `unzipBounded`, the caps every zip import of Skills, hooks and memory reads off the central
  * directory, as they apply to directory entries: those carry no content, yet fflate inflates
  * whatever bytes an accepted entry holds, whatever its name.
  *

@@ -5,9 +5,7 @@
  * - A start migrates the root before it serves: its Projects are listed from `projects/`, the
  *   stored Session Workspaces under a moved folder are rewritten, and the Project opens.
  * - A Project called `projects` keeps the server from starting, naming the Project and the fix.
- * - A new Project's sample Benchmarks are written into the Evaluation Center's data folder, and the
- *   list names that folder and each Benchmark's, for the prompts that must not derive them.
- * - A Project whose `system_agent` is an Agent of the user's lists its Benchmarks from the old
+ * - A Project whose `system_agent` is an Agent of the user's keeps its Benchmarks in the old
  *   folder.
  */
 import fs from "node:fs/promises";
@@ -15,14 +13,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
-  benchmarksDir,
   legacyBenchmarksDir,
   listProjectDirs,
   projectDir,
+  resolveBenchmarksDir,
   systemConfigPath,
 } from "@prismshadow/penguin-core";
 import { openDatabase } from "@prismshadow/penguin-library-db";
-import type { BenchmarksResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, type TestApp } from "./helpers.js";
 
 let t: TestApp | undefined;
@@ -97,30 +94,7 @@ describe("a server start on a data root in the old layout", () => {
   });
 });
 
-describe("Benchmarks in the Evaluation Center's data folder", () => {
-  it("are written there for a new Project, and the list names the folder and each Benchmark's", async () => {
-    t = await createTestApp();
-    const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-    expect((await admin.post("/api/projects", { projectId: "evals", name: "Evals" })).status).toBe(
-      201,
-    );
-
-    const list = (await (
-      await admin.get("/api/projects/evals/benchmarks")
-    ).json()) as BenchmarksResponse;
-
-    const folder = benchmarksDir(t.root, "evals");
-    expect(folder).toBe(
-      path.join(projectDir(t.root, "evals"), "agents", "system_agent", "app", "data", "benchmark"),
-    );
-    expect(list.dir).toBe(folder);
-    const example = list.benchmarks.find((b) => b.id === "example-benchmark");
-    expect(example?.dir).toBe(path.join(folder, "example-benchmark"));
-    await expect(
-      fs.access(path.join(folder, "example-benchmark", "benchmark_config.toml")),
-    ).resolves.toBeUndefined();
-  });
-
+describe("Benchmarks in the old Evaluation Center's data folder", () => {
   it("stay in the old folder of a Project whose system_agent is an Agent of the user's", async () => {
     t = await createTestApp();
     const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
@@ -138,11 +112,9 @@ describe("Benchmarks in the Evaluation Center's data folder", () => {
       'id = "kept"\ntitle = "Kept"\nstatus = "published"\n',
     );
 
-    const list = (await (
-      await admin.get("/api/projects/mine/benchmarks")
-    ).json()) as BenchmarksResponse;
+    const folder = await resolveBenchmarksDir(t.root, "mine");
 
-    expect(list.dir).toBe(legacy);
-    expect(list.benchmarks.map((b) => b.id)).toEqual(["kept"]);
+    expect(folder).toBe(legacy);
+    expect(await fs.readdir(folder)).toEqual(["kept"]);
   });
 });

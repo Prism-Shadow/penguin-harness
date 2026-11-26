@@ -1,21 +1,19 @@
 /**
  * `POST /api/projects/:p/suggest-id` over the real app: one route proposes the id of every
  * kind a create dialog names. Each kind gets the id shape its create route accepts (a
- * non-admin's Project in the caller's namespace, a kebab-case Benchmark), steps around every
- * name that create route refuses (every Project, the Project's Agents, its Benchmarks — a
- * folder no list shows included), asks only whoever that create route admits, and falls
- * through model → slug → placeholder. `org` and `channel` delegate to the organization
- * service. The model is never reached: the Project's utility completion is replaced by a
- * scripted one for every case.
+ * non-admin's Project in the caller's namespace), steps around every name that create route
+ * refuses (every Project, the Project's Agents — a folder no list shows included), asks only
+ * whoever that create route admits, and falls through model → slug → placeholder. `org` and
+ * `channel` delegate to the organization service; a kind a server module contributes has its
+ * own suite (plugin-app-slots.test.ts). The model is never reached: the Project's utility
+ * completion is replaced by a scripted one for every case.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { agentsDir, benchmarksDir } from "@prismshadow/penguin-core";
+import { agentsDir } from "@prismshadow/penguin-core";
 import type {
   AgentsResponse,
-  BenchmarkCreateRequest,
-  BenchmarksResponse,
   ProjectsResponse,
   SemanticIdSuggestResponse,
 } from "../src/api/types.js";
@@ -37,13 +35,6 @@ function stamp(): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
 }
-
-const benchmarkBody = (id: string): BenchmarkCreateRequest => ({
-  id,
-  title: "Report writing",
-  runs: 1,
-  cases: [{ id: "CASE-001-x", title: "X", statement: "Do X.", rubric: "- 100 pts: X." }],
-});
 
 describe("suggest-id routes", () => {
   let t: TestApp;
@@ -142,42 +133,6 @@ describe("suggest-id routes", () => {
     });
   });
 
-  it("a Benchmark id is kebab-case, owner-only, and avoids the Project's Benchmarks", async () => {
-    completion.answers = [answered("report_writing")];
-    expect(await suggest(owner, { name: "报告写作", kind: "benchmark" })).toEqual({
-      id: "report-writing",
-      source: "model",
-    });
-    expect(completion.prompts[0]).toContain("kebab-case");
-    expect(
-      (await owner.post(`/api/projects/${project}/benchmarks`, benchmarkBody("report-writing")))
-        .status,
-    ).toBe(201);
-    completion.answers = [answered("我不知道"), answered("还是不知道")];
-    expect(completion.prompts).toHaveLength(1);
-    expect(await suggest(owner, { name: "Report Writing", kind: "benchmark" })).toEqual({
-      id: "report-writing-2",
-      source: "fallback",
-    });
-    expect(completion.prompts[2]).toContain("digits and hyphens, nothing else");
-    expect(await suggest(owner, { name: "报告写作", kind: "benchmark" })).toEqual({
-      id: `benchmark-${stamp()}`,
-      source: "placeholder",
-      reason: "no_default_model",
-    });
-
-    // A member may create Agents but not Benchmarks, and is refused the proposal the same way.
-    const mia = await provisionUser(t.app, "mia");
-    expect((await owner.post(`/api/projects/${project}/members`, { userId: "mia" })).status).toBe(
-      201,
-    );
-    const member = apiClient(t.app, mia.cookie);
-    const asked = completion.prompts.length;
-    expect((await member.post(url, { name: "Report", kind: "benchmark" })).status).toBe(403);
-    expect((await member.post(url, { name: "Report", kind: "agent" })).status).toBe(200);
-    expect(completion.prompts).toHaveLength(asked + 1);
-  });
-
   it("a Project id lives in the caller's namespace and avoids every Project on the server", async () => {
     completion.answers = [answered("research_lab")];
     expect(await suggest(owner, { name: "科研实验室", kind: "project" })).toEqual({
@@ -207,28 +162,16 @@ describe("suggest-id routes", () => {
   });
 
   it("steps around a folder the create route refuses even when no list shows it", async () => {
-    // A Benchmark deleted mid-evaluation leaves its directory without a config, an Agent folder
-    // can lack system_config.yaml, and a Project directory its row.
-    await fs.mkdir(path.join(benchmarksDir(t.root, project), "report-writing", "CASE-001-x"), {
-      recursive: true,
-    });
+    // An Agent folder can lack system_config.yaml, and a Project directory its row.
     await fs.mkdir(path.join(agentsDir(t.root, project), "report_writer"));
     await fs.mkdir(path.join(t.root, "projects", "olivia-research_lab"));
-    const benchmarks = (await (
-      await owner.get(`/api/projects/${project}/benchmarks`)
-    ).json()) as BenchmarksResponse;
-    expect(benchmarks.benchmarks.map((b) => b.id)).not.toContain("report-writing");
     const agents = (await (
       await owner.get(`/api/projects/${project}/agents`)
     ).json()) as AgentsResponse;
     expect(agents.agents.map((a) => a.agentId)).not.toContain("report_writer");
     const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
     expect(projects.projects.map((p) => p.projectId)).not.toContain("olivia-research_lab");
-    // None of them lists, yet every create route refuses the name.
-    expect(
-      (await owner.post(`/api/projects/${project}/benchmarks`, benchmarkBody("report-writing")))
-        .status,
-    ).toBe(409);
+    // Neither lists, yet both create routes refuse the name.
     expect(
       (await owner.post(`/api/projects/${project}/agents`, { agentId: "report_writer" })).status,
     ).toBe(409);
@@ -236,10 +179,6 @@ describe("suggest-id routes", () => {
       409,
     );
 
-    expect(await suggest(owner, { name: "Report Writing", kind: "benchmark" })).toEqual({
-      id: "report-writing-2",
-      source: "fallback",
-    });
     expect(await suggest(owner, { name: "Report Writer", kind: "agent" })).toEqual({
       id: "report_writer_2",
       source: "fallback",
@@ -259,7 +198,7 @@ describe("suggest-id routes", () => {
     const stranger = apiClient(t.app, (await provisionUser(t.app, "stranger")).cookie);
     // Company mode is on, so an `org` or `channel` 404 can only be the membership check's.
     t.deps.serverSettingsRepo.setCompanyMode(true);
-    for (const kind of ["project", "agent", "benchmark", "org", "channel"]) {
+    for (const kind of ["project", "agent", "org", "channel"]) {
       const res = await stranger.post(url, { name: "Report", kind });
       expect(res.status, kind).toBe(404);
       expect(((await res.json()) as { error: { code: string } }).error.code, kind).toBe(
