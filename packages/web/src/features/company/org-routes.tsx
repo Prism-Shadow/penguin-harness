@@ -8,10 +8,8 @@
  *
  * After the organization's own pages come the company-mode pages a plugin contributes
  * (`nav: "org"`, use-org-pages.ts): their paths are relative to the organization, and the nav
- * row beside them is the sidebar's (company-nav.ts ORG_PAGE_RENDERERS). The page table has
- * already resolved what each one draws — a builtin renderer into the component the module
- * registered (`WebAppModule.pageRenderers`), an iframe into the shell's FramePage — so a
- * route mounts the page's component as it is.
+ * row beside them is the sidebar's (sidebar-mode.tsx). The page table has already bound each
+ * one's iframe into the shell's FramePage, so a route mounts the page's component as it is.
  */
 import type { ComponentType } from "react";
 import { Navigate, Route, Routes } from "react-router";

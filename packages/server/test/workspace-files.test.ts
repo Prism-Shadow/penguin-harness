@@ -3,8 +3,8 @@
  *
  * The service:
  * - Listings put directories first, sorted by name, and drill into subdirectories (a Workspace
- *   at the filesystem root included); reads carry content and type; writes overwrite and create
- *   missing parents; `..`, absolute paths and symlink escapes are refused, as are files past the
+ *   at the filesystem root included); reads carry content and type, an audio file's an audio
+ *   type whatever the case of its extension; writes overwrite and create missing parents; `..`, absolute paths and symlink escapes are refused, as are files past the
  *   size limit.
  * - A write, move or delete holds to the version marker a read returned: a stale one changes
  *   nothing, no marker only creates a file that was never there, and a directory has none.
@@ -97,6 +97,19 @@ describe("workspace-files-service", () => {
     expect(preview.truncated).toBe(true);
     await expect(svc.read(ws, "sub")).rejects.toMatchObject({ status: 400 });
     await expect(svc.read(ws, "nope.txt")).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("file read: an audio file a reply links is read with its audio content type", async () => {
+    const types: Record<string, string> = {
+      "a.mp3": "audio/mpeg",
+      "b.WAV": "audio/wav",
+      "c.ogg": "audio/ogg",
+      "d.m4a": "audio/mp4",
+    };
+    for (const [file, type] of Object.entries(types)) {
+      await fs.writeFile(path.join(ws, file), "RIFF");
+      expect((await svc.read(ws, file)).contentType, file).toBe(type);
+    }
   });
 
   it("file write: overwrites; missing parent directories are auto-created (folder uploads keep their structure)", async () => {

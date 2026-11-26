@@ -53,7 +53,9 @@
  * - Adding a host method since authoring does not break a workbench.
  * - An unreadable type table is refused; removing it installs fresh types and recovers.
  * - Several contributed tabs are exposed in order.
- * - A tab outside ui/, a closed contribution slot and a malformed tab are each refused.
+ * - A tab outside ui/, a tab whose renderer is not an iframe (the retired `builtin` one, say),
+ *   a closed contribution slot and a malformed tab are each refused, naming the contribution
+ *   where it is the tab's.
  * - Pages with no tab get a hint in the API and status file; adding a tab clears it.
  * - Its folders are at the agent level unless it names another. Installed from a plugin, it also
  *   has a server and a machine level, the same for every copy of the app, and removing one copy
@@ -1178,6 +1180,24 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect(await reloadError()).toContain("renderer.iframe.src must be a file under ui/");
   });
 
+  it("refuses a tab whose renderer is not an iframe, naming it, and keeps the previous instance serving", async () => {
+    await list();
+    await writeContributions({
+      "WebModule.sessionTabs": [
+        TAB,
+        {
+          ...TAB,
+          id: "demo.evaluation",
+          key: "evaluation",
+          renderer: { builtin: "SelfEvolutionWorkbench" },
+        },
+      ],
+    });
+    const error = await reloadError();
+    expect(error).toContain("contribution 'demo.evaluation'");
+    expect(error).toContain("renderer must be");
+  });
+
   it("refuses a closed contribution slot and keeps the previous instance serving", async () => {
     await list();
     await writeContributions({
@@ -1188,7 +1208,7 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
           path: "/p",
           nav: "main",
           admin: false,
-          renderer: { builtin: "x" },
+          renderer: { iframe: { src: "/p.html", namespace: "demo" } },
         },
       ],
     });

@@ -226,13 +226,12 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 
 export const router = new Router();
 
-// The demo boots its own page table and has no server-side plugin contributions: no pages,
-// no file renderers and nothing removed. It stands in for every plugin's server half, so it
-// answers as running every server module a booted web module declared: a plugin's web half is
-// drawn in the gallery as it is on a server that runs its module.
+// The demo boots its own page table and has no server-side plugin contributions: no pages and
+// nothing removed. It stands in for every plugin's server half, so it answers as running every
+// server module a booted web module declared: a plugin's web half is drawn in the gallery as it
+// is on a server that runs its module.
 router.get("/api/contributions", (): ContributionsResponse => ({
   pages: [],
-  fileRenderers: [],
   pageRemovals: [],
   agentTabs: [],
   sessionTabs: [],

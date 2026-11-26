@@ -23,10 +23,10 @@
  *   the rail at its order. When the server stops listing it, it goes again.
  * - What only keeps the plugin's own state in step — the conversation on screen, a full-screen
  *   step, a conversation's new id — reaches it whether or not its server module runs.
- * - Every other drawn slot waits too: the shell's pages leave the table, page renderers, Session
- *   tabs, file renderers, sidebar blocks, rail entries and marks draw nothing, a mode is not
- *   offered and a badge's note falls silent, session-row entries leave the menus and their marks
- *   go quiet — while a module that declares nothing is drawn as before. A gated module's session
+ * - Every other drawn slot waits too: the shell's pages leave the table, sidebar blocks, rail
+ *   entries and marks draw nothing, a mode is not offered and a badge's note falls silent,
+ *   session-row entries leave the menus and their marks go quiet — while a module that declares
+ *   nothing is drawn as before. A gated module's session
  *   provider and sidebar scope, which wrap everything below them, are never mounted.
  * - Two contributors naming one Settings key, or offering a link row with one label: the first
  *   keeps it, the later one is dropped.
@@ -58,14 +58,7 @@ import table from "./ifaces.json";
 import type { PluginWebEntry } from "../src/plugin-web.gen";
 import { webRootDef } from "../src/web-root";
 import { WebAppModule } from "../src/web-app/module";
-import {
-  gatedPagesOf,
-  gatesOf,
-  layersOf,
-  pageRenderersOf,
-  sessionProvidersOf,
-} from "../src/web-app/gated-slots";
-import { gatedChatContributions } from "../src/features/chat/deps";
+import { gatedPagesOf, gatesOf, layersOf, sessionProvidersOf } from "../src/web-app/gated-slots";
 import { gatedBadges, gatedModes, gatedSections } from "../src/web-app/sidebar/gated";
 import {
   gatedRowActions,
@@ -316,7 +309,7 @@ describe("every drawn slot of a gated module", () => {
   const draw = (Component: ComponentType<object>, props: object = {}) =>
     renderToStaticMarkup(createElement(Component, props));
 
-  it("leaves the shell's page out of the table, and blanks its page renderer", () => {
+  it("leaves the shell's page out of the table", () => {
     const pages = [
       contributed(GATED, "board.page", { key: "board", path: "/board", order: 1 }, Part),
       contributed(PLAIN, "plain.page", { key: "plain", path: "/plain", order: 2 }, Part),
@@ -327,14 +320,6 @@ describe("every drawn slot of a gated module", () => {
       ["board", GATED],
       ["plain", undefined],
     ]);
-    const renderers = pageRenderersOf(
-      [contributed(GATED, "board.renderer", { name: "Board" }, Part)],
-      gates,
-    );
-    setRunningServerModules(null);
-    expect(draw(renderers.get("Board")!)).toBe("");
-    setRunningServerModules(["FixtureServerModule"]);
-    expect(draw(renderers.get("Board")!)).toBe("<p>part</p>");
   });
 
   it("never mounts a gated module's session provider", () => {
@@ -351,32 +336,22 @@ describe("every drawn slot of a gated module", () => {
     warn.mockRestore();
   });
 
-  it("blanks Session tabs and file renderers, sidebar blocks and marks, and leaves others drawn", () => {
-    const [tab, plainTab] = gatedChatContributions([
-      contributed(GATED, "board.tab", { order: 1 }, Part),
-      contributed(PLAIN, "plain.tab", { order: 2 }, Part),
-    ]);
-    const [section] = gatedSections([
+  it("blanks sidebar blocks and marks, and leaves others drawn", () => {
+    const [section, plainSection] = gatedSections([
       contributed(GATED, "board.section", {}, { Full: Part, Rail: Part, Scope: Part }),
+      contributed(PLAIN, "plain.section", {}, { Full: Part }),
     ]);
     const [badge] = gatedBadges([
       contributed(GATED, "board.badge", {}, { Mark: Part, useNote: () => "new" }),
     ]);
     const full = (section!.code as { Full: ComponentType<object> }).Full;
+    const plainFull = (plainSection!.code as { Full: ComponentType<object> }).Full;
     const mark = (badge!.code as { Mark: ComponentType<object> }).Mark;
     setRunningServerModules(null);
-    expect([draw(tab!.code as ComponentType<object>), draw(full), draw(mark)]).toEqual([
-      "",
-      "",
-      "",
-    ]);
-    expect(draw(plainTab!.code as ComponentType<object>)).toBe("<p>part</p>");
+    expect([draw(full), draw(mark)]).toEqual(["", ""]);
+    expect(draw(plainFull)).toBe("<p>part</p>");
     setRunningServerModules(["FixtureServerModule"]);
-    expect([draw(tab!.code as ComponentType<object>), draw(full), draw(mark)]).toEqual([
-      "<p>part</p>",
-      "<p>part</p>",
-      "<p>part</p>",
-    ]);
+    expect([draw(full), draw(mark)]).toEqual(["<p>part</p>", "<p>part</p>"]);
   });
 
   it("renders a gated section's children without its scope, whatever runs", () => {

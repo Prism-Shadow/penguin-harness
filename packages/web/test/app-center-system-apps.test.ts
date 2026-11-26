@@ -188,12 +188,11 @@ it("lists a server module's titled app page as a tile, and not one without a tit
   });
   const answer: ContributionsResponse = {
     pages: [page("backups", "Backups"), page("monitor")],
-    fileRenderers: [],
     pageRemovals: [],
     agentTabs: [],
     sessionTabs: [],
   };
-  const pages = pageTableFor(SYSTEM_APP_PAGES, answer, new Map());
+  const pages = pageTableFor(SYSTEM_APP_PAGES, answer);
   await open({ pages });
   expect(order()).toEqual([...ADMIN_SYSTEM, system("backups"), BOARD]);
   // The untitled page is still routed, only not an app.

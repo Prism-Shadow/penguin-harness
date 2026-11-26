@@ -1,8 +1,7 @@
 /**
  * Something a surface shows directly below one block of Markdown, chosen from the links inside
- * that block — the Web App's conversation puts a player under the paragraph of a reply that links
- * an audio file this way. The Markdown itself is untouched: a link stays a link, and what is added
- * sits after the block, never inside its text.
+ * that block — a preview under the paragraph that links a file, say. The Markdown itself is
+ * untouched: a link stays a link, and what is added sits after the block, never inside its text.
  *
  * The blocks are paragraphs and list items. A list item's links are the ones written in the item
  * itself: those of a paragraph inside it (a loose list) and of a nested list belong to that inner

@@ -36,7 +36,6 @@ const sidebarWith: SidebarDeps = {
 const Layout = webAppDeps.provide(
   {
     pages: [],
-    pageRenderers: new Map(),
     sessionProviders: [],
     layers: [],
     userEvents: [],

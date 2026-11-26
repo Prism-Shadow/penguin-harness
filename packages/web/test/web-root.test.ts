@@ -10,7 +10,6 @@ import { dockPanelDefinition, type DockPanelDefinition } from "../src/features/d
 
 const mainTerminal = new TerminalModule().panel.mainDefinitions[0]!;
 
-const OrgProposalsPage = () => null;
 /**
  * The booted page table: the real composition root (web-root.ts) boots under vitest, and the
  * shell receives every page the modules contributed.
@@ -27,11 +26,8 @@ const OrgProposalsPage = () => null;
  * - The chat page is the chat page; the dashboard and one machine's ports are
  *   pages of their own modules, off the nav, the ports page admin-only.
  * - Home (`/` and every unmatched path) is company mode's page, since it depends on the mode.
- * - The app's own modules register no page renderer; the proposals page is the one a test hands
- *   in, under the name its plugin's page names.
- * - Folded into the booted table, a contributed page whose key the app owns is ignored, and the
- *   company-mode proposals page is drawn by the proposals page, inside company mode and from
- *   the root alike.
+ * - Folded into the booted table, a contributed page whose key the app owns is ignored, and a
+ *   company-mode page joins it with the iframe it named, for company mode to mount.
  * - The shell receives company's provider and the update badges' owner for the signed-in
  *   session, the layers beside the columns in their mount order, the App Center's windows
  *   over the page area, and the user event handlers of company, the built-in browser and
@@ -39,18 +35,14 @@ const OrgProposalsPage = () => null;
  * - The sidebar receives the Project switcher and the session list for development mode,
  *   company's mode with its switcher, channels, roadmaps and desks, the to-do dots on the
  *   anchors that still have a row (Agents, the App Center, the account and the drawer button; the
- *   system apps' trails ride on the App Center's) and the balance on the account, and company's
- *   unread count on the contributed proposals page's row
- *   (anchored by the renderer's name);
- *   the session list receives the messaging binding, the scheduled mark and the dock's "Browse
- *   files".
+ *   system apps' trails ride on the App Center's) and the balance on the account, and no retired
+ *   proposals badge; the session list receives the messaging binding, the scheduled mark and
+ *   the dock's "Browse files".
  * - The dock receives the eight panels in their menu order — agents and memory from chat, the
  *   files from workspace, the trace, messaging, schedules, the built-in browser and the terminal from
  *   theirs — with the names the dictionary held and a glyph in the icon registry, which the dock
  *   module registers in its panel registry at boot.
- * - The chat page receives the workflow tab strip beside the conversation.
  */
-import type { ComponentType, ReactElement } from "react";
 import {
   bootModules,
   type ClassCtx,
@@ -109,13 +101,9 @@ import { scheduledRowMark } from "../src/features/schedules/session-row-mark";
 import { browseFilesAction } from "../src/features/dock/browse-files";
 import type { UserEventHandler } from "../src/state/user-events";
 import { DockModule } from "../src/features/dock/module";
-import { ChatModule } from "../src/features/chat/module";
-import { fileRenderersOf } from "../src/features/chat/deps";
-import { AudioFile } from "../src/features/audio/audio-file";
 import { MainSidebarApps } from "../src/features/session-list/main-sidebar-apps";
 
 let pages: readonly WebAppPage[] = [];
-let pageRenderers: readonly Contributed[] = [];
 let sessionProviders: readonly Contributed[] = [];
 let layers: readonly Contributed[] = [];
 let userEvents: readonly UserEventHandler[] = [];
@@ -123,22 +111,20 @@ let sidebarSlots: Readonly<Record<string, readonly Contributed[]>> = {};
 let rows: RowExtensions | null = null;
 let sessionListSection: unknown = null;
 let dockPanels: readonly Contributed[] = [];
-let fileRenderers: readonly Contributed[] = [];
 
 /** A slot's code halves in the order the shell mounts them. */
 const codeByOrder = (list: readonly Contributed[]): unknown[] =>
   [...list].sort((a, b) => (a.data.order as number) - (b.data.order as number)).map((c) => c.code);
 
 /**
- * Boots the real tree as bootWeb does, with the shell, the sidebar, the session list, the dock and
- * the chat page standing in by doubles that keep their slots' contributions instead of binding
- * them into components (which need a browser to render).
+ * Boots the real tree as bootWeb does, with the shell, the sidebar, the session list and the dock
+ * standing in by doubles that keep their slots' contributions instead of binding them into
+ * components (which need a browser to render).
  */
 beforeAll(async () => {
   const webApp = Object.assign(new WebAppModule(), {
     setup({ contributions }: ClassCtx) {
       pages = pageTableOf(contributions.pages ?? []);
-      pageRenderers = contributions.pageRenderers ?? [];
       sessionProviders = contributions.sessionProviders ?? [];
       layers = contributions.layers ?? [];
       userEvents = webApp.userEventHandlers.all();
@@ -169,12 +155,6 @@ beforeAll(async () => {
       DockModule.prototype.setup.call(dock, { contributions } as ClassCtx);
     },
   });
-  const chat = Object.assign(new ChatModule(), {
-    setup(ctx: ClassCtx) {
-      fileRenderers = ctx.contributions.fileRenderers ?? [];
-      ChatModule.prototype.setup.call(chat, ctx);
-    },
-  });
   // As bootWeb boots it: the app's modules and the shipped plugins' web halves (the browser's).
   await bootModules(
     webRootDef(pluginWebModules, {
@@ -183,7 +163,6 @@ beforeAll(async () => {
         [SidebarModule, sidebar],
         [SessionListModule, sessionList],
         [DockModule, dock],
-        [ChatModule, chat],
       ]),
     }),
     {
@@ -263,10 +242,7 @@ describe("the booted page table", () => {
 
   it("routes chat, the dashboard and one machine's ports through their modules", () => {
     const page = (key: string) => pages.find((p) => p.key === key);
-    // Chat binds its page under its deps' provider (lib/module-deps.tsx), wrapping the route.
-    const chatRoot = page("chat")?.Component as
-      ((props: object) => ReactElement<{ children: ReactElement }>) | undefined;
-    expect(chatRoot?.({}).props.children.type).toBe(ChatPage);
+    expect(page("chat")?.Component).toBe(ChatPage);
   });
 
   it("leads home through company mode's page, inside the shell and off the nav", () => {
@@ -278,11 +254,7 @@ describe("the booted page table", () => {
       Component: HomeRedirect,
     });
   });
-  it("registers no page renderer of the app's own: every workbench page is drawn in its frame", () => {
-    expect(pageRenderers).toEqual([]);
-  });
-
-  it("folds a contributed page in only under a key the app does not own, drawn by its module's renderer", () => {
+  it("folds a contributed page in only under a key the app does not own, keeping its iframe", () => {
     const remote = [
       {
         id: "x.agents",
@@ -297,33 +269,31 @@ describe("the booted page table", () => {
         key: "org-proposals",
         path: "proposals/:number?",
         nav: "org",
-        renderer: { builtin: "OrgProposalsPage" },
+        renderer: { iframe: { src: "/proposals/", namespace: "proposals" } },
       },
     ];
-    const renderers = new Map(
-      pageRenderers.map((c) => [c.data.name as string, c.code as ComponentType]),
-    );
     const answer = {
       // As the server might send it: the app checks each entry's fields itself.
       pages: remote as readonly object[] as ContributionsResponse["pages"],
-      fileRenderers: [],
       pageRemovals: [],
       agentTabs: [],
       sessionTabs: [],
       quickStarts: [],
       sessionSurfaces: [],
     };
-    renderers.set("OrgProposalsPage", OrgProposalsPage);
-    const merged = contributedPagesOf(pages, answer, renderers);
+    const merged = contributedPagesOf(pages, answer);
     expect(merged.slice(0, pages.length)).toEqual(pages);
     // One table: the router mounts the page from the root, company mode under the organization.
     expect(merged.slice(pages.length)).toMatchObject([
-      { key: "org-proposals", path: "proposals/:number?", frame: "shell", nav: "org" },
+      {
+        key: "org-proposals",
+        path: "proposals/:number?",
+        frame: "shell",
+        nav: "org",
+        renderer: { iframe: { src: "/proposals/", namespace: "proposals" } },
+      },
     ]);
-    expect(orgPagesOf(merged).map((p) => [p.key, p.Component])).toEqual([
-      ["org-proposals", OrgProposalsPage],
-    ]);
-    expect(contributedPagesOf(pages, answer, new Map())).toEqual(pages);
+    expect(orgPagesOf(merged).map((p) => p.key)).toEqual(["org-proposals"]);
   });
 });
 
@@ -451,12 +421,5 @@ describe("the booted dock slot", () => {
       terminal: "TerminalModule",
     });
     expect(dockPanelDefinition("ports")).toBeUndefined();
-  });
-});
-
-describe("the booted chat slot", () => {
-  it("the chat page's file renderer registry holds the audio module's player as `audio`", () => {
-    expect([...fileRenderersOf(fileRenderers)]).toEqual([["audio", AudioFile]]);
-    expect(fileRenderers.map((c) => c.from)).toEqual(["AudioModule"]);
   });
 });

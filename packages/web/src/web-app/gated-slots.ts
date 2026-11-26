@@ -6,7 +6,6 @@
  * - a layer is mounted only while its module is shown, and mounts the moment it is;
  * - a page carries its module (`gatedBy`), and the page table leaves it out while the module is
  *   not shown — routes and the nav alike (web-app/contributions.tsx);
- * - a page renderer draws nothing while its module is not shown;
  * - a session provider is not mounted at all: it wraps the whole signed-in tree, which turning
  *   it on and off would remount.
  *
@@ -62,22 +61,6 @@ export function gatedPagesOf(
     const from = fromOf.get(page.id);
     return from !== undefined && gates.has(from) ? { ...page, gatedBy: from } : page;
   });
-}
-
-/** The page renderers by name, a gated module's drawing nothing while it is not shown. */
-export function pageRenderersOf(
-  contributions: readonly Contributed[],
-  gates: Gates,
-): ReadonlyMap<string, ComponentType> {
-  return new Map(
-    contributions.map((c) => {
-      const Component = c.code as ComponentType;
-      return [
-        (c.data as unknown as { name: string }).name,
-        gates.has(c.from) ? gatedComponent(c.from, Component) : Component,
-      ];
-    }),
-  );
 }
 
 /** The session providers in their order, without a gated module's (which is said on the console). */

@@ -6,9 +6,9 @@
  * router mounts and the sidebar derives its nav group from.
  *
  * Pages a pushed platform or a plugin contributes arrive from the server (GET
- * /api/contributions) in the `PageEntry` shape, which names a renderer instead of carrying a
- * component; `contributedPages` picks the ones to mount beside this table — a page whose
- * renderer this build does not carry is skipped, since there is nothing to draw it with.
+ * /api/contributions) in the `PageEntry` shape, which names the iframe that draws the page
+ * instead of carrying a component; `contributedPages` picks the ones to mount beside this table —
+ * an entry without an iframe renderer is skipped, since there is nothing to draw it with.
  */
 import type { ComponentType } from "react";
 import type { Contributed } from "@prismshadow/penguin-core/kernel";
@@ -73,7 +73,7 @@ export interface PageEntry {
   admin: boolean;
   /** Built but not yet offered: kept in the manifest, reachable by URL and tests, hidden from the nav. */
   released: boolean;
-  renderer: { builtin: string } | { iframe: { src: string; namespace: string } };
+  renderer: { iframe: { src: string; namespace: string } };
 }
 
 /**
@@ -92,7 +92,6 @@ export function orgPagesOf(pages: readonly PageEntry[]): PageEntry[] {
 export function contributedPages(
   local: readonly { key: string }[],
   remote: ReadonlyArray<Record<string, unknown>>,
-  builtinRenderers: ReadonlySet<string>,
 ): PageEntry[] {
   const keys = new Set(local.map((p) => p.key));
   const out: PageEntry[] = [];
@@ -101,8 +100,7 @@ export function contributedPages(
     if (typeof page.key !== "string" || typeof page.path !== "string" || keys.has(page.key))
       continue;
     const renderer = page.renderer;
-    if (renderer === undefined) continue;
-    if ("builtin" in renderer && !builtinRenderers.has(renderer.builtin)) continue;
+    if (typeof renderer?.iframe?.src !== "string") continue;
     out.push({
       id: typeof page.id === "string" ? page.id : `remote.${page.key}`,
       key: page.key,

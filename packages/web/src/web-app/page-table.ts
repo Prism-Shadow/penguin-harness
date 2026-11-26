@@ -78,7 +78,7 @@ export function windowFrameOf(
   const { renderer } = page;
   if (page.app === undefined || !page.released || page.nav === "org" || renderer === undefined)
     return null;
-  return "iframe" in renderer ? renderer.iframe.src : null;
+  return renderer.iframe.src;
 }
 
 /** The route a page is mounted at: one that opens in the window answers every address under it. */
