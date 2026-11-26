@@ -42,6 +42,7 @@ import {
   userAgent,
 } from "@prismshadow/penguin-core";
 import safeRegex from "safe-regex";
+import { fetchFailureText } from "../net/fetch-error.js";
 import { indexMirrorRules } from "./mirror-settings.js";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
@@ -417,7 +418,7 @@ const backoff = (attempt: number) =>
  * A registry behind an `index.json` source: one canonical URL plus its CDN mirrors, tried
  * one at a time in try order — the first address that serves the document carries the
  * read, a failed one hands the read to the next, and a source exhausted on is reported with
- * the failure it ended on. The start of the order is where the last read succeeded (see
+ * every address's failure, in order. The start of the order is where the last read succeeded (see
  * `sticky` below), so a deployment whose canonical address is dead does not pay its window
  * on every read; apart from that start the order is the configured one, every address is
  * tried once per read, and nothing is measured: no probe, no speed test — the walk only
@@ -477,11 +478,8 @@ export function httpPluginRegistry(
         if (attempt < attempts) await delay(attempt);
       }
     }
-    const cause = lastError instanceof Error ? lastError : new Error(String(lastError));
-    const why =
-      cause.cause instanceof Error ? `${cause.message} (${cause.cause.message})` : cause.message;
     throw new Error(
-      `plugin index from ${address} could not be fetched (${attempts} attempts): ${why}`,
+      `plugin index from ${address} could not be fetched (${attempts} attempts): ${fetchFailureText(lastError)}`,
     );
   };
   // One read of the index, fetch through parse. Reads are queued one after another (see
@@ -496,14 +494,20 @@ export function httpPluginRegistry(
     // halfway (a body that never arrives, a document that will not parse) does the same —
     // the address has not served the document, whatever its headers said. No address is
     // fetched twice or fetched again after another has won. All of them failed: the read
-    // reports the failure it ended on, which names the address it belongs to.
-    let lastError: unknown = null;
+    // reports every address's failure in the order tried, each naming the address it belongs
+    // to — the canonical address refusing the document and a mirror timing out are two
+    // different things to fix, and the last one alone would hide the first.
+    const failures: string[] = [];
     for (const address of ordered()) {
       let res: Response;
       try {
         res = await requestAddress(address);
         if (!res.ok && !(res.status === 304 && revalidate !== null)) {
-          throw new Error(`plugin index from ${address} answered HTTP ${res.status}`);
+          await res.body?.cancel().catch(() => undefined);
+          const reason = res.statusText.trim();
+          throw new Error(
+            `plugin index from ${address} answered HTTP ${res.status}${reason !== "" ? ` ${reason}` : ""}`,
+          );
         }
         // Unchanged since the last read: the document in hand stands, nothing re-parsed.
         // The null check also narrows the write below for the type checker.
@@ -539,10 +543,10 @@ export function httpPluginRegistry(
         sticky = address;
         return entries;
       } catch (err) {
-        lastError = err;
+        failures.push(err instanceof Error ? err.message : String(err));
       }
     }
-    throw lastError;
+    throw new Error(failures.join("; "));
   };
   // The queue itself: every read follows the one before it, and a read that fails does not
   // poison the chain — the failure is the caller's news, not the next read's state.

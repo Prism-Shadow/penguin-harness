@@ -4051,11 +4051,19 @@ export const zh = {
     empty: "暂无插件",
     /** Card metadata: the entry's package specifier doubles as the install string. */
     specifierHint: "包名，即 Project 插件列表里写的那串",
-    /** Shown above the list when a source answered with nothing, so a short list is not read as a complete one. */
+    /**
+     * Shown above the list when a source answered with nothing, so a short list is not read as a
+     * complete one. "Could not be read", not "unreachable": a source that answered a document the
+     * server refuses is reached and still lists nothing.
+     */
     sourceUnavailable: (count: number): string =>
       count === 1
-        ? "有 1 个插件来源无法访问，下面的列表可能不完整。"
-        : `有 ${count} 个插件来源无法访问，下面的列表可能不完整。`,
+        ? "有 1 个插件来源读取失败，下面的列表可能不完整。"
+        : `有 ${count} 个插件来源读取失败，下面的列表可能不完整。`,
+    /** The text action after that line that shows each failed source and the server's reason. */
+    sourceDetails: "详情",
+    /** The accessible name of that list. */
+    sourceFailures: "读取失败的插件来源",
     /** Shown while the server is still reading a source: the list holds what has answered so far. */
     sourcePending: (count: number): string =>
       count === 1
