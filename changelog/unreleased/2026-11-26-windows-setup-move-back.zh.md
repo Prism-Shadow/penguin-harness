@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `desktop`
+- **PR:** [#1885](https://github.com/Prism-Shadow/penguin-harness/pull/1885)
 
 [English](2026-11-26-windows-setup-move-back.md)
 
