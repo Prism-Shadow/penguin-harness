@@ -301,8 +301,12 @@ async function prepare(page) {
   };
 }
 
+// Visible only: a conversation left behind stays mounted in its hidden workspace page.
 const transcript = (p, text) =>
-  p.locator('[data-find-region="conversation"]').getByText(text, { exact: true });
+  p
+    .locator('[data-find-region="conversation"]')
+    .getByText(text, { exact: true })
+    .filter({ visible: true });
 
 test("cached remote history opens in another tab while disconnected and catches up on reconnect", async ({
   context,
