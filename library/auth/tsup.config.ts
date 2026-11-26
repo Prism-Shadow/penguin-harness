@@ -6,6 +6,7 @@ export default defineConfig({
     "src/api-token.ts",
     "src/auth.ts",
     "src/auth-token.ts",
+    "src/cookie-name.ts",
     "src/index.ts",
     "src/initial-password.ts",
     "src/live-streams.ts",

@@ -33,7 +33,7 @@ import type { UserRow } from "./repos/users.js";
 import type { AppEnv } from "@prismshadow/penguin-library-http/app-env";
 
 /** The session cookie's name, as every non-browser client spells it (the API contract's value). */
-export const SESSION_COOKIE = "penguin_session";
+export { SESSION_COOKIE } from "./cookie-name.js";
 
 /** A write this copy of the origin check lets through to a later, exact one: the server's `ownOriginPrefixes` builds one from its route groups. */
 export type OwnOrigin = (path: string) => boolean;
