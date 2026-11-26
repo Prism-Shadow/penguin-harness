@@ -65,9 +65,9 @@ import type {
 import type {
   PluginChannels,
   PluginClock,
-  PluginConfig,
   PluginHmr,
   PluginLog,
+  PluginProcessConfig,
   PluginReassembly,
 } from "./ports.js";
 import { HttpError } from "@prismshadow/penguin-library-http/errors";
@@ -105,7 +105,7 @@ const BOOT_FAILED =
 
 @Component()
 export class PluginModulesService implements PluginModules {
-  @Use() private readonly config!: PluginConfig;
+  @Use() private readonly config!: PluginProcessConfig;
   @Use() private readonly hmr!: PluginHmr;
   @Use() private readonly reassembly!: PluginReassembly;
   @Use() private readonly projectConfig!: ProjectConfigStore;
