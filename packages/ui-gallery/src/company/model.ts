@@ -1,1306 +1,788 @@
 /**
- * The state of the company-mode prototype and everything a reader can do to it. Nothing here
- * calls a server or runs an agent: an action returns the next state, and `letTimePass` stands in
- * for the agents, moving every work session one step of its script (fixtures.ts).
+ * The prototype's state and everything that changes it, as pure functions: each takes the state
+ * and returns the next, so the tests drive the company exactly as the reader's clicks do.
  *
- * A ticket and a work session are two things. The ticket is the record of one piece of work: its
- * goal, where it stands, the decisions and the result; the reader reads it. A work session is
- * the conversation an agent has while it does the work; the reader opens it to watch, or to talk
- * to that agent directly. A ticket has its sessions, each a conversation the ticket links to, and
- * what a session concludes is written back to the ticket.
+ * A company is set up in a conversation with its lead (`startCompany`), or opened a week in
+ * (`weekState`). After that, nothing moves until the reader lets time pass (`letTimePass`): an
+ * event may arrive and file a ticket, and every ticket the company holds takes one step of its
+ * script. The server's rules apply to every step: work over its budget stops, a verifier that
+ * would send work back past the round limit stops instead, and work that was not verified never
+ * reaches the person. What stops reaches the inbox; nothing else does.
  *
- * The functions hold the proposal's rules (spec.ts `INVARIANTS`), so the prototype cannot show a
- * state the spec would refuse:
- *
- * - a person's action is taken only on a ticket that waits for exactly that action; anything
- *   else returns the state it was given;
- * - a ticket turns unread only when an agent's step leaves it waiting on the person, and that
- *   step also takes it out of "later"; a person's own action reads it;
- * - a work session stops on its one question until the person answers; the answer is written to
- *   the ticket, then goes into that same session as the person's message, and it carries on;
- * - a delivery sent back goes into the session that delivered it, as the person's message;
- * - what the person says in a session is written to the ticket too, so the ticket alone still
- *   tells the whole story;
- * - a schedule's ticket gets no session before a person accepts it, unless the person has
- *   switched that schedule to automatic;
- * - triage never changes the work, and a ticket that waits on the person cannot be snoozed or
- *   archived;
- * - a ticket that has spent past its budget, or whose verifier would hand its work back once more
- *   than its rounds allow, takes no further step: the server stops it and asks the person to give
- *   it more or to stop it there, and the answer is written to the ticket like any other;
- * - an event (a failed CI run, a new issue) files its ticket as it arrives, proposed like a
- *   patrol's find, without waiting for the patrol.
- *
- * The company gets better in two loops, and the person's own verdicts are the only measure:
- *
- * - every ticket: an answer becomes a decision and a delivery sent back a lesson, both in the
- *   handbook; and the employee whose work was sent back, or who was told something in its
- *   session, notes it in its own skill, with no one's approval;
- * - every week, on the lead's own schedule: the lead looks back over the tickets closed since the
- *   last retrospective (how many passed review the first time, how often work was sent back, how
- *   often the person was asked, what an accepted ticket cost), files the retrospective in the
- *   handbook, and proposes what to change as tickets.
- *   Nothing about the company changes until the person accepts it; a skill accepted absorbs the
- *   lesson it came from, so the handbook every employee reads stays short.
+ * Every call the reader makes is written down: in the ticket's decisions, in the handbook when
+ * they say so, and, for a send-back, as a lesson in the executor's own skill, a new version over
+ * a snapshot of the last, so any change can be rolled back.
  */
 import {
   EVENTS,
-  FIRST_TASK,
+  EXECUTOR_OF,
   FIXTURES,
-  PARTS,
-  RETRO_PROPOSALS,
-  SAID_SCRIPT,
-  WEEK_STAFF,
+  MEMBERS,
+  REQUESTS,
+  STARTERS,
+  WEEK_TICKETS,
 } from "./fixtures";
 import type {
-  Byline,
+  ExecutorId,
   FixtureId,
-  FixtureOwner,
-  HandbookDocId,
-  Role,
-  ScriptStep,
-  TicketKind,
+  Member,
+  MemberId,
+  ModelId,
+  Scenario,
+  Source,
+  Step,
 } from "./fixtures";
-import { inboxViewOf, INBOX_VIEWS, waitOf } from "./spec";
-import type { InboxView, TicketState, Triage } from "./spec";
+import { DEFAULT_GRADES, groupOf, waitOf } from "./spec";
+import type {
+  InboxGroup,
+  OutwardAction,
+  OutwardGrade,
+  TicketStatus,
+  Trigger,
+  Wait,
+  Workbench,
+} from "./spec";
 
-/** The reader, as a ticket names them. */
-export const PERSON = "user:you";
-
-/**
- * Where a ticket came from: something the reader said, a patrol's find, an event as it arrived,
- * the lead's own proposal, or a retrospective's.
- */
-export type Source = "person" | "patrol" | "event" | "lead" | "retro";
-
-/** Why the server stopped a ticket: it spent past its budget, or ran out of rework rounds. */
 export type Halt = "budget" | "rounds";
+export type HaltChoice = "more" | "decide" | "stop";
 
-/** What the person decided when a ticket was stopped: give it more (to this much), or stop it. */
-export interface Overrun {
-  halt: Halt;
-  /** The limit it was stopped at. */
-  from: number;
-  /** The limit it was given; null when the person stopped it there. */
-  to: number | null;
+/** One run of a member on a ticket: a line of its bill. */
+export interface Run {
+  step: Step["k"];
+  by: MemberId;
+  model: ModelId;
+  tokens: number;
+  /** The share of input read from the prompt cache, 0–1. */
+  cache: number;
+  usd: number;
+  /** Tool calls the run made: what the folded log holds. */
+  tools: number;
 }
 
-export interface Ticket extends TicketState, Triage {
+/** A review comment: the verifier's finding, or the person's note when they send work back. */
+export type ReviewEntry =
+  | { by: "verifier"; round: number; finding: number }
+  | { by: "person"; round: number; text: string; paragraph: number | null; version: number };
+
+/** A call the person made on the ticket, as its Decisions section records it. */
+export type Decision =
+  | { kind: "ask"; option: string; note: string; filed: boolean }
+  | { kind: "halt"; halt: Halt; choice: HaltChoice }
+  | { kind: "accept"; outward: OutwardAction | null }
+  | { kind: "sendBack" }
+  | { kind: "proposal"; accepted: boolean }
+  | { kind: "drop" };
+
+export interface Ticket {
   id: string;
-  /** The sample ticket whose words it shows; null for one the reader asked for in their own words. */
-  fixture: FixtureId | null;
-  /** The reader's own words, when there is no fixture. */
-  title: string | null;
-  kind: TicketKind;
-  /** The one responsible: it builds, and it starts every session of the ticket. */
-  owner: Byline;
-  /** Who verifies a delivery before it reaches the person; null when no one does. */
-  verifier: Byline | null;
-  priority: "P0" | "P1" | "P2";
+  /** The sample work it is. */
+  fixture: FixtureId;
+  /** A request in the reader's own words, which names it instead of the sample's title. */
+  text: string | null;
+  workbench: Workbench;
+  owner: ExecutorId;
   source: Source;
-  /** How many steps of its script its sessions have taken. */
-  step: number;
-  /** How many progress lines it holds. */
-  progress: number;
-  /** Its one question is open. */
-  asked: boolean;
-  /** The option the person chose, once the question is answered. */
-  answer: number | null;
-  /** What the person added to their answer. */
-  answerNote: string;
-  delivered: boolean;
-  /** The notes it was sent back with, oldest first; an empty note is the sample's own, in the dictionary. */
-  returns: string[];
-  /** What its verifier found and handed back, oldest first; an empty one is the sample's own. */
-  findings: string[];
-  /** What the person said to its work session, oldest first. */
-  notes: string[];
-  unread: boolean;
-  /** What it may spend, in US dollars; the server stops it past this. */
+  status: TicketStatus;
+  /** How many steps of its script it has taken. */
+  at: number;
+  script: readonly Step[];
   budget: number;
-  /** How many times its verifier may hand its work back on its own before the server stops it. */
-  rounds: number;
-  /** Why the server has stopped it, while it waits on the person for that; else null. */
+  spent: number;
+  rounds: { limit: number; used: number };
+  asking: boolean;
   halt: Halt | null;
-  /** Each time it was stopped and what the person decided, oldest first. */
-  overruns: Overrun[];
+  review: ReviewEntry[];
+  decisions: Decision[];
+  runs: Run[];
+  /** How many times the work was delivered: a document's versions. */
+  versions: number;
+  outward: OutwardAction | null;
+  /** The drafts the reader opened, for an action they send themselves. */
+  opened: number[];
+  unread: boolean;
 }
 
-/** A line of a work session's conversation. */
-export type SessionMessage =
-  /** The ticket, handed to the session when it opens. */
-  | { from: "brief" }
-  /** A progress line: the ticket's progress line of that index. */
-  | { from: "agent"; step: "progress"; line: number }
-  | { from: "agent"; step: "ask" }
-  | { from: "agent"; step: "deliver" }
-  /** The building session hands its delivery to the verifier. */
-  | { from: "agent"; step: "handoff" }
-  /** The verifying session, opened: the delivery it was handed. */
-  | { from: "handed" }
-  /** The verifying session's finding, of that index; it goes back to the building session too. */
-  | { from: "agent"; step: "found"; finding: number }
-  /** The verifier's finding, as the building session receives it. */
-  | { from: "verifier"; finding: number }
-  /** The verifying session passes the delivery on to the person. */
-  | { from: "agent"; step: "verified" }
-  /** The agent's reply to something the person said in the session. */
-  | { from: "agent"; step: "noted" }
-  /** The server stopping the session at a limit. */
-  | { from: "server"; halt: Halt; limit: number }
-  /** The person's decision on a stopped session: the limit it was given, or null to stop it. */
-  | { from: "person"; halt: Halt; to: number | null }
-  | { from: "person"; answer: number; note: string }
-  | { from: "person"; sendBack: string }
-  | { from: "person"; text: string };
+/** An entry in the handbook: a call written down, a lesson from a send-back, a change applied. */
+export type Entry =
+  | { id: string; kind: "decision"; ticket: string; option: string; note: string }
+  | { id: string; kind: "lesson"; ticket: string; member: ExecutorId; review: ReviewEntry }
+  | { id: string; kind: "change"; ticket: string };
 
-/** What a session does on its ticket: build the delivery, or verify it. */
-export type SessionRole = "build" | "verify";
-
-/** A work session: one employee's conversation while it works on one ticket. */
-export interface WorkSession {
-  id: string;
-  ticket: string;
-  /** Its place among its ticket's sessions, from 1. */
-  n: number;
-  by: Byline;
-  role: SessionRole;
-  messages: SessionMessage[];
+/** One version of an executor's private skill: the handbook entry that made it, or none for the first. */
+export interface SkillVersion {
+  v: number;
+  entry: string | null;
 }
 
-/**
- * Where a session stands: working, waiting on the person, waiting while its delivery is verified,
- * or over.
- */
-export type SessionStatus = "running" | "answer" | "review" | "verifying" | "ended";
-
-/** What a handbook entry is: the index, a document, a decision, a lesson, a skill, or a retrospective. */
-export type HandbookKind = "index" | "doc" | "decision" | "lesson" | "skill" | "retro";
-
-/** A file under the organization's handbook/. */
-export interface HandbookEntry {
-  /** Its path under handbook/. */
-  path: string;
-  kind: HandbookKind;
-  /** The ticket it came from; null for the index. */
-  ticket: string | null;
-  /** A fixed document's words; null for a decision or lesson, written from its ticket. */
-  doc: HandbookDocId | null;
-  /** A lesson's note: which of its ticket's send-backs. */
-  returnIndex?: number;
-  /** A skill's employee: it is installed in that employee's own skills. */
-  installedOn?: Byline;
-  /** A lesson a skill has absorbed: that skill's path. It no longer counts in the index. */
-  mergedInto?: string;
-  /** A retrospective's number. */
-  retro?: number;
+export interface Skill {
+  versions: SkillVersion[];
+  /** The version in use; any later one stays as a snapshot to roll forward to. */
+  current: number;
 }
 
-/** A retrospective: which closed tickets it looked back over, and what it proposed. */
-export interface Retro {
-  n: number;
-  /** Its window, as indices into `closed`: from, up to (not including). */
-  from: number;
-  upTo: number;
-  proposals: string[];
-}
+/** A line of the lead's conversation once the company runs. */
+export type ChatLine =
+  | { from: "person"; request: FixtureId | null; text: string | null }
+  | { from: "lead"; request: FixtureId | null; text: string | null; filed: string | null };
 
-/**
- * Something an employee noted in its own skill, on its own: from a ticket sent back, or from what
- * the person told its session. Each note is the skill's next version.
- */
-export interface Learned {
-  byline: Byline;
-  ticket: string;
-}
-
-/** What a stretch of closed tickets says about the work, all of it counted from the tickets. */
-export interface Metrics {
-  closed: number;
-  /** Tasks done. */
-  accepted: number;
-  /** Tasks done with nothing sent back. */
-  firstPass: number;
-  sendBacks: number;
-  /** Questions the person answered. */
-  questions: number;
-  /** What an accepted task cost, on average. */
-  costPerAccepted: number;
-}
-
-/** The fixed documents' paths and kinds. */
-const FIXED_DOCS: Record<HandbookDocId, { path: string; kind: HandbookKind }> = {
-  readme: { path: "README.md", kind: "index" },
-  howWeWork: { path: "how-we-work.md", kind: "index" },
-  state: { path: "state-of-the-project.md", kind: "doc" },
-  docsLesson: { path: "lessons/docs-both-languages.md", kind: "lesson" },
-  bilingualSkill: { path: "skills/bilingual-docs/SKILL.md", kind: "skill" },
-};
-
-const fixedEntry = (
-  doc: HandbookDocId,
-  ticket: string | null,
-  installedOn?: Byline,
-): HandbookEntry => ({
-  ...FIXED_DOCS[doc],
-  ticket,
-  doc,
-  ...(installedOn !== undefined ? { installedOn } : {}),
-});
-
-/**
- * A schedule: the daily patrol, once its proposal is accepted, or the lead's weekly retrospective,
- * which every company has from the start.
- */
-export type ScheduleId = "patrol" | "retro";
-
-export interface Schedule {
-  id: ScheduleId;
-  /**
-   * Its tickets start work directly; off, they are proposed and wait for the person. A
-   * retrospective's proposals always wait.
-   */
-  auto: boolean;
-}
-
-/** How the daily patrol runs: not at all, filing what it finds as proposals, or starting work on it. */
-export type PatrolMode = "off" | "propose" | "auto";
-
-/**
- * How the company works and how its agents write to the person, chosen when it is set up and
- * written to the handbook's how-we-work.md, which every employee reads. The first choices shape
- * the company itself: whether a verifier checks every delivery before the person reviews it, the
- * limits every ticket starts with, whether events file tickets as they arrive, and how the patrol
- * runs. The other three are how the agents write: a ticket's record as points or as prose, a
- * question with options and a recommendation or as a plain question, and progress noted at
- * milestones or at every step.
- */
 export interface CompanySettings {
-  verify: boolean;
-  /** What a ticket may spend, in US dollars. */
   budget: number;
-  /** How many times a verifier may hand a ticket's work back on its own. */
   rounds: number;
-  events: boolean;
-  patrol: PatrolMode;
-  record: "points" | "prose";
-  ask: "options" | "open";
-  progress: "milestones" | "every";
+  grades: Record<OutwardAction, OutwardGrade>;
+  triggers: Record<Trigger, boolean>;
 }
 
-/** What a new company is offered: the choices that keep the person in charge with the least noise. */
 export const DEFAULT_SETTINGS: CompanySettings = {
-  verify: true,
   budget: 5,
   rounds: 2,
-  events: true,
-  patrol: "propose",
-  record: "points",
-  ask: "options",
-  progress: "milestones",
+  grades: DEFAULT_GRADES,
+  triggers: { github: true, message: true, callback: true, patrol: true, review: true },
 };
 
-/**
- * What the lead says in its conversation: a line of the dictionary, about some tickets. Its first
- * proposals, then, once each of them is decided, that the setup is settled; a ticket it filed.
- */
-export type LeadLine = "proposals" | "settled" | "filed";
-
-/** A line of the conversation: the person's own words (or, staged, a ticket's request), or the lead's. */
-export type ChatLine =
-  | { from: "person"; text: string }
-  | { from: "person"; about: string }
-  | { from: "lead"; line: LeadLine; tickets: string[] };
+/** What the reader can try, as the tour lists it, one list per flow. */
+export const TOUR = {
+  onboarding: ["pick", "answer", "edit", "create"],
+  daily: [
+    "ask",
+    "accept",
+    "outward",
+    "halt",
+    "autoReturn",
+    "sendBack",
+    "event",
+    "trace",
+    "request",
+    "rollback",
+    "review",
+  ],
+} as const;
+export type TourItem = (typeof TOUR)[keyof typeof TOUR][number];
 
 export interface CompanyState {
-  /** Before the first sentence, or after it. */
-  stage: "setup" | "running";
-  /** How it works and how its agents write, chosen at setup. */
+  stage: "onboarding" | "running";
+  scenario: Scenario | null;
+  hired: ExecutorId[];
+  members: Record<MemberId, Member>;
   settings: CompanySettings;
-  /** What the person asked the company to look after; null in the staged week. */
-  mission: string | null;
-  /** Oldest first. */
   tickets: Ticket[];
-  /** Every work session, oldest first. */
-  sessions: WorkSession[];
-  schedules: Schedule[];
-  /** The employees besides the lead, in the order they joined: the parts it staffs, then the verifier. */
-  roles: Byline[];
-  /** The roles besides the lead and the verifier, as the lead drafted them and the reader made them. */
-  staff: Role[];
-  /** The handbook's files, oldest first. */
-  handbook: HandbookEntry[];
-  /** The schedule that ran last, so the next quiet pass runs the one after it. */
-  lastRun: ScheduleId | null;
-  /** Ticket ids in the order they closed (done or rejected). */
-  closed: string[];
-  retros: Retro[];
-  learned: Learned[];
+  passes: number;
+  handbook: Entry[];
+  skills: Record<ExecutorId, Skill>;
   chat: ChatLine[];
-  /** What a patrol can still find, in the order it finds it. */
-  pool: FixtureId[];
-  /** The events still to arrive, in the order they arrive. */
-  inbound: FixtureId[];
-  /** How many tickets the person has asked for in their own words. */
-  said: number;
+  /** How many reviews the lead has held. */
+  reviewed: number;
+  benchmark: "idle" | "submitted";
+  did: TourItem[];
+  nextId: number;
 }
 
-/** What letting time pass did to a ticket, for the note the prototype raises. */
-export interface PassEvent {
-  kind:
-    | "progress"
-    | "handed"
-    | "found"
-    | "asked"
-    | "delivered"
-    | "halted"
-    | "event"
-    | "proposed"
-    | "started"
-    | "retro";
-  id: string;
-}
+const FIRST_SKILL: Skill = { versions: [{ v: 1, entry: null }], current: 1 };
 
-/** Who does a sample ticket on this team: the lead, the verifier, or the role doing that kind of work. */
-function ownerOn(staff: readonly Role[], owner: FixtureOwner): Byline | null {
-  if (owner === "lead" || owner === "verifier") return owner;
-  return staff.find((role) => role.part === owner)?.id ?? null;
-}
-
-/** Someone on the team can do this sample ticket. */
-const doable = (staff: readonly Role[], id: FixtureId): boolean =>
-  ownerOn(staff, FIXTURES[id].owner) !== null;
-
-/** The limits a ticket starts with: the company's. */
-const limitsOf = (settings: CompanySettings): Pick<Ticket, "budget" | "rounds"> => ({
-  budget: settings.budget,
-  rounds: settings.rounds,
-});
-
-function ticketOf(
-  id: FixtureId,
-  source: Source,
-  patch: Partial<Ticket> = {},
-  staff: readonly Role[] = WEEK_STAFF,
-): Ticket {
-  const fixture = FIXTURES[id];
-  return {
-    id,
-    fixture: id,
-    title: null,
-    kind: fixture.kind,
-    owner: ownerOn(staff, fixture.owner) ?? "lead",
-    verifier: fixture.verified === true ? "verifier" : null,
-    priority: fixture.priority,
-    source,
-    status: "proposed",
-    step: 0,
-    progress: 0,
-    asked: false,
-    answer: null,
-    answerNote: "",
-    delivered: false,
-    returns: [],
-    findings: [],
-    notes: [],
-    unread: true,
-    snoozed: false,
-    archived: false,
-    ...limitsOf(DEFAULT_SETTINGS),
-    halt: null,
-    overruns: [],
-    ...patch,
-  };
-}
-
-const working = (patch: Partial<Ticket> = {}): Partial<Ticket> => ({
-  status: "in_progress",
-  unread: false,
-  ...patch,
-});
-
-/**
- * A staged ticket's sessions, as its work so far would have written them: the ticket is worked
- * from its start, step by step, through the same rules the prototype runs, with the person's
- * recorded answer and send-backs given where the work waited for them.
- */
-function replay(target: Ticket, roles: Byline[]): WorkSession[] {
-  const start: Ticket = {
-    ...target,
-    status: "in_progress",
-    step: 0,
-    progress: 0,
-    asked: false,
-    answer: null,
-    answerNote: "",
-    delivered: false,
-    returns: [],
-    findings: [],
-    blockedBy: undefined,
-    halt: null,
-    overruns: [],
-  };
-  let overran = 0;
-  let state = openSession(
-    { ...freshState(), stage: "running", roles, tickets: [start] },
-    target.id,
-    "build",
-  );
-  let returned = 0;
-  for (;;) {
-    const ticket = find(state, target.id)!;
-    if (ticket.step >= target.step) break;
-    const wait = waitOf(ticket);
-    if (wait === "answer" && ticket.halt !== null) {
-      state = answerLimit(state, target.id, (target.overruns[overran++]?.to ?? null) !== null);
-    } else if (wait === "answer") {
-      state = answerTicket(state, target.id, target.answer ?? 0, target.answerNote);
-    } else if (wait === "review") {
-      state = sendBack(state, target.id, target.returns[returned++] ?? "");
-    } else {
-      state = stepOne(state, target.id)?.state ?? state;
-    }
-  }
-  return state.sessions;
-}
-
-/** Before anything: the person has not said what the company should look after. */
+/** A company before its first sentence: the lead's welcome waits. */
 export function freshState(): CompanyState {
   return {
-    stage: "setup",
+    stage: "onboarding",
+    scenario: null,
+    hired: [],
+    members: MEMBERS,
     settings: DEFAULT_SETTINGS,
-    mission: null,
     tickets: [],
-    sessions: [],
-    schedules: [{ id: "retro", auto: false }],
-    lastRun: null,
-    // Until it starts, the company has only the lead; setting it up staffs its parts.
-    roles: [],
-    staff: [],
-    handbook: [fixedEntry("readme", null)],
-    closed: [],
-    retros: [],
-    learned: [],
+    passes: 0,
+    handbook: [],
+    skills: { dev: FIRST_SKILL, research: FIRST_SKILL, ops: FIRST_SKILL },
     chat: [],
-    pool: ["flaky", "lint", "discussion"],
-    inbound: [...EVENTS],
-    said: 0,
+    reviewed: 0,
+    benchmark: "idle",
+    did: [],
+    nextId: 1,
   };
 }
 
-/**
- * A week in: a question, a delivery and a patrol's proposal wait; a lesson from a
- * send-back has already become a skill; the rest is quiet.
- */
-export function weekState(): CompanyState {
-  const tickets: Ticket[] = [
-    ticketOf("patrol", "lead", { status: "done", unread: false }),
-    ticketOf("verifier", "lead", { status: "done", unread: false }),
-    ticketOf("survey", "lead", {
-      status: "done",
-      step: 3,
-      progress: 2,
-      delivered: true,
-      unread: false,
-    }),
-    ticketOf("types", "patrol", { status: "rejected", unread: false }),
-    ticketOf("timeout", "patrol", {
-      status: "done",
-      step: 2,
-      progress: 1,
-      delivered: true,
-      unread: false,
-      snoozed: true,
-    }),
-    ticketOf("docs", "person", {
-      status: "done",
-      step: 4,
-      progress: 2,
-      delivered: true,
-      returns: [""],
-      unread: false,
-    }),
-    ticketOf("skill", "retro", { status: "done", unread: false }),
-    ticketOf("community", "patrol", {
-      status: "done",
-      step: 2,
-      progress: 1,
-      delivered: true,
-      unread: false,
-    }),
-    ticketOf("jitter", "person", working({ step: 1, progress: 1 })),
-    ticketOf("evals", "lead", working({ step: 1, progress: 1 })),
-    ticketOf("connection", "person", {
-      status: "review",
-      step: 4,
-      progress: 2,
-      delivered: true,
-    }),
-    ticketOf("release", "person", {
-      status: "review",
-      step: 7,
-      progress: 3,
-      delivered: true,
-      findings: [""],
-    }),
-    ticketOf(
-      "csv",
-      "person",
-      working({ step: 2, progress: 1, asked: true, blockedBy: PERSON, unread: true }),
-    ),
-    ticketOf("flaky", "patrol"),
-  ];
-  const roles: Byline[] = [...WEEK_STAFF.map((role) => role.id), "verifier"];
-  return {
-    stage: "running",
-    settings: DEFAULT_SETTINGS,
-    mission: null,
-    tickets,
-    // The sessions of every ticket whose work has started, their conversations as far as the work.
-    sessions: tickets
-      .filter((ticket) => ticket.step > 0)
-      .flatMap((ticket) => replay(ticket, roles)),
-    schedules: [
-      { id: "retro", auto: false },
-      { id: "patrol", auto: false },
-    ],
-    // The patrol ran last; the next quiet pass is the week's retrospective.
-    lastRun: "patrol",
-    roles,
-    staff: [...WEEK_STAFF],
-    handbook: [
-      fixedEntry("readme", null),
-      fixedEntry("howWeWork", null),
-      fixedEntry("state", "survey"),
-      { ...fixedEntry("docsLesson", "docs"), mergedInto: FIXED_DOCS.bilingualSkill.path },
-      { path: "retros/1.md", kind: "retro", ticket: null, doc: null, retro: 1 },
-      fixedEntry("bilingualSkill", "skill", "writer"),
-    ],
-    // The first retrospective looked back over the first five closed tickets and proposed the skill.
-    closed: ["patrol", "verifier", "survey", "docs", "types", "skill", "timeout", "community"],
-    retros: [{ n: 1, from: 0, upTo: 5, proposals: ["skill"] }],
-    learned: [{ byline: "writer", ticket: "docs" }],
-    chat: [
-      { from: "person", about: "csv" },
-      { from: "lead", line: "filed", tickets: ["csv"] },
-    ],
-    pool: ["lint", "discussion"],
-    inbound: [...EVENTS],
-    said: 0,
-  };
+export function did(state: CompanyState, item: TourItem): CompanyState {
+  return state.did.includes(item) ? state : { ...state, did: [...state.did, item] };
 }
 
-const find = (state: CompanyState, id: string) => state.tickets.find((ticket) => ticket.id === id);
-
-const withTicket = (state: CompanyState, id: string, patch: Partial<Ticket>): CompanyState => ({
+const replace = (state: CompanyState, ticket: Ticket): CompanyState => ({
   ...state,
-  tickets: state.tickets.map((ticket) => (ticket.id === id ? { ...ticket, ...patch } : ticket)),
+  tickets: state.tickets.map((candidate) => (candidate.id === ticket.id ? ticket : candidate)),
 });
 
-/** A ticket's work sessions, oldest first. */
-export const sessionsOf = (state: CompanyState, ticketId: string): WorkSession[] =>
-  state.sessions.filter((session) => session.ticket === ticketId);
-
-/**
- * Whose turn a ticket's work is: the verifier's while it checks a delivery, else the builder's. A
- * ticket the server stopped stays in the turn it was stopped in.
- */
-function turnOf(ticket: Ticket): SessionRole {
-  const next = scriptOf(ticket)[ticket.step];
-  const free = waitOf(ticket) === null || ticket.halt !== null;
-  return free && (next === "found" || next === "verified") ? "verify" : "build";
+export function ticketOf(state: CompanyState, id: string): Ticket | undefined {
+  return state.tickets.find((ticket) => ticket.id === id);
 }
 
-/**
- * Where a session stands, while its ticket is in progress or in review; otherwise it is over. Of
- * each role, only the ticket's latest session is live. The building session carries the ticket
- * through: it waits when the ticket waits on the person, and while its delivery is verified. A
- * verifying session is live only while it checks; each delivery handed over opens a new one.
- */
-export function sessionStatus(state: CompanyState, session: WorkSession): SessionStatus {
-  const ticket = find(state, session.ticket);
-  if (ticket === undefined || (ticket.status !== "in_progress" && ticket.status !== "review"))
-    return "ended";
-  const latest = sessionsOf(state, session.ticket)
-    .filter((candidate) => candidate.role === session.role)
-    .at(-1);
-  if (latest?.id !== session.id) return "ended";
-  const turn = turnOf(ticket);
-  if (session.role === "verify") {
-    if (turn !== "verify") return "ended";
-    return ticket.halt !== null ? "answer" : "running";
-  }
-  if (turn === "verify") return "verifying";
-  const wait = waitOf(ticket);
-  if (wait === "answer" || wait === "review") return wait;
-  return "running";
-}
-
-/** The sessions that are not over, oldest first. */
-export const liveSessions = (state: CompanyState): WorkSession[] =>
-  state.sessions.filter((session) => sessionStatus(state, session) !== "ended");
-
-/**
- * Open a ticket's next work session, for its builder or its verifier; the owner starts both. A
- * building session is handed the ticket; a verifying one, the ticket and the delivery.
- */
-function openSession(state: CompanyState, ticketId: string, role: SessionRole): CompanyState {
-  const ticket = find(state, ticketId);
-  const by = role === "build" ? ticket?.owner : ticket?.verifier;
-  if (by === undefined || by === null) return state;
-  const n = sessionsOf(state, ticketId).length + 1;
-  const messages: SessionMessage[] =
-    role === "build" ? [{ from: "brief" }] : [{ from: "brief" }, { from: "handed" }];
-  return {
-    ...state,
-    sessions: [
-      ...state.sessions,
-      { id: `${ticketId}-${n}`, ticket: ticketId, n, by, role, messages },
-    ],
-  };
-}
-
-/** Add lines to one session. */
-function tellSession(state: CompanyState, id: string, ...messages: SessionMessage[]): CompanyState {
-  return {
-    ...state,
-    sessions: state.sessions.map((session) =>
-      session.id === id ? { ...session, messages: [...session.messages, ...messages] } : session,
-    ),
-  };
-}
-
-/** Add lines to a ticket's latest session of a role. */
-function tell(
-  state: CompanyState,
-  ticketId: string,
-  role: SessionRole,
-  ...messages: SessionMessage[]
-): CompanyState {
-  const latest = sessionsOf(state, ticketId)
-    .filter((session) => session.role === role)
-    .at(-1);
-  return latest === undefined ? state : tellSession(state, latest.id, ...messages);
-}
-
-/**
- * The steps a ticket's work takes: its own, then one round of rework for every time it was sent
- * back. On a ticket with a verifier, every delivery is handed over and verified first, and the
- * first comes back once when its fixture says the verifier finds something.
- */
-export function scriptOf(ticket: Ticket): readonly ScriptStep[] {
-  const base = ticket.fixture === null ? SAID_SCRIPT : FIXTURES[ticket.fixture].script;
-  const finds = ticket.fixture !== null && FIXTURES[ticket.fixture].finds === true;
-  const steps = [...base, ...ticket.returns.flatMap((): ScriptStep[] => ["progress", "deliver"])];
-  if (ticket.verifier === null) return steps;
-  let first = true;
-  return steps.flatMap((step): ScriptStep[] => {
-    if (step !== "deliver") return [step];
-    const found: ScriptStep[] = first && finds ? ["handoff", "found", "progress"] : [];
-    first = false;
-    return [...found, "handoff", "verified"];
-  });
-}
-
-/** A ticket as its work starts: its verifier stays only while that employee is on the team. */
-const staffed = (state: CompanyState, ticket: Ticket): Ticket =>
-  ticket.verifier !== null && !state.roles.includes(ticket.verifier)
-    ? { ...ticket, verifier: null }
-    : ticket;
-
-/**
- * Starting the company: what it looks after, the roles the lead drafted from that (as the person
- * left them), and how it works. The choices take effect at once: the roles join, the verifier
- * joins too if every delivery is to be verified, the patrol is scheduled unless it is off, and
- * how-we-work.md is written for every employee to read. The lead has already read the workspace,
- * so it answers with its own survey and a first task for each kind of work the team does, as
- * proposals; nothing starts until the person accepts it. A company with no role has no one to do
- * the work, and does not start.
- */
-export function startCompany(
-  state: CompanyState,
-  mission: string,
-  staff: readonly Role[] = WEEK_STAFF,
-  settings: CompanySettings = state.settings,
-): CompanyState {
-  const said = mission.trim();
-  if (state.stage !== "setup" || said === "" || staff.length === 0) return state;
-  const ids = staff.map((role) => role.id);
-  const roles: Byline[] = settings.verify ? [...ids, "verifier"] : ids;
-  const kinds = PARTS.filter((part) => staff.some((role) => role.part === part));
-  const proposals: FixtureId[] = ["survey", ...kinds.map((part) => FIRST_TASK[part])];
-  const limits = limitsOf(settings);
-  return {
-    ...state,
-    stage: "running",
-    settings,
-    mission: said,
-    roles,
-    staff: [...staff],
-    schedules: patrolled(state.schedules, settings.patrol),
-    handbook: [...state.handbook, fixedEntry("howWeWork", null)],
-    tickets: proposals.map((id) => ticketOf(id, "lead", limits, staff)),
-    // The patrol finds what is left, and only what someone on the team can do; so do events.
-    pool: state.pool.filter((id) => !proposals.includes(id) && doable(staff, id)),
-    inbound: state.inbound.filter((id) => doable(staff, id)),
-    chat: [
-      { from: "person", text: said },
-      { from: "lead", line: "proposals", tickets: proposals },
-    ],
-  };
-}
-
-/** The schedules with the patrol run as given: left out when it is off. */
-function patrolled(schedules: readonly Schedule[], mode: PatrolMode): Schedule[] {
-  const others = schedules.filter((schedule) => schedule.id !== "patrol");
-  return mode === "off" ? others : [...others, { id: "patrol", auto: mode === "auto" }];
-}
-
-/** Whether events file tickets as they arrive, as the person sets it on the schedules page. */
-export function setEvents(state: CompanyState, events: boolean): CompanyState {
-  if (state.stage !== "running") return state;
-  return { ...state, settings: { ...state.settings, events } };
-}
-
-/** How the patrol runs, as the person sets it on the schedules page; how-we-work.md follows. */
-export function setPatrol(state: CompanyState, mode: PatrolMode): CompanyState {
-  if (state.stage !== "running") return state;
-  return {
-    ...state,
-    settings: { ...state.settings, patrol: mode },
-    schedules: patrolled(state.schedules, mode),
-  };
-}
-
-/** Record that a ticket closed, once. */
-const close = (state: CompanyState, id: string): CompanyState =>
-  state.closed.includes(id) ? state : { ...state, closed: [...state.closed, id] };
-
-/** An employee notes something in its own skill. */
-const learn = (state: CompanyState, byline: Byline, ticket: string): CompanyState => ({
-  ...state,
-  learned: [...state.learned, { byline, ticket }],
+const stateOf = (ticket: Ticket) => ({
+  status: ticket.status,
+  asking: ticket.asking,
+  halted: ticket.halt !== null,
 });
 
-/** Add a file to the handbook. */
-const file = (state: CompanyState, entry: HandbookEntry): CompanyState => ({
-  ...state,
-  handbook: [...state.handbook, entry],
-});
+export const ticketWait = (ticket: Ticket): Wait | null => waitOf(stateOf(ticket));
+export const ticketGroup = (ticket: Ticket): InboxGroup => groupOf(stateOf(ticket));
 
-/**
- * Accept a proposal: a task's work session opens, or a skill is filed in the handbook and
- * installed for its employee; a change is done as written.
- */
-export function acceptTicket(state: CompanyState, id: string): CompanyState {
-  return settle(acceptOne(state, id));
+/** A group's tickets, the newest first, as the inbox lists them. */
+export function ticketsIn(state: CompanyState, group: InboxGroup): Ticket[] {
+  return state.tickets.filter((ticket) => ticketGroup(ticket) === group).reverse();
 }
 
-function acceptOne(state: CompanyState, id: string): CompanyState {
-  const ticket = find(state, id);
-  if (ticket === undefined || waitOf(ticket) !== "accept" || ticket.fixture === null) return state;
-  if (ticket.kind === "task") {
-    const started = withTicket(state, id, working({ verifier: staffed(state, ticket).verifier }));
-    return openSession(started, id, "build");
-  }
-  const settled = close(withTicket(state, id, { status: "done", unread: false }), id);
-  const fixture = FIXTURES[ticket.fixture];
-  if (ticket.kind === "skill" && fixture.handbook !== undefined) {
-    const on = fixture.installsOn === undefined ? null : ownerOn(state.staff, fixture.installsOn);
-    const skill = fixedEntry(fixture.handbook, id, on ?? undefined);
-    // The lesson the skill was distilled from leaves the index: the skill now carries it.
-    const handbook = settled.handbook.map((entry) =>
-      fixture.merges !== undefined && entry.doc === fixture.merges
-        ? { ...entry, mergedInto: skill.path }
-        : entry,
-    );
-    return file({ ...settled, handbook }, skill);
-  }
-  return settled;
-}
-
-/** Reject a proposal. The ticket stays on record. */
-export function rejectTicket(state: CompanyState, id: string): CompanyState {
-  const ticket = find(state, id);
-  if (ticket === undefined || waitOf(ticket) !== "accept") return state;
-  return settle(close(withTicket(state, id, { status: "rejected", unread: false }), id));
-}
-
-/**
- * Accept several proposals at once, as the lead's first answer offers: each is accepted as it
- * would be on its own, and any that no longer waits to be accepted is left as it is.
- */
-export function acceptTickets(state: CompanyState, ids: readonly string[]): CompanyState {
-  return settle(ids.reduce(acceptOne, state));
-}
-
-/**
- * Once every proposal of the lead's first answer is decided, the lead says so, once: setting up
- * is over, and from here on only what waits on the person reaches them. The proposals above it
- * already show how each was decided, so it names no ticket.
- */
-function settle(state: CompanyState): CompanyState {
-  const first = state.chat.find(
-    (line): line is Extract<ChatLine, { from: "lead" }> =>
-      line.from === "lead" && line.line === "proposals",
-  );
-  if (first === undefined) return state;
-  if (state.chat.some((line) => line.from === "lead" && line.line === "settled")) return state;
-  const open = first.tickets.some((id) => {
-    const ticket = find(state, id);
-    return ticket !== undefined && waitOf(ticket) === "accept";
-  });
-  if (open) return state;
-  return { ...state, chat: [...state.chat, { from: "lead", line: "settled", tickets: [] }] };
-}
-
-/**
- * Answer a ticket's question. The answer is written to the ticket first; then it goes into the
- * session that asked, as the person's message, and that session carries on.
- */
-export function answerTicket(
-  state: CompanyState,
-  id: string,
-  option: number,
-  note = "",
-): CompanyState {
-  const ticket = find(state, id);
-  if (ticket === undefined || waitOf(ticket) !== "answer" || !ticket.asked) return state;
-  const said = note.trim();
-  const answered = withTicket(state, id, {
-    asked: false,
-    answer: option,
-    answerNote: said,
-    blockedBy: undefined,
-    unread: false,
-  });
-  const recorded = file(answered, {
-    path: `decisions/${id}.md`,
-    kind: "decision",
-    ticket: id,
-    doc: null,
-  });
-  return tell(recorded, id, "build", { from: "person", answer: option, note: said });
-}
-
-/**
- * Decide on a ticket the server stopped: give it more (twice the budget, or one more round) and
- * it carries on in the session it was stopped in, or stop it there and it closes undone. Either
- * way the decision is written to the ticket and goes into that session as the person's message.
- */
-export function answerLimit(state: CompanyState, id: string, more: boolean): CompanyState {
-  const ticket = find(state, id);
-  if (ticket === undefined || ticket.halt === null || waitOf(ticket) !== "answer") return state;
-  const halt = ticket.halt;
-  const role = turnOf(ticket);
-  const from = halt === "budget" ? ticket.budget : ticket.rounds;
-  const to = more ? (halt === "budget" ? ticket.budget * 2 : ticket.rounds + 1) : null;
-  const decided: Partial<Ticket> = {
-    halt: null,
-    blockedBy: undefined,
-    unread: false,
-    overruns: [...ticket.overruns, { halt, from, to }],
-  };
-  const said: SessionMessage = { from: "person", halt, to };
-  if (to === null) {
-    return tell(
-      close(withTicket(state, id, { ...decided, status: "rejected" }), id),
-      id,
-      role,
-      said,
-    );
-  }
-  const raised = halt === "budget" ? { budget: to } : { rounds: to };
-  return tell(withTicket(state, id, { ...decided, ...raised }), id, role, said);
-}
-
-/** Accept a delivery: the ticket is done and its session is over. */
-export function approveTicket(state: CompanyState, id: string): CompanyState {
-  const ticket = find(state, id);
-  if (ticket === undefined || waitOf(ticket) !== "review") return state;
-  const done = close(withTicket(state, id, { status: "done", unread: false }), id);
-  // A delivered document joins the handbook once it is accepted.
-  const doc = ticket.fixture === null ? undefined : FIXTURES[ticket.fixture].handbook;
-  return doc === undefined ? done : file(done, fixedEntry(doc, id));
-}
-
-/**
- * Send a delivery back with what to change: the note goes into the session that built it, which
- * carries on.
- */
-export function returnTicket(state: CompanyState, id: string, note: string): CompanyState {
-  const ticket = find(state, id);
-  const said = note.trim();
-  if (ticket === undefined || waitOf(ticket) !== "review" || said === "") return state;
-  return sendBack(state, id, said);
-}
-
-/** A send-back, once allowed; an empty note stands for a staged ticket's own, in the dictionary. */
-function sendBack(state: CompanyState, id: string, said: string): CompanyState {
-  const ticket = find(state, id)!;
-  const returned = withTicket(state, id, {
-    status: "in_progress",
-    delivered: false,
-    returns: [...ticket.returns, said],
-    unread: false,
-  });
-  // What was missed is a lesson: the lead files it before the session takes the note up.
-  const learned = file(returned, {
-    path: `lessons/${id}-${ticket.returns.length + 1}.md`,
-    kind: "lesson",
-    ticket: id,
-    doc: null,
-    returnIndex: ticket.returns.length,
-  });
-  // The employee notes it in its own skill too, with no one's approval.
-  return tell(learn(learned, ticket.owner, id), id, "build", { from: "person", sendBack: said });
-}
-
-/**
- * Something the person says to a live work session, without the lead. The agent answers in the
- * session, and the words are written to the ticket, so what was settled there is on record. A
- * question the session asked still waits for its answer.
- */
-export function sayInSession(state: CompanyState, sessionId: string, text: string): CompanyState {
-  const said = text.trim();
-  const session = state.sessions.find((candidate) => candidate.id === sessionId);
-  if (session === undefined || said === "" || sessionStatus(state, session) === "ended")
-    return state;
-  const ticket = find(state, session.ticket)!;
-  const noted = learn(
-    withTicket(state, ticket.id, { notes: [...ticket.notes, said], unread: false }),
-    session.by,
-    ticket.id,
-  );
-  return tellSession(
-    noted,
-    session.id,
-    { from: "person", text: said },
-    { from: "agent", step: "noted" },
-  );
-}
-
-/** Opening a ticket reads it. */
-export function readTicket(state: CompanyState, id: string): CompanyState {
-  const ticket = find(state, id);
-  return ticket === undefined || !ticket.unread ? state : withTicket(state, id, { unread: false });
-}
-
-/** Later, archive and restore: the person's own triage. It never changes the work. */
-export function triageTicket(
-  state: CompanyState,
-  id: string,
-  action: "snooze" | "archive" | "restore",
-): CompanyState {
-  const ticket = find(state, id);
-  if (ticket === undefined) return state;
-  if (action === "restore") {
-    return ticket.snoozed || ticket.archived
-      ? withTicket(state, id, { snoozed: false, archived: false })
-      : state;
-  }
-  if (waitOf(ticket) !== null) return state;
-  return action === "snooze"
-    ? withTicket(state, id, { snoozed: true, archived: false })
-    : withTicket(state, id, { archived: true, snoozed: false, unread: false });
-}
-
-/** Something said to the lead: it files a ticket, opens its work session, and says so. */
-export function sayToLead(state: CompanyState, text: string): CompanyState {
-  const said = text.trim();
-  if (state.stage !== "running" || said === "") return state;
-  const id = `said-${state.said + 1}`;
-  const ticket: Ticket = {
-    ...ticketOf("csv", "person", working(limitsOf(state.settings))),
-    id,
-    fixture: null,
-    title: said,
-    // The lead hands it to the first part the company staffs.
-    owner: state.staff[0]?.id ?? "lead",
-    verifier: state.roles.includes("verifier") ? "verifier" : null,
-    priority: "P2",
-  };
-  return openSession(
-    {
-      ...state,
-      said: state.said + 1,
-      tickets: [...state.tickets, ticket],
-      chat: [
-        ...state.chat,
-        { from: "person", text: said },
-        { from: "lead", line: "filed", tickets: [id] },
-      ],
-    },
-    id,
-    "build",
-  );
-}
-
-/**
- * One step of a ticket's work, in the session whose turn it is: a progress line, the question, a
- * delivery to the person; or, with a verifier, the hand-over that opens a verifying session, a
- * finding written to the ticket and handed back to the building session, or a pass that brings
- * the delivery to the person. Null when the ticket has no step to take.
- */
-function stepOne(
-  state: CompanyState,
-  id: string,
-): { state: CompanyState; event: PassEvent } | null {
-  const ticket = find(state, id);
-  if (ticket === undefined || ticket.status !== "in_progress" || waitOf(ticket) !== null)
-    return null;
-  const step = scriptOf(ticket)[ticket.step];
-  if (step === undefined) return null;
-  if (costOf(state, ticket) > ticket.budget) return stop(state, ticket, "budget");
-  if (step === "found" && ticket.findings.length >= ticket.rounds)
-    return stop(state, ticket, "rounds");
-  const next = { step: ticket.step + 1 };
-  // The steps that leave the ticket waiting on the person: it turns unread, and comes back from "later".
-  const waiting = { ...next, unread: true, snoozed: false, archived: false };
-  switch (step) {
-    case "progress":
-      return {
-        state: tell(
-          withTicket(state, id, { ...next, progress: ticket.progress + 1 }),
-          id,
-          "build",
-          { from: "agent", step, line: ticket.progress },
-        ),
-        event: { kind: "progress", id },
-      };
-    case "ask":
-      return {
-        state: tell(
-          withTicket(state, id, { ...waiting, asked: true, blockedBy: PERSON }),
-          id,
-          "build",
-          {
-            from: "agent",
-            step,
-          },
-        ),
-        event: { kind: "asked", id },
-      };
-    case "deliver":
-      return {
-        state: tell(
-          withTicket(state, id, { ...waiting, status: "review", delivered: true }),
-          id,
-          "build",
-          {
-            from: "agent",
-            step,
-          },
-        ),
-        event: { kind: "delivered", id },
-      };
-    case "handoff":
-      return {
-        state: openSession(
-          tell(withTicket(state, id, next), id, "build", { from: "agent", step }),
-          id,
-          "verify",
-        ),
-        event: { kind: "handed", id },
-      };
-    case "found": {
-      const finding = ticket.findings.length;
-      // What the verifier found corrects the builder: it notes it in its own skill too.
-      const found = learn(
-        withTicket(state, id, { ...next, findings: [...ticket.findings, ""] }),
-        ticket.owner,
-        id,
-      );
-      return {
-        state: tell(tell(found, id, "verify", { from: "agent", step, finding }), id, "build", {
-          from: "verifier",
-          finding,
-        }),
-        event: { kind: "found", id },
-      };
-    }
-    case "verified":
-      return {
-        state: tell(
-          withTicket(state, id, { ...waiting, status: "review", delivered: true }),
-          id,
-          "verify",
-          {
-            from: "agent",
-            step,
-          },
-        ),
-        event: { kind: "delivered", id },
-      };
-  }
-}
-
-/**
- * The server stops a ticket at a limit, before the step that would go past it: the session whose
- * turn it is says so, and the ticket waits on the person, unread and back from "later".
- */
-function stop(
-  state: CompanyState,
-  ticket: Ticket,
-  halt: Halt,
-): { state: CompanyState; event: PassEvent } {
-  const stopped = withTicket(state, ticket.id, {
-    halt,
-    blockedBy: PERSON,
-    unread: true,
-    snoozed: false,
-    archived: false,
-  });
-  const limit = halt === "budget" ? ticket.budget : ticket.rounds;
-  return {
-    state: tell(stopped, ticket.id, turnOf(ticket), { from: "server", halt, limit }),
-    event: { kind: "halted", id: ticket.id },
-  };
-}
-
-/** An event arrives, when one is due and events are on: its ticket is filed as a proposal. */
-function arrive(state: CompanyState): { state: CompanyState; event: PassEvent } | null {
-  const arrived = state.inbound[0];
-  if (!state.settings.events || arrived === undefined) return null;
-  const filed = ticketOf(arrived, "event", limitsOf(state.settings), state.staff);
-  return {
-    state: { ...state, tickets: [...state.tickets, filed], inbound: state.inbound.slice(1) },
-    event: { kind: "event", id: arrived },
-  };
-}
-
-/**
- * Time passes: an event that is due arrives, and every work session takes one step, or is stopped
- * at a limit. When nothing happened, time runs on to the next schedule's run, the schedules taking
- * turns: the patrol files what it finds, proposed, or already in progress when it is automatic;
- * the retrospective looks back over what closed since the last one. A run with nothing to do is
- * skipped.
- */
-export function letTimePass(state: CompanyState): { state: CompanyState; events: PassEvent[] } {
-  if (state.stage !== "running") return { state, events: [] };
-  const events: PassEvent[] = [];
-  let moved = state;
-  const arrived = arrive(state);
-  if (arrived !== null) {
-    events.push(arrived.event);
-    moved = arrived.state;
-  }
-  for (const ticket of state.tickets) {
-    const stepped = stepOne(moved, ticket.id);
-    if (stepped === null) continue;
-    events.push(stepped.event);
-    moved = stepped.state;
-  }
-  if (events.length > 0) return { state: moved, events };
-
-  const last = state.schedules.findIndex((schedule) => schedule.id === state.lastRun);
-  const turns = [...state.schedules.slice(last + 1), ...state.schedules.slice(0, last + 1)];
-  for (const schedule of turns) {
-    const ran = runSchedule(state, schedule);
-    if (ran !== null) return { state: { ...ran.state, lastRun: schedule.id }, events: [ran.event] };
-  }
-  return { state, events };
-}
-
-/** One schedule's run, or null when it has nothing to do. */
-function runSchedule(
-  state: CompanyState,
-  schedule: Schedule,
-): { state: CompanyState; event: PassEvent } | null {
-  if (schedule.id === "retro") {
-    const from = state.retros.at(-1)?.upTo ?? 0;
-    if (state.closed.length === from) return null;
-    const retro = lookBack(state);
-    return { state: retro, event: { kind: "retro", id: String(retro.retros.length) } };
-  }
-  const found = state.pool[0];
-  if (found === undefined) return null;
-  const proposed = ticketOf(found, "patrol", limitsOf(state.settings), state.staff);
-  const filed = schedule.auto ? { ...staffed(state, proposed), ...working() } : proposed;
-  const next = { ...state, tickets: [...state.tickets, filed], pool: state.pool.slice(1) };
-  return {
-    state: schedule.auto ? openSession(next, found, "build") : next,
-    event: { kind: schedule.auto ? "started" : "proposed", id: found },
-  };
-}
-
-/**
- * A retrospective: the lead looks back over the tickets closed since the last one, files it in
- * the handbook, and proposes what to change, each as a ticket waiting on the person.
- */
-function lookBack(state: CompanyState): CompanyState {
-  const n = state.retros.length + 1;
-  const from = state.retros.at(-1)?.upTo ?? 0;
-  const proposals = (RETRO_PROPOSALS[n - 1] ?? []).filter((id) => find(state, id) === undefined);
-  return {
-    ...state,
-    tickets: [
-      ...state.tickets,
-      ...proposals.map((id) => ticketOf(id, "retro", limitsOf(state.settings), state.staff)),
-    ],
-    retros: [...state.retros, { n, from, upTo: state.closed.length, proposals }],
-    handbook: [
-      ...state.handbook,
-      { path: `retros/${n}.md`, kind: "retro", ticket: null, doc: null, retro: n },
-    ],
-  };
-}
-
-/** What the given closed tickets say about the work. */
-export function metricsOf(state: CompanyState, ids: readonly string[]): Metrics {
-  const tickets = ids.flatMap((id) => find(state, id) ?? []);
-  const accepted = tickets.filter((ticket) => ticket.kind === "task" && ticket.status === "done");
-  const cost = accepted.reduce((sum, ticket) => sum + costOf(state, ticket), 0);
-  return {
-    closed: tickets.length,
-    accepted: accepted.length,
-    firstPass: accepted.filter((ticket) => ticket.returns.length === 0).length,
-    sendBacks: tickets.reduce((sum, ticket) => sum + ticket.returns.length, 0),
-    questions: tickets.filter((ticket) => ticket.answer !== null).length,
-    costPerAccepted: accepted.length === 0 ? 0 : cost / accepted.length,
-  };
-}
-
-/** A retrospective's window: the tickets it looked back over. */
-export const windowOf = (state: CompanyState, retro: Retro): string[] =>
-  state.closed.slice(retro.from, retro.upTo);
-
-/** What an employee's closed tickets say about its work. */
-export const employeeMetrics = (state: CompanyState, byline: Byline): Metrics =>
-  metricsOf(
-    state,
-    state.closed.filter((id) => find(state, id)?.owner === byline),
-  );
-
-/**
- * A view's tickets. What waits on the reader is listed longest-waiting first, in the order it
- * came in; every other view lists the newest first.
- */
-export function ticketsIn(state: CompanyState, view: InboxView): Ticket[] {
-  const listed = state.tickets.filter((ticket) => inboxViewOf(ticket) === view);
-  return view === "waiting" ? listed : listed.reverse();
-}
-
-/** How many tickets each view lists. */
-export function inboxCounts(state: CompanyState): Record<InboxView, number> {
-  const counts = Object.fromEntries(INBOX_VIEWS.map((view) => [view, 0])) as Record<
-    InboxView,
-    number
-  >;
-  for (const ticket of state.tickets) counts[inboxViewOf(ticket)] += 1;
+export function groupCounts(state: CompanyState): Record<InboxGroup, number> {
+  const counts: Record<InboxGroup, number> = { decide: 0, moving: 0, settled: 0 };
+  for (const ticket of state.tickets) counts[ticketGroup(ticket)] += 1;
   return counts;
 }
 
-/**
- * What a ticket's sessions have cost so far: each step it has taken costs an equal share of its
- * sample's figure, so rework costs more on top. One the reader asked for costs a flat sum a session.
- */
-export function costOf(state: CompanyState, ticket: Ticket): number {
-  if (ticket.fixture === null) return 0.5 * sessionsOf(state, ticket.id).length;
-  const own = scriptOf({ ...ticket, returns: [] }).length;
-  return own === 0 ? 0 : (FIXTURES[ticket.fixture].cost * ticket.step) / own;
+function newTicket(state: CompanyState, fixture: FixtureId, key: string = fixture): Ticket {
+  const staged = FIXTURES[fixture];
+  return {
+    id: key,
+    fixture,
+    text: null,
+    workbench: staged.workbench,
+    owner: staged.change?.member ?? EXECUTOR_OF[staged.workbench],
+    source: staged.source,
+    status: staged.change !== undefined ? "proposed" : "working",
+    at: 0,
+    script: staged.script,
+    budget: staged.budget,
+    spent: 0,
+    rounds: { limit: state.settings.rounds, used: 0 },
+    asking: false,
+    halt: null,
+    review: [],
+    decisions: [],
+    runs: [],
+    versions: 0,
+    outward: staged.outward ?? null,
+    opened: [],
+    unread: true,
+  };
 }
 
-/** What the company has spent: every ticket's cost. */
-export const spendOf = (state: CompanyState): number =>
-  state.tickets.reduce((sum, ticket) => sum + costOf(state, ticket), 0);
+/** Who runs a step, on which model, and what the run's bill says. */
+function runOf(state: CompanyState, ticket: Ticket, step: Step): Run {
+  const by: MemberId = step.k === "fail" || step.k === "pass" ? "verifier" : ticket.owner;
+  const model = state.members[by].model;
+  // Tokens follow cost at a rate per model family; the figures are the prototype's own.
+  const rate = model.startsWith("deepseek") ? 2_600_000 : 1_400_000;
+  const before = ticket.runs.length;
+  return {
+    step: step.k,
+    by,
+    model,
+    tokens: Math.round(step.usd * rate),
+    cache: Math.min(0.92, 0.45 + before * 0.08),
+    usd: step.usd,
+    tools: step.k === "work" ? 9 + ((before * 7) % 13) : step.k === "deliver" ? 3 : 6,
+  };
+}
+
+/** What a step of time did, as the bar under the page reports it. */
+export type PassEvent =
+  | { kind: "arrived"; id: string }
+  | { kind: "delivered"; id: string }
+  | { kind: "returned"; id: string }
+  | { kind: "passed"; id: string }
+  | { kind: "asked"; id: string }
+  | { kind: "halted"; id: string; halt: Halt };
+
+/** Adds a version to a member's skill for a handbook entry; the version before stays as its snapshot. */
+function bumpSkill(state: CompanyState, member: ExecutorId, entry: string): CompanyState {
+  const skill = state.skills[member];
+  const v = skill.versions.length + 1;
+  return {
+    ...state,
+    skills: {
+      ...state.skills,
+      [member]: { versions: [...skill.versions, { v, entry }], current: v },
+    },
+  };
+}
+
+/** A send-back, written down as a lesson in the handbook and in the executor's skill. */
+function learn(state: CompanyState, ticket: Ticket, review: ReviewEntry): CompanyState {
+  const id = `lesson-${state.nextId}`;
+  const entry: Entry = { id, kind: "lesson", ticket: ticket.id, member: ticket.owner, review };
+  return bumpSkill(
+    { ...state, nextId: state.nextId + 1, handbook: [...state.handbook, entry] },
+    ticket.owner,
+    id,
+  );
+}
+
+/** One step of a ticket's work, or the server's refusal of it. A waiting or settled ticket takes none. */
+function stepTicket(
+  state: CompanyState,
+  id: string,
+): { state: CompanyState; event: PassEvent | null } {
+  const ticket = ticketOf(state, id);
+  if (ticket === undefined) return { state, event: null };
+  const moving = ticket.status === "working" || ticket.status === "verifying";
+  const step = ticket.script[ticket.at];
+  if (!moving || ticketWait(ticket) !== null || step === undefined) return { state, event: null };
+  // The server's two limits: what the work may cost, and how often it may be sent back.
+  if (ticket.spent + step.usd > ticket.budget + 1e-9) {
+    return {
+      state: replace(state, { ...ticket, halt: "budget", unread: true }),
+      event: { kind: "halted", id, halt: "budget" },
+    };
+  }
+  if (step.k === "fail" && ticket.rounds.used >= ticket.rounds.limit) {
+    return {
+      state: replace(state, { ...ticket, halt: "rounds", unread: true }),
+      event: { kind: "halted", id, halt: "rounds" },
+    };
+  }
+  let next: Ticket = {
+    ...ticket,
+    at: ticket.at + 1,
+    spent: Math.round((ticket.spent + step.usd) * 100) / 100,
+    runs: [...ticket.runs, runOf(state, ticket, step)],
+  };
+  let after = state;
+  let event: PassEvent | null = null;
+  if (step.k === "deliver") {
+    next = { ...next, status: "verifying", versions: next.versions + 1 };
+    event = { kind: "delivered", id };
+  } else if (step.k === "fail") {
+    const review: ReviewEntry = {
+      by: "verifier",
+      round: ticket.rounds.used + 1,
+      finding: step.finding,
+    };
+    next = {
+      ...next,
+      status: "working",
+      rounds: { ...ticket.rounds, used: ticket.rounds.used + 1 },
+      review: [...ticket.review, review],
+    };
+    after = learn(after, next, review);
+    event = { kind: "returned", id };
+  } else if (step.k === "pass") {
+    next = { ...next, status: "deciding", unread: true };
+    event = { kind: "passed", id };
+  } else if (step.k === "ask") {
+    next = { ...next, asking: true, unread: true };
+    event = { kind: "asked", id };
+  }
+  return { state: replace(after, next), event };
+}
+
+/** An event from outside: the lead files its ticket at once, when that trigger is on. */
+function arrive(state: CompanyState, id: FixtureId): CompanyState {
+  if (ticketOf(state, id) !== undefined) return state;
+  const fixture = FIXTURES[id];
+  const trigger: Trigger = fixture.source === "github" ? "github" : "message";
+  if (!state.settings.triggers[trigger]) return state;
+  if (!state.hired.includes(EXECUTOR_OF[fixture.workbench])) return state;
+  return { ...state, tickets: [...state.tickets, newTicket(state, id)] };
+}
+
+/** Every moving ticket takes one step; an event due on this pass arrives first. */
+export function letTimePass(state: CompanyState): { state: CompanyState; events: PassEvent[] } {
+  const passes = state.passes + 1;
+  let next: CompanyState = { ...state, passes };
+  const events: PassEvent[] = [];
+  for (const due of EVENTS.filter((event) => event.pass === passes)) {
+    const before = next.tickets.length;
+    next = arrive(next, due.ticket);
+    if (next.tickets.length > before) {
+      events.push({ kind: "arrived", id: due.ticket });
+      next = did(next, "event");
+    }
+  }
+  for (const ticket of next.tickets) {
+    const stepped = stepTicket(next, ticket.id);
+    next = stepped.state;
+    if (stepped.event !== null) events.push(stepped.event);
+  }
+  if (events.some((event) => event.kind === "returned")) next = did(next, "autoReturn");
+  return { state: next, events };
+}
+
+/** Takes a ticket's steps as the sample week did, answering its question as recommended. */
+function replay(state: CompanyState, id: string, attempts: number): CompanyState {
+  let next = state;
+  for (let i = 0; i < attempts; i += 1) {
+    const ticket = ticketOf(next, id)!;
+    if (ticket.asking) {
+      next = answerAsk(next, id, FIXTURES[ticket.fixture].ask?.recommended ?? "", "", false);
+    }
+    next = stepTicket(next, id).state;
+  }
+  return next;
+}
+
+/** The sample company, a week in. */
+export function weekState(): CompanyState {
+  let state: CompanyState = {
+    ...freshState(),
+    stage: "running",
+    scenario: "solo",
+    hired: ["dev", "research", "ops"],
+  };
+  for (const id of WEEK_TICKETS) {
+    const fixture = FIXTURES[id];
+    state = { ...state, tickets: [...state.tickets, newTicket(state, id)] };
+    state = replay(state, id, fixture.week ?? 0);
+    const ticket = ticketOf(state, id)!;
+    if (fixture.settled !== undefined) {
+      const decision: Decision =
+        fixture.settled === "done" ? { kind: "accept", outward: ticket.outward } : { kind: "drop" };
+      state = replace(state, {
+        ...ticket,
+        status: fixture.settled,
+        decisions: [...ticket.decisions, decision],
+        unread: false,
+      });
+    }
+  }
+  return {
+    ...state,
+    // Two calls the reader wrote down earlier in the week.
+    handbook: [
+      { id: "decision-discount", kind: "decision", ticket: "discount", option: "drop", note: "" },
+      { id: "decision-guide", kind: "decision", ticket: "guide", option: "tone", note: "" },
+      ...state.handbook,
+    ],
+    reviewed: 1,
+    did: [],
+  };
+}
+
+/** The reader's answers in the lead's onboarding conversation, and their edits to its plan. */
+export interface Setup {
+  scenario: Scenario;
+  work: readonly Workbench[];
+  budget: number;
+  rounds: number;
+  events: boolean;
+  models: Partial<Record<ExecutorId, ModelId>>;
+}
+
+/** The executors a company needs for its work: one per kind of work, three at most. */
+export function hiresFor(work: readonly Workbench[]): ExecutorId[] {
+  const needed = new Set(work.map((kind) => EXECUTOR_OF[kind]));
+  return (["dev", "research", "ops"] as const).filter((id) => needed.has(id));
+}
+
+/** The company the reader confirmed: its team, its limits, and the first ticket of each kind of work. */
+export function startCompany(state: CompanyState, setup: Setup): CompanyState {
+  const hired = hiresFor(setup.work);
+  const members = { ...state.members };
+  for (const id of hired) {
+    const model = setup.models[id];
+    if (model !== undefined) members[id] = { ...members[id], model };
+  }
+  let next: CompanyState = {
+    ...state,
+    stage: "running",
+    scenario: setup.scenario,
+    hired,
+    members,
+    settings: {
+      ...state.settings,
+      budget: setup.budget,
+      rounds: setup.rounds,
+      triggers: {
+        ...state.settings.triggers,
+        github: setup.events,
+        message: setup.events,
+        callback: setup.events,
+      },
+    },
+    tickets: [],
+  };
+  for (const kind of setup.work) {
+    const ticket = newTicket(next, STARTERS[kind]);
+    next = {
+      ...next,
+      tickets: [...next.tickets, { ...ticket, budget: Math.min(ticket.budget, setup.budget) }],
+    };
+  }
+  return did(next, "create");
+}
+
+export function readTicket(state: CompanyState, id: string): CompanyState {
+  const ticket = ticketOf(state, id);
+  return ticket === undefined || !ticket.unread
+    ? state
+    : replace(state, { ...ticket, unread: false });
+}
+
+/** The answer to a ticket's question, written back to it and, if the reader says so, to the handbook. */
+export function answerAsk(
+  state: CompanyState,
+  id: string,
+  option: string,
+  note: string,
+  file: boolean,
+): CompanyState {
+  const ticket = ticketOf(state, id);
+  if (ticket === undefined || !ticket.asking) return state;
+  let next: Ticket = {
+    ...ticket,
+    asking: false,
+    decisions: [...ticket.decisions, { kind: "ask", option, note, filed: file }],
+  };
+  if (option === "stop") next = { ...next, status: "dropped" };
+  // The full run is a large experiment: it comes with the budget it needs.
+  if (option === "full") next = { ...next, budget: next.budget + 18 };
+  let after = replace(state, next);
+  if (file) {
+    after = {
+      ...after,
+      nextId: after.nextId + 1,
+      handbook: [
+        ...after.handbook,
+        { id: `decision-${after.nextId}`, kind: "decision", ticket: id, option, note },
+      ],
+    };
+  }
+  return did(after, "ask");
+}
+
+/** The reader's call on a ticket the server stopped. */
+export function answerHalt(state: CompanyState, id: string, choice: HaltChoice): CompanyState {
+  const ticket = ticketOf(state, id);
+  if (ticket === undefined || ticket.halt === null) return state;
+  const halt = ticket.halt;
+  let next: Ticket = {
+    ...ticket,
+    halt: null,
+    decisions: [...ticket.decisions, { kind: "halt", halt, choice }],
+  };
+  if (choice === "more") {
+    next =
+      halt === "budget"
+        ? { ...next, budget: ticket.budget * 2 }
+        : { ...next, rounds: { ...ticket.rounds, limit: ticket.rounds.limit + 1 } };
+  } else if (choice === "decide") {
+    // The reader settles it themselves: the work comes to them as it stands.
+    next = { ...next, status: "deciding", at: ticket.script.length };
+  } else {
+    next = { ...next, status: "dropped" };
+  }
+  return did(replace(state, next), "halt");
+}
+
+/** Accepts verified work, which approves the outward action it carries. */
+export function acceptWork(state: CompanyState, id: string): CompanyState {
+  const ticket = ticketOf(state, id);
+  if (ticket === undefined || ticket.status !== "deciding") return state;
+  const next = did(
+    replace(state, {
+      ...ticket,
+      status: "done",
+      decisions: [...ticket.decisions, { kind: "accept", outward: ticket.outward }],
+    }),
+    "accept",
+  );
+  return ticket.outward === null ? next : did(next, "outward");
+}
+
+/** Opens one of a ticket's drafts for the reader to send themselves. */
+export function openDraft(state: CompanyState, id: string, index: number): CompanyState {
+  const ticket = ticketOf(state, id);
+  if (ticket === undefined || ticket.opened.includes(index)) return state;
+  return did(replace(state, { ...ticket, opened: [...ticket.opened, index] }), "outward");
+}
+
+/**
+ * Sends verified work back with the reader's note, on a paragraph or on the whole: the executor
+ * takes it again, the verifier checks it again, and the note becomes a lesson in the executor's
+ * skill.
+ */
+export function sendBack(
+  state: CompanyState,
+  id: string,
+  text: string,
+  paragraph: number | null = null,
+): CompanyState {
+  const ticket = ticketOf(state, id);
+  if (ticket === undefined || ticket.status !== "deciding" || text.trim() === "") return state;
+  const review: ReviewEntry = {
+    by: "person",
+    round: ticket.rounds.used,
+    text: text.trim(),
+    paragraph,
+    version: ticket.versions,
+  };
+  const next: Ticket = {
+    ...ticket,
+    status: "working",
+    script: [
+      ...ticket.script.slice(0, ticket.at),
+      { k: "work", usd: 0.4 },
+      { k: "deliver", usd: 0.2 },
+      { k: "pass", usd: 0.3 },
+    ],
+    review: [...ticket.review, review],
+    decisions: [...ticket.decisions, { kind: "sendBack" }],
+  };
+  return did(learn(replace(state, next), next, review), "sendBack");
+}
+
+/** Accepts or declines a change the lead proposed. Accepting applies it as written. */
+export function answerProposal(state: CompanyState, id: string, accepted: boolean): CompanyState {
+  const ticket = ticketOf(state, id);
+  if (ticket === undefined || ticket.status !== "proposed") return state;
+  let next = replace(state, {
+    ...ticket,
+    status: accepted ? "done" : "dropped",
+    decisions: [...ticket.decisions, { kind: "proposal", accepted }],
+  });
+  const change = FIXTURES[ticket.fixture].change;
+  if (!accepted || change === undefined) return next;
+  const entry = `change-${next.nextId}`;
+  next = {
+    ...next,
+    nextId: next.nextId + 1,
+    handbook: [...next.handbook, { id: entry, kind: "change", ticket: id }],
+  };
+  if (change.model !== undefined) return setModel(next, change.member, change.model);
+  // A rule for one member goes into its skill, over a snapshot of the version before.
+  return bumpSkill(next, change.member, entry);
+}
+
+export function dropTicket(state: CompanyState, id: string): CompanyState {
+  const ticket = ticketOf(state, id);
+  if (ticket === undefined || ticket.status === "done" || ticket.status === "dropped") return state;
+  return replace(state, {
+    ...ticket,
+    status: "dropped",
+    asking: false,
+    halt: null,
+    decisions: [...ticket.decisions, { kind: "drop" }],
+  });
+}
+
+/** Puts an executor's skill back to an earlier version; the later ones stay to roll forward to. */
+export function rollback(state: CompanyState, member: ExecutorId, v: number): CompanyState {
+  const skill = state.skills[member];
+  if (!skill.versions.some((version) => version.v === v)) return state;
+  return did(
+    { ...state, skills: { ...state.skills, [member]: { ...skill, current: v } } },
+    "rollback",
+  );
+}
+
+/** What the reader asks the lead for: a suggested request, or one in their own words. */
+export function askLead(
+  state: CompanyState,
+  request: FixtureId | null,
+  text: string | null,
+): CompanyState {
+  return {
+    ...state,
+    chat: [
+      ...state.chat,
+      { from: "person", request, text },
+      { from: "lead", request, text, filed: null },
+    ],
+  };
+}
+
+/** Files the ticket the lead previewed at `line` of its conversation. */
+export function fileRequest(state: CompanyState, line: number): CompanyState {
+  const preview = state.chat[line];
+  if (preview === undefined || preview.from !== "lead" || preview.filed !== null) return state;
+  // A request in the reader's own words is staged as a document, the commonest work.
+  const fixture: FixtureId = preview.request ?? "pricing";
+  const key =
+    preview.request !== null && ticketOf(state, preview.request) === undefined
+      ? preview.request
+      : `request-${state.nextId}`;
+  const ticket: Ticket = {
+    ...newTicket(state, fixture, key),
+    text: preview.request === null ? preview.text : null,
+    source: "user",
+    budget: state.settings.budget,
+    unread: false,
+  };
+  const chat = state.chat.map((candidate, i) =>
+    i === line && candidate.from === "lead" ? { ...candidate, filed: key } : candidate,
+  );
+  return did(
+    { ...state, nextId: state.nextId + 1, tickets: [...state.tickets, ticket], chat },
+    "request",
+  );
+}
+
+/** The requests the lead still suggests: those not asked for yet. */
+export function suggestions(state: CompanyState): FixtureId[] {
+  return REQUESTS.filter((id) => !state.chat.some((line) => line.request === id));
+}
+
+export function setModel(state: CompanyState, member: MemberId, model: ModelId): CompanyState {
+  return { ...state, members: { ...state.members, [member]: { ...state.members[member], model } } };
+}
+
+export function setLimits(
+  state: CompanyState,
+  limits: { budget?: number; rounds?: number },
+): CompanyState {
+  return { ...state, settings: { ...state.settings, ...limits } };
+}
+
+export function setGrade(
+  state: CompanyState,
+  action: OutwardAction,
+  grade: OutwardGrade,
+): CompanyState {
+  return {
+    ...state,
+    settings: { ...state.settings, grades: { ...state.settings.grades, [action]: grade } },
+  };
+}
+
+export function setTrigger(state: CompanyState, trigger: Trigger, on: boolean): CompanyState {
+  return {
+    ...state,
+    settings: { ...state.settings, triggers: { ...state.settings.triggers, [trigger]: on } },
+  };
+}
+
+/** How one executor has done: what passed the verifier the first time, what came back, what it cost. */
+export interface Metrics {
+  verified: number;
+  firstPass: number;
+  rework: number;
+  tickets: number;
+  spent: number;
+}
+
+export function metricsOf(state: CompanyState, member: ExecutorId): Metrics {
+  const owned = state.tickets.filter(
+    (ticket) => ticket.owner === member && ticket.status !== "proposed",
+  );
+  const verified = owned.filter((ticket) => ticket.runs.some((run) => run.step === "pass"));
+  return {
+    verified: verified.length,
+    firstPass: verified.filter((ticket) => !ticket.review.some((entry) => entry.by === "verifier"))
+      .length,
+    rework: owned.reduce((sum, ticket) => sum + ticket.review.length, 0),
+    tickets: owned.length,
+    spent: owned.reduce((sum, ticket) => sum + ticket.spent, 0),
+  };
+}
+
+export const spendOf = (state: CompanyState) =>
+  state.tickets.reduce((sum, ticket) => sum + ticket.spent, 0);
+
+/**
+ * The lead's review: it reads every executor's figures and proposes a change. In the sample the
+ * second review finds the ledger work dearer than it needs to be, and proposes a cheaper model.
+ */
+export function runReview(state: CompanyState): CompanyState {
+  const next = did(state, "review");
+  if (!next.hired.includes("ops") || ticketOf(next, "cheaperModel") !== undefined) return next;
+  return {
+    ...next,
+    reviewed: next.reviewed + 1,
+    tickets: [...next.tickets, newTicket(next, "cheaperModel")],
+  };
+}
+
+export function submitBenchmark(state: CompanyState): CompanyState {
+  return { ...state, benchmark: "submitted" };
+}

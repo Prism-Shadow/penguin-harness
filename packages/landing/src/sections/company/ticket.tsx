@@ -1,32 +1,28 @@
 /**
- * The ticket file, field by field: an example at the moment its question is open, then one table per part
- * of it (the frontmatter, the prose sections, and the person's own triage, which is kept per
- * person and never written to the file), each row a field's name and type, whether it is required,
- * who writes it, what it means, and whether the shipped company mode has it. Under them, the rule
- * that reads "waiting on you" from the fields. The catalogue is the gallery's company/spec.ts, the words the
- * dictionaries' `company.ticket`. A table from `md` up; on a phone each field stacks.
+ * The ticket file, field by field: an example at the moment its question is open, then one table
+ * per part of it (the frontmatter and the prose sections), each row a field's name and type,
+ * whether it is required, who writes it, what it means, and whether the first company mode has
+ * it. Under them, the rule that reads "waiting on you" from the fields, in the order `waitOf`
+ * takes it. The catalogue is the gallery's company/spec.ts, the words the dictionaries'
+ * `company.ticket`. A table from `md` up; on a phone each field stacks.
  */
 import { highlightSiteCode, SiteCodeBlock } from "@prismshadow/penguin-ui/site";
 import { S } from "../../lib/strings";
-import {
-  FRONTMATTER_FIELDS,
-  SECTION_FIELDS,
-  TRIAGE_FIELDS,
-} from "../../../../ui-gallery/src/company/spec";
+import { FRONTMATTER_FIELDS, SECTION_FIELDS } from "../../../../ui-gallery/src/company/spec";
 import type { FieldDoc, FieldPath, Wait } from "../../../../ui-gallery/src/company/spec";
 import { Section } from "../../components/section";
 
 const GROUPS = [
   { id: "frontmatter", fields: FRONTMATTER_FIELDS },
   { id: "sections", fields: SECTION_FIELDS },
-  { id: "triage", fields: TRIAGE_FIELDS },
 ] as const;
 
-/** When a ticket waits on a person, as the fields say it: language-neutral, like the fields. */
+/** When a ticket waits on a person, as the fields say it, in `waitOf`'s order: language-neutral, like the fields. */
 const WAITS: readonly { wait: Wait; when: string }[] = [
   { wait: "accept", when: "status: proposed" },
-  { wait: "answer", when: "status: in_progress, blocked_by: user:<id>" },
-  { wait: "review", when: "status: review" },
+  { wait: "halt", when: "halt: budget | rounds" },
+  { wait: "ask", when: "ask: <a2ui form>" },
+  { wait: "decide", when: "status: deciding" },
 ];
 
 const LABEL = "text-xs font-semibold text-gray-500 dark:text-gray-400";

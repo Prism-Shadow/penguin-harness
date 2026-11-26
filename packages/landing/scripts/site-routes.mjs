@@ -80,9 +80,9 @@ const AMSP_META = {
  * the static shell. It has no share card of its own yet: the image is the site's.
  */
 const COMPANY_META = {
-  title: "Company mode: read tickets, not transcripts",
+  title: "Company mode: one lead, and you only for the calls",
   description:
-    "The spec for the next company mode, with a prototype to click through: you talk to one lead agent, work is kept as tickets, and a ticket comes to you only to be accepted, answered or reviewed.",
+    "The spec for the next company mode, with a prototype to click through: you agree goals with one lead agent, an executor and an independent verifier move each ticket along a state machine, and only blockers and final calls reach your inbox.",
   image: "/og-cover.png",
   imageAlt: "PenguinHarness",
 };

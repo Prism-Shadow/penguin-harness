@@ -6,7 +6,7 @@
  * the tree keyed by locale — keep `S.x` reads inside components. English marketing copy uses lowercase `agent`; preserve the
  * established casing of Workspace, Token, Task, Skill, Trace, and other product terms.
  */
-import type { FieldPath, InvariantId } from "../../../ui-gallery/src/company/spec";
+import type { FieldPath, InvariantId, Workbench } from "../../../ui-gallery/src/company/spec";
 
 export const zh = {
   siteName: "PenguinHarness",
@@ -955,250 +955,329 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
   /**
    * The company-mode spec (pages/company.tsx): the page around the prototype, which lives in the
-   * gallery (packages/ui-gallery/src/company) and carries its own words. `fields` and `items` are
-   * keyed by the gallery's spec.ts, so a field or a rule with no words fails to typecheck.
+   * gallery (packages/ui-gallery/src/company) and carries its own words. The design is the one the
+   * company-mode research settled on: a light, self-running organization. `fields`, `items` and
+   * `workbenches` are keyed by the gallery's spec.ts, so an entry with no words fails to typecheck.
    */
   company: {
     /** The tab title and description while the page is open; the static shell carries the English pair (scripts/site-routes.mjs). */
-    title: "公司模式：只读工单，不读对话",
+    title: "公司模式：一个主理，只在拍板时找你",
     description:
-      "下一版公司模式规格与交互原型。你只和主理 Agent 说话，需求记成工单，只在等你接受、回答或验收时找你。",
+      "下一版公司模式的规格与可交互原型：你只跟主理 Agent 对齐目标，执行和独立验证按工单状态机推进，只有卡点和最终拍板进收件箱。",
     name: "公司模式",
     draft: "规格草案",
-    headline: "只读工单，不读对话",
+    headline: "一个主理接活，验证过的交付才到你面前",
     subline:
-      "主理 Agent 接下需求，记成工单，交给工作会话去做。工单只在等你接受、回答或验收时找你。",
+      "下一版公司模式按轻量自治组织来做。你只跟主理 Agent 聊目标，执行和独立验证按工单状态机推进，过程默认折叠，只有卡点和最终拍板进收件箱。",
     /** The sentence before the link to the shipped mode's docs page, and the full stop after it. */
     specNote: "本页为下一版公司模式规格，实现以此为准。已发布版本见",
     currentDocs: "公司模式文档",
     specEnd: "。",
 
-    /** The framed prototype (sections/company/prototype.tsx). */
+    /** The framed prototype and what to try in it (sections/company/prototype.tsx). */
     frame: {
       title: "公司模式原型",
       /** The two states the prototype can open in, and the name of that choice. */
-      startsLabel: "初始状态",
-      starts: { week: "运行一周", fresh: "从零开始" },
+      startsLabel: "体验哪一段",
+      starts: { fresh: "开局", week: "日常" },
       open: "单独打开",
-      note: "界面采用真实控件与演示数据，后台无运行中的 Agent。点击右下角「让时间过去」，推进工作会话进度。",
+      note: "原型用真实控件和演示数据，后台没有 Agent 在跑。点底栏的「让时间过去」，每张工单各走一步；「体验清单」记着你试过哪些操作。",
+      tryTitle: "可以试试",
+      tries: {
+        fresh: {
+          title: "开局：从一句话建起组织",
+          text: "一家还没开张的公司。主理先看你有哪些机器和模型，再问你要做什么。",
+          items: [
+            "挑一张起步卡，或直接写一句目标",
+            "在 A2UI 表单里答开局三问：交付哪几类活、单张工单预算、打回轮次上限",
+            "在组织清单里改一项：勾掉一类活、换一名成员的模型、调对外动作的审批分级",
+            "确认后进入收件箱，第一批工单已经派出去",
+          ],
+        },
+        week: {
+          title: "日常：一周后的收件箱",
+          text: "一人公司「浮冰工作室」跑了一周。收件箱按待拍板、进行中、已收尾分组。",
+          items: [
+            "在评测工单的决策卡里选一项，回答写回工单和组织手册",
+            "在验收台看代码对比、实验曲线或带批注的长文档，验收或打回",
+            "处理一次熔断：经销商协议打回到了上限，发票核对花到了预算",
+            "批准合并或发布，或打开回帖的预填草稿自己发",
+            "让时间过去：看验证者自动打回，看 GitHub Issue 自动开单",
+            "跟主理提个新需求，在复盘页看它提的优化工单，在手册里回滚一版 Skill",
+          ],
+        },
+      },
+      startHere: "从这里开始",
     },
 
-    /** What the spec changes against the shipped company mode (sections/company/changes.tsx). */
-    changes: {
-      title: "与已发布版本的差异",
-      subtitle: "沿用外壳、看板、工单文件与日程。调整展示内容、决策入口与通知条件。",
-      head: { topic: "事项", now: "现有版本", spec: "新版规格" },
+    /** The organization in one picture (sections/company/architecture.tsx). */
+    architecture: {
+      title: "轻量自治组织",
+      subtitle: "单一主理入口，状态机执验分离，异常收件箱拍板，领域工作台验收，文件化双层自进化。",
+      flowLabel: "主交付流水线：日常过程默认折叠在后台",
+      machineLabel: "工单记录与状态机：全链路 Trace 默认折叠",
+      nodes: {
+        person: { name: "你", text: "提出目标与约束" },
+        lead: { name: "单一主理 Agent", text: "聊清需求，建组拆单，默认最少编制" },
+        executor: { name: "执行者", text: "按角色与机器干活，产出结果与账单" },
+        verifier: { name: "独立验证者", text: "服务端硬门禁，轮次与预算熔断" },
+        inbox: { name: "异常收件箱", text: "只有卡点与拍板触达，A2UI 决策卡交互" },
+        workbench: { name: "A2APP 工作台", text: "按领域专业验收：代码、科研、合同" },
+      },
+      sendBack: "未通过：自动打回",
+      toInbox: "通过或遇卡点",
+      evolveLabel: "文件化双层自进化：规则、教训与 Skill 全部是本地文件，可审计、可回滚",
+      feedback: {
+        rules: "规则与 Skill 持续更新",
+        lessons: "打回教训与账单",
+        calls: "拍板结论与验收反馈",
+      },
+      inner: {
+        name: "内环：日常本地迭代",
+        text: "拍板结论写进组织手册；验收打回记成教训，更新对应成员的私有 Skill，改前自动快照。主理按一次通过率、返工次数和单工单花费定期复盘，主动提流程优化工单。",
+      },
+      outer: {
+        name: "外环：社区公开评测",
+        text: "接入 Shared RSI Community 的公开 Benchmark 与榜单，组织模板、协作规矩和开源模型组合统一跑分对比。",
+      },
+      whyTitle: "初版的问题，和这一版的回答",
+      head: { problem: "初版", answer: "这一版" },
+      why: [
+        {
+          problem:
+            "讨论散在又长又密的群消息里，出门倒杯水回来就 99+ 未读，分不清哪件事卡住了、该拍什么板。",
+          answer: "不设全员群聊。工单按状态机走，只有卡点、熔断和待拍板进收件箱。",
+        },
+        {
+          problem: "角色越设越多，光靠提示词立规矩，跑着跑着各自发挥。",
+          answer: "默认 1 主理、1~3 执行、1 验证；未验证不放行，打回轮次和预算由服务端硬拦。",
+        },
+        {
+          problem: "不同类型任务的验收入口很割裂。",
+          answer: "工单只管分工、状态和审批记录，验收进按领域生成的工作台。",
+        },
+        {
+          problem: "工单指派和流转等定时巡检，手改文件靠 30 秒轮询同步，没有外部事件触发。",
+          answer: "GitHub Issue、外部消息、回调一到就开单，工单一变就唤醒接手方。",
+        },
+      ],
+    },
+
+    /** What is taken from which product (sections/company/borrow.tsx). */
+    borrow: {
+      title: "借什么",
+      subtitle:
+        "带真实任务实测了 T3 Code、Lody、Raft、Multica、Grok Bot 五款多 Agent 产品，把跑得最顺的机制拆出来，落到 PenguinHarness 的原生能力上。",
+      head: { from: "借鉴对象", what: "拿来用什么", how: "在 PenguinHarness 里的落法" },
+      /** Before where a row can be tried in the prototype. */
+      where: "原型里：",
       items: [
         {
-          topic: "首页",
-          now: "展示四项概览指标，收件箱排在第三",
-          spec: "打开就停在第一张等你的工单上",
+          from: "T3 Code",
+          what: "状态收纳、草稿高亮、手机直连审批",
+          how: "收件箱按待拍板、进行中、已收尾分组，未发草稿给高亮；补齐国内手机端免代理直连推送审批。",
+          where: "左栏收件箱的三组；在工单里写半句打回意见不发，那一行就会高亮。",
         },
         {
-          topic: "决策方式",
-          now: "工单仅显示阻塞原因，回答需进入频道",
-          spec: "在工单上接受、回答或验收，记录留在工单里",
+          from: "Lody",
+          what: "角色绑机器、防失控护栏、执验分离",
+          how: "结合现有远程 SSH 机器管理与插件市场，把「角色 + 机器 + 权限」做成可一键导入导出的组织模板包；委派层数上限和防循环写死在服务端。",
+          where: "团队页每名成员的机器、模型和权限，右上角导入导出模板包。",
         },
         {
-          topic: "沟通对象",
-          now: "全员频道、业务线频道与员工个人工位",
-          spec: "新任务对接主理，工单细节在对应工作会话处理",
+          from: "Raft",
+          what: "结构化决策卡、长文档批注、开局向导",
+          how: "把频道里只读展示的 A2UI 升级为可点选提交的决策卡，确认后直接回写工单；方案、论文等长交付物带版本和按段批注；开局自带懂产品的主理向导。",
+          where: "开局三问和卡点工单的决策卡；发布文章工单的验收台。",
         },
         {
-          topic: "通知范围",
-          now: "提及、阻塞与关闭的工单均进入收件箱",
-          spec: "仅待接受、待回答与待验收三种事件触发通知",
+          from: "Multica",
+          what: "单一主理、状态机、产物与账单前置、收件箱",
+          how: "单一主理接管建组拆单；「未验证不放行」和「打回轮次、预算熔断」写成服务端硬门禁；基于全链路 Trace 默认折叠过程日志。",
+          where: "工单顶部的状态条、预算和打回进度；「运行记录」里的账单和折叠日志。",
         },
         {
-          topic: "侧边栏",
-          now: "六个独立页面、各频道与员工工位",
-          spec: "和 Agent 页面一样：上面是对主理说、团队、手册和全部工单，下面是按状态分组的收件箱和日程",
-        },
-        {
-          topic: "员工架构",
-          now: "员工常驻工位，通过频道进行协作",
-          spec: "有名字和职位；仅主理常驻，其余员工按工单启动工作会话",
-        },
-        {
-          topic: "多人协作",
-          now: "员工在频道里互相交接",
-          spec: "一张工单可由几名员工接力：开发交付后交给验证，验证通过才到你",
-        },
-        {
-          topic: "触发方式",
-          now: "工单指派与流转等定时巡检，手改的文件靠 30 秒一轮的轮询同步，没有外部事件入口",
-          spec: "CI 失败、新 issue、Webhook 回调一到就提成工单；工单一有变化就唤醒负责方，巡检只看事件覆盖不到的来源",
-        },
-        {
-          topic: "花费与返工",
-          now: "每名员工按月设预算，用到 80% 提醒、用满暂停；单张工单和返工次数不设上限",
-          spec: "每张工单带预算和验证自动退回次数两个上限，由服务端强制；到了上限，工单停下问你加一些还是停",
-        },
-        {
-          topic: "对外动作",
-          now: "合并、发布和其他工具调用一样，按组织的审批模式处理",
-          spec: "合并 PR、发布、对外发消息先在工单上写成草稿，你验收通过后才由服务端执行",
-        },
-        {
-          topic: "初始配置",
-          now: "CEO 在全员频道发布初始化提案",
-          spec: "开公司分五步，一屏一件事：先选大方向再改写使命、团队（主理按使命拟出角色，人尽量少，职位和职责都能改，可增减）、工单怎么走（要不要验证，以及预算和退回次数两个上限）、活从哪来（外部事件和巡检）、怎么跟你说话（旁边有预览）；都有默认值，后三步写进手册的「公司怎么运作」。主理的提议工单在对话里一张张或一次全部接受",
-        },
-        {
-          topic: "日程与财务",
-          now: "日程与财务各占一个独立页面",
-          spec: "去掉。日程归入收件箱，Token 用量和花费显示在团队页和工单上",
+          from: "Grok Bot",
+          what: "编制克制、对外动作预填草稿、事件触发",
+          how: "默认最少编制；发帖、发邮件、合 PR、跑大实验一律走预填草稿和分级审批卡；工单流转和 GitHub Issue、外部消息、回调都改成事件驱动。",
+          where: "规则页的对外动作分级和触发开关；让时间过去时自动开出的事件工单。",
         },
       ],
     },
 
     /** Where the spec draws its edges (sections/company/scope.tsx). */
     scope: {
-      title: "做什么，不做什么",
-      subtitle: "这一版只做好一件事：你对主理说一句，工单按规则走完，只在要你拍板时找你。",
-      out: {
-        title: "不做",
+      title: "边界",
+      subtitle: "先把两类需求拆开，再说清楚四件不做的事。",
+      split: {
+        title: "两类需求，两种形态",
         items: [
           {
-            name: "只服务写代码的外壳",
-            text: "分支隔离和 PR 对比属于开发插件，不决定公司模式的形态。科研、合同、财务的工单走同一套流程。",
+            name: "自治交付组织：本模式",
+            text: "面向一人公司、软件维护、科研实验和垂直业务运营。你只跟主理对齐需求，落成工单后由执行者和独立验证者按状态机流转，只有要拍板或验收时才推进收件箱。",
+          },
+          {
+            name: "现实公司镜像：另做",
+            text: "把团队成员和数字分身接进飞书、微信、Telegram 传话、答疑、查共享手册。它离不开聊天入口，拆成独立模式或官方插件，不搅乱主模式的工单和上下文。",
+          },
+        ],
+      },
+      out: {
+        title: "明确不做",
+        items: [
+          {
+            name: "只服务写代码的外部工具壳",
+            text: "分支隔离和 PR 对比只是开发插件的可选能力，不定死公司模式的顶层形态，否则科研、合同、财务这些场景全被挡在门外。",
           },
           {
             name: "全员刷屏的大群聊",
-            text: "跨周的活放在群里，待办会漏，上下文越滚越长。频道退到二线，主舞台留给工单和收件箱。",
-          },
-          {
-            name: "现实公司镜像",
-            text: "把同事和数字分身接进飞书、微信、Telegram 传话答疑，离不开聊天入口，另做独立模式或插件，不进这个模式。",
+            text: "聊天室适合临时沟通，拿来跑跨周交付会漏待办、上下文越滚越胖，白白耗掉开源模型的低成本优势。频道退居二线，主舞台留给工单和收件箱。",
           },
           {
             name: "黑盒托管",
-            text: "模型、技能、权限和运行过程都是 Project 里的文件，看得见就能改，也能审计。",
+            text: "模型、技能、权限和运行过程都是本地文件，人看得见就能改，私有化审计和自进化才接得上。",
           },
           {
-            name: "大公司排场",
-            text: "不预设 CEO、HR、财务、VP。默认一个主理、一到三个干活的、一个验证。",
+            name: "无熔断的自动打回，和大公司排场",
+            text: "一轮任务跑掉 47M Token 的教训摆在眼前，轮次和预算上限必须服务端硬拦。也不预设 CEO、HR、财务、VP，组织图好看不帮你把活干完。",
           },
         ],
       },
       later: {
-        title: "之后再做",
+        title: "扩展方向",
         items: [
           {
-            name: "按领域的验收工作台",
-            text: "工单只管分工、状态和审批记录。代码对比、实验曲线、合同台账、带版本和按段批注的长文档，由组织按交付物生成 A2APP 工作台，从工单一键进入。",
-          },
-          {
-            name: "外部 CLI 作为执行通道",
-            text: "原生底座不变，让某个岗位按需在 Claude Code、Codex 这类外部 harness 里干活。插件市场里目前只有通过 SSH 操控 Claude Code 的 use-claude-code。",
-          },
-          {
-            name: "组织模板包",
-            text: "角色、机器、权限和「公司怎么运作」打成一个包，一键导出、导入。",
-          },
-          {
-            name: "手机上审批",
-            text: "等你的工单推送到手机，在通知里就能接受、回答或验收。",
+            name: "外部 CLI 作为可选执行通道",
+            text: "各家主力模型往往在自家 harness 里发挥最好。保住原生底座，让特定岗位按需调用 Claude Code、Codex。插件市场里目前只有通过 SSH 操控 Claude Code 的 use-claude-code。",
           },
         ],
       },
     },
 
-    /** How the company gets better (sections/company/evolution.tsx). */
-    evolution: {
-      title: "按验收结果自进化",
-      subtitle:
-        "日常改进不跑 Benchmark，也不打分，只从你的验收、打回和回答里学。想和别的组织比，再把模板拿去社区评测。",
-      loops: [
-        {
-          title: "每张工单",
-          when: "自动执行，不用你批",
-          items: [
-            "你的回答记录为决定，同类问题不再问你。",
-            "打回原因记录为教训。",
-            "被打回或纠正的员工将要点记入自身 Skill。",
-          ],
-        },
-        {
-          title: "每周复盘",
-          when: "主理的定时日程，默认每周一",
-          items: [
-            "统计一次就验收通过的比例、打回数、提问数与费用，和上次对比。",
-            "记录上次采纳改动后的实际运行效果。",
-            "要改的提成工单给你；你接受后先存快照再改。",
-          ],
-        },
-        {
-          title: "社区评测",
-          when: "可选，由你决定是否参加",
-          items: [
-            "把角色、「公司怎么运作」和技能导出成组织模板。",
-            "在 Shared RSI Community 的公开团队交付场景上跑分，和其他模板、模型组合对比。",
-            "评测只用公开场景，你的工单和手册不会上传。",
-          ],
-        },
-      ],
-      curves: {
-        title: "核心指标",
-        subtitle: "指标均统计自工单文件。初期花费较高，之后费用和出错应逐步下降。",
-        head: { metric: "指标", trend: "预期走向" },
-        items: [
-          { metric: "一次就验收通过的比例", trend: "上升" },
-          { metric: "工单平均提问次数", trend: "下降，重复问题趋近于 0" },
-          { metric: "与已知教训重复的打回次数", trend: "下降" },
-          { metric: "每张完成工单的 Token 与费用", trend: "前期较高，后续下降" },
+    /** The two problems no product solved (sections/company/problems.tsx). */
+    problems: {
+      title: "现有产品还没解好的两个问题",
+      subtitle: "五款产品都没解好，恰好也是 PenguinHarness 原生底座最有机会补上的两块。",
+      workbench: {
+        title: "通用工单和专业验收的两难",
+        text: "专职写代码的工具审 Diff、合 PR 很顺手，干不了代码之外的活；通用工单什么都能装，真到专业验收又差口气。这里工单只管分工、状态和审批记录，专业验收交给组织按领域生成的 A2APP 工作台，从工单一键进入。",
+        head: { kind: "工作台", accept: "在里面验收什么" },
+        workbenches: {
+          code: "代码对比、检查结果，通过后一键合并 PR",
+          experiment: "实验曲线、指标对比、换随机种子的复现说明",
+          document: "多个版本、按段批注，批注即打回",
+          ledger: "合同条款台账、发票对账，附预填的对外邮件",
+          outreach: "回帖、回信的预填草稿，打开后由你自己发",
+        } satisfies Record<Workbench, string>,
+      },
+      evolution: {
+        title: "组织跑起来之后怎么越跑越稳",
+        text: "文件化架构天然适合拆成内外两环。日常改进不跑分，只从你的拍板、打回和回答里学；想和别的组织比，再拿模板去社区评测。",
+        loops: [
+          {
+            title: "内环：日常本地迭代",
+            when: "自动进行，改动前先存快照",
+            items: [
+              "决策卡里的每次拍板，结论写进组织手册，同类问题不再问你。",
+              "每次验收打回记成一条教训，推动对应成员更新私有 Skill，可随时回滚。",
+              "主理定期按一次通过率、返工次数和单工单花费复盘，主动提流程优化工单，你采纳才生效。",
+            ],
+          },
+          {
+            title: "外环：社区公开评测",
+            when: "可选，由你决定是否参加",
+            items: [
+              "把角色、机器、权限和协作规矩导出成组织模板。",
+              "在 Shared RSI Community 的公开团队交付场景上跑分，和其他模板、模型组合对比。",
+              "评测只用公开场景，你的工单和手册不上传。",
+            ],
+          },
         ],
-        note: "复盘写具体数值，如「10 张打回 2 张」，不只写百分比。是否撤回改动由你决定。",
-        shrink:
-          "教训并入 Skill 后移出索引，被推翻的决定直接删除。否则手册越来越长，会把省下的 Token 吃回去。",
+        metrics: {
+          title: "复盘看的数",
+          head: { metric: "指标", trend: "预期走向" },
+          items: [
+            { metric: "一次通过验证的比例", trend: "上升" },
+            { metric: "返工（打回）次数", trend: "下降，与已知教训重复的打回趋近于 0" },
+            { metric: "单张完成工单的 Token 与花费", trend: "前期较高，之后下降" },
+          ],
+          note: "数字都从工单文件统计。复盘写具体数值，如「10 张打回 2 张」，不只写百分比。",
+        },
       },
     },
 
-    /** The ticket file field by field (sections/company/ticket.tsx), keyed by lib/company-spec.ts. */
+    /** What the server enforces (sections/company/invariants.tsx), keyed by the gallery's spec.ts. */
+    invariants: {
+      title: "服务端硬门禁",
+      subtitle: "Skill 与手册是软性指引，成员可能不照做。下面这些由服务端强制，实现按它们来测。",
+      /** Before the answer a refused write gets. */
+      refusal: "拒绝时返回 ",
+      shipped: "已有",
+      added: "新增",
+      items: {
+        files_are_truth:
+          "文件是唯一事实来源：工单、手册和 Skill 都是 Project 里的文件，数据库只存可重建的缓存。",
+        owner_moves: "工单只能由当前状态的接手方推进：执行者交付，验证者放行或打回，你拍板。",
+        one_lead: "只有主理能开单和派单；新需求只从主理进来，没有全员频道。",
+        verified_first: "未经独立验证的交付不进你的收件箱，也不能被验收。",
+        verifier_apart: "验证者不能是执行者本人，用只读令牌检查，放行不了自己的活。",
+        rounds_capped: "打回到上限后不能再打回：服务端熔断，停下问你再给一轮、你来定，还是停。",
+        budget_capped: "花费到单张工单预算后不能再推进：服务端熔断，停下问你加预算继续还是停。",
+        outward_approved:
+          "回帖、合并、发布、发邮件、跑大实验这类对外动作，按分级先出预填草稿或审批卡，你批了服务端才执行。",
+        delegation_bounded: "委派最多两层（主理、执行者、一名帮手），也不能指回上级工单。",
+        exceptions_only: "只有卡点、熔断和待拍板进收件箱；过程日志和 Trace 默认折叠。",
+        answer_written: "决策卡的回答先写进工单，再交回提问的会话；一张工单同时只有一个未决问题。",
+        events_wake: "GitHub Issue、外部消息、回调一到就开单，工单一变就唤醒接手方，不等轮询。",
+        snapshot_first: "改成员的 Skill 或模型前先存快照，随时可以回滚。",
+      } satisfies Record<InvariantId, string>,
+    },
+
+    /** The ticket file field by field (sections/company/ticket.tsx), keyed by the gallery's spec.ts. */
     ticket: {
       title: "工单文件逐字段说明",
-      subtitle: "工单是 Project 里的 Markdown 文件，所在目录对应其状态。最后一列标注新增字段。",
-      example: "示例：包含未决问题的工单",
+      subtitle:
+        "工单是 Project 里的一个 Markdown 文件，状态机、门禁和收件箱都只读它。最后一列标注初版没有的字段。",
+      example: "示例：卡在一个决定上的评测工单",
       exampleFile: `---
-title: 给导出加上 CSV
-status: in_progress
-owner: agent:org-engineer
-verifier: agent:org-verifier
-source: user:alice
-notify: [user:alice]
-priority: P1
-budget: {usd: 5, spent: 1.05}
+title: 评测：把摘要功能换成开源模型
+status: working
+owner: agent:adelie
+verifier: agent:chinstrap
+source: user
+workbench: experiment
+budget: {usd: 6, spent: 2.00}
 rounds: {limit: 2, used: 0}
-blocked: 等一个决定
-blocked_by: user:alice
 ask:
-  question: 大文件导出：流式写出，还是一次生成？
-  options: [流式写出, 一次生成]
+  question: 候选模型在长文档上低了 3 分，提示词还在调。怎么确认？
+  options: [只跑长文档子集, 跑全量评测, 先停]
   recommended: 0
-sessions:
-  - {id: s_c1, by: agent:org-engineer, as: build}
+outward: {action: experiment, grade: review}
+runs:
+  - {by: agent:adelie, model: qwen3.8-max, tokens: 412000, cache: 0.71, usd: 1.40}
+  - {by: agent:adelie, model: qwen3.8-max, tokens: 168000, cache: 0.83, usd: 0.60}
 history:
-  - {at: 2026-11-13T10:00:12+08:00, by: agent:lead, action: created}
-  - {at: 2026-11-13T10:01:03+08:00, by: system, action: session_started, note: s_c1}
-  - {at: 2026-11-13T10:05:40+08:00, by: agent:org-engineer, action: blocked, note: user:alice}
+  - {at: 2026-11-20T09:02:11+08:00, by: agent:lead, action: created}
+  - {at: 2026-11-20T09:02:12+08:00, by: system, action: assigned, note: agent:adelie}
+  - {at: 2026-11-20T11:40:05+08:00, by: agent:adelie, action: asked}
 ---
 
 ## Goal
-导出页除了 JSON，还能导出 CSV。
+摘要现在每千次调用 $1.84。看 DeepSeek V4 Flash 能不能在掉分不超过 1 分的前提下接手。
 
 ## Acceptance criteria
-- 十万行的导出不超时
-- 现有的 JSON 导出不变
+- 总体准确率与现用模型差距在 1 分以内
+- 长文档单独报告，验证者换随机种子复现
 
-## Progress
-- 读完导出模块，有两种做法
+## Review
+
+## Decisions
 
 ## Result
 `,
       groups: {
         frontmatter: "Frontmatter",
         sections: "正文各节",
-        triage: "你的处置（按人保存，不写入文件）",
       },
       head: {
         field: "字段",
@@ -1214,65 +1293,31 @@ history:
       writers: { person: "人", agent: "Agent", server: "服务端" },
       /** Between two writers, and between a field's facts on a phone. */
       join: "、",
-      waitTitle: "「等你」不是一种状态",
-      waitText: "由三种已有情形推导得出，无需额外的状态定义：",
-      waits: { accept: "待接受", answer: "待回答", review: "待验收" },
+      waitTitle: "什么时候找你",
+      waitText:
+        "「等你」不是一种状态，由字段推导，按下面的顺序取第一条。收件箱也按它分组：等你的进「待拍板」，其余未完的进「进行中」，完成或停掉的进「已收尾」。",
+      waits: { accept: "待采纳", halt: "已熔断", ask: "待回答", decide: "待验收" },
       fields: {
         title: "单行标题，显示在收件箱中。",
-        status: "任务进度，对应文件所在目录。",
-        owner: "唯一的负责方，负责开发，也由它发起工单的每个会话。",
-        verifier: "交付先由它验证，通过了才到你这里。",
-        source: "工单来源：人、日程、外部事件或另一张工单。",
-        parent: "父工单，用于向上汇总成本。",
-        notify: "工单关闭时的通知对象。",
-        priority: "工单优先级。",
-        due: "截止日期。",
-        blocked: "阻塞原因说明。",
-        blocked_by: "谁能解除阻塞；是人时，工单在等这个人。",
-        budget: "这张工单能花多少美元，已经花了多少。花费由服务端按 Trace 统计。",
-        rounds: "验证能自动退回几次，已经退回几次。",
-        ask: "未决问题、选项与推荐项，回答后移除。服务端在工单到达上限时也会写一个。",
-        deliverables: "交付物路径或链接（如 PR 地址）。",
-        outward: "验收通过后服务端要执行的对外动作：合并、发布或发消息。",
-        sessions: "为它工作过的会话：谁，开发还是验证。",
-        history: "按时间正序记录的操作日志。",
+        status:
+          "状态机的当前状态，每个状态绑定一个接手方：提议和待拍板是你，执行是执行者，验证是验证者。",
+        owner: "执行者，由主理按工单的工作台派定。",
+        verifier: "独立验证者，不能与执行者相同。",
+        source: "工单从哪来：你、主理、外部事件、定时巡检，或复盘提议。",
+        workbench: "验收在哪个工作台里做：代码、实验、文档、台账或对外。",
+        budget: "这张工单能花多少美元、已经花了多少。花费由服务端按 Trace 统计，到顶即熔断。",
+        rounds: "验证能自动打回几轮、已经打回几轮，到顶即熔断。",
+        ask: "未决问题，写成 A2UI 表单：选项、推荐项和可选备注。回答写入后移除。",
+        halt: "服务端熔断的原因：预算或打回轮次。由你选择后移除。",
+        outward: "验收后要执行的对外动作、它的审批分级和预填草稿。",
+        runs: "每次运行的成员、模型、Token、缓存命中和花费，账单由此汇总。",
+        history: "按时间正序的操作日志：谁在什么时候做了什么。",
         "## Goal": "要达成什么。",
-        "## Acceptance criteria": "怎样算做完。",
-        "## Progress": "进展记录，每行一条。",
-        "## Decisions": "历史提问与对应决定。",
+        "## Acceptance criteria": "验证者对照检查的标准。",
+        "## Review": "验证者和你的意见，逐轮记下；打回原因会写成教训。",
+        "## Decisions": "决策卡上的问题和你的回答。",
         "## Result": "交付结果与产物位置。",
-        unread: "进入等待状态时标记为未读，打开后转为已读。",
-        snoozed_until: "在此时间前在收件箱中隐藏。",
-        archived: "移出收件箱，不影响工单本身。",
       } satisfies Record<FieldPath, string>,
-    },
-
-    /** What the server enforces (sections/company/invariants.tsx), keyed by lib/company-spec.ts. */
-    invariants: {
-      title: "服务端强制规则",
-      subtitle: "Skill 与手册属于软性指引。以下规则由服务端强制校验。",
-      /** Before the answer a refused write gets. */
-      refusal: "拒绝时返回 ",
-      shipped: "已有",
-      added: "新增",
-      items: {
-        owner_starts: "工单会话只能由负责方或人发起。",
-        files_are_truth: "文件为唯一事实来源，数据库仅存可重建缓存与个人处置。",
-        one_front: "工作会话不主动找你，只通过工单上的提问和交付。",
-        three_points: "仅新增提议、提问与交付三种事件会触发未读状态。",
-        one_ask: "单张工单同一时间最多存在一个未决问题。",
-        answer_recorded: "回答先写入工单文件，再转交提问会话。",
-        observe_first: "日程生成的提议工单在接受前不创建会话。",
-        triage_apart: "稍后与归档不影响任务；等你的工单不能稍后或归档。",
-        own_skill_kept: "员工自己的 Skill 不会被插件更新覆盖。",
-        verified_first: "有验证人的工单，交付要验证通过才到你这里。",
-        snapshot_first: "改动员工前先存快照。",
-        budget_capped: "工单花费超过预算后不能再推进，服务端写一个问题问你：加预算继续，还是停。",
-        rounds_capped: "验证自动退回到上限后不能再退回，服务端停下工单问你：再给一轮，还是停。",
-        outward_approved: "合并、发布、对外发消息只在你验收通过后由服务端执行，员工不能直接做。",
-        delegation_bounded: "子工单最多套两层，也不能指回自己的上级工单。",
-        events_wake: "工单一有变化、外部事件一到，就唤醒对应的员工，不等定时轮询。",
-      } satisfies Record<InvariantId, string>,
     },
   },
 };

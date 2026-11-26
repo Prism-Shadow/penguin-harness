@@ -963,331 +963,398 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     },
   },
   company: {
-    title: "Company mode: read tickets, not transcripts",
+    title: "Company mode: one lead, and you only for the calls",
     description:
-      "Spec and interactive prototype for the next company mode. You talk to one lead agent; it files work as tickets, and a ticket comes to you only to be accepted, answered or reviewed.",
+      "The spec for the next company mode, with a prototype to click through: you agree goals with one lead agent, an executor and an independent verifier move each ticket along a state machine, and only blockers and final calls reach your inbox.",
     name: "Company mode",
     draft: "Draft spec",
-    headline: "Read tickets, not transcripts",
+    headline: "One lead takes the work; only verified work reaches you",
     subline:
-      "The lead agent takes your requests, files them as tickets and hands each to a work session. A ticket comes to you only to be accepted, answered or reviewed.",
+      "The next company mode is a light, self-running organization. You talk goals with one lead agent; an executor and an independent verifier move each ticket along a state machine, the process stays folded, and only blockers and final calls reach your inbox.",
     specNote:
-      "This page specifies the next company mode as the implementation target. For the current release, see ",
-    currentDocs: "the company mode docs",
+      "This page specifies the next company mode; implementations follow it. For the shipped version, see the ",
+    currentDocs: "company mode docs",
     specEnd: ".",
 
     frame: {
       title: "Company mode prototype",
-      startsLabel: "Initial state",
-      starts: { week: "After one week", fresh: "From scratch" },
-      open: "Open standalone",
-      note: "Built with production controls and sample data; no live agents are running. Click “Let time pass” at the bottom right to advance work sessions.",
+      startsLabel: "Which part to try",
+      starts: { fresh: "Setting up", week: "Day to day" },
+      open: "Open on its own",
+      note: "Real controls and sample data; no agent runs behind it. Let time pass in the bottom bar to move every ticket one step; the checklist beside it keeps track of what you have tried.",
+      tryTitle: "Things to try",
+      tries: {
+        fresh: {
+          title: "Setting up: an organization from one sentence",
+          text: "A company that has not opened yet. The lead looks at your machines and models, then asks what you want done.",
+          items: [
+            "Pick a starter card, or write your goal in a sentence",
+            "Answer the three opening questions in the A2UI form: the kinds of work, the budget per ticket, the send-back limit",
+            "Change something in the plan: drop a kind of work, swap a member's model, regrade an outward action",
+            "Confirm and land in the inbox, with the first tickets already assigned",
+          ],
+        },
+        week: {
+          title: "Day to day: the inbox a week in",
+          text: "Floe Studio, a one-person company, a week in. The inbox is grouped into your call, in progress and settled.",
+          items: [
+            "Answer the evaluation ticket's decision card; the answer goes to the ticket and the handbook",
+            "Review a diff, experiment curves or a commented long document in its workbench, then accept or send it back",
+            "Handle a breaker: the reseller agreement hit its send-back limit, the invoice check its budget",
+            "Approve a merge or a publish, or open a prefilled reply and send it yourself",
+            "Let time pass: watch the verifier send work back and a GitHub issue file itself",
+            "Ask the lead for something new, see its proposals on the review page, roll a Skill back in the handbook",
+          ],
+        },
+      },
+      startHere: "Start here",
     },
 
-    changes: {
-      title: "Changes from the shipped version",
+    architecture: {
+      title: "A light, self-running organization",
       subtitle:
-        "The shell, board, ticket format, and schedules remain. Displayed content, decision points, and notification triggers are revised.",
-      head: { topic: "Item", now: "Current", spec: "New spec" },
+        "One lead as the way in, execution kept apart from verification, an inbox for exceptions, a workbench per domain, and learning kept in files on two loops.",
+      flowLabel: "The delivery line: day-to-day process stays folded in the background",
+      machineLabel: "Ticket record and state machine: the full Trace, folded",
+      nodes: {
+        person: { name: "You", text: "Set the goal and the constraints" },
+        lead: {
+          name: "One lead agent",
+          text: "Clarifies the goal, builds the team, splits the tickets, with the fewest hands",
+        },
+        executor: {
+          name: "Executor",
+          text: "Works by role and machine, delivers a result and a bill",
+        },
+        verifier: {
+          name: "Independent verifier",
+          text: "Hard gates on the server, breakers on rounds and budget",
+        },
+        inbox: {
+          name: "Exception inbox",
+          text: "Only blockers and calls get through, answered on A2UI decision cards",
+        },
+        workbench: {
+          name: "A2APP workbench",
+          text: "Review by domain: code, research, contracts",
+        },
+      },
+      sendBack: "Fails: sent back on its own",
+      toInbox: "Passes, or blocks",
+      evolveLabel:
+        "Learning in files, on two loops: rules, lessons and Skills are local files you can audit and roll back",
+      feedback: {
+        rules: "Rules and Skills keep updating",
+        lessons: "Send-back lessons and bills",
+        calls: "Your calls and reviews",
+      },
+      inner: {
+        name: "Inner loop: local, every day",
+        text: "Your calls go into the handbook. Each send-back becomes a lesson that updates the member's own Skill, snapshotted first. The lead reviews first-pass rate, rework and cost per ticket on a schedule and proposes tickets to improve the process.",
+      },
+      outer: {
+        name: "Outer loop: public benchmarks",
+        text: "Organization templates, working rules and open-model line-ups scored side by side on the Shared RSI Community's public benchmarks and leaderboard.",
+      },
+      whyTitle: "What went wrong in the first version, and the answer here",
+      head: { problem: "First version", answer: "This version" },
+      why: [
+        {
+          problem:
+            "Discussion was scattered across long, dense group threads. Step away for a coffee and there were 99+ unread, with no telling what was stuck or which call was yours.",
+          answer:
+            "No all-hands chat. Tickets move on a state machine; only blockers, breakers and calls reach the inbox.",
+        },
+        {
+          problem:
+            "Roles multiplied, rules lived only in prompts, and agents drifted into doing their own thing.",
+          answer:
+            "1 lead, 1 to 3 executors and 1 verifier by default. Nothing unverified is released, and the server enforces the send-back and budget limits.",
+        },
+        {
+          problem: "Each kind of work was reviewed somewhere different.",
+          answer:
+            "A ticket carries the assignment, the status and the approvals; review happens in a workbench made for the domain.",
+        },
+        {
+          problem:
+            "Assignment and hand-offs waited for scheduled patrols, hand-edited files synced on a 30-second poll, and nothing outside could file a ticket.",
+          answer:
+            "A GitHub issue, an outside message or a callback files a ticket as it arrives, and a change to a ticket wakes whoever holds it.",
+        },
+      ],
+    },
+
+    borrow: {
+      title: "What we borrow",
+      subtitle:
+        "T3 Code, Lody, Raft, Multica and Grok Bot, each run on real work. The mechanisms that ran best, taken apart and rebuilt on what PenguinHarness already has.",
+      head: { from: "From", what: "What we take", how: "How it lands in PenguinHarness" },
+      where: "In the prototype: ",
       items: [
         {
-          topic: "Home",
-          now: "Shows four overview metrics; inbox ranks third",
-          spec: "Opens on the first ticket waiting on you",
+          from: "T3 Code",
+          what: "Status grouping, highlighted drafts, approvals on the phone",
+          how: "The inbox groups tickets into your call, in progress and settled, and highlights unsent drafts; push approvals reach phones in China directly, with no proxy.",
+          where:
+            "The inbox's three groups in the left column; start a send-back note on a ticket without sending it and its row is highlighted.",
         },
         {
-          topic: "Decisions",
-          now: "Tickets show only block reasons; answers require a channel",
-          spec: "Accept, answer or review on the ticket; the record stays there",
+          from: "Lody",
+          what: "Roles bound to machines, guardrails, execution apart from verification",
+          how: "With the existing SSH machines and plugin market, role + machine + permissions become an organization template pack you import and export in one click; the delegation depth limit and loop guard live on the server.",
+          where:
+            "Each member's machine, model and permissions on the Team page, with import and export at the top right.",
         },
         {
-          topic: "Communication",
-          now: "All-hands channel, stream channels, and individual desks",
-          spec: "New tasks go to the lead; ticket details run in work sessions",
+          from: "Raft",
+          what: "Structured decision cards, comments on long documents, a guided start",
+          how: "A2UI, read-only in channels today, becomes a decision card you click and submit, written straight back to the ticket; long deliverables such as plans and papers get versions and per-paragraph comments; a lead who knows the product walks you through the start.",
+          where:
+            "The three opening questions, and the decision card on a blocked ticket; the release post's workbench.",
         },
         {
-          topic: "Notifications",
-          now: "Mentions, blocked tickets, and closed tickets notify the inbox",
-          spec: "Notifies only when awaiting acceptance, answers, or review",
+          from: "Multica",
+          what: "One lead, a state machine, results and bills up front, an inbox",
+          how: "One lead builds the team and splits the work; nothing unverified is released and the round and budget breakers are hard gates on the server; the full Trace keeps the process log folded by default.",
+          where:
+            "The status bar, budget and send-back progress at the top of a ticket; the bill and folded log under Runs.",
         },
         {
-          topic: "Sidebar",
-          now: "Six standalone pages, channels, and employee desks",
-          spec: "Laid out as the Agent page: tell the lead, team, handbook and all tickets at the top, then the inbox grouped by state, and the schedules",
-        },
-        {
-          topic: "Employees",
-          now: "Permanent desks collaborating via channels",
-          spec: "A name and a title; only the lead is permanent, others launch sessions per ticket",
-        },
-        {
-          topic: "Working together",
-          now: "Employees hand work to each other in channels",
-          spec: "Several employees can relay one ticket: a delivery goes to verification first, and reaches you once it passes",
-        },
-        {
-          topic: "Triggers",
-          now: "Assignment and status changes wait for the scheduled patrol; files edited by hand sync on a 30-second poll; no way in for outside events",
-          spec: "A failed CI run, a new issue or a webhook is filed as a ticket as it arrives; a change to a ticket wakes its owner at once, and the patrol covers only what events do not",
-        },
-        {
-          topic: "Spend and rework",
-          now: "Each employee has a monthly budget, with a warning at 80% and a pause at 100%; no limit per ticket, and none on rework",
-          spec: "Every ticket carries a budget and a limit on how often its verifier hands work back, held by the server; at a limit the ticket stops and asks you to give it more or to stop",
-        },
-        {
-          topic: "Outward actions",
-          now: "Merging and publishing are tool calls like any other, under the organization's approval mode",
-          spec: "Merging a PR, publishing, or sending a message outside is drafted on the ticket and run by the server only once you approve the delivery",
-        },
-        {
-          topic: "Setup",
-          now: "CEO posts a setup proposal in the all-hands channel",
-          spec: 'Five steps, one per screen: a broad direction and then the mission, the team (the roles the lead drafts from the mission, as few as it can, each renamed, rewritten, dropped or added to), how a ticket goes (whether deliveries are verified, and its two limits: budget and hand-backs), where work comes from (events and the patrol), and how the agents write to you, with a preview. Everything has a default, and the last three are written to "How we work" in the handbook. The lead\'s proposed tickets are accepted in its conversation, one by one or all at once',
-        },
-        {
-          topic: "Calendar and finance",
-          now: "Standalone pages for calendar and finances",
-          spec: "Removed. Schedules live in the inbox; Token use and cost show on the team page and each ticket",
+          from: "Grok Bot",
+          what: "Lean staffing, prefilled drafts for outward actions, event triggers",
+          how: "The fewest hands by default; posts, emails, merges and large experiments all go through prefilled drafts and graded approval cards; tickets move on events, GitHub issues, outside messages and callbacks.",
+          where:
+            "Outward grades and trigger switches on the Rules page; the event tickets that appear as time passes.",
         },
       ],
     },
 
     scope: {
-      title: "What it does, and what it does not",
-      subtitle:
-        "This version does one thing well: you tell the lead once, the ticket runs its course by the rules, and it comes to you only for a decision.",
+      title: "Where it stops",
+      subtitle: "Two kinds of need, pulled apart first, then four things it will not do.",
+      split: {
+        title: "Two kinds of need, two forms",
+        items: [
+          {
+            name: "A self-running delivery organization: this mode",
+            text: "For one-person companies, software maintenance, research and vertical operations. You agree the goal with the lead; once it is a ticket, an executor and an independent verifier move it along the state machine, and it reaches your inbox only for a call or a review.",
+          },
+          {
+            name: "A mirror of a real company: built separately",
+            text: "Team members and their digital twins wired into Feishu, WeChat or Telegram to relay messages, answer questions and look things up in a shared handbook. It needs a chat window, so it becomes its own mode or an official plugin and stays out of this mode's tickets and context.",
+          },
+        ],
+      },
       out: {
         title: "Not doing",
         items: [
           {
             name: "A shell around coding tools",
-            text: "Branch isolation and PR diffs belong to a development plugin, not to the shape of company mode. Research, contract and finance tickets run the same way.",
+            text: "Branch isolation and PR diffs are optional abilities of a development plugin; they do not set the mode's shape, or research, contracts and finance would be left outside.",
           },
           {
-            name: "One big group chat",
-            text: "Work that spans weeks gets lost in a chat: to-dos slip and the context keeps growing. Channels step back; tickets and the inbox take the stage.",
+            name: "An all-hands chat",
+            text: "A chat room suits quick talk. Run cross-week delivery in one and to-dos slip, context swells, and the low cost of open models is burned for nothing. Channels step back; tickets and the inbox take the stage.",
           },
           {
-            name: "Mirroring a real company",
-            text: "Putting colleagues and their digital twins on Feishu, WeChat or Telegram to relay and answer questions needs a chat front end. It becomes a mode or plugin of its own, not part of this one.",
+            name: "A black box",
+            text: "Models, skills, permissions and runs are local files you can read and change, which is what private audits and self-improvement build on.",
           },
           {
-            name: "Hosting as a black box",
-            text: "Models, skills, permissions and every run are files in the Project: what you can see you can change, and audit.",
-          },
-          {
-            name: "A big company's org chart",
-            text: "No CEO, HR, finance or VPs by default. One lead, one to three doing the work, one verifier.",
+            name: "Unlimited send-backs, or a big-company org chart",
+            text: "One run burning 47M tokens is lesson enough: round and budget limits are hard stops on the server. No CEO, HR, finance or VP by default either; a handsome org chart does not get the work done.",
           },
         ],
       },
       later: {
-        title: "Later",
+        title: "Where it could go",
         items: [
           {
-            name: "Review workbenches by field",
-            text: "A ticket keeps the work split, its state and its approvals. Code diffs, experiment curves, contract ledgers and long documents with versions and comments by paragraph get an A2APP workbench the company generates for the delivery, one click from the ticket.",
-          },
-          {
-            name: "Outside CLIs as a way to run",
-            text: "The native runtime stays; a role can work in an outside harness such as Claude Code or Codex when it needs to. Today the plugin market has only use-claude-code, which drives Claude Code over SSH.",
-          },
-          {
-            name: "Company templates",
-            text: 'Roles, machines, permissions and "How we work" packed into one file, exported and imported in one step.',
-          },
-          {
-            name: "Approvals on the phone",
-            text: "A ticket that waits on you is pushed to your phone, to accept, answer or review from the notification.",
+            name: "Outside CLIs as an optional way to run",
+            text: "Each lab's strongest model tends to do best in its own harness. Keep the native base, and let a role call Claude Code or Codex when it needs to. Today the plugin market has only use-claude-code, which drives Claude Code over SSH.",
           },
         ],
       },
     },
 
-    evolution: {
-      title: "Self-improvement from reviews",
+    problems: {
+      title: "Two problems no product has solved",
       subtitle:
-        "Day to day, no Benchmark and no scoring: the company learns from your reviews, send-backs and answers. To compare with other companies, take the template to the community's evaluation.",
-      loops: [
-        {
-          title: "Every ticket",
-          when: "Automatic, no approval required",
-          items: [
-            "Your answers are recorded as decisions, so you are not asked again.",
-            "Send-back reasons are logged as lessons.",
-            "An employee whose delivery is sent back or corrected records the point in its own Skill.",
-          ],
+        "None of the five got these right, and they are the two places PenguinHarness's native base is best placed to fill.",
+      workbench: {
+        title: "General tickets or expert review",
+        text: "Coding tools review diffs and merge PRs well and can do little else; general tickets hold anything and fall short when it comes to expert review. Here a ticket carries only the assignment, the status and the approvals; expert review happens in an A2APP workbench the organization builds per domain, one click from the ticket.",
+        head: { kind: "Workbench", accept: "What you review in it" },
+        workbenches: {
+          code: "The diff and the checks, then merge the PR in one click",
+          experiment:
+            "Experiment curves, the metrics side by side, the reproduction with other seeds",
+          document: "Versions and per-paragraph comments; a comment sends it back",
+          ledger: "Contract clauses and reconciled invoices, with a prefilled email out",
+          outreach: "Prefilled replies and emails that you open and send yourself",
         },
-        {
-          title: "Every week",
-          when: "A schedule of the lead's own, Mondays by default",
-          items: [
-            "Compares the share accepted at first review, send-backs, questions and cost against the last one.",
-            "Records observed outcomes from previously accepted changes.",
-            "Files proposed changes as tickets for you; once you accept, snapshots before applying.",
-          ],
-        },
-        {
-          title: "Community evaluation",
-          when: "Optional; you decide whether to take part",
-          items: [
-            'Exports the roles, "How we work" and the skills as a company template.',
-            "Scores it on Shared RSI Community's public team-delivery scenarios, against other templates and model mixes.",
-            "Only the public scenarios run; your tickets and handbook are not uploaded.",
-          ],
-        },
-      ],
-      curves: {
-        title: "Key metrics",
-        subtitle:
-          "Counted from ticket files. Spend is high at first, then should fall, along with mistakes.",
-        head: { metric: "Metric", trend: "Expected trend" },
-        items: [
-          { metric: "Share accepted at first review", trend: "Upward" },
-          { metric: "Questions per ticket", trend: "Downward, approaching zero repeats" },
-          { metric: "Send-backs repeating a known lesson", trend: "Downward" },
+      },
+      evolution: {
+        title: "Getting steadier as it runs",
+        text: "A file-based design splits naturally into two loops. Day to day nothing is scored: it learns from your calls, send-backs and answers. To compare with other organizations, take the template to the community's benchmarks.",
+        loops: [
           {
-            metric: "Token usage and cost per finished ticket",
-            trend: "High initially, then downward",
+            title: "Inner loop: local, every day",
+            when: "Automatic, with a snapshot before every change",
+            items: [
+              "Every call on a decision card goes into the handbook, and the same question is not asked again.",
+              "Every send-back becomes a lesson that updates the member's own Skill, which you can roll back.",
+              "The lead reviews first-pass rate, rework and cost per ticket on a schedule and proposes tickets to improve the process; nothing changes until you accept.",
+            ],
+          },
+          {
+            title: "Outer loop: public benchmarks",
+            when: "Optional; you decide whether to take part",
+            items: [
+              "Export the roles, machines, permissions and working rules as an organization template.",
+              "Score it on the Shared RSI Community's public team-delivery scenarios, against other templates and model line-ups.",
+              "Only public scenarios are used; your tickets and handbook are never uploaded.",
+            ],
           },
         ],
-        note: "Retrospectives show concrete figures (e.g. “2 of 10 sent back”), not percentages alone. Whether to undo a change is your call.",
-        shrink:
-          "Handbook size remains bounded: lessons merged into Skills leave the index, and superseded decisions are deleted to prevent token bloat.",
+        metrics: {
+          title: "What a review reads",
+          head: { metric: "Measure", trend: "Expected direction" },
+          items: [
+            { metric: "Share passing verification first time", trend: "Up" },
+            { metric: "Send-backs", trend: "Down, with repeats of known lessons near 0" },
+            { metric: "Tokens and cost per finished ticket", trend: "High early, then down" },
+          ],
+          note: "Every number comes from the ticket files. A review states counts, such as 2 of 10 sent back, not only percentages.",
+        },
+      },
+    },
+
+    invariants: {
+      title: "Hard gates on the server",
+      subtitle:
+        "Skills and the handbook are guidance a member may not follow. These the server enforces, and an implementation is tested against them.",
+      refusal: "Refused with ",
+      shipped: "Shipped",
+      added: "New",
+      items: {
+        files_are_truth:
+          "Files are the only source of truth: tickets, the handbook and Skills are files in the Project, and the database holds only caches it can rebuild.",
+        owner_moves:
+          "Only a ticket's holder in its current status moves it: the executor delivers, the verifier passes or sends back, you make the call.",
+        one_lead:
+          "Only the lead files and assigns tickets; new work comes in through the lead, and there is no all-hands channel.",
+        verified_first:
+          "Work that has not passed an independent verifier never reaches your inbox and cannot be accepted.",
+        verifier_apart:
+          "The verifier is never the executor; it checks with a read-only token and cannot pass its own work.",
+        rounds_capped:
+          "At the send-back limit, no more send-backs: the server halts the ticket and asks you for one more round, your own call, or a stop.",
+        budget_capped:
+          "At the ticket's budget, the work stops: the server halts it and asks you whether to add budget or stop.",
+        outward_approved:
+          "Outward actions such as replies, merges, publishing, emails and large experiments come first as a prefilled draft or an approval card by grade, and the server runs them only once you approve.",
+        delegation_bounded:
+          "Delegation goes at most two levels deep (lead, executor, one helper) and never points back at a ticket above it.",
+        exceptions_only:
+          "Only blockers, breakers and calls reach the inbox; process logs and the Trace stay folded by default.",
+        answer_written:
+          "An answer on a decision card is written to the ticket before it goes back to the session that asked; a ticket has one open question at a time.",
+        events_wake:
+          "A GitHub issue, an outside message or a callback files a ticket as it arrives, and a change to a ticket wakes its holder without waiting for a poll.",
+        snapshot_first:
+          "A member's Skill or model is snapshotted before it changes, so it can be rolled back.",
       },
     },
 
     ticket: {
-      title: "Ticket file specification",
+      title: "The ticket file, field by field",
       subtitle:
-        "A ticket is a Markdown file in the Project; its directory reflects its status. New fields are marked in the final column.",
-      example: "Example: ticket with an open question",
+        "A ticket is one Markdown file in the Project; the state machine, the gates and the inbox all read it. The last column marks what the first version lacks.",
+      example: "Example: an evaluation ticket stopped on a decision",
       exampleFile: `---
-title: Add CSV to the export
-status: in_progress
-owner: agent:org-engineer
-verifier: agent:org-verifier
-source: user:alice
-notify: [user:alice]
-priority: P1
-budget: {usd: 5, spent: 1.05}
+title: "Evaluate an open model for summaries"
+status: working
+owner: agent:adelie
+verifier: agent:chinstrap
+source: user
+workbench: experiment
+budget: {usd: 6, spent: 2.00}
 rounds: {limit: 2, used: 0}
-blocked: Waiting on a decision
-blocked_by: user:alice
 ask:
-  question: "Large exports: stream them, or build them in one go?"
-  options: [stream, one go]
+  question: The candidate is 3 points behind on long documents and the prompt is still being tuned. How should we confirm?
+  options: [Long documents only, The full evaluation, Stop]
   recommended: 0
-sessions:
-  - {id: s_c1, by: agent:org-engineer, as: build}
+outward: {action: experiment, grade: review}
+runs:
+  - {by: agent:adelie, model: qwen3.8-max, tokens: 412000, cache: 0.71, usd: 1.40}
+  - {by: agent:adelie, model: qwen3.8-max, tokens: 168000, cache: 0.83, usd: 0.60}
 history:
-  - {at: 2026-11-13T10:00:12+08:00, by: agent:lead, action: created}
-  - {at: 2026-11-13T10:01:03+08:00, by: system, action: session_started, note: s_c1}
-  - {at: 2026-11-13T10:05:40+08:00, by: agent:org-engineer, action: blocked, note: user:alice}
+  - {at: 2026-11-20T09:02:11+08:00, by: agent:lead, action: created}
+  - {at: 2026-11-20T09:02:12+08:00, by: system, action: assigned, note: agent:adelie}
+  - {at: 2026-11-20T11:40:05+08:00, by: agent:adelie, action: asked}
 ---
 
 ## Goal
-The export page offers CSV as well as JSON.
+Summaries cost $1.84 per 1,000 calls today. Find out whether DeepSeek V4 Flash can take over within 1 point of quality.
 
 ## Acceptance criteria
-- An export of a hundred thousand rows does not time out
-- The JSON export is unchanged
+- Overall accuracy within 1 point of the model in use
+- Long documents reported separately, reproduced by the verifier with other seeds
 
-## Progress
-- Read the export module; there are two ways to do it
+## Review
+
+## Decisions
 
 ## Result
 `,
       groups: {
         frontmatter: "Frontmatter",
         sections: "Sections",
-        triage: "Your triage (stored per person, not in the file)",
       },
       head: {
         field: "Field",
         required: "Required",
-        writers: "Writer",
+        writers: "Written by",
         meaning: "Meaning",
-        state: "Today",
+        state: "New?",
       },
-      required: "required",
-      optional: "optional",
-      shipped: "shipped",
-      added: "new",
-      writers: { person: "person", agent: "Agent", server: "server" },
+      required: "Required",
+      optional: "Optional",
+      shipped: "Shipped",
+      added: "New",
+      writers: { person: "Person", agent: "Agent", server: "Server" },
       join: ", ",
-      waitTitle: "Waiting states are derived",
-      waitText: "Computed directly from three existing conditions without an extra status field:",
-      waits: {
-        accept: "Awaiting acceptance",
-        answer: "Awaiting answer",
-        review: "Awaiting review",
-      },
+      waitTitle: "When it comes to you",
+      waitText:
+        "Waiting on you is not a status. It is read from the fields, taking the first rule below that holds. The inbox groups by it too: what waits on you under your call, the rest still open under in progress, finished or stopped under settled.",
+      waits: { accept: "To accept", halt: "Halted", ask: "To answer", decide: "To review" },
       fields: {
-        title: "Single-line summary displayed in the inbox.",
-        status: "Task progress, matching the file's parent directory.",
-        owner:
-          "The one principal responsible for it: it builds, and it starts every session of the ticket.",
-        verifier: "Verifies each delivery first; only what it passes reaches you.",
-        source: "Ticket origin: a person, a schedule, an event, or another ticket.",
-        parent: "Parent ticket for rolling up costs.",
-        notify: "Recipients notified upon ticket closure.",
-        priority: "Priority level.",
-        due: "Target completion date.",
-        blocked: "Reason for blockage.",
-        blocked_by: "Who can unblock it; when that is a person, the ticket waits on them.",
+        title: "One-line title, shown in the inbox.",
+        status:
+          "The state machine's current status; each status has one holder: you for proposed and your call, the executor while working, the verifier while verifying.",
+        owner: "The executor, assigned by the lead from the ticket's workbench.",
+        verifier: "The independent verifier, never the same as the executor.",
+        source:
+          "Where the ticket came from: you, the lead, an outside event, a patrol, or a review proposal.",
+        workbench: "Where it is reviewed: code, experiment, document, ledger or outreach.",
         budget:
-          "What the ticket may spend in US dollars, and what it has spent, counted by the server from the Trace.",
-        rounds: "How often the verifier may hand the work back on its own, and how often it has.",
-        ask: "Open question, choices, and recommended option; cleared once answered. The server writes one too when the ticket reaches a limit.",
-        deliverables: "Paths or URLs to deliverables (e.g. pull requests).",
+          "How many dollars the ticket may spend and has spent. The server counts spending from the Trace and halts at the cap.",
+        rounds:
+          "How many times the verifier may send it back and has; the server halts at the cap.",
+        ask: "The open question, as an A2UI form: options, a recommendation and an optional note. Removed once answered.",
+        halt: "Why the server halted it: budget or send-backs. Removed once you choose.",
         outward:
-          "What the server does outside the company once the delivery is approved: merge, publish or send.",
-        sessions: "The sessions that worked on it: who, and whether to build or verify.",
-        history: "Chronological audit log.",
-        "## Goal": "What is to be achieved.",
-        "## Acceptance criteria": "What counts as done.",
-        "## Progress": "Progress log, one entry per line.",
-        "## Decisions": "Questions resolved and their recorded answers.",
-        "## Result": "Outcome summary and deliverable locations.",
-        unread: "Marked unread when entering a waiting state; cleared on open.",
-        snoozed_until: "Hidden from inbox until this timestamp.",
-        archived: "Removed from inbox without modifying ticket content.",
-      },
-    },
-
-    invariants: {
-      title: "Server-enforced invariants",
-      subtitle: "Skills and handbooks are advisory. The server enforces these rules directly.",
-      refusal: "Refused with ",
-      shipped: "shipped",
-      added: "new",
-      items: {
-        owner_starts: "Work sessions can only be initiated by the assigned owner or a person.",
-        files_are_truth:
-          "Files are the source of truth; the database only stores rebuildable caches and each person's triage.",
-        one_front: "A work session reaches you only through its ticket's question and delivery.",
-        three_points: "Only proposals, questions, and deliverables trigger an unread state.",
-        one_ask: "A ticket may have at most one open question at a time.",
-        answer_recorded:
-          "Answers are written to the ticket before forwarding to the asking session.",
-        observe_first: "Tickets proposed by schedules open no sessions until accepted.",
-        triage_apart:
-          "Later and archive actions do not modify tasks; a ticket waiting on you cannot be deferred or archived.",
-        own_skill_kept: "An employee's own Skill survives plugin updates.",
-        verified_first: "On a ticket with a verifier, a delivery reaches you only once verified.",
-        snapshot_first: "The employees a change touches are snapshotted before it is applied.",
-        budget_capped:
-          "A ticket that has spent past its budget cannot move on; the server asks you whether to raise the budget or stop.",
-        rounds_capped:
-          "Once the verifier has handed work back as often as allowed, it cannot hand it back again; the server stops the ticket and asks you whether to give it one more round or stop.",
-        outward_approved:
-          "Merging, publishing and messages outside the company run on the server only once you approve the delivery; an employee cannot do them directly.",
-        delegation_bounded:
-          "Sub-tickets nest at most two levels deep and never point back at a ticket above them.",
-        events_wake:
-          "A change to a ticket, or an event as it arrives, wakes the employee it concerns without waiting for a poll.",
+          "The outward action to run once accepted, its approval grade and its prefilled draft.",
+        runs: "Each run's member, model, tokens, cache hits and cost; the bill adds them up.",
+        history: "The log of actions in time order: who did what, when.",
+        "## Goal": "What to achieve.",
+        "## Acceptance criteria": "What the verifier checks against.",
+        "## Review":
+          "The verifier's notes and yours, round by round; send-back reasons become lessons.",
+        "## Decisions": "Questions from decision cards and your answers.",
+        "## Result": "What was delivered and where the outputs are.",
       },
     },
   },

@@ -1,393 +1,398 @@
 /**
- * The sample company, a week in, keeps up PenguinHarness: its code, its docs, blog and community,
- * and the evaluation of new models, one employee to each part. The sample work it is staged with is
- * eighteen tickets' worth of facts that are not
- * language (what kind of thing each is, who does it, the steps its work session takes when the
- * reader lets time pass). Their words are the dictionaries' `tickets`, keyed by the same ids.
- * Everything is fictional; no agent runs.
+ * The facts the prototype is staged with, none of them language: who can work here, on which
+ * machine and model, and the sample work, each ticket with the steps it takes when the reader
+ * lets time pass. The words for all of it are the dictionaries', keyed by the same ids.
+ *
+ * The sample is a one-person company, Floe Studio, that keeps up an open-source notes app and
+ * sells a hosted plan: code, a model evaluation, long documents, a contract and an invoice check,
+ * and replies to its community. Everything is fictional; no agent runs.
  */
-export type FixtureId =
-  | "csv"
-  | "connection"
-  | "flaky"
-  | "jitter"
-  | "types"
-  | "docs"
-  | "timeout"
-  | "lint"
-  | "survey"
-  | "patrol"
-  | "verifier"
-  | "skill"
-  | "patrolScope"
-  | "release"
-  | "community"
-  | "discussion"
-  | "evals"
-  | "ciRed";
+import type { OutwardAction, Workbench } from "./spec";
 
-/**
- * What accepting a ticket sets going: work, a skill the lead distilled, installed for the employee
- * who needs it, or a change a retrospective proposed to how the company works (a duty, a
- * schedule's scope), applied as written. A patrol schedule and a dedicated role are in the staged
- * week's history only: a new company sets both up as it starts (model.ts `startCompany`).
- */
-export type TicketKind = "task" | "schedule" | "role" | "skill" | "change";
+/** Every employee is named after a penguin species. */
+export type Species = "emperor" | "chinstrap" | "gentoo" | "adelie" | "king";
 
-/**
- * The handbook's fixed documents, whose words are the dictionaries' `handbook.docs`. Decisions
- * and lessons are written from their tickets instead (model.ts), and how-we-work.md from the
- * company's settings.
- */
-export type HandbookDocId = "readme" | "howWeWork" | "state" | "docsLesson" | "bilingualSkill";
-
-/**
- * Whose byline a ticket carries: one of the company's employees. The lead and the verifier are
- * every company's; any other is a role the lead drafted from the mission, by its id.
- */
-export type Byline = string;
-
-/**
- * The kind of work a role does, as the sample data knows it: code, writing (content, docs,
- * community) or research. A role is the reader's to name and describe; its part only says which
- * of the sample's tickets it takes. A role the reader adds has none, and takes none.
- */
-export type Part = "engineer" | "writer" | "researcher";
-export const PARTS: readonly Part[] = ["engineer", "writer", "researcher"];
-
-/** The folder the company works in: the Project's workspace. */
-export const WORKSPACE = "~/code/penguin-harness";
-
-/**
- * Every employee is named after a penguin species: the Emperor leads, Chinstrap verifies, and the
- * roles the lead drafts take the others in this order. The species' names are the dictionaries'
- * `species`.
- */
-export type Species =
-  "emperor" | "chinstrap" | "gentoo" | "littleBlue" | "adelie" | "king" | "rockhopper" | "macaroni";
-export const ROLE_SPECIES: readonly Species[] = [
-  "gentoo",
-  "littleBlue",
-  "adelie",
-  "king",
-  "rockhopper",
-  "macaroni",
-];
-
-/**
- * Each species' Agent id, which picks its avatar's colour; no two of the first five share one.
- */
+/** Each species' Agent id, which picks its avatar's colour. */
 export const AGENT_ID: Record<Species, string> = {
   emperor: "harness-lead",
   chinstrap: "org-verifier",
   gentoo: "org-engineer",
-  littleBlue: "org-community",
   adelie: "org-study",
   king: "org-scout",
-  rockhopper: "org-analyst",
-  macaroni: "org-comms",
 };
 
-/**
- * The roles the lead can draft from a mission, and the kind of work each does. Their title,
- * duties and sources are the dictionaries' `drafts`; the words in a mission that call for each
- * are `setup.keywords`.
- */
-export type DraftId =
-  | "engineer"
-  | "operations"
-  | "editor"
-  | "community"
-  | "docs"
-  | "digest"
-  | "researcher"
-  | "analyst"
-  | "assistant";
-export const DRAFT_PART: Record<DraftId, Part> = {
-  engineer: "engineer",
-  operations: "writer",
-  editor: "writer",
-  community: "writer",
-  docs: "writer",
-  digest: "writer",
-  researcher: "researcher",
-  analyst: "researcher",
-  assistant: "writer",
+/** The fewest hands a company can run on: one lead, up to three executors, one verifier. */
+export type MemberId = "lead" | "dev" | "research" | "ops" | "verifier";
+export const EXECUTORS = ["dev", "research", "ops"] as const;
+export type ExecutorId = (typeof EXECUTORS)[number];
+
+export type MachineId = "laptop" | "gpu" | "cloud";
+export const MACHINES: readonly MachineId[] = ["laptop", "gpu", "cloud"];
+
+export const MODELS = [
+  "deepseek-v4-pro",
+  "deepseek-v4-flash",
+  "glm-5.3",
+  "qwen3.8-max",
+  "minimax-m3",
+] as const;
+export type ModelId = (typeof MODELS)[number];
+export const MODEL_NAME: Record<ModelId, string> = {
+  "deepseek-v4-pro": "DeepSeek V4 Pro",
+  "deepseek-v4-flash": "DeepSeek V4 Flash",
+  "glm-5.3": "GLM-5.3",
+  "qwen3.8-max": "Qwen3.8 Max",
+  "minimax-m3": "MiniMax M3",
 };
 
-/**
- * A role on the team besides the lead and the verifier: its id, its penguin, what it was drafted
- * as, and what the reader made of it. Its title and duties are the draft's unless the reader
- * wrote their own.
- */
-export interface Role {
-  id: Byline;
+/** What a member may touch. The words are the dictionaries' `perms`. */
+export type Perm =
+  "files" | "branch" | "tests" | "gpu" | "drafts" | "readonly" | "noMerge" | "tickets";
+
+export interface Member {
+  id: MemberId;
   species: Species;
-  draft: DraftId | null;
-  part: Part | null;
-  title?: string;
-  duties?: string;
+  machine: MachineId;
+  model: ModelId;
+  perms: readonly Perm[];
 }
 
-/** The roles drafted, as the team: each takes the next species, and its draft's id. */
-export const staffFrom = (drafts: readonly DraftId[]): Role[] =>
-  drafts.map((draft, i) => ({
-    id: draft,
-    species: ROLE_SPECIES[i] ?? "macaroni",
-    draft,
-    part: DRAFT_PART[draft],
-  }));
-
-/** The sample week's team: one role for each kind of work. */
-export const WEEK_STAFF: readonly Role[] = [
-  { id: "engineer", species: "gentoo", draft: "engineer", part: "engineer" },
-  { id: "writer", species: "littleBlue", draft: "operations", part: "writer" },
-  { id: "researcher", species: "adelie", draft: "researcher", part: "researcher" },
-];
-
 /**
- * The broad directions the setup page offers a company, as the shipped company mode's example
- * missions are offered: a name, one line, and a whole mission to start from. Their words are
- * the dictionaries' `setup.templates`. Each drafts the fewest roles its mission needs.
+ * Each member as a company starts with it. The verifier runs on another model family than the
+ * executors and holds a read-only token of its own, so it can never pass its own work.
  */
-export const TEMPLATES = ["code", "content", "research"] as const;
-export type TemplateId = (typeof TEMPLATES)[number];
-export const TEMPLATE_DRAFTS: Record<TemplateId, readonly DraftId[]> = {
-  code: ["engineer"],
-  content: ["editor", "community"],
-  research: ["researcher"],
+export const MEMBERS: Record<MemberId, Member> = {
+  lead: {
+    id: "lead",
+    species: "emperor",
+    machine: "cloud",
+    model: "deepseek-v4-pro",
+    perms: ["tickets"],
+  },
+  dev: {
+    id: "dev",
+    species: "gentoo",
+    machine: "laptop",
+    model: "glm-5.3",
+    perms: ["files", "branch", "tests", "noMerge"],
+  },
+  research: {
+    id: "research",
+    species: "adelie",
+    machine: "gpu",
+    model: "qwen3.8-max",
+    perms: ["files", "gpu", "noMerge"],
+  },
+  ops: {
+    id: "ops",
+    species: "king",
+    machine: "cloud",
+    model: "deepseek-v4-pro",
+    perms: ["files", "drafts"],
+  },
+  verifier: {
+    id: "verifier",
+    species: "chinstrap",
+    machine: "cloud",
+    model: "minimax-m3",
+    perms: ["readonly", "tests"],
+  },
 };
 
-/** The most roles the lead drafts from a mission of the reader's own. */
-const MOST_DRAFTED = 3;
-
-/**
- * The roles a mission the reader wrote calls for, as the lead would draft them: each role whose
- * words the mission uses, in the drafts' order, at most three; with none, one assistant.
- */
-export function draftsFor(
-  mission: string,
-  keywords: Partial<Record<DraftId, readonly string[]>>,
-): DraftId[] {
-  const said = mission.toLowerCase();
-  const drafts = (Object.keys(DRAFT_PART) as DraftId[]).filter((draft) =>
-    (keywords[draft] ?? []).some((word) => said.includes(word.toLowerCase())),
-  );
-  return drafts.length === 0 ? ["assistant"] : drafts.slice(0, MOST_DRAFTED);
-}
-
-/** The task the lead proposes first for each part it staffs, beside its own survey. */
-export const FIRST_TASK: Record<Part, FixtureId> = {
-  engineer: "flaky",
-  writer: "release",
-  researcher: "evals",
+/** Who does each workbench's work. */
+export const EXECUTOR_OF: Record<Workbench, ExecutorId> = {
+  code: "dev",
+  experiment: "research",
+  document: "ops",
+  ledger: "ops",
+  outreach: "ops",
 };
 
-/**
- * What a million Tokens cost in the sample, input, output and cache together, in US dollars. A
- * ticket's cost is its fixture's; its Tokens are read back from it at this price.
- */
-export const USD_PER_MILLION_TOKENS = 3;
+/** What a company can be set up to do, and the work each starts with. */
+export const SCENARIOS = ["solo", "software", "research", "business"] as const;
+export type Scenario = (typeof SCENARIOS)[number];
+export const SCENARIO_WORK: Record<Scenario, readonly Workbench[]> = {
+  solo: ["code", "experiment", "document", "outreach"],
+  software: ["code", "document"],
+  research: ["experiment", "document"],
+  business: ["ledger", "document", "outreach"],
+};
 
-/**
- * What accepting a delivery does outside the company, drafted on the ticket until then: merge the
- * pull request it opened, or publish the document it wrote. A delivery with none is only read.
- */
-export type Outward = "merge" | "publish";
+/** One step of a ticket's work, each with what it costs. */
+export type Step =
+  | { k: "work"; usd: number }
+  | { k: "deliver"; usd: number }
+  /** The verifier sends the work back with its `finding`-th finding. */
+  | { k: "fail"; usd: number; finding: number }
+  | { k: "pass"; usd: number }
+  /** The work stops on the ticket's question. */
+  | { k: "ask"; usd: number };
 
-/**
- * One step a ticket's work takes. The building session notes progress, stops on its one question,
- * and delivers: straight to the person's review, or, on a ticket with a verifier, handed to a
- * verifying session, which either finds something and hands it back to the building session, or
- * passes it on to the person. A fixture's script names `deliver` only; the verifying steps are
- * written in when the ticket has a verifier (`scriptOf`).
- */
-export type ScriptStep = "progress" | "ask" | "deliver" | "handoff" | "found" | "verified";
+const work = (usd: number): Step => ({ k: "work", usd });
+const deliver = (usd: number): Step => ({ k: "deliver", usd });
+const fail = (finding: number, usd = 0.3): Step => ({ k: "fail", usd, finding });
+const pass = (usd = 0.3): Step => ({ k: "pass", usd });
+const ask: Step = { k: "ask", usd: 0.1 };
 
-/**
- * Who does a sample ticket: the lead, the verifier, or whichever role on the team does that kind
- * of work.
- */
-export type FixtureOwner = "lead" | "verifier" | Part;
+export type Source = "user" | "lead" | "github" | "message" | "patrol" | "review";
+
+export type FixtureId =
+  | "exportFix"
+  | "evalSummary"
+  | "releasePost"
+  | "resellerTerms"
+  | "replies"
+  | "lintRule"
+  | "syncDup"
+  | "apiDocs"
+  | "invoices"
+  | "ciCache"
+  | "guide"
+  | "discount"
+  | "installWin"
+  | "proInquiry"
+  | "pricing"
+  | "tutorial"
+  | "cheaperModel";
 
 export interface Fixture {
-  kind: TicketKind;
-  owner: FixtureOwner;
-  priority: "P0" | "P1" | "P2";
-  /** The steps of its work, in order. A schedule or a role has none: accepting it is the whole of it. */
-  script: readonly ScriptStep[];
-  /** The option its question recommends, when it asks one. */
-  recommended?: number;
-  /** What it hands over. */
-  deliverable?: string;
-  /** What accepting its delivery does outside the company. */
-  outward?: Outward;
-  /**
-   * What its work costs in US dollars, its own steps taken once; each step costs an equal share,
-   * so a round of rework costs more on top.
-   */
-  cost: number;
-  /** The handbook document it adds once it is done. */
-  handbook?: HandbookDocId;
-  /** The kind of work a skill is for: installed for the role that does it, once accepted. */
-  installsOn?: Part;
-  /** The lesson a skill absorbs: once it is installed, the lesson leaves the handbook's index. */
-  merges?: HandbookDocId;
-  /** Its delivery is verified before the person sees it, while the verifier is on the team. */
-  verified?: boolean;
-  /** Its first verification finds something to fix. */
-  finds?: boolean;
+  id: FixtureId;
+  workbench: Workbench;
+  source: Source;
+  /** What the ticket may cost, in USD, before the server stops it. */
+  budget: number;
+  script: readonly Step[];
+  /** How many of its steps it has taken in the sample week; null when it is not in the week. */
+  week: number | null;
+  /** The outward action accepting it sets going, if any. */
+  outward?: OutwardAction;
+  /** The ticket's question: its options, in order, and the one the executor recommends. */
+  ask?: { options: readonly string[]; recommended: string };
+  /** A change to how the company works, proposed by the lead; accepting it applies it. */
+  change?: { member: ExecutorId; model?: ModelId };
+  /** How the week settled it, when it is settled. */
+  settled?: "done" | "dropped";
 }
 
 export const FIXTURES: Record<FixtureId, Fixture> = {
-  csv: {
-    kind: "task",
-    owner: "engineer",
-    priority: "P1",
-    script: ["progress", "ask", "progress", "deliver"],
-    recommended: 0,
-    deliverable: "pull/128",
+  exportFix: {
+    id: "exportFix",
+    workbench: "code",
+    source: "github",
+    budget: 5,
+    script: [work(0.6), work(0.5), deliver(0.2), fail(0), work(0.4), deliver(0.2), pass()],
+    week: 7,
     outward: "merge",
-    cost: 4.2,
-    verified: true,
-    finds: true,
   },
-  connection: {
-    kind: "task",
-    owner: "engineer",
-    priority: "P1",
-    script: ["progress", "progress", "deliver"],
-    deliverable: "pull/126",
-    outward: "merge",
-    cost: 3.1,
-    verified: true,
+  evalSummary: {
+    id: "evalSummary",
+    workbench: "experiment",
+    source: "user",
+    budget: 6,
+    script: [work(0.8), work(1.1), ask, work(1.2), deliver(0.3), pass(0.4)],
+    week: 3,
+    ask: { options: ["subset", "full", "stop"], recommended: "subset" },
   },
-  flaky: {
-    kind: "task",
-    owner: "engineer",
-    priority: "P1",
-    script: ["progress", "deliver"],
-    deliverable: "pull/129",
-    outward: "merge",
-    cost: 1.8,
-    verified: true,
-  },
-  jitter: {
-    kind: "task",
-    owner: "verifier",
-    priority: "P2",
-    script: ["progress", "progress", "deliver"],
-    deliverable: "reports/sidebar-jitter.md",
-    cost: 1.2,
-  },
-  types: {
-    kind: "task",
-    owner: "engineer",
-    priority: "P2",
-    script: ["progress", "deliver"],
-    cost: 0,
-  },
-  docs: {
-    kind: "task",
-    owner: "writer",
-    priority: "P2",
-    script: ["progress", "deliver"],
-    deliverable: "pull/121",
-    outward: "merge",
-    cost: 0.9,
-  },
-  timeout: {
-    kind: "task",
-    owner: "engineer",
-    priority: "P2",
-    script: ["progress", "deliver"],
-    deliverable: "pull/119",
-    outward: "merge",
-    cost: 1.4,
-  },
-  lint: {
-    kind: "task",
-    owner: "engineer",
-    priority: "P2",
-    script: ["progress", "deliver"],
-    deliverable: "pull/130",
-    outward: "merge",
-    cost: 0.7,
-  },
-  survey: {
-    kind: "task",
-    owner: "lead",
-    priority: "P1",
-    script: ["progress", "progress", "deliver"],
-    deliverable: "handbook/state-of-the-project.md",
-    handbook: "state",
-    cost: 2.6,
-  },
-  patrol: { kind: "schedule", owner: "lead", priority: "P1", script: [], cost: 0 },
-  verifier: { kind: "role", owner: "lead", priority: "P2", script: [], cost: 0 },
-  skill: {
-    kind: "skill",
-    owner: "lead",
-    priority: "P2",
-    script: [],
-    cost: 0,
-    handbook: "bilingualSkill",
-    installsOn: "writer",
-    merges: "docsLesson",
-  },
-  patrolScope: { kind: "change", owner: "lead", priority: "P2", script: [], cost: 0 },
-  release: {
-    kind: "task",
-    owner: "writer",
-    priority: "P1",
-    script: ["progress", "progress", "deliver"],
-    deliverable: "changelog/0.3.md",
+  releasePost: {
+    id: "releasePost",
+    workbench: "document",
+    source: "user",
+    budget: 4,
+    script: [work(0.5), deliver(0.2), fail(0), work(0.4), deliver(0.2), pass()],
+    week: 6,
     outward: "publish",
-    cost: 2.3,
-    verified: true,
-    finds: true,
   },
-  community: {
-    kind: "task",
-    owner: "writer",
-    priority: "P2",
-    script: ["progress", "deliver"],
-    deliverable: "reports/community-week-46.md",
-    cost: 1.1,
+  resellerTerms: {
+    id: "resellerTerms",
+    workbench: "ledger",
+    source: "message",
+    budget: 5,
+    script: [
+      work(0.4),
+      deliver(0.1),
+      fail(0),
+      work(0.3),
+      deliver(0.1),
+      fail(1),
+      work(0.3),
+      deliver(0.1),
+      fail(2),
+      work(0.3),
+      deliver(0.1),
+      pass(),
+    ],
+    week: 9,
+    outward: "email",
   },
-  discussion: {
-    kind: "task",
-    owner: "writer",
-    priority: "P2",
-    script: ["progress", "deliver"],
-    cost: 0.6,
+  replies: {
+    id: "replies",
+    workbench: "outreach",
+    source: "patrol",
+    budget: 2,
+    script: [work(0.3), deliver(0.1), pass(0.2)],
+    week: 3,
+    outward: "reply",
   },
-  evals: {
-    kind: "task",
-    owner: "researcher",
-    priority: "P1",
-    script: ["progress", "progress", "deliver"],
-    deliverable: "reports/new-models-eval.md",
-    cost: 9.6,
-    verified: true,
+  lintRule: {
+    id: "lintRule",
+    workbench: "code",
+    source: "review",
+    budget: 1,
+    script: [],
+    week: 0,
+    change: { member: "dev" },
   },
-  ciRed: {
-    kind: "task",
-    owner: "engineer",
-    priority: "P0",
-    script: ["progress", "deliver"],
-    deliverable: "pull/131",
+  syncDup: {
+    id: "syncDup",
+    workbench: "code",
+    source: "github",
+    budget: 5,
+    script: [work(0.7), deliver(0.2), fail(0), work(0.5), deliver(0.2), pass()],
+    week: 1,
     outward: "merge",
-    cost: 1.5,
-    verified: true,
+  },
+  apiDocs: {
+    id: "apiDocs",
+    workbench: "document",
+    source: "lead",
+    budget: 3,
+    script: [work(0.4), deliver(0.2), pass()],
+    week: 2,
+    outward: "publish",
+  },
+  invoices: {
+    id: "invoices",
+    workbench: "ledger",
+    source: "patrol",
+    budget: 2,
+    script: [work(0.9), work(0.8), work(0.6), deliver(0.1), pass(0.2)],
+    week: 1,
+  },
+  ciCache: {
+    id: "ciCache",
+    workbench: "code",
+    source: "github",
+    budget: 3,
+    script: [work(0.5), deliver(0.1), fail(0), work(0.3), deliver(0.1), pass()],
+    week: 6,
+    outward: "merge",
+    settled: "done",
+  },
+  guide: {
+    id: "guide",
+    workbench: "document",
+    source: "user",
+    budget: 3,
+    script: [work(0.6), deliver(0.2), pass()],
+    week: 3,
+    outward: "publish",
+    settled: "done",
+  },
+  discount: {
+    id: "discount",
+    workbench: "experiment",
+    source: "lead",
+    budget: 3,
+    script: [work(0.5)],
+    week: 1,
+    settled: "dropped",
+  },
+  installWin: {
+    id: "installWin",
+    workbench: "code",
+    source: "github",
+    budget: 5,
+    script: [work(0.5), deliver(0.2), pass()],
+    week: null,
+    outward: "merge",
+  },
+  proInquiry: {
+    id: "proInquiry",
+    workbench: "outreach",
+    source: "message",
+    budget: 2,
+    script: [work(0.2), deliver(0.1), pass(0.1)],
+    week: null,
+    outward: "email",
+  },
+  pricing: {
+    id: "pricing",
+    workbench: "document",
+    source: "user",
+    budget: 4,
+    script: [work(0.6), work(0.5), deliver(0.2), pass()],
+    week: null,
+    outward: "publish",
+  },
+  tutorial: {
+    id: "tutorial",
+    workbench: "document",
+    source: "user",
+    budget: 4,
+    script: [work(0.5), deliver(0.2), fail(0), work(0.3), deliver(0.2), pass()],
+    week: null,
+    outward: "publish",
+  },
+  cheaperModel: {
+    id: "cheaperModel",
+    workbench: "ledger",
+    source: "review",
+    budget: 1,
+    script: [],
+    week: null,
+    change: { member: "ops", model: "deepseek-v4-flash" },
   },
 };
 
-/** What the sample's events file, in the order they arrive: a failed CI run on main. */
-export const EVENTS: readonly FixtureId[] = ["ciRed"];
+/** The sample week's tickets, in the order the company filed them. */
+export const WEEK_TICKETS: readonly FixtureId[] = [
+  "discount",
+  "guide",
+  "ciCache",
+  "resellerTerms",
+  "releasePost",
+  "exportFix",
+  "evalSummary",
+  "replies",
+  "apiDocs",
+  "invoices",
+  "syncDup",
+  "lintRule",
+];
 
-/** What the sample's retrospectives propose, by retrospective: the first, then the second. */
-export const RETRO_PROPOSALS: readonly (readonly FixtureId[])[] = [["skill"], ["patrolScope"]];
+/** The first ticket of each kind of work a new company files as it starts. */
+export const STARTERS: Record<Workbench, FixtureId> = {
+  code: "syncDup",
+  experiment: "evalSummary",
+  document: "releasePost",
+  ledger: "invoices",
+  outreach: "replies",
+};
 
-/** The steps of a ticket the reader asked for in their own words. */
-export const SAID_SCRIPT: readonly ScriptStep[] = ["progress", "deliver"];
+/** What arrives from outside while time passes: the pass it arrives on, and the ticket it files. */
+export const EVENTS: readonly { pass: number; ticket: FixtureId }[] = [
+  { pass: 1, ticket: "installWin" },
+  { pass: 3, ticket: "proInquiry" },
+];
+
+/** The requests the lead's conversation suggests, each the ticket it files. */
+export const REQUESTS: readonly FixtureId[] = ["pricing", "tutorial"];
+
+/**
+ * The experiment's curves: accuracy on the evaluation set as the candidate model's prompt is
+ * tuned, against the model in use, per round.
+ */
+export const CURVES = {
+  rounds: 6,
+  current: [81.2, 81.2, 81.2, 81.2, 81.2, 81.2],
+  candidate: [72.4, 76.9, 78.8, 79.6, 80.3, 80.6],
+  longDocs: [61.0, 66.5, 70.2, 73.8, 76.1, 77.9],
+  costPerThousand: { current: 1.84, candidate: 0.31 },
+};
+
+/** Fixed facts the welcome shows: what the lead found on the reader's machines. */
+export const DETECTED = {
+  machines: ["laptop", "gpu", "cloud"] as readonly MachineId[],
+  models: MODELS.length,
+  clis: ["Claude Code", "Codex"],
+};
