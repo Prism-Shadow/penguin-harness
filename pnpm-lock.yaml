@@ -626,6 +626,9 @@ importers:
 
   library/workbench:
     dependencies:
+      '@prismshadow/amsp':
+        specifier: workspace:*
+        version: link:../../packages/amsp
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.23.0)
@@ -9211,6 +9214,7 @@ snapshots:
 
   '@prismshadow/penguin-library-workbench@file:library/workbench(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)':
     dependencies:
+      '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-library-agent': file:library/agent(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-library-http': file:library/http(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
@@ -9230,6 +9234,7 @@ snapshots:
 
   '@prismshadow/penguin-library-workbench@file:library/workbench(supports-color@10.2.2)(ws@8.23.0)':
     dependencies:
+      '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.23.0)
       '@prismshadow/penguin-library-agent': file:library/agent(supports-color@10.2.2)(ws@8.23.0)
       '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.23.0)
@@ -9249,6 +9254,7 @@ snapshots:
 
   '@prismshadow/penguin-library-workbench@file:library/workbench(ws@8.23.0)':
     dependencies:
+      '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(ws@8.23.0)
       '@prismshadow/penguin-library-agent': file:library/agent(ws@8.23.0)
       '@prismshadow/penguin-library-http': file:library/http(ws@8.23.0)
