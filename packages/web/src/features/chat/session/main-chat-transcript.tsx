@@ -6,7 +6,7 @@ import { buildInputHistory } from "../input-history";
 import { buildOutline } from "../outline-model";
 import { useMemoryListing } from "../use-memory-listing";
 import { deletedChangeKeys } from "../memory-nav";
-import { panelDock } from "../../dock";
+import { isPanelOpen } from "../../dock";
 import { machineForSession, sessionKnownHere } from "../../../lib/session-machines";
 import { useSessionDraft } from "../use-session-draft";
 import { useOfflineSessionHistory } from "../offline-session-history";
@@ -141,15 +141,16 @@ export function useMainChatTranscript(scope: ReturnType<typeof useMainChatRoutin
     memoryChangesRef.current = rawMemoryChanges;
   }
   const sessionMemoryChanges = memoryChangesRef.current;
-  // The Agent's memory listing, fetched once the Memory tab exists (its body is mounted
-  // even behind another tab) or this conversation has changes to mark; shared by the
-  // Memory panel and the card's deleted-row marking. Read from the machine the conversation
-  // is on: its Agent is that machine's, and so is its memory.
+  // The Agent's memory listing, fetched once the Memory panel is open here — as its own tab
+  // (its body is mounted even behind another tab) or as the Memory tool beside the Session —
+  // or this conversation has changes to mark; shared by the Memory panel and the card's
+  // deleted-row marking. Read from the machine the conversation is on: its Agent is that
+  // machine's, and so is its memory.
   const memoryListing = useMemoryListing(
     projectId,
     selected?.agentId ?? null,
     selected === null ? null : machineForSession(selected.sessionId),
-    panelDock("memory") !== null || sessionMemoryChanges.length > 0,
+    isPanelOpen("memory") || sessionMemoryChanges.length > 0,
     sessionMemoryChanges,
   );
   // Changed files the loaded listing no longer carries: the card drops those rows
