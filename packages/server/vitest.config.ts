@@ -99,6 +99,22 @@ export default defineConfig({
       "@prismshadow/penguin-hmr": fileURLToPath(
         new URL("../../packages/hmr/src", import.meta.url),
       ),
+      // The theme-pack and the UI package have non-mirroring subpaths too (entries before the
+      // bare names, for the same reason core's are); left to node resolution their snapshot
+      // copies would run beside the graph's own, splitting the ThemePackError the settings
+      // group's routes catch from the instance the validator throws.
+      "@prismshadow/penguin-ui/chat-markdown": fileURLToPath(
+        new URL("../../packages/ui/src/markdown/index.ts", import.meta.url),
+      ),
+      "@prismshadow/penguin-ui/pack-rules": fileURLToPath(
+        new URL("../../packages/ui/src/testing/pack-rules.ts", import.meta.url),
+      ),
+      "@prismshadow/penguin-ui": fileURLToPath(
+        new URL("../../packages/ui/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-theme-pack": fileURLToPath(
+        new URL("../../packages/theme-pack/src", import.meta.url),
+      ),
       "@prismshadow/penguin-library-agent": fileURLToPath(
         new URL("../../library/agent/src", import.meta.url),
       ),
