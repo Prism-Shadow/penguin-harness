@@ -27,11 +27,8 @@ import { enabledMessagingChannel } from "@prismshadow/penguin-library-messaging/
 import { SEMANTIC_ID_RULES } from "../../services/semantic-id.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
 import { isNewSemanticId } from "../../services/ids.js";
-import type {
-  OrganizationService,
-  OrgScheduler,
-  OrgService,
-} from "@prismshadow/penguin-library-organization/runtime/service";
+import { OrganizationService } from "@prismshadow/penguin-library-organization/runtime/service";
+import type { OrgScheduler, OrgService } from "@prismshadow/penguin-library-organization/runtime/service";
 import type { OrgDeps, OrgRuns, OrgSessions } from "@prismshadow/penguin-library-organization/runtime/deps";
 import { OrganizationScheduler } from "@prismshadow/penguin-library-organization/runtime/scheduler";
 
