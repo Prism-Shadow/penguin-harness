@@ -111,7 +111,6 @@ import { ProjectNotifier } from "./services/project-events.js";
 import {
   ProjectService,
   ProjectRuns,
-  ShippedBuiltinBenchmarkSeeds,
 } from "./services/project-service.js";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
@@ -126,7 +125,6 @@ import { DataLayout } from "./mechanisms/data-layout.js";
 import { DeletingFolders } from "./mechanisms/deleting-folders.js";
 import { SessionActivity } from "./runtime/session-activity.js";
 import { MemoryServiceProvider } from "./services/memory-service.js";
-import { BenchmarkServiceProvider } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { SandboxSettings } from "./sandbox/settings-store.js";
@@ -213,7 +211,7 @@ import {
   UsageStore,
 } from "@prismshadow/penguin-library-observability";
 import { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library-trace";
-import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
+import { AgentConfig, AgentLifecycle, Memory, Snapshots } from "./mechanisms/agents.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
 import {
@@ -368,7 +366,6 @@ export class IdentityModule {}
     AgentsRepo,
     ProjectAccess,
     ProjectNotifier,
-    ShippedBuiltinBenchmarkSeeds,
     SystemAgentAppData,
     HostAppSeeds,
     ProjectService,
@@ -516,7 +513,6 @@ export class TracesModule {}
     AgentService,
     DeletingFoldersService,
     MemoryServiceProvider,
-    BenchmarkServiceProvider,
     InstalledAgentSkills,
     AgentRoutes,
   ],
@@ -525,7 +521,6 @@ export class TracesModule {}
     Snapshots,
     AgentLifecycle,
     Memory,
-    Benchmarks,
     DeletingFolders,
     AgentSkills,
   ],

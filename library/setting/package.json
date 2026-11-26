@@ -44,6 +44,10 @@
       "types": "./dist/plugin-module-requests.d.ts",
       "import": "./dist/plugin-module-requests.js"
     },
+    "./project-data-migrations": {
+      "types": "./dist/project-data-migrations.d.ts",
+      "import": "./dist/project-data-migrations.js"
+    },
     "./repos/plugin-module-preinstalls": {
       "types": "./dist/repos/plugin-module-preinstalls.d.ts",
       "import": "./dist/repos/plugin-module-preinstalls.js"
@@ -51,6 +55,10 @@
     "./repos/plugin-module-requests": {
       "types": "./dist/repos/plugin-module-requests.d.ts",
       "import": "./dist/repos/plugin-module-requests.js"
+    },
+    "./repos/project-data-migrations": {
+      "types": "./dist/repos/project-data-migrations.d.ts",
+      "import": "./dist/repos/project-data-migrations.js"
     },
     "./theme-store": {
       "types": "./dist/theme-store.d.ts",

@@ -58,7 +58,6 @@ export {
   MAX_ARCHIVE_FILES,
   MAX_FILE_BYTES,
   MAX_TOTAL_BYTES,
-  MAX_BENCHMARK_ARCHIVE_FILES,
   assertSafeEntryPath,
   unzipBounded,
   skillTooLarge,

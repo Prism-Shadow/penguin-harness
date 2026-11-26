@@ -93,12 +93,11 @@ import {
   useInstalledPluginPrefix,
   useLibraryHost,
   usePushedPluginLibrary,
-  usePushedBenchmarkDirectory,
   userText,
 } from "@prismshadow/penguin-core";
 import { pluginsPrefix } from "../plugin/install.js";
 import { serverPackageDir } from "../plugin/library-host.js";
-import { pushedLibraryDir, pushedBenchmarksDir } from "./asset-archives.js";
+import { pushedLibraryDir } from "./asset-archives.js";
 import { UnsatisfiedPluginsError, bootWithoutUnsatisfied } from "../plugin/unsatisfied.js";
 import type { PluginSelection } from "../plugin/unsatisfied.js";
 import { takePushSlip } from "./push-plugins.js";
@@ -460,7 +459,6 @@ async function createInner(
   // the plugin packages (core no longer does), so it names itself the library's host.
   if (caps !== null) usePushedPluginLibrary(pushedLibraryDir(caps.hmr.assetsDir()));
   useLibraryHost(serverPackageDir());
-  if (caps !== null) usePushedBenchmarkDirectory(pushedBenchmarksDir(caps.hmr.assetsDir()));
   // And it lists what an admin installed on this server: the packages of Skills, hooks or MCP
   // servers in the data root's plugin prefix, beside the ones the build ships.
   if (caps !== null) useInstalledPluginPrefix(pluginsPrefix(caps.config.root));

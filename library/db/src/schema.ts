@@ -248,6 +248,13 @@ CREATE TABLE IF NOT EXISTS plugin_module_preinstalls ( -- the preinstalled built
   listed_at  TEXT NOT NULL,                   -- when this server handled the pair
   PRIMARY KEY (package, project_id)
 );
+CREATE TABLE IF NOT EXISTS project_data_migrations ( -- the one-time migrations of a Project's files this server has begun and finished (PRFC-0036's, until 1.0): a finished row is never run again, a begun one is resumed from what is on disk
+  name        TEXT NOT NULL,                  -- the migration, e.g. '2026-11-26-rsi-workbench'
+  project_id  TEXT NOT NULL,                  -- the Project directory's id; no foreign key: a directory the CLI made has no row yet
+  begun_at    TEXT NOT NULL,                  -- when this server first started it for the Project
+  finished_at TEXT,                           -- NULL until it is done
+  PRIMARY KEY (name, project_id)
+);
 CREATE TABLE IF NOT EXISTS machine (           -- this server's OWN identity, minted here and never assigned from outside (what 'penguin server status' reports)
   singleton  INTEGER PRIMARY KEY CHECK (singleton = 1),  -- exactly one row, enforced by the schema rather than by convention
   machine_id TEXT NOT NULL                    -- 16 base64url characters; what every stored reference to this machine points at

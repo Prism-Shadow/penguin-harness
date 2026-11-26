@@ -64,7 +64,6 @@ import { shippedCliPackages } from "./gen-cli-modules.mjs";
 import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
 import { nodeTypesPayload, typescriptPayload } from "./typescript-payload.mjs";
 import { libraryPayload } from "./library-payload.mjs";
-import { BENCHMARKS_DIR, buildBenchmarks } from "./build-benchmarks.mjs";
 import { createHash } from "node:crypto";
 import { buildPointers, committedBuildMatches } from "./deploy-same-build.mjs";
 
@@ -419,19 +418,6 @@ async function readNativeAssets() {
     await library.cleanup();
   }
   log(`plugin library: ${library.names.length} plugins packed`);
-  await buildBenchmarks();
-  const benchmarks = [];
-  for (const entry of await fsp.readdir(BENCHMARKS_DIR, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile()) continue;
-    const abs = path.join(entry.parentPath, entry.name);
-    if (abs === path.join(BENCHMARKS_DIR, "catalog.json")) continue;
-    benchmarks.push({
-      rel: `builtin-benchmarks/${path.relative(BENCHMARKS_DIR, abs).split(path.sep).join("/")}`,
-      abs,
-      exec: false,
-    });
-  }
-  files["archives/benchmarks.tgz"] = await packArchive(benchmarks);
   return { files, exec };
 }
 

@@ -2581,36 +2581,6 @@ export interface AgentAvatarResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Benchmark scoring (display), manual creation and deletion
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// The benchmark domain's vocabulary moved to the benchmark domain package
-// (@prismshadow/penguin-library-benchmark/types, services+http+cli restack S2); re-exported
-// here so the API contract keeps spelling them.
-// ---------------------------------------------------------------------------
-export type {
-  BenchmarkArchiveGitOrigin,
-  BenchmarkCaseScore,
-  BenchmarkCaseSummary,
-  BenchmarkCasesResponse,
-  BenchmarkCreateCase,
-  BenchmarkCreateRequest,
-  BenchmarkCreateResponse,
-  BenchmarkEvaluation,
-  BenchmarkManifestProblem,
-  BenchmarkOrigin,
-  BenchmarkOriginKind,
-  BenchmarkRunScore,
-  BenchmarkStatus,
-  BenchmarkSummary,
-  BenchmarksResponse,
-  BenchmarkArchiveImportRequest,
-  BenchmarkArchiveImportResponse,
-  CaseMaterial,
-} from "@prismshadow/penguin-library-benchmark/types";
-
-// ---------------------------------------------------------------------------
 // Plugin library, and an Agent's installed skills and hooks
 // ---------------------------------------------------------------------------
 
@@ -4596,14 +4566,15 @@ export interface OrganizationPatchRequest {
 
 /**
  * What a proposed semantic id names. Each kind has its own shape — organization and channel
- * ids carry a `co_` / `ch_` prefix, a non-admin's Project id its owner's `<username>-`, a
- * Benchmark id is kebab-case — and its own set of ids to avoid.
+ * ids carry a `co_` / `ch_` prefix, a non-admin's Project id its owner's `<username>-` — and its
+ * own set of ids to avoid. A kind a server module contributes (`SemanticIdModule.kinds`) is named
+ * by its own string and takes kebab-case ids.
  */
-export type SemanticIdKind = "org" | "channel" | "project" | "agent" | "benchmark";
+export type SemanticIdKind = "org" | "channel" | "project" | "agent";
 
 /**
  * A semantic id proposed for a display name — every create dialog that names an object with a
- * semantic id (a Project, an Agent, a Benchmark, an organization, a channel) lets the user name
+ * semantic id (a Project, an Agent, an organization, a channel) lets the user name
  * the thing first and derive the id from that name. The server asks the Project's default
  * model for a short English id in the kind's spelling (a Chinese name has no mechanical
  * transliteration), falling back to an ASCII slug of the name when the model is unavailable,
@@ -4617,7 +4588,7 @@ export interface SemanticIdSuggestRequest {
   kind: SemanticIdKind;
   /**
    * Ids already in use in the target scope; the proposal avoids them. For a Project, an Agent or
-   * a Benchmark, the server also avoids, on its own, every id that kind's create route refuses
+   * a contributed kind, the server also avoids, on its own, every id that kind's create route refuses
    * as taken, a leftover folder no list shows included.
    */
   taken?: string[];
@@ -4636,7 +4607,7 @@ export type SemanticIdSuggestReason =
 export interface SemanticIdSuggestResponse {
   /**
    * An id the kind's create route accepts, not in `taken`: `^[a-z][a-z0-9_]{1,63}$` for most
-   * kinds, `<username>-<suffix>` for a non-admin's Project, kebab-case for a Benchmark.
+   * kinds, `<username>-<suffix>` for a non-admin's Project, kebab-case for a contributed kind.
    */
   id: string;
   /** Who produced it: the model, the ASCII fallback, or the dated placeholder that names nothing. */

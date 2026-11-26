@@ -160,7 +160,6 @@ import { commandPolicyRoutes } from "./http/routes/command-policy.js";
 import { vaultRoutes } from "./http/routes/vault.js";
 import { memoryRoutes } from "./http/routes/memory.js";
 import { scheduleRoutes } from "@prismshadow/penguin-library-session/schedules";
-import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "./http/routes/skills.js";
 import { agentHooksRoutes } from "./http/routes/hooks.js";
 import { agentPluginsRoutes, pluginLibraryRoutes } from "./http/routes/plugins.js";

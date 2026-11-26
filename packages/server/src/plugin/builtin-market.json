@@ -36,10 +36,6 @@
         "installs": 3121,
         "weekly": 199
       },
-      "@penguinharness/agent-evaluation": {
-        "installs": 509,
-        "weekly": 10
-      },
       "@penguinharness/ape-rsi-toolkit": {
         "installs": 378,
         "weekly": 28
@@ -91,6 +87,10 @@
       "@penguinharness/rrsi-rsi-toolkit": {
         "installs": 372,
         "weekly": 12
+      },
+      "@penguinharness/rsi-workbench": {
+        "installs": 509,
+        "weekly": 10
       },
       "@penguinharness/sandbox-bwrap": {
         "installs": 1747,
@@ -207,33 +207,6 @@
         }
       ]
     },
-    "@penguinharness/agent-evaluation": {
-      "cover": {
-        "src": "agent-evaluation/cover.webp",
-        "thumb": "agent-evaluation/cover-640.webp",
-        "tone": "#00847e"
-      },
-      "screenshots": [
-        {
-          "src": "agent-evaluation/shot-1.webp",
-          "thumb": "agent-evaluation/shot-1-640.webp",
-          "caption": "Describe the capability to test; AI writes and calibrates the Benchmark.",
-          "captionZh": "描述要考察的能力，AI 出题并校准 Benchmark。"
-        },
-        {
-          "src": "agent-evaluation/shot-2.webp",
-          "thumb": "agent-evaluation/shot-2-640.webp",
-          "caption": "Evaluate an agent on a Benchmark from the Evaluate tab.",
-          "captionZh": "在「评估」标签页用 Benchmark 评估一个 Agent。"
-        },
-        {
-          "src": "agent-evaluation/shot-3.webp",
-          "thumb": "agent-evaluation/shot-3-640.webp",
-          "caption": "Scores over time, one line per agent, with every run listed below.",
-          "captionZh": "分数走势：每个 Agent 一条线，下方列出每次运行。"
-        }
-      ]
-    },
     "@penguinharness/browser-automation": {
       "cover": {
         "src": "browser-automation/cover.webp",
@@ -303,6 +276,33 @@
           "thumb": "penguin-support/shot-1-640.webp",
           "caption": "The support workbench: ask a question beside the chat.",
           "captionZh": "客服工作台：在对话旁直接提问。"
+        }
+      ]
+    },
+    "@penguinharness/rsi-workbench": {
+      "cover": {
+        "src": "rsi-workbench/cover.webp",
+        "thumb": "rsi-workbench/cover-640.webp",
+        "tone": "#00847e"
+      },
+      "screenshots": [
+        {
+          "src": "rsi-workbench/shot-1.webp",
+          "thumb": "rsi-workbench/shot-1-640.webp",
+          "caption": "Describe the capability to test; AI writes and calibrates the Benchmark.",
+          "captionZh": "描述要考察的能力，AI 出题并校准 Benchmark。"
+        },
+        {
+          "src": "rsi-workbench/shot-2.webp",
+          "thumb": "rsi-workbench/shot-2-640.webp",
+          "caption": "Evaluate an agent on a Benchmark from the Evaluate tab.",
+          "captionZh": "在「评估」标签页用 Benchmark 评估一个 Agent。"
+        },
+        {
+          "src": "rsi-workbench/shot-3.webp",
+          "thumb": "rsi-workbench/shot-3-640.webp",
+          "caption": "Scores over time, one line per agent, with every run listed below.",
+          "captionZh": "分数走势：每个 Agent 一条线，下方列出每次运行。"
         }
       ]
     },

@@ -1,5 +1,4 @@
 import { defineConfig } from "tsup";
-import { stageBenchmarks } from "../../scripts/build-benchmarks.mjs";
 // Inlines this checkout's git identity into the artifact — see the helper's module doc:
 // the penguin binary bundles core, and a shipped bundle has no path back to the checkout it came from.
 import { buildGitDefine } from "../../scripts/build-git-stamp.mjs";
@@ -29,5 +28,4 @@ export default defineConfig({
   noExternal: ["@prismshadow/penguin-core", /^@penguinharness\/[^/]+\/cli$/],
   banner: { js: "#!/usr/bin/env node" },
   define: buildGitDefine(),
-  onSuccess: () => stageBenchmarks("dist/builtin-benchmarks"),
 });

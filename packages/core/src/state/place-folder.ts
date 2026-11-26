@@ -1,9 +1,8 @@
 /**
  * Writing one folder into a directory of folders, all at once: the copy is staged in a temporary
  * directory under `<dir>/.seeding/` and renamed into `<dir>/<id>`, so a write that fails part-way
- * leaves nothing under the id. A Project's Benchmarks are written this way (project-benchmarks.ts,
- * and the server's zip import), and so are the seeds a built-in plugin ships for a system app's
- * data (the server's services/app-seeds.ts).
+ * leaves nothing under the id. The seeds a built-in plugin ships for a system app's data are
+ * written this way (the server's services/app-seeds.ts).
  */
 import fs from "node:fs/promises";
 import path from "node:path";

@@ -30,7 +30,6 @@
     "@modelcontextprotocol/client": "^2.3.1",
     "@penguinharness/agent-company": "workspace:*",
     "@penguinharness/agent-development": "workspace:*",
-    "@penguinharness/agent-evaluation": "workspace:*",
     "@penguinharness/agent-state-git": "workspace:*",
     "@penguinharness/browser-automation": "workspace:*",
     "@penguinharness/computer-use": "workspace:*",
@@ -57,7 +56,8 @@
   "devDependencies": {
     "@penguinharness/a2ui": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz",
     "@penguinharness/continual-learning": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz",
-    "@penguinharness/default-rsi-toolkit": "https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz",
+    "@penguinharness/default-rsi-toolkit": "https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.2.0/penguinharness-default-rsi-toolkit-0.2.20.tgz",
+    "@penguinharness/rsi-workbench": "https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.2.0/penguinharness-rsi-workbench-0.2.0.tgz",
     "@penguinharness/skill-porting": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz",
     "@penguinharness/use-firecrawl": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz",
     "@types/node": "^24.0.0",

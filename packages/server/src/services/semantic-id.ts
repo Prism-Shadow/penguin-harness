@@ -17,7 +17,7 @@
  * The organization's and the channel's prefix says what an id names and makes every core a
  * valid id; a core that already carries it is not prefixed twice. A non-admin's Project id
  * lives in its owner's namespace, so that prefix is the username the route already demands,
- * not a convention. A Benchmark id is kebab-case, like the ones the evaluation Skills write.
+ * not a convention. A contributed kind's id is kebab-case.
  * The prefixes are a generator's convention, not a rule the server enforces: an id typed by
  * hand is accepted as written, and ids that predate them keep working.
  *
@@ -90,13 +90,12 @@ export const SEMANTIC_ID_RULES: Record<SemanticIdKind, SemanticIdRule> = {
     examples:
       "Report Writer → report_writer; 金融助手 → finance_copilot; 深度研究报告智能体 → deep_research_reporter; Notes → notes.",
   },
-  benchmark: contributedIdRule("benchmark"),
 };
 
 /**
  * The rule of a kind a server module contributes (services/semantic-id-kinds.ts): a kebab-case
  * id of letters, digits, `_` and `-`, at most 100 (core's `isValidId`, which every folder-named
- * object meets), its placeholder named after the kind. The Evaluation Center's Benchmarks are one.
+ * object meets), its placeholder named after the kind.
  */
 export function contributedIdRule(kind: string): SemanticIdRule {
   return {
@@ -216,7 +215,7 @@ function dateStamp(now: Date): string {
 /**
  * The id a name that neither the model nor the ASCII fallback can name gets: the kind's noun
  * and the date behind its prefix — `co_org_<yyyymmdd>`, `ch_channel_<yyyymmdd>`,
- * `agent_<yyyymmdd>`, `benchmark-<yyyymmdd>` — made unique against `taken`. It names nothing —
+ * `agent_<yyyymmdd>`, `<kind>-<yyyymmdd>` for a contributed kind — made unique against `taken`. It names nothing —
  * that is the point. It is valid, so the dialog can go on, and it reads as temporary at a
  * glance, so the surface that fills it in can ask for a meaningful name in its place. Refusing
  * instead would leave the user of a Chinese-named object with no model configured staring at

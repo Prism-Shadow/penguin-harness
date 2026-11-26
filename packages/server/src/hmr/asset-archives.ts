@@ -98,9 +98,3 @@ export function pushedLibraryDir(assets: string | null): string | null {
   return fs.existsSync(path.join(dir, "package.json")) ? dir : null;
 }
 
-/** Benchmark resources bundled with this platform; an ordinary install uses core's copy. */
-export function pushedBenchmarksDir(assets: string | null): string | null {
-  if (assets === null) return null;
-  const dir = path.join(unpackedAssetsDir(assets), "builtin-benchmarks");
-  return fs.existsSync(dir) ? dir : null;
-}
