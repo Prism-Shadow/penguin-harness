@@ -159,7 +159,10 @@ export function Notice({
       {...(role !== undefined ? { role } : {})}
       className={`${VARIANT[variant]} ${className}`}
     >
-      <div className={`flex min-w-0 items-start ${ICON_GAP.menu}${crossOnly ? " flex-1" : ""}`}>
+      <div
+        data-slot="lead"
+        className={`flex min-w-0 items-start ${ICON_GAP.menu}${crossOnly ? " flex-1" : ""}`}
+      >
         {glyph !== undefined && (
           // One line tall (`1lh` is this span's own inherited line height), the mark centred in it:
           // the mark sits on the first line however far the text wraps, and a one-line notice

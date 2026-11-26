@@ -9,5 +9,5 @@
 
 ## Details
 
-- The shared `Notice` now aligns its leading mark with the first line of text instead of centring it on the whole box, so a notice that wraps (such as the plugin market's expanded source-failure notice) no longer shows the dot beside a middle line. A one-line notice looks as before.
+- The shared `Notice` now keeps its tone mark on the first line of text instead of centring it on the whole box, so a notice that wraps, or has a title over its body (such as the plugin market's expanded source-failure notice), no longer shows the mark beside a middle line. The Frost, Console and Doodle themes draw that mark in CSS, so they now anchor it to the notice's leading block (the new `lead` slot of `ui-notice`); the real glyph of the GitHub theme sits on the first line too. A one-line notice, with or without buttons, looks as before.
 - The UI gallery's Notice board gains a multi-line example.
