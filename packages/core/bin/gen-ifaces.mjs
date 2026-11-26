@@ -1246,7 +1246,7 @@ for (const project of projects) {
     ) {
       return keyOf(sym, decl);
     }
-    return `${moduleNameOf(declFile.fileName)}#${sym.getName()}`;
+    return ifaceKeyBySymbol.get(sym) ?? `${moduleNameOf(declFile.fileName)}#${sym.getName()}`;
   };
   /** The component a bare `@Use()` field is wired to: the one its type names, if any. */
   const componentOfType = (typeNode) => {
