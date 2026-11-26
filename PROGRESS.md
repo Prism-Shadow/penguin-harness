@@ -324,3 +324,9 @@ pnpm-lock.yaml 未含。后果与已试路径：
 - TC 收敛过程：browser-automation 修好后 pnpm -r 递归才推进到 packages/server，暴露修复
   13③ 的类型面问题——绑定写在 deps 字面量之后，字面量按 OrgDeps 检查仍缺必填 semanticId；
   修＝移进字面量内（boot 同形）。此前 r2 只见一个错的原因＝pnpm -r 首败即停，后续项目未跑。
+- 收尾读数（调度席五步，全部绿）：①镜像 push（--full）②COMPILE_RC=0（DTS/esbuild 全件，
+  4a6829a1d7）③三件套 TC_RC=0 / LINT_RC=0 / FMT_RC=0（收敛三笔：plugin-modules setup 改
+  构造值上调用并按变异形式赋端口——交集类型在插件工程声明视图坍缩 never；module.ts 合并
+  重复 import；26 文件 prettier patch 经 wt --write＋gzip/base64 回传 git apply；后续又修
+  organization-runtime 绑定移入 deps 字面量）④双套件：server 4856 passed | 12 skipped
+  (4868)，cli 663 passed (663)，均 @ 4a6829a1d7 ⑤origin 推送随本笔提交后执行。
