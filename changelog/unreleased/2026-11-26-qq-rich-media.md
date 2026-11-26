@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** feature
 - **Scope:** `messaging`
+- **PR:** [#1908](https://github.com/Prism-Shadow/penguin-harness/pull/1908)
 
 [中文版](2026-11-26-qq-rich-media.zh.md)
 
