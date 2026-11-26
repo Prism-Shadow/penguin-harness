@@ -110,7 +110,7 @@
     "@prismshadow/penguin-library-session": "workspace:*",
     "@prismshadow/penguin-library-setting": "workspace:*",
     "@xterm/headless": "^5.5.0",
-    "hono": "^4.13.11",
+    "hono": "4.13.13",
     "node-pty": "^1.1.0",
     "ws": "^8.18.3"
   },

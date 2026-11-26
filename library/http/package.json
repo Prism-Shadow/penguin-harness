@@ -121,7 +121,7 @@
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-auth": "workspace:*",
-    "hono": "^4.13.11",
+    "hono": "4.13.13",
     "fflate": "^0.8.3"
   },
   "devDependencies": {
