@@ -447,7 +447,10 @@ describe("sandbox settings ride the parked context across a swap", () => {
           manifest: parseManifest({
             name: "observer",
             requires: {
-              sandbox: { iface: "@prismshadow/penguin-server#Sandbox", from: "SandboxModule" },
+              sandbox: {
+                iface: "@prismshadow/penguin-library-sandbox#Sandbox",
+                from: "SandboxModule",
+              },
             },
             provides: {},
             contributes: {},
