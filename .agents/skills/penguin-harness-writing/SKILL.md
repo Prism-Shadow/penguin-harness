@@ -48,7 +48,7 @@ What differs by kind of text lives in one profile, `reference/profile-<name>.md`
 | --- | --- | --- |
 | `blog-perspectives` | a perspective post: an essay on one thesis in connected paragraphs, a lead, a TL;DR, a few sections | `prompts/contract-section.md` (per section), `contract-post.md` |
 | `blog-practice` | a technical post argued as an essay: a design thesis, sections that each argue one point with evidence and answer the design not taken, numbers rules, TL;DR | the same |
-| `docs` | a page of `packages/docs/content/`, Obsidian-Help style | `prompts/contract-docs.md` |
+| `docs` | a short task page under `packages/docs/content/`, Obsidian-Help style; the long reference pages are outside this profile | `prompts/contract-docs.md` |
 | `landing` | strings for the landing page's dictionaries | `prompts/contract-landing.md` |
 
 A blog category without a profile file needs `--profile <file>` until one is written;
@@ -188,7 +188,7 @@ Sizes are set three times, so a post cannot grow past them unnoticed:
    counts itself, so a cap is one number for the model and for `check`. The wording is the
    `count-rule-<lang>` fragment; change it with `countBody`.
 3. **`check`.** A section above `min(plan × 1.1, profile cap)` is an error; with `--plan-rows
-   advisory`, the mode for a post written as one document, a section above its plan row is a
+   advisory`, the mode for a post written as one document, a section above 1.1 × its plan row is a
    warning and only the profile's cap an error. A lead above its cap and a whole post above the
    total cap are errors either way. Without `--outline`, the profile caps apply. Below a
    floor is a warning: short is allowed, empty is not. On a section file it also reports the page
@@ -323,8 +323,9 @@ sources, whatever numbers each language gave them.
 
 English first by default. Write Chinese first when the title, a meme or the sources are Chinese:
 `outline --lang zh` plans in characters, and the English follows by translation. `translate`
-takes the whole post in one call, with TERMS, the notes (`--notes`) and the pinned title of the
-target language (`--title`); it keeps the markers at the ends of the same sentences and translates
+takes the whole post in one call, with TERMS, the notes (`--notes`), the pinned title of the
+target language (`--title`) and the target language's `--version-note` (required when the source
+carries one, or `none`); it keeps the markers at the ends of the same sentences and translates
 figure blocks string for string. With `--reuse-figures <frozen target draft> --reuse-source <frozen
 source draft>`, a figure whose source block did not change keeps its frozen translation, so it needs
 no redraw. If the translation still reads translated after one fix round, write that language
@@ -388,10 +389,10 @@ directions, comparing text after unescaping; `strip --figures-dir <figures dir>`
 that does not match its block and inlines the rest as one line; `check --in <post> --draft
 <draft>` re-runs the same assertions on the published post.
 
-**Screenshots** stay in `Prism-Shadow/penguin-harness-community` under `assets/blog-assets/`,
-referenced as `/blog-assets/<name>-<lang>.png`; a new one is merged there before the post's PR.
-`strip` writes them as an image line plus an italic caption, escaping `<`, `>` and `&` outside code
-spans.
+**Screenshots** follow the host, path and naming rule in
+`penguin-harness-dev/reference/authoring.md`; merge the file into the community repo's blog assets
+before the post's PR. `strip` writes them as an image line plus an italic caption, escaping `<`,
+`>` and `&` outside code spans.
 
 **Visual check**, on the test host only (a browser runs nowhere else): build the landing
 (`--build "@prismshadow/penguin-landing..."` with the remote runner), serve it with
@@ -478,8 +479,8 @@ twice goes to `findings.unrouted.<lang>.vN.md` for the orchestrator.
   its citations come in another order, see section 7). It prints the model's
   notes (`<!-- omitted: … -->`, `<!-- not applied: … -->`, `<!-- figure changed: … -->`) so they are
   read. Then `check --in <post> --draft <draft> --facts facts.md --pair <other post>`.
-  `packages/landing/test/blog.test.ts` pins post order per category, so a new post edits that
-  list. Add a changelog pair (`Type: process`, `Scope: landing`) per
+  `packages/landing/test/blog.test.ts` reads `content/blog` from disk, so a new post edits no list.
+  Add a changelog pair (`Type: process`, `Scope: landing`) per
   `penguin-harness-dev/reference/changelog.md`.
 - **A published post back into a draft**: `unstrip --in packages/landing/content/blog/<slug>.<lang>.md
   --out-dir <scratch>/articles/<slug>/` writes `recovered.<lang>.md` (each inline figure and each
@@ -489,8 +490,9 @@ twice goes to `findings.unrouted.<lang>.vN.md` for the orchestrator.
   list, verbatim; `## FACTS` one line per citation, the sentence that carried it). The second
   language takes `--pair <the first's recovered draft> --facts <its seed>`, so both drafts carry the
   same source and fact ids section by section. Its guard proves every figure against its block and
-  strips the draft with the seed: figure and image lines must come back byte for byte, every other
-  line once citations are removed; it then reports how many citations the current citer keeps.
+  strips the draft with the seed: figure and image lines must come back byte for byte (an image
+  line's extension excepted), every other line once citations are removed; it then reports how
+  many citations the current citer keeps.
   The seed is a starting point: merge it into `facts.md` and verify each fact again.
 - **A docs page**: `write` (one call) to a draft, `strip` to
   `packages/docs/content/<slug>.<lang>.md`; a new page is also added to `src/lib/nav.ts`, which the

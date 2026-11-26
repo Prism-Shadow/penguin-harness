@@ -98,11 +98,10 @@ and `check-publishable.mjs` fails if a published package depends on it.
 | `CHANGELOG.md`, `CHANGELOG.zh.md` | One line at the top, linking `changelog/<version>/`. |
 | `packages/web/src/lib/release-notes-data.ts` | One entry at the top: the version, the release line's date, and 2–5 short user-facing lines in zh and in en (App Store "What's New" register, no internal names). The App info dialog renders it; it is edited here and nowhere else. |
 | `README.md`, `README.zh.md` | The Docker example pins the exact version (`hiyouga/penguinharness:<version>`). |
-| `package.json`, `packages/*/package.json`, `plugins/*/package.json` | Version, in lockstep, except the plugins in `scripts/lib/own-version-plugins.mjs`. |
+| `package.json`, `packages/*/package.json`, `library/*/package.json`, `plugins/*/package.json` | Version, in lockstep, except the plugins in `scripts/lib/own-version-plugins.mjs`. |
 | `packages/core/src/index.ts` | `export const VERSION`. |
 | `packages/server/src/plugin/builtin-market.json`, `packages/server/src/plugin/market-covers/` | Refreshed from the community repository's `main` (`Prism-Shadow/penguin-harness-community`, a fresh checkout): `node scripts/sync-market-assets.mjs <community checkout>` copies `assets/plugins/market.json` over `builtin-market.json`, and replaces `market-covers/` with every built-in plugin's `cover.webp` and `cover-640.webp` as the document names them. It prints the bytes the build now carries. Then `pnpm exec prettier --write packages/server/src/plugin/builtin-market.json`, so only the formatting differs. The server answers with this copy and these covers until the published document arrives, and serves the covers offline; the landing site falls back to the copy. Run the server's `plugin-market.test.ts` afterwards: a copy the server refuses fails it. Screenshots are not copied; the server fetches them. |
 | `packages/landing/content/blog/penguinharness-<v-with-dashes>.{en,zh}.md` | The post pair. |
-| `packages/landing/test/blog.test.ts` | The new slug joins the expected list. |
 
 **Anything whose version already differs is a decision, not a sweep.** Bump what sits on the
 previous release's number without thinking about it. For the rest, decide and record the decision
@@ -154,19 +153,13 @@ frontmatter, one lead paragraph, then a `##` section per highlight with its scre
 migrations that need a restart, plugins that must be installed on existing Agents, renamed flags,
 routes that moved. Say what breaks and what to do, one bullet each.
 
-Images are written `/blog-assets/<name>` and resolved by `blogAssetUrl`; never paste the raw
-host. Screenshots are named `penguinharness-<v-with-dashes>-<feature>-<lang>.png` and **shot once
-per UI language** — the post pair references `-en.png` and `-zh.png` separately.
-
-The assets live in the sibling `Prism-Shadow/penguin-harness-community` repo under
-`assets/blog-assets/`, not here.
+Images follow `reference/authoring.md`'s host, path and language-suffix rule; a release's
+screenshots are named `penguinharness-<v-with-dashes>-<feature>-<lang>.png`.
 
 ## Screenshots
 
-Captured, not mocked: drive the app through the Playwright harness in `packages/web/e2e/` with
-its mock LLM against a scratch `PENGUIN_HOME` — never `~/.penguin`, which is real data. Shoot at
-`deviceScaleFactor: 2` and crop to the feature rather than the window. Check every frame for what
-must not ship: absolute paths carrying a home directory, API keys, and mock-model filler text.
+Capture follows `reference/authoring.md`'s rule ("Blog posts, and where their images live"); the
+release's filenames are in "The blog post" above.
 
 ## Polishing the prose
 
@@ -180,7 +173,7 @@ is enabled on a given key: a 403 `model_access_denied`, or a 401 `invalid_model`
 user which model to use rather than picking one. `glm-5.3-flash` reasons before it answers, so its
 reasoning counts against `max_tokens`: a small cap returns `finish_reason: length` with no text.
 
-`scripts/polish-release-prose.mjs` beside this file carries the instruction and does the call:
+`scripts/polish-release-prose.mjs` carries the instruction and does the call:
 
 ```sh
 TOKENDANCE_KEY_FILE=~/.config/tokendance-key \
@@ -191,28 +184,11 @@ It prints to stdout; `--write` rewrites the file, `--model <id>` overrides the d
 
 The register to ask for is **VS Code's release notes**: a developer writing for developers, plain
 and unhyped, each section leading with what changed in one sentence, concrete nouns and numbers
-carrying the weight. The instruction that produces it:
-
-> You are editing the release notes of PenguinHarness, an open-source TypeScript harness for AI
-> agents. The audience is developers deciding whether to upgrade.
->
-> Voice and shape — follow VS Code's release notes:
-> - A developer writing for developers. Plain, direct, unhyped.
-> - Lead each section with what changed, in one sentence. Then the detail that makes it usable.
-> - Concrete nouns, numbers, defaults, limits, flags and file names carry the weight. Adjectives do not.
-> - Short paragraphs. One idea each. Prefer a sentence over a clause pile.
-> - No marketing register: no "powerful", "seamless", "revolutionary", "we are excited to".
-> - No second-person cheerleading and no rhetorical questions.
->
-> Hard constraints:
-> - Preserve every technical fact exactly: names, numbers, versions, paths, flags, defaults,
->   limits, error codes, command lines. Never invent one, never round one, never drop one.
-> - Preserve the Markdown structure as given: heading levels and order, image references and their
->   alt text, code fences and their contents, link targets. Edit prose only.
-> - Keep the input's language. English in, English out. Chinese in, Chinese out. Do not translate.
-> - If a sentence is already good, leave it alone. Polishing is not rewriting.
->
-> Return only the polished Markdown. No preamble, no commentary, no fences around the whole document.
+carrying the weight. The full instruction is the `INSTRUCTION` constant in
+`.agents/skills/penguin-harness-dev/scripts/polish-release-prose.mjs`; read it there rather than
+copying it here, because it also carries the hard rules a shorter version misses — spaced em
+dashes, "a clause is a fact too", "a list stays a list", no heading the document did not have, and
+the full banned-word list.
 
 **Read the result against the source before taking it**, and check it mechanically first. Over one
 release the model, told plainly not to, still: added an `# H1` title the document did not have,

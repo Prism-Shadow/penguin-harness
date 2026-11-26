@@ -1,12 +1,13 @@
 # Changing the built-in model catalog
 
-Loaded on demand from `SKILL.md`. `packages/server/src/model-catalog/catalog.ts` is the single
-source of truth for presets: the server seeds a new Project's config from it (`seed.ts`), and the
-Web App, the CLI and the gallery display it through the browser-safe subpath
-`@prismshadow/penguin-server/model-catalog` (`index.ts`). What the UI shows about MMSP's clients
-is `client-protocols.ts`, and the variable names the UI previews are `env-keys.ts`, both asked of
-MMSP's credentials module. Core never reads any of it (see the core rule in `SKILL.md`). It is a
-*catalog*, not a routing table — MMSP owns routing and the environment-key rule.
+Loaded on demand from `SKILL.md`. `library/model/src/model-catalog/` is the single source of truth
+for presets: `catalog.ts` holds the rows, provider groups and pricing, `seed.ts` turns them into
+preset rows and provider tables, and `client-protocols.ts` / `env-keys.ts` carry the UI's protocol
+and variable previews. The server's `packages/server/src/model-catalog/` re-exports it,
+`packages/server/src/services/project-config-seed.ts` composes a new Project's config from the
+rows, and `@prismshadow/penguin-server/model-catalog` stays the browser-safe subpath the Web App
+imports. Core never reads any of it (see the core rule in `SKILL.md`). It is a *catalog*, not a
+routing table — MMSP owns routing and the environment-key rule.
 
 ## Pricing
 
@@ -18,9 +19,10 @@ MMSP's credentials module. Core never reads any of it (see the core rule in `SKI
   section comment — OpenAI above 272K input, Gemini 3.1 Pro above 200K, MiniMax M3 above 512K.
   Long-context use is then knowingly under-costed; that is the convention, not an oversight.
 - A **promotion** is a `discount` fraction beside the list `pricing`, never a discounted number
-  written into `pricing`: `effectivePricing()` derives the billed rate, and a lapsed promotion is
-  one field to delete with the rate to return to still on the row. `presetModelEntries()` writes
-  the effective rate, so what a Project stores is what the gateway charges.
+  written into `pricing`: `effectivePricing()` derives the billed rate. A Project stores the list
+  price too: `presetModelEntries()` writes the list (a scheduled row's peak) price, and
+  `presetPromotions()` stores the fraction beside it, which the cost center applies when it prices
+  usage. A lapsed promotion is one field to delete, with the rate to return to still on the row.
 - A **time-based** tier is an `offPeakDiscount` schedule instead, and it is never baked into a
   Project. The row stores its peak price, and the cost center decides the tier from each usage
   record's own `ts` — the aggregation splits by tier before pricing. Deciding it at read time
@@ -58,18 +60,15 @@ Provider glyphs are one monochrome family: 24×24, `currentColor`, pure paths, n
 A vendor's own mark goes in with its colours flattened, the way Qwen's gradient wordmark already
 is — a single coloured glyph in that row reads as a mistake.
 
-**Moving the default reaches further than adding a model.** `PRESET_DEFAULT_MODEL` in the catalog
-holds it (core's `defaultProjectConfig()` carries no model at all), and six documented first-run commands pin it
-by hand — `README.md`, `README.zh.md`, and `quickstart-cli` / `quickstart-sdk` in both languages —
-each ending `--set-default`, which writes `default_model`. Leave them on the old id and the
-documented first run silently undoes the change on every fresh install. The `models` and
-`configuration` samples carry it in two places that must move together, the `default_model` line
-and the `[[models]]` row it names (a default naming no entry is rejected on load), and
-`plugins/agent-development/skills/penguin-sdk/SKILL.md` states it in prose. Mark the new
-default's catalog row `wasDefault: true` and leave the marker on the old one: "Restore defaults"
-deletes every row that is not a preset, and the marker is what keeps usage on a former default
-priced afterwards (`retainedCatalogPricing`). The old row therefore stays in the catalog, retired
-once it stops being a preset.
+**There is no catalog-wide default model to move.** Since #1674 (2026-11-20) a new Project starts
+with no default; the first-run guide (`ModelSetupGuide`) and the Default model settings dialog
+(`DefaultModelsDialog`, `PUT /models/default`) set a per-Project one. A provider group may name a
+`connectDefault` — the row offered when that group's first key is saved, which
+`connect-default-offer.ts` resolves — and the docs' `--set-default` writes the user's own
+`default_model`, not a catalog decision. `wasDefault` marks a row that was a catalog default before
+#1674: `retainedCatalogPricing` uses it to keep pricing the usage a Project recorded on that row
+after "Restore defaults" removes it, and a retired row is kept in the catalog for as long as that
+usage may exist. With no catalog default, a new row has no reason to carry the marker.
 
 ## Who may use the environment
 
@@ -83,8 +82,14 @@ it decides nothing about who may use it. Gateways and the third-party adapters (
 ModelScope) carry a base URL on their group, so their keys come from the config.
 
 Existing Projects never migrate automatically: presets are copied into `.project_config.toml` at
-creation and nothing rewrites them. Users pick changes up through the models page's explicit "sync
-presets", which appends and updates catalog-owned fields but never deletes and never touches the
-stored default. `display_name` is the one catalog-owned field a sync fills rather than overwrites —
-a stored name may be the user's own rename — so a name the user cleared is filled back in, while a
-rename survives. Say so in the entry.
+creation and nothing rewrites them. The models page offers two actions:
+
+- **Add new models** (`mode: add`) appends the presets the table lacks — retired rows never — and
+  their promotions, in catalog order. Nothing else moves: no existing row, group table, promotion,
+  key or reference.
+- **Restore defaults** (`mode: restore`) resets the model configuration to a new Project's, keeping
+  the API keys but deleting every row that is not a preset (the user's own, older catalog rows and
+  retired rows included), every user-defined group and every override, and clearing the default
+  and vision models. The first-run guide asks for a default again.
+
+Say which action an entry means. A stored `display_name` is the user's: a rename survives.

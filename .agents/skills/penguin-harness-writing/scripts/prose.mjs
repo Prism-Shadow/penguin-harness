@@ -108,7 +108,9 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
              [--version-note <t>] [--date YYYY-MM-DD]
                section mode: one section from the frozen plan; --out defaults to the next version
   translate  --in <f> --facts <f> --to en|zh [--title <t>] [--notes <f>] [--title-rule <text|@f>]
+             [--version-note <t>]
              [--reuse-figures <frozen target draft> --reuse-source <frozen source draft>]
+             the target language's version note: required when the source carries one, or "none";
              section mode (an s<n>.<lang>.v<k>.md input, or --sections-dir): --outline <f>
   polish     --in <f>                       section mode: neighbours read-only
   fix        --in <f> --findings <f> --facts <f> [--outline <f>] [--notes <f>]   section mode
@@ -157,6 +159,8 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
              --out <f>            the completion (required unless --dry-run or defaulted); the raw
                                   JSON goes to <out>.raw.json, or <raw-dir>/<folder>-<step>-<out
                                   name>.raw.json, or --raw <f>; an existing raw file is never overwritten
+             --raw-dir <dir>      where raw responses go when they are not written beside --out
+             --raw <f>            the raw response file to write instead of the default location
              --model <id>         default ${DEFAULT_MODEL}
              --temperature <n>    default 0.3 (outline 0.5, review 0.2)
              --max-tokens <n>     default 32000 (reasoning counts against it)
@@ -166,6 +170,7 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
              --version-note <t>   the verbatim note line (without "> "), or "none"; polish/fix
                                   default to the note already in the input
              --timeout <s>        per attempt, default 1800
+             --with <f>           an alias for --pair <f> (check and pair)
 
 local steps:
   plan       --in <outline> [--profile …] [--facts <f>] [--figures <manifest>] [--lang en|zh]
@@ -180,8 +185,8 @@ local steps:
              [--figures <manifest>] [--svg <dir>] [--draft <f>] [--slug <slug>] [--pair <f>]
              [--assets <dir>] [--version-note <t>] [--lang en|zh]
                budgets are hard: a section above min(plan × 1.1, profile cap) is an error;
-               --plan-rows advisory (a post written whole): above the plan row a warning, above
-               the profile cap an error
+               --plan-rows advisory (a post written whole): above 1.1 × the plan row a warning,
+               above the profile cap an error
                --section (or an s<n>… file): one section — its shape, the figures its row owns,
                  and the page total with the other sections' latest versions (warned when over)
                --figures: every manifest stem has a figure block, in order, and no others

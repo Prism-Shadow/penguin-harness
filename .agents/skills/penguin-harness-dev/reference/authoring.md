@@ -19,14 +19,16 @@ footnotes that the skill generates from its fact markers; a `**Sources**` footer
 A published post's screenshots are never deleted, so that asset class grows without bound in the
 number of posts written; keeping it out of this history keeps everyone's clone small.
 
-**Posts still write a repo-local path.** Reference an image as `/blog-assets/<name>` — both
-`![alt](…)` and the raw `<img src="…">` some posts use — and let the renderer resolve it:
+**Posts still write a repo-local path.** Reference an image as `/blog-assets/<name>-<lang>.<ext>` —
+both `![alt](…)` and the raw `<img src="…">` some posts use — and let the renderer resolve it:
 `blogAssetUrl` in `packages/landing/src/lib/community-assets.ts`, applied by the `img` adapter in
 `src/pages/blog-post.tsx`. Never paste the raw `raw.githubusercontent` URL into a post. One source
-of truth for the host, Markdown that stays readable and diffable, and moving the host again is a
-one-line change instead of a sweep over every post.
+of truth for the host and the naming — stated once, here; the writing skill and the release guide
+point at this paragraph. A post pair references the `-en` and `-zh` files separately, so shoot once
+per UI language. Markdown that stays readable and diffable, and moving the host again is a one-line
+change instead of a sweep over every post.
 
-Release screenshots are captured, not mocked up: drive the app through the Playwright e2e harness
+Post screenshots are captured, not mocked up: drive the app through the Playwright e2e harness
 in `packages/web/e2e/` with its mock LLM, against a scratch `PENGUIN_HOME` — never `~/.penguin`,
 which is the developer's real data. Shoot at `deviceScaleFactor: 2`, crop to the feature rather
 than the whole window, and check the frame for what must not ship publicly: absolute paths carrying
@@ -100,9 +102,9 @@ Imported wholesale from a sibling repo's workflow, these are wrong here:
   records presets in its catalog.
 - **Agent Notes** (`.agents/notes/<lifecycle>/<class>/…`) and their supersession lifecycle. No such
   convention.
-- **`knip`, `pnpm run doc-sync`, `pnpm run lint`.** None exist.
+- **`knip` and `pnpm run doc-sync`.** Neither exists here; `pnpm lint` is oxlint, and CI runs it.
 - **Coverage-scoped verification** (`--coverage.include`, per-file thresholds). No coverage gate is
   configured here, so narrowing means choosing test files, not proving coverage over a source scope.
 - **Adding a skill to the repo root's `plugins/`** because it is "a skill". Those packages are the
-  shipped, user-facing plugin library — a docs-sync test requires every plugin to appear in the
-  bilingual skills pages, and everything there installs into users' agents. Repo development skills live in `.agents/skills/`.
+  shipped, user-facing plugin library — everything there installs into users' agents, and the docs
+  pages describe it — so repo development skills live in `.agents/skills/`.
