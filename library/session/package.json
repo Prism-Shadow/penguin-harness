@@ -79,7 +79,7 @@
     "@prismshadow/penguin-library-db": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
-    "hono": "^4.13.11",
+    "hono": "4.13.13",
     "smol-toml": "^1.9.1"
   },
   "devDependencies": {

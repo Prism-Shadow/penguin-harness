@@ -129,7 +129,7 @@
     "@prismshadow/penguin-library-session": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
     "@prismshadow/penguin-library-model": "workspace:*",
-    "hono": "^4.13.11"
+    "hono": "4.13.13"
   },
   "devDependencies": {
     "tsup": "^8.3.0",

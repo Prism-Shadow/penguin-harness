@@ -270,7 +270,7 @@
     "@prismshadow/penguin-library-project": "workspace:*",
     "@prismshadow/penguin-library-session": "workspace:*",
     "@prismshadow/penguin-library-trace": "workspace:*",
-    "hono": "^4.13.11",
+    "hono": "4.13.13",
     "ws": "^8.18.3",
     "tar": "^7.5.21"
   },
