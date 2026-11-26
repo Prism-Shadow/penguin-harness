@@ -10,13 +10,25 @@
  */
 import http from "node:http";
 
+/** One answer from a machine's server, read whole. */
+export interface MachineAnswer {
+  status: number;
+  text: string;
+  /**
+   * The seconds its `retry-after` header asks the caller to wait before asking again, when it
+   * sent one. A server still starting sends it with its 503 (hmr/starting.ts); one whose
+   * platform cannot boot does not, which is how the two are told apart (starting-wait.ts).
+   */
+  retryAfter?: number;
+}
+
 /** The machine's own API, reached through its tunnel as an authenticated caller. */
 export interface MachineApi {
   request(
     method: "GET" | "POST" | "PUT" | "PATCH",
     path: string,
     body?: unknown,
-  ): Promise<{ status: number; text: string }>;
+  ): Promise<MachineAnswer>;
   /**
    * A POST whose body is bytes rather than JSON, with a deadline of its own. The hot update
    * is megabytes, and the machine unpacks, boots and commits it before answering — a timeout
@@ -29,7 +41,7 @@ export interface MachineApi {
     timeoutMs: number,
     /** Request headers beyond the ones every call carries. */
     headers?: Record<string, string>,
-  ): Promise<{ status: number; text: string }>;
+  ): Promise<MachineAnswer>;
 }
 
 /**
@@ -51,7 +63,7 @@ export function machineApi(
     contentType: string,
     timeoutMs: number,
     extra: Record<string, string> = {},
-  ): Promise<{ status: number; text: string }> =>
+  ): Promise<MachineAnswer> =>
     new Promise((resolve, reject) => {
       const req = http.request(
         {
@@ -74,12 +86,14 @@ export function machineApi(
         (res) => {
           const chunks: Buffer[] = [];
           res.on("data", (chunk: Buffer) => chunks.push(chunk));
-          res.on("end", () =>
+          res.on("end", () => {
+            const retryAfter = retryAfterOf(res.headers["retry-after"]);
             resolve({
               status: res.statusCode ?? 0,
               text: Buffer.concat(chunks).toString("utf8"),
-            }),
-          );
+              ...(retryAfter === null ? {} : { retryAfter }),
+            });
+          });
           // `end` is the only settling event on the happy path. A machine that closes the
           // channel after the headers and before the body — its server restarting under a
           // hot update, the session dropping mid-answer — ends the response without `end`,
@@ -112,4 +126,16 @@ export function machineApi(
     postBytes: (path, contentType, body, timeoutMs, headers) =>
       send("POST", path, body, contentType, timeoutMs, headers),
   };
+}
+
+/**
+ * The seconds a `retry-after` header asks for. Delay-seconds is the form a PenguinHarness server
+ * sends; an HTTP-date, which none does, still asks for a retry, so it reads as one second rather
+ * than as no header at all.
+ */
+function retryAfterOf(value: string | undefined): number | null {
+  if (value === undefined) return null;
+  const said = value.trim();
+  if (said === "") return null;
+  return /^\d+$/.test(said) ? Number(said) : 1;
 }
