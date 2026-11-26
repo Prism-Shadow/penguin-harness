@@ -751,9 +751,6 @@ importers:
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
-      '@penguinharness/first-workbench-guide':
-        specifier: workspace:*
-        version: link:../../plugins/first-workbench-guide
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -813,20 +810,20 @@ importers:
         version: 2.9.1
     devDependencies:
       '@penguinharness/a2ui':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz
       '@penguinharness/continual-learning':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz
       '@penguinharness/default-rsi-toolkit':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz
       '@penguinharness/skill-porting':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz
       '@penguinharness/use-firecrawl':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz
       '@types/node':
         specifier: ^24.0.0
         version: 24.19.2
@@ -924,9 +921,6 @@ importers:
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
-      '@penguinharness/first-workbench-guide':
-        specifier: workspace:*
-        version: link:../../plugins/first-workbench-guide
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -956,20 +950,20 @@ importers:
         version: link:../../plugins/use-bento-slides
     devDependencies:
       '@penguinharness/a2ui':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz
       '@penguinharness/continual-learning':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz
       '@penguinharness/default-rsi-toolkit':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz
       '@penguinharness/skill-porting':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz
       '@penguinharness/use-firecrawl':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz
       '@prismshadow/penguin-cli':
         specifier: workspace:*
         version: file:packages/cli(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@10.2.2))(supports-color@10.2.2)
@@ -1085,8 +1079,8 @@ importers:
         version: 4.0.1(supports-color@10.2.2)
     devDependencies:
       '@penguinharness/a2ui':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz
       '@penguinharness/ace-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
@@ -1115,17 +1109,14 @@ importers:
         specifier: workspace:*
         version: link:../../plugins/computer-use
       '@penguinharness/continual-learning':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
       '@penguinharness/default-rsi-toolkit':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
-      '@penguinharness/first-workbench-guide':
-        specifier: workspace:*
-        version: link:../../plugins/first-workbench-guide
+        specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -1166,8 +1157,8 @@ importers:
         specifier: workspace:*
         version: link:../../plugins/sandbox-wsl
       '@penguinharness/skill-porting':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz
       '@penguinharness/skilladam-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz
@@ -1190,8 +1181,8 @@ importers:
         specifier: workspace:*
         version: link:../../plugins/use-bento-slides
       '@penguinharness/use-firecrawl':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.65.1
@@ -1261,9 +1252,6 @@ importers:
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
-      '@penguinharness/first-workbench-guide':
-        specifier: workspace:*
-        version: link:../../plugins/first-workbench-guide
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -1389,20 +1377,20 @@ importers:
         version: 2.9.1
     devDependencies:
       '@penguinharness/a2ui':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz
       '@penguinharness/continual-learning':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz
       '@penguinharness/default-rsi-toolkit':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz
       '@penguinharness/skill-porting':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz
       '@penguinharness/use-firecrawl':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz
       '@prismshadow/penguin-hmr':
         specifier: workspace:*
         version: file:packages/hmr(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
@@ -1687,8 +1675,8 @@ importers:
         version: 19.3.1(react@19.3.1)
     devDependencies:
       '@penguinharness/a2ui':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz
       '@penguinharness/ace-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
@@ -1699,8 +1687,8 @@ importers:
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
       '@penguinharness/default-rsi-toolkit':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz
       '@penguinharness/humanizer':
         specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/humanizer-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/humanizer-0.2.19-rc.1.tgz
@@ -1729,8 +1717,8 @@ importers:
         specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-claude-code-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-claude-code-0.2.19-rc.1.tgz
       '@penguinharness/use-firecrawl':
-        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
-        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.65.1
@@ -2035,24 +2023,6 @@ importers:
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.3(@noble/hashes@1.8.0))(vite@7.3.8(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1))
-
-  plugins/first-workbench-guide:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.23.0)
-      esbuild:
-        specifier: ^0.28.1
-        version: 0.28.2
-      fflate:
-        specifier: ^0.8.3
-        version: 0.8.3
-      jsdom:
-        specifier: ^30.1.2
-        version: 30.1.3(@noble/hashes@1.8.0)
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.3(@noble/hashes@1.8.0))(vite@7.3.8(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -3224,9 +3194,9 @@ packages:
     resolution: {integrity: sha512-ktTSACRJ5WdpfjHjFT2EWJQQPacGv1cPCDfEbdmpAHOxdFiYqPe4lfnXGA3D8Dg9/0kHPYSvyRlgujIOVlTdvQ==}
     engines: {node: '>=14.18.0'}
 
-  '@penguinharness/a2ui@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz':
-    resolution: {integrity: sha512-3IkgCwIXJ5IS6qYbjZehSdQQKi4wFhKPuxhDZnr1ZCoUY7H4YmsHkN3+L832gGeT0Gc7sZ0FZy2CVnPomrmZgA==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz}
-    version: 0.2.19-rc.1
+  '@penguinharness/a2ui@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz':
+    resolution: {integrity: sha512-fNW3pPMkwdS5Ym0rlnghZGgFUmmR9goyWqYtIS7sWfAEjWR7qMcvbbkIzrvVgOZ30jFT/x2CK3ynNPy3qaCJqA==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz}
+    version: 0.2.19
 
   '@penguinharness/ace-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz':
     resolution: {integrity: sha512-DpBCmhf7WMe8nWpY72HSqn0QOzX0GQmz0B68JKkgWi2vAn0YZ3WEYjRvgYESJyw+52c15uLK9n9TKZCDILQ/5A==, tarball: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz}
@@ -3261,19 +3231,16 @@ packages:
     resolution: {directory: plugins/computer-use, type: directory}
     engines: {node: '>=24'}
 
-  '@penguinharness/continual-learning@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz':
-    resolution: {integrity: sha512-6Spzm6IBWhqwhE/by6KhaQwKNxAw9ww3ivMj5W9ub+9anbfAy7C3iWTGGnhScEcnpPy8nyuFSVUbLfpx6FK7MQ==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz}
-    version: 0.2.19-rc.2
+  '@penguinharness/continual-learning@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz':
+    resolution: {integrity: sha512-GHpNNWO6rQ3wPYc2l/Et4PBqG3rCuPQThqrV8BglBv8juUmergxxSJy3faqs5AYYOF+qme5K+D2EqfF1FsOyow==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz}
+    version: 0.2.20
 
   '@penguinharness/data-analysis@file:plugins/data-analysis':
     resolution: {directory: plugins/data-analysis, type: directory}
 
-  '@penguinharness/default-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz':
-    resolution: {integrity: sha512-djtsVFkBrhFQhQGfYjUvQrx8NmGDaIhcTDMAxB6gEcdMd9bnpvtxNwEanjhiSAIgTiwe03QdduAWae9DQCCWzQ==, tarball: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz}
-    version: 0.2.19-rc.1
-
-  '@penguinharness/first-workbench-guide@file:plugins/first-workbench-guide':
-    resolution: {directory: plugins/first-workbench-guide, type: directory}
+  '@penguinharness/default-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz':
+    resolution: {integrity: sha512-l9m+juQaWo6bKC4lcJdgiWB/hAqhy5MC120mECw5Zfq0OzIKPDt5zyK9SSe/UVDSVIz8P//q4Ys8XHvBYRDUmg==, tarball: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz}
+    version: 0.2.19
 
   '@penguinharness/goal@file:plugins/goal':
     resolution: {directory: plugins/goal, type: directory}
@@ -3311,9 +3278,9 @@ packages:
     resolution: {integrity: sha512-COEVelrAsmkwjFYez/F8g5FqlmFW106zhZdFk32DUIzLoDIagdfLMPcBRhGrn4lZEMb4C2hmI70hexjOD+9gZw==, tarball: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz}
     version: 0.2.19-rc.1
 
-  '@penguinharness/skill-porting@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz':
-    resolution: {integrity: sha512-Ik19f4k0DtYkNzkp80tz1NRZFj9E+muU3T6KJEU3PJjUbablQCuE+g6n2rIFwD3VY76CMZewwkpS4ZilPBAAZA==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz}
-    version: 0.2.19-rc.1
+  '@penguinharness/skill-porting@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz':
+    resolution: {integrity: sha512-CGebKi3AxWRz9qg6vcfYHipsfjFuGfaVDXuKw/BaZl5yhBoQs6u01XJ5Co9+xe8OwA+t6dvo9QOTSfwETZIQnQ==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz}
+    version: 0.2.19
 
   '@penguinharness/skilladam-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz':
     resolution: {integrity: sha512-PbSfpqZjs0UPr8JC8EZkyBoH6x8U3nTybyr1j4lauYfoQNABKP6TBRx/2rc3C+NXwK2u1/mY2h66EEkRsopqEg==, tarball: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz}
@@ -3344,9 +3311,9 @@ packages:
     resolution: {integrity: sha512-hOiy0gRywIBCZxWXMsh5fHJJYt45ofKJ/F9VsaVdxeFEIN9t22lvNo1bBj8oRVY/bLW3PpnhI/0qX/jmhS0aFg==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-claude-code-0.2.19-rc.1.tgz}
     version: 0.2.19-rc.1
 
-  '@penguinharness/use-firecrawl@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz':
-    resolution: {integrity: sha512-wcHwnfCSkv8e42C/mMP9CI6OscKKdCVm4rnxN+W+cLihqFlgfCogrVre+PGNnKgd1RFY/v0l1KyATlk0Iqgw1Q==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz}
-    version: 0.2.19-rc.1
+  '@penguinharness/use-firecrawl@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz':
+    resolution: {integrity: sha512-oBV5X+yDQfEOta+xT7CaYzfdBUZiABBHRhk7tKgopsCHL/N6iGx1M37yiReP9gT9qIl3AaZ28q0QEQ04PK7Q/g==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz}
+    version: 0.2.19
 
   '@playwright/test@1.65.1':
     resolution: {integrity: sha512-y+NCIRm2LvY4slUVWvGh1nujJ8RF/hEisIsq2mtUPgdQC4L701bq5hZGMhrpeXjACvwvO9tj5dJqhvM6TP9lbw==}
@@ -8076,7 +8043,7 @@ snapshots:
       tslib: 2.9.1
       webcrypto-core: 1.9.2
 
-  '@penguinharness/a2ui@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz': {}
+  '@penguinharness/a2ui@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz': {}
 
   '@penguinharness/ace-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz': {}
 
@@ -8096,13 +8063,11 @@ snapshots:
 
   '@penguinharness/computer-use@file:plugins/computer-use': {}
 
-  '@penguinharness/continual-learning@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz': {}
+  '@penguinharness/continual-learning@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz': {}
 
   '@penguinharness/data-analysis@file:plugins/data-analysis': {}
 
-  '@penguinharness/default-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz': {}
-
-  '@penguinharness/first-workbench-guide@file:plugins/first-workbench-guide': {}
+  '@penguinharness/default-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz': {}
 
   '@penguinharness/goal@file:plugins/goal': {}
 
@@ -8124,7 +8089,7 @@ snapshots:
 
   '@penguinharness/rrsi-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz': {}
 
-  '@penguinharness/skill-porting@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz': {}
+  '@penguinharness/skill-porting@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz': {}
 
   '@penguinharness/skilladam-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz': {}
 
@@ -8142,7 +8107,7 @@ snapshots:
 
   '@penguinharness/use-claude-code@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-claude-code-0.2.19-rc.1.tgz': {}
 
-  '@penguinharness/use-firecrawl@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz': {}
+  '@penguinharness/use-firecrawl@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/use-firecrawl-0.2.19.tgz': {}
 
   '@playwright/test@1.65.1':
     dependencies:
@@ -8216,7 +8181,6 @@ snapshots:
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/computer-use': file:plugins/computer-use
       '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
@@ -8260,7 +8224,6 @@ snapshots:
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/computer-use': file:plugins/computer-use
       '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
@@ -9335,7 +9298,6 @@ snapshots:
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/computer-use': file:plugins/computer-use
       '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
@@ -9401,7 +9363,6 @@ snapshots:
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/computer-use': file:plugins/computer-use
       '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
@@ -9467,7 +9428,6 @@ snapshots:
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/computer-use': file:plugins/computer-use
       '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
