@@ -181,3 +181,45 @@ pnpm-lock.yaml 未含。后果与已试路径：
   （new/instanceof 对 import type 名）server src 除本例外净 0（terminal-relay 的
   WebSocket 命中为别名误报，25 行本有 ws 值导入），library＋cli 净 0。上轮读数：
   PluginConfigProvider root 红已随端口改名消失。
+- 验证轮修复 8（server 套件四轮主错：No plugin library）：setup 文件与配置都在——
+  test/setup/library-host.ts 存在、vitest.config.ts:105 setupFiles 列有它、且第 16 行
+  确调 useLibraryHost(serverPackageDir())，但 namedHost 仍为空。根因＝9377badf4d（S22
+  plugin→library 搬域）把 serverPackageDir 实现随域搬进 library/plugin/src/library-host.ts，
+  而它的找法是「以调用传入的目录为起点向上最近一个 package.json，name 必须是
+  @prismshadow/penguin-server，否则 null」（第一个 package.json 不匹配即返回，不续走）。
+  原实现位于 server 包内所以起点即命中；搬移后默认起点变成 library/plugin 包自己的
+  目录（vitest 解析到注入拷贝 dist/library-host.js，import.meta.url 在
+  packages/server/node_modules/@prismshadow/penguin-library-plugin/dist/），向上第一个
+  package.json 是 penguin-library-plugin 自己的 → 恒 null → useLibraryHost(null) →
+  findHost 两个锚点（LOADER_DIR=packages/core/dist 向上、vitest worker 向上）均无
+  @penguinharness/ 依赖 → hostPackage 缓存 null 并 throw「No plugin library」。main 绿
+  正因旧位置成立——这是 restack 搬域引入的真回归，不是测试基建自身的洞。佐证：server
+  package.json dependencies 命名全部 @penguinharness/* 插件包（94 行起），namedHost 一旦
+  命中链路即通；core hostPackage() 的 null 会被缓存（host===undefined 才重算）。
+  修＝server 侧转发文件 packages/server/src/plugin/library-host.ts 显式定义
+  serverPackageDir() 包装：以本文件（server 包内）的 import.meta.url 为起点调用 library
+  侧实现；checkout（src/plugin/ 向上）与 npm 安装（dist 向上）都命中 server 的
+  package.json，desktop/热推 bundle 场景仍按原设计返回 null（pushed library 或 bundling
+  package 兜底）。保留 export * 转发其余符号（本地导出按 ESM 规范遮蔽同名 star 导出），
+  hmr/platform.ts 与 test/setup/library-host.ts 两个调用方零改动。hmr 红线未触碰。
+  提交 c5c3f6beef（身份已核 Myriad-Dreamin）。待 land 读数。
+- 验证轮修复 9（63 文件级红的主错，两轮试错后定位真机制）：c5c3f6beef 后读数 213→63
+  （seedAdmin/provision 链恢复，经 vite 图 core），剩 63 文件全挂在 createAgent →
+  DiskPluginLibrary.defaultInstalled。机制＝双注册表：server src 静态 import 的
+  penguin-library-plugin 是注入快照（server/node_modules 内 symlink → .pnpm 的
+  file: 物理拷贝；core 则是 symlink → packages/core 源目录），vitest 对快照
+  externalize → Node 原生加载其 dist → dist 的 core import 从快照树解析到 .pnpm 的
+  core 物理拷贝（readlink 实证 PHYSICAL）→ 与 vite 图的 packages/core 是两个注册表
+  ＋两个物理文件，setup 命名的 host 对快照那份不可见。两轮尝试证伪：inline
+  penguin-library-plugin（34eb4b2773）读数不变——dist 虽被 transform，其 core import
+  externalize 仍落快照拷贝；21 条 alias 指各 library src（97b0bcac3f）读数不变——
+  src 进了 vite 图，但 src 的 core import externalize 由 Node 从 src 位置解析，
+  与 vite 图 core 仍是两个注册表（同物理文件也分表）。快照物理拷贝这道墙任何
+  resolve 侧手法都跨不过。真修＝test/setup/library-host.ts 在 Node 视角也命名：
+  createRequire 定位 library-plugin 快照真实目录（require.resolve 经 symlink 落
+  .pnpm），再从快照 package.json 建 require、require(esm) 拿快照树内的 core
+  （与 dist 内 import 的 node_modules walk 同起点、同 real-path URL、同 Node ESM
+  实例），对它调 useLibraryHost(serverPackageDir())；try/catch 兜底（无快照形态
+  时图内实例已被命名）。同时回退 alias 与 inline 两处无效改动，vitest.config.ts
+  恢复 c5c3f6beef 形态，交付面保持最小。hostPackage 链的快照侧消费方全仓仅
+  library-module.ts 一处，已核。
