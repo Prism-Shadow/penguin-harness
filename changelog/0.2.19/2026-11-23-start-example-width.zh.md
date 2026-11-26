@@ -1,0 +1,10 @@
+# 首页示例随输入区宽度显示
+
+- **Date:** 2026-11-23
+- **Type:** fix
+- **Scope:** `web`
+- **PR:** [#1726](https://github.com/Prism-Shadow/penguin-harness/pull/1726)
+
+[English](2026-11-23-start-example-width.md)
+
+首页示例使用简短的中英文标题。示例和快捷指令在输入区内单行显示，空间不足时可从「更多示例」找到未显示的提示和操作，并查看快捷指令的全名。

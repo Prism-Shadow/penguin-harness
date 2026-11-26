@@ -1,9 +1,0 @@
-# 应用侧栏的全屏图标
-
-- **Date:** 2026-11-23
-- **Type:** change
-- **Scope:** `web`
-
-[English](2026-11-23-sidebar-app-fullscreen-icon.md)
-
-侧栏运行中应用的「全屏打开」按钮采用与面板一致的四角展开图标。

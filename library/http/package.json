@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-http",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "The server's HTTP vocabulary: the unified error shape, the request-validation helpers, the JSON answer rules (validators, compression), the public origin and page CSP, and the Hono env the auth middleware fills. A library package - the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {

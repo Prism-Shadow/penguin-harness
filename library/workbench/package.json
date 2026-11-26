@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-workbench",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "The workbenches domain: what a workbench is as the server holds it and shows it, the request/response pair its main handler speaks, and the host surface a workbench's SDK calls. A library package - the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {

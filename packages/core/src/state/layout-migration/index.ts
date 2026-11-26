@@ -18,7 +18,7 @@
  *
  * Compatibility owner: core's `state/layout-migration/`. The migration, its callers, the
  * listings' skipping of links and the links themselves stay until 1.0, when they are removed
- * together and a cleanup step deletes the links (changelog/unreleased/
+ * together and a cleanup step deletes the links (changelog/0.2.19/
  * 2026-11-20-backward-compatibility.md).
  */
 import fs from "node:fs/promises";

@@ -20,7 +20,7 @@
  * contributed endpoint.
  *
  * Compatibility code, kept until 1.0 like the repo's other compatibility code
- * (changelog/unreleased/2026-11-19-backward-compatibility.md); it goes together with those two
+ * (changelog/0.2.19/2026-11-19-backward-compatibility.md); it goes together with those two
  * names.
  */
 import type { IncomingMessage } from "node:http";
