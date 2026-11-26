@@ -223,3 +223,14 @@ pnpm-lock.yaml 未含。后果与已试路径：
   时图内实例已被命名）。同时回退 alias 与 inline 两处无效改动，vitest.config.ts
   恢复 c5c3f6beef 形态，交付面保持最小。hostPackage 链的快照侧消费方全仓仅
   library-module.ts 一处，已核。
+- 验证轮修复 10（修复 9 的 require(esm) 被 core exports 封锁，改绝对路径直指快照 core 的
+  dist 文件）：vps 探针实证 createRequire(...).require("@prismshadow/penguin-core") 抛
+  ERR_PACKAGE_PATH_NOT_EXPORTED——core 的 exports 只有 import 条件、无 require，且无
+  ./package.json 子路径导出（裸名 resolve 同样会被挡），setup 的 try 块整段被 catch 吞掉
+  → 快照 core 从未被命名，读数因此纹丝不动。exports 映射只约束裸 specifier，绝对文件
+  路径的 require 完全绕开它；core exports "." 的 import 落点即 dist/index.js，故
+  snapshotRequire(join(dirname(插件 package.json), "..", "penguin-core", "dist",
+  "index.js")) 与快照 dist 内 import 的解析落点是同一物理文件 → 同 real-path URL →
+  同 Node ESM 实例。路径推导：pnpm file: 拷贝把插件直接依赖平铺在同一 node_modules
+  层，core 拷贝是插件包目录的同级（../penguin-core）。只改 library-host.ts 的 require
+  目标与注释，import 补 node:path。待 land 读数。
