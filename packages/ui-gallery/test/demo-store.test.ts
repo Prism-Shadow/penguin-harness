@@ -346,10 +346,14 @@ describe("the self-evolution round", () => {
     expect(calls.map((call) => call.subagentSessionId)).toEqual([...IDS.sessions.evaluators]);
     expect(model.items.some((item) => item.kind === "subagent")).toBe(false);
     expect(calls.every((call) => call.outputComplete && call.decision === "allow")).toBe(true);
+    // The round was started from the default Agent's workbench: its request preselects the
+    // optimizer and the evaluator and names the Benchmark's folder in that workbench's data.
     const prompt = model.items.find((item) => item.kind === "user_text");
-    expect(prompt?.kind === "user_text" && parseSkillsMessage(prompt.text)?.skills).toEqual([
-      "agent-optimization",
-    ]);
+    const started = prompt?.kind === "user_text" ? parseSkillsMessage(prompt.text) : null;
+    expect(started?.skills).toEqual(["agent-optimization", "agent-evaluation"]);
+    expect(started?.rest).toContain(
+      `/agents/${IDS.agents.general}/app/data/benchmark/${IDS.benchmarks.docs}`,
+    );
     expect(model.items.at(-1)?.kind).toBe("task_stats");
     // Each evaluator's own Session is the history that rode in its parent.
     for (const id of IDS.sessions.evaluators) {

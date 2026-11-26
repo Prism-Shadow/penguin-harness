@@ -1,6 +1,11 @@
 /**
  * The demo's self-evolution round: the General Agent improves the docs Agent on its Benchmark
- * with the Default RSI Toolkit's `agent-optimization` Skill, in the order the Skill prescribes —
+ * with the Default RSI Toolkit's `agent-optimization` Skill. The round was started from the
+ * General Agent's Self-Evolution Workbench (Optimize on that Benchmark): the page opened the
+ * conversation as the person who pressed Start and sent the request the workbench's handler
+ * builds (benchmark-workbench.ts), so the Session is the person's own and its first message is
+ * that request behind its `[use_skills]` block. The Agent then works in the order the Skill
+ * prescribes —
  * read the Reference evaluation, read the weakest case's Test Trace, state a hypothesis, snapshot
  * the Agent State, make one edit (the candidate version), evaluate every case in parallel through
  * `agent-evaluation` subagents, accept the candidate on a strictly higher score and append its
@@ -15,6 +20,7 @@
  * as the Skills write it; the person's and the agents' prose follows the frame's language.
  */
 import { buildSkillsMessage } from "@prismshadow/amsp/markers";
+import { benchmarkPrompt, benchmarksDirOf } from "./benchmark-workbench";
 import { IDS } from "./ids";
 import {
   approvalDecision,
@@ -69,6 +75,34 @@ export const RSI_ROUND = {
     },
   ] satisfies RsiCase[],
 } as const;
+
+/** The round's Benchmark folder: in the General Agent's Self-Evolution Workbench data. */
+const RSI_BENCHMARK_DIR = `${benchmarksDirOf(IDS.agents.general)}/${RSI_ROUND.benchmarkId}`;
+
+/**
+ * The round's first message, as the workbench's Start sent it: Optimize with the default loop on
+ * the docs Agent's Benchmark (target 85, one run per case, at most two rounds, the Test Agent on
+ * deepseek-flash), the handler's request behind a `[use_skills]` block naming the Skills it
+ * preselects, both of which the General Agent has.
+ */
+export function rsiStartedTask(lang: Lang): string {
+  const { prompt, skills } = benchmarkPrompt(
+    {
+      kind: "optimize",
+      language: lang,
+      benchmarkId: RSI_ROUND.benchmarkId,
+      targetAgentId: IDS.agents.docs,
+      method: "default-rsi-toolkit",
+      testedModel: { provider: "deepseek", modelId: "deepseek-flash" },
+      runs: 1,
+      roundLimit: 2,
+      targetScore: 85,
+    },
+    IDS.agents.general,
+    () => 1,
+  );
+  return buildSkillsMessage(skills, prompt);
+}
 
 const mean = (values: readonly number[]) => values.reduce((a, b) => a + b, 0) / values.length;
 
@@ -149,6 +183,7 @@ function evaluatorPrompt(caseId: string): string {
     `expected_version: ${RSI_ROUND.candidate}`,
     `test_agent_id: ${IDS.agents.docs}`,
     `benchmark_id: ${RSI_ROUND.benchmarkId}`,
+    `benchmark_dir: ${RSI_BENCHMARK_DIR}`,
     "provider: deepseek",
     "model_id: deepseek-flash",
   ].join("\n");
@@ -328,7 +363,7 @@ const COPY: Record<Lang, Copy> = {
 /** The round's conversation title. */
 export const rsiTitle = (lang: Lang): string => COPY[lang].title;
 
-/** The request that starts the self-evolution example. */
+/** The request the homepage walkthrough types into a new conversation to start the example. */
 export const rsiPrompt = (lang: Lang): string => COPY[lang].prompt;
 
 /** The accepted round's summary, shared by the saved and streamed conversations. */
@@ -519,12 +554,12 @@ export function rsiTranscript(lang: Lang, now: number, ref: ModelRef): Transcrip
         agentId: IDS.agents.general,
         systemPrompt: GENERAL_PROMPT,
       }),
-      userText(s(0), buildSkillsMessage(["agent-optimization"], c.prompt)),
+      userText(s(0), rsiStartedTask(lang)),
       requestBegin(s(0.4)),
       thinking(s(7), c.thinking[0]),
       toolCall(s(8), "call_scoreboard", "exec_command", {
         cmd: [
-          `cd ${PROJECT_SH}/agents/system_agent/app/data/benchmark/${RSI_ROUND.benchmarkId}`,
+          `cd ${RSI_BENCHMARK_DIR}`,
           "python3 -c \"import yaml; e = yaml.safe_load(open('scoreboard.yaml'))['evaluations'][-1]; print(e['agent_id'], e['version'], e['model_id'], e['thinking_level'], e['score']); [print(c['case'], c['score']) for c in e['cases']]\"",
         ].join("\n"),
         description: c.readReference,
@@ -584,7 +619,7 @@ export function rsiTranscript(lang: Lang, now: number, ref: ModelRef): Transcrip
       thinking(s(APPEND_SEC - 4), c.thinking[4]),
       toolCall(s(APPEND_SEC - 1), "call_append", "exec_command", {
         cmd: [
-          `cd ${PROJECT_SH}/agents/system_agent/app/data/benchmark/${RSI_ROUND.benchmarkId}`,
+          `cd ${RSI_BENCHMARK_DIR}`,
           "cat >> scoreboard.yaml <<'EOF'",
           appendedEvaluation(lang, evaluatedAt),
           "EOF",

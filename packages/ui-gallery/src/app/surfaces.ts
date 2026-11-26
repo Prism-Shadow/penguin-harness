@@ -80,8 +80,14 @@ export const SURFACES: readonly Surface[] = [
   { id: "models", group: "resources", route: "/models" },
   { id: "machines", group: "resources", route: "/machines" },
   { id: "usage", group: "measure", route: "/usage" },
-  { id: "benchmark", group: "measure", route: "/benchmark" },
-  { id: "benchmark-detail", group: "measure", route: "/benchmark/docs-qa-v1" },
+  // The default Agent's Self-Evolution Workbench in the App Center's window, at its list and at
+  // one Benchmark's page (the window's `at`).
+  { id: "benchmark", group: "measure", route: "/apps?app=default_agent%2Fbenchmark" },
+  {
+    id: "benchmark-detail",
+    group: "measure",
+    route: "/apps?app=default_agent%2Fbenchmark&at=%2Fdocs-qa-v1",
+  },
   { id: "settings", group: "system", route: "/chat/s-hooks-index", open: "settings" },
   {
     id: "settings-appearance",

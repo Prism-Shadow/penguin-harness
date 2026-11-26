@@ -169,4 +169,4 @@ Agent 达到目标分数，或者轮数用完，循环就会停止。被否决�
 
 这一路，你让 AI 建好 Benchmark 并测出基线分，让 AI 解释了一道题，用更好的 Benchmark 替换了旧的，评估了一个 Agent，还让 Optimizer 在严格的 Evaluator 把关下改进了它。每道题、每个分数、每个版本都是 Project 里的文件，你可以随时查看、备份，也可以做版本管理。
 
-这些对话框里每个选项的说明，见[评估中心文档](https://penguin.ooo/docs/evaluation-center)。想了解这套循环的设计，请阅读[自我进化](https://penguin.ooo/docs/self-improvement)。
+这些对话框里每个选项的说明，见[自进化工作台文档](https://penguin.ooo/docs/self-evolution-workbench)。想了解这套循环的设计，请阅读[自我进化](https://penguin.ooo/docs/self-improvement)。

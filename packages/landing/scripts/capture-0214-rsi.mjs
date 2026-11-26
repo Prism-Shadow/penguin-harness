@@ -8,9 +8,10 @@
  * conversation is in one language.
  *
  * What is real and what is seeded:
- * - Real: the start page, the plugin library and its RSI category, the seven built-in
- *   Benchmarks a new Project is given, the Use dialog and its Method select (read from the
- *   library), the optimization conversation's prompt (assembled by the Use dialog), and every
+ * - Real: the start page, the plugin library and its RSI category, the Benchmarks the default
+ *   Agent's Self-Evolution Workbench seeds on its first load (its page, in the App Center's window
+ *   frame), the Use dialog and its Method select (read from the library), the optimization
+ *   conversation's prompt (built by the workbench and sent by its Start), and every
  *   tool call in that conversation — it reads the scoreboard and the statements, snapshots the
  *   agent, writes a Skill, edits AGENTS.md, bumps the version, runs 30 evaluation subagents
  *   through run_subagent and appends the accepted evaluation to scoreboard.yaml.
@@ -52,6 +53,16 @@ const LANGS = (process.env.SHOT_LANGS ?? "en,zh").split(",");
 // The start page prints the running version. This tree is main before the release bump, so the
 // label is set to the version the shots ship with; SHOT_VERSION="" keeps the real one.
 const SHOW_VERSION = process.env.SHOT_VERSION ?? "0.2.14";
+
+/** The default Agent's Self-Evolution Workbench: its API mount, and its page's frame in the app. */
+const WORKBENCH_AGENT = "default_agent";
+const WORKBENCH_FRAME = 'iframe[src*="/workbenches/benchmark/ui/"]';
+const workbenchApi = (projectId) =>
+  `/api/projects/${projectId}/agents/${WORKBENCH_AGENT}/workbenches/benchmark/api`;
+/** The App Center's window on the workbench, at `at` inside its page. */
+const workbenchUrl = (at = "/") =>
+  `${BASE}/apps?app=${encodeURIComponent(`${WORKBENCH_AGENT}/benchmark`)}` +
+  (at === "/" ? "" : `&at=${encodeURIComponent(at)}`);
 
 const TRAIN = "penguinharness-benchmark-gdpevo-train";
 const TEST = "penguinharness-benchmark-gdpevo-test";
@@ -526,7 +537,7 @@ const STATE = {};
 function scene(lang) {
   const st = STATE[lang];
   const { app, ref, cand, base, caseIds } = st;
-  const bench = `${app}/benchmarks/${TRAIN}`;
+  const bench = `${app}/agents/${WORKBENCH_AGENT}/app/data/benchmark/${TRAIN}`;
   const agent = `${app}/agents/${TESTED}`;
   const refEnv = envMeans(ref);
   const candEnv = envMeans(cand);
@@ -909,10 +920,13 @@ async function provisionProject(lang) {
       if (!String(e).includes("409")) throw e;
     });
   }
-  await api("DELETE", `/api/projects/${projectId}/benchmarks/example-benchmark`).catch(() => {});
+  // The workbench seeds its Benchmarks on its first load; the Example is not part of the story.
+  await api("GET", `${workbenchApi(projectId)}/benchmarks`);
+  await api("DELETE", `${workbenchApi(projectId)}/benchmarks/example-benchmark`).catch(() => {});
 
-  const app = path.join(HOME, projectId);
-  const benchDir = (id) => path.join(app, "benchmarks", id);
+  const app = path.join(HOME, "projects", projectId);
+  const benchDir = (id) =>
+    path.join(app, "agents", WORKBENCH_AGENT, "app", "data", "benchmark", id);
   const casesOf = (id) =>
     readdirSync(benchDir(id))
       .filter((n) => n.startsWith("CASE-"))
@@ -1015,38 +1029,36 @@ process.on("exit", cleanup);
 
 const STR = {
   en: {
-    send: "Send",
+    start: "Start",
+    openChat: "Open chat",
     use: "Use",
     optimize: "Optimize",
     method: "Method",
     roundLimit: "Round limit",
     testedAgent: "Tested agent",
     text3: "Candidate v3 is in place",
-    editInChat: "Edit in a new conversation",
     evolveFolder: "Evaluate and optimize agents",
     counts: ["Agents", "RSI algorithms", "Benchmarks"],
     rsiGroup: "Agent Self-Evolution",
     trend: "Score over time",
     evaluations: "Evaluations",
-    evalCenter: "Evaluation Center",
-    gdpevoTrain: "PenguinHarness Benchmark GDPevo Train",
+    secE: "PenguinHarness Benchmark Sec E",
   },
   zh: {
-    send: "发送",
+    start: "开始",
+    openChat: "打开对话",
     use: "使用",
     optimize: "优化",
     method: "方法",
     roundLimit: "最多轮数",
     testedAgent: "被测智能体",
     text3: "候选 v3 已就位",
-    editInChat: "在新对话中编辑",
     evolveFolder: "评测与优化智能体",
     counts: ["智能体", "自进化算法", "评估集"],
     rsiGroup: "Agent 自进化",
     trend: "分数随时间变化",
     evaluations: "评估明细",
-    evalCenter: "评估中心",
-    gdpevoTrain: "PenguinHarness Benchmark GDPevo Train",
+    secE: "PenguinHarness 评测集 E",
   },
 };
 
@@ -1156,39 +1168,37 @@ try {
 
     // ---- Use dialog: Method select open (before the round, so the Reference is v2) ----------
     if (want("method") || want("chat")) {
-      const { context, page } = await openPage(lang, `${BASE}/benchmark/${TRAIN}`, {
+      const { context, page } = await openPage(lang, workbenchUrl(`/${TRAIN}`), {
         width: 1440,
         height: 1000,
       });
       try {
-        await page
+        // The workbench's page, in the App Center's window frame.
+        const wb = page.frameLocator(WORKBENCH_FRAME);
+        await wb
           .getByRole("button", { name: t.use, exact: true })
           .first()
           .click({ timeout: 30000 });
-        const dialog = page.getByRole("dialog").last();
+        const dialog = wb.getByRole("dialog").last();
         await dialog.waitFor({ timeout: 15000 });
         await dialog.getByText(t.optimize, { exact: true }).first().click();
         const trigger = dialog.locator('button[aria-haspopup="listbox"]').first();
         // The Method select is the first select of the tab; it is enabled once the library is read.
-        await page.waitForFunction(
-          () =>
-            [...document.querySelectorAll('[role="dialog"] button[aria-haspopup="listbox"]')].some(
-              (b) => !b.disabled && /rsi-toolkit/.test(b.textContent ?? ""),
-            ),
-          null,
-          { timeout: 30000 },
-        );
+        await dialog
+          .locator('button[aria-haspopup="listbox"]:not([disabled])', { hasText: /rsi-toolkit/ })
+          .first()
+          .waitFor({ timeout: 30000 });
         // The agent under test: the newest evaluation is another agent's, so pick it.
         await dialog
           .getByText(t.testedAgent, { exact: true })
           .first()
           .locator('xpath=following::button[@aria-haspopup="listbox"][1]')
           .click();
-        await page.getByRole("option", { name: AGENTS[lang][0].name }).first().click();
+        await wb.getByRole("option", { name: AGENTS[lang][0].name }).first().click();
         await page.waitForTimeout(500);
         if (want("method")) {
           await trigger.click();
-          const listbox = page.getByRole("listbox");
+          const listbox = wb.getByRole("listbox");
           await listbox.waitFor({ timeout: 10000 });
           await page.waitForTimeout(600);
           // The dialog from its title down to just under the open list.
@@ -1203,15 +1213,15 @@ try {
           await page.waitForTimeout(300);
         }
         if (want("chat")) {
-          // One round: the conversation shows one Candidate end to end.
+          // One round: the conversation shows one Candidate end to end. Start opens it as the
+          // admin's own conversation; Open chat goes there.
           const rounds = dialog.getByLabel(t.roundLimit);
           await rounds.fill("1");
-          await dialog.getByRole("button", { name: t.editInChat }).click();
-          await page.waitForURL(/\/chat\/new/, { timeout: 15000 });
-          const send = page.getByRole("button", { name: t.send, exact: true });
-          await send.waitFor({ timeout: 20000 });
-          await page.waitForTimeout(1500);
-          await send.click();
+          await dialog.getByRole("button", { name: t.start, exact: true }).click();
+          await wb
+            .getByRole("button", { name: t.openChat, exact: true })
+            .first()
+            .click({ timeout: 30000 });
           await page.waitForURL(/\/chat\/(?!new)[^/]+$/, { timeout: 30000 });
           // The round ends with the table's total row.
           await page
@@ -1326,30 +1336,39 @@ try {
       }
     }
 
-    // ---- Evaluation Center list ---------------------------------------------------------------
+    // ---- The workbench's Benchmark list ---------------------------------------------------------
     if (want("benchmarks")) {
-      const { context, page } = await openPage(lang, `${BASE}/benchmark`, {
+      const { context, page } = await openPage(lang, workbenchUrl(), {
         width: 1440,
         height: 1700,
       });
       try {
-        await page.getByText("PenguinHarness Benchmark Sec E").first().waitFor({ timeout: 30000 });
+        const wb = page.frameLocator(WORKBENCH_FRAME);
+        await wb.getByText(t.secE).first().waitFor({ timeout: 30000 });
         await page.waitForTimeout(1500);
-        // From the page title down to the bottom of the last card.
-        const box = await page.evaluate(() => {
-          const title = [...document.querySelectorAll("h1, h2")].find((h) => h.offsetParent);
-          const last = [...document.querySelectorAll("*")].find(
-            (el) =>
-              el.childElementCount === 0 && el.textContent === "PenguinHarness Benchmark Sec E",
+        // From the page title down to the bottom of the last card, in the frame's coordinates;
+        // the frame's own place on the page is added after.
+        const inFrame = await wb.locator("body").evaluate((body, last) => {
+          const page = body.ownerDocument;
+          const title = [...page.querySelectorAll("h1, h2")].find((h) => h.offsetParent);
+          const named = [...page.querySelectorAll("*")].find(
+            (el) => el.childElementCount === 0 && el.textContent === last,
           );
-          let card = last;
+          let card = named;
           while (card && card.parentElement && card.parentElement.childElementCount < 7)
             card = card.parentElement;
           const t = title.getBoundingClientRect();
           const c = card.getBoundingClientRect();
           const frame = card.parentElement.getBoundingClientRect();
           return { x: frame.x, y: t.y, width: frame.width, bottom: c.bottom };
-        });
+        }, t.secE);
+        const at = await page.locator(WORKBENCH_FRAME).first().boundingBox();
+        const box = {
+          x: inFrame.x + at.x,
+          y: inFrame.y + at.y,
+          width: inFrame.width,
+          bottom: inFrame.bottom + at.y,
+        };
         await page.screenshot({
           path: path.join(OUT_DIR, `penguinharness-0-2-14-benchmarks-${lang}.png`),
           clip: {
@@ -1370,15 +1389,16 @@ try {
 
     // ---- Benchmark page: chart and evaluations --------------------------------------------------
     if (want("detail")) {
-      const { context, page } = await openPage(lang, `${BASE}/benchmark/${TRAIN}`, {
+      const { context, page } = await openPage(lang, workbenchUrl(`/${TRAIN}`), {
         width: 1440,
         height: 1800,
       });
       try {
-        const trend = page.getByText(t.trend, { exact: true }).first();
+        const wb = page.frameLocator(WORKBENCH_FRAME);
+        const trend = wb.getByText(t.trend, { exact: true }).first();
         await trend.waitFor({ timeout: 30000 });
         await page.waitForTimeout(1500);
-        const table = page.locator("table").last();
+        const table = wb.locator("table").last();
         await shootUnion(
           page,
           [trend.locator("xpath=.."), table],
@@ -1388,7 +1408,7 @@ try {
         // The newest evaluation's dialog: every case of v3 with its run.
         if (want("evaluation")) {
           await table.locator("tbody tr").first().click();
-          const dialog = page.getByRole("dialog").last();
+          const dialog = wb.getByRole("dialog").last();
           await dialog.waitFor({ timeout: 15000 });
           await page.waitForTimeout(1200);
           // The first case open, to show its run and the Harbor trial it was recorded as.

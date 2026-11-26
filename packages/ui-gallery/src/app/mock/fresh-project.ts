@@ -1,8 +1,10 @@
 /** The default Project in the homepage frame, before the reader starts its evolution example. */
-import type { BenchmarkSummary, WorkbenchInfo } from "@prismshadow/penguin-server/api";
+import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
+import type { BenchmarkSummary } from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/lib/api";
 import { version } from "../../../../web/package.json";
-import benchmark from "../../../../../plugins/agent-evaluation/workbenches/benchmark/package.json";
-import benchmarkIcon from "../../../../../plugins/agent-evaluation/workbenches/benchmark/ui/icon.svg?url";
+// The pinned package exports none of its workbench files, so they are read by path.
+import benchmark from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/package.json";
+import benchmarkIcon from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/ui/icon.svg?url";
 import images from "../../../../../plugins/multimodal-tools/workbenches/images/package.json";
 import imagesIcon from "../../../../../plugins/multimodal-tools/workbenches/images/ui/icon.svg?url";
 import slides from "../../../../../plugins/use-bento-slides/workbenches/slides/package.json";
@@ -64,6 +66,8 @@ export function seedFreshProject(f: DemoFixtures, playing: boolean): void {
       .filter((b) => (playing ? b.id !== IDS.benchmarks.draft : b.origin?.kind === "builtin"))
       .map((b) => (b.origin?.kind === "builtin" ? { ...b, evaluations: [], agentIds: [] } : b)),
   ];
+  // Nothing has been started from the workbench yet; the walkthrough's round starts in the chat.
+  f.benchmarkTasks = [];
 }
 
 /** Seed the same Agent-owned apps in the walkthrough and in the populated gallery. */
@@ -110,22 +114,14 @@ export function seedPresetWorkbenches(f: DemoFixtures, fresh: boolean): void {
       hints: [],
       icon: art,
       appCenter,
-      tabs: [
-        {
-          ...tab,
-          renderer:
-            "iframe" in tab.renderer
-              ? { iframe: { src: `${base}/${tab.renderer.iframe.src}` } }
-              : tab.renderer,
-        },
-      ],
+      tabs: [{ ...tab, renderer: { iframe: { src: `${base}/${tab.renderer.iframe.src}` } } }],
     };
     (f.installed[agent.agentId]!.workbenches ??= []).push(workbench);
     f.appCenter.shortcuts.push({
       agentId: agent.agentId,
       agentName: agent.name ?? agent.agentId,
       workbenchId: id,
-      ...(id === "benchmark" ? { plugin: "agent-evaluation" } : {}),
+      ...(id === "benchmark" ? { plugin: "rsi-workbench" } : {}),
       title: appCenter.title ?? tab.title,
       titleZh: appCenter.titleZh ?? tab.titleZh,
       icon: art,
