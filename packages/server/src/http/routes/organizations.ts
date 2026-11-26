@@ -18,10 +18,7 @@ import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { OrgService } from "@prismshadow/penguin-library-organization/runtime/service";
 import type { TraceIndex } from "@prismshadow/penguin-library-trace/trace";
 import { organizationRoutes } from "@prismshadow/penguin-library-organization/routes";
-import {
-  refuseUndeletable,
-  removeAgents,
-} from "../../services/agent-deletion.js";
+import { refuseUndeletable, removeAgents } from "../../services/agent-deletion.js";
 import type { AgentDeletionDeps } from "../../services/agent-deletion.js";
 
 @Component({

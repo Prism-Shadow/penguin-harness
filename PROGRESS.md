@@ -318,3 +318,6 @@ pnpm-lock.yaml 未含。后果与已试路径：
   penguin-library-project 重复 import（修＝合并，Member 系列与 AgentIndex 并入一条）；
   FMT_RC=1：26 文件格式漂移（搬域未过 prettier＋我改的 library-host/organization-runtime/
   vitest.config）。④⑤待三件套转绿后连跑。
+- FMT 修复（wt 通道）：本地无 prettier，按构建机产物流程走——wt 快照内 prettier --write
+  26 文件 → git diff 打包 gzip+base64 回传（19508B，本地解码校验字节后 git apply，25 文件
+  +244/−637）。随本笔提交，三件套重跑待 COMPILE_RC。

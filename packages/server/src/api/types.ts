@@ -250,7 +250,7 @@ export type {
   PluginModuleDecideRequest,
   PluginIndexResponse,
   PluginReadmeResponse,
-  PluginConfigActionResponse
+  PluginConfigActionResponse,
 } from "@prismshadow/penguin-library-plugin/types";
 
 export type {
@@ -321,7 +321,11 @@ export type {
   UnreadableChart,
 } from "@prismshadow/penguin-library-organization/types";
 export { TICKET_SLUG_PATTERN } from "@prismshadow/penguin-library-organization/types";
-export type { AgentDeletionInfo, AgentDeleteResponse, AgentDeletionResponse } from "@prismshadow/penguin-library-agent/types";
+export type {
+  AgentDeletionInfo,
+  AgentDeleteResponse,
+  AgentDeletionResponse,
+} from "@prismshadow/penguin-library-agent/types";
 import type { UserInfo } from "@prismshadow/penguin-library-auth";
 import type {
   BrowserBackend,

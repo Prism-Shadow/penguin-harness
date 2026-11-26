@@ -47,7 +47,9 @@ let loading: Promise<TypeScript> | null = null;
  */
 function compilerBases(assets: string | null): (() => string)[] {
   return [
-    ...(assets === null ? [] : [() => path.join(pluginPlatformPorts().unpackedAssetsDir(assets), "index.mjs")]),
+    ...(assets === null
+      ? []
+      : [() => path.join(pluginPlatformPorts().unpackedAssetsDir(assets), "index.mjs")]),
     () => import.meta.url,
     ...(process.argv[1] ? [() => pathToFileURL(process.argv[1]!).href] : []),
   ];

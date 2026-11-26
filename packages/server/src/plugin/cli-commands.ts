@@ -7,7 +7,11 @@
  */
 import { Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandFiles, CliCommandSummary } from "@prismshadow/penguin-core/cli";
+import type {
+  CliCommandCode,
+  CliCommandFiles,
+  CliCommandSummary,
+} from "@prismshadow/penguin-core/cli";
 import { effectivePluginTable } from "@prismshadow/penguin-core";
 import type { DatabaseSync } from "node:sqlite";
 import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";

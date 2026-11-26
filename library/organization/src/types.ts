@@ -747,7 +747,6 @@ export interface OrgHandbookFileWriteRequest {
   content: string;
 }
 
-
 /** One organization employing an Agent, as the Agent list carries it (see the Agent list's `employments`). */
 export interface Employment {
   orgId: string;

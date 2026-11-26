@@ -40,9 +40,7 @@ useLibraryHost(host);
 // on the same module instance the snapshot's dist import resolves to.
 try {
   const requireOf = createRequire(import.meta.url);
-  const pluginPackageJson = requireOf.resolve(
-    "@prismshadow/penguin-library-plugin/package.json",
-  );
+  const pluginPackageJson = requireOf.resolve("@prismshadow/penguin-library-plugin/package.json");
   const snapshotRequire = createRequire(pluginPackageJson);
   const nodeCopy = snapshotRequire(
     join(dirname(pluginPackageJson), "..", "penguin-core", "dist", "index.js"),

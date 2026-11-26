@@ -59,10 +59,7 @@ for (const [name, entry] of Object.entries(doc.plugins ?? {})) {
     fs.copyFileSync(from, to);
   }
 }
-fs.copyFileSync(
-  documentFile,
-  path.join(ROOT, "library", "plugin", "src", "builtin-market.json"),
-);
+fs.copyFileSync(documentFile, path.join(ROOT, "library", "plugin", "src", "builtin-market.json"));
 
 let bytes = 0;
 const files = marketCoverFiles(ROOT);

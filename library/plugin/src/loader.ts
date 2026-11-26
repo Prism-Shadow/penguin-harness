@@ -178,7 +178,11 @@ export function pluginBases(root: string | undefined, assetsDir: string | null):
   if (assetsDir !== null) {
     // A push carries the prefix as archives; they are unpacked before anything resolves.
     bases.push({
-      file: path.join(pluginPlatformPorts().unpackedAssetsDir(assetsDir), "plugins", "package.json"),
+      file: path.join(
+        pluginPlatformPorts().unpackedAssetsDir(assetsDir),
+        "plugins",
+        "package.json",
+      ),
       builtin: true,
     });
   }

@@ -9,10 +9,7 @@ import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AuthState, Clock, Config } from "../hmr/capabilities.js";
 import type { Auth, AuthSessions, Users } from "@prismshadow/penguin-library-auth";
 import type { PasswordHasher } from "@prismshadow/penguin-library-auth/password";
-import {
-  AuthService,
-  InitialProjectProvisioner,
-} from "@prismshadow/penguin-library-auth/service";
+import { AuthService, InitialProjectProvisioner } from "@prismshadow/penguin-library-auth/service";
 
 export * from "@prismshadow/penguin-library-auth/service";
 

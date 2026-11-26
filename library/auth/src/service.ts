@@ -6,22 +6,13 @@
  * admin. Sessions are rows in auth_sessions (cookie holds the token, the row its sha256), so
  * they outlive a restart and renew in place.
  */
-import type {
-  UserInfo,
-  SessionVia,
-  Auth,
-  AuthSessions,
-  Users,
-} from "./auth.js";
+import type { UserInfo, SessionVia, Auth, AuthSessions, Users } from "./auth.js";
 import { randomBytes } from "node:crypto";
 import { tokensEqual } from "./api-token.js";
 import { HttpError } from "@prismshadow/penguin-library-http/errors";
 import type { UserRow } from "./repos/users.js";
 import { sessionTokenHash } from "./repos/auth-sessions.js";
-import type {
-  SessionViaValue,
-  AuthSessionsRepo,
-} from "./repos/auth-sessions.js";
+import type { SessionViaValue, AuthSessionsRepo } from "./repos/auth-sessions.js";
 import type { AuthRuntimeState } from "./runtime-state.js";
 import { verifyAccountPassword, verifyPassword } from "./password.js";
 import type { PasswordHasher } from "./password.js";
