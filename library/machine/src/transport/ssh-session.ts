@@ -176,7 +176,7 @@ const HOST: ShellHost = { changed: tell, signInFor, noteSignIn };
  */
 export const SESSION_GROUP = "machineSession.v2";
 export const SESSION_SHAPE_ID = `${SESSION_GROUP}:shape`;
-export const MACHINE_SESSION_IFACE = "@prismshadow/penguin-server#MachineSession";
+export const MACHINE_SESSION_IFACE = "@prismshadow/penguin-library-machine#MachineSession";
 const sessionResourceId = (address: string): string => `${SESSION_GROUP}:${address}`;
 
 /**
