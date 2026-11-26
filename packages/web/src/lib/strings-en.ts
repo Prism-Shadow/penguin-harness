@@ -1118,6 +1118,31 @@ export const en: Strings = {
     searchAgents: "Search agents",
 
     reload: "Reload",
+    /**
+     * "Fix with AI"'s prompt for a workbench whose files do not load, written into the new chat's
+     * composer; the user reads and sends it. `machine` is null on this server, else the machine
+     * with its alias (null when the page does not know it).
+     */
+    repairPrompt: (w: {
+      id: string;
+      name: string;
+      agentId: string;
+      machine: { label: string | null } | null;
+      error: string;
+    }): string =>
+      [
+        `The workbench \`${w.id}\`${w.name === w.id ? "" : ` ("${w.name}")`} of the Agent \`${w.agentId}\` does not load${
+          w.machine === null
+            ? ""
+            : w.machine.label === null
+              ? " (it is on a connected machine, and this conversation runs on that machine too)"
+              : ` (it is on the connected machine "${w.machine.label}", and this conversation runs on that machine too)`
+        }. Its folder is \`<app_data_dir>/agents/${w.agentId}/agent_state/workbenches/${w.id}/\`.`,
+        `The load error, verbatim:\n${w.error}`,
+        "A load is the server type-checking the workbench's `index.ts` and every file it imports (the TSX pages under `ui/` included) strictly, under options the host fixes: `strict`, NodeNext, and no `@types` but the `@types/node` the server carries; a `tsconfig.json` in the folder is not read. Any diagnostic fails the load, and the version that last loaded keeps serving. Saving any file in the folder loads it again, and `.build/status.json` in the folder records how the last load went (`ok`, `error`, `hints`): read it after every edit. The `penguin-plugin` Skill describes the folder's layout and the host's interface.",
+        "Find out why it does not load. If the error comes from what the platform provides rather than from the workbench's own code — Node's or TypeScript's declarations missing (such as TS2688, no type definition file for `node`), the host's types (`.harness/plugin.d.ts`), how PenguinHarness was packaged — say so plainly, change nothing, and suggest I report it as a PenguinHarness problem.",
+        "Otherwise fix the workbench's code. Tell me what you intend to change before you change its files.",
+      ].join("\n\n"),
     history: "History",
     /** The full-page route while it is still finding out which page it should show. */
     loadingPage: "Opening the page…",

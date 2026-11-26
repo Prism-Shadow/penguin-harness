@@ -14,6 +14,7 @@ import {
   WorkbenchFrame,
   WorkbenchPageStatus,
 } from "../workbenches";
+import { WorkbenchRepairButton } from "../ai-create";
 import { FrameAppBody } from "./frame-app-body";
 import { setSelectedAppPath } from "../../lib/running-apps";
 
@@ -185,6 +186,7 @@ function AgentWorkbenchWindow(props: WindowProps) {
             loading={tab === undefined && failure === null}
             off={off}
             failure={failure}
+            repair={(failed) => <WorkbenchRepairButton target={failed} />}
           />
         )}
       </div>
