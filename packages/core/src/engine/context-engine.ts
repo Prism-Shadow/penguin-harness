@@ -1597,7 +1597,10 @@ export class ContextEngine {
     // Set when the decision came back naming the rule that caused it (see PolicyDenial):
     // the command policy's answers — a `deny` rule's "forbidden", and the deny a host that
     // cannot ask a person (an unattended Session) answers a policy-reasoned call with.
+    // PolicyDenial.by marks the refusals a person gave themselves (an attended `ask` hit),
+    // which read as the person's line naming the rule.
     let denialRule: string | undefined;
+    let denialByUser = false;
     if (hooked?.decision === "deny" || hooked?.decision === "allow") {
       decision = hooked.decision;
     } else {
@@ -1608,6 +1611,7 @@ export class ContextEngine {
         } else {
           decision = answer.decision;
           denialRule = answer.rule;
+          denialByUser = answer.by === "user";
         }
       } catch (err) {
         process.stderr.write(`[penguin] approve callback threw: ${messageOf(err)}; denying.\n`);
@@ -1634,7 +1638,9 @@ export class ContextEngine {
               ? `Tool call denied by policy under rule \`${denialRule}\`.`
               : "Tool call denied by policy."
             : denialRule !== undefined
-              ? `Tool call denied by rule \`${denialRule}\`.`
+              ? denialByUser
+                ? `Tool call denied by the user under rule \`${denialRule}\`.`
+                : `Tool call denied by rule \`${denialRule}\`.`
               : "Tool call denied by user.",
       toolCallId,
       status: "aborted",

@@ -150,6 +150,14 @@ describe("a command-policy ask hit in a real conversation", { timeout: 30_000 },
       (m) => (m.payload as { type?: string }).type === "approval_decision",
     );
     expect((decision?.payload as { decision?: string } | undefined)?.decision).toBe("deny");
+    // The person's no keeps the rule with it: the model reads who answered and under
+    // which rule (see PolicyDenial.by), not a bare cancellation.
+    const denied = records.find(
+      (m) => (m.payload as { type?: string }).type === "tool_call_output",
+    );
+    expect((denied?.payload as { output?: string } | undefined)?.output).toBe(
+      "Tool call denied by the user under rule `gh-pr-merge-close`.",
+    );
   });
 
   it("an organization's Session reads the denial as a rule refusal, not a person's", async () => {

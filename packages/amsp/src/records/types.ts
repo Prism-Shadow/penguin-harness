@@ -113,10 +113,17 @@ export type ApprovalDecision = "allow" | "deny" | "forbidden";
  * rule rides under it); a `"deny"` renders as ``Tool call denied by rule `<rule>`.``; the
  * `approval_decision` event still carries the
  * plain decision string (an {@link approvalDecision} builder normalizes it).
+ *
+ * A host that did ask a person and got their refusal answers a policy-reasoned call with
+ * `by: "user"` set: the line then reads ``Tool call denied by the user under rule `<rule>`.`` —
+ * the rule prompted the question, the person gave the no. Without the mark the `"deny"`
+ * reads as the rule's own answer.
  */
 export interface PolicyDenial {
   decision: "deny" | "forbidden";
   rule: string;
+  /** Set when a person gave this denial themselves; absent when the rule's own answer refused the call. */
+  by?: "user";
 }
 
 /** Token counts (input/output/cache/total). */

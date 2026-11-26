@@ -368,6 +368,7 @@ A refused call gets a synthetic `aborted` `tool_call_output` for the model to re
 | --- | --- |
 | A person or approval mode (`deny`) | `Tool call denied by user.` |
 | The command policy (`forbidden`) | ``Tool call denied by policy under rule `<rule>`.`` |
+| A person refusing a call the policy asked about (`deny`) | ``Tool call denied by the user under rule `<rule>`.`` |
 | A pre-tool-use hook | `Tool call denied by the <hook> hook[: <reason>].` |
 
 A policy hit therefore never reads as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event, with a policy veto recorded as `forbidden`, which makes the Trace a complete audit record. Approval happens in the tool-execution phase of the [agent loop](/agent-loop).

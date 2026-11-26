@@ -184,7 +184,15 @@ export function makeApprove(args: {
       ...(toolCall.origin !== undefined ? { origin: toolCall.origin } : {}),
       ...(reason !== undefined ? { reason } : {}),
     });
-    return promise;
+    return (async () => {
+      const answer = await promise;
+      // A person's refusal of a policy-asked call keeps the rule with it, marked as the
+      // person's: the rendered line names who answered and under which rule (see
+      // PolicyDenial.by). Without the mark a named deny reads as the rule's own answer.
+      return reason !== undefined && answer === "deny"
+        ? { decision: "deny", rule: reason.rule, by: "user" }
+        : answer;
+    })();
   };
   return async (toolCall, context) => {
     const mode = getMode();

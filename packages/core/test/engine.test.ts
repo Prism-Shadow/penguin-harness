@@ -599,6 +599,34 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     );
   });
 
+  it("an attended refusal of a policy ask reads the user's line with the rule", async () => {
+    // The person saw the rule's question and gave the no themselves (PolicyDenial.by):
+    // the line names who answered — the user — and under which rule, not the rule acting
+    // alone and not a bare cancellation either.
+    const llm = new FakeLLM();
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment });
+    const deny: ApproveFn = async () => ({
+      decision: "deny",
+      rule: "gh-pr-merge-close",
+      by: "user",
+    });
+
+    const all = await collectRun(engine, [userText("merge it")], deny);
+
+    const decision = all.find(
+      (m) => (m.payload as { type?: string }).type === "approval_decision",
+    )!;
+    expect((decision.payload as { decision?: string }).decision).toBe("deny");
+    const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
+    expect((output.payload as { output: string }).output).toBe(
+      "Tool call denied by the user under rule `gh-pr-merge-close`.",
+    );
+  });
+
   it("stamps the Session token series onto token_usage before it is yielded or written", async () => {
     // The LLM reports per-request counts only (12 then 20 here; its session slot is a
     // stand-in) and the engine authors the cumulative series. Consumers serialize at yield
