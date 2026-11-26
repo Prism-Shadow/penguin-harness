@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `cli`
+- **PR:** [#1888](https://github.com/Prism-Shadow/penguin-harness/pull/1888)
 
 [中文版](2026-11-26-cli-shorten-windows-paths.zh.md)
 
