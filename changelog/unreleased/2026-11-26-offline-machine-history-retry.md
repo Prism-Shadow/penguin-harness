@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `server`, `web`
+- **PR:** [#1904](https://github.com/Prism-Shadow/penguin-harness/pull/1904)
 
 [中文版](2026-11-26-offline-machine-history-retry.zh.md)
 
