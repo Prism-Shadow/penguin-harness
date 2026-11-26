@@ -38,7 +38,7 @@ function TabIcon({ tab }: { tab: BuiltinBrowserTab }) {
   const src = faviconSrc(tab.favicon, window.location.origin);
   if (src === null || src === failed) {
     return (
-      <span aria-hidden className="shrink-0 text-tone-done-fg">
+      <span aria-hidden className="shrink-0 text-link">
         <GlyphIcon d={ICONS.globe} size={ICON_SIZE.inlineGlyph} />
       </span>
     );
