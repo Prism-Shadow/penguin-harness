@@ -3,7 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** feature
 - **Scope:** `server`, `core`, `web`, `ui-gallery`, `docs`
-- **PR:** pending
+- **PR:** [#1899](https://github.com/Prism-Shadow/penguin-harness/pull/1899)
 - **Breaking:** yes — 删除 core 的 Benchmark 导出与 `/api/projects/:p/benchmarks…`；Benchmark 归装有工作台的 Agent 所有
 
 [English](2026-11-26-rsi-workbench-builtin.md)
