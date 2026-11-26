@@ -6,7 +6,7 @@ export * from "../../../../web/src/lib/workbench-tabs";
 export function workbenchUiUrl(tab: Parameters<typeof installedUrl>[0]): string {
   const url = installedUrl(tab);
   if (
-    !/^\/(?:server\/[^/]+\/)?api\/projects\/demo\/agents\/(?:default_agent\/workbenches\/(?:images|slides)|penguin_support\/workbenches\/support)\/ui\//.test(
+    !/^\/(?:server\/[^/]+\/)?api\/projects\/demo\/agents\/(?:default_agent\/workbenches\/(?:images|slides|benchmark)|penguin_support\/workbenches\/support)\/ui\//.test(
       url,
     )
   )

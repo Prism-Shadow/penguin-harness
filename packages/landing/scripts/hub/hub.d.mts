@@ -18,6 +18,9 @@ export interface Hub {
 
 export declare const PLUGINS_DIR: string;
 
+/** The Release-pinned library packages the landing lists: each one's folder and source link. */
+export declare function publishedLibraryPackages(): { dir: string; sourceUrl: string }[];
+
 export declare function loadHub(options?: {
   refresh?: boolean;
   repo?: string;

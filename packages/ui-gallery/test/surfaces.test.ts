@@ -29,7 +29,7 @@ describe("the surfaces", () => {
     expect(surfaceById("nope")).toBeUndefined();
   });
 
-  it("open on routes the demo store answers: the Sessions, Agents, plugins and Benchmarks they name exist", () => {
+  it("open on routes the demo store answers: the Sessions, Agents, apps, plugins and Benchmarks they name exist", () => {
     const store = resetStore({ lang: "en", signedIn: true });
     for (const surface of SURFACES) {
       expect(surface.route.startsWith("/"), surface.id).toBe(true);
@@ -42,7 +42,19 @@ describe("the surfaces", () => {
           store.f.agents.some((a) => a.agentId === agent),
           surface.id,
         ).toBe(true);
-      const benchmark = /^\/benchmark\/([^/?]+)/.exec(surface.route)?.[1];
+      // An App Center window names an app the App Center lists, and a place inside it the app
+      // can show: for the Self-Evolution Workbench, a Benchmark it holds.
+      const address = new URL(surface.route, "http://gallery.invalid");
+      const app = address.pathname === "/apps" ? address.searchParams.get("app") : null;
+      if (app)
+        expect(
+          store.f.appCenter.shortcuts.some((s) => `${s.agentId}/${s.workbenchId}` === app),
+          surface.id,
+        ).toBe(true);
+      const benchmark =
+        app === "default_agent/benchmark"
+          ? /^\/([^/?]+)/.exec(address.searchParams.get("at") ?? "")?.[1]
+          : undefined;
       if (benchmark)
         expect(
           store.f.benchmarks.some((b) => b.id === benchmark),

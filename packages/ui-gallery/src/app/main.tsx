@@ -31,6 +31,7 @@ import { installFetchShim } from "./mock/fetch-shim";
 import { setTerminalStreamOpener } from "../../../web/src/features/terminal/terminal-stream";
 import { openDemoTerminal } from "./mock/terminal";
 import { getStore } from "./mock/store";
+import { IDS } from "./mock/ids";
 import { rsiPrompt } from "./mock/rsi-transcript";
 import { installEvolutionAutoplay } from "./evolution-autoplay";
 
@@ -111,7 +112,12 @@ void bootWeb().then((Root) => {
 if (params.autoplay === "evolution") {
   const dispose = installEvolutionAutoplay(
     window,
-    rsiPrompt(params.lang),
+    {
+      prompt: rsiPrompt(params.lang),
+      lang: params.lang,
+      benchmarkTitle:
+        store.f.benchmarks.find((b) => b.id === IDS.benchmarks.docs)?.title ?? IDS.benchmarks.docs,
+    },
     store.evolutionPlayback,
     () => store.clearEvolutionRounds(),
     params.freshProject === true,

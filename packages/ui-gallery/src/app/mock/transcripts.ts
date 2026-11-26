@@ -233,7 +233,7 @@ Nothing else in the corpus changed, so the index rebuild took 12.4 ms [1].
       prompt: "Read CHANGELOG.md and draft the structure of the 0.3 release notes.",
       sentences: [
         "The changelog has forty-one unreleased entries. ",
-        "Grouping them by the surface they touch reads better than by type: the chat, the Agents page, the Evaluation Center, machines. ",
+        "Grouping them by the surface they touch reads better than by type: the chat, the Agents page, the Self-Evolution Workbench, machines. ",
         "Three entries carry a Breaking marker, so the notes need a compatibility section up front. ",
         "The migration entries reference each other; I should name the one a reader has to act on and fold the rest under it. ",
         "The highlight is remote machines — every other entry is a refinement. ",
@@ -375,7 +375,7 @@ rank("如何配置 hooks？", index)[0].source;
       prompt: "读一下 CHANGELOG.md，起草 0.3 发布说明的结构。",
       sentences: [
         "变更日志里有四十一条未发布的条目。",
-        "按它们触及的界面分组比按类型分组更好读：对话、智能体页、评估中心、机器。",
+        "按它们触及的界面分组比按类型分组更好读：对话、智能体页、自进化工作台、机器。",
         "有三条带 Breaking 标记，所以说明开头需要一节兼容性说明。",
         "迁移相关的条目互相引用；应该点名读者必须动手的那一条，其余折叠在它下面。",
         "亮点是远程机器——其他条目都是打磨。",

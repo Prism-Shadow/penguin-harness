@@ -44,7 +44,10 @@ export const IDS = {
     /** The Test Sessions the evaluators ran the docs Agent in (`penguin run`): archived until kept. */
     tests: ["s-test-hooks", "s-test-mcp", "s-test-memory", "s-test-citations"],
   },
-  /** A Benchmark the docs agent wrote, one still being built, and a built-in one. */
+  /**
+   * Benchmarks of the default Agent's Self-Evolution Workbench: one the docs agent wrote, one
+   * still being built, and one the workbench seeds.
+   */
   benchmarks: {
     docs: "docs-qa-v1",
     draft: "release-notes-draft",

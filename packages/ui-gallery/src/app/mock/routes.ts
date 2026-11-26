@@ -1,7 +1,8 @@
 /**
  * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`, the wrappers its
  * features keep beside them, and those a plugin web half exports, such as the agent browser's
- * `plugins/browser-automation/src/web/api.ts`), answered from the demo store. Reads answer the
+ * `plugins/browser-automation/src/web/api.ts`), and those a workbench page calls on its handler
+ * (the Self-Evolution Workbench's, benchmark-workbench.ts), answered from the demo store. Reads answer the
  * fixtures; writes mutate them where the app shows the result
  * (a renamed Session, a saved model table, a new schedule) and answer `demo_read_only` where
  * the operation would need a machine, a registry or a provider behind it. Each handler's
@@ -42,7 +43,6 @@ import type {
   ArchivedSessionsBatchResponse,
   ArchivedSessionsResponse,
   AuthResponse,
-  BenchmarkCasesResponse,
   BrowserBackendResponse,
   BrowserExtensionPairingResponse,
   BrowserExtensionsResponse,
@@ -50,9 +50,6 @@ import type {
   BuiltinBrowserImportSourcesResponse,
   BuiltinBrowserSettings,
   BuiltinBrowserStatus,
-  BenchmarkCreateResponse,
-  BenchmarksResponse,
-  CaseMaterial,
   ChatDefaultsDto,
   ContributionsResponse,
   CommandPolicyDto,
@@ -160,6 +157,7 @@ import { isThemeId } from "@prismshadow/penguin-ui";
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
 import { agentPluginGroups } from "../../../../web/src/features/plugins/agent-plugin-groups";
 import { declaredServerModules } from "../../../../web/src/lib/module-gate";
+import { benchmarkWorkbenchRoutes } from "./benchmark-workbench";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
@@ -196,9 +194,6 @@ import type {
 import type { AmspRecord } from "./types";
 
 type Ctx = RequestContext;
-
-/** Where the demo Project keeps its Benchmarks: the Evaluation Center's data folder, as a server names it. */
-const GALLERY_BENCHMARKS_DIR = `/home/demo/.penguin/data/projects/${IDS.project}/agents/system_agent/app/data/benchmark`;
 
 const record = (body: unknown): Record<string, unknown> =>
   typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
@@ -2773,120 +2768,10 @@ router
   });
 
 // ---------------------------------------------------------------------------------------------
-// Benchmarks
+// The Self-Evolution Workbench's handler (benchmark-workbench.ts)
 // ---------------------------------------------------------------------------------------------
 
-const benchmarkOf = ({ store, params }: Ctx) => {
-  const benchmark = store.f.benchmarks.find((b) => b.id === params.benchmarkId);
-  if (!benchmark) notFound("Benchmark");
-  return benchmark;
-};
-
-const caseFilesOf = (ctx: Ctx, material: CaseMaterial): Record<string, string> => {
-  const benchmark = benchmarkOf(ctx);
-  const files = ctx.store.f.caseFiles[`${benchmark.id}/${ctx.params.caseId}`];
-  if (!files) notFound("Case");
-  return files[material];
-};
-
-const listCaseFiles = (ctx: Ctx, material: CaseMaterial): WorkspaceFilesResponse => {
-  const files = caseFilesOf(ctx, material);
-  const path = normalizePath(ctx.query.get("path") ?? "");
-  const seen = new Set<string>();
-  const entries: WorkspaceFilesResponse["entries"] = [];
-  for (const [filePath, content] of Object.entries(files)) {
-    if (path !== "" && !filePath.startsWith(`${path}/`)) continue;
-    const rest = path === "" ? filePath : filePath.slice(path.length + 1);
-    const name = rest.split("/")[0]!;
-    if (seen.has(name)) continue;
-    seen.add(name);
-    const isDir = rest.includes("/");
-    entries.push({
-      name,
-      kind: isDir ? "dir" : "file",
-      sizeBytes: isDir ? 0 : content.length,
-      mtime: new Date(ctx.store.f.now).toISOString(),
-    });
-  }
-  return { path, entries };
-};
-
-const caseFileContent = (ctx: Ctx, material: CaseMaterial) => {
-  const files = caseFilesOf(ctx, material);
-  const path = normalizePath(ctx.query.get("path") ?? "");
-  const content = files[path];
-  if (content === undefined) notFound("File");
-  return raw(content, { "content-type": "text/plain; charset=utf-8", etag: `"${content.length}"` });
-};
-
-router
-  .get("/api/projects/:projectId/benchmarks", ({ store }): BenchmarksResponse => ({
-    benchmarks: store.f.benchmarks.map((b) => ({ ...b, dir: `${GALLERY_BENCHMARKS_DIR}/${b.id}` })),
-    dir: GALLERY_BENCHMARKS_DIR,
-  }))
-  .get("/api/projects/:projectId/benchmarks/:benchmarkId/cases", (ctx): BenchmarkCasesResponse => ({
-    cases: ctx.store.f.benchmarkCases[benchmarkOf(ctx).id] ?? [],
-  }))
-  .post("/api/projects/:projectId/benchmarks", ({ store, body }): unknown => {
-    const { id, title, description, runs, cases } = record(body);
-    const benchmarkId = str(id, `benchmark-${store.f.benchmarks.length + 1}`);
-    if (store.f.benchmarks.some((b) => b.id === benchmarkId))
-      fail(409, "benchmark_exists", "That id is taken.");
-    const list = Array.isArray(cases) ? (cases as Array<Record<string, unknown>>) : [];
-    // The server writes the day's first version, on the local calendar.
-    const day = new Date();
-    const two = (n: number) => String(n).padStart(2, "0");
-    const benchmark: BenchmarksResponse["benchmarks"][number] = {
-      id: benchmarkId,
-      title: str(title, benchmarkId),
-      ...(typeof description === "string" ? { description } : {}),
-      runs: typeof runs === "number" ? runs : 1,
-      status: "published",
-      version: `${day.getFullYear()}.${two(day.getMonth() + 1)}.${two(day.getDate())}.1`,
-      origin: { kind: "manual" },
-      caseCount: list.length,
-      evaluations: [],
-      agentIds: [],
-    };
-    store.f.benchmarks.push(benchmark);
-    store.f.benchmarkCases[benchmarkId] = list.map((c) => ({
-      id: str(c.id),
-      title: str(c.title, str(c.id)),
-    }));
-    for (const c of list) {
-      store.f.caseFiles[`${benchmarkId}/${str(c.id)}`] = {
-        statement: { "README.md": `# ${str(c.title)}\n\n${str(c.statement)}\n` },
-        rubric: { "README.md": str(c.rubric) },
-      };
-    }
-    return json({ benchmark } satisfies BenchmarkCreateResponse, 201);
-  })
-  .delete("/api/projects/:projectId/benchmarks/:benchmarkId", (ctx) => {
-    const benchmark = benchmarkOf(ctx);
-    ctx.store.f.benchmarks = ctx.store.f.benchmarks.filter((b) => b.id !== benchmark.id);
-    return empty();
-  })
-  .post("/api/projects/:projectId/benchmarks/archive", () => readOnly("import a Benchmark package"))
-  .get("/api/projects/:projectId/benchmarks/:benchmarkId/archive", (ctx) => {
-    const benchmark = benchmarkOf(ctx);
-    return raw("PK\u0003\u0004 demo archive", {
-      "content-type": "application/zip",
-      "content-disposition": `attachment; filename="${benchmark.id}-v${benchmark.version ?? "0"}.zip"`,
-    });
-  })
-  .get("/api/projects/:projectId/benchmarks/:benchmarkId/cases/:caseId/files", (ctx) =>
-    listCaseFiles(ctx, "statement"),
-  )
-  .get("/api/projects/:projectId/benchmarks/:benchmarkId/cases/:caseId/rubric/files", (ctx) =>
-    listCaseFiles(ctx, "rubric"),
-  )
-  .get("/api/projects/:projectId/benchmarks/:benchmarkId/cases/:caseId/files/content", (ctx) =>
-    caseFileContent(ctx, "statement"),
-  )
-  .get(
-    "/api/projects/:projectId/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content",
-    (ctx) => caseFileContent(ctx, "rubric"),
-  );
+benchmarkWorkbenchRoutes(router);
 
 // ---------------------------------------------------------------------------------------------
 // Agent zip export / import

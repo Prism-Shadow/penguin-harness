@@ -62,6 +62,9 @@
  *   value would show; a facet every item shares is not offered.
  * - Given a run's time or token count that rounds up to the next unit, when it is shown, then it
  *   is shown in that unit (1.0 h, not 60 min; 1.0M, not 1000K).
+ * - Given the Release-pinned library packages, when the hub reads them, then each links to its
+ *   source at the Release's tag: a toolkit to its folder in the repository, the Self-Evolution
+ *   Workbench, which is its repository's root, to the repository itself.
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -69,7 +72,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadHub } from "../scripts/hub/hub.mjs";
+import { loadHub, publishedLibraryPackages } from "../scripts/hub/hub.mjs";
 import {
   fetchPublished,
   MARKET_DOCUMENT_URL,
@@ -878,4 +881,16 @@ it("publishes the same evaluation reference for ACE, APE, AWM and OPRO", () => {
   });
   expect(references[0]).toBeTruthy();
   expect(new Set(references).size).toBe(1);
+});
+
+it("links each Release-pinned plugin to its source at the Release's tag", () => {
+  const catalog = createRequire(import.meta.url);
+  const sourceOf = (name: string) => {
+    const dir = dirname(catalog.resolve(`@penguinharness/${name}/package.json`));
+    return publishedLibraryPackages().find((pkg) => pkg.dir === dir)?.sourceUrl;
+  };
+  const tagged = /^https:\/\/github\.com\/[^/]+\/[^/]+\/tree\/[^/]+(\/[^/]+)*$/;
+  for (const { sourceUrl } of publishedLibraryPackages()) expect(sourceUrl).toMatch(tagged);
+  expect(sourceOf("ace-rsi-toolkit")).toMatch(/\/tree\/[^/]+\/plugins\/ace-rsi-toolkit$/);
+  expect(sourceOf("rsi-workbench")).toMatch(/\/penguin-harness-rsi-platform\/tree\/[^/]+$/);
 });

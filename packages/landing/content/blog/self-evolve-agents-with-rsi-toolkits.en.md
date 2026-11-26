@@ -86,4 +86,4 @@ Select a row under **Evaluations** to see every case and run. A run recorded as 
 - During a GDPevo task the agent can reach only the model provider's API host, because GDPevo's answers are public.
 - An agent created before 0.2.15 does not have the OPRO, APE, ACE and AWM toolkits until you install them, and a new agent has only the plugins picked when it was created.
 
-For every field of the dialog, see the [Evaluation Center documentation](https://penguin.ooo/docs/evaluation-center). For how each algorithm runs, see [RSI toolkits](https://penguin.ooo/docs/self-improvement#rsi-toolkits).
+For every field of the dialog, see the [Self-Evolution Workbench documentation](https://penguin.ooo/docs/self-evolution-workbench). For how each algorithm runs, see [RSI toolkits](https://penguin.ooo/docs/self-improvement#rsi-toolkits).

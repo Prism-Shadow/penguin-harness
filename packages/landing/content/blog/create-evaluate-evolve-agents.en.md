@@ -169,4 +169,4 @@ Some ways to keep going:
 
 You had AI build a Benchmark and take a baseline, asked AI to explain a case, replaced the Benchmark with a better one, evaluated an agent, and let the Optimizer improve it against a strict Evaluator. Every case, score and version is a file in your Project, so you can inspect, back up and version all of it.
 
-For every option in these dialogs, see the [Evaluation Center documentation](https://penguin.ooo/docs/evaluation-center). For the design of the loop, read [Self-improvement](https://penguin.ooo/docs/self-improvement).
+For every option in these dialogs, see the [Self-Evolution Workbench documentation](https://penguin.ooo/docs/self-evolution-workbench). For the design of the loop, read [Self-improvement](https://penguin.ooo/docs/self-improvement).

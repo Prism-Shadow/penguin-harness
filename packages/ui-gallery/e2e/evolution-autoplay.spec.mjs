@@ -1,6 +1,7 @@
 /**
  * Given the hero's embedded new conversation, when visible, it types and sends one request,
- * then the app shows its score curve, rests and starts another round without reloading the document.
+ * then opens the Self-Evolution Workbench from the App Center and shows the round's score curve
+ * in the workbench's page, rests and starts another round without reloading the document.
  * Given a frame below the viewport, it waits; showing it starts the walkthrough without
  * stealing the host page's focus or changing its scroll position.
  * Given human input, autoplay yields and preserves the person's draft.
@@ -9,11 +10,15 @@
 import { test, expect } from "@playwright/test";
 
 const composer = '[data-slot="composer"] textarea:visible';
+/** The workbench's page frame, wherever it is shown. */
+const WORKBENCH = 'iframe[src*="/workbenches/benchmark/ui/"]';
 const query = (lang = "en", autoplay = true) =>
   `app.html?route=%2Fchat%2Fnew&theme=modern&mode=light&lang=${lang}&embed=1${autoplay ? "&autoplay=evolution" : ""}`;
 
+/** The round's Benchmark page in the workbench: its heading, then its score curve. */
 async function advanceToCurve(page, frame = page, lang = "en") {
-  const heading = frame.getByRole("heading", {
+  const workbench = frame.locator(`${WORKBENCH}:visible`).first().contentFrame();
+  const heading = workbench.getByRole("heading", {
     name: lang === "zh" ? "文档问答 v1" : "Docs QA v1",
     exact: true,
   });
@@ -21,7 +26,7 @@ async function advanceToCurve(page, frame = page, lang = "en") {
     await page.clock.runFor(2000);
   await expect(heading).toBeVisible();
   await expect(
-    frame
+    workbench
       .getByText(lang === "zh" ? "分数随时间变化" : "Score over time", { exact: true })
       .locator("..")
       .locator('svg.ui-chart [data-part="series"]')
@@ -45,11 +50,13 @@ for (const lang of ["en", "zh"]) {
       page.getByRole("button", { name: lang === "zh" ? "停止" : "Stop", exact: true }).first(),
     ).toBeVisible();
     await advanceToCurve(page, page, lang);
-    const result = page.getByRole("table").last();
+    // The Benchmark's evaluations: the round's Reference and the candidate it kept.
+    const workbench = page.locator(`${WORKBENCH}:visible`).contentFrame();
+    const result = workbench.getByRole("table").last();
     await expect(result).toContainText("81");
     await expect(result).toContainText("88.5");
     await expect(
-      page.getByRole("heading", {
+      workbench.getByRole("heading", {
         name: lang === "zh" ? "文档问答 v1" : "Docs QA v1",
         exact: true,
       }),
@@ -57,8 +64,11 @@ for (const lang of ["en", "zh"]) {
     await expect(page.getByTestId("dock").filter({ visible: true })).toHaveCount(0);
     await expect(page.locator(composer)).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText(/mock data|模拟数据/i);
+    // The app's document; the workbench page moves inside itself by its address's fragment.
     let reloads = 0;
-    page.on("framenavigated", () => reloads++);
+    page.on("framenavigated", (navigated) => {
+      if (navigated === page.mainFrame()) reloads++;
+    });
     await page.clock.runFor(5000);
     await expect(page.locator(composer)).toBeVisible();
     await page.clock.runFor(4500);
@@ -93,7 +103,9 @@ test("waits below the fold and leaves the host page in place", async ({ page, ba
   await page.locator("iframe").scrollIntoViewIfNeeded();
   await page.locator("#host").evaluate((button) => button.focus({ preventScroll: true }));
   await advanceToCurve(page, frame);
-  await expect(frame.getByRole("table").last()).toContainText("88.5");
+  await expect(
+    frame.locator(`${WORKBENCH}:visible`).contentFrame().getByRole("table").last(),
+  ).toContainText("88.5");
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("host");
   expect(await page.evaluate(() => scrollY)).toBe(scroll);
 });
@@ -120,7 +132,7 @@ test("keeps the evaluation panel open when the reader takes over during the run"
   await page.clock.runFor(25_000);
   await expect(page.getByRole("table").last()).toContainText("88.5");
   await expect(page.getByTestId("dock").first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Docs QA v1", exact: true })).toHaveCount(0);
+  await expect(page.locator(WORKBENCH)).toHaveCount(0);
 });
 
 for (const mode of ["reduced motion", "ordinary frame"]) {

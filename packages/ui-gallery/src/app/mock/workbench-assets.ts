@@ -1,16 +1,24 @@
 /** Serve the same installed HTML, assets and SDK by URL in dev and on the static site. */
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, posix } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, relative, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { EARLY_SUPPORT } from "./workbench-revisions";
 import { pageSdkFile } from "../../../../server/src/workbenches/page-sdk";
 
 const root = fileURLToPath(new URL("../../../../../", import.meta.url));
+const shipped = (plugin: string, id: string) =>
+  join(root, "plugins", plugin, "workbenches", id, "ui");
+/** The pinned Self-Evolution Workbench's built page, which its package exports no path to. */
+const rsiWorkbench = dirname(
+  createRequire(import.meta.url).resolve("@penguinharness/rsi-workbench/package.json"),
+);
 const apps = [
-  ["default_agent", "slides", "use-bento-slides"],
-  ["default_agent", "images", "multimodal-tools"],
-  ["penguin_support", "support", "penguin-support"],
+  ["default_agent", "slides", shipped("use-bento-slides", "slides")],
+  ["default_agent", "images", shipped("multimodal-tools", "images")],
+  ["default_agent", "benchmark", join(rsiWorkbench, "workbenches", "benchmark", "ui")],
+  ["penguin_support", "support", shipped("penguin-support", "support")],
 ] as const;
 const modelControl = join(root, "plugins/use-bento-slides/workbenches/slides/ui/model-control.tsx");
 const png = join(root, "packages/desktop/build/icons/256x256.png");
@@ -43,12 +51,19 @@ function addPages(
           if (path.startsWith("/") || /^[a-z]+:/i.test(path)) return attribute;
           return " " + key + '="' + base + posix.join(assetDir, path) + '"';
         });
-      content = document.replace(
-        "<head>",
-        '<head><link rel="stylesheet" data-workbench-base href="' +
+      // A page that links the shared components' stylesheet gets no base stylesheet, as in the
+      // app (lib/workbench-theme.ts): its unlayered rules would beat the components' layered ones.
+      const baseSheet = /<link\b[^>]*\bdata-penguin-ui\b/.test(document)
+        ? ""
+        : '<link rel="stylesheet" data-workbench-base href="' +
           base +
           prefix +
-          '/workbench-ui.css"><script src="' +
+          '/workbench-ui.css">';
+      content = document.replace(
+        "<head>",
+        "<head>" +
+          baseSheet +
+          '<script src="' +
           base +
           prefix +
           '/workbench-requests.js"></script>',
@@ -73,9 +88,8 @@ async function assets(base: string, modelUrl: string) {
       api + "/multimodal-tools/sessions/image-example/files/penguin.png",
       readFileSync(png),
     );
-    for (const [agent, id, plugin] of apps) {
+    for (const [agent, id, dir] of apps) {
       const dest = api + "/agents/" + agent + "/workbenches/" + id;
-      const dir = join(root, "plugins", plugin, "workbenches", id, "ui");
       files.set(
         dest + "/sdk/amsp.js",
         "export * from " + JSON.stringify(base + prefix + "/amsp.js"),
