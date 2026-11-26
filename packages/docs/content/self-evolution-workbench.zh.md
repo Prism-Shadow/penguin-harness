@@ -18,7 +18,7 @@ description: 在默认 Agent 的自进化工作台中创建 Benchmark、给 Agen
 
 在**应用中心**选择**自进化工作台**。它在应用网格上方的应用窗口中打开，最小化、全屏和关闭都与其他应用相同；打开期间，侧栏的**应用**分组也会列出它。窗口地址为 `/apps?app=default_agent/benchmark`，其中的 `at` 记录工作台内的位置。页面以卡片形式列出这个工作台的 Benchmark。
 
-旧地址 `/benchmark`、`/benchmark/<id>` 及其查询串会打开窗口中的同一位置：优先是默认 Agent 的工作台，其次是本 Project 中另一个装有它的 Agent。哪个 Agent 都没有装时，打开应用中心并给出「安装到默认 Agent」。
+旧地址 `/benchmark`、`/benchmark/<id>` 及其查询串会打开窗口中的同一位置：优先是默认 Agent 的工作台，其次是本 Project 中另一个装有它的 Agent，已从应用中心移出的也照样打开。哪个 Agent 都没有装时，打开应用中心并给出「安装到默认 Agent」。
 
 和其他工作台一样，可以在默认 Agent 的[工作台](/agents#工作台)子页上把它从应用中心撤下、停用或移除，也可以从插件库把它装到别的 Agent 上，见[在 Agent 上安装插件](/skills#在-agent-上安装插件)。
 

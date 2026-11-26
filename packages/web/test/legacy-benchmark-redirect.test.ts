@@ -6,7 +6,8 @@
  *
  * - The window is the default Agent's workbench when the App Center lists it as the
  *   `rsi-workbench` plugin's, else another Agent's; a `benchmark` workbench the plugin did not
- *   install is neither.
+ *   install is neither. One taken out of the App Center opens all the same, in its window, with
+ *   no offer to install it again.
  * - The rest of the path and the query are the window's `at`, which reads back as that place
  *   inside the app; the bare address opens the window at its start, with no `at`.
  * - A list that cannot be read leads to the default Agent's window.
@@ -67,11 +68,17 @@ const AGENTS = [{ agentId: "default_agent", name: "General Agent" }, { agentId: 
 /** Arrives at the old address `at` from the conversations, with the real App Center at /apps. */
 async function arrive(
   at: string,
-  options: { apps?: AppCenterShortcut[]; library?: PluginItem[]; listFails?: boolean } = {},
+  options: {
+    apps?: AppCenterShortcut[];
+    hiddenApps?: AppCenterShortcut[];
+    library?: PluginItem[];
+    listFails?: boolean;
+  } = {},
 ) {
   const server = agentServer(undefined, {
     moreAgents: AGENTS,
     apps: options.apps ?? [],
+    hiddenApps: options.hiddenApps ?? [],
     library: options.library ?? [],
   });
   if (options.listFails === true) server.failNext(null, /\/app-center$/);
@@ -115,6 +122,18 @@ it("opens another Agent's when the default Agent has none, and passes over one t
     apps: [benchmarkApp("default_agent"), benchmarkApp("analyst", "rsi-workbench")],
   });
   expect(windowOf(router)).toEqual({ app: "analyst/benchmark", at: "/b1" });
+});
+
+it("opens the plugin's workbench taken out of the App Center in its window, offering no install", async () => {
+  const { router } = await arrive("/benchmark/b1?agentId=analyst", {
+    apps: [benchmarkApp("analyst")],
+    hiddenApps: [benchmarkApp("default_agent", "rsi-workbench")],
+    library: [RSI_WORKBENCH],
+  });
+  expect(windowOf(router)).toEqual({ app: "default_agent/benchmark", at: "/b1?agentId=analyst" });
+  expect(tile("default_agent/benchmark")).toBeNull();
+  await waitFor(() => document.body.textContent?.includes("Self-Evolution Workbench") === true);
+  expect(offer()).toBe(false);
 });
 
 it("opens the bare address at the workbench's start, with no place in the address", async () => {

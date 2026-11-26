@@ -19,13 +19,15 @@
  * - A Project without a default Agent gets one first; one that cannot be provisioned keeps its data,
  *   is not recorded, and is migrated at a later start once it can be.
  * - A default Agent without the workbench gets it installed once; removed afterwards, it does not
- *   come back.
+ *   come back. The install replaces a published copy of `benchmark-design` with the package's and
+ *   keeps an edited `agent-evaluation`, whose plugin card then offers the update.
  * - A run cut short between the move and the link is finished from what is on disk.
  * - A Project this build creates is recorded at its creation and never migrated; a migrated root
  *   starts again with nothing to do.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
@@ -33,6 +35,7 @@ import {
   legacyBenchmarksDir,
   libraryPlugin,
   listInstalledWorkbenches,
+  skillsDir,
   systemConfigPath,
   workbenchCacheDir,
   workbenchDataDir,
@@ -42,6 +45,10 @@ import { INSTALL, MIGRATION, MOVE } from "../src/services/rsi-workbench-migratio
 import { writeAgentEvaluationWorkbench } from "./fixtures/agent-evaluation-workbench.js";
 import { apiClient, createTestApp, loginAdmin, restartTestApp, type TestApp } from "./helpers.js";
 
+/** `benchmark-design` as `agent-evaluation` shipped it in 0.2.19 and 0.2.20, byte for byte. */
+const PUBLISHED_BENCHMARK_DESIGN = fileURLToPath(
+  new URL("./fixtures/agent-evaluation-skills/benchmark-design", import.meta.url),
+);
 const DEFAULT = "default_agent";
 const SYSTEM = "system_agent";
 
@@ -172,8 +179,19 @@ describe("the startup migration to the Self-Evolution Workbench", { timeout: 120
     await write(agentDir(root, "stuck", DEFAULT), "not a folder");
     await benchmark(sourceOf(root, "stuck"), "eta");
 
-    // lacking: a default Agent without the workbench.
+    // lacking: a default Agent without the workbench, carrying benchmark-design as 0.2.20 shipped it
+    // and an agent-evaluation someone edited.
     await fs.rm(workbenchOf(root, "lacking", DEFAULT), { recursive: true, force: true });
+    const lackingSkills = skillsDir(root, "lacking", DEFAULT);
+    await fs.rm(path.join(lackingSkills, "benchmark-design"), { recursive: true, force: true });
+    await fs.cp(PUBLISHED_BENCHMARK_DESIGN, path.join(lackingSkills, "benchmark-design"), {
+      recursive: true,
+    });
+    await fs.rm(path.join(lackingSkills, "agent-evaluation"), { recursive: true, force: true });
+    await write(
+      path.join(lackingSkills, "agent-evaluation", "SKILL.md"),
+      "---\nname: agent-evaluation\ndescription: Run a case, my way.\nversion: 2026.11.21.1\n---\n\nEdited by hand.\n",
+    );
     await benchmark(sourceOf(root, "lacking"), "epsilon");
 
     // cut: a run that stopped after moving the folder, before leaving the link in the folder's place.
@@ -288,8 +306,28 @@ describe("the startup migration to the Self-Evolution Workbench", { timeout: 120
     expect(lines.some((l) => l.startsWith("[rsi-workbench] stuck:"))).toBe(true);
   });
 
-  it("installs the workbench once on a default Agent that has none", async () => {
+  it("installs the workbench once on a default Agent that has none, replacing only unedited Skills", async () => {
     expect(await receiptOf(workbenchOf(root, "lacking", DEFAULT))).toBe("rsi-workbench");
+    const skills = skillsDir(root, "lacking", DEFAULT);
+    const shipped = libraryPlugin("rsi-workbench")!.skills.find(
+      (s) => s.name === "benchmark-design",
+    )!;
+    expect(await fs.readFile(path.join(skills, "benchmark-design", "SKILL.md"), "utf8")).toContain(
+      `version: `,
+    );
+    expect(await fs.readFile(path.join(skills, "agent-evaluation", "SKILL.md"), "utf8")).toContain(
+      "Edited by hand.",
+    );
+    const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    const agents = (await (await admin.get("/api/projects/lacking/agents")).json()) as {
+      agents: { agentId: string; pluginUpdates?: { name: string }[] }[];
+    };
+    expect(agents.agents.find((a) => a.agentId === DEFAULT)?.pluginUpdates).toContainEqual(
+      expect.objectContaining({ name: "rsi-workbench" }),
+    );
+    expect(
+      lines.some((l) => l.includes("lacking:") && l.includes("kept its edited agent-evaluation")),
+    ).toBe(true);
     expect(await fs.readdir(targetOf(root, "lacking"))).toEqual(
       expect.arrayContaining(["epsilon"]),
     );

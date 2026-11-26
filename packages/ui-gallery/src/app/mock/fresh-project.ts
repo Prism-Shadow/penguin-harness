@@ -1,6 +1,6 @@
 /** The default Project in the homepage frame, before the reader starts its evolution example. */
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
-import type { BenchmarkSummary } from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/lib/api";
+import type { BenchmarkSummary } from "./rsi-workbench-contract";
 import { version } from "../../../../web/package.json";
 // The pinned package exports none of its workbench files, so they are read by path.
 import benchmark from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/package.json";

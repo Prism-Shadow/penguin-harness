@@ -24,11 +24,10 @@ import type {
   TaskRecord,
   TaskRecordResponse,
   TasksResponse,
+  TaskSpec,
   WorkbenchTaskKind,
-} from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/lib/api";
-import { casePage } from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/lib/api";
-import { buildRequest } from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/lib/prompts";
-import type { TaskSpec } from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/lib/prompts";
+} from "./rsi-workbench-contract";
+import { buildRequest, casePage } from "./rsi-workbench-contract";
 import { READ_ONLY } from "./errors";
 import { IDS } from "./ids";
 import { empty, fail, json, raw } from "./router";

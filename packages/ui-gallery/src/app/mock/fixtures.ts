@@ -73,7 +73,7 @@ import type {
   BenchmarkSummary,
   CaseMaterial,
   TaskRecord,
-} from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/lib/api";
+} from "./rsi-workbench-contract";
 import { EXAMPLE_BENCHMARK_ID, SEED_BENCHMARKS } from "./benchmark-seeds";
 import type { SeedBenchmark } from "./benchmark-seeds";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.

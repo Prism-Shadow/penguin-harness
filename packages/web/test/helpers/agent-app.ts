@@ -350,6 +350,8 @@ export function agentServer(
     appCenterLayout?: AppCenterLayout;
     /** Other Agents' App Center shortcuts, listed after the Agent's own (by default none). */
     apps?: AppCenterShortcut[];
+    /** Other Agents' workbenches taken out of the App Center (GET …/app-center/hidden; by default none). */
+    hiddenApps?: AppCenterShortcut[];
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
@@ -426,6 +428,7 @@ export function agentServer(
   const building = new Set<string>();
   let appCenterLayout: AppCenterLayout | null = options.appCenterLayout ?? null;
   const apps = [...(options.apps ?? [])];
+  const hiddenApps = [...(options.hiddenApps ?? [])];
   let partSkills = [...(options.parts?.skills ?? [])];
   let partHooks = [...(options.parts?.hooks ?? [])];
   let partMcp = [...(options.parts?.mcpServers ?? [])];
@@ -1060,6 +1063,16 @@ export function agentServer(
       return json({
         shortcuts: [...shortcuts, ...apps],
         layout: appCenterLayout,
+      } satisfies AppCenterResponse);
+    }
+    if (path === `/api/projects/${PROJECT_ID}/app-center/hidden` && method === "GET") {
+      // The workbenches whose App Center switch is off, switched off or not.
+      const shortcuts: AppCenterShortcut[] = workbenches
+        .filter((w) => w.appCenter?.show === false)
+        .map((w) => shortcutOf(AGENT_ID, stored.config.name ?? AGENT_ID, w));
+      return json({
+        shortcuts: [...shortcuts, ...hiddenApps],
+        layout: null,
       } satisfies AppCenterResponse);
     }
     if (path === `/api/projects/${PROJECT_ID}/app-center/layout` && method === "PUT") {

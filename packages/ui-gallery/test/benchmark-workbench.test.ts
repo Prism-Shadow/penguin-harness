@@ -21,7 +21,7 @@ import type {
   CaseFilesResponse,
   PromptResponse,
   TasksResponse,
-} from "../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/lib/api";
+} from "../src/app/mock/rsi-workbench-contract";
 import type { SessionCreateResponse, SessionResponse } from "@prismshadow/penguin-server/api";
 import { READ_ONLY } from "../src/app/mock/errors";
 import { answerAsResponse } from "../src/app/mock/fetch-shim";

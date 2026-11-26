@@ -6,10 +6,12 @@
  * `/benchmark/b1?agentId=x` at `/b1?agentId=x`.
  *
  * The window is the default Agent's `benchmark` workbench when the App Center lists it as the
- * plugin's, else the first other Agent's. With neither, the App Center opens with an offer to
- * install the plugin on the default Agent, which then opens the window there; the offer rides in
- * the history entry's state, so the address stays the App Center's own. A list that cannot be
- * read leads to the default Agent's window, which the App Center opens once it lists it.
+ * plugin's, else the first other Agent's; when no tile is the plugin's, the same is looked for
+ * among the workbenches taken out of the App Center, and the one found runs with its own shortcut,
+ * as an Agent's settings open a hidden workbench. With none at all, the App Center opens with an
+ * offer to install the plugin on the default Agent, which then opens the window there; the offer
+ * rides in the history entry's state, so the address stays the App Center's own. A list that
+ * cannot be read leads to the default Agent's window, which the App Center opens once it lists it.
  *
  * Compatibility for addresses made before the move: it stays until 1.0, and whoever prepares 1.0
  * removes this module, its page in module.ts and the offer in app-center-page.tsx.
@@ -22,6 +24,7 @@ import * as api from "../../api/endpoints";
 import { APP_CENTER_PATH, locatedAppKey } from "../../lib/app-center-path";
 import { windowAddress } from "../../lib/app-window-address";
 import { DEFAULT_AGENT_ID } from "../../lib/default-agent";
+import { launchApp } from "../../lib/running-apps";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
 import { useProject } from "../../state/project";
@@ -47,13 +50,14 @@ function legacyBenchmarkAt(pathname: string, search: string): string {
   return `/${rest.join("/")}${search}`;
 }
 
-/** The App Center key of the window an old address opens, or null when no Agent has the workbench. */
-function legacyBenchmarkApp(shortcuts: readonly AppCenterShortcut[]): string | null {
+/** The workbench an old address opens among `shortcuts`: the default Agent's, else the first other Agent's. */
+function legacyBenchmarkApp(shortcuts: readonly AppCenterShortcut[]): AppCenterShortcut | null {
   const installed = shortcuts.filter(
     (shortcut) => shortcut.workbenchId === WORKBENCH && shortcut.plugin === PLUGIN,
   );
-  const app = installed.find((shortcut) => shortcut.agentId === DEFAULT_AGENT_ID) ?? installed[0];
-  return app === undefined ? null : locatedAppKey(app.agentId, app.workbenchId);
+  return (
+    installed.find((shortcut) => shortcut.agentId === DEFAULT_AGENT_ID) ?? installed[0] ?? null
+  );
 }
 
 /** The page at `/benchmark/*`: it draws nothing and leaves once the App Center's list answers. */
@@ -65,21 +69,36 @@ export function LegacyBenchmarkRedirect() {
     if (projectId === null) return;
     const at = legacyBenchmarkAt(pathname, search);
     let current = true;
-    void api.getAppCenter(projectId).then(
-      ({ shortcuts }) => {
+    const open = (app: AppCenterShortcut) =>
+      void navigate(windowAddress(locatedAppKey(app.agentId, app.workbenchId), at), {
+        replace: true,
+      });
+    void (async () => {
+      try {
+        const shown = legacyBenchmarkApp((await api.getAppCenter(projectId)).shortcuts);
         if (!current) return;
-        const app = legacyBenchmarkApp(shortcuts);
-        if (app !== null) void navigate(windowAddress(app, at), { replace: true });
-        else
-          void navigate(APP_CENTER_PATH, {
-            replace: true,
-            state: { legacyBenchmarkAt: at } satisfies OfferState,
+        if (shown !== null) return open(shown);
+        const hidden = legacyBenchmarkApp(
+          (await api.getAppCenter(projectId, null, true)).shortcuts,
+        );
+        if (!current) return;
+        if (hidden !== null) {
+          // No tile opens it: it runs with its own shortcut, which the window is drawn from.
+          launchApp({
+            key: locatedAppKey(hidden.agentId, hidden.workbenchId),
+            projectId,
+            shortcut: hidden,
           });
-      },
-      () => {
+          return open(hidden);
+        }
+        void navigate(APP_CENTER_PATH, {
+          replace: true,
+          state: { legacyBenchmarkAt: at } satisfies OfferState,
+        });
+      } catch {
         if (current) void navigate(windowAddress(DEFAULT_APP, at), { replace: true });
-      },
-    );
+      }
+    })();
     return () => {
       current = false;
     };

@@ -10,7 +10,7 @@
  * the format's own reader runs on Node only, and the tables after them say nothing the list shows.
  */
 import catalog from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/seeds/catalog.json";
-import type { BenchmarkStatus } from "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/lib/api";
+import type { BenchmarkStatus } from "./rsi-workbench-contract";
 
 const SEED_FILES = import.meta.glob<string>(
   "../../../node_modules/@penguinharness/rsi-workbench/workbenches/benchmark/seeds/*/{benchmark_config.toml,CASE-*/statement/README.md,CASE-*/rubric/README.md}",

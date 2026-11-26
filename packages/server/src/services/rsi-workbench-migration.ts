@@ -22,7 +22,9 @@
  *    offers the update instead.
  * 2. **The default Agent gets the workbench once** where it has none (decision E1, kept in
  *    {@link installsWhereMissing}): through the same install an Agent's plugin page performs,
- *    recorded under {@link INSTALL}, so a later removal stands.
+ *    recorded under {@link INSTALL}, so a later removal stands. Its `benchmark-design` and
+ *    `agent-evaluation` Skills replace only copies this repository published; an edited copy is
+ *    kept and its plugin card offers the update (legacy-evaluation-skills.ts).
  * 3. **The Benchmarks move** from the system Agent's `app/data/benchmark/` — or, where the Project's
  *    `system_agent` is an Agent of the user's (compat C1), from the Project's old `benchmarks/`
  *    (core's benchmark-dirs.ts) — into the default Agent's workbench data
@@ -45,10 +47,11 @@
  * NEVER THROWS. A Project that fails is logged with its cause and left unfinished, and the next
  * boot resumes it from what it finds on disk; the others go on.
  *
- * BACKWARD COMPATIBILITY. Kept until 1.0. Whoever prepares 1.0 removes this file, its call in
- * hmr/platform.ts and in ProjectService, core's benchmark-dirs.ts and workbench-owner-renames.ts,
- * the layout helpers core exports for it, and the project_data_migrations table with its repo (and
- * a migration that drops it), and deletes the links it left; see
+ * BACKWARD COMPATIBILITY. Kept until 1.0. Whoever prepares 1.0 removes this file and
+ * legacy-evaluation-skills.ts, its call in hmr/platform.ts and in ProjectService, core's
+ * benchmark-dirs.ts and workbench-owner-renames.ts, the layout helpers core exports for it, and the
+ * project_data_migrations table with its repo (and a migration that drops it), and deletes the
+ * links it left; see
  * changelog/unreleased/2026-11-26-backward-compatibility.md.
  */
 import { createHash } from "node:crypto";
@@ -80,6 +83,7 @@ import {
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import type { ProjectDataMigrations } from "@prismshadow/penguin-library-setting";
 import { listProjectIds } from "../plugin/loader.js";
+import { editedSkillCopies } from "./legacy-evaluation-skills.js";
 import { writeAppCenterShow } from "../workbenches/app-center.js";
 import { migrateWorkbenches } from "../workbenches/migrate.js";
 
@@ -321,10 +325,25 @@ async function installOnce(
   await migrateWorkbenches(home);
   const dir = path.join(workbenchesDir(root, projectId, DEFAULT_AGENT_ID), WORKBENCH);
   if ((await lstatOrNull(dir)) === null) {
+    // The install replaces an unedited copy of the plugin's Skills; an edited one stays, and its
+    // plugin card offers the update.
+    const edited = await editedSkillCopies(
+      root,
+      projectId,
+      DEFAULT_AGENT_ID,
+      plugin.skills.map((skill) => skill.name),
+    );
+    const install: LibraryPlugin = {
+      ...plugin,
+      skills: plugin.skills.filter((skill) => !edited.has(skill.name)),
+    };
     try {
-      await installPlugin(root, projectId, DEFAULT_AGENT_ID, plugin);
+      await installPlugin(root, projectId, DEFAULT_AGENT_ID, install);
       log(
-        `[rsi-workbench] ${projectId}: installed ${PLUGIN} on ${DEFAULT_AGENT_ID}, which had no ${WORKBENCH} workbench (once; removing it later is not undone)`,
+        `[rsi-workbench] ${projectId}: installed ${PLUGIN} on ${DEFAULT_AGENT_ID}, which had no ${WORKBENCH} workbench (once; removing it later is not undone)` +
+          (edited.size > 0
+            ? `; kept its edited ${[...edited].join(" and ")} Skill, whose plugin card offers the update`
+            : ""),
       );
     } catch (err) {
       if (!(err instanceof WorkbenchNameTakenError)) throw err;
