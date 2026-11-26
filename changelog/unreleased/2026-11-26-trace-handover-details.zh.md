@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1894](https://github.com/Prism-Shadow/penguin-harness/pull/1894)
 
 [English](2026-11-26-trace-handover-details.md)
 
