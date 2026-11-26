@@ -1250,6 +1250,8 @@ export const zh = {
         "请查明它为什么加载不了。如果错误出自平台提供的部分，而不是工作台自己的代码——缺少 Node 或 TypeScript 的声明（例如 TS2688，找不到 `node` 的类型定义文件）、宿主类型（`.harness/plugin.d.ts`）、PenguinHarness 的打包——请直接说明，不要改动任何东西，并建议我把它作为 PenguinHarness 的问题报告。",
         "否则请修复工作台的代码。改动它的文件之前，先告诉我你打算改什么。",
       ].join("\n\n"),
+    /** 「用 AI 修复」 could not read the Agents it picks the default one from: the failure's words follow. */
+    repairAgentsFailed: (reason: string) => `没能读取接手修复的 Agent：${reason}`,
     history: "历史",
     /** The full-page route while it is still finding out which page it should show. */
     loadingPage: "正在打开页面…",

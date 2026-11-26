@@ -15,6 +15,9 @@
  *   take it, the confirmation says so and opens nothing.
  * - The full page, outside the shell with no Project to open a chat in, offers Reload and the
  *   report.
+ * - For a workbench on a machine whose Agents no page has read yet, the confirmation reads them
+ *   (busy meanwhile) and opens the chat for that machine's default Agent; when the read fails, it
+ *   says so with its report, never that there is no Agent.
  */
 import { createElement as h } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
@@ -30,6 +33,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { aiChatRouteState, buildAiDraft } from "../src/features/ai-create/ai-bridge";
 import { workbenchRepairRequest } from "../src/features/ai-create/workbench-repair";
+import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { WorkbenchAppPage } from "../src/features/workbenches/workbench-app-page";
@@ -44,8 +48,26 @@ import { AuthProvider } from "../src/state/auth";
 import { LocaleProvider } from "../src/state/locale";
 import { ThemeProvider } from "../src/state/theme";
 import { ADMIN_ME } from "./helpers/admin-settings";
-import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp, whereIs } from "./helpers/agent-app";
-import { button, click, dialogs, hasButton, mount, unmountAll, waitFor } from "./helpers/dom";
+import {
+  AGENT_ID,
+  PROJECT_ID,
+  agentServer,
+  buttonIn,
+  mountAgentApp,
+  topDialog,
+  whereIs,
+} from "./helpers/agent-app";
+import type { FakeMachine } from "./helpers/agent-app";
+import {
+  button,
+  click,
+  dialogs,
+  hasButton,
+  menuItem,
+  mount,
+  unmountAll,
+  waitFor,
+} from "./helpers/dom";
 import { SignedIn } from "./helpers/signed-in";
 import { WorkspaceWindows } from "./helpers/workspace-windows";
 
@@ -228,6 +250,79 @@ describe("the window of a workbench whose files do not load", () => {
     await click(button(en.plugins.repairOpen));
     expect(toastStore.getState().items.map((t) => t.text)).toContain(en.plugins.repairNoAgent);
     expect(whereIs(router)).toBe(before);
+    expect(dialogs()).toEqual([]);
+  });
+});
+
+/** A machine whose own Agents include a default Agent, which this server's list lacks. */
+const GPU: FakeMachine = {
+  machineId: "gpu1",
+  alias: "gpu-box",
+  agents: ["default_agent", AGENT_ID],
+};
+
+/** The machine's answers to "list your Agents". */
+const machineAgentReads = (server: ReturnType<typeof agentServer>) =>
+  server
+    .requests()
+    .filter(
+      (r) =>
+        r.machine === GPU.machineId &&
+        r.method === "GET" &&
+        r.path === `/api/projects/${PROJECT_ID}/agents`,
+    );
+
+/**
+ * The failed board on the Workbenches sub-page of the Agent on the machine, "Fix with AI" asked,
+ * with no list of the machine's Agents held: the page's own read of it failed.
+ */
+async function askOnMachine() {
+  setActiveStrings(en);
+  const server = agentServer(undefined, { workbenches: [FAILED], machines: [GPU] });
+  server.failNext(GPU.machineId, /\/agents$/);
+  const router = await mountAgentApp(h(AgentSettingsPage), {
+    at: `/agents/${AGENT_ID}?tab=workbenches&machine=${GPU.machineId}`,
+  });
+  await waitFor(() => hasButton(`${en.workbenches.more} board`));
+  await waitFor(() => machineAgentReads(server).length > 0);
+  await click(button(`${en.workbenches.more} board`));
+  await click(menuItem(en.plugins.repair));
+  return { server, router };
+}
+
+describe("Fix with AI for a workbench on a machine", () => {
+  it("reads the machine's Agents when no page has, then opens the chat for its default Agent", async () => {
+    const { server, router } = await askOnMachine();
+    const before = machineAgentReads(server).length;
+    const held = server.holdNext(GPU.machineId, /\/agents$/);
+    await click(buttonIn(topDialog(), en.plugins.repairOpen));
+    // Busy while the machine answers: the question stays, its buttons wait.
+    expect(buttonIn(topDialog(), en.plugins.repairOpen).disabled).toBe(true);
+    expect(whereIs(router)).not.toBe("/chat/new");
+
+    held.release();
+    await waitFor(() => whereIs(router) === "/chat/new");
+    expect(machineAgentReads(server).length).toBeGreaterThan(before);
+    expect(draft()).toMatchObject({
+      agentId: "default_agent",
+      machineId: GPU.machineId,
+      workspace: "",
+      aiPrefill: true,
+    });
+    expect(draft().text).toContain(TS2688);
+    expect(draft().text).toContain('"gpu-box"');
+  });
+
+  it("says the read failed, with its report, rather than that there is no Agent", async () => {
+    const { server, router } = await askOnMachine();
+    server.failNext(GPU.machineId, /\/agents$/);
+    await click(buttonIn(topDialog(), en.plugins.repairOpen));
+    await waitFor(() => toastStore.getState().items.length > 0);
+    const toasts = toastStore.getState().items;
+    expect(toasts.map((t) => t.text)).not.toContain(en.plugins.repairNoAgent);
+    const failed = toasts.find((t) => t.kind === "error");
+    expect(failed?.report).toBeDefined();
+    expect(whereIs(router)).toBe(`/agents/${AGENT_ID}?tab=workbenches&machine=${GPU.machineId}`);
     expect(dialogs()).toEqual([]);
   });
 });

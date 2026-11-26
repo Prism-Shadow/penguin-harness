@@ -1143,6 +1143,9 @@ export const en: Strings = {
         "Find out why it does not load. If the error comes from what the platform provides rather than from the workbench's own code — Node's or TypeScript's declarations missing (such as TS2688, no type definition file for `node`), the host's types (`.harness/plugin.d.ts`), how PenguinHarness was packaged — say so plainly, change nothing, and suggest I report it as a PenguinHarness problem.",
         "Otherwise fix the workbench's code. Tell me what you intend to change before you change its files.",
       ].join("\n\n"),
+    /** "Fix with AI" could not read the Agents it picks the default one from: the failure's words follow. */
+    repairAgentsFailed: (reason: string) =>
+      `Couldn’t read the Agents to hand the repair to: ${reason}`,
     history: "History",
     /** The full-page route while it is still finding out which page it should show. */
     loadingPage: "Opening the page…",
