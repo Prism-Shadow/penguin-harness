@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1882](https://github.com/Prism-Shadow/penguin-harness/pull/1882)
 
 [中文版](2026-11-26-npm-failure-text-skips-warnings.zh.md)
 
