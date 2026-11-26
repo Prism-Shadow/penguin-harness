@@ -1,10 +1,9 @@
-import { useMainSidebarController } from "../../features/session-list";
+import { useMainSidebarController, useSidebarApps } from "../../features/session-list";
 import { navPagesOf, useWebAppPages } from "../index";
 import { sidebarDeps } from "./deps";
 import type { MainSidebarProps } from "../../lib/main-sidebar-bindings";
 import { useOnSystemApp } from "../../lib/system-apps";
 import { usePageWorkspace } from "../../lib/page-workspace-context";
-import { useSidebarApps } from "../../features/session-list/use-sidebar-apps";
 import { createMainSidebarNavigation } from "./main-navigation";
 import { renderMainSidebarFrame } from "./main-frame";
 
