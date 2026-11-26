@@ -5,8 +5,8 @@
  *
  * - The index read tries the source's own URL first, then the deployment's mirrors one at
  *   a time in the order given; a connection failure, a timeout and a non-ok answer each
- *   hand the read to the next address, and a source exhausted on is reported with the
- *   failure it ended on. The start of the order is where the last read succeeded (the
+ *   hand the read to the next address, and a source exhausted on is reported with every
+ *   address's failure, in order. The start of the order is where the last read succeeded (the
  *   sticky start): the next read begins at the address that carried the previous one, so
  *   a dead canonical's window is not paid read after read. No address is tried twice, and
  *   none is fetched after another has carried the read; a document that will not parse
@@ -127,7 +127,7 @@ describe("httpPluginRegistry mirrors", () => {
     expect(registry.hits).toEqual([url, mirror]);
   });
 
-  it("a source exhausted on reports the failure it ended on", async () => {
+  it("a source exhausted on reports every address's failure, in order", async () => {
     const url = "https://index.example/index.json";
     const mirror = "https://cdn-mirror.example/index.json";
     const registry = fakeFetch({ [url]: { status: 404 }, [mirror]: new TypeError("fetch failed") });
@@ -137,7 +137,9 @@ describe("httpPluginRegistry mirrors", () => {
         attempts: 1,
         delay: noWait,
       }).index(),
-    ).rejects.toThrow(/could not be fetched \(1 attempts\): fetch failed/);
+    ).rejects.toThrow(
+      /index\.example\/index\.json answered HTTP 404.*; .*cdn-mirror\.example\/index\.json could not be fetched \(1 attempts\): fetch failed/,
+    );
   });
 
   it("a single address behaves as before: one URL, no address hop", async () => {
@@ -171,7 +173,7 @@ describe("the read walks the addresses in order", () => {
     expect(new Set(registry.hits).size).toBe(registry.hits.length);
   });
 
-  it("a source exhausted on reports the failure it ended on, with the addresses it named", async () => {
+  it("a source exhausted on reports each address's failure, naming the address", async () => {
     const url = "https://index.example/index.json";
     const mirror = "https://cdn-mirror.example/index.json";
     const registry = fakeFetch({ [url]: { status: 404 }, [mirror]: new TypeError("fetch failed") });

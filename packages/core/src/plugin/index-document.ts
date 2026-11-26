@@ -6,10 +6,14 @@
  * index by the same rules: a row the App would refuse never reaches the site's catalog.
  */
 
-/** One place a version's release asset is served from (`github`: a release asset tarball). */
+/**
+ * One place a version can be installed from, every channel serving the same bytes the row's
+ * `integrity` pins. `github` is a release asset tarball at `url`; `npm` is the npm registry, which
+ * needs no address and so carries none. Another kind is a tarball somewhere else, at its `url`.
+ */
 export interface IndexDocumentChannel {
   kind: string;
-  url: string;
+  url?: string;
 }
 
 /**
@@ -51,19 +55,22 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === "string");
 }
 
-/** Validates one raw entry; returns null instead of throwing so the caller can name the index position. */
-function asIndexEntry(value: unknown): IndexDocumentEntry | null {
-  if (typeof value !== "object" || value === null) return null;
-  const e = value as Record<string, unknown>;
-  if (
-    typeof e.name !== "string" ||
-    typeof e.version !== "string" ||
-    typeof e.description !== "string" ||
-    !isStringArray(e.authors) ||
-    typeof e.license !== "string"
-  ) {
-    return null;
+/**
+ * What is wrong with one raw entry, as a phrase naming the field ("channels[1] (github) has no
+ * url"), or null when it is a well-formed row. A phrase rather than a throw, so the caller can
+ * name the index position and the package, and whoever reads the failure can see which row of
+ * which document to fix.
+ */
+function entryFault(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return "is not an object";
   }
+  const e = value as Record<string, unknown>;
+  for (const key of ["name", "version", "description", "license"] as const) {
+    if (e[key] === undefined) return `has no "${key}"`;
+    if (typeof e[key] !== "string") return `"${key}" is not a string`;
+  }
+  if (!isStringArray(e.authors)) return `"authors" is not a list of strings`;
   for (const key of [
     "title",
     "titleZh",
@@ -74,12 +81,14 @@ function asIndexEntry(value: unknown): IndexDocumentEntry | null {
     "shortDescriptionZh",
     "icon",
   ] as const) {
-    if (e[key] !== undefined && typeof e[key] !== "string") return null;
+    if (e[key] !== undefined && typeof e[key] !== "string") return `"${key}" is not a string`;
   }
   for (const key of ["keywords", "categories", "sandboxDefaultFor"] as const) {
-    if (e[key] !== undefined && !isStringArray(e[key])) return null;
+    if (e[key] !== undefined && !isStringArray(e[key])) return `"${key}" is not a list of strings`;
   }
-  if (e.updatedAt !== undefined && typeof e.updatedAt !== "number") return null;
+  if (e.updatedAt !== undefined && typeof e.updatedAt !== "number") {
+    return `"updatedAt" is not a number`;
+  }
   // The release pin and its channels ride the row like any other field: an index that
   // carries them is malformed when they are not well-formed, and the install face
   // decides what a well-formed row's channel is worth (indexChannelOf, below).
@@ -87,22 +96,43 @@ function asIndexEntry(value: unknown): IndexDocumentEntry | null {
     e.integrity !== undefined &&
     (typeof e.integrity !== "string" || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(e.integrity))
   ) {
-    return null;
+    return `"integrity" is not sha512-<base64>`;
   }
   if (e.channels !== undefined) {
-    if (!Array.isArray(e.channels)) return null;
-    for (const channel of e.channels) {
-      if (typeof channel !== "object" || channel === null) return null;
+    if (!Array.isArray(e.channels)) return `"channels" is not a list`;
+    for (const [i, channel] of e.channels.entries()) {
+      if (typeof channel !== "object" || channel === null) return `channels[${i}] is not an object`;
       const c = channel as Record<string, unknown>;
-      if (typeof c.kind !== "string" || c.kind === "" || typeof c.url !== "string") return null;
+      if (typeof c.kind !== "string" || c.kind === "") return `channels[${i}] has no "kind"`;
+      if (c.url !== undefined && typeof c.url !== "string") {
+        return `channels[${i}] (${c.kind}) has a "url" that is not a string`;
+      }
+      // Only the github channel is fetched here, so only its address is required: an npm
+      // channel names the registry and carries none, and a kind this reader does not install
+      // from is listed as written — a publisher's new kind must not cost every deployment
+      // the whole document.
+      if (c.kind === "github" && c.url === undefined) return `channels[${i}] (github) has no url`;
     }
   }
+  return null;
+}
+
+/** A well-formed raw entry as a row, less what only the serving machine may say. */
+function asIndexEntry(value: object): IndexDocumentEntry {
   // Only the serving machine can report an installed version, even when the index is self-hosted.
-  if ("localInstall" in e) {
-    const { localInstall: _localOnly, ...entry } = e;
+  if ("localInstall" in value) {
+    const { localInstall: _localOnly, ...entry } = value as Record<string, unknown>;
     return entry as unknown as IndexDocumentEntry;
   }
   return value as IndexDocumentEntry;
+}
+
+/** The row a malformed entry claims to be, for its failure: ` (name@version)` when it says. */
+function claimedRow(value: unknown): string {
+  if (typeof value !== "object" || value === null) return "";
+  const { name, version } = value as Record<string, unknown>;
+  if (typeof name !== "string") return "";
+  return typeof version === "string" ? ` (${name}@${version})` : ` (${name})`;
 }
 
 /**
@@ -124,10 +154,13 @@ export function parsePluginIndex(
     throw new Error(`plugin index from ${source} is not an array`);
   }
   return data.map((raw, i) => {
-    const entry = asIndexEntry(raw);
-    if (entry === null) {
-      throw new Error(`plugin index from ${source} has a malformed entry at index ${i}`);
+    const fault = entryFault(raw);
+    if (fault !== null) {
+      throw new Error(
+        `plugin index from ${source} has a malformed entry at index ${i}${claimedRow(raw)}: ${fault}`,
+      );
     }
+    const entry = asIndexEntry(raw as object);
     return icons === "drop" ? withoutIcon(entry) : entry;
   });
 }
@@ -165,6 +198,15 @@ export function indexChannelOf(entry: IndexDocumentEntry): {
 } {
   const listed = entry.channels?.find((c) => c.kind === "github");
   if (listed === undefined) return { channel: null, fault: null };
+  // A parsed row's github channel always has its address (parsePluginIndex refuses one without);
+  // a row built by hand may not, and there is nothing to fetch then.
+  const url = listed.url;
+  if (url === undefined) {
+    return {
+      channel: null,
+      fault: `${entry.name}'s index entry lists a github release channel with no url; it is not installable.`,
+    };
+  }
   if (entry.integrity === undefined) {
     return {
       channel: null,
@@ -176,8 +218,8 @@ export function indexChannelOf(entry: IndexDocumentEntry): {
   // guards the bytes — a man in the middle on any http hop cannot make a tampered tarball
   // match. Off the machine the channel is https, no exceptions.
   if (
-    !listed.url.startsWith("https://") &&
-    !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])([:/]|$)/.test(listed.url)
+    !url.startsWith("https://") &&
+    !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])([:/]|$)/.test(url)
   ) {
     return {
       channel: null,
@@ -189,7 +231,7 @@ export function indexChannelOf(entry: IndexDocumentEntry): {
       name: entry.name,
       version: entry.version,
       integrity: entry.integrity,
-      url: listed.url,
+      url,
     },
     fault: null,
   };

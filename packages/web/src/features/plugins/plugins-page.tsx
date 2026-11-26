@@ -160,6 +160,7 @@ import { installOnAgent, toastWriteError, uninstallFromAgent } from "./agent-plu
 import { toastInstall } from "../../lib/agent-plugin-install";
 import { useOnPluginModulesChanged, usePluginModuleRequests } from "../../lib/plugin-modules";
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
+import { SourceFailuresNotice } from "./source-failures-notice";
 import { ImportPluginModal } from "./plugin-import-modal";
 import {
   PLUGIN_GROUP_BYS,
@@ -1361,9 +1362,7 @@ export function PluginsPage() {
           />
         )}
         {indexFailures.length > 0 && (
-          <Notice tone="attention" className="mt-4">
-            {S.pluginRegistry.sourceUnavailable(indexFailures.length)}
-          </Notice>
+          <SourceFailuresNotice failures={indexFailures} className="mt-4" />
         )}
         {indexPending > 0 && (
           <Notice tone="attention" className="mt-4">

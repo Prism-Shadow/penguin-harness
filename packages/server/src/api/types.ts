@@ -3214,7 +3214,7 @@ export interface PluginIndexEntry {
   channels?: PluginIndexChannel[];
 }
 
-/** One place a version's release asset is served from. */
+/** One place a version can be installed from. */
 export interface PluginIndexChannel {
   /**
    * The kind of source: `github` names a GitHub release asset tarball, the kind the
@@ -3222,8 +3222,11 @@ export interface PluginIndexChannel {
    * the ones it does not fetch.
    */
   kind: string;
-  /** The https URL the asset is served at. */
-  url: string;
+  /**
+   * The https URL the asset is served at. Always present on a `github` channel; absent on an
+   * `npm` one, which names the npm registry rather than an address.
+   */
+  url?: string;
 }
 
 /** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */

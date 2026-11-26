@@ -3873,8 +3873,10 @@ export const en: Strings = {
     /** Shown above the list when a source answered with nothing, so a short list is not read as a complete one. */
     sourceUnavailable: (count: number): string =>
       count === 1
-        ? "One plugin source could not be reached, so this list may be incomplete."
-        : `${count} plugin sources could not be reached, so this list may be incomplete.`,
+        ? "One plugin source could not be read, so this list may be incomplete."
+        : `${count} plugin sources could not be read, so this list may be incomplete.`,
+    sourceDetails: "Details",
+    sourceFailures: "Plugin sources that could not be read",
     /** Shown while the server is still reading a source: the list holds what has answered so far. */
     sourcePending: (count: number): string =>
       count === 1
