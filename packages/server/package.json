@@ -118,7 +118,6 @@
     "dotenv": "^17.0.0",
     "fflate": "^0.8.3",
     "hono": "^4.13.11",
-    "isomorphic-git": "^1.44.0",
     "mdast-util-gfm-footnote": "^2.1.0",
     "mdast-util-gfm-strikethrough": "^2.0.0",
     "mdast-util-gfm-table": "^2.0.0",
@@ -174,6 +173,7 @@
     "@types/which": "^3.0.4",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "4.1.12",
+    "isomorphic-git": "1.44.10",
     "tsup": "^8.3.0",
     "tsx": "^4.20.0",
     "vitest": "^4.1.12"
