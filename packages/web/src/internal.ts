@@ -72,6 +72,8 @@ export * from "./state/theme";
 export * from "./state/use-tool-bindings";
 export * from "@prismshadow/penguin-library-agent/web";
 export * from "@prismshadow/penguin-library-model/web";
+export * from "@prismshadow/penguin-library-project/web";
+export * from "@prismshadow/penguin-library-trace/web";
 
 export * from "./features/ai-create";
 export * from "./features/chat";
