@@ -146,3 +146,8 @@ pnpm-lock.yaml 未含。后果与已试路径：
   cookie-name face，server tsconfig paths 补映射（auth-token 与 initial-password 之间，
   字母序）。types.ts 其余三条 value 再导出（TICKET_SLUG_PATTERN/HOST_COMMANDS/
   AVATAR_MAX_CHARS）web 构建未红，不扩面。
+- 验证轮修复 4 补：auth DTS 红为上一步自身引留——middleware.ts 的
+  export { … } from 再导出不产生本地绑定，而本文件 44/53 行仍用 SESSION_COOKIE
+  （TS2552 ×4）。改 import { SESSION_COOKIE } from "./cookie-name.js" +
+  export { SESSION_COOKIE }; 两行，绑定与导出面同时在。教训与 types.ts 14 名同坑：
+  再导出无本地绑定。
