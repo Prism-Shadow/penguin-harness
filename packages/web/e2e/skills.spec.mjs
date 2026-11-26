@@ -52,7 +52,7 @@ const OFFICE_TAB = /^(Office Productivity|办公效率)$/;
 const PLUGINS = [
   "default-rsi-toolkit",
   "agent-development",
-  "agent-evaluation",
+  "rsi-workbench",
   "model-development",
   "software-development",
   "data-analysis",

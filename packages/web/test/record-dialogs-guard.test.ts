@@ -2,19 +2,17 @@
 /**
  * Record dialogs under the settings commit model: the ssh host forms — a new host filled in by
  * hand in the add dialog (features/machines/add-machine-dialog.tsx), and a host's configure
- * dialog (features/machines/ssh-host-dialog.tsx) — the manual Benchmark form
- * (features/benchmark/create-benchmark-modal.tsx), the chat's shortcut editor
+ * dialog (features/machines/ssh-host-dialog.tsx) — the chat's shortcut editor
  * (features/chat/saved-prompts.tsx) and the built-in browser's homepage
  * (plugins/browser-automation/src/web/homepage-dialog.tsx).
  *
  * - The verb waits for what it needs: a new ssh host's name and address, a malformed value — or a
  *   name the page already has — said under its field as it is typed; a change to a configured
- *   host; every required field of a Benchmark and of each of its cases; a homepage entry that
- *   opens another page than the saved one.
+ *   host; a homepage entry that opens another page than the saved one.
  * - A name the ssh config refuses leaves the add dialog open with the typing and the reason under
  *   the name.
- * - Closing with typing — or, in the add dialog, a host ticked — asks first; a blank form, and a
- *   Benchmark whose added case was removed again, close at once.
+ * - Closing with typing — or, in the add dialog, a host ticked — asks first; a blank form closes
+ *   at once.
  * - A shortcut's save waits for its write: a refused one leaves the dialog open with the typing
  *   and the list as it was; a landed one closes it and lists the shortcut. A new shortcut
  *   opened from the composer's text can be saved as it stands, and closes untouched without a
@@ -36,7 +34,6 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { AddMachineDialog } from "../src/features/machines/add-machine-dialog";
 import { SshHostDialog } from "../src/features/machines/ssh-host-dialog";
-import { CreateBenchmarkModal } from "../src/features/benchmark/create-benchmark-modal";
 import { SavedPrompts } from "../src/features/chat/saved-prompts";
 import { HomepageDialog } from "../../../plugins/browser-automation/src/web/homepage-dialog";
 import { apiError, json, stubFetch } from "./helpers/fetch";
@@ -199,50 +196,6 @@ describe("record dialogs", () => {
         path: "/api/projects/p1/machines/ssh-hosts/gpu-1",
         body: { hostName: "10.0.0.21", identityFile: "~/.ssh/gpu", password: null },
       });
-    });
-  });
-
-  describe("the manual Benchmark form", () => {
-    const b = en.benchmark;
-
-    async function openCreate() {
-      stubFetch(() => apiError(404, "not_found"));
-      const onClose = vi.fn();
-      await mount(
-        withPrompt(
-          h(CreateBenchmarkModal, { open: true, onClose, projectId: "p1", onCreated: () => {} }),
-        ),
-      );
-      return onClose;
-    }
-
-    it("waits for every required field of the form and of its case", async () => {
-      await openCreate();
-      expect(button(b.createSubmit).disabled).toBe(true);
-      await type(field(b.titleField), "Docs QA");
-      await type(field(b.idField), "docs-qa");
-      await type(field(b.caseSlugField), "install");
-      await type(field(b.caseTitleField), "Install steps");
-      await type(field(b.caseStatementField), "Explain how to install.");
-      expect(button(b.createSubmit).disabled).toBe(true);
-      await type(field(b.caseRubricField), "Names every step.");
-      expect(button(b.createSubmit).disabled).toBe(false);
-    });
-
-    it("asks before Cancel drops a typed case, and closes once an added case is removed again", async () => {
-      const onClose = await openCreate();
-      await type(field(b.caseStatementField), "Explain how to install.");
-      await click(button(en.common.cancel));
-      expect(promptOpen()).toBe(true);
-      await click(button(en.common.keepEditing));
-      await type(field(b.caseStatementField), "");
-
-      await click(button(b.addCase));
-      expect(document.querySelectorAll(`button[aria-label="${b.removeCase}"]`)).toHaveLength(2);
-      await click(document.querySelectorAll(`button[aria-label="${b.removeCase}"]`)[0]!);
-      await click(button(en.common.cancel));
-      expect(promptOpen()).toBe(false);
-      expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
 

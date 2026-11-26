@@ -16,8 +16,7 @@
  * - The header's New folder makes a folder of the apps checked in its dialog, under the name
  *   typed there, at the first checked app's place.
  * - An old folder containing the built-in Files tile still opens a separately installed Files app.
- * - A system app's tile opens its own page, where the nav keeps the App Center lit, Benchmark
- *   detail pages included.
+ * - A system app's tile opens its own page, where the nav keeps the App Center lit.
  */
 import { test, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
@@ -547,12 +546,9 @@ test("a system app's tile opens its page, where the App Center stays lit", async
   await setAccountPrefs(page.request, { lang: "en" });
   await page.goto(`${BASE}/apps`);
   const grid = page.getByRole("list", { name: "App Center" });
-  await grid.getByRole("button", { name: "Self-Evolution Workbench, system app" }).click();
-  await expect(page).toHaveURL(`${BASE}/benchmark`);
+  await grid.getByRole("button", { name: "Cost Center, system app" }).click();
+  await expect(page).toHaveURL(/\/usage(?:\?|$)/);
   const appCenter = page.locator("aside").first().getByRole("link", { name: "App Center" });
-  await expect(appCenter).toHaveAttribute("aria-current", "page");
-  // A Benchmark's own page lies under the Evaluation Center's.
-  await page.goto(`${BASE}/benchmark/no-such-benchmark`);
   await expect(appCenter).toHaveAttribute("aria-current", "page");
 });
 

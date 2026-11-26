@@ -34,27 +34,27 @@ function page(key: string, extra: Partial<WebAppPage> = {}): WebAppPage {
 
 describe("parentedPagesOf", () => {
   it("returns a table without parents as it is", () => {
-    const table = [page("agents"), page("benchmark")];
+    const table = [page("agents"), page("reports")];
     expect(parentedPagesOf(table)).toBe(table);
   });
 
   it("keeps a child whose parent is in the table", () => {
-    const table = [page("benchmark"), page("hello", { parent: "benchmark" })];
-    expect(parentedPagesOf(table).map((p) => p.key)).toEqual(["benchmark", "hello"]);
+    const table = [page("reports"), page("hello", { parent: "reports" })];
+    expect(parentedPagesOf(table).map((p) => p.key)).toEqual(["reports", "hello"]);
   });
 
   it("drops a child whose parent is absent, so it is neither in the nav nor routed", () => {
-    const table = [page("agents"), page("hello", { parent: "benchmark" })];
+    const table = [page("agents"), page("hello", { parent: "reports" })];
     expect(parentedPagesOf(table).map((p) => p.key)).toEqual(["agents"]);
   });
 
   it("refuses a child whose parent sits under another page, and keeps that parent", () => {
     const table = [
-      page("benchmark"),
-      page("hello", { parent: "benchmark" }),
+      page("reports"),
+      page("hello", { parent: "reports" }),
       page("deeper", { parent: "hello" }),
     ];
-    expect(parentedPagesOf(table).map((p) => p.key)).toEqual(["benchmark", "hello"]);
+    expect(parentedPagesOf(table).map((p) => p.key)).toEqual(["reports", "hello"]);
   });
 
   it("drops a page that names itself as its parent", () => {
@@ -66,28 +66,28 @@ describe("parentedPagesOf", () => {
 describe("the nav's children", () => {
   const pages = [
     page("agents"),
-    page("benchmark"),
-    page("hello", { parent: "benchmark" }),
-    page("later", { parent: "benchmark", released: false }),
-    page("ops", { parent: "benchmark", admin: true }),
-    page("second", { parent: "benchmark" }),
+    page("reports"),
+    page("hello", { parent: "reports" }),
+    page("later", { parent: "reports", released: false }),
+    page("ops", { parent: "reports", admin: true }),
+    page("second", { parent: "reports" }),
     page("machines", { admin: true }),
     page("tool", { parent: "machines" }),
   ];
 
   it("entries are the top-level pages only", () => {
-    expect(navKeysFor(pages, true)).toEqual(["agents", "benchmark", "machines"]);
-    expect(navKeysFor(pages, false)).toEqual(["agents", "benchmark"]);
+    expect(navKeysFor(pages, true)).toEqual(["agents", "reports", "machines"]);
+    expect(navKeysFor(pages, false)).toEqual(["agents", "reports"]);
   });
 
   it("each entry carries its children in table order, offered like entries", () => {
     expect([...navChildKeysFor(pages, true)]).toEqual([
-      ["benchmark", ["hello", "ops", "second"]],
+      ["reports", ["hello", "ops", "second"]],
       ["machines", ["tool"]],
     ]);
     // A member is offered neither the admin-only child nor, through its parent, the other.
     const member = navChildKeysFor(pages, false);
-    expect(member.get("benchmark")).toEqual(["hello", "second"]);
+    expect(member.get("reports")).toEqual(["hello", "second"]);
     expect(navKeysFor(pages, false)).not.toContain("machines");
   });
 });

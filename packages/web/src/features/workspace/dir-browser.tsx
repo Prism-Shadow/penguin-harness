@@ -1,8 +1,7 @@
 /**
  * A directory read in the shared read-only file browser (the UI package's `FileBrowser`, the one
- * the plugin detail and the Benchmark case dialog draw): listed one level at a time through the
- * Files panel's routes as its folders are opened, a file previewed on the right with a Download
- * link. Nothing here writes.
+ * the plugin detail draws): listed one level at a time through the Files panel's routes as its
+ * folders are opened, a file previewed on the right with a Download link. Nothing here writes.
  *
  * - On arrival the root is listed, and the first of the caller's `lead` names found there opens
  *   by itself (compared without case), so the browser lands on what the directory is about.

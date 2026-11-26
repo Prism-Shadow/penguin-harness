@@ -37,13 +37,6 @@ import type {
   ApprovalDecisionRequest,
   AuthLoginRequest,
   AuthResponse,
-  BenchmarkArchiveImportRequest,
-  BenchmarkArchiveImportResponse,
-  BenchmarkCasesResponse,
-  BenchmarkCreateRequest,
-  BenchmarkCreateResponse,
-  BenchmarksResponse,
-  CaseMaterial,
   ChatDefaultsDto,
   CommandPolicyDto,
   CommandPolicyRuleDto,
@@ -2386,114 +2379,6 @@ export const removeAgentSkill = (
     { method: "DELETE", server: machineId },
   );
 
-// Benchmarks (scores, manual creation and deletion) -------------------------------------------
-// Benchmarks sit at the Project level, beside agents rather than under one: a Benchmark can
-// evaluate many agents, so no agent id travels in these paths.
-
-/**
- * A Project's Benchmarks as ONE server holds them. A `benchmarks/` directory is written on
- * whichever machine created or evaluated the Benchmark, so the Evaluation Center asks this
- * server and each machine it holds, then merges the answers (lib/benchmark-merge.ts). The path
- * is not Session-scoped, so nothing about it can be routed from an id — the machine is passed.
- */
-export const listBenchmarks = (projectId: string, machineId: string | null) =>
-  apiFetch<BenchmarksResponse>(`/api/projects/${encodeURIComponent(projectId)}/benchmarks`, {
-    server: machineId,
-  });
-
-export const listBenchmarkCases = (
-  projectId: string,
-  benchmarkId: string,
-  machineId: string | null,
-) =>
-  apiFetch<BenchmarkCasesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}` +
-      `/cases`,
-    { server: machineId },
-  );
-
-/** Creates a Benchmark by hand (owner only); the server writes the on-disk layout. 409 `benchmark_exists` on a taken id. */
-export const createBenchmark = (projectId: string, body: BenchmarkCreateRequest) =>
-  apiFetch<BenchmarkCreateResponse>(`/api/projects/${encodeURIComponent(projectId)}/benchmarks`, {
-    method: "POST",
-    body,
-  });
-
-/** Removes a Benchmark directory whole — cases, config and scoreboard (owner only; 204). */
-export const deleteBenchmark = (projectId: string, benchmarkId: string) =>
-  apiFetch<void>(
-    `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}`,
-    { method: "DELETE" },
-  );
-
-/** Imports a Benchmark package from a zip (base64; any member); 409 `benchmark_exists` on a taken id unless overwrite; 201 returns the Benchmark as listed. */
-export const importBenchmarkArchive = (projectId: string, body: BenchmarkArchiveImportRequest) =>
-  apiFetch<BenchmarkArchiveImportResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/benchmarks/archive`,
-    { method: "POST", body },
-  );
-
-/**
- * Download URL of a published Benchmark's package (a zip; the server names it `<id>-v<version>.zip`
- * in Content-Disposition), from the machine holding the copy — null for this server. The export
- * round-trips through importBenchmarkArchive.
- */
-export const benchmarkArchiveUrl = (
-  projectId: string,
-  benchmarkId: string,
-  machineId: string | null,
-): string =>
-  apiUrl(
-    `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}/archive`,
-    machineId,
-  );
-
-const benchmarkCaseFilesPath = (
-  projectId: string,
-  benchmarkId: string,
-  caseId: string,
-  material: CaseMaterial,
-) =>
-  `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}` +
-  `/cases/${encodeURIComponent(caseId)}` +
-  `${material === "rubric" ? "/rubric" : ""}/files`;
-
-export const listBenchmarkCaseFiles = (
-  projectId: string,
-  benchmarkId: string,
-  caseId: string,
-  path: string,
-  material: CaseMaterial,
-  machineId: string | null,
-) =>
-  apiFetch<WorkspaceFilesResponse>(
-    benchmarkCaseFilesPath(projectId, benchmarkId, caseId, material),
-    { query: { path }, server: machineId },
-  );
-
-export const benchmarkCaseFileUrl = (
-  projectId: string,
-  benchmarkId: string,
-  caseId: string,
-  path: string,
-  material: CaseMaterial,
-  options: { download?: boolean; preview?: boolean; machineId: string | null },
-): string => {
-  const base = `${benchmarkCaseFilesPath(
-    projectId,
-    benchmarkId,
-    caseId,
-    material,
-  )}/content?path=${encodeURIComponent(path)}`;
-  return (
-    // A browser-followed URL (an <img> src, a download link), so the proxy prefix has to be
-    // IN it — there is no request here for a routing rule to act on.
-    apiUrl(base, options.machineId) +
-    (options.download ? "&download=1" : "") +
-    (options.preview && !options.download ? "&preview=1" : "")
-  );
-};
-
 // An Agent's own avatar (agent_state/avatar.<ext>) ---------------------------------------------
 
 const agentAvatarPath = (projectId: string, agentId: string) =>
@@ -2789,9 +2674,9 @@ export const createOrganization = (projectId: string, body: OrganizationCreateRe
   apiFetch<OrganizationDetail>(orgBase(projectId), { method: "POST", body });
 
 /**
- * A semantic id for a display name — a Project's, an Agent's, a Benchmark's, an organization's or
- * a channel's, by `kind` — from the default model of the Project in the path, with an ASCII
- * fallback and a dated placeholder behind it.
+ * A semantic id for a display name — a Project's, an Agent's, an organization's or a channel's,
+ * by `kind` — from the default model of the Project in the path, with an ASCII fallback and a
+ * dated placeholder behind it.
  */
 export const suggestSemanticId = (projectId: string, body: SemanticIdSuggestRequest) =>
   apiFetch<SemanticIdSuggestResponse>(`/api/projects/${encodeURIComponent(projectId)}/suggest-id`, {
