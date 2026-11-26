@@ -310,3 +310,11 @@ pnpm-lock.yaml 未含。后果与已试路径：
   4da1314adb+54628ca9bc PluginConfig 接口钉键机制（@Interface(key?)＋gen-ifaces 双推导点
   尊重显式键）＋npmReason 过滤 npm warn 噪声。hmr 红线零触碰（gen-ifaces/markers 属 core，
   config 仅指路不修改 hmr 文件）。待同步镜像并报 owner。
+- 收尾验证（调度席安排的五步）：①镜像 push（nothing new → --full 成功）②COMPILE_RC=0
+  （174bb93bff，DTS/esbuild 全件）③三件套首跑三红——TC_RC=2：browser-automation 的
+  typecheck 报 plugin-modules.ts(60) 'setup' does not exist on PluginModules（搬域后抽象
+  类无 setup 成员，Object.assign 后赋给抽象类型字段再调用丢失收窄；修＝局部变量先 setup
+  再赋字段，行为等价）——LINT_RC=1：runtime/organization/module.ts 两处
+  penguin-library-project 重复 import（修＝合并，Member 系列与 AgentIndex 并入一条）；
+  FMT_RC=1：26 文件格式漂移（搬域未过 prettier＋我改的 library-host/organization-runtime/
+  vitest.config）。④⑤待三件套转绿后连跑。
