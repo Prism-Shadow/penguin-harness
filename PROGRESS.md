@@ -301,3 +301,12 @@ pnpm-lock.yaml 未含。后果与已试路径：
   table does not carry' → 模块树整树拒绝（ModuleBootError 7 行）。修＝ifaceKeyOfType
   尾部同样先查 ifaceKeyBySymbol。grep 全文件确认其余 moduleNameOf 推导点仅剩
   namedKeyOf（数据类型 $ref，无接口类语义）与 component 键（不受影响）。
+- 全绿（land ok，54628ca9bc）：Test Files 348 passed | 1 skipped (349)、0 失败、
+  "No plugin library" 0 次，Duration 409s。读数演进：349 红文件 → 213 → 63 → 22 → 5 → 0。
+  本轮（第九层起）四笔：229167df36 setup 绝对路径 require 快照 core 的 dist/index.js
+  （require(esm) 被 exports 封锁的绕法）；fc96888a24 vitest alias 全库坍缩注册表（19 库包
+  +core+hmr，core 两个非镜像子路径显式钉位）；9d30844548 theme-pack/ui alias＋
+  cdn-failover 改库包 specifier＋organization-runtime 绑定 deps.semanticId；
+  4da1314adb+54628ca9bc PluginConfig 接口钉键机制（@Interface(key?)＋gen-ifaces 双推导点
+  尊重显式键）＋npmReason 过滤 npm warn 噪声。hmr 红线零触碰（gen-ifaces/markers 属 core，
+  config 仅指路不修改 hmr 文件）。待同步镜像并报 owner。
