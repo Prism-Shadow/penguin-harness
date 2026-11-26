@@ -321,3 +321,6 @@ pnpm-lock.yaml 未含。后果与已试路径：
 - FMT 修复（wt 通道）：本地无 prettier，按构建机产物流程走——wt 快照内 prettier --write
   26 文件 → git diff 打包 gzip+base64 回传（19508B，本地解码校验字节后 git apply，25 文件
   +244/−637）。随本笔提交，三件套重跑待 COMPILE_RC。
+- TC 收敛过程：browser-automation 修好后 pnpm -r 递归才推进到 packages/server，暴露修复
+  13③ 的类型面问题——绑定写在 deps 字面量之后，字面量按 OrgDeps 检查仍缺必填 semanticId；
+  修＝移进字面量内（boot 同形）。此前 r2 只见一个错的原因＝pnpm -r 首败即停，后续项目未跑。
