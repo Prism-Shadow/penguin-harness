@@ -6,8 +6,11 @@ import {
   createAgent,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
+  relocateProjectWorkspacePaths,
   tracesDir,
   userText,
+  WORKSPACE_MARKER_FILENAME,
+  workspaceMemoryKeyForRealPath,
 } from "../src/index.js";
 import { seedProject } from "./seeded-project.js";
 import { stubProviderKeys } from "./provider-keys.js";
@@ -135,5 +138,136 @@ describe.skipIf(process.platform !== "win32")("the installed Windows data locati
     expect(fs.readFileSync(pointer, "utf16le")).toBe("\ufeff" + base);
     fs.writeFileSync(pointer, "relative", "utf16le");
     expect(() => resolveRoot()).toThrow(/Invalid Windows data location/);
+  });
+
+  it("relocates config paths and workspace memory for both projects/ and top-level legacy Projects", async () => {
+    const oldData = path.join(control, "data");
+    const newData = path.join(base, "data");
+    const legacyWorkspace = path.join(
+      oldData,
+      "legacy_proj",
+      "organizations",
+      "co_one",
+      "workspace",
+      "hr",
+    );
+    const modernWorkspace = path.join(
+      oldData,
+      "projects",
+      "modern_proj",
+      "organizations",
+      "co_two",
+      "workspace",
+      "eng",
+    );
+    const movedLegacyWorkspace = path.join(
+      newData,
+      "legacy_proj",
+      "organizations",
+      "co_one",
+      "workspace",
+      "hr",
+    );
+    const movedModernWorkspace = path.join(
+      newData,
+      "projects",
+      "modern_proj",
+      "organizations",
+      "co_two",
+      "workspace",
+      "eng",
+    );
+
+    const legacyDir = path.join(newData, "legacy_proj");
+    const modernDir = path.join(newData, "projects", "modern_proj");
+    const legacyOldKey = workspaceMemoryKeyForRealPath(legacyWorkspace);
+    const legacyNewKey = workspaceMemoryKeyForRealPath(movedLegacyWorkspace);
+    const modernOldKey = workspaceMemoryKeyForRealPath(modernWorkspace);
+    const modernNewKey = workspaceMemoryKeyForRealPath(movedModernWorkspace);
+
+    fs.mkdirSync(path.join(legacyDir, "agents", "a1", "agent_state", "memory", legacyOldKey), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(legacyDir, ".project_config.toml"),
+      `[default_chat]\nworkspace = ${JSON.stringify(legacyWorkspace)}\n`,
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(
+        legacyDir,
+        "agents",
+        "a1",
+        "agent_state",
+        "memory",
+        legacyOldKey,
+        WORKSPACE_MARKER_FILENAME,
+      ),
+      `${legacyWorkspace}\n`,
+      "utf8",
+    );
+
+    fs.mkdirSync(path.join(modernDir, "agents", "a2", "agent_state", "memory", modernOldKey), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(modernDir, ".project_config.toml"),
+      `[default_chat]\nworkspace = ${JSON.stringify(modernWorkspace)}\n`,
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(
+        modernDir,
+        "agents",
+        "a2",
+        "agent_state",
+        "memory",
+        modernOldKey,
+        WORKSPACE_MARKER_FILENAME,
+      ),
+      `${modernWorkspace}\n`,
+      "utf8",
+    );
+
+    await relocateProjectWorkspacePaths(newData, [{ from: oldData, to: newData }], () => {});
+
+    expect(fs.readFileSync(path.join(legacyDir, ".project_config.toml"), "utf8")).toBe(
+      `[default_chat]\nworkspace = ${JSON.stringify(movedLegacyWorkspace)}\n`,
+    );
+    expect(
+      fs.readFileSync(
+        path.join(
+          legacyDir,
+          "agents",
+          "a1",
+          "agent_state",
+          "memory",
+          legacyNewKey,
+          WORKSPACE_MARKER_FILENAME,
+        ),
+        "utf8",
+      ),
+    ).toBe(`${movedLegacyWorkspace}\n`);
+    expect(
+      fs.existsSync(path.join(legacyDir, "agents", "a1", "agent_state", "memory", legacyOldKey)),
+    ).toBe(false);
+
+    expect(fs.readFileSync(path.join(modernDir, ".project_config.toml"), "utf8")).toBe(
+      `[default_chat]\nworkspace = ${JSON.stringify(movedModernWorkspace)}\n`,
+    );
+    expect(
+      fs.readFileSync(
+        path.join(
+          modernDir,
+          "agents",
+          "a2",
+          "agent_state",
+          "memory",
+          modernNewKey,
+          WORKSPACE_MARKER_FILENAME,
+        ),
+        "utf8",
+      ),
+    ).toBe(`${movedModernWorkspace}\n`);
   });
 });

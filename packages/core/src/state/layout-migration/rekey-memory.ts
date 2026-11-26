@@ -21,8 +21,8 @@ import {
   WORKSPACE_MARKER_FILENAME,
   workspaceMemoryKeyForRealPath,
 } from "../memory.js";
-import { agentsDir, memoryDir } from "../paths.js";
-import { listProjectDirs } from "../project-dirs.js";
+import { agentsDirFrom } from "../paths.js";
+import { listProjectDirs, type ProjectDirEntry } from "../project-dirs.js";
 import type { PathMove } from "./journal.js";
 import { lstatOrNull } from "./move.js";
 import { movedPath } from "./rewrite.js";
@@ -41,6 +41,7 @@ export async function rekeyWorkspaceMemory(
   root: string,
   moves: readonly PathMove[],
   log: (line: string) => void,
+  projects?: readonly ProjectDirEntry[],
 ): Promise<void> {
   if (moves.length === 0) return;
   // A marker holds a real path, and the data root may be reached through a link of its own
@@ -55,9 +56,10 @@ export async function rekeyWorkspaceMemory(
           { from: real(from), to: real(to) },
         ];
   });
-  for (const { id: projectId } of await listProjectDirs(root)) {
-    for (const agentId of await childNames(agentsDir(root, projectId))) {
-      const memory = memoryDir(root, projectId, agentId);
+  for (const { id: projectId, dir: projectRoot } of projects ?? (await listProjectDirs(root))) {
+    const agentsRoot = agentsDirFrom(projectRoot);
+    for (const agentId of await childNames(agentsRoot)) {
+      const memory = path.join(agentsRoot, agentId, "agent_state", "memory");
       for (const key of await childNames(memory)) {
         if (key === USER_SCOPE_KEY) continue;
         const marker = await readWorkspaceMarker(path.join(memory, key));
