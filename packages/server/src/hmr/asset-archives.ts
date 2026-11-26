@@ -97,4 +97,3 @@ export function pushedLibraryDir(assets: string | null): string | null {
   const dir = path.join(unpackedAssetsDir(assets), LIBRARY_DIR);
   return fs.existsSync(path.join(dir, "package.json")) ? dir : null;
 }
-

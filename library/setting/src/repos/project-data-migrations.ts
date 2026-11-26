@@ -6,10 +6,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "@prismshadow/penguin-library-db";
-import type {
-  ProjectDataMigrationRow,
-  ProjectDataMigrations,
-} from "../project-data-migrations.js";
+import type { ProjectDataMigrationRow, ProjectDataMigrations } from "../project-data-migrations.js";
 
 @Component()
 export class ProjectDataMigrationsRepo implements ProjectDataMigrations {

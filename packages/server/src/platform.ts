@@ -108,10 +108,7 @@ import { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/wo
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
 import { ProjectNotifier } from "./services/project-events.js";
-import {
-  ProjectService,
-  ProjectRuns,
-} from "./services/project-service.js";
+import { ProjectService, ProjectRuns } from "./services/project-service.js";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
@@ -518,14 +515,7 @@ export class TracesModule {}
     InstalledAgentSkills,
     AgentRoutes,
   ],
-  exports: [
-    AgentConfig,
-    Snapshots,
-    AgentLifecycle,
-    Memory,
-    DeletingFolders,
-    AgentSkills,
-  ],
+  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, DeletingFolders, AgentSkills],
 })
 export class AgentsModule {}
 

@@ -69,8 +69,9 @@ const exists = (p: string) =>
   );
 
 async function receiptOf(dir: string): Promise<string> {
-  return (JSON.parse(await fs.readFile(path.join(dir, ".plugin.json"), "utf8")) as { plugin: string })
-    .plugin;
+  return (
+    JSON.parse(await fs.readFile(path.join(dir, ".plugin.json"), "utf8")) as { plugin: string }
+  ).plugin;
 }
 
 function ledgerRow(t: TestApp, name: string, projectId: string) {
@@ -104,7 +105,16 @@ describe("the startup migration to the Self-Evolution Workbench", { timeout: 120
     const first = await createTestApp({ durableDatabase: true });
     root = first.root;
     const admin = apiClient(first.app, (await loginAdmin(first.app)).cookie);
-    for (const projectId of ["evals", "clash", "held", "bare", "stuck", "lacking", "cut", "fresh"]) {
+    for (const projectId of [
+      "evals",
+      "clash",
+      "held",
+      "bare",
+      "stuck",
+      "lacking",
+      "cut",
+      "fresh",
+    ]) {
       const res = await admin.post("/api/projects", { projectId, name: projectId });
       expect(res.status, await res.text()).toBe(201);
     }
@@ -196,7 +206,9 @@ describe("the startup migration to the Self-Evolution Workbench", { timeout: 120
     };
     expect(manifest.penguin.appCenter.show).toBe(false);
     expect(manifest.penguin.version > "2026.11.25.1").toBe(true);
-    expect(await exists(path.join(workbenchOf(root, "evals", "evaluator"), ".disabled"))).toBe(true);
+    expect(await exists(path.join(workbenchOf(root, "evals", "evaluator"), ".disabled"))).toBe(
+      true,
+    );
   });
 
   it("leaves an edited copy as it is and reads it as rsi-workbench's, an update behind", async () => {
@@ -204,25 +216,36 @@ describe("the startup migration to the Self-Evolution Workbench", { timeout: 120
     expect(await receiptOf(dir)).toBe("agent-evaluation");
     expect(await fs.readFile(path.join(dir, "index.ts"), "utf8")).toContain("// mine");
     const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-    const listed = (await (await admin.get("/api/projects/evals/agents/tinker/plugins")).json()) as {
+    const listed = (await (
+      await admin.get("/api/projects/evals/agents/tinker/plugins")
+    ).json()) as {
       workbenches: { name: string; plugin: string; version: string }[];
     };
     expect(listed.workbenches).toEqual([
       { name: "benchmark", plugin: "rsi-workbench", version: "2026.11.25.1" },
     ]);
-    expect(lines.some((l) => l.includes("evals/tinker") && l.includes("stays as it is"))).toBe(true);
+    expect(lines.some((l) => l.includes("evals/tinker") && l.includes("stays as it is"))).toBe(
+      true,
+    );
   });
 
   it("moves the system Agent's Benchmarks into the default Agent's workbench, Harbor into its cache, and links the old folder", async () => {
     const target = targetOf(root, "evals");
     expect((await fs.readdir(target)).sort()).toEqual([".seeded", "alpha", "beta"]);
-    expect(await fs.readFile(path.join(target, "beta", ".jobs", "job-1", "trial-1", "agent.log"), "utf8")).toBe("…");
+    expect(
+      await fs.readFile(
+        path.join(target, "beta", ".jobs", "job-1", "trial-1", "agent.log"),
+        "utf8",
+      ),
+    ).toBe("…");
     const source = sourceOf(root, "evals");
     expect((await fs.lstat(source)).isSymbolicLink()).toBe(true);
     expect(await fs.realpath(source)).toBe(await fs.realpath(target));
     const harbor = path.join(workbenchCacheDir(root, "evals", DEFAULT, "benchmark"), "harbor");
     expect(await fs.readFile(path.join(harbor, "README.md"), "utf8")).toBe("harbor");
-    expect(lines.filter((l) => l.includes("evals:") && l.includes("still running"))).toHaveLength(1);
+    expect(lines.filter((l) => l.includes("evals:") && l.includes("still running"))).toHaveLength(
+      1,
+    );
     expect(lines.find((l) => l.includes("still running"))).toContain("beta");
     for (const name of [MIGRATION, MOVE, INSTALL]) {
       expect(ledgerRow(t, name, "evals")?.finished_at).toEqual(expect.any(String));
@@ -236,12 +259,23 @@ describe("the startup migration to the Self-Evolution Workbench", { timeout: 120
   });
 
   it("leaves a same-id Benchmark where it is, keeps the old folder and finishes nothing", async () => {
-    expect((await fs.readdir(targetOf(root, "clash"))).sort()).toEqual([".seeded", "shared", "solo"]);
-    expect(await fs.readFile(path.join(targetOf(root, "clash"), "shared", "benchmark_config.toml"), "utf8")).toBe("mine");
+    expect((await fs.readdir(targetOf(root, "clash"))).sort()).toEqual([
+      ".seeded",
+      "shared",
+      "solo",
+    ]);
+    expect(
+      await fs.readFile(
+        path.join(targetOf(root, "clash"), "shared", "benchmark_config.toml"),
+        "utf8",
+      ),
+    ).toBe("mine");
     const source = sourceOf(root, "clash");
     expect((await fs.lstat(source)).isDirectory()).toBe(true);
     expect(await fs.readdir(source)).toEqual(["shared"]);
-    expect(lines.some((l) => l.includes(path.join(source, "shared")) && l.includes("stays where it is"))).toBe(true);
+    expect(
+      lines.some((l) => l.includes(path.join(source, "shared")) && l.includes("stays where it is")),
+    ).toBe(true);
     expect(ledgerRow(t, MIGRATION, "clash")?.finished_at).toBeNull();
   });
 
@@ -256,7 +290,9 @@ describe("the startup migration to the Self-Evolution Workbench", { timeout: 120
 
   it("installs the workbench once on a default Agent that has none", async () => {
     expect(await receiptOf(workbenchOf(root, "lacking", DEFAULT))).toBe("rsi-workbench");
-    expect(await fs.readdir(targetOf(root, "lacking"))).toEqual(expect.arrayContaining(["epsilon"]));
+    expect(await fs.readdir(targetOf(root, "lacking"))).toEqual(
+      expect.arrayContaining(["epsilon"]),
+    );
     expect(ledgerRow(t, INSTALL, "lacking")?.finished_at).toEqual(expect.any(String));
   });
 
@@ -289,7 +325,11 @@ describe("the startup migration to the Self-Evolution Workbench", { timeout: 120
 
     ({ t, lines } = await restart(t));
 
-    expect((await fs.readdir(targetOf(root, "clash"))).sort()).toEqual([".seeded", "shared", "solo"]);
+    expect((await fs.readdir(targetOf(root, "clash"))).sort()).toEqual([
+      ".seeded",
+      "shared",
+      "solo",
+    ]);
     expect((await fs.lstat(sourceOf(root, "clash"))).isSymbolicLink()).toBe(true);
     expect(ledgerRow(t, MIGRATION, "clash")?.finished_at).toEqual(expect.any(String));
     expect(await fs.readdir(targetOf(root, "stuck"))).toEqual(expect.arrayContaining(["eta"]));

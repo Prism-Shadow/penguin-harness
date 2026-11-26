@@ -9,12 +9,7 @@ import { agentTracesRoutes } from "../http/routes/agent-traces.js";
 import { agentApiRoutes } from "../http/routes/agent-api.js";
 import { agentAvatarRoutes } from "../http/routes/agent-avatar.js";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
-import type {
-  AgentConfig,
-  AgentLifecycle,
-  Memory,
-  Snapshots,
-} from "../mechanisms/agents.js";
+import type { AgentConfig, AgentLifecycle, Memory, Snapshots } from "../mechanisms/agents.js";
 import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";

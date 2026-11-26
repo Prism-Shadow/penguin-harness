@@ -103,18 +103,19 @@ const WORKBENCH = BENCHMARK_APP_ID;
  * without `penguin.appCenter.show`, which the App Center switch rewrites (the published file is
  * in that same key order).
  */
-const PUBLISHED: readonly Readonly<Record<"index.ts" | "package.json" | "ui/icon.svg", string>>[] = [
-  {
-    "index.ts": "7c58cef3b4fea9bcb9874124dba8f442df8aa190169035b138ca21704841e391",
-    "package.json": "4f4ce6f65994442849c1d3e2ccbc26bf2645709d34b818886b98a1516118f9a9",
-    "ui/icon.svg": "6e0cf94c8e416075ba5f28b7e45510f07488ef0c47988d8cfa696190b686aff9",
-  },
-  {
-    "index.ts": "7c58cef3b4fea9bcb9874124dba8f442df8aa190169035b138ca21704841e391",
-    "package.json": "758c4a58dfa09b7dac813a06886a1753c9504f48c2ff25fcf8ecefcd680d4a69",
-    "ui/icon.svg": "25a0b587204a9716f1ecba8521e42fba319a4b1ec91f2e3cd32b6b4c95cc4868",
-  },
-];
+const PUBLISHED: readonly Readonly<Record<"index.ts" | "package.json" | "ui/icon.svg", string>>[] =
+  [
+    {
+      "index.ts": "7c58cef3b4fea9bcb9874124dba8f442df8aa190169035b138ca21704841e391",
+      "package.json": "4f4ce6f65994442849c1d3e2ccbc26bf2645709d34b818886b98a1516118f9a9",
+      "ui/icon.svg": "6e0cf94c8e416075ba5f28b7e45510f07488ef0c47988d8cfa696190b686aff9",
+    },
+    {
+      "index.ts": "7c58cef3b4fea9bcb9874124dba8f442df8aa190169035b138ca21704841e391",
+      "package.json": "758c4a58dfa09b7dac813a06886a1753c9504f48c2ff25fcf8ecefcd680d4a69",
+      "ui/icon.svg": "25a0b587204a9716f1ecba8521e42fba319a4b1ec91f2e3cd32b6b4c95cc4868",
+    },
+  ];
 
 /**
  * Decision E1 (2026-11-26): a default Agent that has no `benchmark` workbench gets the plugin
@@ -170,7 +171,9 @@ export async function migrateToRsiWorkbench(deps: RsiWorkbenchMigrationDeps): Pr
       }
     }
   } catch (err) {
-    deps.log(`[rsi-workbench] the Projects were not migrated, the next start tries again: ${reason(err)}`);
+    deps.log(
+      `[rsi-workbench] the Projects were not migrated, the next start tries again: ${reason(err)}`,
+    );
   }
 }
 
@@ -325,14 +328,19 @@ async function installOnce(
       );
     } catch (err) {
       if (!(err instanceof WorkbenchNameTakenError)) throw err;
-      log(`[rsi-workbench] ${projectId}: ${PLUGIN} was not installed on ${DEFAULT_AGENT_ID}: ${err.message}`);
+      log(
+        `[rsi-workbench] ${projectId}: ${PLUGIN} was not installed on ${DEFAULT_AGENT_ID}: ${err.message}`,
+      );
     }
   }
   ledger.finish(INSTALL, projectId, now());
 }
 
 /** Answers whether the move is done; false leaves it for the next start (see the module header). */
-async function moveBenchmarks(deps: RsiWorkbenchMigrationDeps, projectId: string): Promise<boolean> {
+async function moveBenchmarks(
+  deps: RsiWorkbenchMigrationDeps,
+  projectId: string,
+): Promise<boolean> {
   const { root, ledger, log, now } = deps;
   const source = await resolveBenchmarksDir(root, projectId);
   const target = workbenchDataDir(root, projectId, DEFAULT_AGENT_ID, WORKBENCH);
