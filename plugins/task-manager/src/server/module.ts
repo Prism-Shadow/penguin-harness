@@ -123,8 +123,7 @@ export class TaskManagerModule {
           ownerUserId: row.ownerUserId,
         })),
       agentsOf,
-      // A page is a workbench that has been read for writing at least once (its `.page-id`). A
-      // workbench never opened holds no page id, so no Session can name it as its source.
+      // Each workbench listed by the server carries its in-memory page id (`WorkbenchInfo.pageId`).
       pagesOf: async (projectId, agentId) => {
         const infos = await workbenches.list(projectId, agentId).catch((err: unknown) => {
           log.line(

@@ -15,7 +15,7 @@ import { modelVisiblePath } from "./model-visible-path.js";
 import { workspacesDir } from "../state/index.js";
 import { attachedImageLine, isWholeOriginBlock } from "@prismshadow/amsp/markers";
 import { userText } from "@prismshadow/amsp/records";
-import type { McpServerConnectResult, AmspRecord } from "@prismshadow/amsp/records";
+import type { McpServerConnectResult, AmspRecord, PageSource } from "@prismshadow/amsp/records";
 
 /** Session runtime environment fields: the placeholder substitution values for `assembleSystemPrompt`; producer and consumer share the same type. */
 export type SessionEnvironment = SessionEnvironmentValues;
@@ -60,10 +60,10 @@ export function formatSessionId(date: Date = new Date()): string {
 /**
  * Generate a Workbench page id of the form `page-YYYY-MM-DD-HH-mm-ss-<8-hex>`: a Session id's
  * shape with `page-` in place of `session-` (local timezone, zero-padded; hex from randomUUID).
- * A page keeps its id for the life of its workbench folder (the server writes it there), and a
- * Session the page opens records it as its source (`PageSource`).
+ * The server assigns one in memory per workbench, exposes it on the workbench's module `ctx` and
+ * `WorkbenchHost`, and every Session the workbench opens records it as its source (`PageSource`).
  */
-export function formatPageId(date: Date = new Date()): string {
+export function formatPageId(date: Date = new Date()): PageSource {
   const hex = randomUUID().replace(/-/g, "").slice(0, 8);
   return `page-${idTimestamp(date)}-${hex}`;
 }

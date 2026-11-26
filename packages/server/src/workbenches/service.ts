@@ -123,7 +123,6 @@ import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import type { AgentStateEngines } from "./engines.js";
 import type { VersionAuthor } from "./git-identity.js";
 import {
-  ensurePageId,
   HIDDEN_FROM_SIDEBAR,
   isSafeRelPath,
   isSwitchedOff,
@@ -180,11 +179,6 @@ function key(projectId: string, agentId: string, workbenchId: string): string {
 /** Where a workbench's folder sits in the Agent State repository. */
 function repoPath(workbenchId: string): string {
   return `workbenches/${workbenchId}`;
-}
-
-/** The page id as the listing carries it: nothing at all when the folder would not take one. */
-function pageIdField(pageId: string | null): { pageId?: string } {
-  return pageId === null ? {} : { pageId };
 }
 
 function messageOf(err: unknown): string {
@@ -309,7 +303,11 @@ export function contributedAppIcon(tabs: readonly WorkbenchTab[]): WorkbenchTabI
 }
 
 /** Pairs the manifests with the emitted default export, by name. */
-async function loadDefs(manifests: readonly Manifest[], entry: string): Promise<ModuleDef> {
+async function loadDefs(
+  manifests: readonly Manifest[],
+  entry: string,
+  pageId: PageSource,
+): Promise<ModuleDef> {
   const mod = (await import(pathToFileURL(entry).href)) as {
     default?: { modules?: Record<string, ModuleDef["create"] | { create: ModuleDef["create"] }> };
   };
@@ -320,13 +318,17 @@ async function loadDefs(manifests: readonly Manifest[], entry: string): Promise<
   const defs = new Map<string, ModuleDef>();
   for (const manifest of manifests) {
     const found = code[manifest.name];
-    const create = typeof found === "function" ? found : found?.create;
-    if (typeof create !== "function") {
+    const rawCreate = typeof found === "function" ? found : found?.create;
+    if (typeof rawCreate !== "function") {
       throw new Error(
         `package.json names module '${manifest.name}' but the default export has no create() for it`,
       );
     }
-    defs.set(manifest.name, { manifest, create });
+    const bound = typeof found === "function" ? rawCreate : rawCreate.bind(found);
+    defs.set(manifest.name, {
+      manifest,
+      create: (ctx, context) => bound(Object.assign(ctx, { pageId }), context),
+    });
   }
   for (const def of defs.values()) {
     def.children = def.manifest.children.map((ref) => {
@@ -367,6 +369,8 @@ export class WorkbenchService implements Workbenches {
   @Use() private readonly engines!: AgentStateEngines;
 
   private readonly loaded = new Map<string, Loaded>();
+  /** The in-memory page id of each workbench (`projectId/agentId/workbenchId` → `PageSource`). */
+  private readonly pageIds = new Map<string, PageSource>();
   private readonly watchers = new Map<string, { close(): void }>();
   private readonly pending = new Map<string, NodeJS.Timeout>();
   /** The load in flight per workbench: a load takes a compiler run, so two can overlap. */
@@ -427,6 +431,7 @@ export class WorkbenchService implements Workbenches {
       for (const w of this.watchers.values()) w.close();
       for (const l of this.loaded.values()) l.tree?.dispose();
       this.loaded.clear();
+      this.pageIds.clear();
     });
   }
 
@@ -502,12 +507,12 @@ export class WorkbenchService implements Workbenches {
       // the same 404 the session-gated routes answer for an unknown id.
       throw new WorkbenchNotFound("no such workbench");
     }
+    const pageId = this.pageIds.get(key(projectId, agentId, folder.id));
     return {
       id: folder.id,
       name: folder.pkg.name,
       version: folder.pkg.version,
-      // Read, never minted: this path answers without writing a folder (see the doc).
-      ...pageIdField(folder.pageId),
+      ...(pageId !== undefined ? { pageId } : {}),
       revision: folder.revision,
       uiRev: folder.uiRev,
       tabs,
@@ -899,6 +904,9 @@ export class WorkbenchService implements Workbenches {
       l.tree?.dispose();
       this.loaded.delete(k);
     }
+    for (const k of this.pageIds.keys()) {
+      if (k.startsWith(prefix)) this.pageIds.delete(k);
+    }
   }
 
   async whileReleased<T>(projectId: string, agentId: string, work: () => Promise<T>): Promise<T> {
@@ -1004,7 +1012,7 @@ export class WorkbenchService implements Workbenches {
       id,
       name: l.folder.pkg.name,
       version: l.folder.pkg.version,
-      ...pageIdField(await this.pageIdOf(l.folder)),
+      pageId: this.pageIdOf(projectId, agentId, id),
       revision: l.folder.revision,
       uiRev: l.folder.uiRev,
       tabs: l.tabs,
@@ -1031,7 +1039,7 @@ export class WorkbenchService implements Workbenches {
       id: folder.id,
       name: folder.pkg.name,
       version: folder.pkg.version,
-      ...pageIdField(await this.pageIdOf(folder)),
+      pageId: this.pageIdOf(projectId, agentId, folder.id),
       revision: folder.revision,
       uiRev: folder.uiRev,
       tabs: [],
@@ -1048,15 +1056,19 @@ export class WorkbenchService implements Workbenches {
   }
 
   /**
-   * The workbench's page id, minted and written into its folder the first time it is asked for:
-   * the id every Session its pages open records as its source (`PageSource`), so one page's
-   * Sessions are told apart from another's. A folder that will not take the file answers null —
-   * such a workbench is listed and serves, but records its Sessions as `workbench`.
+   * The workbench's page id in this server process, minted the first time the workbench is
+   * seen and kept across reloads until it is removed or its Agent is released: the id
+   * `ctx.pageId` and `host.pageId` read, and the `source` (`PageSource`) every Session
+   * `host.createSession` opens records.
    */
-  private async pageIdOf(folder: WorkbenchFolder): Promise<PageSource | null> {
-    const known = folder.pageId;
-    if (known !== null) return known;
-    return ensurePageId(folder.dir, formatPageId).catch(() => null);
+  private pageIdOf(projectId: string, agentId: string, workbenchId: string): PageSource {
+    const k = key(projectId, agentId, workbenchId);
+    let existing = this.pageIds.get(k);
+    if (existing === undefined) {
+      existing = formatPageId(this.clock.now());
+      this.pageIds.set(k, existing);
+    }
+    return existing;
   }
 
   /** Whether the workbench runs: neither its own off-marker nor the Agent's is there. */
@@ -1253,7 +1265,8 @@ export class WorkbenchService implements Workbenches {
         ...fit.problems,
       ];
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
-      const root = await loadDefs(manifests, entry);
+      const pageId = this.pageIdOf(projectId, agentId, folder.id);
+      const root = await loadDefs(manifests, entry, pageId);
       const own = new WorkbenchSubscriptions({
         channels: this.channels,
         statusOf: (sessionId) => this.runner.statusOf(sessionId),
@@ -1261,7 +1274,7 @@ export class WorkbenchService implements Workbenches {
         log: (line) => this.log.line(`[workbench ${folder.id}] ${line}`),
       });
       subscriptions = own;
-      const host = await this.host(projectId, agentId, folder, own);
+      const host = await this.host(projectId, agentId, folder, own, pageId);
       const modules = await bootModules(root, {
         ifaces: table as unknown as IfaceTable,
         resources: this.resources!,
@@ -1375,13 +1388,10 @@ export class WorkbenchService implements Workbenches {
     agentId: string,
     folder: WorkbenchFolder,
     subscriptions: WorkbenchSubscriptions,
+    pageId: PageSource,
   ) {
     const service = this;
     let state: unknown = await readState(folder.dir);
-    // The page whose Sessions this is: every Session the handler opens records it as its source
-    // (`PageSource`), so the tree one page's Sessions form is read back from the Traces alone.
-    // Read (and minted, when the folder holds none) before any Session can be opened.
-    const pageId = await service.pageIdOf(folder);
     // The plugin it came from names the app at the shared levels; a name no plugin could have
     // is no app's.
     const from = await installedPlugin(folder.dir).catch(() => null);
@@ -1400,6 +1410,7 @@ export class WorkbenchService implements Workbenches {
       (await service.agentConfig.exists(projectId, SYSTEM_AGENT_ID)) &&
       !(await service.agentConfig.isSystemAgent(projectId, SYSTEM_AGENT_ID));
     return {
+      pageId,
       listAgents: () =>
         service.agents
           .list(projectId)
@@ -1437,8 +1448,8 @@ export class WorkbenchService implements Workbenches {
           ...(model ? { provider: model.provider, modelId: model.modelId } : {}),
           approvalMode,
           // The page's id, so the Sessions one page opened are told apart from another page's
-          // (`PageSource`); a folder that would not take an id keeps the kind's own source.
-          source: pageId ?? "workbench",
+          // (`PageSource`).
+          source: pageId,
           client: "workbench",
         });
       },
@@ -1509,7 +1520,9 @@ export class WorkbenchService implements Workbenches {
 
   /** Drops a workbench's instance and tells the Project's users it is gone. */
   private forget(projectId: string, agentId: string, workbenchId: string): void {
-    this.unload(key(projectId, agentId, workbenchId));
+    const k = key(projectId, agentId, workbenchId);
+    this.unload(k);
+    this.pageIds.delete(k);
     this.publish(projectId, { type: "workbench_removed", projectId, agentId, workbenchId });
   }
 

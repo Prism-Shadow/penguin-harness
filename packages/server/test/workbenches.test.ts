@@ -146,7 +146,7 @@ import type { WorkbenchPackage } from "@prismshadow/penguin-server/plugin";
 export default {
   modules: {
     Workbench: {
-      create({ use }) {
+      create({ use, pageId }) {
         const host = use.host;
         let releaseEvents: (() => void) | undefined;
         return {
@@ -159,7 +159,7 @@ export default {
                   // No argument at all is this Agent: the rendered types keep the parameter optional.
                   const opened = await (agent ? host.createSession({ agentId: agent }) : host.createSession()).catch((e: Error) => e.message);
                   const ran = await host.run(req.query["session"] ?? "", [{ text: "hi" }]).catch((e: Error) => e.message);
-                  return { body: { opened, ran, agents: host.listAgents().map((a) => a.agentId) } };
+                  return { body: { opened, ran, pageId, hostPageId: host.pageId, agents: host.listAgents().map((a) => a.agentId) } };
                 }
                 if (req.path === "/talk") {
                   // The mode is whatever the page sent, cast past its type as plain JavaScript could.
@@ -526,6 +526,8 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect(await res.json()).toEqual({
       opened: "createSession: this Project has no Agent 'nobody'",
       ran: "run: this Project has no Session 'not-a-session'",
+      pageId: wf.pageId,
+      hostPageId: wf.pageId,
       agents: [AGENT],
     });
     const system = (await (await owner.get(`${BASE}/demo/api/open?agent=system_agent`)).json()) as {
@@ -535,12 +537,17 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect(t.deps.sessionsRepo.listByAgent(PROJECT, "system_agent")).toEqual([]);
     const own = (await (await owner.get(`${BASE}/demo/api/open`)).json()) as {
       opened: { sessionId: string };
+      pageId: string;
+      hostPageId: string;
     };
     // Assert the Session the workbench caller receives, including its unattended approval
     // mode, rather than the arguments of an internal service or a missing ambient key. The
     // source is the page's own id: the page is what opened it, and its id is what tells this
     // page's Sessions from another page's.
+    expect(wf.pageId).toMatch(/^page-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}$/);
     expect(own).toMatchObject({
+      pageId: wf.pageId,
+      hostPageId: wf.pageId,
       opened: {
         sessionId: expect.any(String),
         projectId: PROJECT,
@@ -548,7 +555,7 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
         provider: "custom",
         modelId: "workbench-test",
         approvalMode: "allow-all",
-        source: expect.stringMatching(/^page-/),
+        source: wf.pageId,
         archived: true,
       },
     });

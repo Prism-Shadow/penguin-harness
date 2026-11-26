@@ -42,6 +42,8 @@ export type WorkbenchRequest = Parameters<WorkbenchMain["handle"]>[0];
 export type WorkbenchResponse = Awaited<ReturnType<WorkbenchMain["handle"]>>;
 export interface WorkbenchModuleCtx<Use> {
   use: Use;
+  /** This workbench's page id (\`page-YYYY-MM-DD-HH-mm-ss-<8 hex>\`), which its Sessions record as their \`source\`. */
+  readonly pageId: string;
   /** Runs when the tree is disposed (a reload, a removal, the platform going away). */
   effect(dispose: () => void): void;
 }

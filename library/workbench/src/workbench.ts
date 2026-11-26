@@ -19,8 +19,8 @@ export interface WorkbenchInfo {
   version: string | null;
   /**
    * The page id this workbench's Sessions record as their source (`PageSource`):
-   * `page-YYYY-MM-DD-HH-mm-ss-<8 hex>`, minted the first time the folder was read. Absent only
-   * from a server that predates page ids, or for a folder that would not take one.
+   * `page-YYYY-MM-DD-HH-mm-ss-<8 hex>`, assigned by the server in memory and exposed on the
+   * workbench's module `ctx` and `WorkbenchHost`. Absent only from a server that predates page ids.
    */
   pageId?: string;
   /** git's tree id (12 hex) of the folder's source: what history records. */

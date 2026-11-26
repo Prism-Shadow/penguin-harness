@@ -96,6 +96,11 @@ export abstract class WorkbenchMain {
 @Interface()
 export abstract class WorkbenchHost {
   /**
+   * This workbench's page id (`page-YYYY-MM-DD-HH-mm-ss-<8 hex>`), which its Sessions record as
+   * their `source` (`PageSource`).
+   */
+  abstract readonly pageId: string;
+  /**
    * The Agents of this Project — who `createSession` can be asked to open a Session of. The
    * system Agent, which runs none, is not one of them.
    */
