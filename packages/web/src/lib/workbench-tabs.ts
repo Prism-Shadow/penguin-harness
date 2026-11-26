@@ -7,8 +7,9 @@
  * for each page it has — several, or none for a handler-only workbench — and the server hands
  * them over with each page's URL resolved. The slot keeps its name, so no installed manifest has
  * to change. `uiRev`, the content hash of the workbench's `ui/` tree, is only the cache key an
- * open page compares to notice it changed under it (the iframe reloads on a new one). A page
- * whose renderer this build does not carry is left out: there is nothing to draw it with.
+ * open page compares to notice it changed under it (the iframe reloads on a new one). Every page
+ * is drawn in a frame; a tab without an iframe renderer, which an older machine may still list
+ * for its in-repo Self-Evolution Workbench, is left out: there is nothing to draw it with.
  */
 import { useEffect } from "react";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
@@ -33,7 +34,9 @@ export type WorkbenchTab = {
   uiRev: string;
   /** The load error of the CURRENT files; the tab still shows the last good UI. */
   error: string | null;
-} & ({ src: string; builtin?: never } | { builtin: "SelfEvolutionWorkbench"; src?: never });
+  /** The page's URL, routed through the machine that holds it. */
+  src: string;
+};
 
 /**
  * Dispatched on `window` when the server says a workbench of some Agent was (re)loaded or
@@ -108,12 +111,9 @@ export function workbenchTabsOf(
         uiRev: w.uiRev ?? w.revision,
         error: w.error,
       };
-      if ("builtin" in tab.renderer) {
-        return tab.renderer.builtin === "SelfEvolutionWorkbench"
-          ? [{ ...shared, builtin: tab.renderer.builtin }]
-          : [];
-      }
-      const { src, pointerLock } = tab.renderer.iframe;
+      const iframe = (tab.renderer as Partial<typeof tab.renderer>).iframe;
+      if (iframe === undefined) return [];
+      const { src, pointerLock } = iframe;
       return [
         { ...shared, src: apiUrl(src, machineId), ...(pointerLock ? { pointerLock: true } : {}) },
       ];

@@ -263,7 +263,7 @@
   "test/vault.test.ts": 2.9,
   "test/version.test.ts": 7.5,
   "test/vision-detect.test.ts": 0,
-  "test/web-file-renderers.test.ts": 1.5,
+  "test/web-contribution-renderers.test.ts": 1.5,
   "test/web-page-removals.test.ts": 2.9,
   "test/web-static-caching.test.ts": 1.5,
   "test/web-static-compression.test.ts": 3.6,

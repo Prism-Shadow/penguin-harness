@@ -7,14 +7,14 @@
  *   the user just left is dropped; signing out clears it. A refresh asks again for the same
  *   user; its failure keeps what was held.
  * - The merge appends iframe pages after the compiled ones; a compiled page wins a key or
- *   path clash; a builtin page is drawn by the renderer a module contributed under its name
- *   (`WebAppModule.pageRenderers`) and skipped when there is none; an entry without a key, a
- *   path or a renderer is skipped. A page's title, Chinese title, glyph and parent are kept
+ *   path clash; an entry without a key, a path or an iframe src is skipped, and so is one naming
+ *   the retired `builtin` renderer. A page's title, Chinese title, glyph and parent are kept
  *   when they are strings, and its frame is named by its title.
  * - A company-mode page (`nav: "org"`) keeps a path relative to the organization and clashes
  *   as the rooted one; `released` and the renderer it named are kept; `orgPagesOf` selects
  *   these pages from the table.
- * - A merged iframe page is routed at its path and draws a sandboxed frame of its src.
+ * - A merged iframe page is routed at its path and draws a sandboxed frame of its src; a
+ *   company-mode one draws it under the organization layout and from its rooted path alike.
  */
 import { createElement as h, type ComponentType } from "react";
 
@@ -63,16 +63,12 @@ const COMPILED: WebAppPage[] = [
   },
 ];
 
-/** No module contributed a page renderer. */
-const NONE: ReadonlyMap<string, ComponentType> = new Map();
-
 const frame = (src: string) => ({ iframe: { src, namespace: "hello" } });
 
 /** An answer as the server might send it: entries the app must check, malformed ones included. */
 function answer(pages: readonly object[]): ContributionsResponse {
   return {
     pages: pages as ContributionsResponse["pages"],
-    fileRenderers: [],
     pageRemovals: [],
     agentTabs: [],
     sessionTabs: [],
@@ -115,7 +111,7 @@ describe("createContributionsStore", () => {
     calls[0]!.reject(new Error("500"));
     await settle();
     expect(store.current()).toEqual({ user: "alice", answer: null, pending: false });
-    expect(contributedPagesOf(COMPILED, store.current().answer, NONE)).toBe(COMPILED);
+    expect(contributedPagesOf(COMPILED, store.current().answer)).toBe(COMPILED);
   });
 
   it("a user change drops the last answer and asks again; a late answer for the old user is dropped", async () => {
@@ -176,8 +172,8 @@ describe("refresh", () => {
 
 describe("contributedPagesOf", () => {
   it("returns the compiled table as it is without an answer", () => {
-    expect(contributedPagesOf(COMPILED, null, NONE)).toBe(COMPILED);
-    expect(contributedPagesOf(COMPILED, answer([]), NONE)).toBe(COMPILED);
+    expect(contributedPagesOf(COMPILED, null)).toBe(COMPILED);
+    expect(contributedPagesOf(COMPILED, answer([]))).toBe(COMPILED);
   });
 
   it("appends an iframe page after the compiled ones, inside the shell", () => {
@@ -194,7 +190,6 @@ describe("contributedPagesOf", () => {
           renderer: frame("/hello.html"),
         },
       ]),
-      NONE,
     );
     expect(merged.slice(0, 2)).toEqual(COMPILED);
     expect(merged[2]).toMatchObject({
@@ -238,7 +233,6 @@ describe("contributedPagesOf", () => {
           renderer: frame("/b.html"),
         },
       ]),
-      NONE,
     );
     expect(merged[2]).toMatchObject({
       key: "a",
@@ -264,26 +258,11 @@ describe("contributedPagesOf", () => {
         { id: "d", from: "x", key: "d", path: "/d", renderer: frame("/d.html") },
         { id: "e", from: "x", key: "d", path: "/e", renderer: frame("/e.html") },
       ]),
-      NONE,
     );
     expect(merged.map((p) => p.id)).toEqual(["agents.page", "terminal.page", "d"]);
   });
 
-  it("draws a builtin page with the renderer a module contributed under its name", () => {
-    const Proposals: ComponentType = () => null;
-    const merged = contributedPagesOf(
-      COMPILED,
-      answer([
-        { id: "a", from: "x", key: "a", path: "/a", renderer: { builtin: "Proposals" } },
-        { id: "b", from: "x", key: "b", path: "/b", renderer: { builtin: "Unknown" } },
-      ]),
-      new Map([["Proposals", Proposals]]),
-    );
-    expect(merged.map((p) => p.id)).toEqual(["agents.page", "terminal.page", "a"]);
-    expect(merged[2]!.Component).toBe(Proposals);
-  });
-
-  it("skips a builtin renderer nobody contributed, and an entry without a key, a path or an iframe src", () => {
+  it("skips a page naming the retired builtin renderer, and an entry without a key, a path or an iframe src", () => {
     const merged = contributedPagesOf(
       COMPILED,
       answer([
@@ -294,7 +273,6 @@ describe("contributedPagesOf", () => {
         { id: "e", from: "x", key: "e", path: "/e", renderer: { iframe: { namespace: "e" } } },
         { id: "f", from: "x", key: "f", path: "/f" },
       ]),
-      NONE,
     );
     expect(merged.map((p) => p.id)).toEqual(["agents.page", "terminal.page"]);
   });
@@ -317,7 +295,6 @@ describe("contributedPagesOf", () => {
           renderer: frame("/e"),
         },
       ]),
-      NONE,
     );
     expect(merged.slice(2)).toMatchObject([
       { id: "a", path: "roadmaps", nav: "org", released: true, renderer: frame("/r") },
@@ -341,7 +318,6 @@ describe("contributedPagesOf", () => {
           renderer: frame("/plugins/hello/index.html"),
         },
       ]),
-      NONE,
     );
     const html = renderToStaticMarkup(
       h(
@@ -373,9 +349,8 @@ describe("orgPagesOf", () => {
       answer([
         { id: "a", from: "x", key: "a", path: "/a", nav: "main", renderer: frame("/a") },
         { id: "b", from: "x", key: "b", path: "b", nav: "org", renderer: frame("/b") },
-        { id: "c", from: "x", key: "c", path: "c", nav: "org", renderer: { builtin: "P" } },
+        { id: "c", from: "x", key: "c", path: "c", nav: "org", renderer: frame("/c") },
       ]),
-      new Map([["P", Blank]]),
     );
     expect(orgPagesOf(merged).map((p) => p.id)).toEqual(["b", "c"]);
     expect(orgPagesOf(COMPILED)).toEqual([]);
@@ -425,7 +400,7 @@ describe("the org pages' consumption chain", () => {
         key: "roadmaps",
         path: "roadmaps/:number?",
         nav: "org",
-        renderer: { builtin: "Roadmaps" },
+        renderer: frame("/plugins/roadmaps/index.html"),
       },
       {
         id: "notes.page",
@@ -436,31 +411,10 @@ describe("the org pages' consumption chain", () => {
         renderer: frame("/plugins/notes/index.html"),
       },
     ]);
-  const table = (builtins: ReadonlyMap<string, ComponentType>) =>
-    contributedPagesOf(COMPILED, orgAnswer(), builtins);
-
-  const Roadmaps: ComponentType = () => <div data-testid="roadmarks">roadmaps body</div>;
-
-  it("mounts a registered builtin org page's resolved component under the organization layout", async () => {
-    const pages = table(new Map([["Roadmaps", Roadmaps]]));
-    const page = await mount(
-      h(
-        ThemeProvider,
-        null,
-        h(
-          MemoryRouter,
-          { initialEntries: ["/org/p/o/roadmaps"] },
-          h(Routes, null, h(Route, { path: "/org/*", element: h(OrgRoutesStub, { pages }) })),
-        ),
-      ),
-    );
-    await settle();
-    expect(page.container.querySelector('[data-testid="roadmarks"]')).not.toBeNull();
-    await page.unmount();
-  });
+  const table = () => contributedPagesOf(COMPILED, orgAnswer());
 
   it("mounts an iframe org page as the shell's sandboxed frame, not the legacy bare iframe", async () => {
-    const pages = table(NONE);
+    const pages = table();
     const page = await mount(
       h(
         ThemeProvider,
@@ -481,7 +435,7 @@ describe("the org pages' consumption chain", () => {
   });
 
   it("mounts a company-mode page from the root, its rooted path, as the table documents", async () => {
-    const pages = table(new Map([["Roadmaps", Roadmaps]]));
+    const pages = table();
     const page = await mount(
       h(
         ThemeProvider,
@@ -494,7 +448,9 @@ describe("the org pages' consumption chain", () => {
       ),
     );
     await settle();
-    expect(page.container.querySelector('[data-testid="roadmarks"]')).not.toBeNull();
+    expect(page.container.querySelector("iframe")?.getAttribute("src")).toBe(
+      "/plugins/roadmaps/index.html",
+    );
     await page.unmount();
   });
 });

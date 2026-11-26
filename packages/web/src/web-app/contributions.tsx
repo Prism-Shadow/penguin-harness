@@ -1,17 +1,9 @@
 import { PagesContext, type WebAppPagesValue } from "../lib/web-app-pages";
 
-import {
-  useEffect,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-  type ComponentType,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import type { ContributionsResponse, RendererRef } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
-import { FileRendererRulesContext, type FileRendererRule } from "../lib/file-renderers";
 
 import { contributionShown, setRunningServerModules, useModuleGates } from "../lib/module-gate";
 import { subscribeUserEvents } from "../lib/amsp/user-events";
@@ -127,28 +119,24 @@ function framePageFor(src: string, title: string) {
   };
 }
 
-/** The renderer an entry names, as this build reads it; null when it names none it could draw. */
+/** The iframe an entry names, as this build reads it; null when it names none, the only renderer. */
 function rendererOf(raw: unknown): RendererRef | null {
-  const ref = raw as { iframe?: { src?: unknown; namespace?: unknown }; builtin?: unknown } | null;
-  const iframe = ref?.iframe;
-  if (typeof iframe?.src === "string") {
-    const namespace = typeof iframe.namespace === "string" ? iframe.namespace : "";
-    return { iframe: { src: iframe.src, namespace } };
-  }
-  if (typeof ref?.builtin === "string") return { builtin: ref.builtin };
-  return null;
+  const iframe = (raw as { iframe?: { src?: unknown; namespace?: unknown } } | null)?.iframe;
+  if (typeof iframe?.src !== "string") return null;
+  const namespace = typeof iframe.namespace === "string" ? iframe.namespace : "";
+  return { iframe: { src: iframe.src, namespace } };
 }
 
 /**
- * The compiled pages plus the contributed ones this build can draw, appended in the server's
- * order after the last compiled page, each keeping the renderer it named. An entry is skipped
- * when it lacks a key or a path, when a compiled page (or an earlier entry) owns its key or
- * path, or when its renderer is neither an iframe with a `src` nor a `builtin` name in
- * `renderers`. Its nav name, glyph and parent are kept when they are strings, and its `app` when
- * it makes the page a system app (systemAppOf); whether its parent can hold it is decided over the
- * merged table (parentedPagesOf). An iframe page that is a system app opens in the App Center's
- * window (page-table.ts `windowFrameOf`), so what its route draws is the way into that window
- * (window-redirect.tsx), not its frame.
+ * The compiled pages plus the contributed ones, appended in the server's order after the last
+ * compiled page, each keeping the iframe it named. An entry is skipped when it lacks a key or a
+ * path, when a compiled page (or an earlier entry) owns its key or path, or when its renderer is
+ * not an iframe with a `src` — one naming the retired `builtin` renderer included: there is
+ * nothing to draw it with. Its nav name, glyph and parent are kept when they are strings, and its
+ * `app` when it makes the page a system app (systemAppOf); whether its parent can hold it is
+ * decided over the merged table (parentedPagesOf). A page that is a system app opens in the App
+ * Center's window (page-table.ts `windowFrameOf`), so what its route draws is the way into that
+ * window (window-redirect.tsx), not its frame.
  *
  * A company-mode page (`nav: "org"`) has a path relative to an organization: company mode
  * mounts it under the organization layout (features/company/org-routes.tsx) and the router
@@ -158,7 +146,6 @@ function rendererOf(raw: unknown): RendererRef | null {
 export function contributedPagesOf(
   compiled: readonly WebAppPage[],
   answer: ContributionsResponse | null,
-  renderers: ReadonlyMap<string, ComponentType>,
 ): readonly WebAppPage[] {
   if (answer === null || answer.pages.length === 0) return compiled;
   const keys = new Set(compiled.map((p) => p.key));
@@ -187,15 +174,7 @@ export function contributedPagesOf(
       }) !== null;
     const Component = windowed
       ? windowRedirectFor(key, path)
-      : "iframe" in renderer
-        ? framePageFor(renderer.iframe.src, typeof title === "string" ? title : key)
-        : renderers.get(renderer.builtin);
-    if (Component === undefined) {
-      console.warn(
-        `Missing builtin renderer "${"builtin" in renderer ? renderer.builtin : ""}" for contributed page "${key}" (${path}); skipping page`,
-      );
-      continue;
-    }
+      : framePageFor(renderer.iframe.src, typeof title === "string" ? title : key);
     keys.add(key);
     paths.add(rooted);
     out.push({
@@ -235,34 +214,6 @@ function systemAppOf(raw: unknown, title: unknown, key: string): { order: number
 }
 
 /**
- * The answer's file renderer rules this build can read, in the server's order: extensions are
- * strings, dropped of a leading dot and lowercased (empty ones dropped), and the renderer is a
- * `builtin` name. Anything else — no extensions left, an iframe renderer, a missing field, an
- * answer from a server that sends no such list — is skipped. Whether the name is in this build's
- * registry is the conversation's question, not this one's.
- */
-export function fileRendererRulesOf(
-  answer: ContributionsResponse | null,
-): readonly FileRendererRule[] {
-  const entries: unknown = answer?.fileRenderers;
-  if (!Array.isArray(entries)) return NO_RULES;
-  const rules: FileRendererRule[] = [];
-  for (const entry of entries as Array<Record<string, unknown> | null>) {
-    if (entry === null || typeof entry !== "object" || typeof entry.id !== "string") continue;
-    const builtin = (entry.renderer as { builtin?: unknown } | undefined)?.builtin;
-    if (typeof builtin !== "string" || builtin === "" || !Array.isArray(entry.extensions)) continue;
-    const extensions = (entry.extensions as unknown[])
-      .filter((e): e is string => typeof e === "string")
-      .map((e) => e.replace(/^\./, "").toLowerCase())
-      .filter((e) => e !== "");
-    if (extensions.length > 0) rules.push({ id: entry.id, extensions, builtin });
-  }
-  return rules;
-}
-
-const NO_RULES: readonly FileRendererRule[] = [];
-
-/**
  * The keys of the pages the answer removes, in the server's order: an entry is read when its key
  * is a non-empty string; anything else, and an answer that sends no such list, is skipped.
  */
@@ -284,21 +235,15 @@ const NO_REMOVALS: readonly string[] = [];
 export function pageTableFor(
   compiled: readonly WebAppPage[],
   answer: ContributionsResponse | null,
-  renderers: ReadonlyMap<string, ComponentType>,
 ): readonly WebAppPage[] {
   return parentedPagesOf(
-    removedPagesOf(contributedPagesOf(compiled, answer, renderers), pageRemovalsOf(answer)),
+    removedPagesOf(contributedPagesOf(compiled, answer), pageRemovalsOf(answer)),
   );
 }
 
-/** The answer's parts besides the pages, for the features that read them (web-app/index.ts). */
-
-/**
- * Holds the signed-in user's contributions — the merged page table and the file renderer rules —
- * for everything under the router.
- */
+/** Holds the signed-in user's contributions — the merged page table — for everything under the router. */
 export function WebAppPagesProvider({ children }: { children: ReactNode }) {
-  const { pages: booted, pageRenderers, userEvents } = webAppDeps.useDeps();
+  const { pages: booted } = webAppDeps.useDeps();
   // A page of a web module waiting for its server module is in the table only while that
   // module runs (gated-slots.ts); the table follows the gates.
   const gates = useModuleGates();
@@ -319,17 +264,15 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const pending = current ? state.pending : userId !== null;
   const value = useMemo<WebAppPagesValue>(
     () => ({
-      pages: pageTableFor(compiled, answer, pageRenderers),
-      workbenchHost: { pageRenderers, userEvents },
+      pages: pageTableFor(compiled, answer),
       pending,
       // A mocked or older server may leave these out.
       quickStarts: [],
       startMetrics: startMetricsOf(answer),
       refresh: store.refresh,
     }),
-    [compiled, answer, pageRenderers, userEvents, pending, store],
+    [compiled, answer, pending, store],
   );
-  const rules = useMemo(() => fileRendererRulesOf(answer), [answer]);
   // The server re-assembled (a plugin came or went), or the stream lost events: ask again.
   useEffect(
     () =>
@@ -345,13 +288,7 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   // for this viewer stands in, so a plugin's web half does not pop in after every load.
   // Signed out or in safe mode, every gate is shut.
   useEffect(() => setRunningServerModules(runningModulesFor(userId, answer)), [userId, answer]);
-  return (
-    <PagesContext.Provider value={value}>
-      <FileRendererRulesContext.Provider value={rules}>
-        {children}
-      </FileRendererRulesContext.Provider>
-    </PagesContext.Provider>
-  );
+  return <PagesContext.Provider value={value}>{children}</PagesContext.Provider>;
 }
 
 export { useContributions, useWebAppPages, useWebAppPagesPending } from "../lib/web-app-pages";

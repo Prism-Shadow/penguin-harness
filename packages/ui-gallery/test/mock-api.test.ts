@@ -225,7 +225,6 @@ describe("the mocked API", () => {
     const store = resetStore({ lang: "zh", signedIn: true });
     expect(await api.getContributions()).toEqual({
       pages: [],
-      fileRenderers: [],
       pageRemovals: [],
       agentTabs: [],
       sessionTabs: [],

@@ -2,7 +2,7 @@
  * GET /api/contributions — the web slots' contributions, as data, and the start page's
  * contributed counts (`startMetrics`, routes/start-page.ts). What a pushed platform or an
  * installed plugin adds to the web app arrives here; the app merges it with its own pages and
- * renders what it has a renderer for. It also names the server modules plugins run in this
+ * draws each one in an iframe. It also names the server modules plugins run in this
  * generation (`modules`), which is how the app knows to draw a plugin's web half.
  */
 import { Hono } from "hono";
@@ -14,8 +14,6 @@ import type {
   ContributionsResponse,
   RendererRef,
   WebContribution,
-  WebFileRendererContribution,
-  WebFileRendererData,
   WebPageContribution,
   WebPageData,
   WebPageRemovalContribution,
@@ -37,10 +35,10 @@ export function contributionsRoutes(deps: ContributionsRouteDeps): Hono<AppEnv> 
 
 /**
  * The frontend's slots, declared on the SERVER so a server module (or a plugin) can
- * contribute a page, a page removal, a file renderer, an Agent settings tab or a Session tab
- * as manifest data. The web app reads them back through GET /api/contributions and renders
- * the ones whose renderer it knows: a `builtin` name from its own registry, or an `iframe`.
- * No code crosses this boundary — only data.
+ * contribute a page, a page removal, an Agent settings tab or a Session tab as manifest data.
+ * The web app reads them back through GET /api/contributions and draws each surface in an
+ * iframe of a document the contributing module serves, the only renderer there is. No code
+ * crosses this boundary — only data.
  */
 
 @Interface()
@@ -52,8 +50,6 @@ export abstract class WebShell {
 export interface WebShellSlots {
   /** A page (WebPageData says what each field means). */
   pages: WebPageData;
-  /** Linked Workspace file renderer data. */
-  fileRenderers: WebFileRendererData;
   /** A page the web app drops, its own or a contributed one (WebPageRemovalData). */
   pageRemovals: WebPageRemovalData;
   /** A tab on the Agent settings page. */
@@ -110,7 +106,6 @@ export class WebModule {
       );
     const response: ContributionsResponse = {
       pages: collect<WebPageContribution>("pages"),
-      fileRenderers: collect<WebFileRendererContribution>("fileRenderers"),
       pageRemovals: collect<WebPageRemovalContribution>("pageRemovals"),
       agentTabs: collect("agentTabs"),
       sessionTabs: collect("sessionTabs"),

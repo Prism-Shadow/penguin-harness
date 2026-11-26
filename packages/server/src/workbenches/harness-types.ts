@@ -108,8 +108,8 @@ headers, declare its return type (\`Promise<WorkbenchResponse>\`) so they are no
 \`\`\`
 
 One entry per tab, beside the chat of this Agent; \`key\` is unique in the workbench; \`src\` is a
-file under \`ui/\`. \`"contributes": {}\` is a server-only workbench with no UI — also how a UI is
-taken away again.
+file under \`ui/\`. The renderer is always \`iframe\`: a tab naming any other fails the load.
+\`"contributes": {}\` is a server-only workbench with no UI — also how a UI is taken away again.
 
 ## Pages in TSX
 

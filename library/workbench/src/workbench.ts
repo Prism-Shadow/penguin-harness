@@ -62,16 +62,17 @@ export interface WorkbenchInfo {
   showInSidebar?: boolean;
 }
 
-/** How the Web App draws a contributed tab: a page of the workbench, or a renderer it carries. */
-export type WorkbenchTabRenderer =
-  | {
-      iframe: {
-        src: string;
-        /** Let a user gesture capture relative mouse movement in this tab. */
-        pointerLock?: boolean;
-      };
-    }
-  | { builtin: string };
+/**
+ * How the Web App draws a contributed tab: a page of the workbench in a frame. There is no other
+ * renderer; a manifest naming one fails the workbench's load.
+ */
+export type WorkbenchTabRenderer = {
+  iframe: {
+    src: string;
+    /** Let a user gesture capture relative mouse movement in this tab. */
+    pointerLock?: boolean;
+  };
+};
 
 /**
  * One tab beside Chat, as the workbench contributed it (`WebModule.sessionTabs`). In a

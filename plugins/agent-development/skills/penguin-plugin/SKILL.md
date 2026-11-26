@@ -1,7 +1,7 @@
 ---
 name: penguin-plugin
 description: Use for PenguinHarness plugins and workbenches — what a plugin package is and how to build, test, share and submit one, and the workbenches (the tabs and pages beside the chat, with server code behind them) an Agent keeps in its Agent State — building one, changing it, showing it as the whole app, restoring an earlier version, and removing it when the user wants the custom UI gone.
-version: 2026.11.21.2
+version: 2026.11.26.2
 ---
 
 # Penguin Plugins
@@ -384,7 +384,7 @@ Keep empty alerts hidden. A component rule such as `.notice { display: flex }` o
 
 ### Tabs are contributions
 
-Each entry under `WebModule.sessionTabs` is one tab beside the chat: `key` (unique in the workbench, part of the full-page URL), `title` / `titleZh`, and a `renderer` whose `iframe.src` is a file under `ui/`. Several entries make several tabs; none makes a server-only workbench. It is the same slot, written the same way, a plugin contributes to — the host opens it to workbenches and scopes the tab to this Agent. A slot the host has not opened (`WebModule.pages`, say) is refused by name.
+Each entry under `WebModule.sessionTabs` is one tab beside the chat: `key` (unique in the workbench, part of the full-page URL), `title` / `titleZh`, and a `renderer` whose `iframe.src` is a file under `ui/`. The renderer is always `iframe` — the host draws no page of its own for a workbench — and a tab naming any other fails the load, naming the contribution. Several entries make several tabs; none makes a server-only workbench. It is the same slot, written the same way, a plugin contributes to — the host opens it to workbenches and scopes the tab to this Agent. A slot the host has not opened (`WebModule.pages`, say) is refused by name.
 
 ## Operate with plugin host
 

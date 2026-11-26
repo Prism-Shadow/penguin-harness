@@ -1,11 +1,10 @@
 import { mainPanelDefinition as mainPanelmemory } from "./main-memory-panel";
 import { mainPanelDefinition as mainPanelagents } from "./main-agents-panel";
 /**
- * The chat page: the conversation, its draft and Session views, with the named renderers for the
- * Workspace files a reply links (`fileRenderers`, iface.ts); what other modules move when a
- * conversation takes a new id (`sessionHandovers`) and the rows they add to a web link's menu
- * (`linkActions`); its drafts for the surfaces that start and list them; and the two dock panels
- * that show the conversation itself: its subagents and its memory (panels/).
+ * The chat page: the conversation, its draft and Session views; what other modules move when a
+ * conversation takes a new id (`sessionHandovers`, iface.ts) and the rows they add to a web
+ * link's menu (`linkActions`); its drafts for the surfaces that start and list them; and the two
+ * dock panels that show the conversation itself: its subagents and its memory (panels/).
  */
 import type { ComponentType } from "react";
 import {
@@ -20,7 +19,6 @@ import type { LinkAction, Ordered, SessionHandover } from "@prismshadow/penguin-
 import { ChatPage } from "./chat-page";
 import { chatDrafts } from "./chat-drafts";
 import type { Chat, ChatDrafts } from "./iface";
-import { chatDeps, fileRenderersOf, gatedChatContributions } from "./deps";
 import { setLinkActions } from "./link-actions";
 import { setSessionHandovers } from "./session-handover";
 
@@ -80,12 +78,7 @@ export class ChatModule {
         from: c.from,
       })),
     );
-    this.page = chatDeps.provide(
-      {
-        fileRenderers: fileRenderersOf(gatedChatContributions(contributions.fileRenderers ?? [])),
-      },
-      ChatPage,
-    );
+    this.page = ChatPage;
     this.chat = {};
   }
 }

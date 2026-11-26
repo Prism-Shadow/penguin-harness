@@ -3,7 +3,7 @@
  *
  * No plugin on this line contributes a page yet, so the spec answers GET /api/contributions
  * itself over HTTP (and serves the page's document): one iframe page in the main nav, one
- * with a builtin renderer this build does not carry, and one claiming the Agents page's key.
+ * naming the retired `builtin` renderer, and one claiming the Agents page's key.
  *
  * - Only the iframe page joins the nav; opening it draws its document in the content area,
  *   and its URL opened directly lands on it too (the catch-all waits for the answer).

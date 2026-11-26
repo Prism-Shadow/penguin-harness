@@ -142,11 +142,5 @@ export function groupOrganizationsByProject<T extends { projectId: string }>(
     .filter((g) => g.organizations.length > 0);
 }
 
-/** Builtin contributed org pages retained in this framework-only stack.
- * The six main org routes stay explicit; old proposals pages are split out.
- * Iframe contributions remain available through contributedPages. */
-export const ORG_PAGE_RENDERERS = {} as const;
-export type OrgPageRenderer = keyof typeof ORG_PAGE_RENDERERS;
-
 import type { WorkMode } from "./company-context";
 export type { WorkMode } from "./company-context";

@@ -264,9 +264,13 @@ function contributedTabs(manifests: readonly Manifest[], uiBase: string): Workbe
         );
       }
       keys.add(tab.key);
-      if (!("iframe" in tab.renderer)) {
-        tabs.push(tab);
-        continue;
+      // A tab is a page of the workbench and is drawn in a frame, the one way the host draws
+      // one: a manifest naming another renderer is wrong, not a tab to skip.
+      const renderer: unknown = (entry as { renderer?: unknown }).renderer;
+      if (typeof renderer !== "object" || renderer === null || !("iframe" in renderer)) {
+        throw new Error(
+          `contribution '${tab.id}': renderer must be { "iframe": { "src": "${UI_DIR}/…" } }, the only renderer a tab has`,
+        );
       }
       const src = tab.renderer.iframe.src;
       if (!isSafeRelPath(src) || !src.startsWith(`${UI_DIR}/`)) {

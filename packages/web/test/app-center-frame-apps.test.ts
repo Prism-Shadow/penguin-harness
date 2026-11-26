@@ -68,13 +68,12 @@ const ANSWER: ContributionsResponse = {
       title: "Plain",
     },
   ],
-  fileRenderers: [],
   pageRemovals: [],
   agentTabs: [],
   sessionTabs: [],
 };
 
-const PAGES = pageTableFor(SYSTEM_APP_PAGES, ANSWER, new Map());
+const PAGES = pageTableFor(SYSTEM_APP_PAGES, ANSWER);
 
 afterEach(async () => {
   await unmountAll();

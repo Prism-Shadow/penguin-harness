@@ -37,31 +37,23 @@ describe("workbench pages", () => {
       }),
       info({ id: "headless", tabs: [] }),
       info({ id: "broken", error: "module tree rejected" }),
-      info({
-        id: "other",
-        tabs: [{ id: "other.x", key: "x", title: "X", renderer: { builtin: "nope" } }],
-      }),
     ]);
     expect(tabs.map((t) => t.tabId)).toEqual(["demo/board", "demo/stats", "broken/board"]);
     expect(tabs[1]).toMatchObject({ key: "stats", titleZh: "统计", src: `${UI}/stats.html` });
     expect(tabs[2]!.error).toBe("module tree rejected");
   });
 
-  it("recognizes the evaluation workbench only when an installed tab declares its renderer", () => {
-    const tabs = workbenchTabsOf([
-      info({
-        id: "benchmark",
-        tabs: [
-          {
-            id: "benchmark.main",
-            key: "main",
-            title: "Self-Evolution Workbench",
-            renderer: { builtin: "SelfEvolutionWorkbench" },
-          },
-        ],
-      }),
-    ]);
-    expect(tabs[0]).toMatchObject({ workbenchId: "benchmark", builtin: "SelfEvolutionWorkbench" });
+  it("shows no page for a tab an older machine lists without an iframe, and keeps the others", () => {
+    // A 0.2.19 or 0.2.20 machine lists its in-repo Self-Evolution Workbench with the retired
+    // `builtin` renderer: nothing here can draw it, so it is left out.
+    const retired = {
+      id: "benchmark.main",
+      key: "main",
+      title: "Self-Evolution Workbench",
+      renderer: { builtin: "SelfEvolutionWorkbench" },
+    } as unknown as WorkbenchInfo["tabs"][number];
+    const tabs = workbenchTabsOf([info({ id: "benchmark", tabs: [retired] }), info({})], "m-1");
+    expect(tabs.map((t) => t.tabId)).toEqual(["demo/board"]);
   });
 
   it("serves the page of a machine's workbench through that machine, and says which", () => {

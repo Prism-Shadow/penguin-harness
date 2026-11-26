@@ -23,7 +23,6 @@ import {
 } from "../../lib/workbench-theme";
 import { FILL_APP_MESSAGE, workbenchUiUrl, type WorkbenchTab } from "../../lib/workbench-tabs";
 import { useTheme } from "../../state/theme";
-import { NativeWorkbenchPage } from "./native-workbench-page";
 import { WorkbenchModelPicker } from "./workbench-model-picker";
 
 /** How long a page that never finishes loading stays hidden before it is shown as it is. */
@@ -37,18 +36,7 @@ interface FrameProps {
   onFillApp?: () => void;
 }
 
-export function WorkbenchFrame({ tab, ...props }: FrameProps) {
-  if (tab.builtin !== undefined)
-    return <NativeWorkbenchPage name={tab.builtin} projectId={props.projectId} />;
-  return <WorkbenchIframe {...props} tab={tab} />;
-}
-
-function WorkbenchIframe({
-  projectId,
-  agentId,
-  tab,
-  onFillApp,
-}: Omit<FrameProps, "tab"> & { tab: WorkbenchTab & { src: string } }) {
+export function WorkbenchFrame({ projectId, agentId, tab, onFillApp }: FrameProps) {
   const { dark, appliedTheme, accent, textSize, fontLatin, fontCjk } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
 

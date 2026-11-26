@@ -69,9 +69,6 @@ const COMPILED: WebAppPage[] = [
 
 const keysOf = (pages: readonly WebAppPage[]) => pages.map((p) => p.key);
 
-/** No builtin page renderer: the contributed pages here are iframes. */
-const NONE: ReadonlyMap<string, ComponentType> = new Map();
-
 /** An answer as the server might send it: entries the app must check, malformed ones included. */
 function answer(
   pages: readonly object[],
@@ -79,7 +76,6 @@ function answer(
 ): ContributionsResponse {
   return {
     pages,
-    fileRenderers: [],
     ...(pageRemovals === undefined ? {} : { pageRemovals }),
     agentTabs: [],
     sessionTabs: [],
@@ -182,13 +178,13 @@ describe("pageRemovalsOf", () => {
 
 describe("pageTableFor", () => {
   it("is the compiled table without an answer", () => {
-    expect(pageTableFor(COMPILED, null, NONE)).toBe(COMPILED);
+    expect(pageTableFor(COMPILED, null)).toBe(COMPILED);
   });
 
   it("removes a compiled page with its children, contributed ones included", () => {
-    const withHello = pageTableFor(COMPILED, answer([HELLO]), NONE);
+    const withHello = pageTableFor(COMPILED, answer([HELLO]));
     expect(keysOf(withHello)).toContain("example-hello");
-    const removed = keysOf(pageTableFor(COMPILED, answer([HELLO], [REMOVE_AGENTS]), NONE));
+    const removed = keysOf(pageTableFor(COMPILED, answer([HELLO], [REMOVE_AGENTS])));
     expect(removed).not.toContain("agents");
     expect(removed).not.toContain("agent-settings");
     expect(removed).not.toContain("example-hello");
@@ -199,17 +195,12 @@ describe("pageTableFor", () => {
     const table = pageTableFor(
       COMPILED,
       answer([HELLO], [{ id: "r", from: "M", key: "example-hello" }]),
-      NONE,
     );
     expect(keysOf(table)).toEqual(keysOf(COMPILED));
   });
 
   it("removes nothing in a table that does not hold the key", () => {
-    const table = pageTableFor(
-      COMPILED,
-      answer([], [{ id: "r", from: "M", key: "nowhere" }]),
-      NONE,
-    );
+    const table = pageTableFor(COMPILED, answer([], [{ id: "r", from: "M", key: "nowhere" }]));
     expect(keysOf(table)).toEqual(keysOf(COMPILED));
   });
 });
@@ -223,9 +214,8 @@ describe("safe mode", () => {
       const keys = keysOf(useWebAppPages()).join(",");
       return createElement("p", null, `${keys} pending=${String(useWebAppPagesPending())}`);
     }
-    const Root = webAppDeps.provide(
-      { pages: COMPILED, pageRenderers: NONE } as unknown as WebAppDeps,
-      () => createElement(WebAppPagesProvider, null, createElement(Probe)),
+    const Root = webAppDeps.provide({ pages: COMPILED } as unknown as WebAppDeps, () =>
+      createElement(WebAppPagesProvider, null, createElement(Probe)),
     );
     expect(renderToStaticMarkup(createElement(Root))).toBe(
       `<p>${keysOf(COMPILED).join(",")} pending=false</p>`,
@@ -237,6 +227,6 @@ describe("safe mode", () => {
     const store = createContributionsStore(fetch);
     store.setUser(null);
     expect(fetch).not.toHaveBeenCalled();
-    expect(pageTableFor(COMPILED, store.current().answer, NONE)).toBe(COMPILED);
+    expect(pageTableFor(COMPILED, store.current().answer)).toBe(COMPILED);
   });
 });

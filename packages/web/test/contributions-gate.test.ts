@@ -32,7 +32,6 @@ const BoardPart = gatedComponent("BoardWebModule", () => createElement("p", null
 const App = webAppDeps.provide(
   {
     pages: [],
-    pageRenderers: new Map(),
     sessionProviders: [],
     layers: [],
     userEvents: [],
@@ -42,7 +41,6 @@ const App = webAppDeps.provide(
 
 const answer = (modules: string[]): ContributionsResponse => ({
   pages: [],
-  fileRenderers: [],
   pageRemovals: [],
   agentTabs: [],
   sessionTabs: [],

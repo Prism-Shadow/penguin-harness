@@ -1,7 +1,6 @@
-import { createContext, useContext, type ComponentType } from "react";
+import { createContext, useContext } from "react";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 import type { WebAppPage } from "../web-app";
-import type { UserEventHandler } from "../state/user-events";
 import type { StartMetric } from "./start-metrics";
 export interface ContributionsValue {
   /** The module plugins' quick starts; none until the server answers. */
@@ -13,10 +12,6 @@ export interface ContributionsValue {
 
 export interface WebAppPagesValue extends ContributionsValue {
   pages: readonly WebAppPage[];
-  workbenchHost?: {
-    pageRenderers: ReadonlyMap<string, ComponentType>;
-    userEvents: readonly UserEventHandler[];
-  };
   pending: boolean;
 }
 

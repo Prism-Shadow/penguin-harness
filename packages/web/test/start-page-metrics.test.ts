@@ -25,7 +25,6 @@ describe("startMetricsOf", () => {
   it("has none in an answer that sends no list, or no answer at all", () => {
     const older: ContributionsResponse = {
       pages: [],
-      fileRenderers: [],
       pageRemovals: [],
       agentTabs: [],
       sessionTabs: [],

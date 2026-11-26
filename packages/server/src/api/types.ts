@@ -4801,8 +4801,11 @@ export interface OrgHandbookFileWriteRequest {
 // Web contributions (GET /api/contributions)
 // ---------------------------------------------------------------------------
 
-/** How the web app renders a contributed surface: a name from its own registry, or an iframe. */
-export type RendererRef = { builtin: string } | { iframe: { src: string; namespace: string } };
+/**
+ * How the web app draws a contributed surface: in an iframe of a document the contributing
+ * module serves. There is no other renderer; a contribution naming one does not fit the slot.
+ */
+export type RendererRef = { iframe: { src: string; namespace: string } };
 
 /** One contribution to a web slot: its id, the contributing module, and the slot's data. */
 export interface WebContribution {
@@ -4841,19 +4844,6 @@ export type WebPageData = {
 export type WebPageContribution = WebContribution & WebPageData;
 
 /**
- * The data of one `WebModule.fileRenderers` contribution: the Workspace files it draws, by
- * extension (without the dot, compared case-insensitively), and the renderer that draws one.
- * Where the app shows it is the app's own choice (below a reply's paragraph that links the file).
- */
-export type WebFileRendererData = {
-  extensions: string[];
-  renderer: RendererRef;
-};
-
-/** A file renderer contribution as GET /api/contributions answers it. */
-export type WebFileRendererContribution = WebContribution & WebFileRendererData;
-
-/**
  * The data of one `WebModule.pageRemovals` contribution: the key of a page the web app drops —
  * one of its own or one another plugin contributed. The app drops the routes under the page's
  * path and the pages under it with it, and keeps the page its catch-all leads to.
@@ -4887,7 +4877,6 @@ export type StartMetricContribution = WebContribution & StartMetricData;
 
 export interface ContributionsResponse {
   pages: WebPageContribution[];
-  fileRenderers: WebFileRendererContribution[];
   pageRemovals: WebPageRemovalContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
