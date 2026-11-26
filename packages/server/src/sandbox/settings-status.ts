@@ -34,6 +34,8 @@ import {
   unavailableNetworks,
 } from "@prismshadow/penguin-library-sandbox/status";
 
+export { enforcementNotice };
+
 /**
  * The sandbox card's live notices: a warning when the saved policy needs isolation no usable
  * backend implements (every command would be refused), what the machine enforces, and each
