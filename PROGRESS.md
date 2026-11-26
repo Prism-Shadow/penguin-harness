@@ -157,3 +157,12 @@ pnpm-lock.yaml 未含。后果与已试路径：
   plugin-market.test.ts 同字面量在 packages/server/test/ 只需 3 级。四处全按各自深度
   修净（python normpath 机械复核落点）。上轮 compile 读数：web 包已绿（cookie-name
   达效）、auth DTS 过、desktop 过。
+- 验证轮修复 5（server 套件 349/349 文件红，单根因）：bound TDZ 环——platform-ports.ts
+  为取 WorkbenchNotFound 引 workbenches/service.js，service 求值途中经 typescript.js
+  回到 platform-ports 并在模块顶跑 ensurePluginPlatformPorts()，此时 platform-ports
+  体未到 let bound（TS/ESM 循环求值暂停点）。破环选运行时依赖最小边：WorkbenchNotFound
+  下沉新叶模块 workbenches/errors.ts（自述零依赖），service.ts import＋原位
+  export { WorkbenchNotFound }（导出面不变，routes.ts 的组合导入与 instanceof 语义不动），
+  platform-ports.ts 改引 errors.js。platform-ports 传递闭包复核全叶（library ports、
+  node-only asset-archives、core+leaf profile、errors、json、kernel type）——四 shim
+  的 import 即绑从此无再入路径。hmr 红线未触碰（asset-archives 仅读）。

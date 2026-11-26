@@ -121,6 +121,7 @@ import { loadTypeScript, nodeTypesRoot } from "../plugin/typescript.js";
 import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "./ui-runtime.js";
 import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import type { AgentStateEngines } from "./engines.js";
+import { WorkbenchNotFound } from "./errors.js";
 import type { VersionAuthor } from "./git-identity.js";
 import {
   HIDDEN_FROM_SIDEBAR,
@@ -1606,7 +1607,7 @@ export class WorkbenchService implements Workbenches {
   }
 }
 
-export class WorkbenchNotFound extends Error {}
+export { WorkbenchNotFound };
 
 /** A load's hints: the ones about what it serves, then the App Center declaration's. */
 function hintsOf(l: Loaded): string[] {
