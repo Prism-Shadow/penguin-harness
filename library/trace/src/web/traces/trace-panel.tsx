@@ -27,8 +27,7 @@ import {
   Skeleton,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { formatBytes } from "@prismshadow/penguin-web/internal";
+import { S, formatBytes, failureNode } from "@prismshadow/penguin-web/internal";
 import { TraceFileView } from "./trace-file-view";
 import { TracePicker } from "./trace-picker";
 import {
@@ -38,8 +37,6 @@ import {
   sortTraceFiles,
 } from "./trace-refresh";
 import type { TraceHighlight } from "./timeline-chart";
-import { failureNode } from "@prismshadow/penguin-web/internal";
-
 interface FileRef {
   index: number;
   date: string;

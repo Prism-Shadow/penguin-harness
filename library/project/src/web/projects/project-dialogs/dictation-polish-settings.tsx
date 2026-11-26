@@ -14,10 +14,14 @@ import {
   useFormDraft,
   useSaving,
 } from "@prismshadow/penguin-ui";
-import { getVoicePolish, patchVoicePolish } from "@prismshadow/penguin-web/internal";
-import type { VoicePolishSettings, VoicePolishUpdate } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
+import {
+  getVoicePolish,
+  patchVoicePolish,
+  type VoicePolishSettings,
+  type VoicePolishUpdate,
+  apiErrorText,
+  S,
+} from "@prismshadow/penguin-web/internal";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 
 /**

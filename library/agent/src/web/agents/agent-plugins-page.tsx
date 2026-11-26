@@ -35,17 +35,17 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import type { AgentPluginsInstallResponse, PluginGroupItem } from "@prismshadow/penguin-server/api";
 import { CollapsibleSection, SettingsEmpty, Waiting } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
 import {
+  S,
   agentModuleMark,
   installsOf,
   pluginCategories,
   pluginRows,
   rowMatches,
-  type AgentPluginGroup,
-  type AgentPluginGroups,
-  type AgentTarget,
-  type PluginRow,
+  AgentPluginGroup,
+  AgentPluginGroups,
+  AgentTarget,
+  PluginRow,
   packageUpdate,
   useLocalPluginIndex,
 } from "@prismshadow/penguin-web/internal";

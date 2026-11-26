@@ -39,10 +39,15 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  apiErrorText,
+  toneInk,
+  useAgentLocation,
+  toastApiError,
+  toastFailure,
+  toldFailure,
+} from "@prismshadow/penguin-web/internal";
 import {
   emptyMcpForm,
   entryToTest,
@@ -54,9 +59,6 @@ import {
   type McpServerFormState,
   type McpTransportKind,
 } from "./mcp-servers-form";
-import { toastApiError, toastFailure } from "@prismshadow/penguin-web/internal";
-import { toldFailure } from "@prismshadow/penguin-web/internal";
-
 /** Maps a validation error code to its localized message. */
 function errorText(err: McpFormError | undefined): string | undefined {
   if (!err) return undefined;

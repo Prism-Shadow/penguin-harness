@@ -73,12 +73,14 @@ import {
   Text,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { openHistoryStream } from "@prismshadow/penguin-web/internal";
-import { CostPartsRows, ElapsedSplitRows, StatHint } from "@prismshadow/penguin-web/internal";
-import { readHistory } from "@prismshadow/penguin-web/internal";
-import { HistoryFileLoading } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
 import {
+  openHistoryStream,
+  CostPartsRows,
+  ElapsedSplitRows,
+  StatHint,
+  readHistory,
+  HistoryFileLoading,
+  S,
   computeTps,
   formatAverage,
   formatMoney,
@@ -86,11 +88,12 @@ import {
   formatTps,
   humanizeDuration,
   humanizeTokens,
+  resolveContextWindow,
+  toneInk,
+  useTheme,
+  Currency,
+  failureNode,
 } from "@prismshadow/penguin-web/internal";
-import { resolveContextWindow } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";
-
 import {
   TRACE_ROUNDS_PAGE,
   expandedAfterAnalysis,
@@ -114,8 +117,6 @@ import { ROUND_NAV_MIN_ROUNDS, RoundNavButton } from "./trace-round-nav";
 import { TraceToolbar } from "./trace-toolbar";
 import { levelChangeText, thinkingLevelChanges } from "./trace-levels";
 import type { LevelChanges } from "./trace-levels";
-import { failureNode } from "@prismshadow/penguin-web/internal";
-
 /**
  * Badge text for a round row, or null when the round is not a compaction turn.
  *

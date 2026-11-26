@@ -24,10 +24,10 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import type { PluginModuleStatus } from "@prismshadow/penguin-server/api";
 import { ConfirmModal, ICONS, toastSuccess } from "@prismshadow/penguin-ui";
-import { toastInstall } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { localizedText } from "@prismshadow/penguin-web/internal";
 import {
+  toastInstall,
+  S,
+  localizedText,
   PluginUpdateParts,
   StdioInstallBody,
   askModuleOnAgent,
@@ -37,15 +37,14 @@ import {
   toastModuleAsked,
   toastWriteError,
   uninstallFromAgent,
-  type AgentInstalls,
-  type AgentPluginGroup,
-  type AgentTarget,
+  AgentInstalls,
+  AgentPluginGroup,
+  AgentTarget,
   PackageUpdateDialog,
-  type PackageUpdate,
+  PackageUpdate,
+  toastFailure,
+  toldFailure,
 } from "@prismshadow/penguin-web/internal";
-import { toastFailure } from "@prismshadow/penguin-web/internal";
-import { toldFailure } from "@prismshadow/penguin-web/internal";
-
 /** What a plugin is called on this page: the library's display name, else its name. */
 export function agentPluginTitle(entry: AgentPluginGroup, locale: "zh" | "en"): string {
   return entry.plugin === null

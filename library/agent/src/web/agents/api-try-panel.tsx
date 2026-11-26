@@ -41,10 +41,13 @@ import {
   StreamingCaret,
   Text,
 } from "@prismshadow/penguin-ui";
-import { formatBytes } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "@prismshadow/penguin-web/internal";
+import {
+  formatBytes,
+  S,
+  toneInk,
+  useAgentLocation,
+  toastApiError,
+} from "@prismshadow/penguin-web/internal";
 import {
   approvalDesk,
   initialTryState,
@@ -65,8 +68,6 @@ import type {
   TryState,
   TryView,
 } from "./api-try-log";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-
 export interface ApiTryViewProps {
   input: string;
   running: boolean;

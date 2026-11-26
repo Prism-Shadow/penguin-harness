@@ -14,10 +14,8 @@ import type { DefaultModelOffer, ModelRefDto } from "@prismshadow/penguin-server
 import { providerInfo } from "../../model-catalog/index";
 import { ConfirmModal, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
+import { S, toastApiError } from "@prismshadow/penguin-web/internal";
 import { setPinnedBalance } from "./balance";
-
 /** A row as far as naming it goes. */
 interface NamedRow {
   provider: string;

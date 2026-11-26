@@ -122,18 +122,49 @@ import {
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { cardBodyClick } from "@prismshadow/penguin-web/internal";
-import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { USD_TO_CNY, useTheme, type Currency } from "@prismshadow/penguin-web/internal";
-
-import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
-import { formatDateTime, humanizeTokens } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  S,
+  apiErrorText,
+  cardBodyClick,
+  useDocumentTitle,
+  useProject,
+  useAuth,
+  useLocale,
+  USD_TO_CNY,
+  useTheme,
+  Currency,
+  AiCreateModal,
+  AiCreateButtons,
+  formatDateTime,
+  humanizeTokens,
+  allGroupKeys,
+  discountedPrice,
+  fractionOff,
+  groupModelRows,
+  isFreeModel,
+  sameModelRef,
+  userProviderInfo,
+  commitModelGroupOrder,
+  loadModelGroupOrder,
+  saveModelGroupOrder,
+  TAG_TONE,
+  inUseTag,
+  modelTags,
+  clearDraftModelRef,
+  useUpdateBadges,
+  dismissTodo,
+  refreshProjectTodos,
+  useToolBindings,
+  notifyModelsChanged,
+  requestDefaultModels,
+  toneInk,
+  toastApiError,
+  toastFailure,
+  failureNode,
+  toldFailure,
+  toldNode,
+} from "@prismshadow/penguin-web/internal";
 import {
   MODEL_PROVIDERS,
   PENGUIN_GO_PROVIDER_ID,
@@ -150,21 +181,6 @@ import {
 } from "../../model-catalog/index";
 
 import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
-import {
-  allGroupKeys,
-  discountedPrice,
-  fractionOff,
-  groupModelRows,
-  isFreeModel,
-  sameModelRef,
-  userProviderInfo,
-} from "@prismshadow/penguin-web/internal";
-import {
-  commitModelGroupOrder,
-  loadModelGroupOrder,
-  saveModelGroupOrder,
-} from "@prismshadow/penguin-web/internal";
-import { TAG_TONE, inUseTag, modelTags } from "@prismshadow/penguin-web/internal";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -199,8 +215,6 @@ import {
   withModelGroupPinned,
   type ModelGroupPins,
 } from "./model-group-pins";
-import { clearDraftModelRef } from "@prismshadow/penguin-web/internal";
-import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "@prismshadow/penguin-web/internal";
 import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
 import type { PresetSyncHost } from "./preset-sync";
 import { buildImportedRows, groupImportConnection, pickableModelIds } from "./group-import";
@@ -214,8 +228,6 @@ import {
   type ProviderConnections,
 } from "./connection";
 
-import { useToolBindings } from "@prismshadow/penguin-web/internal";
-import { notifyModelsChanged, requestDefaultModels } from "@prismshadow/penguin-web/internal";
 import { usageTargets, type UsageTarget } from "./default-models";
 import { CONNECT_PARAM } from "./connect-link";
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
@@ -231,7 +243,6 @@ import {
 
 import { formatLatency, tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-test";
 
-import { toneInk } from "@prismshadow/penguin-web/internal";
 import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
 
 import {
@@ -257,10 +268,7 @@ import {
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
 import { ConnectDefaultOfferConfirm } from "./connect-default-offer";
-import { toastApiError, toastFailure } from "@prismshadow/penguin-web/internal";
 import { toastDetectFailed, type DetectMiss } from "./detect-failure";
-import { failureNode, toldFailure, toldNode } from "@prismshadow/penguin-web/internal";
-
 /**
  * The authorization flows a group's Connect dialog can run, keyed by the flow named in that
  * group's catalog descriptor. Everything the two differ in lives here — the four

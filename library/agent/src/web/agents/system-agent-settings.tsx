@@ -2,13 +2,15 @@ import { AgentOverviewField, AgentStateSection } from "./agent-overview-fields";
 import { useNavigate } from "react-router";
 import type { AgentConfigResponse } from "@prismshadow/penguin-server/api";
 import { Button, GlyphAppIcon, ListRow, Pill, SettingsList } from "@prismshadow/penguin-ui";
-import { glyphOf } from "@prismshadow/penguin-web/internal";
-import { localizedText } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { useRestoreApp } from "@prismshadow/penguin-web/internal";
-import { systemAppKey, useSystemApps } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-
+import {
+  glyphOf,
+  localizedText,
+  S,
+  useRestoreApp,
+  systemAppKey,
+  useSystemApps,
+  useLocale,
+} from "@prismshadow/penguin-web/internal";
 /** Edge of a row's mark, in px: the tile every settings row leads with. */
 const MARK_PX = 36;
 

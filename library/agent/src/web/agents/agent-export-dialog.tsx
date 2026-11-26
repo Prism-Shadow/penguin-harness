@@ -14,10 +14,7 @@ import {
   Segmented,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-import { downloadArchive } from "@prismshadow/penguin-web/internal";
-
+import { S, toastApiError, downloadArchive } from "@prismshadow/penguin-web/internal";
 /** The most Sessions "Latest N" may ask for, as the server caps it. */
 const MAX_SESSIONS = 500;
 

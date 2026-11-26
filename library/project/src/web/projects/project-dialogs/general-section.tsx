@@ -9,12 +9,14 @@ import {
   useSaving,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-import { projectDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  toastApiError,
+  projectDisplayName,
+  useProject,
+  failureNode,
+} from "@prismshadow/penguin-web/internal";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
-import { failureNode } from "@prismshadow/penguin-web/internal";
-
 export function GeneralSection({
   projectId,
   isOwner,

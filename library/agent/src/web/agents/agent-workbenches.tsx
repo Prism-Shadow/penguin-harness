@@ -31,9 +31,24 @@
  * a zip that imports back unchanged.
  */
 import type { ReactNode } from "react";
-import { locatedAppKey } from "@prismshadow/penguin-web/internal";
-import { useRestoreApp } from "@prismshadow/penguin-web/internal";
-import { shortcutOfWorkbench } from "@prismshadow/penguin-web/internal";
+import {
+  locatedAppKey,
+  useRestoreApp,
+  shortcutOfWorkbench,
+  useInstantSetting,
+  S,
+  workbenchTabsOf,
+  useLocale,
+  agentDisplayName,
+  useProject,
+  useAgentLocation,
+  localizedText,
+  useWorkbenchRepair,
+  useWorkbenchActions,
+  workbenchLoadFailure,
+  cardBodyClick,
+} from "@prismshadow/penguin-web/internal";
+import type { LoadFailedActions } from "@prismshadow/penguin-web/internal";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -45,19 +60,8 @@ import {
   toldReport,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { useInstantSetting } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { workbenchTabsOf } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "@prismshadow/penguin-web/internal";
-import { localizedText } from "@prismshadow/penguin-web/internal";
-import { useWorkbenchRepair } from "@prismshadow/penguin-web/internal";
-import { useWorkbenchActions, workbenchLoadFailure } from "@prismshadow/penguin-web/internal";
-import type { LoadFailedActions } from "@prismshadow/penguin-web/internal";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildWorkbenchImportPrompt } from "./workbench-import";
-import { cardBodyClick } from "@prismshadow/penguin-web/internal";
 import type { PartRef, PartSource } from "./plugins-subpages";
 import { LabelledSwitch, WorkbenchMark } from "./workbench-row";
 

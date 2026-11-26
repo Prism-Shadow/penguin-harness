@@ -27,12 +27,9 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toneDot } from "@prismshadow/penguin-web/internal";
+import { S, toneDot, toastApiError } from "@prismshadow/penguin-web/internal";
 import { HEADER_TEXT, connectedMenuItems } from "./group-header";
 import type { ConnectedMenuItem } from "./group-header";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-
 /** What a menu row runs; the page supplies each. */
 export interface ConnectionActions {
   /** Starts the group's connect flow (the Not connected button, and Reconnect from the menu). */

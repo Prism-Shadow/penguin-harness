@@ -22,12 +22,12 @@ import {
   isFreeModel,
   sameModelRef,
   visibleChatModels,
-  type ModelCredentialRowLike,
-  type ModelRefValue,
-  type ModelRowLike,
+  ModelCredentialRowLike,
+  ModelRefValue,
+  ModelRowLike,
+  modelTags,
+  ModelTag,
 } from "@prismshadow/penguin-web/internal";
-import { modelTags, type ModelTag } from "@prismshadow/penguin-web/internal";
-
 /**
  * Display label for a model: the display name, or falls back to the upstream id (model_id is
  * the raw field, no prefix parsing). Blank counts as absent — a name the user cleared is sent

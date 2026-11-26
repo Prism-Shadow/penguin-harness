@@ -86,13 +86,20 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { formatBytes, formatRelativeDate } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { agentKey, useAgentLocation } from "@prismshadow/penguin-web/internal";
-import { useAiBridge } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  formatBytes,
+  formatRelativeDate,
+  useAuth,
+  useLocale,
+  useProject,
+  agentKey,
+  useAgentLocation,
+  useAiBridge,
+  toastApiError,
+  downloadArchive,
+  failureNode,
+} from "@prismshadow/penguin-web/internal";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
   MemoryDocumentError,
@@ -101,10 +108,6 @@ import {
   type MemoryImportPlan,
   type MemoryUpload,
 } from "./memory-transfer";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-import { downloadArchive } from "@prismshadow/penguin-web/internal";
-import { failureNode } from "@prismshadow/penguin-web/internal";
-
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
 

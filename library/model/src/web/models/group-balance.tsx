@@ -13,12 +13,14 @@ import { useEffect, useState } from "react";
 import { type ModelProviderInfo, providerInfo } from "../../model-catalog/index";
 
 import { ChevronDown, Dropdown, Menu, MenuItem, ProviderLogo } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
-import { formatDateTime } from "@prismshadow/penguin-web/internal";
-import { useLocalShown } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";
-
+import {
+  S,
+  formatDateTime,
+  useLocalShown,
+  useProject,
+  useTheme,
+  Currency,
+} from "@prismshadow/penguin-web/internal";
 import {
   displayBalance,
   formatBalance,

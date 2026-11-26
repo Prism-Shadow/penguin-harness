@@ -46,11 +46,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import type { ToggleRowVariant } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-
+import { S, useProject, useAgentLocation, toastApiError } from "@prismshadow/penguin-web/internal";
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 
 /** What every feature supplies: the switch card's label, plus the two strings a switch-only feature needs in place of the prompt section's own wording. */

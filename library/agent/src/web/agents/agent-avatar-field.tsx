@@ -25,10 +25,7 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { AvatarPicker } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-
+import { AvatarPicker, S, toastApiError } from "@prismshadow/penguin-web/internal";
 /**
  * The avatar's edge, in the field and in the page's header: the profile row's preview, for the
  * same reason — the avatar is the subject of what stands beside it, one step above it, not a hero.

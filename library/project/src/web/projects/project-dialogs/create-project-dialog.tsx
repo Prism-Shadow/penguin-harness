@@ -8,17 +8,16 @@ import {
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
 import {
+  S,
   PROJECT_ID_MAX_LENGTH,
   PROJECT_SUFFIX_PATTERN,
   SEMANTIC_ID_PATTERN,
+  useProject,
+  useAuth,
+  SemanticIdField,
+  failureNode,
 } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import { SemanticIdField } from "@prismshadow/penguin-web/internal";
-import { failureNode } from "@prismshadow/penguin-web/internal";
-
 export function CreateProjectDialog({
   open,
   onClose,

@@ -1,10 +1,13 @@
 import { EmptyState } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
-import { NAV_ICONS } from "@prismshadow/penguin-web/internal";
-import { panelLabel, type DockPanelBodyProps, type PanelId } from "@prismshadow/penguin-web/internal";
-
+import {
+  S,
+  NAV_ICONS,
+  panelLabel,
+  DockPanelBodyProps,
+  PanelId,
+  useChatSession,
+} from "@prismshadow/penguin-web/internal";
 import { TracePanel } from "./trace-panel";
-import { useChatSession } from "@prismshadow/penguin-web/internal";
 function draftPlaceholder(id: PanelId) {
   return (
     <EmptyState

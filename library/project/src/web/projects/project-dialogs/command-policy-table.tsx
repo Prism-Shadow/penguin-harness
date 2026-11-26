@@ -26,9 +26,7 @@ import {
   IconButton,
   Switch,
 } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-
+import { S, toneInk } from "@prismshadow/penguin-web/internal";
 /** Rules on one page of the table. */
 export const RULES_PER_PAGE = 10;
 

@@ -25,14 +25,18 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { failureOf, failureNode } from "@prismshadow/penguin-web/internal";
-import { toastFailure } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "@prismshadow/penguin-web/internal";
-import { useAgentsOn } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  failureOf,
+  failureNode,
+  toastFailure,
+  useProject,
+  useAgentLocation,
+  useAgentsOn,
+  AiCreateModal,
+  AiCreateButtons,
+} from "@prismshadow/penguin-web/internal";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
 import { VaultAddDialog } from "./vault-add-dialog";
 import type { Failure } from "@prismshadow/penguin-ui";
 

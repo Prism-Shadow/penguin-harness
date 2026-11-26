@@ -21,9 +21,14 @@ import {
   TokenDonut,
   usePortalPanel,
 } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
-import { computeTps, formatPercent, formatTps, humanizeTokens } from "@prismshadow/penguin-web/internal";
-import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  computeTps,
+  formatPercent,
+  formatTps,
+  humanizeTokens,
+  STAT_ICONS,
+} from "@prismshadow/penguin-web/internal";
 import { hitRateOf, inputOf } from "./round-facts";
 import type { Buckets } from "./round-facts";
 

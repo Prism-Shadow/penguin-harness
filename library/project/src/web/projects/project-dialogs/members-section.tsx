@@ -2,11 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { MemberInfo } from "@prismshadow/penguin-server/api";
 import { Badge, Button, ConfirmModal, Input, Waiting } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import { failureNode } from "@prismshadow/penguin-web/internal";
-
+import { S, toastApiError, useAuth, failureNode } from "@prismshadow/penguin-web/internal";
 export function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
   const { user } = useAuth();
   const [members, setMembers] = useState<MemberInfo[] | null>(null);

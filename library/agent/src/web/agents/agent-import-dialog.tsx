@@ -21,14 +21,19 @@ import {
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { toastInstall } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { SEMANTIC_ID_PATTERN } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
-import { PromptFold, pickDefaultAgent, useAiBridge } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  toastInstall,
+  S,
+  SEMANTIC_ID_PATTERN,
+  toneInk,
+  toastApiError,
+  agentDisplayName,
+  useProject,
+  PromptFold,
+  pickDefaultAgent,
+  useAiBridge,
+} from "@prismshadow/penguin-web/internal";
 import { ARCHIVE_ACCEPT, ARCHIVE_BUTTON_CLASS, agentIdFromArchiveName } from "./archive-file";
 import {
   MIGRATION_SOURCES,

@@ -42,17 +42,22 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { formatDateTime } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "@prismshadow/penguin-web/internal";
-import { useAgentsOn } from "@prismshadow/penguin-web/internal";
-import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
-import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  formatDateTime,
+  useProject,
+  useAgentLocation,
+  useAgentsOn,
+  AiCreateModal,
+  AiCreateButtons,
+  ScheduleFormModal,
+  ScheduleSuggestions,
+  scheduleExamples,
+  toggleBody,
+  toastApiError,
+  failureNode,
+} from "@prismshadow/penguin-web/internal";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-import { failureNode } from "@prismshadow/penguin-web/internal";
-
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
 const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {
   active: { tone: "success" },

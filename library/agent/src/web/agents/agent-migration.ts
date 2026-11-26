@@ -4,10 +4,12 @@
  * itself is the `agent-porting` Skill's, so a framework that changes its layout needs a Skill
  * edit, not a release of this page.
  */
-import { getAgentPlugins, getPluginLibrary } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { installOnAgent } from "@prismshadow/penguin-web/internal";
-
+import {
+  getAgentPlugins,
+  getPluginLibrary,
+  S,
+  installOnAgent,
+} from "@prismshadow/penguin-web/internal";
 /** The frameworks the dialog offers, in its order, each with the user directory it keeps its setup in. */
 export const MIGRATION_SOURCES = [
   { id: "claude-code", name: "Claude Code", home: "~/.claude" },

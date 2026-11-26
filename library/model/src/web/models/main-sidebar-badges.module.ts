@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
-import { navNoteFor, useUpdateBadges } from "@prismshadow/penguin-web/internal";
-import { joinedNote, useSystemAppNotes } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import type { NavBadge } from "@prismshadow/penguin-web/internal";
-
+import {
+  navNoteFor,
+  useUpdateBadges,
+  joinedNote,
+  useSystemAppNotes,
+  useAuth,
+  type NavBadge,
+} from "@prismshadow/penguin-web/internal";
 /** Main AppLayout previously owned this eager hook. Keep one signed-in owner as a slot provider. */
 function MainUpdateBadgesOwner({ children }: { children: ReactNode }) {
   // The administrator's owner also reads the server module requests that wait (the Plugins dot).

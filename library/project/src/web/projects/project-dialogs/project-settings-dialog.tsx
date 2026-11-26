@@ -1,8 +1,6 @@
 import { useState } from "react";
 import { ICONS, PagedDialog, guardLeave, useGuardedClose } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
+import { S, useProject, useAuth } from "@prismshadow/penguin-web/internal";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 import { GeneralSection } from "./general-section";
 import { MembersSection } from "./members-section";

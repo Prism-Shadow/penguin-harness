@@ -59,8 +59,7 @@ import {
 } from "../../model-catalog/index";
 
 import * as api from "@prismshadow/penguin-web/internal";
-import { formatDateTime } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
+import { formatDateTime, S, toastApiError } from "@prismshadow/penguin-web/internal";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -74,7 +73,6 @@ import {
 } from "./protocol-types";
 
 import type { RowState } from "./models-page";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
 import { toastDetectFailed, type DetectMiss } from "./detect-failure";
 
 /** A group's row as this dialog reads it: what it stores of its own. */

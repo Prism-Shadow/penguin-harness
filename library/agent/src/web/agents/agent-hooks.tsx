@@ -37,17 +37,19 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "@prismshadow/penguin-web/internal";
-import { localizedText } from "@prismshadow/penguin-web/internal";
-import { SkillTile } from "@prismshadow/penguin-web/internal";
-import { downloadArchive } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  useLocale,
+  useProject,
+  useAgentLocation,
+  localizedText,
+  SkillTile,
+  downloadArchive,
+  toastApiError,
+  cardBodyClick,
+} from "@prismshadow/penguin-web/internal";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildHookImportPrompt } from "./hook-import";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-import { cardBodyClick } from "@prismshadow/penguin-web/internal";
 import type { PartRef, PartSource } from "./plugins-subpages";
 
 /**

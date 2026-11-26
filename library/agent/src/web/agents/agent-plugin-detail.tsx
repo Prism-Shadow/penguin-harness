@@ -32,11 +32,12 @@ import {
   RuledSection,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { useRead } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { BOOK_ICON, localizedText } from "@prismshadow/penguin-web/internal";
-import { workbenchTabsOf } from "@prismshadow/penguin-web/internal";
 import {
+  useRead,
+  S,
+  BOOK_ICON,
+  localizedText,
+  workbenchTabsOf,
   MARKET_KEY,
   McpServerMarks,
   McpSetUpModal,
@@ -46,9 +47,9 @@ import {
   hasParts,
   isSelected,
   pluginMarket,
-  type AgentPluginGroup,
-  type AgentTarget,
-  type PluginRow,
+  AgentPluginGroup,
+  AgentTarget,
+  PluginRow,
 } from "@prismshadow/penguin-web/internal";
 import type { AgentPluginActions } from "./agent-plugin-actions";
 import {

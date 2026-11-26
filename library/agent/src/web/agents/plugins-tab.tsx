@@ -52,28 +52,31 @@ import {
   useMarkedRow,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "@prismshadow/penguin-web/internal";
-import { useInstantSetting } from "@prismshadow/penguin-web/internal";
-import { onPluginsChanged } from "@prismshadow/penguin-web/internal";
-import { useOnPluginModulesChanged } from "@prismshadow/penguin-web/internal";
 import {
+  useAgentLocation,
+  useInstantSetting,
+  onPluginsChanged,
+  useOnPluginModulesChanged,
   publishMachineAgentsChanged,
   readMachineAgents,
   useAgentsOn,
-} from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { WORKBENCH_UPDATED_EVENT } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { useMachines } from "@prismshadow/penguin-web/internal";
-import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
-import {
+  S,
+  WORKBENCH_UPDATED_EVENT,
+  useAuth,
+  useLocale,
+  useMachines,
+  agentDisplayName,
+  useProject,
   LIBRARY_KEY,
   agentInstalls,
   agentPluginGroups,
   installsKey,
   pluginLibrary,
-  type AgentPluginGroups,
+  AgentPluginGroups,
+  failureNode,
+  toldFailure,
+  toastFailure,
+  workbenchLoadFailure,
 } from "@prismshadow/penguin-web/internal";
 import { agentPluginTitle } from "./agent-plugin-actions";
 import { AgentPluginsPage } from "./agent-plugins-page";
@@ -89,9 +92,6 @@ import {
   type PluginsSubPage,
 } from "./plugins-subpages";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { failureNode, toldFailure } from "@prismshadow/penguin-web/internal";
-import { toastFailure } from "@prismshadow/penguin-web/internal";
-import { workbenchLoadFailure } from "@prismshadow/penguin-web/internal";
 
 /** Everything the sub-pages list, as the Agent's server last answered. */
 interface Lists {

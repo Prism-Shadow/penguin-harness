@@ -13,11 +13,13 @@ import {
   MenuSeparator,
   SidebarSwitcherButton,
 } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
-import { projectDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  projectDisplayName,
+  useProject,
+  useOpenProjectSettings,
+} from "@prismshadow/penguin-web/internal";
 import { CreateProjectDialog } from "./project-dialogs/create-project-dialog";
-import { useOpenProjectSettings } from "@prismshadow/penguin-web/internal";
-
 export function ProjectSwitcher() {
   const { projects, currentProject, setCurrentProjectId, reloadProjects } = useProject();
   const [projectOpen, setProjectOpen] = useState(false);

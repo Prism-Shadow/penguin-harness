@@ -47,18 +47,20 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
 import type { AgentMcpServerItem, McpServerTestResponse } from "@prismshadow/penguin-server/api";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "@prismshadow/penguin-web/internal";
-import { localizedText } from "@prismshadow/penguin-web/internal";
-import { McpServerMarks } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  apiErrorText,
+  useLocale,
+  useProject,
+  useAgentLocation,
+  localizedText,
+  McpServerMarks,
+  toneInk,
+  toastFailure,
+  failureOf,
+} from "@prismshadow/penguin-web/internal";
 import { permissionOf, transportOf } from "./mcp-servers-form";
 import { McpServerDialog } from "./mcp-server-dialog";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-import { toastFailure } from "@prismshadow/penguin-web/internal";
-import { failureOf } from "@prismshadow/penguin-web/internal";
 import type { Failure } from "@prismshadow/penguin-ui";
 
 /** Table cell summary: the spawn line for stdio, the URL for http/sse. */

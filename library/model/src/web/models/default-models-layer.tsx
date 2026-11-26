@@ -21,16 +21,17 @@ import { useLocation, useNavigate } from "react-router";
 import { MODEL_PROVIDERS, PENGUIN_GO_PROVIDER_ID } from "../../model-catalog/index";
 import { ModelSetupGuide } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { onDefaultModelsRequest, onModelsChanged } from "@prismshadow/penguin-web/internal";
 import {
+  onDefaultModelsRequest,
+  onModelsChanged,
   dismissOnboarding,
   onboardingDismissed,
   onboardingStep,
   usableChatModel,
+  S,
+  useAuth,
+  useProject,
 } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
 import { ProjectDefaultModelsDialog } from "./default-models";
 import { connectPath } from "./connect-link";
 import { TOKENDANCE_PROVIDER_ID } from "./tokendance-banner";

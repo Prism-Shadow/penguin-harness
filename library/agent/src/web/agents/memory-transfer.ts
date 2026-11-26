@@ -13,9 +13,7 @@
  * on language switch.
  */
 import type { MemoryImportRequest, MemoryScopeExport } from "@prismshadow/penguin-server/api";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-
+import { ApiError, S } from "@prismshadow/penguin-web/internal";
 /** Format marker of a version 1 document, typed against the DTO so this literal cannot drift from the server's. */
 const SCOPE_FORMAT: MemoryScopeExport["format"] = "penguin-memory-scope";
 /**

@@ -5,13 +5,15 @@ import type {
   PlatformAuthFlowStatusResponse,
   PlatformAuthStartResponse,
 } from "@prismshadow/penguin-server/api";
-import type { KeyAuthEndpoints } from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { isElectronRenderer } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
+import {
+  type KeyAuthEndpoints,
+  ApiError,
+  isElectronRenderer,
+  S,
+  failureNode,
+  toldNode,
+} from "@prismshadow/penguin-web/internal";
 import { Button, Modal, Spinner } from "@prismshadow/penguin-ui";
-import { failureNode, toldNode } from "@prismshadow/penguin-web/internal";
-
 const POLL_MS = 3_000;
 
 type Phase = "starting" | "ready" | "waiting" | "applying" | "failed" | "done";

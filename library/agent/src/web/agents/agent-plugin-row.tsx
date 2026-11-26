@@ -37,9 +37,9 @@ import {
   StatusMark,
 } from "@prismshadow/penguin-ui";
 import type { ToneName } from "@prismshadow/penguin-ui";
-import { cardBodyClick } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
 import {
+  cardBodyClick,
+  S,
   McpServerMarks,
   ModuleStatusMark,
   pluginMcpState,
@@ -47,13 +47,13 @@ import {
   rowIcon,
   rowShortDescription,
   rowVersion,
-  type AgentInstalls,
-  type AgentModuleMark,
-  type AgentPluginGroup,
-  type AgentPluginStatus,
-  type PluginRow,
+  AgentInstalls,
+  AgentModuleMark,
+  AgentPluginGroup,
+  AgentPluginStatus,
+  PluginRow,
+  SkillTile,
 } from "@prismshadow/penguin-web/internal";
-import { SkillTile } from "@prismshadow/penguin-web/internal";
 import type { AgentPluginActions } from "./agent-plugin-actions";
 
 /** Each status's glyph, and its tone; a status without one recedes. */

@@ -22,10 +22,7 @@ import type {
   PinnedBalance,
 } from "@prismshadow/penguin-server/api";
 import * as api from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { formatMoney } from "@prismshadow/penguin-web/internal";
-import { USD_TO_CNY, type Currency } from "@prismshadow/penguin-web/internal";
-
+import { apiErrorText, formatMoney, USD_TO_CNY, Currency } from "@prismshadow/penguin-web/internal";
 // —— Formatting (pure) ——
 
 const CURRENCY_SYMBOL: Readonly<Record<string, string>> = { CNY: "¥", USD: "$" };

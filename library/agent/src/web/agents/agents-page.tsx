@@ -74,34 +74,46 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { cardBodyClick } from "@prismshadow/penguin-web/internal";
-import { formatDateTime, formatRelativeDays } from "@prismshadow/penguin-web/internal";
-import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
 import {
+  ApiError,
+  useAgentAvatarSrc,
+  S,
+  apiErrorText,
+  cardBodyClick,
+  formatDateTime,
+  formatRelativeDays,
+  useDocumentTitle,
   useUpdateBadges,
   dismissTodo,
   bulkOutcome,
   failedList,
   firstFailure,
   noticeCounts,
+  useAuth,
+  useLocale,
+  agentDisplayName,
+  useProject,
+  STAT_ICONS,
+  DRAFT_SESSION_ID,
+  prepareNewChatDraft,
+  AiCreateModal,
+  AiCreateButtons,
+  agentKey,
+  agentSettingsPath,
+  mixAgents,
+  useMachineAgents,
+  type PlacedAgent,
+  toneInk,
+  employmentsOf,
+  splitByEmployment,
+  holdsSystemAgentId,
+  isBuiltinAgent,
+  isSystemAgent,
+  useSystemApps,
+  followAgentDeletion,
+  toastApiError,
+  failureNode,
 } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
-import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
-import { DRAFT_SESSION_ID, prepareNewChatDraft } from "@prismshadow/penguin-web/internal";
-import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
-import { agentKey, agentSettingsPath } from "@prismshadow/penguin-web/internal";
-import { mixAgents, useMachineAgents } from "@prismshadow/penguin-web/internal";
-import type { PlacedAgent } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-import { employmentsOf, splitByEmployment } from "@prismshadow/penguin-web/internal";
-import { holdsSystemAgentId, isBuiltinAgent, isSystemAgent } from "@prismshadow/penguin-web/internal";
-import { useSystemApps } from "@prismshadow/penguin-web/internal";
 import {
   AGENT_GROUP_BYS,
   groupByAuthor,
@@ -114,11 +126,7 @@ import {
 import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
 import { AgentExportDialog } from "./agent-export-dialog";
 import { AgentImportDialog } from "./agent-import-dialog";
-import { followAgentDeletion } from "@prismshadow/penguin-web/internal";
 import type { PluginPickItem } from "./create-agent-dialog";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-import { failureNode } from "@prismshadow/penguin-web/internal";
-
 /** Card button icons (24x24 line path, rendered via GlyphIcon). */
 const CARD_ICONS = {
   /** New chat (plus sign) */
