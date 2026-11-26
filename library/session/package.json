@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-session",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "description": "The sessions domain: the SessionIndex, SessionDrivers, SessionOrigins and Schedules mechanisms, the ApprovalMode vocabulary, and the sessions/schedules repos. A library package - the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {

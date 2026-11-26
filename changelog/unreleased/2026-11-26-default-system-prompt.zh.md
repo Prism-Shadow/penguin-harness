@@ -1,9 +1,9 @@
 # 优化默认系统提示词的交付物校验与工具执行规范
 
 - **Date:** 2026-11-26
-- **Type:** feat
+- **Type:** feature
 - **Scope:** `core`
-- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1880
+- **PR:** [#1880](https://github.com/Prism-Shadow/penguin-harness/pull/1880)
 
 [English](2026-11-26-default-system-prompt.md)
 

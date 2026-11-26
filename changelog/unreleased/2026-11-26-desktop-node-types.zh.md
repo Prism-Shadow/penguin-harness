@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-26
 - **Type:** fix
-- **Scope:** `desktop`, `workbenches`
+- **Scope:** `desktop`, `server`
 - **PR:** [#1889](https://github.com/Prism-Shadow/penguin-harness/pull/1889)
 
 [English](2026-11-26-desktop-node-types.md)

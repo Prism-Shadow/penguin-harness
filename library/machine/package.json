@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-machine",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "description": "The machines domain: the MachineRow shape, the machines repo and the browser-extension pairing store. A library package - the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {

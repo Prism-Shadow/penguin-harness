@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/multimodal-tools",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "type": "module",
   "description": "Generate text, read images, search and fetch the web, generate images, video and speech, and transcribe recordings with the Project's models, through penguin tools.",
   "keywords": [
