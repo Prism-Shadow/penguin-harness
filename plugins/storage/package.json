@@ -62,7 +62,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "commander": "^13.0.0",
-    "hono": "^4.13.11",
+    "hono": "4.13.13",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tsup": "^8.3.0",
