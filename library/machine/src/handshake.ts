@@ -16,6 +16,7 @@
 import type { VersionReport } from "@prismshadow/penguin-core";
 import type { MachineApi } from "./machine-api.js";
 import { runningBuild, runsPlan } from "./install-server.js";
+import { answeredWhenAsked } from "./answer-reason.js";
 import type { PushPlan, RunningBuild } from "./install-server.js";
 
 /** The door a machine's server answers the handshake on. */
@@ -40,7 +41,7 @@ export function readHandshakeAnswer(status: number, text: string): HandshakeRead
     return { kind: "unknown", detail: "it has no handshake door (404), so its build is unknown" };
   }
   if (status !== 200) {
-    return { kind: "failed", detail: `it answered ${status} when asked its handshake` };
+    return { kind: "failed", detail: answeredWhenAsked({ status, text }, "its handshake") };
   }
   let body: { identity?: unknown };
   try {

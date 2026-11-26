@@ -31,6 +31,7 @@ import type {
   ProviderConnectionUpdate,
 } from "@prismshadow/penguin-library-model";
 import type { MachineApi } from "./machine-api.js";
+import { answeredWhenAsked } from "./answer-reason.js";
 import { effectiveConnection, providerConnectionShape } from "@prismshadow/penguin-core";
 import { catalogEntryFor } from "@prismshadow/penguin-library-model/model-catalog/catalog";
 import { modelEnvironment } from "@prismshadow/penguin-library-model/model-catalog/env-keys";
@@ -377,7 +378,7 @@ export async function syncModelsToMachine(opts: {
   try {
     const listed = await opts.api.request("GET", "/api/projects");
     if (listed.status !== 200) {
-      return { kind: "failed", detail: `it answered ${listed.status} when asked its projects` };
+      return { kind: "failed", detail: answeredWhenAsked(listed, "its projects") };
     }
     theirs = projectsIn(listed.text);
   } catch (err) {
@@ -451,7 +452,7 @@ export async function syncModelsToMachine(opts: {
       if (current.status !== 200) {
         refused.push({
           projectId,
-          detail: `it answered ${current.status} when asked the models of ${projectId}`,
+          detail: answeredWhenAsked(current, `the models of ${projectId}`),
         });
         continue;
       }

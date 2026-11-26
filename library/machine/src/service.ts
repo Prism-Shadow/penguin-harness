@@ -119,6 +119,8 @@ import type { LocalModels } from "./models-sync.js";
 import { localSettings, syncSettingsToMachine } from "./settings-sync.js";
 import { machineApi } from "./machine-api.js";
 import type { MachineApi } from "./machine-api.js";
+import { isStarting, waitingOutStarting } from "./starting-wait.js";
+import { answeredWhenAsked } from "./answer-reason.js";
 import { ADOPTED_AT_HEADER } from "@prismshadow/penguin-library-trace/listing";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
 import type { MachineRow } from "./machine.js";
@@ -2328,7 +2330,10 @@ export class MachinesService {
     };
   }
 
-  /** What a machine's server says it runs (its GET /api/version, asked as its admin). */
+  /**
+   * What a machine's server says it runs (its GET /api/version, asked as its admin). Any answer
+   * but a 200 is said with the reason the server gave: a platform that could not boot names why.
+   */
   async #askBuild(
     target: RemoteTarget,
     port: number,
@@ -2336,13 +2341,12 @@ export class MachinesService {
     const session = await this.#sessionOn(target);
     if (!("cookie" in session)) return { ok: false, detail: session.detail };
     try {
-      const answer = await machineApi(
-        this.#effects.agent(target, port),
-        port,
-        session.cookie,
-      ).request("GET", "/api/version");
+      const answer = await this.#jobApi(target, port, session.cookie).request(
+        "GET",
+        "/api/version",
+      );
       if (answer.status !== 200) {
-        return { ok: false, detail: `it answered ${answer.status} when asked its version` };
+        return { ok: false, detail: answeredWhenAsked(answer, "its version") };
       }
       const build = runningBuild(JSON.parse(answer.text));
       return build === null
@@ -2501,7 +2505,19 @@ export class MachinesService {
   async #handshakeAt(target: RemoteTarget, port: number): Promise<HandshakeReading> {
     const session = await this.#sessionOn(target);
     if (!("cookie" in session)) return { kind: "failed", detail: session.detail };
-    return askHandshake(machineApi(this.#effects.agent(target, port), port, session.cookie));
+    return askHandshake(this.#jobApi(target, port, session.cookie));
+  }
+
+  /**
+   * The API this server's work on a machine asks its server through — the version, the handshake,
+   * the config sync. Its questions wait out a server that is still starting (starting-wait.ts):
+   * the readiness a start waits for is a pid and a port that accepts, and the App behind that
+   * port comes up seconds later. A cut ends the wait with the work.
+   */
+  #jobApi(target: RemoteTarget, port: number, cookie: string): MachineApi {
+    return waitingOutStarting(machineApi(this.#effects.agent(target, port), port, cookie), {
+      signal: target.signal,
+    });
   }
 
   /** The stop and the start this server already has, once — or only the start if none was up. */
@@ -2992,7 +3008,7 @@ export class MachinesService {
       fail(`Config not synced — ${session.detail}`);
       return finish();
     }
-    const api = machineApi(this.#effects.agent(target, port), port, session.cookie);
+    const api = this.#jobApi(target, port, session.cookie);
 
     const models = await syncModelsToMachine({
       api,
@@ -3190,6 +3206,9 @@ export class MachinesService {
    * by the process that never died, and the readiness probe — which only asks whether a
    * server answers — reads that as success: the machine then reports a version it is not
    * running, which is the one outcome every guard on this path exists to prevent.
+   *
+   * It is done when the App answers, not when the port does (#untilAnswering): what follows a
+   * restart is a question to that App, and a person told "Restarted" uses the machine at once.
    */
   async #restartServer(
     address: string,
@@ -3219,12 +3238,47 @@ export class MachinesService {
     if (!started.ok) {
       return { ok: false, detail: `its server did not come back up: ${started.detail}` };
     }
+    const answering = await this.#untilAnswering(target, port);
+    if (!answering.ok) {
+      return {
+        ok: false,
+        // A cut ends the wait too, with the starting answer it last had: that is not the server's.
+        detail:
+          target.signal?.aborted === true
+            ? "it was stopped."
+            : `its server came back up but did not finish starting: ${answering.detail}`,
+      };
+    }
     // It is a different process now, and possibly one with an identity it did not have a
     // moment ago: a machine mints its id when a server that mints one starts there.
     await this.#refreshStatus(address, target);
     if (target.signal?.aborted === true) return { ok: false, detail: "it was stopped." };
     this.#record(address, { remotePort: port });
     return { ok: true, port };
+  }
+
+  /**
+   * Waits for the App behind a port a start has just seen accept, by asking it its version the
+   * way every job's question does (#jobApi). Only a server still starting when that wait is spent
+   * is a failure: any other answer, or none, is for the next question to read and say.
+   */
+  async #untilAnswering(
+    target: RemoteTarget,
+    port: number,
+  ): Promise<{ ok: true } | { ok: false; detail: string }> {
+    const session = await this.#sessionOn(target);
+    if (!("cookie" in session)) return { ok: true };
+    try {
+      const answer = await this.#jobApi(target, port, session.cookie).request(
+        "GET",
+        "/api/version",
+      );
+      return isStarting(answer)
+        ? { ok: false, detail: answeredWhenAsked(answer, "its version") }
+        : { ok: true };
+    } catch {
+      return { ok: true };
+    }
   }
 
   /**

@@ -40,6 +40,10 @@
       "types": "./dist/answer.d.ts",
       "import": "./dist/answer.js"
     },
+    "./answer-reason": {
+      "types": "./dist/answer-reason.d.ts",
+      "import": "./dist/answer-reason.js"
+    },
     "./carried-store": {
       "types": "./dist/carried-store.d.ts",
       "import": "./dist/carried-store.js"
@@ -155,6 +159,10 @@
     "./server-state": {
       "types": "./dist/server-state.d.ts",
       "import": "./dist/server-state.js"
+    },
+    "./starting-wait": {
+      "types": "./dist/starting-wait.d.ts",
+      "import": "./dist/starting-wait.js"
     },
     "./service": {
       "types": "./dist/service.d.ts",
