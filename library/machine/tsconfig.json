@@ -14,13 +14,9 @@
       "@prismshadow/penguin-library-http/errors": ["../http/src/errors.ts"],
       "@prismshadow/penguin-library-http/heartbeat": ["../http/src/heartbeat.ts"],
       "@prismshadow/penguin-library-http/json-answer": ["../http/src/json-answer.ts"],
-      "@prismshadow/penguin-library-http/socket-compression": [
-        "../http/src/socket-compression.ts"
-      ],
+      "@prismshadow/penguin-library-http/socket-compression": ["../http/src/socket-compression.ts"],
       "@prismshadow/penguin-library-http/socket-frames": ["../http/src/socket-frames.ts"],
-      "@prismshadow/penguin-library-http/socket-line-frames": [
-        "../http/src/socket-line-frames.ts"
-      ],
+      "@prismshadow/penguin-library-http/socket-line-frames": ["../http/src/socket-line-frames.ts"],
       "@prismshadow/penguin-library-http/socket-sse-text": ["../http/src/socket-sse-text.ts"],
       "@prismshadow/penguin-library-http/socket-stream-answer": [
         "../http/src/socket-stream-answer.ts"

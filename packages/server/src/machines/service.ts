@@ -30,7 +30,10 @@ import { traceCacheAt } from "@prismshadow/penguin-library-machine/trace-cache";
 import type { MachineSessionForward } from "@prismshadow/penguin-library-machine/session-forward";
 import { machinesRoutes } from "@prismshadow/penguin-library-machine/routes";
 import { machineSessionForward } from "@prismshadow/penguin-library-machine/session-forward";
-import { SESSION_GROUP, attachSessionRegistry } from "@prismshadow/penguin-library-machine/transport";
+import {
+  SESSION_GROUP,
+  attachSessionRegistry,
+} from "@prismshadow/penguin-library-machine/transport";
 import { deployPacker, findCheckout } from "@prismshadow/penguin-library-machine/checkout-image";
 import { shippedImage } from "@prismshadow/penguin-library-machine/install-server";
 import { readPushedBuild, writePushedBuild } from "../hmr/pushed-build.js";

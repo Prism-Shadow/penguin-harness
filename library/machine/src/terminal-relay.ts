@@ -245,7 +245,12 @@ export abstract class RemoteTerminals {
    * Joins a viewer's socket to the machine's stream when `session` is a remote reference.
    * False for a local pty, which the caller then serves itself.
    */
-  abstract attach(ws: WsSocket, session: RelayTerminal, url: URL, log: (line: string) => void): boolean;
+  abstract attach(
+    ws: WsSocket,
+    session: RelayTerminal,
+    url: URL,
+    log: (line: string) => void,
+  ): boolean;
 }
 
 @Component()

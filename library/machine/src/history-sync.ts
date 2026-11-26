@@ -57,7 +57,10 @@ import type {
 } from "./contract.js";
 import { HttpError } from "@prismshadow/penguin-library-http/errors";
 import { assembleWindow } from "@prismshadow/penguin-library-trace/history-layout";
-import { historyLinesPath, parseHistoryFileKey } from "@prismshadow/penguin-library-trace/history-wire";
+import {
+  historyLinesPath,
+  parseHistoryFileKey,
+} from "@prismshadow/penguin-library-trace/history-wire";
 import type { HistoryLinesQuery } from "@prismshadow/penguin-library-trace/history-wire";
 import { encodeCursor } from "@prismshadow/penguin-library-trace/message-window";
 import { historyResponse } from "@prismshadow/penguin-library-trace/session-history";
