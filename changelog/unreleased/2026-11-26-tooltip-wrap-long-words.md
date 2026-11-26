@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `ui`
+- **PR:** [#1893](https://github.com/Prism-Shadow/penguin-harness/pull/1893)
 
 [中文版](2026-11-26-tooltip-wrap-long-words.zh.md)
 
