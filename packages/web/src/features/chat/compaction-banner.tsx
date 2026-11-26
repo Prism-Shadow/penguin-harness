@@ -39,11 +39,12 @@
  * half-written drafts (see stream-model's compaction_end handling), so there is nothing left
  * to show.
  *
- * A model switch that could not summarize opens the next context with a Trace hand-over
- * instead, and its row is where that hand-over shows: a "Hand-off note" section in the result's
- * place (see CompactionHandoverSection), under the same 压缩完毕 head with the degraded mark. A
- * switch whose current model could not be reached ran no compaction at all; its row is made from
- * the hand-over alone, so it settles without a wall time.
+ * A compaction that completes without a full summary opens the next context with a hand-over
+ * instead: the hand-off note, or a model switch's Trace hand-over. Its row is where that
+ * hand-over shows, as a "Hand-off note" section in the result's place (see
+ * CompactionHandoverSection), under the same 压缩完毕 head with the degraded mark. A switch whose
+ * current model could not be reached ran no compaction at all; its row is made from the hand-over
+ * alone, so it settles without a wall time.
  *
  * Doesn't show Tokens: the row only needs to state whether compaction happened and whether it
  * succeeded. Compaction's cost lands in different places depending on when it occurs — compaction
@@ -223,8 +224,8 @@ export function CompactionBanner({
       content: <CompactionWork cards={work} ctx={ctx} pending={pending} />,
     });
   }
-  // A switch's Trace hand-over stands in the result's place: a row that has one completed
-  // without a full summary, so it never shows a result section too.
+  // A hand-over stands in the result's place: a row that has one completed without a full
+  // summary, so it never shows a result section too.
   if (item.handover !== undefined) {
     rows.push({
       key: "handover",

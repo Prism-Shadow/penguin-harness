@@ -38,8 +38,9 @@
  *     partial_thinking / partial_text fragments, or the span's complete thinking
  *     and assistant text on rebuild) accumulate onto the running compaction
  *     banner instead (issue #290), and its tool calls become cards on it (CompactionItem.work);
- *     user text prefixed with `[context_summary]` is a compaction-summary
- *     injection, treated as internal input (not rendered, doesn't start a new Task).
+ *     the text a context opens with (`[context_summary]`, or a switch's in-place
+ *     `[model_switch_from]`) is internal input: not rendered, doesn't start a new Task,
+ *     and, when it stands in a summary's place, the hand-over of the row it follows.
  *   - Task segmentation: a complete text/image message on the main
  *     session's user side starts a new Task, and so does the first request
  *     after a request_end or abort that ended the run (a Retry, which sends no
@@ -64,11 +65,7 @@ import {
   normalizeSessionSource,
   updatedModel,
 } from "@prismshadow/amsp";
-import {
-  parseBackgroundTaskDoneMessage,
-  parseInPlaceModelSwitch,
-  parseUserSteeringText,
-} from "@prismshadow/amsp/markers";
+import { parseBackgroundTaskDoneMessage, parseUserSteeringText } from "@prismshadow/amsp/markers";
 import type {
   ApprovalDecision,
   CompactionMode,
@@ -109,6 +106,7 @@ import {
   type MemoryChangeRow,
 } from "./memory-changes";
 import { compactionDegraded } from "./compaction-summary";
+import { contextOpeningOf, type ContextOpening } from "./context-opening";
 
 // ---------------------------------------------------------------------------
 // View model types
@@ -474,21 +472,21 @@ export interface CompactionItem extends RequestFailureFacts {
   /** Settled result wall time (boundaries: see thinkingStartedAtMs). */
   summaryDurationMs?: number;
   /**
-   * The Trace hand-over an in-session model switch opened the next context with in the summary's
-   * place: the row's hand-over section, and with it a completion without a full summary. A switch
-   * whose compaction gave no summary hands it to that compaction's own row. One whose current model
-   * could not be reached sent no compaction request and wrote no compaction pair, so its row is
-   * the hand-over's alone: settled `completed`, with no error pair and no times (see
-   * foldTraceHandover).
+   * The text the next context opened with in the summary's place: the row's hand-over section,
+   * and with it a completion without a full summary. A compaction that gave no summary opens it
+   * with the hand-off note, or, for a model switch, the Trace hand-over; either joins the
+   * compaction's own row. A switch whose current model could not be reached sent no compaction
+   * request and wrote no compaction pair, so its row is the hand-over's alone: settled
+   * `completed`, with no error pair and no times (see foldContextOpening).
    */
   handover?: CompactionHandover;
 }
 
-/** A model switch's Trace hand-over, as the compaction row above its marker shows it. */
+/** What a context opened with in a summary's place, as the compaction row it follows shows it. */
 export interface CompactionHandover {
-  /** The whole `[model_switch_from]` block the next context opens with, raw (the section strips its tags). */
+  /** The whole block the next context opens with, raw (`[context_summary]` or `[model_switch_from]`; the section strips its tags). */
   text: string;
-  /** The Trace file it hands over, as the block names it. */
+  /** The Trace file it names, when it names one. */
   tracePath?: string;
 }
 
@@ -655,10 +653,11 @@ export interface StreamModel {
    */
   contextModel: { sessionId: string; provider: string; modelId: string } | null;
   /**
-   * The raw text of the last Trace hand-over folded into a marker. A switch made before the
-   * context it left completed a turn rewrites that context's opening at the next file's head, so
-   * the same hand-over arrives again behind the later marker: that marker says it was handed over
-   * by Trace, but that switch ran no compaction and gets no row of its own (see foldTraceHandover).
+   * The raw text of the last hand-over folded into a row. A switch made before the context it left
+   * completed a turn rewrites that context's opening at the next file's head, so the same
+   * hand-over arrives again behind the later marker: a switch's marks that marker as handed over
+   * by Trace, but that switch ran no compaction and the hand-over joins no second row (see
+   * foldContextOpening).
    */
   lastHandoverText: string | null;
   /** `contextModel` as the open Task began: a switch only happens between Tasks, so this is the model the whole Task runs on (see `TaskStatsItem.model`). */
@@ -1568,25 +1567,14 @@ function handleComplete(
   switch (p.type) {
     case "text": {
       if (p.role === "user") {
-        // Compaction-summary injection (`[context_summary]` prefix, an
-        // internal input in the new context file): not rendered as a user bubble, doesn't
-        // start a new Task. The old `<context_summary>` prefix is still recognized — old
-        // Traces containing it are re-rendered through this reducer.
-        if (p.text.startsWith("[context_summary]") || p.text.startsWith("<context_summary>")) {
+        // The text a context opened with (an internal input at the head of its file): a
+        // compaction's `[context_summary]`, or the Trace hand-over of an in-session model switch
+        // (see context-opening.ts). Not rendered as a user bubble and never starts a Task; a
+        // hand-over shows on the compaction row it follows.
+        const opening = contextOpeningOf(p.text, model.contextModel?.sessionId);
+        if (opening !== null) {
           touchTask(model, timestamp);
-          return;
-        }
-        // The Trace handoff an in-session model switch opened the context with instead of a
-        // summary (a whole `[model_switch_from]` block naming this Session — a `/model` new
-        // conversation's names its source): no bubble and no Task either; it marks the switch
-        // and shows on the compaction row above the marker.
-        const handover = parseInPlaceModelSwitch(p.text, model.contextModel?.sessionId);
-        if (handover !== null) {
-          touchTask(model, timestamp);
-          foldTraceHandover(model, {
-            text: p.text,
-            ...(handover.tracePath !== undefined ? { tracePath: handover.tracePath } : {}),
-          });
+          foldContextOpening(model, opening);
           return;
         }
         // Mid-run steering (`[user_steering]`-wrapped user text, delivered between turns):
@@ -2372,24 +2360,40 @@ function findLastRunningCompaction(model: StreamModel): CompactionItem | null {
   return null;
 }
 
+/** Rows that can stand between a compaction row and the text its next context opened with. */
+const BETWEEN_ROW_AND_OPENING: ReadonlySet<ChatItem["kind"]> = new Set([
+  "mcp_connect",
+  "model_change",
+]);
+
 /**
- * Folds a model switch's Trace hand-over into the switch it opened the context for. The latest
- * marker says the switch was handed over by Trace, and the compaction row above it shows the
- * hand-over. A switch whose compaction gave no summary already has that row: the degraded one
- * its compaction ended in, with at most the next context's MCP connect row between it and the
- * marker. A switch whose current model could not be reached wrote no compaction pair, so the row
- * is made here, in the marker's place above it. A hand-over the model already holds is that same
- * opening, carried on by a switch with nothing to compact: only its marker changes.
+ * Folds the text a context opened with into the row it follows, by one rule for every hand-over:
+ * an opening that follows a compaction row which completed without a full summary is that row's
+ * hand-over. That covers a compaction's hand-off note written in the summary's place, and the
+ * Trace hand-over of a model switch whose compaction gave no summary. Between the row and the
+ * opening stand at most the next context's MCP connect row and a switch's marker.
+ *
+ * A switch's hand-over also marks the latest marker as handed over by Trace. A switch whose
+ * current model could not be reached wrote no compaction pair, so its row is made from the
+ * hand-over, in the marker's place above it. An opening the model already holds is that opening
+ * carried on by a switch with nothing to compact: it marks that switch's marker and adds nothing
+ * else. A summary's opening adds nothing: its row already shows the summary as its result.
  */
-function foldTraceHandover(model: StreamModel, handover: CompactionHandover): void {
-  const at = model.items.findLastIndex((i) => i.kind === "model_change");
-  if (at === -1) return;
-  const marker = model.items[at] as ModelChangeItem;
-  marker.handover = handover.tracePath !== undefined ? { tracePath: handover.tracePath } : {};
-  if (model.lastHandoverText === handover.text) return;
-  model.lastHandoverText = handover.text;
+function foldContextOpening(model: StreamModel, opening: ContextOpening): void {
+  let at = model.items.length;
+  if (opening.switched) {
+    at = model.items.findLastIndex((i) => i.kind === "model_change");
+    if (at === -1) return;
+    const marker = model.items[at] as ModelChangeItem;
+    marker.handover = opening.tracePath !== undefined ? { tracePath: opening.tracePath } : {};
+  }
+  if (model.lastHandoverText === opening.text) return;
+  const handover: CompactionHandover = {
+    text: opening.text,
+    ...(opening.tracePath !== undefined ? { tracePath: opening.tracePath } : {}),
+  };
   let before = at - 1;
-  while (before >= 0 && model.items[before]!.kind === "mcp_connect") before--;
+  while (before >= 0 && BETWEEN_ROW_AND_OPENING.has(model.items[before]!.kind)) before--;
   const own = model.items[before];
   if (
     own?.kind === "compaction" &&
@@ -2398,8 +2402,11 @@ function foldTraceHandover(model: StreamModel, handover: CompactionHandover): vo
     compactionDegraded(own)
   ) {
     own.handover = handover;
+    model.lastHandoverText = opening.text;
     return;
   }
+  if (!opening.switched) return;
+  model.lastHandoverText = opening.text;
   model.items.splice(at, 0, {
     kind: "compaction",
     id: nextId(model),

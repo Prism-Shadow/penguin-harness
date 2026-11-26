@@ -55,12 +55,14 @@
  *   request included.
  * - A Session's first message streams its session_meta ahead of task_begin: it renders nothing
  *   and marks no model change.
- * - A model switch that hands over by Trace path folds its `[model_switch_from]` handoff (naming
- *   this Session) into the model-change marker and shows it on the compaction row above: the
- *   degraded row its compaction ended in, or, when the current model could not be reached and no
- *   compaction ran, a settled row made from the hand-over alone. The same hand-over carried on by
- *   a switch with nothing to compact marks that marker and adds no second row; a `/model` block
- *   naming another Session stays a Prompt.
+ * - The text a context opens with in a summary's place is the hand-over of the compaction row it
+ *   follows, by one rule: a degraded compaction's hand-off note, with the Trace file it names, and
+ *   a model switch's `[model_switch_from]` hand-over (naming this Session), which also marks the
+ *   model-change marker. When the current model could not be reached and no compaction ran, a
+ *   settled row is made from the hand-over alone. A summary's opening joins no row. The same
+ *   hand-over carried on by a switch with nothing to compact adds no second row, and a note
+ *   carried over such a switch still joins its compaction's row; a `/model` block naming another
+ *   Session stays a Prompt.
  * - A switch's `session_update` draws the model-change marker under the Session held (one per
  *   record, several in a row included), and the context's same-model session_meta that follows
  *   draws none; a Trace without the record still draws it from two metas. A nested child's
@@ -97,7 +99,13 @@ import {
   userText,
   withOrigin,
 } from "@prismshadow/amsp";
-import { buildBackgroundTaskDoneMessage, buildModelSwitchMessage } from "@prismshadow/amsp/markers";
+import {
+  buildBackgroundTaskDoneMessage,
+  buildContextSummaryText,
+  buildModelSwitchMessage,
+  markerBlock,
+  MARKER_TAGS,
+} from "@prismshadow/amsp/markers";
 import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/amsp";
 import {
   approvalKey,
@@ -732,6 +740,107 @@ describe("approvals and events", () => {
     pushMessage(opened, meta("s2"));
     pushMessage(opened, handoff("s1"));
     expect(items(opened).map((i) => i.kind)).toEqual(["user_text"]);
+  });
+
+  describe("a compaction's hand-off note, with no model switch", () => {
+    const TRACE = "/data/traces/s1_001.jsonl";
+    /** A hand-off note as the harness writes it: the template filled, its Trace line last but one. */
+    const note = (tracePath: string) =>
+      buildContextSummaryText(
+        [
+          "No summary of the earlier conversation could be written, so the harness wrote this note in its place.",
+          "",
+          "The user's messages, oldest first:",
+          "Trace file: quoted from the user, not the harness's line",
+          "",
+          `Trace file (JSONL, one record per line): ${tracePath}`,
+          "Carry on with the task from where it stopped.",
+        ].join("\n"),
+      );
+    /**
+     * A Session that answered once and compacted, then the next file's head and its first Task;
+     * `switchTo` puts a switch with nothing to compact between the two files.
+     */
+    const compacted = (end: AmspRecord, opening: AmspRecord, switchTo?: string) => {
+      const m = createStreamModel();
+      pushMessage(m, meta("s1"));
+      pushMessage(m, userText("task 1"));
+      pushMessage(m, requestBegin());
+      pushMessage(m, assistantText("re: task 1"));
+      pushMessage(m, requestEnd("completed"));
+      pushMessage(
+        m,
+        compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 1 }),
+      );
+      pushMessage(m, end);
+      if (switchTo !== undefined) {
+        pushMessage(m, sessionUpdate({ provider: "custom", model_id: switchTo }));
+      }
+      pushMessage(m, taskBegin());
+      pushMessage(m, sessionMeta({ ...meta("s1").payload, model_id: switchTo ?? "m" }));
+      pushMessage(m, toolListReady([]));
+      pushMessage(m, opening);
+      pushMessage(m, userText("task 2"));
+      finalizeHistory(m);
+      return m;
+    };
+    const degradedEnd = compactionEnd({
+      reason: "manual",
+      mode: "summarize",
+      status: "completed",
+      errorCode: "malformed",
+      errorMessage: "the response contained no usable summary",
+    });
+
+    it("is the hand-over of the degraded row it follows, with the Trace file it names last, and no bubble", () => {
+      const m = compacted(degradedEnd, userText(note(TRACE)));
+      const texts = items(m).flatMap((i) => (i.kind === "user_text" ? [i.text] : []));
+      expect(texts).toEqual(["task 1", "task 2"]);
+      expect(items(m).find((i) => i.kind === "compaction")).toMatchObject({
+        status: "completed",
+        errorCode: "malformed",
+        handover: { text: note(TRACE), tracePath: TRACE },
+      });
+    });
+
+    it("names no Trace file when the note's line holds the empty placeholder", () => {
+      const m = compacted(degradedEnd, userText(note("(not recorded)")));
+      const row = items(m).find((i): i is CompactionItem => i.kind === "compaction")!;
+      expect(row.handover).toEqual({ text: note("(not recorded)") });
+    });
+
+    it("a full summary's opening joins no row: the row keeps the summary as its result", () => {
+      const m = createStreamModel();
+      pushMessage(m, meta("s1"));
+      pushMessage(m, userText("task 1"));
+      pushMessage(m, requestBegin());
+      pushMessage(m, assistantText("re: task 1"));
+      pushMessage(m, requestEnd("completed"));
+      pushMessage(
+        m,
+        compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 1 }),
+      );
+      pushMessage(m, requestBegin());
+      pushMessage(m, assistantText(markerBlock(MARKER_TAGS.summary, "the plan")));
+      pushMessage(m, requestEnd("completed"));
+      pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+      pushMessage(m, taskBegin());
+      pushMessage(m, meta("s1"));
+      pushMessage(m, userText(buildContextSummaryText("the plan", TRACE)));
+      finalizeHistory(m);
+      const row = items(m).find((i): i is CompactionItem => i.kind === "compaction")!;
+      expect(row.handover).toBeUndefined();
+      expect(row.summaryText).toBe(markerBlock(MARKER_TAGS.summary, "the plan"));
+    });
+
+    it("a note carried over a switch with nothing to compact still joins its compaction's row, and the marker stays unmarked", () => {
+      const m = compacted(degradedEnd, userText(note(TRACE)), "m2");
+      expect(items(m).filter((i) => i.kind === "model_change")).toHaveLength(1);
+      const row = items(m).find((i): i is CompactionItem => i.kind === "compaction")!;
+      expect(row.handover).toEqual({ text: note(TRACE), tracePath: TRACE });
+      const marker = items(m).find((i): i is ModelChangeItem => i.kind === "model_change")!;
+      expect(marker.handover).toBeUndefined();
+    });
   });
 
   it("a round settled behind a switch's compaction row and marker places its stats row above both", () => {

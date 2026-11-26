@@ -5018,7 +5018,7 @@ export const zh = {
     compactionWork: "工作",
     /** The summarize row's last body section (the first reuses `thinking`): the summary the compaction request wrote. */
     compactionResult: "压缩结果",
-    /** The section in the result's place when a model switch handed the history over by Trace path: why there is no summary, the Trace file, and the note the next context opens with. */
+    /** The section in the result's place when a compaction completed without a full summary (a model switch's Trace hand-over included): why there is no summary, the Trace file the note names, and the note the next context opens with. */
     compactionHandover: "交接说明",
     /** Its line naming the Trace file the new model reads the earlier history from. */
     compactionHandoverTrace: (tracePath: string): string => `Trace 文件：${tracePath}`,

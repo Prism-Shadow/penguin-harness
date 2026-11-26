@@ -1,8 +1,13 @@
 /**
- * A model switch handed over by Trace, as the chat draws it from the Trace: the records through
- * the stream model (lib/amsp/stream-model.ts) into the transcript's item dispatch
+ * A compaction's hand-over, as the chat draws it from the Trace: the records through the stream
+ * model (lib/amsp/stream-model.ts) into the transcript's item dispatch
  * (features/chat/message-item.tsx) and the compaction row's hand-over section
  * (features/chat/compaction-handover.tsx).
+ *
+ * - A compaction with no model switch that completed without a full summary settles to 压缩完毕
+ *   with the degraded mark. Its folded hand-over section gives the mark's reason, the Trace file
+ *   its hand-off note names, and that note, its tags stripped. A compaction that wrote a full
+ *   summary keeps the summary as its result and has no hand-over.
  *
  * - A switch whose current model could not be reached settles to 压缩完毕 with the degraded mark,
  *   which says no summary was asked for and that the next context opens with the hand-over. The
@@ -31,10 +36,17 @@ import {
   userText,
 } from "@prismshadow/amsp";
 import type { AmspRecord } from "@prismshadow/amsp";
-import { buildContextSummaryText, buildModelSwitchMessage } from "@prismshadow/amsp/markers";
+import {
+  buildContextSummaryText,
+  buildModelSwitchMessage,
+  markerBlock,
+  MARKER_TAGS,
+} from "@prismshadow/amsp/markers";
+import { defaultSystemConfig } from "@prismshadow/penguin-core";
 import { CompactionHandoverBody } from "../src/features/chat/compaction-handover";
 import { MessageItem } from "../src/features/chat/message-item";
 import type { StreamRenderContext } from "../src/features/chat/message-stream";
+import { compactionResultVisible } from "../src/lib/amsp/compaction-summary";
 import {
   createStreamModel,
   finalizeHistory,
@@ -119,6 +131,60 @@ function transcript(way: keyof typeof SWITCHES): ChatItem[] {
       : handoff();
   const model = createStreamModel();
   pushMessages(model, [...answered(), ...SWITCHES[way], metaOn(B), toolListReady([]), opening]);
+  finalizeHistory(model);
+  return model.items;
+}
+
+const UNUSABLE = "the response contained no usable summary";
+
+/** The hand-off note a compaction with no summary opens the next context with: core's default template, filled. */
+const HANDOFF_NOTE = buildContextSummaryText(
+  defaultSystemConfig()
+    .compaction!.handoff_note!.replace("{{ERROR}}", `[request_error] malformed: ${UNUSABLE}`)
+    .replace("{{USER_MESSAGES}}", "- fix the three links in the draft")
+    .replace("{{LAST_TURN}}", "two fixed, one left")
+    .replace("{{TRACE_PATH}}", TRACE),
+);
+
+/** A Session on A that answered once, compacted on its own, and went on in the next file. */
+function compactedTranscript(way: "degraded" | "summarized"): ChatItem[] {
+  const span =
+    way === "degraded"
+      ? [
+          compactionEnd({
+            reason: "manual",
+            mode: "summarize",
+            status: "completed",
+            attempt: 3,
+            errorCode: "malformed",
+            errorMessage: UNUSABLE,
+          }),
+        ]
+      : [
+          requestBegin(),
+          assistantText(markerBlock(MARKER_TAGS.summary, "the draft's path and the link left")),
+          requestEnd("completed"),
+          compactionEnd({ reason: "manual", mode: "summarize", status: "completed", attempt: 1 }),
+        ];
+  const opening =
+    way === "degraded"
+      ? HANDOFF_NOTE
+      : buildContextSummaryText("the draft's path and the link left", TRACE);
+  const model = createStreamModel();
+  pushMessages(model, [
+    ...answered(),
+    compactionBegin({ reason: "manual", mode: "summarize", context: 60_000, turns: 1 }),
+    ...span,
+    taskBegin(),
+    metaOn(A),
+    toolListReady([]),
+    userText(opening),
+    userText("now the last link"),
+    requestBegin(),
+    assistantText("fixed"),
+    requestEnd("completed"),
+    taskEnd(),
+  ]);
   finalizeHistory(model);
   return model.items;
 }
@@ -235,5 +301,53 @@ describe.each([
     expect(html).toContain(dict.chat.compactionDone("summarize"));
     expect(markLines(html)).toBeNull();
     expect(text(draw(divider))).toBe(dict.chat.modelChanged(A.modelId, B.modelId));
+  });
+});
+
+describe.each([
+  ["zh", zh],
+  ["en", en],
+] as const)("a compaction with no model switch (%s)", (lang, dict) => {
+  beforeEach(() => {
+    stubLocalStorage().setItem("penguin.lang", lang);
+    setActiveStrings(dict);
+  });
+  afterEach(() => setActiveStrings(zh));
+
+  /** The transcript's one compaction row. */
+  const onlyRow = (items: ChatItem[]): CompactionItem => {
+    const rows = items.filter((i): i is CompactionItem => i.kind === "compaction");
+    expect(rows).toHaveLength(1);
+    expect(items.some((i) => i.kind === "model_change")).toBe(false);
+    return rows[0]!;
+  };
+
+  it("that got no summary settles to Compacted with the degraded mark and folds the same hand-over section: the reason, the Trace file the note names, and the note", () => {
+    const items = compactedTranscript("degraded");
+    const row = onlyRow(items);
+    // The note is no message of the person's.
+    const said = items.flatMap((i) => (i.kind === "user_text" ? [i.text] : []));
+    expect(said).toEqual(["fix the three links in the draft", "now the last link"]);
+    const html = draw(row);
+    expect(html).toContain(dict.chat.compactionDone("summarize"));
+    expect(html).toContain('aria-expanded="false"');
+    const lines = markLines(html)!;
+    expect(lines[0]!.endsWith(UNUSABLE)).toBe(true);
+    const body = openedBody(row);
+    for (const line of lines) expect(body).toContain(line);
+    expect(body).toContain(dict.chat.compactionHandoverTrace(TRACE));
+    expect(body).toContain("No summary of the earlier conversation could be written");
+    expect(body).toContain("two fixed, one left");
+    expect(body).toContain("Carry on with the task from where it stopped.");
+    expect(body).not.toContain("context_summary");
+  });
+
+  it("that wrote a full summary is unchanged: its result is the summary, with no hand-over and no degraded mark", () => {
+    const row = onlyRow(compactedTranscript("summarized"));
+    expect(row.handover).toBeUndefined();
+    expect(compactionResultVisible(row)).toBe(true);
+    const html = draw(row);
+    expect(html).toContain(dict.chat.compactionDone("summarize"));
+    expect(markLines(html)).toBeNull();
   });
 });

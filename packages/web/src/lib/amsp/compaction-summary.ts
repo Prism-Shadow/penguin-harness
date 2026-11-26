@@ -1,7 +1,7 @@
 /**
  * Display text for a compaction row's expandable body: the summary the compaction request
- * wrote, with the `[summary]` tags stripped, or the Trace hand-over a model switch opened the
- * next context with in its place; and what the row reads off its end.
+ * wrote, with the `[summary]` tags stripped (the hand-over a row shows in its place is
+ * context-opening.ts's); and what the row reads off its end.
  *
  * Split out of the banner component so it can be unit-tested (the Web test suite runs in a
  * node environment and renders no React). Extraction uses core's own lenient extractor, so
@@ -10,13 +10,8 @@
  * mid-stream (opening tag written, closing tag not yet) therefore reads as plain text
  * rather than disappearing until the model closes the block.
  */
-import {
-  dualFormPatterns,
-  extractSummary,
-  MARKER_TAGS,
-  matchDualForm,
-} from "@prismshadow/amsp/markers";
-import type { ChatItem, CompactionHandover, CompactionItem } from "./stream-model";
+import { extractSummary } from "@prismshadow/amsp/markers";
+import type { ChatItem, CompactionItem } from "./stream-model";
 
 /**
  * Whether the row's result section is on screen yet. It appears only once the request has
@@ -50,8 +45,8 @@ export function compactionSummaryText(item: Pick<CompactionItem, "summaryText">)
 
 /**
  * A compaction that completed without a full summary: a `completed` end carrying the error pair,
- * or a model switch's Trace hand-over standing in the summary's place — the row of a switch whose
- * current model could not be reached is that hand-over alone, with no end to carry a pair.
+ * or a row holding a hand-over in the summary's place — the row of a switch whose current model
+ * could not be reached is that hand-over alone, with no end to carry a pair.
  */
 export function compactionDegraded(
   item: Pick<CompactionItem, "status" | "errorCode" | "errorMessage" | "handover">,
@@ -71,21 +66,6 @@ export function compactionSummaryAsked(
   item: Pick<CompactionItem, "errorCode" | "errorMessage">,
 ): boolean {
   return item.errorCode !== undefined || item.errorMessage !== undefined;
-}
-
-const HANDOVER_BLOCK = dualFormPatterns(MARKER_TAGS.modelSwitchFrom, "\\n([\\s\\S]*)\\n");
-
-/**
- * The note a model switch's Trace hand-over opened the next context with, as its section shows
- * it: the `[model_switch_from]` block's own lines, its tags stripped as the result section strips
- * the summary's. The reducer only folds a text that is one whole block; anything else reads as
- * written.
- */
-export function compactionHandoverNote(handover: Pick<CompactionHandover, "text">): string {
-  const text = handover.text.trim();
-  const block = matchDualForm(HANDOVER_BLOCK, text);
-  const whole = block !== null && block.index === 0 && block[0].length === text.length;
-  return whole ? block[1]!.trim() : text;
 }
 
 /**
