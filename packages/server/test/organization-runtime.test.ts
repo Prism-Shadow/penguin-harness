@@ -262,18 +262,18 @@ describe("organization runtime", () => {
       companyModeEnabled: () => companyMode,
       now: () => nowMs,
       log: () => {},
-    };
-    // The semantic-id vocabulary is the server's own; bound exactly as the boot binds it
-    // (src/runtime/organization/module.ts), with the test's completion queue feeding it.
-    deps.semanticId = {
-      suggest: ({ projectId, name, kind, taken, completeOnce, recordFailure }) =>
-        suggestSemanticId({ completeOnce, recordFailure }, projectId, {
-          name,
-          kind,
-          rule: SEMANTIC_ID_RULES[kind],
-          taken,
-        }),
-      acceptsNew: isNewSemanticId,
+      // The semantic-id vocabulary is the server's own; bound exactly as the boot binds it
+      // (src/runtime/organization/module.ts), with the test's completion queue feeding it.
+      semanticId: {
+        suggest: ({ projectId, name, kind, taken, completeOnce, recordFailure }) =>
+          suggestSemanticId({ completeOnce, recordFailure }, projectId, {
+            name,
+            kind,
+            rule: SEMANTIC_ID_RULES[kind],
+            taken,
+          }),
+        acceptsNew: isNewSemanticId,
+      },
     };
     scheduler = new OrganizationScheduler(deps, { intervalMs: 1_000_000 });
     service = new OrganizationService(deps, scheduler);
