@@ -217,11 +217,12 @@ export async function makeOrgHarness(opts: {
     // module does, minus the model ask (completeOnce stays unset, as the deps field allows).
     semanticId: {
       suggest: ({ projectId, name, kind, taken, completeOnce, recordFailure }) =>
-        suggestSemanticId(
-          { completeOnce, recordFailure },
-          projectId,
-          { name, kind, rule: SEMANTIC_ID_RULES[kind], taken },
-        ),
+        suggestSemanticId({ completeOnce, recordFailure }, projectId, {
+          name,
+          kind,
+          rule: SEMANTIC_ID_RULES[kind],
+          taken,
+        }),
       acceptsNew: isNewSemanticId,
     },
     errors: { record: (e) => void errors.push(e) },

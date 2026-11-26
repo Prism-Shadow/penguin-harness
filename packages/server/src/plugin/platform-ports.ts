@@ -4,7 +4,10 @@
  * interface table (ifaces.json), and whether this process runs from a development checkout.
  * The server's plugin import paths call {@link ensurePluginPlatformPorts} before anything loads.
  */
-import { bindPluginPlatformPorts, type PluginUninstallWorkbenches } from "@prismshadow/penguin-library-plugin/ports";
+import {
+  bindPluginPlatformPorts,
+  type PluginUninstallWorkbenches,
+} from "@prismshadow/penguin-library-plugin/ports";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
 import { profileFromEnv } from "../machines/layout.js";
 import type { Workbenches } from "../mechanisms/workbenches.js";

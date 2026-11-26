@@ -12,7 +12,10 @@ import { userChannelKey } from "../http/user-channel.js";
 import type { PluginLibrary } from "@prismshadow/penguin-library-plugin/library-module";
 import { PluginModulesService } from "@prismshadow/penguin-library-plugin/plugin-modules";
 import type { PluginModules } from "@prismshadow/penguin-library-plugin/mechanisms";
-import type { PluginModulePreinstalls, PluginModuleRequests } from "@prismshadow/penguin-library-setting";
+import type {
+  PluginModulePreinstalls,
+  PluginModuleRequests,
+} from "@prismshadow/penguin-library-setting";
 import type { Members, ProjectConfigStore, Projects } from "@prismshadow/penguin-library-project";
 import type { Users } from "@prismshadow/penguin-library-auth";
 

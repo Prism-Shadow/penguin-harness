@@ -49,7 +49,15 @@ export interface OrganizationDeletionDeps {
     removeAgents(
       projectId: string,
       agentIds: readonly string[],
-    ): Promise<Array<{ agentId: string; deletion: OrganizationDeleteResponse["deletedAgents"][number]["deletion"] } | { agentId: string; error: unknown }>>;
+    ): Promise<
+      Array<
+        | {
+            agentId: string;
+            deletion: OrganizationDeleteResponse["deletedAgents"][number]["deletion"];
+          }
+        | { agentId: string; error: unknown }
+      >
+    >;
   };
 }
 

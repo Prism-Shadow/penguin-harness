@@ -31,7 +31,9 @@ export function bundledCoversDir(
   here: string = path.dirname(fileURLToPath(import.meta.url)),
 ): string | null {
   const candidates = [
-    ...(assets !== null ? [path.join(pluginPlatformPorts().unpackedAssetsDir(assets), MARKET_COVERS_NAME)] : []),
+    ...(assets !== null
+      ? [path.join(pluginPlatformPorts().unpackedAssetsDir(assets), MARKET_COVERS_NAME)]
+      : []),
     path.join(here, MARKET_COVERS_NAME),
   ];
   return candidates.find((dir) => existsSync(dir)) ?? null;

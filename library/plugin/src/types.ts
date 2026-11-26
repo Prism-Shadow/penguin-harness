@@ -9,7 +9,6 @@
  * can move on.
  */
 
-
 /**
  * One `tools.mcpServers` entry of an Agent, as the Plugins page and the Agent settings read it:
  * identity, target and what keeps it from connecting — never a header, env or oauth value.
@@ -27,10 +26,8 @@ export interface AgentMcpServerItem {
   signIn: boolean;
 }
 
-
 /** An MCP transport, as an entry resolves it (`transport`, else inferred from `command` / `url`). */
 export type McpTransport = "stdio" | "http" | "sse";
-
 
 /** One installed hook package (`agent_state/hooks/<name>/`): its manifest, without the scripts. */
 export interface HookItem {
@@ -46,7 +43,6 @@ export interface HookItem {
   icon?: IconRef;
 }
 
-
 /**
  * An icon, as a listing sends one: where this server serves the image, and how to draw it. An
  * icon never travels as markup. `url` is a path on this server that carries the image's content
@@ -59,7 +55,6 @@ export interface IconRef {
   /** A monochrome SVG (every paint `currentColor` or `none`): drawn as a mask in the text colour. Otherwise drawn as itself. */
   tint: boolean;
 }
-
 
 /**
  * How many times each plugin is installed, for the market's 热门 / 飙升 (popular / rising) panel:
@@ -77,7 +72,6 @@ export interface MarketPopularity {
   items: Record<string, { installs: number; weekly: number }>;
 }
 
-
 /** What the market document says a plugin looks like. Every part is optional. */
 export interface PluginArt {
   cover?: MarketImage;
@@ -88,7 +82,6 @@ export interface PluginArt {
   icon?: { url: string };
   screenshots?: MarketShot[];
 }
-
 
 /**
  * One picture of the plugin market, named by the route this server serves it at
@@ -105,13 +98,11 @@ export interface MarketImage {
   tone?: string;
 }
 
-
 /** A screenshot on a plugin's detail: a picture and what it shows. */
 export interface MarketShot extends MarketImage {
   caption?: string;
   captionZh?: string;
 }
-
 
 /** One file a run hands back to the terminal, which saves it under the command's `files.write`. */
 export interface PluginCliCommandOutputFile {
@@ -121,7 +112,6 @@ export interface PluginCliCommandOutputFile {
   /** Its bytes, base64. */
   data: string;
 }
-
 
 /** POST /api/cli/commands/run: runs argv against one plugin's commands on the server. */
 export interface PluginCliCommandRunRequest {
@@ -141,7 +131,6 @@ export interface PluginCliCommandRunRequest {
   files?: PluginCliCommandInputFile[];
 }
 
-
 /** One file the terminal sends with a run. */
 export interface PluginCliCommandInputFile {
   /** The option's value as typed: what the command looks the file up by. */
@@ -152,7 +141,6 @@ export interface PluginCliCommandInputFile {
   data: string;
 }
 
-
 /** What one run printed, its exit code, and the files it handed back. */
 export interface PluginCliCommandRunResponse {
   exitCode: number;
@@ -161,12 +149,10 @@ export interface PluginCliCommandRunResponse {
   files?: PluginCliCommandOutputFile[];
 }
 
-
 /** GET /api/cli/commands: every command the server's plugins contribute, in load order. */
 export interface PluginCliCommandsResponse {
   commands: PluginCliCommandInfo[];
 }
-
 
 /** One command a plugin contributes to the CLI, as GET /api/cli/commands lists it. */
 export interface PluginCliCommandInfo {
@@ -188,7 +174,6 @@ export interface PluginCliCommandInfo {
   files?: { read?: string[]; write?: string };
 }
 
-
 /** Whether a backend that applies to this machine is installed, and this OS's default ones. */
 export interface PluginConfigBackend {
   /** A backend for this OS is installed: loaded, or installed and failing its check. */
@@ -200,7 +185,6 @@ export interface PluginConfigBackend {
    */
   recommended?: string[];
 }
-
 
 /**
  * One published version of a plugin — the index entry format every plugin registry
@@ -271,7 +255,6 @@ export interface PluginIndexEntry {
   channels?: PluginIndexChannel[];
 }
 
-
 /** One place a version's release asset is served from. */
 export interface PluginIndexChannel {
   /**
@@ -283,7 +266,6 @@ export interface PluginIndexChannel {
   /** The https URL the asset is served at. */
   url: string;
 }
-
 
 /** One settings group (GET /api/admin/plugin-config): its schema and its values, secrets masked. */
 export interface PluginConfigEntry {
@@ -337,7 +319,6 @@ export interface PluginConfigEntry {
   report?: PluginStatusReport;
 }
 
-
 /** A declared configuration: a titled group of fields, in declaration order. */
 export interface PluginConfiguration {
   title?: string;
@@ -353,7 +334,6 @@ export interface PluginConfiguration {
   switch?: string;
   properties: Record<string, PluginConfigField>;
 }
-
 
 /**
  * One field of a settings group a module declares (its `PluginConfigProvider.groups`
@@ -445,7 +425,6 @@ export interface PluginConfigField {
   pin?: PluginConfigPinColumn;
 }
 
-
 /** One choice of an `enum` field. */
 export interface PluginConfigOption {
   value: string;
@@ -455,7 +434,6 @@ export interface PluginConfigOption {
   description?: string;
   descriptionZh?: string;
 }
-
 
 /** One column of a `table` field: a scalar field type (`string`, `boolean`, or an `enum` with `options`). */
 export interface PluginConfigTableColumn {
@@ -468,7 +446,6 @@ export interface PluginConfigTableColumn {
   descriptionZh?: string;
   options?: PluginConfigOption[];
 }
-
 
 /** One row of a `table` field: its id and its declared cells. */
 export interface PluginConfigTableRow {
@@ -490,7 +467,6 @@ export interface PluginConfigTableRow {
   descriptionZh?: string;
 }
 
-
 /**
  * A table's single choice of a row: the `enum` field it stores into, and its title, drawn in
  * brackets after the chosen row's name. The choice may name no row (nothing stored, and the
@@ -503,7 +479,6 @@ export interface PluginConfigRowChoice {
   titleZh?: string;
 }
 
-
 /** The values a row added to an `extensible` table starts from. */
 export interface PluginConfigNewRow {
   /** The add button's text ("Add preset"). */
@@ -514,7 +489,6 @@ export interface PluginConfigNewRow {
   valuesZh?: Record<string, string>;
 }
 
-
 /** A header over adjacent table columns, with its own "?". */
 export interface PluginConfigColumnGroup {
   title: string;
@@ -524,7 +498,6 @@ export interface PluginConfigColumnGroup {
   columns: string[];
 }
 
-
 /** A table's pin column: which boolean column, and its tooltip pinned and not. */
 export interface PluginConfigPinColumn {
   column: string;
@@ -533,7 +506,6 @@ export interface PluginConfigPinColumn {
   off: string;
   offZh?: string;
 }
-
 
 /** A line of live status a contributed group reports beside its fields (e.g. that nothing can enforce it). */
 export interface PluginConfigNotice {
@@ -550,7 +522,6 @@ export interface PluginConfigNotice {
   detailsZh?: string;
 }
 
-
 /** One button under a settings group: what it is called, and what pressing it will do. */
 export interface PluginConfigActionDecl {
   id: string;
@@ -559,7 +530,6 @@ export interface PluginConfigActionDecl {
   description?: string;
   descriptionZh?: string;
 }
-
 
 /** One enum option (or boolean position) a settings group cannot honour on this machine, and why. */
 export interface PluginConfigUnavailableDecl {
@@ -571,7 +541,6 @@ export interface PluginConfigUnavailableDecl {
   reason: string;
   reasonZh?: string;
 }
-
 
 /**
  * A settings group's status in the plugin page's shape (its status contributor's `report()`):
@@ -588,7 +557,6 @@ export interface PluginStatusReport {
   recheck?: string;
 }
 
-
 /** Where the plugin stands, in a word or two, drawn as a pill in its state's tone. */
 export interface PluginStatusSummary {
   /**
@@ -603,7 +571,6 @@ export interface PluginStatusSummary {
   hint?: string;
   hintZh?: string;
 }
-
 
 /** A program the plugin installs and runs beside itself (agent-desktop), as its version element shows it. */
 export interface PluginStatusVersion {
@@ -628,7 +595,6 @@ export interface PluginStatusVersion {
   /** The action the element offers as its button (install, retry). */
   action?: string;
 }
-
 
 /** One precondition the plugin checks on this machine. */
 export interface PluginStatusCheck {
@@ -657,7 +623,6 @@ export interface PluginStatusCheck {
   page?: string;
 }
 
-
 /** One Agent that carries a plugin, as the server-uninstall confirm names it. */
 export interface PluginHolder {
   projectId: string;
@@ -665,7 +630,6 @@ export interface PluginHolder {
   agentId: string;
   agentName: string;
 }
-
 
 /**
  * GET /api/admin/plugins/holders?package=… (admin): who would lose a plugin if it were uninstalled
@@ -683,7 +647,6 @@ export interface PluginHoldersResponse {
   shared: Array<{ projectId: string; projectName: string }>;
   agents: PluginHolder[];
 }
-
 
 /**
  * One library plugin as the listing describes it: its package.json's npm fields and its card
@@ -739,7 +702,6 @@ export interface PluginItem {
   modules?: boolean;
 }
 
-
 export interface SkillMetadataItem {
   /** Skill directory name (the identity key for install / uninstall / Prompt addressing). */
   name: string;
@@ -759,7 +721,6 @@ export interface SkillMetadataItem {
   version: string;
 }
 
-
 /** A quick start: a prompt pre-filled into a new-chat draft — never sent by the page. */
 export interface QuickStartItem {
   prompt: string;
@@ -769,7 +730,6 @@ export interface QuickStartItem {
   /** Open the draft in goal mode. */
   goal?: boolean;
 }
-
 
 export interface TaskCreateRequest {
   input: TaskInputPart[];
@@ -821,7 +781,6 @@ export interface TaskCreateRequest {
   promptHooks?: string[];
 }
 
-
 /**
  * A single Prompt's input parts: text, image (data: / http(s) URL), or an uploaded file.
  * Docs: /docs/server-api § "Session-Level Endpoints".
@@ -846,7 +805,6 @@ export type TaskInputPart =
    * separators, no `..`).
    */
   | { type: "file"; fileName: string; dataUrl: string };
-
 
 export interface AgentCreateRequest {
   /** Semantic id, specified by the creator: `^[a-z][a-z0-9_-]{1,63}$`, unique within the Project, immutable after creation. */
@@ -884,14 +842,12 @@ export interface AgentCreateRequest {
   directorySkills?: string[];
 }
 
-
 /**
  * Who made an Agent (`author` in system_config.yaml): a person in the Web App (`user`), an
  * agent working in a Session (`agent`), or company mode creating an organization's CEO or a new
  * hire (`company`). A config without the field, or with any other value, reads as `user`.
  */
 export type AgentAuthor = "user" | "agent" | "company";
-
 
 /** A plugin's MCP server as the library lists it: identity and target only — no header, env or oauth value. */
 export interface PluginMcpServerItem {
@@ -907,7 +863,6 @@ export interface PluginMcpServerItem {
   signIn: boolean;
 }
 
-
 /** One vault key a plugin's MCP server needs before it can connect: declared in the manifest, or only referenced (then the key is all there is to show). */
 export interface PluginSetupKeyItem {
   key: string;
@@ -916,7 +871,6 @@ export interface PluginSetupKeyItem {
   /** Where to get the value (a URL), or one sentence. */
   help?: string;
 }
-
 
 /**
  * GET /api/plugins/market: the market's curation — which plugins are selected, which of them
@@ -941,7 +895,6 @@ export interface PluginMarketResponse {
   popularity?: MarketPopularity;
 }
 
-
 /** What one install, or one explicit ask, did about a plugin's server module. */
 export interface PluginModuleAction {
   plugin: string;
@@ -954,7 +907,6 @@ export interface PluginModuleAction {
   action: "enabled" | "requested" | "blocked" | "failed";
   reason?: string;
 }
-
 
 /** One row of the ledger of module requests and decisions, for the administrator. */
 export interface PluginModuleRequest {
@@ -997,7 +949,6 @@ export interface PluginModuleRequest {
   onServer: boolean;
 }
 
-
 /** How a library plugin's server module stands on this server (PRFC-0031). */
 export type PluginModuleState =
   /** Loaded in this server's module tree. */
@@ -1011,7 +962,6 @@ export type PluginModuleState =
   /** No Project lists it for this server. */
   | "off";
 
-
 /** GET /api/admin/plugin-modules, and the answer to a decision (administrator only). */
 export interface PluginModuleRequestsResponse {
   requests: PluginModuleRequest[];
@@ -1023,7 +973,6 @@ export interface PluginModuleRequestsResponse {
    */
   stillListedBy?: Array<{ projectId: string; projectName: string }>;
 }
-
 
 /** One library plugin that carries server modules, on this server and for this Project. */
 export interface PluginModuleStatus {
@@ -1041,7 +990,6 @@ export interface PluginModuleStatus {
   request?: PluginModuleRequestView;
 }
 
-
 /** The standing ask to run a module on this server, as a Project member sees it. */
 export interface PluginModuleRequestView {
   /** `pending`: waiting for the administrator; `declined`: the administrator stopped it, and installs do not bring it back. */
@@ -1050,7 +998,6 @@ export interface PluginModuleRequestView {
   mine: boolean;
   requestedAt: string;
 }
-
 
 /**
  * DELETE /api/admin/plugins?package=… (admin): uninstalls the plugin from every Agent here, then
@@ -1063,7 +1010,6 @@ export interface PluginServerUninstallResponse {
   /** Each Agent it was uninstalled from, with the parts that could not be removed. */
   agents: Array<PluginHolder & { failed?: PluginUninstallResponse["failed"] }>;
 }
-
 
 /**
  * DELETE /api/projects/:p/agents/:a/plugins/:name: uninstall a whole plugin from the Agent, on
@@ -1087,7 +1033,6 @@ export interface PluginUninstallResponse {
   }>;
 }
 
-
 /**
  * An installed plugin the running build cannot fully run (plugin/unsatisfied.ts): it
  * contributes to a slot, or wires to a module or interface, that this build does not have.
@@ -1102,12 +1047,10 @@ export interface UnsatisfiedPlugin {
   reason: string;
 }
 
-
 /** GET /api/plugins: the library by category (any logged-in user). */
 export interface PluginLibraryResponse {
   groups: PluginGroupItem[];
 }
-
 
 export interface PluginGroupItem {
   id: string;
@@ -1116,7 +1059,6 @@ export interface PluginGroupItem {
   titleZh?: string;
   plugins: PluginItem[];
 }
-
 
 /**
  * GET /api/plugins/:plugin/files: everything a library plugin ships, for the detail view's file
@@ -1127,7 +1069,6 @@ export interface PluginGroupItem {
 export interface PluginFilesResponse {
   files: Record<string, string>;
 }
-
 
 /**
  * POST /api/projects/:p/agents/:a/plugins: install library plugins by name — each one's skills
@@ -1145,7 +1086,6 @@ export interface PluginInstallRequest {
   skipModules?: boolean;
 }
 
-
 export interface AgentPluginsInstallResponse {
   workbenches?: Array<{ name: string; plugin: string; version: string }>;
   skills: SkillMetadataItem[];
@@ -1157,7 +1097,6 @@ export interface AgentPluginsInstallResponse {
   /** POST only: what this install did about each installed plugin's server module; a plugin it left alone is not listed. Absent from a server older than PRFC-0031. */
   moduleActions?: PluginModuleAction[];
 }
-
 
 /** POST /api/projects/:p/plugins/modules `{ plugin }` (any member): enable a plugin's server module, or ask the administrator to. */
 export interface PluginModuleAskRequest {
@@ -1172,20 +1111,17 @@ export interface PluginModuleAskRequest {
   agentId?: string;
 }
 
-
 /** The answer to an explicit ask: every module's state for this Project, and what the ask did. */
 export interface PluginModuleAskResponse {
   modules: PluginModuleStatus[];
   moduleActions: PluginModuleAction[];
 }
 
-
 /** POST /api/admin/plugin-modules/decide (administrator only). `decline` on an enabled row stops the module on this server. */
 export interface PluginModuleDecideRequest {
   package: string;
   decision: "enable" | "decline";
 }
-
 
 /** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */
 export interface PluginIndexResponse {
@@ -1205,7 +1141,6 @@ export interface PluginIndexResponse {
   pending: string[];
 }
 
-
 /**
  * A plugin's long-form docs: the README.md at its package root, as npm ships it.
  * GET /api/plugins/registry/readme?name= answers for an index entry, with `readme` null when
@@ -1221,7 +1156,6 @@ export interface PluginReadmeResponse {
 // ---------------------------------------------------------------------------
 // Plugin-contributed languages
 // ---------------------------------------------------------------------------
-
 
 /** POST /api/admin/plugin-config/action — what running one reported. */
 export interface PluginConfigActionResponse {

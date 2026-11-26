@@ -72,11 +72,7 @@ import {
   slugSuffix,
   slugify,
 } from "../files.js";
-import {
-  isTicketId,
-  ticketCreatedDate,
-  TICKET_SLUG_PATTERN,
-} from "../ticket-id.js";
+import { isTicketId, ticketCreatedDate, TICKET_SLUG_PATTERN } from "../ticket-id.js";
 import { renderHandbook } from "../handbook.js";
 import {
   DEFAULT_CHANNEL_ID,
@@ -88,12 +84,7 @@ import {
   isTicketColumn,
   normalizeWorkspaceSpec,
 } from "../paths.js";
-import {
-  agentPrincipal,
-  parsePrincipal,
-  principalAgentId,
-  userPrincipal,
-} from "../principal.js";
+import { agentPrincipal, parsePrincipal, principalAgentId, userPrincipal } from "../principal.js";
 import { isValidTimeZone, zonedDate, zonedDayRange } from "../zoned.js";
 import {
   latestSlotAt,

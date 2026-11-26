@@ -194,7 +194,8 @@ export interface OrgDeps {
       name: string;
       kind: SemanticIdKind;
       taken: readonly string[];
-      completeOnce?: ((projectId: string, prompt: string) => Promise<UtilityCompletion>) | undefined;
+      completeOnce?:
+        ((projectId: string, prompt: string) => Promise<UtilityCompletion>) | undefined;
       recordFailure: (projectId: string, detail: string) => void;
     }): Promise<SemanticIdSuggestResponse>;
     acceptsNew(id: string): boolean;

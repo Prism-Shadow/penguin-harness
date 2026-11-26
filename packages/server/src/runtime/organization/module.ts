@@ -28,8 +28,15 @@ import { SEMANTIC_ID_RULES } from "../../services/semantic-id.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
 import { isNewSemanticId } from "../../services/ids.js";
 import { OrganizationService } from "@prismshadow/penguin-library-organization/runtime/service";
-import type { OrgScheduler, OrgService } from "@prismshadow/penguin-library-organization/runtime/service";
-import type { OrgDeps, OrgRuns, OrgSessions } from "@prismshadow/penguin-library-organization/runtime/deps";
+import type {
+  OrgScheduler,
+  OrgService,
+} from "@prismshadow/penguin-library-organization/runtime/service";
+import type {
+  OrgDeps,
+  OrgRuns,
+  OrgSessions,
+} from "@prismshadow/penguin-library-organization/runtime/deps";
 import { OrganizationScheduler } from "@prismshadow/penguin-library-organization/runtime/scheduler";
 
 /**
@@ -117,11 +124,12 @@ export class OrganizationModule {
       // over the kind table and the shared suggester.
       semanticId: {
         suggest: ({ projectId, name, kind, taken, completeOnce, recordFailure }) =>
-          suggestSemanticId(
-            { completeOnce, recordFailure },
-            projectId,
-            { name, kind, rule: SEMANTIC_ID_RULES[kind], taken },
-          ),
+          suggestSemanticId({ completeOnce, recordFailure }, projectId, {
+            name,
+            kind,
+            rule: SEMANTIC_ID_RULES[kind],
+            taken,
+          }),
         acceptsNew: isNewSemanticId,
       },
       usage: this.usage,
