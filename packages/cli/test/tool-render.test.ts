@@ -208,6 +208,18 @@ describe("renderPartialToolCall — file tools", () => {
     expect(
       renderPartialToolCall("write_file", '{"file_path":"packages/core/src/state/out.ts"}'),
     ).toBe("write_file …/state/out.ts");
+    expect(
+      renderPartialToolCall(
+        "read_file",
+        JSON.stringify({ file_path: "C:\\Users\\alice\\project\\src\\app.ts" }),
+      ),
+    ).toBe("read_file …\\src\\app.ts");
+    expect(
+      renderPartialToolCall(
+        "edit_file",
+        JSON.stringify({ file_path: "C:/Users/alice\\project\\src\\app.ts" }),
+      ),
+    ).toBe("edit_file …/src/app.ts");
   });
 });
 
@@ -226,6 +238,13 @@ describe("shortenPath", () => {
       "…/state/default-config.ts",
     );
     expect(shortenPath("/home/user/project/src/app.py")).toBe("…/src/app.py");
+    expect(shortenPath("src\\file.ts")).toBe("src\\file.ts");
+    expect(shortenPath("C:\\file.ts")).toBe("C:\\file.ts");
+    expect(shortenPath("C:\\src\\file.ts")).toBe("…\\src\\file.ts");
+    expect(shortenPath("C:\\Users\\alice\\project\\src\\app.ts")).toBe("…\\src\\app.ts");
+    expect(shortenPath("\\\\server\\share\\dir\\file.ts")).toBe("…\\dir\\file.ts");
+    expect(shortenPath("C:/Users/alice\\project\\src\\app.ts")).toBe("…/src/app.ts");
+    expect(shortenPath("C:\\Users\\alice\\project/app.ts")).toBe("…/project/app.ts");
   });
 });
 
