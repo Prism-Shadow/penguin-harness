@@ -212,6 +212,34 @@
       "types": "./dist/transport/index.d.ts",
       "import": "./dist/transport/index.js"
     },
+    "./transport/connection": {
+      "types": "./dist/transport/connection.d.ts",
+      "import": "./dist/transport/connection.js"
+    },
+    "./transport/exec": {
+      "types": "./dist/transport/exec.d.ts",
+      "import": "./dist/transport/exec.js"
+    },
+    "./transport/lane": {
+      "types": "./dist/transport/lane.d.ts",
+      "import": "./dist/transport/lane.js"
+    },
+    "./transport/login": {
+      "types": "./dist/transport/login.d.ts",
+      "import": "./dist/transport/login.js"
+    },
+    "./transport/socks": {
+      "types": "./dist/transport/socks.d.ts",
+      "import": "./dist/transport/socks.js"
+    },
+    "./transport/ssh-session": {
+      "types": "./dist/transport/ssh-session.d.ts",
+      "import": "./dist/transport/ssh-session.js"
+    },
+    "./transport/targets": {
+      "types": "./dist/transport/targets.d.ts",
+      "import": "./dist/transport/targets.js"
+    },
     "./machine": {
       "types": "./dist/machine.d.ts",
       "import": "./dist/machine.js"
