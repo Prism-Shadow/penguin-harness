@@ -2,11 +2,11 @@
  * Where an Agent's own picture is, for every surface that draws the Agent: the one lookup.
  *
  * Most of those surfaces know an Agent by its id alone — a session row, a subagent chip, a
- * topology node, a picker row, a Benchmark's tested Agents — so the picture is found here, in
- * the Agent lists the page already holds: this server's (state/project.tsx), and each machine's
- * as last read there (lib/machine-agent-lists.ts), since the same id on a machine is another
- * Agent. A list's `avatarRev` names the picture; the URL is built here and nowhere else, and an
- * Agent without one gets no URL, so `AgentAvatar` draws its default.
+ * topology node, a picker row — so the picture is found here, in the Agent lists the page
+ * already holds: this server's (state/project.tsx), and each machine's as last read there
+ * (lib/machine-agent-lists.ts), since the same id on a machine is another Agent. A list's
+ * `avatarRev` names the picture; the URL is built here and nowhere else, and an Agent without
+ * one gets no URL, so `AgentAvatar` draws its default.
  *
  * Nothing is asked of any server for this: a list nobody on the page has read yet simply has no
  * picture to give, and the default shows until it does — as it does outside a Project.

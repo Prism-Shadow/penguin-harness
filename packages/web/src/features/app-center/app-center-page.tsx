@@ -110,6 +110,7 @@ import { FolderPanel } from "./folder-panel";
 import { NewFolderDialog } from "./new-folder-dialog";
 import { systemShortcutsOf } from "./system-tiles";
 import { HiddenWorkbenchesDialog } from "./hidden-workbenches-dialog";
+import { LegacyBenchmarkOffer } from "./legacy-benchmark-redirect";
 import { AppMenu, FolderMenu, GridMenu, type GridActions } from "./tile-menus";
 import { useTileDrag, type Drop, type Dragged } from "./tile-drag";
 import { useAppCenter } from "./use-app-center";
@@ -528,6 +529,9 @@ export function AppCenterPage() {
                   {S.workbenches.retryHistory}
                 </Button>
               </NoticeStrip>
+            )}
+            {projectId !== null && (
+              <LegacyBenchmarkOffer projectId={projectId} onInstalled={reload} />
             )}
             {grid === null ? (
               error === null && (

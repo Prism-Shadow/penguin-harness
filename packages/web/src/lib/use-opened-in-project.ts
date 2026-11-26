@@ -1,8 +1,7 @@
 /**
- * Pages whose address names something of one Project — an Agent (`/agents/:agentId`), a
- * Benchmark (`/benchmark/:benchmarkId`), an Agent filter (`/usage?agentId=`) — belong to the
- * Project they were opened in (lib/project-scope.ts). Asked under another Project, the same id
- * names another thing or nothing at all.
+ * Pages whose address names something of one Project — an Agent (`/agents/:agentId`), an Agent
+ * filter (`/usage?agentId=`) — belong to the Project they were opened in (lib/project-scope.ts).
+ * Asked under another Project, the same id names another thing or nothing at all.
  */
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";

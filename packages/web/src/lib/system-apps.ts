@@ -94,7 +94,7 @@ export function systemAppsOf(pages: readonly AppPage[], isAdmin: boolean): Syste
 
 /**
  * Whether `pathname` is one of the viewer's system apps or a page under one by its route
- * (route-under.ts: the Evaluation Center's `/benchmark/:benchmarkId` lies under `/benchmark`).
+ * (route-under.ts: a system app's `/reports/:reportId` lies under its `/reports`).
  * The App Center's nav row is lit there, since the App Center is where those pages are opened.
  */
 export function onSystemApp(

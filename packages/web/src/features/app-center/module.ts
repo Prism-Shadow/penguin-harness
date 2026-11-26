@@ -7,6 +7,7 @@
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import { AppCenterPage } from "./app-center-page";
 import { AppCenterWindows } from "./app-center-windows";
+import { LegacyBenchmarkRedirect } from "./legacy-benchmark-redirect";
 import { SystemAppPage } from "./system-app-page";
 
 @Module({
@@ -37,6 +38,18 @@ import { SystemAppPage } from "./system-app-page";
         released: true,
         order: 112,
       },
+      {
+        // The Evaluation Center's old addresses, until 1.0: they lead into the Self-Evolution
+        // Workbench's window (legacy-benchmark-redirect.tsx).
+        id: "app-center.legacy-benchmark",
+        key: "legacy-benchmark",
+        path: "/benchmark/*",
+        frame: "shell",
+        nav: "none",
+        admin: false,
+        released: true,
+        order: 70,
+      },
     ],
     "WebAppModule.layers": [{ id: "app-center.windows", order: 40, area: "page" }],
   },
@@ -45,4 +58,5 @@ export class AppCenterModule {
   @Bind("app-center.page") page = AppCenterPage;
   @Bind("app-center.windows") windows = AppCenterWindows;
   @Bind("app-center.system-app") systemApp = SystemAppPage;
+  @Bind("app-center.legacy-benchmark") legacyBenchmark = LegacyBenchmarkRedirect;
 }

@@ -764,9 +764,9 @@ export function PluginDetailModal({
 
 /**
  * The browser over what a library plugin installs, read from the library of the server
- * `machineId` names: tree left, preview right (stacked on narrow screens) — the same one the
- * Benchmark case dialog draws. SKILL.md shows its body, with the frontmatter the header already
- * states dropped.
+ * `machineId` names: tree left, preview right (stacked on narrow screens) — the same one a part's
+ * files dialog draws. SKILL.md shows its body, with the frontmatter the header already states
+ * dropped.
  */
 function PluginFiles({ plugin, machineId }: { plugin: PluginItem; machineId: string | null }) {
   const [files, setFiles] = useState<Record<string, string> | null>(null);
@@ -801,8 +801,8 @@ function PluginFiles({ plugin, machineId }: { plugin: PluginItem; machineId: str
           S.plugins.detailHooks,
         );
   const rows = pluginTreeRows(groups, collapsed);
-  // The first file of the first group opens on arrival (the benchmark browser's readme
-  // auto-preview), so the pane is never empty while there is something to read.
+  // The first file of the first group opens on arrival, so the pane is never empty while there
+  // is something to read.
   const current = selected ?? groups[0]?.paths[0] ?? null;
   const text = current !== null && files !== null ? files[current] : undefined;
   const preview = current !== null && text !== undefined ? filePreview(current, text) : null;

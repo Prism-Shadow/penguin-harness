@@ -148,7 +148,7 @@ describe("the sessions list against a machine whose forward is stuck", () => {
             headers: {},
             body: {
               sessions: [],
-              counts: { active: 0, subagent: 0, schedule: 0, benchmark: 0, archived: 0 },
+              counts: { active: 0, subagent: 0, schedule: 0, archived: 0 },
             },
           };
     const store = createSessionsStore();

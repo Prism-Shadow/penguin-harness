@@ -24,14 +24,22 @@ test("the default Agent and Support own separately removable workbenches", async
   });
   expect(created.ok(), await created.text()).toBeTruthy();
   expect(await workbenches("presetordinary")).toEqual([]);
+  // The workbench's own page, drawn in its frame by the rsi-workbench package.
+  const app = (on) => on.frameLocator("iframe[src*='/workbenches/benchmark/ui/']:visible");
+  const heading = (on) => app(on).getByRole("heading", { name: "Self-Evolution Workbench" });
   await page.goto("/apps");
   const tile = page.locator('li[data-app="default_agent/benchmark"] > button');
   await expect(tile).toBeVisible();
   await expect(page.locator('li[data-app="system_agent/benchmark"]')).toHaveCount(0);
   await tile.click();
-  await expect(page.getByRole("heading", { name: "Evaluation Center" })).toBeVisible();
+  await expect(heading(page)).toBeVisible();
+  // The Evaluation Center's old address leads into the same window, at the Benchmark it names.
+  await page.goto("/benchmark/example-benchmark");
+  await expect(page).toHaveURL(/\/apps\?app=default_agent%2Fbenchmark&at=%2Fexample-benchmark/);
+  await expect(app(page).getByRole("button", { name: "Back to list" })).toBeVisible();
+  await expect(app(page).getByRole("heading", { name: "Example Benchmark" })).toBeVisible();
   await page.goto("/app/default_project/default_agent/benchmark");
-  await expect(page.getByRole("heading", { name: "Evaluation Center" })).toBeVisible();
+  await expect(heading(page)).toBeVisible();
   await page.getByRole("button", { name: /More.*Self-Evolution Workbench/ }).click();
   await expect(page.getByRole("menuitem", { name: /Version history/i })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: /Remove/i })).toBeVisible();
@@ -53,12 +61,12 @@ test("the default Agent and Support own separately removable workbenches", async
     await setAccountPrefs(member.request, { lang: "en" });
     const memberPage = await member.newPage();
     await memberPage.goto("/app/default_project/default_agent/benchmark");
-    await expect(memberPage.getByRole("heading", { name: "Evaluation Center" })).toBeVisible();
+    await expect(heading(memberPage)).toBeVisible();
 
     const support = agent("penguin_support") + "/workbenches/support";
     const supportTile = page.locator('li[data-app="penguin_support/support"] > button');
     for (const [ownerId, id, plugin, sibling, siblingTile] of [
-      ["default_agent", "benchmark", "agent-evaluation", support, supportTile],
+      ["default_agent", "benchmark", "rsi-workbench", support, supportTile],
       ["penguin_support", "support", "penguin-support", base, tile],
     ]) {
       const target = agent(ownerId) + "/workbenches/" + id;
@@ -91,8 +99,8 @@ test("the System Agent's card and overview describe its own apps in both languag
 }) => {
   await provisionAndLogin(page.request, "presetdescriptions", "password123");
   for (const [lang, systemApp, evaluation] of [
-    ["en", "Cost Center", "Evaluation Center"],
-    ["zh", "成本中心", "评估中心"],
+    ["en", "Cost Center", "Self-Evolution Workbench"],
+    ["zh", "成本中心", "自进化工作台"],
   ]) {
     await setAccountPrefs(page.request, { lang });
     for (const path of ["/agents", "/agents/system_agent"]) {

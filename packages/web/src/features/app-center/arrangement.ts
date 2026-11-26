@@ -120,7 +120,7 @@ export function arrange(
     out.push(...folded({ type: "folder", id: item.id, name: item.name, apps, unseen }));
   }
   const first = defaultSystemKeys.filter((key) => live.get(key)?.system !== undefined);
-  if (live.get(evaluationWorkbench)?.plugin === "agent-evaluation") first.push(evaluationWorkbench);
+  if (live.get(evaluationWorkbench)?.plugin === "rsi-workbench") first.push(evaluationWorkbench);
   for (const key of [...first, ...live.keys()]) {
     const app = take(key);
     if (app !== null) out.push(app);

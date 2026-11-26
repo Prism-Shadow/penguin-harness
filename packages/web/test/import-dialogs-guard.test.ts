@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 /**
- * The Skill, hook, workbench and Benchmark import dialogs under the settings commit model: the
- * Agent settings Plugins tab's Import skill (features/agents/agent-skills.tsx), Import hook
+ * The Skill, hook and workbench import dialogs under the settings commit model: the Agent
+ * settings Plugins tab's Import skill (features/agents/agent-skills.tsx), Import hook
  * (features/agents/agent-hooks.tsx) and Import workbench (features/agents/agent-workbenches.tsx),
- * each opened from its sub-page's Import button, and the Evaluation Center's Import benchmark
- * (features/benchmark/benchmark-import-modal.tsx). In each, what the source field holds is the
- * dialog's draft; every scenario runs on all four.
+ * each opened from its sub-page's Import button. In each, what the source field holds is the
+ * dialog's draft; every scenario runs on all three.
  *
  * - Closing with a source typed asks first, and "keep editing" keeps it; a source typed back to
  *   empty is no change, and the dialog closes at once.
@@ -13,23 +12,16 @@
  *   refused, the typed source is still there and Esc asks again.
  * - Opening the chat with a typed source moves to the conversation without asking, and leaves
  *   nothing unsaved.
- * - Choosing a Benchmark example fills the editable source without importing; opening the chat
- *   carries the edited source and the instructions for copying files.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createElement as h, useState } from "react";
-import type { AgentSummary } from "@prismshadow/penguin-server/api";
+import { createElement as h } from "react";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
-import { ADMIN_ME } from "./helpers/admin-settings";
 import { PluginsTab } from "../src/features/agents/plugins-tab";
 import type { PluginsSubPage } from "../src/features/agents/plugins-subpages";
-import { ImportBenchmarkModal } from "../src/features/benchmark/benchmark-import-modal";
 import {
   AGENT_ID,
-  PROJECT_ID,
   agentServer,
   buttonIn,
   fieldIn,
@@ -72,19 +64,6 @@ async function openFromTab(subPage: PluginsSubPage, importAction: string) {
   return { server, router };
 }
 
-/** The Evaluation Center's part: the dialog, mounted while it is open, sending to the Agent. */
-function BenchmarkHarness() {
-  const [open, setOpen] = useState(true);
-  if (!open) return null;
-  return h(ImportBenchmarkModal, {
-    projectId: PROJECT_ID,
-    benchmarksDir: `/data/projects/${PROJECT_ID}/agents/system_agent/app/data/benchmark`,
-    agents: [{ agentId: AGENT_ID } as AgentSummary],
-    onClose: () => setOpen(false),
-    onImported: () => setOpen(false),
-  });
-}
-
 interface ImportDialog {
   name: string;
   /** Mounts the page the dialog belongs to, with the dialog open. */
@@ -122,22 +101,6 @@ const DIALOGS: ImportDialog[] = [
     openChat: en.workbenches.importOpenChat,
     uploading: en.workbenches.importUploading,
     archive: "/workbenches/archive",
-  },
-  {
-    name: "Import benchmark",
-    open: async () => {
-      const server = agentServer();
-      const router = await mountAgentApp(h(BenchmarkHarness), {
-        route: "/benchmarks",
-        at: "/benchmarks",
-      });
-      await waitFor(() => dialogs().length === 1);
-      return { server, router };
-    },
-    source: en.benchmark.importSourceLabel,
-    openChat: en.benchmark.importOpenChat,
-    uploading: en.benchmark.importUploading,
-    archive: `/api/projects/${PROJECT_ID}/benchmarks/archive`,
   },
 ];
 
@@ -195,35 +158,5 @@ describe.each(DIALOGS)("the $name dialog", (dialog) => {
     expect(promptOpen()).toBe(false);
     expect(hasUnsaved()).toBe(false);
     expect(dialogs()).toEqual([]);
-  });
-});
-
-describe("Benchmark import examples", () => {
-  beforeAll(() => setActiveStrings(en));
-  afterAll(() => setActiveStrings(zh));
-  afterEach(unmountAll);
-
-  it("fills the source without importing, and carries an edited source into the chat draft", async () => {
-    const server = agentServer();
-    const router = await mountAgentApp(h(BenchmarkHarness), {
-      route: "/chat/:sessionId",
-      at: "/chat/import",
-    });
-    const example = topDialog().querySelector<HTMLButtonElement>('button[aria-pressed="false"]')!;
-    await click(example);
-    const source = fieldIn(topDialog(), en.benchmark.importSourceLabel);
-    expect(source.value).toMatch(
-      /^https:\/\/github.com\/Prism-Shadow\/penguin-harness-benchmark\/tree\/main\/packages\//,
-    );
-    expect(server.writes(`/api/projects/${PROJECT_ID}/benchmarks/archive`)).toEqual([]);
-    expect(whereIs(router)).toBe("/chat/import");
-    await type(source, SOURCE);
-    expect(example.getAttribute("aria-pressed")).toBe("false");
-    await click(buttonIn(topDialog(), en.benchmark.importOpenChat));
-    await waitFor(() => whereIs(router) === "/chat/new");
-    const text = loadDraft(draftKey(ADMIN_ME.user.userId, PROJECT_ID)).text as string;
-    expect(text).toContain(SOURCE);
-    expect(text).toContain("agents/system_agent/app/data/benchmark/<id>/");
-    expect(text).not.toContain("penguin benchmark");
   });
 });

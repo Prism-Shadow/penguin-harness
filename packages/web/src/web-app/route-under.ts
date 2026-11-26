@@ -4,14 +4,14 @@
  * one the App Center's nav row follows to stay lit on a system app's pages (lib/system-apps.ts).
  *
  * A pattern lies under a root when it starts with every non-splat segment of the root, so
- * `/benchmark/:benchmarkId` lies under `/benchmark` and not the other way round: what lives under
+ * `/agents/:agentId` lies under `/agents` and not the other way round: what lives under
  * a page's URL belongs to that page. A root ending in a splat (`/reports/*`) answers the rest of
  * the URL, its own bare path included, so every pattern whose leading segments match it lies
  * under it, however those name their parameters. A root that is nothing but the splat (home,
  * `*`) or nothing at all (`/`) holds nothing: everything would match it.
  */
 
-/** A route pattern's segments: "/benchmark/:benchmarkId" → ["benchmark", ":benchmarkId"]. */
+/** A route pattern's segments: "/agents/:agentId" → ["agents", ":agentId"]. */
 export const routeSegmentsOf = (path: string) => path.split("/").filter((s) => s !== "");
 
 /** Whether the pattern `path` lies under the pattern `root` (a pattern lies under itself). */

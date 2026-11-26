@@ -1,8 +1,8 @@
 /**
  * The id field every create dialog that names an object with a semantic id wears — a Project's,
- * an Agent's, a Benchmark's, an organization's and a channel's. The id is still required and
- * still validated by the caller (each kind has its own rule and its own error copy), but it no
- * longer has to be invented: the field carries a "generate" button that asks the server to
+ * an Agent's, an organization's and a channel's. The id is still required and still validated by
+ * the caller (each kind has its own rule and its own error copy), but it no longer has to be
+ * invented: the field carries a "generate" button that asks the server to
  * propose one from the display name (or, when nothing else names the thing yet, from the
  * mission or the description), which is why the name is the field above it.
  *

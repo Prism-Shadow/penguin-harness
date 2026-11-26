@@ -8,7 +8,7 @@
  * `capture` hosts a scripted mock LLM, starts the built server (packages/server/dist) on a
  * throwaway data root, provisions one user per UI language, drives one real conversation each
  * (a thinking block, a tool call that executes, a Markdown answer with code, a table and links),
- * and then, per language × mode (light / dark) × variant, screenshots twelve pages into
+ * and then, per language × mode (light / dark) × variant, screenshots eleven pages into
  * `<out>/<variant>/<lang>/<mode>/<page>.png`. Every variant is served by the one server: page
  * requests are fulfilled from that variant's dist through Playwright routing, while `/api` reaches
  * the server, so the only thing that differs between two shots is the bundle.
@@ -439,17 +439,6 @@ const PAGES = [
   { id: "plugins", run: (page) => page.goto(`${BASE}/plugins`) },
   { id: "models", run: (page) => page.goto(`${BASE}/models`) },
   { id: "usage", run: (page) => page.goto(`${BASE}/usage`) },
-  {
-    id: "benchmark",
-    run: async (page) => {
-      await page.goto(`${BASE}/benchmark`);
-      await page.waitForTimeout(1500);
-      await page
-        .getByText(/Example Benchmark|示例/)
-        .first()
-        .click({ timeout: 5000 });
-    },
-  },
 ];
 
 // ---------------------------------------------------------------------------

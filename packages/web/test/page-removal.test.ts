@@ -3,7 +3,7 @@
  * web-app/contributions.tsx `pageRemovalsOf` and `pageTableFor`).
  *
  * - A removal drops the page its key names and every page whose route lies under that page's
- *   path (`benchmark` takes `/benchmark/:benchmarkId`, not the other way round); a key naming no
+ *   path (`agents` takes `/agents/:agentId`, not the other way round); a key naming no
  *   page does nothing; a page at "/" takes only itself; the pages answering HOME_PATHS stay —
  *   the home page (`*`) and the homes it leads to in both modes (company-nav.ts `homePath`).
  * - Only non-empty string keys are read; an answer without the list removes nothing.
@@ -60,8 +60,6 @@ const COMPILED: WebAppPage[] = [
   page("agent-settings", "/agents/:agentId", { nav: "none", order: 21 }),
   page("plugins", "/plugins", { order: 40 }),
   page("plugin-detail", "/plugins/registry/*", { nav: "none", order: 41 }),
-  page("benchmark", "/benchmark", { order: 70 }),
-  page("benchmark-detail", "/benchmark/:benchmarkId", { nav: "none", order: 71 }),
   page("workflow-app", "/app/:projectId/:agentId/:workflowId", { frame: "bare", order: 110 }),
   page("workflow-app-tab", "/app/:projectId/:agentId/:workflowId/:tabKey", {
     frame: "bare",
@@ -88,7 +86,7 @@ function answer(
   } as unknown as ContributionsResponse;
 }
 
-/** The validation plugins' contributions: a page under the Evaluation Center, and its removal. */
+/** A plugin's contributions: a page under Agents, and the removal of Agents. */
 const HELLO = {
   id: "hello.page",
   from: "HelloPage",
@@ -96,23 +94,21 @@ const HELLO = {
   path: "/example-hello",
   nav: "main",
   admin: false,
-  parent: "benchmark",
+  parent: "agents",
   renderer: { iframe: { src: "/hello.html", namespace: "hello" } },
 };
-const REMOVE_BENCHMARK = { id: "r", from: "NoEvaluationCenter", key: "benchmark" };
+const REMOVE_AGENTS = { id: "r", from: "NoAgents", key: "agents" };
 
 describe("removedPagesOf", () => {
   it("drops the named page and the routes under its path, not the pages above it", () => {
-    expect(keysOf(removedPagesOf(COMPILED, ["benchmark"]))).toEqual([
+    expect(keysOf(removedPagesOf(COMPILED, ["agents"]))).toEqual([
       "chat",
-      "agents",
-      "agent-settings",
       "plugins",
       "plugin-detail",
       "workflow-app",
       "workflow-app-tab",
     ]);
-    expect(keysOf(removedPagesOf(COMPILED, ["benchmark-detail"]))).toContain("benchmark");
+    expect(keysOf(removedPagesOf(COMPILED, ["agent-settings"]))).toContain("agents");
     expect(keysOf(removedPagesOf(COMPILED, ["plugins"]))).not.toContain("plugin-detail");
     expect(keysOf(removedPagesOf(COMPILED, ["workflow-app"]))).not.toContain("workflow-app-tab");
     expect(keysOf(removedPagesOf(COMPILED, ["workflow-app-tab"]))).toContain("workflow-app");
@@ -165,8 +161,8 @@ describe("removedPagesOf", () => {
       page("home", "*", { nav: "none", order: 130 }),
     ];
     expect(keysOf(removedPagesOf(table, ["home", "org", "chat"]))).toEqual(keysOf(table));
-    expect(keysOf(removedPagesOf(table, ["home", "benchmark"]))).toEqual(
-      keysOf(table).filter((k) => !k.startsWith("benchmark")),
+    expect(keysOf(removedPagesOf(table, ["home", "agents"]))).toEqual(
+      keysOf(table).filter((k) => !k.startsWith("agent")),
     );
   });
 });
@@ -180,7 +176,7 @@ describe("pageRemovalsOf", () => {
   it("is empty without an answer, and for a server that sends no list", () => {
     expect(pageRemovalsOf(null)).toEqual([]);
     expect(pageRemovalsOf(answer([]))).toEqual([]);
-    expect(pageRemovalsOf(answer([], "benchmark" as unknown as unknown[]))).toEqual([]);
+    expect(pageRemovalsOf(answer([], "agents" as unknown as unknown[]))).toEqual([]);
   });
 });
 
@@ -192,11 +188,11 @@ describe("pageTableFor", () => {
   it("removes a compiled page with its children, contributed ones included", () => {
     const withHello = pageTableFor(COMPILED, answer([HELLO]), NONE);
     expect(keysOf(withHello)).toContain("example-hello");
-    const removed = keysOf(pageTableFor(COMPILED, answer([HELLO], [REMOVE_BENCHMARK]), NONE));
-    expect(removed).not.toContain("benchmark");
-    expect(removed).not.toContain("benchmark-detail");
+    const removed = keysOf(pageTableFor(COMPILED, answer([HELLO], [REMOVE_AGENTS]), NONE));
+    expect(removed).not.toContain("agents");
+    expect(removed).not.toContain("agent-settings");
     expect(removed).not.toContain("example-hello");
-    expect(removed).toContain("agents");
+    expect(removed).toContain("plugins");
   });
 
   it("removes a contributed page by its key", () => {
@@ -237,7 +233,7 @@ describe("safe mode", () => {
   });
 
   it("a store told nobody is signed in never fetches, so it holds no removal", () => {
-    const fetch = vi.fn(async () => answer([], [REMOVE_BENCHMARK]));
+    const fetch = vi.fn(async () => answer([], [REMOVE_AGENTS]));
     const store = createContributionsStore(fetch);
     store.setUser(null);
     expect(fetch).not.toHaveBeenCalled();
