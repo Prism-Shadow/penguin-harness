@@ -20,7 +20,6 @@ export type Opaque<Name extends string, T = unknown> = T & { readonly __opaque?:
  */
 export type IfaceHandle<T> = (abstract new () => T) &
   (<C>(target: C, context: ClassDecoratorContext) => C);
-
 /**
  * An interface as a CLASS. It is also a runtime value, so a manifest names it by
  * reference (`requires: { db: [Db, RuntimeModule] }`) instead of by string. Nothing is
@@ -42,8 +41,18 @@ export type IfaceHandle<T> = (abstract new () => T) &
  * A decorated class must be exactly a declaration: no heritage, no constructor, no
  * concrete or private member. The generator rejects the rest rather than deciding what
  * belongs in the contract.
+ *
+ * The interface's key in a table is `<declaring package>#<Name>`; the optional argument
+ * pins it instead. A package move changes the declaring package, and a manifest names the
+ * interface by key — so a class the platform has already published carries the key its
+ * consumers wrote, wherever the class comes to live:
+ *
+ * ```ts
+ * @Interface("@acme/server#Db")
+ * export abstract class Db { ... }
+ * ```
  */
-export function Interface<T = unknown>(): IfaceHandle<T> {
+export function Interface<T = unknown>(key?: string): IfaceHandle<T> {
   // Applied as a decorator it is called with the class and hands it back untouched;
   // a `class {}` would throw "cannot be invoked without 'new'" in that position.
   function handle(target?: unknown, _context?: unknown): unknown {

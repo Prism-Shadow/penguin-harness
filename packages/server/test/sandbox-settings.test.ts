@@ -30,7 +30,7 @@ function backend(seen: Seen[]): ModuleDef {
     manifest: parseManifest({
       name: "TestBackend",
       requires: {
-        config: { iface: "@prismshadow/penguin-library-plugin#PluginConfig", from: "PluginConfigModule" },
+        config: { iface: "@prismshadow/penguin-server#PluginConfig", from: "PluginConfigModule" },
       },
       provides: {},
       contributes: {
@@ -319,7 +319,7 @@ describe("sandbox settings group", () => {
             name: "ProbedBackend",
             requires: {
               config: {
-                iface: "@prismshadow/penguin-library-plugin#PluginConfig",
+                iface: "@prismshadow/penguin-server#PluginConfig",
                 from: "PluginConfigModule",
               },
             },

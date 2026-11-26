@@ -271,3 +271,21 @@ pnpm-lock.yaml 未含。后果与已试路径：
   首条长行，而 vps 环境 ~/.npmrc 含 npm 不认识的键（"Unknown user config network…"），
   warn 行抢在 error 行前 → 消息不含 registry.invalid；修＝npmReason 过滤 npm warn 噪声行，
   理由优先取 error 行，只剩 warn 时落 err.message（命令行带 --registry 仍点名）。待快测。
+- 验证轮修复 13①判定（调度席转达 G1 评审先例后重判）：PluginConfig 键判 plugin-facing——
+  gen-ifaces 以声明包名推导键（moduleNameOf(file)#Class），带方法的 @Interface() 类投影为
+  { iface: "<module>#<Name>" } 进接口表（packages/core/bin/gen-ifaces.mjs:47/511 区域）；
+  消费面＝平台文档明言"插件的 manifest 以 PluginConfigModule 为 config 来源"
+  （packages/server/src/platform.ts:462、plugin/index.ts 的 <module>#<Export> 契约），
+  插件 manifest requires.config.iface 按此键点名。搬域把键从
+  @prismshadow/penguin-server#PluginConfig 改成 @prismshadow/penguin-library-plugin#…＝
+  改了插件面契约。正修＝钉键（@Interface(key?) 显式键＋gen-ifaces 与运行时同尊），
+  夹具字符串还原基线，不改字符串迁就。
+- 验证轮修复 14（按钉键正修重落修复 13①）：机制照 G1 M1 形状在分支自落——core
+  kernel/markers.ts 的 Interface() 加可选 key 参数（@Interface("<module>#<Name>")，
+  运行时 no-op 不变，纯声明）；core bin/gen-ifaces.mjs 加 ifaceKeyBySymbol 收集遍历
+  （装饰器首参须字符串字面量且含 #，否则拒绝）并让 keyOf 先查显式键再落默认推导，头注释
+  同步；运行时零改动（boot 检查与插件 loader 消费的 ifaceTable 就是生成物，hmr
+  platform.ts:72 静态 import）。PluginConfig 在 library/plugin/src/config.ts:834 钉回
+  @prismshadow/penguin-server#PluginConfig；sandbox-settings 两处夹具字符串还原基线。
+  全仓审计：本分支仅此一键搬家（ProjectModelRequests 仍在 server、WorkflowHost 仅存在于
+  专测拒绝行为的迁移夹具，无类属预期）。npmReason 的 warn 过滤（修复 13②）不变。
