@@ -134,3 +134,15 @@ pnpm-lock.yaml 未含。后果与已试路径：
   pnpm-workspace.yaml 作仓根再 join library/plugin/src/builtin-market.json；直跑与打包
   两形态实测解析同一路径且文件在（.vite-temp 探针模拟打包位）。同链 source.mjs 的两级
   上跳在 .vite-temp 位恰好落点不变未动；hub.mjs 的 createRequire 不在打包链。
+
+- 验证轮修复 4（web 编译红，总调度确诊）：server api/types.ts:2880 的 value 再导出
+  export { SESSION_COOKIE } from .../auth/middleware 使 web bundle 经
+  @prismshadow/penguin-server/api 拉入 middleware dist，链上 media-type→node:util 被
+  vite 打桩报 "MIMEType" is not exported。修＝纯挪位、face 不变：library/auth 新增
+  src/cookie-name.ts（零 import 落常量），middleware.ts 改
+  export { SESSION_COOKIE } from "./cookie-name.js"（导出面不变，server shim
+  export * 仍成立，own-origin/cli-commands 的 type 导入不受影响），package.json
+  exports +./cookie-name、tsup entries +src/cookie-name.ts，server types.ts:2880 改指
+  cookie-name face，server tsconfig paths 补映射（auth-token 与 initial-password 之间，
+  字母序）。types.ts 其余三条 value 再导出（TICKET_SLUG_PATTERN/HOST_COMMANDS/
+  AVATAR_MAX_CHARS）web 构建未红，不扩面。

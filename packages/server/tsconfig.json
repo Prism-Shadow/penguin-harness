@@ -80,6 +80,9 @@
       "@prismshadow/penguin-library-auth/auth-token": [
         "../../library/auth/src/auth-token.ts"
       ],
+      "@prismshadow/penguin-library-auth/cookie-name": [
+        "../../library/auth/src/cookie-name.ts"
+      ],
       "@prismshadow/penguin-library-auth/initial-password": [
         "../../library/auth/src/initial-password.ts"
       ],

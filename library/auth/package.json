@@ -32,6 +32,10 @@
       "types": "./dist/auth.d.ts",
       "import": "./dist/auth.js"
     },
+    "./cookie-name": {
+      "types": "./dist/cookie-name.d.ts",
+      "import": "./dist/cookie-name.js"
+    },
     "./repos/auth-sessions": {
       "types": "./dist/repos/auth-sessions.d.ts",
       "import": "./dist/repos/auth-sessions.js"
