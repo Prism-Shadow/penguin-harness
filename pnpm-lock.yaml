@@ -198,8 +198,8 @@ importers:
         specifier: ^0.8.3
         version: 0.8.3
       hono:
-        specifier: ^4.13.11
-        version: 4.13.21
+        specifier: 4.13.13
+        version: 4.13.13
     devDependencies:
       '@types/ws':
         specifier: ^8.18.1
@@ -253,8 +253,8 @@ importers:
         specifier: workspace:*
         version: file:library/trace(supports-color@10.2.2)(ws@8.23.0)
       hono:
-        specifier: ^4.13.11
-        version: 4.13.21
+        specifier: 4.13.13
+        version: 4.13.13
       tar:
         specifier: ^7.5.21
         version: 7.5.23
@@ -314,8 +314,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       hono:
-        specifier: ^4.13.11
-        version: 4.13.21
+        specifier: 4.13.13
+        version: 4.13.13
       remark-parse:
         specifier: ^11.0.0
         version: 11.0.0(supports-color@10.2.2)
@@ -500,8 +500,8 @@ importers:
         specifier: workspace:*
         version: file:library/http(supports-color@10.2.2)(ws@8.23.0)
       hono:
-        specifier: ^4.13.11
-        version: 4.13.21
+        specifier: 4.13.13
+        version: 4.13.13
       smol-toml:
         specifier: ^1.9.1
         version: 1.9.1
@@ -568,8 +568,8 @@ importers:
         specifier: ^5.5.0
         version: 5.5.0
       hono:
-        specifier: ^4.13.11
-        version: 4.13.21
+        specifier: 4.13.13
+        version: 4.13.13
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
@@ -611,8 +611,8 @@ importers:
         specifier: workspace:*
         version: link:../session
       hono:
-        specifier: ^4.13.11
-        version: 4.13.21
+        specifier: 4.13.13
+        version: 4.13.13
     devDependencies:
       tsup:
         specifier: ^8.3.0
@@ -1236,7 +1236,7 @@ importers:
     dependencies:
       '@hono/node-server':
         specifier: '>=2.0.5'
-        version: 2.1.11(hono@4.13.21)
+        version: 2.1.11(hono@4.13.13)
       '@larksuiteoapi/node-sdk':
         specifier: ^1.73.0
         version: 1.77.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
@@ -1322,8 +1322,8 @@ importers:
         specifier: ^0.8.3
         version: 0.8.3
       hono:
-        specifier: ^4.13.11
-        version: 4.13.21
+        specifier: 4.13.13
+        version: 4.13.13
       mdast-util-gfm-footnote:
         specifier: ^2.1.0
         version: 2.1.0(supports-color@10.2.2)
@@ -1988,8 +1988,8 @@ importers:
         specifier: ^13.0.0
         version: 13.1.0
       hono:
-        specifier: ^4.13.11
-        version: 4.13.21
+        specifier: 4.13.13
+        version: 4.13.13
       react:
         specifier: ^19.1.0
         version: 19.3.1
@@ -2090,8 +2090,8 @@ importers:
         specifier: ^13.0.0
         version: 13.1.0
       hono:
-        specifier: ^4.13.11
-        version: 4.13.21
+        specifier: 4.13.13
+        version: 4.13.13
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.33)(supports-color@10.2.2)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
@@ -2247,8 +2247,8 @@ importers:
         specifier: ^13.0.0
         version: 13.1.0
       hono:
-        specifier: ^4.13.11
-        version: 4.13.21
+        specifier: 4.13.13
+        version: 4.13.13
       react:
         specifier: ^19.1.0
         version: 19.3.1
@@ -5274,6 +5274,10 @@ packages:
   hastscript@9.0.3:
     resolution: {integrity: sha512-1ALZXSmCGmW3h8AMz4R4+QKSKFi7sNgXLVwmwB8FYVtl1CwQ3WDkSAEY/d5tp1g/vbQgq2s1WlHgfO3jbw1TsA==}
 
+  hono@4.13.13:
+    resolution: {integrity: sha512-CQ46U0ZkAGmbT/4UxdzzGJpacP2IeKgY4a5/tOI9AABbpOMfK739wfDXmv1usCk+3RkKj1hQy4/fjhiwa2xlrA==}
+    engines: {node: '>=16.9.0'}
+
   hono@4.13.21:
     resolution: {integrity: sha512-h9UsguqfVk4kjUwLvQpHOmOaJpW10jz9lp8bvKUUa04wJG/fabKFBqXZ06D6LFaeKQZtUZRVeg0gfkTTEsX7Mw==}
     engines: {node: '>=16.9.0'}
@@ -7820,6 +7824,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
+  '@hono/node-server@2.1.11(hono@4.13.13)':
+    dependencies:
+      hono: 4.13.13
+
   '@hono/node-server@2.1.11(hono@4.13.21)':
     dependencies:
       hono: 4.13.21
@@ -8648,7 +8656,7 @@ snapshots:
       '@prismshadow/penguin-core': file:packages/core(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-library-auth': file:library/auth(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       fflate: 0.8.3
-      hono: 4.13.21
+      hono: 4.13.13
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@modelcontextprotocol/sdk'
@@ -8665,7 +8673,7 @@ snapshots:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.23.0)
       '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.23.0)
       fflate: 0.8.3
-      hono: 4.13.21
+      hono: 4.13.13
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@modelcontextprotocol/sdk'
@@ -8682,7 +8690,7 @@ snapshots:
       '@prismshadow/penguin-core': file:packages/core(ws@8.23.0)
       '@prismshadow/penguin-library-auth': file:library/auth(ws@8.23.0)
       fflate: 0.8.3
-      hono: 4.13.21
+      hono: 4.13.13
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@modelcontextprotocol/sdk'
@@ -8707,7 +8715,7 @@ snapshots:
       '@prismshadow/penguin-library-project': file:library/project(ws@8.23.0)
       '@prismshadow/penguin-library-session': file:library/session(ws@8.23.0)
       '@prismshadow/penguin-library-trace': file:library/trace(ws@8.23.0)
-      hono: 4.13.21
+      hono: 4.13.13
       tar: 7.5.23
       ws: 8.23.0
     transitivePeerDependencies:
@@ -8733,7 +8741,7 @@ snapshots:
       '@prismshadow/penguin-library-project': file:library/project(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-library-session': file:library/session(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-library-trace': file:library/trace(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
-      hono: 4.13.21
+      hono: 4.13.13
       tar: 7.5.23
       ws: 8.23.0
     transitivePeerDependencies:
@@ -8759,7 +8767,7 @@ snapshots:
       '@prismshadow/penguin-library-project': file:library/project(supports-color@10.2.2)(ws@8.23.0)
       '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)(ws@8.23.0)
       '@prismshadow/penguin-library-trace': file:library/trace(supports-color@10.2.2)(ws@8.23.0)
-      hono: 4.13.21
+      hono: 4.13.13
       tar: 7.5.23
       ws: 8.23.0
     transitivePeerDependencies:
@@ -8785,7 +8793,7 @@ snapshots:
       '@prismshadow/penguin-library-setting': file:library/setting(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-library-workspace': file:library/workspace(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.3.0)(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@10.2.2))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@10.2.2)
-      hono: 4.13.21
+      hono: 4.13.13
       remark-parse: 11.0.0(supports-color@10.2.2)
       undici: 7.30.2
       unified: 11.0.5
@@ -9038,7 +9046,7 @@ snapshots:
       '@prismshadow/penguin-core': file:packages/core(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-library-http': file:library/http(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
-      hono: 4.13.21
+      hono: 4.13.13
       smol-toml: 1.9.1
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -9057,7 +9065,7 @@ snapshots:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.23.0)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.23.0)
       '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.23.0)
-      hono: 4.13.21
+      hono: 4.13.13
       smol-toml: 1.9.1
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -9076,7 +9084,7 @@ snapshots:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.23.0)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.23.0)
       '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.23.0)
-      hono: 4.13.21
+      hono: 4.13.13
       smol-toml: 1.9.1
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -9095,7 +9103,7 @@ snapshots:
       '@prismshadow/penguin-core': file:packages/core(ws@8.23.0)
       '@prismshadow/penguin-library-db': file:library/db(ws@8.23.0)
       '@prismshadow/penguin-library-http': file:library/http(ws@8.23.0)
-      hono: 4.13.21
+      hono: 4.13.13
       smol-toml: 1.9.1
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -9168,7 +9176,7 @@ snapshots:
       '@prismshadow/penguin-library-session': file:library/session(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-library-setting': file:library/setting(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@xterm/headless': 5.5.0
-      hono: 4.13.21
+      hono: 4.13.13
       node-pty: 1.1.0
       ws: 8.23.0
     transitivePeerDependencies:
@@ -9189,7 +9197,7 @@ snapshots:
       '@prismshadow/penguin-library-http': file:library/http(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-library-model': file:library/model(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-library-session': file:library/session(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
-      hono: 4.13.21
+      hono: 4.13.13
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@modelcontextprotocol/sdk'
@@ -9209,7 +9217,7 @@ snapshots:
       '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.23.0)
       '@prismshadow/penguin-library-model': file:library/model(supports-color@10.2.2)(ws@8.23.0)
       '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)(ws@8.23.0)
-      hono: 4.13.21
+      hono: 4.13.13
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@modelcontextprotocol/sdk'
@@ -9229,7 +9237,7 @@ snapshots:
       '@prismshadow/penguin-library-http': file:library/http(ws@8.23.0)
       '@prismshadow/penguin-library-model': file:library/model(ws@8.23.0)
       '@prismshadow/penguin-library-session': file:library/session(ws@8.23.0)
-      hono: 4.13.21
+      hono: 4.13.13
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@modelcontextprotocol/sdk'
@@ -9318,7 +9326,7 @@ snapshots:
 
   '@prismshadow/penguin-server@file:packages/server':
     dependencies:
-      '@hono/node-server': 2.1.11(hono@4.13.21)
+      '@hono/node-server': 2.1.11(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.77.0
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
@@ -9347,7 +9355,7 @@ snapshots:
       css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
-      hono: 4.13.21
+      hono: 4.13.13
       mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
       mdast-util-gfm-strikethrough: 2.0.1(supports-color@10.2.2)
       mdast-util-gfm-table: 2.0.1(supports-color@10.2.2)
@@ -9384,7 +9392,7 @@ snapshots:
 
   '@prismshadow/penguin-server@file:packages/server(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)':
     dependencies:
-      '@hono/node-server': 2.1.11(hono@4.13.21)
+      '@hono/node-server': 2.1.11(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.77.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
@@ -9413,7 +9421,7 @@ snapshots:
       css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
-      hono: 4.13.21
+      hono: 4.13.13
       mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
       mdast-util-gfm-strikethrough: 2.0.1(supports-color@10.2.2)
       mdast-util-gfm-table: 2.0.1(supports-color@10.2.2)
@@ -9450,7 +9458,7 @@ snapshots:
 
   '@prismshadow/penguin-server@file:packages/server(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
-      '@hono/node-server': 2.1.11(hono@4.13.21)
+      '@hono/node-server': 2.1.11(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.77.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
@@ -9479,7 +9487,7 @@ snapshots:
       css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
-      hono: 4.13.21
+      hono: 4.13.13
       mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
       mdast-util-gfm-strikethrough: 2.0.1(supports-color@10.2.2)
       mdast-util-gfm-table: 2.0.1(supports-color@10.2.2)
@@ -11691,6 +11699,8 @@ snapshots:
       hast-util-parse-selector: 4.0.0
       property-information: 7.2.0
       space-separated-tokens: 2.0.2
+
+  hono@4.13.13: {}
 
   hono@4.13.21: {}
 
