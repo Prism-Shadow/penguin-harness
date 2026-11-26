@@ -103,6 +103,7 @@
     "build": "tsup"
   },
   "dependencies": {
+    "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-agent": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
