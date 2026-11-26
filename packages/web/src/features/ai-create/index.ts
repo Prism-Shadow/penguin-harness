@@ -1,7 +1,8 @@
 /**
  * The "Create with AI" kit: the bridge into a new conversation with the Project's default agent,
  * the prompt panel with its examples and full-prompt preview, the dialog around it, and the pair
- * of buttons — "Create with AI" beside "Create manually" — that opens either path.
+ * of buttons — "Create with AI" beside "Create manually" — that opens either path. A workbench that
+ * fails to load is handed over through the same bridge ("Fix with AI", workbench-repair.tsx).
  */
 export { aiChatRouteState, buildAiDraft, useAiBridge } from "./ai-bridge";
 export type { AiChatRequest, AiChatRouteState } from "./ai-bridge";
@@ -13,3 +14,8 @@ export type { AiCreateModalProps } from "./ai-create-modal";
 export { AiCreateButtons } from "./ai-create-buttons";
 export type { AiCreateButtonsProps } from "./ai-create-buttons";
 export { pickDefaultAgent } from "../../lib/default-agent";
+export {
+  WorkbenchRepairButton,
+  useWorkbenchRepair,
+  workbenchRepairRequest,
+} from "./workbench-repair";

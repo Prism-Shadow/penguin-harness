@@ -48,7 +48,6 @@ import {
   SettingsList,
   SubPageBar,
   ToggleRow,
-  toastError,
   toastSuccess,
   useMarkedRow,
 } from "@prismshadow/penguin-ui";
@@ -90,7 +89,9 @@ import {
   type PluginsSubPage,
 } from "./plugins-subpages";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { failureNode } from "../../lib/failure";
+import { failureNode, toldFailure } from "../../lib/failure";
+import { toastFailure } from "../../lib/toast-api-error";
+import { workbenchLoadFailure } from "../workbenches";
 
 /** Everything the sub-pages list, as the Agent's server last answered. */
 interface Lists {
@@ -583,9 +584,20 @@ export function PluginsTab({
           onClose={() => setImporting(null)}
           onImported={(workbench) => {
             setImporting(null);
-            // Its files are written either way; a load that failed says so instead of a success.
+            // Its files are written either way; a load that failed says so instead of a success,
+            // and offers its report.
             if (workbench.error === null) toastSuccess(S.workbenches.importDoneToast);
-            else toastError(S.workbenches.importLoadFailedToast(workbench.error));
+            else
+              toastFailure(
+                toldFailure(
+                  S.workbenches.importLoadFailedToast(workbench.error),
+                  workbenchLoadFailure({
+                    workbenchId: workbench.id,
+                    machineId,
+                    error: workbench.error,
+                  }),
+                ),
+              );
             void changed();
           }}
         />

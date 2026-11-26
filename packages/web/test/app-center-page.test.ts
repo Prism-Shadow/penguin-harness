@@ -17,7 +17,8 @@
  *   that page.
  * - A building tile does not open, by click or by its menu, and turns live by itself when the
  *   server says the workbench loaded; the news that a load started turns a tile to building.
- * - A failed tile still opens, and its menu shows the recorded error.
+ * - A failed tile still opens, and its menu shows the recorded error, which offers its report and
+ *   "Fix with AI": that asks first, then opens a chat holding the repair prompt.
  * - "View in agent settings" opens the Agent's settings on the Workbenches sub-page.
  * - Dragging a tile beside another reorders the grid, onto another makes a folder; the menu's
  *   forward and backward move one too. Each arrangement is stored as the viewer's layout, and a
@@ -36,7 +37,10 @@
 import { act, createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { AppCenterLayout, WorkbenchInfo } from "@prismshadow/penguin-server/api";
+import { closeReport, reportStore } from "@prismshadow/penguin-ui";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
+import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
+import { ADMIN_ME } from "./helpers/admin-settings";
 import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
 import { useRestoreApp, useRunningApps } from "../src/lib/running-apps";
 import { useProject } from "../src/state/project";
@@ -495,6 +499,28 @@ it("still opens a failed app, and its menu shows the recorded error", async () =
   await click(button(en.common.close));
   await click(tileButton(key("board")));
   expect(whereIs(router)).toBe(`/apps?app=${encodeURIComponent(key("board"))}`);
+});
+
+it("offers the recorded error's report, and Fix with AI, which asks before it opens a chat", async () => {
+  const error = "index.ts:1:1 TS1005 ';' expected";
+  localStorage.clear();
+  const { router } = await open([workbench("board", { error })]);
+  await rightClick(tileButton(key("board")));
+  await click(menuItem(en.appCenter.menu.showError));
+  await click(topDialog().querySelector("[data-report-issue]")!);
+  expect(reportStore.getState().open?.output?.text).toBe(error);
+  expect(reportStore.getState().open?.facts).toContainEqual(["Workbench", "board"]);
+  closeReport();
+
+  await click(buttonIn(topDialog(), en.plugins.repair));
+  // The error's dialog gives way to the question, and nothing has moved yet.
+  expect(topDialog().getAttribute("aria-label")).toBe(en.plugins.repairTitle("Board"));
+  expect(whereIs(router)).toBe("/apps");
+  await click(buttonIn(topDialog(), en.plugins.repairOpen));
+  await until(() => whereIs(router) === "/chat/new");
+  const draft = loadDraft(draftKey(ADMIN_ME.user.userId, PROJECT_ID));
+  expect(draft).toMatchObject({ agentId: AGENT_ID, workspace: "", aiPrefill: true });
+  expect(draft.text).toContain(error);
 });
 
 it("reorders by dragging a tile beside another, and stores the order as the viewer's", async () => {

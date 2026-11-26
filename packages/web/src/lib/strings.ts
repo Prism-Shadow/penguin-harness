@@ -1225,6 +1225,33 @@ export const zh = {
     searchAgents: "搜索智能体",
 
     reload: "重新加载",
+    /**
+     * 「用 AI 修复」's prompt for a workbench whose files do not load, written into the new chat's
+     * composer; the user reads and sends it. `machine` is null on this server, else the machine
+     * with its alias (null when the page does not know it).
+     */
+    repairPrompt: (w: {
+      id: string;
+      name: string;
+      agentId: string;
+      machine: { label: string | null } | null;
+      error: string;
+    }): string =>
+      [
+        `Agent \`${w.agentId}\` 的工作台 \`${w.id}\`${w.name === w.id ? "" : `（「${w.name}」）`}加载失败${
+          w.machine === null
+            ? ""
+            : w.machine.label === null
+              ? "（它在一台已连接的机器上，本对话也在那台机器上运行）"
+              : `（它在已连接的机器「${w.machine.label}」上，本对话也在那台机器上运行）`
+        }。它的目录是 \`<app_data_dir>/agents/${w.agentId}/agent_state/workbenches/${w.id}/\`。`,
+        `加载错误原文：\n${w.error}`,
+        "加载是指服务端在宿主固定的选项下严格检查工作台的 `index.ts` 及其引入的全部文件（含 `ui/` 下的 TSX 页面）：`strict`、NodeNext，`@types` 只用服务端随附的 `@types/node`，不读目录里的 `tsconfig.json`。任何一条诊断都会使加载失败，上次加载成功的版本继续提供服务。保存目录里的任一文件即重新加载；目录里的 `.build/status.json` 记录最近一次加载的结果（`ok`、`error`、`hints`），每次改动后都要读它确认。工作台的目录布局与宿主接口见 `penguin-plugin` Skill。",
+        "请查明它为什么加载不了。如果错误出自平台提供的部分，而不是工作台自己的代码——缺少 Node 或 TypeScript 的声明（例如 TS2688，找不到 `node` 的类型定义文件）、宿主类型（`.harness/plugin.d.ts`）、PenguinHarness 的打包——请直接说明，不要改动任何东西，并建议我把它作为 PenguinHarness 的问题报告。",
+        "否则请修复工作台的代码。改动它的文件之前，先告诉我你打算改什么。",
+      ].join("\n\n"),
+    /** 「用 AI 修复」 could not read the Agents it picks the default one from: the failure's words follow. */
+    repairAgentsFailed: (reason: string) => `没能读取接手修复的 Agent：${reason}`,
     history: "历史",
     /** The full-page route while it is still finding out which page it should show. */
     loadingPage: "正在打开页面…",

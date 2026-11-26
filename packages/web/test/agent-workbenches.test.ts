@@ -7,7 +7,9 @@
  *   workbench hidden from the sidebar and the App Center opens all the same, from the row's own
  *   reading of it.
  * - A workbench without a page shows what its load noticed on its row, every hint in the row's
- *   hint.
+ *   hint. While its files do not load, its More menu also opens the error's report and "Fix with
+ *   AI", which asks first and then opens a chat holding the repair prompt, unsent; a workbench
+ *   that loads offers neither.
  * - Each row of the More menu does its action: Reload reloads (a failure stays recoverable),
  *   Version history lists the versions and a restore asks first, and Remove asks first — a
  *   cancel writes nothing, a confirmation removes only that workbench and refreshes the list,
@@ -22,7 +24,10 @@ import { rowOf } from "./helpers/agent-plugins";
 import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
+import { closeReport, reportStore } from "@prismshadow/penguin-ui";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
+import { ADMIN_ME } from "./helpers/admin-settings";
 import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
 import { ThemeProvider } from "../src/state/theme";
 import { setActiveStrings, zh } from "../src/lib/strings";
@@ -185,4 +190,32 @@ it("shows what the load of a workbench without a page noticed on its row", async
     (el) => el.textContent === hints[0],
   );
   expect(notice?.dataset["tooltip"]).toBe(hints.join("\n"));
+});
+it("offers the error's report and Fix with AI in the More menu while the files do not load", async () => {
+  const error = "index.ts(3,1): error TS2304: Cannot find name 'nope'.";
+  localStorage.clear();
+  const { server, router } = await open([], { error });
+  expect(document.body.textContent).toContain(error);
+
+  await more(en.report.action);
+  expect(reportStore.getState().open?.output?.text).toBe(error);
+  closeReport();
+
+  await more(en.plugins.repair);
+  // It asks first: nothing has moved yet.
+  expect(whereIs(router)).toBe(`/agents/${AGENT_ID}?tab=workbenches`);
+  await click(buttonIn(topDialog(), en.plugins.repairOpen));
+  await waitFor(() => whereIs(router) === "/chat/new");
+  const draft = loadDraft(draftKey(ADMIN_ME.user.userId, PROJECT_ID));
+  // The Project has no default_agent here: its first Agent takes the repair.
+  expect(draft).toMatchObject({ agentId: AGENT_ID, workspace: "", aiPrefill: true });
+  expect(draft.text).toContain(error);
+  expect(server.writes().filter((request) => request.path.includes("/sessions"))).toEqual([]);
+});
+it("offers neither in the More menu of a workbench that loads", async () => {
+  await open();
+  await click(button(`${en.workbenches.more} Support`));
+  expect(() => menuItem(en.workbenches.reload)).not.toThrow();
+  expect(() => menuItem(en.plugins.repair)).toThrow();
+  expect(() => menuItem(en.report.action)).toThrow();
 });
