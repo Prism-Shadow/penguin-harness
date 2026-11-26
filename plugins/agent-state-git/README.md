@@ -41,6 +41,9 @@ The plugin includes Git for macOS (Intel and Apple silicon), glibc Linux (x86, x
 ARM and ARM64) and Windows (x86, x64 and ARM64). Installation and activation work offline.
 An administrator can still set `LOCAL_GIT_DIRECTORY` to a Git in dugite’s directory layout;
 otherwise the plugin extracts its own platform payload into the Agent State engine cache.
+The macOS desktop app is the exception: Apple notarizes an app only when every program in it is
+signed, so that app carries the Git for its own architecture as files, signed with the app, and
+the plugin runs it from there.
 The server checks `git version` before choosing the native engine. Unsupported platforms and
 unusable programs retain the built-in engine.
 

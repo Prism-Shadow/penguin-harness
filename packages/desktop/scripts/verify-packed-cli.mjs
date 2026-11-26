@@ -207,12 +207,17 @@ for (const app of dirs) {
   ran += 1;
   console.log(`[verify-packed-cli] ${app}: penguin --version -> ${printed}`);
   // Exercise the native engine from the server's installed prefix, with no PATH Git or network.
+  const gitPlugin = path.join(app, "plugins/node_modules/@penguinharness/agent-state-git");
+  // A macOS app carries Git for its own architecture alone (build/mac-native-git.cjs), so the
+  // other architecture's app, whose launcher Rosetta may still have run, has none for this Node.
+  const hostGit = path.join(gitPlugin, "dist/native", `${process.platform}-${process.arch}`);
+  if (process.platform === "darwin" && !fs.existsSync(hostGit)) {
+    console.log(`[verify-packed-cli] ${app}: built for another architecture, native Git not run.`);
+    continue;
+  }
   const gitSmoke = spawnSync(
     process.execPath,
-    [
-      path.resolve(pkgDir, "../../plugins/agent-state-git/test/packed.mjs"),
-      path.join(app, "plugins/node_modules/@penguinharness/agent-state-git"),
-    ],
+    [path.resolve(pkgDir, "../../plugins/agent-state-git/test/packed.mjs"), gitPlugin],
     { stdio: "inherit" },
   );
   if (gitSmoke.status !== 0) problems.push(`${app}: native Git failed to save and read a version.`);

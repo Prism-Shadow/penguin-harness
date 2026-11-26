@@ -483,6 +483,35 @@ jobs:
           echo "macOS verification complete: code signatures are valid. Any warnings above are non-fatal by policy."
           exit 0
 
+      # The Git the Agent State history plugin runs is signed with the app, hardened runtime
+      # included, and nothing else in this workflow starts it. The app built for this runner's
+      # architecture saves and reads back a version with it; the other architecture's Git is
+      # only asked for its version, and only reported, since it runs here under Rosetta or not
+      # at all.
+      - name: Run the signed app's native Git
+        if: runner.os == 'macOS' && env.REQUIRE_MACOS_SIGNING == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          plugin="Contents/Resources/app/plugins/node_modules/@penguinharness/agent-state-git"
+          case "$(uname -m)" in
+            arm64) host=mac-arm64; other=mac; other_arch=x64 ;;
+            *) host=mac; other=mac-arm64; other_arch=arm64 ;;
+          esac
+
+          node plugins/agent-state-git/test/packed.mjs \
+            "packages/desktop/out/$host/PenguinHarness.app/$plugin"
+
+          other_git="packages/desktop/out/$other/PenguinHarness.app/$plugin/dist/native/darwin-$other_arch/bin/git"
+          if [[ ! -x "$other_git" ]]; then
+            echo "::error title=Missing native Git::$other_git was not packed."
+            exit 1
+          fi
+          if ! "$other_git" version; then
+            echo "::warning title=macOS native Git::$other_git did not run on this runner."
+          fi
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
