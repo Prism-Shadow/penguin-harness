@@ -481,7 +481,8 @@
   border-color: var(--ui-tone-danger-line);
   color: var(--ui-tone-danger-fg);
 }
-:root[data-theme="doodle"] .ui-notice::before {
+:root[data-theme="doodle"] .ui-notice::before,
+:root[data-theme="doodle"] .ui-notice [data-slot="lead"]::before {
   scale: 1.3;
   border: 1.5px solid var(--ui-fg);
 }
