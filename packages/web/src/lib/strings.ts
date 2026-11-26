@@ -5026,16 +5026,17 @@ export const zh = {
     compactionWork: "工作",
     /** The summarize row's last body section (the first reuses `thinking`): the summary the compaction request wrote. */
     compactionResult: "压缩结果",
+    /** The section in the result's place when a compaction completed without a full summary (a model switch's Trace hand-over included): why there is no summary, the Trace file the note names, and the note the next context opens with. */
+    compactionHandover: "交接说明",
+    /** Its line naming the Trace file the new model reads the earlier history from. */
+    compactionHandoverTrace: (tracePath: string): string => `Trace 文件：${tracePath}`,
+    /** The degraded reason's first line for a switch whose current model could not be reached: it sent no compaction request. */
+    compactionHandoverUnasked: "原模型不可用，没有请求摘要",
     /** The marker between two contexts on different models (an in-session model switch), naming both by model id. */
     modelChanged: (from: string, to: string): string => `模型已切换 · ${from} → ${to}`,
-    /** The same marker when the switch handed the history over by Trace path instead of a summary. */
+    /** The same marker when the switch handed the history over by Trace path instead of a summary; the compaction row above it holds the hand-over (`compactionHandover`). */
     modelChangedByTrace: (from: string, to: string): string =>
       `模型已切换 · ${from} → ${to} · 经 Trace 交接`,
-    /** Its hover: why there is no summary, and the file the new model reads the history from. */
-    modelChangedByTraceHint: (tracePath?: string): string =>
-      tracePath
-        ? `没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件：${tracePath}`
-        : "没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件",
     /**
      * The settled row's status-mark tooltip and accessible name when the compaction completed without
      * a full summary: the title stays 压缩完毕, only the mark says it. Why first — the cause in words

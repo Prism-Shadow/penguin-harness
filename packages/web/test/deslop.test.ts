@@ -106,6 +106,7 @@ const TOKENS_ONLY: readonly string[] = [
   "plugins/browser-automation/src/web/pairing-dialog.tsx",
   "features/chat/background-done-banner.tsx",
   "features/chat/compaction-banner.tsx",
+  "features/chat/compaction-handover.tsx",
   "features/chat/goal-banner.tsx",
   "features/chat/handoff-banner.tsx",
   "features/chat/harness-banner.tsx",

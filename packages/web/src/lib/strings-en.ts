@@ -4790,13 +4790,12 @@ Example: Optimize the current app's interface so complete beginners with no tech
     compactionDone: (mode: string): string => (mode === "discard" ? "Cleared" : "Compacted"),
     compactionWork: "Work",
     compactionResult: "Result",
+    compactionHandover: "Hand-off note",
+    compactionHandoverTrace: (tracePath: string): string => `Trace file: ${tracePath}`,
+    compactionHandoverUnasked: "the previous model was unavailable, so no summary was requested",
     modelChanged: (from: string, to: string): string => `Model switched · ${from} → ${to}`,
     modelChangedByTrace: (from: string, to: string): string =>
       `Model switched · ${from} → ${to} · handed over by Trace`,
-    modelChangedByTraceHint: (tracePath?: string): string =>
-      tracePath
-        ? `No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to: ${tracePath}`
-        : "No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to",
     compactionDegradedHint: (
       why: string | null,
       errorMessage: string | undefined,
