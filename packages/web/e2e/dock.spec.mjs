@@ -2,23 +2,26 @@
  * The dock system (features/dock) and the chat toolbar's two dock toggles: every side
  * element — subagents panel, Workspace files, Memory, Trace, the command-line terminal — is a
  * tab in the right or bottom dock.
- * - the toolbar has exactly two pull-open buttons; an opened dock with no tabs shows a
- *   picker (choose what to open here), and each dock's own "+" menu adds more tabs;
+ * - the toolbar has exactly two pull-open buttons; an opened dock with no tabs shows its
+ *   start page (what can open here: in a conversation's right dock, the "+" menu's Session
+ *   tools), and each dock's own "+" menu adds more tabs;
  * - Ctrl+` focuses the terminal and accepts the first command while attaching; the shell
- *   keeps running while hidden, and native and asynchronous pastes on reopen retain their
- *   place in its line editor;
+ *   keeps running once its tab closes, and native and asynchronous pastes on reopen retain
+ *   their place in its line editor;
  * - an arrow typed before the first screen restore uses the foreground application's cursor mode;
  * - the terminal panel holds the conversation's shells as tabs of its own: its "+" starts
  *   another and shows it, a shell tab's × asks and kills the shell, and killing the last one
  *   leaves an empty group ready for the next explicit create;
  * - tabs of different kinds mix in one strip with always-visible per-tab ×s: a panel
- *   tab's × closes the panel, the last tab closing puts the dock away;
+ *   tab's × closes the panel, and the last tab closing leaves the dock open on its start page,
+ *   which the toolbar's toggle still puts away;
  * - a whole dock moves to the other edge via its header button, a single tab via drag
  *   onto the drop targets;
  * - after configuring a model and sending the first message, Files can move to the bottom
  *   and enter fullscreen immediately, even when the original draft page is still mounted;
  * - the Memory tool opened from the Shortcuts menu lists the Agent's memory, and a listing
- *   that cannot be read shows its failure and report instead of waiting forever;
+ *   that cannot be read shows its failure and report instead of waiting forever (reopened from
+ *   the start page its closed tab left);
  * - an explicit button expands the right dock across the Session, or the bottom dock up to its
  *   toolbar. Dragging the divider only resizes the dock and keeps the conversation usable;
  * - the arrangement is PER CONVERSATION (each one manages its own tabs, browser-window
@@ -102,7 +105,14 @@ const anyDock = (page) => page.locator('[data-testid="dock"][data-open="true"]')
 const terminalBody = (page) => page.locator('[data-testid="dock-terminal-body"]:visible');
 const screenText = (page) => terminalBody(page).locator(".xterm-rows").innerText();
 
-/** Pull a dock open from the toolbar and pick an element on its picker. */
+/**
+ * A Session tool's tab: what a conversation's right dock opens from its start page and its "+",
+ * keyed by the tool's page rather than the panel's id.
+ */
+const toolTab = (scope, kind) =>
+  scope.locator(`[data-testid="dock-tab"][data-tab-id^=":app:session-tool/${kind}/"]`);
+
+/** Pull a dock open from the toolbar and pick an element on its start page. */
 async function openViaPicker(page, position, kind) {
   await page.getByTestId(`dock-toggle-${position}`).click();
   await page.getByTestId(`dock-pick-${kind}`).click();
@@ -151,7 +161,7 @@ async function waitForShell(page, tag) {
   await expect.poll(() => screenText(page), { timeout: 30000 }).toMatch(new RegExp(`${tag}$`, "m"));
 }
 
-test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running, reopening reattaches", async ({
+test("Ctrl+` opens the terminal group in the right dock; closing its tab keeps it running, reopening reattaches", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
@@ -199,12 +209,9 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
   );
   await expect.poll(() => screenText(page)).toContain("EDIT_READY");
 
-  // Hide via the dock's ×: the surface goes away, the tab and the shell do not.
-  await dockAt(page, "right")
-    .locator('[data-testid="dock-tab"][data-tab-id^=":app:session-tool/terminal"]')
-    .getByTestId("dock-tab-close")
-    .click();
-  await expect(anyDock(page)).toHaveCount(0);
+  // Close the terminal's tab: the dock stays, on its start page, and the shell keeps running.
+  await toolTab(dockAt(page, "right"), "terminal").getByTestId("dock-tab-close").click();
+  await expect(dockAt(page, "right").getByTestId("dock-picker")).toBeVisible();
   await expect
     .poll(async () => {
       const res = await (await page.request.get(`${BASE}/api/terminals`)).json();
@@ -212,7 +219,7 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
     })
     .toBe(1);
 
-  // Ctrl+` restores the same shell — the marker typed before the hide is still on screen.
+  // Ctrl+` restores the same shell — the marker typed before the close is still on screen.
   const reattach = await holdTerminalLookup(page);
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "right")).toBeVisible();
@@ -279,11 +286,8 @@ test("an opening terminal sends cursor keys in the foreground program's mode", a
     `node -e "process.stdin.setRawMode(true);process.stdout.write('\\x1b[?1h'+'MODE_'+'READY\\n');let bytes='';process.stdin.on('data',b=>console.log('HEX_'+(bytes+=b.toString('hex'))))"`,
   );
   await expect.poll(() => screenText(page)).toContain("MODE_READY");
-  await dockAt(page, "right")
-    .locator('[data-testid="dock-tab"][data-tab-id^=":app:session-tool/terminal"]')
-    .getByTestId("dock-tab-close")
-    .click();
-  await expect(anyDock(page)).toHaveCount(0);
+  await toolTab(dockAt(page, "right"), "terminal").getByTestId("dock-tab-close").click();
+  await expect(dockAt(page, "right").getByTestId("dock-picker")).toBeVisible();
   const attach = await holdTerminalLookup(page);
   await page.keyboard.press("Control+Backquote");
   await expect(terminalBody(page).locator(".xterm-helper-textarea")).toBeFocused();
@@ -301,7 +305,7 @@ test("an opening terminal sends cursor keys in the foreground program's mode", a
   await killTabConfirmed(page, shellTabs(page));
 });
 
-test("two toolbar toggles: an opened empty dock shows the picker; hiding keeps tabs", async ({
+test("two toolbar toggles: an opened empty dock shows its start page; hiding keeps tabs", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
@@ -316,15 +320,15 @@ test("two toolbar toggles: an opened empty dock shows the picker; hiding keeps t
   await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByTestId("panels-toolbar").locator("button")).toHaveCount(2);
 
-  // Pull open the right dock: the picker lists every element; picking Trace opens its tab.
+  // Pull open the right dock: its start page lists every element; picking Trace opens its tool.
   await page.getByTestId("dock-toggle-right").click();
   const right = dockAt(page, "right");
   await expect(right.getByTestId("dock-picker")).toBeVisible();
-  for (const kind of ["agents", "terminal", "workspace", "memory", "trace"]) {
+  for (const kind of ["app-center", "agents", "terminal", "workspace", "memory", "trace"]) {
     await expect(right.getByTestId(`dock-pick-${kind}`)).toBeVisible();
   }
   await right.getByTestId("dock-pick-trace").click();
-  await expect(right.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
+  await expect(toolTab(right, "trace")).toHaveAttribute("data-active", "true");
   await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "true");
 
   // The bottom dock opens independently — both docks on screen at once.
@@ -334,15 +338,25 @@ test("two toolbar toggles: an opened empty dock shows the picker; hiding keeps t
   ).toBeVisible();
   await expect(anyDock(page)).toHaveCount(2);
 
-  // Toggling the right dock hides it (tab kept); reopening comes back on the tab, not the picker.
+  // Toggling the right dock hides it (tab kept); reopening comes back on the tab, not the start page.
   await page.getByTestId("dock-toggle-right").click();
   await expect(dockAt(page, "right")).toHaveCount(0);
   await page.getByTestId("dock-toggle-right").click();
-  await expect(right.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
+  await expect(toolTab(right, "trace")).toHaveAttribute("data-active", "true");
   await expect(right.getByTestId("dock-picker")).toHaveCount(0);
 
-  // A panel tab's × closes it; the last tab closing puts the dock away entirely.
-  await right.locator('[data-tab-id="trace"]').getByTestId("dock-tab-close").click();
+  // A tab's × closes it; the last one leaves the dock open on its start page, at its width
+  // (measured once the reopening has settled, and again before anything could animate), and
+  // only the dock's own toggle puts it away.
+  await right.evaluate((el) =>
+    Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)),
+  );
+  const width = (await right.boundingBox()).width;
+  await toolTab(right, "trace").getByTestId("dock-tab-close").click();
+  await expect(right.getByTestId("dock-picker")).toBeVisible();
+  expect(Math.abs((await right.boundingBox()).width - width)).toBeLessThan(2);
+  await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "true");
+  await page.getByTestId("dock-toggle-right").click();
   await expect(dockAt(page, "right")).toHaveCount(0);
   await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "false");
 });
@@ -357,7 +371,6 @@ test("the Session toolbar and bottom dock share the middle column; resizing neve
   await page.goto(`${BASE}/chat/${sessionId}`);
   const composer = page.getByPlaceholder(/输入消息/);
   await composer.fill("Draft kept while resizing");
-  const location = page.url();
   const host = page.locator("[data-dock-host]:visible");
   const toolbar = host.locator("[data-session-toolbar]");
   const handle = host.locator('[data-testid="dock-resizer"][aria-orientation="vertical"]');
@@ -365,6 +378,8 @@ test("the Session toolbar and bottom dock share the middle column; resizing neve
   const bottom = dockAt(page, "bottom");
   await openViaPicker(page, "right", "trace");
   await openViaPicker(page, "bottom", "memory");
+  // The Trace tool has an address of its own; resizing never leaves it.
+  const location = page.url();
 
   const edges = async (locator) =>
     locator.evaluate((element) => {
@@ -448,7 +463,7 @@ test("the Session toolbar and bottom dock share the middle column; resizing neve
   await page.keyboard.press("Enter");
   await expect(info).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Escape");
-  await expect(right.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
+  await expect(toolTab(right, "trace")).toHaveAttribute("data-active", "true");
   await bottom.getByTestId("dock-fullscreen").click();
   await expect(bottom).toHaveAttribute("data-fullscreen", "full");
   const lower = await edges(bottom.locator("[data-dock-content]"));
@@ -474,7 +489,7 @@ test("tabs of every kind share a dock: switch, close a panel tab, terminals numb
 
   await openViaPicker(page, "right", "workspace");
   const right = dockAt(page, "right");
-  await expect(right.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
+  await expect(toolTab(right, "workspace")).toHaveAttribute("data-active", "true");
 
   // The right-side shortcut opens this conversation's terminal group. Creating a shell is explicit.
   await right.getByTestId("dock-add").click();
@@ -491,14 +506,14 @@ test("tabs of every kind share a dock: switch, close a panel tab, terminals numb
   await expect(shellTabs(page).first()).toContainText(/^\d+:/);
 
   // Tab click switches; the terminal's view survives being covered (still attached below).
-  await right.locator('[data-tab-id="workspace"]').click();
-  await expect(right.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
+  await toolTab(right, "workspace").click();
+  await expect(toolTab(right, "workspace")).toHaveAttribute("data-active", "true");
   await expect(right.getByRole("button", { name: "刷新" })).toBeVisible();
   await terminalTab.click();
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("MIXED_DOCK");
 
   // A panel tab's × closes just the panel; the terminal tab remains, dock stays.
-  await right.locator('[data-tab-id="workspace"]').getByTestId("dock-tab-close").click();
+  await toolTab(right, "workspace").getByTestId("dock-tab-close").click();
   await expect(right.locator('[data-testid="dock-tab"]')).toHaveCount(1);
   await expect(right).toBeVisible();
   await killAllTerminals(page.request);
@@ -539,7 +554,7 @@ test("Files moves to the bottom and enters fullscreen after the first chat reply
   expect((await bottom.boundingBox()).height).toBeGreaterThan(24);
   await bottom.getByTestId("dock-fullscreen").click();
   await expect(bottom).toHaveAttribute("data-fullscreen", "full");
-  await expect(bottom.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
+  await expect(toolTab(bottom, "workspace")).toHaveAttribute("data-active", "true");
 });
 
 test("the Memory tool opened from Shortcuts lists the Agent's memory; a listing that fails says so", async ({
@@ -585,15 +600,17 @@ test("the Memory tool opened from Shortcuts lists the Agent's memory; a listing 
   await expect(panel.getByText("Prefers green tea", { exact: true })).toBeVisible();
   await expect(panel.locator(".ui-waiting")).toHaveCount(0);
 
-  // The same tool, reopened while the Agent's memory cannot be read: the failure and its
-  // report take the list's place, and nothing is left waiting.
+  // The same tool, reopened from the start page its closed tab left while the Agent's memory
+  // cannot be read: the failure and its report take the list's place, and nothing is left
+  // waiting.
   await tool.getByTestId("dock-tab-close").click();
   await expect(tool).toHaveCount(0);
   socket.answer("GET", `/api/projects/${projectId}/agents/default_agent/memory`, {
     status: 500,
     body: { error: { code: "internal", message: "memory unreadable" } },
   });
-  await openFromShortcuts();
+  await panel.getByTestId("dock-pick-memory").click();
+  await expect(tool).toBeVisible();
   await expect(panel.locator("[data-report-issue]")).toBeVisible();
   await expect(panel.getByText("Prefers green tea", { exact: true })).toHaveCount(0);
   await expect(panel.locator(".ui-waiting")).toHaveCount(0);
@@ -627,7 +644,7 @@ test("a whole dock moves to the other edge; a single tab moves by drag onto the 
 
   // Drag the workspace tab out of the strip: the edge overlay appears; dropping on the
   // RIGHT target splits it back out into its own right dock.
-  const wsTab = bottom.locator('[data-tab-id="workspace"]');
+  const wsTab = toolTab(bottom, "workspace");
   const wb = await wsTab.boundingBox();
   await page.mouse.move(wb.x + wb.width / 2, wb.y + wb.height / 2);
   await page.mouse.down();
@@ -638,9 +655,7 @@ test("a whole dock moves to the other edge; a single tab moves by drag onto the 
   await page.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2, { steps: 4 });
   await expect(page.locator('[data-testid="dock-layout-preview"][data-pos="right"]')).toBeVisible();
   await page.mouse.up();
-  await expect(
-    dockAt(page, "right").locator('[data-tab-id="workspace"][data-active="true"]'),
-  ).toBeVisible();
+  await expect(toolTab(dockAt(page, "right"), "workspace")).toHaveAttribute("data-active", "true");
   await expect(bottom.locator(traceTab)).toBeVisible();
 });
 
@@ -656,8 +671,14 @@ test("sizes and the arrangement survive a reload; hidden stays hidden", async ({
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
 
+  // Panel tabs, which the stored arrangement keeps (a Session tool lives in its window): Files
+  // from the bottom dock's start page, moved to the right edge, then Trace at the bottom.
+  await openViaPicker(page, "bottom", "workspace");
+  await dockAt(page, "bottom").getByTestId("dock-move").click();
+  await expect(
+    dockAt(page, "right").locator('[data-tab-id="workspace"][data-active="true"]'),
+  ).toBeVisible();
   await openViaPicker(page, "bottom", "trace");
-  await openViaPicker(page, "right", "workspace");
   const bottom = dockAt(page, "bottom");
   await expect(bottom.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
 
@@ -717,7 +738,10 @@ test("each conversation manages its own tabs: nothing leaks, and each side survi
 
   await page.goto(`${BASE}/chat/${sidA}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
-  await openViaPicker(page, "right", "workspace");
+  // A Files panel tab on the right, which the stored arrangement keeps across the reloads below.
+  await openViaPicker(page, "bottom", "workspace");
+  await dockAt(page, "bottom").getByTestId("dock-move").click();
+  await expect(dockAt(page, "right").locator('[data-tab-id="workspace"]')).toBeVisible();
   await page.keyboard.press("Control+Backquote");
   await expect(
     dockAt(page, "right").locator('[data-tab-id^=":app:session-tool/terminal"]'),

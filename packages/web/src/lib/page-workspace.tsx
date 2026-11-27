@@ -39,13 +39,13 @@ import { PageWorkspaceContext as Context, type SessionLocation } from "./page-wo
 
 interface DockOperations {
   clearDockPages(): void;
-  detachDockPage(key: string): void;
+  closeDockPage(key: string): void;
   dockActiveKey(position: "right"): string | null;
   openPanel(key: string, position: "right"): void;
 }
 
 export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: DockOperations }) {
-  const { clearDockPages, detachDockPage, dockActiveKey, openPanel } = dock;
+  const { clearDockPages, closeDockPage, dockActiveKey, openPanel } = dock;
   const userId = useAuth().user?.userId ?? null;
   const projectId = useProject().currentProject?.projectId ?? null;
   const location = useLocation();
@@ -505,7 +505,9 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       : removed;
     const pair = sessionAppPair(before);
     if (page.kind !== "session") {
-      detachDockPage(dockPageKey(id));
+      // Closed, minimized or gone, the page leaves the dock it was shown in open, as a closed
+      // panel tab does: on the next tab, or on the start page when it was the last.
+      closeDockPage(dockPageKey(id));
       if (!keepOpen) byApp.current.delete(id);
       for (const [sid, attached] of bySession.current)
         if (attached.id === id) bySession.current.delete(sid);

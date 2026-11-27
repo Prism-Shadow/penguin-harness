@@ -2,6 +2,7 @@ export { docksOnScreen } from "./dock-state";
 
 export {
   clearDockPages,
+  closeDockPage,
   detachDockPage,
   dockActiveKey,
   openPanel,

@@ -3,7 +3,8 @@
  * back and the actions), the card padded and flush, the ruled section, the collapsible section
  * open and folded, the entity header, the navigation list at both densities, an app window's
  * title bar with all three controls, with close alone and with the app's pages to switch between,
- * and the sidebar's app list in each of its rows' states — all from the package.
+ * the sidebar's app list in each of its rows' states, and the dock's start page as tiles at a
+ * dock's width and as rows across a bottom band — all from the package.
  */
 import { useState } from "react";
 import {
@@ -19,6 +20,7 @@ import {
   CollapsibleSection,
   CopyButton,
   Count,
+  DockPicker,
   EntityHeader,
   GlyphAppIcon,
   GlyphIcon,
@@ -45,6 +47,22 @@ import {
 } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
+
+/**
+ * The start page's choices, as a conversation's right dock offers them: the App Center, then the
+ * panels by their order. A Session tool wears the art the App Center gives it.
+ */
+const LAUNCH = [
+  { key: "appCenter", glyph: ICONS.tiles },
+  { key: "agents", glyph: ICONS.robotPair },
+  { key: "terminal", glyph: ICONS.terminalWindow, art: "session-tools-terminal" },
+  { key: "files", glyph: ICONS.folder, art: "session-tools-workspace" },
+  { key: "memory", glyph: ICONS.brain },
+  { key: "trace", glyph: ICONS.eye },
+  { key: "remote", glyph: ICONS.paperPlane },
+  { key: "schedules", glyph: ICONS.alarmClock },
+  { key: "browser", glyph: ICONS.globe, art: "session-tools-builtin-browser" },
+] as const;
 
 /** Model ids are the same in both languages: they are data, not copy. */
 const MODELS = ["gpt-5.4", "gpt-5.4-mini", "o4-mini"];
@@ -320,6 +338,39 @@ export function LayoutBoard() {
               </ul>
             )}
           </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.launch} aside={t.launchHint}>
+        <div className="lib-stack lib-stack-wide">
+          {([false, true] as const).map((band) => (
+            <div key={String(band)} className="lib-stack lib-stack-wide">
+              <span className="lib-caption">{band ? t.launchBand : t.launchDock}</span>
+              <div
+                className="lib-box flex"
+                style={band ? { height: "11rem" } : { width: "22rem", maxWidth: "100%" }}
+              >
+                <DockPicker
+                  horizontal={band}
+                  label={t.launchLabel}
+                  choices={LAUNCH.map((choice) => ({
+                    key: choice.key,
+                    name: t.launchNames[choice.key],
+                    icon: (size) => (
+                      <GlyphAppIcon
+                        {...("art" in choice ? { appKey: choice.art } : {})}
+                        d={choice.glyph}
+                        size={size}
+                      />
+                    ),
+                    ...(choice.key === "terminal"
+                      ? { hint: `${t.launchNames.terminal} (${t.launchShortcut})` }
+                      : {}),
+                    onLaunch: () => {},
+                  }))}
+                />
+              </div>
+            </div>
+          ))}
         </div>
       </BoardGroup>
       <BoardGroup title={t.nav} aside={t.navHint}>

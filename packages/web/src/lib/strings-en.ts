@@ -572,6 +572,7 @@ export const en: Strings = {
     here: "This server",
 
     addTab: "Add panel",
+    startPage: "Start page",
     closeTab: "Close panel",
     hideDock: "Hide sidebar",
     moveToRight: "Move to the right",

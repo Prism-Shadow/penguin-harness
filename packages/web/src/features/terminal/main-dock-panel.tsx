@@ -7,14 +7,13 @@ import { TerminalPanel } from "./terminal-panel";
 
 // The terminal is one panel whose body lists the conversation's shells as tabs. Unlike the
 // browser it needs a Session — a shell belongs to the conversation that opened it — so a draft
-// does not offer it. It lands at the bottom, where a terminal is expected, and the picker
-// names its toggle's keys.
+// does not offer it. It lands at the bottom, where a terminal is expected, and its tile on the
+// dock's start page names its toggle's keys.
 export const mainPanelDefinition = {
   id: TERMINAL_PANEL,
   label: () => S.terminal.shellEntry,
   glyph: NAV_ICONS.terminal,
   order: 15,
-  lead: true,
   defaultPosition: "bottom",
   shortcut: "terminal.toggle",
   availableFromAppCenter: terminalApiSupported,

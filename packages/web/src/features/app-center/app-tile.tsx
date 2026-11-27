@@ -45,6 +45,7 @@ import {
   ICON_SIZE,
   ImageIcon,
   InstallRing,
+  LaunchTile,
   UpdateDot,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -151,13 +152,6 @@ function DropLine({ side }: { side: Side }) {
 const DROP_OUTLINE = "outline-2 outline-offset-4 outline-accent";
 
 /**
- * A tile is pressed and held for its menu on touch, so neither the text selection nor the
- * picture's own callout (save image, share) may answer the hold instead.
- */
-const TILE_BUTTON =
-  "flex w-full select-none flex-col items-center gap-2 rounded-lg p-2 text-center transition-colors duration-150 [-webkit-touch-callout:none] hover:bg-fg/5 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none";
-
-/**
  * The update dot on an icon's top-right corner, straddling it: the page surface's dot (no ring),
  * placed the way a page button wears it.
  */
@@ -168,21 +162,6 @@ function TileDot() {
 /** A tile's hint or name with the sentence of what waits on its page, when something does. */
 function withNote(text: string, note: string | null): string {
   return note === null ? text : S.todo.joined([text, note]);
-}
-
-/**
- * The name under the icon: two lines at most, then an ellipsis. Inside an open folder it has no
- * preview to travel from, so it fades in as the folder unfolds.
- */
-function TileName({ fade = false, children }: { fade?: boolean; children: ReactNode }) {
-  return (
-    <span
-      data-unfold-fade={fade || undefined}
-      className="line-clamp-2 w-full break-words text-sm leading-snug text-fg"
-    >
-      {children}
-    </span>
-  );
 }
 
 export const appTriggerId = (id: string) => `app-center-app-${id}`;
@@ -264,10 +243,9 @@ export function AppTile({
       {(mark === "before" || mark === "after") && <DropLine side={mark} />}
       <ContextMenu label={title} items={menuItems} width={MENU_PX}>
         {(target) => (
-          <button
+          <LaunchTile
             ref={target.ref}
             {...target.props}
-            type="button"
             id={appTriggerId(app.id)}
             aria-label={name}
             aria-disabled={closed || undefined}
@@ -278,35 +256,38 @@ export function AppTile({
               if (target.consumeLongPressClick()) return;
               if (!closed) onOpen();
             }}
-            className={`${TILE_BUTTON} ${closed ? "cursor-default" : ""} ${
+            className={`${closed ? "cursor-default" : ""} ${
               failed || shortcut.unavailable ? "opacity-60" : ""
             } ${lifted ? "opacity-40" : ""}`}
-          >
-            <AppIconShape
-              clip={false}
-              data-unfold-art={inFolder ? app.id : undefined}
-              className={`relative ${mark === "into" ? DROP_OUTLINE : ""}`}
-            >
-              <span className={`block ${building ? "opacity-50" : ""}`}>
-                <TileIcon shortcut={shortcut} title={title} owner={tileOwner} />
-              </span>
-              {building && (
-                <InstallRing
-                  size={RING_PX}
-                  className="pointer-events-none absolute -top-1.5 -left-1.5 text-accent"
-                />
-              )}
-              {failed && (
-                <span
-                  aria-hidden
-                  className={`absolute -top-1.5 -left-1.5 rounded-full bg-canvas ${toneInk.attention}`}
-                >
-                  <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.rowLead} />
+            icon={
+              <AppIconShape
+                clip={false}
+                data-unfold-art={inFolder ? app.id : undefined}
+                className={`relative ${mark === "into" ? DROP_OUTLINE : ""}`}
+              >
+                <span className={`block ${building ? "opacity-50" : ""}`}>
+                  <TileIcon shortcut={shortcut} title={title} owner={tileOwner} />
                 </span>
-              )}
-              {note !== null && <TileDot />}
-            </AppIconShape>
-            <TileName fade={inFolder}>{title}</TileName>
+                {building && (
+                  <InstallRing
+                    size={RING_PX}
+                    className="pointer-events-none absolute -top-1.5 -left-1.5 text-accent"
+                  />
+                )}
+                {failed && (
+                  <span
+                    aria-hidden
+                    className={`absolute -top-1.5 -left-1.5 rounded-full bg-canvas ${toneInk.attention}`}
+                  >
+                    <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.rowLead} />
+                  </span>
+                )}
+                {note !== null && <TileDot />}
+              </AppIconShape>
+            }
+            name={title}
+            unfoldFade={inFolder}
+          >
             {shortcut.machineLabel && (
               <span
                 data-unfold-fade={inFolder || undefined}
@@ -315,7 +296,7 @@ export function AppTile({
                 {shortcut.machineLabel}
               </span>
             )}
-          </button>
+          </LaunchTile>
         )}
       </ContextMenu>
     </li>
@@ -359,10 +340,9 @@ export function FolderTile({
       {(mark === "before" || mark === "after") && <DropLine side={mark} />}
       <ContextMenu label={folder.name} items={menuItems} width={MENU_PX}>
         {(target) => (
-          <button
+          <LaunchTile
             ref={target.ref}
             {...target.props}
-            type="button"
             id={folderTriggerId(folder.id)}
             aria-expanded={expanded}
             aria-controls={expanded ? folderPanelId(folder.id) : undefined}
@@ -379,31 +359,32 @@ export function FolderTile({
               if (target.consumeLongPressClick()) return;
               onOpen();
             }}
-            className={`${TILE_BUTTON} ${lifted ? "opacity-40" : ""}`}
-          >
-            {/* The update dot sits outside the folder's square, which clips its previews. */}
-            <span className="relative block">
-              {/* The open folder unfolds from this square, its apps from their previews in it. */}
-              <AppIconShape
-                data-unfold-from
-                className={`relative grid grid-cols-2 content-start bg-fg/10 ${mark === "into" ? DROP_OUTLINE : ""}`}
-                style={{ padding: FOLDER_INSET_PX, gap: FOLDER_GAP_PX }}
-              >
-                {folder.apps.slice(0, 4).map((app) => (
-                  <span key={app.id} data-unfold-source={app.id} className="flex">
-                    <TileIcon
-                      shortcut={app.shortcut}
-                      title={titleOf(app.shortcut)}
-                      size={MINI_PX}
-                      owner={ownerOf?.(app)}
-                    />
-                  </span>
-                ))}
-              </AppIconShape>
-              {notes.length > 0 && <TileDot />}
-            </span>
-            <TileName>{folder.name}</TileName>
-          </button>
+            className={lifted ? "opacity-40" : ""}
+            icon={
+              // The update dot sits outside the folder's square, which clips its previews.
+              <span className="relative block">
+                {/* The open folder unfolds from this square, its apps from their previews in it. */}
+                <AppIconShape
+                  data-unfold-from
+                  className={`relative grid grid-cols-2 content-start bg-fg/10 ${mark === "into" ? DROP_OUTLINE : ""}`}
+                  style={{ padding: FOLDER_INSET_PX, gap: FOLDER_GAP_PX }}
+                >
+                  {folder.apps.slice(0, 4).map((app) => (
+                    <span key={app.id} data-unfold-source={app.id} className="flex">
+                      <TileIcon
+                        shortcut={app.shortcut}
+                        title={titleOf(app.shortcut)}
+                        size={MINI_PX}
+                        owner={ownerOf?.(app)}
+                      />
+                    </span>
+                  ))}
+                </AppIconShape>
+                {notes.length > 0 && <TileDot />}
+              </span>
+            }
+            name={folder.name}
+          />
         )}
       </ContextMenu>
     </li>
