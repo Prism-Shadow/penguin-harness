@@ -265,9 +265,24 @@ importers:
       '@prismshadow/penguin-hmr':
         specifier: workspace:*
         version: file:packages/hmr(supports-color@10.2.2)(ws@8.23.0)
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@prismshadow/penguin-web':
+        specifier: workspace:*
+        version: file:packages/web(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.23.0)
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.3.0
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.2
+      react:
+        specifier: ^19.1.0
+        version: 19.3.1
+      react-router:
+        specifier: ^8.3.0
+        version: 8.5.2(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.33)(supports-color@10.2.2)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
@@ -474,7 +489,22 @@ importers:
       '@prismshadow/penguin-library-session':
         specifier: workspace:*
         version: link:../session
+      '@prismshadow/penguin-library-setting':
+        specifier: workspace:*
+        version: link:../setting
     devDependencies:
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@prismshadow/penguin-web':
+        specifier: workspace:*
+        version: link:../../packages/web
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.3.0
+      react:
+        specifier: ^19.1.0
+        version: 19.3.1
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.33)(supports-color@10.2.2)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
@@ -577,9 +607,39 @@ importers:
         specifier: ^8.18.3
         version: 8.23.0
     devDependencies:
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@prismshadow/penguin-web':
+        specifier: workspace:*
+        version: file:packages/web(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.23.0)
+      '@prismshadow/penguin-web-plugin':
+        specifier: workspace:*
+        version: link:../../packages/web-plugin
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.1.0
+        version: 19.3.0(@types/react@19.3.0)
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.2
+      '@xterm/addon-clipboard':
+        specifier: ^0.1.0
+        version: 0.1.0(@xterm/xterm@5.5.0)
+      '@xterm/addon-fit':
+        specifier: ^0.10.0
+        version: 0.10.0(@xterm/xterm@5.5.0)
+      '@xterm/xterm':
+        specifier: ^5.5.0
+        version: 5.5.0
+      react:
+        specifier: ^19.1.0
+        version: 19.3.1
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.3.1(react@19.3.1)
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.33)(supports-color@10.2.2)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
@@ -667,9 +727,33 @@ importers:
         specifier: workspace:*
         version: file:library/http(supports-color@10.2.2)(ws@8.23.0)
     devDependencies:
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@prismshadow/penguin-web':
+        specifier: workspace:*
+        version: link:../../packages/web
       '@types/node':
         specifier: ^24
         version: 24.19.2
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.1.0
+        version: 19.3.0(@types/react@19.3.0)
+      react:
+        specifier: ^19.1.0
+        version: 19.3.1
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.3.1(react@19.3.1)
+      react-markdown:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/react@19.3.0)(react@19.3.1)(supports-color@10.2.2)
+      react-router:
+        specifier: ^8.3.0
+        version: 8.5.2(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       tsup:
         specifier: ^8
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.33)(supports-color@10.2.2)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
@@ -1828,6 +1912,18 @@ importers:
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.65.1
+      '@prismshadow/penguin-library-machine':
+        specifier: workspace:*
+        version: link:../../library/machine
+      '@prismshadow/penguin-library-sandbox':
+        specifier: workspace:*
+        version: link:../../library/sandbox
+      '@prismshadow/penguin-library-terminal':
+        specifier: workspace:*
+        version: link:../../library/terminal
+      '@prismshadow/penguin-library-workspace':
+        specifier: workspace:*
+        version: link:../../library/workspace
       '@prismshadow/penguin-server':
         specifier: workspace:*
         version: file:packages/server(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@10.2.2))(supports-color@10.2.2)
@@ -3434,6 +3530,16 @@ packages:
     peerDependencies:
       react: ^19.1.0
       react-dom: ^19.1.0
+
+  '@prismshadow/penguin-web-plugin@file:packages/web-plugin':
+    resolution: {directory: packages/web-plugin, type: directory}
+    engines: {node: '>=24'}
+    peerDependencies:
+      '@prismshadow/penguin-ui': workspace:*
+      react: ^19.1.0
+
+  '@prismshadow/penguin-web@file:packages/web':
+    resolution: {directory: packages/web, type: directory}
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -8992,6 +9098,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
       '@prismshadow/penguin-library-session': file:library/session(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-setting': file:library/setting(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(supports-color@10.2.2)(ws@8.23.0)(zod@4.6.7)
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@modelcontextprotocol/sdk'
@@ -9560,6 +9667,47 @@ snapshots:
       - micromark-util-types
       - supports-color
       - use-sync-external-store
+
+  '@prismshadow/penguin-web-plugin@file:packages/web-plugin(@prismshadow/penguin-ui@file:packages/ui(@types/react@19.3.0)(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@10.2.2))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@10.2.2))(react@19.3.1)':
+    dependencies:
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.3.0)(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@10.2.2))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@10.2.2)
+      react: 19.3.1
+
+  '@prismshadow/penguin-web@file:packages/web(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.23.0)':
+    dependencies:
+      '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/storage': file:plugins/storage
+      '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.23.0)
+      '@prismshadow/penguin-library-setting': file:library/setting(supports-color@10.2.2)(ws@8.23.0)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.3.0)(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@10.2.2))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@10.2.2)
+      '@prismshadow/penguin-web-plugin': file:packages/web-plugin(@prismshadow/penguin-ui@file:packages/ui(@types/react@19.3.0)(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@10.2.2))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@10.2.2))(react@19.3.1)
+      '@xterm/addon-clipboard': 0.1.0(@xterm/xterm@5.5.0)
+      '@xterm/addon-fit': 0.10.0(@xterm/xterm@5.5.0)
+      '@xterm/xterm': 5.5.0
+      copy-to-clipboard: 4.0.2
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+      react-markdown: 10.1.0(@types/react@19.3.0)(react@19.3.1)(supports-color@10.2.2)
+      react-router: 8.5.2(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      uqr: 0.1.3
+      zustand: 5.1.0(@types/react@19.3.0)(react@19.3.1)
+    transitivePeerDependencies:
+      - '@aws-sdk/credential-provider-node'
+      - '@modelcontextprotocol/sdk'
+      - '@smithy/hash-node'
+      - '@smithy/signature-v4'
+      - '@types/react'
+      - '@types/react-dom'
+      - bufferutil
+      - immer
+      - micromark
+      - micromark-util-types
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
+      - zod
 
   '@protobufjs/aspromise@1.1.2': {}
 
