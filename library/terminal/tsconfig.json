@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "jsx": "react-jsx",
     "paths": {
       "@prismshadow/penguin-library-auth": ["../auth/src/index.ts"],
       "@prismshadow/penguin-library-http": ["../http/src/index.ts"],
