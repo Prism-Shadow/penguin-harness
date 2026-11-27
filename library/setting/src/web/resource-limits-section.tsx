@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DEFAULT_BROWSER_LIMIT, DEFAULT_TERMINAL_LIMIT } from "../../resource-limits";
+import { DEFAULT_BROWSER_LIMIT, DEFAULT_TERMINAL_LIMIT } from "../resource-limits";
 import type { ServerSettings } from "@prismshadow/penguin-server/api";
 import {
   Button,
