@@ -42,7 +42,6 @@ export * from "./lib/clipboard";
 export * from "./lib/company-context";
 export * from "./lib/company-nav";
 export * from "./lib/failure";
-export * from "./lib/first-workbench-entry";
 export * from "./lib/format";
 export * from "./lib/frame-address";
 export * from "./lib/frame-context";
