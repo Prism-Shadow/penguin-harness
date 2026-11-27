@@ -3,7 +3,7 @@
 - **Date:** 2026-11-27
 - **Type:** feature
 - **Scope:** `server`, `ui`, `tooling`
-- **PR:** [#PR](https://github.com/Prism-Shadow/penguin-harness/pull/PR)
+- **PR:** [#1929](https://github.com/Prism-Shadow/penguin-harness/pull/1929)
 
 [中文版](2026-11-27-plugin-market-covers.zh.md)
 
