@@ -29,7 +29,7 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { channelIdProblem, type ChannelIdProblem } from "./channel-list";
-
+import { machineForOrg } from "../../lib/org-machines";
 import { SemanticIdField } from "../semantic-id";
 import { ErrorLine } from "./shared";
 import { failureNode } from "../../lib/failure";
@@ -137,6 +137,7 @@ function NewChannelForm({
         />
         <SemanticIdField
           projectId={projectId}
+          machineId={machineForOrg(projectId, orgId)}
           kind="channel"
           label={S.company.channels.idField}
           hint={S.company.channels.idHint}

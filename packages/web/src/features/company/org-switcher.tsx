@@ -28,7 +28,9 @@ import {
   Waiting,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { nameOnMachine } from "../../lib/workspace-machines";
 import { useCompany } from "./company-state";
+import { useSessions } from "../../state/sessions";
 import { projectDisplayName, useProject } from "../../state/project";
 import {
   groupOrganizationsByProject,
@@ -46,6 +48,11 @@ import { OrgStatusDot, OrgStatusPill, orgStatusText } from "./shared";
 export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
   const company = useCompany();
+  // An organization on another machine reads `Name [SSH: alias]`, like a Workspace there; the
+  // alias falls back to the machine id when the machine list could not be read.
+  const { machineLabels } = useSessions();
+  const machineAlias = (machineId: string | null) =>
+    machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
   const onOrgCreated = useOrganizationCreated();
   const { projects } = useProject();
   const [open, setOpen] = useState(false);
@@ -163,7 +170,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
                   glyph={<OrgStatusDot org={o} />}
                   label={
                     <>
-                      {o.name}
+                      {nameOnMachine(o.name, machineAlias(o.machineId ?? null))}
                       {active && <span className="sr-only">{S.company.switcherCurrent}</span>}
                     </>
                   }
