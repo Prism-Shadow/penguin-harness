@@ -134,7 +134,9 @@ This rule shapes how QQ behaves:
 - A few minutes after your last QQ message, replies can no longer be delivered. Send the bot another message in QQ to continue.
 - One QQ message can receive at most 4 replies, or 5 in a group. When a run produces more messages than that, the last reply carries the rest combined.
 - With **Final reply only** on, a run that takes longer than about five minutes delivers nothing.
-- QQ carries text only. The bot does not read images or files you send, and the agent cannot send files to QQ.
+- Text, images and files travel in both directions. A voice message arrives as QQ's own transcript; one QQ could not transcribe cannot be read. A message you quote reaches the agent as a blockquote above your text.
+- A file the agent sends uses one of the message's replies, and only while no text is waiting for the last reply. A picture format QQ will not show as a picture is sent as a file instead.
+- A file with no reply left, or one QQ refuses, is not sent. A one-line note takes its place in the chat, and the failure is recorded in the Cost Center's error records.
 
 ## Connect WeChat
 
@@ -178,8 +180,8 @@ A connected conversation shows a paper-plane icon on its row in the sidebar. Poi
 - A message to the bot starts a Task in the conversation, just like a message typed in the Web App. The agent is not told that the message came from a chat app.
 - If the agent is busy, the message waits in the queue and runs next.
 - While the connection is on, the conversation stays loaded on the server, from the moment the connection comes up. A message after a quiet spell does not wait for the conversation to load, though the model provider can still be slower to answer after a long pause.
-- On Feishu, Telegram and WeChat, images and files you send are attached to the message. Each image can be up to 20 MB, and one connection accepts up to 40 MB of images per 10 minutes. Files follow the upload limits in [Settings](/settings); Telegram also caps bot downloads at 20 MB.
-- Stickers are not supported, and neither are voice and video messages on Feishu and Telegram. The bot replies that only text, image and file messages are supported.
+- On Feishu, Telegram, QQ and WeChat, images and files you send are attached to the message. Each image can be up to 20 MB, and one connection accepts up to 40 MB of images per 10 minutes. Files follow the upload limits in [Settings](/settings); Telegram also caps bot downloads at 20 MB.
+- Stickers are not supported, and neither are voice and video messages on Feishu and Telegram. On QQ, voice arrives as a transcript. The bot replies that only text, image and file messages are supported.
 - On Feishu, Telegram and WeChat, messages sent while the connection is off are not delivered later. On WeChat, a message sent within 5 minutes before the connection comes up is the exception and is answered.
 
 ### Replies the bot sends
@@ -188,7 +190,7 @@ A connected conversation shows a paper-plane icon on its row in the sidebar. Poi
 - Turns you start in the Web App are sent to the chat too, except on QQ.
 - In a group, the first reply of a run replies to the message that started it.
 - A long reply is split into several messages of up to 4000 characters.
-- When a reply mentions a file that the run created or changed in the Workspace, the file follows the reply into the chat. A run sends at most 5 files, with images up to 10 MB and other files up to 30 MB. A file that could not be sent is not announced in the chat; it is recorded in the Cost Center's error records.
+- When a reply mentions a file that the run created or changed in the Workspace, the file follows the reply into the chat. A run sends at most 5 files, with images up to 10 MB and other files up to 30 MB. A file that could not be sent is not announced in the chat, except on QQ, where a one-line note is left; either way it is recorded in the Cost Center's error records.
 
 ### Approvals
 
