@@ -31,7 +31,7 @@ export function gixEngine(native: Native, version: string): AgentStateEngine {
       return native.commit({
         gitdir: c.gitdir,
         refName: c.ref,
-        parent: c.parent,
+        parent: c.parent ?? undefined,
         rel: c.rel,
         files: c.files === null ? null : c.files.map((f) => ({ rel: f.rel, body: f.body })),
         message: c.message,

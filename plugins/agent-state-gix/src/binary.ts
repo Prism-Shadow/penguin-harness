@@ -18,7 +18,7 @@ export interface Native {
   commit(input: {
     gitdir: string;
     refName: string;
-    parent: string | null;
+    parent?: string;
     rel: string;
     files: Array<{ rel: string; body: Uint8Array }> | null;
     message: string;
