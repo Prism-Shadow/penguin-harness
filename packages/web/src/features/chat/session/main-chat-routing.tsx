@@ -20,7 +20,7 @@ import {
   isPanelOpen,
   subscribeDock,
 } from "../../dock";
-import { terminalApiSupported, subscribeTerminals } from "../../terminal";
+import { terminalApiSupported, subscribeTerminals } from "@prismshadow/penguin-library-terminal/web";
 import { usePageWorkspace } from "../../../lib/page-workspace-context";
 import { sessionAppPair } from "../../../lib/session-app-dock";
 import type { useMainChatInputs } from "./main-chat-inputs";
