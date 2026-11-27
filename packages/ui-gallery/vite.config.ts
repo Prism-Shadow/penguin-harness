@@ -138,6 +138,15 @@ export default defineConfig({
   ],
   resolve: {
     dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
+    // The internal hub the domain libraries' web halves compile against resolves to the app's
+    // own source, as in the app's own config: the gallery builds those halves straight from
+    // the libraries' src/web, whose directory has no node_modules edge into @prismshadow/penguin-web.
+    alias: [
+      {
+        find: "@prismshadow/penguin-web/internal",
+        replacement: new URL("../web/src/internal.ts", import.meta.url).pathname,
+      },
+    ],
   },
   // The app's module classes use standard decorators; the dev server must lower them, as in
   // the app's own config.
