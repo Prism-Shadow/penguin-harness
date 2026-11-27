@@ -22,8 +22,9 @@
  * static host serves each page. The vitest config stays separate (vitest's embedded vite types
  * conflict with vite 7's).
  *
- * The package source and the app's live outside this Vite root, which the dev server's file
- * watcher does not cover by default; the plugin below watches both.
+ * The package source, the app's, and the session domain's web half the app compiles in live
+ * outside this Vite root, which the dev server's file watcher does not cover by default; the
+ * plugin below watches the three.
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -41,7 +42,7 @@ import { deepPagePaths } from "./src/lib/page-paths";
 const at = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
 function watchPackageSources(): Plugin {
-  const roots = [at("../ui/src/"), at("../web/src/")];
+  const roots = [at("../ui/src/"), at("../web/src/"), at("../../library/session/src/web/")];
   const stylesheets = [
     at("./src/styles.css"),
     at("./src/app/app.css"),

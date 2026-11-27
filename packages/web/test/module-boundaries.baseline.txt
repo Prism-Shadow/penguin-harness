@@ -1,6 +1,7 @@
-# Import edges in packages/web/src that break the module boundaries (module-boundaries.test.ts).
-# One line per edge, sorted: `importing-file -> imported-file` (paths relative to src/), or
-# `cycle: features/a -> features/b` for an edge between two feature directories that lies on a cycle.
+# Import edges that break the module boundaries (module-boundaries.test.ts).
+# One line per edge, sorted: `importing-file -> imported-file` (paths relative to the tree they
+# sit in: packages/web/src, or library/session/src/web), or `cycle: a -> b` for an edge between
+# two module directories that lies on a cycle.
 # This list only shrinks: never add a line; delete each line whose edge your change removes.
 # The `internal-hub.ts -> features/...` lines are the internals hub's transition re-exports; they
 # leave as the features they name grow faces of their own.

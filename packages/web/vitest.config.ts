@@ -87,7 +87,13 @@ export default defineConfig({
     // Every vi.stubGlobal (fetch, localStorage, …) is undone before the next test starts.
     unstubGlobals: true,
     // `vitest run --coverage`: branch and line coverage of the app's own source, and of the
-    // session domain's web half the app compiles in.
-    coverage: { provider: "v8", include: ["src/**", "../../library/session/src/web/**"] },
+    // session domain's web half the app compiles in. The half sits outside this package's
+    // root, and the coverage provider drops out-of-root files before include patterns apply,
+    // so the patterns alone would never match it; admit it here.
+    coverage: {
+      provider: "v8",
+      include: ["src/**", "../../library/session/src/web/**"],
+      allowExternal: true,
+    },
   },
 });
