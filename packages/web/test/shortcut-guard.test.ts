@@ -13,7 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 /** The scanned roots, as repo-relative id prefixes: the app and the library web halves it compiles in. */
 const ROOTS: ReadonlyArray<readonly [string, string]> = [
