@@ -886,7 +886,7 @@ async function downloadChannelAsset(
   prefix: string,
   address: string,
   file: string,
-  onProgress: (received: number, total: number | null) => void,
+  onProgress: ((received: number, total: number | null) => void) | undefined,
   stallMs: number,
 ): Promise<string> {
   const staging = path.join(prefix, STAGING_DIR);
@@ -925,7 +925,7 @@ async function downloadChannelAsset(
     }
     const length = response.headers.get("content-length");
     total = length === null || !/^\d+$/.test(length) ? null : Number(length);
-    onProgress(0, total);
+    onProgress?.(0, total);
     for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
       lastByte = Date.now();
       received += chunk.byteLength;
@@ -938,7 +938,7 @@ async function downloadChannelAsset(
         onProgress(received, total);
       }
     }
-    onProgress(received, total);
+    onProgress?.(received, total);
     await once(stream, "finish");
     if (total !== null && received !== total) {
       throw new PluginInstallError(
