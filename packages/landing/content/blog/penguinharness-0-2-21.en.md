@@ -2,10 +2,10 @@
 title: "PenguinHarness 0.2.21: terminals on Linux, a steadier server, and offline machines"
 date: 2026-11-27
 category: news
-excerpt: "A hotfix release: terminals open again on Linux systems with glibc older than 2.42, the server no longer exits on a socket that arrives while it starts, a conversation on an unreachable machine shows its cached copy after five retries, Memory opened from Shortcuts loads, and the Browser panel opens its first tab by itself."
+excerpt: "A hotfix release: terminals open again on Linux systems with glibc older than 2.42, the server no longer exits on a socket that arrives while it starts, a conversation on an unreachable machine shows its cached copy after five retries, Memory opened from Shortcuts loads, the Browser panel opens its first tab by itself, and a QQ bot carries images, files and voice messages."
 ---
 
-PenguinHarness 0.2.21 is out — a hotfix release on top of 0.2.20. **Terminals open again on Linux systems with glibc older than 2.42.** 0.2.19 and 0.2.20 broke them for servers, the Linux desktop app and remote machines alike. The server no longer exits when a socket arrives while it starts. A conversation on an unreachable machine stops retrying and shows its cached copy. Memory opened from Shortcuts loads. The Browser panel opens its first tab by itself. For everything new since 0.2.17, see [the 0.2.20 post](/blog/penguinharness-0-2-20).
+PenguinHarness 0.2.21 is out — a hotfix release on top of 0.2.20. **Terminals open again on Linux systems with glibc older than 2.42.** 0.2.19 and 0.2.20 broke them for servers, the Linux desktop app and remote machines alike. The server no longer exits when a socket arrives while it starts. A conversation on an unreachable machine stops retrying and shows its cached copy. Memory opened from Shortcuts loads. The Browser panel opens its first tab by itself. A QQ bot connected through Remote control now carries images, files and voice messages in both directions. For everything new since 0.2.17, see [the 0.2.20 post](/blog/penguinharness-0-2-20).
 
 ## Terminals open again on Linux
 
@@ -38,6 +38,12 @@ The **Files**, **Memory** and **Agents** jumps opened from **Shortcuts** also re
 ![The Browser panel with the first tab it opened by itself: New tab with its blue globe icon in the tab strip, the address bar and the start page of common sites](/blog-assets/penguinharness-0-2-21-browser-tab-en.png)
 
 A new tab's globe icon takes the theme's link colour instead of the faint secondary text colour, so it is legible in all four themes and in dark mode.
+
+## A QQ bot carries images, files and voice messages
+
+**A conversation connected to a QQ bot through Remote control no longer carries text only.** The images and files an Agent writes in its reply reach QQ. The images, files and voice messages you send reach the Agent. A voice message arrives as QQ's own transcript. A quoted message's text appears above the reply as a blockquote.
+
+Files go through QQ's rich-media upload and are sent as a passive reply, so the server needs no public URL. Each file takes one of the replies QQ allows for your message, and only while no text is waiting for the last one. A file that has no reply left, or that QQ refuses, leaves a one-line note in the chat. A picture in a format QQ refuses is sent again as a file.
 
 ## Also in this release
 

@@ -1,4 +1,4 @@
-PenguinHarness 0.2.21 is a hotfix release on top of 0.2.20. Terminals open again on Linux systems whose glibc is older than 2.42, which 0.2.19 and 0.2.20 broke for servers, the Linux desktop app and remote machines alike. The server no longer exits when a socket arrives while it starts, and it refuses a malformed WebSocket request instead of stopping. A conversation on a remote machine that cannot be reached stops retrying after five attempts and shows the cached copy. Memory opened from a conversation's **Shortcuts** loads, and the **Browser** panel opens its first tab by itself.
+PenguinHarness 0.2.21 is a hotfix release on top of 0.2.20. Terminals open again on Linux systems whose glibc is older than 2.42, which 0.2.19 and 0.2.20 broke for servers, the Linux desktop app and remote machines alike. The server no longer exits when a socket arrives while it starts, and it refuses a malformed WebSocket request instead of stopping. A conversation on a remote machine that cannot be reached stops retrying after five attempts and shows the cached copy. Memory opened from a conversation's **Shortcuts** loads, and the **Browser** panel opens its first tab by itself. A QQ bot connected through **Remote control** now carries images, files and voice messages in both directions.
 
 ## Install
 
@@ -69,6 +69,12 @@ Opening the **Browser** panel with no tab now creates one new tab, the way the t
 ![The Browser panel with the first tab it opened by itself: New tab with its blue globe icon in the tab strip, the address bar and the start page of common sites](https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-21-browser-tab-en.png)
 
 It happens once each time the panel is shown, and not when tabs exist or when the built-in browser is unavailable. Closing the last tab leaves the **New tab** button rather than opening another. A new tab's globe icon takes the theme's link colour instead of the faint secondary text colour, so it reads in all four themes and in dark mode.
+
+### A QQ bot carries images, files and voice messages
+
+A conversation connected to a QQ bot through **Remote control** no longer carries text only. The images and files an Agent writes in its reply reach QQ, and the images, files and voice messages a user sends reach the Agent. A voice message arrives as QQ's own transcript, and a quoted message's text appears above the reply as a blockquote.
+
+Outbound files are registered through QQ's rich-media upload API and sent as a `msg_type: 7` passive reply, so no public URL is needed. Files up to 3.5 MB go through `file_data`; larger ones use `upload_prepare`, part uploads, `upload_part_finish` and a merge. A file takes one of the message's passive-reply slots, and only while no text is waiting for the final slot. A file that has no slot, or that QQ refuses, leaves a one-line note in the chat and still files an error record. A picture format QQ refuses is sent again as a file.
 
 ## Notable in this release
 
