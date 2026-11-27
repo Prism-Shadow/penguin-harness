@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-auth",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "description": "The auth domain: the Users, AuthSessions, Auth and Admin mechanisms, the SessionVia vocabulary, the UserInfo view, the users/auth_sessions repos, and what an account keeps beside its preferences (the UserDraftsStore and BackgroundImageStore mechanisms and their repos). A library package - the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {

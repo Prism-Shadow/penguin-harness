@@ -14,8 +14,8 @@ export const en: Strings = {
     label: "Announcements",
     prev: "Previous announcement",
     next: "Next announcement",
-    release0220:
-      "PenguinHarness 0.2.20: Harness OS, voice input and output, a plugin market — see release notes",
+    release0221:
+      "PenguinHarness 0.2.21: terminals work again on Linux, a steadier server — see release notes",
     penguinGo: "Penguin Go official Token packs are live: 50% off every Gemini model",
   },
 

@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/plan",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "description": "Discuss goals, trade-offs and architecture before implementing a task.",
   "keywords": [
     "penguin-plugin",

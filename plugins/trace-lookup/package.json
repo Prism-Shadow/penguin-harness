@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/trace-lookup",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "description": "Look up what happened earlier in a conversation from its Trace file, precisely — after a compaction or a model switch, when a detail is no longer in context.",
   "keywords": [
     "penguin-plugin",

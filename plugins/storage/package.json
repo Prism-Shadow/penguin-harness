@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/storage",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "type": "module",
   "description": "See what the data root holds — by category, per Project and Agent — and clean what can be regenerated: orphan scratchpads, temporary Workspaces and tool environments, each after a review. Settings › Storage in the app, penguin storage in the shell, and a Skill that lets an agent tell the user what takes space.",
   "keywords": [

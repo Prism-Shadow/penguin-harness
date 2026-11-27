@@ -194,7 +194,7 @@ Claude 5.5 的 OpenCode Go 预设为 Haiku；Fable 5.1、Opus 5.5 和 Sonnet 5.5
 ### Docker
 
 ```bash
-docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:0.2.20
+docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:0.2.21
 docker logs penguin       # 首次登录链接，在本机可原样打开
 ```
 
