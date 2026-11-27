@@ -78,7 +78,7 @@ export class MessagingModule {
   @Provide() messaging!: Messaging;
   @Bind("messaging.session-routes") sessionRoutesRoutes!: Hono<AppEnv>;
   async setup({ contributions, effect }: ClassCtx) {
-    const { lineDelayMs, inboundImageBudgetBytes } = this.tuning;
+    const { lineDelayMs, inboundImageBudgetBytes, inboundQuietMs } = this.tuning;
     const now = () => this.clock.now().getTime();
     const messagingRepo = this.messagingRepo;
     const sessionsRepo = this.sessionsRepo;
@@ -98,6 +98,7 @@ export class MessagingModule {
       now,
       ...(lineDelayMs !== undefined ? { lineDelayMs } : {}),
       ...(inboundImageBudgetBytes !== undefined ? { inboundImageBudgetBytes } : {}),
+      ...(inboundQuietMs !== undefined ? { inboundQuietMs } : {}),
     });
     // Every scan flow arrives the same way — QQ's and WeChat's from their child nodes, any
     // other through the same slot — and each gets the same scan routes.

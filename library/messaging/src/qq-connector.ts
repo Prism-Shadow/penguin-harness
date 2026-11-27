@@ -434,7 +434,9 @@ export class QQConnector implements MessagingChannelConnector {
           chatKind: evt.kind === "c2c" ? "direct" : "group",
           messageId: qqReplyRefOf(evt.kind, evt.openid, evt.messageId),
           ...inboundMediaOf(this.transport, evt),
-          ...(evt.senderOpenid !== undefined ? { senderName: evt.senderOpenid } : {}),
+          ...(evt.senderOpenid !== undefined
+            ? { senderId: evt.senderOpenid, senderName: evt.senderOpenid }
+            : {}),
         });
       },
       ...(handlers.onReady ? { onReady: handlers.onReady } : {}),

@@ -102,11 +102,13 @@ export interface MessagingInboundMessage {
   messageId: string;
   /**
    * The message's plain text; null for anything that carries none (stickers, voice, …) — a
-   * message with no text, no image and no file gets the not-supported notice. An image or a
-   * file sent with a caption puts the caption here: the caption IS that message's text, so
-   * a channel needs no second field for it and the bridge no second rule. A channel that
-   * carries a caption on media it does NOT deliver must still report null, or the model
-   * answers a question about an attachment it never received.
+   * message with no text, no image and no file gets the not-supported notice. Media sent
+   * with a caption puts the caption here: the caption IS that message's text, so a channel
+   * needs no second field for it and the bridge no second rule. That holds for media the
+   * channel does NOT deliver too, provided the media is named in `omitted`: the bridge never
+   * runs a message on its text alone once every attachment it carried was left out, so the
+   * model is not asked about an attachment it never received, while an album whose caption
+   * sits on a video still reaches the Agent with its pictures and its words.
    */
   text: string | null;
   /**
@@ -125,9 +127,37 @@ export interface MessagingInboundMessage {
    * is there.
    */
   files?: readonly MessagingInboundFile[];
+  /**
+   * Media this message carried that nothing downstream can use, in the order the user sees
+   * it (absent or empty when there is none). Listed rather than dropped so the person in the
+   * chat hears which part of a mixed message stayed behind — a video in an album of photos,
+   * a clip inside a rich-text post — while the parts that can be delivered still are.
+   */
+  omitted?: readonly MessagingOmittedPart[];
+  /**
+   * The platform's own id tying several events into ONE message the user sent (Telegram's
+   * `media_group_id`: an album arrives as one update per item). Events of one chat sharing
+   * it are composed into a single input. Absent on a channel that delivers a message whole.
+   */
+  groupId?: string;
+  /**
+   * Channel-scoped id of the sender. Only compared for equality: an attachment sent on its
+   * own and a text following it at once are composed into one input only when both came
+   * from the same person, which in a group chat the chat id alone cannot say. Absent where
+   * the event names no sender, and then a group chat's events are never composed.
+   */
+  senderId?: string;
   /** Sender display name when the channel's event carries one. */
   senderName?: string;
 }
+
+/**
+ * Inbound media a channel received and does not deliver: nothing downstream decodes or
+ * transcribes a video or a recording, so handing one over as an attachment would offer a
+ * capability that is not there, and a folder is no file at all. Closed, so every name has its
+ * bilingual words in the notice that reports it.
+ */
+export type MessagingOmittedPart = "video" | "audio" | "voice" | "folder";
 
 export interface MessagingConnectorHandlers {
   onMessage(msg: MessagingInboundMessage): void | Promise<void>;

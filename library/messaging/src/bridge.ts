@@ -26,10 +26,14 @@
  * `[attached file: <path>]` line, so the model opens it with its ordinary file tools and
  * the bytes never enter the conversation (see services/task-attachments.ts, which owns
  * that path and its caps for the web composer too). The three combine — text, images and
- * files in one message compose one input — and a message with none of them (sticker,
- * voice, video) gets a polite bilingual "not supported" reply. Only once that work is done
- * is the binding row's watermark advanced, so a process that dies mid-message has the
- * channel replay it rather than find it already marked.
+ * files in one message compose one input — and so do the events a platform splits one
+ * message into: an album's items, or an attachment and the note sent right after it (see
+ * inbound-bundles.ts). A part that does not arrive (too large, refused, a video nothing here
+ * plays) costs only itself: the rest is delivered and the chat is told which part stayed
+ * behind, unless no attachment arrived at all, which stops the message whole. A message with
+ * nothing deliverable (sticker, voice, video) gets a polite bilingual "not supported" reply.
+ * Only once that work is done is the binding row's watermark advanced, so a process that dies
+ * mid-message has the channel replay it rather than find it already marked.
  *
  * Outbound (Session → channel): the bridge subscribes to the Session's in-process channel
  * and relays the main conversation's completed assistant messages — by default each of them
@@ -107,10 +111,16 @@ import {
   type MessagingInboundFile,
   type MessagingInboundImage,
   type MessagingInboundMessage,
+  type MessagingOmittedPart,
   type MessagingSendNote,
   MessagingReplyHeldError,
 } from "./connector.js";
 import { messagingErrorKind } from "./error-kind.js";
+import {
+  InboundBundles,
+  MESSAGING_INBOUND_OPEN_MAX_MS,
+  MESSAGING_INBOUND_QUIET_MS,
+} from "./inbound-bundles.js";
 import { chunkMarkdown } from "./markdown.js";
 import {
   MessagingMediaTooLargeError,
@@ -172,8 +182,12 @@ export const MESSAGING_LINE_DELAY_MS = 1000;
 // The fixed outbound notices are user-facing chat content, deliberately bilingual
 // like the rest of the product's user-facing copy (the server has no locale for an
 // external chat, so both languages ride each notice).
+//
+// The not-supported notice names PARTS, not message kinds: one message may carry text, images
+// and files together, so "text, image and file messages" would misdescribe the very message it
+// accepts. It answers a message nothing of which can be delivered.
 export const MESSAGING_UNSUPPORTED_NOTICE =
-  "Only text, image and file messages are supported for now. 目前仅支持文本、图片和文件消息。";
+  "Only text, images and files are supported for now. 目前仅支持文本、图片和文件。";
 /**
  * The two ways an inbound image does not arrive, deliberately worded as two notices.
  *
@@ -288,6 +302,153 @@ export function messagingInboundFilePermissionNotice(
 /** A file the channel would not hand over, carrying the channel's OWN reason (see the image version). */
 export function messagingInboundFileFailedNotice(fileName: string, reason: string): string {
   return `"${fileName}" could not be downloaded from the chat, so nothing was sent to the Agent. 无法从会话中下载文件“${fileName}”，未发送给智能体。(${noticeReason(reason)})`;
+}
+
+/** What part of a message did not reach the Agent: one of its images (1-based, of how many), or a file by name. */
+export type MessagingLostWhat = { image: number; of: number } | { file: string };
+
+/** Why that part did not arrive — one entry per notice above, plus the per-message file count. */
+export type MessagingLostCause =
+  | { kind: "too_large"; maxBytes: number }
+  | { kind: "budget" }
+  | { kind: "total"; totalBytes: number }
+  | { kind: "count"; maxCount: number }
+  | { kind: "permission"; scopes: readonly string[]; grantUrl: string | null }
+  | { kind: "failed"; reason: string };
+
+export interface MessagingLostPart {
+  what: MessagingLostWhat;
+  cause: MessagingLostCause;
+}
+
+const OMITTED_WORDS: Record<
+  MessagingOmittedPart,
+  { en: (n: number) => string; zh: (n: number) => string }
+> = {
+  video: {
+    en: (n) => (n === 1 ? "a video" : `${n} videos`),
+    zh: (n) => (n === 1 ? "视频" : `${n} 段视频`),
+  },
+  audio: {
+    en: (n) => (n === 1 ? "an audio file" : `${n} audio files`),
+    zh: (n) => (n === 1 ? "音频" : `${n} 段音频`),
+  },
+  voice: {
+    en: (n) => (n === 1 ? "a voice message" : `${n} voice messages`),
+    zh: (n) => (n === 1 ? "语音" : `${n} 条语音`),
+  },
+  folder: {
+    en: (n) => (n === 1 ? "a folder" : `${n} folders`),
+    zh: (n) => (n === 1 ? "文件夹" : `${n} 个文件夹`),
+  },
+};
+
+function lostWhatWords(what: MessagingLostWhat): { en: string; zh: string } {
+  if ("file" in what) return { en: `"${what.file}"`, zh: `文件“${what.file}”` };
+  return what.of === 1
+    ? { en: "the image", zh: "图片" }
+    : { en: `image ${what.image}`, zh: `第 ${what.image} 张图片` };
+}
+
+function lostCauseWords(cause: MessagingLostCause): { en: string; zh: string } {
+  const mb = (bytes: number) => Math.floor(bytes / (1024 * 1024));
+  switch (cause.kind) {
+    case "too_large":
+      return {
+        en: `over the ${mb(cause.maxBytes)}MB limit`,
+        zh: `超过 ${mb(cause.maxBytes)}MB 上限`,
+      };
+    case "budget":
+      return { en: "too many images just now", zh: "短时间内图片过多" };
+    case "total":
+      return {
+        en: `over the ${mb(cause.totalBytes)}MB one message may carry`,
+        zh: `超过单条消息 ${mb(cause.totalBytes)}MB 的上限`,
+      };
+    case "count":
+      return { en: `more than ${cause.maxCount} files`, zh: `超过 ${cause.maxCount} 个文件` };
+    case "permission":
+      return { en: "the bot's app is missing a permission", zh: "机器人应用缺少权限" };
+    case "failed":
+      return { en: "download failed", zh: "下载失败" };
+  }
+}
+
+/**
+ * Part of a message did not reach the Agent while the rest of it did. One line naming every
+ * part that stayed behind and why, so the person can send just that part again: a mixed
+ * message is not refused whole for one picture too many or one clip nothing here plays.
+ *
+ * The channel's own failure reasons follow in parentheses, as on the single-attachment
+ * notices, and a missing permission adds its scopes and console link once.
+ */
+export function messagingPartsLeftOutNotice(
+  lost: readonly MessagingLostPart[],
+  omitted: readonly MessagingOmittedPart[],
+): string {
+  const en: string[] = [];
+  const zh: string[] = [];
+  for (const part of lost) {
+    const what = lostWhatWords(part.what);
+    const why = lostCauseWords(part.cause);
+    en.push(`${what.en} (${why.en})`);
+    zh.push(`${what.zh}（${why.zh}）`);
+  }
+  const counts = new Map<MessagingOmittedPart, number>();
+  for (const kind of omitted) counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  for (const [kind, n] of counts) {
+    en.push(`${OMITTED_WORDS[kind].en(n)} (not supported)`);
+    zh.push(`${OMITTED_WORDS[kind].zh(n)}（暂不支持）`);
+  }
+  const reasons = [
+    ...new Set(lost.flatMap((p) => (p.cause.kind === "failed" ? [p.cause.reason] : []))),
+  ];
+  const permission = lost.find((p) => p.cause.kind === "permission")?.cause;
+  const line = `Not sent to the Agent from that message: ${en.join(", ")}. The rest was sent. 该消息中以下内容未发送给智能体：${zh.join("、")}。其余内容已发送。`;
+  return [
+    reasons.length > 0 ? `${line}(${noticeReason(reasons.join("; "))})` : line,
+    ...(permission?.kind === "permission"
+      ? [permissionDetail(permission.scopes, permission.grantUrl)]
+      : []),
+  ].join("\n");
+}
+
+/**
+ * The notice for a message NONE of whose attachments arrived: the one its first lost part has
+ * of its own, exactly as when that part was the message's only one — nothing reached the
+ * Agent, which is what those notices say. A message whose only attachments were media nothing
+ * here plays is answered with the not-supported notice.
+ */
+function nothingArrivedNotice(lost: readonly MessagingLostPart[]): string {
+  // A file is refused for the count only past the files actually attempted, so when nothing
+  // arrived some other cause always comes first.
+  const first = lost.find((p) => p.cause.kind !== "count");
+  if (first === undefined) return MESSAGING_UNSUPPORTED_NOTICE;
+  const { what, cause } = first;
+  if ("image" in what) {
+    switch (cause.kind) {
+      case "budget":
+        return messagingImageBudgetNotice();
+      case "permission":
+        return messagingImagePermissionNotice(cause.scopes, cause.grantUrl);
+      case "failed":
+        return messagingImageFailedNotice(cause.reason);
+      default:
+        return messagingImageTooLargeNotice();
+    }
+  }
+  switch (cause.kind) {
+    case "total":
+      return messagingInboundFilesTooLargeNotice(cause.totalBytes);
+    case "permission":
+      return messagingInboundFilePermissionNotice(what.file, cause.scopes, cause.grantUrl);
+    case "failed":
+      return messagingInboundFileFailedNotice(what.file, cause.reason);
+    case "too_large":
+      return messagingInboundFileTooLargeNotice(what.file, cause.maxBytes);
+    default:
+      return MESSAGING_UNSUPPORTED_NOTICE;
+  }
 }
 
 export const MESSAGING_APPROVAL_NOTICE =
@@ -891,6 +1052,8 @@ export interface MessagingBridgeDeps {
   lineDelayMs?: number;
   /** Test hook: one binding's inbound image budget (default MESSAGING_INBOUND_IMAGE_BUDGET_BYTES). */
   inboundImageBudgetBytes?: number;
+  /** Test hook: how long an attachment on its own waits for the rest of its message (default MESSAGING_INBOUND_QUIET_MS). */
+  inboundQuietMs?: number;
 }
 
 /**
@@ -919,6 +1082,11 @@ interface BridgeEntry {
   client: MessagingClient | null;
   /** Inbound group message to thread replies onto (memory only; direct chats clear it). */
   lastInboundMessageId: string | null;
+  /**
+   * The parts of messages still arriving (see inbound-bundles.ts). Per connection: what waits
+   * here when the connection closes is dropped with it, like an event arriving after that.
+   */
+  bundles: InboundBundles;
   /**
    * When this entry last ACCEPTED an inbound message, and the last failure that happened
    * after one was accepted. Both are reported through statusOf rather than folded into
@@ -1040,6 +1208,7 @@ export class MessagingBridge {
   private readonly log: (line: string) => void;
   private readonly lineDelayMs: number;
   private readonly inboundImageBudgetBytes: number;
+  private readonly inboundQuietMs: number;
 
   constructor(private readonly deps: MessagingBridgeDeps) {
     this.connectors = new Map(deps.connectors.map((c) => [c.channel, c]));
@@ -1048,6 +1217,7 @@ export class MessagingBridge {
     this.lineDelayMs = deps.lineDelayMs ?? MESSAGING_LINE_DELAY_MS;
     this.inboundImageBudgetBytes =
       deps.inboundImageBudgetBytes ?? MESSAGING_INBOUND_IMAGE_BUDGET_BYTES;
+    this.inboundQuietMs = deps.inboundQuietMs ?? MESSAGING_INBOUND_QUIET_MS;
   }
 
   /**
@@ -1189,6 +1359,17 @@ export class MessagingBridge {
     // Mirror arming: a connection made while the Session is mid-run must not mirror that
     // run's partial tail — it arms at the next idle flip instead.
     const runState = this.deps.runner.statusOf(row.sessionId);
+    // The flush closes over the entry it belongs to, so a timer outliving a reconnect finds
+    // the entry stale and processes nothing.
+    const bundles = new InboundBundles({
+      quietMs: this.inboundQuietMs,
+      openMaxMs: Math.max(this.inboundQuietMs, MESSAGING_INBOUND_OPEN_MAX_MS),
+      now: this.now,
+      flush: (parts) => {
+        if (!this.live(entry)) return;
+        void this.processInbound(entry, parts);
+      },
+    });
     const entry: BridgeEntry = {
       sessionId: row.sessionId,
       channel: row.channel,
@@ -1199,6 +1380,7 @@ export class MessagingBridge {
       unsubscribe: null,
       client: null,
       lastInboundMessageId: null,
+      bundles,
       lastInboundAt: null,
       lastDeliveryError: null,
       lastSendNote: null,
@@ -1265,6 +1447,12 @@ export class MessagingBridge {
     const entry = this.entries.get(sessionId);
     if (!entry) return;
     this.entries.delete(sessionId);
+    const dropped = entry.bundles.close();
+    if (dropped > 0) {
+      this.log(
+        `[messaging] ${entry.channel} connection closed with ${dropped} inbound part(s) still waiting; dropped`,
+      );
+    }
     this.deps.runner.keepLoaded(sessionId, false);
     entry.unsubscribe?.();
     try {
@@ -1447,13 +1635,36 @@ export class MessagingBridge {
       // off the row.
       this.deps.repo.recordChat(entry.sessionId, entry.channel, msg.chatId, isDirect);
       entry.lastInboundMessageId = isDirect ? null : msg.messageId;
-      // A caption is this message's text; an attachment sent with none carries no text at all.
-      const text = msg.text !== null && msg.text.trim() !== "" ? msg.text : null;
-      const images = msg.images ?? [];
-      const files = msg.files ?? [];
-      if (images.length === 0 && files.length === 0) {
+    } catch (err) {
+      this.recordDeliveryFailure(entry, err, "inbound", "messaging_inbound_failed");
+      return;
+    }
+    // One event is not always one message: an album's items, or an attachment and the note
+    // sent right after it, are composed into one input (see inbound-bundles.ts). What is ready
+    // goes in the order it arrived; what waits is processed when its quiet period ends.
+    for (const parts of entry.bundles.offer(msg)) await this.processInbound(entry, parts);
+  }
+
+  /**
+   * Turns one message — the parts a platform delivered it in, usually just one — into one
+   * Session input, or into the notice that says why nothing of it could be delivered.
+   */
+  private async processInbound(
+    entry: BridgeEntry,
+    parts: readonly MessagingInboundMessage[],
+  ): Promise<void> {
+    // The part a notice answers: the newest, which in a group is also the reply anchor.
+    const last = parts.at(-1)!;
+    try {
+      // A caption is its message's text; an attachment sent with none carries no text at all.
+      const texts = parts.flatMap((p) => (p.text !== null && p.text.trim() !== "" ? [p.text] : []));
+      const text = texts.length > 0 ? texts.join("\n\n") : null;
+      const images = parts.flatMap((p) => p.images ?? []);
+      const files = parts.flatMap((p) => p.files ?? []);
+      const omitted = parts.flatMap((p) => p.omitted ?? []);
+      if (images.length === 0 && files.length === 0 && omitted.length === 0) {
         if (text === null) {
-          await this.replyInbound(entry, msg, MESSAGING_UNSUPPORTED_NOTICE);
+          await this.replyInbound(entry, last, MESSAGING_UNSUPPORTED_NOTICE);
         } else {
           // An ordinary user input, exactly as if typed into the web composer: no marker
           // block, no special sender — the model deliberately does not learn the message
@@ -1463,11 +1674,20 @@ export class MessagingBridge {
           });
         }
       } else {
-        const notice = await this.startAttachedTask(entry, text, images, files);
-        // The whole message stops on a notice rather than running on the caption alone: a
-        // model asked "what is wrong with this?" about a picture it never received answers
-        // confidently about nothing, which is worse than a notice saying so.
-        if (notice !== null) await this.replyInbound(entry, msg, notice);
+        const outcome = await this.startAttachedTask(entry, text, images, files, omitted);
+        if (outcome.notice !== null) {
+          if (!outcome.started) {
+            await this.replyInbound(entry, last, outcome.notice);
+          } else {
+            // The Task already runs, so a notice that fails to send must not skip the
+            // watermark below: a replay would run the message a second time.
+            try {
+              await this.replyInbound(entry, last, outcome.notice);
+            } catch (err) {
+              this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
+            }
+          }
+        }
       }
       // The durable watermark goes LAST, and its own UPDATE is the price of that. What it
       // marks is a message this process finished with: the follow-up a busy Session queues
@@ -1475,11 +1695,12 @@ export class MessagingBridge {
       // in between — outlive the work it claims, and `connect`'s seeding would then make
       // the channel's replay of that message a complete no-op. Written here, a throw above
       // skips it and the replay runs the message instead: at-least-once rather than a
-      // silent swallow.
+      // silent swallow. A message delivered in several parts marks its newest one.
+      const newest = [...parts].reverse().find((p) => p.messageId !== "");
       this.deps.repo.recordInboundWatermark(
         entry.sessionId,
         entry.channel,
-        msg.messageId === "" ? null : msg.messageId,
+        newest === undefined ? null : newest.messageId,
       );
     } catch (err) {
       // The chat hears nothing when this fires — a Session that cannot load, a Workspace that
@@ -1489,25 +1710,32 @@ export class MessagingBridge {
   }
 
   /**
-   * Turns a message carrying attachments into one Task, or resolves the notice to answer
-   * the chat with when it could not be made whole.
+   * Turns a message carrying attachments into one Task, and answers the notice to send the
+   * chat (null for none) and whether a Task started at all.
    *
-   * All-or-nothing across BOTH kinds, and in this order: the images are downloaded first,
-   * then the files, and only then is anything written to disk. A refusal on either side
-   * stops the message — a message is one thing the user sent, and half of it reaching the
-   * Agent is not a partial success but a misleading one — and refusing before the write
-   * means a rejected message leaves nothing behind in the scratchpad to clean up.
+   * The images are downloaded first, then the files, and only then is anything written to
+   * disk, so a message that is refused leaves nothing behind in the scratchpad to clean up.
+   *
+   * A part that does not arrive costs only itself. The rest of the message reaches the Agent
+   * and the chat is told, in one line, which part stayed behind and why — a mixed message must
+   * not be refused whole because one picture was too large or one item is a video nothing here
+   * plays. But when NONE of its attachments arrives, the message stops there, text and all: a
+   * model asked "what is wrong with this?" about a picture it never received answers
+   * confidently about nothing, which is worse than a notice saying so.
    */
   private async startAttachedTask(
     entry: BridgeEntry,
     text: string | null,
     images: readonly MessagingInboundImage[],
     files: readonly MessagingInboundFile[],
-  ): Promise<string | null> {
+    omitted: readonly MessagingOmittedPart[],
+  ): Promise<{ started: boolean; notice: string | null }> {
     const parts = await this.inboundImageParts(entry, images);
-    if ("notice" in parts) return parts.notice;
     const attachments = await this.inboundFileAttachments(entry, files);
-    if ("notice" in attachments) return attachments.notice;
+    const lost = [...parts.lost, ...attachments.lost];
+    if (parts.parts.length === 0 && attachments.attachments.length === 0) {
+      return { started: false, notice: nothingArrivedNotice(lost) };
+    }
     // Text first, then the images — the same order and the same parts the web composer
     // submits, so a chat message with a picture is indistinguishable from a pasted one. The
     // files' `[attached file: …]` lines are appended by core's shared placement rule, which
@@ -1535,7 +1763,13 @@ export class MessagingBridge {
       await removeAttachments(written);
       throw err;
     }
-    return null;
+    return {
+      started: true,
+      notice:
+        lost.length === 0 && omitted.length === 0
+          ? null
+          : messagingPartsLeftOutNotice(lost, omitted),
+    };
   }
 
   /**
@@ -1566,22 +1800,21 @@ export class MessagingBridge {
   }
 
   /**
-   * Downloads the message's files into composer attachments, or the notice to answer with
-   * when one of them could not be delivered.
+   * Downloads the message's files into composer attachments, and names each one that could
+   * not be delivered and why.
    *
    * The caps are the server's attachment limits — the very numbers an authenticated
    * composer upload answers to — because these files land in exactly the same place, the
    * Session scratchpad, and are read back the same way, through the model's bounded file
-   * tools. Both byte budgets apply:
+   * tools. Both byte budgets apply, and so does the count:
    *
    * - the per-file ceiling rides into each `fetch`, so an oversized attachment is refused at
    *   the byte that crosses it and is never resident in this process;
    * - the per-message total is spent as the batch is collected, each later file's cap
-   *   shrinking to what is left, so a message carrying several cannot add up past it either.
-   *
-   * The per-message file COUNT is deliberately not enforced: attachment-limits.ts calls it a
-   * composer-usability bound rather than a resource one, the byte budgets being what actually
-   * bound memory and disk — and a chat message carries one file today on both channels.
+   *   shrinking to what is left, so a message carrying several cannot add up past it either;
+   * - past the composer's per-message file count the rest are not fetched at all — an album of
+   *   documents or a burst of files joined into one input reaches the same ceiling a
+   *   composer upload does.
    *
    * There is no rolling per-binding budget like the image one, because the cost it exists to
    * prevent is not paid here: an inline image is written into the Trace and re-read whole on
@@ -1596,14 +1829,23 @@ export class MessagingBridge {
   private async inboundFileAttachments(
     entry: BridgeEntry,
     files: readonly MessagingInboundFile[],
-  ): Promise<{ attachments: TaskAttachment[] } | { notice: string }> {
-    if (files.length === 0) return { attachments: [] };
-    const limits = this.deps.attachmentLimits();
+  ): Promise<{ attachments: TaskAttachment[]; lost: MessagingLostPart[] }> {
     const attachments: TaskAttachment[] = [];
+    const lost: MessagingLostPart[] = [];
+    if (files.length === 0) return { attachments, lost };
+    const limits = this.deps.attachmentLimits();
     let spent = 0;
-    for (const file of files) {
+    for (const [i, file] of files.entries()) {
+      const what = { file: file.fileName };
+      if (i >= limits.maxCount) {
+        lost.push({ what, cause: { kind: "count", maxCount: limits.maxCount } });
+        continue;
+      }
       const remaining = limits.totalBytes - spent;
-      if (remaining <= 0) return { notice: messagingInboundFilesTooLargeNotice(limits.totalBytes) };
+      if (remaining <= 0) {
+        lost.push({ what, cause: { kind: "total", totalBytes: limits.totalBytes } });
+        continue;
+      }
       const cap = Math.min(limits.maxBytes, remaining);
       try {
         const data = await file.fetch(cap);
@@ -1617,35 +1859,37 @@ export class MessagingBridge {
         this.log(`[messaging] ${entry.channel} file fetch failed: ${reason}`);
         if (err instanceof MessagingMediaTooLargeError) {
           // Which ceiling stopped it decides what the chat is told: one file over a per-file
-          // ceiling is that file's problem, while a batch over the message total is nobody's
-          // in particular — naming a file there would send the user to shrink one that was
-          // never too big. What decides is the ceiling the transfer REPORTS refusing at, not
-          // the one it was offered: a connector may narrow the cap further to its own
-          // platform's limit (Telegram serves a bot no file over 20MB), and that refusal is
-          // still about this one file even on a later file whose cap the message's remaining
-          // budget had already shrunk.
+          // ceiling is that file's problem, while a file that only crossed what the message
+          // had left is not too big at all — the files before it spent the room. What decides
+          // is the ceiling the transfer REPORTS refusing at, not the one it was offered: a
+          // connector may narrow the cap further to its own platform's limit (Telegram serves
+          // a bot no file over 20MB), and that refusal is still about this one file even on a
+          // later file whose cap the message's remaining budget had already shrunk.
           const spentTheMessage = err.maxBytes === remaining && remaining < limits.maxBytes;
-          return {
-            notice: spentTheMessage
-              ? messagingInboundFilesTooLargeNotice(limits.totalBytes)
-              : messagingInboundFileTooLargeNotice(file.fileName, err.maxBytes),
-          };
+          lost.push({
+            what,
+            cause: spentTheMessage
+              ? { kind: "total", totalBytes: limits.totalBytes }
+              : { kind: "too_large", maxBytes: err.maxBytes },
+          });
+          continue;
         }
         this.recordError(entry.sessionId, err, "messaging_file_fetch_failed");
-        return {
-          notice:
+        lost.push({
+          what,
+          cause:
             err instanceof MessagingPermissionError
-              ? messagingInboundFilePermissionNotice(file.fileName, err.scopes, err.grantUrl)
-              : messagingInboundFileFailedNotice(file.fileName, reason),
-        };
+              ? { kind: "permission", scopes: err.scopes, grantUrl: err.grantUrl }
+              : { kind: "failed", reason },
+        });
       }
     }
-    return { attachments };
+    return { attachments, lost };
   }
 
   /**
-   * Downloads the message's images into `image_url` input parts, or the notice to answer
-   * with when one of them could not be delivered.
+   * Downloads the message's images into `image_url` input parts, and names each one that
+   * could not be delivered and why.
    *
    * The cap is the server's inline-image ceiling — the same number the web composer's
    * uploads answer to, because these images land in exactly the same place (the
@@ -1660,12 +1904,17 @@ export class MessagingBridge {
   private async inboundImageParts(
     entry: BridgeEntry,
     images: readonly MessagingInboundImage[],
-  ): Promise<{ parts: AmspRecord[] } | { notice: string }> {
+  ): Promise<{ parts: AmspRecord[]; lost: MessagingLostPart[] }> {
     const budget = this.imageBudgetFor(entry);
     const parts: AmspRecord[] = [];
-    for (const image of images) {
+    const lost: MessagingLostPart[] = [];
+    for (const [i, image] of images.entries()) {
+      const what = { image: i + 1, of: images.length };
       const remaining = budget.remaining(this.now(), this.inboundImageBudgetBytes);
-      if (remaining <= 0) return { notice: messagingImageBudgetNotice() };
+      if (remaining <= 0) {
+        lost.push({ what, cause: { kind: "budget" } });
+        continue;
+      }
       // The window's remainder rides into the fetch exactly as the ceiling does, so an
       // image that would overspend is refused at the byte that crosses rather than
       // buffered whole and measured afterwards.
@@ -1680,23 +1929,26 @@ export class MessagingBridge {
         if (err instanceof MessagingMediaTooLargeError) {
           // Which ceiling stopped it decides what the chat is told: the server's limit is
           // fixed by sending a smaller picture, the window's budget only by waiting.
-          return {
-            notice:
+          lost.push({
+            what,
+            cause:
               cap < INLINE_IMAGE_MAX_BYTES
-                ? messagingImageBudgetNotice()
-                : messagingImageTooLargeNotice(),
-          };
+                ? { kind: "budget" }
+                : { kind: "too_large", maxBytes: INLINE_IMAGE_MAX_BYTES },
+          });
+          continue;
         }
         this.recordError(entry.sessionId, err, "messaging_image_fetch_failed");
-        return {
-          notice:
+        lost.push({
+          what,
+          cause:
             err instanceof MessagingPermissionError
-              ? messagingImagePermissionNotice(err.scopes, err.grantUrl)
-              : messagingImageFailedNotice(reason),
-        };
+              ? { kind: "permission", scopes: err.scopes, grantUrl: err.grantUrl }
+              : { kind: "failed", reason },
+        });
       }
     }
-    return { parts };
+    return { parts, lost };
   }
 
   /** This binding's rolling image budget, created on first use (see InboundImageBudget). */
