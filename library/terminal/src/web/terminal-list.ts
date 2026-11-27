@@ -131,14 +131,6 @@ export function terminalApiSupported(): boolean {
   return !unsupported;
 }
 
-/**
- * How long a machine's list is waited for. A machine that holds its connection but answers
- * nothing would otherwise hold its round — and every refresh after it, which shares the one in
- * flight — until ssh gives the connection up; its shells are left out of that round instead, as
- * an unreachable machine's are. The API socket's own wait for an answer.
- */
-const MACHINE_LIST_TIMEOUT_MS = ANSWER_TIMEOUT_MS;
-
 /** Re-reads the list from the server; concurrent calls share one request. */
 export function refreshTerminals(): Promise<void> {
   if (inflight) return inflight;
@@ -155,8 +147,13 @@ export function refreshTerminals(): Promise<void> {
       const parts = new Map<string | null, { terminals: TerminalInfo[] } | null>();
       const ask = async (source: string | null) => {
         const giveUp = new AbortController();
+        // How long a machine's list is waited for — the API socket's own wait for an answer. A
+        // machine that holds its connection but answers nothing is given up on here, and its
+        // shells are left out of that round, as an unreachable machine's are. The wait is read
+        // here rather than at module scope: the host's dock code imports this half, so a
+        // top-level read of the hub's constant would close a cycle and read it too early.
         const timer =
-          source === null ? null : setTimeout(() => giveUp.abort(), MACHINE_LIST_TIMEOUT_MS);
+          source === null ? null : setTimeout(() => giveUp.abort(), ANSWER_TIMEOUT_MS);
         const res = await fetch(apiUrl("/api/terminals", source), {
           credentials: "same-origin",
           signal: giveUp.signal,
