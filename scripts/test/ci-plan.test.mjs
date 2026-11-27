@@ -3,7 +3,7 @@
  *
  * - Given a docs or landing edit, when planning CI, then only affected sites run, on Linux.
  * - Given a catalog README, an RFC or a CI test file edit, when planning CI, then no package job
- *   runs; given the release's npm script, only npm packaging does.
+ *   runs; given the release's npm script or its native-module check, only npm packaging does.
  * - Given README edits beside a landing edit, when planning CI, then the landing keeps its checks
  *   and the READMEs add none.
  * - Given a core edit, when planning CI, then its transitive consumers and native OS tests run.
@@ -297,6 +297,7 @@ describe("affected CI", { concurrency: false }, () => {
     "plugins/README.zh.md",
     "rfcs/PRFC-0001-fixture.md",
     "scripts/test/ci-plan.test.mjs",
+    "scripts/test/check-native-glibc.test.mjs",
   ]) {
     it(`a ${file} edit selects no package job`, () => {
       const plan = changed(file);
@@ -321,15 +322,17 @@ describe("affected CI", { concurrency: false }, () => {
     });
   }
 
-  it("the release's npm script selects npm packaging, which walks it, and no package job", () => {
-    const plan = changed("scripts/release-npm.sh");
-    assert.equal(plan.full, false);
-    assert.deepEqual(plan.packages, []);
-    assert.equal(plan.packaging, true);
-    for (const job of ["tests", "macos_tests", "windows_tests", "typecheck", "runtime", "e2e"]) {
-      assert.equal(plan[job], false, `${job} should not run`);
-    }
-  });
+  for (const file of ["scripts/release-npm.sh", "scripts/check-native-glibc.mjs"]) {
+    it(`${file} selects npm packaging, which walks it, and no package job`, () => {
+      const plan = changed(file);
+      assert.equal(plan.full, false);
+      assert.deepEqual(plan.packages, []);
+      assert.equal(plan.packaging, true);
+      for (const job of ["tests", "macos_tests", "windows_tests", "typecheck", "runtime", "e2e"]) {
+        assert.equal(plan[job], false, `${job} should not run`);
+      }
+    });
+  }
 
   it("README and changelog edits beside a landing edit add nothing to the landing's checks", () => {
     write("README.md", "changed\n");

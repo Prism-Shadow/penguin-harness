@@ -53,11 +53,13 @@ const ROOM_MB = 2 * INSTALL_NEEDS_MB;
 export const MIN_GLIBC = "2.28";
 
 /**
- * The oldest glibc the release's terminal binding loads on: node-pty is compiled for Linux
- * against glibc 2.34 or newer (the release runner, and Debian 12 for arm64), which binds its
- * forkpty and openpty at GLIBC_2.34. Below it the server runs and terminals do not open.
+ * The oldest glibc the release's terminal binding loads on: node-pty's Linux bindings are built
+ * in a manylinux_2_28 container (scripts/build-linux-pty.sh), and the release fails rather than
+ * ship one that needs more (scripts/check-native-glibc.mjs). That is the bundled Node's own
+ * floor, so terminals open wherever the release runs; a binding that ever needs more than Node
+ * does raises this, and below it the server runs and terminals do not open.
  */
-export const TERMINAL_GLIBC = "2.34";
+export const TERMINAL_GLIBC = "2.28";
 
 /** The tools install.sh runs besides the shell's own; one sha256 tool of the two it accepts. */
 const TOOLS = ["curl", "tar", "gzip", "mktemp"];
