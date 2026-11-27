@@ -3,7 +3,7 @@
 - **Date:** 2026-11-27
 - **Type:** feature
 - **Scope:** `messaging`, `docs`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#1928](https://github.com/Prism-Shadow/penguin-harness/pull/1928)
 
 [中文版](2026-11-27-messaging-mixed-content.zh.md)
 
