@@ -827,6 +827,21 @@ export function panelDock(id: PanelId): DockPosition | null {
   return tabHome(id);
 }
 
+/**
+ * Whether this conversation has a panel open (shown or not): its own tab, or a Session workbench
+ * page standing in for it (`openDockPage`'s native id). A panel opened beside the Session, as
+ * its Shortcuts and `openPanel` do, sits in the dock under the page's key rather than the
+ * panel's id, so `panelDock` alone reads it as closed, and a body that only loads once its panel
+ * is open would wait forever.
+ */
+export function isPanelOpen(id: PanelId): boolean {
+  if (tabHome(id) !== null) return true;
+  for (const [key, panel] of contextualPanels.get(layout) ?? []) {
+    if (panel.id === id && tabHome(key) !== null) return true;
+  }
+  return false;
+}
+
 let sessionPanelOpener: ((id: PanelId) => boolean) | null = null;
 export function setSessionPanelOpener(opener: typeof sessionPanelOpener): void {
   sessionPanelOpener = opener;

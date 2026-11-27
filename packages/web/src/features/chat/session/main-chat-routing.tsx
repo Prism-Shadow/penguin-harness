@@ -13,7 +13,13 @@ import {
 } from "../session-project";
 import { machineForSession } from "../../../lib/session-machines";
 import { useMachineModels } from "../../../lib/machine-models";
-import { setDockConversation, dockVersion, openPanel, panelDock, subscribeDock } from "../../dock";
+import {
+  setDockConversation,
+  dockVersion,
+  openPanel,
+  isPanelOpen,
+  subscribeDock,
+} from "../../dock";
 import { terminalApiSupported, subscribeTerminals } from "../../terminal";
 import { usePageWorkspace } from "../../../lib/page-workspace-context";
 import { sessionAppPair } from "../../../lib/session-app-dock";
@@ -81,9 +87,9 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
   // so a re-added tab is a fresh mount that would otherwise replay the stale command —
   // reopening the Workspace would re-locate a long-clicked file, and reopening the agents
   // tab would come back pinned to an old Task instead of the latest.
-  const workspaceTabExists = panelDock("workspace") !== null;
-  const memoryTabExists = panelDock("memory") !== null;
-  const agentsTabExists = panelDock("agents") !== null;
+  const workspaceTabExists = isPanelOpen("workspace");
+  const memoryTabExists = isPanelOpen("memory");
+  const agentsTabExists = isPanelOpen("agents");
   useEffect(() => {
     if (!workspaceTabExists) setFileOpenRequest(null);
   }, [workspaceTabExists]);

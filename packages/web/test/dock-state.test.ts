@@ -23,6 +23,8 @@
  * - The panel toggle (Ctrl+`) reports a missing tab so the caller opens the panel, hides the
  *   shown panel's dock and restores it, and brings the panel to the front when another tab
  *   covers it.
+ * - A Session tool docked in a panel's place counts as that panel open in its own conversation
+ *   (not in another) until it is detached, exactly as the panel's own tab does.
  * - Each scope's arrangement round-trips across a reload, the terminal's shown shell included
  *   (sizes are one preference); a stored tab key that is no well-formed id is dropped, not the
  *   dock, while a well-formed id nothing has registered (a plugin's panel not loaded yet) is kept;
@@ -725,4 +727,22 @@ it("reuses an attached Session tool when a panel request arrives before its fore
   dock.detachDockPage(key);
   dock.openPanel("agents");
   expect(dock.dockViews()[0]?.tabs.map(dock.tabKey)).toEqual(["agents"]);
+});
+
+it("counts a Session tool standing in for a panel as that panel open, in its conversation, until it closes", () => {
+  const owner = dock.currentDockScope();
+  const key = ":app:session-tool/memory/standing-in";
+  expect(dock.isPanelOpen("memory")).toBe(false);
+  dock.openDockPage(key, "memory");
+  expect(dock.panelDock("memory")).toBeNull();
+  expect(dock.isPanelOpen("memory")).toBe(true);
+  expect(dock.isPanelOpen("agents")).toBe(false);
+  dock.setDockScope(`another-conversation-${scopeSeq}`);
+  expect(dock.isPanelOpen("memory")).toBe(false);
+  dock.setDockScope(owner);
+  expect(dock.isPanelOpen("memory")).toBe(true);
+  dock.detachDockPage(key);
+  expect(dock.isPanelOpen("memory")).toBe(false);
+  dock.openPanel("memory");
+  expect(dock.isPanelOpen("memory")).toBe(true);
 });
