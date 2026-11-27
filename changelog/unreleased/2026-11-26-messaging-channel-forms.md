@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** refactor
 - **Scope:** `messaging`, `web`
+- **PR:** [#1921](https://github.com/Prism-Shadow/penguin-harness/pull/1921)
 
 [中文版](2026-11-26-messaging-channel-forms.zh.md)
 
