@@ -141,6 +141,18 @@ export const en: GalleryStrings = {
         "The Project's home screen of apps: icon-and-name tiles in each build state (ready, building, failed), a folder holding two apps, and New folder in the header.",
       how: "Sidebar › App Center; New folder in the header opens the dialog that names a folder and checks its apps; right-click a tile or the empty space for its menu, drag tiles to reorder them or stack them into a folder.",
     },
+    company: {
+      title: "Company (draft)",
+      description:
+        "Company mode as a plugin app in the App Center: the inbox holds only tickets that need your call, your acceptance or a halted breaker; decision cards are interactive A2UI; tickets move through working, verifying and your call.",
+      how: "App Center › Company; pick on a decision card, accept or send back a delivery, lift a breaker; switch to Team, Tickets and Handbook in the header.",
+    },
+    "company-new": {
+      title: "New organization (draft)",
+      description:
+        "Hand a goal to the lead in a sentence, or start from an organization template you can import and export; the real-company mirror is marked as another plugin.",
+      how: "Company › organization switcher › New organization; pick a template to see its plan and create it.",
+    },
     plugins: {
       title: "Plugins",
       description: "Every plugin by category, to regroup or search; a card opens its details.",

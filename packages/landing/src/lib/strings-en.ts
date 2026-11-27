@@ -1136,4 +1136,119 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       },
     },
   },
+  company: {
+    title: "Company mode: the next draft",
+    description:
+      "A design draft for the next company mode: a plugin app in the App Center, where a lead splits the work, execution and verification stay apart, and only what needs you reaches the inbox.",
+    status: "Design draft",
+    headline: "Company mode, as an app in the App Center",
+    subline:
+      "Company stops being a mode of the sidebar and becomes an app the agent-company plugin provides. You agree goals with a lead, tickets move between execution and verification on their own, and only what needs your call reaches the inbox.",
+    note: "The window below is the real Web App on demo data. The company app inside it is a draft and has not shipped.",
+    frame: "The company app draft (live demo)",
+    questions: {
+      title: "Four questions, four answers",
+      subtitle:
+        "What sets multi-agent products apart is how their interface answers these four questions.",
+      items: [
+        {
+          question: "How does work go out?",
+          answer: "Through one entry",
+          body: "You talk to the lead only. The lead builds the team, splits the work and assigns it, with the fewest hands by default: 1 lead, 1 to 3 executors, 1 verifier.",
+        },
+        {
+          question: "Where do you see progress?",
+          answer: "In the inbox, not a chat",
+          body: "Three groups: your call, in progress, settled. Process logs stay folded and the Trace keeps recording; open them when you need them.",
+        },
+        {
+          question: "How do agents hand work over?",
+          answer: "By state, not by mention",
+          body: "Working → verifying → your call → done. Work that fails verification goes back on its own; at the send-back or budget limit the server halts it.",
+        },
+        {
+          question: "When do you step in?",
+          answer: "Only for exceptions",
+          body: "Three cases: a decision card to pick on, a delivery to accept, a halted breaker. Specialist review happens in the workbench for its domain.",
+        },
+      ],
+    },
+    plugin: {
+      title: "Built on the plugin seams that exist",
+      subtitle: "No new runtime. Every piece the company app uses is in the platform today.",
+      now: "In the platform today",
+      use: "How the company app uses it",
+      rows: [
+        {
+          name: "App Center",
+          now: "A plugin page declared as an app is a tile in the App Center. It opens in a window, or full screen.",
+          use: "Company is an app of the agent-company plugin. Without the plugin there is no tile.",
+        },
+        {
+          name: "Conversations",
+          now: "A plugin page can ask the Web App to open a conversation.",
+          use: "“Talk to the lead” and “Take it over” open ordinary Sessions. The app builds no chat of its own.",
+        },
+        {
+          name: "A2UI",
+          now: "In development mode, choices and forms in a conversation can already be answered.",
+          use: "Decision cards use the same components, and the answer is written to the ticket instead of the composer.",
+        },
+        {
+          name: "Workbenches",
+          now: "An agent can build its own apps; each version is a git commit.",
+          use: "Code diffs, experiment curves and document review live in workbenches. A ticket links to them.",
+        },
+        {
+          name: "Skills",
+          now: "The agent-company plugin already ships Skills for the CEO, employees, finance, HR, research, mirroring and setup.",
+          use: "HR and finance stop being seats in the default team and become Skills the lead calls when needed.",
+        },
+      ],
+    },
+    tradeoffs: {
+      title: "Trade-offs",
+      subtitle:
+        "Weighed against the five products tested in the research, on PenguinHarness's current architecture.",
+      groups: [
+        {
+          name: "Kept",
+          items: [
+            "Organizations, members, tickets, the handbook and budgets",
+            "The full Trace; logs are only folded by default",
+            "Every member is still an agent of the Project, with its own model and machine",
+          ],
+        },
+        {
+          name: "Changed",
+          items: [
+            "The entry: the sidebar's Development | Company switch and the /org pages become one app in the App Center",
+            "The home page: the overview becomes the inbox",
+            "No all-hands chat by default; channels become an optional page",
+            "Decision cards become answerable, and the answer is written to the ticket",
+            "The server enforces the send-back limit and each ticket's budget",
+          ],
+        },
+        {
+          name: "Later",
+          items: [
+            "Event triggers such as GitHub issues and outside messages; today it is the scheduler, plus immediate handling of API writes",
+            "Outside CLIs such as Claude Code and Codex as execution channels",
+            "Scoring organization templates on the Shared RSI Community",
+            "Approvals straight from a phone",
+          ],
+        },
+        {
+          name: "Not doing",
+          items: [
+            "A tool shell that only serves coding",
+            "A default big-company chart of CEO, HR and finance",
+            "Black-box hosting that hides models, permissions and process",
+          ],
+        },
+      ],
+      mirror:
+        "Mirroring a real company, with digital twins relaying in Feishu or WeChat, depends on a chat entry. It goes to the messaging plugins and stays out of the company app's main flow.",
+    },
+  },
 };

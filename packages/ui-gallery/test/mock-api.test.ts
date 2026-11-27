@@ -24,6 +24,7 @@ import * as browserApi from "../../../plugins/browser-automation/src/web/api";
 import { pluginWebModules } from "../../web/src/plugin-web.gen";
 import { runTry } from "../../web/src/features/agents/api-try-log";
 import type { TryAction } from "../../web/src/features/agents/api-try-log";
+import { companyAppPage } from "../src/app/mock/company-app";
 import { ApiError, UNMOCKED } from "../src/app/mock/errors";
 import { IDS } from "../src/app/mock/ids";
 import { answerAsResponse } from "../src/app/mock/fetch-shim";
@@ -224,7 +225,7 @@ describe("the mocked API", () => {
   it("answers the real ids with the fixtures, and unknown ids with 404", async () => {
     const store = resetStore({ lang: "zh", signedIn: true });
     expect(await api.getContributions()).toEqual({
-      pages: [],
+      pages: [companyAppPage()],
       fileRenderers: [],
       pageRemovals: [],
       agentTabs: [],

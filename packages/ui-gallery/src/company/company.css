@@ -1,0 +1,8 @@
+@import "../../../web/src/styles.css";
+@source "./";
+
+html,
+body,
+#root {
+  height: 100%;
+}
