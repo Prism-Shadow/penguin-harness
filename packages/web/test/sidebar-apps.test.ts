@@ -21,7 +21,7 @@ import { WORKBENCH_UPDATED_EVENT } from "../src/lib/workbench-tabs";
 import { useProject } from "../src/state/project";
 import { SYSTEM_APP_PAGES } from "./helpers/system-app-pages";
 import { ThemeProvider } from "../src/state/theme";
-import { CompanyProvider } from "../src/features/company/company-state";
+import { CompanyProvider } from "@prismshadow/penguin-library-organization/web/company/company-state";
 import { sidebarDeps } from "../src/web-app/sidebar/deps";
 import { Sidebar } from "../src/web-app/sidebar/sidebar";
 import {
