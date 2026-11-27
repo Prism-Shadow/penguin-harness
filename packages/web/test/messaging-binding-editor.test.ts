@@ -27,11 +27,11 @@ import {
   MessagingBindingBody,
   MessagingBindingHelp,
   enablePrerequisite,
-  telegramTestNotices,
   type MessagingBindingEditorState,
   type MessagingChannelFacts,
 } from "../src/features/messaging/messaging-binding-editor";
 import { emptyMessagingForm } from "../src/features/messaging/messaging-binding-form";
+import { telegramTestNotices } from "../src/features/messaging/channels/telegram/test-notices";
 import { UiStringsProvider } from "@prismshadow/penguin-ui";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { uiStringsOf } from "../src/lib/ui-strings";
