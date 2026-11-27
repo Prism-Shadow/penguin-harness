@@ -1,19 +1,16 @@
 /**
- * The Skills installed on one Agent, by name (PRFC-0036's read views): what a server module reads
- * to show an Agent's Skills, or to say which Skill a task needs that the Agent lacks.
- *
- * A Skill is a `skills/<name>/` folder of the Agent State that holds a SKILL.md, named by its
- * folder — the identity install and uninstall address it by, as core's `listInstalledSkills`
- * says. A dot-prefixed folder is an install being staged, never a Skill. Only names are read: no
- * SKILL.md is opened, so the answer costs one directory listing and a check per folder.
+ * The installed-skills read view moved to the agent domain package
+ * (@prismshadow/penguin-library-agent/agent-skills, services+http+cli restack S10) — it speaks
+ * library vocabulary and a structural paths port. This file keeps the assembly: the provider
+ * binds the service's paths port to the server's `Paths` capability and provides the
+ * AgentSkills mechanism, and re-exports the moved shapes for the server's own import paths.
  */
-import fs from "node:fs/promises";
-import path from "node:path";
-import { isValidId, skillsDir } from "@prismshadow/penguin-core";
-import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
-import { badRequest } from "../http/errors.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
+import { InstalledAgentSkills } from "@prismshadow/penguin-library-agent/agent-skills";
+
+export { InstalledAgentSkills } from "@prismshadow/penguin-library-agent/agent-skills";
 
 /** AgentSkills: what InstalledAgentSkills implements, and a server module reaches through the plugin face. */
 @Interface()
@@ -26,24 +23,20 @@ export abstract class AgentSkills {
   abstract installedSkills(projectId: string, agentId: string): Promise<string[]>;
 }
 
-@Component()
-export class InstalledAgentSkills implements AgentSkills {
+/** The installed-skills assembly: binds the service's paths port and its AgentConfig port. */
+@Module({ name: "InstalledAgentSkills" })
+export class InstalledAgentSkillsProvider {
   @Use() private readonly paths!: Paths;
   @Use() private readonly agentConfig!: AgentConfig;
+  @Provide() AgentSkills!: AgentSkills;
+  @Provide() InstalledAgentSkills!: InstalledAgentSkills;
 
-  async installedSkills(projectId: string, agentId: string): Promise<string[]> {
-    if (!isValidId(projectId) || !isValidId(agentId)) {
-      throw badRequest("projectId and agentId must be letters, digits, '_' and '-' only.");
-    }
-    await this.agentConfig.requireExists(projectId, agentId);
-    const dir = skillsDir(this.paths.root, projectId, agentId);
-    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
-    const names: string[] = [];
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-      const skill = await fs.stat(path.join(dir, entry.name, "SKILL.md")).catch(() => null);
-      if (skill?.isFile() === true) names.push(entry.name);
-    }
-    return names.sort((a, b) => a.localeCompare(b));
+  setup() {
+    // The service's ports are decorator-injected fields; the server binds them by hand here.
+    this.InstalledAgentSkills = Object.assign(new InstalledAgentSkills(), {
+      paths: this.paths,
+      agentConfig: this.agentConfig,
+    });
+    this.AgentSkills = this.InstalledAgentSkills;
   }
 }

@@ -115,6 +115,10 @@
     "./history-stream": {
       "types": "./dist/history-stream.d.ts",
       "import": "./dist/history-stream.js"
+    },
+    "./harness-history": {
+      "types": "./dist/harness-history.d.ts",
+      "import": "./dist/harness-history.js"
     }
   },
   "scripts": {

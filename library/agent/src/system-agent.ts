@@ -5,7 +5,9 @@
  * existed is refused nothing (compat C1, core state/system-agent.ts).
  *
  * - 409 `system_agent_no_sessions`: a Session on it, from wherever it is asked for (the session
- *   service's create path, which every surface reaches), and its Agent API settings.
+ *   service's create path, which every surface reaches), and its Agent API settings. Moved to
+ *   the session domain package (services+http+cli restack S14 — the session service speaks it
+ *   at runtime); re-exported here beside its siblings.
  * - 409 `system_agent_closed`: a plugin install on it.
  * - 409 `builtin_agent_locked`: a change of its name, description or author, its export, and an
  *   import that would overwrite it.
@@ -19,22 +21,9 @@ import { HttpError } from "@prismshadow/penguin-library-http";
 import type { AgentConfig } from "./contract.js";
 
 /** What every refusal asks: the AgentConfig mechanism's predicate. */
-type SystemAgentLookup = Pick<AgentConfig, "isSystemAgent">;
+export type SystemAgentLookup = Pick<AgentConfig, "isSystemAgent">;
 
-/** Throws 409 `system_agent_no_sessions` when the Agent is the system Agent. */
-export async function refuseSystemAgentSessions(
-  agents: SystemAgentLookup,
-  projectId: string,
-  agentId: string,
-): Promise<void> {
-  if (await agents.isSystemAgent(projectId, agentId)) {
-    throw new HttpError(
-      409,
-      "system_agent_no_sessions",
-      "The system Agent owns the system apps and runs no Sessions.",
-    );
-  }
-}
+export { refuseSystemAgentSessions } from "@prismshadow/penguin-library-session/system-agent";
 
 /** Throws 409 `system_agent_closed` when the Agent is the system Agent. */
 export async function refuseSystemAgentInstall(

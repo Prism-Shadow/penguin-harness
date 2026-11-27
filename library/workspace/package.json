@@ -35,6 +35,34 @@
     "./types": {
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
+    },
+    "./workspace-group": {
+      "types": "./dist/workspace-group.d.ts",
+      "import": "./dist/workspace-group.js"
+    },
+    "./workspace-guard": {
+      "types": "./dist/workspace-guard.d.ts",
+      "import": "./dist/workspace-guard.js"
+    },
+    "./workspace-archive": {
+      "types": "./dist/workspace-archive.d.ts",
+      "import": "./dist/workspace-archive.js"
+    },
+    "./drafts": {
+      "types": "./dist/drafts.d.ts",
+      "import": "./dist/drafts.js"
+    },
+    "./user-drafts": {
+      "types": "./dist/user-drafts.d.ts",
+      "import": "./dist/user-drafts.js"
+    },
+    "./draft-shortcuts": {
+      "types": "./dist/draft-shortcuts.d.ts",
+      "import": "./dist/draft-shortcuts.js"
+    },
+    "./directory-skills": {
+      "types": "./dist/directory-skills.d.ts",
+      "import": "./dist/directory-skills.js"
     }
   },
   "scripts": {

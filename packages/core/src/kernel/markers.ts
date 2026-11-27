@@ -42,8 +42,12 @@ export type IfaceHandle<T> = (abstract new () => T) &
  * A decorated class must be exactly a declaration: no heritage, no constructor, no
  * concrete or private member. The generator rejects the rest rather than deciding what
  * belongs in the contract.
+ *
+ * The optional `key` pins the interface-table key the host ships the class under — a
+ * plugin-facing interface keeps its key while its declaration moves between packages,
+ * so the manifests that require it by name keep resolving.
  */
-export function Interface<T = unknown>(): IfaceHandle<T> {
+export function Interface<T = unknown>(key?: string): IfaceHandle<T> {
   // Applied as a decorator it is called with the class and hands it back untouched;
   // a `class {}` would throw "cannot be invoked without 'new'" in that position.
   function handle(target?: unknown, _context?: unknown): unknown {

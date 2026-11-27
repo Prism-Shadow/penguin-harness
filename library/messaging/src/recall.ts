@@ -12,7 +12,8 @@
 import type { AmspRecord, TextPayload } from "@prismshadow/penguin-core";
 import type { RecallStore } from "@prismshadow/penguin-library-session";
 
-function isPlainText(role: "user" | "assistant") {
+/** Predicate for a plain-text message (no origin): recall and title material are drawn only from the role's model text. */
+export function isPlainText(role: "user" | "assistant") {
   return (msg: AmspRecord): msg is AmspRecord<TextPayload> => {
     const payload = msg.payload as { type?: string; role?: string };
     return (

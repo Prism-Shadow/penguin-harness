@@ -22,6 +22,21 @@
       "@prismshadow/penguin-library-agent/agent-config-service": [
         "../../library/agent/src/agent-config-service.ts"
       ],
+      "@prismshadow/penguin-library-agent/agent-service": [
+        "../../library/agent/src/agent-service.ts"
+      ],
+      "@prismshadow/penguin-library-agent/agent-skills": [
+        "../../library/agent/src/agent-skills.ts"
+      ],
+      "@prismshadow/penguin-library-agent/agent-tasks": ["../../library/agent/src/agent-tasks.ts"],
+      "@prismshadow/penguin-library-agent/agent-deletion": [
+        "../../library/agent/src/agent-deletion.ts"
+      ],
+      "@prismshadow/penguin-library-agent/agent-author-migration": [
+        "../../library/agent/src/agent-author-migration.ts"
+      ],
+      "@prismshadow/penguin-library-agent/ids": ["../../library/agent/src/ids.ts"],
+      "@prismshadow/penguin-library-agent/tree-purge": ["../../library/agent/src/tree-purge.ts"],
       "@prismshadow/penguin-library-agent/system-agent": [
         "../../library/agent/src/system-agent.ts"
       ],
@@ -141,6 +156,25 @@
       "@prismshadow/penguin-library-workspace/workspace-files-service": [
         "../../library/workspace/src/workspace-files-service.ts"
       ],
+      "@prismshadow/penguin-library-workspace/workspace-group": [
+        "../../library/workspace/src/workspace-group.ts"
+      ],
+      "@prismshadow/penguin-library-workspace/workspace-guard": [
+        "../../library/workspace/src/workspace-guard.ts"
+      ],
+      "@prismshadow/penguin-library-workspace/workspace-archive": [
+        "../../library/workspace/src/workspace-archive.ts"
+      ],
+      "@prismshadow/penguin-library-workspace/drafts": ["../../library/workspace/src/drafts.ts"],
+      "@prismshadow/penguin-library-workspace/user-drafts": [
+        "../../library/workspace/src/user-drafts.ts"
+      ],
+      "@prismshadow/penguin-library-workspace/draft-shortcuts": [
+        "../../library/workspace/src/draft-shortcuts.ts"
+      ],
+      "@prismshadow/penguin-library-workspace/directory-skills": [
+        "../../library/workspace/src/directory-skills.ts"
+      ],
       "@prismshadow/penguin-library-workbench/workbench": [
         "../../library/workbench/src/workbench.ts"
       ],
@@ -174,11 +208,26 @@
       "@prismshadow/penguin-library-model/model-catalog/seed": [
         "../../library/model/src/model-catalog/seed.ts"
       ],
+      "@prismshadow/penguin-library-model/tool-model-test": [
+        "../../library/model/src/tool-model-test.ts"
+      ],
       "@prismshadow/penguin-library-model/repos/model-promotions": [
         "../../library/model/src/repos/model-promotions.ts"
       ],
       "@prismshadow/penguin-library-model/repos/model-provider-auth-tokens": [
         "../../library/model/src/repos/model-provider-auth-tokens.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-balance": [
+        "../../library/model/src/model-balance.ts"
+      ],
+      "@prismshadow/penguin-library-model/tool-binding-key": [
+        "../../library/model/src/tool-binding-key.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-modalities": [
+        "../../library/model/src/model-modalities.ts"
+      ],
+      "@prismshadow/penguin-library-model/tool-model-bindings": [
+        "../../library/model/src/tool-model-bindings.ts"
       ],
       "@prismshadow/penguin-library-machine": ["../../library/machine/src/index.ts"],
       "@prismshadow/penguin-library-machine/browser-extensions": [
@@ -306,6 +355,33 @@
       ],
       "@prismshadow/penguin-library-project": ["../../library/project/src/index.ts"],
       "@prismshadow/penguin-library-project/project": ["../../library/project/src/project.ts"],
+      "@prismshadow/penguin-library-project/ports": ["../../library/project/src/ports.ts"],
+      "@prismshadow/penguin-library-project/access": ["../../library/project/src/access.ts"],
+      "@prismshadow/penguin-library-project/events": ["../../library/project/src/events.ts"],
+      "@prismshadow/penguin-library-project/project-service": [
+        "../../library/project/src/project-service.ts"
+      ],
+      "@prismshadow/penguin-library-project/model-requests": [
+        "../../library/project/src/model-requests.ts"
+      ],
+      "@prismshadow/penguin-library-project/project-config-service": [
+        "../../library/project/src/project-config-service.ts"
+      ],
+      "@prismshadow/penguin-library-project/project-config-migrations": [
+        "../../library/project/src/project-config-migrations.ts"
+      ],
+      "@prismshadow/penguin-library-project/project-config-seed": [
+        "../../library/project/src/project-config-seed.ts"
+      ],
+      "@prismshadow/penguin-library-project/connect-default-offer": [
+        "../../library/project/src/connect-default-offer.ts"
+      ],
+      "@prismshadow/penguin-library-project/protocol-detect": [
+        "../../library/project/src/protocol-detect.ts"
+      ],
+      "@prismshadow/penguin-library-project/vision-detect": [
+        "../../library/project/src/vision-detect.ts"
+      ],
       "@prismshadow/penguin-library-project/repos": ["../../library/project/src/repos/index.ts"],
       "@prismshadow/penguin-library-project/repos/agents": [
         "../../library/project/src/repos/agents.ts"
@@ -317,6 +393,9 @@
         "../../library/project/src/repos/projects.ts"
       ],
       "@prismshadow/penguin-library-session": ["../../library/session/src/index.ts"],
+      "@prismshadow/penguin-library-session/mtime-gate": [
+        "../../library/session/src/mtime-gate.ts"
+      ],
       "@prismshadow/penguin-library-session/repos": ["../../library/session/src/repos/index.ts"],
       "@prismshadow/penguin-library-session/repos/schedules": [
         "../../library/session/src/repos/schedules.ts"
@@ -324,6 +403,7 @@
       "@prismshadow/penguin-library-session/repos/sessions": [
         "../../library/session/src/repos/sessions.ts"
       ],
+      "@prismshadow/penguin-library-session/listing": ["../../library/session/src/listing.ts"],
       "@prismshadow/penguin-library-session/session": ["../../library/session/src/session.ts"],
       "@prismshadow/penguin-library-session/schedule-file": [
         "../../library/session/src/schedule-file.ts"
@@ -335,8 +415,8 @@
       "@prismshadow/penguin-library-session/schedules-status": [
         "../../library/session/src/schedules-status.ts"
       ],
-      "@prismshadow/penguin-library-session/mtime-gate": [
-        "../../library/session/src/mtime-gate.ts"
+      "@prismshadow/penguin-library-session/session-title": [
+        "../../library/session/src/session-title.ts"
       ],
       "@prismshadow/penguin-library-setting": ["../../library/setting/src/index.ts"],
       "@prismshadow/penguin-library-setting/attachment-limits": [
@@ -410,6 +490,9 @@
       ],
       "@prismshadow/penguin-library-trace/history-stream": [
         "../../library/trace/src/history-stream.ts"
+      ],
+      "@prismshadow/penguin-library-trace/harness-history": [
+        "../../library/trace/src/harness-history.ts"
       ],
       "@prismshadow/penguin-library-trace/ports": ["../../library/trace/src/ports.ts"],
       "@prismshadow/penguin-library-trace/trace-index": ["../../library/trace/src/trace-index.ts"],

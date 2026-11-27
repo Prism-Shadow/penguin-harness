@@ -240,6 +240,21 @@ for (const project of projects) {
    * on a class that declares its own abstract members, or `extends Interface<…>()` for
    * an interface that IS an existing type (see core kernel/markers.ts).
    */
+  /** An explicit key pins the table key: `@Interface("<pkg>#<Name>")` on the class. */
+  const ifaceKeyOverrideOf = (d) => {
+    for (const dec of ts.getDecorators?.(d) ?? []) {
+      if (
+        ts.isCallExpression(dec.expression) &&
+        ts.isIdentifier(dec.expression.expression) &&
+        dec.expression.expression.text === "Interface" &&
+        dec.expression.arguments.length > 0 &&
+        ts.isStringLiteral(dec.expression.arguments[0]) &&
+        dec.expression.arguments[0].text
+      )
+        return dec.expression.arguments[0].text;
+    }
+    return null;
+  };
   const isInterfaceClassDecl = (d) =>
     ts.isClassDeclaration(d) &&
     (hasInterfaceDecorator(d) ||
@@ -493,22 +508,35 @@ for (const project of projects) {
   const componentKeyBySymbol = new Map();
   for (const [sym, { node, meta, file, kind, className }] of moduleClasses) {
     // A node is named by its class: `export class AuthService` is the node `AuthService`.
+    // An explicit `name` in the meta keeps a moved implementation's node name (the assembly's
+    // plugin-facing contract) — the class it wraps carries a different name.
     const declId = `${file}\0${className}`;
     if ("name" in meta) {
-      if (!namedNodes.has(declId)) {
+      if (typeof meta.name !== "string" || meta.name === "") {
         errors.push(
-          `${file}: @${kind === "module" ? "Module" : "Component"} meta names the node — a node is named by its class ('${className}')`,
+          `${file}: @${kind === "module" ? "Module" : "Component"} meta name must be a non-empty string on '${className}'`,
         );
+        continue;
       }
-      continue;
+    } else {
+      meta.name = className;
     }
-    meta.name = className;
     namedNodes.add(declId);
     moduleNameBySymbol.set(sym, meta.name);
     moduleNameByClassName.set(className, meta.name);
     // `export default class X` names its symbol "default"; the class keeps its own name.
-    if (kind === "component")
-      componentKeyBySymbol.set(sym, `${moduleNameOf(node.getSourceFile().fileName)}#${className}`);
+    // An explicit `key` pins the manifest key the component keeps while its declaration
+    // moves between packages (`pkg#Name`), the way `@Interface("pkg#Name")` does.
+    if (kind === "component") {
+      if (meta.key !== undefined && (typeof meta.key !== "string" || !meta.key.includes("#"))) {
+        errors.push(`${file}: @Component key must be a 'pkg#Name' string on '${className}'`);
+        continue;
+      }
+      componentKeyBySymbol.set(
+        sym,
+        meta.key ?? `${moduleNameOf(node.getSourceFile().fileName)}#${className}`,
+      );
+    }
   }
   // The plugin declaration: `export default { modules: [...], replaces: [...] }`, or a
   // default-exported binding initialized to that literal (`const plugin: Plugin = {...}`).
@@ -578,7 +606,9 @@ for (const project of projects) {
     if (keys.has(symbol)) return keys.get(symbol);
     const owner = exportingFile ?? decl.getSourceFile();
     const key =
-      componentKeyBySymbol.get(symbol) ?? `${moduleNameOf(owner.fileName)}#${symbol.getName()}`;
+      componentKeyBySymbol.get(symbol) ??
+      ifaceKeyOverrideOf(decl) ??
+      `${moduleNameOf(owner.fileName)}#${symbol.getName()}`;
     keys.set(symbol, key);
     pending.push({ symbol, decl, key });
     return key;
@@ -1219,7 +1249,7 @@ for (const project of projects) {
     ) {
       return keyOf(sym, decl);
     }
-    return `${moduleNameOf(declFile.fileName)}#${sym.getName()}`;
+    return ifaceKeyOverrideOf(decl) ?? `${moduleNameOf(declFile.fileName)}#${sym.getName()}`;
   };
   /** The component a bare `@Use()` field is wired to: the one its type names, if any. */
   const componentOfType = (typeNode) => {

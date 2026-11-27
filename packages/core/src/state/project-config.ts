@@ -824,6 +824,17 @@ export function projectConfigFromTable(
 }
 
 /**
+ * Parses the whole `.project_config.toml` text into its raw table — unknown fields included,
+ * which core's typed loader (loadProjectConfig) drops. Consumers that read and rewrite the
+ * complete file (the server's project config store) parse through this so every reader of the
+ * file shares one TOML parser without each declaring its own.
+ */
+export function parseProjectConfigToml(text: string): Record<string, unknown> {
+  // Defensive: parseToml may return null/undefined for an empty file, and destructuring it would throw a TypeError.
+  return (parseToml(text) ?? {}) as Record<string, unknown>;
+}
+
+/**
  * Loads the Project config; returns the default config (without writing to disk) if
  * `.project_config.toml` doesn't exist. Returns plaintext (masking is applied at the interface
  * layer); reports a clear error when the old format (a string reference / an entry missing
@@ -838,8 +849,7 @@ export async function loadProjectConfig(root: string, projectId: string): Promis
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return defaultProjectConfig();
     throw err;
   }
-  // Defensive: parseToml may return null/undefined for an empty file, and destructuring it would throw a TypeError.
-  const table = (parseToml(raw) ?? {}) as Record<string, unknown>;
+  const table = parseProjectConfigToml(raw);
   // The raw table is written back, not the typed config, so every key the file carries
   // survives the rewrite (this loader keeps known keys only).
   if (migrateProjectConfigTable(table)) {

@@ -93,8 +93,12 @@ import {
 } from "./message-window.js";
 import type { ChildAggregate, ScanState } from "./message-window.js";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
-import { sessionIdCreatedAt } from "./session-id.js";
-import { listCategory, listingMarksOf, readRecordedSource } from "./listing.js";
+import { sessionIdCreatedAt } from "@prismshadow/penguin-library-session/session-id";
+import {
+  listCategory,
+  listingMarksOf,
+  readRecordedSource,
+} from "@prismshadow/penguin-library-session/listing";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
 import type { TraceLineIndexEntry } from "./trace-line-index.js";

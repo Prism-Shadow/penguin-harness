@@ -7,8 +7,13 @@
  * @prismshadow/penguin-library-db.
  *
  * Subpaths:
- * - `.` - the mechanism contracts plus ApprovalMode.
+ * - `.` - the mechanism contracts plus ApprovalMode, MessagingChannel and SessionInfo.
  * - `./session` - the contracts module on its own.
+ * - `./ports` - the service-facing ports (the server's assembly binds them structurally).
+ * - `./session-service`, `./session-deletion`, `./archived-sessions-service` - the services
+ *   (moved from the server's services, services+http+cli restack S14).
+ * - `./listing`, `./session-id`, `./trace-file-path`, `./system-agent`, `./sandbox-ceiling`,
+ *   (workspace-group vocabulary lives in @prismshadow/penguin-library-workspace — restack S15)
  * - `./repos` (and per-file) - the storing components.
  */
 export {
@@ -19,6 +24,7 @@ export {
   AgentState,
   Scheduling,
 } from "./session.js";
+export type { MessagingChannel, ModelRefDto, SessionInfo } from "./session.js";
 export type {
   ApprovalMode,
   RunStarter,
@@ -48,3 +54,13 @@ export type {
   SessionBackgroundTasks,
   SwitchModelOpts,
 } from "./session.js";
+export type { SessionServiceEvent, ProjectSummary, ProjectRole } from "./ports.js";
+export type {
+  SessionCreatedEvent,
+  SessionArchivedEvent,
+  SessionDeletedEvent,
+  SessionTitleEvent,
+  SessionStateEvent,
+  SessionBackgroundEvent,
+  SessionApprovalsEvent,
+} from "./ports.js";

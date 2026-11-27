@@ -155,7 +155,22 @@ import type {
   ApprovalReason,
   ApprovalMode,
   SessionBackgroundTasks,
+  // The Session view moved to the session domain library (services+http+cli restack S14):
+  // imported for the DTOs below, re-exported where it was defined so
+  // `@prismshadow/penguin-server/api` keeps spelling it.
+  SessionInfo,
 } from "@prismshadow/penguin-library-session";
+import type {
+  ArchivedSessionSource,
+  ArchivedSessionsQuery,
+  ArchivedSessionGroupServers,
+  ArchivedSessionGroup,
+  ArchivedSessionGroupsResponse,
+  ArchivedSessionsResponse,
+  ArchivedSessionsBatch,
+  ArchivedSessionsBatchFilter,
+  ArchivedSessionsBatchResponse,
+} from "@prismshadow/penguin-library-session/archived-sessions-service";
 import type { MessagingChannel } from "@prismshadow/penguin-library-messaging/vocabulary";
 import type { UserInfo } from "@prismshadow/penguin-library-auth";
 import type {
@@ -504,17 +519,11 @@ export interface ProxyProbeResponse {
 }
 
 /**
- * One draft-screen shortcut: a prompt the user wrote, filed under a name they chose. Clicking it
- * fills the composer exactly like a built-in example does, and sends nothing. Deliberately holds
- * no Skill list — a saved prompt is not authored against a known Skill catalog the way a shipped
- * example is, and the Agent it will run under is picked after the click.
+ * One draft-screen shortcut: the canonical declaration is the workspace library's drafts
+ * (a prompt the user wrote, filed under a name they chose).
  */
-export interface DraftShortcut {
-  /** Stable client-generated id: what an edit or a delete addresses the row by. Unique per user. */
-  id: string;
-  title: string;
-  prompt: string;
-}
+export type { DraftShortcut } from "@prismshadow/penguin-library-workspace/drafts";
+import type { DraftShortcut } from "@prismshadow/penguin-library-workspace/drafts";
 
 /**
 
@@ -544,8 +553,8 @@ export interface UiPrefs {
   /**
    * The draft screen's user-defined shortcuts, in display order. Replaced whole on every write
    * (the merge is shallow, so the array is one field like any other) and bounded on write by
-   * services/draft-shortcuts.ts — count, title length and prompt length — because this is the one
-   * known key holding user-authored text rather than a flag or an id.
+   * the workspace library's draft-shortcuts module — count, title length and prompt length —
+   * because this is the one known key holding user-authored text rather than a flag or an id.
    */
   draftShortcuts?: DraftShortcut[];
   /** Keyboard shortcut overrides, replaced whole on every write and validated by the keybindings validator (the setting domain library). */
@@ -652,24 +661,14 @@ export interface BackgroundImagePutResponse {
   imageId: string | null;
 }
 
-/**
- * The kinds of draft the account keeps, as the first segment of a draft key
- * (`<kind>:<id>`). The id names what the draft belongs to, so the server can drop it with that
- * thing: `chat` — a Project's new-conversation draft (`chat:<projectId>`); `parked` — a
- * Project's parked draft conversations (`parked:<projectId>`); `org` — a Project's
- * create-organization form (`org:<projectId>`); `channel` — a company-mode channel's composer
- * (`channel:<projectId>.<orgId>.<channelId>`); `session` — a Session's composer
- * (`session:<sessionId>`); `a2ui` — a reply's form answers in progress
- * (`a2ui:<sessionId>:<block>`).
- */
-export const DRAFT_KINDS = ["chat", "parked", "org", "channel", "session", "a2ui"] as const;
-export type DraftKind = (typeof DRAFT_KINDS)[number];
-
-/** One draft's cap, in characters of its JSON text. */
-export const DRAFT_VALUE_MAX_CHARS = 256 * 1024;
-
-/** Draft writes one PATCH may carry. */
-export const DRAFTS_PATCH_MAX_ENTRIES = 50;
+// The drafts vocabulary moved to the workspace domain library (drafts.ts there); each is
+// imported and re-exported — the server→library direction only.
+export {
+  DRAFT_KINDS,
+  DRAFT_VALUE_MAX_CHARS,
+  DRAFTS_PATCH_MAX_ENTRIES,
+} from "@prismshadow/penguin-library-workspace/drafts";
+export type { DraftKind } from "@prismshadow/penguin-library-workspace/drafts";
 
 /** GET /api/me/drafts: every draft the account keeps, by key, as the JSON each was written with. */
 export interface DraftsResponse {
@@ -879,48 +878,15 @@ export interface DefaultModelResponse {
 }
 
 /**
- * Why a group's balance could not be read:
- * - `unsupported`: the group publishes no balance endpoint (no `balance` descriptor in the catalog);
- * - `no_key`: the group has no API key to ask with — none stored, and no vendor variable that
- *   MMSP's vendor client reads for the group's base URL;
- * - `upstream_failed`: the vendor could not be reached in time, refused the request, or answered
- *   without a readable balance.
+ * The balance wire shapes moved to the model domain package
+ * (@prismshadow/penguin-library-model, services+http+cli restack S13), beside the amount and
+ * error-code vocabulary they build on; re-exported here so the API contract keeps spelling them.
  */
-
-/**
- * GET /api/projects/:p/models/balance?provider=<group>[&force=1] (Project member): the account
- * balance behind the group's API key — the stored one, or else the environment key MMSP's
- * vendor client reads for the group's base URL (DeepSeek's DEEPSEEK_API_KEY) — read server-side
- * from the endpoint the catalog's `balance` descriptor names. The key never reaches the browser, and
- * neither does the vendor's own text. Like the connectivity test, a balance that cannot be read is an answer
- * (`ok: false` with a code), not a failed request. Readings and vendor failures are cached for
- * 60 s per Project and group, for as long as the group's key is the same; `force=1` skips the
- * cache and refreshes it.
- */
-export type ModelBalanceResponse = ModelBalanceReading | ModelBalanceFailure;
-
-export interface ModelBalanceReading extends ModelBalanceAmount {
-  ok: true;
-  provider: string;
-  /** Whether the account can make requests right now (DeepSeek's `is_available`); absent when the vendor does not say. */
-  available?: boolean;
-  /** Further currencies the account holds, after the one in `amount` / `currency`; absent when there is only one. */
-  others?: ModelBalanceAmount[];
-  /** When the server read it from the vendor (ISO 8601); a cached answer keeps its original time. */
-  fetchedAt: string;
-}
-
-export interface ModelBalanceFailure {
-  ok: false;
-  provider: string;
-  error: ModelBalanceErrorCode;
-  /** The vendor's HTTP status, when it answered with an error. */
-  status?: number;
-  /** English detail for logs and bug reports; the Web App words each code itself. */
-  message: string;
-  /** When the answer was settled (ISO 8601). */
-  fetchedAt: string;
-}
+export type {
+  ModelBalanceResponse,
+  ModelBalanceReading,
+  ModelBalanceFailure,
+} from "@prismshadow/penguin-library-model";
 
 // ---------------------------------------------------------------------------
 // Provider key-minting flows (/api/projects/:p/model-oauth, owner)
@@ -1135,9 +1101,16 @@ export type {
   HostCommandMessage,
 } from "@prismshadow/penguin-library-setting/types";
 export { HOST_COMMANDS, LEGACY_HOST_COMMANDS } from "@prismshadow/penguin-library-setting/types";
+import type {
+  AgentDeletionInfo,
+  PluginUpdateRef,
+  Employment,
+  OrgStatus,
+} from "@prismshadow/penguin-library-agent/types";
 export type {
   AgentArchiveQuery,
   AgentCompactionConfigDto,
+  AgentDeletionInfo,
   AgentConfigDto,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
@@ -1159,24 +1132,13 @@ export type {
   MemoryScopeExport,
   MemoryScopeInfo,
   MemoryTransferFile,
+  PluginUpdateRef,
   VaultEntryInfo,
   VaultEntryUpdate,
   VaultResponse,
   VaultUpdateRequest,
 } from "@prismshadow/penguin-library-agent/types";
 export { AVATAR_MAX_CHARS } from "@prismshadow/penguin-library-agent/types";
-
-/** One library plugin an Agent's installed copy is behind on — one of its skills or its hook package carries an older dated version than the library's same part (see {@link AgentSummary.pluginUpdates}). */
-export interface PluginUpdateRef {
-  /** Plugin name — what `POST …/plugins` reinstalls to bring the Agent up to date. */
-  name: string;
-  /**
-   * The LIBRARY's content version: the newest dated version (`YYYY.MM.DD.N`) among the plugin's
-   * parts, i.e. the date of what installing again would bring, not what is on disk. A label —
-   * it moves whenever any part changes, so a dismissed update comes back for the next one.
-   */
-  version: string;
-}
 
 /**
  * Who made an Agent (`author` in system_config.yaml): a person in the Web App (`user`), an
@@ -1255,14 +1217,7 @@ export interface AgentSummary {
 }
 
 /** One organization employing an Agent, as the Agent list carries it (see {@link AgentSummary.employments}). */
-export interface Employment {
-  orgId: string;
-  /** The organization's display name (`org_config.toml`), the id when the config does not parse. */
-  orgName: string;
-  /** The Agent's title in that organization's chart; "CEO" for the CEO of a chart that does not parse. */
-  title: string;
-  status: OrgStatus;
-}
+export type { Employment } from "@prismshadow/penguin-library-agent/types";
 
 export interface AgentsResponse {
   agents: AgentSummary[];
@@ -1319,31 +1274,6 @@ export interface AgentCreateRequest {
 
 export interface AgentCreateResponse {
   agent: AgentSummary;
-}
-
-/**
- * Where a deleted Agent's files stand. The Agent itself is gone the moment DELETE answers: its
- * folder was moved out of the Project's agents directory in one rename, and every list and route
- * stopped seeing it. What follows is the removal of that folder's contents in the background,
- * which this reports.
- */
-export interface AgentDeletionInfo {
-  /** Names this deletion (GET /api/projects/:projectId/agent-deletions/:deletionId). */
-  deletionId: string;
-  agentId: string;
-  /**
-   * `counting`: the folder is walked to learn how many entries it holds (`total` grows);
-   * `removing`: they are removed (`removed` grows towards `total`); `done`: nothing is left;
-   * `failed`: some entries could not be removed (`error` says why). What is left is tried again
-   * when the server next starts.
-   */
-  phase: "counting" | "removing" | "done" | "failed";
-  /** Entries found: so far while counting, then in all. Files and folders alike. */
-  total: number;
-  /** Entries removed so far. */
-  removed: number;
-  /** The first error the removal met, as the operating system worded it (`failed` only). */
-  error?: string;
 }
 
 /** DELETE /api/projects/:projectId/agents/:agentId (202). */
@@ -1543,123 +1473,12 @@ export interface AgentApiKeyCreateResponse {
 // Memory
 // ---------------------------------------------------------------------------
 
-export interface SessionInfo {
-  sessionId: string;
-  projectId: string;
-  agentId: string;
-  /**
-   * Provider group of the session's **current** model (paired with `modelId` to form a model
-   * reference). It moves with each in-session switch (`POST /api/sessions/:id/switch-model`).
-   */
-  provider: string;
-  /** Last confirmed target while it waits for, or is carrying out, a model handoff. */
-  pendingModel?: ModelRefDto;
-  /** Single-Session GET: the latest accepted switch that later failed, while its live channel exists. */
-  modelSwitchFailure?: ModelRefDto & { id: string };
-  /** Upstream model_id of the session's current model (the request id sent to MMSP). */
-  modelId: string;
-  workspace: string;
-  approvalMode: ApprovalMode;
-  /** The Session's own sandbox policy (see {@link SessionSandbox}). */
-  sandbox: SessionSandbox;
-  /**
-   * Thinking level pinned for this Session (set via PATCH; the Web App's in-chat picker).
-   * Unset = never pinned: each model context the Session opens reads the Agent config's
-   * `model.thinking_level`, so config edits keep taking effect. Once pinned it survives
-   * reloads and applies from the Session's very next LLM request — the thinking level is
-   * the soft-limited runtime parameter, changeable mid-context at the cost of the
-   * provider's cached context (the picker advises compacting first) — and every later
-   * context opens at it; an Agent-config change no longer moves it.
-   */
-  thinkingLevel?: ThinkingLevelName;
-  /** Short title auto-generated by the model after the first turn; unset until generated (frontend shows "New Chat"). */
-  title?: string;
-  /**
-   * What kind of conversation this is, read from core session_meta — the single source of
-   * truth (the DB stores no source). With the user's marks it decides where the Session is
-   * listed (`archived`): a `user` Session is in the sidebar until archived; an `api`,
-   * `schedule`, `cli` or `workbench` Session is archived until the user keeps it, and in the sidebar marked
-   * with its source once kept; a `subagent` or `company` Session is in no list — its parent's
-   * Agent panel and company mode's own views open them. A Trace head that records no source
-   * (written before it was required) reads as `company` for a row the organization runtime
-   * opened (`client: "org"`), else as `user`; so does such a row before its first run. Absent
-   * only while any other row is not yet classified (its Trace head has not been read yet),
-   * which renders as `user`.
-   */
-  source?: SessionSource;
-  createdAt: string;
-  /**
-   * Last activity the server drove for this Session (ISO 8601, same convention as
-   * createdAt), monotonic — it never moves backwards. Set to createdAt at creation, then
-   * stamped when a run starts and again when it ends; a run here is one Task, one
-   * compaction, or one whole goal loop (every round of a goal belongs to a single run, so
-   * an N-round goal stamps twice, not 2N times).
-   *
-   * Two kinds of row therefore stay at createdAt no matter how busy they look: Sessions
-   * adopted from a CLI Trace (this server drives none of their runs) and subagent rows
-   * (their work is driven through the parent Session's entry). Reading real activity for
-   * those would mean consulting the Trace tree, which this field deliberately does not do.
-   *
-   * Rows that predate the field are backfilled once at startup from the Session's most
-   * recent request timestamp, falling back to createdAt.
-   */
-  lastActiveAt: string;
-  status: SessionStatus;
-  /** Number of approvals awaiting human decision (a persisted count outside server events, for list badges). */
-  pendingApprovalCount: number;
-  /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start once the session is idle. */
-  pendingFollowUpCount: number;
-  /** Whether a Trace record exists (a Task has been started). */
-  hasTrace: boolean;
-  /**
-   * Whether the Session is archived — the listing rule's answer, never the bare mark: the user
-   * archived it, or a program opened it (source `api`, `schedule`, `cli` or `workbench`) and the user has
-   * not kept it. An archived Session is left out of the sidebar and listed on the archive page
-   * (`/api/me/archived-sessions`). Always false for a `subagent` or `company` Session, which is
-   * in no list.
-   */
-  archived: boolean;
-  /**
-   * Absolute path of the session's latest Trace file (the current context shard); absent
-   * when no Trace exists yet. Populated on the **single-session GET only** — list rows omit
-   * it (locating it costs a directory walk per Session). The web's `/model` switch puts it
-   * into the new session's `[model_switch_from]` block so the model can read the source
-   * history itself when it needs it.
-   */
-  tracePath?: string;
-  /** Present when the Session has an ENABLED messaging binding: its channel (the sidebar row's per-channel indicator). */
-  messagingChannel?: MessagingChannel;
-  /**
-   * Company mode: the organization that owns this Session — a desk session of one of its
-   * employees, or a session contributing to one of its tickets — read from the organization
-   * caches. Absent for every ordinary Session. Development mode's list asks the server to
-   * leave every such row out (`excludeOrg=1` on the list route — page and totals alike) and
-   * still drops one that reaches it by another door; the company sidebar's 工位 group and the
-   * tickets are where these Sessions are reached instead.
-   */
-  orgId?: string;
-  /**
-   * Which client opened the Session, as stored on the index row: "cli" from the CLI (a
-   * Session adopted from a legacy CLI-direct Trace included), "org" from the organization
-   * runtime (a desk or a ticket session, and every sub-session one of those spawns), "api"
-   * from an Agent API run (the only Sessions the API may continue), "web" otherwise. Absent
-   * only on a row that predates the column, which reads as "web". Unlike
-   * {@link SessionInfo.orgId} — projected from the organization caches, so it disappears with
-   * the organization and is not read while company mode is off — this is a durable stamp on
-   * the row: development mode's list hides an "org" Session either way.
-   */
-  client?: "web" | "cli" | "org" | "api" | "workbench";
-  /**
-   * Background work the Session's loaded runtime still owns: command sessions running past
-   * their yield window (`exec_command` promotions and `run_in_background` launches) and
-   * background subagent sessions mid-round. Read from the runtime's in-memory registries —
-   * no Trace is consulted — and present only while at least one count is non-zero, so a
-   * Session that is not loaded (a resumed entry starts with empty registries) and one with
-   * nothing running both omit it. Changes are pushed as `session_background` on the user
-   * channel; list rows and the single-session GET carry the same field.
-   */
-  backgroundTasks?: SessionBackgroundTasks;
-}
+/**
+ * One Session as the list and the single GET serve it — the shape lives with the session
+ * contract (@prismshadow/penguin-library-session, services+http+cli restack S14); re-exported
+ * here so the API contract keeps spelling it.
+ */
+export type { SessionInfo } from "@prismshadow/penguin-library-session";
 
 /** The background-task counts moved to @prismshadow/penguin-library-session (the AgentState
  * closed shape reaches them); re-exported here for the `@prismshadow/penguin-server/api` path. */
@@ -1729,111 +1548,22 @@ export interface SessionsResponse {
 }
 
 /**
- * The archive page's source filter: `user` is a conversation the user archived by hand (source
- * `user`, or a row whose Trace has not been read yet); the other three are what a program
- * opened. `subagent` and `company` Sessions are never archived, so never listed.
+ * The archive page's query and response shapes live with the archive-page service
+ * (@prismshadow/penguin-library-session/archived-sessions-service, services+http+cli restack
+ * S14); re-exported here so the API contract keeps spelling them.
  */
-export type ArchivedSessionSource = "user" | "api" | "schedule" | "cli" | "workbench";
-
-/** Query of GET /api/me/archived-sessions/groups, and the part every archive query shares. */
-export interface ArchivedSessionsQuery {
-  /** Case-insensitive substring of the title (the DB title, else the Trace's first-prompt title); at most 200 characters. */
-  q?: string;
-  source?: ArchivedSessionSource;
-  /** One Project the user can open (404 `project_not_found` otherwise); absent = every Project they own or are a member of. */
-  projectId?: string;
-}
-
-/**
- * Which servers' groups GET /api/me/archived-sessions/groups answers with: `here` this server's
- * alone, never waiting on a machine; `machines` the machines' alone. Absent: both, in one answer.
- * The Web App asks the two apart, so a machine that answers nothing never holds this server's.
- */
-export type ArchivedSessionGroupServers = "here" | "machines";
-
-/** One group of the archive page: one Workspace of one Project, on this server or on one machine. */
-export interface ArchivedSessionGroup {
-  projectId: string;
-  projectName: string;
-  /** The Workspace path, as the sidebar groups it; `temp` for the merged temporary Workspaces. */
-  workspace: string;
-  /** Archived Sessions in the group matching the query. */
-  count: number;
-  /** The newest `lastActiveAt` in the group — the order the groups come in, newest first. */
-  latest: string;
-  /** The machine the group's Sessions live on (its own id); absent on this server's groups. */
-  machineId?: string;
-  /** That machine's ssh alias, for the group's header. */
-  machineAlias?: string;
-  /** That machine's own time when it counted the group: a batch on the whole group passes it as `until`. */
-  asOf?: string;
-}
-
-/** GET /api/me/archived-sessions/groups. */
-export interface ArchivedSessionGroupsResponse {
-  groups: ArchivedSessionGroup[];
-  /** Sum of the groups' counts. */
-  total: number;
-  /**
-   * The server's time when these counts were taken (ISO). A group's batch passes it as its
-   * filter's `until`, so it acts on the Sessions the count saw and on none that came after.
-   */
-  asOf: string;
-  /** Machines the user's Projects use whose archive could not be read (not connected, or no answer). */
-  unreachable?: Array<{ machineId: string; alias: string }>;
-}
-
-/** Query of GET /api/me/archived-sessions: one group's page, newest activity first. */
-export interface ArchivedSessionsRowsQuery extends ArchivedSessionsQuery {
-  projectId: string;
-  /** The group's `workspace` (a path, or `temp`). */
-  workspace: string;
-  /** 1–100. */
-  limit: number;
-  /** `<lastActiveAt>,<sessionId>` of the last row held, as the Session list's cursor. */
-  before?: string;
-  /** The group's machine (`ArchivedSessionGroup.machineId`): the page is read from it. */
-  machineId?: string;
-}
-
-/** GET /api/me/archived-sessions. */
-export interface ArchivedSessionsResponse {
-  /** `title` falls back to the Trace's first-prompt title when the row has none. */
-  sessions: SessionInfo[];
-  hasMore: boolean;
-}
-
-/**
- * What an archive-page batch acts on: explicit ids (1–500), or every archived row a filter
- * matches — on this server, or with `machineId` on that machine (the filter then names its Project).
- */
-export type ArchivedSessionsBatch = (
-  { sessionIds: string[] } | { filter: ArchivedSessionsBatchFilter }
-) & { machineId?: string };
-
-/** A batch's filter: the archive query, one group's Workspace, and the snapshot it was counted at. */
-export interface ArchivedSessionsBatchFilter extends ArchivedSessionsQuery {
-  workspace?: string;
-  /**
-   * The groups response's `asOf` the user acted on (ISO): only Sessions archived by then and
-   * not active since are acted on, so one archived or run after the count is left alone.
-   */
-  until?: string;
-  /** Sessions left out although the filter matches them — rows unticked after Select all (1–500). */
-  exclude?: string[];
-}
-
-/** POST /api/me/archived-sessions/unarchive and /delete. */
-export interface ArchivedSessionsBatchResponse {
-  /**
-   * Sessions acted on. Unarchive counts only the ones that were archived. Delete counts every
-   * named one; a filter's delete leaves a running Session alone (it is not aborted) and does not
-   * count it.
-   */
-  done: number;
-  /** Ids that name nothing the user can open (the ids form only; a filter never reports any). */
-  missing: string[];
-}
+export type {
+  ArchivedSessionSource,
+  ArchivedSessionsQuery,
+  ArchivedSessionsRowsQuery,
+  ArchivedSessionGroupServers,
+  ArchivedSessionGroup,
+  ArchivedSessionGroupsResponse,
+  ArchivedSessionsResponse,
+  ArchivedSessionsBatch,
+  ArchivedSessionsBatchFilter,
+  ArchivedSessionsBatchResponse,
+} from "@prismshadow/penguin-library-session/archived-sessions-service";
 
 /**
  * One page request inside POST /api/projects/:p/sessions/batch — the same knobs the
@@ -2839,18 +2569,9 @@ export interface PluginModuleStatus {
   request?: PluginModuleRequestView;
 }
 
-/** What one install, or one explicit ask, did about a plugin's server module. */
-export interface PluginModuleAction {
-  plugin: string;
-  /**
-   * `enabled`: listed for this Project on this server, and running (or waiting for a restart);
-   * `requested`: an administrator is asked; `blocked`: the administrator stopped this module;
-   * `failed`: listed, and the module did not start (`reason`) — when the App would not boot with
-   * it, the listing was undone.
-   */
-  action: "enabled" | "requested" | "blocked" | "failed";
-  reason?: string;
-}
+/** What one install, or one explicit ask, did about a plugin's server module (the agent library's `AgentPluginModuleAction`). */
+export type { AgentPluginModuleAction as PluginModuleAction } from "@prismshadow/penguin-library-agent/ports";
+import type { AgentPluginModuleAction as PluginModuleAction } from "@prismshadow/penguin-library-agent/ports";
 
 /** POST /api/projects/:p/plugins/modules `{ plugin }` (any member): enable a plugin's server module, or ask the administrator to. */
 export interface PluginModuleAskRequest {
@@ -4103,12 +3824,8 @@ export interface MachinesStopUsingRequest {
 // Company mode: organizations (files are the truth; every DTO here is a projection)
 // ---------------------------------------------------------------------------
 
-/**
- * Organization status: `paused` stops every automatic trigger; humans can still talk to any
- * desk. These two values are the whole lifecycle — no route deletes an organization, so a
- * paused one keeps its conversations, employees, desks and tickets.
- */
-export type OrgStatus = "active" | "paused";
+/** Organization status (see the agent library's `Employment.status` for the lifecycle). */
+export type { OrgStatus } from "@prismshadow/penguin-library-agent/types";
 /** Approval mode for desk and ticket sessions; unattended runs never get always-ask. */
 export type OrgApprovalMode = "allow-all" | "read-only" | "deny-all";
 /** The five kanban columns, each a directory under `tickets/<yyyy-mm>/`. */

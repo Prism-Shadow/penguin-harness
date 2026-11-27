@@ -1,36 +1,33 @@
 /**
- * Everyone who can see a Project, told about an event — in ONE place.
- *
- * The audience is the rule ProjectAccess reads to answer "may this user see the Project":
- * the owner plus the members. Publishing is per user channel and only to a user who has
- * GET /api/events open (`peek`, never `get`): a channel opened here would be one nobody is
- * listening on. The session runtime, the title generator and the sessions route all
- * publish through this, so the audience rule is written once.
+ * The Project events notifier moved to the projects domain package
+ * (@prismshadow/penguin-library-project/events, server restack S11) — it publishes over the
+ * package's ProjectChannels port. This file keeps the assembly: the Provider binds the
+ * notifier's port to the server's `Channels` hub and re-exports the moved shapes for the
+ * server's own import paths.
  */
-import type {
-  ServerEvent,
-  Members,
-  ProjectEvents,
-  Projects,
-} from "@prismshadow/penguin-library-project";
-import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Channels } from "../hmr/capabilities.js";
-import type { ChannelHub } from "../runtime/channel.js";
-import { userChannelKey } from "../http/routes/events.js";
+import type { Members, ProjectEvents, Projects } from "@prismshadow/penguin-library-project";
+import { ProjectNotifier } from "@prismshadow/penguin-library-project/events";
+import { userChannelKey } from "../http/user-channel.js";
 
-@Component()
-export class ProjectNotifier implements ProjectEvents {
+export * from "@prismshadow/penguin-library-project/events";
+
+/** The events assembly: binds the notifier's channels port (the user-channel key mapping is the server's own). */
+@Module({ name: "ProjectNotifier" })
+export class ProjectNotifierProvider {
   @Use() private readonly projects!: Projects;
   @Use() private readonly members!: Members;
   @Use() private readonly channels!: Channels;
+  @Provide() ProjectEvents!: ProjectEvents;
+  @Provide() ProjectNotifier!: ProjectNotifier;
 
-  notifyProjectUsers(projectId: string, event: ServerEvent): void {
-    const ownerUserId = this.projects.findById(projectId)?.ownerUserId;
-    if (ownerUserId === undefined) return;
-    const audience = new Set([ownerUserId, ...this.members.list(projectId).map((m) => m.userId)]);
-    const channels = this.channels as ChannelHub;
-    for (const userId of audience) {
-      channels.peek(userChannelKey(userId))?.publish(event, "server_event");
-    }
+  setup() {
+    this.ProjectNotifier = Object.assign(new ProjectNotifier(), {
+      projects: this.projects,
+      members: this.members,
+      channels: { peekUser: (userId: string) => this.channels.peek(userChannelKey(userId)) },
+    });
+    this.ProjectEvents = this.ProjectNotifier;
   }
 }

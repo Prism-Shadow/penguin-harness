@@ -68,7 +68,7 @@ import {
   UpdateCheck,
 } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
-import { HarnessHistoryStore } from "./services/harness-history.js";
+import { HarnessHistoryServiceProvider } from "./services/harness-history.js";
 import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
 import { AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import { ServerSettingsRepo } from "@prismshadow/penguin-library-setting/repos/server-settings";
@@ -94,7 +94,7 @@ import { SessionDriverRegistry } from "./runtime/session-drivers.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageServiceProvider } from "./services/usage-service.js";
-import { ProjectConfigService } from "./services/project-config-service.js";
+import { ProjectConfigServiceProvider } from "./services/project-config-service.js";
 import { ModelOAuthProvider } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
@@ -103,10 +103,10 @@ import { TraceServiceProvider } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
-import { ProjectNotifier } from "./services/project-events.js";
+import { ProjectNotifierProvider } from "./services/project-events.js";
 import {
-  ProjectService,
   ProjectRuns,
+  ProjectServiceProvider,
   ShippedBuiltinBenchmarkSeeds,
 } from "./services/project-service.js";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
@@ -115,7 +115,7 @@ import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime
 import { AgentConfigServiceProvider } from "./services/agent-config-service.js";
 import { SnapshotServiceProvider } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
-import { AgentService } from "./services/agent-service.js";
+import { AgentServiceProvider } from "./services/agent-service.js";
 import { DeletingFoldersService } from "./services/deleting-folders.js";
 import { RootDataLayout } from "./services/data-layout.js";
 import { DataLayout } from "./mechanisms/data-layout.js";
@@ -172,8 +172,8 @@ import { SemanticIdModule } from "./services/semantic-id-kinds.js";
 import { StartPageModule } from "./http/routes/start-page.js";
 import { AppData, SystemAgentAppData } from "./services/app-data.js";
 import { AppSeeds, HostAppSeeds } from "./services/app-seeds.js";
-import { AgentTasks, HostAgentTasks } from "./services/agent-tasks.js";
-import { AgentSkills, InstalledAgentSkills } from "./services/agent-skills.js";
+import { AgentTasks, HostAgentTasksProvider } from "./services/agent-tasks.js";
+import { AgentSkills, InstalledAgentSkillsProvider } from "./services/agent-skills.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
@@ -363,12 +363,12 @@ export class IdentityModule {}
     MembersRepo,
     AgentsRepo,
     ProjectAccess,
-    ProjectNotifier,
+    ProjectNotifierProvider,
     ShippedBuiltinBenchmarkSeeds,
     SystemAgentAppData,
     HostAppSeeds,
-    ProjectService,
-    ProjectConfigService,
+    ProjectServiceProvider,
+    ProjectConfigServiceProvider,
     ModelOAuthProvider,
     PlatformAuthProvider,
     ModelScopeAuthProvider,
@@ -408,7 +408,7 @@ export class ProjectsModule {}
     SessionApiRoutes,
     SchedulerRoutes,
     EventsRoutes,
-    HostAgentTasks,
+    HostAgentTasksProvider,
   ],
   exports: [
     SessionIndex,
@@ -509,11 +509,11 @@ export class TracesModule {}
   children: [
     AgentConfigServiceProvider,
     SnapshotServiceProvider,
-    AgentService,
+    AgentServiceProvider,
     DeletingFoldersService,
     MemoryServiceProvider,
     BenchmarkServiceProvider,
-    InstalledAgentSkills,
+    InstalledAgentSkillsProvider,
     AgentRoutes,
   ],
   exports: [
@@ -568,7 +568,7 @@ export class CompanyModule {}
     GlobalFetch,
     UpdateCheckService,
     UpdateJobService,
-    HarnessHistoryStore,
+    HarnessHistoryServiceProvider,
     HttpModule,
     StartPageModule,
     WebModule,

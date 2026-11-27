@@ -19,6 +19,7 @@
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
+import type { AgentConfigView } from "@prismshadow/penguin-library-agent/types";
 import { HttpError } from "@prismshadow/penguin-library-http";
 import {
   badRequest,
@@ -28,7 +29,6 @@ import {
   requireValidId,
 } from "@prismshadow/penguin-library-http/validate";
 import type { AppEnv } from "@prismshadow/penguin-library-http";
-import type { AgentConfigView } from "@prismshadow/penguin-library-agent/types";
 import type { Schedules, Scheduling } from "./session.js";
 import type { ScheduleStateRow } from "./repos/schedules.js";
 import {

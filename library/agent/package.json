@@ -40,6 +40,26 @@
       "types": "./dist/agent-vocab.d.ts",
       "import": "./dist/agent-vocab.js"
     },
+    "./agent-service": {
+      "types": "./dist/agent-service.d.ts",
+      "import": "./dist/agent-service.js"
+    },
+    "./agent-deletion": {
+      "types": "./dist/agent-deletion.d.ts",
+      "import": "./dist/agent-deletion.js"
+    },
+    "./agent-author-migration": {
+      "types": "./dist/agent-author-migration.d.ts",
+      "import": "./dist/agent-author-migration.js"
+    },
+    "./agent-tasks": {
+      "types": "./dist/agent-tasks.d.ts",
+      "import": "./dist/agent-tasks.js"
+    },
+    "./agent-skills": {
+      "types": "./dist/agent-skills.d.ts",
+      "import": "./dist/agent-skills.js"
+    },
     "./agent-config-service": {
       "types": "./dist/agent-config-service.d.ts",
       "import": "./dist/agent-config-service.js"
@@ -51,6 +71,14 @@
     "./workbench-dirs": {
       "types": "./dist/workbench-dirs.d.ts",
       "import": "./dist/workbench-dirs.js"
+    },
+    "./tree-purge": {
+      "types": "./dist/tree-purge.d.ts",
+      "import": "./dist/tree-purge.js"
+    },
+    "./ids": {
+      "types": "./dist/ids.d.ts",
+      "import": "./dist/ids.js"
     },
     "./system-agent": {
       "types": "./dist/system-agent.d.ts",

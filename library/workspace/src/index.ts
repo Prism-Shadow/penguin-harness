@@ -28,3 +28,31 @@ export type {
   FilesStatRequest,
   FilesStatResponse,
 } from "./types.js";
+export { TEMP_WORKSPACE_GROUP, isTempWorkspace, matchesWorkspaceGroup } from "./workspace-group.js";
+export { assertWorkspaceAllowed } from "./workspace-guard.js";
+export { archiveWorkspaceGroup } from "./workspace-archive.js";
+export type { WorkspaceArchiveDeps } from "./workspace-archive.js";
+export { DRAFT_KINDS, DRAFT_VALUE_MAX_CHARS, DRAFTS_PATCH_MAX_ENTRIES } from "./drafts.js";
+export type { DraftKind, DraftShortcut } from "./drafts.js";
+export {
+  DRAFTS_MAX_COUNT,
+  DRAFTS_MAX_TOTAL_CHARS,
+  draftOwnerOf,
+  parseDraftsPatch,
+} from "./user-drafts.js";
+export type { DraftOwner } from "./user-drafts.js";
+export type { DraftWrite } from "@prismshadow/penguin-library-auth";
+export {
+  DRAFT_SHORTCUT_MAX_COUNT,
+  DRAFT_SHORTCUT_TITLE_MAX,
+  DRAFT_SHORTCUT_PROMPT_MAX,
+  DRAFT_SHORTCUT_ID_MAX,
+  validateDraftShortcuts,
+} from "./draft-shortcuts.js";
+export {
+  SKILL_SOURCE_DIRS,
+  discoverDirectorySkills,
+  directorySkillIcon,
+  resolveDirectorySkills,
+} from "./directory-skills.js";
+export type { SkillSourceDir, DirectorySkill, DirectorySkillEntry } from "./directory-skills.js";

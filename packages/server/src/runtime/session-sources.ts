@@ -1,10 +1,10 @@
 /**
  * In-process registry of Session sources, derived from core `session_meta` — the single
  * source of truth for what kind of conversation a Session is (the DB stores no `source`
- * column). The listing rule and the source vocabulary moved to the trace domain package
- * (@prismshadow/penguin-library-trace/listing, services+http+cli restack S9); this file
- * keeps the registry component and re-exports the moved shapes for the server's own
- * import paths.
+ * column). The listing rule and the source vocabulary live in the session domain package
+ * (@prismshadow/penguin-library-session/listing, services+http+cli restack S9, then moved
+ * to the session package by S14); this file keeps the registry component and re-exports the
+ * moved shapes for the server's own import paths.
  *
  * Populated wherever the server actually has the meta in hand: Session creation
  * (SessionService reads the just-created core Session's meta), subagent registration

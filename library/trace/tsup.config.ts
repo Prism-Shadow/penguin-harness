@@ -26,6 +26,7 @@ export default defineConfig({
     "src/session-history.ts",
     "src/history-lines.ts",
     "src/history-stream.ts",
+    "src/harness-history.ts",
   ],
   format: ["esm"],
   target: "node24",
