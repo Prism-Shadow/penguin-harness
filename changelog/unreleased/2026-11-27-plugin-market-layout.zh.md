@@ -3,6 +3,7 @@
 - **Date:** 2026-11-27
 - **Type:** feature
 - **Scope:** `web`, `ui`, `ui-gallery`
+- **PR:** [#1930](https://github.com/Prism-Shadow/penguin-harness/pull/1930)
 
 [English](2026-11-27-plugin-market-layout.md)
 
