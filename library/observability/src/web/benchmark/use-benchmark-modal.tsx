@@ -55,18 +55,25 @@ import {
   Textarea,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { isConversationAgent } from "@prismshadow/penguin-web/internal";
-import { formatScore } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
 import {
+  S,
+  isConversationAgent,
+  formatScore,
+  useLocale,
+  agentDisplayName,
+  useProject,
   PromptFold,
   composeAiPrompt,
   pickDefaultAgent,
   useAiBridge,
+  ModelCatalogSelect,
+  DEFAULT_TOOLKIT_PLUGIN,
+  EVALUATION_SKILL,
+  OPTIMIZATION_SKILL,
+  pickRsiMethod,
+  rsiMethods,
+  useRsiToolkits,
 } from "@prismshadow/penguin-web/internal";
-import { ModelCatalogSelect } from "@prismshadow/penguin-web/internal";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import {
   DEFAULT_TEST_REPETITIONS,
@@ -77,14 +84,6 @@ import {
   rsiOptimizeTail,
 } from "./benchmark-prompts";
 import type { EvaluateParams, OptimizeParams, RsiOptimizeParams } from "./benchmark-prompts";
-import {
-  DEFAULT_TOOLKIT_PLUGIN,
-  EVALUATION_SKILL,
-  OPTIMIZATION_SKILL,
-  pickRsiMethod,
-  rsiMethods,
-} from "@prismshadow/penguin-web/internal";
-import { useRsiToolkits } from "@prismshadow/penguin-web/internal";
 
 /** Which half of the dialog is on screen. */
 export type UseTab = "evaluate" | "optimize";

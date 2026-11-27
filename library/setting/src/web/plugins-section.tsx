@@ -33,12 +33,18 @@
 import { useEffect, useRef, useState } from "react";
 import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  localizedText,
+  apiErrorText,
+  useSessionsIfAny,
+  useProjectIfAny,
+  MachinePicker,
+  toastApiError,
+  toastFailure,
+  toldFailure,
+} from "@prismshadow/penguin-web/internal";
 import { webLocale } from "@prismshadow/penguin-web-plugin";
-import { localizedText } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { useSessionsIfAny } from "@prismshadow/penguin-web/internal";
-import { useProjectIfAny } from "@prismshadow/penguin-web/internal";
 import {
   THIS_SERVER_KEY,
   backendToOffer,
@@ -46,7 +52,6 @@ import {
   installInOrder,
 } from "./lib/sandbox-backend-prompt";
 import { SETTINGS_SCOPE } from "./lib/unsaved/scopes";
-import { MachinePicker } from "@prismshadow/penguin-web/internal";
 import { PluginCard } from "./plugin-config-card";
 import { cardsOn, type GroupPage } from "./plugin-config-groups";
 import { withLiveParts } from "./plugin-config-live";
@@ -59,8 +64,6 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import { toastApiError, toastFailure } from "@prismshadow/penguin-web/internal";
-import { toldFailure } from "@prismshadow/penguin-web/internal";
 
 /**
  * Brings one card into view once the list has loaded — an opening that names a card (the

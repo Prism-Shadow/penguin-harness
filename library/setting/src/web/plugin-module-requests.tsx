@@ -43,16 +43,16 @@ import {
   type ToneName,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { formatRelativeLong } from "@prismshadow/penguin-web/internal";
 import {
+  formatRelativeLong,
   acceptPluginModuleRequests,
   usePluginModuleRequests,
+  localizedText,
+  S,
+  toastApiError,
+  SkillTile,
 } from "@prismshadow/penguin-web/internal";
-import { localizedText } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
 import { webLocale } from "@prismshadow/penguin-web-plugin";
-import { SkillTile } from "@prismshadow/penguin-web/internal";
 
 /** Waiting rows first, newest first; then decided ones, the latest decision first. */
 function ordered(requests: readonly PluginModuleRequest[]): PluginModuleRequest[] {

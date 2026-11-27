@@ -39,12 +39,15 @@ import {
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toneInk, type Tone } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { localizedText } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  toneInk,
+  type Tone,
+  useLocale,
+  localizedText,
+  failureNode,
+} from "@prismshadow/penguin-web/internal";
 import { stdioServers } from "./plugin-status";
-import { failureNode } from "@prismshadow/penguin-web/internal";
 
 /** One mark: a glyph in its tone, the sentence on hover and as its accessible name. */
 function Mark({ glyph, tone, sentence }: { glyph: string; tone: Tone; sentence: string }) {

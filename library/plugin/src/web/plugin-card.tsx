@@ -78,15 +78,18 @@ import {
   Skeleton,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { cardBodyClick } from "@prismshadow/penguin-web/internal";
-import { apiUrl } from "@prismshadow/penguin-web/internal";
-import { locatedAppKey } from "@prismshadow/penguin-web/internal";
-import { downloadArchive } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { agentDisplayName } from "@prismshadow/penguin-web/internal";
-import { SkillTile } from "@prismshadow/penguin-web/internal";
+import {
+  useAgentAvatarSrc,
+  S,
+  cardBodyClick,
+  apiUrl,
+  locatedAppKey,
+  downloadArchive,
+  useLocale,
+  agentDisplayName,
+  SkillTile,
+  toastApiError,
+} from "@prismshadow/penguin-web/internal";
 import { packageUpdate } from "./plugin-package-update";
 import { MarketPluginCard } from "./plugin-market-card";
 import type { InstallStage } from "@prismshadow/penguin-web/internal";
@@ -126,7 +129,6 @@ import {
 } from "./plugin-status";
 import { PluginUpdateParts } from "./plugin-update-parts";
 import { BlankAgentDialog, BlankAgentRow, type BlankAgentSource } from "./blank-agent";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** The same target names the selected action and its confirmation. */
 function installTargetLabel(name: string, id: string | null, machine: string | null): string {

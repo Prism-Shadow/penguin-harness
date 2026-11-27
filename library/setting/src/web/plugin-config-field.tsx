@@ -8,9 +8,7 @@
  */
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 import { Checkbox, Input, PasswordInput, Select, ToggleRow } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
-import type { Locale } from "@prismshadow/penguin-web/internal";
-import { localizedText } from "@prismshadow/penguin-web/internal";
+import { S, localizedText, type Locale } from "@prismshadow/penguin-web/internal";
 import { ConfigTable } from "./plugin-config-table";
 import { ConfigListEditor } from "./plugin-config-list-editor";
 import type { TableDraft } from "./plugin-config-draft";

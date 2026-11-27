@@ -58,13 +58,15 @@ import {
   useSaving,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { useInstantSetting } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  S,
+  apiErrorText,
+  useInstantSetting,
+  toneInk,
+  toastApiError,
+} from "@prismshadow/penguin-web/internal";
 import { SETTINGS_SCOPE } from "./lib/unsaved/scopes";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** Brand names: identical in every locale, so they are keyed off the server's provider id rather than doubled into both dictionaries. */
 const PROVIDER_LABEL: Record<ProxyProbeProvider, string> = {

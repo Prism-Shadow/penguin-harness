@@ -143,10 +143,7 @@ export function separateProjects(entries) {
 function separateProjectConfig(webDir, entry) {
   const dir = path.join(webDir, "node_modules", ".cache", "gen-web-table");
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(
-    dir,
-    `${entry.name.replaceAll(/[^a-zA-Z0-9.-]/g, "_")}.tsconfig.json`,
-  );
+  const file = path.join(dir, `${entry.name.replaceAll(/[^a-zA-Z0-9.-]/g, "_")}.tsconfig.json`);
   const text = `${JSON.stringify(
     {
       extends: path.join(webDir, "tsconfig.json"),

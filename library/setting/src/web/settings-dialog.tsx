@@ -37,23 +37,24 @@ import {
 } from "@prismshadow/penguin-ui";
 import { webLocale } from "@prismshadow/penguin-web-plugin";
 
-import { S } from "@prismshadow/penguin-web/internal";
-import { glyphOf } from "@prismshadow/penguin-web/internal";
-import { useModuleGates } from "@prismshadow/penguin-web/internal";
 import {
+  S,
+  glyphOf,
+  useModuleGates,
   resolveSettingsSection,
   settingsGroups,
   visibleSettingsSections,
   type HostSettingsSectionKey,
   type SettingsGroupKey,
   type SettingsSectionKey,
+  localizedText,
+  useAuth,
+  useSessionsIfAny,
+  AdminUsersSection,
 } from "@prismshadow/penguin-web/internal";
 
 import { SETTINGS_SCOPE } from "./lib/unsaved/scopes";
 import { mayNamePluginPage, pluginPageTarget, pluginPages } from "./lib/plugin-pages";
-import { localizedText } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import { useSessionsIfAny } from "@prismshadow/penguin-web/internal";
 import { ProfileSection } from "./profile-section";
 import { GeneralSection } from "./general-section";
 import { AppearanceSection } from "./appearance-section";
@@ -67,7 +68,6 @@ import { CompanySection } from "./company-section";
 import { AgentApiSection } from "./agent-api-section";
 import { PluginsSection } from "./plugins-section";
 import { ModuleRequestsPage, useModuleRequestsWaiting } from "./module-requests-page";
-import { AdminUsersSection } from "@prismshadow/penguin-web/internal";
 import { shownSections } from "./contributed-sections";
 import { usePluginPagesIndex } from "./plugin-pages-index";
 import { PluginPageBody, PluginPageHeading, PluginPageIcon } from "./plugin-page";

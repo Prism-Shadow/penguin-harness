@@ -27,9 +27,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { Button, toastError, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
+import { apiErrorText, S, toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** Modules of quiet zone around the code — four is what the QR spec asks for. */
 const QUIET_ZONE = 4;

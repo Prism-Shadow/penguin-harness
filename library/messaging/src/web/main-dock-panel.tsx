@@ -1,13 +1,13 @@
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
 import {
+  S,
   panelLabel,
   type DockPanelBodyProps,
   type PanelId,
+  useChatSession,
 } from "@prismshadow/penguin-web/internal";
 
 import { MessagingPanel } from "./messaging-panel";
-import { useChatSession } from "@prismshadow/penguin-web/internal";
 function draftPlaceholder(id: PanelId) {
   return (
     <EmptyState

@@ -27,11 +27,15 @@ import {
   type Failure,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { failureOf } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-import { AiExamples, PromptFold, useAiBridge } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  S,
+  failureOf,
+  toneInk,
+  AiExamples,
+  PromptFold,
+  useAiBridge,
+} from "@prismshadow/penguin-web/internal";
 import {
   buildPluginImportPrompt,
   isNpmPluginName,

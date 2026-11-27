@@ -2,8 +2,7 @@
  * The messaging panel (`DockModule.panels`, kind `messaging`): the open conversation's relay
  * bindings, started over per conversation (keyed by Session).
  */
-import { DraftPanelEmpty } from "@prismshadow/penguin-web/internal";
-import { useChatSession } from "@prismshadow/penguin-web/internal";
+import { DraftPanelEmpty, useChatSession } from "@prismshadow/penguin-web/internal";
 import { MessagingPanel } from "./messaging-panel";
 
 export function MessagingDockPanel({ active }: { active: boolean }) {

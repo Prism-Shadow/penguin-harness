@@ -26,8 +26,7 @@
  */
 import type { IconRef, PluginConfigEntry, PluginItem } from "@prismshadow/penguin-server/api";
 import type { SettingsSectionData } from "@prismshadow/penguin-web-plugin";
-import { apiUrl } from "@prismshadow/penguin-web/internal";
-import { localizedText } from "@prismshadow/penguin-web/internal";
+import { apiUrl, localizedText } from "@prismshadow/penguin-web/internal";
 import type { ContributedSettingsKey } from "@prismshadow/penguin-web/internal";
 
 /** What a plugin page needs of a contributed Settings page: its data, and its name. */

@@ -13,8 +13,8 @@
  */
 import { useState, useSyncExternalStore } from "react";
 import { PrefRow, Segmented, SettingsGroup, ToggleRow, guardLeave } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
 import {
+  S,
   enableNotifications,
   notificationHintFor,
   notificationPermission,
@@ -23,12 +23,13 @@ import {
   subscribeNotificationsEnabled,
   writeNotificationsEnabled,
   type NotificationAccess,
+  useCompany,
+  resolveSystemLocale,
+  useLocale,
+  type LangPref,
+  useTheme,
+  type Currency,
 } from "@prismshadow/penguin-web/internal";
-
-import { useCompany } from "@prismshadow/penguin-web/internal";
-import { resolveSystemLocale, useLocale, type LangPref } from "@prismshadow/penguin-web/internal";
-
-import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";
 
 import { TraceImportRow } from "./trace-import-row";
 

@@ -12,10 +12,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { ServerSettingsResponse } from "@prismshadow/penguin-server/api";
 import { ConfirmModal, SettingsGroup, SettingsSection, ToggleRow } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
-import { failureNode } from "@prismshadow/penguin-web/internal";
+import { S, toneInk, toastApiError, failureNode } from "@prismshadow/penguin-web/internal";
 
 /** Turns the switch off on the server. Reached only through the confirm. */
 const switchOffAgentApiServer = (): Promise<ServerSettingsResponse> =>
