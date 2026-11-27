@@ -135,7 +135,7 @@ describe("agent-state-gix interchange with real Git", () => {
     // The main branch already carries commits at this point, so the CAS must and does refuse a
     // fresh first commit there; the empty-tree first commit is pinned on its own repository.
     await expect(
-      engine.commit({ ...c, files: undefined }),
+      engine.commit({ ...c, files: null }),
     ).rejects.toThrow(/refused/i);
     const root = await fs.mkdtemp(path.join(import.meta.dirname!, "gix-empty-"));
     try {
