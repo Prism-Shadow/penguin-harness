@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** refactor
 - **Scope:** `messaging`, `server`
+- **PR:** [#1922](https://github.com/Prism-Shadow/penguin-harness/pull/1922)
 
 [中文版](2026-11-26-messaging-scan-flow.zh.md)
 
