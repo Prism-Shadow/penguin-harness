@@ -64,7 +64,10 @@ import {
   type Fact,
 } from "@prismshadow/penguin-library-machine/web/machine-detail-view";
 
-import { readingTone, type MachineReading } from "@prismshadow/penguin-library-machine/web/machines-view";
+import {
+  readingTone,
+  type MachineReading,
+} from "@prismshadow/penguin-library-machine/web/machines-view";
 
 import { formatDateTime, formatShortDateTime } from "../src/lib/format";
 import { S } from "../src/lib/strings";
