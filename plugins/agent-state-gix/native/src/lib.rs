@@ -119,11 +119,14 @@ pub fn commit(input: CommitInput) -> Result<String> {
         .edit_tree(foundation)
         .map_err(|e| refuse(format!("gitoxide cannot edit the parent's tree: {e}")))?;
     match &input.files {
-        // Null removes the folder: every file gone.
+        // Null removes the folder: every file gone. A first commit carries no folder, so
+        // nothing to remove there — the commit is the empty tree.
         None => {
-            editor
-                .remove(input.rel.as_str())
-                .map_err(|e| refuse(format!("cannot remove {}: {e}", input.rel)))?;
+            if parent.is_some() {
+                editor
+                    .remove(input.rel.as_str())
+                    .map_err(|e| refuse(format!("cannot remove {}: {e}", input.rel)))?;
+            }
         }
         Some(files) => {
             // The folder's files replace what the folder had, so the folder goes first —

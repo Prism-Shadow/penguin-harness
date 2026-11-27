@@ -121,6 +121,23 @@ describe("agent-state-gix interchange with real Git", () => {
     expect((await fs.readFile(path.join(c.gitdir, c.ref), "utf8")).trim()).toBe(tip);
   });
 
+  it("a folder removal: same id from both sides, the folder gone from the tree", async () => {
+    const tip = (await fs.readFile(path.join(c.gitdir, c.ref), "utf8")).trim();
+    const removal: AgentStateCommit = { ...c, parent: tip, files: null };
+    const gixSha = await engine.commit(removal);
+    const realSha = await realGitCommit(removal);
+    expect(gixSha).toBe(realSha);
+    const ls = run(c.gitdir, ["ls-tree", "-r", gixSha]);
+    expect(ls.stdout.toString()).not.toContain("workbenches/w1");
+  });
+
+  it("a first commit with no files is the empty tree, same id from both sides", async () => {
+    const empty: AgentStateCommit = { ...c, rel: "workbenches/w-empty", files: null };
+    const gixSha = await engine.commit(empty);
+    const realSha = await realGitCommit(empty);
+    expect(gixSha).toBe(realSha);
+  });
+
   it("readBlobs answers what git cat-file answers", async () => {
     const tip = (await fs.readFile(path.join(c.gitdir, c.ref), "utf8")).trim();
     const ls = run(c.gitdir, ["ls-tree", "-r", tip]);
