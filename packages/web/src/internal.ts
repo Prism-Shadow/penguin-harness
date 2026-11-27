@@ -31,6 +31,7 @@ export * from "./lib/agent-employment";
 export * from "./lib/agent-location";
 export * from "./lib/api-error";
 export * from "./lib/app-center-path";
+export * from "./lib/canvas-view";
 export * from "./lib/app-window-address";
 export * from "./lib/archive-download";
 export * from "./lib/builtin-agents";
