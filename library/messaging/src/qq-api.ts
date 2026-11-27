@@ -34,6 +34,9 @@
 import { userAgent } from "@prismshadow/penguin-core";
 import { WebSocket } from "undici";
 import { MessagingChannelError, httpStatusRecovers } from "./connector.js";
+import { MessagingMediaTooLargeError, collectUnderCap } from "./media.js";
+import { uploadQQMedia } from "./qq-upload.js";
+import type { QQUploadArgs, QQUploadTuning } from "./qq-upload.js";
 
 /**
  * QQ bot OpenAPI host — both the token endpoint and the resource endpoints. Deliberately
@@ -103,6 +106,29 @@ export interface QQInboundEvent {
   content: string;
   /** Sender openid (`author.user_openid` in a single chat, `author.member_openid` in a group). */
   senderOpenid?: string;
+  /** What the message carries besides text (images, files, video, voice); absent when nothing. */
+  attachments?: QQAttachment[];
+  /**
+   * The text of the message this one quotes (`message_type` 103), when the platform sent it.
+   * The quoted message's own attachments are not carried: they are not this message's.
+   */
+  quoted?: string;
+}
+
+/**
+ * One inbound attachment, reduced from the platform's `MessageAttachment`. `contentType` is
+ * the platform's own label — a MIME type for pictures and video, the bare words `voice` and
+ * `file` otherwise — and is only a hint: the connector classifies by it, but the bytes it
+ * fetches are what the Agent actually gets.
+ */
+export interface QQAttachment {
+  /** Download URL, already carrying a scheme (the platform sometimes omits it). */
+  url: string;
+  filename?: string;
+  contentType?: string;
+  size?: number;
+  /** For voice: the platform's own speech-to-text of the recording (`asr_refer_text`). */
+  asrText?: string;
 }
 
 /**
@@ -133,7 +159,15 @@ export interface QQSendArgs {
    * this must genuinely increment per reply.
    */
   msgSeq: number;
+  /**
+   * A rich-media handle from {@link QQBotClient.uploadFile}: sent as `msg_type: 7` with
+   * `media.file_info`, and `content` / `markdown` are not part of that message at all.
+   */
+  fileInfo?: string;
 }
+
+/** One file to register with the platform; see {@link QQBotClient.uploadFile}. */
+export type QQUploadFileArgs = QQUploadArgs;
 
 /** OpenAPI half of the seam, bound to one credential pair. Every method throws on failure with a readable reason. */
 export interface QQBotClient {
@@ -143,8 +177,14 @@ export interface QQBotClient {
    * so the exchange itself is the probe and there is no account label to surface.
    */
   checkCredentials(): Promise<void>;
-  /** Sends one passive text reply into a single chat or a group. */
+  /** Sends one passive reply — text, markdown or (with `fileInfo`) rich media — into a single chat or a group. */
   sendMessage(args: QQSendArgs): Promise<void>;
+  /**
+   * Registers a file with the platform and returns its `file_info`. Costs no reply slot: it
+   * is an upload, not a message. A refusal is a {@link QQApiError} carrying the platform's
+   * code (850019 unsupported format, 850031 over the size limit, 40093002 daily volume…).
+   */
+  uploadFile(args: QQUploadFileArgs): Promise<string>;
 }
 
 export interface QQGatewayHandlers {
@@ -163,6 +203,14 @@ export interface QQGatewayConnection {
 /** Factory the QQ connector is built over: the production adapter, or a test fake. */
 export interface QQTransport {
   createClient(creds: QQCredentials): QQBotClient;
+  /**
+   * Downloads one inbound attachment, refusing at the byte that crosses `maxBytes` with a
+   * {@link MessagingMediaTooLargeError}. A transport method rather than a connector call to
+   * `fetch` so a test can stand the download in without a socket, and so it rides the same
+   * proxy-aware fetch as every other call. `what` names the transfer in an error — never the
+   * URL, which is a signed link.
+   */
+  fetchAttachment(url: string, maxBytes: number, what: string): Promise<Buffer>;
   /**
    * Opens the gateway for one bot. Resolves as soon as the session is constructed and
    * connecting — lifecycle arrives via the handlers (`onReady` / `onError`), because the
@@ -397,6 +445,8 @@ export interface QQTransportOpts {
   createSocket?: (url: string) => QQSocket;
   /** Test hook: the handshake deadline (default QQ_HANDSHAKE_TIMEOUT_MS). */
   handshakeTimeoutMs?: number;
+  /** Test hook: how a chunked upload retries a part (default 3 attempts, the platform's delay). */
+  upload?: QQUploadTuning;
 }
 
 /** One bot's access token with early refresh, shared by the OpenAPI client and the gateway identify. */
@@ -462,10 +512,23 @@ interface ProductionClient extends QQBotClient {
   tokens: TokenCache;
 }
 
-function createProductionClient(creds: QQCredentials): ProductionClient {
+function createProductionClient(
+  creds: QQCredentials,
+  uploadTuning: QQUploadTuning = {},
+): ProductionClient {
   const tokens = tokenCacheOf(creds);
 
-  const post = async (path: string, payload: Record<string, unknown>, retry = true) => {
+  /**
+   * One authenticated POST, resolving the parsed JSON body. `what` leads the error text
+   * ("Message send", "Upload") so a failure names the operation it belongs to.
+   */
+  const post = async (
+    path: string,
+    payload: Record<string, unknown>,
+    what: string,
+    timeoutMs = CALL_TIMEOUT_MS,
+    retry = true,
+  ): Promise<unknown> => {
     const token = await tokens.get();
     let res: Response;
     try {
@@ -477,27 +540,51 @@ function createProductionClient(creds: QQCredentials): ProductionClient {
           "user-agent": userAgent(),
         },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
-      throw new MessagingChannelError(`Message send failed: ${fetchErrorText(err)}`, true);
+      throw new MessagingChannelError(`${what} failed: ${fetchErrorText(err)}`, true);
     }
-    if (res.status >= 200 && res.status < 300) return;
+    if (res.status >= 200 && res.status < 300) return res.json().catch(() => null);
     const body = (await res.json().catch(() => null)) as QQErrorBody | null;
     if (res.status === 401) {
       // The cached token died before its stated expiry — a secret rotated in the console,
       // or a clock further off than the refresh margin covers. Drop it and replay ONCE, so
       // a genuinely revoked credential still surfaces as an error instead of looping.
       tokens.invalidate();
-      if (retry) return post(path, payload, false);
+      if (retry) return post(path, payload, what, timeoutMs, false);
     }
     const errCode = body?.err_code ?? body?.code;
     const detail = qqSendErrorText(errCode, body?.message ?? `HTTP ${res.status}`);
     // The platform answered, whatever it said: a refused request delivered nothing, which is
     // what makes another form of the same message safe to send (see QQApiError).
     throw new QQApiError(
-      `Message send failed: ${detail}${errCode !== undefined ? ` (code ${errCode})` : ""}`,
+      `${what} failed: ${detail}${errCode !== undefined ? ` (code ${errCode})` : ""}`,
       errCode,
+      httpStatusRecovers(res.status),
+    );
+  };
+
+  /**
+   * One part of a chunked upload, PUT to the presigned storage URL the platform handed out.
+   * No QQ credentials ride it — the signature in the URL is the authorization, and sending
+   * the bot's token to a storage host would be a leak, not a courtesy.
+   */
+  const put = async (url: string, bytes: Buffer): Promise<void> => {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "PUT",
+        headers: { "user-agent": userAgent() },
+        body: bytes,
+        signal: AbortSignal.timeout(UPLOAD_PART_TIMEOUT_MS),
+      });
+    } catch (err) {
+      throw new MessagingChannelError(`Upload failed: ${fetchErrorText(err)}`, true);
+    }
+    if (res.status >= 200 && res.status < 300) return;
+    throw new MessagingChannelError(
+      `Upload failed: storage answered HTTP ${res.status}`,
       httpStatusRecovers(res.status),
     );
   };
@@ -507,24 +594,84 @@ function createProductionClient(creds: QQCredentials): ProductionClient {
     async checkCredentials(): Promise<void> {
       await tokens.get();
     },
-    sendMessage(args: QQSendArgs): Promise<void> {
+    async sendMessage(args: QQSendArgs): Promise<void> {
       const path =
         args.kind === "group"
           ? `/v2/groups/${encodeURIComponent(args.openid)}/messages`
           : `/v2/users/${encodeURIComponent(args.openid)}/messages`;
+      const ids = { msg_id: args.msgId, msg_seq: args.msgSeq };
+      if (args.fileInfo !== undefined) {
+        // 7 = rich media: the body is the handle alone.
+        await post(
+          path,
+          { msg_type: 7, media: { file_info: args.fileInfo }, ...ids },
+          "Message send",
+        );
+        return;
+      }
       const markdown = args.markdown;
-      return post(path, {
-        // "传了 markdown 后此字段必须为空" — the platform rejects a payload carrying both.
-        content: markdown === undefined ? args.content : "",
-        // 0 = plain text, 2 = markdown. Rich media (7) needs a publicly reachable URL for the
-        // bytes, which is why this channel refuses outbound files (see qq-connector).
-        msg_type: markdown === undefined ? 0 : 2,
-        ...(markdown !== undefined ? { markdown: { content: markdown } } : {}),
-        msg_id: args.msgId,
-        msg_seq: args.msgSeq,
-      });
+      await post(
+        path,
+        {
+          // "传了 markdown 后此字段必须为空" — the platform rejects a payload carrying both.
+          content: markdown === undefined ? args.content : "",
+          // 0 = plain text, 2 = markdown.
+          msg_type: markdown === undefined ? 0 : 2,
+          ...(markdown !== undefined ? { markdown: { content: markdown } } : {}),
+          ...ids,
+        },
+        "Message send",
+      );
     },
+    uploadFile: (args: QQUploadFileArgs): Promise<string> =>
+      uploadQQMedia(
+        {
+          post: (path, payload, timeoutMs) => post(path, payload, "Upload", timeoutMs),
+          put,
+        },
+        args,
+        uploadTuning,
+      ),
   };
+}
+
+/**
+ * The ceiling on one inbound attachment download. The caller's `maxBytes` is the real cap;
+ * this only bounds how long a stalled transfer may hold the bridge.
+ */
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+/** One chunked-upload part's deadline: a part is megabytes, not a JSON body. */
+const UPLOAD_PART_TIMEOUT_MS = 60_000;
+
+async function fetchAttachmentBytes(url: string, maxBytes: number, what: string): Promise<Buffer> {
+  let res: Response;
+  try {
+    // Attachment URLs are public signed links: no Authorization header, and none must be
+    // added — the QQBot token is for api.bot.qq.com only.
+    res = await fetch(url, {
+      headers: { "user-agent": userAgent() },
+      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new MessagingChannelError(
+      `${what} could not be downloaded: ${fetchErrorText(err)}`,
+      true,
+    );
+  }
+  if (!res.ok || res.body === null) {
+    throw new MessagingChannelError(
+      `${what} could not be downloaded: HTTP ${res.status}`,
+      httpStatusRecovers(res.status),
+    );
+  }
+  // A declared length over the cap is refused without reading a byte; one that lies, or is
+  // absent, is caught by the running count (see collectUnderCap).
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body.cancel().catch(() => {});
+    throw new MessagingMediaTooLargeError(what, maxBytes);
+  }
+  return collectUnderCap(res.body as unknown as AsyncIterable<Uint8Array>, maxBytes, what);
 }
 
 /** The production factory: plain HTTPS for the OpenAPI, undici's WebSocket for the gateway. */
@@ -533,7 +680,8 @@ export function createQQTransport(opts: QQTransportOpts = {}): QQTransport {
   const createSocket = opts.createSocket ?? ((url: string): QQSocket => new WebSocket(url));
   const handshakeMs = opts.handshakeTimeoutMs ?? QQ_HANDSHAKE_TIMEOUT_MS;
   return {
-    createClient: (creds) => createProductionClient(creds),
+    createClient: (creds) => createProductionClient(creds, opts.upload),
+    fetchAttachment: fetchAttachmentBytes,
     async openGateway(creds, handlers): Promise<QQGatewayConnection> {
       const session = new GatewaySession(createProductionClient(creds), handlers, {
         retryMs,
@@ -923,15 +1071,24 @@ export function normalizeDispatch(frame: QQGatewayFrame): QQInboundEvent | null 
         content?: string;
         group_openid?: string;
         author?: { user_openid?: string; member_openid?: string };
+        message_type?: number;
+        attachments?: unknown;
+        msg_elements?: unknown;
       }
     | undefined;
   if (d === undefined || typeof d.id !== "string" || d.id === "") return null;
   // The platform strips the "@bot" prefix but not the space it sat in.
   const content = typeof d.content === "string" ? d.content.trim() : "";
+  const attachments = attachmentsOf(d.attachments);
+  const quoted = d.message_type === 103 ? quotedTextOf(d.msg_elements) : "";
+  const extras = {
+    ...(attachments.length > 0 ? { attachments } : {}),
+    ...(quoted !== "" ? { quoted } : {}),
+  };
   if (frame.t === "C2C_MESSAGE_CREATE") {
     const openid = d.author?.user_openid;
     if (typeof openid !== "string" || openid === "") return null;
-    return { kind: "c2c", openid, messageId: d.id, content, senderOpenid: openid };
+    return { kind: "c2c", openid, messageId: d.id, content, senderOpenid: openid, ...extras };
   }
   if (frame.t === "GROUP_AT_MESSAGE_CREATE") {
     const openid = d.group_openid;
@@ -943,7 +1100,47 @@ export function normalizeDispatch(frame: QQGatewayFrame): QQInboundEvent | null 
       messageId: d.id,
       content,
       ...(typeof sender === "string" && sender !== "" ? { senderOpenid: sender } : {}),
+      ...extras,
     };
   }
   return null;
+}
+
+/**
+ * The platform's `attachments` array, reduced. An entry with no URL is unusable and dropped;
+ * a URL without a scheme (`//host/path`, which older payloads carry) gets `https:`, and a
+ * scheme other than http(s) is dropped rather than handed to fetch.
+ */
+function attachmentsOf(raw: unknown): QQAttachment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: QQAttachment[] = [];
+  for (const item of raw as Array<Record<string, unknown>>) {
+    const rawUrl = typeof item?.url === "string" ? item.url.trim() : "";
+    if (rawUrl === "") continue;
+    const url = rawUrl.startsWith("//") ? `https:${rawUrl}` : rawUrl;
+    if (!/^https?:\/\//i.test(url)) continue;
+    const str = (v: unknown): string | undefined =>
+      typeof v === "string" && v !== "" ? v : undefined;
+    const filename = str(item.filename);
+    const contentType = str(item.content_type);
+    const asrText = str(item.asr_refer_text)?.trim();
+    out.push({
+      url,
+      ...(filename !== undefined ? { filename } : {}),
+      ...(contentType !== undefined ? { contentType } : {}),
+      ...(typeof item.size === "number" ? { size: item.size } : {}),
+      ...(asrText !== undefined && asrText !== "" ? { asrText } : {}),
+    });
+  }
+  return out;
+}
+
+/** The quoted message's text out of `msg_elements`; "" when there is none. */
+function quotedTextOf(raw: unknown): string {
+  if (!Array.isArray(raw)) return "";
+  return (raw as Array<{ content?: unknown }>)
+    .flatMap((el) =>
+      typeof el?.content === "string" && el.content.trim() !== "" ? [el.content.trim()] : [],
+    )
+    .join("\n");
 }
