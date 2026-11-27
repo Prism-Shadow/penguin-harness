@@ -17,7 +17,9 @@
  *   the download parameter), names an unnamed file plainly and skips media with neither.
  * - Outbound sends carry one item per request and the conversation token when known; an
  *   image or file is uploaded as ciphertext under a fresh key the handle declares, with the
- *   plaintext length, and a caption goes out as its own message. The ciphertext goes to the
+ *   plaintext length, and the item carries that key as base64 of its hex digits (the form the
+ *   WeChat app opens, which this side's own reader takes back too); a caption goes out as its
+ *   own message. The ciphertext goes to the
  *   ready-made upload URL when one comes back, else to the CDN base under the upload parameter
  *   and the file key; an answer with neither fails naming the fields it did carry, and nothing
  *   is posted anywhere.
@@ -376,6 +378,17 @@ describe("inbound normalization", () => {
 });
 
 describe("outbound sends", () => {
+  /**
+   * Opens uploaded ciphertext with an outbound item's `aes_key`, read the way Tencent's senders
+   * write it: base64 of the key's 32 lowercase hex characters, and those characters as the key.
+   */
+  function openWithSentKey(aesKey: string, ciphertext: Uint8Array): Buffer {
+    const hex = Buffer.from(aesKey, "base64").toString("ascii");
+    expect(hex).toMatch(/^[0-9a-f]{32}$/);
+    const decipher = createDecipheriv("aes-128-ecb", Buffer.from(hex, "hex"), null);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  }
+
   it("sends one item per request and echoes the conversation token", async () => {
     const calls = stubWeChat();
     await client().sendText({ userId: USER, text: "hi", contextToken: "ctx-7" });
@@ -437,7 +450,13 @@ describe("outbound sends", () => {
     const item = JSON.parse(calls[2]!.body).msg.item_list[0];
     expect(item.type).toBe(2);
     expect(item.image_item.media.encrypt_query_param).toBe("dl-param-1");
-    expect(Buffer.from(item.image_item.media.aes_key as string, "base64").equals(key)).toBe(true);
+    // The reported failure: a key sent as base64 of its 16 raw bytes is delivered, and the WeChat
+    // app then shows the picture as unavailable. The hex form is the one that opens the bytes
+    // the CDN received.
+    const sentKey = item.image_item.media.aes_key as string;
+    expect(openWithSentKey(sentKey, calls[1]!.bytes).equals(plaintext)).toBe(true);
+    // This side's own reader takes the same form back.
+    expect(parseWeChatAesKey(sentKey).equals(key)).toBe(true);
   });
 
   it("sends a file under the FILE media type, with its name and its PLAINTEXT length", async () => {
@@ -460,6 +479,9 @@ describe("outbound sends", () => {
     const item = JSON.parse(calls[2]!.body).msg.item_list[0];
     expect(item.type).toBe(4);
     expect(item.file_item.file_name).toBe("report.pdf");
+    // A file's key goes out in the same hex form as a picture's, and opens what was uploaded.
+    const opened = openWithSentKey(item.file_item.media.aes_key as string, calls[1]!.bytes);
+    expect(opened.equals(bytes)).toBe(true);
     // The receiving client shows this number, and the ciphertext is a padding block
     // longer than what the reader actually gets.
     expect(item.file_item.len).toBe(String(bytes.length));

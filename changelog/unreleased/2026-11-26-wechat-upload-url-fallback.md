@@ -1,4 +1,4 @@
-# WeChat sends images and files when the platform returns only an upload parameter
+# Images and files sent to WeChat arrive and open in the WeChat client
 
 - **Date:** 2026-11-26
 - **Type:** fix
@@ -9,7 +9,9 @@
 
 An image or file sent to a WeChat chat failed with "the upload URL was not returned" whenever
 `ilink/bot/getuploadurl` answered with `upload_param` and no `upload_full_url`. Media in an inbound
-message that carried `encrypt_query_param` and no `full_url` was dropped the same way.
+message that carried `encrypt_query_param` and no `full_url` was dropped the same way. Images and
+files that were delivered could not be opened in the WeChat client, which showed a picture as
+unavailable. They now open.
 
 ## Details
 
@@ -21,3 +23,6 @@ message that carried `encrypt_query_param` and no `full_url` was dropped the sam
   taken first.
 - When the upload answer carries neither field, the error lists the field names it did carry. Field
   values never appear in it.
+- The `aes_key` of an outbound image or file is base64 of the key's 32 lowercase hex characters,
+  as Tencent's own senders write it, instead of base64 of its 16 raw bytes. The CDN ciphertext and
+  the `aeskey` sent to `getuploadurl` are unchanged, and inbound keys are still read in either form.

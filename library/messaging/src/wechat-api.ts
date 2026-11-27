@@ -516,6 +516,21 @@ export function parseWeChatAesKey(aesKey: string): Buffer {
   throw new Error("wechat media key is neither 16 raw bytes nor 32 hex characters");
 }
 
+/**
+ * Writes a key into an outbound item's `aes_key`: base64 of its 32 lowercase HEX CHARACTERS,
+ * never of its 16 raw bytes.
+ *
+ * parseWeChatAesKey's tolerance of both forms is this reader's own, and the WeChat app does not
+ * share it: a picture whose key went out as base64 of the raw bytes is delivered, then shown as
+ * unavailable and cannot be opened. Tencent's own senders write the hex form for images, videos
+ * and files alike: openclaw-weixin keeps the key as hex (src/cdn/upload.ts:127) and base64s that
+ * text (src/messaging/send.ts:301, 345, 389), and its docs/protocol.md:651 says so. The CDN
+ * encryption and `getuploadurl`'s `aeskey` use the same key in its raw and hex forms.
+ */
+function outboundAesKey(key: Buffer): string {
+  return Buffer.from(key.toString("hex"), "utf8").toString("base64");
+}
+
 // ---------------------------------------------------------------------------
 // Inbound normalization
 // ---------------------------------------------------------------------------
@@ -879,7 +894,7 @@ export function createWeChatTransport(): WeChatTransport {
               image_item: {
                 media: {
                   encrypt_query_param: param,
-                  aes_key: aesKey.toString("base64"),
+                  aes_key: outboundAesKey(aesKey),
                   encrypt_type: 1,
                 },
                 mid_size: cipherSize,
@@ -904,7 +919,7 @@ export function createWeChatTransport(): WeChatTransport {
               file_item: {
                 media: {
                   encrypt_query_param: param,
-                  aes_key: aesKey.toString("base64"),
+                  aes_key: outboundAesKey(aesKey),
                   encrypt_type: 1,
                 },
                 file_name: args.file.fileName,
