@@ -144,8 +144,8 @@ export const en: GalleryStrings = {
     company: {
       title: "Company (draft)",
       description:
-        "Company mode as a plugin app in the App Center: the inbox holds only tickets that need your call, your acceptance or a halted breaker; decision cards are interactive A2UI; tickets move through working, verifying and your call.",
-      how: "App Center › Company; pick on a decision card, accept or send back a delivery, lift a breaker; switch to Team, Tickets and Handbook in the header.",
+        "Company mode as a plugin app in the App Center: one conversation is one job, grouped into waiting on you, in progress and done, with the sub-sessions a member delegates listed under it.",
+      how: "App Center › Company; click a row to open that conversation, copy its session ID or stop it from the row menu; New job opens a new conversation.",
     },
     "company-new": {
       title: "New organization (draft)",

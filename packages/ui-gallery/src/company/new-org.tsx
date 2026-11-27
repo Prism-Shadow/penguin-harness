@@ -11,12 +11,20 @@ import {
   RuledSection,
   Textarea,
 } from "@prismshadow/penguin-ui";
-import { useCompanyApp } from "./context";
-import { money, templates } from "./fixtures";
+import { templates } from "./fixtures";
 import type { Template } from "./fixtures";
+import type { Lang } from "./frame";
+import type { Words } from "./words";
 
-function TemplateCard({ template, onPick }: { template: Template; onPick: () => void }) {
-  const { w } = useCompanyApp();
+function TemplateCard({
+  w,
+  template,
+  onPick,
+}: {
+  w: Words;
+  template: Template;
+  onPick: () => void;
+}) {
   const body = (
     <>
       <span className="flex min-w-0 items-center gap-2">
@@ -27,9 +35,7 @@ function TemplateCard({ template, onPick }: { template: Template; onPick: () => 
       </span>
       <span className="mt-1 block text-xs text-fg-muted">{template.summary}</span>
       {!template.otherPlugin && (
-        <span className="mt-3 block text-xs text-fg-subtle">
-          {w.create.teamValue(template.executors)} · {template.workbench}
-        </span>
+        <span className="mt-3 block text-xs text-fg-subtle">{template.members.join(" · ")}</span>
       )}
     </>
   );
@@ -44,7 +50,7 @@ function TemplateCard({ template, onPick }: { template: Template; onPick: () => 
       <button
         type="button"
         onClick={onPick}
-        className="block h-full w-full p-4 text-left rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg-subtle/60"
+        className="block h-full w-full rounded-[inherit] p-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg-subtle/60"
       >
         {body}
       </button>
@@ -53,13 +59,16 @@ function TemplateCard({ template, onPick }: { template: Template; onPick: () => 
 }
 
 export function NewOrgPage({
+  w,
+  lang,
   onCreate,
   back,
 }: {
+  w: Words;
+  lang: Lang;
   onCreate: (template: Template, goal: string) => void;
   back: { label: string; onClick: () => void };
 }) {
-  const { w, lang } = useCompanyApp();
   const [goal, setGoal] = useState("");
   const [picked, setPicked] = useState<Template | null>(null);
   const list = templates(lang);
@@ -91,6 +100,7 @@ export function NewOrgPage({
             {list.map((template) => (
               <TemplateCard
                 key={template.id}
+                w={w}
                 template={template}
                 onPick={() => setPicked(template)}
               />
@@ -105,7 +115,7 @@ export function NewOrgPage({
         footer={
           <div className="flex flex-wrap justify-end gap-2">
             <Button size="sm" onClick={() => setPicked(null)}>
-              {w.inbox.cancel}
+              {w.create.cancel}
             </Button>
             <Button
               size="sm"
@@ -125,13 +135,7 @@ export function NewOrgPage({
             <KeyValueRow label={w.create.goal}>
               {goal.trim() === "" ? picked.summary : goal.trim()}
             </KeyValueRow>
-            <KeyValueRow label={w.create.planTeam}>
-              {w.create.teamValue(picked.executors)}
-            </KeyValueRow>
-            <KeyValueRow label={w.create.planLimits}>
-              {w.create.planLimitsValue(picked.maxRounds, money(picked.budget))}
-            </KeyValueRow>
-            <KeyValueRow label={w.create.planWorkbench}>{picked.workbench}</KeyValueRow>
+            <KeyValueRow label={w.create.planTeam}>{picked.members.join(" · ")}</KeyValueRow>
             <KeyValueRow label={w.create.planTrigger}>{picked.trigger}</KeyValueRow>
           </KeyValue>
         )}
