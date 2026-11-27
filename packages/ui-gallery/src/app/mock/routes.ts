@@ -160,7 +160,7 @@ import { isThemeId } from "@prismshadow/penguin-ui";
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
 import { agentPluginGroups } from "@prismshadow/penguin-library-plugin/web/agent-plugin-groups";
 import { declaredServerModules } from "../../../../web/src/lib/module-gate";
-import { MESSAGING_CHANNELS } from "../../../../web/src/features/messaging/channels/channel-ids";
+import { MESSAGING_CHANNELS } from "@prismshadow/penguin-library-messaging/web/channels/channel-ids";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
