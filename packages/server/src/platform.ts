@@ -32,11 +32,7 @@ import {
 } from "./hmr/capabilities.js";
 import { ScryptHasher, PasswordHasher } from "./auth/password.js";
 import { LiveStreamRegistry, LiveStreams } from "./auth/live-streams.js";
-import {
-  Messaging,
-  MessagingTaskRunner,
-  QQScan,
-} from "@prismshadow/penguin-library-messaging/bridge";
+import { Messaging, MessagingTaskRunner } from "@prismshadow/penguin-library-messaging/bridge";
 import {
   DefaultMessagingTuning,
   MessagingAccountsModule,
@@ -552,7 +548,7 @@ export class WorkspaceModule {}
     MessagingModule,
     MessagingAccountsModule,
   ],
-  exports: [Messaging, QQScan, MessagingBindings],
+  exports: [Messaging, MessagingBindings],
 })
 export class MessagingHubModule {}
 

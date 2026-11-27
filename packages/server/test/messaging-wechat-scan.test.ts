@@ -289,7 +289,7 @@ describe("the WeChat scan service", () => {
     transport.next = completed;
     expect(await service.poll(SID, started.taskId)).toEqual({
       status: "completed",
-      bot: completed.bot,
+      credential: { accountId: BOT_ID, config: completed.bot },
     });
     expect(await service.poll(SID, started.taskId)).toBeNull();
   });
