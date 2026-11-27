@@ -81,6 +81,7 @@ import {
   PLUGIN_MACHINE_ID,
   type PluginRequirement,
   type PluginTables,
+  unscopedPackageName,
 } from "@prismshadow/penguin-core";
 import type { Config, Db, Hmr, Reassembly, ReassemblyChange } from "../../hmr/capabilities.js";
 import {
@@ -645,10 +646,12 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
    * process has no library host (nothing is shipped).
    */
   const libraryShipped = (name: string): { version: string | null } | null => {
+    // The library's roots are keyed by the unscoped plugin name; the specifier names the package.
+    const bare = unscopedPackageName(name);
     try {
       for (const [root, entry] of libraryRoots()) {
-        if (root === name && !entry.installed) {
-          return { version: libraryPluginPackage(name)?.version ?? null };
+        if (root === bare && !entry.installed) {
+          return { version: libraryPluginPackage(bare)?.version ?? null };
         }
       }
     } catch {
