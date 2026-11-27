@@ -181,7 +181,7 @@ A connected conversation shows a paper-plane icon on its row in the sidebar. Poi
 - If the agent is busy, the message waits in the queue and runs next.
 - While the connection is on, the conversation stays loaded on the server, from the moment the connection comes up. A message after a quiet spell does not wait for the conversation to load, though the model provider can still be slower to answer after a long pause.
 - On Feishu, Telegram, QQ and WeChat, images and files you send are attached to the message. Each image can be up to 20 MB, and one connection accepts up to 40 MB of images per 10 minutes. Files follow the upload limits in [Settings](/settings); Telegram also caps bot downloads at 20 MB.
-- Stickers are not supported, and neither are voice and video messages on Feishu and Telegram. On QQ, voice arrives as a transcript. The bot replies that only text, image and file messages are supported.
+- Stickers are not supported, and neither are voice and video messages on Feishu and Telegram. The bot replies that only text, image and file messages are supported. On QQ, voice arrives as a transcript.
 - On Feishu, Telegram and WeChat, messages sent while the connection is off are not delivered later. On WeChat, a message sent within 5 minutes before the connection comes up is the exception and is answered.
 
 ### Replies the bot sends
