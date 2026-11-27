@@ -152,8 +152,7 @@ export function refreshTerminals(): Promise<void> {
         // shells are left out of that round, as an unreachable machine's are. The wait is read
         // here rather than at module scope: the host's dock code imports this half, so a
         // top-level read of the hub's constant would close a cycle and read it too early.
-        const timer =
-          source === null ? null : setTimeout(() => giveUp.abort(), ANSWER_TIMEOUT_MS);
+        const timer = source === null ? null : setTimeout(() => giveUp.abort(), ANSWER_TIMEOUT_MS);
         const res = await fetch(apiUrl("/api/terminals", source), {
           credentials: "same-origin",
           signal: giveUp.signal,
