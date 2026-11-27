@@ -545,7 +545,7 @@ export { useAuth } from "./state/auth";
 
 export { useLocale } from "./state/locale";
 
-export { jobFor } from "./features/machines/machines-view";
+export { jobFor } from "./features/machines";
 
 export { useMachines } from "./state/machines";
 
