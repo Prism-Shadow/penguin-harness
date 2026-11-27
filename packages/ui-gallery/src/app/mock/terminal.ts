@@ -1,10 +1,10 @@
-import type { SocketHandlers } from "../../../../library/terminal/src/web/terminal-connection";
+import type { SocketHandlers } from "../../../../../library/terminal/src/web/terminal-connection";
 import {
   decodeFrame,
   encodeFrame,
   TerminalOpcode,
-} from "../../../../library/terminal/src/web/terminal-frames";
-import type { TerminalInfo } from "../../../../library/terminal/src/web/terminal-view";
+} from "../../../../../library/terminal/src/web/terminal-frames";
+import type { TerminalInfo } from "../../../../../library/terminal/src/web/terminal-view";
 import { empty, fail, type Router } from "./router";
 import { getStore, type DemoStore } from "./store";
 
