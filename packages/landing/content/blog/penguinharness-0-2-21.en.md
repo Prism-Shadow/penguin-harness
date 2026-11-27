@@ -2,10 +2,10 @@
 title: "PenguinHarness 0.2.21: terminals on Linux, a steadier server, and offline machines"
 date: 2026-11-27
 category: news
-excerpt: "A hotfix release: terminals open again on Linux systems with glibc older than 2.42, the server no longer exits on a socket that arrives while it starts, a conversation on an unreachable machine shows its cached copy after five retries, Memory opened from Shortcuts loads, the Browser panel opens its first tab by itself, and a QQ bot carries images, files and voice messages."
+excerpt: "A fix release: terminals open again on Linux systems with glibc older than 2.42, the server no longer exits on a socket that arrives while it starts, a conversation on an unreachable machine stays readable with its status on the input box, Memory opened from Shortcuts loads, the Browser panel opens its first tab by itself, closing a dock's last tab leaves it on its start page, and a QQ bot carries images, files and voice messages."
 ---
 
-PenguinHarness 0.2.21 is out — a hotfix release on top of 0.2.20. **Terminals open again on Linux systems with glibc older than 2.42.** 0.2.19 and 0.2.20 broke them for servers, the Linux desktop app and remote machines alike. The server no longer exits when a socket arrives while it starts. A conversation on an unreachable machine stops retrying and shows its cached copy. Memory opened from Shortcuts loads. The Browser panel opens its first tab by itself. A QQ bot connected through Remote control now carries images, files and voice messages in both directions. For everything new since 0.2.17, see [the 0.2.20 post](/blog/penguinharness-0-2-20).
+PenguinHarness 0.2.21 is out — a fix release on top of 0.2.20. **Terminals open again on Linux systems with glibc older than 2.42.** 0.2.19 and 0.2.20 broke them for servers, the Linux desktop app and remote machines alike. The server no longer exits when a socket arrives while it starts. A conversation on an unreachable machine stays readable, with the machine's status on its input box. Memory opened from Shortcuts loads. The Browser panel opens its first tab by itself, and closing a dock's last tab leaves it on its start page. A QQ bot connected through Remote control now carries images, files and voice messages in both directions. Images and files sent to WeChat arrive again. For everything new since 0.2.17, see [the 0.2.20 post](/blog/penguinharness-0-2-20).
 
 ## Terminals open again on Linux
 
@@ -15,13 +15,13 @@ Both Linux bindings, x64 and arm64, are now built in a `manylinux_2_28` containe
 
 The release now checks this on what it ships. `scripts/check-native-glibc.mjs` reads the symbol versions of every Linux `*.node` in the payload tarballs, the npm package's carried store and the desktop app. It fails the release, the desktop build and CI's npm packaging when one needs a glibc newer than 2.28 or when an expected binding is missing.
 
-## A conversation on an unreachable machine shows the cached copy
+## A conversation on an unreachable machine stays readable
 
-**Opening a conversation on a remote machine that cannot be reached no longer retries without end.** Each wait names its reason and its attempt out of five, for example "Can't reach the server on Office, retrying in 2 s (attempt 2/5)". After five retries that move nothing (1, 2, 4, 8 and 16 s), the page shows this server's cached copy of the conversation and a status line that names the reason and ends with **Retry**, which makes one attempt.
+**While the machine a conversation lives on is out of reach, its state now covers that conversation's input box instead of standing at the top of the conversation.** The transcript stays readable where you left it, and what you typed stays under the cover. The cover names the machine and its state, with **Retry now** and **Stop retrying** while it reconnects, and **Retry** and **Go to Machines** once retrying stops. A last line says messages can't be sent until the machine is back and that what you typed is kept.
 
-![A conversation on the machine Office after the retries stopped: the status line "The server on Office isn't responding. Showing the conversation from the last sync." with Retry, over the cached copy of a real glm-5.3-flash conversation](/blog-assets/penguinharness-0-2-21-offline-machine-en.png)
+![The end of a real glm-5.3-flash conversation on the machine Office, still readable, and its input box covered by "The server on Office isn't responding" with Retry and Go to Machines, over the note that the conversation shown is from the last sync, messages can't be sent until it's back, and what you've typed is kept](/blog-assets/penguinharness-0-2-21-offline-machine-en.png)
 
-Until a stream from that machine moves again, later reads of it try once and do not retry, so reopening the conversation does not start a new round. When the machines list already reads the machine as away, the cached copy and the status line show at once. The page reads the live history again by itself when the machine's API socket comes back, without polling.
+When the machine drops while the conversation is open, the transcript keeps its scroll position and turns read-only. The input box keeps its text, attachments and picked Skills. Opening such a conversation no longer retries without end: after five retries that move nothing (1, 2, 4, 8 and 16 s), the page shows this server's cached copy, and reopening the conversation does not start a new round. When the machine is back, the page reads the live history again by itself, without polling, and the input box returns.
 
 ## Memory opened from Shortcuts loads
 
@@ -39,6 +39,14 @@ The **Files**, **Memory** and **Agents** jumps opened from **Shortcuts** also re
 
 A new tab's globe icon takes the theme's link colour instead of the faint secondary text colour, so it is legible in all four themes and in dark mode.
 
+## Closing a dock's last tab leaves it on its start page
+
+**Closing the last tab in a conversation's dock no longer puts the dock away.** The dock stays where it is, at the same size, and shows its start page: everything its **+** menu offers, in the same order, as App Center tiles.
+
+![A real glm-5.3-flash conversation whose right dock stayed open after its last tab closed, on its start page: App Center, Agents panel, Terminal, Files, Memory, Trajectories, Remote control and Scheduled tasks as tiles](/blog-assets/penguinharness-0-2-21-dock-start-page-en.png)
+
+In a conversation's right dock, the tiles are its Shortcuts: **App Center** first, then the panels. Arrow keys move between tiles and Enter opens one. The empty dock the toolbar buttons pull open shows the same page. Only the dock's own controls put it away: its ×, the toolbar button and its keyboard shortcuts.
+
 ## A QQ bot carries images, files and voice messages
 
 **A conversation connected to a QQ bot through Remote control no longer carries text only.** The images and files an Agent writes in its reply reach QQ. The images, files and voice messages you send reach the Agent. A voice message arrives as QQ's own transcript. A quoted message's text appears above the reply as a blockquote.
@@ -49,6 +57,7 @@ Files go through QQ's rich-media upload and are sent as a passive reply, so the 
 
 - **Server**: A socket that arrived while the server was starting or swapping its running modules could end the process — for example a browser tab still open on a previous server that reconnected while a fresh data root started. Until startup has finished, the server answers every request with 503 and `retry-after`, and closes a WebSocket handshake at once with 1013 (Try Again Later). A malformed WebSocket request could stop a running server; it is now refused with 400. A failed handshake of a terminal stream or the API socket is logged and refused, and none of these ends the process.
 - **Remote machines**: In the desktop app, the browser in a conversation that runs on a remote machine says the conversation runs on another machine, which has no desktop app, so conversations there cannot use the browser. It no longer asks you to open the desktop app you are already in. On the machine, `penguin browser status` says the session's browser is in PenguinHarness on the computer the machine was added from.
+- **Workbenches**: An Agent workbench window or full page keeps its place inside the page in the address (`at`), so Back, Forward, a pasted address and full screen return to it. Workbench authors use the `penguin:location` and `penguin:navigate` messages, described in the `penguin-plugin` Skill and the Workbench plugins docs.
 - **WeChat**: Sending an image or file to a WeChat chat no longer fails with "the upload URL was not returned". Images arrive viewable in the WeChat client instead of showing as unavailable.
 - **Interface**: The dock's **+** menu no longer lists **Hide launcher**. The entry stays on the floating launcher's own menu, and **Shortcuts launcher** under **Settings › Appearance** shows a hidden launcher again.
 - **Interface**: Opening an app no longer highlights the **App Center** row in the sidebar alongside the app's own row.
