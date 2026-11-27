@@ -216,7 +216,7 @@ function parseCommit(id: string, body: Uint8Array): RawCommit {
     else if (key === "committer")
       committerTime = Number(/ (\d+) [+-]\d{4}$/.exec(value)?.[1]);
   }
-  if (!/^[0-9a-f]{40}$/.test(tree ?? "") || committerTime === undefined || Number.isNaN(committerTime))
+  if (tree === undefined || !/^[0-9a-f]{40}$/.test(tree) || committerTime === undefined || Number.isNaN(committerTime))
     throw new Error(`${id} is not a commit`);
   return { tree, parents, committerTime };
 }

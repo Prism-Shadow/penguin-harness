@@ -32,7 +32,7 @@ function deferred() {
   const source: AgentStateEngineSource = (host) => {
     asked.push(host.cacheDir);
     return new Promise((resolve) => {
-      answer = resolve as (engine: AgentStateEngine) => void;
+      answer = resolve;
     });
   };
   return { source, asked, answer: (e: AgentStateEngine | null) => answer(e) };

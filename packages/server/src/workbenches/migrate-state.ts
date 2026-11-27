@@ -99,7 +99,7 @@ export async function ensureWorkbenchLinkTarget(agentDir: string): Promise<void>
 
 export async function migrateWorkbenchesIntoState(
   agentDir: string,
-  opts: StateMigrationOptions = {},
+  opts: StateMigrationOptions,
 ): Promise<void> {
   const old = path.join(agentDir, "workbenches");
   const target = path.join(agentDir, "agent_state", "workbenches");
