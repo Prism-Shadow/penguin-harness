@@ -25,6 +25,7 @@ export {
   tabKey,
   TERMINAL_PANEL,
   dockVersion,
+  isNarrow,
   subscribeDock,
   terminalPanelOffered,
   subscribeTerminalPanelOffered,
@@ -77,19 +78,6 @@ export * as api from "./api/endpoints";
 export { locatedAppKey, appWindowPath } from "./lib/app-center-path";
 export { sessionAppPair, slotDomId } from "./lib/session-app-dock";
 export { usePageWorkspace } from "./lib/page-workspace-context";
-export {
-  panelLabel,
-  setCloseGuard,
-  tabKey,
-  TERMINAL_PANEL,
-  dockVersion,
-  isNarrow,
-  subscribeDock,
-  terminalPanelOffered,
-  subscribeTerminalPanelOffered,
-  type DockPanelBodyProps,
-  type PanelId,
-} from "./features/dock/index";
 export { localizedText } from "./lib/skill-use";
 export {
   launchApp,
