@@ -2066,10 +2066,16 @@ describe("a telegram album, and media sent a moment apart", () => {
   it("a voice message does not swallow the text sent right after it", async () => {
     // Nothing of a voice message reaches the Agent, so it waits for no note: joined, the
     // message would carry no attachment that arrived and the words would be refused with it.
-    fake.push({ message_id: 321, chat: { id: 42424242, type: "private" }, voice: { file_id: "v" } });
+    fake.push({
+      message_id: 321,
+      chat: { id: 42424242, type: "private" },
+      voice: { file_id: "v" },
+    });
     fake.push(privateText("and check the logs", 322));
     await waitFor(() => runs.length === 1);
-    expect(runs[0]).toEqual([expect.objectContaining({ type: "text", text: "and check the logs" })]);
+    expect(runs[0]).toEqual([
+      expect.objectContaining({ type: "text", text: "and check the logs" }),
+    ]);
     await waitFor(() => fake.allTexts().some((s) => s.text === MESSAGING_UNSUPPORTED_NOTICE));
   });
 });
