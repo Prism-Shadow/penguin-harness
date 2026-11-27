@@ -88,8 +88,8 @@ jobs:
         with:
           ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
-      - name: CI selection and gate regressions
-        run: node --test scripts/test/ci-plan.test.mjs scripts/test/ci-gate.test.mjs scripts/test/offline-archives.test.mjs scripts/test/build-plugins.test.mjs
+      - name: CI and packaging script regressions
+        run: node --test scripts/test/ci-plan.test.mjs scripts/test/ci-gate.test.mjs scripts/test/offline-archives.test.mjs scripts/test/build-plugins.test.mjs scripts/test/check-native-glibc.test.mjs scripts/test/stage-linux-pty.test.mjs
       - name: Code style (Prettier)
         run: pnpm format:check
 
@@ -140,12 +140,24 @@ jobs:
         run: node scripts/check-plugin-versions.mjs '${{ github.event.pull_request.base.sha }}'
       # No plugin-tree .test.mjs suites remain. Restore their strict runner when suites return.
 
+  # node-pty's Linux bindings, built in a manylinux_2_28 container as the release builds them
+  # (linux-pty.yml), for npm packaging to stage before it packs the carried store.
+  linux-pty:
+    needs: plan
+    if: needs.plan.outputs.packaging == 'true'
+    uses: ./.github/workflows/linux-pty.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ inputs.ref || '' }}
+      artifact: linux-pty-ci
+
   # The npm publishing path, walked without publishing. CI used to prove only that the sources
   # typecheck and the tests pass, and the release workflow built a different, narrower set -- so a
   # packaging break first appeared after the tag, where it costs a version number. This job stamps,
   # builds and tests the way the release does (scripts/release-npm.sh) and packs what it would upload.
   npm-packaging:
-    needs: plan
+    needs: [plan, linux-pty]
     if: needs.plan.outputs.packaging == 'true'
     name: npm packaging
     runs-on: ubuntu-latest
@@ -154,6 +166,14 @@ jobs:
         with:
           ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
+      # The install compiled node-pty's Linux binding against this runner's glibc; the carried
+      # store packed below ships the portable bindings instead, as the release's does.
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-pty-ci
+          path: linux-pty
+      - name: Stage the portable Linux node-pty bindings
+        run: node scripts/stage-linux-pty.mjs linux-pty
       # --registry also asks npm which published names do not exist yet. A new package is
       # legitimate, so that is a warning rather than a failure -- but it has to be seen before the
       # tag, because the release's OIDC exchange cannot create a name npm has never seen.
@@ -194,6 +214,15 @@ jobs:
           # way the release's npm job packs it into the server package's dist/.
           node scripts/pack-carried-store.mjs packages/server/dist/hmr
           test -s packages/server/dist/hmr/harness.json
+      # The check the release runs on what it ships (scripts/check-native-glibc.mjs): a Linux
+      # native module in the store that needs a glibc newer than 2.28, or a store without both
+      # Linux node-pty bindings, fails here rather than on a user's machine (issue #1900).
+      - name: The carried store's Linux native modules load on glibc 2.28
+        run: |
+          node scripts/check-native-glibc.mjs \
+            --expect 'archives/node-pty.tgz!node_modules/node-pty/prebuilds/linux-x64/pty.node' \
+            --expect 'archives/node-pty.tgz!node_modules/node-pty/prebuilds/linux-arm64/pty.node' \
+            packages/server/dist/hmr
       - name: Pack the publishable packages
         run: |
           for p in amsp a2ui core server cli; do

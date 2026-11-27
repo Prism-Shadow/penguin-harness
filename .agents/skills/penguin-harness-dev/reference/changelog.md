@@ -11,7 +11,8 @@ pattern-matching a neighbouring entry.
   without the other is unfinished.
 - H1, then the metadata block in fixed order — `Date` / `Type` / `Scope` / `PR` / `Issue` /
   `Breaking` — then the counterpart link, then a lead paragraph and bespoke sections. Field names
-  and values stay English in both files so one `grep` covers the tree.
+  and values stay English in both files so one `grep` covers the tree, except the `Breaking`
+  reason, which is prose and is translated with the rest of the entry.
 - Omit an inapplicable field entirely. Placeholders are what stop `grep -rl 'Breaking:'
   changelog/` from being an exact query.
 - `Breaking` present ⇒ a `## Compatibility` / `## 兼容性` section stating what breaks and the

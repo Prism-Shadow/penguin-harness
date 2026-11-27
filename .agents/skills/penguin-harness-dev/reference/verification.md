@@ -7,10 +7,11 @@ suite on another machine when the user asks for that.
 
 ## Known platform failures that are not your diff
 
-`ci-windows` runs the same chain minus `format:check`, plus `scripts/test-installer.ps1`. Two
-failures there are known: a bare `Failed` worker crash, and an `environment.test.ts`
-truncation-timing assertion — rerun before debugging. An `EBUSY` on removing a directory that is
-some child process's cwd is real, not a flake.
+The Windows job, `test-windows`, runs the affected unit suites (no `format:check`, typecheck or
+e2e); `installer-windows` runs `scripts/test-installer.ps1` on its own. Two failures there are
+known: a bare `Failed` worker crash, and an `environment.test.ts` truncation-timing assertion —
+rerun before debugging. An `EBUSY` on removing a directory that is some child process's cwd is
+real, not a flake.
 
 The local server suite drops a few tests under full parallel load — they time out and pass on
 their own. Rerun the file alone before blaming the diff.

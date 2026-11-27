@@ -15,7 +15,7 @@
  */
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
-import { isRuntimeUpgradePath } from "../terminal/ws.js";
+import { isRuntimeUpgradePath, upgradeTarget } from "../terminal/ws.js";
 import { legacyExtensionUpgrade } from "./legacy-browser.js";
 import type { ServerHmrHost } from "./platform.js";
 
@@ -37,23 +37,35 @@ export interface UpgradeSeamDeps {
 
 export function attachUpgradeSeam(server: HttpServer, deps: UpgradeSeamDeps): void {
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
-    if (deps.reserved(pathname)) return;
-    void deps
-      .current()
-      .then((surface) => {
-        if (surface?.upgrade?.(req, socket, head) === true) return;
-        deps.fallback?.(req, socket, head);
-      })
-      .catch((err: unknown) => {
-        deps.log(
-          `[upgrade] ${pathname} failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        if (socket.destroyed) return;
-        socket.write("HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n");
-        socket.destroy();
-      });
+    const target = upgradeTarget(req);
+    // A request target that is no path names no endpoint; the runtime's listener leaves it alone.
+    if (target === null) return refuse(socket, 400, "Bad Request");
+    const pathname = target.pathname;
+    const failed = (err: unknown) => {
+      deps.log(`[upgrade] ${pathname} failed: ${err instanceof Error ? err.message : String(err)}`);
+      refuse(socket, 500, "Internal Server Error");
+    };
+    // Caught here as well as in the promise: a throw out of an 'upgrade' listener is uncaught
+    // (Node emits it from the connection's data handler) and would end the process.
+    try {
+      if (deps.reserved(pathname)) return;
+      void deps
+        .current()
+        .then((surface) => {
+          if (surface?.upgrade?.(req, socket, head) === true) return;
+          deps.fallback?.(req, socket, head);
+        })
+        .catch(failed);
+    } catch (err) {
+      failed(err);
+    }
   });
+}
+
+function refuse(socket: Duplex, status: number, text: string): void {
+  if (socket.destroyed) return;
+  socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\n\r\n`);
+  socket.destroy();
 }
 
 /**

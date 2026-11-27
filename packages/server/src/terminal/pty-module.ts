@@ -18,8 +18,10 @@
  *    what makes a build pushed from another kind of machine — a Mac installing on Linux, an
  *    x64 box installing on arm64 — open terminals at all.
  * 3. The pushed asset. It comes from whatever machine ran the deploy, so it carries that
- *    machine's binding (and node-pty's darwin and win32 prebuilds): right for the hot path
- *    it exists to serve, never allowed to displace a copy built for this machine.
+ *    machine's binding and node-pty's darwin and win32 prebuilds — and the portable Linux ones
+ *    when that checkout was staged with scripts/stage-linux-pty.mjs, as every build the
+ *    release and CI pack is: right for the hot path it exists to serve, never allowed to
+ *    displace a copy built for this machine.
  *
  * node-pty's own loader tries `build/Release`, `build/Debug`, then `prebuilds/<platform>-
  * <arch>`, so a copy without a binding for this machine fails at require time and the next
