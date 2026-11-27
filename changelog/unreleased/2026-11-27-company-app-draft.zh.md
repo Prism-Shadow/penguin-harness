@@ -3,6 +3,7 @@
 - **Date:** 2026-11-27
 - **Type:** feature
 - **Scope:** `ui-gallery`, `landing`
+- **PR:** [#1916](https://github.com/Prism-Shadow/penguin-harness/pull/1916)
 
 [English](2026-11-27-company-app-draft.md)
 
