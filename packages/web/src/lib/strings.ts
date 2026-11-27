@@ -4770,19 +4770,14 @@ export const zh = {
     statParenOpen: "（",
     statParenClose: "）",
     noSessions: "还没有 Session",
-    /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    /**
+     * The routed conversation is on a machine with no connection held: what stands in the
+     * transcript's place when the hub's copy of it has nothing to show. The machine's own state is
+     * on the input box (`machineCover`).
+     */
     offlineHistory: {
-      disconnected: (alias: string) => `${alias} 未连接。`,
-      /**
-       * The read stopped retrying (machine_unreachable) while the connection is held: the
-       * machine's server did not take the call, or the machine took it and sent nothing.
-       */
-      unreachable: (alias: string) => `${alias} 上的服务没有响应。`,
-      silent: (alias: string) => `${alias} 没有回应。`,
-      cached: "正在显示上次同步的对话记录。",
       miss: "本地没有这段对话的缓存。连接恢复后会自动打开。",
       empty: "上次同步时还没有消息。",
-      refreshing: (alias: string) => `${alias} 已连接，正在更新对话记录。`,
       failed: "暂时无法读取本地对话记录。",
     },
     sessionOnOfflineMachine: (machine: string) => `这个对话在 ${machine} 上，当前没有连接。`,
@@ -4837,6 +4832,40 @@ export const zh = {
       hint: "对话保存在那台机器上，连接恢复后会自动加载。",
       openMachines: "去机器管理",
       details: "技术细节",
+    },
+    /**
+     * The cover on the input box of a conversation whose machine is out of reach: what is
+     * happening, in one line over the machine's retry row (or the presses that stand in for it),
+     * then what that means for sending.
+     */
+    machineCover: {
+      /** The server is bringing the machine back, or no more is known than that it is out of reach. */
+      reconnecting: (alias: string) => `暂时连不上 ${alias}`,
+      /** The server stopped bringing it back (a person, the attempts, ssh, a refused password). */
+      stoppedTrying: (alias: string) => `连不上 ${alias}`,
+      stopped: (alias: string) => `${alias} 上的服务已停止`,
+      notConnected: (alias: string) => `${alias} 尚未连接`,
+      missing: "这个对话所在的机器不在当前 Project 的机器列表中",
+      /** A read gave up while the connection is held: the machine's server did not take it, or the machine sent nothing. */
+      noService: (alias: string) => `${alias} 上的服务没有响应`,
+      silent: (alias: string) => `${alias} 没有回应`,
+      /** A job on the machine, its connection down meanwhile, by what the job does. */
+      working: {
+        install: (alias: string) => `正在 ${alias} 上安装 PenguinHarness`,
+        restart: (alias: string) => `正在重启 ${alias} 上的服务`,
+        connect: (alias: string) => `正在启动 ${alias} 上的服务`,
+        stop: (alias: string) => `正在停止 ${alias} 上的服务`,
+        sync: (alias: string) => `正在向 ${alias} 同步配置`,
+      },
+      /** Back: the conversation is read afresh, and the input box returns when it is. */
+      refreshing: (alias: string) => `${alias} 已重新连接，正在更新对话记录`,
+      /**
+       * What it means for sending; `drafted`: something is typed or staged in the box; `cached`:
+       * the transcript shown is the copy kept from the last sync, not one read live.
+       */
+      note: (drafted: boolean, cached: boolean): string =>
+        (cached ? "对话记录来自上次同步。" : "") +
+        (drafted ? "连上之前不能发送消息，已输入的内容会保留。" : "连上之前不能发送消息。"),
     },
     /** Above the composer while the conversation's machine reads as needing a restart. */
     machineRestartNeeded: {

@@ -5,14 +5,17 @@
  * (waiting with its live countdown, going out, sent, given up, stopped, a fatal error, earlier
  * messages that failed to load), every press a bracketed text action; the failure details dialog
  * the lines' Details opens; and the "could not load" notice a pane shows in place of its content,
- * with the machine's row inside it while it is being brought back. The wait counts down live, and
- * a press holds its actions until the board starts the next attempt.
+ * with the machine's row inside it while it is being brought back; and a conversation's input box
+ * as it is and under the cover that stands on it while its machine is out of reach. The wait
+ * counts down live, and a press holds its actions until the board starts the next attempt.
  */
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { DEFAULT_MAX_TURN_ATTEMPTS } from "@prismshadow/penguin-core/interfaces";
 import {
   Button,
+  ComposerCard,
+  ComposerCover,
   CountdownText,
   ICONS,
   LoadFailed,
@@ -22,6 +25,8 @@ import {
   ReportDialog,
   RetryActions,
   RetryStatus,
+  SendButton,
+  Spinner,
   TextAction,
   buttonClass,
   useCountdown,
@@ -193,6 +198,14 @@ export function RetryBoard() {
   const details = <TextAction onClick={() => setReportOpen(true)}>{t.openDetails}</TextAction>;
   const retry = <TextAction onClick={noop}>{t.retry}</TextAction>;
   const away = lines[1]!;
+  // The conversation's input box with a draft in it: as it is, and under a cover.
+  const box = (cover: ReactNode) => (
+    <ComposerCard
+      textarea={{ value: t.boxDraft, readOnly: true }}
+      actions={<SendButton action="send" label={t.boxSend} onClick={noop} />}
+      cover={cover}
+    />
+  );
 
   return (
     <div className="gf-board">
@@ -216,6 +229,52 @@ export function RetryBoard() {
             <MachineCard key={props.id} {...props} />
           ))}
         </MachineList>
+      </BoardGroup>
+      <BoardGroup title={t.inBox} aside={t.inBoxHint}>
+        <div className="lib-stack" style={{ maxWidth: "46rem" }}>
+          {box(null)}
+          {box(
+            <ComposerCover
+              title={t.boxUnreachable("mini")}
+              status={
+                <RetryStatus {...lines[1]!} reason={null} size="sm" className="justify-center" />
+              }
+              note={t.boxNote}
+            />,
+          )}
+          {box(
+            <ComposerCover
+              title={t.boxStoppedTrying("mini")}
+              status={
+                <RetryStatus
+                  {...lines[3]!}
+                  reason={null}
+                  secondary={{ label: t.openMachines, onClick: noop }}
+                  size="sm"
+                  className="justify-center"
+                />
+              }
+              note={t.boxNote}
+            />,
+          )}
+          {box(
+            <ComposerCover
+              title={t.boxServerStopped("mini")}
+              status={<TextAction onClick={noop}>{t.openMachines}</TextAction>}
+              note={t.boxNote}
+            />,
+          )}
+          {box(
+            <ComposerCover
+              title={t.boxRefreshing("mini")}
+              status={
+                <span aria-hidden="true">
+                  <Spinner size="sm" label={t.boxRefreshing("mini")} />
+                </span>
+              }
+            />,
+          )}
+        </div>
       </BoardGroup>
       <BoardGroup title={t.inChat} aside={t.inChatHint}>
         <div style={{ maxWidth: "46rem" }}>

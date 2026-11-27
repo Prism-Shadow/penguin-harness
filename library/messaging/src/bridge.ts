@@ -75,7 +75,11 @@
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
-import type { MessagingDeliveryError, MessagingRuntimeStatus } from "./vocabulary.js";
+import type {
+  MessagingChannel,
+  MessagingDeliveryError,
+  MessagingRuntimeStatus,
+} from "./vocabulary.js";
 import type { MessagingBindingRow } from "./repos/messaging-bindings.js";
 import type { QQScanPoll, QQScanService } from "./qq-scan.js";
 import {
@@ -2207,7 +2211,7 @@ export abstract class QQScan {
 
 export interface MessagingSlots {
   /** A channel connector: which channel it speaks (static), and the connector (code). */
-  connectors: Slot<{ channel: "feishu" | "telegram" | "qq" | "wechat" }, MessagingChannelConnector>;
+  connectors: Slot<{ channel: MessagingChannel }, MessagingChannelConnector>;
 }
 
 /**

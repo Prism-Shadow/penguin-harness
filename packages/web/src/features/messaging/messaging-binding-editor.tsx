@@ -30,6 +30,11 @@
  * screen: the switch carries it as its tooltip and the "what binding does" fold states it
  * in full. Deleting a stored credential remains a separate act — the per-field clear.
  *
+ * This file is the shell, and names no channel: the picker, the connection controls, the
+ * probes, the delivery rows and the FAQ frame are the same on every channel, and whatever is
+ * not — a channel's fields, how its draft validates and saves, its probe, its copy — is that
+ * channel's half of the form (`channels/<name>/`, listed once in `channels/registry.ts`).
+ *
  * Two channels lead their section with scan-to-connect, after which the server holds the
  * credentials without them ever passing through this browser. On QQ (`qq-scan-connect.tsx`)
  * the typed fields stay below the QR as the fallback; on WeChat
@@ -61,17 +66,13 @@ import type {
   MessagingChannel,
   MessagingRuntimeStatus,
   MessagingUnreachableMachine,
-  TelegramTestResponse,
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
-  Checkbox,
   FieldLabel,
   HelpFold,
   InfoPopover,
-  Input,
   Notice,
-  PasswordInput,
   Segmented,
   Switch,
   toastError,
@@ -94,8 +95,9 @@ import {
   holderConflict,
   holdersNote,
 } from "./messaging-binding-location";
-import { QQScanConnect } from "./qq-scan-connect";
-import { WeChatScanConnect } from "./wechat-scan-connect";
+import type { MessagingChannelFacts } from "./channels/channel-form";
+import { ExternalLink } from "./channels/fields-kit";
+import { CHANNEL_FORMS, MESSAGING_CHANNELS, channelForm } from "./channels/registry";
 import {
   bindingsToForm,
   emptyMessagingForm,
@@ -110,6 +112,8 @@ import {
 import { toastApiError, toastFailure } from "../../lib/toast-api-error";
 import { toldFailure } from "../../lib/failure";
 
+export type { MessagingChannelFacts } from "./channels/channel-form";
+
 /** How often the visible editor refreshes the runtime status (connects settle within a poll or two). */
 const STATUS_POLL_MS = 3000;
 
@@ -120,78 +124,12 @@ const HINT_EMPHASIS_MS = 1500;
 const FOCUSABLE =
   "button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])";
 
-/**
- * Per-channel external links: the walkthrough (setup FAQ fold) and where the channel issues
- * the credential (field corner). The second is a developer console for some channels and a
- * chat with a bot for others, so its label belongs to the channel — only the ones that do
- * have a console reach for the shared `S.messaging.console` wording.
- *
- * A channel may have NEITHER, which is why the entry is nullable: WeChat's bot is authorized
- * by a scan and has no public console and no walkthrough to point at, and inventing a URL
- * would send a reader to a page that does not answer them.
- */
-const CHANNEL_LINKS = {
-  feishu: {
-    // Feishu's own echo-bot walkthrough: creating a self-built app and its long connection.
-    tutorial: "https://open.feishu.cn/document/develop-an-echo-bot/introduction",
-    credentialSource: "https://open.feishu.cn/app",
-  },
-  telegram: {
-    // The BotFather section of the bot-features page: "a detailed guide to using
-    // @BotFather", opening on /newbot and the token it returns — which is this fold's
-    // steps, one level deeper. NOT /bots/tutorial: that one is "From BotFather to 'Hello
-    // World'", and past its token section it is about downloading an IDE and picking a
-    // framework, i.e. about WRITING a bot. Nobody here is writing one — PenguinHarness is
-    // the bot. The fragment is a plain document anchor present in the served HTML, so it
-    // lands where it says (unlike a hash route, which the server never sees).
-    tutorial: "https://core.telegram.org/bots/features#botfather",
-    // Where the credential is actually issued. Telegram has no web console: the token comes
-    // from @BotFather inside the app, and this link is the one that leads there.
-    credentialSource: "https://t.me/BotFather",
-  },
-  qq: {
-    // The wiki ROOT is the onboarding guide itself — "介绍与接入指南": registering a
-    // developer account, creating the bot, and the page its AppID and AppSecret are shown
-    // on. That is what a reader of the setup fold is after; the API reference one level
-    // down at /develop/api-v2/ answers a question they are not asking yet.
-    tutorial: "https://bot.q.qq.com/wiki/",
-    // The trailing slash is load-bearing and must not be tidied away: /qqbot/dashboard
-    // answers 404, while /qqbot/ alone serves a 700-byte shell that only lands anywhere
-    // because the retired hash-route app still redirects out of it.
-    credentialSource: "https://q.qq.com/qqbot/dashboard/",
-  },
-  wechat: null,
-} as const satisfies Record<
-  MessagingChannel,
-  { tutorial: string; credentialSource: string } | null
->;
-
 const STATUS_TONE: Record<MessagingRuntimeStatus["state"], Tone> = {
   disconnected: "muted",
   connecting: "busy",
   connected: "success",
   error: "danger",
 };
-
-function errorText(code: MessagingFormErrors[keyof MessagingFormErrors]): string | undefined {
-  if (code === undefined) return undefined;
-  if (code === "required") return S.common.requiredField;
-  if (code === "token_invalid") return S.telegram.invalidToken;
-  return S.feishu.invalidDomain;
-}
-
-/** One channel's server-side facts, as the editor renders them (the form fields stay client-side). */
-export interface MessagingChannelFacts {
-  /** A secret is stored (a cleared config keeps its row but loses this). */
-  secretConfigured: boolean;
-  /** The stored secret's site-wide mask (display-only, never round-trips); null without one. */
-  secretMasked: string | null;
-  enabled: boolean;
-  status: MessagingRuntimeStatus;
-  lastChatKnown: boolean;
-  /** The bot the saved config signs in as (`accountIdOf`); null with nothing saved. */
-  accountId: string | null;
-}
 
 const EMPTY_FACTS: MessagingChannelFacts = {
   secretConfigured: false,
@@ -204,18 +142,19 @@ const EMPTY_FACTS: MessagingChannelFacts = {
 
 type ChannelFactsMap = Record<MessagingChannel, MessagingChannelFacts>;
 
+/** Every channel with nothing saved. */
+function emptyFacts(): ChannelFactsMap {
+  return Object.fromEntries(MESSAGING_CHANNELS.map((c) => [c, EMPTY_FACTS])) as ChannelFactsMap;
+}
+
 function factsOf(
   binding: MessagingBindingInfo | null,
   status: MessagingRuntimeStatus,
 ): MessagingChannelFacts {
   if (binding === null) return { ...EMPTY_FACTS, status };
-  // The two token channels name the field `botTokenMasked`; the two App-Secret ones name it
-  // `appSecretMasked`. Both are the same fact — a credential is stored — under the name its
-  // own channel gives it.
-  const masked =
-    binding.channel === "telegram" || binding.channel === "wechat"
-      ? binding.botTokenMasked
-      : binding.appSecretMasked;
+  // The token channels name the field `botTokenMasked`, the App-Secret ones `appSecretMasked`:
+  // the same fact — a credential is stored — under the name its own channel gives it.
+  const masked = channelForm(binding.channel).secretMasked(binding);
   return {
     secretConfigured: masked !== undefined,
     secretMasked: masked ?? null,
@@ -227,13 +166,10 @@ function factsOf(
 }
 
 function factsFromList(res: MessagingBindingsResponse): ChannelFactsMap {
-  const map: ChannelFactsMap = {
-    feishu: EMPTY_FACTS,
-    telegram: EMPTY_FACTS,
-    qq: EMPTY_FACTS,
-    wechat: EMPTY_FACTS,
-  };
+  const map = emptyFacts();
   for (const entry of res.bindings) {
+    // A channel this build has no form for (a newer server's) has nowhere to be shown.
+    if (!Object.hasOwn(CHANNEL_FORMS, entry.binding.channel)) continue;
     map[entry.binding.channel] = factsOf(entry.binding, entry.status);
   }
   return map;
@@ -297,43 +233,6 @@ export interface MessagingBindingEditorState {
   sendTestMessage(): Promise<void>;
 }
 
-/** One notice a credential test produces; the tone picks the toast that carries it. */
-export interface MessagingTestNotice {
-  tone: "success" | "info" | "error";
-  text: string;
-}
-
-/**
- * The notices one Telegram credential-test response turns into, in the order they are shown
- * (the updateCheckOutcome idiom: the classification is a pure function, the host only picks
- * toasts for it).
- *
- * A success whose bot still has Group Privacy on produces TWO. The success line stands
- * unchanged — the credentials really are fine, and the bot really will answer a direct chat —
- * and the privacy notice rides beside it rather than lengthening it: it is about group chats
- * only, and it is the one thing a user cannot discover by testing, since a bot that cannot
- * hear a group produces silence and never an error.
- */
-export function telegramTestNotices(res: TelegramTestResponse): MessagingTestNotice[] {
-  if (!res.ok) {
-    return [{ tone: "error", text: S.messaging.testFail(res.error ?? S.common.unknownError) }];
-  }
-  const ms = res.latencyMs ?? 0;
-  const notices: MessagingTestNotice[] = [
-    // The success line names the bot: the one detail a user can check against @BotFather.
-    {
-      tone: "success",
-      text:
-        res.botUsername !== undefined
-          ? S.messaging.testOkAs(res.botUsername, ms)
-          : S.messaging.testOk(ms),
-    },
-  ];
-  // Only an answered `true`: an absent field is unknown, and unknown is not a problem.
-  if (res.groupPrivacy === true) notices.push({ tone: "info", text: S.messaging.testPrivacyOn });
-  return notices;
-}
-
 /** Where a click on the prerequisite-gated switch moves focus. */
 export type EnableFocus = "scan" | "credential" | "save";
 
@@ -377,8 +276,8 @@ export function enablePrerequisite({
   if (!facts.secretConfigured) {
     return {
       hint: S.messaging.credentialMissingHint[channel],
-      // QQ's typed fields are the fallback below its QR, so the scan is where it starts too.
-      focus: channel === "qq" || channel === "wechat" ? "scan" : "credential",
+      // The scan block on the channels that lead with one, else the first typed field.
+      focus: channelForm(channel).enableFocus,
     };
   }
   if (dirty) return { hint: S.messaging.saveBeforeEnable, focus: "save" };
@@ -416,12 +315,7 @@ export function useMessagingBinding(
   const [form, setForm] = useState<MessagingFormState | null>(null);
   /** What the form last loaded/saved — the dirty check compares against it. */
   const [baseline, setBaseline] = useState<MessagingFormState | null>(null);
-  const [channels, setChannels] = useState<ChannelFactsMap>({
-    feishu: EMPTY_FACTS,
-    telegram: EMPTY_FACTS,
-    qq: EMPTY_FACTS,
-    wechat: EMPTY_FACTS,
-  });
+  const [channels, setChannels] = useState<ChannelFactsMap>(emptyFacts);
   const [busy, setBusy] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -545,24 +439,15 @@ export function useMessagingBinding(
     patchForm({ channel });
   };
 
-  const selected: MessagingChannel = form?.channel ?? "feishu";
+  const selected: MessagingChannel = form?.channel ?? MESSAGING_CHANNELS[0];
   const facts = channels[selected];
-  const enabledChannel: MessagingChannel | null = channels.feishu.enabled
-    ? "feishu"
-    : channels.telegram.enabled
-      ? "telegram"
-      : channels.qq.enabled
-        ? "qq"
-        : channels.wechat.enabled
-          ? "wechat"
-          : null;
+  const enabledChannel: MessagingChannel | null =
+    MESSAGING_CHANNELS.find((channel) => channels[channel].enabled) ?? null;
   const dirty = form !== null && baseline !== null && formDirty(form, baseline);
   const unsavedAny =
     form !== null &&
     baseline !== null &&
-    (["feishu", "telegram", "qq", "wechat"] as const).some((channel) =>
-      formDirty({ ...form, channel }, baseline),
-    );
+    MESSAGING_CHANNELS.some((channel) => formDirty({ ...form, channel }, baseline));
   /** The selected channel's draft as Save would send it, or what is wrong with it. */
   const built = form === null ? null : formToPut(form, channels[form.channel].secretConfigured);
   const valid = built !== null && built.ok;
@@ -590,15 +475,7 @@ export function useMessagingBinding(
       remember({ bindings: binding === null ? others : [...others, { binding, status }] });
     }
     if (binding !== null) {
-      const fresh = bindingsToForm([binding]);
-      const sub =
-        channel === "feishu"
-          ? { feishu: fresh.feishu }
-          : channel === "qq"
-            ? { qq: fresh.qq }
-            : channel === "wechat"
-              ? { wechat: fresh.wechat }
-              : { telegram: fresh.telegram };
+      const sub = { [channel]: bindingsToForm([binding])[channel] } as Partial<MessagingFormState>;
       setForm((prev) => (prev ? { ...prev, ...sub } : prev));
       setBaseline((prev) => (prev ? { ...prev, ...sub } : prev));
     }
@@ -619,28 +496,14 @@ export function useMessagingBinding(
     setTesting(true);
     try {
       const draft = formToTest(form);
-      if (draft.channel === "telegram") {
-        const res = await api.testTelegramBinding(sessionId, draft.body);
-        for (const notice of telegramTestNotices(res)) {
-          if (notice.tone === "error") testFailed("telegram", notice.text, res.error);
-          else if (notice.tone === "info") toastInfo(notice.text);
-          else toastSuccess(notice.text);
-        }
-      } else if (draft.channel === "qq") {
-        const res = await api.testQQBinding(sessionId, draft.body);
-        if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
-        else testFailed("qq", S.messaging.testFail(res.error ?? S.common.unknownError), res.error);
-      } else if (draft.channel === "wechat") {
-        // No body: this channel's probe reads the stored binding, there being no draft.
-        const res = await api.testWeChatBinding(sessionId);
-        if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
-        else
-          testFailed("wechat", S.messaging.testFail(res.error ?? S.common.unknownError), res.error);
-      } else {
-        const res = await api.testFeishuBinding(sessionId, draft.body);
-        if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
-        else
-          testFailed("feishu", S.messaging.testFail(res.error ?? S.common.unknownError), res.error);
+      const outcome = await channelForm(draft.channel).test(
+        sessionId,
+        "body" in draft ? draft.body : undefined,
+      );
+      for (const notice of outcome.notices) {
+        if (notice.tone === "error") testFailed(draft.channel, notice.text, outcome.error);
+        else if (notice.tone === "info") toastInfo(notice.text);
+        else toastSuccess(notice.text);
       }
     } catch (e) {
       toastApiError(e, { text: S.messaging.testFail(apiErrorText(e)) });
@@ -666,14 +529,7 @@ export function useMessagingBinding(
     if (built === null || !built.ok) return;
     setBusy(true);
     try {
-      const res =
-        built.channel === "telegram"
-          ? await api.putTelegramBinding(sessionId, built.body)
-          : built.channel === "qq"
-            ? await api.putQQBinding(sessionId, built.body)
-            : built.channel === "wechat"
-              ? await api.putWeChatBinding(sessionId, built.body)
-              : await api.putFeishuBinding(sessionId, built.body);
+      const res = await channelForm(built.channel).put(sessionId, built.body);
       applyChannel(built.channel, res.binding, res.status);
       toastSuccess(S.common.saved);
     } catch (e) {
@@ -751,93 +607,6 @@ export function useMessagingBinding(
     testConnection,
     sendTestMessage,
   };
-}
-
-/** External link styled like the models dialog's "get API key" corner action. */
-function ExternalLink({ href, label }: { href: string; label: string }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer noopener"
-      className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-    >
-      {label} ↗
-    </a>
-  );
-}
-
-/**
- * A field with an action link at the label's top-right corner — the models dialog's
- * "get API key" idiom. The control inside carries `aria-label` itself: this wrapper's
- * label row is layout, not a <label> element.
- */
-function CornerLinkedField({
-  label,
-  required,
-  link,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  link: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div className="block">
-      <span className="mb-1 flex items-baseline justify-between gap-2">
-        <FieldLabel block={false} {...(required ? { required: true } : {})}>
-          {label}
-        </FieldLabel>
-        {link}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-/**
- * The stored secret's status row, under the secret field — the models-page configured-key
- * idiom: the site-wide mask in mono, and a "clear stored …" checkbox applied on Save
- * (typing into the field unchecks it). Clearing requires the channel's connection to be
- * disabled first, so the checkbox is gated with that hint while enabled.
- */
-function StoredSecretRow({
-  masked,
-  clearLabel,
-  checked,
-  enabled,
-  readOnly,
-  onChange,
-}: {
-  masked: string;
-  clearLabel: string;
-  /** The clear checkbox's state (lives in the form, applied on Save). */
-  checked: boolean;
-  /** The channel's connection is enabled: clearing is gated until it is turned off. */
-  enabled: boolean;
-  /** The binding's machine is out of reach: nothing can be saved, so nothing can be cleared. */
-  readOnly: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-      <span className="font-mono">{masked}</span>
-      <Checkbox
-        checked={checked}
-        disabled={enabled || readOnly}
-        onChange={onChange}
-        label={clearLabel}
-      />
-      {/* A disabled checkbox does not reliably fire hover, so the reason is on screen rather
-          than in a title: a gated control that never says why is the bug this avoids. */}
-      {enabled && (
-        <span className="text-gray-400 dark:text-gray-500">
-          {S.messaging.disableBeforeClearHint}
-        </span>
-      )}
-    </div>
-  );
 }
 
 /**
@@ -930,12 +699,12 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
   const readOnly = !b.access.live;
   const note = b.holdersNote?.channel === channel ? b.holdersNote.text : null;
   const hintInk = hintEmphasized ? toneInk.attention : "text-gray-400 dark:text-gray-500";
+  const spec = channelForm(channel);
+  /** The id a channel's field carries, by the name its form gives it (`app-id`, `bot-token`…). */
+  const fieldId = (name: string) => `${idBase}-${name}`;
   const ids = {
     hint: `${idBase}-enable-hint`,
     scan: `${idBase}-scan`,
-    appId: `${idBase}-app-id`,
-    appSecret: `${idBase}-app-secret`,
-    botToken: `${idBase}-bot-token`,
   };
   /**
    * A click on the switch while a prerequisite is unmet sends nothing. It repeats the hint as
@@ -957,40 +726,22 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
       block?.querySelector<HTMLElement>(FOCUSABLE)?.focus({ preventScroll: true });
     } else if (prerequisite.focus === "credential") {
       // The first credential field still empty; with all of them typed, Save is what is left.
-      const fields: [id: string, value: string][] =
-        channel === "telegram"
-          ? [[ids.botToken, form.telegram.botToken]]
-          : [
-              [ids.appId, form.feishu.appId],
-              [ids.appSecret, form.feishu.appSecret],
-            ];
-      const empty = fields.find(([, value]) => value.trim() === "");
+      const typed = (spec.credentialFields?.(form[channel]) ?? []).map(
+        ([name, value]): [id: string, value: string] => [fieldId(name), value],
+      );
+      const empty = typed.find(([, value]) => value.trim() === "");
       document.getElementById(empty?.[0] ?? b.saveButtonId)?.focus();
     } else if (prerequisite.focus === "save") {
       document.getElementById(b.saveButtonId)?.focus();
     }
   };
-  // The delivery preferences of the selected channel, and the patch that writes one back.
-  // Every sub-state carries the same three, so resolving the channel once here keeps the
-  // rows at the bottom free of a selector they have nothing to say about.
-  const delivery =
-    channel === "telegram"
-      ? form.telegram
-      : channel === "qq"
-        ? form.qq
-        : channel === "wechat"
-          ? form.wechat
-          : form.feishu;
-  const patchDelivery = (patch: Partial<MessagingDeliveryFields>) =>
-    b.patchForm(
-      channel === "telegram"
-        ? { telegram: { ...form.telegram, ...patch } }
-        : channel === "qq"
-          ? { qq: { ...form.qq, ...patch } }
-          : channel === "wechat"
-            ? { wechat: { ...form.wechat, ...patch } }
-            : { feishu: { ...form.feishu, ...patch } },
-    );
+  // The selected channel's sub-state, and the patch that writes part of it back. Every
+  // sub-state carries the three delivery preferences, so the rows at the bottom read them
+  // from it without a selector they have nothing to say about.
+  const fields = form[channel];
+  const patchFields = (patch: Partial<MessagingDeliveryFields>) =>
+    b.patchForm({ [channel]: { ...fields, ...patch } } as Partial<MessagingFormState>);
+  const finalReplyOnlyNote = spec.finalReplyOnlyNote?.();
   return (
     <div className="space-y-3">
       <BindingWhere b={b} />
@@ -999,13 +750,11 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           rest is read-only: what each channel was last saved as is worth reading. */}
       <div role="group" aria-label={S.messaging.channelLabel}>
         <Segmented
-          cols={4}
-          options={[
-            { value: "feishu" as MessagingChannel, label: S.messaging.channelName.feishu },
-            { value: "telegram" as MessagingChannel, label: S.messaging.channelName.telegram },
-            { value: "qq" as MessagingChannel, label: S.messaging.channelName.qq },
-            { value: "wechat" as MessagingChannel, label: S.messaging.channelName.wechat },
-          ]}
+          cols={MESSAGING_CHANNELS.length}
+          options={MESSAGING_CHANNELS.map((value) => ({
+            value,
+            label: S.messaging.channelName[value],
+          }))}
           value={channel}
           onChange={(v) => b.selectChannel(v)}
         />
@@ -1161,18 +910,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             !facts.lastChatKnown ||
             readOnly
           }
-          {...(!facts.lastChatKnown
-            ? {
-                title:
-                  channel === "telegram"
-                    ? S.telegram.testMessageNoChat
-                    : channel === "qq"
-                      ? S.qq.testMessageNoChat
-                      : channel === "wechat"
-                        ? S.wechat.testMessageNoChat
-                        : S.feishu.testMessageNoChat,
-              }
-            : {})}
+          {...(!facts.lastChatKnown ? { title: spec.copy().testMessageNoChat } : {})}
           onClick={() => void b.sendTestMessage()}
         >
           {b.sendingTest ? S.messaging.sendingTestMessage : S.messaging.sendTestMessage}
@@ -1192,220 +930,17 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
       {note !== null && <p className="text-xs text-gray-500 dark:text-gray-400">{note}</p>}
       {/* The credential fields trail the controls above; explanations live in the FAQ folds
           below the save area. */}
-      {channel === "telegram" ? (
-        <>
-          <CornerLinkedField
-            label={S.telegram.botToken}
-            required={!facts.secretConfigured}
-            // Not the shared "developer console" label: this one opens @BotFather in the
-            // Telegram app, and a corner link promising a console that does not exist sends
-            // the reader looking for a web page Telegram has never had. The label names the
-            // thing the click actually reaches — Telegram's own page for it is titled
-            // "Launch @BotFather".
-            link={
-              <ExternalLink
-                href={CHANNEL_LINKS.telegram.credentialSource}
-                label={S.telegram.openBotFather}
-              />
-            }
-          >
-            <PasswordInput
-              size="sm"
-              id={ids.botToken}
-              disabled={readOnly}
-              aria-label={S.telegram.botToken}
-              {...(facts.secretConfigured ? { placeholder: S.telegram.botTokenKeepHint } : {})}
-              error={errorText(b.fieldErrors.botToken)}
-              value={form.telegram.botToken}
-              onChange={(e) =>
-                b.patchForm({
-                  telegram: { ...form.telegram, botToken: e.target.value, clearToken: false },
-                })
-              }
-              autoComplete="off"
-            />
-          </CornerLinkedField>
-          {facts.secretMasked !== null && form.telegram.botToken === "" && (
-            <StoredSecretRow
-              masked={facts.secretMasked}
-              clearLabel={S.telegram.clearToken}
-              checked={form.telegram.clearToken}
-              enabled={facts.enabled}
-              readOnly={readOnly}
-              onChange={(checked) =>
-                b.patchForm({ telegram: { ...form.telegram, clearToken: checked } })
-              }
-            />
-          )}
-        </>
-      ) : channel === "qq" ? (
-        <>
-          {/* The easy path leads: scanning is what most people will do, and the fields below
-              are the fallback for a bot the scan cannot reach. Both are inside this channel's
-              branch, so nothing above the fields moves when the QR opens. */}
-          <div id={ids.scan}>
-            {/* A disabled fieldset takes every control of the scan with it: a scan starts a
-                login on the machine, which cannot be asked. */}
-            <fieldset disabled={readOnly} className="min-w-0">
-              <QQScanConnect
-                sessionId={b.sessionId}
-                enabled={facts.enabled}
-                onBound={(binding) => b.adoptBinding(binding)}
-              />
-            </fieldset>
-          </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500">{S.qq.scanOrManual}</p>
-          <CornerLinkedField
-            label={S.qq.appId}
-            required
-            link={
-              <ExternalLink href={CHANNEL_LINKS.qq.credentialSource} label={S.messaging.console} />
-            }
-          >
-            <Input
-              size="sm"
-              disabled={readOnly}
-              aria-label={S.qq.appId}
-              error={errorText(b.fieldErrors.appId)}
-              value={form.qq.appId}
-              onChange={(e) => b.patchForm({ qq: { ...form.qq, appId: e.target.value } })}
-              className="font-mono"
-              placeholder="102000000"
-              autoComplete="off"
-            />
-          </CornerLinkedField>
-          <PasswordInput
-            size="sm"
-            disabled={readOnly}
-            label={S.qq.appSecret}
-            {...(facts.secretConfigured
-              ? { placeholder: S.qq.appSecretKeepHint }
-              : { required: true })}
-            error={errorText(b.fieldErrors.appSecret)}
-            value={form.qq.appSecret}
-            onChange={(e) =>
-              b.patchForm({ qq: { ...form.qq, appSecret: e.target.value, clearSecret: false } })
-            }
-            autoComplete="off"
-          />
-          {facts.secretMasked !== null && form.qq.appSecret === "" && (
-            <StoredSecretRow
-              masked={facts.secretMasked}
-              clearLabel={S.qq.clearSecret}
-              checked={form.qq.clearSecret}
-              enabled={facts.enabled}
-              readOnly={readOnly}
-              onChange={(checked) => b.patchForm({ qq: { ...form.qq, clearSecret: checked } })}
-            />
-          )}
-          {/* The one channel whose rule cannot wait for a collapsed fold: QQ delivers only
-              replies to messages sent from QQ, so a user who binds it and then types in the
-              web app sees nothing arrive and concludes the binding is broken. It sits under
-              this channel's fields rather than above them, which keeps the controls at the
-              same height across channels. */}
-          <p className="text-xs text-gray-500 dark:text-gray-400">{S.qq.repliesOnly}</p>
-        </>
-      ) : channel === "wechat" ? (
-        <>
-          {/* The whole credential form: there is nothing to type on this channel, so the QR
-              is not the easy path but the only one. */}
-          <div id={ids.scan}>
-            <fieldset disabled={readOnly} className="min-w-0">
-              <WeChatScanConnect
-                sessionId={b.sessionId}
-                enabled={facts.enabled}
-                bound={facts.secretConfigured}
-                onBound={(binding) => b.adoptBinding(binding)}
-              />
-            </fieldset>
-          </div>
-          {facts.secretMasked !== null && (
-            <StoredSecretRow
-              masked={facts.secretMasked}
-              clearLabel={S.wechat.clearToken}
-              checked={form.wechat.clearToken}
-              enabled={facts.enabled}
-              readOnly={readOnly}
-              onChange={(checked) =>
-                b.patchForm({ wechat: { ...form.wechat, clearToken: checked } })
-              }
-            />
-          )}
-          {/* This channel's rule that cannot wait for a collapsed fold: it carries direct
-              chats only, so a user who binds it and then writes in a group sees nothing
-              arrive and concludes the binding is broken. */}
-          <p className="text-xs text-gray-500 dark:text-gray-400">{S.wechat.directOnly}</p>
-        </>
-      ) : (
-        <>
-          <CornerLinkedField
-            label={S.feishu.appId}
-            required
-            link={
-              <ExternalLink
-                href={CHANNEL_LINKS.feishu.credentialSource}
-                label={S.messaging.console}
-              />
-            }
-          >
-            <Input
-              size="sm"
-              id={ids.appId}
-              disabled={readOnly}
-              aria-label={S.feishu.appId}
-              error={errorText(b.fieldErrors.appId)}
-              value={form.feishu.appId}
-              onChange={(e) => b.patchForm({ feishu: { ...form.feishu, appId: e.target.value } })}
-              className="font-mono"
-              placeholder="cli_xxxxxxxxxxxxxxxx"
-              autoComplete="off"
-            />
-          </CornerLinkedField>
-          <PasswordInput
-            size="sm"
-            id={ids.appSecret}
-            disabled={readOnly}
-            label={S.feishu.appSecret}
-            {...(facts.secretConfigured
-              ? { placeholder: S.feishu.appSecretKeepHint }
-              : { required: true })}
-            error={errorText(b.fieldErrors.appSecret)}
-            value={form.feishu.appSecret}
-            onChange={(e) =>
-              b.patchForm({
-                feishu: { ...form.feishu, appSecret: e.target.value, clearSecret: false },
-              })
-            }
-            autoComplete="off"
-          />
-          {facts.secretMasked !== null && form.feishu.appSecret === "" && (
-            <StoredSecretRow
-              masked={facts.secretMasked}
-              clearLabel={S.feishu.clearSecret}
-              checked={form.feishu.clearSecret}
-              enabled={facts.enabled}
-              readOnly={readOnly}
-              onChange={(checked) =>
-                b.patchForm({ feishu: { ...form.feishu, clearSecret: checked } })
-              }
-            />
-          )}
-          <Input
-            size="sm"
-            disabled={readOnly}
-            label={S.feishu.baseDomain}
-            hint={S.feishu.baseDomainHint}
-            error={errorText(b.fieldErrors.baseDomain)}
-            value={form.feishu.baseDomain}
-            onChange={(e) =>
-              b.patchForm({ feishu: { ...form.feishu, baseDomain: e.target.value } })
-            }
-            className="font-mono"
-            placeholder="https://open.feishu.cn"
-            autoComplete="off"
-          />
-        </>
-      )}
+      <spec.Fields
+        sessionId={b.sessionId}
+        fields={fields}
+        patch={patchFields}
+        facts={facts}
+        errors={b.fieldErrors}
+        readOnly={readOnly}
+        fieldId={fieldId}
+        scanId={ids.scan}
+        onBound={(binding) => b.adoptBinding(binding)}
+      />
       {/* The saved fields that are not credentials, so they close the form rather than
           sitting among them. Every row is offered on every channel, and their explanations
           sit behind the label's "?" — see DeliveryOptionRow. Order is the order they take
@@ -1413,52 +948,43 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           those is rendered. The Markdown row's sentence is the one that differs per channel,
           because what a channel can show is the whole of what the reader needs to decide.
 
-          The one place a channel changes the answer rather than shading it: on QQ every send
-          is a passive reply anchored to an inbound message, and that anchor expires, so
-          holding the reply to the run's end loses a long run's output entirely instead of
-          merely delaying it. That is a different outcome, not a nuance of the same one, so it
-          is appended to this option's explanation — and only there. A standing strip under the
-          row would be the third thing on this form permanently explaining a channel to someone
-          who has already read it once; what belongs on screen is the switch, and what belongs
-          behind the "?" is why you might not want it. `linePerMessage` needs nothing similar:
-          QQ clamps the split to its own budget and the reply still arrives. */}
+          The one place a channel changes the answer rather than shading it — QQ, where holding
+          the reply to the run's end loses a long run's output instead of delaying it — the
+          channel's `finalReplyOnlyNote` is appended to this option's explanation, and only
+          there. A standing strip under the row would be the third thing on this form
+          permanently explaining a channel to someone who has already read it once; what
+          belongs on screen is the switch, and what belongs behind the "?" is why you might not
+          want it. `linePerMessage` needs nothing similar: QQ clamps the split to its own budget
+          and the reply still arrives. */}
       <DeliveryOptionRow
         label={S.messaging.finalReplyOnly}
         help={
-          channel === "qq" ? (
+          finalReplyOnlyNote !== undefined ? (
             <>
               <p>{S.messaging.finalReplyOnlyHelp}</p>
-              <p className="mt-2">{S.messaging.finalReplyOnlyQQWarning}</p>
+              <p className="mt-2">{finalReplyOnlyNote}</p>
             </>
           ) : (
             S.messaging.finalReplyOnlyHelp
           )
         }
-        checked={delivery.finalReplyOnly}
+        checked={fields.finalReplyOnly}
         disabled={readOnly}
-        onChange={(v) => patchDelivery({ finalReplyOnly: v })}
+        onChange={(v) => patchFields({ finalReplyOnly: v })}
       />
       <DeliveryOptionRow
         label={S.messaging.linePerMessage}
         help={S.messaging.linePerMessageHelp}
-        checked={delivery.linePerMessage}
+        checked={fields.linePerMessage}
         disabled={readOnly}
-        onChange={(v) => patchDelivery({ linePerMessage: v })}
+        onChange={(v) => patchFields({ linePerMessage: v })}
       />
       <DeliveryOptionRow
         label={S.messaging.renderMarkdown}
-        help={
-          channel === "telegram"
-            ? S.messaging.renderMarkdownHelpTelegram
-            : channel === "qq"
-              ? S.messaging.renderMarkdownHelpQQ
-              : channel === "wechat"
-                ? S.messaging.renderMarkdownHelpWeChat
-                : S.messaging.renderMarkdownHelpFeishu
-        }
-        checked={delivery.renderMarkdown}
+        help={spec.renderMarkdownHelp()}
+        checked={fields.renderMarkdown}
         disabled={readOnly}
-        onChange={(v) => patchDelivery({ renderMarkdown: v })}
+        onChange={(v) => patchFields({ renderMarkdown: v })}
       />
     </div>
   );
@@ -1478,15 +1004,10 @@ export function MessagingBindingHelp({
   /** The machine a conversation on one connects from; null for this server's own. */
   machineAlias?: string | null;
 }) {
-  const per =
-    channel === "telegram"
-      ? S.telegram
-      : channel === "qq"
-        ? S.qq
-        : channel === "wechat"
-          ? S.wechat
-          : S.feishu;
-  const links = CHANNEL_LINKS[channel];
+  const spec = channelForm(channel);
+  const per = spec.copy();
+  const setupNote = spec.setupNote?.();
+  const whatNote = spec.whatNote?.();
   return (
     <div className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
       <HelpFold title={S.messaging.faqSetupTitle}>
@@ -1495,30 +1016,23 @@ export function MessagingBindingHelp({
             <li key={step}>{step}</li>
           ))}
         </ol>
-        {/* What the QR button spares the reader: the last two steps of the list above.
-            Disclosed here rather than parked beside the button, which is a control and so
-            cannot be the title a standing sentence would need. */}
-        {channel === "qq" && <p className="mt-1.5">{S.qq.scanHint}</p>}
-        {/* Why this channel's form has no fields, said where a reader looking for them
-            arrives. */}
-        {channel === "wechat" && <p className="mt-1.5">{S.wechat.scanOnly}</p>}
-        {/* Absent for a channel with nowhere public to send the reader (see CHANNEL_LINKS). */}
-        {links !== null && (
+        {/* The channel's word on its own steps: on QQ what the QR button spares the reader,
+            on WeChat why its form has no fields. Disclosed here rather than beside the
+            button, which is a control and so cannot be the title a standing sentence needs. */}
+        {setupNote !== undefined && <p className="mt-1.5">{setupNote}</p>}
+        {/* Absent for a channel with nowhere public to send the reader. */}
+        {spec.tutorial !== null && (
           <p className="mt-1.5">
-            <ExternalLink href={links.tutorial} label={S.messaging.tutorial} />
+            <ExternalLink href={spec.tutorial} label={S.messaging.tutorial} />
           </p>
         )}
       </HelpFold>
       <HelpFold title={S.messaging.faqWhatTitle}>
         <p>{per.intro}</p>
-        {/* The channel's own flavor first, then the channel-neutral rule that owns the
-            question a reader actually arrives with: how the bot moves conversations. */}
-        {/* QQ's reply budget belongs to "what binding does" rather than troubleshooting:
-            it is not a fault, it is how the channel delivers a long answer. */}
-        {channel === "qq" && <p className="mt-1.5">{S.qq.replyBudget}</p>}
-        {/* What actually travels on this channel, which is more than on any other here and
-            is the question its users ask first. */}
-        {channel === "wechat" && <p className="mt-1.5">{S.wechat.media}</p>}
+        {/* The channel's own flavor first (QQ's reply budget, what travels on WeChat), then
+            the channel-neutral rule that owns the question a reader actually arrives with:
+            how the bot moves conversations. */}
+        {whatNote !== undefined && <p className="mt-1.5">{whatNote}</p>}
         <p className="mt-1.5">{S.messaging.faqWhatBinding}</p>
         {/* Where the bot runs, for a conversation on a machine: what that means for the
             connection, for a QR login and for this app being away. The visible "Connects
@@ -1529,12 +1043,9 @@ export function MessagingBindingHelp({
         <ul className="list-disc space-y-1 pl-4">
           <li>{S.messaging.troubleNoChat}</li>
           <li>{S.messaging.troubleConnError}</li>
-          {channel === "telegram" && <li>{S.messaging.troubleOnePoller}</li>}
-          {channel === "telegram" && <li>{S.messaging.troubleGroupPrivacy}</li>}
-          {channel === "qq" && <li>{S.messaging.troubleQQPassive}</li>}
-          {channel === "wechat" && <li>{S.messaging.troubleWeChatDirect}</li>}
-          {channel === "wechat" && <li>{S.messaging.troubleWeChatReplyWindow}</li>}
-          {channel === "telegram" && <li>{S.messaging.troubleNoGroupInbound}</li>}
+          {spec.troubles().map((entry) => (
+            <li key={entry}>{entry}</li>
+          ))}
         </ul>
       </HelpFold>
     </div>
