@@ -1,0 +1,58 @@
+{
+  "name": "@penguinharness/agent-state-gix",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "gitoxide for PenguinHarness Agent State history: the two engine steps in-process, in native code, no Git process.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "git",
+    "gitoxide",
+    "agent-state",
+    "workbench-history"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/agent-state-gix"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "native/index.node",
+    "README.md",
+    "icon.svg",
+    "ifaces.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build:native": "cargo build --release --manifest-path native/Cargo.toml && cp native/target/release/libagent_state_gix.so native/index.node",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+  },
+  "devDependencies": {
+    "@penguinharness/agent-state-git": "workspace:*",
+    "@prismshadow/penguin-core": "workspace:*",
+    "tsup": "^8.3.0",
+    "vitest": "^4.1.12"
+  }
+}
