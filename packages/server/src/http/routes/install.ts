@@ -29,6 +29,7 @@ export interface InstallRouteDeps {
   config: ServerConfig;
 }
 import { ensureInstallId } from "../../install-id.js";
+import { runningCommit, versionReport } from "../../version-report.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Config } from "../../hmr/capabilities.js";
@@ -36,8 +37,12 @@ import { Config } from "../../hmr/capabilities.js";
 export function installRoutes(deps: InstallRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  app.get("/", (c) => {
-    return c.json({ installId: ensureInstallId(deps.config.root) } satisfies InstallResponse);
+  app.get("/", async (c) => {
+    const running = runningCommit(await versionReport(deps.config.root));
+    return c.json({
+      installId: ensureInstallId(deps.config.root),
+      ...running,
+    } satisfies InstallResponse);
   });
 
   return app;

@@ -61,6 +61,7 @@ export type { AgentStateEngines, AgentStateEnginesSlots } from "../workbenches/e
 export type { Terminals } from "../terminal/manager.js";
 export type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 export type { AgentService } from "../services/agent-service.js";
+export type { AgentLifecycle } from "../mechanisms/agents.js";
 export type { AgentConfigService } from "../services/agent-config-service.js";
 export type { Messaging, MessagingSlots } from "../runtime/messaging/bridge.js";
 export type {
@@ -125,6 +126,8 @@ export type {
 export type { StartPage, StartPageSlots } from "../http/routes/start-page.js";
 export type { ProjectMachines, ProjectModels } from "./views.js";
 export type { MachineApi } from "../machines/machine-api.js";
+export type { OrgActor, OrgChannelRef, OrgEmployeeView, OrgGateway, OrgGatewaySlots, OrgView } from "../mechanisms/organization.js";
+export type { WorkflowFolderView, WorkflowLoader, WorkflowLoadOutcome, WorkflowLoadRequest, WorkflowVersion } from "../mechanisms/workflows.js";
 export type { WorkspaceFiles } from "../mechanisms/workspace.js";
 export { containedFile, isSafeRelPath, uiFileResponse } from "../http/static-files.js";
 export {

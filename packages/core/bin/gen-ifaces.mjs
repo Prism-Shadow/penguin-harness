@@ -689,7 +689,9 @@ for (const project of projects) {
     if (key !== null && !(type.getFlags() & (ts.TypeFlags.Primitive | ts.TypeFlags.Literal))) {
       if (key in types || stack.includes(type)) return { $ref: key };
       types[key] = null; // reserve: a self-reference met while projecting resolves to $ref
-      const projected = projectData(type, atNode, [...stack, type]);
+      // The named type's own body projects from depth zero: it is emitted once and compared
+      // through its $ref wherever it is reached, so the depth it was met at is not its depth.
+      const projected = projectData(type, atNode, [type]);
       if (projected === null) {
         delete types[key];
         return null;
@@ -1337,6 +1339,24 @@ for (const project of projects) {
   while (pending.length > 0) {
     const { symbol, decl, key } = pending.shift();
     table[key] = ifaceOf(symbol, decl);
+    // A host interface's slot companion travels with its copy: the loader compares the copy
+    // with the host's own table, and a copy that dropped the slots would not fit it.
+    const className = decl.name?.text;
+    if (className === undefined) continue;
+    const sf = decl.getSourceFile();
+    const moduleSymbol = checker.getSymbolAtLocation(sf);
+    if (moduleSymbol === undefined) continue;
+    const companionExp = checker
+      .getExportsOfModule(moduleSymbol)
+      .find((e) => e.getName() === `${className}Slots`);
+    if (companionExp === undefined) continue;
+    const companionSym =
+      companionExp.flags & ts.SymbolFlags.Alias
+        ? checker.getAliasedSymbol(companionExp)
+        : companionExp;
+    const companionDecl = companionSym.declarations?.find((d) => ts.isInterfaceDeclaration(d));
+    if (companionDecl === undefined) continue;
+    table[key].slots = slotsOf(companionSym, companionDecl);
   }
   for (const { symbol, decl, owner, sf } of slotCompanions) {
     const ownerExp = checker

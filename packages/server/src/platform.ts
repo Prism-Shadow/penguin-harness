@@ -89,6 +89,9 @@ import { TraceIndexRepo } from "@prismshadow/penguin-library-trace/repos/trace-i
 import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import { MessagingConversationsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-conversations";
 import { OrgCacheRepo } from "@prismshadow/penguin-library-organization/organizations";
+import { OrgGateway } from "./mechanisms/organization.js";
+import { WorkflowLoader } from "./mechanisms/workflows.js";
+import { WorkflowLoaderService } from "./workflows/loader.js";
 import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
 import { AgentStateStore } from "./runtime/agent-state.js";
 import { SessionSources } from "./runtime/session-sources.js";
@@ -560,8 +563,14 @@ export class MessagingHubModule {}
  * Project deletion reach for leave the group, as OrgCache.
  */
 @Module({
+  children: [WorkflowLoaderService],
+  exports: [WorkflowLoader],
+})
+export class WorkflowsModule {}
+
+@Module({
   children: [OrgCacheRepo, OrganizationModule, OrgRoutes],
-  exports: [OrgCache, OrgService, OrgScheduler],
+  exports: [OrgCache, OrgService, OrgScheduler, OrgGateway],
 })
 export class CompanyModule {}
 
@@ -676,6 +685,7 @@ export class PluginModulesModule {}
     TerminalModule,
     MachinesModule,
     TerminalRelay,
+    WorkflowsModule,
     SessionForwardRoutes,
     HistoryRoutes,
     HistoryLinesRoutes,
