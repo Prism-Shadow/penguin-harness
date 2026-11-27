@@ -75,7 +75,8 @@ export function isAppFile(file: SourceFile): boolean {
 
 /**
  * How a guard's lists name an app file: its path under `packages/web/src/` for the app's own,
- * its repo path (`plugins/<name>/src/web/…`) for a plugin web half's.
+ * its repo path (`plugins/<name>/src/web/…`, `library/<domain>/src/web/…`) for a plugin or
+ * library web half's.
  */
 export function appKeyOf(id: string): string {
   const web = "packages/web/src/";
@@ -84,7 +85,7 @@ export function appKeyOf(id: string): string {
 
 /** The repo-relative id of the app file a guard's list names (the inverse of {@link appKeyOf}). */
 export function appIdOf(key: string): string {
-  return key.startsWith("plugins/") ? key : `packages/web/src/${key}`;
+  return key.startsWith("plugins/") || key.startsWith("library/") ? key : `packages/web/src/${key}`;
 }
 
 /** `.ts`, `.tsx` and `.css` under every root. */

@@ -75,7 +75,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/company/finance-page.tsx": { 24: [1, "W10"] },
   "features/company/overview-page.tsx": { 24: [1, "W10"] },
   "features/company/ticket-dialog.tsx": { 24: [3, "W10"] },
-  "features/machines/machine-detail-dialog.tsx": { 24: [1, "W10"] },
+  "library/machine/src/web/machine-detail-dialog.tsx": { 24: [1, "W10"] },
   "features/models/group-balance.tsx": { 24: [2, "W10"] },
   "features/models/preset-sync.tsx": { 24: [1, "W10"] },
   "features/settings/proxy-section.tsx": { 24: [1, "W10"] },
