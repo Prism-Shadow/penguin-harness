@@ -47,7 +47,7 @@
  *   `data-depth` is a digit 0–8 and its `data-last` is `"true"`, a decorative icon's
  *   `data-role` is one of the four the recipes tint apart, `.ui-activity` names its kind
  *   (`thinking` / `tool` / `event`), its state (`running` / `done` / `error`) and its slots
- *   (`label`, `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`,
+ *   (`label`, `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`lead`, `icon`,
  *   `title`, `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
  *   (`caret`), `.ui-widget` its kind (the six widgets) and its slots (`head`, `body`, `foot`),
  *   a chart's parts are the seven the recipes style and a legend's swatch, and a glyph's the one
@@ -270,7 +270,7 @@ const ACTIVITY_KINDS = new Set(["thinking", "tool", "event"]);
 const ACTIVITY_STATES = new Set(["running", "done", "error"]);
 const ACTIVITY_SLOTS = new Set(["label", "detail", "progress", "mark", "toggle", "toggle-end"]);
 const NOTICE_TONES = new Set(["info", "success", "warning", "danger", "neutral"]);
-const NOTICE_SLOTS = new Set(["icon", "title", "body", "actions"]);
+const NOTICE_SLOTS = new Set(["lead", "icon", "title", "body", "actions"]);
 const STREAM_STATES = new Set(["streaming", "done"]);
 const STREAM_SLOTS = new Set(["caret"]);
 const WIDGET_KINDS = new Set(["weather", "clock", "countdown", "metrics", "chart", "resources"]);
@@ -504,7 +504,7 @@ describe("style hooks", () => {
             }
           }
         }
-        // A notice names its tone as a literal the recipes select on, and its slots are the four.
+        // A notice names its tone as a literal the recipes select on, and its slots are the five.
         if (names.has("ui-notice")) {
           const tone = element.attributes.get("data-tone");
           if (tone !== null && (typeof tone !== "string" || !NOTICE_TONES.has(tone))) {

@@ -902,7 +902,7 @@ describe("the themes' own faces (round 6)", () => {
       .map((rule) => rule.selector);
     expect(mono).toEqual([
       ':root[data-theme="geek"] .ui-activity [data-slot="label"]',
-      ':root[data-theme="geek"] .ui-notice::before',
+      ':root[data-theme="geek"] .ui-notice::before, :root[data-theme="geek"] .ui-notice [data-slot="lead"]::before',
       ':root[data-theme="geek"] .ui-chart text:is([data-part="axis"], [data-part="label"])',
       ':root[data-theme="geek"] .ui-widget [data-figure]',
     ]);

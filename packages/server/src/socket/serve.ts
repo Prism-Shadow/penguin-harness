@@ -105,15 +105,30 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   const answers = new Map<number, StreamAnswer>();
   let alive = true;
   let revoked = false;
+  /** Ends the socket for good, its calls and streams with it. */
+  const end = (code: number, reason: string): false => {
+    revoked = true;
+    for (const controller of inflight.values()) controller.abort();
+    ws.close(code, reason);
+    return false;
+  };
   // A signed-out login ends the socket, its calls and streams with it: HTTP would refuse its
   // next request, and so does this transport of the same routes.
   const authorized = (): boolean => {
     if (revoked) return false;
-    if (deps.sessionIsLive()) return true;
-    revoked = true;
-    for (const controller of inflight.values()) controller.abort();
-    ws.close(1008, "login expired or revoked");
-    return false;
+    let live: boolean;
+    try {
+      live = deps.sessionIsLive();
+    } catch (err) {
+      // No answer about the login at all. It is asked from the frame handler and the beat, where
+      // a throw would be uncaught and end the process, so the socket ends instead — as an
+      // internal error, not a revocation: the client reconnects, and its handshake asks again.
+      deps.log(
+        `[socket] the login could not be checked: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return end(1011, "the login could not be checked");
+    }
+    return live || end(1008, "login expired or revoked");
   };
 
   const send = (frame: ServerFrame): void => {

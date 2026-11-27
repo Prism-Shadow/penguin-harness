@@ -574,15 +574,20 @@ export interface HistoryProgress {
   doneLines: number;
   totalLines: number;
   /**
-   * The hub waits on the machine: `not_connected` (out of reach, the hub reconnects) and
-   * `retrying` (connected and silent, the hub asks again), each with its attempt and the time of
-   * the next; or `slow` — connected and beating, but the machine has sent nothing else for a
-   * minute (a route stuck over there): nothing is retried, `attempt` and `nextAt` are 0, and the
-   * stream goes on. Null again once bytes move.
+   * The hub waits on the machine, and says why: `not_connected` (the hub holds no connection to
+   * it), `unreachable` (the connection is held, but nothing reaches the machine's server: no API
+   * socket could be dialled and the forward could not deliver either) and `retrying` (the machine
+   * answered, or its stream opened, and the stream was cut without moving), each with its attempt,
+   * the most attempts it gets (`maxAttempts`; past them the read ends with
+   * `machine_unreachable`) and the time of the next; or `slow` — connected and beating, but the
+   * machine has sent nothing else for a minute (a route stuck over there): nothing is retried,
+   * `attempt`, `maxAttempts` and `nextAt` are 0, and the stream goes on. Null again once bytes
+   * move.
    */
   waiting: null | {
-    reason: "not_connected" | "retrying" | "slow";
+    reason: "not_connected" | "unreachable" | "retrying" | "slow";
     attempt: number;
+    maxAttempts: number;
     nextAt: number;
   };
 }

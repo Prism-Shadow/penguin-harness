@@ -159,9 +159,15 @@ export function Notice({
       {...(role !== undefined ? { role } : {})}
       className={`${VARIANT[variant]} ${className}`}
     >
-      <div className={`flex min-w-0 items-center ${ICON_GAP.menu}${crossOnly ? " flex-1" : ""}`}>
+      <div
+        data-slot="lead"
+        className={`flex min-w-0 items-start ${ICON_GAP.menu}${crossOnly ? " flex-1" : ""}`}
+      >
         {glyph !== undefined && (
-          <span data-slot="icon" aria-hidden className="flex shrink-0">
+          // One line tall (`1lh` is this span's own inherited line height), the mark centred in it:
+          // the mark sits on the first line however far the text wraps, and a one-line notice
+          // looks as if the whole row were centred.
+          <span data-slot="icon" aria-hidden className="flex min-h-[1lh] shrink-0 items-center">
             {typeof glyph === "string" ? <GlyphIcon d={glyph} /> : glyph}
           </span>
         )}

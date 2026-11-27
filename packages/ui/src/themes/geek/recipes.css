@@ -376,7 +376,8 @@
 :root[data-theme="geek"] .ui-notice [data-slot="icon"] {
   display: none;
 }
-:root[data-theme="geek"] .ui-notice::before {
+:root[data-theme="geek"] .ui-notice::before,
+:root[data-theme="geek"] .ui-notice [data-slot="lead"]::before {
   content: "[INFO]";
   position: absolute;
   inset-inline-start: var(--ui-row-px);
@@ -388,16 +389,41 @@
   font-size: var(--ui-text-small-size);
   font-weight: var(--ui-weight-strong);
 }
-:root[data-theme="geek"] .ui-notice[data-tone="success"]::before {
+/* A `Notice`'s tag rides its leading block's first line (the block is `data-slot="lead"`, centred
+   against taller actions, so a one-line notice keeps the tag where it was); the block starts at
+   the host's padding, so the tag reaches back out to the row's inset. A banner's rides its
+   first line under the strip's padding. */
+:root[data-theme="geek"] .ui-notice:has(> [data-slot="lead"])::before {
+  display: none;
+}
+:root[data-theme="geek"] .ui-notice [data-slot="lead"] {
+  position: relative;
+}
+:root[data-theme="geek"] .ui-notice [data-slot="lead"]::before {
+  inset-inline-start: calc(-4rem);
+  inset-block: auto;
+  top: 0;
+  height: 1lh;
+}
+:root[data-theme="geek"] .ui-notice[data-banner]::before {
+  inset-block: auto;
+  top: 0.375rem;
+  height: 1lh;
+}
+:root[data-theme="geek"] .ui-notice[data-tone="success"]::before,
+:root[data-theme="geek"] .ui-notice[data-tone="success"] [data-slot="lead"]::before {
   content: "[ OK ]";
 }
-:root[data-theme="geek"] .ui-notice[data-tone="warning"]::before {
+:root[data-theme="geek"] .ui-notice[data-tone="warning"]::before,
+:root[data-theme="geek"] .ui-notice[data-tone="warning"] [data-slot="lead"]::before {
   content: "[WARN]";
 }
-:root[data-theme="geek"] .ui-notice[data-tone="danger"]::before {
+:root[data-theme="geek"] .ui-notice[data-tone="danger"]::before,
+:root[data-theme="geek"] .ui-notice[data-tone="danger"] [data-slot="lead"]::before {
   content: "[FAIL]";
 }
-:root[data-theme="geek"] .ui-notice[data-tone="neutral"]::before {
+:root[data-theme="geek"] .ui-notice[data-tone="neutral"]::before,
+:root[data-theme="geek"] .ui-notice[data-tone="neutral"] [data-slot="lead"]::before {
   content: "[NOTE]";
 }
 

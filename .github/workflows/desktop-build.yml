@@ -92,7 +92,19 @@ env:
   MINGIT_TAG: v2.55.0.windows.3
 
 jobs:
+  # node-pty's Linux bindings, built in a manylinux_2_28 container (linux-pty.yml). Every OS
+  # packs them: the Linux app loads one itself, and each app's install image carries both to
+  # the Linux machines it installs — which a macOS or Windows runner cannot build for.
+  linux-pty:
+    uses: ./.github/workflows/linux-pty.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ inputs.ref || '' }}
+      artifact: linux-pty-desktop
+
   build:
+    needs: linux-pty
     strategy:
       fail-fast: false
       matrix:
@@ -161,6 +173,20 @@ jobs:
           (cd packages/desktop && npm version --no-git-tag-version --allow-same-version "$V")
 
       - run: pnpm install --frozen-lockfile
+
+      # Before the build: the desktop's staged node-pty (scripts/build-assets.mjs) and the
+      # install image are both copied out of the workspace's install, which on Linux holds a
+      # binding compiled against this runner's glibc and elsewhere none for Linux at all.
+      # A tag from before the portable bindings builds as it did.
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-pty-desktop
+          path: linux-pty
+      - name: Stage the portable Linux node-pty bindings
+        shell: bash
+        run: |
+          if [ ! -f scripts/stage-linux-pty.mjs ]; then echo "Legacy tag: node-pty ships as installed."; exit 0; fi
+          node scripts/stage-linux-pty.mjs linux-pty
 
       - run: pnpm -r build
 
@@ -308,6 +334,20 @@ jobs:
       # command the app runs on a machine goes through the CLI it leaves in that machine's store.
       - name: Pack the install image
         run: pnpm --dir packages/desktop run image
+
+      # What the app packs — its own node-pty, the install image it pushes to Linux machines
+      # and the builtin plugins — loads on glibc 2.28, and both Linux bindings are in the first
+      # two (#1900: the 0.2.20 image carried none, the Linux app one that needed GLIBC_2.42).
+      - name: Linux native modules load on glibc 2.28
+        shell: bash
+        run: |
+          if [ ! -f scripts/check-native-glibc.mjs ]; then echo "Legacy tag: nothing to check with."; exit 0; fi
+          node scripts/check-native-glibc.mjs \
+            --expect dist/node_modules/node-pty/prebuilds/linux-x64/pty.node \
+            --expect dist/node_modules/node-pty/prebuilds/linux-arm64/pty.node \
+            --expect 'install-image.gz!archives/node-pty.tgz!node_modules/node-pty/prebuilds/linux-x64/pty.node' \
+            --expect 'install-image.gz!archives/node-pty.tgz!node_modules/node-pty/prebuilds/linux-arm64/pty.node' \
+            packages/desktop/dist packages/desktop/plugins
 
       - name: Build packages
         env:

@@ -35,8 +35,15 @@ interface NavEntryView {
 /**
  * The nav as the sidebar draws it. `onSystemApp`: the page on screen is a system app or lies under
  * one (lib/system-apps.ts), where the App Center's row is lit, since that is where those open.
+ * `appRowLit`: an app's own row in the Apps list is the current page (an app window is open under
+ * `/apps?app=…`, or a system app is on screen), so the App Center's row is not: it is lit only
+ * while its grid is what shows.
  */
-export function createMainSidebarNavigation(scope: MainSidebarState, onSystemApp = false) {
+export function createMainSidebarNavigation(
+  scope: MainSidebarState,
+  onSystemApp = false,
+  appRowLit = false,
+) {
   const {
     location,
     locale,
@@ -114,7 +121,11 @@ export function createMainSidebarNavigation(scope: MainSidebarState, onSystemApp
         label={label}
         glyph={glyph}
         href={to}
-        active={isCurrentPath(to, location.pathname) || (to === APP_CENTER_PATH && onSystemApp)}
+        active={
+          to === APP_CENTER_PATH
+            ? !appRowLit && (isCurrentPath(to, location.pathname) || onSystemApp)
+            : isCurrentPath(to, location.pathname)
+        }
         renderLink={renderRouterLink}
         onClick={() => onNavigate?.()}
         {...(note !== null

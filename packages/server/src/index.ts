@@ -25,7 +25,8 @@ import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { Instance } from "@prismshadow/penguin-core/kernel";
 import { nodeFloorRefusal } from "@prismshadow/penguin-core";
 import { packagedPlatform } from "./hmr/platform.js";
-import { startingResponse } from "./hmr/starting.js";
+import { answerStartingUpgrades, startingResponse } from "./hmr/starting.js";
+import { liveNode } from "./hmr/live-node.js";
 import { carriedBody, syncCarriedImage } from "./carried-image.js";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
 import type { ServerBoot } from "./app.js";
@@ -82,8 +83,10 @@ async function main(): Promise<void> {
       await server.loadPlugins();
       await server.buildDeps(hmr);
       server.applyPersistedProxy();
-      server.buildApp();
+      // Before the App answers: on a fresh root the seed provisions default_project, whose
+      // preinstalled modules re-assemble the App — a window with no modules in the tree.
       await server.seedAdmin();
+      server.buildApp();
       server.installProcessHandlers();
       await server.printFirstLoginNotice();
     },
@@ -123,10 +126,12 @@ class PenguinServer {
 
   private shuttingDown = false;
 
-  /** The current App's auth service — resolved per call, since a hot swap replaces the tree. */
-  private auth(): Auth {
-    return this.deps.tree.api<Auth>("IdentityModule", "Auth");
-  }
+  /**
+   * The current App's auth service — resolved per call, since a hot swap replaces the tree, and
+   * the last one resolved while a swap has the tree disposed (hmr/live-node.ts). Assigned by
+   * buildDeps().
+   */
+  private auth!: () => Auth;
 
   /**
    * The process-level handlers' record of an error. A tree that cannot answer (mid-swap, a
@@ -301,6 +306,7 @@ class PenguinServer {
 
   async buildDeps(hmr: Hmr<PlatformApi>): Promise<void> {
     this.deps = await bootAppDeps(this.config, [], this.plugins, undefined, this.host, hmr);
+    this.auth = liveNode<Auth>(this.deps, "IdentityModule", "Auth");
   }
 
   /**
@@ -331,9 +337,13 @@ class PenguinServer {
 
   /**
    * Assembles the layer's middleware and routes; from here the listening port answers
-   * with them. The terminal stream and the contributed WebSocket endpoints are upgrades, which
-   * never reach the fetch handler — they are bound on each Node listener here, once the
-   * platform they ask exists.
+   * with them, and no longer with the starting response. The terminal stream and the
+   * contributed WebSocket endpoints are upgrades, which never reach the fetch handler — they
+   * are bound on each Node listener here, once the platform they ask exists.
+   *
+   * Last of the steps that build anything, after the admin seed: until here the platform may
+   * still be assembling (the seed's re-assembly on a fresh root), and a request that reached it
+   * in that window met a tree with no modules in it.
    */
   buildApp(): void {
     this.app = createApp(this.deps);
@@ -364,6 +374,10 @@ class PenguinServer {
    *
    * The sweep runs unconditionally: a root carried over from a build that stored the
    * plaintext must not keep holding it (see initial-password.ts).
+   *
+   * Part of the startup, so it runs before the App answers (buildApp): on a fresh root the
+   * default_project it provisions lists the preinstalled modules (PRFC-0030), which re-assembles
+   * the App — the running tree is disposed before its successor is built.
    */
   async seedAdmin(): Promise<void> {
     await this.auth().seedAdmin();
@@ -377,9 +391,10 @@ class PenguinServer {
 
   /**
    * Opens the HTTP listener. The port is bound before the platform exists: until buildApp()
-   * it answers the starting response, so a client that arrives early sees "starting" —
-   * and, if it is a browser, comes back on its own — rather than a refused connection.
-   * Everything that needs the port the OS actually handed out (PORT=0 asks for an
+   * it answers the starting response — a request the 503, a WebSocket handshake a close with
+   * 1013 (hmr/starting.ts) — so a client that arrives early sees "starting" and comes back on
+   * its own, rather than a refused connection, and nothing it sends reaches a platform still
+   * being built. Everything that needs the port the OS actually handed out (PORT=0 asks for an
    * ephemeral one) waits for onListening().
    */
   listen(): void {
@@ -399,6 +414,7 @@ class PenguinServer {
       },
       (info) => this.onListening(info.port),
     );
+    answerStartingUpgrades(this.httpServer as unknown as HttpServer, () => this.app !== undefined);
   }
 
   /**
@@ -556,6 +572,7 @@ class PenguinServer {
         `[server] IPv6 loopback listener unavailable (${err.code ?? err.message}); previews via localhost may not resolve.`,
       );
     });
+    answerStartingUpgrades(loopback as unknown as HttpServer, () => this.app !== undefined);
     // The terminal stream is bound on every listener in buildApp(), this one included, or
     // the terminal only works on whichever address the browser happened to resolve; a
     // loopback opened after buildApp() (never in practice) gets it here.

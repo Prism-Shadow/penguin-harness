@@ -1,0 +1,60 @@
+# node-pty's Linux terminal bindings, for linux-x64 and linux-arm64, built in a manylinux_2_28
+# container (scripts/build-linux-pty.sh) and uploaded as an artifact for the jobs that pack
+# node-pty: they stage it with scripts/stage-linux-pty.mjs before anything is packed, and
+# check what they pack with scripts/check-native-glibc.mjs.
+#
+# node-pty publishes prebuilt bindings for darwin and win32 only. On Linux it compiles one at
+# install time against the installing machine's glibc, so the bindings the release shipped
+# were the runner's: when `ubuntu-latest` moved from Ubuntu 24.04 to 26.04 they began to need
+# GLIBC_2.42, and from 0.2.19 every terminal failed on a Linux machine with an older glibc
+# (issue #1900). Built here, they need glibc 2.28 — what the bundled Node itself needs — and
+# one build serves the macOS and Windows jobs too, which cannot run a Linux container at all
+# but pack the Linux bindings into the install image they push to Linux machines.
+name: Linux node-pty bindings
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to check out; empty is the calling run's own."
+        required: false
+        type: string
+        default: ""
+      artifact:
+        description: "The artifact name, unique within the calling run (every caller builds its own)."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: node-pty for Linux (manylinux_2_28)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      # The install provides the lockfile's node-pty and node-addon-api sources, and the tar
+      # library the check reads archives with.
+      - uses: ./.github/actions/setup
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      # A tag from before this workflow has no build script: it ships node-pty as it was built,
+      # and the placeholder keeps the artifact its callers download.
+      - name: Build node-pty for linux-x64 and linux-arm64
+        run: |
+          if [ ! -f scripts/build-linux-pty.sh ]; then
+            echo "This ref predates scripts/build-linux-pty.sh; no portable bindings."
+            mkdir -p linux-pty && : > linux-pty/LEGACY
+            exit 0
+          fi
+          sh scripts/build-linux-pty.sh linux-pty x64 arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}
+          path: linux-pty/
+          if-no-files-found: error
+          retention-days: 7

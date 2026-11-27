@@ -92,8 +92,9 @@ extraMetadata:
 asar: false
 # Nothing to rebuild: the only native module is node-pty, staged into dist/node_modules as
 # the binaries its npm tarball prebuilds (darwin, win32) or as the binding pnpm's install
-# already compiled on this host (Linux). Both are N-API, so Electron's Node loads them as
-# published — scripts/terminal-smoke.mjs is what proves it.
+# already compiled on this host (Linux) — which a release build replaces with the portable
+# Linux ones (scripts/stage-linux-pty.mjs, glibc 2.28). All are N-API, so Electron's Node
+# loads them as published — scripts/terminal-smoke.mjs is what proves it.
 npmRebuild: false
 nodeGypRebuild: false
 

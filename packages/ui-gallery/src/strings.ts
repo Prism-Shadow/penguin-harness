@@ -918,6 +918,8 @@ export const zh = {
       retry: "重试",
       calloutTitle: "模板里缺少记忆占位符",
       calloutBody: "在提示词模板里插入占位符后，记忆才会注入对话。",
+      wrappedBody:
+        "有 2 个插件源无法读取。第一行说明现象，其余各行逐条列出原因，圆点应停在第一行，而不是整个提示条的正中。\n渠道 [0] 缺少 url\n渠道 [1] 无法连接",
       todo: "页面待办",
       todoText: "有 3 个技能可更新",
       todoAction: "全部更新",

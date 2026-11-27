@@ -120,6 +120,11 @@ export interface SessionStreamState {
   /** Start fresh subscriptions when a remote machine returns. */
   reconnect: () => void;
   /**
+   * The hold (useSessionStream's `hold`) kept this Session's reads from opening: nothing has been
+   * asked of its machine, and they open once the hold lifts.
+   */
+  held: boolean;
+  /**
    * How far the reads behind the transcript have come: the window it waits on, an older window,
    * and the fill behind the first paint. All null for a Session on this server.
    */
@@ -154,10 +159,21 @@ export function useSessionStream(
   /** Notification of a server auto-generated title (for updating the list in place); held in a ref, doesn't trigger a reconnect. */
   onSessionTitle: (sessionId: string, title: string) => void,
   source: string,
+  /**
+   * The Session's machine is known to be down (the machines account reads it as away): its
+   * history and live subscription do not open until this lifts, so nothing retries against a
+   * machine that cannot answer. Only an opening is held — reads already open for this Session
+   * stay open when its machine goes away, so the transcript on screen is never torn down.
+   */
+  hold = false,
 ): SessionStreamState {
   const [subscriptionGeneration, setSubscriptionGeneration] = useState(0);
   const [version, setVersion] = useState(0);
   const [connectionGeneration, setConnectionGeneration] = useState(0);
+  /** The Session, source and connection generation the reads were last opened for. */
+  const openedRef = useRef<string | null>(null);
+  const openKey = JSON.stringify([sessionId, source, connectionGeneration]);
+  const held = !!sessionId && hold && openedRef.current !== openKey;
   const [loading, setLoading] = useState(true);
   const [taskState, setTaskState] = useState<SessionStatus>(initialStatus);
   const [queuedFollowUps, setQueuedFollowUps] = useState(0);
@@ -289,6 +305,13 @@ export function useSessionStream(
     setPendingFollowUps([]);
     setSubagents([]);
     setPendingTick((t) => t + 1);
+    if (held) {
+      // Waiting for the machine: nothing is asked of it. The previous Session's controller went
+      // with its cleanup; the empty placeholder stands in until the hold lifts.
+      controllerRef.current = null;
+      return;
+    }
+    openedRef.current = openKey;
 
     // Restore an in-flight goal's banner (only when still active — a long-finished goal
     // shouldn't greet every visit); live goal_* events override this snapshot. Fetched from
@@ -373,6 +396,8 @@ export function useSessionStream(
     void controller.load();
 
     return () => {
+      // Closed: whatever opens next for this Session is an opening the hold may keep.
+      openedRef.current = null;
       goalFetchStale = true;
       window.clearTimeout(slow);
       controller.dispose();
@@ -387,9 +412,9 @@ export function useSessionStream(
       }
     };
     // initialStatus only serves as the first-frame placeholder; it doesn't rebuild the connection
-    // on parent re-renders.
+    // on parent re-renders. `held` lifting is what opens a held Session's reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, source, connectionGeneration]);
+  }, [sessionId, source, connectionGeneration, held]);
 
   const reconnect = useCallback(() => {
     setLoading(true);
@@ -454,6 +479,7 @@ export function useSessionStream(
     errorCause,
     retry,
     reconnect,
+    held,
     transfer,
     retryNow,
     bodies: bodiesRef.current,

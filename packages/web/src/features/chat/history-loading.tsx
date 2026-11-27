@@ -73,7 +73,8 @@ function useQuietSecond(active: boolean): boolean {
 
 /**
  * The words for the server's wait on the machine. A retry (`not_connected`: it reconnects;
- * `retrying`: connected and silent, it asks again) says its attempt and counts down to the next,
+ * `unreachable`: connected, but the machine's server is not reached; `retrying`: connected and
+ * silent, it asks again) says its attempt out of the most it makes and counts down to the next,
  * and can be made now. `slow` — connected and beating, but no data for a minute — retries
  * nothing: no attempt, no countdown, nothing to press. A reason this build does not know is said
  * plainly, without guessing at its cause.
@@ -83,17 +84,24 @@ function waitingWords(
   alias: string | null,
 ): { now: string; inSeconds?: (seconds: number) => string; retries: boolean } {
   const words = S.chat.historyTransfer;
+  const { attempt, maxAttempts: max } = waiting;
   switch (waiting.reason) {
     case "not_connected":
       return {
-        now: words.reconnecting(waiting.attempt),
-        inSeconds: (seconds) => words.reconnectIn(seconds, waiting.attempt),
+        now: words.reconnecting(attempt, max),
+        inSeconds: (seconds) => words.reconnectIn(seconds, attempt, max),
+        retries: true,
+      };
+    case "unreachable":
+      return {
+        now: words.unreachable(alias, attempt, max),
+        inSeconds: (seconds) => words.unreachableIn(alias, seconds, attempt, max),
         retries: true,
       };
     case "retrying":
       return {
-        now: words.asking(waiting.attempt),
-        inSeconds: (seconds) => words.askIn(seconds, waiting.attempt),
+        now: words.asking(attempt, max),
+        inSeconds: (seconds) => words.askIn(seconds, attempt, max),
         retries: true,
       };
     case "slow":

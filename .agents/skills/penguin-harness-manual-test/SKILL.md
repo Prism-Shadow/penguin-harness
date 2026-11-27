@@ -26,9 +26,11 @@ one is free; `PORT=` inline moves it. The gallery's port is strict — a busy 73
 drifting, because quoted gallery links and `pnpm --filter @prismshadow/penguin-ui-gallery shots`
 name it.
 
-The user's installed app, server and CLI all use `~/.penguin/data` — their real Agents, Sessions
-and keys. Never point a dev run there. Both surfaces print the root they took (`Data root: …`,
-`[shell] dev instance … on data root …`); read it rather than assume.
+The user's installed app, server and CLI use `~/.penguin/data` by default — their real Agents,
+Sessions and keys. On Windows the installer can store that data on another drive (recorded in
+`~/.penguin/windows-data-location`, which the server and CLI follow). Both surfaces print the root
+they took (`Data root: …`, `[shell] dev instance … on data root …`); read that line rather than
+assuming the default. Never point a dev run there.
 
 ## Four ways a working setup looks broken
 
@@ -45,16 +47,16 @@ proxy. Use `curl --noproxy '*'`. Browsers and the server itself are unaffected.
 desktop app — holds `<root>/server.lock`. The lock is per root, not per port, so `PORT=` will not
 get past it. Use a different root; do not kill their process.
 
-## One instance at a time
+## One live instance per task
 
-Only one local dev instance runs at a time, counting every agent's. A separate root gets you past
-the lock but not past the browser: cookies and the admin claim are shared across instances, so
-bringing a second one up corrupts the first's session state. Stop the previous PR's instance before
-starting the next.
-
-The slot belongs to the task that genuinely needs a running server — watching a live stream,
-driving a real tool call. The rest verify statically: for an icon-legibility or spacing question a
-throwaway HTML render shows the same pixels at a fraction of the cost.
+A data root admits one server, so the lock above is per root. A different root and port is a second
+instance: the dev backend (7368) and the dev CLI (7369) are designed to run beside each other, and
+browser session cookies are named per port, so a second instance no longer signs the first one out.
+What is still scarce is the machine and your attention: keep one live instance for the task at
+hand, and stop it before starting the next. The slot belongs to the task that genuinely needs a
+running server — watching a live stream, driving a real tool call. The rest verify statically: for
+an icon-legibility or spacing question a throwaway HTML render shows the same pixels at a fraction
+of the cost.
 
 ## PENGUIN_HOME
 
@@ -74,8 +76,9 @@ Unset it rather than blanking it: `run-with-env` reads empty as unset, but `reso
 
 ## Signing in
 
-A fresh root seeds `admin` with a random `penguin-<4 digits>` password, printed once at startup.
-`PENGUIN_SEED_ADMIN_PASSWORD` pins it, which is how the e2e harness logs in.
+A fresh root seeds `admin` with a random password that is never shown (24 base64url characters,
+hashed and discarded). Until a password is set, the server prints a first-login link instead;
+`PENGUIN_SEED_ADMIN_PASSWORD` pins a known password, which is how the e2e harness logs in.
 
 The first-login link the server prints is the user's to open, not yours — no `curl`, no browser, no
 headless fetch. It redeems into whichever cookie jar made the request, and the desktop shell's

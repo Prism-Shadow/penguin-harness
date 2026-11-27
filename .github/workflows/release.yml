@@ -18,6 +18,10 @@
 #   multiple versions coexist. Releases up to v0.1.5 shipped raw program
 #   archives under the same names plus *-offline wrappers; the installers keep accepting that
 #   legacy layout for pinned versions.
+# - linux-pty: node-pty's Linux terminal bindings, built in a manylinux_2_28 container
+#   (linux-pty.yml), which release and publish-npm stage before they pack anything; both check
+#   what they ship with scripts/check-native-glibc.mjs (a Linux native module needing glibc newer
+#   than 2.28 fails the run).
 # - publish-npm: publish the whole chain (the @penguinharness/* plugin packages -> @prismshadow/amsp
 #   -> @prismshadow/a2ui -> @prismshadow/penguin-core ->
 #   @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the tag version.
@@ -130,8 +134,21 @@ jobs:
     # never sees a name shadowed to empty (the v0.2.2 failure mode).
     secrets: inherit
 
+  # node-pty's Linux bindings, built in a manylinux_2_28 container (linux-pty.yml), for the
+  # release's lib/ and the npm package's carried store; the desktop job builds its own, since
+  # desktop-build.yml also runs alone on release branches. Not gated on the Release existing:
+  # a retried npm publish packs the carried store again.
+  linux-pty:
+    needs: check-release
+    uses: ./.github/workflows/linux-pty.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      artifact: linux-pty
+
   release:
-    needs: [check-release, desktop]
+    needs: [check-release, desktop, linux-pty]
     if: needs.check-release.outputs.exists != 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -154,6 +171,19 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # The install compiled node-pty's Linux binding against this runner's glibc. The portable
+      # ones (linux-pty.yml) replace it in the workspace's install, which the carried store below
+      # is packed from, and in lib/ once it is assembled. A tag from before them builds as it did.
+      - name: Download the portable Linux node-pty bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-pty
+          path: linux-pty
+      - name: Stage them into the workspace's node-pty
+        run: |
+          if [ ! -f scripts/stage-linux-pty.mjs ]; then echo "Legacy tag: node-pty ships as installed."; exit 0; fi
+          node scripts/stage-linux-pty.mjs linux-pty
 
       # Inject the release tag into core's VERSION constant (the source for CLI --version and the install-complete
       # message) and both standalone installers. The stamped installers then select the same immutable OSS/GitHub
@@ -288,30 +318,17 @@ jobs:
           test -s out/penguin/lib/dist/hmr/harness.json
 
       # node-pty compiles its terminal binding when it is installed, for the machine installing
-      # it — this runner, linux-x64 — and publishes prebuilds for darwin and win32 only. So the
-      # lib/ every payload shares had no binding for linux-arm64, and every terminal on an arm64
-      # Linux machine failed with "Failed to load native module: pty.node". Built here once for
-      # arm64 under QEMU into prebuilds/linux-arm64, which node-pty's loader tries after
-      # build/Release, so one lib/ serves both Linux architectures (N-API: one binding for every
-      # Node). Scripts are skipped at install and node-gyp is run by name, against the image's
-      # own headers, so neither npm's script policy nor a header download decides the build.
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-      - name: Build node-pty for linux-arm64
+      # it, and publishes prebuilds for darwin and win32 only. So the deploy above compiled
+      # lib/'s binding for this runner, against its glibc: from 0.2.19, when `ubuntu-latest`
+      # became Ubuntu 26.04, one that needs GLIBC_2.42, and every terminal failed on a Linux
+      # machine with an older glibc (#1900). The portable bindings (linux-pty.yml, glibc 2.28)
+      # replace it and fill prebuilds/linux-x64 and prebuilds/linux-arm64, which node-pty's
+      # loader tries after build/Release, so one lib/ serves both Linux architectures (N-API:
+      # one binding for every Node).
+      - name: Stage the portable Linux node-pty bindings into lib/
         run: |
-          pty=out/penguin/lib/node_modules/node-pty
-          version="$(node -p "require('./$pty/package.json').version")"
-          mkdir -p "$pty/prebuilds/linux-arm64"
-          docker run --rm --platform linux/arm64 -v "$PWD/$pty/prebuilds/linux-arm64:/out" \
-            "node:${NODE_RUNTIME_VERSION#v}-bookworm" sh -c "
-              set -e
-              cd /tmp && npm init -y >/dev/null
-              npm install --ignore-scripts --no-audit --no-fund node-pty@$version
-              cd node_modules/node-pty
-              node \"\$(npm prefix -g)/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js\" rebuild --nodedir=/usr/local
-              cp build/Release/pty.node /out/pty.node"
-          file "$pty/prebuilds/linux-arm64/pty.node" | grep -q 'ARM aarch64'
+          if [ ! -f scripts/stage-linux-pty.mjs ]; then echo "Legacy tag: node-pty ships as installed."; exit 0; fi
+          node scripts/stage-linux-pty.mjs linux-pty out/penguin/lib/node_modules/node-pty
 
       # Program payloads: linux runtimes use .tar.xz, darwin .tar.gz (nodejs.org naming);
       # node/ is only lightly trimmed (drop share/doc and share/man, keep the rest). Payloads
@@ -342,6 +359,24 @@ jobs:
           rm -rf out/penguin/node
           printf '{"schemaVersion":1,"target":"universal"}\n' > out/penguin/package-manifest.json
           tar -czf payloads/universal.tar.gz -C out penguin
+
+      # Before anything is published: every Linux native module a payload carries loads on
+      # glibc 2.28, the bundled Node's own floor, and node-pty's portable Linux bindings are in
+      # lib/ and in the carried store (the install image a CLI pushes to Linux machines, from a
+      # Mac too). A runner image change raised the binding's need silently once — 2.34 through
+      # 0.2.18, 2.42 from 0.2.19 (#1900) — and nothing failed; scripts/check-native-glibc.mjs.
+      # The Windows payload is the same lib/ in a zip.
+      - name: Linux native modules load on glibc 2.28
+        run: |
+          if [ ! -f scripts/check-native-glibc.mjs ]; then echo "Legacy tag: nothing to check with."; exit 0; fi
+          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64 universal; do
+            node scripts/check-native-glibc.mjs \
+              --expect penguin/lib/node_modules/node-pty/prebuilds/linux-x64/pty.node \
+              --expect penguin/lib/node_modules/node-pty/prebuilds/linux-arm64/pty.node \
+              --expect 'archives/node-pty.tgz!node_modules/node-pty/prebuilds/linux-x64/pty.node' \
+              --expect 'archives/node-pty.tgz!node_modules/node-pty/prebuilds/linux-arm64/pty.node' \
+              "payloads/$target.tar.gz"
+          done
 
       # Windows payload: same lib/ + web/ layout, but a .zip (the native format), the official
       # win-x64 Node runtime — whose zip has node.exe at the ARCHIVE ROOT, not bin/ — and
@@ -617,9 +652,9 @@ jobs:
         run: sh scripts/publish-release-to-oss.sh release-assets "$TAG" "${{ steps.latest.outputs.update }}"
 
   publish-npm:
-    needs: [check-release, validate]
+    needs: [check-release, validate, linux-pty]
     if: >-
-      !cancelled() && needs.check-release.result == 'success' &&
+      !cancelled() && needs.check-release.result == 'success' && needs.linux-pty.result == 'success' &&
       (needs.validate.result == 'success' || needs.check-release.outputs.exists == 'true')
     name: Publish npm packages
     runs-on: ubuntu-latest
@@ -656,6 +691,18 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # The carried store packed below ships node-pty's portable Linux bindings, not the one
+      # this install compiled for the runner (see the release job).
+      - name: Download the portable Linux node-pty bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-pty
+          path: linux-pty
+      - name: Stage them into the workspace's node-pty
+        run: |
+          if [ ! -f scripts/stage-linux-pty.mjs ]; then echo "Legacy tag: node-pty ships as installed."; exit 0; fi
+          node scripts/stage-linux-pty.mjs linux-pty
 
       # Version always comes from the tag: package version and core's VERSION constant are injected together (the
       # repo keeps the dev version). All published packages must bump in lockstep -- pnpm publish rewrites every
@@ -694,6 +741,16 @@ jobs:
           # Only this command sees the empty file: the steps below keep setup-node's.
           : > "$RUNNER_TEMP/suites.npmrc"
           NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/suites.npmrc" bash scripts/release-npm.sh test
+
+      # The carried store an npm install installs Linux machines from: its Linux native modules
+      # load on glibc 2.28 and it carries both of node-pty's portable Linux bindings (#1900).
+      - name: The carried store's Linux native modules load on glibc 2.28
+        run: |
+          if [ ! -f scripts/check-native-glibc.mjs ]; then echo "Legacy tag: nothing to check with."; exit 0; fi
+          node scripts/check-native-glibc.mjs \
+            --expect 'archives/node-pty.tgz!node_modules/node-pty/prebuilds/linux-x64/pty.node' \
+            --expect 'archives/node-pty.tgz!node_modules/node-pty/prebuilds/linux-arm64/pty.node' \
+            packages/server/dist/hmr
 
       # Copy LICENSE into the package dirs (the files allowlist includes it, so artifacts ship the license)
       # and the built web assets into the server package (web-dist/, in its files allowlist: an npm install

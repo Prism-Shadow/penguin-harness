@@ -22,6 +22,13 @@
  *   waits; given one this server no longer lists, the stream ends with `machine_not_found`.
  * - Given a machine stream that keeps ending without moving, then it is asked again only after a
  *   growing wait the reader is told of, never at once in a loop.
+ * - Given a machine whose connection is held and whose server nothing reaches, then the reader is
+ *   told the server is out of reach (`unreachable`), with the attempt out of five; after five
+ *   retries the stream ends with `machine_unreachable`, a read of that machine opened again is
+ *   tried once and ends the same way, and once a stream from it has moved, a read waits with every
+ *   retry again.
+ * - Given the socket to a machine, then the machines list is told when it comes up and when it
+ *   closes, and nothing while dials keep failing.
  * - Given a copy that cannot be written, then the window still arrives, from the stream itself.
  * - Given the generation replaced, then every stream it holds ends without an error (the reader
  *   asks the next one), and a stream asked of it afterwards ends at once.
@@ -252,9 +259,21 @@ afterEach(async () => {
   await removeTempRoot(root);
 });
 
-/** The hub's proxy to the machine on `port`, its history answered from a copy under the temp root. */
+/** A loopback port nothing listens on: a machine whose server is down behind a held connection. */
+async function deadPort(): Promise<number> {
+  const server = net.createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as net.AddressInfo).port;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
+
+/**
+ * The hub's proxy to the machine on `port` (read on every dial when a function: the machine's
+ * server moving), its history answered from a copy under the temp root.
+ */
 function hub(
-  port: number,
+  port: number | (() => number),
   options: {
     connected?: () => boolean;
     known?: (machineId: string) => boolean;
@@ -273,8 +292,11 @@ function hub(
   const links = options.links;
   const agent = (): http.Agent =>
     links === undefined ? new http.Agent() : links.tap(MACHINE, new http.Agent());
+  const portOf = typeof port === "number" ? () => port : port;
   const target = (): ProxyTarget | null =>
-    connected() ? { agent: agent(), port, cookie: "c", adoptedAt: null, session: 1 } : null;
+    connected()
+      ? { agent: agent(), port: portOf(), cookie: "c", adoptedAt: null, session: 1 }
+      : null;
   const cache = options.cache ?? new TraceCache(path.join(root, "machines", "traces"));
   const refusal = options.refusal;
   const { history, sync } = machineHistory({
@@ -1029,6 +1051,7 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     expect(progressOf(history.events).at(-1)?.waiting).toEqual({
       reason: "not_connected",
       attempt: 1,
+      maxAttempts: 5,
       nextAt: clock.now() + 1_000,
     });
 
@@ -1394,6 +1417,97 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     clock.advance(1_000);
     await waitFor(() => progressOf(history.events).some((p) => p.waiting?.attempt === 2));
     expect(calls).toBe(2);
+  });
+
+  it("says the machine's server is out of reach, not that the machine is silent, when the connection is held and nothing gets through", async () => {
+    const { get } = hub(await deadPort());
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => progressOf(history.events).some((p) => p.waiting?.attempt === 1));
+    expect(progressOf(history.events).at(-1)?.waiting).toEqual({
+      reason: "unreachable",
+      attempt: 1,
+      maxAttempts: 5,
+      nextAt: clock.now() + 1_000,
+    });
+  });
+
+  it("stops after five retries that move nothing, and tries a machine it gave up on once per read until a stream from it moves", async () => {
+    let port = await deadPort();
+    const machine = await scriptedMachine(answerWindow);
+    close.push(machine.close);
+    const { get } = hub(() => port);
+
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      await waitFor(() => progressOf(history.events).some((p) => p.waiting?.attempt === attempt));
+      expect(progressOf(history.events).at(-1)?.waiting).toMatchObject({
+        reason: "unreachable",
+        attempt,
+        maxAttempts: 5,
+      });
+      clock.advance(1_000 * 2 ** (attempt - 1));
+    }
+    await history.finished;
+    const end = history.named().at(-1)!;
+    expect(end.event).toBe("error");
+    expect(JSON.parse(end.data)).toMatchObject({
+      code: "machine_unreachable",
+      details: { machineId: MACHINE, reason: "unreachable" },
+    });
+    expect(progressOf(history.events).some((p) => (p.waiting?.attempt ?? 0) > 5)).toBe(false);
+
+    // Opened again while the machine stays out of reach: one attempt, no wait, the same end.
+    const again = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    await again.finished;
+    expect(progressOf(again.events).some((p) => p.waiting !== null)).toBe(false);
+    expect(JSON.parse(again.named().at(-1)!.data)).toMatchObject({ code: "machine_unreachable" });
+
+    // Back: the read goes through.
+    port = machine.port;
+    const back = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    await back.finished;
+    expect(back.has("done")).toBe(true);
+
+    // Down again after a stream moved: the next read waits with every retry once more.
+    await machine.close();
+    await waitFor(() => sockets.fact(MACHINE)?.state === "failed");
+    port = await deadPort();
+    const later = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(later.stop);
+    await waitFor(() => progressOf(later.events).some((p) => p.waiting?.attempt === 1));
+    expect(progressOf(later.events).at(-1)?.waiting).toMatchObject({
+      reason: "unreachable",
+      maxAttempts: 5,
+    });
+  });
+
+  it("tells the machines list when the socket to a machine comes up and when it closes, and nothing while dials keep failing", async () => {
+    const told: (string | undefined)[] = [];
+    const watched: MachineSockets = new MachineSockets(() => undefined, {
+      announce: () => told.push(watched.fact(MACHINE)?.state),
+    });
+    close.push(() => watched.close());
+    const at = (port: number): ProxyTarget => ({
+      agent: new http.Agent(),
+      port,
+      cookie: "c",
+      adoptedAt: null,
+      session: 1,
+    });
+    const dead = await deadPort();
+    expect("answer" in (await watched.socketFor(MACHINE, at(dead)))).toBe(true);
+    expect("answer" in (await watched.socketFor(MACHINE, at(dead)))).toBe(true);
+    expect(told).toEqual([]);
+
+    const machine = await scriptedMachine(answerWindow);
+    close.push(machine.close);
+    expect("socket" in (await watched.socketFor(MACHINE, at(machine.port)))).toBe(true);
+    expect(told).toEqual(["connected"]);
+    await machine.close();
+    await waitFor(() => told.length === 2);
+    expect(told).toEqual(["connected", "failed"]);
   });
 
   it("delivers the window from the stream itself when the copy cannot be written", async () => {

@@ -4553,6 +4553,12 @@ Example: Optimize the current app's interface so complete beginners with no tech
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
     offlineHistory: {
       disconnected: (alias: string) => `${alias} is not connected.`,
+      /**
+       * The read stopped retrying (machine_unreachable) while the connection is held: the
+       * machine's server did not take the call, or the machine took it and sent nothing.
+       */
+      unreachable: (alias: string) => `The server on ${alias} isn't responding.`,
+      silent: (alias: string) => `${alias} isn't answering.`,
       cached: "Showing the conversation from the last sync.",
       miss: "No cached history is available. The conversation will open when the machine reconnects.",
       empty: "There were no messages at the last sync.",
@@ -4642,16 +4648,24 @@ Example: Optimize the current app's interface so complete beginners with no tech
       /** The Trace panel bringing a machine's Trace file over before it opens it. */
       trace: (alias: string | null) =>
         alias === null ? "Fetching the Trace" : `Fetching the Trace from ${alias}`,
-      /** The machine is not connected and the server reconnects: the attempt, then the seconds. */
-      reconnecting: (attempt: number) =>
-        `Lost the connection to the machine, reconnecting (attempt ${attempt})`,
-      reconnectIn: (seconds: number, attempt: number) =>
-        `Lost the connection to the machine, reconnecting in ${seconds} s (attempt ${attempt})`,
-      /** Connected, but the machine sent nothing for a while: the server asks it again. */
-      asking: (attempt: number) =>
-        `The machine is not answering, asking again (attempt ${attempt})`,
-      askIn: (seconds: number, attempt: number) =>
-        `The machine is not answering, asking again in ${seconds} s (attempt ${attempt})`,
+      /**
+       * The server retries the machine, each sentence with the attempt out of the most it makes,
+       * then the seconds: not connected (it reconnects); connected, but the machine's server is
+       * not reached (`alias` null while the machine list has not answered); connected, and the
+       * machine sent nothing for a while (it asks again).
+       */
+      reconnecting: (attempt: number, max: number) =>
+        `Lost the connection to the machine, reconnecting (attempt ${attempt}/${max})`,
+      reconnectIn: (seconds: number, attempt: number, max: number) =>
+        `Lost the connection to the machine, reconnecting in ${seconds} s (attempt ${attempt}/${max})`,
+      unreachable: (alias: string | null, attempt: number, max: number) =>
+        `Can't reach the server on ${alias ?? "the machine"}, retrying (attempt ${attempt}/${max})`,
+      unreachableIn: (alias: string | null, seconds: number, attempt: number, max: number) =>
+        `Can't reach the server on ${alias ?? "the machine"}, retrying in ${seconds} s (attempt ${attempt}/${max})`,
+      asking: (attempt: number, max: number) =>
+        `The machine is not answering, asking again (attempt ${attempt}/${max})`,
+      askIn: (seconds: number, attempt: number, max: number) =>
+        `The machine is not answering, asking again in ${seconds} s (attempt ${attempt}/${max})`,
       /**
        * Connected and beating, but nothing else from the machine for a minute (a route stuck over
        * there): nothing is retried, so no attempt and no countdown.
@@ -7031,6 +7045,7 @@ Example: Optimize the current app's interface so complete beginners with no tech
       trace_body_not_found: "This part is no longer in the conversation's Trace.",
       machine_refused: "The machine refused this read.",
       machine_no_answer: "The machine didn't answer.",
+      machine_unreachable: "This machine can't be reached; automatic retries have stopped.",
       machine_not_found: "This machine is not on the Project's machine list.",
       machine_outdated: "The machine runs an older version; update it on the Machines page.",
       plugin_not_installed: "Nothing of this plugin is left on this agent.",

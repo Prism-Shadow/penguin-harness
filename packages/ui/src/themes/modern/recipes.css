@@ -486,7 +486,8 @@
 :root[data-theme-base="modern"] .ui-notice [data-slot="icon"] {
   display: none;
 }
-:root[data-theme-base="modern"] .ui-notice::before {
+:root[data-theme-base="modern"] .ui-notice::before,
+:root[data-theme-base="modern"] .ui-notice [data-slot="lead"]::before {
   content: "";
   position: absolute;
   inset-inline-start: var(--ui-row-px);
@@ -496,6 +497,25 @@
   margin-top: -0.25em;
   border-radius: var(--ui-radius-pill);
   background-color: var(--_tone-fg);
+}
+/* A `Notice` marks its leading block (`data-slot="lead"`: the mark's slot and the text), and the
+   dot rides that block's first line, so a notice that wraps, or carries a title over its body,
+   keeps the dot beside its first line instead of the middle of the box. The block is centred
+   against any taller actions, so a one-line notice has the dot exactly where the box's centre
+   put it. The block starts at the host's padding, so the dot reaches back out to the row's inset. */
+:root[data-theme-base="modern"] .ui-notice:has(> [data-slot="lead"])::before {
+  display: none;
+}
+:root[data-theme-base="modern"] .ui-notice [data-slot="lead"] {
+  position: relative;
+}
+:root[data-theme-base="modern"] .ui-notice [data-slot="lead"]::before {
+  inset-inline-start: calc(-1.125em);
+  top: 0.5lh;
+}
+/* A banner is one centred sentence: its dot rides the first text line, under the strip's padding. */
+:root[data-theme-base="modern"] .ui-notice[data-banner]::before {
+  top: calc(0.375rem + 0.5lh);
 }
 
 /* A notice laid edge to edge (a banner) is still a rounded card here, so it stands off the
