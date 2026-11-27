@@ -1136,4 +1136,120 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       },
     },
   },
+  company: {
+    title: "Company mode: the next draft",
+    description:
+      "A design draft for the next company mode: a plugin app in the App Center where one conversation is one job, and what waits on you, what is running and what is done are listed apart.",
+    status: "Design draft",
+    headline: "Company mode, as an app in the App Center",
+    subline:
+      "Company stops being a mode of the sidebar and becomes an app the agent-company plugin provides. Every job you hand the organization is an ordinary conversation, with the sub-sessions its members delegate listed under it. What waits on you comes first, and opening a job opens that conversation.",
+    note: "The window above is the real Web App on demo data. The company app inside it is a draft and has not shipped.",
+    frame: "The company app draft (live demo)",
+    questions: {
+      title: "Four questions, four answers",
+      subtitle:
+        "What sets multi-agent products apart is how their interface answers these four questions.",
+      items: [
+        {
+          question: "How does work go out?",
+          answer: "As a conversation",
+          body: "A new job is a new conversation, usually with the lead. The lead delegates what can be split off to members, each part a sub-session of its own. Conversations a scheduled task opens join the same list.",
+        },
+        {
+          question: "Where do you see progress?",
+          answer: "In the conversation list",
+          body: "Three groups: waiting on you, in progress, done, with sub-sessions indented under their job. The state is the conversation's own run state; there are no tickets or boards on top.",
+        },
+        {
+          question: "How do agents hand work over?",
+          answer: "Through sub-sessions",
+          body: "Delegated work is a sub-session that holds its own process and Trace, and hands its result back to the parent. Open any level and you land on the same conversation page.",
+        },
+        {
+          question: "When do you step in?",
+          answer: "When a conversation waits on you",
+          body: "When an action needs your approval, or an agent asks you a multiple-choice question, that conversation and its job move to Waiting on you. You answer inside the conversation.",
+        },
+      ],
+    },
+    plugin: {
+      title: "Built on the plugin seams that exist",
+      subtitle:
+        "The company runtime stays as it is. What the app needs from the platform is there today; the plugin only adds a page.",
+      now: "In the platform today",
+      use: "How the company app uses it",
+      rows: [
+        {
+          name: "App Center",
+          now: "A plugin page declared as an app is a tile in the App Center. It opens in a window, or full screen.",
+          use: "Company becomes an app the agent-company plugin contributes. Without the plugin there is no tile.",
+        },
+        {
+          name: "Sessions",
+          now: "The organization runtime already opens a session for each member's desk and each ticket, marked as the organization's.",
+          use: "The app lists those sessions by parent and child. Tickets stay in the runtime and no longer show in the interface.",
+        },
+        {
+          name: "Conversations",
+          now: "A plugin page can ask the Web App to open a conversation.",
+          use: "Opening a job opens that conversation. The app builds no chat of its own.",
+        },
+        {
+          name: "A2UI",
+          now: "In development mode, choices and forms in a conversation can already be answered.",
+          use: "When an agent asks you a multiple-choice question, the conversation moves to Waiting on you and you answer it there.",
+        },
+        {
+          name: "Skills",
+          now: "The agent-company plugin already ships Skills for the CEO, employees, finance, HR, research, mirroring and setup.",
+          use: "HR and finance stop being seats in the default team and become Skills the lead calls when needed.",
+        },
+      ],
+    },
+    tradeoffs: {
+      title: "Trade-offs",
+      subtitle:
+        "What stays, what changes, what waits and what is left out, decided on PenguinHarness's current architecture.",
+      groups: [
+        {
+          name: "Kept",
+          items: [
+            "Organizations, members and budgets",
+            "Tickets in the runtime, each still backed by one session",
+            "The full Trace",
+            "Every member is still an agent of the Project, with its own model and machine",
+          ],
+        },
+        {
+          name: "Changed",
+          items: [
+            "The entry: the sidebar's Development | Company switch and the /org pages become one app in the App Center",
+            "The home page: the overview becomes a list of conversations grouped by state",
+            "No tickets, board or inbox in the interface; one job is one conversation",
+            "No all-hands chat by default; channels become an optional page",
+          ],
+        },
+        {
+          name: "Later",
+          items: [
+            "New job opening straight with the lead, marked as the organization's; the draft borrows the ordinary new chat",
+            "Event triggers such as GitHub issues and outside messages; today it is the scheduler, plus immediate handling of API writes",
+            "Outside CLIs such as Claude Code and Codex as execution channels",
+            "Scoring organization templates on the Shared RSI Community",
+          ],
+        },
+        {
+          name: "Not doing",
+          items: [
+            "A tool shell that only serves coding",
+            "A default big-company chart of CEO, HR and finance",
+            "Black-box hosting that hides models, permissions and process",
+          ],
+        },
+      ],
+      mirror:
+        "Mirroring a real company, with digital twins relaying in Feishu or WeChat, depends on a chat entry. It goes to the messaging plugins and stays out of the company app's main flow.",
+    },
+  },
 };

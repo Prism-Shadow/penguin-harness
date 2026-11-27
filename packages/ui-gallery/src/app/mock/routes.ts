@@ -160,6 +160,7 @@ import { isThemeId } from "@prismshadow/penguin-ui";
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
 import { agentPluginGroups } from "../../../../web/src/features/plugins/agent-plugin-groups";
 import { declaredServerModules } from "../../../../web/src/lib/module-gate";
+import { companyAppPage } from "./company-app";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
@@ -231,12 +232,13 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 
 export const router = new Router();
 
-// The demo boots its own page table and has no server-side plugin contributions: no pages,
-// no file renderers and nothing removed. It stands in for every plugin's server half, so it
-// answers as running every server module a booted web module declared: a plugin's web half is
-// drawn in the gallery as it is on a server that runs its module.
+// The demo boots its own page table. Its one server-side page is the company app draft, an
+// iframe system app as the agent-company plugin would contribute it; no file renderers and
+// nothing removed. It stands in for every plugin's server half, so it answers as running every
+// server module a booted web module declared: a plugin's web half is drawn in the gallery as it
+// is on a server that runs its module.
 router.get("/api/contributions", (): ContributionsResponse => ({
-  pages: [],
+  pages: [companyAppPage()],
   fileRenderers: [],
   pageRemovals: [],
   agentTabs: [],

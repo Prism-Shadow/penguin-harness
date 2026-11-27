@@ -61,12 +61,24 @@ const AMSP_META = {
   imageAlt: "AMSP: Agent Message Stream Protocol",
 };
 
+const COMPANY_META = {
+  title: "Company mode: the next draft",
+  description:
+    "A design draft for the next PenguinHarness company mode: a plugin app in the App Center, a lead that splits the work, execution kept apart from verification, and an inbox for exceptions only.",
+  image: "/og-cover.png",
+  imageAlt: "PenguinHarness",
+};
+
 /**
- * Non-blog landing SPA pages: the desktop download page and the AMSP page. A page with `meta`
+ * Non-blog landing SPA pages: the desktop download page, the AMSP page and the company mode draft. A page with `meta`
  * gets its own title, description and share card in its shell (route-shell.mjs).
  */
 export function pageRoutes() {
-  return [{ route: "/download/" }, { route: "/amsp/", meta: AMSP_META }];
+  return [
+    { route: "/download/" },
+    { route: "/amsp/", meta: AMSP_META },
+    { route: "/company/", meta: COMPANY_META },
+  ];
 }
 
 /**

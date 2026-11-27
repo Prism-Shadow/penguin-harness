@@ -141,6 +141,18 @@ export const en: GalleryStrings = {
         "The Project's home screen of apps: icon-and-name tiles in each build state (ready, building, failed), a folder holding two apps, and New folder in the header.",
       how: "Sidebar › App Center; New folder in the header opens the dialog that names a folder and checks its apps; right-click a tile or the empty space for its menu, drag tiles to reorder them or stack them into a folder.",
     },
+    company: {
+      title: "Company (draft)",
+      description:
+        "Company mode as a plugin app in the App Center: one conversation is one job, grouped into waiting on you, in progress and done, with the sub-sessions a member delegates listed under it.",
+      how: "App Center › Company; click a row to open that conversation, copy its session ID or stop it from the row menu; New job opens a new conversation.",
+    },
+    "company-new": {
+      title: "New organization (draft)",
+      description:
+        "Hand a goal to the lead in a sentence, or start from an organization template you can import and export; the real-company mirror is marked as another plugin.",
+      how: "Company › organization switcher › New organization; pick a template to see its plan and create it.",
+    },
     plugins: {
       title: "Plugins",
       description: "Every plugin by category, to regroup or search; a card opens its details.",

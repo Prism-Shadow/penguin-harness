@@ -3,9 +3,10 @@
  * second page. A dev tool run locally with `pnpm dev:gallery`, it is also published on the public
  * site under `/gallery/` (scripts/build-site.mjs builds it with `BASE_PATH=<base>gallery/`).
  *
- * Three documents come out of one build: `index.html`, the gallery site; `app.html`, the real
- * Web App mounted against an in-browser mock of its API (src/app); and `lib.html`, one component
- * library board made of the app's real components (src/library). The app's own source is
+ * Four documents come out of one build: `index.html`, the gallery site; `app.html`, the real
+ * Web App mounted against an in-browser mock of its API (src/app); `lib.html`, one component
+ * library board made of the app's real components (src/library); and `company.html`, the company
+ * app draft the demo server contributes as a plugin page (src/company). The app's own source is
  * imported from `packages/web/src`; its network layer is swapped for the mock by
  * `mockWebNetwork()` (src/app/mock/vite-plugin.ts), and the two inline boot scripts — the
  * storage seed that gives a frame its own preferences, then the app's own pre-paint script,
@@ -46,6 +47,7 @@ function watchPackageSources(): Plugin {
     at("./src/styles.css"),
     at("./src/app/app.css"),
     at("./src/library/library.css"),
+    at("./src/company/company.css"),
   ];
   return {
     name: "penguin:gallery-watch-sources",
@@ -72,7 +74,7 @@ function watchPackageSources(): Plugin {
  * pre-paint script is the static one: the gallery is a static site with no theme server, so its
  * frames never link an imported pack.
  */
-const FRAME_DOCUMENTS = ["app.html", "lib.html"];
+const FRAME_DOCUMENTS = ["app.html", "lib.html", "company.html"];
 
 function frameDocument(): Plugin {
   const scripts = `${storageSeedScript()};${STATIC_BOOT_SCRIPT}`;
@@ -93,6 +95,27 @@ function frameDocument(): Plugin {
  * is a full page load, and a static host answers with files only: without these, a reload or a
  * quoted link would get the host's 404 page (on the public site, the landing page's).
  */
+function markPenguinUiStylesheet(): Plugin {
+  return {
+    name: "penguin:gallery-penguin-ui-stylesheet",
+    transformIndexHtml: {
+      order: "post",
+      handler(html, ctx) {
+        if (!ctx.filename.endsWith("company.html")) return;
+        if (ctx.server)
+          return [
+            {
+              tag: "link",
+              attrs: { rel: "stylesheet", href: "data:text/css,", "data-penguin-ui": true },
+              injectTo: "head-prepend",
+            },
+          ];
+        return html.replaceAll('<link rel="stylesheet"', '<link rel="stylesheet" data-penguin-ui');
+      },
+    },
+  };
+}
+
 function pageShells(): Plugin {
   return {
     name: "penguin:gallery-page-shells",
@@ -133,6 +156,7 @@ export default defineConfig({
     penguinUi(),
     katexWoff2Only(),
     frameDocument(),
+    markPenguinUiStylesheet(),
     pageShells(),
     watchPackageSources(),
   ],
@@ -147,7 +171,12 @@ export default defineConfig({
     // stylesheet as a data: URI, whatever theme is shown.
     assetsInlineLimit: (file) => (file.endsWith(".woff2") ? false : undefined),
     rollupOptions: {
-      input: { gallery: at("./index.html"), app: at("./app.html"), library: at("./lib.html") },
+      input: {
+        gallery: at("./index.html"),
+        app: at("./app.html"),
+        library: at("./lib.html"),
+        company: at("./company.html"),
+      },
     },
   },
   worker: { format: "es" },
