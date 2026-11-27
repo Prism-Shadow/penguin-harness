@@ -3,6 +3,7 @@
 - **Date:** 2026-11-27
 - **Type:** feature
 - **Scope:** `web`, `ui`, `ui-gallery`
+- **PR:** [#1926](https://github.com/Prism-Shadow/penguin-harness/pull/1926)
 
 [English](2026-11-27-dock-start-page.md)
 
