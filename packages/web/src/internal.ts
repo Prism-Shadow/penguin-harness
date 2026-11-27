@@ -90,6 +90,9 @@ export * from "./state/auth";
 export * from "./state/background";
 export * from "./state/locale";
 export * from "./state/machines";
+// the endpoints hook of the same name stays host-internal (called as `api.useMachines`);
+// the hub's `useMachines` is the state hook the domain web halves read.
+export { useMachines } from "./state/machines";
 export * from "./state/project";
 export * from "./state/sessions";
 export * from "./state/theme-entries";
