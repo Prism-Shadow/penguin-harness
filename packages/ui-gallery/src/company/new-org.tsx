@@ -2,6 +2,8 @@ import { useState } from "react";
 import {
   Button,
   Card,
+  KeyValue,
+  KeyValueRow,
   Modal,
   PageFrame,
   PageHeader,
@@ -39,19 +41,14 @@ function TemplateCard({ template, onPick }: { template: Template; onPick: () => 
     );
   return (
     <Card as="li" padding="none" interactive>
-      <button type="button" onClick={onPick} className="block h-full w-full p-4 text-left">
+      <button
+        type="button"
+        onClick={onPick}
+        className="block h-full w-full p-4 text-left rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg-subtle/60"
+      >
         {body}
       </button>
     </Card>
-  );
-}
-
-function Fact({ name, value }: { name: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-1.5 text-sm">
-      <dt className="text-fg-muted">{name}</dt>
-      <dd className="min-w-0 text-fg">{value}</dd>
-    </div>
   );
 }
 
@@ -124,16 +121,19 @@ export function NewOrgPage({
         }
       >
         {picked !== null && (
-          <dl className="divide-y divide-line-muted">
-            <Fact name={w.create.goal} value={goal.trim() === "" ? picked.summary : goal.trim()} />
-            <Fact name={w.create.planTeam} value={w.create.teamValue(picked.executors)} />
-            <Fact
-              name={w.create.planLimits}
-              value={w.create.planLimitsValue(picked.maxRounds, money(picked.budget))}
-            />
-            <Fact name={w.create.planWorkbench} value={picked.workbench} />
-            <Fact name={w.create.planTrigger} value={picked.trigger} />
-          </dl>
+          <KeyValue size="sm">
+            <KeyValueRow label={w.create.goal}>
+              {goal.trim() === "" ? picked.summary : goal.trim()}
+            </KeyValueRow>
+            <KeyValueRow label={w.create.planTeam}>
+              {w.create.teamValue(picked.executors)}
+            </KeyValueRow>
+            <KeyValueRow label={w.create.planLimits}>
+              {w.create.planLimitsValue(picked.maxRounds, money(picked.budget))}
+            </KeyValueRow>
+            <KeyValueRow label={w.create.planWorkbench}>{picked.workbench}</KeyValueRow>
+            <KeyValueRow label={w.create.planTrigger}>{picked.trigger}</KeyValueRow>
+          </KeyValue>
         )}
       </Modal>
     </PageFrame>

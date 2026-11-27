@@ -99,6 +99,8 @@ export const zh = {
     skillVersion: (skill: string, version: number) => `${skill} v${version}`,
     rollback: "回滚到上一版",
     rolledBack: (version: number) => `已回滚到 v${version}`,
+    noRules: "还没有规则。你在收件箱里拍板后会写在这里。",
+    rollbackOf: (name: string) => `把 ${name} 的 Skill 回滚到上一版`,
     noLessons: "还没有教训。",
   },
   create: {

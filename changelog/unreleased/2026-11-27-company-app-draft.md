@@ -15,12 +15,12 @@ The component gallery gained a working draft of company mode rebuilt as an app t
   - **Inbox:** what is waiting on the user, what is in progress, and what has settled.
   - **Tickets:** a board with columns for working, verifying, waiting on the user, and done. Each ticket opens in a drawer with its log folded.
   - **Team:** the lead, the executors and the verifier.
-  - **Handbook:** rules and lessons, with a Skill rollback.
+  - **Handbook:** rules and lessons, each lesson naming the Skill version it produced; a member's Skill rolls back from the Team page.
   - **New organization:** created from a goal or from a template.
 - The inbox handles three kinds of item:
   - **Decision cards** use the A2UI `ChoiceBlock`, and the chosen answer is written into the ticket and the handbook.
   - **Deliveries** can be accepted, opened in the Agent workbench, or sent back with a reason. A send-back counts a round, records a lesson and moves the executor's Skill version.
-  - **Halted tickets** stop at the send-back limit or the budget limit, and show a breaker the user can lift.
+  - **Halted tickets** stop at the send-back limit (the model also halts on budget), and show a breaker the user can lift.
 - "Talk to the lead" and "Take it over" hand off to an ordinary conversation through `penguin:navigate`.
 - Two gallery surfaces, `company` and `company-new`, open the app inside the framed Web App.
 - The landing site's `/company` page (`/company/` in the static build) has four sections:

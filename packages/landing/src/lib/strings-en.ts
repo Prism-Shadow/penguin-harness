@@ -1144,7 +1144,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     headline: "Company mode, as an app in the App Center",
     subline:
       "Company stops being a mode of the sidebar and becomes an app the agent-company plugin provides. You agree goals with a lead, tickets move between execution and verification on their own, and only what needs your call reaches the inbox.",
-    note: "The window below is the real Web App on demo data. The company app inside it is a draft and has not shipped.",
+    note: "The window above is the real Web App on demo data. The company app inside it is a draft and has not shipped.",
     frame: "The company app draft (live demo)",
     questions: {
       title: "Four questions, four answers",
@@ -1175,14 +1175,15 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     },
     plugin: {
       title: "Built on the plugin seams that exist",
-      subtitle: "No new runtime. Every piece the company app uses is in the platform today.",
+      subtitle:
+        "The company runtime stays as it is. What the app needs from the platform is there today; the plugin only adds a page.",
       now: "In the platform today",
       use: "How the company app uses it",
       rows: [
         {
           name: "App Center",
           now: "A plugin page declared as an app is a tile in the App Center. It opens in a window, or full screen.",
-          use: "Company is an app of the agent-company plugin. Without the plugin there is no tile.",
+          use: "Company becomes an app the agent-company plugin contributes. Without the plugin there is no tile.",
         },
         {
           name: "Conversations",
@@ -1209,7 +1210,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     tradeoffs: {
       title: "Trade-offs",
       subtitle:
-        "Weighed against the five products tested in the research, on PenguinHarness's current architecture.",
+        "What stays, what changes, what waits and what is left out, decided on PenguinHarness's current architecture.",
       groups: [
         {
           name: "Kept",

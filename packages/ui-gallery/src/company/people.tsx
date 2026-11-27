@@ -16,7 +16,7 @@ import type { Role } from "./model";
 const ROLES: readonly Role[] = ["lead", "executor", "verifier"];
 
 export function TeamPage() {
-  const { w, org } = useCompanyApp();
+  const { w, org, act } = useCompanyApp();
   return (
     <PageFrame width="lg">
       <PageHeader title={w.team.title} info={w.team.info} />
@@ -45,6 +45,21 @@ export function TeamPage() {
                         </span>
                       </span>
                     }
+                    trailing={
+                      member.skillVersion > 1 ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={w.handbook.rollbackOf(member.name)}
+                          onClick={() => {
+                            act.rollBack(member.id);
+                            toastSuccess(w.handbook.rolledBack(member.skillVersion - 1));
+                          }}
+                        >
+                          {w.handbook.rollback}
+                        </Button>
+                      ) : undefined
+                    }
                   />
                 ))}
               </SettingsList>
@@ -57,7 +72,7 @@ export function TeamPage() {
 }
 
 export function HandbookPage() {
-  const { w, org, act } = useCompanyApp();
+  const { w, org } = useCompanyApp();
   const rules = org.handbook.filter((line) => line.kind === "rule");
   const lessons = org.handbook.filter((line) => line.kind === "lesson");
   return (
@@ -65,7 +80,7 @@ export function HandbookPage() {
       <PageHeader title={w.handbook.title} info={w.handbook.info} />
       <div className="space-y-8">
         <RuledSection title={w.handbook.rules} count={rules.length}>
-          <SettingsList label={w.handbook.rules}>
+          <SettingsList label={w.handbook.rules} empty={w.handbook.noRules}>
             {rules.map((line) => (
               <ListRow
                 key={line.id}
@@ -80,31 +95,14 @@ export function HandbookPage() {
           <SettingsList label={w.handbook.lessons} empty={w.handbook.noLessons}>
             {lessons.map((line) => {
               const member = line.member === undefined ? undefined : memberById(org, line.member);
+              const parts = [w.handbook.fromTicket(line.ticket)];
+              if (member !== undefined) {
+                parts.push(member.name);
+                if (line.version !== undefined)
+                  parts.push(w.handbook.skillVersion(member.skill, line.version));
+              }
               return (
-                <ListRow
-                  key={line.id}
-                  as="li"
-                  title={line.text}
-                  description={
-                    member === undefined
-                      ? w.handbook.fromTicket(line.ticket)
-                      : `${w.handbook.fromTicket(line.ticket)} · ${member.name} · ${w.handbook.skillVersion(member.skill, member.skillVersion)}`
-                  }
-                  trailing={
-                    member !== undefined && member.skillVersion > 1 ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          act.rollBack(member.id);
-                          toastSuccess(w.handbook.rolledBack(member.skillVersion - 1));
-                        }}
-                      >
-                        {w.handbook.rollback}
-                      </Button>
-                    ) : undefined
-                  }
-                />
+                <ListRow key={line.id} as="li" title={line.text} description={parts.join(" · ")} />
               );
             })}
           </SettingsList>

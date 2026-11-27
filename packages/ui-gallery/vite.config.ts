@@ -47,6 +47,7 @@ function watchPackageSources(): Plugin {
     at("./src/styles.css"),
     at("./src/app/app.css"),
     at("./src/library/library.css"),
+    at("./src/company/company.css"),
   ];
   return {
     name: "penguin:gallery-watch-sources",
@@ -94,6 +95,27 @@ function frameDocument(): Plugin {
  * is a full page load, and a static host answers with files only: without these, a reload or a
  * quoted link would get the host's 404 page (on the public site, the landing page's).
  */
+function markPenguinUiStylesheet(): Plugin {
+  return {
+    name: "penguin:gallery-penguin-ui-stylesheet",
+    transformIndexHtml: {
+      order: "post",
+      handler(html, ctx) {
+        if (!ctx.filename.endsWith("company.html")) return;
+        if (ctx.server)
+          return [
+            {
+              tag: "link",
+              attrs: { rel: "stylesheet", href: "data:text/css,", "data-penguin-ui": true },
+              injectTo: "head-prepend",
+            },
+          ];
+        return html.replaceAll('<link rel="stylesheet"', '<link rel="stylesheet" data-penguin-ui');
+      },
+    },
+  };
+}
+
 function pageShells(): Plugin {
   return {
     name: "penguin:gallery-page-shells",
@@ -134,6 +156,7 @@ export default defineConfig({
     penguinUi(),
     katexWoff2Only(),
     frameDocument(),
+    markPenguinUiStylesheet(),
     pageShells(),
     watchPackageSources(),
   ],

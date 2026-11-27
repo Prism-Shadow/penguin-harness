@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   Button,
   ListRow,
@@ -79,6 +79,13 @@ function Decision({ ticket, need }: { ticket: Ticket; need: Extract<Need, { kind
 function Acceptance({ ticket, need }: { ticket: Ticket; need: Extract<Need, { kind: "accept" }> }) {
   const { w, act } = useCompanyApp();
   const [note, setNote] = useState<string | null>(null);
+  const sendBackId = useId();
+  const restoreFocus = useRef(false);
+  useEffect(() => {
+    if (note !== null || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    document.getElementById(sendBackId)?.focus();
+  }, [note, sendBackId]);
   return (
     <div className="space-y-3">
       <div>
@@ -96,7 +103,7 @@ function Acceptance({ ticket, need }: { ticket: Ticket; need: Extract<Need, { ki
           <Button size="sm" onClick={() => navigateHost(need.workbenchApp)}>
             {w.inbox.openWorkbench}
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setNote("")}>
+          <Button id={sendBackId} size="sm" variant="ghost" onClick={() => setNote("")}>
             {w.inbox.sendBack}
           </Button>
         </div>
@@ -107,6 +114,7 @@ function Acceptance({ ticket, need }: { ticket: Ticket; need: Extract<Need, { ki
             label={w.inbox.sendBackNote}
             placeholder={w.inbox.sendBackPlaceholder}
             rows={2}
+            autoFocus
             value={note}
             onChange={(event) => setNote(event.target.value)}
           />
@@ -122,7 +130,13 @@ function Acceptance({ ticket, need }: { ticket: Ticket; need: Extract<Need, { ki
             >
               {w.inbox.confirmSendBack}
             </Button>
-            <Button size="sm" onClick={() => setNote(null)}>
+            <Button
+              size="sm"
+              onClick={() => {
+                restoreFocus.current = true;
+                setNote(null);
+              }}
+            >
               {w.inbox.cancel}
             </Button>
           </div>

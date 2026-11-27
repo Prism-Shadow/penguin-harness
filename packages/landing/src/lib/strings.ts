@@ -1124,7 +1124,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     headline: "公司模式，装进应用中心",
     subline:
       "公司不再是侧栏里的一种模式，而是 agent-company 插件提供的一个应用。你和主理对齐目标，工单在执行和验证之间自己流转，需要你拍板的事才进收件箱。",
-    note: "下面跑的是真实的 Web App，数据是演示用的；公司应用本身还是草案，没有发布。",
+    note: "上面跑的是真实的 Web App，数据是演示用的；公司应用本身还是草案，没有发布。",
     frame: "公司应用的设计草案（实时演示）",
     questions: {
       title: "四个问题，四个回答",
@@ -1154,14 +1154,14 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     },
     plugin: {
       title: "用现有的插件机制接进来",
-      subtitle: "不新造运行时。公司应用用到的每一块，平台今天都有。",
+      subtitle: "公司的运行时保持不变。应用要用的平台能力今天都有，插件只需再贡献一个页面。",
       now: "平台今天有",
       use: "公司应用怎么用",
       rows: [
         {
           name: "应用中心",
           now: "插件页面声明为应用，就是应用中心里的一个图块，在窗口里打开，也能全屏。",
-          use: "公司是 agent-company 插件提供的应用；插件不在，图块也不在。",
+          use: "公司改由 agent-company 插件以应用的形式贡献；插件不在，图块也不在。",
         },
         {
           name: "对话",
@@ -1187,7 +1187,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     },
     tradeoffs: {
       title: "取舍",
-      subtitle: "对照调研里实测的五款产品，按 PenguinHarness 现在的架构做的取舍。",
+      subtitle: "保留什么、改什么、以后再做、不做什么，都按 PenguinHarness 现在的架构来定。",
       groups: [
         {
           name: "沿用",

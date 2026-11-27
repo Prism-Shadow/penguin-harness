@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
+import { LOCATION_MESSAGE, NAVIGATE_MESSAGE } from "../../../web/src/lib/frame-messages";
 
 export type Lang = "zh" | "en";
-
-export const LOCATION_MESSAGE = "penguin:location";
-export const NAVIGATE_MESSAGE = "penguin:navigate";
 
 export const ROUTES = ["/", "/tickets", "/team", "/handbook", "/new"] as const;
 export type Route = (typeof ROUTES)[number];
@@ -45,13 +43,14 @@ export function useHostLang(): Lang {
     const root = document.documentElement;
     const observer = new MutationObserver(() => setLang(langOf(root.lang)));
     observer.observe(root, { attributes: true, attributeFilter: ["lang"] });
+    setLang(langOf(root.lang));
     return () => observer.disconnect();
   }, []);
   return lang;
 }
 
 function startAt(): string {
-  const hash = decodeURIComponent(window.location.hash.slice(1));
+  const hash = window.location.hash.slice(1);
   return hash.startsWith("/") ? hash : "/";
 }
 

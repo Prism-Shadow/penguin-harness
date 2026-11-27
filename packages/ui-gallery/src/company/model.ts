@@ -56,6 +56,7 @@ export interface HandbookLine {
   text: string;
   ticket: string;
   member?: string;
+  version?: number;
 }
 
 export interface Org {
@@ -123,7 +124,7 @@ export function boardColumn(org: Org, stage: Stage): readonly Ticket[] {
 export function decide(org: Org, id: string, answer: string, notes: Notes): Org {
   const ticket = ticketById(org, id);
   if (ticket?.need?.kind !== "decision") return org;
-  const rule = ticket.need.rule.replace("{answer}", answer);
+  const rule = ticket.need.rule.replace("{answer}", () => answer);
   const next = withTicket(org, id, (t) => {
     const { need: _need, ...rest } = t;
     return {
@@ -184,6 +185,7 @@ export function sendBack(org: Org, id: string, note: string, notes: Notes): Org 
         text: reason,
         ticket: id,
         member: ticket.executor,
+        version: (memberById(org, ticket.executor)?.skillVersion ?? 0) + 1,
       },
     ],
   };

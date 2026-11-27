@@ -6,8 +6,8 @@
  * - Given a verified delivery, when the user accepts it, then it settles; accepting a ticket
  *   that is not waiting for acceptance changes nothing.
  * - Given a verified delivery, when the user sends it back without a reason, nothing changes;
- *   with a reason, the round is counted, the lesson lands in the handbook, the executor's Skill
- *   moves one version and the ticket goes back to work.
+ *   with a reason, the round is counted, the lesson lands in the handbook naming the Skill
+ *   version it produced, the executor's Skill moves one version and the ticket goes back to work.
  * - Given a delivery on its last allowed round, when the user sends it back, then the ticket
  *   halts with a send-back breaker in the inbox instead of going back to work.
  * - Given a halted ticket, when the user lifts the breaker, then a rounds breaker grants exactly
@@ -74,6 +74,7 @@ describe("the company app's ticket flow", () => {
       kind: "lesson",
       text: "The table is cut off",
       member: "writer",
+      version: writer.skillVersion + 1,
     });
     expect(memberById(after, "writer")?.skillVersion).toBe(writer.skillVersion + 1);
   });

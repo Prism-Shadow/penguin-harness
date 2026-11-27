@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
 import {
   Button,
   Card,
   CollapsibleSection,
   Drawer,
+  KeyValue,
+  KeyValueRow,
   PageFrame,
   PageHeader,
   Pill,
@@ -23,7 +24,7 @@ function BoardCard({ ticket }: { ticket: Ticket }) {
       <button
         type="button"
         onClick={() => openTicket(ticket.id)}
-        className="block w-full space-y-2 p-3 text-left"
+        className="block w-full space-y-2 p-3 text-left rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg-subtle/60"
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="text-xs text-fg-muted tabular-nums">{ticket.id}</span>
@@ -82,8 +83,16 @@ function Track({ ticket }: { ticket: Ticket }) {
   return (
     <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
       {BOARD_STAGES.map((stage, index) => (
-        <li key={stage} className="flex items-center gap-1.5">
-          {index > 0 && <span className="text-fg-subtle">→</span>}
+        <li
+          key={stage}
+          className="flex items-center gap-1.5"
+          aria-current={index === reached ? "step" : undefined}
+        >
+          {index > 0 && (
+            <span aria-hidden="true" className="text-fg-subtle">
+              →
+            </span>
+          )}
           {index === reached ? (
             <Pill tone={STAGE_TONE[ticket.stage]}>{w.stage[ticket.stage]}</Pill>
           ) : (
@@ -103,15 +112,6 @@ function WorkbenchButton({ need }: { need: Extract<Need, { kind: "accept" }> }) 
   );
 }
 
-function Fact({ name, children }: { name: string; children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-1.5 text-sm">
-      <dt className="text-fg-muted">{name}</dt>
-      <dd className="min-w-0 text-fg">{children}</dd>
-    </div>
-  );
-}
-
 export function TicketDrawer() {
   const { w, org, place, openTicket } = useCompanyApp();
   const ticket = place.ticket === null ? undefined : ticketById(org, place.ticket);
@@ -126,14 +126,18 @@ export function TicketDrawer() {
       {ticket !== undefined && (
         <div className="space-y-5 p-4">
           <Track ticket={ticket} />
-          <dl className="divide-y divide-line-muted">
-            <Fact name={w.ticket.executor}>{memberById(org, ticket.executor)?.name}</Fact>
-            <Fact name={w.ticket.verifier}>{memberById(org, ticket.verifier)?.name}</Fact>
-            <Fact name={w.ticket.source}>{w.source[ticket.source]}</Fact>
-            <Fact name={w.ticket.rounds}>
+          <KeyValue size="sm">
+            <KeyValueRow label={w.ticket.executor}>
+              {memberById(org, ticket.executor)?.name}
+            </KeyValueRow>
+            <KeyValueRow label={w.ticket.verifier}>
+              {memberById(org, ticket.verifier)?.name}
+            </KeyValueRow>
+            <KeyValueRow label={w.ticket.source}>{w.source[ticket.source]}</KeyValueRow>
+            <KeyValueRow label={w.ticket.rounds}>
               {w.ticket.roundsValue(ticket.rounds, ticket.maxRounds)}
-            </Fact>
-            <Fact name={w.ticket.cost}>
+            </KeyValueRow>
+            <KeyValueRow label={w.ticket.cost}>
               <span className="block">
                 {w.ticket.costValue(money(ticket.spent), money(ticket.budget))}
               </span>
@@ -145,14 +149,16 @@ export function TicketDrawer() {
                 tone={ticket.spent >= ticket.budget * 0.9 ? "attention" : "accent"}
                 label={w.ticket.cost}
               />
-            </Fact>
+            </KeyValueRow>
             {ticket.need?.kind === "accept" && (
-              <Fact name={w.ticket.workbench}>
+              <KeyValueRow label={w.ticket.workbench}>
                 <WorkbenchButton need={ticket.need} />
-              </Fact>
+              </KeyValueRow>
             )}
-            {ticket.outcome !== undefined && <Fact name={w.ticket.outcome}>{ticket.outcome}</Fact>}
-          </dl>
+            {ticket.outcome !== undefined && (
+              <KeyValueRow label={w.ticket.outcome}>{ticket.outcome}</KeyValueRow>
+            )}
+          </KeyValue>
           <CollapsibleSection title={w.ticket.log(ticket.log.length)} defaultOpen={false}>
             <ol className="space-y-1.5 px-3 pb-3">
               {ticket.log.map((line, index) => (

@@ -292,6 +292,7 @@ export function demoOrgs(lang: Lang): Org[] {
           text: L("跑示例前先装上当前版本的 CLI", "Install the current CLI before running samples"),
           ticket: "T-13",
           member: "runner",
+          version: 3,
         },
         {
           id: "lesson-T-12-1",
@@ -299,6 +300,7 @@ export function demoOrgs(lang: Lang): Org[] {
           text: L("截图跟着版本号一起换", "Replace screenshots along with the version number"),
           ticket: "T-12",
           member: "writer",
+          version: 4,
         },
       ],
     },

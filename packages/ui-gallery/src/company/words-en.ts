@@ -102,6 +102,8 @@ export const en: Words = {
     skillVersion: (skill: string, version: number) => `${skill} v${version}`,
     rollback: "Roll back one version",
     rolledBack: (version: number) => `Rolled back to v${version}`,
+    noRules: "No rules yet. Each call you make in the inbox is written here.",
+    rollbackOf: (name: string) => `Roll back ${name}'s Skill one version`,
     noLessons: "No lessons yet.",
   },
   create: {
@@ -126,7 +128,8 @@ export const en: Words = {
     otherPlugin: "Another plugin",
     otherPluginHint:
       "Mirroring a real company needs a chat entry; the messaging plugins carry it, outside company mode's main flow",
-    teamValue: (executors: number) => `1 lead · ${executors} executors · 1 verifier`,
+    teamValue: (executors: number) =>
+      `1 lead · ${executors} ${executors === 1 ? "executor" : "executors"} · 1 verifier`,
     created: (name: string) => `Created "${name}". The lead is settling the goal with you`,
   },
 };
