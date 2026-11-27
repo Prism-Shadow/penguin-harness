@@ -26,6 +26,15 @@ const CI_ONLY = new Map([
   ["scripts/test/ci-gate.test.mjs", null],
   // The npm job's steps: npm packaging walks `stamp` and `test-smoke`; release.yml runs the rest.
   ["scripts/release-npm.sh", "packaging"],
+  // node-pty's portable Linux bindings: built (linux-pty.yml), staged and checked by npm
+  // packaging, as release.yml and desktop-build.yml do. Their suites run in style.
+  ["scripts/build-linux-pty.sh", "packaging"],
+  ["scripts/stage-linux-pty.mjs", "packaging"],
+  ["scripts/check-native-glibc.mjs", "packaging"],
+  ["scripts/lib/elf.mjs", "packaging"],
+  ["scripts/test/check-native-glibc.test.mjs", null],
+  ["scripts/test/stage-linux-pty.test.mjs", null],
+  ["scripts/test/elf-fixture.mjs", null],
 ]);
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 const command = (names, task) =>

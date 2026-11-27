@@ -182,7 +182,9 @@ for (const lang of ["en", "zh"]) {
       node.evaluateAll((rows) =>
         rows.map((row) => row.getAttribute("aria-label") || row.textContent.trim()),
       );
-    const choices = await labels(fan);
+    // The ball's own "hide launcher" row is not a "+" menu choice.
+    const choices = (await labels(fan)).slice(0, -1);
+    await expect(chat.getByTestId("dock-launcher-hide")).toHaveCount(1);
     const launch = chat.getByTestId("dock-launcher-open-app-center");
     await launch.focus();
     await page.keyboard.press("Enter");
@@ -221,6 +223,7 @@ for (const lang of ["en", "zh"]) {
     await add.click();
     const rows = page.getByRole("menu").locator('[data-testid^="dock-add-"]');
     expect(await labels(rows)).toEqual(choices);
+    await expect(page.getByTestId("dock-add-hide")).toHaveCount(0);
     await rows.first().focus();
     await page.keyboard.press("Enter");
     await expect(models).toBeVisible();

@@ -34,7 +34,9 @@ const SHIPPED_FILES = ["package.json", "LICENSE", "deps/winpty/LICENSE"];
 
 /**
  * Package-root directories whose contents ship: the JavaScript, the binding node-gyp builds
- * where no prebuild exists (Linux), and the prebuilt binaries for every other platform.
+ * where no prebuild exists (Linux), and the prebuilt binaries for every other platform — in a
+ * release build also the portable Linux ones, which scripts/stage-linux-pty.mjs puts in
+ * `prebuilds/linux-*` (and in place of the build/Release one) before this runs.
  */
 const SHIPPED_DIRS = ["lib", "build/Release", "prebuilds"];
 

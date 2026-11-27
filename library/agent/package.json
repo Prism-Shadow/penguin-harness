@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-agent",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "description": "The agent domain: the AgentConfig and Memory mechanisms and their services (the Web App's Agent config, vault, skills/schedules prompt templates and Memory tabs), the Agent package import/export/zip caps, the avatar plumbing and the API vocabulary. One package, no server dependencies — the server imports these; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {

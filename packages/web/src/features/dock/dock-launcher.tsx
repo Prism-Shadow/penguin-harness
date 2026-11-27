@@ -143,7 +143,9 @@ function FloatingLauncher({
   // The panels offered here, in registry order (the built-in browser only in the desktop app's
   // own window): one fan entry each.
   const panels = useDockPanels();
-  const shortcuts = useSessionShortcuts(panels, narrow ? undefined : "right");
+  const shortcuts = useSessionShortcuts(panels, narrow ? undefined : "right", {
+    hideEntry: true,
+  });
   const reducedMotion = usePrefersReducedMotion();
   const reducedMotionRef = useRef(reducedMotion);
   reducedMotionRef.current = reducedMotion;

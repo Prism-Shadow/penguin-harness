@@ -15,6 +15,6 @@ Wherever the Web App shows that a workbench's files did not load, it now offers 
 - **Report a problem** opens the shared problem report. The report names the workbench and says whether it runs on a connected machine, and it ends with the load error, masked like every report.
 - Where the actions appear:
   - The pane of an app with no page to show, in its App Center window. Reload is now the primary button there, with Fix with AI as the secondary button beside it. The same pane on the app's full page, which sits outside the app shell with no Project to open a chat in, offers Reload and Report a problem.
-  - The App Center's "View error" dialog.
+  - The App Center's "Show error" dialog.
   - The More menu of an Agent settings workbench row, while its load has failed.
   - The toast after an import whose load failed, which offers Report a problem.

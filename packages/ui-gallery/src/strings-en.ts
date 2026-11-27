@@ -927,6 +927,8 @@ export const en: GalleryStrings = {
       retry: "Retry",
       calloutTitle: "The template has no memory placeholder",
       calloutBody: "Insert the placeholder into the prompt template to inject memory.",
+      wrappedBody:
+        "2 plugin sources could not be read. The first line says what happened and the lines below list why; the dot stays on the first line, not the middle of the box.\nchannels[0] has no url\nchannels[1] could not be reached",
       todo: "Page to-do",
       todoText: "3 skills can be updated",
       todoAction: "Update all",

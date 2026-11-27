@@ -21,6 +21,9 @@ import { WORKBENCH_UPDATED_EVENT } from "../src/lib/workbench-tabs";
 import { useProject } from "../src/state/project";
 import { SYSTEM_APP_PAGES } from "./helpers/system-app-pages";
 import { ThemeProvider } from "../src/state/theme";
+import { CompanyProvider } from "../src/features/company/company-state";
+import { sidebarDeps } from "../src/web-app/sidebar/deps";
+import { Sidebar } from "../src/web-app/sidebar/sidebar";
 import {
   AGENT_ID,
   PROJECT_ID,
@@ -120,9 +123,27 @@ function DropTarget() {
 }
 const dragging = () => button("Drop on its conversation").dataset.dragging;
 
+/** The real column with nothing but its fixed nav block, beside the Apps list. */
+const Column = sidebarDeps.provide(
+  {
+    sections: [],
+    modes: [],
+    badges: [],
+    useModes: () => [],
+    useNotes: () => new Map(),
+    drafts: {} as never,
+  },
+  Sidebar,
+);
+/** The nav rows that are the current page, by their names. */
+const litNav = () =>
+  [...document.querySelectorAll('aside[aria-label="Nav"] nav [aria-current="page"]')].map((el) =>
+    el.textContent?.trim(),
+  );
+
 async function open(
   workbenches: WorkbenchInfo[],
-  options: { second?: WorkbenchInfo[]; at?: string; admin?: boolean } = {},
+  options: { second?: WorkbenchInfo[]; at?: string; admin?: boolean; nav?: boolean } = {},
 ) {
   setActiveStrings(en);
   const server = agentServer(undefined, {
@@ -152,7 +173,18 @@ async function open(
     ],
     // Beside every page, as the shell mounts them: the windows' layer and the sidebar.
     layers: [
-      h(ThemeProvider, null, h(WorkspaceWindows, null, h(DropTarget))),
+      h(
+        ThemeProvider,
+        null,
+        h(
+          WorkspaceWindows,
+          null,
+          h(DropTarget),
+          options.nav
+            ? h(CompanyProvider, null, h("aside", { "aria-label": "Nav" }, h(Column)))
+            : null,
+        ),
+      ),
       h(SwitchAgent),
       h(Launchers, { items: workbenches }),
     ],
@@ -246,6 +278,23 @@ it("opens an app's window over the conversation, lit while in front, and Close r
   expect(whereIs(router)).toBe(HERE);
   expect(windowOf("Board")).toBeNull();
   expect(group()).toBeNull();
+});
+
+it("lights the App Center only while its grid shows, never beside the open app's own row", async () => {
+  const { router } = await open([workbench("board")], { nav: true, at: "/apps" });
+  await until(() => litNav().length > 0);
+  expect(litNav()).toEqual([en.appCenter.title]);
+
+  await launch(key("board"));
+  await until(() => frameOf("Board") !== null);
+  expect(rows()).toEqual([`${running("Board")} (lit)`]);
+  expect(litNav()).toEqual([]);
+  expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+
+  await pageAction("Board", en.appCenter.windowMinimize);
+  await run(() => router.navigate("/apps"));
+  expect(litNav()).toEqual([en.appCenter.title]);
+  expect(rows()).toEqual([running("Board")]);
 });
 
 it("minimizes to the conversation with the app running, and its row brings back the same frame", async () => {

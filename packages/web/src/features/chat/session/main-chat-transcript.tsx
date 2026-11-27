@@ -6,10 +6,10 @@ import { buildInputHistory } from "../input-history";
 import { buildOutline } from "../outline-model";
 import { useMemoryListing } from "../use-memory-listing";
 import { deletedChangeKeys } from "../memory-nav";
-import { panelDock } from "../../dock";
+import { isPanelOpen } from "../../dock";
 import { machineForSession, sessionKnownHere } from "../../../lib/session-machines";
 import { useSessionDraft } from "../use-session-draft";
-import { useOfflineSessionHistory } from "../offline-session-history";
+import { useMachineHold, useOfflineSessionHistory } from "../offline-session-history";
 import { useSessionStream } from "../use-session-stream";
 import type { useMainChatRouting } from "./main-chat-routing";
 
@@ -39,6 +39,15 @@ export function useMainChatTranscript(scope: ReturnType<typeof useMainChatRoutin
     };
   }
 
+  // A conversation whose machine the machines account reads as away opens nothing until it is
+  // back: the offline view shows the hub's cached copy meanwhile, and no read retries against a
+  // machine known to be down.
+  const hold = useMachineHold(
+    projectId,
+    scope.user?.userId ?? null,
+    sessionId,
+    scope.offlineOwner?.machineId ?? null,
+  );
   // No handler for the sub-session registration the parent's channel announces: a subagent
   // Session is in no list (its parent's Agent panel opens it), so nothing here has to refresh.
   const stream = useSessionStream(
@@ -46,6 +55,7 @@ export function useMainChatTranscript(scope: ReturnType<typeof useMainChatRoutin
     selected?.status ?? "idle",
     setTitle,
     JSON.stringify([scopeKey, route.current.generation]),
+    hold,
   );
 
   // Chat input area draft: caches text, both staged switch chips (`/agent` target, `/model`
@@ -141,15 +151,16 @@ export function useMainChatTranscript(scope: ReturnType<typeof useMainChatRoutin
     memoryChangesRef.current = rawMemoryChanges;
   }
   const sessionMemoryChanges = memoryChangesRef.current;
-  // The Agent's memory listing, fetched once the Memory tab exists (its body is mounted
-  // even behind another tab) or this conversation has changes to mark; shared by the
-  // Memory panel and the card's deleted-row marking. Read from the machine the conversation
-  // is on: its Agent is that machine's, and so is its memory.
+  // The Agent's memory listing, fetched once the Memory panel is open here — as its own tab
+  // (its body is mounted even behind another tab) or as the Memory tool beside the Session —
+  // or this conversation has changes to mark; shared by the Memory panel and the card's
+  // deleted-row marking. Read from the machine the conversation is on: its Agent is that
+  // machine's, and so is its memory.
   const memoryListing = useMemoryListing(
     projectId,
     selected?.agentId ?? null,
     selected === null ? null : machineForSession(selected.sessionId),
-    panelDock("memory") !== null || sessionMemoryChanges.length > 0,
+    isPanelOpen("memory") || sessionMemoryChanges.length > 0,
     sessionMemoryChanges,
   );
   // Changed files the loaded listing no longer carries: the card drops those rows

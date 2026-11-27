@@ -3,7 +3,8 @@
  * browser layer (browser-layer.tsx) lays the page on screen over. The panel lists only the current
  * conversation's pages, while the layer keeps other conversations' pages alive off screen — the panel holds no page itself, it only registers where the page should appear.
  *
- * An empty panel waits for a user or Agent to create a tab. A new tab
+ * An empty panel opens one new tab by itself when it comes on screen (use-auto-first-tab.ts), as
+ * the terminal does; closing the last tab leaves the New tab button. A new tab
  * opens the homepage when one is set, and reads as that homepage while it loads. A blank one
  * shows the start page (new-tab-page.tsx), a few common sites, rather than a white page, and the
  * address bar takes the focus to wait for an address. A tab whose page crashed shows that in the slot, with
@@ -16,6 +17,9 @@
  * (chrome-surface.tsx): the built-in pages stay alive out of sight, since nothing registers a
  * slot for them. Which of the two the agents drive is chosen in Settings › Browser; the panel's
  * menu does not offer it.
+ *
+ * A Session on a machine says so rather than asking that machine for pages: a machine runs a
+ * plain server with no desktop app, so it has no browser of its own to show.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button, EmptyState, Waiting, useWindowShown } from "@prismshadow/penguin-ui";
@@ -53,6 +57,7 @@ import { HomepageDialog } from "./homepage-dialog";
 import { ImportDialog } from "./import-dialog";
 import { heavyTabMemory, loadWarningText } from "./load";
 import { NewTabPage } from "./new-tab-page";
+import { useAutoFirstTab } from "./use-auto-first-tab";
 import { registerSlot, setSlotVisible } from "./slot-registry";
 import { webviewForTab, type WebviewElement } from "./webview-registry";
 
@@ -115,10 +120,20 @@ export function BuiltinBrowserPanel({
     if (native && active && windowShown && sessionId && projectId)
       return showWorkbenchGroup(sessionId, projectId);
   }, [native, active, windowShown, sessionId, projectId]);
-  // Remote groups belong to their machine. A local group needs the server's desktop capability
-  // before reading native tabs; standalone servers use the account's Chrome surface below.
+  if (scope !== undefined && scope.machineId !== null) {
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
+        <EmptyState
+          title={S.builtinBrowser.unavailableTitle}
+          description={S.builtinBrowser.unavailableOnMachine}
+        />
+      </div>
+    );
+  }
+  // A local group needs the server's desktop capability before reading native tabs; standalone
+  // servers use the account's Chrome surface below.
   if (scope?.machineId === null && desktop === undefined) return <Waiting />;
-  if (scope && !native && (scope.machineId !== null || desktop))
+  if (scope && !native && desktop)
     return (
       <ManagedBrowserPages
         key={JSON.stringify([scope.machineId, scope.projectId, scope.sessionId])}
@@ -213,6 +228,7 @@ function BrowserSurface({
     browserShown: active && windowShown,
   });
   const newTab = () => void openBrowserTab(undefined, state, group);
+  useAutoFirstTab(firstTabAvailable, active && windowShown, state.scope, newTab);
 
   const navigate = (url: string) => {
     if (tabId === null) {

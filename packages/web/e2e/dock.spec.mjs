@@ -17,6 +17,8 @@
  *   onto the drop targets;
  * - after configuring a model and sending the first message, Files can move to the bottom
  *   and enter fullscreen immediately, even when the original draft page is still mounted;
+ * - the Memory tool opened from the Shortcuts menu lists the Agent's memory, and a listing
+ *   that cannot be read shows its failure and report instead of waiting forever;
  * - an explicit button expands the right dock across the Session, or the bottom dock up to its
  *   toolbar. Dragging the divider only resizes the dock and keeps the conversation usable;
  * - the arrangement is PER CONVERSATION (each one manages its own tabs, browser-window
@@ -30,6 +32,7 @@
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
+import { watchSocket } from "./api-socket.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -537,6 +540,63 @@ test("Files moves to the bottom and enters fullscreen after the first chat reply
   await bottom.getByTestId("dock-fullscreen").click();
   await expect(bottom).toHaveAttribute("data-fullscreen", "full");
   await expect(bottom.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
+});
+
+test("the Memory tool opened from Shortcuts lists the Agent's memory; a listing that fails says so", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, "dockmemory", P);
+  await setAccountPrefs(page.request, { lang: "en", initialPasswordBannerDismissed: true });
+  const projectId = await configureProjectModel(page.request);
+  // One topic in the Agent's own scope, written the way a user uploads one: the scope import.
+  const memory = `${BASE}/api/projects/${projectId}/agents/default_agent/memory`;
+  const [scope] = (await (await page.request.get(memory)).json()).scopes;
+  const imported = await page.request.post(
+    `${memory}/scopes/${encodeURIComponent(scope.scopeKey)}/import`,
+    {
+      data: {
+        payload: {
+          format: "penguin-memory-scope",
+          version: 1,
+          scopeKey: scope.scopeKey,
+          kind: scope.kind,
+          exportedAt: "2026-11-26T00:00:00.000Z",
+          index: "- [Tea](tea.md) — prefers green tea\n",
+          files: [
+            { name: "tea.md", content: "---\nname: tea\ndescription: Prefers green tea\n---\n" },
+          ],
+        },
+      },
+    },
+  );
+  expect(imported.ok(), "import memory").toBeTruthy();
+  const sessionId = await createSession(page.request, projectId);
+  const socket = await watchSocket(page);
+  const panel = page.locator('[data-testid="dock"]:visible');
+  const tool = panel.locator('[data-testid="dock-tab"][data-tab-id^=":app:session-tool/memory"]');
+  const openFromShortcuts = async () => {
+    await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
+    await page.getByTestId("dock-launcher-open-memory").click();
+    await expect(tool).toBeVisible();
+  };
+
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await openFromShortcuts();
+  await expect(panel.getByText("Prefers green tea", { exact: true })).toBeVisible();
+  await expect(panel.locator(".ui-waiting")).toHaveCount(0);
+
+  // The same tool, reopened while the Agent's memory cannot be read: the failure and its
+  // report take the list's place, and nothing is left waiting.
+  await tool.getByTestId("dock-tab-close").click();
+  await expect(tool).toHaveCount(0);
+  socket.answer("GET", `/api/projects/${projectId}/agents/default_agent/memory`, {
+    status: 500,
+    body: { error: { code: "internal", message: "memory unreadable" } },
+  });
+  await openFromShortcuts();
+  await expect(panel.locator("[data-report-issue]")).toBeVisible();
+  await expect(panel.getByText("Prefers green tea", { exact: true })).toHaveCount(0);
+  await expect(panel.locator(".ui-waiting")).toHaveCount(0);
 });
 
 test("a whole dock moves to the other edge; a single tab moves by drag onto the drop target", async ({

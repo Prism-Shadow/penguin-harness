@@ -3,7 +3,7 @@
  *
  * Every failure the bridge catches used to reach `error-recorder.ts` with no `kind`, and its
  * default for a non-HTTP source is `unexpected` — so an inbound picture a Feishu app had simply
- * not been granted the scope to download, and a file QQ structurally cannot accept, both filed
+ * not been granted the scope to download, and a file QQ has no reply slot left for, both filed
  * as "shouldn't happen, needs a human". They are neither. The recorder's own criterion is
  * **"does a human need to step in"**, not "did something fail", and by that rule a refusal is
  * `expected` when it is anticipated, has a defined handling path, and leaves nobody anything to
@@ -35,6 +35,7 @@
 import type { ErrorKind } from "@prismshadow/penguin-library-observability";
 import {
   MessagingChannelError,
+  MessagingConnectionClosedError,
   MessagingNeedsRecentMessageError,
   MessagingReplyHeldError,
 } from "./connector.js";
@@ -44,7 +45,6 @@ import {
   MessagingPermissionError,
   MessagingUnsupportedError,
 } from "./media.js";
-import { MessagingConnectionClosedError } from "./qq-api.js";
 
 /**
  * The capture points that put the refusal in front of the person in the chat.
@@ -102,8 +102,8 @@ type RefusalType = new (message: string) => Error;
  * "the person who can act was told". It means nobody has anything to do:
  *
  * - `messaging_file_send_failed` + {@link MessagingUnsupportedError} — the channel structurally
- *   cannot carry a file (QQ's rich-media path needs a publicly reachable URL this server does
- *   not have). It will refuse the next one identically; there is no fault to chase and no fix
+ *   cannot carry a file right now by its own rules (QQ's reply cap: every file takes one of the few
+ *   passive-reply slots a message funds, and none is free). It will refuse the next one identically; there is no fault to chase and no fix
  *   to deploy.
  * - `messaging_file_too_large` and `messaging_files_skipped` + {@link MessagingOutboundCapError}
  *   — the bridge's own per-file ceiling and per-reply count. Known limits: nothing is broken,

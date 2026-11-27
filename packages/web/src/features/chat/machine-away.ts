@@ -5,6 +5,7 @@
  * the Agent settings page take, so the chat never disagrees with the Machines page.
  */
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
+import { ApiError } from "../../api/client";
 import { machineLink } from "../../lib/machine-link";
 import type { MachineLink } from "../../lib/machine-link";
 import { S } from "../../lib/strings";
@@ -44,6 +45,34 @@ export function machineAway(
     headline: words[link](alias),
     retry: retryReading(readMachine(machine, null, state?.imageVersion ?? null), alias),
   };
+}
+
+/** Why a conversation's history read stopped waiting for its machine, in the hub's words. */
+export type StoppedReason = "not_connected" | "unreachable" | "retrying";
+
+/**
+ * Why a history read gave up on its machine — its retries ran out with nothing moving (503
+ * `machine_unreachable`, the last attempt's reason in `details.reason`) — or null when `cause` is
+ * any other failure. A reason this build does not know reads as the machine not answering.
+ */
+export function stoppedWaiting(cause: unknown): StoppedReason | null {
+  if (!(cause instanceof ApiError) || cause.code !== "machine_unreachable") return null;
+  const reason = cause.details?.reason;
+  return reason === "not_connected" || reason === "unreachable" ? reason : "retrying";
+}
+
+/**
+ * Whether the machines account lists the machine and reads it as away: the machine a conversation
+ * is on is known to be down, so its reads wait (nothing is asked of it) and its offline view
+ * shows. A machine the list does not have, or has not answered about yet, is not known to be down:
+ * its reads say for themselves where it stands.
+ */
+export function listedAway(
+  state: MachinesResponse | null,
+  settled: boolean,
+  machineId: string,
+): boolean {
+  return machineAway(state, settled, machineId)?.machine != null;
 }
 
 /**

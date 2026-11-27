@@ -71,7 +71,7 @@ describe("Notice", () => {
     expect(html).toContain('aria-label="关闭"');
   });
   it("keeps a lone close cross on the body's line, while buttons may take a row of their own", () => {
-    const body = /<div class="[^"]*\bflex-1\b[^"]*"><div class="min-w-0">/;
+    const body = /<div data-slot="lead" class="[^"]*\bflex-1\b[^"]*"><div class="min-w-0">/;
     const cross = renderStatic(
       createElement(Notice, { tone: "attention", dismiss: { onClick: noop }, children: "x" }),
     );

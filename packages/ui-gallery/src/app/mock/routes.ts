@@ -160,6 +160,7 @@ import { isThemeId } from "@prismshadow/penguin-ui";
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
 import { agentPluginGroups } from "../../../../web/src/features/plugins/agent-plugin-groups";
 import { declaredServerModules } from "../../../../web/src/lib/module-gate";
+import { MESSAGING_CHANNELS } from "../../../../web/src/features/messaging/channels/channel-ids";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
@@ -1516,7 +1517,7 @@ router
 router.get("/api/sessions/:sessionId/messaging", (): MessagingBindingsResponse => ({
   bindings: [],
 }));
-for (const channel of ["feishu", "telegram", "qq", "wechat"]) {
+for (const channel of MESSAGING_CHANNELS) {
   router
     .put(`/api/sessions/:sessionId/messaging/${channel}`, () =>
       readOnly("save a messaging binding"),

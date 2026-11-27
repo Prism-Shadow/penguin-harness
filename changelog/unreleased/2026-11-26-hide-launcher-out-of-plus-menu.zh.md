@@ -1,0 +1,10 @@
+# 停靠栏加号菜单不再列出「隐藏悬浮球」
+
+- **Date:** 2026-11-26
+- **Type:** fix
+- **Scope:** `web`
+- **PR:** [1907](https://github.com/Prism-Shadow/penguin-harness/pull/1907)
+
+[English](2026-11-26-hide-launcher-out-of-plus-menu.md)
+
+停靠栏的「+」菜单不再列出「隐藏悬浮球」。该项仍保留在悬浮球自身的菜单里；已隐藏的悬浮球可在「设置 › 外观」的「快捷方式」开关中重新显示。

@@ -14,8 +14,16 @@ import {
 import { openPanel, type DockPosition } from "./dock-state";
 import type { DockPanelDefinition } from "./panel-registry";
 
-/** Both conversation menus launch from the same visible Session and capability-filtered panels. */
-export function useSessionShortcuts(panels: DockPanelDefinition[], position?: DockPosition) {
+/**
+ * Both conversation menus launch from the same visible Session and capability-filtered panels.
+ * Only the floating launcher offers "hide the launcher": it is the ball's own control, while the
+ * dock's "+" menu is for opening things and a hidden ball is shown again in Settings.
+ */
+export function useSessionShortcuts(
+  panels: DockPanelDefinition[],
+  position?: DockPosition,
+  options: { hideEntry?: boolean } = {},
+) {
   const chat = useContext(ChatSessionContext);
   const selected = chat?.selected;
   const host = useContext(PageIdentity)?.sessionHost;
@@ -48,6 +56,7 @@ export function useSessionShortcuts(panels: DockPanelDefinition[], position?: Do
         }),
     });
   }
+  if (!options.hideEntry) return entries;
   entries.push({
     key: "hide",
     label: hidden ? S.dock.launcherShow : S.dock.launcherHide,

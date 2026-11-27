@@ -14,7 +14,7 @@ export const zh = {
     label: "公告",
     prev: "上一条公告",
     next: "下一条公告",
-    release0217: "PenguinHarness 0.2.17 已发布：Agent API 记录流、统计图、表单，查看更新日志",
+    release0220: "PenguinHarness 0.2.20 已发布：Harness OS、语音输入输出、插件市场，查看更新日志",
     penguinGo: "Penguin Go 官方 Token 包上线，Gemini 全系列模型 5 折",
   },
 

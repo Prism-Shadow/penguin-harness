@@ -52,6 +52,8 @@ export { dockVersion } from "./dock-state";
 
 export { panelDock } from "./dock-state";
 
+export { isPanelOpen } from "./dock-state";
+
 export { subscribeDock } from "./dock-state";
 
 export { isDockVisible } from "./dock-state";
