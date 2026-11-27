@@ -6,6 +6,9 @@ export interface PluginWebSource {
   specifier: string;
   /** The tsconfig its web modules are read through. */
   tsconfig: string;
+  /** Whether the package is a library package (`library/<domain>`): its half boots from
+   * web-root's children, so it never joins the generated list. */
+  library: boolean;
 }
 
 export function pluginWebEntries(

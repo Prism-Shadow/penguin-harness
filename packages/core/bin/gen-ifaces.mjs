@@ -18,6 +18,11 @@
  * is written into its table as a copy under the host's own key — the copy the loader compares
  * with the running platform's table when it loads the plugin.
  *
+ * `--project-sources <dir>` (repeatable) names the own sources of an installed copy: a separate
+ * `--project` may sit under node_modules — the Web App hands one for each plugin installed
+ * there, whose sources the app's own program never reads — and the files under such a directory
+ * are projected although their paths run through node_modules.
+ *
  * Published with @prismshadow/penguin-core as the `penguin-gen-ifaces` bin, so a package
  * outside this repository builds its table the way the shipped plugins do; inside the repo,
  * scripts/gen-ifaces.mjs runs this file. It compiles with the `typescript` of the package
@@ -128,14 +133,28 @@ const sourceRoots = args.flatMap((a, i) =>
       ]
     : [],
 );
-/** A source file this run projects: not a declaration, not installed, and under --sources if given. */
+/** `--project-sources <dir>`: the directories whose source files are projected although they sit
+ * under node_modules — the own sources of an installed copy, handed beside its separate project. */
+const projectSourceRoots = args.flatMap((a, i) =>
+  a === "--project-sources"
+    ? [
+        `${path
+          .resolve(args[i + 1])
+          .split(path.sep)
+          .join("/")}/`,
+      ]
+    : [],
+);
+/** A source file this run projects: not a declaration, not installed — except a file under a
+ * `--project-sources` directory, the own sources of an installed copy — and under --sources if given. */
 const projectsFile = (sf) =>
   !sf.isDeclarationFile &&
-  !sf.fileName.includes("/node_modules/") &&
+  (!sf.fileName.includes("/node_modules/") ||
+    projectSourceRoots.some((root) => sf.fileName.startsWith(root))) &&
   (sourceRoots.length === 0 || sourceRoots.some((root) => sf.fileName.startsWith(root)));
 if (projects.length === 0 || outPath === null) {
   console.error(
-    "usage: gen-ifaces --project <tsconfig> [--project ...] --out <ifaces.json> [--components-out <cli-commands.gen.ts>] [--check]",
+    "usage: gen-ifaces --project <tsconfig> [--project ...] [--project-sources <dir>] --out <ifaces.json> [--components-out <cli-commands.gen.ts>] [--check]",
   );
   process.exit(2);
 }
