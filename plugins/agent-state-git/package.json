@@ -55,6 +55,7 @@
   "devDependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "dugite": "3.3.3",
+    "isomorphic-git": "^1.44.0",
     "tar": "^7.5.21",
     "tsup": "^8.3.0",
     "vitest": "^4.1.12"

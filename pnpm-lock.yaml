@@ -1780,6 +1780,9 @@ importers:
       dugite:
         specifier: 3.3.3
         version: 3.3.3(bare-buffer@3.7.3)
+      isomorphic-git:
+        specifier: ^1.44.0
+        version: 1.44.10
       tar:
         specifier: ^7.5.21
         version: 7.5.22
