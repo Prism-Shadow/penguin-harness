@@ -35,6 +35,7 @@
 import type { ErrorKind } from "@prismshadow/penguin-library-observability";
 import {
   MessagingChannelError,
+  MessagingConnectionClosedError,
   MessagingNeedsRecentMessageError,
   MessagingReplyHeldError,
 } from "./connector.js";
@@ -44,7 +45,6 @@ import {
   MessagingPermissionError,
   MessagingUnsupportedError,
 } from "./media.js";
-import { MessagingConnectionClosedError } from "./qq-api.js";
 
 /**
  * The capture points that put the refusal in front of the person in the chat.

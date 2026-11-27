@@ -94,29 +94,6 @@ import {
 } from "./runtime/session-manager.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { Scheduler } from "./runtime/scheduler.js";
-import { MessagingBridge } from "@prismshadow/penguin-library-messaging/bridge";
-import { FeishuConnector } from "@prismshadow/penguin-library-messaging/feishu-connector";
-import { createLarkSdk } from "@prismshadow/penguin-library-messaging/feishu-sdk";
-import type { FeishuSdk } from "@prismshadow/penguin-library-messaging/feishu-sdk";
-import { TelegramConnector } from "@prismshadow/penguin-library-messaging/telegram-connector";
-import { createTelegramTransport } from "@prismshadow/penguin-library-messaging/telegram-api";
-import type { TelegramTransport } from "@prismshadow/penguin-library-messaging/telegram-api";
-import { QQConnector } from "@prismshadow/penguin-library-messaging/qq-connector";
-import { createQQTransport } from "@prismshadow/penguin-library-messaging/qq-api";
-import type { QQTransport } from "@prismshadow/penguin-library-messaging/qq-api";
-import {
-  QQScanService,
-  createQQScanTransport,
-} from "@prismshadow/penguin-library-messaging/qq-scan";
-import { WeChatConnector } from "@prismshadow/penguin-library-messaging/wechat-connector";
-import { createWeChatTransport } from "@prismshadow/penguin-library-messaging/wechat-api";
-import type { WeChatTransport } from "@prismshadow/penguin-library-messaging/wechat-api";
-import {
-  WeChatScanService,
-  createWeChatScanTransport,
-} from "@prismshadow/penguin-library-messaging/wechat-scan";
-import type { WeChatScanTransport } from "@prismshadow/penguin-library-messaging/wechat-scan";
-import type { QQScanTransport } from "@prismshadow/penguin-library-messaging/qq-scan";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";

@@ -33,7 +33,11 @@
  */
 import { userAgent } from "@prismshadow/penguin-core";
 import { WebSocket } from "undici";
-import { MessagingChannelError, httpStatusRecovers } from "./connector.js";
+import {
+  MessagingChannelError,
+  MessagingConnectionClosedError,
+  httpStatusRecovers,
+} from "./connector.js";
 
 /**
  * QQ bot OpenAPI host — both the token endpoint and the resource endpoints. Deliberately
@@ -244,38 +248,6 @@ function closeCodeIsRoutine(code: number): boolean {
     code === 1006 ||
     (code >= 1011 && code <= 1014)
   );
-}
-
-/**
- * A connection the platform itself closed, carrying the code it closed with.
- *
- * The gateway's own kind of MessagingChannelError, so the error recorder can tell a socket the
- * gateway cycled from one that is down until someone acts, WITHOUT reading the message text: a
- * wording match would tie the dashboard's "needs a human" count to how a platform phrases
- * itself. error-kind.ts reads `recovers` and nothing else.
- *
- * `recovers` carries the answer rather than the raw code because the reconnect decision is
- * protocol state this file already owns and nothing above it holds (see GatewaySession). It
- * is true only where the next handshake restores the connection with nothing changed
- * (closeCodeIsRoutine), and false where retrying repeats the same refusal or the session has
- * stopped for good.
- *
- * It lives beside the gateway rather than in a shared module because the gateway is the only
- * connection in this product that learns WHY it was closed: the Feishu long connection is the
- * vendor SDK's own reconnect loop and surfaces a plain failure, and Telegram's transport is a
- * long poll with no connection to close.
- */
-export class MessagingConnectionClosedError extends MessagingChannelError {
-  constructor(
-    message: string,
-    /** The platform's own WebSocket close code. */
-    readonly closeCode: number,
-    /** Whether the next handshake brings the connection back with nothing changed. */
-    recovers: boolean,
-  ) {
-    super(message, recovers);
-    this.name = "MessagingConnectionClosedError";
-  }
 }
 
 /**

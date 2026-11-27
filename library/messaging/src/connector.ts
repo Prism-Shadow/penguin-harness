@@ -185,6 +185,39 @@ export class MessagingChannelError extends Error {
 }
 
 /**
+ * A connection the platform itself closed, carrying the code it closed with.
+ *
+ * A connection's own kind of MessagingChannelError, so the error recorder can tell a socket the
+ * platform cycled from one that is down until someone acts, WITHOUT reading the message text: a
+ * wording match would tie the dashboard's "needs a human" count to how a platform phrases
+ * itself. error-kind.ts reads `recovers` and nothing else.
+ *
+ * `recovers` carries the answer rather than the raw code because the reconnect decision is
+ * protocol state the raising transport owns and nothing above it holds (see qq-api's
+ * GatewaySession). It is true only where the next handshake restores the connection with
+ * nothing changed, and false where retrying repeats the same refusal or the session has
+ * stopped for good.
+ *
+ * It lives here, on the seam, rather than in the one transport that raises it, so the shared
+ * classifier never imports a channel's file. The QQ gateway is the only connection in this
+ * product that learns WHY it was closed today: the Feishu long connection is the vendor SDK's
+ * own reconnect loop and surfaces a plain failure, and Telegram's transport is a long poll with
+ * no connection to close.
+ */
+export class MessagingConnectionClosedError extends MessagingChannelError {
+  constructor(
+    message: string,
+    /** The platform's own WebSocket close code. */
+    readonly closeCode: number,
+    /** Whether the next handshake brings the connection back with nothing changed. */
+    recovers: boolean,
+  ) {
+    super(message, recovers);
+    this.name = "MessagingConnectionClosedError";
+  }
+}
+
+/**
  * A send the connector did not deliver NOW but KEPT, to deliver later on its own. Not a failure:
  * the text is not lost, nothing is broken, and nobody has anything to do — the platform only
  * lets the bot speak inside a window the user's own messages open, and the user's next message

@@ -25,7 +25,7 @@ import type { MessagingBindings } from "./messaging.js";
 import type { Access } from "@prismshadow/penguin-library-project";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import { enabledAccounts, findAccountHolders, holdsAccount } from "./account-holders.js";
-import { isMessagingChannel } from "./enabled-channel.js";
+import { MESSAGING_CHANNELS, isMessagingChannel } from "./enabled-channel.js";
 import type { MessagingMachineApi } from "./ports.js";
 import { HttpError } from "@prismshadow/penguin-library-http";
 import { badRequest, requireValidId } from "@prismshadow/penguin-library-http/validate";
@@ -70,7 +70,7 @@ export function messagingAccountHoldersRoutes(deps: MessagingAccountsRouteDeps):
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const channel = c.req.query("channel") ?? "";
     if (!isMessagingChannel(channel)) {
-      throw badRequest("channel must be one of feishu, telegram, qq, wechat.");
+      throw badRequest(`channel must be one of ${MESSAGING_CHANNELS.join(", ")}.`);
     }
     const accountId = c.req.query("accountId") ?? "";
     if (accountId.trim() === "") throw badRequest("accountId is required.");
