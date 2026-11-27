@@ -1,0 +1,126 @@
+/**
+ * The runs not ended yet, and the processes runs start.
+ *
+ * The table of live runs is process-wide (one `Symbol.for` key on globalThis): a hot update
+ * builds a new registry while a run the old one started — a deploy — is still going, and that
+ * run ends on the old instance (its store connection stays open until then). The new instance
+ * reads the same table, so "one run of an Action at a time" and the live output of
+ * `GET …/actions/runs/:id` hold across the update. Nothing else is shared between instances.
+ */
+import type { ProcessEnd, RunContext } from "./action-model.js";
+import type { RunStart } from "./action-store.js";
+import { startProcess, type StartProcess } from "./deploy-process.js";
+
+/** A process run is stopped after an hour. */
+export const PROCESS_TIMEOUT_MS = 60 * 60_000;
+/** After a SIGTERM (the timeout's, or a retirement's), how long a process has before SIGKILL. */
+export const KILL_GRACE_MS = 10_000;
+/** The kept tail of a process's output, in characters. */
+export const OUTPUT_LIMIT = 1024 * 1024;
+
+export interface LiveRun {
+  start: RunStart;
+  /** `<projectId>/<orgId>`. */
+  orgKey: string;
+  /** The kept tail of the output, and how many characters were dropped before it. */
+  output: string;
+  dropped: number;
+  hasProcess: boolean;
+  /** What the run was handed: a company workflow's deploy reaches its process through it (CompanyHost.deploy). */
+  ctx?: RunContext;
+  /** Signals the run's process, once it started one. */
+  kill?: (signal: NodeJS.Signals) => void;
+  /** Settles once the run has ended and its end is recorded (by the instance that started it). */
+  done?: Promise<unknown>;
+}
+
+const LIVE = Symbol.for("penguin.company-proposals.live-action-runs");
+
+/** The process-wide table of live runs. */
+export function liveRuns(): Map<string, LiveRun> {
+  const g = globalThis as { [LIVE]?: Map<string, LiveRun> };
+  g[LIVE] ??= new Map();
+  return g[LIVE];
+}
+
+/** How many runs of `key` have not ended in the organization. */
+export function runningCount(orgKey: string, key: string): number {
+  let n = 0;
+  for (const r of liveRuns().values()) if (r.orgKey === orgKey && r.start.key === key) n++;
+  return n;
+}
+
+/** The output of a live run from an offset, the way the routes answer it. */
+export function outputFrom(
+  r: { output: string; dropped: number },
+  from: number,
+): { output: string; from: number; next: number } {
+  const start = Math.max(from, r.dropped);
+  const next = r.dropped + r.output.length;
+  return {
+    output: r.output.slice(Math.min(start - r.dropped, r.output.length)),
+    from: Math.min(start, next),
+    next,
+  };
+}
+
+/**
+ * Runs `argv` for a live run: its output appended to the run (a bounded tail), SIGTERM after
+ * `timeoutMs` and SIGKILL after the grace. Resolves when it exits or fails to start.
+ */
+export function runProcess(
+  live: LiveRun,
+  argv: readonly string[],
+  opts: { cwd: string; env: NodeJS.ProcessEnv; start?: StartProcess; timeoutMs?: number },
+): Promise<ProcessEnd> {
+  if (argv.length === 0 || argv[0]!.trim() === "") {
+    return Promise.resolve({ exitCode: null, error: "no program to run", timedOut: false });
+  }
+  const proc = (opts.start ?? startProcess)(argv, { cwd: opts.cwd, env: opts.env });
+  live.hasProcess = true;
+  live.kill = (signal) => proc.kill(signal);
+  const timeoutMs = opts.timeoutMs ?? PROCESS_TIMEOUT_MS;
+  return new Promise((resolve) => {
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill("SIGTERM");
+      setTimeout(() => proc.kill("SIGKILL"), KILL_GRACE_MS).unref();
+    }, timeoutMs);
+    timer.unref();
+    proc.onOutput((text) => {
+      live.output += text;
+      if (live.output.length > OUTPUT_LIMIT) {
+        const cut = live.output.length - OUTPUT_LIMIT;
+        live.output = live.output.slice(cut);
+        live.dropped += cut;
+      }
+    });
+    proc.onExit((code, error) => {
+      clearTimeout(timer);
+      resolve({
+        exitCode: code,
+        error: timedOut ? `stopped after the ${Math.round(timeoutMs / 1000)} s limit` : error,
+        timedOut,
+      });
+    });
+  });
+}
+
+/**
+ * The organization is being deleted: every live run of it, whichever registry instance started
+ * it (a run an instance before a hot update started is still in the table), has its process
+ * stopped — SIGTERM, then SIGKILL after the grace — and is awaited until its end is recorded.
+ * A process holds the organization's shared workspace as its working directory, which on Windows
+ * keeps the directory from moving to the trash. Other organizations' runs are left alone.
+ */
+export async function stopRuns(orgKey: string, graceMs = KILL_GRACE_MS): Promise<void> {
+  const mine = [...liveRuns().values()].filter((r) => r.orgKey === orgKey);
+  for (const r of mine) {
+    if (r.kill === undefined) continue;
+    const kill = r.kill;
+    kill("SIGTERM");
+    setTimeout(() => kill("SIGKILL"), graceMs).unref();
+  }
+  await Promise.all(mine.map((r) => r.done?.catch(() => undefined)));
+}

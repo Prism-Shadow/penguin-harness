@@ -536,6 +536,18 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "A dismissed empty-page note, keyed by user, Project and organization id of this root.",
   },
   {
+    kind: "exact",
+    key: "penguin.prGraph.showOthers",
+    scope: "browser",
+    why: "The PR graph's show-others toggle, per browser: a view preference over the graph the page fetches, holding nothing of a root.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.proposals.diffLayout",
+    scope: "browser",
+    why: "The proposals page's unified/split diff layout, per browser: a view preference, holding nothing of a root.",
+  },
+  {
     kind: "family",
     key: "penguin.orgTempSessions.",
     scope: "install",

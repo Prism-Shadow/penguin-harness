@@ -1,0 +1,9 @@
+{
+  // The server half and its tests, in the server's program (its paths reach the host's
+  // face from source, the way gen-ifaces projects the host's interfaces into the table).
+  "extends": "../../packages/server/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "."
+  },
+  "include": ["src", "test"]
+}

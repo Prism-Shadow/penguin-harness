@@ -5,6 +5,12 @@ import { mainPanelDefinition as mainTrace } from "../src/features/traces/main-do
 import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/main-dock-panel";
 import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
 import { mainPanelDefinition as mainBrowser } from "../../../plugins/browser-automation/src/web/main-dock-panel";
+// The proposals half's pieces, by the package specifier the generated table boots: the same
+// module instance, so the bound values are the ones imported here.
+import {
+  ProposalsPageHost,
+  proposalsUserEvents,
+} from "@prismshadow/penguin-plugin-company-proposals/web";
 import { TerminalModule } from "../src/features/terminal/module";
 import { dockPanelDefinition, type DockPanelDefinition } from "../src/features/dock/panel-registry";
 
@@ -284,7 +290,16 @@ describe("the booted page table", () => {
     });
   });
   it("keeps builtin renderer registration pluggable without restoring a retired owner", () => {
-    expect(pageRenderers).toEqual([]);
+    // The only page renderer a plugin web half ships is the company proposals page's — a
+    // name the server-contributed page declares, drawn by that module's own host component.
+    expect(pageRenderers).toEqual([
+      {
+        code: ProposalsPageHost,
+        data: { name: "OrgProposalsPage" },
+        from: "CompanyProposalsWebModule",
+        id: "company-proposals.page-renderers",
+      },
+    ]);
   });
 
   it("folds a contributed page in only under a key the app does not own, drawn by its module's renderer", () => {
@@ -358,8 +373,13 @@ describe("the booted shell slots", () => {
     ]);
   });
 
-  it("dispatches user events to company, the built-in browser and schedules, in that order", () => {
-    expect(userEvents).toEqual([companyUserEvents, builtinBrowserUserEvents, scheduleUserEvents]);
+  it("dispatches user events to company, the built-in browser, the proposals half and schedules, in that order", () => {
+    expect(userEvents).toEqual([
+      companyUserEvents,
+      builtinBrowserUserEvents,
+      proposalsUserEvents,
+      scheduleUserEvents,
+    ]);
   });
 });
 

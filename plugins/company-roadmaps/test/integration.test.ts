@@ -1,0 +1,113 @@
+/**
+ * The plugin on the real server: installed through a Project's config, loaded by the real
+ * loader, and its requirements — the organization gateway (CompanyModule) and company-proposals'
+ * module (CompanyProposalsPlugin), through which an approved item's proposal is created,
+ * installed beside it — resolved from the real module tree, and its retirement contributed to
+ * the organization module by a node of its own (the tree refuses a node that contributes there
+ * while requiring the gateway: a cycle); its routes mounted behind the cookie gate, answering
+ * 404 while company mode is off and for an organization that does not exist once it is on.
+ * Creating an organization needs a model to run its CEO, so the lifecycle itself is exercised
+ * in service.test.ts over the fakes.
+ *
+ * Needs the server and this package built (see README).
+ */
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  defaultServerEntry,
+  startHarness,
+  type Harness,
+  type HarnessApi,
+  type HarnessApiError,
+} from "@prismshadow/penguin-plugin-test";
+import { PAGE_SRC } from "../src/page.js";
+
+const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+/** company-proposals, which this plugin requires: it is installed with it. */
+const PROPOSALS_DIR = path.resolve(PLUGIN_DIR, "..", "company-proposals");
+const BASE = "/api/projects/default_project/organizations/acme/roadmaps";
+const ACTIONS = "/api/projects/default_project/organizations/acme/actions";
+
+async function status(run: Promise<unknown>): Promise<number> {
+  return run.then(
+    () => 200,
+    (e: HarnessApiError) => e.status,
+  );
+}
+
+describe("the company-roadmaps plugin on a real server", () => {
+  let harness: Harness;
+  let api: HarnessApi;
+
+  beforeAll(async () => {
+    await fs.access(defaultServerEntry());
+    harness = await startHarness({ plugins: [PROPOSALS_DIR, PLUGIN_DIR] });
+    api = await harness.login();
+  }, 90_000);
+  afterAll(async () => {
+    await harness?.stop();
+  });
+
+  it("is loaded, both nodes: the gateway and company-proposals resolved, and the retirement taken by the organization module without a cycle", async () => {
+    const row = (await harness.installedPlugins()).find((r) =>
+      r.modules.includes("CompanyRoadmapsPlugin"),
+    );
+    expect(row).toMatchObject({
+      active: true,
+      modules: ["CompanyRoadmapsPlugin", "RoadmapsRetirement"],
+      replaces: [],
+    });
+    // Its Actions go to company-proposals' registry, a module of that plugin's own.
+    const proposals = (await harness.installedPlugins()).find((r) =>
+      r.modules.includes("CompanyProposalsPlugin"),
+    );
+    expect(proposals).toMatchObject({
+      active: true,
+      modules: [
+        "CompanyProposalsPlugin",
+        "ProposalNotices",
+        "CompanyActionRegistry",
+        "ProposalsRetirement",
+      ],
+    });
+  });
+
+  it("contributes the roadmaps page as a company-mode iframe page, and serves it behind the cookie gate", async () => {
+    const { pages } = await api.get<{ pages: Array<Record<string, unknown>> }>(
+      "/api/contributions",
+    );
+    expect(pages.find((p) => p.key === "roadmaps")).toMatchObject({
+      nav: "org",
+      path: "roadmaps/:number?",
+      renderer: { iframe: { src: PAGE_SRC } },
+    });
+    const res = await api.request("GET", PAGE_SRC);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/^text\/html/);
+    expect(await res.text()).toContain(
+      '<main id="main"><header class="head"><h1>Roadmaps</h1></header>',
+    );
+    const anonymous = await fetch(`${harness.baseUrl}${PAGE_SRC}`);
+    expect(anonymous.status).toBe(401);
+  });
+
+  it("answers 404 while company mode is off, and 404 for a missing organization once it is on — the reads and the roadmap Actions alike", async () => {
+    const open = {
+      subject: "organization",
+      params: { name: "x", channelId: "room_a", employees: ["a"] },
+    };
+    expect(await status(api.get(BASE))).toBe(404);
+    expect(await status(api.post(`${ACTIONS}/roadmap.open/runs`, open))).toBe(404);
+    await api.put("/api/admin/settings", { companyMode: true });
+    expect(await status(api.get(BASE))).toBe(404);
+    expect(await status(api.post(`${ACTIONS}/roadmap.open/runs`, open))).toBe(404);
+  });
+
+  it("has no write route of its own: a POST to the roadmaps is not found", async () => {
+    expect(await status(api.post(BASE, { name: "x", channelId: "room_a", employees: ["a"] }))).toBe(
+      404,
+    );
+  });
+});
