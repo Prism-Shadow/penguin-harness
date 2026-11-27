@@ -9,6 +9,10 @@
  *   ProjectMachines  the machines a Project uses, with a client to each one's API while it is
  *                    connected (the machines service has it); a route reads it for an
  *                    administrator only, as the machine proxy does
+ *   MachineDial      a dial to a connected machine's server by its own id — through the connection
+ *                    this server holds, its port there, a session there as its cookie — for a
+ *                    module that keeps a socket of its own to it (the browser relay); the machines
+ *                    service has it, and it acts as an administrator there, as the proxy does
  *
  * `Access` (who may see or own a Project) is the host's own interface, and `AgentSkills` (the
  * Skills installed on an Agent, services/agent-skills.ts) a host node of its own, exported beside these.
@@ -16,6 +20,7 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { ModelsResponse } from "@prismshadow/penguin-library-model";
 import type { MachineApi } from "../machines/machine-api.js";
+import type { ProxyTarget } from "../machines/proxy.js";
 
 @Interface()
 export abstract class ProjectModels {
@@ -32,4 +37,10 @@ export abstract class ProjectMachines {
   abstract projectApis(
     projectId: string,
   ): Promise<Array<{ machineId: string; alias: string; api: MachineApi | null }>>;
+}
+
+@Interface()
+export abstract class MachineDial {
+  /** A dial to the machine's server through the connection held to it; null when it is not connected. */
+  abstract proxyTarget(machineId: string): Promise<ProxyTarget | null>;
 }

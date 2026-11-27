@@ -75,6 +75,8 @@ export const openBuiltinBrowserTab = (body: {
   activate?: boolean;
   sessionId?: string;
   projectId?: string;
+  /** The machine `sessionId` runs on: this server holds the page for that machine's Session. */
+  machineId?: string;
 }) =>
   apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath("/tabs"), {
     method: "POST",

@@ -272,7 +272,7 @@ export const browserEn: BrowserText = {
       if (reason === "extension_disabled")
         return "An admin has turned off Chrome extension connections on this server, so the user's Chrome cannot be driven.";
       if (reason === "hub_disconnected")
-        return "This session runs on a machine: its browser is the one in PenguinHarness on the computer this machine was added from, and it cannot be reached from this machine now. Tell the user so; do not ask them to pair a Chrome with this machine.";
+        return "This session runs on a machine: its browser is the one in PenguinHarness on the computer this machine was added from, and that app is not connected to this machine now. Ask the user to keep PenguinHarness open there and this machine connected on its Machines page; do not ask them to pair a Chrome with this machine.";
       return "The browser is driven through a running PenguinHarness server, and none was reached: open the desktop app, or point --server or PENGUIN_API_URL at the server.";
     },
     notSupported: () =>
@@ -472,7 +472,7 @@ export const browserZh: BrowserText = {
       if (reason === "extension_disabled")
         return "管理员已在本服务器上关闭 Chrome 扩展连接，无法驱动该用户的 Chrome。";
       if (reason === "hub_disconnected")
-        return "此会话运行在一台机器上：它的浏览器在添加这台机器的那台电脑的 PenguinHarness 里，现在从这台机器连不上。请如实告诉用户，不要请用户把 Chrome 配对到这台机器。";
+        return "此会话运行在一台机器上：它的浏览器在添加这台机器的那台电脑的 PenguinHarness 里，而那里的应用现在没有连到这台机器。请用户在那里打开 PenguinHarness，并在「机器管理」中保持这台机器连接；不要请用户把 Chrome 配对到这台机器。";
       return "浏览器要经由正在运行的 PenguinHarness 服务器驱动，但没有连上任何服务器：请打开桌面应用，或用 --server 或 PENGUIN_API_URL 指向该服务器。";
     },
     notSupported: () =>

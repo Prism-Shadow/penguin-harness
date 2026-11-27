@@ -10,11 +10,11 @@
  * Returning pages after a failed first send restores the draft's selection and storage.
  * Leaving a Session whose docks show the browser for one whose docks do not opens no page there
  * (which would bring the panel up with it), and going back shows it again. A Session on a
- * machine says that machine has no browser, and asks it for none.
+ * machine gets this window's own browser: its pages are opened here, for that machine's Session.
  */
 import { act, createElement, Fragment, useSyncExternalStore } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
+import type { BuiltinBrowserStatus, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 // The browser reaches the app's own helpers through the plugin face; this hands them over.
 import "../src/web-app/plugin-host";
 import { BuiltinBrowserLayer } from "../../../plugins/browser-automation/src/web/browser-layer";
@@ -299,16 +299,46 @@ it("keeps a visible Session browser workbench in place when its new page arrives
   await act(async () => setDockScope(null));
 });
 
-it("says a Session on a machine has no browser there, and asks that machine for none", async () => {
-  const fetched = stubFetch((request) =>
-    request.path.endsWith("/status")
-      ? json({ available: true, backend: "builtin", tabs: [], activeTabId: null })
-      : new Response(null, { status: 204 }),
-  );
+it("gives a Session on a machine this window's browser, and opens its pages here for that machine", async () => {
+  const machineId = "QS7J4YVgSovi-Z2c";
+  const sessionId = "on-machine";
+  const status: BuiltinBrowserStatus = {
+    available: true,
+    backend: "builtin",
+    backends: [{ backend: "builtin", available: true }],
+    tabs: [],
+    activeTabId: null,
+  };
+  const fetched = stubFetch((request) => {
+    if (request.path.endsWith("/status")) return json(status);
+    if (request.method === "POST" && request.path === "/api/builtin-browser/tabs") {
+      return json({ tab: tab(41, sessionId) });
+    }
+    return new Response(null, { status: 204 });
+  });
   dispatchBrowser({ type: "supported", supported: true });
-  const scope = { projectId: "p", machineId: "QS7J4YVgSovi-Z2c", agentId: "a", sessionId: "on-m" };
-  const rendered = await mount(createElement(BuiltinBrowserPanel, { scope, active: true }));
-  expect(rendered.container.textContent).toContain(S.builtinBrowser.unavailableOnMachine);
-  expect(rendered.container.querySelector('[role="combobox"]')).toBeNull();
+  dispatchBrowser({ type: "status", status });
+  const scope = { projectId: "p", machineId, agentId: "a", sessionId };
+  await mount(
+    createElement(
+      Fragment,
+      null,
+      createElement(BuiltinBrowserLayer),
+      createElement(BuiltinBrowserPanel, { scope, active: true }),
+    ),
+  );
+  expect(browserState().scope).toBe(sessionId);
+  // Shown with no page, the panel opens its first one itself: here, for the machine's Session.
+  const opens = () =>
+    fetched.requests.filter(
+      (request) => request.method === "POST" && request.path === "/api/builtin-browser/tabs",
+    );
+  await act(async () => undefined);
+  expect(opens()).toHaveLength(1);
+  expect(opens()[0]).toMatchObject({
+    machine: null,
+    body: { sessionId, projectId: "p", machineId },
+  });
   expect(fetched.requests.filter((request) => request.machine !== null)).toEqual([]);
+  await act(async () => setDockScope(null));
 });

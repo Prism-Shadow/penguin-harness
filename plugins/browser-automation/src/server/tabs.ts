@@ -24,6 +24,8 @@ export interface OpenRequest {
   /** The tab whose popup (or "Open link in new tab") this is. */
   openerTabId?: number;
   sessionId?: string;
+  /** The machine `sessionId` lives on, for a page a machine's Session owns (through its channel). */
+  machineId?: string;
   partition?: string;
   createdAt: number;
   /** The tab that claimed it; null until then. */
@@ -50,6 +52,8 @@ export class TabRegistry {
   private active: number | null = null;
   private readonly partitions = new Map<number, string>();
   private readonly owners = new Map<number, string>();
+  /** For a page a machine's Session owns: that machine (its Session is in `owners`). */
+  private readonly machines = new Map<number, string>();
   private readonly activeBySession = new Map<string, number>();
   /** A tab activated before the shell reported it. */
   private pendingActive: number | null = null;
@@ -74,11 +78,15 @@ export class TabRegistry {
     return this.list(sessionId).at(-1)?.id ?? null;
   }
 
-  /** A tab whose far side names its Session (a hub's): that Session owns it from now on. */
-  own(id: number, sessionId: string): void {
+  /**
+   * The Session that owns a tab from now on: one a hub names (on a machine), or a machine's
+   * Session a page was opened for (on the hub; `machineId` names that machine).
+   */
+  own(id: number, sessionId: string, machineId?: string): void {
     this.owners.set(id, sessionId);
+    if (machineId !== undefined) this.machines.set(id, machineId);
     const tab = this.tabs.get(id);
-    if (tab !== undefined) this.tabs.set(id, { ...tab, sessionId });
+    if (tab !== undefined) this.tabs.set(id, this.owned(tab));
   }
 
   /** Transfer existing pages and pending popups without recreating their guests. */
@@ -101,10 +109,12 @@ export class TabRegistry {
 
   private owned(tab: BuiltinBrowserTab): BuiltinBrowserTab {
     const sessionId = this.owners.get(tab.id);
+    const machineId = this.machines.get(tab.id);
     const partition = this.partitions.get(tab.id);
     return {
       ...tab,
       ...(sessionId === undefined ? {} : { sessionId }),
+      ...(machineId === undefined ? {} : { machineId }),
       ...(partition === undefined ? {} : { partition }),
     };
   }
@@ -276,6 +286,7 @@ export class TabRegistry {
     activate: boolean;
     openerTabId?: number;
     sessionId?: string;
+    machineId?: string;
     partition?: string;
   }): OpenRequest {
     this.prune();
@@ -285,6 +296,7 @@ export class TabRegistry {
       activate: opts.activate,
       ...(opts.openerTabId !== undefined ? { openerTabId: opts.openerTabId } : {}),
       ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
+      ...(opts.machineId !== undefined ? { machineId: opts.machineId } : {}),
       ...(opts.partition !== undefined ? { partition: opts.partition } : {}),
       createdAt: this.now(),
       claimedTabId: null,
@@ -309,6 +321,7 @@ export class TabRegistry {
     if (state.partition !== undefined) this.partitions.set(tabId, state.partition);
     if (state.sessionId !== undefined) {
       this.owners.set(tabId, state.sessionId);
+      if (state.machineId !== undefined) this.machines.set(tabId, state.machineId);
       if (state.activate) this.rememberActive(tabId);
     }
     const tab = this.tabs.get(tabId);
@@ -383,6 +396,7 @@ export class TabRegistry {
     if (owner !== undefined && this.activeBySession.get(owner) === id)
       this.activeBySession.delete(owner);
     this.owners.delete(id);
+    this.machines.delete(id);
     this.partitions.delete(id);
   }
 

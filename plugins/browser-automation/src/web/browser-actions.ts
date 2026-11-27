@@ -63,14 +63,18 @@ async function openInScope(
 ): Promise<BuiltinBrowserTab | null> {
   dispatchBrowser({ type: "opening", delta: 1, scope });
   try {
-    const { tab } = group
-      ? await api.openManagedPage(group, url)
-      : await api.openBuiltinBrowserTab({
-          activate: true,
-          ...(projectId === null ? {} : { projectId }),
-          ...(url === undefined ? {} : { url }),
-          ...(scope === NO_BROWSER_SCOPE ? {} : { sessionId: scope }),
-        });
+    // A conversation on a machine: this server holds its pages, opened for the machine's Session.
+    const machineId = group?.machineId ?? null;
+    const { tab } =
+      group !== undefined && machineId === null
+        ? await api.openManagedPage(group, url)
+        : await api.openBuiltinBrowserTab({
+            activate: true,
+            ...(projectId === null ? {} : { projectId }),
+            ...(url === undefined ? {} : { url }),
+            ...(scope === NO_BROWSER_SCOPE ? {} : { sessionId: scope }),
+            ...(machineId === null ? {} : { machineId }),
+          });
     return tab;
   } catch (err) {
     toastApiError(err, { text: S.builtinBrowser.openFailed(apiErrorText(err)) });
@@ -127,9 +131,12 @@ export function activateBrowserTab(
   group?: api.ManagedBrowserGroup,
 ): void {
   dispatchBrowser({ type: "activated", tabId, backend });
-  void (group ? api.activateManagedPage(group, tabId) : api.activateBuiltinBrowserTab(tabId)).catch(
-    () => undefined,
-  );
+  // A machine's pages are this server's own: only a local group goes through its managed routes.
+  void (
+    group !== undefined && group.machineId === null
+      ? api.activateManagedPage(group, tabId)
+      : api.activateBuiltinBrowserTab(tabId)
+  ).catch(() => undefined);
 }
 
 /**
@@ -183,7 +190,7 @@ export async function switchBrowserBackend(backend: BrowserBackend): Promise<boo
  * (and any other window) sooner; a 404 means the server had already dropped it.
  */
 export function closeBrowserTab(tabId: number, group?: api.ManagedBrowserGroup): void {
-  if (group) {
+  if (group !== undefined && group.machineId === null) {
     void api.closeManagedPage(group, tabId).catch((err) => toastApiError(err));
     return;
   }

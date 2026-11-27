@@ -18,8 +18,9 @@
  * slot for them. Which of the two the agents drive is chosen in Settings › Browser; the panel's
  * menu does not offer it.
  *
- * A Session on a machine says so rather than asking that machine for pages: a machine runs a
- * plain server with no desktop app, so it has no browser of its own to show.
+ * A Session on a machine has its pages here as well: a machine runs a plain server with no
+ * browser of its own, so this server holds them for it and relays them to its agents
+ * (machine-relay.ts). The panel is this window's own browser for it, as for a local Session.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button, EmptyState, Waiting, useWindowShown } from "@prismshadow/penguin-ui";
@@ -112,28 +113,17 @@ export function BuiltinBrowserPanel({
   const live = useSyncExternalStore(subscribeBrowser, browserState, browserState);
   const windowShown = useWindowShown();
   const desktop = live.backends?.some((entry) => entry.backend === "builtin" && entry.available);
-  const native =
-    scope?.machineId === null && desktop && live.supported && live.backend === "builtin";
+  const native = scope !== undefined && desktop && live.supported && live.backend === "builtin";
   const sessionId = scope?.sessionId,
     projectId = scope?.projectId;
   useLayoutEffect(() => {
     if (native && active && windowShown && sessionId && projectId)
       return showWorkbenchGroup(sessionId, projectId);
   }, [native, active, windowShown, sessionId, projectId]);
-  if (scope !== undefined && scope.machineId !== null) {
-    return (
-      <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
-        <EmptyState
-          title={S.builtinBrowser.unavailableTitle}
-          description={S.builtinBrowser.unavailableOnMachine}
-        />
-      </div>
-    );
-  }
-  // A local group needs the server's desktop capability before reading native tabs; standalone
-  // servers use the account's Chrome surface below.
-  if (scope?.machineId === null && desktop === undefined) return <Waiting />;
-  if (scope && !native && desktop)
+  // A group needs the server's desktop capability before reading native tabs; standalone servers
+  // use the account's Chrome surface below. A window that hosts no pages lists a local group's.
+  if (scope !== undefined && desktop === undefined) return <Waiting />;
+  if (scope && scope.machineId === null && !native && desktop)
     return (
       <ManagedBrowserPages
         key={JSON.stringify([scope.machineId, scope.projectId, scope.sessionId])}

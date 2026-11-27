@@ -182,6 +182,8 @@ export class BrowserBackendRuntime {
   /** The tab a window shows on screen (POST /tabs/on-screen); never throttled while it is there. */
   private onScreen: number | null = null;
   private throttleTimer: NodeJS.Timeout | null = null;
+  /** For the machine relay: told when a page becomes a machine Session's. */
+  private readonly machineTabListeners = new Set<(tab: BuiltinBrowserTab) => void>();
   private disposed = false;
 
   constructor(private readonly deps: BackendRuntimeDeps) {
@@ -246,6 +248,8 @@ export class BrowserBackendRuntime {
     url?: unknown;
     sessionId?: string;
     projectId?: string;
+    /** The machine `sessionId` runs on: a page this server holds for that machine's Session. */
+    machineId?: string;
     activate?: boolean;
   }): Promise<BuiltinBrowserTab> {
     await this.ready();
@@ -261,7 +265,13 @@ export class BrowserBackendRuntime {
     const activate = opts.activate !== false;
     const tabId = this.link.capabilities.createsTabs
       ? await this.createTab(url, activate, opts.sessionId, opts.projectId)
-      : await this.requestTab(url, activate, opts.sessionId, opts.projectId);
+      : await this.requestTab(url, activate, opts.sessionId, opts.projectId, opts.machineId);
+    // A machine's Session owns its page whichever browser holds it (the user's Chrome shares one
+    // group, so ownership is the registry's to keep).
+    if (opts.machineId !== undefined && opts.sessionId !== undefined) {
+      this.tabs.own(tabId, opts.sessionId, opts.machineId);
+      this.tellMachineTab(tabId);
+    }
     // The agent's (or the panel's) new tab: its grace runs from now, as after an action.
     this.actedAt.set(tabId, this.now());
     this.syncThrottle();
@@ -293,9 +303,32 @@ export class BrowserBackendRuntime {
         "No tab is waiting for this request any more; remove the tab.",
       );
     }
-    if (this.tabs.openRequest(requestId)?.activate === true) this.tabs.activate(tabId);
+    const request = this.tabs.openRequest(requestId);
+    if (request?.activate === true) this.tabs.activate(tabId);
     // Ownership changes even when the claimed page was already globally active.
     this.schedulePublish();
+    if (request?.machineId !== undefined) this.tellMachineTab(tabId);
+  }
+
+  /**
+   * For the machine relay: runs `listener` with a page as it becomes a machine Session's (its
+   * claim, or its open for the machine) — which no event of the shell says. Returns the unsubscribe.
+   */
+  onMachineTab(listener: (tab: BuiltinBrowserTab) => void): () => void {
+    this.machineTabListeners.add(listener);
+    return () => this.machineTabListeners.delete(listener);
+  }
+
+  private tellMachineTab(tabId: number): void {
+    const tab = this.tabs.get(tabId);
+    if (tab?.machineId === undefined) return;
+    for (const listener of this.machineTabListeners) {
+      try {
+        listener(tab);
+      } catch (err) {
+        this.deps.log(`builtin browser: a machine's tab listener failed: ${messageOf(err)}`);
+      }
+    }
   }
 
   /**
@@ -422,13 +455,36 @@ export class BrowserBackendRuntime {
     return this.act(tab, "cdp", sessionId, (tabId, actions) => actions.cdp(tabId, method, params));
   }
 
+  /**
+   * For the machine relay (machine-relay.ts): one command of a machine's driver about a page held
+   * for it, sent to the far side as it is, its refusal or failure the link's own. The relay has
+   * already checked what the machine may ask.
+   */
+  async relay(command: DesktopBrowserCommand, timeoutMs?: number): Promise<unknown> {
+    await this.ready();
+    return this.link.request(command, timeoutMs);
+  }
+
+  /**
+   * For the machine relay: an agent on a machine started or finished an action in a page held for
+   * it. The windows show it at work, and the page runs unthrottled meanwhile, as for an agent here.
+   */
+  machineActivity(
+    tabId: number,
+    action: BuiltinBrowserAction,
+    sessionId: string | undefined,
+    busy: boolean,
+  ): void {
+    this.activity(tabId, action, sessionId, busy ? 1 : -1);
+  }
+
   /** A command for the link itself (the built-in browser's cookies and data), past the availability check. */
   async request(command: DesktopBrowserCommand, timeoutMs: number): Promise<unknown> {
     await this.ready();
     try {
       return await this.link.request(command, timeoutMs);
     } catch (err) {
-      throw mapLinkError(err, -1, this.backend);
+      throw mapLinkError(err, -1, this.backend, this.link.downReason);
     }
   }
 
@@ -489,7 +545,7 @@ export class BrowserBackendRuntime {
     try {
       return await this.link.request(command, timeoutMs);
     } catch (err) {
-      throw mapLinkError(err, tabId, this.backend);
+      throw mapLinkError(err, tabId, this.backend, this.link.downReason);
     }
   }
 
@@ -533,12 +589,14 @@ export class BrowserBackendRuntime {
     activate: boolean,
     sessionId: string | undefined,
     projectId?: string,
+    machineId?: string,
   ): Promise<number> {
     const request = this.requestOpen({
       partition: this.deps.partition?.(sessionId, projectId),
       url,
       activate,
       ...(sessionId !== undefined ? { sessionId } : {}),
+      ...(machineId !== undefined ? { machineId } : {}),
     });
     const tabId = await this.tabs.waitForClaim(request.requestId, this.timing.openClaimMs);
     if (tabId === null) {
@@ -685,6 +743,7 @@ export class BrowserBackendRuntime {
     activate: boolean;
     openerTabId?: number;
     sessionId?: string;
+    machineId?: string;
     partition?: string | undefined;
   }): OpenRequest {
     const request = this.tabs.createOpen({
@@ -692,6 +751,7 @@ export class BrowserBackendRuntime {
       partition: opts.partition ?? "persist:penguin-browser",
       activate: opts.activate,
       ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
+      ...(opts.machineId !== undefined ? { machineId: opts.machineId } : {}),
       ...(opts.openerTabId !== undefined ? { openerTabId: opts.openerTabId } : {}),
     });
     this.deps.publish({
@@ -730,13 +790,17 @@ export class BrowserBackendRuntime {
       return;
     }
     this.popups.set(event.openerTabId, [...recent, now]);
-    const sessionId = this.tabs.get(event.openerTabId)?.sessionId;
+    const opener = this.tabs.get(event.openerTabId);
+    const sessionId = opener?.sessionId;
+    // A machine's page opens its popups for the same machine's Session.
+    const machineId = opener?.machineId;
     this.requestOpen({
       url: event.url,
-      partition: this.tabs.get(event.openerTabId)?.partition,
+      partition: opener?.partition,
       activate: event.background !== true,
       openerTabId: event.openerTabId,
       ...(sessionId !== undefined ? { sessionId } : {}),
+      ...(sessionId !== undefined && machineId !== undefined ? { machineId } : {}),
     });
   }
 
