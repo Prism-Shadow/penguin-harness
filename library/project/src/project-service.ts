@@ -98,8 +98,11 @@ export class ProjectService implements ProjectLifecycle {
    * a library-bundled core would preset from its own unconfigured defaults (`No plugin
    * library`, an unpushed benchmark directory).
    */
-  provisionAgents!: (opts: { root: string; projectId: string }) => Promise<string[]>;
-  provisionBenchmarks!: (
+  private readonly provisionAgents!: (opts: {
+    root: string;
+    projectId: string;
+  }) => Promise<string[]>;
+  private readonly provisionBenchmarks!: (
     root: string,
     projectId: string,
     builtins?: readonly BuiltinBenchmark[],
