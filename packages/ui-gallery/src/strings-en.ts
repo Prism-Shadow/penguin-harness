@@ -2437,6 +2437,16 @@ export const en: GalleryStrings = {
       inCard: "In a machine card",
       inCardHint:
         "The card's middle while no job runs; in the narrow column both actions wrap under the sentence together; a press disables them until the next attempt begins.",
+      inBox: "On the input box",
+      inBoxHint:
+        "While a conversation's machine is out of reach, its state stands on that conversation's input box rather than at the top of the conversation: a title, the machine's own retry row (Retry now and Stop retrying while it retries; Retry and Go to Machines once it stops), then a muted line. What was typed stays in place, not drawn, and the box keeps its size and corners; the transcript stays readable. Once the machine is back, the box says the conversation is being updated and returns when it is.",
+      boxDraft: "Look at the hooks cases it still gets wrong",
+      boxSend: "Send",
+      boxUnreachable: (alias: string) => `Can't reach ${alias} right now`,
+      boxStoppedTrying: (alias: string) => `Can't reach ${alias}`,
+      boxServerStopped: (alias: string) => `The server on ${alias} is stopped`,
+      boxNote: "Messages can't be sent until it's back. What you've typed is kept.",
+      boxRefreshing: (alias: string) => `${alias} is back. Updating the conversation`,
       inChat: "In a conversation",
       inChatHint:
         'A model request being retried is a line of text in the conversation, the shape of "[Aborted]": a bracketed label, the attempt and the countdown, the cause in short with the HTTP status in parentheses, then bracketed text actions on the same line. Retry now and Stop retrying while it waits, Details on every state. A ladder that ran out, or was stopped during a wait, reads "[Failed]" and offers Retry as the last line; an error no retry can fix reads "[Error]". The provider\'s own words are in the details, not on the line. Earlier messages that failed to load get the same kind of line at the top.',

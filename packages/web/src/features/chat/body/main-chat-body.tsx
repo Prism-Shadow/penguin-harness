@@ -7,7 +7,12 @@ import { ConversationOutline } from "../conversation-outline";
 import { DraftView } from "./draft-view";
 import { GoalStatusBanner } from "../goal-banner";
 import { RouteOfflineNotice } from "../route-offline-notice";
-import { OfflineSessionHistory } from "../offline-session-history";
+import {
+  OFFLINE_CONTEXT,
+  OfflineHistoryNote,
+  OfflineSessionHistory,
+  offlineItems,
+} from "../offline-session-history";
 import { HistoryLoadFailed } from "../history-load-failed";
 import { HistoryLoading } from "../history-loading";
 import { RequestFailureDialog } from "../request-failure-dialog";
@@ -70,6 +75,14 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
     input,
   } = scope;
   const showDocks = scope.hostsAppPanel || (scope.paneFocused && archivedRow === null);
+  // A conversation whose machine is out of reach (or was, and is being read afresh): its
+  // transcript stays where it is, read-only, and the input box carries the machine's state.
+  const offline = offlineHistory && (selected || routeSessionPending) ? offlineHistory : null;
+  const liveReady = !stream.loading && !stream.error;
+  const copy = offline !== null ? offlineItems(offline) : null;
+  // While the live read cannot show (held for the machine, reading again now that it is back,
+  // given up), the copy stands in — in the same stream, so the reader stays where they were.
+  const showCopy = copy !== null && !liveReady;
   return (
     <>
       <ChatDockProvider value={chatDock}>
@@ -137,11 +150,11 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
                           navigate("/chat");
                         }}
                       />
-                    ) : offlineHistory && (selected || routeSessionPending) ? (
-                      <OfflineSessionHistory {...offlineHistory} />
                     ) : selected ? (
                       <>
-                        {stream.error ? (
+                        {offline !== null ? (
+                          copy === null && <OfflineHistoryNote copy={offline.copy} />
+                        ) : stream.error ? (
                           // History failed to load: say why and offer the way on, instead of staying on
                           // a misleading empty state — for a conversation on a machine out of reach,
                           // the machine's state rather than the transport's error.
@@ -164,7 +177,7 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
                         ) : null}
                         {/* A resumed pane reopens its stream. Keep the composer mounted while
                           history loads so its unsent text, files and selection survive. */}
-                        <Activity mode={stream.loading || stream.error ? "hidden" : "visible"}>
+                        <Activity mode={liveReady || showCopy ? "visible" : "hidden"}>
                           {/* The empty state shares the same structure as the message stream (message
                            area + bottom input area). The first message leaves the composer in place. */}
                           {/* `relative`: the floating dock launcher below anchors to this body —
@@ -174,7 +187,9 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
                             (ActivityGroup) ends its pager short of it through
                             --activity-head-reserve. */}
                           <div className="relative min-h-0 flex-1 max-sm:[--activity-head-reserve:62px]">
-                            {emptyChat ? (
+                            {showCopy && copy.length === 0 ? (
+                              <OfflineHistoryNote copy={{ items: copy }} />
+                            ) : emptyChat ? (
                               <div className="flex h-full items-center justify-center px-4">
                                 <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
                                   {S.chat.emptyGreeting}
@@ -187,9 +202,10 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
                                 projectId={selected?.orgId !== undefined ? projectId : null}
                               >
                                 <MessageStream
-                                  items={allItems}
-                                  version={stream.version}
-                                  ctx={ctx}
+                                  items={showCopy ? copy : allItems}
+                                  // The copy's own count, apart from every live version.
+                                  version={showCopy ? -1 - copy.length : stream.version}
+                                  ctx={offline !== null ? OFFLINE_CONTEXT : ctx}
                                   scrollElRef={streamScrollRef}
                                   // The selection menu's "Add to conversation": the excerpt is staged
                                   // in this composer as a chip, the same way the Files panel stages a
@@ -199,7 +215,8 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
                                   // loading): near-top scrolling prepends the previous window,
                                   // scroll position anchored (see MessageStream).
                                   older={{
-                                    hasMore: stream.older.hasMore,
+                                    // Nothing earlier is asked of a machine out of reach.
+                                    hasMore: offline === null && stream.older.hasMore,
                                     loading: stream.older.loading,
                                     error: stream.older.error,
                                     errorCause: stream.older.errorCause,
@@ -212,14 +229,16 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
                                   // width; hides itself when the gutter is too narrow or the
                                   // pointer can't hover).
                                   outline={
-                                    <ConversationOutline
-                                      entries={outline}
-                                      turnOffset={stream.outlineOffset}
-                                      version={stream.version}
-                                      scrollRef={streamScrollRef}
-                                      running={stream.taskState !== "idle"}
-                                      fit={railFit}
-                                    />
+                                    !showCopy && (
+                                      <ConversationOutline
+                                        entries={outline}
+                                        turnOffset={stream.outlineOffset}
+                                        version={stream.version}
+                                        scrollRef={streamScrollRef}
+                                        running={stream.taskState !== "idle"}
+                                        fit={railFit}
+                                      />
+                                    )
                                   }
                                 />
                               </PathCapsulesProvider>
@@ -237,6 +256,10 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
                               onClose={() => setFailureShown(null)}
                             />
                           </div>
+                        </Activity>
+                        {/* Its own Activity: the input box stands while the machine is out of
+                          reach, its cover saying where things stand, over the copy or a note. */}
+                        <Activity mode={liveReady || offline !== null ? "visible" : "hidden"}>
                           <div
                             ref={
                               bottomMount.open && bottomMount.view?.merged
@@ -264,6 +287,10 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
                           </div>
                         </Activity>
                       </>
+                    ) : offline !== null ? (
+                      // A link the list does not hold yet: the copy, and the cover where the
+                      // input box stands once the conversation is known.
+                      <OfflineSessionHistory {...offline} />
                     ) : routeSessionOffline ? (
                       <RouteOfflineNotice
                         owner={routeSessionOwner}

@@ -55,6 +55,7 @@ import {
 import { useChildSessions, useChildTranscript } from "./use-child-sessions";
 import { AgentTopologyView } from "./agent-topology-view";
 import { MessageStream, type StreamRenderContext } from "./message-stream";
+import { useListedAwayCover } from "./machine-cover";
 import { useAgentSkills } from "./use-agent-skills";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { toastApiError } from "../../lib/toast-api-error";
@@ -484,6 +485,9 @@ function SubagentComposer({
   // toolbar dropdown and the slash menu. A child shares its parent's Workspace, so its Agent
   // is the one on the parent Session's machine.
   const { skills } = useAgentSkills(projectId, meta?.agentId ?? null, machineForSession(sessionId));
+  // The child runs on its parent's machine: while that machine is out of reach, the box says so
+  // over what is typed, as the conversation's own box does.
+  const cover = useListedAwayCover(projectId, machineForSession(sessionId));
 
   // The level pinned on the child Session from this panel ("" = untouched, the child runs at
   // its own level): mirrors the main composer's per-session pick, scoped to this child —
@@ -578,6 +582,7 @@ function SubagentComposer({
           modeSaving={modeSaving}
           agents={[]}
           skills={skills}
+          cover={cover}
         />
       </div>
     </div>

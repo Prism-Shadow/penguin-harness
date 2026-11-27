@@ -2912,7 +2912,9 @@ router
 // Machines (admin)
 // ---------------------------------------------------------------------------------------------
 
-const machinesResponse = (store: DemoStore): MachinesResponse => store.f.machines;
+// A copy, as the wire hands one: the app keeps the list as its state, and the store moving a
+// machine's link must reach it as a new answer rather than as a mutation of the one it holds.
+const machinesResponse = (store: DemoStore): MachinesResponse => structuredClone(store.f.machines);
 
 router
   .get("/api/projects/:projectId/machines", ({ store }) => machinesResponse(store))
@@ -2978,13 +2980,16 @@ router
   )
   .post("/api/projects/:projectId/machines/:machineId/connect", () => readOnly("connect a machine"))
   // Nothing in the fixtures is being brought back: a Retry or a Stop retrying finds nothing to
-  // do, as the server answers for a machine that is up.
-  .post("/api/projects/:projectId/machines/:machineId/reconnect", ({ store }) =>
-    machinesResponse(store),
-  )
-  .post("/api/projects/:projectId/machines/:machineId/stop-reconnecting", ({ store }) =>
-    machinesResponse(store),
-  )
+  // do, as the server answers for a machine that is up — unless a frame took the remote
+  // conversation's machine down (remote-machine.ts), where a Retry brings it back.
+  .post("/api/projects/:projectId/machines/:machineId/reconnect", ({ store, params }) => {
+    store.reconnectMachine(params.machineId!);
+    return machinesResponse(store);
+  })
+  .post("/api/projects/:projectId/machines/:machineId/stop-reconnecting", ({ store, params }) => {
+    store.stopReconnectingMachine(params.machineId!);
+    return machinesResponse(store);
+  })
   .post("/api/projects/:projectId/machines/:machineId/restart", () => readOnly("restart a machine"))
   .post("/api/projects/:projectId/machines/:machineId/sync", () =>
     readOnly("sync a machine's config"),

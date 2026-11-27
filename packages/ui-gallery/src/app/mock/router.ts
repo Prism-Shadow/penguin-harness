@@ -114,7 +114,17 @@ export class Router {
     return this.routes.map(({ method, pattern }) => ({ method, pattern }));
   }
 
-  async dispatch(store: DemoStore, method: Method, url: string, body: unknown): Promise<Answer> {
+  /**
+   * Answers a request. `cached`: the hub's copy of a machine's conversation is read, which it
+   * answers whether or not the machine is connected.
+   */
+  async dispatch(
+    store: DemoStore,
+    method: Method,
+    url: string,
+    body: unknown,
+    cached = false,
+  ): Promise<Answer> {
     const { path, query, machineId } = splitUrl(url);
     const found = this.match(method, path);
     if (found === null) {
@@ -138,7 +148,7 @@ export class Router {
       fail(404, "not_found", "Project not found.");
     }
     const result = await found.route.handler({
-      store: machineRoute ? store.sessionsOn(machineId) : store,
+      store: machineRoute ? store.sessionsOn(machineId, cached) : store,
       method,
       path,
       params: found.params,
