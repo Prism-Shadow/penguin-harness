@@ -271,7 +271,7 @@ describe("agent-state-gix interchange with real Git", () => {
     const mine = await engine.readBlobs(c.gitdir, oids);
     expect(mine[0]!.toString()).toBe("written by the gitcl pipeline\n");
     // The history walk sees gitcl's commit on gix's tip: its parent is what gix wrote.
-    const commitBody = run(c.gitdir, ["cat-file", "commit", sha]).toString();
+    const commitBody = run(c.gitdir, ["cat-file", "commit", sha]).stdout.toString();
     expect(commitBody).toMatch(/^tree [0-9a-f]{40}/m);
     expect(commitBody).toMatch(new RegExp(`parent ${tip}`));
     // git fsck arbitrates the mixed history.
@@ -299,7 +299,7 @@ describe("agent-state-gix interchange with real Git", () => {
     const gixOid = /blob ([0-9a-f]{40})\tworkbenches\/w-after-gitcl\/gix\.txt/.exec(
       ls.stdout.toString(),
     )![1]!;
-    const blob = run(c.gitdir, ["cat-file", "blob", gixOid]).toString();
+    const blob = run(c.gitdir, ["cat-file", "blob", gixOid]).stdout.toString();
     expect(blob).toBe("written by gitoxide\n");
     // And the commit id both sides see is the same object: gitcl's rev-parse answers it.
     const tip = run(c.gitdir, ["rev-parse", c.ref]).toString().trim();
