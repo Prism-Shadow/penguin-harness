@@ -13,6 +13,7 @@
       "@prismshadow/penguin-library-http/settle": ["../http/src/settle.ts"],
       "@prismshadow/penguin-library-session": ["../session/src/index.ts"],
       "@prismshadow/penguin-library-session/session-title": ["../session/src/session-title.ts"],
+      "@prismshadow/penguin-library-session/system-agent": ["../session/src/system-agent.ts"],
       "@prismshadow/penguin-library-project": ["../project/src/index.ts"],
       "@prismshadow/penguin-library-observability": ["../observability/src/index.ts"],
       "@prismshadow/penguin-library-agent-api": ["../agent-api/src/index.ts"],
