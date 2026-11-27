@@ -603,11 +603,12 @@ export class CompanyModule {}
 export class ApiModule {}
 
 /**
- * Workbenches, and the Agent State history behind their versions: `AgentStateHistoryModule`
- * owns the `engines` slot a plugin contributes a faster engine to (./workbenches/engines.ts).
+ * Workbenches; the Agent State history behind their versions (`AgentStateHistoryModule`) sits
+ * above, next to the other groups: it provides the `engines` slot a plugin contributes a faster
+ * engine to (./workbenches/engines.ts), and the Agent service and the API routes read it too.
  */
 @Module({
-  children: [AgentStateHistoryModule, WorkbenchService, WorkbenchRoutes],
+  children: [WorkbenchService, WorkbenchRoutes],
   exports: [Workbenches],
 })
 export class WorkbenchesModule {}
@@ -667,6 +668,7 @@ export class PluginModulesModule {}
     ObservabilityModule,
     TracesModule,
     AgentsModule,
+    AgentStateHistoryModule,
     WorkspaceModule,
     MessagingHubModule,
     CompanyModule,
