@@ -13,6 +13,8 @@ import type { useChatController } from "../session/use-chat-controller";
 import { agentPagePath } from "../session/main-chat-dock";
 import { machineForSession } from "../../../lib/session-machines";
 import { handoffFailure } from "../request-notice";
+import { MachineCover } from "../machine-cover";
+import { offlineCover } from "../offline-session-history";
 
 export function createMainChatView(
   scope: ReturnType<typeof useChatController> & {
@@ -64,6 +66,7 @@ export function createMainChatView(
     onPickSessionModel,
     modelPricing,
     setFailureShown,
+    offlineHistory,
   } = scope;
 
   // Header statistics (chip row + info dropdown), live while a Task runs; recomputed every
@@ -200,6 +203,19 @@ export function createMainChatView(
         ? { initialPendingModelRef: sessionDraft.switchModelRef }
         : {})}
       onPendingModelChange={onDraftPendingModelChange}
+      // The conversation's machine out of reach: the box says where it stands, over what is
+      // typed in it, which stays as it was until the machine is back.
+      cover={
+        offlineHistory
+          ? (drafted) => (
+              <MachineCover
+                projectId={projectId}
+                reading={offlineCover(offlineHistory, !stream.loading && !stream.error)}
+                drafted={drafted}
+              />
+            )
+          : null
+      }
     />
   );
 

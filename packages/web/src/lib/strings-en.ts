@@ -4552,17 +4552,8 @@ Example: Optimize the current app's interface so complete beginners with no tech
     noSessions: "No Sessions yet",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
     offlineHistory: {
-      disconnected: (alias: string) => `${alias} is not connected.`,
-      /**
-       * The read stopped retrying (machine_unreachable) while the connection is held: the
-       * machine's server did not take the call, or the machine took it and sent nothing.
-       */
-      unreachable: (alias: string) => `The server on ${alias} isn't responding.`,
-      silent: (alias: string) => `${alias} isn't answering.`,
-      cached: "Showing the conversation from the last sync.",
       miss: "No cached history is available. The conversation will open when the machine reconnects.",
       empty: "There were no messages at the last sync.",
-      refreshing: (alias: string) => `${alias} is connected. Updating the conversation.`,
       failed: "The cached conversation could not be read.",
     },
     sessionOnOfflineMachine: (machine: string) =>
@@ -4618,6 +4609,28 @@ Example: Optimize the current app's interface so complete beginners with no tech
       hint: "The conversation is kept on that machine and loads as soon as the connection is back.",
       openMachines: "Go to Machines",
       details: "Technical details",
+    },
+    machineCover: {
+      reconnecting: (alias: string) => `Can't reach ${alias} right now`,
+      stoppedTrying: (alias: string) => `Can't reach ${alias}`,
+      stopped: (alias: string) => `The server on ${alias} is stopped`,
+      notConnected: (alias: string) => `${alias} isn't connected`,
+      missing: "This conversation's machine isn't on this Project's machine list",
+      noService: (alias: string) => `The server on ${alias} isn't responding`,
+      silent: (alias: string) => `${alias} isn't answering`,
+      working: {
+        install: (alias: string) => `Installing PenguinHarness on ${alias}`,
+        restart: (alias: string) => `Restarting the server on ${alias}`,
+        connect: (alias: string) => `Starting the server on ${alias}`,
+        stop: (alias: string) => `Stopping the server on ${alias}`,
+        sync: (alias: string) => `Syncing the config to ${alias}`,
+      },
+      refreshing: (alias: string) => `${alias} is back. Updating the conversation`,
+      note: (drafted: boolean, cached: boolean): string =>
+        (cached ? "The conversation shown is from the last sync. " : "") +
+        (drafted
+          ? "Messages can't be sent until it's back. What you've typed is kept."
+          : "Messages can't be sent until it's back."),
     },
     machineRestartNeeded: {
       body: (alias: string) =>

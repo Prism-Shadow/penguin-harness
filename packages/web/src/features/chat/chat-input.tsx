@@ -645,6 +645,7 @@ export function ChatInput({
   draftUploads,
   resizableDraft = false,
   variant = "session",
+  cover = null,
 }: {
   draftUploads?: DraftUploads;
   status: SessionStatus;
@@ -929,6 +930,12 @@ export function ChatInput({
    * restore, ↑/↓ history, the post-send clear) out with them.
    */
   controlRef?: RefObject<ComposerControl | null>;
+  /**
+   * What the input box shows in place of the editor while the conversation cannot be written to
+   * (its machine is out of reach), given whether anything is staged in the editor under it; null
+   * while it can. Everything typed, attached or picked stays as it was underneath.
+   */
+  cover?: ((drafted: boolean) => ReactNode) | null;
 }) {
   const { locale } = useLocale();
   const avatarSrc = useAgentAvatarSrc();
@@ -2520,6 +2527,17 @@ export function ChatInput({
           container breakpoints) — the card's width changes with the viewport and with the Files
           panel squeezing it, so viewport breakpoints wouldn't judge it accurately. */}
       <ComposerCard
+        cover={
+          cover?.(
+            text.trim() !== "" ||
+              images.length > 0 ||
+              attachments.length > 0 ||
+              references.length > 0 ||
+              selectedSkills.length > 0 ||
+              target !== null ||
+              pendingModel !== null,
+          ) ?? null
+        }
         banner={banner}
         attachments={
           // The staged images, then the staged files, as one row of tiles at the top of the
