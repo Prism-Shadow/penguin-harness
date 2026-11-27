@@ -3,6 +3,7 @@
 - **Date:** 2026-11-27
 - **Type:** process
 - **Scope:** `docs`
+- **PR:** [#1927](https://github.com/Prism-Shadow/penguin-harness/pull/1927)
 
 [English](2026-11-27-docs-remote-control-qq-media.md)
 
