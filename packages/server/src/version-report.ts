@@ -36,3 +36,22 @@ export async function versionReport(root: string): Promise<VersionReport> {
         : { ...harness, assets: typeof dir === "string" && dir.length > 0 ? dir : null },
   };
 }
+
+/**
+ * The commit a report says this server runs, and the describe it came from: the pushed
+ * harness's source revision when a hot update put one here (the sha of its `g<sha>`, as short
+ * as the pusher's describe spelt it), else the build's own. Public with the install id: it
+ * names a commit and nothing about the machine (company-proposals reads it to place a server
+ * deployment on the PR graph).
+ */
+export function runningCommit(report: VersionReport): {
+  commit: string | null;
+  describe: string | null;
+} {
+  const revision = report.harness?.source?.revision ?? null;
+  const sha = revision === null ? null : /-g([0-9a-f]{7,40})(?:-dirty)?$/i.exec(revision)?.[1];
+  if (revision !== null && sha !== undefined && sha !== null) {
+    return { commit: sha.toLowerCase(), describe: revision };
+  }
+  return { commit: report.commit, describe: report.describe };
+}
