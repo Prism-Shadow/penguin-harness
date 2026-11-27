@@ -82,6 +82,8 @@ function mount(
     importer?: Importer;
     now?: () => number;
     log?: (line: string) => void;
+    /** This server runs as another one's machine (PENGUIN_MACHINE=1). */
+    machine?: boolean;
   } = {},
 ): Harness {
   const shell = opts.shell === undefined ? new FakeShell() : opts.shell;
@@ -107,6 +109,7 @@ function mount(
     timing: FAST,
     ...(opts.importer ? { importer: opts.importer } : {}),
     ...(opts.now ? { now: opts.now } : {}),
+    ...(opts.machine ? { machine: true } : {}),
   });
   browsers.push(browser);
   const app = new Hono<AppEnv>();
@@ -1531,5 +1534,68 @@ describe("Session and Project isolation", () => {
     expect(
       (await json<BuiltinBrowserStatus>(await h.call("GET", "/tabs?sessionId=draft-a"))).tabs,
     ).toEqual([]);
+  });
+});
+
+describe("a Session on a machine", () => {
+  const sessionsOn = (projectId: string) => ({
+    access: { requireProjectAccess: vi.fn() },
+    sessions: {
+      findById: (id: string) =>
+        ({ sessionId: id, projectId }) as NonNullable<
+          ReturnType<import("@prismshadow/penguin-server/plugin").SessionIndex["findById"]>
+        >,
+    },
+  });
+
+  it("tells the agent the person's browser is out of reach, not that a desktop app or a Chrome is missing", async () => {
+    const h = mount({ shell: null, machine: true });
+    const status = await json<BuiltinBrowserStatus>(
+      await h.call("GET", "/status?sessionId=session-m"),
+    );
+    expect(status).toMatchObject({ available: false, reason: "hub_disconnected", tabs: [] });
+    expect(status.backends.map((info) => info.reason)).toEqual(["hub_disconnected"]);
+    const open = await h.call("POST", "/tabs", {
+      url: "https://example.com",
+      sessionId: "session-m",
+    });
+    expect(open.status).toBe(503);
+    expect((await errorOf(open)).error.reason).toBe("hub_disconnected");
+    const scan = await h.call("POST", "/tabs/active/scan", { sessionId: "session-m" });
+    expect((await errorOf(scan)).error.reason).toBe("hub_disconnected");
+  });
+
+  it("offers no Chrome pairing and no switch of its own", async () => {
+    const h = mount({ shell: null, machine: true, human: true });
+    expect((await h.call("POST", "/extension/pairings")).status).toBe(404);
+    expect(await json(await h.call("GET", "/backend"))).toMatchObject({ choices: [] });
+    expect((await h.call("PUT", "/backend", { backend: "chrome" })).status).toBe(405);
+  });
+
+  it("answers the same for the Session's pages opened from another window", async () => {
+    const h = mount({
+      shell: null,
+      machine: true,
+      human: true,
+      resourceAccess: sessionsOn("work"),
+    });
+    expect(await json(await h.call("GET", "/projects/work/session-resources"))).toEqual({
+      counts: {},
+    });
+    const open = await h.call("POST", "/projects/work/session-resources/session-m/tabs", {});
+    expect(open.status).toBe(503);
+    expect((await errorOf(open)).error.reason).toBe("hub_disconnected");
+  });
+
+  it("leaves import and clearing data to the server the machine was added from", async () => {
+    const h = mount({ shell: null, machine: true, human: true });
+    const cleared = await h.call("POST", "/clear-data", { storages: ["cookies"] });
+    expect(cleared.status).toBe(405);
+    expect((await errorOf(cleared)).error.code).toBe("not_supported");
+  });
+
+  it("is still for admins only", async () => {
+    const h = mount({ shell: null, machine: true, admin: false });
+    expect((await h.call("GET", "/status")).status).toBe(403);
   });
 });

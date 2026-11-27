@@ -141,7 +141,11 @@ function connectionOptions(target: RemoteTarget): string[] {
  * `node\node.exe` (scripts/launchers/penguin.cmd) — so the POSIX form is not "not found"
  * there, it is a different sentence. `%USERPROFILE%` is what install.ps1 defaults to.
  */
-export function remotePenguin(platform: RemotePlatform, layout: RemoteLayout): string {
+export function remotePenguin(
+  platform: RemotePlatform,
+  layout: RemoteLayout,
+  extraEnv: Readonly<Record<string, string>> = {},
+): string {
   if (platform === "win32") {
     const dir = layout.programDir.win;
     return `set "PENGUIN_HOME=${layout.dataRoot.win}" & set "PENGUIN_PROFILE=${layout.profile}" & "${dir}\\node\\node.exe" "${dir}\\lib\\dist\\penguin-hmr.js"`;
@@ -150,7 +154,10 @@ export function remotePenguin(platform: RemotePlatform, layout: RemoteLayout): s
   // `env`, not a bare `VAR=value` prefix: startServerCommand puts `nohup` in front of this,
   // and nohup takes the first word as the program — a bare assignment there is "no such
   // command", and the server never starts.
-  return `env PENGUIN_HOME="${layout.dataRoot.posix}" PENGUIN_PROFILE=${layout.profile} "${dir}/node/bin/node" "${dir}/lib/dist/penguin-hmr.js"`;
+  const extra = Object.entries(extraEnv)
+    .map(([name, value]) => ` ${name}=${value}`)
+    .join("");
+  return `env PENGUIN_HOME="${layout.dataRoot.posix}" PENGUIN_PROFILE=${layout.profile}${extra} "${dir}/node/bin/node" "${dir}/lib/dist/penguin-hmr.js"`;
 }
 
 /** `ssh <options> <alias> <remote command>`. */
@@ -261,7 +268,10 @@ export function startServerCommand(port: number, layout: RemoteLayout): string {
   // it is omitted, so a login shell carrying HOST=0.0.0.0 would put that machine's server on
   // every interface. This side only ever reaches it as a channel inside the ssh session, at
   // loopback on the far end, so binding wider is exposure with nothing asking for it.
-  return `mkdir -p "${root}" && nohup ${remotePenguin("linux", layout)} server --host 127.0.0.1 --port ${port} >> "${root}/server.log" 2>&1 < /dev/null & echo $!`;
+  // PENGUIN_MACHINE=1 tells that server it runs as this one's machine: a Session there has no
+  // browser of its own and uses the person's, through this server (the browser plugin's hub link).
+  const penguin = remotePenguin("linux", layout, { PENGUIN_MACHINE: "1" });
+  return `mkdir -p "${root}" && nohup ${penguin} server --host 127.0.0.1 --port ${port} >> "${root}/server.log" 2>&1 < /dev/null & echo $!`;
 }
 
 /** The pid startServerCommand printed; null when the output holds none. */

@@ -9,7 +9,8 @@
  * sends no adoption request (the server may not offer a built-in browser).
  * Returning pages after a failed first send restores the draft's selection and storage.
  * Leaving a Session whose docks show the browser for one whose docks do not opens no page there
- * (which would bring the panel up with it), and going back shows it again.
+ * (which would bring the panel up with it), and going back shows it again. A Session on a
+ * machine says that machine has no browser, and asks it for none.
  */
 import { act, createElement, Fragment, useSyncExternalStore } from "react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -35,6 +36,7 @@ import {
   setDockScope,
   subscribeDock,
 } from "../src/features/dock/dock-state";
+import { S } from "../../../plugins/browser-automation/src/web/strings";
 import { mount, unmountAll } from "./helpers/dom";
 import { json, stubFetch } from "./helpers/fetch";
 
@@ -295,4 +297,18 @@ it("keeps a visible Session browser workbench in place when its new page arrives
   });
   expect(address()?.disabled).toBe(false);
   await act(async () => setDockScope(null));
+});
+
+it("says a Session on a machine has no browser there, and asks that machine for none", async () => {
+  const fetched = stubFetch((request) =>
+    request.path.endsWith("/status")
+      ? json({ available: true, backend: "builtin", tabs: [], activeTabId: null })
+      : new Response(null, { status: 204 }),
+  );
+  dispatchBrowser({ type: "supported", supported: true });
+  const scope = { projectId: "p", machineId: "QS7J4YVgSovi-Z2c", agentId: "a", sessionId: "on-m" };
+  const rendered = await mount(createElement(BuiltinBrowserPanel, { scope, active: true }));
+  expect(rendered.container.textContent).toContain(S.builtinBrowser.unavailableOnMachine);
+  expect(rendered.container.querySelector('[role="combobox"]')).toBeNull();
+  expect(fetched.requests.filter((request) => request.machine !== null)).toEqual([]);
 });

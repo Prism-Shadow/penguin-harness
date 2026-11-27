@@ -62,6 +62,9 @@ export const zh = {
     unavailableDesktop: "内置浏览器只能在 PenguinHarness 桌面应用中使用。",
     unavailableShell: "当前桌面应用版本过旧，请更新后使用内置浏览器。",
     unavailableWindow: "没有可以显示浏览器的应用窗口。",
+    /** A Session on a machine: that server has no desktop app, so no browser of its own. */
+    unavailableOnMachine:
+      "此对话运行在另一台机器上。那台机器没有桌面应用，机器上的对话用不了浏览器。",
     /** After the reason, where the server offers Chrome but none is paired: where to pair one. */
     unavailablePairChrome: "要让 Agent 改用你的 Chrome，先在设置 › 浏览器中配对。",
     /** The unavailable built-in panel's way out, where the server offers the user's Chrome. */
@@ -391,6 +394,8 @@ export const en: BrowserStrings = {
     unavailableDesktop: "The built-in browser runs in the PenguinHarness desktop app.",
     unavailableShell: "This desktop app is too old for the built-in browser. Update it to use it.",
     unavailableWindow: "No app window is available to show the browser.",
+    unavailableOnMachine:
+      "This conversation runs on another machine. That machine has no desktop app, so conversations there cannot use the browser.",
     unavailablePairChrome: "To have agents use your Chrome instead, pair it in Settings › Browser.",
     useChrome: "Use System Chrome",
     startPage: {

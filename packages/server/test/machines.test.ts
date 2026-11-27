@@ -26,6 +26,7 @@ import {
   cmdQuote,
   isAliveCommand,
   launchedPid,
+  remotePenguin,
   runInstallScriptCommand,
   startServerCommand,
   uninstallCommand,
@@ -789,6 +790,14 @@ describe("startServerCommand", () => {
     expect(command).not.toMatch(/nohup PENGUIN_HOME=/);
     expect(command).toContain("server --host 127.0.0.1 --port 7371");
     expect(command).toContain('"$HOME/.penguin-dev/data/server.log"');
+  });
+
+  it("starts the server knowing it is a machine, and only the server", () => {
+    // The flag rides in the same `env` as the data root, so nohup still runs the program.
+    expect(startServerCommand(7371, DEV)).toMatch(
+      /nohup env PENGUIN_HOME="[^"]+" PENGUIN_PROFILE=dev PENGUIN_MACHINE=1 "/,
+    );
+    expect(remotePenguin("linux", DEV)).not.toContain("PENGUIN_MACHINE");
   });
 
   it("prints the launched pid, and nothing else reads as one", () => {

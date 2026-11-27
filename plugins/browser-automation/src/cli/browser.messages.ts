@@ -271,6 +271,8 @@ export const browserEn: BrowserText = {
         return "This server has no agent browser: it predates it. Ask the user to update PenguinHarness on the server.";
       if (reason === "extension_disabled")
         return "An admin has turned off Chrome extension connections on this server, so the user's Chrome cannot be driven.";
+      if (reason === "hub_disconnected")
+        return "This session runs on a machine: its browser is the one in PenguinHarness on the computer this machine was added from, and it cannot be reached from this machine now. Tell the user so; do not ask them to pair a Chrome with this machine.";
       return "The browser is driven through a running PenguinHarness server, and none was reached: open the desktop app, or point --server or PENGUIN_API_URL at the server.";
     },
     notSupported: () =>
@@ -469,6 +471,8 @@ export const browserZh: BrowserText = {
         return "该服务器没有 Agent 浏览器：它的版本早于这项功能。请用户更新服务器上的 PenguinHarness。";
       if (reason === "extension_disabled")
         return "管理员已在本服务器上关闭 Chrome 扩展连接，无法驱动该用户的 Chrome。";
+      if (reason === "hub_disconnected")
+        return "此会话运行在一台机器上：它的浏览器在添加这台机器的那台电脑的 PenguinHarness 里，现在从这台机器连不上。请如实告诉用户，不要请用户把 Chrome 配对到这台机器。";
       return "浏览器要经由正在运行的 PenguinHarness 服务器驱动，但没有连上任何服务器：请打开桌面应用，或用 --server 或 PENGUIN_API_URL 指向该服务器。";
     },
     notSupported: () =>

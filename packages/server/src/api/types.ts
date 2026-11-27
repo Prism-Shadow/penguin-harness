@@ -5560,7 +5560,10 @@ export interface BrowserLinkCapabilities {
 /**
  * Why the agent browser cannot be driven. Built-in: not under the desktop shell, a shell too old
  * to host it, or no app window to host a new tab. Chrome: this user has no paired extension, it
- * is paired but not connected now, or an admin switched Chrome connections off server-wide.
+ * is paired but not connected now, or an admin switched Chrome connections off server-wide. On a
+ * machine (a server another one started as its machine): the browser is the person's own on the
+ * server that added it, and that server is not connected to this machine now
+ * (`hub_disconnected`).
  */
 export type BuiltinBrowserUnavailableReason =
   | "not_desktop"
@@ -5568,7 +5571,8 @@ export type BuiltinBrowserUnavailableReason =
   | "no_window"
   | "extension_not_paired"
   | "extension_disconnected"
-  | "extension_disabled";
+  | "extension_disabled"
+  | "hub_disconnected";
 
 /** One backend as GET /status lists it for the caller. */
 export interface BrowserBackendInfo {

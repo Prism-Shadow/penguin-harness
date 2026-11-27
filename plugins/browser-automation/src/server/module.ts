@@ -201,6 +201,10 @@ export class BuiltinBrowserRoutes {
     // Only a server the shell spawned hosts the built-in browser: a desktop window attached to a
     // separately running server has no port into that server.
     const port = this.desktop.current() !== null ? this.port.current() : null;
+    // A server another one started as its machine (the machines module's start command sets
+    // PENGUIN_MACHINE=1): a Session here uses the person's own browser on that server, and this
+    // one pairs no Chrome of its own (an extension cannot reach a server bound to its loopback).
+    const machine = port === null && process.env.PENGUIN_MACHINE === "1";
     const store = new BrowserExtensionsRepo(this.db as unknown as DatabaseSync);
     const browser = new BuiltinBrowser({
       port,
@@ -215,11 +219,15 @@ export class BuiltinBrowserRoutes {
         }
       },
       log: (line) => log.line(line),
-      chrome: {
-        store,
-        enabled: () => settings.getBrowserExtensionsEnabled(),
-        publishTo,
-      },
+      ...(machine
+        ? { machine: true }
+        : {
+            chrome: {
+              store,
+              enabled: () => settings.getBrowserExtensionsEnabled(),
+              publishTo,
+            },
+          }),
       prefs: backendPrefs(this.prefs),
     });
     const pairing = new ExtensionPairing({
