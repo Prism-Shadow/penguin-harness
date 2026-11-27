@@ -53,6 +53,10 @@ export const orgEn: OrgText = {
     channelJoinDesc: "Join a channel yourself (people only; an employee waits to be invited)",
     channelLeaveDesc: "Leave a channel",
     channelRemoveDesc: "Remove another member from a channel (people only)",
+    channelNotifyDesc:
+      "Set a channel's default recipients: members a message with no @ counts as mentioning (an employee's desk is triggered, a person sees it under @me)",
+    channelNotifyNone: "Clear the default recipients",
+    channelNotifyNeedsList: "Give the principals to notify, or --none to clear the list.",
     channelArchiveDesc: "Archive a channel: read-only until it is unarchived (people only)",
     channelUnarchiveDesc: "Unarchive a channel (people only)",
     channelTailDesc: "Print a channel's last messages of a day (20 unless -n is given)",
@@ -101,7 +105,8 @@ export const orgEn: OrgText = {
     ticketSlug: "The ticket id's words: lowercase English words joined by hyphens",
     goal: "The goal, naming every input it relies on by full path (mutually exclusive with --body-file)",
     criteria: "Acceptance criteria, naming the expected deliverables by full path (with --goal)",
-    bodyFile: "Read the whole Markdown body from this file (the header is still generated)",
+    bodyFile:
+      "Read the whole Markdown body from this file (the header is still generated): its ## Goal, ## Acceptance criteria, ## Progress and ## Result sections become the ticket's, nothing may stand above the first ## heading, and a file with no ## heading is all goal",
     owner: "The responsible principal (agent:<id> / user:<id>); defaults to you on create",
     parent: "Parent ticket id",
     notify: "Principals notified when the ticket ends, comma-separated",
@@ -187,6 +192,9 @@ export const orgEn: OrgText = {
     channelJoined: (channelId) => `Joined ${channelId}.`,
     channelLeft: (channelId) => `Left ${channelId}.`,
     channelMemberRemoved: (channelId, principal) => `${principal} removed from ${channelId}.`,
+    channelNotifySet: (channelId, principals) =>
+      `Messages in ${channelId} with no @ now count as mentioning ${principals}.`,
+    channelNotifyCleared: (channelId) => `${channelId} has no default recipients now.`,
     channelArchived: (channelId) => `Channel ${channelId} archived.`,
     channelUnarchived: (channelId) => `Channel ${channelId} unarchived.`,
     messageSent: (id) => `Message ${id} sent.`,
@@ -246,11 +254,271 @@ export const orgEn: OrgText = {
     channelHead: (name, channelId, members, archived) =>
       `${name} (${channelId}) — ${members} members${archived ? ", archived" : ""}`,
     channelPurposeLine: (purpose) => `Purpose: ${purpose}`,
+    channelNotifyLine: (principals) => `Default recipients (a message with no @): ${principals}`,
     channelCreatedBy: (principal, createdAt) => `Created by ${principal} on ${createdAt}`,
     channelLastMessage: (time) => `Last message: ${time}`,
     financeTotal: (period, total) => `Total (${period}): ${total}`,
     unpriced: () =>
       "[unpriced] some usage ran on a model without pricing: the figures are a lower bound",
+    proposalDesc:
+      "Proposals (the company-proposals plugin): a change written for a person to read while an employee builds it",
+    proposalLsDesc: "List the organization's proposals (filtered locally by --status)",
+    proposalShowDesc:
+      "Show a proposal: its head, scope, materials, the sections, the comments and the events",
+    proposalCreateDesc:
+      "Start a proposal and hand it to an employee to write (a person; an employee's new proposals come from approved roadmap items)",
+    proposalPublishDesc:
+      "Publish a revision from a Markdown file (frontmatter title and scope, then the sections)",
+    proposalBriefDesc:
+      "Rewrite a proposal's brief (the author or a person); the revisions, comments and approval stay",
+    proposalReadyDesc: "Mark a proposal ready for reading (the author or a person)",
+    proposalApproveDesc: "Approve a proposal and request its merge (a person)",
+    proposalMergedDesc:
+      "Report the implementation merged (the implementer or a person; anybody else once the impl PR is merged into its default branch)",
+    proposalRejectDesc: "Reject a proposal with a reason (a person or any employee)",
+    proposalImplementDesc:
+      "Open an implementation session for an employee on the proposal; prints the session id",
+    proposalMaterialDesc: "Related material: the PR, an issue, a branch, a document, a ticket",
+    proposalMaterialAddDesc:
+      "Attach material as <kind>=<url> (pr, issue, branch, doc, ticket, url)",
+    proposalImplDesc:
+      "Register the proposal's impl — a branch pair (--head and --base), its PR, or both; one per proposal, replacing the one before (--adopt: the one-time adoption from the pr materials)",
+    proposalImplAdopt:
+      "Give every proposal without an impl PR its latest pr material on the delivery repository",
+    proposalImplHeadOpt:
+      "The impl branch's head: a git remote of the proposal's repository (or owner/repo) and a branch",
+    proposalImplBaseOpt:
+      "The base the head is measured against: a remote (or owner/repo) and a branch; required with --head",
+    proposalDiffDesc:
+      "Print the impl branch's patch: the merge base of base and head, up to head (read from GitHub)",
+    proposalDiffStatOpt: "Only the changed files with their added and deleted lines",
+    proposalGraphDesc:
+      "Show the delivery repository's open PRs as a commit graph, with each PR's proposal and the origins' PRs on the same branch",
+    proposalGraphAllOpt:
+      "Draw every open PR, not only the organization's proposals and the PRs they are stacked on",
+    proposalDeployDesc:
+      "Run the organization's deploy Action deploy.<id> on the proposal's impl head (or a PR's with --pr), on the server that holds the organization; arguments after -- go to the deploy",
+    proposalDeployTo: "The deploy's id: the Action deploy.<id> (penguin org action ls lists them)",
+    proposalDeployPr: "Deploy this PR of the delivery repository instead of a proposal's impl",
+    proposalDeployHead:
+      "The head you looked at: the run is refused when the subject has moved past it",
+    proposalDeployDryRun:
+      "Print which Action would run on which subject and whether you may run it, without running it",
+    proposalDeployUsage: "Name a proposal number or --pr <n>, one of the two.",
+    proposalDeployPlanned: (key, subject, allowed, why) =>
+      `${key} would run on ${subject} (dry run): ${allowed === null ? "not in this organization" : allowed ? "allowed" : `refused — ${why}`}`,
+    proposalDeployStarted: (run, key, subject, head) =>
+      `Deploy ${run}: ${key} on ${subject} at ${head}. Ctrl-C stops following; the run goes on.`,
+    proposalDeploySucceeded: (run, head) => `Deploy ${run} succeeded (${head}).`,
+    proposalDeployFailed: (run, outcome, exitCode, message) =>
+      `Deploy ${run} ${outcome}${exitCode === null ? "" : ` (exit ${exitCode})`}${message === null || message === "" ? "" : `: ${message}`}.`,
+    actionDesc:
+      "The organization's Actions: every write to its proposals and roadmaps, and their runs (the Activity)",
+    actionLsDesc: "List the Actions in force in the organization (--all: every contribution)",
+    actionLsSubject:
+      "Only the Actions acting on this subject, each with whether you may run it now",
+    actionLsAll:
+      "Every contribution — actions, guards, hooks, subject resolvers — built in or a company workflow's",
+    actionRunDesc: "Run the Action a key names on a subject (e.g. proposal:12)",
+    actionExecDesc:
+      "Run one contribution exactly, by its id (what an ambiguous key asks for): an action's id runs it; a guard's runs its key's Action, judged by that guard alone",
+    actionParam:
+      "A parameter, name=value (the value as JSON when it parses, else a string); repeatable",
+    actionParams: "The parameters as one JSON object (--param flags override it)",
+    actionRequestId: "A retry with the same id answers the first run instead of running again",
+    actionParamInvalid: (value) => `Not a parameter (name=value) or a JSON object: ${value}`,
+    actionRunsDesc: "The Activity: the organization's runs, newest first",
+    actionRunsSubject: "Only the runs on this subject",
+    actionRunsBy: "Only the runs by this principal (user:<id> or agent:<id>)",
+    actionRunsKey: "Only the runs of this Action key",
+    actionRunsBefore: "The page before this cursor (what the last page printed as next)",
+    actionRunsLimit: "At most this many runs (1–200, default 50)",
+    actionLimitInvalid: (value) => `--limit must be 1–200: ${value}`,
+    actionCheckDesc: "List the keys two contributions of one standing answer (ambiguous when run)",
+    actionsNone: "This organization has no Actions.",
+    actionsHeader: ["KEY", "CONTRIBUTION", "SUBJECTS", "ALLOWED"],
+    contributionsHeader: ["ID", "KIND", "KEY", "WORKFLOW", "REPLACED", "FROM"],
+    actionRunsNone: "No runs.",
+    actionRunsHeader: ["STARTED", "KEY", "SUBJECT", "BY", "VIA", "OUTCOME"],
+    actionRunsNext: (cursor) => `More: --before '${cursor}'`,
+    actionCheckNone: "No conflicts.",
+    actionConflict: (key, kind, contributions) => `${key} (${kind}): ${contributions}`,
+    actionRunStarted: (run, key, subject) =>
+      `Run ${run}: ${key} on ${subject}. Ctrl-C stops following; the run goes on.`,
+    actionRunEnded: (run, outcome, message) =>
+      `Run ${run} ${outcome}${message === null || message === "" ? "" : `: ${message}`}.`,
+    actionExecForm: (cli) => `  ${cli}`,
+    roadmapDesc:
+      "The organization's roadmaps: one item of a discussing draft, added or removed without rewriting the rest",
+    roadmapItemDesc: "One item of a discussing roadmap's draft",
+    roadmapItemAddDesc:
+      "Add one item to a discussing roadmap's draft (the roadmap.item.add Action), leaving every other item, the record and the body as they are",
+    roadmapItemRemoveDesc:
+      "Remove one item from a discussing roadmap's draft (the roadmap.item.remove Action), unless it stands for a proposal",
+    roadmapItemKey: "The item's key, 1–40 lowercase letters, digits or dashes",
+    roadmapItemKind: "The item's kind: proposal or roadmap",
+    roadmapItemTitle: "The item's title",
+    roadmapItemBrief: "The item's brief, one or two sentences",
+    roadmapItemOwner: "A proposal item's owner, an employee id",
+    roadmapItemEmployees: "A roadmap item's employees, comma-separated (the first one moderates)",
+    roadmapItemCites: "The body sections the brief draws on, comma-separated",
+    roadmapItemStackedOn:
+      "The earlier proposal item this one stacks on; `null` for none (without the flag it stacks on the previous proposal item)",
+    roadmapItemProposal: "An adopted proposal number the item stands for",
+    roadmapNumberInvalid: (value) => `Roadmap number "${value}" is invalid: a positive integer.`,
+    roadmapItemProposalInvalid: (value) => `--proposal must be a proposal number: ${value}`,
+    workflowDesc:
+      "The organization's company workflows: packages whose Actions, guards and hooks take effect in it once loaded",
+    workflowLsDesc: "List the company workflows, the revision serving and whether the files load",
+    workflowPutDesc:
+      "Write a local directory as company workflow <id> and load it (the workflow.write Action)",
+    workflowPutKeep: "Keep the workflow's files the directory lacks (default: delete them)",
+    workflowRmDesc: "Delete a company workflow and its versions",
+    workflowReloadDesc: "Load a company workflow again after its files were changed in place",
+    workflowHistoryDesc: "List a company workflow's recorded versions, newest first",
+    workflowRollbackDesc: "Restore a recorded version of a company workflow and load it",
+    workflowsNone: "This organization has no company workflows.",
+    workflowsHeader: ["ID", "SERVING", "ON DISK", "CONTRIBUTIONS", "STATE"],
+    workflowVersionsNone: "No versions recorded.",
+    workflowVersionsHeader: ["REVISION", "SAVED", "FILES"],
+    workflowDirInvalid: (dir, why) => `Cannot send ${dir} as a workflow: ${why}.`,
+    workflowLoaded: (id, revision) => `Workflow ${id} loaded (revision ${revision}).`,
+    workflowNotLoaded: (id, error) =>
+      `Workflow ${id} did not load; what served before keeps serving:\n${error}`,
+    workflowSkipped: (id, reason) => `  left out: ${id} — ${reason}`,
+    workflowRemoved: (id) => `Workflow ${id} removed.`,
+    proposalDeploymentDesc:
+      "The deployments somebody registered, which the PR graph places at the commit each one runs",
+    proposalDeploymentAddDesc:
+      "Register a deployment by its id; a deployment already on the registry is refused",
+    proposalDeploymentUrlOpt:
+      "The deployment is a penguin server at this url; the graph reads the commit it runs from there",
+    proposalDeploymentLsDesc: "List the registered deployments",
+    proposalFeedbackDesc:
+      "Send the author feedback from the implementation (or, with --runtime, from testing the dev branch)",
+    proposalConcludeDesc:
+      "Send a discussion's conclusion to the owner's desk, once (from inside the discussion, or as a person with --discussion)",
+    proposalCommentsDesc:
+      "Print the proposal's text with each commented passage marked ⟦<id>⟧…⟦/<id>⟧, then the comments by id",
+    proposalResolveDesc: "Resolve one comment, with a note on what changed",
+    proposalStatusFilter:
+      "Only proposals in this state (drafting, ready, approved, merged, rejected)",
+    proposalAuthor: "The employee that writes the proposal (its Agent id)",
+    proposalBrief_: "The delegation, in one sentence",
+    proposalTitle: "A working title (the published document's own title replaces it)",
+    proposalFile: "The proposal as one Markdown document",
+    proposalBriefText: "The new brief",
+    proposalBriefFile: "Read the new brief from a local file",
+    proposalBriefOneSource: "Give exactly one of -m <text> or --file <file>.",
+    proposalImplementer: "The employee that builds it (its Agent id); default: the author itself",
+    proposalMessage: "A note appended to the proposal text the session opens with",
+    proposalWorkspace:
+      "Another directory inside the shared workspace (default: the employee's desk workspace)",
+    proposalMaterialLabel: "How the material is listed (default: derived from the URL)",
+    proposalFeedbackText: "What the implementation found",
+    proposalConclusionText: "The conclusion: what was decided, what changes, what stays open",
+    proposalDiscussion: "The discussion's session id (default: the session you run in)",
+    proposalDiscussionMissing:
+      "Name the discussion: run this inside the discussion's session, or pass --discussion <session_id>.",
+    proposalRuntime: "The feedback comes from the test team's run of the dev branch",
+    proposalPending: "Only the batched, unresolved comments — what the author has to work through",
+    proposalResolveText: "What was changed for it",
+    proposalRejectReason: "Why the proposal is rejected",
+    proposalsPluginMissing: () =>
+      "The organization has no proposals plugin: install company-proposals on this Project.",
+    proposalNumberInvalid: (value) =>
+      `Invalid proposal number "${value}": expected a positive integer.`,
+    proposalStatusInvalid: (value) =>
+      `Invalid status "${value}": expected drafting, ready, approved, merged or rejected.`,
+    proposalMaterialInvalid: (value) =>
+      `Invalid material "${value}": expected <kind>=<url> with kind pr, issue, branch, doc, ticket or url.`,
+    proposalsEmpty: () => "No proposals.",
+    proposalCommentsEmpty: (number) => `No comments on proposal #${number}.`,
+    proposalCreated: (number, title) => `Created proposal #${number}: ${title}`,
+    proposalPublished: (number, revision) => `Published proposal #${number}, revision ${revision}.`,
+    proposalBriefRewritten: (number) => `Rewrote the brief of proposal #${number}.`,
+    proposalStatusSet: (number, status) => `Proposal #${number} is now ${status}.`,
+    proposalImplementing: (number, implementer, sessionId) =>
+      `Proposal #${number}: ${implementer} is implementing it in session ${sessionId}.`,
+    proposalMaterialAdded: (number, kind) => `Attached ${kind} to proposal #${number}.`,
+    proposalImplPr: (label, url) => `Impl PR: ${label} ${url}`,
+    proposalImplSet: (number, url) => `Proposal #${number}'s impl PR is ${url}.`,
+    proposalImplBranch: (head, base, pr) =>
+      `Impl branch: ${head} ← ${base}${pr === null ? " (no PR yet)" : `  PR ${pr}`}`,
+    proposalImplBranchSet: (number, head, base, pr) =>
+      `Proposal #${number}'s impl branch is ${head} ← ${base}${pr === null ? "" : `, with PR ${pr}`}.`,
+    proposalImplPairUsage: () =>
+      "--head and --base each take two values, a remote and a branch: --head origin feat/x --base origin main.",
+    proposalDiffHead: (head, base, ahead, behind, url) =>
+      `${head} ← ${base}: ${ahead} commit${ahead === 1 ? "" : "s"} ahead, ${behind} behind  ${url}`,
+    proposalDiffStat: (files, additions, deletions) =>
+      `${files} file${files === 1 ? "" : "s"} changed, +${additions} −${deletions}`,
+    proposalDiffTruncated: (limit) =>
+      `GitHub lists at most ${limit} files of a comparison; the rest are not shown.`,
+    proposalImplAmbiguous: (number, urls) =>
+      `Proposal #${number} had several pr materials there (${urls}); the latest was taken.`,
+    proposalImplSkipped: (number, reason) => `Proposal #${number} skipped: ${reason}.`,
+    proposalImplUsage: () =>
+      "Give the proposal and its impl: impl <number> <url>, impl <number> --head <remote> <branch> --base <remote> <branch> (with or without the url), or --adopt.",
+    graphNoProposal: () => "no proposal",
+    graphOffChain: () => "Off the chain:",
+    graphOffReason: (reason, at, relation, base) =>
+      ({
+        "old-line": `old line: ${relation} against ${at}`,
+        unread: `not compared with ${at}`,
+        "no-base": `base ${base} is the branch of no open, merged or closed PR`,
+        "not-taken": `not taken at the fork at ${at}`,
+        above: `on off-chain ${at}`,
+        cycle: "its declared bases form a cycle",
+      })[reason] ?? reason,
+    graphUnplaced: () => "Proposals whose impl is not on the graph:",
+    graphUnplacedReason: (reason, at, into, base) =>
+      ({
+        counterpart: `${at} carries its branch`,
+        merged: `merged into ${into}`,
+        "in-base": `already in ${base}`,
+        closed: "closed",
+        "open-elsewhere": "open on another repository",
+        unread: "not read",
+      })[reason] ?? reason,
+    graphErrors: () => "Not read from GitHub:",
+    graphDeploymentsOff: () => "Deployments on no layer:",
+    graphBaseBehind: (n) => `(behind ${n})`,
+    graphOthersHidden: (n) => `(${n} other PR${n === 1 ? "" : "s"} not drawn; --all draws them)`,
+    deploymentRegistered: (id, url) =>
+      url === null
+        ? `Registered deployment ${id}.`
+        : `Registered deployment ${id}, a server at ${url}.`,
+    proposalFeedbackRecorded: (number) => `Feedback recorded on proposal #${number}.`,
+    proposalConcluded: (number, owner) =>
+      `Sent the discussion's conclusion to ${owner}'s desk (proposal #${number}).`,
+    proposalCommentResolved: (number, commentId) =>
+      `Resolved comment ${commentId} on proposal #${number}.`,
+    proposalHead: (number, title, status, revision) =>
+      `Proposal #${number}: ${title} — ${status}, revision ${revision}`,
+    proposalApproved: (revision) => `Approved: r${revision}`,
+    proposalRevisedAfterApproval: (approved, head) =>
+      `Revised after approval (r${approved} → r${head}): needs approving again`,
+    proposalPeople: (author, implementer, delegatedBy) =>
+      `Author ${author}, implementer ${implementer ?? "-"}, delegated by ${delegatedBy}`,
+    proposalBrief: (brief) => `Brief: ${brief}`,
+    proposalSessions: (sessions) => `Implementation sessions: ${sessions}`,
+    proposalScope: (root) =>
+      `Scope under ${root === "" ? "the shared workspace" : `root ${root}`} (kind, file, state, name pattern):`,
+    proposalHint: (hint) => `Hint: ${hint}`,
+    proposalTests: () => "Tests (kind, file, [name pattern], what it tests, state):",
+    proposalGroupUndeclared: () => "(undeclared — the next publish must move these)",
+    proposalGroupsDesc:
+      "List the test groups a proposal may use, in order (declared under Settings → Plugins → Company proposals)",
+    proposalGroupsEmpty: () =>
+      "No test groups are declared. An admin declares them under Settings → Plugins → Company proposals.",
+    proposalMaterials: () => "Materials:",
+    proposalComments: () => "Comments:",
+    proposalEvents: () => "Events:",
+    colNumber: () => "#",
+    colRevision: () => "REV",
+    colAuthor: () => "AUTHOR",
+    colImplementer: () => "IMPLEMENTER",
     colEmployees: () => "EMPLOYEES",
     colRunning: () => "RUNNING",
     colOpen: () => "OPEN",

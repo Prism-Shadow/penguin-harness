@@ -49,6 +49,10 @@ export interface OrgText {
     channelJoinDesc: string;
     channelLeaveDesc: string;
     channelRemoveDesc: string;
+    channelNotifyDesc: string;
+    /** --none: clear the default recipients. */
+    channelNotifyNone: string;
+    channelNotifyNeedsList: string;
     channelArchiveDesc: string;
     channelUnarchiveDesc: string;
     channelTailDesc: string;
@@ -207,6 +211,8 @@ export interface OrgText {
     channelJoined(channelId: string): string;
     channelLeft(channelId: string): string;
     channelMemberRemoved(channelId: string, principal: string): string;
+    channelNotifySet(channelId: string, principals: string): string;
+    channelNotifyCleared(channelId: string): string;
     channelArchived(channelId: string): string;
     channelUnarchived(channelId: string): string;
     messageSent(id: string): string;
@@ -263,11 +269,232 @@ export interface OrgText {
     /** `channel show`: the head line, then the lines the channel actually has. */
     channelHead(name: string, channelId: string, members: number, archived: boolean): string;
     channelPurposeLine(purpose: string): string;
+    channelNotifyLine(principals: string): string;
     channelCreatedBy(principal: string, createdAt: string): string;
     channelLastMessage(time: string): string;
     financeTotal(period: string, total: string): string;
     /** stderr note under `finance`: some usage had no pricing, so the total is a lower bound. */
     unpriced(): string;
+    /** `penguin org proposal`: the company-proposals plugin's routes (a 404 without an organization code = the plugin is not installed). */
+    proposalDesc: string;
+    proposalLsDesc: string;
+    proposalShowDesc: string;
+    proposalCreateDesc: string;
+    proposalPublishDesc: string;
+    /** `proposal brief <n>`: rewrite the brief in place (the author or a person). */
+    proposalBriefDesc: string;
+    proposalReadyDesc: string;
+    proposalApproveDesc: string;
+    proposalMergedDesc: string;
+    proposalRejectDesc: string;
+    proposalImplementDesc: string;
+    proposalMaterialDesc: string;
+    proposalMaterialAddDesc: string;
+    /** `proposal impl <n> <url>`: the impl PR; `--adopt`: the one-time adoption from the pr materials. */
+    proposalImplDesc: string;
+    proposalImplAdopt: string;
+    proposalImplHeadOpt: string;
+    proposalImplBaseOpt: string;
+    proposalDiffDesc: string;
+    proposalDiffStatOpt: string;
+    /** `proposal graph`: the delivery repository's PR graph. */
+    proposalGraphDesc: string;
+    proposalGraphAllOpt: string;
+    /** The graph's first line, when the default view leaves other people's PRs out. */
+    graphOthersHidden(n: number): string;
+    /** `proposal deploy <n> --to <id>`: run the deploy Action `deploy.<id>` on the impl head (or a PR's). */
+    proposalDeployDesc: string;
+    proposalDeployTo: string;
+    proposalDeployPr: string;
+    proposalDeployHead: string;
+    proposalDeployDryRun: string;
+    proposalDeployUsage: string;
+    proposalDeployPlanned: (
+      key: string,
+      subject: string,
+      allowed: boolean | null,
+      why: string,
+    ) => string;
+    proposalDeployStarted: (run: string, key: string, subject: string, head: string) => string;
+    proposalDeploySucceeded: (run: string, head: string) => string;
+    proposalDeployFailed: (
+      run: string,
+      outcome: string,
+      exitCode: number | null,
+      message: string | null,
+    ) => string;
+    /** `org action …`: the organization's Actions, their runs and bindings. */
+    actionDesc: string;
+    actionLsDesc: string;
+    actionLsSubject: string;
+    actionLsAll: string;
+    actionRunDesc: string;
+    actionExecDesc: string;
+    actionParam: string;
+    actionParams: string;
+    actionRequestId: string;
+    actionParamInvalid: (value: string) => string;
+    actionRunsDesc: string;
+    actionRunsSubject: string;
+    actionRunsBy: string;
+    actionRunsKey: string;
+    actionRunsBefore: string;
+    actionRunsLimit: string;
+    actionLimitInvalid: (value: string) => string;
+    actionCheckDesc: string;
+    actionsNone: string;
+    actionsHeader: string[];
+    contributionsHeader: string[];
+    actionRunsNone: string;
+    actionRunsHeader: string[];
+    actionRunsNext: (cursor: string) => string;
+    actionCheckNone: string;
+    actionConflict: (key: string, kind: string, contributions: string) => string;
+    actionRunStarted: (run: string, key: string, subject: string) => string;
+    actionRunEnded: (run: string, outcome: string, message: string | null) => string;
+    /** An ambiguous key's answer: each contribution's exact invocation. */
+    actionExecForm: (cli: string) => string;
+    /** `org roadmap item`: the company-roadmaps plugin's one-item writes. */
+    roadmapDesc: string;
+    roadmapItemDesc: string;
+    roadmapItemAddDesc: string;
+    roadmapItemRemoveDesc: string;
+    roadmapItemKey: string;
+    roadmapItemKind: string;
+    roadmapItemTitle: string;
+    roadmapItemBrief: string;
+    roadmapItemOwner: string;
+    roadmapItemEmployees: string;
+    roadmapItemCites: string;
+    roadmapItemStackedOn: string;
+    roadmapItemProposal: string;
+    roadmapNumberInvalid: (value: string) => string;
+    roadmapItemProposalInvalid: (value: string) => string;
+    /** `org workflow`: the organization's company workflows. */
+    workflowDesc: string;
+    workflowLsDesc: string;
+    workflowPutDesc: string;
+    workflowPutKeep: string;
+    workflowRmDesc: string;
+    workflowReloadDesc: string;
+    workflowHistoryDesc: string;
+    workflowRollbackDesc: string;
+    workflowsNone: string;
+    workflowsHeader: string[];
+    workflowVersionsNone: string;
+    workflowVersionsHeader: string[];
+    workflowDirInvalid: (dir: string, why: string) => string;
+    workflowLoaded: (id: string, revision: string) => string;
+    workflowNotLoaded: (id: string, error: string) => string;
+    workflowSkipped: (id: string, reason: string) => string;
+    workflowRemoved: (id: string) => string;
+    /** `proposal deployment add|ls`: the registry of deployments the graph places. */
+    proposalDeploymentDesc: string;
+    proposalDeploymentAddDesc: string;
+    proposalDeploymentUrlOpt: string;
+    proposalDeploymentLsDesc: string;
+    proposalFeedbackDesc: string;
+    /** `proposal conclude <n>`: a discussion's conclusion, to the owner's desk. */
+    proposalConcludeDesc: string;
+    proposalCommentsDesc: string;
+    proposalResolveDesc: string;
+    /** ls's --status: one lifecycle state. */
+    proposalStatusFilter: string;
+    /** create's --author: the employee that writes it. */
+    proposalAuthor: string;
+    /** create's --brief: the delegation, one sentence (named with a trailing underscore: `proposalBrief` is the `show` line). */
+    proposalBrief_: string;
+    proposalTitle: string;
+    /** publish's --file: the whole proposal as one Markdown document. */
+    proposalFile: string;
+    /** brief's -m / --file: the new brief, inline or from a file; exactly one of them. */
+    proposalBriefText: string;
+    proposalBriefFile: string;
+    proposalBriefOneSource: string;
+    /** implement's --agent: the employee that builds it. */
+    proposalImplementer: string;
+    proposalMessage: string;
+    proposalWorkspace: string;
+    proposalMaterialLabel: string;
+    proposalFeedbackText: string;
+    /** conclude's -m and --discussion (default: the calling session). */
+    proposalConclusionText: string;
+    proposalDiscussion: string;
+    /** conclude outside a session without --discussion. */
+    proposalDiscussionMissing: string;
+    /** feedback's --runtime: from the test team's run of the dev branch. */
+    proposalRuntime: string;
+    /** comments' --pending: the batched, unresolved ones — the author's worklist. */
+    proposalPending: string;
+    proposalResolveText: string;
+    proposalRejectReason: string;
+    /** A 404 with no organization code under `…/proposals`: the plugin is not on this Project. */
+    proposalsPluginMissing(): string;
+    proposalNumberInvalid(value: string): string;
+    proposalStatusInvalid(value: string): string;
+    /** `material add` without a `<kind>=<url>` of a known kind. */
+    proposalMaterialInvalid(value: string): string;
+    proposalsEmpty(): string;
+    proposalCommentsEmpty(number: number): string;
+    /** Confirmations of the proposal writes. */
+    proposalCreated(number: number, title: string): string;
+    proposalPublished(number: number, revision: number): string;
+    proposalBriefRewritten(number: number): string;
+    proposalStatusSet(number: number, status: string): string;
+    proposalImplementing(number: number, implementer: string, sessionId: string): string;
+    proposalMaterialAdded(number: number, kind: string): string;
+    proposalImplPr(label: string, url: string): string;
+    proposalImplSet(number: number, url: string): string;
+    proposalImplBranch(head: string, base: string, pr: string | null): string;
+    proposalImplBranchSet(number: number, head: string, base: string, pr: string | null): string;
+    proposalImplPairUsage(): string;
+    proposalDiffHead(
+      head: string,
+      base: string,
+      ahead: number,
+      behind: number,
+      url: string,
+    ): string;
+    proposalDiffStat(files: number, additions: number, deletions: number): string;
+    proposalDiffTruncated(limit: number): string;
+    proposalImplAmbiguous(number: number, urls: string): string;
+    proposalImplSkipped(number: number, reason: string): string;
+    proposalImplUsage(): string;
+    graphNoProposal(): string;
+    graphOffChain(): string;
+    /** Why a node is off the chain; `at` is `#n` or the base branch, `base` the declared base. */
+    graphOffReason(reason: string, at: string, relation: string, base: string): string;
+    graphUnplaced(): string;
+    /** Why an impl PR is not on the graph; `at` is `#n`, `into` the branch merged into, `base` the base branch. */
+    graphUnplacedReason(reason: string, at: string, into: string, base: string): string;
+    graphErrors(): string;
+    graphDeploymentsOff(): string;
+    /** The base branch's row: the commits it gained since the first stack's bottom was built. */
+    graphBaseBehind(n: number): string;
+    deploymentRegistered(id: string, url: string | null): string;
+    proposalFeedbackRecorded(number: number): string;
+    proposalConcluded(number: number, owner: string): string;
+    proposalCommentResolved(number: number, commentId: string): string;
+    /** `proposal show`: the head lines above the document. */
+    proposalHead(number: number, title: string, status: string, revision: number): string;
+    proposalApproved(revision: number): string;
+    proposalRevisedAfterApproval(approved: number, head: number): string;
+    proposalPeople(author: string, implementer: string | null, delegatedBy: string): string;
+    proposalBrief(brief: string): string;
+    proposalSessions(sessions: string): string;
+    proposalScope(root: string): string;
+    proposalHint(hint: string): string;
+    proposalTests(): string;
+    proposalGroupUndeclared(): string;
+    proposalGroupsDesc: string;
+    proposalGroupsEmpty(): string;
+    proposalMaterials(): string;
+    proposalComments(): string;
+    proposalEvents(): string;
+    colNumber(): string;
+    colRevision(): string;
+    colAuthor(): string;
+    colImplementer(): string;
     colEmployees(): string;
     colRunning(): string;
     colOpen(): string;
