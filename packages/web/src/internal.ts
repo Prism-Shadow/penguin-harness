@@ -43,7 +43,6 @@ export * from "./lib/company-context";
 export * from "./lib/dock-panel-empty";
 export * from "./lib/failure";
 export * from "./lib/file-path";
-export * from "./lib/first-workbench-entry";
 export * from "./lib/format";
 export * from "./lib/instant-setting";
 export * from "./lib/machine-agent-lists";
