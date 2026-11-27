@@ -33,7 +33,7 @@ export function gixEngine(native: Native, version: string): AgentStateEngine {
         refName: c.ref,
         parent: c.parent ?? undefined,
         rel: c.rel,
-        files: c.files === null ? undefined : c.files.map((f) => ({ rel: f.rel, body: f.body })),
+        files: c.files?.map((f) => ({ rel: f.rel, body: f.body })),
         message: c.message,
         author: identity(c.author),
         committer: identity(c.committer),
