@@ -80,37 +80,19 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { formatDateTime } from "@prismshadow/penguin-web/internal";
-import { machineLink } from "@prismshadow/penguin-web/internal";
-import { toneInk, type Tone } from "@prismshadow/penguin-web/internal";
-import { useMachines } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { cachedBinding, rememberBinding } from "./messaging-binding-cache";
 import {
-  accountIdOf,
-  bindingLocation,
-  editorAccess,
-  holderConflict,
-  holdersNote,
-} from "./messaging-binding-location";
-import type { MessagingChannelFacts } from "./channels/channel-form";
-import { ExternalLink } from "./channels/fields-kit";
-import { CHANNEL_FORMS, MESSAGING_CHANNELS, channelForm } from "./channels/registry";
-import {
-  bindingsToForm,
-  emptyMessagingForm,
-  formDirty,
-  formTestable,
-  formToPut,
-  formToTest,
-  type MessagingDeliveryFields,
-  type MessagingFormErrors,
-  type MessagingFormState,
-} from "./messaging-binding-form";
-import { toastApiError, toastFailure } from "@prismshadow/penguin-web/internal";
-import { toldFailure } from "@prismshadow/penguin-web/internal";
+  S,
+  apiErrorText,
+  formatDateTime,
+  machineLink,
+  toneInk,
+  type Tone,
+  useMachines,
+  useProject,
+  toastApiError,
+  toastFailure,
+  toldFailure,
+} from "@prismshadow/penguin-web/internal";
 
 export type { MessagingChannelFacts } from "./channels/channel-form";
 

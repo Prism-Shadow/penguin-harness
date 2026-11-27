@@ -10,8 +10,7 @@
  */
 import { useState } from "react";
 import { SettingsSection } from "@prismshadow/penguin-ui";
-import { usePluginModuleRequests } from "@prismshadow/penguin-web/internal";
-import { useSessionsIfAny } from "@prismshadow/penguin-web/internal";
+import { usePluginModuleRequests, useSessionsIfAny } from "@prismshadow/penguin-web/internal";
 import { PluginModuleRequests } from "./plugin-module-requests";
 import { ConfigMachinePicker } from "./plugins-section";
 

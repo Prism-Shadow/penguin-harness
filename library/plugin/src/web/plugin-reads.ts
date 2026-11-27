@@ -22,8 +22,12 @@ import type {
   PluginMarketResponse,
 } from "@prismshadow/penguin-server/api";
 import { useEffect } from "react";
-import { getPluginIndex } from "@prismshadow/penguin-web/internal";
-import { createReadStore, readKey, useRead } from "@prismshadow/penguin-web/internal";
+import {
+  getPluginIndex,
+  createReadStore,
+  readKey,
+  useRead,
+} from "@prismshadow/penguin-web/internal";
 
 export const pluginLibrary = createReadStore<PluginLibraryResponse>({
   what: "the plugin library could not be read",

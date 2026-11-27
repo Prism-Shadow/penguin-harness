@@ -28,8 +28,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import type { Failure } from "@prismshadow/penguin-ui";
 import type { InstallStage } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
+import { S, toneInk } from "@prismshadow/penguin-web/internal";
 import { InstallProgress } from "./install-bar";
 import {
   installAmount,

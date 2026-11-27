@@ -31,9 +31,7 @@ import {
   type ChartPaint,
 } from "@prismshadow/penguin-ui";
 
-import { formatMoney } from "@prismshadow/penguin-web/internal";
-import type { Currency } from "@prismshadow/penguin-web/internal";
-import { bucketAxisLabel, bucketFullLabel } from "@prismshadow/penguin-web/internal";
+import { formatMoney, bucketAxisLabel, bucketFullLabel } from "@prismshadow/penguin-web/internal";
 import { Empty } from "./usage-charts";
 
 /**

@@ -17,8 +17,7 @@
  * works the folder out from its App Data Dir. A copy only another machine answered for, or a
  * machine whose server predates the field, is named by the Skills' own rule instead.
  */
-import { S } from "@prismshadow/penguin-web/internal";
-import { composeAiPrompt, type AiExample } from "@prismshadow/penguin-web/internal";
+import { S, composeAiPrompt, type AiExample } from "@prismshadow/penguin-web/internal";
 
 /** Directory names and Benchmark ids share the Agent id alphabet. */
 export const ID_PATTERN = /^[A-Za-z0-9_-]+$/;

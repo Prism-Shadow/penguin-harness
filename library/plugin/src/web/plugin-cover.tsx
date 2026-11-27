@@ -9,8 +9,7 @@
  */
 import type { PluginArt } from "@prismshadow/penguin-server/api";
 import { Cover, type CoverSource } from "@prismshadow/penguin-ui";
-import { PENGUIN_LOGO_URL } from "@prismshadow/penguin-web/internal";
-import { skillTileHue } from "@prismshadow/penguin-web/internal";
+import { PENGUIN_LOGO_URL, skillTileHue } from "@prismshadow/penguin-web/internal";
 import type { PluginRow } from "./plugin-groups";
 import { marketIcon } from "./plugin-market";
 

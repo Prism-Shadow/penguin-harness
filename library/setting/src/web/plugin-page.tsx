@@ -19,11 +19,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { SettingsSectionCode } from "@prismshadow/penguin-web-plugin";
 import { GlyphIcon, ICON_GAP, ICON_SIZE, ICONS, Pill, RuledSection } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
-import { glyphOf } from "@prismshadow/penguin-web/internal";
-import type { PluginPage, PluginSectionRef } from "./lib/plugin-pages";
-import { useSessionsIfAny } from "@prismshadow/penguin-web/internal";
-import { SkillIcon } from "@prismshadow/penguin-web/internal";
+import { S, glyphOf, useSessionsIfAny, SkillIcon } from "@prismshadow/penguin-web/internal";
 import { PluginsSection } from "./plugins-section";
 import { useSettingsNavigation } from "./settings-navigation";
 

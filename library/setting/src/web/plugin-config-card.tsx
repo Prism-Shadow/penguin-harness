@@ -29,27 +29,13 @@ import { Fragment, useState } from "react";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 import { Button, toastSuccess, useFormDraft, useSaving } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { dispatchPluginConfigSaved } from "@prismshadow/penguin-web/internal";
-import { SETTINGS_SCOPE } from "./lib/unsaved/scopes";
-import type { Locale } from "@prismshadow/penguin-web/internal";
-import { AdvancedFold } from "./advanced-fold";
 import {
-  baselineOf,
-  drawnFields,
-  sameValue,
-  switchedOff,
-  typedDraftOf,
-  valueOf,
-  type Draft,
-} from "./plugin-config-draft";
-
-import { ConfigField } from "./plugin-config-field";
-import { ConfigHeading } from "./plugin-config-heading";
-import { PluginGroupPage } from "./plugin-group-page";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
+  ApiError,
+  S,
+  apiErrorText,
+  dispatchPluginConfigSaved,
+  toastApiError,
+} from "@prismshadow/penguin-web/internal";
 
 /** A card's draft: each member entry's typed fields, and the secrets the next Save clears. */
 export interface CardDraft {

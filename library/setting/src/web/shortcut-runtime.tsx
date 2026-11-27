@@ -8,10 +8,13 @@
  */
 import { useEffect } from "react";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { hydrateFromServer, setKeybindingsPersister } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  hydrateFromServer,
+  setKeybindingsPersister,
+  useAuth,
+  toastApiError,
+} from "@prismshadow/penguin-web/internal";
 
 export function ShortcutRuntime() {
   const { user } = useAuth();

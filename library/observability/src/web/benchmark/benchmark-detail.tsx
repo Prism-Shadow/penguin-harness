@@ -37,42 +37,20 @@ import {
   type ChartPaint,
 } from "@prismshadow/penguin-ui";
 
-import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
-import type { MergedBenchmark, MergedCase, MergedEvaluation } from "../lib/benchmark-merge";
-import { S } from "@prismshadow/penguin-web/internal";
 import {
+  useAgentAvatarSrc,
+  S,
   formatDateTime,
   formatMoney,
   formatScore,
   humanizeDuration,
+  toneInk,
+  useLocale,
+  useTheme,
+  type Currency,
+  NEUTRAL_SERIES,
+  failureNode,
 } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";
-
-import { NEUTRAL_SERIES } from "@prismshadow/penguin-web/internal";
-import { AskAiModal } from "./ask-ai-modal";
-import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
-import { watchBenchmarkCases } from "./benchmark-sources";
-import {
-  benchmarkDescription,
-  evaluationLabel,
-  labelSeries,
-  scoreScale,
-  scoreValues,
-  seriesPoints,
-  type EvaluationSeries,
-} from "./benchmark-metrics";
-
-import {
-  askCaseExamples,
-  askCaseTail,
-  benchmarkFolder,
-  type AskCaseParams,
-} from "./benchmark-prompts";
-
-import { EvaluationDetailModal } from "./evaluation-detail-modal";
-import { failureNode } from "@prismshadow/penguin-web/internal";
 
 /** A score series' paint: palette slot i, or the neutral for the evaluations with no label. */
 const scoreSeriesPaint = (s: EvaluationSeries, i: number): ChartPaint =>

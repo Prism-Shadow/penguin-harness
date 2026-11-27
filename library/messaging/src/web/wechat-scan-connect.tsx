@@ -32,10 +32,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { Button, Input, toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { QrCode } from "./qq-scan-connect";
-import { toastApiError } from "@prismshadow/penguin-web/internal";
+import { apiErrorText, S, toastApiError } from "@prismshadow/penguin-web/internal";
 
 /**
  * Consecutive poll failures ridden out before the code comes down. The interval fires
