@@ -16,7 +16,7 @@ import {
 } from "./dock-launcher-state";
 import { openPanel, type DockPosition } from "./dock-state";
 import type { DockPanelDefinition } from "./panel-registry";
-import type { CommandId } from "../../lib/shortcuts/types";
+import type { CommandId } from "@prismshadow/penguin-web/internal";
 
 /**
  * One thing a conversation's launch surfaces open: a menu row reads `label`, a start-page tile

@@ -479,6 +479,7 @@ export {
   useKeymap,
   useShortcutTitle,
 } from "./lib/shortcuts/use-keymap";
+export type { Chord, CommandId, Keymap } from "./lib/shortcuts/types";
 
 export type { SidebarSection } from "./lib/sidebar-contributions";
 

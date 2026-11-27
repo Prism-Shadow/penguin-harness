@@ -54,6 +54,7 @@ export type { MainSidebarState } from "./session-list";
 export {
   LAUNCHER_HIDDEN_KEY,
   TERMINAL_PANEL,
+  closeDockPage,
   clearDockPages,
   createShell,
   currentDockScope,
