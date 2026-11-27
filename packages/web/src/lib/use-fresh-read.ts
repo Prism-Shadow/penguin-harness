@@ -1,7 +1,7 @@
 /**
  * A server read that stays current while the page is open, for lists that change underneath it:
- * the plugin library when an admin installs or removes a plugin, a Project's Benchmarks when one
- * is imported or deleted. Every mount reads again, so coming back to a page shows the change
+ * the plugin library when an admin installs or removes a plugin, an Agent's installs when a
+ * plugin is added to it. Every mount reads again, so coming back to a page shows the change
  * without a reload. Until that read lands, the mount shows what the last one read under the same
  * key in this page load — a count does not drop back to "—", nor a list to empty, while the fresh
  * answer is on its way. A failed read keeps an earlier answer on screen: one failed refresh says

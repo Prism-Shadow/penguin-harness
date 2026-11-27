@@ -15,22 +15,12 @@ import {
   formatRelativeDays,
   formatRelativeLong,
   formatRelativeShort,
-  formatScore,
   formatShortDateTime,
   formatTps,
   formatYearMonthDay,
   humanizeDuration,
   humanizeTokens,
-  signedDelta,
 } from "../src/lib/format";
-
-describe("formatScore", () => {
-  it("keeps up to the stored two decimal places", () => {
-    expect(formatScore(72)).toBe("72");
-    expect(formatScore(72.5)).toBe("72.5");
-    expect(formatScore(72.35)).toBe("72.35");
-  });
-});
 
 describe("humanizeTokens", () => {
   it("below 1000 unchanged", () => {
@@ -102,14 +92,6 @@ describe("humanizeDuration", () => {
     expect(humanizeDuration(59_600, { compact: true })).toBe("1m0s");
     // Without compact the tenths are kept, so there is nothing to carry.
     expect(humanizeDuration(59_600)).toBe("59.6s");
-  });
-});
-
-describe("signedDelta", () => {
-  it("non-negative gets +, negative already has -", () => {
-    expect(signedDelta("1k")).toBe("+1k");
-    expect(signedDelta("-1k")).toBe("-1k");
-    expect(signedDelta("0")).toBe("+0");
   });
 });
 

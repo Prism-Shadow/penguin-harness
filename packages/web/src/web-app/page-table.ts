@@ -129,9 +129,9 @@ export const HOME_PATHS: readonly string[] = ["/chat", "/org"];
 
 /**
  * The table without the pages the given keys name, nor the pages whose route lies under one of
- * theirs (route-under.ts: `/benchmark/:benchmarkId` lies under `/benchmark`, and a trailing splat
- * answers the rest of the URL), so removing `benchmark` takes `benchmark-detail` with it but not
- * the other way round: what lives under a page's URL belongs to that page, and a removal names
+ * theirs (route-under.ts: `/agents/:agentId` lies under `/agents`, and a trailing splat answers
+ * the rest of the URL), so removing `agents` takes `agent-settings` with it but not the other
+ * way round: what lives under a page's URL belongs to that page, and a removal names
  * the page a user sees, not the routes behind it. A page at "/" or at a bare splat (home, `*`)
  * takes only itself. A page that answers one of HOME_PATHS stays whatever names it. Keys naming
  * no page are ignored; pages under a removed one by `parent` are left to parentedPagesOf, which

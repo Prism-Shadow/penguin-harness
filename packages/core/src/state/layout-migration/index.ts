@@ -48,6 +48,11 @@ export type { LayoutMigrationCode } from "./error.js";
 export type { LayoutStore } from "./context.js";
 export type { PathMove } from "./journal.js";
 export { movedPath } from "./rewrite.js";
+// The folder moves and the links left behind, for the server's own one-time data migrations
+// (packages/server's services/rsi-workbench-migration.ts), which move what this migration moved
+// once more and must leave the same kind of link. Removed with them at 1.0.
+export { isRealDir, lstatOrNull, moveDir } from "./move.js";
+export { linkDir } from "./link.js";
 
 export interface LayoutMigrationOptions {
   /** The host's stored copies of the paths; without one they are rewritten by the server later. */

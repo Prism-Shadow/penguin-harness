@@ -25,13 +25,8 @@ export * from "./project-config.js";
 export * from "./agent-state.js";
 export * from "./agent-vault.js";
 export * from "./memory.js";
-export * from "./benchmark-manifest.js";
-export * from "./example-benchmark.js";
-export * from "./builtin-benchmarks.js";
-export { placeBenchmark, provisionProjectBenchmarks } from "./project-benchmarks.js";
-export type { PlaceBenchmarkOptions } from "./project-benchmarks.js";
-// A folder written into a directory of folders at once (staged, then renamed): Benchmarks, and
-// the seeds a built-in plugin ships for a system app's data.
+// A folder written into a directory of folders at once (staged, then renamed): the seeds a
+// built-in plugin ships for a system app's data.
 export { PLACE_STAGING_DIR, placeFolder } from "./place-folder.js";
 export type { PlaceFolderOptions } from "./place-folder.js";
 

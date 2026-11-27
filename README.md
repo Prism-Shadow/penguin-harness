@@ -57,7 +57,7 @@ PenguinHarness is an open-source framework for agent self-evolution (recursive s
 
 ## Self-evolution
 
-Pick an algorithm, pick a Benchmark, and an agent improves another agent round by round. Every candidate is a new version, snapshotted before it changes, and every score lands in the Evaluation Center.
+Pick an algorithm, pick a Benchmark, and an agent improves another agent round by round. Every candidate is a new version, snapshotted before it changes, and every score lands in the Self-Evolution Workbench.
 
 | Toolkit | Algorithm |
 | --- | --- |
@@ -72,7 +72,7 @@ Pick an algorithm, pick a Benchmark, and an agent improves another agent round b
 | `trace-rsi-toolkit` | [TRACE](https://arxiv.org/abs/2608.22793): skill-bank evolution from contrasting trajectories, with consistency measurement |
 | `rrsi-rsi-toolkit` | [RRSI](https://arxiv.org/abs/2609.24972): annealed edit budget, a leakage Critic before any measurement, a Pruner for what stopped earning, and a noise-floored selection rule |
 
-Every new Project includes seventeen Benchmarks, run as Harbor tasks in Docker: PenguinHarness Benchmark Sec A to Sec E (from rag-bench-essential, DeepSWE, AutomationBench, Terminal-Bench-Science and Terminal-Bench) and a Train/Test pair for each of GDPEVO Essential's six scenarios. More are in [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark).
+The Self-Evolution Workbench of every new Project's default agent includes eighteen Benchmarks, run as Harbor tasks in Docker: PenguinHarness Benchmark Sec A to Sec E (from rag-bench-essential, DeepSWE, AutomationBench, Terminal-Bench-Science and Terminal-Bench), a Train/Test pair for each of GDPEVO Essential's six scenarios, and a biomedical prediction Benchmark. More are in [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark).
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-benchmark-detail-en.png" alt="A Benchmark's score chart: three agents climbing across versions" width="820" />
@@ -140,10 +140,10 @@ Agents can also write and optimize their own Skills ([docs](https://penguin.ooo/
 
 | Category             | Plugins                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
-| Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
+| Agent Self-Evolution | `rsi-workbench`, `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
 | Office Productivity  | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `goal`, `trace-lookup`, `agent-company`, `penguin-support` |
 | Software Development | `software-development` |
-| AI App Development   | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
+| AI App Development   | `agent-development`, `model-development`, `skill-porting` |
 
 A2UI, External Plugin Porting and Firecrawl ship with the product from [PenguinHarness Apps](https://github.com/Prism-Shadow/penguin-harness-apps). Its other workbenches and Skills can be installed through the plugin marketplace.
 

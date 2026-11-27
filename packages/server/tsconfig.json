@@ -54,18 +54,6 @@
         "../../library/agent/src/agent-avatar.ts"
       ],
       "@prismshadow/penguin-library-agent/avatar-file": ["../../library/agent/src/avatar-file.ts"],
-      "@prismshadow/penguin-library-benchmark": ["../../library/benchmark/src/index.ts"],
-      "@prismshadow/penguin-library-benchmark/contract": [
-        "../../library/benchmark/src/contract.ts"
-      ],
-      "@prismshadow/penguin-library-benchmark/benchmark-service": [
-        "../../library/benchmark/src/benchmark-service.ts"
-      ],
-      "@prismshadow/penguin-library-benchmark/benchmark-archive": [
-        "../../library/benchmark/src/benchmark-archive.ts"
-      ],
-      "@prismshadow/penguin-library-benchmark/types": ["../../library/benchmark/src/types.ts"],
-      "@prismshadow/penguin-library-benchmark/ports": ["../../library/benchmark/src/ports.ts"],
       "@prismshadow/penguin-library-agent-api/agent-api": [
         "../../library/agent-api/src/agent-api.ts"
       ],
@@ -351,6 +339,9 @@
       "@prismshadow/penguin-library-setting/plugin-module-requests": [
         "../../library/setting/src/plugin-module-requests.ts"
       ],
+      "@prismshadow/penguin-library-setting/project-data-migrations": [
+        "../../library/setting/src/project-data-migrations.ts"
+      ],
       "@prismshadow/penguin-library-setting/theme-store": [
         "../../library/setting/src/theme-store.ts"
       ],
@@ -361,6 +352,9 @@
       ],
       "@prismshadow/penguin-library-setting/repos/plugin-module-requests": [
         "../../library/setting/src/repos/plugin-module-requests.ts"
+      ],
+      "@prismshadow/penguin-library-setting/repos/project-data-migrations": [
+        "../../library/setting/src/repos/project-data-migrations.ts"
       ],
       "@prismshadow/penguin-library-setting/repos/server-settings": [
         "../../library/setting/src/repos/server-settings.ts"

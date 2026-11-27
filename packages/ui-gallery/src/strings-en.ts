@@ -109,7 +109,7 @@ export const en: GalleryStrings = {
       title: "Chat · self-evolution round",
       description:
         "The General Agent improves the docs Agent with the Default RSI Toolkit: it reads the Reference score and the weakest case's Trace, snapshots the Agent State and edits it, evaluates every case through parallel evaluator subagents, and keeps the new version because it scores higher.",
-      how: "Sidebar › General Agent › “Improve Docs Expert on Docs QA v1”. A round starts from Evaluation Center › a Benchmark › Use › Optimize.",
+      how: "Sidebar › General Agent › “Improve Docs Expert on Docs QA v1”. A round starts from App Center › Self-Evolution Workbench › a Benchmark › Use › Optimize › Start.",
     },
     "chat-new": {
       title: "New chat",
@@ -165,16 +165,16 @@ export const en: GalleryStrings = {
       how: "Sidebar › Cost center.",
     },
     benchmark: {
-      title: "Evaluation center",
+      title: "Self-Evolution Workbench",
       description:
-        "The Benchmark list: published and draft status, case counts, and the score trend across evaluations.",
-      how: "Sidebar › Evaluation center.",
+        "The default Agent's workbench, open in the app window: its Benchmark list, with published and draft status, case counts, and the score trend across evaluations.",
+      how: "App Center › Self-Evolution Workbench.",
     },
     "benchmark-detail": {
       title: "Benchmark detail",
       description:
-        "One Benchmark: the score curve, each evaluation's case scores, and the cases' statement and rubric files.",
-      how: "Evaluation center › any Benchmark.",
+        "One Benchmark in the Self-Evolution Workbench: the score curve, each evaluation's case scores, the cases' statement and rubric files, and the tasks started from it.",
+      how: "App Center › Self-Evolution Workbench › any Benchmark.",
     },
     settings: {
       title: "Settings",

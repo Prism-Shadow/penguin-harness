@@ -14,9 +14,11 @@
  * can be), that one Benchmark stays in the old folder with a warning, the old folder is not
  * replaced by a link, and the next start tries again.
  *
- * This step is kept apart from step 1 so it can be pointed elsewhere on its own: the Evaluation
- * Center is becoming a plugin whose workbench keeps the id `benchmark` on the system Agent, which
- * is this same folder.
+ * This step is kept apart from step 1 so it can be pointed elsewhere on its own. The Benchmarks
+ * have since moved on, into the default Agent's Self-Evolution Workbench: the server's one-time
+ * migration (packages/server's services/rsi-workbench-migration.ts) moves this step's folder there
+ * at its next start and leaves a link in its place, so the chain of links reaches them from both
+ * old places.
  *
  * Compatibility owner: core's `state/layout-migration/`, removed with the migration at 1.0.
  */

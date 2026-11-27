@@ -27,7 +27,8 @@ const OrgProposalsPage = () => null;
  * - The chat page is the chat page; the dashboard and one machine's ports are
  *   pages of their own modules, off the nav, the ports page admin-only.
  * - Home (`/` and every unmatched path) is company mode's page, since it depends on the mode.
- * - The proposals page is the one page renderer, under the name its plugin's page names.
+ * - The app's own modules register no page renderer; the proposals page is the one a test hands
+ *   in, under the name its plugin's page names.
  * - Folded into the booted table, a contributed page whose key the app owns is ignored, and the
  *   company-mode proposals page is drawn by the proposals page, inside company mode and from
  *   the root alike.
@@ -277,8 +278,8 @@ describe("the booted page table", () => {
       Component: HomeRedirect,
     });
   });
-  it("registers the Self-Evolution workbench renderer through its owning module", () => {
-    expect(pageRenderers.map(({ data }) => data.name)).toEqual(["SelfEvolutionWorkbench"]);
+  it("registers no page renderer of the app's own: every workbench page is drawn in its frame", () => {
+    expect(pageRenderers).toEqual([]);
   });
 
   it("folds a contributed page in only under a key the app does not own, drawn by its module's renderer", () => {

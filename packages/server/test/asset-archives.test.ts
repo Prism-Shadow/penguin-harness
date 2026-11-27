@@ -14,7 +14,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { UNPACKED_DIR, unpackedAssetsDir, pushedBenchmarksDir } from "../src/hmr/asset-archives.js";
+import { UNPACKED_DIR, unpackedAssetsDir, pushedLibraryDir } from "../src/hmr/asset-archives.js";
 // @ts-expect-error — a plain .mjs build script, no declarations.
 import { archiveName, packArchive } from "../../../scripts/asset-archives.mjs";
 
@@ -69,13 +69,13 @@ describe("asset archives", () => {
         await source({
           "plugins/package.json": "{}",
           "node_modules/p/spawn-helper": "#!",
-          "builtin-benchmarks/sample/benchmark_config.toml": 'id = "sample"\n',
+          "library/package.json": "{}",
         }),
       ),
     );
     const out = unpackedAssetsDir(assets);
     expect(out).toBe(path.join(assets, UNPACKED_DIR));
-    expect(pushedBenchmarksDir(assets)).toBe(path.join(out, "builtin-benchmarks"));
+    expect(pushedLibraryDir(assets)).toBe(path.join(out, "library"));
     expect(await fs.readFile(path.join(out, "plugins", "package.json"), "utf8")).toBe("{}");
     if (process.platform !== "win32") {
       expect(
@@ -94,8 +94,8 @@ describe("asset archives", () => {
     const plain = path.join(dir, "plain");
     await fs.mkdir(plain);
     expect(unpackedAssetsDir(plain)).toBe(plain);
-    expect(pushedBenchmarksDir(plain)).toBeNull();
-    expect(pushedBenchmarksDir(null)).toBeNull();
+    expect(pushedLibraryDir(plain)).toBeNull();
+    expect(pushedLibraryDir(null)).toBeNull();
   });
 
   it("unpacks the real archives of a store that came off a Mac with AppleDouble companions", async () => {

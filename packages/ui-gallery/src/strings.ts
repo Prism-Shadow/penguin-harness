@@ -147,7 +147,7 @@ export const zh = {
       title: "对话 · 自进化一轮",
       description:
         "通用智能体用默认 RSI 工具包优化文档专家：读取 Reference 分数和失分最多的用例的 Trace，给 Agent State 做快照后修改，由并行的评测子智能体逐题评测，新版本分数更高，于是保留。",
-      how: "侧栏 › 通用智能体 › 「在文档问答 v1 上优化文档专家」。从评估中心 › 某个 Benchmark › 使用 › 优化 开始一轮。",
+      how: "侧栏 › 通用智能体 › 「在文档问答 v1 上优化文档专家」。从应用中心 › 自进化工作台 › 某个 Benchmark › 使用 › 优化 › 开始 发起一轮。",
     },
     "chat-new": {
       title: "新对话",
@@ -198,14 +198,16 @@ export const zh = {
       how: "侧栏 › 成本中心。",
     },
     benchmark: {
-      title: "评估中心",
-      description: "评估任务列表：已发布与草稿状态、用例数、历次评估的分数走势。",
-      how: "侧栏 › 评估中心。",
+      title: "自进化工作台",
+      description:
+        "默认 Agent 的工作台，在应用窗口中打开：它的 Benchmark 列表，已发布与草稿状态、用例数、历次评估的分数走势。",
+      how: "应用中心 › 自进化工作台。",
     },
     "benchmark-detail": {
-      title: "评估详情",
-      description: "一个评估任务：分数曲线、每轮评估的用例得分、用例的题面与评分标准文件。",
-      how: "评估中心 › 任意一个评估任务。",
+      title: "Benchmark 详情",
+      description:
+        "自进化工作台里的一个 Benchmark：分数曲线、每轮评估的用例得分、用例的题面与评分标准文件，以及从这里发起的任务。",
+      how: "应用中心 › 自进化工作台 › 任意一个 Benchmark。",
     },
     settings: {
       title: "设置",

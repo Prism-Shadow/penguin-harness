@@ -11,9 +11,11 @@
  * installs the one the suite names, and the App Center switch sets their `appCenter.show`. The
  * Project's App Center lists the ones shown, the way the server derives a shortcut (titles from
  * the declaration, else the first tab, else the name; broken when the files do not load); a suite
- * can add or replace one mid-test ({@link AgentServer.putWorkbench}). A test can refuse the next
- * write with
- * {@link AgentServer.refuseNext}, or read back what was written with {@link AgentServer.writes}.
+ * can add or replace one mid-test ({@link AgentServer.putWorkbench}). After them it lists the
+ * other Agents' apps a suite names (`apps`), each with the plugin that installed it, and the one
+ * an install of a library plugin that ships a workbench adds under that Agent. A test can refuse
+ * the next write with {@link AgentServer.refuseNext}, or read back what was written with
+ * {@link AgentServer.writes}.
  *
  * What the Agent carries besides is the suite's too (`parts`): Skills, hook packages, MCP server
  * entries and the install receipts naming each workbench's plugin. The files on its disk a suite
@@ -346,6 +348,10 @@ export function agentServer(
     archiveRefusal?: { status: number; code: string };
     /** The viewer's stored App Center arrangement (by default none). */
     appCenterLayout?: AppCenterLayout;
+    /** Other Agents' App Center shortcuts, listed after the Agent's own (by default none). */
+    apps?: AppCenterShortcut[];
+    /** Other Agents' workbenches taken out of the App Center (GET …/app-center/hidden; by default none). */
+    hiddenApps?: AppCenterShortcut[];
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
@@ -421,6 +427,8 @@ export function agentServer(
   let workbenches = [...(options.workbenches ?? [])];
   const building = new Set<string>();
   let appCenterLayout: AppCenterLayout | null = options.appCenterLayout ?? null;
+  const apps = [...(options.apps ?? [])];
+  const hiddenApps = [...(options.hiddenApps ?? [])];
   let partSkills = [...(options.parts?.skills ?? [])];
   let partHooks = [...(options.parts?.hooks ?? [])];
   let partMcp = [...(options.parts?.mcpServers ?? [])];
@@ -773,6 +781,21 @@ export function agentServer(
           .filter((p) => names.includes(p.name))
           .flatMap((p) => p.skills.map((skill) => skill.name));
         installs.set(key, [...new Set([...(installs.get(key) ?? []), ...skills])]);
+        if (request.machine === null) {
+          const agentId = decodeURIComponent(pluginsPath[1]!);
+          for (const plugin of library.filter((p) => names.includes(p.name)))
+            for (const { name } of plugin.workbenches ?? [])
+              if (!apps.some((a) => a.agentId === agentId && a.workbenchId === name))
+                apps.push({
+                  agentId,
+                  agentName: agentId,
+                  workbenchId: name,
+                  title: plugin.title ?? plugin.name,
+                  plugin: plugin.name,
+                  path: `/app/${PROJECT_ID}/${agentId}/${name}`,
+                  build: "ready",
+                });
+        }
         pluginUpdates = pluginUpdates.filter((u) => !names.includes(u.name));
         if (modules !== undefined && request.machine === null) {
           moduleActions = askModules(names);
@@ -1037,7 +1060,20 @@ export function agentServer(
         // A workbench switched off, or every one while the Agent-wide switch is off, has no tile.
         .filter((w) => w.appCenter?.show === true && allOn && !switchedOff.has(w.id))
         .map((w) => shortcutOf(AGENT_ID, stored.config.name ?? AGENT_ID, w));
-      return json({ shortcuts, layout: appCenterLayout } satisfies AppCenterResponse);
+      return json({
+        shortcuts: [...shortcuts, ...apps],
+        layout: appCenterLayout,
+      } satisfies AppCenterResponse);
+    }
+    if (path === `/api/projects/${PROJECT_ID}/app-center/hidden` && method === "GET") {
+      // The workbenches whose App Center switch is off, switched off or not.
+      const shortcuts: AppCenterShortcut[] = workbenches
+        .filter((w) => w.appCenter?.show === false)
+        .map((w) => shortcutOf(AGENT_ID, stored.config.name ?? AGENT_ID, w));
+      return json({
+        shortcuts: [...shortcuts, ...hiddenApps],
+        layout: null,
+      } satisfies AppCenterResponse);
     }
     if (path === `/api/projects/${PROJECT_ID}/app-center/layout` && method === "PUT") {
       appCenterLayout = (request.body as { layout: AppCenterLayout | null }).layout;

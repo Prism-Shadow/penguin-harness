@@ -158,9 +158,7 @@ async function open(
     at: options.at ?? HERE,
     pages: SYSTEM_APP_PAGES,
     extra: [
-      ...SYSTEM_APP_PAGES.filter(
-        (p) => p.app || p.key === "benchmark" || p.key === "benchmark-detail",
-      ).map((p) => ({
+      ...SYSTEM_APP_PAGES.filter((p) => p.app).map((p) => ({
         path: p.path,
         element: h("p", null, p.key),
       })),
@@ -458,8 +456,6 @@ it("lists each opened native app once in Apps and restores its last address", as
       group()?.querySelector(`[data-app-row="system_agent/${name}"]`)?.getAttribute("aria-current"),
     ).toBe("page");
   }
-  await run(() => router.navigate("/benchmark/sample?agentId=helper"));
-  expect(row("system_agent/benchmark")).toBeNull();
   await run(() => router.navigate("/plugins?tab=installed"));
   const app = "system_agent/plugins";
   expect(group()?.querySelectorAll(`[data-app-row="${app}"]`)).toHaveLength(1);

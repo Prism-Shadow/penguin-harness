@@ -18,8 +18,12 @@ import { benchmarkRepo, dataFiles } from "./source.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const PLUGINS_DIR = join(HERE, "..", "..", "..", "..", "plugins");
 
-/** Release-pinned library packages carry the same card, icon and Skill files as local packages. */
-function publishedLibraryPackages() {
+/**
+ * Release-pinned library packages carry the same card, icon and Skill files as local packages.
+ * Each links to its source at the Release's tag: the package's folder in its repository, or the
+ * repository itself for a package that is the repository's root (it names no `directory`).
+ */
+export function publishedLibraryPackages() {
   const require = createRequire(new URL("../../package.json", import.meta.url));
   const { devDependencies } = require("./package.json");
   return Object.entries(devDependencies).flatMap(([name, pin]) => {
@@ -29,12 +33,9 @@ function publishedLibraryPackages() {
     if (!release) return [];
     const manifest = require.resolve(`${name}/package.json`);
     const pkg = JSON.parse(readFileSync(manifest, "utf8"));
-    return [
-      {
-        dir: dirname(manifest),
-        sourceUrl: `${release[1]}/tree/${release[2]}/${pkg.repository.directory}`,
-      },
-    ];
+    const folder = pkg.repository?.directory;
+    const tree = `${release[1]}/tree/${release[2]}`;
+    return [{ dir: dirname(manifest), sourceUrl: folder ? `${tree}/${folder}` : tree }];
   });
 }
 

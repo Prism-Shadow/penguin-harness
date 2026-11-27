@@ -1,8 +1,8 @@
 /**
  * The library plugins of the demo, read from the packages the product ships
- * (`plugins/<name>/package.json` and `icon.svg`) and the cards they declare: the RSI toolkits,
- * which make up the library's `rsi` category, and the Agent Evaluation plugin they measure
- * through — the self-evolution story — and the rest of what the plugin market shows, in the
+ * (`plugins/<name>/package.json` and `icon.svg`, or the pinned package's) and the cards they
+ * declare: the RSI toolkits and the Self-Evolution Workbench they measure through, which make up
+ * the library's `rsi` category — the self-evolution story — and the rest of what the plugin market shows, in the
  * categories their cards name, plus two workbench plugins the market offers that this
  * repository does not ship yet (`marketPlugins().studios`). A card and its detail say what the
  * real plugin says, in both languages, and the start page counts the toolkits from this list as
@@ -16,9 +16,10 @@
 import type { IconRef, PluginItem, SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import aceIcon from "@penguinharness/ace-rsi-toolkit/icon.svg?raw";
 import acePkg from "@penguinharness/ace-rsi-toolkit/package.json";
-import evaluationWorkbench from "../../../../../plugins/agent-evaluation/workbenches/benchmark/package.json";
-import evaluationIcon from "../../../../../plugins/agent-evaluation/icon.svg?raw";
-import evaluationPkg from "../../../../../plugins/agent-evaluation/package.json";
+// The package's workbench manifest and icon, through its `./workbenches/*` and `./icon.svg` exports.
+import rsiWorkbenchManifest from "@penguinharness/rsi-workbench/workbenches/benchmark/package.json";
+import rsiWorkbenchIcon from "@penguinharness/rsi-workbench/icon.svg?raw";
+import rsiWorkbenchPkg from "@penguinharness/rsi-workbench/package.json";
 import apeIcon from "@penguinharness/ape-rsi-toolkit/icon.svg?raw";
 import apePkg from "@penguinharness/ape-rsi-toolkit/package.json";
 import awmIcon from "@penguinharness/awm-rsi-toolkit/icon.svg?raw";
@@ -215,13 +216,14 @@ const CARDS: Record<string, Card> = {
       skills: ["trace-rsi-toolkit"],
     },
   },
-  "agent-evaluation": {
-    title: "Agent Evaluation",
-    titleZh: "智能体评测",
+  "rsi-workbench": {
+    title: "Self-Evolution Workbench",
+    titleZh: "自进化工作台",
     descriptionZh:
-      "Agent 评估：为智能体设计并校准能力 Benchmark（或导入已发布的 Benchmark 包），并逐题隔离执行、私下评分——默认 RSI 工具包的优化循环就以这些测量为准。",
-    shortDescription: "Design Benchmarks, run and score agent evaluations.",
-    shortDescriptionZh: "设计 Benchmark，执行并评分智能体评测。",
+      "默认 Agent 的自进化工作台：在应用窗口里管理这个 Agent 的 Benchmark——手动创建、用 AI 设计并校准、导入与导出——并一键发起评估与优化，任务作为你的对话出现在侧栏；附带 benchmark-design 与 agent-evaluation 两个 Skill，RSI 工具包的优化循环以这些测量为准。",
+    shortDescription:
+      "The default Agent's workbench: create, import, evaluate and optimize Agents against Benchmarks.",
+    shortDescriptionZh: "默认 Agent 的工作台：创建、导入 Benchmark，评估并优化 Agent。",
     quickStart: {
       prompt:
         "List the Benchmark packages in Prism-Shadow/penguin-harness-benchmark and tell me in one line each what they measure. Import nothing until I pick one.",
@@ -529,24 +531,27 @@ export function rsiToolkitPlugins(): PluginItem[] {
   );
 }
 
-/** The Agent Evaluation plugin: the evaluator every toolkit measures through, and Benchmark design. */
-export function agentEvaluationPlugin(): PluginItem {
+/**
+ * The Self-Evolution Workbench: the default Agent's workbench for its Benchmarks, with the
+ * evaluator every toolkit measures through and Benchmark design.
+ */
+export function rsiWorkbenchPlugin(): PluginItem {
   return libraryPlugin(
-    evaluationPkg,
-    evaluationIcon,
+    rsiWorkbenchPkg,
+    rsiWorkbenchIcon,
     [
       skill(
         "agent-evaluation",
         "Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.",
-        "2026.11.03.1",
+        "2026.11.26.1",
       ),
       skill(
         "benchmark-design",
         "Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline, or import a published Benchmark package.",
-        "2026.11.01.1",
+        "2026.11.26.1",
       ),
     ],
-    { workbenches: [{ name: "benchmark", version: evaluationWorkbench.penguin.version }] },
+    { workbenches: [{ name: "benchmark", version: rsiWorkbenchManifest.penguin.version }] },
   );
 }
 

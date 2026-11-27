@@ -249,8 +249,8 @@ export async function loadAgentState(opts?: {
       ) as MCPServerConfig[],
     };
   }
-  // The Project's Benchmarks are no Agent's to write, default_agent's included: they are
-  // written when the Project is created (project-benchmarks.ts), never on this path.
+  // A workbench's data is never written on this path: a workbench seeds its own data folder when
+  // it first loads (the Self-Evolution Workbench's Benchmarks included).
   await Promise.all([
     atomicWriteFile(agentsMdPath(root, projectId, agentId), agentsMd, { followSymlinks: true }),
     ...plugins.map((plugin) => installPluginFiles(root, projectId, agentId, plugin)),

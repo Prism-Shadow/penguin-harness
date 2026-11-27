@@ -28,6 +28,7 @@
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
+import { RSI_WORKBENCH_SEEDS, rsiWorkbenchSeedsDir } from "./src/app/mock/rsi-workbench-seeds";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import { STATIC_BOOT_SCRIPT } from "../ui/src/boot";
@@ -138,6 +139,7 @@ export default defineConfig({
   ],
   resolve: {
     dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
+    alias: { [RSI_WORKBENCH_SEEDS]: rsiWorkbenchSeedsDir() },
   },
   // The app's module classes use standard decorators; the dev server must lower them, as in
   // the app's own config.

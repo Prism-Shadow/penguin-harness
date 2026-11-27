@@ -19,9 +19,6 @@
  *     and `icon.svg` reach no installed copy and need nothing; neither does a change to a
  *     SKILL.md's `version` line alone.
  *
- * The Benchmarks a new Project is seeded with carry date versions too, kept in core's data; their
- * rule is SEEDED_BENCHMARKS below.
- *
  * Only this repository's `plugins/` is compared. An external built-in plugin
  * (scripts/lib/external-plugins.mjs) has no files here — the build ships the version its own
  * repository published, whose release gates its dated versions — so there is nothing to check.
@@ -131,48 +128,6 @@ function hookContribution(source) {
   } catch {
     return undefined;
   }
-}
-
-/** The example remains authored here; shipped Benchmark versions live in their packages. */
-const SEEDED_BENCHMARKS = [
-  {
-    sources: ["packages/core/src/state/example-benchmark.ts"],
-    versions: "packages/core/src/state/example-benchmark.ts",
-  },
-];
-const dateVersions = (text) =>
-  [...text.matchAll(/\bversion:\s*"(\d{4}\.\d{2}\.\d{2}\.\d+)"/g)].map((m) => m[1]).join(",");
-/** A line that is a comment (`//`, or part of a `/* … *\/` block) or blank. */
-const COMMENT_OR_BLANK = /^\s*(\/\/|\/\*|\*|$)/;
-/** Whether `file` changed since the base in a line that is not a comment or blank. */
-const changesContent = (file) =>
-  git("diff", "-U0", `${base}...HEAD`, "--", file)
-    .split("\n")
-    .filter((line) => /^[+-]/.test(line) && !/^(\+\+\+|---) /.test(line))
-    .some((line) => !COMMENT_OR_BLANK.test(line.slice(1)));
-const unversioned = [];
-for (const { sources, versions } of SEEDED_BENCHMARKS) {
-  if (!sources.some(changesContent)) continue;
-  let before;
-  try {
-    before = dateVersions(git("show", `${base}:${versions}`));
-  } catch {
-    continue;
-  }
-  let after;
-  try {
-    after = dateVersions(readFileSync(versions, "utf8"));
-  } catch {
-    continue;
-  }
-  if (before === after) unversioned.push(versions);
-}
-if (unversioned.length > 0) {
-  console.error(
-    `benchmark versions: the seeded Benchmarks changed without a new version in ${unversioned.join(", ")}. ` +
-      "Move the version (YYYY.MM.DD.N) of every Benchmark whose files the change alters.",
-  );
-  process.exit(1);
 }
 
 const changed = git("diff", "--name-only", `${base}...HEAD`, "--", "plugins/")

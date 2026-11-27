@@ -1,9 +1,10 @@
 /**
  * A few of the app's features bypass its client and call `fetch` themselves — the Workspace
- * file preview (which reads the `ETag` off the response), the benchmark case browser, the
- * archive downloads, the terminal list. The frame answers those from the same router by
- * wrapping `fetch` for `/api/…` URLs; everything else (the frame's own assets) goes to the
- * network as before.
+ * file preview (which reads the `ETag` off the response), the archive downloads, the terminal
+ * list — and so does every installed workbench page: the script the gallery puts first in each
+ * page's head (workbench-requests.js) hands its API requests to this frame's `fetch`, before the
+ * page's own scripts run. The frame answers those from the same router by wrapping `fetch` for
+ * `/api/…` URLs; everything else (the frame's own assets) goes to the network as before.
  */
 import { ApiError } from "./errors";
 import { isApiUrl } from "./router";

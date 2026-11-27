@@ -113,7 +113,7 @@ describe("arrange", () => {
       system: { glyph: id },
     }));
     const extra = shortcut("first");
-    const evaluation = { ...shortcut("benchmark", "default_agent"), plugin: "agent-evaluation" };
+    const evaluation = { ...shortcut("benchmark", "default_agent"), plugin: "rsi-workbench" };
     const apps = [extra, evaluation, ...standard];
     const expected = [
       ...["models", "plugins", "machines", "usage"].map((id) => `system_agent/${id}`),

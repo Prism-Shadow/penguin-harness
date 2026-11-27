@@ -68,7 +68,7 @@ interface DemoProject {
   projectId: string;
   name: string;
   path: string;
-  /** What the Project holds outside its Agents (its Benchmarks, its config). */
+  /** What the Project holds outside its Agents (its config). */
   own: StorageBytes;
   agents: DemoAgent[];
 }
@@ -129,7 +129,12 @@ function build(store: DemoStore): StorageDemo {
         {
           agentId: "default_agent",
           name: agentName("default_agent"),
-          bytes: bytesOf({ traces: 97 * MB, agentState: 22 * MB, scratchpads: 3 * MB }),
+          bytes: bytesOf({
+            traces: 97 * MB,
+            agentState: 22 * MB,
+            scratchpads: 3 * MB,
+            caches: 640 * MB,
+          }),
         },
       ],
     },
@@ -207,6 +212,7 @@ function build(store: DemoStore): StorageDemo {
   };
   const docs = { projectId: demoProject.projectId, agentId: "docs-expert" };
   const notes = { projectId: demoProject.projectId, agentId: "release-notes" };
+  const general = { projectId: demoProject.projectId, agentId: "default_agent" };
   const analyst = { projectId: "research-lab", agentId: "analyst" };
   const builder = { projectId: "website", agentId: "builder" };
   const idle = (
@@ -234,7 +240,8 @@ function build(store: DemoStore): StorageDemo {
     item("c-1", "agentCache", "idle", "python-3.12", 812 * MB, 2, false, analyst),
     item("c-2", "agentCache", "idle", "node-22", 377 * MB, 4, false, builder),
     item("c-3", "agentCache", "idle", "playwright", 568 * MB, 11, false, docs),
-    item("sc-1", "serverCache", "idle", "penguin-benchmarks", 640 * MB, 3, true),
+    // The Self-Evolution Workbench's Harbor checkouts, in its own cache folder on the default Agent.
+    item("c-4", "agentCache", "idle", "benchmark", 640 * MB, 3, false, general),
     item("sc-2", "serverCache", "idle", "model-catalog", 22 * MB, 1, true),
   ];
 
@@ -292,7 +299,7 @@ function build(store: DemoStore): StorageDemo {
   return {
     projects,
     server: [
-      { name: ".cache", category: "caches", bytes: 662 * MB },
+      { name: ".cache", category: "caches", bytes: 22 * MB },
       { name: "plugins", category: "plugins", bytes: 214 * MB },
       { name: "web.db", category: "other", bytes: 64 * MB },
       { name: "logs", category: "logs", bytes: 48 * MB },

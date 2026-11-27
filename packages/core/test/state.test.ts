@@ -108,8 +108,8 @@ describe("paths / resolveRoot", () => {
 });
 
 describe("loadAgentState", () => {
-  // Timeout: initialization writes the full layout — 15 library skills plus the example
-  // benchmark, dozens of small files — and this first init test also pays the cold-I/O cost
+  // Timeout: initialization writes the full layout — the library skills, dozens of small
+  // files — and this first init test also pays the cold-I/O cost
   // (first-touch reads of the skills package, Defender scans) on Windows runners, where a
   // slow-disk moment has pushed it past the 5s default. Purely a failure deadline: passing
   // runs stay as fast as before on every platform.

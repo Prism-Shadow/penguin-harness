@@ -53,11 +53,6 @@ export function humanizeDurationLive(ms: number): string {
   return `${Math.floor(s / 60)}m${s % 60}s`;
 }
 
-/** Add an explicit sign to a delta string: non-negative gets `+`, negative already has `-` (negative when context shrinks after compaction). */
-export function signedDelta(formatted: string): string {
-  return formatted.startsWith("-") ? formatted : `+${formatted}`;
-}
-
 /**
  * Output TPS = output tokens ÷ LLM generation seconds (generation duration is
  * the `request_begin`–`request_end` wall clock, including tool-argument
@@ -150,11 +145,6 @@ export function formatMoney(
   }
   const digits = abs >= 100 ? 0 : abs >= 1 ? 2 : 4;
   return `${symbol}${v.toFixed(digits)}`;
-}
-
-/** Benchmark score display: integers unchanged, decimals keep up to the stored two places. */
-export function formatScore(n: number): string {
-  return Number.isInteger(n) ? `${n}` : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 /** True while the one-decimal rendering of `v` still fits under `limit`: 1023.9 does, 1023.99 does not. */

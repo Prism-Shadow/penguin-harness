@@ -86,4 +86,4 @@ PenguinHarness 0.2.15 把五个自进化算法做成了插件，也就是 RSI �
 - 跑 GDPevo 题目期间，Agent 只能访问模型服务商的 API 主机，因为 GDPevo 的答案是公开的。
 - 0.2.15 之前创建的 Agent 没有装 OPRO、APE、ACE 和 AWM 工具包，需要你手动安装；新建 Agent 则只有创建时勾选的那些插件。
 
-对话框里各字段的说明见[评估中心文档](https://penguin.ooo/docs/evaluation-center)。每个算法怎么运行，见 [RSI 工具包](https://penguin.ooo/docs/self-improvement#rsi-工具包)。
+对话框里各字段的说明见[自进化工作台文档](https://penguin.ooo/docs/self-evolution-workbench)。每个算法怎么运行，见 [RSI 工具包](https://penguin.ooo/docs/self-improvement#rsi-工具包)。

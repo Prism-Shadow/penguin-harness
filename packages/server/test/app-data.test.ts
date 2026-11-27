@@ -6,8 +6,8 @@
  * - Given a Project, an app's folders are the system Agent's agent-level ones for that app id —
  *   data and cache under `agents/system_agent/app/`, state under `run/` — each a real directory
  *   by the time it is handed out; asking again answers the same.
- * - The Evaluation Center's `benchmark` app's data is the folder the Project's Benchmarks are
- *   listed from: a Benchmark created through its route is there.
+ * - The `benchmark` app's data is the old Evaluation Center's folder of the Project's Benchmarks:
+ *   a Benchmark already there is in the folder it answers.
  * - Given a Project made before the system Agent existed, asking gives it its system Agent first,
  *   and the folders sit under it.
  * - Given a Project whose `system_agent` is the user's own Agent, another app is refused 409
@@ -32,11 +32,10 @@ import {
 } from "@prismshadow/penguin-core";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { IfaceTable, ModuleDef } from "@prismshadow/penguin-core/kernel";
-import type { BenchmarkCreateRequest } from "../src/api/types.js";
 import table from "../src/ifaces.json" with { type: "json" };
 import { PluginHost } from "../src/plugin/host.js";
 import type { AppData } from "../src/services/app-data.js";
-import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
+import { createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const HOST_KEY = "@prismshadow/penguin-server#AppData";
@@ -115,15 +114,10 @@ describe("AppData", () => {
     expect(await appData().dataPaths(PROJECT, "deck")).toEqual(paths);
   });
 
-  it("answers the Benchmarks folder for the benchmark app", async () => {
-    const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-    const created = await admin.post(`/api/projects/${PROJECT}/benchmarks`, {
-      id: "report-writing",
-      title: "Report writing",
-      runs: 1,
-      cases: [{ id: "CASE-001-x", title: "X", statement: "Do X.", rubric: "- 100 pts: X." }],
-    } satisfies BenchmarkCreateRequest);
-    expect(created.status).toBe(201);
+  it("answers the old Benchmarks folder for the benchmark app", async () => {
+    await fs.mkdir(path.join(benchmarksDir(t.root, PROJECT), "report-writing", "CASE-001-x"), {
+      recursive: true,
+    });
     const { dataDir } = await appData().dataPaths(PROJECT, "benchmark");
     expect(dataDir).toBe(benchmarksDir(t.root, PROJECT));
     expect(await isDir(path.join(dataDir, "report-writing"))).toBe(true);

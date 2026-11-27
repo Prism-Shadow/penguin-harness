@@ -1,19 +1,23 @@
 /**
- * Where a Project's Benchmarks are: the Evaluation Center's data folder, which is the system
- * Agent's agent-level data of the app `benchmark` (PRFC-0034, PRFC-0032's `agent` level):
+ * Where a Project's Benchmarks were before the Self-Evolution Workbench kept them per Agent: the
+ * old Evaluation Center's data folder, the system Agent's agent-level data of the app `benchmark`
+ * (PRFC-0034, PRFC-0032's `agent` level),
  *
  *   <root>/projects/<p>/agents/system_agent/app/data/benchmark/<benchmark_id>/
  *
- * Agent level, because a Benchmark is the Project's data and the system Agent is never deleted
- * or exported, so the folder lives exactly as long as the Project does. Where they sit does not
- * change what they are: a Benchmark is a peer of an Agent, not something an Agent owns — one
- * Benchmark can evaluate several Agents, and the Agent under test is recorded on each scoreboard
- * evaluation.
+ * and, before 2026-11, the Project's `benchmarks/` beside `agents/`. Benchmarks now live in the
+ * data folder of the workbench `benchmark` of the Agent it is installed on (the default Agent's
+ * `agents/default_agent/app/data/benchmark/`), which the workbench reads and writes itself.
  *
- * Before 2026-11 they were the Project's `benchmarks/`, beside `agents/`; the layout migration
- * (state/layout-migration/) moves them and leaves a link there until 1.0. A Project whose
- * `system_agent` is an Agent of the user's (compat C1, system-agent.ts) has no Evaluation Center
- * data folder: its Benchmarks stay in the old place, which {@link resolveBenchmarksDir} names.
+ * BACKWARD COMPATIBILITY. Nothing reads these folders any more except the steps that move them:
+ * the layout migration (state/layout-migration/, `benchmarks/` → the system Agent's folder) and
+ * the server's one-time move into the default Agent's workbench data
+ * (packages/server's services/rsi-workbench-migration.ts), plus the server's `AppData` until its
+ * seam goes. Each move leaves a link at the place it emptied. A Project whose `system_agent` is an
+ * Agent of the user's (compat C1, system-agent.ts) never had the system Agent's folder: its
+ * Benchmarks stayed in `benchmarks/`, which {@link resolveBenchmarksDir} names. This file goes with
+ * those migrations at 1.0; whoever prepares 1.0 removes it
+ * (changelog/unreleased/2026-11-26-backward-compatibility.md).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -21,10 +25,10 @@ import { SYSTEM_AGENT_ID } from "./builtin-agents.js";
 import { projectDir, systemConfigPath, workbenchDataDir } from "./paths.js";
 import { isSystemAgent } from "./system-agent.js";
 
-/** The Evaluation Center's app id: the name of its data folder under the system Agent's `app/data/`. */
+/** The app id the old Evaluation Center kept its data under, and the Self-Evolution Workbench's workbench id. */
 export const BENCHMARK_APP_ID = "benchmark";
 
-/** `<root>/projects/<p>/agents/system_agent/app/data/benchmark`: the Project's Benchmarks (none until the first one is written). */
+/** `<root>/projects/<p>/agents/system_agent/app/data/benchmark`: where the Project's Benchmarks were in 0.2.19 and 0.2.20. */
 export function benchmarksDir(root: string, projectId: string): string {
   return workbenchDataDir(root, projectId, SYSTEM_AGENT_ID, BENCHMARK_APP_ID);
 }

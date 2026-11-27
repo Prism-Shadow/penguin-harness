@@ -3,20 +3,13 @@ import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";
 import type { Clock, Config, Paths } from "../hmr/capabilities.js";
 import { memoryRoutes } from "../http/routes/memory.js";
-import { benchmarksRoutes } from "../http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "../http/routes/skills.js";
 import { agentArchiveRoutes } from "../http/routes/agent-archive.js";
 import { agentTracesRoutes } from "../http/routes/agent-traces.js";
 import { agentApiRoutes } from "../http/routes/agent-api.js";
 import { agentAvatarRoutes } from "../http/routes/agent-avatar.js";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
-import type {
-  AgentConfig,
-  AgentLifecycle,
-  Benchmarks,
-  Memory,
-  Snapshots,
-} from "../mechanisms/agents.js";
+import type { AgentConfig, AgentLifecycle, Memory, Snapshots } from "../mechanisms/agents.js";
 import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
@@ -25,18 +18,11 @@ import type { Workbenches } from "../mechanisms/workbenches.js";
 
 /**
  * The Agent-scoped route groups: memory, skills, the API tab's settings and keys, the Agent's
- * own avatar, export and import, traces — and benchmarks, which are Project-level peers of an Agent but read through the same
- * services.
+ * own avatar, export and import, and traces.
  */
 @Component({
   contributes: {
     "HttpModule.routes": [
-      {
-        id: "agents.benchmarks",
-        prefix: "/api/projects/:projectId/benchmarks",
-        auth: "user",
-        order: 165,
-      },
       {
         id: "agents.memory",
         prefix: "/api/projects/:projectId/agents/:agentId/memory",
@@ -83,7 +69,6 @@ export class AgentRoutes {
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly memory!: Memory;
   @Use() private readonly snapshots!: Snapshots;
-  @Use() private readonly benchmarks!: Benchmarks;
   @Use() private readonly traces!: Traces;
   @Use() private readonly agentApi!: AgentApi;
   @Use() private readonly projectConfig!: ProjectConfigStore;
@@ -95,7 +80,6 @@ export class AgentRoutes {
   @Use() private readonly traceStore!: TraceIndexStore;
   @Use() private readonly sessions!: SessionIndex;
   @Bind("agents.memory") memoryRoutes!: Hono<AppEnv>;
-  @Bind("agents.benchmarks") benchmarksRoutes!: Hono<AppEnv>;
   @Bind("agents.skills") skillsRoutes!: Hono<AppEnv>;
   @Bind("agents.api") apiRoutes!: Hono<AppEnv>;
   @Bind("agents.avatar") avatarRoutes!: Hono<AppEnv>;
@@ -106,7 +90,6 @@ export class AgentRoutes {
     const access = this.access;
     const agentConfigService = this.agentConfig;
     this.memoryRoutes = memoryRoutes({ memoryService: this.memory, access });
-    this.benchmarksRoutes = benchmarksRoutes({ benchmarks: this.benchmarks, access });
     this.skillsRoutes = agentSkillsRoutes({ agentConfigService, config: this.config, access });
     const clock = this.clock;
     this.apiRoutes = agentApiRoutes({

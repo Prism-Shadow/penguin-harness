@@ -63,8 +63,8 @@ Delete these on sight, and do not write new ones:
   landing's list", "the list names exactly the Benchmarks the catalogue ships", an id list or a
   count pinned to a directory, a catalogue or another package's table. They fail on somebody
   else's legitimate change, never on a bug. Where the source is another repository's live branch
-  (the Benchmark catalogue a build clones from `main`), a merge there turns every open pull request
-  red at once. If a list must follow its source, derive it from the source at build or run time.
+  (the benchmark repository the landing's hub pages clone afresh on every build), a merge there
+  turns every open pull request red at once. If a list must follow its source, derive it from the source at build or run time.
   Otherwise keep it by hand and let review catch it. If a label must exist for every entry, key
   the dictionary by the entry so the compiler checks it.
 - **Tests that read what this repository does not pin.** Another repository's live branch or
@@ -121,8 +121,10 @@ file a test creates, and runs a file several times slower than a dev box.
   runner (5 s, and the server's and core's larger Windows budgets are not headroom to spend).
 - Count what a fixture writes, not only what the test asserts. A file every app boot or every
   new Project writes is written again by every test that boots one; that is how the built-in
-  Benchmarks a new Project gets made the Windows server shards several times slower within a
-  week. Shrink the fixture, or give the boot a test seam the way `passwordHashCost` does.
+  Benchmarks a new Project got made the Windows server shards several times slower within a
+  week, and they still arrive with every new Project, now as the seeds the Self-Evolution
+  Workbench copies into its data folder on its first load. Shrink the fixture, or give the boot a
+  test seam the way `passwordHashCost` does.
 - No large real fixtures (thousands of files, multi-megabyte archives — declare the size
   instead), no sleeps, no polling loops with long deadlines. Wait on the event.
 - Share setup across a `describe`; type into a terminal only after the previous command's

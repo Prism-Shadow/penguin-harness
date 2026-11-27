@@ -3,9 +3,9 @@
  *   POST /api/projects/:p/suggest-id   { name, kind, taken? } → { id, source, reason? }
  *
  * `kind` is `project`, `agent`, `org` or `channel`, or a kind a server module contributes
- * (`SemanticIdModule.kinds`, services/semantic-id-kinds.ts) — the Evaluation Center's `benchmark`
- * is one. The proposal itself is the shared one (services/semantic-id-suggest.ts): the default
- * model of the Project in the path, then the ASCII slug of the name, then a dated placeholder.
+ * (`SemanticIdModule.kinds`, services/semantic-id-kinds.ts). The proposal itself is the shared
+ * one (services/semantic-id-suggest.ts): the default model of the Project in the path, then the
+ * ASCII slug of the name, then a dated placeholder.
  * What differs by kind is decided here, beside the permission each kind's create route demands:
  *
  * | kind        | who may ask                              | id shape                           | avoided on top of `taken`             |
@@ -21,7 +21,7 @@
  * may create a Project, so membership of the Project whose model is spent is the only gate.
  * The ids avoided are the names the kind's create route refuses with 409, read as names only —
  * not the list views, which skip a folder with no config that the create route still refuses,
- * and open every Agent and Benchmark to answer. For a Project that is every id on the server.
+ * and open every Agent to answer. For a Project that is every id on the server.
  * None of them reaches the prompt, only the collision suffix. `org` and `channel` delegate to
  * the organization service, recorded as the organization's.
  */
@@ -62,7 +62,7 @@ export interface SuggestIdRouteDeps {
   orgService: Pick<OrgService, "suggestId">;
   settings: Pick<Settings, "getCompanyMode">;
   completeOnce: (projectId: string, prompt: string) => Promise<UtilityCompletion>;
-  /** One model dead end of a Project, Agent or Benchmark proposal, for the log and the errors panel. */
+  /** One model dead end of a Project, Agent or contributed-kind proposal, for the log and the errors panel. */
   recordFailure: (projectId: string, detail: string) => void;
 }
 
@@ -94,7 +94,7 @@ export function suggestIdRoutes(deps: SuggestIdRouteDeps): Hono<AppEnv> {
 
     const contributed = kind === "project" || kind === "agent" ? null : deps.kinds.find(kind);
     // A contributed kind asks whoever its create route admits: the owner, when that route is
-    // Project management (as a Benchmark's is).
+    // Project management.
     if (contributed?.access === "owner") deps.access.requireProjectOwner(user.userId, projectId);
     const reserved =
       kind === "project"

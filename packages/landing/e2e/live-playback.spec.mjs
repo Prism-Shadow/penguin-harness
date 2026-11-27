@@ -1,11 +1,17 @@
 /**
- * The homepage plays a single evolution round when its frame comes into view. Stopping restores
- * a new chat, and reduced motion waits for Play. Setup prompts stay out of the walkthrough.
- * The AMSP player has independent pause and resume controls.
+ * The homepage plays a single evolution round when its frame comes into view: the request is
+ * sent, then the default Agent's Self-Evolution Workbench (the pinned package's page, in a frame
+ * of its own inside the app) opens the round's Benchmark, and the conversation ends beside its
+ * score curve. Stopping restores a new chat, and reduced motion waits for Play. Setup prompts
+ * stay out of the walkthrough. The AMSP player has independent pause and resume controls.
  */
 import { test, expect } from "@playwright/test";
 
 const composer = '[data-slot="composer"] textarea';
+/** The workbench's page frame inside the app, wherever it is shown. */
+const WORKBENCH = 'iframe[src*="/workbenches/benchmark/ui/"]';
+/** The workbench's page shown under `root` (the app's frame, or one of its panes). */
+const workbenchPage = (root) => root.locator(`${WORKBENCH}:visible`).first().contentFrame();
 
 async function openHero(page, lang = "zh", useVirtualClock = true) {
   await page.addInitScript((lang) => {
@@ -51,8 +57,8 @@ for (const [lang, play, stop] of [
     await expect(frame.locator(composer)).not.toHaveValue("");
     await expect(guide).toHaveCount(0);
     await expect(passwordNotice).toHaveCount(0);
-    const chart = frame.locator("main svg.ui-chart:visible").first();
-    const evaluation = frame.getByRole("heading", {
+    const chart = workbenchPage(frame).locator("svg.ui-chart:visible").first();
+    const evaluation = workbenchPage(frame).getByRole("heading", {
       name: lang === "en" ? "Docs QA v1" : "文档问答 v1",
       exact: true,
     });
@@ -64,7 +70,9 @@ for (const [lang, play, stop] of [
     await page.clock.fastForward(15_000);
     if (lang === "en") {
       await expect(frame.locator('[data-pane="left"] [data-slot="composer"]')).toBeVisible();
-      await expect(frame.locator('[data-pane="right"] svg.ui-chart').first()).toBeVisible();
+      await expect(
+        workbenchPage(frame.locator('[data-pane="right"]')).locator("svg.ui-chart").first(),
+      ).toBeVisible();
     } else {
       await expect(
         frame.locator('[data-pane="left"]:visible, [data-pane="right"]:visible'),
@@ -86,7 +94,7 @@ test("the desktop walkthrough finishes with its conversation beside the score cu
   await page.setViewportSize({ width: 1280, height: 800 });
   const { frame } = await openHero(page, "en", false);
   const conversation = frame.locator('[data-pane="left"] [data-slot="composer"] textarea');
-  const benchmark = frame.locator('[data-pane="right"]');
+  const benchmark = workbenchPage(frame.locator('[data-pane="right"]'));
   await expect(benchmark.getByRole("heading", { name: "Docs QA v1", exact: true })).toBeVisible({
     timeout: 45_000,
   });
@@ -147,13 +155,20 @@ test("opens the installed workbenches without navigating away from the homepage"
   await page.clock.resume();
   const catalog = frame.getByRole("link", { name: /^App Center(?: ·|$)/ }).first();
   await catalog.click();
-  for (const id of ["default_agent/slides", "default_agent/images", "penguin_support/support"]) {
+  for (const id of [
+    "default_agent/benchmark",
+    "default_agent/slides",
+    "default_agent/images",
+    "penguin_support/support",
+  ]) {
     const app = id.split("/")[1];
     await frame.locator('li[data-app="' + id + '"] > button').click();
     const workbench = frame
       .locator('iframe[src*="/demo-workbenches/api/"][src*="/workbenches/' + app + '/ui/"]:visible')
       .contentFrame();
-    if (app === "slides") {
+    if (app === "benchmark") {
+      await expect(workbench.getByText("Example Benchmark", { exact: true })).toBeVisible();
+    } else if (app === "slides") {
       await workbench.locator("[data-open-deck]").first().click();
       const editor = workbench.locator("iframe#editor").contentFrame();
       await expect
@@ -253,7 +268,7 @@ test("a keyboard-activated navigation link keeps its destination while the scrip
   await expect(tile).toBeVisible();
   await page.clock.fastForward(60_000);
   await expect(tile).toBeVisible();
-  await expect(frame.getByRole("heading", { name: "Docs QA v1", exact: true })).toHaveCount(0);
+  await expect(frame.locator(WORKBENCH)).toHaveCount(0);
 });
 
 test("taking over the split preview releases the scripted drag", async ({ page }) => {

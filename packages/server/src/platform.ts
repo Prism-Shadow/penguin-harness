@@ -108,11 +108,7 @@ import { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/wo
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
 import { ProjectNotifier } from "./services/project-events.js";
-import {
-  ProjectService,
-  ProjectRuns,
-  ShippedBuiltinBenchmarkSeeds,
-} from "./services/project-service.js";
+import { ProjectService, ProjectRuns } from "./services/project-service.js";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
@@ -126,7 +122,6 @@ import { DataLayout } from "./mechanisms/data-layout.js";
 import { DeletingFolders } from "./mechanisms/deleting-folders.js";
 import { SessionActivity } from "./runtime/session-activity.js";
 import { MemoryServiceProvider } from "./services/memory-service.js";
-import { BenchmarkServiceProvider } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { SandboxSettings } from "./sandbox/settings-store.js";
@@ -167,6 +162,7 @@ import { PluginLibraryModule } from "./plugin/library-module.js";
 import { SystemAppModule } from "./plugin/system-app-modules.js";
 import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
 import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls";
+import { ProjectDataMigrationsRepo } from "@prismshadow/penguin-library-setting/repos/project-data-migrations";
 import { PluginModules } from "./mechanisms/plugins.js";
 import { PluginModulesService } from "./services/plugin-modules.js";
 import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
@@ -213,7 +209,7 @@ import {
   UsageStore,
 } from "@prismshadow/penguin-library-observability";
 import { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library-trace";
-import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
+import { AgentConfig, AgentLifecycle, Memory, Snapshots } from "./mechanisms/agents.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
 import {
@@ -368,9 +364,9 @@ export class IdentityModule {}
     AgentsRepo,
     ProjectAccess,
     ProjectNotifier,
-    ShippedBuiltinBenchmarkSeeds,
     SystemAgentAppData,
     HostAppSeeds,
+    ProjectDataMigrationsRepo,
     ProjectService,
     ProjectConfigService,
     ModelOAuthProvider,
@@ -516,19 +512,10 @@ export class TracesModule {}
     AgentService,
     DeletingFoldersService,
     MemoryServiceProvider,
-    BenchmarkServiceProvider,
     InstalledAgentSkills,
     AgentRoutes,
   ],
-  exports: [
-    AgentConfig,
-    Snapshots,
-    AgentLifecycle,
-    Memory,
-    Benchmarks,
-    DeletingFolders,
-    AgentSkills,
-  ],
+  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, DeletingFolders, AgentSkills],
 })
 export class AgentsModule {}
 

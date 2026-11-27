@@ -163,8 +163,7 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     // Electron carries web/dist via a file mapping, not an npm dependency.
     if (affected.has(`${prefix}web`)) implicit.add(`${prefix}desktop`);
     if (affected.has(`${prefix}server`)) for (const name of serverSourceReaders) implicit.add(name);
-    // Landing imports gallery/UI helpers and docs navigation, and its tests read
-    // core's builtin benchmark catalog.
+    // Landing imports gallery/UI helpers, docs navigation and core.
     if (["core", "docs", "ui", "ui-gallery"].some((name) => affected.has(`${prefix}${name}`))) {
       implicit.add(`${prefix}landing`);
     }

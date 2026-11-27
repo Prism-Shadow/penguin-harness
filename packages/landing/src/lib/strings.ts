@@ -368,7 +368,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     penguin: {
       name: "PenguinHarness",
       mode: "已经搭好",
-      note: "Web App、Trace、内置 Benchmark 的评估中心、自进化工具包、Agent API、沙箱。",
+      note: "Web App、Trace、内置 Benchmark 的自进化工作台、自进化工具包、Agent API、沙箱。",
     },
   },
 

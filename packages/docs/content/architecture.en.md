@@ -95,7 +95,7 @@ Item by item, each design maps to an owner and to the file or module that carrie
 | Secrets | File layer | Vault: `agent_state/.vault.toml`; model credentials: `.project_config.toml` (both 0600) |
 | The model table and the default model | File layer | `<project>/.project_config.toml` |
 | Run history (the sole source of truth for recovery) | File layer | `traces/<date>/<session>_<index>.jsonl` — see [Sessions & Traces](/sessions-and-traces) |
-| Benchmark cases and scores | File layer | `<project>/agents/system_agent/app/data/benchmark/<id>/` — see [Self-Improvement](/self-improvement) |
+| Benchmark cases and scores | File layer | The Self-Evolution Workbench's data folder, `<project>/agents/default_agent/app/data/benchmark/<id>/` for the default agent's — see [Self-Improvement](/self-improvement) |
 | Snapshots | File layer | `snapshots/v<version>.tar.gz`; the export/import service lives in the Server |
 | Streaming rendering, approval UI, charts | CLI / Web | `cli/src`, `web/src` (pure rendering, no engine logic) |
 
@@ -152,7 +152,7 @@ packages/web/src
 ├── lib/amsp/     # AmspRecord stream → view-model reducer; connect-first + dedup stream controller
 ├── components/   # ui primitives (modal / drawer / select …) and the app layout
 ├── pages/        # the login pages
-└── features/     # chat / agents / skills / plugins / models / usage / traces / benchmark / schedules / company / settings / admin … pages
+└── features/     # chat / agents / skills / plugins / models / usage / traces / app-center / schedules / company / settings / admin … pages
 ```
 
 The Server's routes and delivery guarantees are detailed on [Server API](/server-api), and how the Server process assembles its subsystems on [Server Boot and Subsystems](/server-boot).

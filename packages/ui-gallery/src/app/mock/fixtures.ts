@@ -2,10 +2,12 @@
  * The demo world the mocked API answers from, built for one language at a time: a signed-in
  * admin, one Project with two Agents and its built-in General Agent, their conversations (the
  * General Agent's is a self-evolution round on the docs Agent, rsi-transcript.ts), the model
- * table, the plugin library and what is installed, thirty days of usage, the docs Agent's
- * Benchmark, a draft and the built-in Benchmarks, schedules, the machines, the memory and vault
- * of the docs Agent, a small Workspace and the server's settings. Every row is typed by the server's own DTOs, so the compiler is what keeps this
- * data in step with the app that reads it.
+ * table, the plugin library and what is installed, thirty days of usage, the default Agent's
+ * Self-Evolution Workbench data (the docs Agent's Benchmark, a draft, the seeded Benchmarks and
+ * the tasks the page started), schedules, the machines, the memory and vault of the docs Agent, a
+ * small Workspace and the server's settings. Every row is typed by the server's own DTOs, and the
+ * workbench's by its handler's (the pinned package's `lib/api.ts`), so the compiler is what keeps
+ * this data in step with the app and the page that read it.
  */
 import type {
   AgentApiSettings,
@@ -14,10 +16,6 @@ import type {
   AppCenterShortcut,
   AgentConfigResponse,
   AgentSummary,
-  BenchmarkCaseSummary,
-  BenchmarkEvaluation,
-  BenchmarkSummary,
-  CaseMaterial,
   ChatDefaultsDto,
   CommandPolicyDto,
   DirListResponse,
@@ -69,18 +67,25 @@ import {
   presetProviderTable,
 } from "../../../../server/dist/model-catalog.js";
 import { effectiveConnection } from "../../../../core/dist/state/model-connection.js";
-// The Benchmark files fetched for this build, shared with Project provisioning.
-import bundledBenchmarks from "../../../../../node_modules/.cache/penguin-benchmarks/catalog.json";
+import type {
+  BenchmarkCaseSummary,
+  BenchmarkEvaluation,
+  BenchmarkSummary,
+  CaseMaterial,
+  TaskRecord,
+} from "./rsi-workbench-contract";
+import { EXAMPLE_BENCHMARK_ID, SEED_BENCHMARKS } from "./benchmark-seeds";
+import type { SeedBenchmark } from "./benchmark-seeds";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
 import type { AmspRecord } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
 import {
-  agentEvaluationPlugin,
   goalPlugin,
   marketPlugins,
   penguinSupportPlugin,
   rsiToolkitPlugins,
+  rsiWorkbenchPlugin,
   shippedIcon,
 } from "./library-plugins";
 // The market's curation as this build embeds it: its paths are the gallery's static files.
@@ -105,14 +110,8 @@ import type { ModelRef } from "./transcripts";
 // Helpers
 // ---------------------------------------------------------------------------------------------
 
-/** The package metadata and README texts prepared for the browser at build time. */
-type BuiltinBenchmark = Pick<
-  BenchmarkSummary,
-  "id" | "title" | "description" | "descriptionZh" | "version"
-> & {
-  cases: Array<{ id: string; title: string; statement: string; rubric: string }>;
-};
-const BUILTIN_BENCHMARKS = bundledBenchmarks as BuiltinBenchmark[];
+/** The seeded Benchmarks but the Example, whose history the demo keeps in example-benchmark.json. */
+const BUILTIN_BENCHMARKS = SEED_BENCHMARKS.filter((seed) => seed.id !== EXAMPLE_BENCHMARK_ID);
 
 /** The curation document's shape (plugin/builtin-market.json): paths relative to its folder. */
 interface MarketDocument {
@@ -318,9 +317,12 @@ export interface DemoFixtures {
   /** The market's curation: the selected plugins, which may lead, and their art. */
   market: PluginMarketResponse;
   readmes: Record<string, string>;
+  /** The default Agent's Self-Evolution Workbench: its Benchmarks, their cases and files. */
   benchmarks: BenchmarkSummary[];
   benchmarkCases: Record<string, BenchmarkCaseSummary[]>;
   caseFiles: Record<string, Record<CaseMaterial, Record<string, string>>>;
+  /** The tasks its page started, as its handler records them; oldest first. */
+  benchmarkTasks: TaskRecord[];
   machines: MachinesResponse;
   version: VersionResponse;
   update: UpdateCheckResponse;
@@ -966,18 +968,23 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
     shortDescriptionZh: zh,
     version,
   });
-  // The self-evolution toolkits, the evaluator and the market's plugins are the shipped
-  // packages' own listings, in their cards' categories; the demo adds a few of its own, and the
-  // server's order holds: categories in the library's order, plugins by name within each.
+  // The self-evolution toolkits, the Self-Evolution Workbench and the market's plugins are the
+  // shipped packages' own listings, in their cards' categories; the demo adds a few of its own,
+  // and the server's order holds: categories in the library's order, plugins by name within each.
   const toolkits = rsiToolkitPlugins();
-  const evaluationPlugin = agentEvaluationPlugin();
+  const workbenchPlugin = rsiWorkbenchPlugin();
   const supportPlugin = penguinSupportPlugin();
   const market = marketPlugins();
   const byName = (plugins: PluginItem[]) =>
     [...plugins].sort((a, b) => a.name.localeCompare(b.name));
   const library: PluginLibraryResponse = {
     groups: [
-      { id: "rsi", title: "Agent Self-Evolution", titleZh: "Agent 自进化", plugins: toolkits },
+      {
+        id: "rsi",
+        title: "Agent Self-Evolution",
+        titleZh: "Agent 自进化",
+        plugins: byName([...toolkits, workbenchPlugin]),
+      },
       {
         id: "office-productivity",
         title: "Office Productivity",
@@ -1053,7 +1060,7 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
         id: "ai-app-development",
         title: "AI App Development",
         titleZh: "AI 应用开发",
-        plugins: byName([...market.aiApp, evaluationPlugin]),
+        plugins: byName(market.aiApp),
       },
     ],
   };
@@ -1123,18 +1130,19 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
       ],
       hooks: [],
     },
-    // The default Agent carries one toolkit and its evaluator. Support belongs to its own Agent.
+    // The default Agent carries one toolkit and the Self-Evolution Workbench with its Skills.
+    // Support belongs to its own Agent.
     [IDS.agents.general]: {
       skills: [
         ...toolkits.filter((plugin) => plugin.name === "default-rsi-toolkit"),
-        evaluationPlugin,
+        workbenchPlugin,
       ].flatMap((plugin) =>
         plugin.skills.map((s) => ({ ...s, ...(plugin.icon ? { icon: plugin.icon } : {}) })),
       ),
       hooks: [],
-      pluginWorkbenches: (evaluationPlugin.workbenches ?? []).map((w) => ({
+      pluginWorkbenches: (workbenchPlugin.workbenches ?? []).map((w) => ({
         ...w,
-        plugin: evaluationPlugin.name,
+        plugin: workbenchPlugin.name,
       })),
     },
     penguin_support: {
@@ -1442,7 +1450,7 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
    * The one built-in Benchmark the docs Agent has been through: one Harbor trial per case, the
    * verifier passing three of them. A run's Session id names its trial (`harbor:<trial>`).
    */
-  const harborBaseline = (bench: BuiltinBenchmark): BenchmarkEvaluation => {
+  const harborBaseline = (bench: SeedBenchmark): BenchmarkEvaluation => {
     const rnd = seeded(4040);
     const cases = bench.cases.map((item, i) => {
       const score = i === 0 || i === 3 || i === 7 ? 100 : 0;
@@ -1503,15 +1511,16 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
       evaluations: [],
       agentIds: [],
     },
-    // Built in, as a new Project gets them: English titles in either locale, like the product's.
+    // Seeded, as the workbench's first load writes them into its data folder.
     ...BUILTIN_BENCHMARKS.map((bench): BenchmarkSummary => ({
       id: bench.id,
       title: bench.title,
-      description: bench.description,
-      descriptionZh: bench.descriptionZh,
-      runs: 1,
-      status: "published",
-      version: bench.version,
+      ...(bench.titleZh !== undefined ? { titleZh: bench.titleZh } : {}),
+      ...(bench.description !== undefined ? { description: bench.description } : {}),
+      ...(bench.descriptionZh !== undefined ? { descriptionZh: bench.descriptionZh } : {}),
+      runs: bench.runs ?? 1,
+      status: bench.status,
+      ...(bench.version !== undefined ? { version: bench.version } : {}),
       origin: { kind: "builtin" },
       caseCount: bench.cases.length,
       evaluations: bench.id === IDS.benchmarks.builtin ? [harborBaseline(bench)] : [],
@@ -1528,7 +1537,7 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
       { id: "CASE-002-breaking", title: L("列出破坏性变更", "List the breaking changes") },
     ],
   };
-  for (const bench of BUILTIN_BENCHMARKS) {
+  for (const bench of SEED_BENCHMARKS) {
     benchmarkCases[bench.id] = bench.cases.map((item) => ({
       id: item.id,
       title: item.title,
@@ -1548,8 +1557,8 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
       };
     }
   }
-  // A Harbor case is text only: what the task is, where its folder is, and how it is launched.
-  for (const bench of BUILTIN_BENCHMARKS) {
+  // A seeded case is text only: what the task is, where its folder is, and how it is launched.
+  for (const bench of SEED_BENCHMARKS) {
     bench.cases.forEach((item) => {
       caseFiles[`${bench.id}/${item.id}`] = {
         statement: { "README.md": item.statement },
@@ -1557,6 +1566,18 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
       };
     });
   }
+  // The self-evolution round was started from the workbench: Optimize on the docs Agent's
+  // Benchmark, as the page records the conversation it opened (rsi-transcript.ts).
+  const benchmarkTasks: TaskRecord[] = [
+    {
+      sessionId: IDS.sessions.optimize,
+      kind: "optimize",
+      benchmarkId: RSI_ROUND.benchmarkId,
+      agentId: IDS.agents.general,
+      approvalMode: "allow-all",
+      createdAt: iso(rsi.startedAt),
+    },
+  ];
 
   const machines: MachinesResponse = {
     machines: [
@@ -2273,6 +2294,7 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
     benchmarks,
     benchmarkCases,
     caseFiles,
+    benchmarkTasks,
     machines,
     version,
     update,

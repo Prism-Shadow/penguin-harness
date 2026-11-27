@@ -14,6 +14,7 @@
  * - `./attachment-limits` — the one place every attachment size number is defined.
  * - `./plugin-module-requests` — the PluginModuleRequests mechanism and its row (PRFC-0031).
  * - `./plugin-module-preinstalls` — the PluginModulePreinstalls mechanism (PRFC-0030).
+ * - `./project-data-migrations` — the ProjectDataMigrations mechanism (one-time file migrations).
  * - `./theme-store` — the installed theme packs under the data root.
  * - `./keybindings` — the bounds on the account's keyboard-shortcut overrides.
  * - `./desktop-service` — the desktop shell's token check and its shell↔web relays.
@@ -25,6 +26,8 @@ export { Settings, UiPrefsStore } from "./setting.js";
 export { PluginModuleRequests } from "./plugin-module-requests.js";
 export type { PluginModuleRequestRow, PluginModuleVia } from "./plugin-module-requests.js";
 export { PluginModulePreinstalls } from "./plugin-module-preinstalls.js";
+export { ProjectDataMigrations } from "./project-data-migrations.js";
+export type { ProjectDataMigrationRow } from "./project-data-migrations.js";
 export { ThemeStore } from "./theme-store.js";
 export type { ThemeStoreDeps } from "./theme-store.js";
 export {

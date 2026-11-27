@@ -8,8 +8,10 @@
  */
 import { defineConfig } from "vitest/config";
 import { mockWebNetwork } from "./src/app/mock/vite-plugin";
+import { RSI_WORKBENCH_SEEDS, rsiWorkbenchSeedsDir } from "./src/app/mock/rsi-workbench-seeds";
 
 export default defineConfig({
   plugins: [mockWebNetwork()],
+  resolve: { alias: { [RSI_WORKBENCH_SEEDS]: rsiWorkbenchSeedsDir() } },
   test: { environment: "node", include: ["test/**/*.test.ts"] },
 });

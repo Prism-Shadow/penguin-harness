@@ -147,10 +147,19 @@ in the PR body:
 - An external built-in plugin (a `@penguinharness/*` package from another repository, pinned in
   `packages/server`, `packages/cli` and `packages/desktop`; `plugins/README.md`) is not on the
   release's line at all. The stamp and `check-plugin-versions.mjs` leave it alone and the release
-  publishes nothing for it; its version moves only through a pin-raising pull request (the three
-  pins, its `minimumReleaseAgeExclude` entry, `pnpm install`) after its own release is registered
-  in the plugin index. The build fetches its locked tarball, so a release run needs npm (or the
-  index's github channel) the way it needs the registry for the native dependencies.
+  publishes nothing for it; its version moves only through a pin-raising pull request after its
+  own release is registered in the plugin index. The pin takes one of two forms, and the pull
+  request follows it:
+  - a GitHub Release asset URL in `devDependencies`, what the RSI toolkits and
+    `@penguinharness/rsi-workbench` use: change the URL in each host that pins it and run
+    `pnpm install`. pnpm's `minimumReleaseAge` reads a registry version's publish time, which a URL
+    does not have, so this form needs no `minimumReleaseAgeExclude` entry;
+  - an exact npm version in `dependencies`: change the three versions, move its
+    `<name>@<version>` entry in `minimumReleaseAgeExclude` (`pnpm-workspace.yaml`) to the new
+    version, and run `pnpm install`.
+
+  The build fetches its locked tarball, so a release run needs GitHub or npm (or the index's
+  github channel) the way it needs the registry for the native dependencies.
 - A package created mid-cycle at whatever number its author typed is the other case. `packages/hmr`
   arrived from #656 at 0.2.9 and was pulled into lockstep at 0.2.12: it is `private: true` and never
   published, so nothing ships wrong either way, and a package inside `packages/*` sitting three

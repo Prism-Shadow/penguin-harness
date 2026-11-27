@@ -2,8 +2,8 @@
  * The system apps as their readers see them (lib/system-apps.ts), over the features' own pages:
  * which apps a viewer has, and where the App Center's nav row stays lit besides its own page.
  *
- * System apps come from released page declarations accessible to the viewer. Benchmark routes
- * belong to the Agent Evaluation workbench.
+ * System apps come from released page declarations accessible to the viewer. The Evaluation
+ * Center's old addresses (`/benchmark…`) are no system app's: they lead into a workbench's window.
  */
 import { describe, expect, it } from "vitest";
 import { onSystemApp, systemAppsOf } from "../src/lib/system-apps";
@@ -42,7 +42,7 @@ describe("onSystemApp", () => {
   });
 
   it("recognizes a registered child route under a system app", () => {
-    const detail = SYSTEM_APP_PAGES.find((page) => page.key === "benchmark-detail")!;
+    const detail = SYSTEM_APP_PAGES.find((page) => page.key === "system-app")!;
     const pages = [...SYSTEM_APP_PAGES, { ...detail, key: "model-detail", path: "/models/:id" }];
     expect(onSystemApp("/models/sample", pages, true)).toBe(true);
   });

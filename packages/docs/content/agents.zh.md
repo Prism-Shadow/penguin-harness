@@ -55,7 +55,7 @@ Agent 属于它所在的服务端。Project 用到机器时，每台已连接机
 - 只从插件库复制新 Agent 需要的 Skill，其他 Agent 一概不动；
 - 报告新 Agent 的 id、安装了哪些 Skill，以及怎样和它开始对话。
 
-**报告写作智能体**示例会创建 id 为 `report-writer` 的 Agent。[评估中心](/evaluation-center)里有配套的 Benchmark 示例，创建后可以继续对这个 Agent 做评估和优化。
+**报告写作智能体**示例会创建 id 为 `report-writer` 的 Agent。[自进化工作台](/self-evolution-workbench)里有配套的 Benchmark 示例，创建后可以继续对这个 Agent 做评估和优化。
 
 ## 手动创建 Agent
 

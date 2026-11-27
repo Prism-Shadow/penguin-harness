@@ -7,12 +7,6 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AgentDeletionInfo } from "../api/types.js";
 import type { AgentCreation, AgentListItem } from "../services/agent-service.js";
-export { Benchmarks } from "@prismshadow/penguin-library-benchmark/contract";
-export type {
-  BenchmarkArchive,
-  BenchmarkCreateInput,
-  BenchmarkImportOptions,
-} from "@prismshadow/penguin-library-benchmark/types";
 export { AgentConfig, Memory } from "@prismshadow/penguin-library-agent/contract";
 
 /** The snapshot mechanism and its package vocabulary moved to the agent domain library

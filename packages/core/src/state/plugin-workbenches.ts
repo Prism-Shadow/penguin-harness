@@ -5,6 +5,7 @@ import type { LibraryPlugin } from "../plugin/library-reader.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { workbenchesDir } from "./paths.js";
 import { isWindowsReservedName, WINDOWS_RESERVED_RULE } from "./reserved-names.js";
+import { currentWorkbenchOwner } from "./workbench-owner-renames.js";
 
 export interface InstalledWorkbench {
   name: string;
@@ -32,7 +33,7 @@ async function receipt(dir: string): Promise<Receipt | null> {
       !data.files.every((file: unknown) => typeof file === "string" && safeSource(file))
     )
       return null;
-    return data;
+    return { ...data, plugin: currentWorkbenchOwner(data.plugin, path.basename(dir)) };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError)
       return null;

@@ -379,7 +379,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     penguin: {
       name: "PenguinHarness",
       mode: "Already built",
-      note: "Web App, Traces, Evaluation Center with built-in Benchmarks, self-evolution toolkits, Agent API, sandbox.",
+      note: "Web App, Traces, the Self-Evolution Workbench with built-in Benchmarks, self-evolution toolkits, Agent API, sandbox.",
     },
   },
 

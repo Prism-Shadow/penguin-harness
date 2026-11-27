@@ -3,29 +3,21 @@
  * upload/download routes and the directory import. One set of numbers, so a limit raised for one
  * entry point cannot quietly leave another behind, and one message, so the failure reads the same
  * wherever the user hit it. `unzipBounded` is where they are enforced on the way in, since an
- * archive can only be bounded before it is inflated. The Benchmark package archive
- * (benchmark-archive.ts) shares them all but the file count.
+ * archive can only be bounded before it is inflated.
  */
 import { unzipSync } from "fflate";
 import { HttpError, badRequest } from "./errors.js";
 
-/** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). Shared with the hooks and Benchmark archive routes. */
+/** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). Shared with the hooks archive routes. */
 export const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
 export const MAX_ARCHIVE_FILES = 200;
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
 
 /**
- * A Benchmark package's file cap. Each case carries its statement's and its rubric's materials,
- * so a package of ten cases outgrows the Skill cap long before it nears the byte caps, which it
- * shares.
- */
-export const MAX_BENCHMARK_ARCHIVE_FILES = 1000;
-
-/**
  * Validates one zip entry path (zip-slip guard): rejects absolute paths (leading "/" or a
  * drive letter), backslashes and any ".." segment — a malicious archive must never write
- * outside the target directory. Shared by the Skill, hook and Benchmark archive imports.
+ * outside the target directory. Shared by the Skill and hook archive imports.
  */
 export function assertSafeEntryPath(name: string): void {
   if (name.includes("\\")) throw badRequest(`Invalid zip entry path (backslash): ${name}`);

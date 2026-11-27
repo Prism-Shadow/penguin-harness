@@ -313,6 +313,7 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-26-project-data-migrations",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -380,6 +381,7 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-26-project-data-migrations",
       ]);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -441,6 +443,7 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-26-project-data-migrations",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -505,6 +508,7 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-26-project-data-migrations",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -557,6 +561,7 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-26-project-data-migrations",
       ]);
       expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
         { address: "ssh:nas", adopted_at: null },
@@ -606,6 +611,7 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-26-project-data-migrations",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -672,6 +678,7 @@ describe("a usage table from before the purpose column: 2026-11-19-usage-records
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-26-project-data-migrations",
       ]);
       expect(db.prepare("SELECT session_id, purpose FROM usage_records").all()).toEqual([
         { session_id: "s1", purpose: null },
@@ -714,6 +721,7 @@ describe("a database from before the module requests: 2026-11-19-plugin-module-r
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-26-project-data-migrations",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -767,6 +775,7 @@ describe("a database from before the preinstall record: 2026-11-19-plugin-module
     try {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-26-project-data-migrations",
       ]);
       const record = db.prepare(
         "INSERT OR IGNORE INTO plugin_module_preinstalls (package, project_id, listed_at) VALUES (?, ?, ?)",
@@ -792,6 +801,63 @@ describe("a database from before the preinstall record: 2026-11-19-plugin-module
       const after = shape(db);
       rollbackTo(db, "2026-11-19-plugin-module-requests");
       expect(hasTable(db, "plugin_module_preinstalls")).toBe(false);
+      migrate(db);
+      expect(shape(db)).toBe(after);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+// Given a database from before the record of a Project's one-time file migrations, the upgrade
+// adds its table on the swap path, a migration begins once per Project and stays unfinished
+// until it is marked so, and down takes the table away.
+describe("a database from before the project data migrations record: 2026-11-26-project-data-migrations", () => {
+  /** A root whose line declared everything through 2026-11-19-plugin-module-preinstalls. */
+  function openPreProjectDataMigrations(): DatabaseSync {
+    const db = openFresh();
+    db.exec("DROP TABLE project_data_migrations;");
+    stampThrough(db, "2026-11-19-plugin-module-preinstalls");
+    return db;
+  }
+
+  it("adds the table while a pushed platform boots, one row per migration and Project", () => {
+    const db = openPreProjectDataMigrations();
+    try {
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "2026-11-26-project-data-migrations",
+      ]);
+      const begin = db.prepare(
+        "INSERT OR IGNORE INTO project_data_migrations (name, project_id, begun_at) VALUES (?, ?, ?)",
+      );
+      expect(Number(begin.run("m1", "p1", "first").changes)).toBe(1);
+      expect(Number(begin.run("m1", "p1", "second").changes)).toBe(0);
+      expect(Number(begin.run("m1", "p2", "second").changes)).toBe(1);
+      db.prepare(
+        "UPDATE project_data_migrations SET finished_at = ? WHERE name = ? AND project_id = ?",
+      ).run("done", "m1", "p2");
+      expect(
+        db
+          .prepare(
+            "SELECT project_id, begun_at, finished_at FROM project_data_migrations ORDER BY 1",
+          )
+          .all(),
+      ).toEqual([
+        { project_id: "p1", begun_at: "first", finished_at: null },
+        { project_id: "p2", begun_at: "second", finished_at: "done" },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down drops the table, and a second up recreates it", () => {
+    const db = openPreProjectDataMigrations();
+    try {
+      migrate(db);
+      const after = shape(db);
+      rollbackTo(db, "2026-11-19-plugin-module-preinstalls");
+      expect(hasTable(db, "project_data_migrations")).toBe(false);
       migrate(db);
       expect(shape(db)).toBe(after);
     } finally {

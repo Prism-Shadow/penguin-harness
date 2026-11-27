@@ -62,7 +62,7 @@ export const DOCS_NAV: DocsSectionDef[] = [
   },
   {
     id: "advanced",
-    pages: pages("evaluation-center", "self-improvement", "goal-mode", "company-mode"),
+    pages: pages("self-evolution-workbench", "self-improvement", "goal-mode", "company-mode"),
   },
   {
     id: "design",
