@@ -7,7 +7,7 @@
  * AgentLifecycle mechanism, and re-exports the moved shapes for the server's own import paths.
  */
 import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import { installPlugin, McpServerNameTakenError } from "@prismshadow/penguin-core";
+import { createAgent, installPlugin, McpServerNameTakenError } from "@prismshadow/penguin-core";
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
@@ -100,6 +100,7 @@ export class AgentServiceProvider {
       directorySkills: {
         resolve: (dir: string, names: readonly string[]) => resolveDirectorySkills(dir, names),
       },
+      hostCreateAgent: createAgent,
     });
     this.AgentLifecycle = this.AgentService;
     // The service's own setup ran on its node before the move; its dispose effect (ending the

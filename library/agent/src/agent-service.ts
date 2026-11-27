@@ -192,6 +192,15 @@ export class AgentService implements AgentLifecycle {
   @Use() private readonly pluginModules!: AgentPluginModules;
   @Use() private readonly workbenches!: AgentWorkbenches;
   @Use() private readonly directorySkills!: AgentDirectorySkills;
+  /**
+   * The host's Agent factory (core's `createAgent`), injected by the assembly: the host's core
+   * instance owns the plugin library a hot-pushed platform configures — a library-bundled core
+   * would initialize a plain `default_agent` from its own unconfigured host (`No plugin
+   * library`, the admin-preinstalled plugins missed), with the State's directories already on
+   * disk when it throws, turning a retry into 409 `agent_exists`. The returned Agent is not
+   * read: the call runs for the State initialization alone.
+   */
+  private readonly hostCreateAgent!: typeof coreCreateAgent;
 
   /** Deletions this process knows, by `${projectId}/${deletionId}`. */
   private readonly deletions = new Map<string, AgentDeletionInfo>();
@@ -819,7 +828,7 @@ export class AgentService implements AgentLifecycle {
     const directorySeed = directory
       ? await this.directorySkills.resolve(directory.path, directory.names)
       : [];
-    await coreCreateAgent({ root: this.root, projectId, agentId });
+    await this.hostCreateAgent({ root: this.root, projectId, agentId });
     try {
       if (archive !== undefined) {
         // No pre-import snapshot: it protects existing State, and this Agent has none yet.
