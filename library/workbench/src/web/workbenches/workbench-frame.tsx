@@ -32,9 +32,10 @@ import {
   documentLangFor,
   useLocale,
   useTheme,
+  stampFrameContext,
+  useFrameLocation,
+  type FrameLocation,
 } from "@prismshadow/penguin-web/internal";
-import { stampFrameContext } from "../../lib/frame-context";
-import { useFrameLocation, type FrameLocation } from "../../lib/frame-location";
 import { NativeWorkbenchPage } from "./native-workbench-page";
 import { WorkbenchModelPicker } from "./workbench-model-picker";
 

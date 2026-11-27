@@ -45,6 +45,8 @@ export * from "./lib/failure";
 export * from "./lib/first-workbench-entry";
 export * from "./lib/format";
 export * from "./lib/frame-address";
+export * from "./lib/frame-context";
+export * from "./lib/frame-location";
 export * from "./lib/frame-messages";
 export * from "./lib/host-history";
 export * from "./lib/machine-catalogs";
