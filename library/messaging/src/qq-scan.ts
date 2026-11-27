@@ -32,8 +32,10 @@
  */
 import { createDecipheriv, randomBytes } from "node:crypto";
 import { userAgent } from "@prismshadow/penguin-core";
-import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
+import type { MessagingClock } from "./ports.js";
+import type { ScanFlow, ScanFlowPoll } from "./scan-flow.js";
 
 /** Host serving the three bind-task calls (not the bot OpenAPI host). */
 export const QQ_SCAN_BASE = "https://q.qq.com";
@@ -281,11 +283,13 @@ interface QQScanTask {
   claimed: boolean;
 }
 
-/** What a poll tells the caller: where the scan stands, and the credentials once it landed. */
-export interface QQScanPoll {
+/**
+ * What a poll tells the caller: where the scan stands, and once it landed the binding to store —
+ * the App ID as the account, and the plaintext pair as the config, exactly what a typed PUT
+ * stores.
+ */
+export interface QQScanPoll extends ScanFlowPoll {
   status: QQBindStatus;
-  /** Present only on `completed` — the plaintext pair, for the caller to store. */
-  bot?: { appId: string; appSecret: string };
 }
 
 export interface QQScanServiceOpts {
@@ -304,8 +308,12 @@ export interface QQScanServiceOpts {
  * replayed poll of the same task id reads as unknown rather than re-authorizing anything.
  * "Consumed" is claimed before the upstream request rather than deleted after it, because
  * the client's poll interval fires whether or not the previous request came back.
+ *
+ * QQ's {@link ScanFlow}: the scan routes (scan-routes.ts) drive it, contributed by
+ * {@link QqScanFlow}. It takes no pairing code, so it has no `submitVerifyCode` and QQ has no
+ * `verify` route.
  */
-export class QQScanService {
+export class QQScanService implements ScanFlow {
   private readonly tasks = new Map<string, QQScanTask>();
   private readonly now: () => number;
   /** The self-re-arming sweep, alive only while a task is remembered (see `armSweep`). */
@@ -373,7 +381,10 @@ export class QQScanService {
       throw new Error("QQ reported the scan complete but returned no bot");
     }
     const appSecret = decryptQQBotSecret(task.key, bot.encryptedSecret);
-    return { status: "completed", bot: { appId: bot.appId, appSecret } };
+    return {
+      status: "completed",
+      credential: { accountId: bot.appId, config: { appId: bot.appId, appSecret } },
+    };
   }
 
   /** Drops a task the user walked away from (the editor's cancel, and its unmount). */
@@ -446,5 +457,31 @@ export class QQScanTransportProvider {
   @Provide() qqScanTransport!: QQScanTransportHandle;
   setup() {
     this.qqScanTransport = { transport: createQQScanTransport() };
+  }
+}
+
+/**
+ * QQ's scan flow, contributed to messaging.scanFlows the way its connector is contributed to
+ * messaging.connectors. A completed poll is answered with the scanned bot's `appId`.
+ */
+@Component({
+  contributes: {
+    "MessagingModule.scanFlows": [
+      {
+        id: "messaging-qq.scan-flow",
+        channel: "qq",
+        accountIdField: "appId",
+      },
+    ],
+  },
+})
+export class QqScanFlow {
+  @Use() private readonly qqScanTransport!: QQScanTransportHandle;
+  @Use() private readonly clock!: MessagingClock;
+  @Bind("messaging-qq.scan-flow") flow!: ScanFlow;
+  setup() {
+    this.flow = new QQScanService(this.qqScanTransport.transport, {
+      now: () => this.clock.now().getTime(),
+    });
   }
 }

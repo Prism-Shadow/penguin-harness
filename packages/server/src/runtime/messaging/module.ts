@@ -17,14 +17,13 @@ import {
   MessagingSlots,
   MessagingTaskRunner,
   MessagingTuning,
-  QQScan,
 } from "@prismshadow/penguin-library-messaging/bridge";
 import type { MessagingChannelConnector } from "@prismshadow/penguin-library-messaging/connector";
 import { sessionMessagingRoutes } from "@prismshadow/penguin-library-messaging/routes";
-import { QQScanService } from "@prismshadow/penguin-library-messaging/qq-scan";
-import { WeChatScanService } from "@prismshadow/penguin-library-messaging/wechat-scan";
-import type { QQScanTransportHandle } from "@prismshadow/penguin-library-messaging/qq-scan";
-import type { WeChatScanTransportHandle } from "@prismshadow/penguin-library-messaging/wechat-scan";
+import type { ScanFlow } from "@prismshadow/penguin-library-messaging/scan-flow";
+import type { MessagingScanFlow } from "@prismshadow/penguin-library-messaging/scan-routes";
+import { QqScanFlow } from "@prismshadow/penguin-library-messaging/qq-scan";
+import { WechatScanFlow } from "@prismshadow/penguin-library-messaging/wechat-scan";
 import { FeishuMessaging } from "@prismshadow/penguin-library-messaging/feishu-connector";
 import { TelegramMessaging } from "@prismshadow/penguin-library-messaging/telegram-connector";
 import { QqMessaging } from "@prismshadow/penguin-library-messaging/qq-connector";
@@ -54,15 +53,20 @@ export type { Messaging, MessagingSlots };
       },
     ],
   },
-  children: [FeishuMessaging, TelegramMessaging, QqMessaging, WechatMessaging],
+  children: [
+    FeishuMessaging,
+    TelegramMessaging,
+    QqMessaging,
+    WechatMessaging,
+    QqScanFlow,
+    WechatScanFlow,
+  ],
 })
 export class MessagingModule {
   @Use() private readonly paths!: Paths;
   @Use() private readonly channels!: Channels;
   @Use() private readonly clock!: Clock;
   @Use() private readonly tuning!: MessagingTuning;
-  @Use() private readonly qqScanTransport!: QQScanTransportHandle;
-  @Use() private readonly wechatScanTransport!: WeChatScanTransportHandle;
   @Use() private readonly log!: Log;
   @Use() private readonly messagingRepo!: MessagingBindings;
   @Use() private readonly sessionsRepo!: SessionIndex;
@@ -72,7 +76,6 @@ export class MessagingModule {
   @Use() private readonly errors!: Errors;
   @Use() private readonly access!: Access;
   @Provide() messaging!: Messaging;
-  @Provide() qqScan!: QQScan;
   @Bind("messaging.session-routes") sessionRoutesRoutes!: Hono<AppEnv>;
   async setup({ contributions, effect }: ClassCtx) {
     const { lineDelayMs, inboundImageBudgetBytes } = this.tuning;
@@ -96,21 +99,24 @@ export class MessagingModule {
       ...(lineDelayMs !== undefined ? { lineDelayMs } : {}),
       ...(inboundImageBudgetBytes !== undefined ? { inboundImageBudgetBytes } : {}),
     });
-    const qqScan = new QQScanService(this.qqScanTransport.transport, { now });
-    // Same shape as the QQ one: what it holds is the handle that collects a bot token
-    // rather than a key that decrypts a secret, and is equally not worth persisting.
-    const wechatScan = new WeChatScanService(this.wechatScanTransport.transport, { now });
+    // Every scan flow arrives the same way — QQ's and WeChat's from their child nodes, any
+    // other through the same slot — and each gets the same scan routes.
+    const scanFlows: MessagingScanFlow[] = (contributions.scanFlows ?? []).map((c) => {
+      const { channel, accountIdField } = c.data as Pick<
+        MessagingScanFlow,
+        "channel" | "accountIdField"
+      >;
+      return { channel, accountIdField, flow: c.code as ScanFlow };
+    });
     // Connect every enabled binding; only active while this App is.
     await messaging.start();
     effect(() => messaging.stop());
     this.messaging = messaging;
-    this.qqScan = qqScan;
     this.sessionRoutesRoutes = sessionMessagingRoutes({
       messaging,
       messagingRepo,
       access: this.access,
-      qqScan,
-      wechatScan,
+      scanFlows,
       sessionsRepo,
     });
   }

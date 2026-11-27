@@ -226,7 +226,7 @@ describe("QQScanService", () => {
     transport.complete(started.taskId);
     expect(await service.poll(SID, started.taskId)).toEqual({
       status: "completed",
-      bot: { appId: APP_ID, appSecret: APP_SECRET },
+      credential: { accountId: APP_ID, config: { appId: APP_ID, appSecret: APP_SECRET } },
     });
     // Consumed: a replayed poll must not re-authorize anything.
     expect(await service.poll(SID, started.taskId)).toBeNull();

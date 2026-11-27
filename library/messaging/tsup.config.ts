@@ -35,6 +35,8 @@ export default defineConfig({
     "src/recall.ts",
     "src/reply-files.ts",
     "src/routes.ts",
+    "src/scan-flow.ts",
+    "src/scan-routes.ts",
     "src/task-attachments.ts",
     "src/telegram-api.ts",
     "src/telegram-connector.ts",

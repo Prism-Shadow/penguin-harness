@@ -81,7 +81,7 @@ import type {
   MessagingRuntimeStatus,
 } from "./vocabulary.js";
 import type { MessagingBindingRow } from "./repos/messaging-bindings.js";
-import type { QQScanPoll, QQScanService } from "./qq-scan.js";
+import type { ScanFlow } from "./scan-flow.js";
 import {
   INLINE_IMAGE_MAX_BYTES,
   toAttachmentLimits,
@@ -2201,17 +2201,15 @@ export abstract class Messaging {
   abstract sendTestMessage(row: MessagingBindingRow): Promise<void>;
 }
 
-@Interface()
-export abstract class QQScan {
-  abstract start(sessionId: string): Promise<{ taskId: string; qrUrl: string; pollMs: number }>;
-  abstract poll(sessionId: string, taskId: string): Promise<QQScanPoll | null>;
-  abstract cancel(sessionId: string, taskId: string): void;
-  abstract cancelSession(sessionId: string): void;
-}
-
 export interface MessagingSlots {
   /** A channel connector: which channel it speaks (static), and the connector (code). */
   connectors: Slot<{ channel: MessagingChannel }, MessagingChannelConnector>;
+  /**
+   * A channel's scan-to-connect flow: which channel it binds and the key its completed poll
+   * names the account under (static), and the flow (code). Each one gets the scan routes
+   * (scan-routes.ts) at `/messaging/<channel>/scan…`.
+   */
+  scanFlows: Slot<{ channel: MessagingChannel; accountIdField: string }, ScanFlow>;
 }
 
 /**
