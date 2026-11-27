@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** refactor
 - **Scope:** `messaging`, `server`
+- **PR:** [#1918](https://github.com/Prism-Shadow/penguin-harness/pull/1918)
 
 [English](2026-11-26-messaging-channel-neutral-seam.md)
 
