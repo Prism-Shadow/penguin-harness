@@ -26,10 +26,12 @@
  *
  * ## Media rides a CDN, encrypted, and the encryption is not optional
  *
- * A picture or a file is never inline. Outbound: `getuploadurl` issues a pre-signed URL for
- * bytes the caller has already AES-128-ECB encrypted under a key it generates, and the CDN
- * answers with the `x-encrypted-param` handle that the message item then references.
- * Inbound: the item carries a URL and the key, and the bytes are ciphertext until decrypted.
+ * A picture or a file is never inline. Outbound: `getuploadurl` issues a pre-signed upload
+ * target for bytes the caller has already AES-128-ECB encrypted under a key it generates, and
+ * the CDN answers with the `x-encrypted-param` handle that the message item then references.
+ * Inbound: the item carries where to fetch it and the key, and the bytes are ciphertext until
+ * decrypted. Either direction names the transfer as a ready-made URL or as a parameter to be
+ * placed on the CDN base (see WECHAT_CDN_BASE).
  * ECB with a per-file random key is the platform's choice, not one made here — the framing
  * is what it is, and the alternative to implementing it is not carrying media at all.
  *
@@ -51,6 +53,17 @@ import { MessagingMediaTooLargeError, collectUnderCap } from "./media.js";
 
 /** The platform's fixed entry host: the QR calls, and the default API base before a scan names one. */
 export const WECHAT_API_BASE = "https://ilinkai.weixin.qq.com";
+
+/**
+ * The media CDN, for answers that name a transfer by its parameter rather than by a URL.
+ *
+ * `getuploadurl` may return `upload_param` without `upload_full_url`, and an inbound media item
+ * may carry `encrypt_query_param` without `full_url`. Tencent's own plugin (see the module doc)
+ * then places the parameter on this base, which is its `CDN_BASE_URL` (src/auth/accounts.ts) and
+ * the default CDN base its docs/protocol.md names. A ready-made URL is always taken first, in both
+ * directions, which is the same order that client uses (src/cdn/cdn-upload.ts, pic-decrypt.ts).
+ */
+export const WECHAT_CDN_BASE = "https://novac2c.cdn.weixin.qq.com/c2c";
 
 /**
  * `iLink-App-Id`. Not a per-integration credential — it names the KIND of client, and every
@@ -164,9 +177,9 @@ export interface WeChatCredentials {
  */
 export interface WeChatMediaRef {
   /**
-   * The ready-made download URL the server returns. Required: the alternative is rebuilding
-   * it from a CDN host this protocol does not document, and a guessed host that resolves
-   * would be worse than one that does not.
+   * Where the bytes are: the item's ready-made `full_url`, or, for an item that carries only
+   * its `encrypt_query_param`, the download URL on WECHAT_CDN_BASE. Either way it embeds the
+   * signed parameter that authorizes the read, so it never goes into a message (see fetchMedia).
    */
   url: string;
   /**
@@ -408,6 +421,36 @@ function endpointUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/${path}`;
 }
 
+// The CDN's query key is `encrypted_query_param` in both directions, while the wire's media field
+// is spelled `encrypt_query_param`. Every value is URL-encoded: a parameter is base64, and an
+// unencoded `+`, `/` or `=` would alter what the CDN verifies the transfer against.
+
+/** The upload target for an answer that carried `upload_param` and no `upload_full_url`. */
+function cdnUploadUrl(uploadParam: string, filekey: string): string {
+  return (
+    `${WECHAT_CDN_BASE}/upload?encrypted_query_param=${encodeURIComponent(uploadParam)}` +
+    `&filekey=${encodeURIComponent(filekey)}`
+  );
+}
+
+/** The download URL for a media item that carried `encrypt_query_param` and no `full_url`. */
+function cdnDownloadUrl(encryptQueryParam: string): string {
+  return `${WECHAT_CDN_BASE}/download?encrypted_query_param=${encodeURIComponent(encryptQueryParam)}`;
+}
+
+/**
+ * Where `getuploadurl` says the ciphertext goes: its ready-made `upload_full_url` first, else its
+ * `upload_param` on the CDN base with the file key the request declared. Null when the answer
+ * carries neither.
+ */
+function uploadUrlOf(handle: Record<string, unknown>, filekey: string): string | null {
+  const fullUrl = handle.upload_full_url;
+  if (typeof fullUrl === "string" && fullUrl.trim() !== "") return fullUrl.trim();
+  const param = handle.upload_param;
+  if (typeof param === "string" && param !== "") return cdnUploadUrl(param, filekey);
+  return null;
+}
+
 /** The response envelope the JSON calls share; `ret` is 0 or absent on success. */
 interface WeChatEnvelope {
   ret?: number;
@@ -473,6 +516,21 @@ export function parseWeChatAesKey(aesKey: string): Buffer {
   throw new Error("wechat media key is neither 16 raw bytes nor 32 hex characters");
 }
 
+/**
+ * Writes a key into an outbound item's `aes_key`: base64 of its 32 lowercase HEX CHARACTERS,
+ * never of its 16 raw bytes.
+ *
+ * parseWeChatAesKey's tolerance of both forms is this reader's own, and the WeChat app does not
+ * share it: a picture whose key went out as base64 of the raw bytes is delivered, then shown as
+ * unavailable and cannot be opened. Tencent's own senders write the hex form for images, videos
+ * and files alike: openclaw-weixin keeps the key as hex (src/cdn/upload.ts:127) and base64s that
+ * text (src/messaging/send.ts:301, 345, 389), and its docs/protocol.md:651 says so. The CDN
+ * encryption and `getuploadurl`'s `aeskey` use the same key in its raw and hex forms.
+ */
+function outboundAesKey(key: Buffer): string {
+  return Buffer.from(key.toString("hex"), "utf8").toString("base64");
+}
+
 // ---------------------------------------------------------------------------
 // Inbound normalization
 // ---------------------------------------------------------------------------
@@ -490,6 +548,7 @@ interface WireItem {
 
 interface WireMedia {
   full_url?: string;
+  encrypt_query_param?: string;
   aes_key?: string;
 }
 
@@ -503,10 +562,19 @@ interface WireMessage {
   item_list?: WireItem[];
 }
 
-/** A media handle, or null when the item carries no usable URL. */
+/** Where an item's bytes are: its ready-made URL first, else its parameter on the CDN base. */
+function downloadUrlOf(media: WireMedia | undefined): string | null {
+  const fullUrl = media?.full_url;
+  if (typeof fullUrl === "string" && fullUrl !== "") return fullUrl;
+  const param = media?.encrypt_query_param;
+  if (typeof param === "string" && param !== "") return cdnDownloadUrl(param);
+  return null;
+}
+
+/** A media handle, or null when the item says nowhere to fetch it from. */
 function mediaRefOf(media: WireMedia | undefined, aesKeyOverride?: string): WeChatMediaRef | null {
-  const url = media?.full_url;
-  if (typeof url !== "string" || url === "") return null;
+  const url = downloadUrlOf(media);
+  if (url === null) return null;
   // `image_item.aeskey` is hex and takes precedence over `media.aes_key` where both are sent;
   // it is the one the platform's own client prefers for images.
   const aesKey =
@@ -673,8 +741,9 @@ export function createWeChatTransport(): WeChatTransport {
       };
 
       /**
-       * The upload half of an outbound attachment: a fresh key, a pre-signed URL for the
-       * ciphertext, and the CDN's handle for the message item to reference.
+       * The upload half of an outbound attachment: a fresh key, a pre-signed upload target for
+       * the ciphertext (the URL `getuploadurl` returns, or its parameter on the CDN base — see
+       * uploadUrlOf), and the CDN's handle for the message item to reference.
        *
        * `no_need_thumb` is set because nothing here has a thumbnail to make. The platform
        * requires thumbnail sizes for IMAGE and VIDEO only when one is being uploaded, and a
@@ -704,15 +773,21 @@ export function createWeChatTransport(): WeChatTransport {
           },
           { timeoutMs: CALL_TIMEOUT_MS, label: `${label} upload handle` },
         );
-        const uploadUrl = handle.upload_full_url;
-        if (typeof uploadUrl !== "string" || uploadUrl.trim() === "") {
-          // The alternative is assembling a URL from a CDN host this protocol never
-          // documents. A guessed host that happened to resolve would be worse than none.
-          throw new WeChatApiError(undefined, `${label} failed: the upload URL was not returned`);
+        const uploadUrl = uploadUrlOf(handle, filekey);
+        if (uploadUrl === null) {
+          // The field NAMES say what the platform answered with instead. Their values stay out:
+          // an upload parameter is itself the authorization for a write.
+          const fields = Object.keys(handle);
+          throw new WeChatApiError(
+            undefined,
+            `${label} failed: the upload URL was not returned (the response carried ${
+              fields.length === 0 ? "no fields" : `only ${fields.join(", ")}`
+            })`,
+          );
         }
         let res: Response;
         try {
-          res = await fetch(uploadUrl.trim(), {
+          res = await fetch(uploadUrl, {
             method: "POST",
             headers: { "content-type": "application/octet-stream", "user-agent": userAgent() },
             body: new Uint8Array(encryptEcb(file.data, aesKey)),
@@ -819,7 +894,7 @@ export function createWeChatTransport(): WeChatTransport {
               image_item: {
                 media: {
                   encrypt_query_param: param,
-                  aes_key: aesKey.toString("base64"),
+                  aes_key: outboundAesKey(aesKey),
                   encrypt_type: 1,
                 },
                 mid_size: cipherSize,
@@ -844,7 +919,7 @@ export function createWeChatTransport(): WeChatTransport {
               file_item: {
                 media: {
                   encrypt_query_param: param,
-                  aes_key: aesKey.toString("base64"),
+                  aes_key: outboundAesKey(aesKey),
                   encrypt_type: 1,
                 },
                 file_name: args.file.fileName,
