@@ -68,28 +68,47 @@
  *
  * ## Media
  *
- * Text only, in both directions. Inbound images are not normalized (a non-text message
- * reads as no text, which the bridge answers with its notice) and outbound files are
- * refused with a reason — see refuseMedia, which explains what QQ would require.
+ * Both directions carry it, through the platform's own rich-media API rather than anything
+ * this server has to host.
+ *
+ * INBOUND: a message's `attachments` become the bridge's image and file handles — fetched
+ * lazily, under the bridge's caps, from the platform's signed download links. A voice
+ * recording is read as the platform's own transcript (`asr_refer_text`), the way WeChat's is:
+ * nothing downstream decodes audio, and one with no transcript reads as no text at all, which
+ * the bridge answers with its not-supported notice. A quoted message's text rides above the
+ * reply as a blockquote.
+ *
+ * OUTBOUND: the bytes are registered (qq-upload.ts, which costs no slot) and then sent as a
+ * `msg_type: 7` passive reply, which costs ONE slot from the same ledger the text draws on.
+ * A file may take any slot while nothing is withheld for the final one; once text is waiting
+ * there, the file does not get to push it out to a later message. A file that cannot be sent
+ * for want of a slot, or that the platform refuses, is never dropped silently: a one-line
+ * note joins the tail (so the chat hears about it as soon as a slot exists), and the failure
+ * is also thrown so the bridge files its error record — see sendMedia.
  */
 import { MESSAGING_TEXT_CHUNK_CHARS, chunkMessagingText } from "./bridge.js";
 import type { MessagingTuning } from "./bridge.js";
-import { MessagingUnsupportedError } from "./media.js";
+import { MessagingMediaTooLargeError, MessagingUnsupportedError, sniffImageMime } from "./media.js";
 import type {
   MessagingChannelConnector,
   MessagingClient,
   MessagingConnection,
   MessagingConnectorHandlers,
+  MessagingInboundFile,
+  MessagingInboundImage,
+  MessagingOutboundFile,
   MessagingSendOptions,
 } from "./connector.js";
 import { chunkMarkdown } from "./markdown.js";
 import type {
+  QQAttachment,
   QQBotClient,
   QQChatKind,
   QQCredentials,
   QQInboundEvent,
   QQTransport,
 } from "./qq-api.js";
+import type { QQFileType } from "./qq-upload.js";
 import { QQ_BODY_INDEPENDENT_SEND_CODES, QQApiError, createQQTransport } from "./qq-api.js";
 import { qqMarkdownOf } from "./qq-markdown.js";
 import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
@@ -149,52 +168,95 @@ export const QQ_TAIL_MAX_CHARS = 20_000;
 const QQ_TAIL_ELIDED = "…(earlier part omitted 前略)…";
 
 /**
- * The bridge's outbound-file shape, mirrored structurally rather than imported: it is a
- * two-field record, and matching it by structure keeps this connector compiling against a
- * seam it never adds to.
+ * The refusal for a send with nothing to reply to. A bare Error on purpose: it drops
+ * something the chat was meant to receive and has no way to say so (the message that would
+ * carry the reason is the message being refused), so the error record is the only place it
+ * can be noticed — which is what `unexpected` is for.
  */
-interface QQOutboundFile {
-  fileName: string;
-  data: Buffer;
+function noRepliableMessage(): Error {
+  return new Error(
+    "QQ only accepts replies to a message sent from QQ, within a few minutes of it — send the bot a message in QQ and it will answer",
+  );
 }
 
 /**
- * Outbound media, refused rather than faked.
- *
- * QQ does have a rich-media path, and this product cannot reach it. Sending a picture on
- * API v2 is a two-step: the bytes are first registered against `/v2/{users,groups}/…/files`,
- * which takes a PUBLICLY REACHABLE https URL — the same requirement that ruled the webhook
- * mode out and made this a gateway connection in the first place — and only then can a
- * `msg_type: 7` message reference the handle it returns. Documents are worse still: the
- * platform lists a file type and does not open it. And any such message would spend a slot
- * from the same passive-reply budget the text is already rationing.
- *
- * So the honest answer is a refusal that names the reason. The bridge files the refusals of one
- * reply as one error record naming every file, and the reply's text still arrives — quietly
- * resolving would tell it a picture reached a chat that never received one. It is a
- * `MessagingUnsupportedError` rather than a bare one so that record is filed as expected: this
- * refusal is the platform's shape, identical every time, and nothing an operator reads a
- * dashboard to find (see error-kind.ts).
- *
- * The text names no file, and that is deliberate: the record's head names every file it covers,
- * and a refusal that reads the same for each is what lets them share the one reason line (see
- * the bridge's messagingFilesNotSentRecords) instead of repeating it once per file.
- *
- * The passive-reply-window refusal in `enqueue` deliberately stays a BARE `Error`, and the
- * split is the point rather than an oversight: this one costs nothing, since the reply text
- * still reaches the chat and the record names the file that did not follow it, while that one
- * IS the reply — the text is dropped and the chat cannot be told, because the message that
- * would carry the reason is the message being refused. Somebody therefore does have to notice
- * it, which is what `unexpected` is for; and `MessagingUnsupportedError` promises the opposite
- * in its own contract (a refusal the platform repeats identically, with no fault to chase and
- * no fix to deploy), which a reply lost to an expired window does not keep.
+ * The platform's `file_type` for an outbound file: 1 picture, 2 video, 3 voice, 4 anything
+ * else. Only the formats the platform names get their rich form — `.mp4` plays inline and
+ * `.silk` is the one voice format it accepts — while everything else (an `.mp3`, a PDF)
+ * arrives as a downloadable file card, which is also what the platform itself falls back to
+ * for an oversized picture or video.
  */
-function refuseMedia(): Promise<never> {
-  return Promise.reject(
-    new MessagingUnsupportedError(
-      "QQ cannot receive files: sending a file to QQ requires a publicly reachable URL for it, which this server has no way to provide",
-    ),
-  );
+export function qqFileTypeOf(fileName: string, asImage: boolean): QQFileType {
+  if (asImage) return 1;
+  const ext = fileName.slice(fileName.lastIndexOf(".") + 1).toLowerCase();
+  if (ext === "mp4") return 2;
+  if (ext === "silk") return 3;
+  return 4;
+}
+
+/** The platform's refusal of a picture format it will not show as a picture. */
+const QQ_UNSUPPORTED_FORMAT_CODE = 850019;
+
+/** The one-line, bilingual note a file's absence leaves in the chat (like the tail's elision marker). */
+function mediaNotSentNote(fileName: string, reason: string): string {
+  return `[File not sent 文件未发送: ${fileName} — ${reason}]`;
+}
+
+/**
+ * One inbound event as the bridge's normalized message, media as HANDLES: nothing is
+ * downloaded here (see connector.ts), and each handle checks the declared size before it
+ * asks for a byte.
+ */
+function inboundMediaOf(
+  transport: QQTransport,
+  evt: QQInboundEvent,
+): {
+  text: string | null;
+  images: MessagingInboundImage[];
+  files: MessagingInboundFile[];
+} {
+  const images: MessagingInboundImage[] = [];
+  const files: MessagingInboundFile[] = [];
+  const transcripts: string[] = [];
+  const download = (a: QQAttachment, what: string) => async (maxBytes: number) => {
+    if (a.size !== undefined && a.size > maxBytes)
+      throw new MessagingMediaTooLargeError(what, maxBytes);
+    return transport.fetchAttachment(a.url, maxBytes, what);
+  };
+  for (const a of evt.attachments ?? []) {
+    const type = a.contentType ?? "";
+    if (type === "voice") {
+      // The recording itself is not handed on: only its transcript can be read downstream.
+      if (a.asrText !== undefined) transcripts.push(a.asrText);
+    } else if (type.startsWith("image/")) {
+      const fetchBytes = download(a, "The image");
+      images.push({
+        fetch: async (maxBytes) => {
+          const data = await fetchBytes(maxBytes);
+          // The bytes name their type conclusively where they can; the declared one is the
+          // fallback, never `application/octet-stream`, which no provider accepts in a data URL.
+          return { data, mimeType: sniffImageMime(data) ?? type };
+        },
+      });
+    } else {
+      files.push({
+        // The sender's own name where the platform has one; a plain placeholder otherwise,
+        // since a made-up extension would tell the model the file is something it is not.
+        fileName: a.filename ?? (type === "video/mp4" ? "video.mp4" : "file"),
+        fetch: download(a, "The file"),
+      });
+    }
+  }
+  const own = [evt.content, ...transcripts].filter((part) => part !== "").join("\n");
+  // The quote is context for words the sender wrote, never a message of its own.
+  const quote =
+    own !== "" && evt.quoted !== undefined
+      ? `${evt.quoted
+          .split("\n")
+          .map((line) => `> ${line}`)
+          .join("\n")}\n\n`
+      : "";
+  return { text: own !== "" ? `${quote}${own}` : null, images, files };
 }
 
 /** Narrows a stored config document; throws a readable error on a malformed one. */
@@ -332,9 +394,6 @@ export class QQConnector implements MessagingChannelConnector {
       const { kind, openid } = parseQQChatId(chatId);
       return this.enqueue(creds, bot, kind, openid, text, opts?.markdown === true);
     };
-    // Assembled into a variable rather than returned as a literal: the media methods below
-    // are refusals rather than implementations, and a channel that grows one later should
-    // be able to fill them in without the shape of this function changing.
     const client = {
       async checkCredentials(): Promise<null> {
         await bot.checkCredentials();
@@ -351,8 +410,10 @@ export class QQConnector implements MessagingChannelConnector {
         const { kind, openid } = chatOfReplyRef(ref);
         return this.enqueue(creds, bot, kind, openid, text, opts?.markdown === true);
       },
-      sendImage: (_chatId: string, _file: QQOutboundFile) => refuseMedia(),
-      sendFile: (_chatId: string, _file: QQOutboundFile) => refuseMedia(),
+      sendImage: (chatId: string, file: MessagingOutboundFile) =>
+        this.sendMedia(creds, bot, chatId, file, true),
+      sendFile: (chatId: string, file: MessagingOutboundFile) =>
+        this.sendMedia(creds, bot, chatId, file, false),
     };
     return client;
   }
@@ -372,10 +433,7 @@ export class QQConnector implements MessagingChannelConnector {
           chatId: qqChatIdOf(evt.kind, evt.openid),
           chatKind: evt.kind === "c2c" ? "direct" : "group",
           messageId: qqReplyRefOf(evt.kind, evt.openid, evt.messageId),
-          // Only text is read today; an empty content is every non-text message type
-          // (image, voice, card, forwarded record), which the bridge answers with the
-          // text-only notice. Inbound media is a follow-up, not a gap.
-          text: evt.content !== "" ? evt.content : null,
+          ...inboundMediaOf(this.transport, evt),
           ...(evt.senderOpenid !== undefined ? { senderName: evt.senderOpenid } : {}),
         });
       },
@@ -513,13 +571,7 @@ export class QQConnector implements MessagingChannelConnector {
       // `async` so this is a rejection rather than a synchronous throw: the seam's methods
       // are typed as promises, and a caller that only attaches `.catch` — as any caller
       // reasonably may — would never see a throw raised before the promise exists.
-      //
-      // A bare Error on purpose, unlike the media refusal next door: this one drops text the
-      // chat was meant to receive and has no way to say so, so the error record is the only
-      // place it can be noticed (see refuseMedia).
-      throw new Error(
-        "QQ only accepts replies to a message sent from QQ, within a few minutes of it — send the bot a message in QQ and it will answer",
-      );
+      throw noRepliableMessage();
     }
     const budget = QQ_REPLY_BUDGET[kind];
     if (ledger.spent < budget - 1) {
@@ -530,6 +582,95 @@ export class QQConnector implements MessagingChannelConnector {
     // The final slot is only spendable once. Past it the tail waits for the next inbound
     // message rather than being sent into a rejection.
     if (ledger.spent < budget) this.scheduleFlush(ledger, this.tailFlushMs);
+  }
+
+  /**
+   * One outbound file: register the bytes, then spend one slot on the `msg_type: 7` message.
+   *
+   * Runs on the chat's send chain, so the slot check and the sequence number it reserves are
+   * exactly as ordered as a text send's, and a text queued behind a slow upload waits for it
+   * rather than overtaking. The slot is checked BEFORE the upload: a file with nowhere to go
+   * is not worth the transfer.
+   *
+   * Every way this can fail leaves a note in the chat and throws. The note is the user's half
+   * (a file the reply promised and that never came would otherwise be a silent absence — the
+   * bridge files its record under the Project, not in the chat); the throw is the operator's
+   * (see the bridge's messagingFilesNotSentRecords). A full ledger is a
+   * {@link MessagingUnsupportedError}, because the platform's reply cap is a standing shape
+   * of the channel that nothing is broken by; a platform refusal rethrows as it came.
+   */
+  private async sendMedia(
+    creds: QQCredentials,
+    bot: QQBotClient,
+    chatId: string,
+    file: MessagingOutboundFile,
+    asImage: boolean,
+  ): Promise<void> {
+    const { kind, openid } = parseQQChatId(chatId);
+    const ledger = this.ledgerFor(creds.appId, kind, openid);
+    ledger.bot = bot;
+    if (!this.repliable(ledger)) throw noRepliableMessage();
+    await this.chain(ledger, async () => {
+      // Re-checked inside the chain: the window may have closed while this waited its turn.
+      if (!this.repliable(ledger)) throw noRepliableMessage();
+      const budget = QQ_REPLY_BUDGET[kind];
+      if (ledger.tail.length > 0 || ledger.spent >= budget) {
+        const reason = `QQ allows only ${budget} replies to one message and none is free`;
+        this.noteMediaNotSent(ledger, file.fileName, reason);
+        throw new MessagingUnsupportedError(`${reason} for a file`);
+      }
+      try {
+        const fileType = qqFileTypeOf(file.fileName, asImage);
+        const upload = (type: QQFileType): Promise<string> =>
+          bot.uploadFile({
+            kind,
+            openid,
+            fileType: type,
+            fileName: file.fileName,
+            data: file.data,
+          });
+        let fileInfo: string;
+        try {
+          fileInfo = await upload(fileType);
+        } catch (err) {
+          // A picture format the platform will not show as a picture (it lists png and jpg;
+          // gif and webp are accepted on some accounts and not others) still goes out as a
+          // file card — better the file than a refusal.
+          if (
+            !(err instanceof QQApiError) ||
+            err.code !== QQ_UNSUPPORTED_FORMAT_CODE ||
+            fileType !== 1
+          ) {
+            throw err;
+          }
+          fileInfo = await upload(4);
+        }
+        // Reserved before the await, as sendNow does: a rejected send has still consumed its
+        // sequence number and a repeated pair is refused rather than retried.
+        ledger.spent += 1;
+        await bot.sendMessage({
+          kind,
+          openid,
+          content: "",
+          msgId: ledger.msgId!,
+          msgSeq: ledger.spent,
+          fileInfo,
+        });
+      } catch (err) {
+        this.noteMediaNotSent(
+          ledger,
+          file.fileName,
+          err instanceof Error ? err.message : String(err),
+        );
+        throw err;
+      }
+    });
+  }
+
+  /** Leaves the chat a one-line account of a file that did not arrive, as a withheld text. */
+  private noteMediaNotSent(ledger: QQReplyLedger, fileName: string, reason: string): void {
+    this.withhold(ledger, mediaNotSentNote(fileName, reason));
+    if (ledger.spent < QQ_REPLY_BUDGET[ledger.kind]) this.scheduleFlush(ledger, this.tailFlushMs);
   }
 
   /** Appends to the withheld tail, dropping from the FRONT if the ceiling is reached. */
