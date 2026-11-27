@@ -2,7 +2,7 @@
  * The registry of dock panel kinds: one self-describing definition per kind — its id, how it is
  * named and drawn, where it sorts, whether it is offered here, and the component that renders its
  * tab's body — read by every surface that lists, names or renders panels: the dock's tab strip,
- * its "+" menu and its picker, the floating launcher's fan, and the toolbar's panel buttons.
+ * its "+" menu and its start page, the floating launcher's fan, and the toolbar's panel buttons.
  *
  * Why a registry rather than a list of kinds: the dock is meant to take panels from plugins, and
  * a plugin's panel must be able to arrive without the dock knowing it by name. Everything the
@@ -45,13 +45,13 @@ export interface DockPanelBodyProps {
 
 /**
  * A panel kind as the registry holds it: the plugin face's definition (its id, name, glyph,
- * place, picker lead, offering and body — declared once there, for the app's panels and a
- * plugin's alike) plus what only the app's own panels set.
+ * place, offering and body — declared once there, for the app's panels and a plugin's alike)
+ * plus what only the app's own panels set.
  */
 export interface DockPanelDefinition extends PanelDefinition {
   /** The dock its tab lands in when it has none yet and nothing asked for one. Default: right. */
   defaultPosition?: "bottom" | "right";
-  /** A command that opens or toggles it; the empty dock's picker shows its keys on the row. */
+  /** A command that opens or toggles it; its tile on an empty dock's start page names its keys. */
   shortcut?: CommandId;
 }
 

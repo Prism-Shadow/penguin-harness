@@ -2031,6 +2031,24 @@ export const zh = {
       appsRestore: "恢复",
       appsMinimize: "最小化",
       appsSettings: "在 Agent 设置中查看",
+      launch: "启动图块",
+      launchHint:
+        "打开东西用的图块：应用图标在上、名称在下，最多两行，停靠栏的启动页与应用中心同用这一种。列数按网格自身的宽度取，每行尽量一样多；矮的底部停靠栏改为图标与名称并排的行。方向键按网格移动焦点，Enter 打开。",
+      launchDock: "右侧停靠栏的启动页",
+      launchBand: "底部停靠栏的启动页",
+      launchLabel: "启动页",
+      launchNames: {
+        appCenter: "应用中心",
+        agents: "智能体面板",
+        terminal: "命令行终端",
+        files: "文件浏览",
+        memory: "记忆",
+        trace: "轨迹观测",
+        remote: "远程控制",
+        schedules: "定时任务",
+        browser: "浏览器",
+      },
+      launchShortcut: "Ctrl+`",
     },
     data: {
       reviewList: {

@@ -221,13 +221,12 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
     "true",
   );
   await expect(page.getByTestId("dock").getByText("Subagent report: 3 TODOs")).toBeVisible();
-  // Close the tab (its × — the last tab, so the dock goes away with it, dropping the
-  // pinned scope), then reopen through the toolbar toggle and the picker -> back to the
-  // DEFAULT latest-Task scope.
+  // Close the tab (its × — the last tab, so the dock stays on its start page and the pinned
+  // scope goes with the tab), then reopen from the start page -> back to the DEFAULT
+  // latest-Task scope.
   await rightDock.getByRole("button", { name: /关闭面板.*智能体面板/ }).click();
-  await expect(rightDock).toHaveCount(0);
-  await page.getByTestId("dock-toggle-right").click();
-  await page.getByTestId("dock-pick-agents").click();
+  await expect(rightDock.getByTestId("dock-picker")).toBeVisible();
+  await rightDock.getByTestId("dock-pick-agents").click();
   await expect(agentsTabActive(page)).toBeVisible();
   // A plain turn has no child of its own. Reopening still shows the latest delegation.
   await expect(graph.getByRole("button", { name: /General Agent/ })).toHaveCount(2);
@@ -560,6 +559,11 @@ test("previous and next turns retain the original child through another send and
   const englishToggle = cold.getByTestId("dock-toggle-right");
   await expect(englishToggle).toHaveAttribute("aria-expanded", /true|false/);
   if ((await englishToggle.getAttribute("aria-expanded")) === "false") await englishToggle.click();
+  // A Session tool opened from the start page lives in its window, so the reload can come back
+  // on the start page instead: its Agents tile opens the panel again.
+  const englishPick = cold.getByTestId("dock-pick-agents");
+  await expect(previousEn.or(englishPick)).toBeVisible();
+  if (await englishPick.isVisible()) await englishPick.click();
   await expect(previousEn).toBeVisible();
   await expect(narrow.getByText("Page 3", { exact: true })).toBeVisible();
   await expect(previousEn).toBeEnabled();

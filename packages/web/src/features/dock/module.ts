@@ -4,10 +4,10 @@
  * files" in the session list (browse-files.ts).
  *
  * Each contributed panel is registered in the panel registry (panel-registry.ts) at boot — its
- * stored key, its name in the active language, its mark, its place, whether it leads the empty
- * dock's picker, and the module that contributed it — which every dock surface reads; a stored tab
- * of a kind nobody contributes keeps its place with a placeholder body. The listeners go to
- * dock-listeners.ts in their contributed order.
+ * stored key, its name in the active language, its mark, its place, and the module that
+ * contributed it — which every dock surface reads; a stored tab of a kind nobody contributes keeps
+ * its place with a placeholder body. The listeners go to dock-listeners.ts in their contributed
+ * order.
  */
 import {
   Bind,
@@ -39,15 +39,9 @@ import type { Dock, DockPanel, DockPanelData, PanelOffering } from "./iface";
 /** Registers the `panels` contributions in the panel registry, in their contributed order. */
 function registerPanels(contributions: readonly Contributed[]): void {
   const main = contributions.flatMap((c) => {
-    const lead = (c.data as unknown as DockPanelData).lead;
     const definitions =
       (c.code as { mainDefinitions?: readonly DockPanelDefinition[] }).mainDefinitions ?? [];
-    // The data half says whether the kind leads the picker, unless its definition says it itself.
-    return definitions.map((definition) => ({
-      from: c.from,
-      definition:
-        lead === undefined || definition.lead !== undefined ? definition : { ...definition, lead },
-    }));
+    return definitions.map((definition) => ({ from: c.from, definition }));
   });
   const mainKinds = new Set(main.map(({ definition }) => definition.id));
   for (const { from, definition } of main) registerDockPanel(definition, from);
@@ -64,7 +58,6 @@ function registerPanels(contributions: readonly Contributed[]): void {
         label: () => (S === zh ? data.titleZh : data.title),
         glyph: glyphOf(data.icon),
         order: data.order,
-        ...(data.lead !== undefined ? { lead: data.lead } : {}),
         Body,
         ...(Body.offered !== undefined ? { offered: Body.offered } : {}),
         ...(Body.subscribeOffered !== undefined ? { subscribeOffered: Body.subscribeOffered } : {}),

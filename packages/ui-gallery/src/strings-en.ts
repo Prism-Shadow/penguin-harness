@@ -2080,6 +2080,24 @@ export const en: GalleryStrings = {
       appsRestore: "Restore",
       appsMinimize: "Minimize",
       appsSettings: "View in agent settings",
+      launch: "Launch tiles",
+      launchHint:
+        "What things are opened with: the app's icon over its name, two lines at most, shared by the dock's start page and the App Center. The grid takes its columns from its own width and fills its rows as evenly as it can; a short bottom dock sets icon and name side by side in rows. The arrow keys move the focus across the grid, and Enter opens.",
+      launchDock: "The right dock's start page",
+      launchBand: "The bottom dock's start page",
+      launchLabel: "Start page",
+      launchNames: {
+        appCenter: "App Center",
+        agents: "Agents panel",
+        terminal: "Terminal",
+        files: "Files",
+        memory: "Memory",
+        trace: "Trajectories",
+        remote: "Remote control",
+        schedules: "Scheduled tasks",
+        browser: "Browser",
+      },
+      launchShortcut: "Ctrl+`",
     },
     data: {
       reviewList: {

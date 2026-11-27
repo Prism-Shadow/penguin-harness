@@ -654,6 +654,8 @@ export const zh = {
 
     /** The dock header's "+" menu: panels and shells this dock can take a tab for. */
     addTab: "添加面板",
+    /** An open dock with no tabs: the list of what it opens (its accessible name). */
+    startPage: "启动页",
     /** A panel tab's × (its content closes; terminal tabs use terminal.killShell instead). */
     closeTab: "关闭面板",
     /** The dock header's ×: the dock hides, its tabs stay for the next open. */

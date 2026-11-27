@@ -1,9 +1,10 @@
 /**
  * Narrow viewport (<1024px, the dock store's merge breakpoint): the right and bottom
  * docks render as ONE merged bottom surface — a 320px-minimum right panel does not fit a
- * phone. Pulling open a dock lands on the merged surface's picker; picking the Workspace
- * opens its tab there; drilling into a directory and opening a Markdown file renders the
- * preview; the dock's × puts the whole surface away.
+ * phone. Pulling open a dock lands on the merged surface's start page; picking the Workspace
+ * opens its tool there; drilling into a directory and opening a Markdown file renders the
+ * preview; closing the tool's tab leaves the surface open on its start page, and the dock's ×
+ * puts the whole surface away.
  * A short phone with a composer notice can still open a panel, reach its actions, and return to its draft.
  * With both initial notices, opening Files from Shortcuts exposes a whole row before any scroll, and more files can be reached below it.
  * Slash rows remain tappable, and the focused text and Close stay visible when a keyboard reduces
@@ -66,8 +67,8 @@ test("mobile merged dock: workspace opens at the bottom → nested dir → md re
   page,
 }) => {
   const sessionId = await openSessionWithNotes(page, "sheetuser");
-  // Pull open the right dock: at this width it renders as the merged bottom surface,
-  // whose picker then opens the Workspace (the tab still records its right-dock home).
+  // Pull open the right dock: at this width it renders as the merged bottom surface, whose
+  // start page then opens the Workspace tool (its tab still records its right-dock home).
   await page.getByTestId("dock-toggle-right").click();
 
   // One merged bottom surface, never a right dock at this width.
@@ -77,7 +78,13 @@ test("mobile merged dock: workspace opens at the bottom → nested dir → md re
   // panels), while at this width there is no right surface to render at all.
   await expect(page.locator('[data-testid="dock"][data-position="right"]')).toHaveCount(0);
   await dock.getByTestId("dock-pick-workspace").click();
-  await expect(dock.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
+  const files = dock.locator(
+    '[data-testid="dock-tab"][data-tab-id^=":app:session-tool/workspace/"]',
+  );
+  await expect(files).toHaveAttribute("data-active", "true");
+  // The tool has an address of its own beside the conversation; resizing never leaves it.
+  const address = page.url();
+  expect(address).toContain(`beside=${sessionId}`);
 
   // Drill into the directory → open the md → default rendered view (h1 shown, not source).
   await dock.getByText("notes").first().click();
@@ -99,7 +106,7 @@ test("mobile merged dock: workspace opens at the bottom → nested dir → md re
   await touch.detach();
   await expect(dock).not.toHaveAttribute("data-fullscreen");
   await expect(dock.getByRole("heading", { name: "Sheet Heading" })).toBeVisible();
-  await expect(page).toHaveURL(`${BASE}/chat/${sessionId}`);
+  await expect(page).toHaveURL(address);
   const toolbar = page.locator("[data-session-toolbar]");
   expect((await dock.boundingBox()).y).toBeGreaterThan(
     (await toolbar.boundingBox()).y + (await toolbar.boundingBox()).height,
@@ -112,7 +119,10 @@ test("mobile merged dock: workspace opens at the bottom → nested dir → md re
   await expect(page.locator('[data-testid="dock"][data-position="right"]')).toHaveCount(0);
   await expect(dock.getByRole("heading", { name: "Sheet Heading" })).toBeVisible();
 
-  // The dock's × puts the surface away; the toolbar toggle reads closed again.
+  // Closing the tool's tab leaves the surface open on its start page; the dock's × puts the
+  // surface away, and the toolbar toggle reads closed again.
+  await files.getByTestId("dock-tab-close").click();
+  await expect(dock.getByTestId("dock-picker")).toBeVisible();
   await dock.getByTestId("dock-close").click();
   await expect(dock).toBeHidden();
   await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "false");

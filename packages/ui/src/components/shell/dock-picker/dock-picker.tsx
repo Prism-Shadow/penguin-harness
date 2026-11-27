@@ -1,57 +1,55 @@
 /**
- * The body of an open dock that has no tabs yet: a centred list of what can open there, one row
- * per choice — a glyph and a name, and the key caps of a shortcut that does the same thing.
- * The bottom surface lays its choices out in a wrapping row; the right one stacks them.
+ * The dock's start page: the body of an open dock with no tabs, which a dock shows when it is
+ * pulled open empty and when its last tab closes. It is a home screen of what the dock can open,
+ * one launch tile per choice in the caller's order, in the middle of the dock and scrolled when
+ * the dock is too short for it. The right dock and full screen stack each icon over its name;
+ * the bottom band sets them side by side in rows, which keep the band's few lines of height for
+ * the choices themselves.
+ *
+ * `reveal` marks the page as content swapped into a dock that was already on screen (its last tab
+ * just closed), and the theme fades it in; a page the dock opens with arrives with the dock.
  */
-import type { HTMLAttributes, ReactNode } from "react";
-import { ICON_GAP } from "../../../icon-scale";
-import { Kbd } from "../../actions/kbd/kbd";
+import type { HTMLAttributes, Ref } from "react";
+import { LaunchGrid, type LaunchGridItem } from "../launch-grid/launch-grid";
 
-export interface DockPickerChoice {
-  /** Stable id: the row's test id is `dock-pick-<key>`. */
-  key: string;
-  label: string;
-  glyph: ReactNode;
-  /** A shortcut that makes the same choice, as the platform names its keys (`["Ctrl", "`"]`). */
-  keys?: readonly string[];
-  onChoose: () => void;
-}
+export type DockPickerChoice = Omit<LaunchGridItem, "testId">;
 
 export interface DockPickerProps extends HTMLAttributes<HTMLDivElement> {
   choices: readonly DockPickerChoice[];
-  /** A row of choices (the bottom surface) instead of a list (the right one). */
+  /** The bottom band: rows instead of tiles. */
   horizontal: boolean;
+  /** The list's accessible name. */
+  label: string;
+  /** Content swapped into a dock already on screen, which the theme fades in. */
+  reveal?: boolean;
+  ref?: Ref<HTMLDivElement>;
 }
 
-export function DockPicker({ choices, horizontal, className = "", ...rest }: DockPickerProps) {
+export function DockPicker({
+  choices,
+  horizontal,
+  label,
+  reveal = false,
+  className = "",
+  ref,
+  ...rest
+}: DockPickerProps) {
   return (
     <div
+      ref={ref}
       data-testid="dock-picker"
       {...rest}
-      className={`flex min-h-0 flex-1 items-start justify-center overflow-y-auto p-4 ${className}`}
+      className={`flex min-h-0 flex-1 overflow-y-auto ${className}`}
     >
       <div
-        className={
-          horizontal
-            ? "my-auto flex max-w-full flex-wrap items-center justify-center gap-1"
-            : "my-auto flex w-60 flex-col gap-1"
-        }
+        data-reveal={reveal || undefined}
+        className={`m-auto w-full ${horizontal ? "px-4 py-4" : "px-3 py-6"}`}
       >
-        {choices.map((choice) => (
-          <button
-            key={choice.key}
-            type="button"
-            data-testid={`dock-pick-${choice.key}`}
-            onClick={choice.onChoose}
-            className={`flex items-center ${ICON_GAP.menu} rounded-md px-3 py-2 text-left text-sm text-fg-muted transition-colors duration-150 hover:bg-line-muted hover:text-fg`}
-          >
-            <span className="shrink-0 text-fg-muted">{choice.glyph}</span>
-            <span className={`min-w-0 truncate ${choice.keys === undefined ? "" : "flex-1"}`}>
-              {choice.label}
-            </span>
-            {choice.keys !== undefined && <Kbd keys={choice.keys} />}
-          </button>
-        ))}
+        <LaunchGrid
+          label={label}
+          layout={horizontal ? "row" : "tile"}
+          items={choices.map((choice) => ({ ...choice, testId: `dock-pick-${choice.key}` }))}
+        />
       </div>
     </div>
   );
