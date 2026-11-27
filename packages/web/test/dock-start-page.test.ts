@@ -33,7 +33,8 @@ beforeAll(async () => {
   vi.stubGlobal("matchMedia", unmatchedQuery);
   dock = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
   ({ DockPanel } = await import("@prismshadow/penguin-library-session/web/dock/dock-panel"));
-  ({ registerDockPanel } = await import("@prismshadow/penguin-library-session/web/dock/panel-registry"));
+  ({ registerDockPanel } =
+    await import("@prismshadow/penguin-library-session/web/dock/panel-registry"));
 });
 
 const unregister: (() => void)[] = [];

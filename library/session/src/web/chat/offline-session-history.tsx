@@ -13,7 +13,17 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { ComposerCard, EmptyState, Skeleton, WallpaperSurface } from "@prismshadow/penguin-ui";
-import { ApiError, S, createStreamModel, machineForSession, openHistoryStream, pushMessages, readHistory, seedHistoryWindow, useMachines } from "@prismshadow/penguin-web/internal";
+import {
+  ApiError,
+  S,
+  createStreamModel,
+  machineForSession,
+  openHistoryStream,
+  pushMessages,
+  readHistory,
+  seedHistoryWindow,
+  useMachines,
+} from "@prismshadow/penguin-web/internal";
 import type { ChatItem } from "@prismshadow/penguin-web/internal";
 import { listedAway, machineAway, stoppedWaiting, type StoppedReason } from "./machine-away";
 import { MachineCover, type MachineCoverReading } from "./machine-cover";

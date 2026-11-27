@@ -20,7 +20,14 @@ import {
   routedView,
   sessionProbeKey,
 } from "../session-project";
-import { setDockConversation, dockVersion, isPanelOpen, openPanel, panelDock, subscribeDock } from "../../dock";
+import {
+  setDockConversation,
+  dockVersion,
+  isPanelOpen,
+  openPanel,
+  panelDock,
+  subscribeDock,
+} from "../../dock";
 import type { useMainChatInputs } from "./main-chat-inputs";
 
 /** Exact consecutive main ChatPage statements 26..61; called once, in original order. */

@@ -62,7 +62,23 @@ import {
   type DockTabItem,
 } from "@prismshadow/penguin-ui";
 
-import { DockPanelTitle, S, ScopedPanelSession, SessionAppDockBody, confirmClose, dockPageId, isSessionWorkbenchKind, pageSessionId, sessionAppPair, sessionWorkbenchAppKey, sessionWorkbenchKindAt, shortcutTitle, useCoarsePointer, useKeymap, usePageWorkspace } from "@prismshadow/penguin-web/internal";
+import {
+  DockPanelTitle,
+  S,
+  ScopedPanelSession,
+  SessionAppDockBody,
+  confirmClose,
+  dockPageId,
+  isSessionWorkbenchKind,
+  pageSessionId,
+  sessionAppPair,
+  sessionWorkbenchAppKey,
+  sessionWorkbenchKindAt,
+  shortcutTitle,
+  useCoarsePointer,
+  useKeymap,
+  usePageWorkspace,
+} from "@prismshadow/penguin-web/internal";
 import { announceDockLayout } from "./dock-listeners";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
 import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
