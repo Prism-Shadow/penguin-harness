@@ -77,7 +77,7 @@ import {
   MESSAGE_MAX,
 } from "../src/runtime/error-recorder.js";
 import { messagingErrorKind } from "@prismshadow/penguin-library-messaging/error-kind";
-import { MessagingConnectionClosedError } from "@prismshadow/penguin-library-messaging/qq-api";
+import { MessagingConnectionClosedError } from "@prismshadow/penguin-library-messaging/connector";
 import { StreamErrorWatcher } from "../src/runtime/stream-error-watcher.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

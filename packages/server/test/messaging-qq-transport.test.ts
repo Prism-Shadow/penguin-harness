@@ -36,11 +36,13 @@ import type {
 import {
   QQ_API_BASE,
   QQ_INTENT_GROUP_AND_C2C,
-  MessagingConnectionClosedError,
   QQApiError,
   createQQTransport,
 } from "@prismshadow/penguin-library-messaging/qq-api";
-import { MessagingChannelError } from "@prismshadow/penguin-library-messaging/connector";
+import {
+  MessagingChannelError,
+  MessagingConnectionClosedError,
+} from "@prismshadow/penguin-library-messaging/connector";
 import { createHash } from "node:crypto";
 import { MessagingMediaTooLargeError } from "@prismshadow/penguin-library-messaging/media";
 import { messagingErrorKind } from "@prismshadow/penguin-library-messaging/error-kind";

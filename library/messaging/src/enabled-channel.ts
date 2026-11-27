@@ -19,6 +19,12 @@ const MESSAGING_CHANNEL_IDS = {
   wechat: true,
 } as const satisfies Record<MessagingChannel, true>;
 
+/**
+ * Every channel id, in the table's order: what a refusal naming the accepted values lists, so
+ * a channel added to the table is named there without anyone editing the message.
+ */
+export const MESSAGING_CHANNELS = Object.keys(MESSAGING_CHANNEL_IDS) as readonly MessagingChannel[];
+
 /** Whether a stored channel discriminator — untrusted text in the DB — names a known channel. */
 export function isMessagingChannel(channel: string): channel is MessagingChannel {
   return Object.hasOwn(MESSAGING_CHANNEL_IDS, channel);
