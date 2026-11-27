@@ -10,6 +10,7 @@
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
+import fss from "node:fs";
 import path from "node:path";
 import { describe, expect, beforeAll, afterAll, it } from "vitest";
 import { importStream } from "@penguinharness/agent-state-git";
@@ -38,7 +39,7 @@ function run(
  * engine gix must stand in for.
  */
 function gitclCommit(c: AgentStateCommit): string {
-  const tmp = fs.mkdtempSync(path.join(path.dirname(c.gitdir), "gitcl-"));
+  const tmp = fss.mkdtempSync(path.join(path.dirname(c.gitdir), "gitcl-"));
   try {
     if (c.parent !== null) {
       const wt = run(c.gitdir, ["worktree", "add", "--detach", tmp, c.parent]);
@@ -48,10 +49,10 @@ function gitclCommit(c: AgentStateCommit): string {
       expect(init.status).toBe(0);
     }
     const dir = path.join(tmp, c.rel);
-    fs.rmSync(dir, { recursive: true, force: true });
+    fss.rmSync(dir, { recursive: true, force: true });
     for (const file of c.files ?? []) {
-      fs.mkdirSync(path.dirname(path.join(dir, file.rel)), { recursive: true });
-      fs.writeFileSync(path.join(dir, file.rel), file.body);
+      fss.mkdirSync(path.dirname(path.join(dir, file.rel)), { recursive: true });
+      fss.writeFileSync(path.join(dir, file.rel), file.body);
     }
     const env = {
       ...process.env,
@@ -95,7 +96,7 @@ function gitclCommit(c: AgentStateCommit): string {
     if (c.parent !== null) {
       run(c.gitdir, ["worktree", "remove", "--force", tmp]);
     }
-    fs.rmSync(tmp, { recursive: true, force: true });
+    fss.rmSync(tmp, { recursive: true, force: true });
   }
 }
 
