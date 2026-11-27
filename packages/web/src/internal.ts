@@ -105,6 +105,7 @@ export {
   compactionDegraded,
   compactionResultVisible,
   compactionShortOfRoom,
+  compactionSummaryAsked,
   compactionSummaryText,
   refusalHandoff,
 } from "./lib/amsp/compaction-summary";
