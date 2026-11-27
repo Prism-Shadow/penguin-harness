@@ -20,7 +20,7 @@ export interface Native {
     refName: string;
     parent?: string;
     rel: string;
-    files: Array<{ rel: string; body: Uint8Array }> | null;
+    files?: Array<{ rel: string; body: Uint8Array }>;
     message: string;
     author: { name: string; email: string; whenSeconds: number; whenOffsetMinutes: number };
     committer: { name: string; email: string; whenSeconds: number; whenOffsetMinutes: number };
