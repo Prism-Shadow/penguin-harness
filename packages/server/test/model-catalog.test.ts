@@ -174,9 +174,12 @@ describe("model-catalog", () => {
     for (const model of penguinGoModels) {
       expect(model.baseUrl, model.modelId).toBe(PENGUIN_GO_BASE_URL);
       expect(model.clientType, model.modelId).toBeDefined();
-      // The image preset bills text and images separately, which one output rate cannot express.
-      if (model.modelId === "gemini-3.1-flash-image") {
+      if (model.capability === "image") {
+        expect(model.imagePricing?.unit, model.modelId).toBe("usd_per_mtok");
+      } else if (model.modelId === "gemini-3.1-flash-image") {
+        // This preset has no list estimate for its separate text and image output rates.
         expect(model.pricing, model.modelId).toBeUndefined();
+        expect(model.imagePricing, model.modelId).toBeUndefined();
       } else {
         expect(model.pricing?.unit, model.modelId).toBe("usd_per_mtok");
       }
@@ -373,6 +376,7 @@ describe("model-catalog", () => {
       "google/gemini-nano-banana-2.1",
       /^https:\/\/openrouter\.ai\/api\/v1\/images\/generations$/,
     ],
+    ["penguin-go", "gemini-nano-banana-2.1", /^https:\/\/go\.penguin\.ooo\/api\/v1\/stream$/],
   ])("the %s Nano Banana preset returns the requested image", async (provider, model, endpoint) => {
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN4sAAAAASUVORK5CYII=",
@@ -383,6 +387,22 @@ describe("model-catalog", () => {
       if (provider === "openrouter") {
         return Response.json({
           data: [{ b64_json: png.toString("base64"), media_type: "image/png" }],
+        });
+      }
+      if (provider === "penguin-go") {
+        const event = {
+          role: "assistant",
+          event_type: "delta",
+          content_items: [
+            { type: "inline_data.done", data: png.toString("base64"), mime_type: "image/png" },
+          ],
+          usage_metadata: null,
+          finish_reason: null,
+        };
+        const stop = { ...event, event_type: "stop", content_items: [], finish_reason: "stop" };
+        const body = [event, stop].map((item) => `data: ${JSON.stringify(item)}\n\n`).join("");
+        return new Response(`${body}data: [DONE]\n\n`, {
+          headers: { "content-type": "text/event-stream" },
         });
       }
       const events = [
@@ -406,7 +426,9 @@ describe("model-catalog", () => {
       const entry = presetModelEntries().find(
         (row) => row.provider === provider && row.model_id === model,
       )!;
-      const connection = storedConnection({ ...entry, api_key: "test-key" });
+      const groups = presetProviderTable();
+      groups[provider] = { ...groups[provider], api_key: "test-key" };
+      const connection = storedConnection(entry, groups);
       const client = new AutoLLMClient({ model: entry.model_id, ...connection });
       const images: Uint8Array[] = [];
       for await (const event of client.streamingResponse({
@@ -419,6 +441,13 @@ describe("model-catalog", () => {
       expect(fake.calls).toHaveLength(1);
       const url = new URL(fake.calls[0]!.url);
       expect(url.origin + url.pathname).toMatch(endpoint);
+      if (provider === "penguin-go") {
+        expect(fake.calls[0]!.headers.get("authorization")).toBe("Bearer test-key");
+        expect(JSON.parse(fake.calls[0]!.body)).toMatchObject({ model });
+        expect(modelModalities(model, connection.clientType, connection.baseUrl).output).toContain(
+          "Image",
+        );
+      }
       expect(images.map((bytes) => Buffer.from(bytes))).toEqual([png]);
     } finally {
       vi.unstubAllGlobals();

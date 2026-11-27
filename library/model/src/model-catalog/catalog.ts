@@ -2687,6 +2687,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
+    modelId: "gemini-nano-banana-2.1",
+    displayName: "Gemini Nano Banana 2.1",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    capability: "image",
+    tool: true,
+    contextWindow: 131072,
+    supportsVision: true,
+    imagePricing: { unit: "usd_per_mtok", input: 1.5, thoughts: 7.5, output: 30 },
+    clientType: "mmsp",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
     modelId: "gemini-omni-1.2-flash",
     displayName: "Gemini Omni 1.2 Flash",
     provider: PENGUIN_GO_PROVIDER_ID,
