@@ -30,6 +30,8 @@
 /* A shipped plugin's web half is compiled with the app (plugin-web.gen.ts) and keeps its source
    under its package's src/web/, so its class strings are scanned there. */
 @source "../../../plugins/*/src/web";
+/* The session domain's web half is compiled with the app the same way, from its own package. */
+@source "../../../library/session/src/web";
 
 /* Brand color scale (Google blue family): generates utility classes like bg-brand-600 / text-brand-300. */
 @theme {

@@ -81,6 +81,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/traces/trace-panel.tsx": { 24: [2, "W10"] },
   "lib/strings-en.ts": { 24: [31, "W10"] },
   "lib/strings.ts": { 24: [31, "W10"] },
+  "library/session/src/web/chat/archived-session-stub.tsx": { 24: [1, "W10"] },
 };
 
 /**
@@ -103,7 +104,18 @@ const TOKENS_ONLY: readonly string[] = [
   "plugins/browser-automation/src/web/chrome-surface.tsx",
   "plugins/browser-automation/src/web/new-tab-page.tsx",
   "plugins/browser-automation/src/web/pairing-dialog.tsx",
+  "library/session/src/web/chat/background-done-banner.tsx",
+  "library/session/src/web/chat/compaction-banner.tsx",
   "library/session/src/web/chat/compaction-handover.tsx",
+  "library/session/src/web/chat/goal-banner.tsx",
+  "library/session/src/web/chat/handoff-banner.tsx",
+  "library/session/src/web/chat/harness-banner.tsx",
+  "library/session/src/web/chat/mcp-connect-banner.tsx",
+  "library/session/src/web/chat/message-item.tsx",
+  "library/session/src/web/chat/org-trigger-banner.tsx",
+  "library/session/src/web/chat/scheduled-banner.tsx",
+  "library/session/src/web/chat/skills-banner.tsx",
+  "library/session/src/web/chat/task-stats-line.tsx",
   "features/company/handbook-page.tsx",
   "features/model-picker/model-picker-modal.tsx",
   "features/settings/shortcut-recorder.tsx",

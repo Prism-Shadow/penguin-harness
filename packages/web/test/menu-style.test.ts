@@ -19,7 +19,7 @@ describe("menus and pickers", () => {
 
   it("draw their rows with the Menu family, never a hand-built menu row", () => {
     const handBuilt = SCAN.files
-      .filter((file) => file.root === "web")
+      .filter((file) => file.root === "web" || file.root === "library:session")
       .filter((file) => /\bmenuRow(?:Class|Tone)\b/.test(file.text))
       .map((file) => file.id);
     expect(handBuilt).toEqual([]);
@@ -27,7 +27,10 @@ describe("menus and pickers", () => {
 
   it("mark the current choice with Select's check, never a typed ✓", () => {
     const typed = SCAN.files
-      .filter((file) => file.root === "web" && file.name.endsWith(".tsx"))
+      .filter(
+        (file) =>
+          (file.root === "web" || file.root === "library:session") && file.name.endsWith(".tsx"),
+      )
       .filter((file) => /["'`]✓["'`]/.test(file.text))
       .map((file) => file.id);
     expect(typed).toEqual([]);
