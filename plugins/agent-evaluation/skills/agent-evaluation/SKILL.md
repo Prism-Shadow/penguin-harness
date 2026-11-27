@@ -1,7 +1,7 @@
 ---
 name: agent-evaluation
 description: Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.
-version: 2026.11.21.1
+version: 2026.11.27.1
 ---
 
 # Agent Evaluation
@@ -64,7 +64,7 @@ Before launch, snapshot every file under the Case's `statement/` and `rubric/` d
 
 ## Cases run outside a Workspace
 
-If the Case's `statement/README.md` has a `## How this case is run` section that names the Harbor framework, links a repository and gives the `harbor run` launch, the Case is a Harbor task kept in that repository: follow `reference/harbor.md` for Prepare, Run and Score. Links may name a branch such as `main`, a tag or a commit. One Harbor trial replaces the Workspace launch and the task verifier's reward replaces the Rubric judgement. The run rules — fetching the repository revision named by the statement, the launch, concurrency and Docker networks, retries, what `result.json` holds, credentials — are the repository's own, in its README section **Running a task (for agents)**, which the statement links; read that section once per evaluation and follow it. The Contract, visibility rules, failure codes and Return format are unchanged. `thinking_level` is still the Test Agent's configured value, and `provider` / `model_id` are still the request's. The Harbor adapter, not you, copies the requested model's saved entry into the task container; the one thing you look up is that model's API host, through the repository's helper, as the reference says.
+If the Case's `statement/README.md` has a `## How this case is run` section that names the Harbor framework, links a repository and gives the `harbor run` launch, the Case is a Harbor task kept in that repository: follow `reference/harbor.md` for Prepare, Run and Score. The task link names a full commit. Shared run instructions and the Penguin adapter may link to `main`. One Harbor trial replaces the Workspace launch and the task verifier's reward replaces the Rubric judgement. The run rules — fetching the repository revision named by the statement, the launch, concurrency and Docker networks, retries, what `result.json` holds, credentials — are in the **Running a task (for agents)** section linked by the statement. Read it once per evaluation and follow it. The Contract, visibility rules, failure codes and Return format are unchanged. `thinking_level` is still the Test Agent's configured value, and `provider` / `model_id` are still the request's. The Harbor adapter, not you, copies the requested model's saved entry into the task container; the one thing you look up is that model's API host, through the repository's helper, as the reference says.
 
 A caller that fans out cells of such a Benchmark follows `reference/harbor.md` §A: the shared setup once, before its first `run_subagent` — the install bundle included — then the cells in the background up to the limit (four at a time unless the user named another), each returned cell replaced at once by the next rather than in batches, and one more try at lower concurrency for a cell Docker could not give a network, which is never a score of 0.
 

@@ -14,6 +14,15 @@
  *   The card is a size container, so the toolbar collapses by the card's own width rather than the
  *   viewport's; it takes the theme's input focus ring while anything inside it has focus, and
  *   carries the glass hook of the layer floating over the conversation.
+ * - The card's `cover` stands on the card's own face in place of the editor while the editor
+ *   cannot be used (the conversation's machine is out of reach): the editor stays mounted and
+ *   keeps its place in the layout, laid out but not drawn, so the card neither changes size nor
+ *   loses what was typed, staged or selected, and the cover's words take the card's own surface,
+ *   border and corners in every theme. The card is as tall as the taller of the two, which is the
+ *   editor at any common width. A cover that comes while the editor has focus takes it to its
+ *   first control, and gives it back to the text body when it goes. The slot is a polite live
+ *   region present from the first paint, so a cover is announced when it comes and its words when
+ *   they change. `ComposerCover` lays the words out: a title, the live status row, a muted note.
  * - `ComposerBanner` is a notice that belongs to the composer (no model to send with yet), drawn
  *   as the card's top band through `ComposerCard`'s `banner`: inside the card's border and
  *   attached to its top edge, so it reads as part of the input box rather than as a card of its
@@ -30,8 +39,10 @@
  * The composer's behaviour — sending, slash matching, paste and drop, drafts — is the caller's;
  * these draw it.
  */
-import type { ReactNode, Ref, TextareaHTMLAttributes } from "react";
+import { useLayoutEffect, useRef } from "react";
+import type { FocusEvent, ReactNode, Ref, RefObject, TextareaHTMLAttributes } from "react";
 import { Button } from "../../actions/button/button";
+import { FOCUSABLE_SELECTOR } from "../../overlays/esc-layers/esc-layers";
 import {
   NOTICE_TONE,
   NOTICE_TONE_CLASS,
@@ -59,6 +70,7 @@ export function ComposerCard({
   hint,
   strip,
   actions,
+  cover,
 }: {
   /** A notice drawn as the card's top band (`ComposerBanner`), above everything else. */
   banner?: ReactNode;
@@ -78,54 +90,158 @@ export function ComposerCard({
   strip?: ReactNode;
   /** The right group: status, model and the action button; it never shrinks. */
   actions?: ReactNode;
+  /**
+   * What the card shows in place of the editor while the editor cannot be used
+   * (`ComposerCover`); absent or null while it can. The editor stays mounted under it.
+   */
+  cover?: ReactNode;
 }) {
   const { ref, ...text } = textarea;
+  const covered = cover !== undefined && cover !== null && cover !== false;
+  const editorRef = useRef<HTMLDivElement>(null);
+  const coverRef = useRef<HTMLDivElement>(null);
+  const coverFocus = useCoverFocus(covered, editorRef, coverRef);
   return (
     <div
       data-slot="composer"
-      className="ui-glass @container rounded-lg border border-line-emphasis bg-surface px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-fg-muted focus-within:ring-2 focus-within:ring-fg-subtle/30"
+      {...(covered ? { "data-covered": "" } : {})}
+      className="ui-glass @container grid rounded-lg border border-line-emphasis bg-surface px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-fg-muted focus-within:ring-2 focus-within:ring-fg-subtle/30"
     >
-      {banner !== undefined && banner !== null && banner !== false && (
-        // Out to the card's border on three sides, clipped to its top corners whatever radius the
-        // theme gives the card, and ruled off from the text below.
-        <div className="-mx-2.5 -mt-2 mb-2 overflow-hidden rounded-t-[inherit] border-b border-line-muted">
-          {banner}
-        </div>
-      )}
-      {attachments !== undefined && attachments !== null && (
-        <div className="mb-2">{attachments}</div>
-      )}
-      {chips}
-      {/* The body rung rather than the form controls' small one: this is a typing surface for
+      {/* The editor and the cover share one cell, so the card keeps the editor's size under a
+          cover; the editor is laid out but not drawn, which also takes it out of the Tab order
+          and the accessibility tree. Corners inherited, so the banner's band keeps the card's. */}
+      <div
+        ref={editorRef}
+        className={`col-start-1 row-start-1 min-w-0 rounded-[inherit] ${covered ? "invisible" : ""}`}
+      >
+        {banner !== undefined && banner !== null && banner !== false && (
+          // Out to the card's border on three sides, clipped to its top corners whatever radius the
+          // theme gives the card, and ruled off from the text below.
+          <div className="-mx-2.5 -mt-2 mb-2 overflow-hidden rounded-t-[inherit] border-b border-line-muted">
+            {banner}
+          </div>
+        )}
+        {attachments !== undefined && attachments !== null && (
+          <div className="mb-2">{attachments}</div>
+        )}
+        {chips}
+        {/* The body rung rather than the form controls' small one: this is a typing surface for
           prose the user composes and re-reads, and the toolbar under it is the small rung. */}
-      <textarea
-        ref={ref}
-        rows={2}
-        {...text}
-        className={`${resizeHandle ? "" : "max-h-44"} block min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 font-sans text-base leading-6 placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed disabled:opacity-60`}
-      />
-      {resizeHandle}
-      <div className="mt-1 flex items-center justify-between gap-2 text-xs">
-        <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
-          {strip !== undefined && strip !== null ? (
-            strip
-          ) : (
-            <>
-              <div className="flex shrink-0 items-center gap-px">{tools}</div>
-              {hint !== undefined && hint !== "" && (
-                <span
-                  data-tooltip={hint}
-                  data-tooltip-content="text"
-                  className="hidden min-w-0 truncate text-fg-subtle @lg:block"
-                >
-                  {hint}
-                </span>
-              )}
-            </>
-          )}
+        <textarea
+          ref={ref}
+          rows={2}
+          {...text}
+          className={`${resizeHandle ? "" : "max-h-44"} block min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 font-sans text-base leading-6 placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed disabled:opacity-60`}
+        />
+        {resizeHandle}
+        <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+          <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+            {strip !== undefined && strip !== null ? (
+              strip
+            ) : (
+              <>
+                <div className="flex shrink-0 items-center gap-px">{tools}</div>
+                {hint !== undefined && hint !== "" && (
+                  <span
+                    data-tooltip={hint}
+                    data-tooltip-content="text"
+                    className="hidden min-w-0 truncate text-fg-subtle @lg:block"
+                  >
+                    {hint}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">{actions}</div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">{actions}</div>
       </div>
+      <div
+        ref={coverRef}
+        data-slot="cover"
+        role="status"
+        onFocus={coverFocus.onFocus}
+        onBlur={coverFocus.onBlur}
+        tabIndex={covered ? -1 : undefined}
+        className={`col-start-1 row-start-1 flex min-w-0 items-center justify-center focus:outline-none ${covered ? "" : "pointer-events-none"}`}
+      >
+        {covered && cover}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Focus across a cover's coming and going. Focus in the editor when a cover comes moves to the
+ * cover's first control (or the cover itself, when it offers none): the editor is no longer
+ * drawn, and a hidden control drops focus to the page. While the cover holds focus, a control
+ * removed as the words change hands focus to the cover's first one. Focus in the cover when it
+ * goes returns to the text body. Focus anywhere else is never taken.
+ */
+function useCoverFocus(
+  covered: boolean,
+  editorRef: RefObject<HTMLDivElement | null>,
+  coverRef: RefObject<HTMLDivElement | null>,
+) {
+  const was = useRef(covered);
+  /** What in the cover has focus — or had it when it was removed, which is the cover's to mend. */
+  const held = useRef<Element | null>(null);
+  useLayoutEffect(() => {
+    const cover = coverRef.current;
+    const editor = editorRef.current;
+    const active = document.activeElement;
+    const lost = active === null || active === document.body || active === cover;
+    const first = () =>
+      cover?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) ?? (covered ? cover : null);
+    if (covered && !was.current) {
+      if (editor !== null && active !== null && editor.contains(active)) first()?.focus();
+    } else if (covered) {
+      if (held.current !== null && !held.current.isConnected && lost) first()?.focus();
+    } else if (was.current && held.current !== null && lost) {
+      editor?.querySelector<HTMLElement>("textarea")?.focus();
+    }
+    if (!covered) held.current = null;
+    was.current = covered;
+  });
+  return {
+    onFocus: (event: FocusEvent<HTMLDivElement>) => {
+      held.current = event.target;
+    },
+    onBlur: (event: FocusEvent<HTMLDivElement>) => {
+      const left = event.target;
+      // Settled after the commit that may be removing it: a control removed while it held focus
+      // stays held for the commit to mend; focus the reader moved elsewhere is let go.
+      queueMicrotask(() => {
+        if (held.current !== left || !left.isConnected) return;
+        if (coverRef.current?.contains(document.activeElement) !== true) held.current = null;
+      });
+    },
+  };
+}
+
+/**
+ * The words a composer's cover holds, centred on the card: a title saying what is happening, the
+ * live status under it (the shared retry row, with its presses), and a muted note.
+ */
+export function ComposerCover({
+  title,
+  status,
+  note,
+}: {
+  /** What is happening, in one line. */
+  title: string;
+  /** The live status and its presses: the shared retry row, or a row of text actions. */
+  status?: ReactNode;
+  /** A muted line under them; absent for none. */
+  note?: string | null;
+}) {
+  return (
+    <div className="flex max-w-full flex-col items-center gap-1 px-3 text-center text-sm">
+      <p className="max-w-full text-balance break-words font-medium text-fg">{title}</p>
+      {status}
+      {note !== undefined && note !== null && (
+        <p className="max-w-full text-balance break-words text-xs text-fg-muted">{note}</p>
+      )}
     </div>
   );
 }

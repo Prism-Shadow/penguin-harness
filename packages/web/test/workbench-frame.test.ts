@@ -10,6 +10,7 @@ import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { AppWindow } from "@prismshadow/penguin-ui";
 import { WorkbenchFrame } from "../src/features/workbenches/workbench-frame";
+import { LocaleProvider } from "../src/state/locale";
 import { ThemeProvider } from "../src/state/theme";
 import { mount, run, unmountAll } from "./helpers/dom";
 
@@ -34,33 +35,37 @@ async function frame(
   }));
   await mount(
     h(
-      MemoryRouter,
+      LocaleProvider,
       null,
-      h(Location),
       h(
-        ThemeProvider,
+        MemoryRouter,
         null,
-        h(AppWindow, {
-          shown,
-          children: h(WorkbenchFrame, {
-            agentId: "default_agent",
-            projectId: "project",
-            tab: {
-              tabId: "support/main",
-              workbenchId: "support",
-              key: "main",
-              title: "Support",
-              src: "/support",
-              pointerLock,
-              machineId,
-              name: "Support",
-              version: null,
-              revision: "current",
-              uiRev: "ui",
-              error: null,
-            },
+        h(Location),
+        h(
+          ThemeProvider,
+          null,
+          h(AppWindow, {
+            shown,
+            children: h(WorkbenchFrame, {
+              agentId: "default_agent",
+              projectId: "project",
+              tab: {
+                tabId: "support/main",
+                workbenchId: "support",
+                key: "main",
+                title: "Support",
+                src: "/support",
+                pointerLock,
+                machineId,
+                name: "Support",
+                version: null,
+                revision: "current",
+                uiRev: "ui",
+                error: null,
+              },
+            }),
           }),
-        }),
+        ),
       ),
     ),
   );

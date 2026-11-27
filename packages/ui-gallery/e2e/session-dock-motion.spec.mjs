@@ -207,7 +207,9 @@ for (const reducedMotion of ["no-preference", "reduce"]) {
       return transitions;
     });
     await right.getByTestId("dock-move").click();
-    const tab = bottom.locator('[data-tab-id="workspace"]');
+    // The start page opens the conversation's Files tool, keyed by its page.
+    const files = '[data-tab-id^=":app:session-tool/workspace/"]';
+    const tab = bottom.locator(files);
     const box = await tab.boundingBox();
     const x = box.x + box.width / 2;
     await page.mouse.move(x, box.y + box.height / 2);
@@ -219,6 +221,6 @@ for (const reducedMotion of ["no-preference", "reduce"]) {
     const drop = await target.boundingBox();
     await page.mouse.move(drop.x + drop.width / 2, drop.y + drop.height / 2);
     await page.mouse.up();
-    await expect(right.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
+    await expect(right.locator(files)).toHaveAttribute("data-active", "true");
   });
 }

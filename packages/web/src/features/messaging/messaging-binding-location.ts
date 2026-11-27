@@ -22,6 +22,7 @@ import type { MachineLink } from "../../lib/machine-link";
 import { formatDateTime } from "../../lib/format";
 import { machineForSession } from "../../lib/session-machines";
 import { S } from "../../lib/strings";
+import { channelForm } from "./channels/registry";
 
 /** The server a Session's binding lives on: a machine, or this server (null). */
 export function bindingLocation(sessionId: string): { machineId: string | null } {
@@ -87,9 +88,10 @@ export function holdersNote(
   return others.length === 0 ? null : S.messaging.holdersUnchecked(others);
 }
 
-/** The bot a binding signs in as: the channel's public account id, never a secret. */
+/**
+ * The bot a binding signs in as: the channel's public account id, never a secret, under
+ * whatever name its channel gives it (`channels/<name>`).
+ */
 export function accountIdOf(binding: MessagingBindingInfo): string {
-  return binding.channel === "telegram" || binding.channel === "wechat"
-    ? binding.botId
-    : binding.appId;
+  return channelForm(binding.channel).accountId(binding);
 }

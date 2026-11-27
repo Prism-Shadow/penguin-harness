@@ -6,9 +6,9 @@
  *
  * - A panel opens as a right-dock tab by default and stays a singleton: opening it in the other
  *   dock moves the tab, and reopening shows it where it lives; the scheduled-tasks panel and the
- *   built-in browser open like any other. Closing a tab removes it, and the last one puts the
- *   dock away.
- * - An open dock with no tabs is visible (the picker); toggling a dock closed keeps its tabs.
+ *   built-in browser open like any other. Closing a tab removes it, and closing the last one
+ *   leaves the dock open on its start page, which the dock's own × still puts away.
+ * - An open dock with no tabs is visible (its start page); toggling a dock closed keeps its tabs.
  * - A panel with no tab yet lands in the dock asked for, else at its own default edge (the
  *   terminal's is the bottom), and stays one tab; the shell the terminal panel shows is kept per
  *   conversation.
@@ -36,10 +36,14 @@
  * - There is one view per open dock; a hidden dock keeps its view to stay mounted on, an empty
  *   one has none.
  * - At most one surface is fullscreen, and only an open dock with tabs enters it. It lasts while
- *   that dock is open with tabs and no dock it covers comes forward: the right dock's cover is its
- *   own row, so the bottom dock opening or activating leaves it, while the bottom dock's cover
- *   reaches the right dock, so the right dock opening or activating ends it. Hiding the surface or
- *   closing its last tab ends either; switching tabs within it does not.
+ *   that dock is open and no dock it covers comes forward: the right dock's cover is its own row,
+ *   so the bottom dock opening or activating leaves it, while the bottom dock's cover reaches the
+ *   right dock, so the right dock opening or activating ends it. Hiding the surface ends either;
+ *   switching tabs within it does not, nor does closing its last tab, which leaves its start page
+ *   at full screen.
+ * - An app page closed in its dock leaves the dock open, on its start page when it was the last
+ *   tab; one moved away, or one that stood in for a panel the conversation already had, puts the
+ *   dock back as it was before the page came.
  * - Given Sessions with different fullscreen docks, switching away and back restores each one's
  *   fullscreen without applying it to a new Session; explicitly exiting stays exited on return.
  * - Given a fullscreen draft, its first send hands fullscreen to the new Session, but never
@@ -107,7 +111,7 @@ describe("panel tabs", () => {
     expect(dock.isTabShown("builtin-browser")).toBe(true);
   });
 
-  it("closing a panel tab removes it; closing the last one puts the dock away", () => {
+  it("closing a panel tab removes it; the last one leaves the dock open on its start page", () => {
     dock.openPanel("workspace", "right");
     dock.openPanel("memory", "right");
     dock.closePanel("memory");
@@ -115,6 +119,12 @@ describe("panel tabs", () => {
     expect(dock.dockActiveKey("right")).toBe("workspace");
     expect(dock.isDockVisible("right")).toBe(true);
     dock.closePanel("workspace");
+    expect(dock.isDockVisible("right")).toBe(true);
+    expect(dock.dockViews()).toEqual([
+      { position: "right", merged: false, tabs: [], activeKey: null },
+    ]);
+    // Only the dock's own controls put it away.
+    dock.hideView(dock.dockViews()[0]!);
     expect(dock.isDockVisible("right")).toBe(false);
   });
 });
@@ -476,7 +486,7 @@ describe("view models", () => {
       tabs: dock.dockTabs("right"),
       activeKey: "memory",
     });
-    // The last tab's × takes the dock away with it: no body left to keep.
+    // A hidden dock emptied of its tabs has no body left to keep.
     dock.closePanel("workspace");
     dock.closePanel("memory");
     expect(dock.closedDockView("right")).toBeNull();
@@ -513,13 +523,15 @@ describe("fullscreen", () => {
     expect(dock.fullscreenDock()).toBeNull();
   });
 
-  it("outlives closing one of its tabs and exits with the last", () => {
+  it("outlives closing its tabs, the last one included, and exits when the dock hides", () => {
     dock.openPanel("workspace", "bottom");
     dock.openPanel("memory", "bottom");
     dock.setDockFullscreen("bottom");
     dock.closePanel("memory");
     expect(dock.fullscreenDock()).toBe("bottom");
     dock.closePanel("workspace");
+    expect(dock.fullscreenDock()).toBe("bottom");
+    dock.toggleDock("bottom");
     expect(dock.fullscreenDock()).toBeNull();
   });
 
@@ -659,6 +671,19 @@ it("offers only explicit registered panel opens to the Session workbench adapter
   }
 });
 
+it("an app page closed in its dock leaves the dock open, on its start page when it was the last", () => {
+  dock.openPanel(":app:board");
+  dock.openPanel(":app:notes");
+  dock.setDockFullscreen("right");
+  dock.closeDockPage(":app:notes");
+  expect(dock.dockActiveKey("right")).toBe(":app:board");
+  dock.closeDockPage(":app:board");
+  expect(dock.dockViews()).toEqual([
+    { position: "right", merged: false, tabs: [], activeKey: null },
+  ]);
+  expect(dock.fullscreenDock()).toBe("right");
+});
+
 it("removing app tabs restores the user's last active ordinary panel", () => {
   dock.openPanel("memory");
   dock.openPanel("agents");
@@ -695,9 +720,14 @@ it("separates same-ID machine workbench docks without writing new saved layouts"
   expect(saved["studio-window"]).toBeUndefined();
 });
 
-it.each(["right", "bottom"] as const)(
-  "temporarily presents a saved %s panel in the right dock and restores its arrangement",
-  (edge) => {
+it.each([
+  ["right", "detachDockPage"],
+  ["bottom", "detachDockPage"],
+  ["right", "closeDockPage"],
+  ["bottom", "closeDockPage"],
+] as const)(
+  "temporarily presents a saved %s panel in the right dock and restores its arrangement (%s)",
+  (edge, leave) => {
     dock.openPanel("memory", edge);
     dock.toggleDock(edge);
     const scope = dock.currentDockScope()!;
@@ -710,7 +740,7 @@ it.each(["right", "bottom"] as const)(
     );
     expect(dock.borrowedDockPanel(key)).toBe("memory");
     expect(saved()).toEqual(original);
-    dock.detachDockPage(key);
+    dock[leave](key);
     expect(dock.dockViews()).toEqual([]);
     expect(dock.closedDockView(edge)?.tabs.map(dock.tabKey)).toEqual(["memory"]);
     expect(saved()).toEqual(original);

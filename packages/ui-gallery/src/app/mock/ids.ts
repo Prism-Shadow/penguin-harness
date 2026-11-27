@@ -56,6 +56,16 @@ export const IDS = {
   },
   machine: "local",
   workspace: "/home/demo/projects/docs-expert",
+  /**
+   * The conversation a frame seeds on the connected machine when it asks for one (`remote=1`,
+   * remote-machine.ts): the machine's list id, its own id, and the Session and Workspace on it.
+   */
+  remote: {
+    machine: "ssh:gpu-box",
+    machineId: "gpu-box-a8f3c2",
+    session: "s-gpu-eval",
+    workspace: "/home/ubuntu/projects/docs-expert",
+  },
 } as const;
 
 /** Every session id the store seeds, for the tests that walk them. */

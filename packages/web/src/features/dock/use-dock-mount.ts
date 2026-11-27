@@ -10,9 +10,9 @@
  *
  * The store's dockViews() only lists OPEN docks, so a collapse transition needs a view for
  * the frames it plays over: the hook keeps the LAST OPEN view mounted (open=false, sliding
- * to zero) for the transition's duration, which is also what carries a dock whose last tab
- * just closed through its exit. Changes the store marks instant (scope switches, cross-dock
- * moves — see instantVersion) skip the animation in both directions.
+ * to zero) for the transition's duration, which is also what carries an empty dock (its start
+ * page) through its exit. Changes the store marks instant (scope switches, cross-dock moves —
+ * see instantVersion) skip the animation in both directions.
  *
  * The animate/linger decision is frozen AT RENDER TIME of the open/close flip (a ref
  * adjusted during render — deterministic for a given store state, so a re-render replays

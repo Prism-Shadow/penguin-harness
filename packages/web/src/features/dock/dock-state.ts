@@ -5,9 +5,10 @@
  * and every side element is a TAB in one of them: the subagents panel, the Workspace
  * files panel, the Memory panel, the Trace panel, the messaging panel, the scheduled-tasks
  * panel, the built-in browser and the command-line terminal. A dock
- * shows its tabs in a strip and renders the active one; an OPEN dock with no tabs shows a
- * picker instead (choose what to open here), which is what the toolbar's two pull-open
- * buttons land on. Both docks can be open at once, and any tab can live in either dock
+ * shows its tabs in a strip and renders the active one; an OPEN dock with no tabs shows its
+ * start page instead (what can open here), which is what the toolbar's two pull-open buttons
+ * land on on an empty dock, and what a dock shows once its last tab closes. Both docks can be
+ * open at once, and any tab can live in either dock
  * (the panel kinds are singletons — one tab per kind within a conversation). A panel that
  * holds several things — the browser's pages, the terminal's shells — draws its own strip of
  * them inside its body; the store knows only the panel's tab, plus which shell the terminal
@@ -25,8 +26,10 @@
  * a reload restores each conversation's docks. Sizes are the exception: how wide/tall the
  * user likes a dock is one preference, not one per conversation.
  *
- * Closing a TAB removes it (the last tab closing also puts the dock away); a dock's ×
- * hides the surface, keeping its tabs — and, through closedDockView, everything their
+ * Closing a TAB removes it and leaves its dock where it is, on its start page once the last
+ * one goes: only the dock's own controls put it away (its ×, the toolbar's toggle, the keyboard
+ * command, Ctrl+` on the terminal it shows), or a move that carries its last tab elsewhere. The
+ * dock's × hides the surface, keeping its tabs — and, through closedDockView, everything their
  * bodies hold — for the next open. Below the desktop breakpoint the two docks render as ONE
  * merged bottom surface (a 320px-minimum right panel does not fit a phone); the stored
  * arrangement splits back apart when the window widens.
@@ -38,10 +41,12 @@
  *
  * One surface at a time can be fullscreen. The right covers the Session, including the bottom
  * dock, and the bottom covers the center below the toolbar. Fullscreen stays in memory, so
- * switching away and back restores it; a reload or the breakpoint flipping clears it. It holds
- * while its surface is open with tabs and no dock it COVERS is brought forward (checked after every
- * mutation, in commit()): the bottom dock taking the stage under a fullscreen right dock drops
- * it, so what was asked for is seen rather than opening under the cover.
+ * switching away and back restores it; a reload or the breakpoint flipping clears it. A surface
+ * enters it only with tabs, and it holds while that surface stays open — on its start page too,
+ * once its last tab closes, since closing a tab changes what the dock shows and not its size —
+ * and no dock it COVERS is brought forward (checked after every mutation, in commit()): the
+ * bottom dock taking the stage under a fullscreen right dock drops it, so what was asked for is
+ * seen rather than opening under the cover.
  *
  * A store (rather than component state) because the consumers live far apart: the chat
  * toolbar toggles the docks, the global hotkey flips the terminal panel, AppLayout points the
@@ -105,7 +110,7 @@ interface DockAreaState {
   tabs: DockTab[];
   /** tabKey of the shown tab; kept pointing at a member (or null when empty). */
   active: string | null;
-  /** An open dock is on screen — with tabs it shows the active one, without it shows the picker. */
+  /** An open dock is on screen — with tabs it shows the active one, without it its start page. */
   open: boolean;
 }
 
@@ -497,7 +502,7 @@ export function tabHome(key: string): DockPosition | null {
   return findTab(key)?.position ?? null;
 }
 
-/** Whether a dock occupies its edge. An open dock with no tabs shows the picker. */
+/** Whether a dock occupies its edge. An open dock with no tabs shows its start page. */
 export function isDockVisible(position: DockPosition): boolean {
   return area(position).open;
 }
@@ -541,7 +546,7 @@ export interface DockView {
 /**
  * The docks to render right now. Wide: one view per open dock. Narrow: a single merged
  * bottom view listing every open dock's tabs (bottom's first — it is the surface the
- * merged view inherits). An open dock with no tabs renders its picker.
+ * merged view inherits). An open dock with no tabs renders its start page.
  */
 function projectedView(position: DockPosition): DockView {
   const { tabs, active } = area(position);
@@ -647,22 +652,38 @@ function insertTab(tab: DockTab, position: DockPosition): void {
   activate(position, key);
 }
 
-/** Remove transient app tabs while retaining the conversation's own panel arrangement. */
-function detachPages(matches: (key: string) => boolean, except?: string): void {
+/**
+ * Removes window-local app tabs, keeping the conversation's own panel arrangement. A page that
+ * leaves by moving (to another conversation) or by being discarded (the account or Project
+ * changing) puts its dock back the way it was before the page came, as a reload would show it —
+ * a dock it opened goes away again rather than staying behind empty. So does a page that stood
+ * in for a panel this conversation already had (`openDockPage`'s borrowed panel): it was showing
+ * the person's own saved arrangement, which its closing leaves exactly as it found it. Any
+ * other page `closed` where it was shown (its tab's ×, its app closed, minimized or gone) leaves
+ * its dock open, on the next tab or on the start page, as closing a panel's tab does.
+ */
+function detachPages(matches: (key: string) => boolean, except?: string, closed = false): void {
   let changed = false;
   for (const [owner, entry] of Object.entries({ ...scopes, [scope]: layout })) {
     if (owner === except) continue;
     const loans = contextualPanels.get(entry);
+    const presented = new Set<string>();
     for (const key of loans?.keys() ?? []) {
       if (matches(key)) {
+        if (loans!.get(key)!.borrowed) presented.add(key);
         loans!.delete(key);
         instant += 1;
       }
     }
     const focused = entry[entry.focus].active;
+    // The dock that stays on screen stays the one touched last, so a full screen it holds holds.
+    let focusStays = false;
     for (const area of [entry.right, entry.bottom]) {
       const tabs = area.tabs.filter((tab) => !matches(tabKey(tab)));
       if (tabs.length === area.tabs.length) continue;
+      const stays =
+        closed && !area.tabs.some((tab) => matches(tabKey(tab)) && presented.has(tabKey(tab)));
+      if (stays && area === entry[entry.focus]) focusStays = true;
       area.tabs = tabs;
       if (area.active && matches(area.active)) {
         const previous = beforePage.get(area);
@@ -670,18 +691,26 @@ function detachPages(matches: (key: string) => boolean, except?: string): void {
         const priorPanel = tabs.find((tab) => tabKey(tab) === previous?.active);
         const selected = priorApp ?? priorPanel ?? tabs.at(-1);
         area.active = selected ? tabKey(selected) : null;
-        if (!priorApp && previous) area.open = previous.open;
+        if (!stays && !priorApp && previous) area.open = previous.open;
       }
-      if (!tabs.length) area.open = false;
+      if (!stays && !tabs.length) area.open = false;
       changed = true;
     }
-    if (focused && matches(focused) && !entry[entry.focus].active?.startsWith(":"))
+    if (!focusStays && focused && matches(focused) && !entry[entry.focus].active?.startsWith(":"))
       entry.focus = beforePageFocus.get(entry) ?? entry.focus;
   }
   if (changed) commit();
 }
+/** An app page moved off this window's other conversations (`except` keeps it where it went). */
 export function detachDockPage(key: string, except?: string): void {
   if (key.startsWith(":")) detachPages((candidate) => candidate === key, except);
+}
+/**
+ * An app page closed where it was shown: its dock stays, on its start page if it was the last tab
+ * (unless the page stood in for a panel the conversation had, whose arrangement comes back).
+ */
+export function closeDockPage(key: string): void {
+  if (key.startsWith(":")) detachPages((candidate) => candidate === key, undefined, true);
 }
 export function clearDockPages(): void {
   detachPages((key) => key.startsWith(":"));
@@ -695,7 +724,7 @@ export function clearDockPages(): void {
   windowScopes.clear();
 }
 
-/** Closing the last tab also hides its dock. */
+/** Closes a tab. Its dock stays on screen, showing its start page once the last tab is gone. */
 export function removeTab(key: string): void {
   const found = findTab(key);
   if (!found) return;
@@ -703,11 +732,13 @@ export function removeTab(key: string): void {
   state.tabs = state.tabs.filter((tab) => tabKey(tab) !== key);
   if (state.active === key)
     state.active = state.tabs.length > 0 ? tabKey(state.tabs[state.tabs.length - 1]!) : null;
-  if (state.tabs.length === 0) state.open = false;
   commit();
 }
 
-/** Moves one tab to the other dock (drag / the dock pickers), activating it there. */
+/**
+ * Moves one tab to the other dock (drag), activating it there. A dock the move empties goes away
+ * with it: the tab went somewhere, and a start page left behind would be a second surface for one.
+ */
 export function moveTab(key: string, to: DockPosition): void {
   const found = findTab(key);
   if (!found) return;
@@ -749,7 +780,7 @@ export function reorderDock(position: DockPosition, keys: readonly string[]): vo
 
 /**
  * The toolbar's two pull-open buttons: an open dock goes away (its tabs stay for the next
- * open); a closed one comes on screen — showing its tabs, or the picker when it has none.
+ * open); a closed one comes on screen — showing its tabs, or its start page when it has none.
  */
 export function toggleDock(position: DockPosition): void {
   const state = area(position);
@@ -776,22 +807,26 @@ export function fullscreenDock(): DockPosition | null {
   return fullscreenByLayout.get(layout) ?? null;
 }
 
-/** Whether the merged view is on screen with something in its strip (rather than its picker). */
-function mergedViewHasTabs(candidate: ScopeLayout): boolean {
-  return (
-    (candidate.bottom.open && candidate.bottom.tabs.length > 0) ||
-    (candidate.right.open && candidate.right.tabs.length > 0)
+/** Whether the merged view is on screen, and with `withTabs`, with something in its strip. */
+function mergedViewOpen(candidate: ScopeLayout, withTabs: boolean): boolean {
+  return (["bottom", "right"] as const).some(
+    (position) => candidate[position].open && (!withTabs || candidate[position].tabs.length > 0),
   );
 }
 
 /**
- * Whether a surface can be fullscreen as the layout stands: on screen with tabs (the picker is
- * never fullscreen). Wide, the surface is one dock; narrow, it is the merged view, which only
- * exists at the bottom.
+ * Whether a surface can be fullscreen as the layout stands. Entering takes a surface on screen
+ * with tabs (an empty dock's start page has nothing to grow for); staying takes it on screen, so
+ * the start page its last tab leaves keeps the size it had. Wide, the surface is one dock;
+ * narrow, it is the merged view, which only exists at the bottom.
  */
-function fullscreenEligible(position: DockPosition, candidate: ScopeLayout = layout): boolean {
-  if (narrow) return position === "bottom" && mergedViewHasTabs(candidate);
-  return candidate[position].open && candidate[position].tabs.length > 0;
+function fullscreenEligible(
+  position: DockPosition,
+  candidate: ScopeLayout = layout,
+  entering = false,
+): boolean {
+  if (narrow) return position === "bottom" && mergedViewOpen(candidate, entering);
+  return candidate[position].open && (!entering || candidate[position].tabs.length > 0);
 }
 
 /** Reveal a newly focused dock underneath a cover. The right cover includes the bottom dock. */
@@ -809,7 +844,7 @@ function reconcileFullscreen(candidate: ScopeLayout = layout): void {
  * for a surface that is not on screen with tabs.
  */
 export function setDockFullscreen(position: DockPosition | null): void {
-  if (position !== null && !fullscreenEligible(position)) return;
+  if (position !== null && !fullscreenEligible(position, layout, true)) return;
   if (position !== null && !narrow && layout.focus !== position) {
     layout.focus = position;
     persist();

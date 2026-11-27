@@ -124,6 +124,14 @@
       "types": "./dist/routes.d.ts",
       "import": "./dist/routes.js"
     },
+    "./scan-flow": {
+      "types": "./dist/scan-flow.d.ts",
+      "import": "./dist/scan-flow.js"
+    },
+    "./scan-routes": {
+      "types": "./dist/scan-routes.d.ts",
+      "import": "./dist/scan-routes.js"
+    },
     "./task-attachments": {
       "types": "./dist/task-attachments.d.ts",
       "import": "./dist/task-attachments.js"

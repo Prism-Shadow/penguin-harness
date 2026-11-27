@@ -23,13 +23,14 @@
  *
  * Two channels offer a scan-to-connect flow, and the server holds what makes it safe in both:
  * QQ's (`/qq/scan…`) keeps the AES key that decrypts the App Secret, WeChat's
- * (`/wechat/scan…`) keeps the poll handle that collects the bot token. Each polls on the
- * browser's behalf and stores the result; the browser only ever learns a task handle, the URL
- * to render as a QR code, and the non-secret account id that came back — the same
- * never-round-trip-the-secret rule the PUT handlers follow, applied to a secret that arrives
- * from outside instead of from the user. On WeChat the scan is not the convenient path but
- * the ONLY one: there is no console to copy a token out of, so its PUT carries preferences
- * alone.
+ * (`/wechat/scan…`) keeps the poll handle that collects the bot token. Each is a contributed
+ * ScanFlow (scan-flow.ts), and one registrar (scan-routes.ts) gives every flow its routes over
+ * the host this router hands it. Each polls on the browser's behalf and stores the result;
+ * the browser only ever learns a task handle, the URL to render as a QR code, and the
+ * non-secret account id that came back — the same never-round-trip-the-secret rule the PUT
+ * handlers follow, applied to a secret that arrives from outside instead of from the user.
+ * On WeChat the scan is not the convenient path but the ONLY one: there is no console to copy
+ * a token out of, so its PUT carries preferences alone.
  *
  * A PUT also carries the three saved fields that are not credentials: `linePerMessage`
  * (whether a relayed reply is delivered one message per non-blank line), `finalReplyOnly`
@@ -57,18 +58,12 @@ import type {
   MessagingBindingStateRequest,
   MessagingChannelState,
   MessagingTestMessageResponse,
-  QQBindingInfo,
   QQBindingResponse,
-  QQScanPollResponse,
-  QQScanStartResponse,
   QQTestResponse,
   TelegramBindingInfo,
   TelegramBindingResponse,
   TelegramTestResponse,
-  WeChatBindingInfo,
   WeChatBindingResponse,
-  WeChatScanPollResponse,
-  WeChatScanStartResponse,
   WeChatTestResponse,
 } from "./vocabulary.js";
 import type { AppEnv } from "@prismshadow/penguin-library-http";
@@ -95,9 +90,8 @@ import {
 import type { MessagingChannel } from "./connector.js";
 import { MessagingNeedsRecentMessageError } from "./connector.js";
 import { isMessagingChannel } from "./enabled-channel.js";
-import type { WeChatScanService } from "./wechat-scan.js";
+import { registerScanRoutes, type MessagingScanFlow, type ScanRouteHost } from "./scan-routes.js";
 import type { MessagingBridge } from "./bridge.js";
-import type { QQScanService } from "./qq-scan.js";
 import type { MessagingBindings } from "./messaging.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Access } from "@prismshadow/penguin-library-project";
@@ -107,8 +101,8 @@ export interface MessagingRouteDeps {
   messaging: MessagingBridge;
   messagingRepo: MessagingBindings;
   access: Access;
-  qqScan: QQScanService;
-  wechatScan: WeChatScanService;
+  /** The contributed scan-to-connect flows, one per channel that binds by scanning a QR code. */
+  scanFlows: readonly MessagingScanFlow[];
   sessionsRepo: SessionIndex;
 }
 
@@ -362,44 +356,49 @@ export function sessionMessagingRoutes(deps: MessagingRouteDeps): Hono<AppEnv> {
     }
   };
 
-  /**
-   * The disable-first rule both scan flows start with. A server rule rather than a greyed-out
-   * button: a scan rewrites the whole credential and would point a live connector at whatever
-   * account was scanned, which the PUT's account guard exists to prevent it doing silently.
-   */
-  const guardScanStart = (sessionId: string, channel: MessagingChannel): void => {
-    if (deps.messagingRepo.find(sessionId, channel)?.enabled === true) {
-      throw new HttpError(
-        409,
-        "messaging_disable_before_scan",
-        "Disable the connection before rebinding it by scan.",
-      );
-    }
-  };
-
-  /**
-   * Storing what a completed scan produced — identical on both channels that have one, which
-   * is why it is here rather than written twice.
-   *
-   * It stores only: enabling stays the separate act it is everywhere, because enabling is
-   * what binds the account and is exclusive. The account guard runs because the start refused
-   * an enabled binding and this fires anyway when the connection was switched on WHILE the
-   * scan was in flight — an enabled binding re-pointed at an account another Session holds
-   * would stand two connections on one bot's single event stream without either passing the
-   * enable gate. The restart of an enabled connector is the same never-diverge rule the PUTs
-   * follow.
-   */
-  const saveScanResult = async (
-    sessionId: string,
-    channel: MessagingChannel,
-    accountId: string,
-    config: Record<string, unknown>,
-  ): Promise<MessagingBindingRow> => {
-    const bound = deps.messagingRepo.find(sessionId, channel);
-    if (bound !== null && bound.enabled) guardAccountFree(sessionId, channel, accountId);
-    const saved = deps.messagingRepo.upsert({ sessionId, channel, accountId, config });
-    if (saved.enabled) await deps.messaging.sync(sessionId);
-    return saved;
+  /** What the scan routes (scan-routes.ts) reach of this router, for every contributed flow. */
+  const scanHost: ScanRouteHost = {
+    // Owner-only throughout, like every other write here: the flow ends in a stored
+    // credential, so it is a credential write however little of it the caller types.
+    ownerSession: (c) => {
+      const row = resolveSession(c);
+      deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
+      return row;
+    },
+    /**
+     * The disable-first rule every scan flow starts with. A server rule rather than a
+     * greyed-out button: a scan rewrites the whole credential and would point a live connector
+     * at whatever account was scanned, which the PUT's account guard exists to prevent it
+     * doing silently.
+     */
+    guardScanStart: (sessionId, channel) => {
+      if (deps.messagingRepo.find(sessionId, channel)?.enabled === true) {
+        throw new HttpError(
+          409,
+          "messaging_disable_before_scan",
+          "Disable the connection before rebinding it by scan.",
+        );
+      }
+    },
+    /**
+     * Storing what a completed scan produced — identical on every channel that has one, which
+     * is why it is here rather than in each flow.
+     *
+     * It stores only: enabling stays the separate act it is everywhere, because enabling is
+     * what binds the account and is exclusive. The account guard runs because the start
+     * refused an enabled binding and this fires anyway when the connection was switched on
+     * WHILE the scan was in flight — an enabled binding re-pointed at an account another
+     * Session holds would stand two connections on one bot's single event stream without
+     * either passing the enable gate. The restart of an enabled connector is the same
+     * never-diverge rule the PUTs follow.
+     */
+    saveScanResult: async (sessionId, channel, { accountId, config }) => {
+      const bound = deps.messagingRepo.find(sessionId, channel);
+      if (bound !== null && bound.enabled) guardAccountFree(sessionId, channel, accountId);
+      const saved = deps.messagingRepo.upsert({ sessionId, channel, accountId, config });
+      if (saved.enabled) await deps.messaging.sync(sessionId);
+      return CHANNEL_SPECS[channel].toInfo(saved);
+    },
   };
 
   // The channel-agnostic read: every saved channel config with its runtime status. The
@@ -495,6 +494,12 @@ export function sessionMessagingRoutes(deps: MessagingRouteDeps): Hono<AppEnv> {
   };
 
   for (const spec of Object.values(CHANNEL_SPECS)) registerChannelRoutes(spec);
+
+  // Scan-to-connect: `/<channel>/scan…` for every channel that contributed a flow (QQ's is the
+  // alternative to typing an App ID and an App Secret, WeChat's the only way that channel is
+  // ever bound). One registrar serves them all; what each channel holds between polls — QQ's
+  // AES key, WeChat's poll handle — stays inside its flow and never reaches these routes.
+  for (const scan of deps.scanFlows) registerScanRoutes(app, scan, scanHost);
 
   app.put("/:sessionId/messaging/feishu", async (c) => {
     const row = resolveSession(c);
@@ -664,74 +669,6 @@ export function sessionMessagingRoutes(deps: MessagingRouteDeps): Hono<AppEnv> {
     return c.json(qqResponse(row.sessionId));
   });
 
-  // —— QQ scan-to-connect ————————————————————————————————————————————————————
-  //
-  // The alternative to typing an App ID and an App Secret: the server registers a bind task
-  // under a fresh AES key, the browser renders the returned URL as a QR code, the user scans
-  // it in QQ, and the completed poll hands back the App Secret encrypted under that key.
-  //
-  // The key never leaves the server, which is what these three routes are shaped around: the
-  // browser is given a task handle, a URL and a status, and the credentials it produces go
-  // straight into storage without passing back through it. Owner-only throughout, like every
-  // other write here — the flow ends in a stored secret, so it is a credential write however
-  // little of it the caller types.
-
-  app.post("/:sessionId/messaging/qq/scan", async (c) => {
-    const row = resolveSession(c);
-    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
-    guardScanStart(row.sessionId, "qq");
-    let started: { taskId: string; qrUrl: string; pollMs: number };
-    try {
-      started = await deps.qqScan.start(row.sessionId);
-    } catch (err) {
-      throw new HttpError(502, "qq_scan_failed", err instanceof Error ? err.message : String(err));
-    }
-    return c.json(started satisfies QQScanStartResponse);
-  });
-
-  app.post("/:sessionId/messaging/qq/scan/poll", async (c) => {
-    const row = resolveSession(c);
-    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
-    const body = await readJson(c);
-    const taskId = requireString(body, "taskId", { minLen: 1, maxLen: 500 });
-    let result: Awaited<ReturnType<typeof deps.qqScan.poll>>;
-    try {
-      result = await deps.qqScan.poll(row.sessionId, taskId);
-    } catch (err) {
-      throw new HttpError(502, "qq_scan_failed", err instanceof Error ? err.message : String(err));
-    }
-    // Unknown, another Session's, already resolved, or claimed by a poll still in flight —
-    // neither a replay nor an overlapping poll may re-authorize.
-    if (result === null) {
-      throw new HttpError(
-        404,
-        "qq_scan_task_unknown",
-        "This scan is no longer in progress: start a new one.",
-      );
-    }
-    if (result.status !== "completed" || result.bot === undefined) {
-      return c.json({ status: result.status } satisfies QQScanPollResponse);
-    }
-    // The scan landed: store it exactly as the PUT would (see saveScanResult).
-    const saved = await saveScanResult(row.sessionId, "qq", result.bot.appId, {
-      appId: result.bot.appId,
-      appSecret: result.bot.appSecret,
-    });
-    return c.json({
-      status: "completed",
-      appId: result.bot.appId,
-      binding: CHANNEL_SPECS.qq.toInfo(saved) as QQBindingInfo,
-    } satisfies QQScanPollResponse);
-  });
-
-  app.post("/:sessionId/messaging/qq/scan/cancel", async (c) => {
-    const row = resolveSession(c);
-    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
-    const body = await readJson(c);
-    deps.qqScan.cancel(row.sessionId, requireString(body, "taskId", { minLen: 1, maxLen: 500 }));
-    return c.body(null, 204);
-  });
-
   // Credential probe: the access-token exchange, which is the only credential call the
   // platform has. It names no account, so the response carries no label — unlike Telegram's.
   app.post("/:sessionId/messaging/qq/test", async (c) => {
@@ -803,106 +740,6 @@ export function sessionMessagingRoutes(deps: MessagingRouteDeps): Hono<AppEnv> {
     // connector, so the stored config and the live connection never diverge.
     if (saved.enabled) await deps.messaging.sync(row.sessionId);
     return c.json(wechatResponse(row.sessionId));
-  });
-
-  // —— WeChat scan-to-connect ————————————————————————————————————————————————
-  //
-  // Four routes rather than QQ's three: WeChat may interpose a pairing code shown on the
-  // phone, and the digits need somewhere to arrive. They ride the next poll rather than a
-  // request of their own, because the platform takes the code as a parameter of its status
-  // call — so `verify` records them and answers 204.
-  //
-  // Owner-only throughout, like every other write here: the flow ends in a stored credential,
-  // so it is a credential write however little of it the caller types.
-
-  app.post("/:sessionId/messaging/wechat/scan", async (c) => {
-    const row = resolveSession(c);
-    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
-    guardScanStart(row.sessionId, "wechat");
-    let started: { taskId: string; qrUrl: string; pollMs: number };
-    try {
-      started = await deps.wechatScan.start(row.sessionId);
-    } catch (err) {
-      throw new HttpError(
-        502,
-        "wechat_scan_failed",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-    return c.json(started satisfies WeChatScanStartResponse);
-  });
-
-  app.post("/:sessionId/messaging/wechat/scan/poll", async (c) => {
-    const row = resolveSession(c);
-    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
-    const body = await readJson(c);
-    const taskId = requireString(body, "taskId", { minLen: 1, maxLen: 500 });
-    let result: Awaited<ReturnType<typeof deps.wechatScan.poll>>;
-    try {
-      result = await deps.wechatScan.poll(row.sessionId, taskId);
-    } catch (err) {
-      throw new HttpError(
-        502,
-        "wechat_scan_failed",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-    // Unknown, another Session's, or already resolved. An overlapping poll is NOT this — the
-    // upstream call is a long poll and the scan service answers those `pending` (see
-    // wechat-scan.ts), so a client whose interval outpaces the platform is not an error.
-    if (result === null) {
-      throw new HttpError(
-        404,
-        "wechat_scan_task_unknown",
-        "This scan is no longer in progress: start a new one.",
-      );
-    }
-    if (result.status !== "completed" || result.bot === undefined) {
-      return c.json({ status: result.status } satisfies WeChatScanPollResponse);
-    }
-    const { botId, botToken, baseUrl, userId } = result.bot;
-    const saved = await saveScanResult(row.sessionId, "wechat", botId, {
-      botId,
-      botToken,
-      baseUrl,
-      userId,
-    });
-    return c.json({
-      status: "completed",
-      botId,
-      binding: CHANNEL_SPECS.wechat.toInfo(saved) as WeChatBindingInfo,
-    } satisfies WeChatScanPollResponse);
-  });
-
-  app.post("/:sessionId/messaging/wechat/scan/verify", async (c) => {
-    const row = resolveSession(c);
-    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
-    const body = await readJson(c);
-    const taskId = requireString(body, "taskId", { minLen: 1, maxLen: 500 });
-    // The platform shows a short numeric code; the bound is generous rather than exact
-    // because the length is not documented and a rejected digit is the platform's answer to
-    // give, not this route's.
-    const verifyCode = requireString(body, "verifyCode", { minLen: 1, maxLen: 32 }).trim();
-    if (verifyCode === "") throw badRequest("verifyCode must not be blank.");
-    if (!deps.wechatScan.submitVerifyCode(row.sessionId, taskId, verifyCode)) {
-      throw new HttpError(
-        404,
-        "wechat_scan_task_unknown",
-        "This scan is no longer in progress: start a new one.",
-      );
-    }
-    return c.body(null, 204);
-  });
-
-  app.post("/:sessionId/messaging/wechat/scan/cancel", async (c) => {
-    const row = resolveSession(c);
-    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
-    const body = await readJson(c);
-    deps.wechatScan.cancel(
-      row.sessionId,
-      requireString(body, "taskId", { minLen: 1, maxLen: 500 }),
-    );
-    return c.body(null, 204);
   });
 
   /**

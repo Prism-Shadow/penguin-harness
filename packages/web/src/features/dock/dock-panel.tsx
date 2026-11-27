@@ -1,8 +1,8 @@
 import { pageSessionId } from "../../lib/page-layout";
 /**
  * One dock surface (dock-state.ts owns the arrangement): a tab strip across the top and
- * the active tab's body below — or, while the open dock has no tabs, a centered picker
- * choosing what to open here. The chat page renders one per open dock — right and/or
+ * the active tab's body below — or, while the open dock has no tabs, its start page: what the
+ * dock can open, as launch tiles. The chat page renders one per open dock — right and/or
  * bottom — or a single merged bottom surface below the desktop breakpoint.
  *
  * The drawing is the UI package's (`DockFrame`, `DockTabs`, `DockPicker`); this container
@@ -18,9 +18,10 @@ import { pageSessionId } from "../../lib/page-layout";
  * shows, and so does hiding the whole dock (which renders at zero size rather than
  * unmounting), so a panel keeps its scroll, its drill-down and its unsaved text.
  *
- * The header carries the strip, a "+" menu (the panels the registry offers here), a
+ * The header carries the strip, a "+" menu (what the start page offers, in its order), a
  * move-to-other-edge button, a fullscreen toggle, and the dock's × (hide — tabs and everything
- * their bodies hold stay; each tab's own always-visible × is what removes). A terminal has no way
+ * their bodies hold stay; each tab's own always-visible × is what removes, and the last one
+ * leaves the dock on its start page at the size it had). A terminal has no way
  * out of its conversation's dock: no window of its own, no background form — it is a tab of the
  * terminal panel, and fullscreen is how it gets large. Tabs drag sideways to reorder;
  * dragging a tab out of the strip brings up the edge overlay (dock-drag.tsx) and dropping on
@@ -50,6 +51,7 @@ import {
   Dropdown,
   CrashBoundary,
   EmptyState,
+  GlyphAppIcon,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
@@ -62,8 +64,7 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import { S } from "../../lib/strings";
-import { chordKeys } from "../../components/ui/chord-kbd";
-import { displayedBinding, useKeymap } from "../../lib/shortcuts/use-keymap";
+import { shortcutTitle, useKeymap } from "../../lib/shortcuts/use-keymap";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { announceDockLayout } from "./dock-listeners";
 import { confirmClose } from "../../lib/dock-close-guard";
@@ -86,14 +87,13 @@ import {
   type PanelBodyProps,
 } from "./dock-panel-bodies";
 import type { ComponentProps } from "react";
-import { sessionWorkbenchKindAt } from "../../lib/session-workbenches";
-import { panelGlyph, panelLabel } from "./panel-meta";
 import {
-  dockPanelDefinition,
-  useDockPanels,
-  type DockPanelDefinition,
-  type PanelId,
-} from "./panel-registry";
+  isSessionWorkbenchKind,
+  sessionWorkbenchAppKey,
+  sessionWorkbenchKindAt,
+} from "../../lib/session-workbenches";
+import { panelGlyph, panelLabel } from "./panel-meta";
+import { dockPanelDefinition, useDockPanels, type PanelId } from "./panel-registry";
 import { bottomDockHeight, bottomDockMaxHeight } from "./bottom-dock-size";
 import { composerHeight, useComposerHeight } from "./composer-height";
 
@@ -120,7 +120,7 @@ import {
   type DockTab,
   type DockView,
 } from "./dock-state";
-import { useSessionShortcuts } from "./session-shortcuts";
+import { useSessionShortcuts, type SessionShortcut } from "./session-shortcuts";
 import {
   dockWidthFor,
   persistPanelWidth,
@@ -223,9 +223,9 @@ export function DockPanel({
   animateEntrance = true,
 }: DockPanelProps) {
   useSyncExternalStore(subscribeDock, dockVersion);
-  // The picker names a panel's keys (the terminal's toggle) and redraws when they are rebound.
+  // The start page names a panel's keys (the terminal's toggle) and redraws when they are rebound.
   useKeymap();
-  // The panels offered here, in registry order: what the "+" menu and the picker list, and
+  // The panels offered here, in registry order: what the "+" menu and the start page list, and
   // what re-renders the strip when a definition arrives for a tab it already shows.
   const offered = useDockPanels();
   const { position, merged, tabs, activeKey } = view;
@@ -441,13 +441,21 @@ export function DockPanel({
 
   // ------------------------------------------------------------------------------ add menu
 
-  const openPanelHere = (definition: DockPanelDefinition): void => {
-    setAddOpen(false);
-    // The merged view has no edge of its own to insist on — the panel's existing tab (or
-    // its own default edge) decides, which is also where it lands when the window widens
-    // back out.
-    openNativePanel(definition.id, merged ? undefined : position, definition.defaultPosition);
-  };
+  // What this dock opens, in the one order its "+" menu lists and its start page draws: on the
+  // right (and the narrow merged surface, which has no edge of its own to insist on) the
+  // conversation's shortcuts, which the launcher's fan offers too; at the bottom the panels the
+  // registry offers, opened in this dock.
+  const actions: SessionShortcut[] =
+    position === "right" || merged
+      ? shortcuts
+      : offered.map((definition) => ({
+          key: definition.id,
+          label: definition.label(),
+          name: definition.label(),
+          glyph: definition.glyph,
+          ...(definition.shortcut !== undefined ? { shortcut: definition.shortcut } : {}),
+          choose: () => openNativePanel(definition.id, position, definition.defaultPosition),
+        }));
 
   const addMenu = (
     <Dropdown
@@ -467,28 +475,18 @@ export function DockPanel({
       }
     >
       <Menu>
-        {position === "right" || merged
-          ? shortcuts.map((entry) => (
-              <MenuItem
-                key={entry.key}
-                data-testid={`dock-add-${entry.key}`}
-                glyph={<GlyphIcon d={entry.glyph} size={ICON_SIZE.inlineGlyph} />}
-                label={entry.label}
-                onSelect={() => {
-                  setAddOpen(false);
-                  entry.choose();
-                }}
-              />
-            ))
-          : offered.map((definition) => (
-              <MenuItem
-                key={definition.id}
-                data-testid={`dock-add-${definition.id}`}
-                glyph={<GlyphIcon d={definition.glyph} size={ICON_SIZE.inlineGlyph} />}
-                label={definition.label()}
-                onSelect={() => openPanelHere(definition)}
-              />
-            ))}
+        {actions.map((entry) => (
+          <MenuItem
+            key={entry.key}
+            data-testid={`dock-add-${entry.key}`}
+            glyph={<GlyphIcon d={entry.glyph} size={ICON_SIZE.inlineGlyph} />}
+            label={entry.label}
+            onSelect={() => {
+              setAddOpen(false);
+              entry.choose();
+            }}
+          />
+        ))}
       </Menu>
     </Dropdown>
   );
@@ -564,31 +562,53 @@ export function DockPanel({
     if (tab) closeTab(tab);
   };
 
-  // An open dock with nothing in it yet: the picker chooses what this dock opens. Every row is a
-  // panel the registry offers here (the terminal only with a Session to own its shells, the
-  // built-in browser only where it can be shown: the desktop app's own window), and a row whose
-  // panel names a command shows that command's keys while they are bound.
-  const pickPanel = (definition: DockPanelDefinition): DockPickerChoice => {
-    const chord = definition.shortcut === undefined ? null : displayedBinding(definition.shortcut);
-    return {
-      key: definition.id,
-      label: definition.label(),
-      glyph: <GlyphIcon d={definition.glyph} size={ICON_SIZE.iconButton} />,
-      ...(chord !== null ? { keys: chordKeys(chord) } : {}),
-      onChoose: () =>
-        openNativePanel(definition.id, merged ? undefined : position, definition.defaultPosition),
-    };
-  };
-  // The picker leads with the panels that ask to (`lead`): what a conversation most often opens.
-  // Both runs keep the registry's order, which is where a plugin's panel lands.
-  const pickerChoices: DockPickerChoice[] = [
-    ...offered.filter((definition) => definition.lead === true),
-    ...offered.filter((definition) => definition.lead !== true),
-  ].map(pickPanel);
+  // An open dock with no tabs shows its start page: the "+" menu's choices as launch tiles, in
+  // its order (the terminal only with a Session to own its shells, the built-in browser only
+  // where it can be shown: the desktop app's own window). A Session tool wears the icon the App
+  // Center gives it; a tile whose panel names a command says that command's keys in its hint.
+  const startChoices: DockPickerChoice[] = actions.map((action) => ({
+    key: action.key,
+    name: action.name,
+    icon: (size) => (
+      <GlyphAppIcon
+        {...(isSessionWorkbenchKind(action.key)
+          ? { appKey: sessionWorkbenchAppKey(action.key) }
+          : {})}
+        d={action.glyph}
+        size={size}
+      />
+    ),
+    ...(action.shortcut !== undefined ? { hint: shortcutTitle(action.name, action.shortcut) } : {}),
+    onLaunch: action.choose,
+  }));
+
+  // The start page that takes the place of the last tab, in a dock already on screen, is content
+  // swapped into a settled surface: it fades in, and it takes the focus the closed tab's × had,
+  // never focus that is somewhere else (the composer).
+  const startRef = useRef<HTMLDivElement | null>(null);
+  const [hadTabs, setHadTabs] = useState(tabs.length > 0);
+  const [swappedIn, setSwappedIn] = useState(false);
+  if (hadTabs !== tabs.length > 0) {
+    setHadTabs(tabs.length > 0);
+    setSwappedIn(tabs.length === 0 && open);
+  }
+  useEffect(() => {
+    if (!swappedIn) return;
+    const focused = document.activeElement;
+    if (focused !== null && focused !== document.body && !rootRef.current?.contains(focused))
+      return;
+    startRef.current?.querySelector<HTMLElement>("[data-launch-key]")?.focus();
+  }, [swappedIn]);
 
   const bodies =
     tabs.length === 0 ? (
-      <DockPicker choices={pickerChoices} horizontal={horizontal} />
+      <DockPicker
+        ref={startRef}
+        choices={startChoices}
+        horizontal={horizontal}
+        label={S.dock.startPage}
+        reveal={swappedIn}
+      />
     ) : (
       <div className="relative min-h-0 flex-1">
         {tabs.map((tab) => {
@@ -673,9 +693,10 @@ export function DockPanel({
               />
             </DockHeaderButton>
           )}
-          {/* Not in the picker state: with no tab there is nothing to show full screen. While
-              fullscreen it stays where it was, as the one way back. */}
-          {tabs.length > 0 && (
+          {/* Not on an empty dock's start page: with no tab there is nothing to show full screen.
+              While fullscreen it stays where it was, as the one way back — on the start page its
+              last tab left too. */}
+          {(tabs.length > 0 || fullscreen) && (
             <DockHeaderButton
               label={fullscreen ? S.dock.exitFullscreen : S.dock.fullscreen}
               coarse={coarsePointer}

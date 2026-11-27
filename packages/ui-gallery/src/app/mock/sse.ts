@@ -120,6 +120,7 @@ export const HISTORY_STREAM_BEAT_MS = 5_000;
 export type HistoryStreamQuery =
   | { kind: "tail"; limit: number; budget?: number; fill?: boolean }
   | { kind: "before"; cursor: string; limit: number; budget?: number }
+  | { kind: "cached" }
   | { kind: "full" }
   | { kind: "fill"; file: number; agent?: string };
 
@@ -162,7 +163,13 @@ export function openHistoryStream(
     let answer: MessagesResponse;
     try {
       const path = `/api/sessions/${encodeURIComponent(sessionId)}/messages${messagesQuery(query)}`;
-      const result = await router.dispatch(getStore(), "GET", apiUrl(path, machineId), undefined);
+      const result = await router.dispatch(
+        getStore(),
+        "GET",
+        apiUrl(path, machineId),
+        undefined,
+        query.kind === "cached",
+      );
       answer = (result.kind === "json" ? result.body : { messages: [] }) as MessagesResponse;
     } catch (error) {
       if (!open) return;

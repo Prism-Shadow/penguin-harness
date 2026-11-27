@@ -1,7 +1,7 @@
 ---
 name: penguin-plugin
 description: Use for PenguinHarness plugins and workbenches — what a plugin package is and how to build, test, share and submit one, and the workbenches (the tabs and pages beside the chat, with server code behind them) an Agent keeps in its Agent State — building one, changing it, showing it as the whole app, restoring an earlier version, and removing it when the user wants the custom UI gone.
-version: 2026.11.21.2
+version: 2026.11.26.1
 ---
 
 # Penguin Plugins
@@ -412,6 +412,15 @@ Your handler's responses are served from the app's own origin, so anything you e
 ### Filling the app
 
 A page can be shown as the whole app — no sidebar, no chat, no tab strip — at `/app/<project>/<agent>/<workbench>[/<tab key>]` (the workbench's first tab when no key is given): the tab's *Fill the app* button goes there, `penguin web --app <project>/<agent>/<workbench>[/<tab key>]` opens the browser straight onto it, and the page itself can ask with `parent.postMessage({ type: "penguin:fill-app" }, "*")`. The floating *Exit full screen* button returns to the same Agent and workbench tab. The command palette also offers *Exit full page*. Its chord is Ctrl+Alt+P (⌥⌘P on macOS) unless the user rebound it under Settings › Keyboard shortcuts. A key pressed inside the page reaches the app only when the page has not handled it, so a page must not intercept that chord.
+
+### Its place in the address
+
+A page with places of its own — a list, one item, a filter — can keep where it is in the app's address, so a reload, a link, Back and Forward come back to it. The window's address is `/apps?app=<agent>/<workbench>&at=<place>` and the full page's `/app/<project>/<agent>/<workbench>[/<tab key>]?at=<place>`: `at` is a path and query inside the page, starting with `/` (at most 2048 characters, URL-encoded in the address; its root is no `at` at all). Two messages carry it, posted between the page and `window.parent` on the app's own origin:
+
+- `{ type: "penguin:location", at }` goes both ways. The frame's `src` carries the starting place as its fragment (`#<at>`; no fragment is the root), so read `location.hash` when the page starts. Post `parent.postMessage({ type: "penguin:location", at }, location.origin)` each time the page moves inside itself: the host replaces `at` in its address without adding a history entry, so move with `history.replaceState`, never `pushState`. When the host's own address moves (Back, Forward, a pasted address) it posts the same message to the page, which goes there without reloading. An address with no `at` (the tile, the sidebar) brings a running window back where the page already is. A workbench of several pages keeps one place: switching to another page starts that page at its root.
+- `{ type: "penguin:navigate", to }` asks the host to take the user to `to`, a path of the Web App that starts with a single `/` and is not under `/api/` — a conversation, `/chat/<sessionId>`, say. The window is minimized first and keeps running, so Back returns to it. A minimized window's request is ignored.
+
+The host takes either message only from its own frame and origin; take one only when `event.source === window.parent` and `event.origin === location.origin`. A page that posts neither is shown as before. The page's root element also carries `lang` (`zh-CN` or `en`) and `data-project-id`, kept current when the user switches language or Project, beside the theme the host writes into it.
 
 ### The App Center
 

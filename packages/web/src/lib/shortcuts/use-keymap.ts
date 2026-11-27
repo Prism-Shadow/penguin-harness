@@ -31,7 +31,7 @@ export function useDisplayedBinding(id: CommandId): Chord | null {
 
 /**
  * useDisplayedBinding's read without the subscription, for a surface that shows the chords of
- * commands it learns at render (the dock picker's panel rows): call it under one `useKeymap()`.
+ * commands it learns at render (the dock start page's tiles): call it under one `useKeymap()`.
  */
 export function displayedBinding(id: CommandId): Chord | null {
   const chord = bindingOf(id);
@@ -50,4 +50,12 @@ export function useShortcutLabel(id: CommandId): string | null {
 export function useShortcutTitle(label: string, id: CommandId): string {
   const chord = useShortcutLabel(id);
   return chord === null ? label : `${label} (${chord})`;
+}
+
+/** useShortcutTitle's text without the subscription, as displayedBinding is: call it under one `useKeymap()`. */
+export function shortcutTitle(label: string, id: CommandId): string {
+  const chord = displayedBinding(id);
+  return chord === null
+    ? label
+    : `${label} (${formatChord(chord, currentPlatform(), keyboardLayout() ?? undefined)})`;
 }

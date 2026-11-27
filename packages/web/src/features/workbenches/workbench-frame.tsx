@@ -13,8 +13,16 @@
  * `onFillApp`. The page SDK's chat model requests are answered for this frame alone
  * (workbench-model-picker.tsx), and a page that opts in (`pointerLock`) may capture the mouse.
  * The iframe keys on the page's `uiRev`, so an Agent editing its pages sees them reload.
+ *
+ * Its root carries the interface language and the current Project as a contributed page's does
+ * (lib/frame-context.ts), and it keeps a location of its own the same way (lib/frame-location.ts):
+ * the host that shows it passes where it wants the page (`at`, the `src` fragment at first) and
+ * hears the page's `penguin:location` and `penguin:navigate`. A page that posts neither is shown
+ * as it always was.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { stampFrameContext } from "../../lib/frame-context";
+import { useFrameLocation, type FrameLocation } from "../../lib/frame-location";
 import {
   forwardFrameKeys,
   PAGE_FRAME_SANDBOX,
@@ -22,6 +30,7 @@ import {
   themeWorkbenchFrame,
 } from "../../lib/workbench-theme";
 import { FILL_APP_MESSAGE, workbenchUiUrl, type WorkbenchTab } from "../../lib/workbench-tabs";
+import { documentLangFor, useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import { NativeWorkbenchPage } from "./native-workbench-page";
 import { WorkbenchModelPicker } from "./workbench-model-picker";
@@ -29,7 +38,7 @@ import { WorkbenchModelPicker } from "./workbench-model-picker";
 /** How long a page that never finishes loading stays hidden before it is shown as it is. */
 const FRAME_REVEAL_TIMEOUT_MS = 4000;
 
-interface FrameProps {
+interface FrameProps extends FrameLocation {
   projectId: string;
   agentId: string;
   tab: WorkbenchTab;
@@ -48,20 +57,38 @@ function WorkbenchIframe({
   agentId,
   tab,
   onFillApp,
+  ...location
 }: Omit<FrameProps, "tab"> & { tab: WorkbenchTab & { src: string } }) {
   const { dark, appliedTheme, accent, textSize, fontLatin, fontCjk } = useTheme();
+  const lang = documentLangFor(useLocale().locale);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const src = useFrameLocation(frameRef, workbenchUiUrl(tab), location);
 
   // The app's dark class, theme, accent, fonts and root font size stop at the frame, so they are
-  // copied in on load and on every appearance change. Past the commit, because the provider that
-  // stamps them on the app's own document is an ancestor and its effect runs after this one's.
+  // copied in on load and on every appearance change, with the language and the Project. Past the
+  // commit, because the provider that stamps them on the app's own document is an ancestor and its
+  // effect runs after this one's.
+  const context = useRef({ lang, projectId });
+  context.current = { lang, projectId };
   const applyTheme = useCallback(() => {
     themeWorkbenchFrame(frameRef.current, readDocumentTheme(document));
+    stampFrameContext(frameRef.current, context.current);
   }, []);
   useEffect(() => {
     const id = requestAnimationFrame(applyTheme);
     return () => cancelAnimationFrame(id);
-  }, [applyTheme, dark, appliedTheme, accent, textSize, fontLatin, fontCjk, tab.uiRev]);
+  }, [
+    applyTheme,
+    dark,
+    appliedTheme,
+    accent,
+    textSize,
+    fontLatin,
+    fontCjk,
+    lang,
+    projectId,
+    tab.uiRev,
+  ]);
 
   // Until it has loaded and been themed the page paints the browser's white canvas, then its own
   // unstyled markup: it stays invisible over the app's background until the theme is on it, and
@@ -102,7 +129,7 @@ function WorkbenchIframe({
         ref={frameRef}
         onLoad={onFrameLoad}
         title={tab.title}
-        src={workbenchUiUrl(tab)}
+        src={src}
         className={`min-h-0 flex-1 border-0 transition-opacity duration-150 motion-reduce:transition-none ${
           shownKey === frameKey ? "opacity-100" : "opacity-0"
         }`}

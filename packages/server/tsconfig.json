@@ -242,6 +242,12 @@
         "../../library/messaging/src/reply-files.ts"
       ],
       "@prismshadow/penguin-library-messaging/routes": ["../../library/messaging/src/routes.ts"],
+      "@prismshadow/penguin-library-messaging/scan-flow": [
+        "../../library/messaging/src/scan-flow.ts"
+      ],
+      "@prismshadow/penguin-library-messaging/scan-routes": [
+        "../../library/messaging/src/scan-routes.ts"
+      ],
       "@prismshadow/penguin-library-messaging/task-attachments": [
         "../../library/messaging/src/task-attachments.ts"
       ],

@@ -87,7 +87,7 @@ const HORIZONTAL_REACH = 40;
 const VERTICAL_REACH = 56;
 
 export interface LauncherVisibility {
-  /** The right dock occupies its edge (open — showing its tabs or its picker). */
+  /** The right dock occupies its edge (open — showing its tabs or its start page). */
   rightDockVisible: boolean;
   /** The bottom dock is open; below the breakpoint it is the surface both docks merge into. */
   bottomDockVisible: boolean;

@@ -535,6 +535,8 @@ createRoot(document.getElementById("root")!).render(<App />);
 
 工作台页面是透明的：页面自己不设背景时，透出应用在它下面的底色——主题的页面色或你设置的自定义背景，与对话页一致。想要不透明的页面，就写 `body { background: var(--wb-canvas); }`（TSX 页面在自己的样式表里用 `var(--ui-canvas)`）。
 
+工作台页面可以把自己的位置记在地址里，刷新、链接与前进后退都回到原处：窗口以 `at` 记下位置（`/apps?app=<agentId>/<workbenchId>&at=…`），整页同样带它（`/app/<projectId>/<agentId>/<workbenchId>[/<标签键>]?at=…`）。页面与宿主用与[系统应用的页面](/plugins#应用窗口中的页面)相同的 `penguin:location` 与 `penguin:navigate` 消息交换位置，页面的根元素同样带 `lang` 与 `data-project-id`。两种消息都不发的页面不受影响。
+
 内置 `penguin-support` 插件为默认 Project 的客服 Agent 安装 `penguin-support` Skill 和客服工作台：居中的问题列表、新建问题弹窗，以及支持追问的对话详情。问题运行时，对话框里会随生成显示回答和 Agent 正在做的事，并提供**停止**按钮。新版本以插件更新的形式提供，已安装的副本只在你更新时才被替换。也可以把该插件安装到其他 Agent。
 
 内置的 `use-bento-slides` 插件提供对话旁的**幻灯片**标签页和应用中心的 **AI PPT**。在首页打开或重命名已有文稿。你与 Agent 可同时修改工作台数据目录（Agent 目录下的 `app/data/slides/`）中的同一份 JSON 文稿，编辑器在接收 Agent 的修改时保留你的待保存内容。可从**历史版本**恢复文稿、导出可编辑的 PowerPoint 文件，或下载能重新导入的独立 Bento HTML 文件。

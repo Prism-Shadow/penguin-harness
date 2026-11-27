@@ -39,8 +39,8 @@ export interface DockPanelData {
   /** Its place in the docks' menus, ascending. */
   order: number;
   /**
-   * Listed first in an empty dock's picker, before every other offered panel (both runs by
-   * `order`). A `mainDefinitions` entry that does not say it itself takes its contribution's.
+   * @deprecated Read by nothing: an empty dock's start page lists its panels in the "+" menu's
+   * order, by `order`. Kept so a contribution that still sets it type-checks.
    */
   lead?: boolean;
 }
@@ -69,7 +69,7 @@ export interface DockPanelDefinition {
   /** Its glyph's path (an `ICONS` value). */
   glyph: string;
   order: number;
-  /** As `DockPanelData.lead`. */
+  /** @deprecated As `DockPanelData.lead`: read by nothing. */
   lead?: boolean;
   /** Whether it is offered here; always when absent. */
   offered?: () => boolean;

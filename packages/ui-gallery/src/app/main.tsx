@@ -14,8 +14,9 @@
  * `open=settings` (or `settings.<page>`) asks the app for its Settings dialog through the
  * app's own request seam, which the account menu answers as soon as it mounts; `embed=1` makes
  * the app the guest of the page that frames it (guest-frame.ts); `notices=1` raises the notices a
- * conversation can carry in the demo store (mock/notices.ts), and `as=member` signs the demo
- * account in as a member.
+ * conversation can carry in the demo store (mock/notices.ts), `as=member` signs the demo
+ * account in as a member, and `remote=1` seeds a conversation on the demo's connected machine
+ * whose link `window.galleryMachine` moves (mock/remote-machine.ts).
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -31,6 +32,7 @@ import { installFetchShim } from "./mock/fetch-shim";
 import { setTerminalStreamOpener } from "../../../web/src/features/terminal/terminal-stream";
 import { openDemoTerminal } from "./mock/terminal";
 import { getStore } from "./mock/store";
+import { isDemoLink } from "./mock/remote-machine";
 import { rsiPrompt } from "./mock/rsi-transcript";
 import { installEvolutionAutoplay } from "./evolution-autoplay";
 
@@ -62,7 +64,16 @@ const store = getStore({
   embedded: params.embedded === true,
   freshProject: params.freshProject === true,
   evolutionDemo: params.autoplay === "evolution",
+  remote: params.remote === true,
 });
+// The remote conversation's machine, moved from outside the app (the screenshot script, a browser
+// check): the store answers as the server would, and says the machines list changed.
+if (params.remote) {
+  (window as Window & { galleryMachine?: (link: string) => void }).galleryMachine = (link) => {
+    if (!isDemoLink(link)) throw new Error(`Unknown link state: ${link}`);
+    store.setMachineLink(link);
+  };
+}
 // Each homepage frame has its own storage. A stopped run returns to a usable new chat.
 if (params.freshProject) dismissOnboarding(store.f.project.projectId);
 installFetchShim();

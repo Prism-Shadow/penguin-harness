@@ -42,10 +42,7 @@ import type { SchedulesRepo } from "@prismshadow/penguin-library-session/repos/s
 import type { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
 import type { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import type { MessagingBridge } from "@prismshadow/penguin-library-messaging/bridge";
-import type {
-  QQScanService,
-  QQScanTransport,
-} from "@prismshadow/penguin-library-messaging/qq-scan";
+import type { QQScanTransport } from "@prismshadow/penguin-library-messaging/qq-scan";
 import type { Scheduler } from "../src/runtime/scheduler.js";
 import type { OrganizationService } from "../src/runtime/organization/service.js";
 import type { OrgCacheRepo } from "@prismshadow/penguin-library-organization/organizations";
@@ -237,7 +234,6 @@ export interface TestDeps {
   errorsRepo: ErrorsRepo;
   messagingRepo: MessagingBindingsRepo;
   messaging: MessagingBridge;
-  qqScan: QQScanService;
   scheduler: Scheduler;
   /** Company mode: the organization runtime and its caches. */
   orgService: OrganizationService;
@@ -286,7 +282,6 @@ export function flattenForTests(boot: ServerBoot): TestDeps {
     errorsRepo: api("ObservabilityModule", "ErrorLog"),
     messagingRepo: api("MessagingHubModule", "MessagingBindings"),
     messaging: api("MessagingHubModule", "Messaging"),
-    qqScan: api("MessagingHubModule", "QQScan"),
     scheduler: api("SessionRuntimeModule", "Scheduling"),
     orgService: api("CompanyModule", "OrgService"),
     orgCacheRepo: api("CompanyModule", "OrgCache"),

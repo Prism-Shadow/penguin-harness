@@ -1,9 +1,9 @@
 /**
  * Top-right dock switcher of the chat toolbar (Codex-style): exactly two icon toggles — pull
  * open the bottom dock, pull open the right dock — drawn by the UI package's `PanelsToolbar`
- * and bound here to the dock store. Opening a dock that has no tabs yet lands on its picker
- * (choose what to open there); everything element-specific — the tab strips, each dock's "+"
- * menu, the pickers — lives on the dock surfaces themselves (features/dock).
+ * and bound here to the dock store. Opening a dock that has no tabs yet lands on its start page
+ * (what can open there); everything element-specific — the tab strips, each dock's "+" menu, the
+ * start pages — lives on the dock surfaces themselves (features/dock).
  *
  * The pending-approval amber dot rides the toggle of the dock that holds the agents tab
  * (the right one while the panel is closed — the default edge panels open on), keeping a

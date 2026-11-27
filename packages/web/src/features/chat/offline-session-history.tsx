@@ -1,6 +1,7 @@
 /**
  * A conversation on a machine that cannot be reached: the hub's cached copy of its latest
- * messages, read-only, under one line saying where the machine stands.
+ * messages (or the transcript already on screen), read-only, and the machine's state on a cover
+ * over the input box (machine-cover.tsx) rather than over the transcript.
  *
  * It shows when the machine is known to be down — the machines account reads it as away (the
  * conversation's reads are then held and never open: use-session-stream's `hold`), or the hub's
@@ -11,7 +12,7 @@
  * was held, the machine's API socket coming up again.
  */
 import { useEffect, useRef, useState } from "react";
-import { EmptyState, Notice, TextAction } from "@prismshadow/penguin-ui";
+import { ComposerCard, EmptyState, Skeleton, WallpaperSurface } from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
 import { openHistoryStream } from "../../api/sse";
 import {
@@ -24,8 +25,8 @@ import { readHistory } from "../../lib/history/history-read";
 import { machineForSession } from "../../lib/session-machines";
 import { S } from "../../lib/strings";
 import { useMachines } from "../../state/machines";
-import { HistoryMachineRetry } from "./history-machine-retry";
 import { listedAway, machineAway, stoppedWaiting, type StoppedReason } from "./machine-away";
+import { MachineCover, type MachineCoverReading } from "./machine-cover";
 import { MessageStream, type StreamRenderContext } from "./message-stream";
 import type { SessionStreamState } from "./use-session-stream";
 
@@ -204,7 +205,8 @@ export function useOfflineSessionHistory(
   return {
     alias: machine?.alias ?? owner?.alias ?? machineId,
     connected: !away,
-    retry: away && machineStatus?.retry ? machineStatus : null,
+    /** The machines account's reading of the machine while it is away; null otherwise. */
+    away: away ? machineStatus : null,
     /**
      * The read gave up on a machine the account does not read as away: why, and the one Retry
      * (a single attempt — the hub retries a machine it gave up on no further).
@@ -218,59 +220,86 @@ export function useOfflineSessionHistory(
   };
 }
 
-const readOnly: StreamRenderContext = {
+export type OfflineSessionView = NonNullable<ReturnType<typeof useOfflineSessionHistory>>;
+
+/** Nothing on a cached copy takes input: no approvals, no answers. */
+export const OFFLINE_CONTEXT: StreamRenderContext = {
   pendingApprovals: new Map(),
   onApprove: async () => {},
   origin: [],
   taskRunning: false,
 };
 
-/** The line's first sentence: where the machine stands, in the words of what is known of it. */
-function headline(alias: string, connected: boolean, stopped: StoppedReason | null): string {
-  const words = S.chat.offlineHistory;
-  if (connected) return words.refreshing(alias);
-  if (stopped === "unreachable") return words.unreachable(alias);
-  if (stopped === "retrying") return words.silent(alias);
-  return words.disconnected(alias);
+/** The messages the offline view shows, or null when it has none to show (yet). */
+export function offlineItems(view: OfflineSessionView): ChatItem[] | null {
+  return view.copy !== null && typeof view.copy === "object" ? view.copy.items : null;
 }
 
-export function OfflineSessionHistory({
-  alias,
-  connected,
-  copy,
-  retry,
-  stopped,
-  projectId,
-}: NonNullable<ReturnType<typeof useOfflineSessionHistory>>) {
+/**
+ * What the input box's cover is told about the machine. `live`: the conversation's own read is
+ * showing, so the transcript on screen is not the copy.
+ */
+export function offlineCover(view: OfflineSessionView, live = false): MachineCoverReading {
+  return {
+    alias: view.alias,
+    connected: view.connected,
+    away: view.away,
+    stopped: view.stopped,
+    cached: !live && offlineItems(view) !== null,
+  };
+}
+
+/**
+ * The transcript's place while the offline view has no messages to show: the cached copy being
+ * read, missing, unreadable, or empty.
+ */
+export function OfflineHistoryNote({ copy }: { copy: OfflineSessionView["copy"] }) {
   const words = S.chat.offlineHistory;
+  if (copy === null) {
+    return (
+      <div className="space-y-3 p-6">
+        <Skeleton className="h-5 w-1/3" />
+        <Skeleton className="h-5 w-2/3" />
+      </div>
+    );
+  }
+  return (
+    <EmptyState
+      title={copy === "miss" ? words.miss : copy === "failed" ? words.failed : words.empty}
+    />
+  );
+}
+
+/**
+ * The offline view of a conversation the page has no row for yet (a link opened before the list
+ * knows it): the copy, and an input box that holds nothing but the cover, where the composer
+ * stands once the conversation is known.
+ */
+export function OfflineSessionHistory(view: OfflineSessionView) {
+  const items = offlineItems(view);
   return (
     <>
-      <Notice role="status" tone={connected ? "info" : "attention"} className="mx-3 mt-2 shrink-0">
-        {headline(alias, connected, stopped?.reason ?? null)}{" "}
-        {copy && typeof copy === "object"
-          ? words.cached
-          : copy === "miss"
-            ? words.miss
-            : copy === "failed"
-              ? words.failed
-              : null}
-        {stopped && (
-          <>
-            {" "}
-            <TextAction onClick={stopped.onRetry}>{S.common.retry}</TextAction>
-          </>
+      <div className="relative min-h-0 flex-1">
+        {items !== null && items.length > 0 ? (
+          <MessageStream items={items} version={items.length} ctx={OFFLINE_CONTEXT} />
+        ) : (
+          <OfflineHistoryNote copy={items !== null ? { items } : view.copy} />
         )}
-      </Notice>
-      {retry && <HistoryMachineRetry projectId={projectId} away={retry} />}
-      {copy && typeof copy === "object" && (
-        <div className="min-h-0 flex-1">
-          {copy.items.length ? (
-            <MessageStream items={copy.items} version={copy.items.length} ctx={readOnly} />
-          ) : (
-            <EmptyState title={words.empty} />
-          )}
+      </div>
+      <WallpaperSurface className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
+        <div className="mx-auto max-w-3xl">
+          <ComposerCard
+            textarea={{ value: "", readOnly: true, tabIndex: -1, "aria-hidden": true }}
+            cover={
+              <MachineCover
+                projectId={view.projectId}
+                reading={offlineCover(view)}
+                drafted={false}
+              />
+            }
+          />
         </div>
-      )}
+      </WallpaperSurface>
     </>
   );
 }
