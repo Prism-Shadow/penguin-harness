@@ -65,6 +65,7 @@ import { ExtensionPairing } from "./extension-pairing.js";
 import { extensionUpgrade } from "./extension-ws.js";
 import { hubUpgrade } from "./hub-ws.js";
 import { MachineRelays } from "./machine-relay.js";
+import { machineHolding } from "./machine-sessions.js";
 import { builtinBrowserRoutes, extensionPairRoutes } from "./routes.js";
 import { BuiltinBrowser } from "./service.js";
 import type { BrowserShellPort } from "./shell-link.js";
@@ -289,18 +290,8 @@ export class BuiltinBrowserRoutes {
     this.routes = builtinBrowserRoutes(browser, {
       resourceAccess: { access: this.access, sessions: this.sessions },
       // A conversation on a machine is the machine's to vouch for (its panel opens pages here).
-      sessionMachine: async (projectId, sessionId, named) => {
-        for (const machine of await projectMachines.projectApis(projectId)) {
-          if (machine.api === null || (named !== undefined && machine.machineId !== named))
-            continue;
-          const answer = await machine.api.request(
-            "GET",
-            `/api/sessions/${encodeURIComponent(sessionId)}`,
-          );
-          if (answer.status === 200) return machine.machineId;
-        }
-        return null;
-      },
+      sessionMachine: (projectId, sessionId, named) =>
+        machineHolding((id) => projectMachines.projectApis(id), projectId, sessionId, named),
       // The human an agent's session acts for, as the browser knows people: by id and role.
       driverOf: (sessionId) => {
         const userId = drivers.driverOf(sessionId);
