@@ -8,6 +8,8 @@
  * Deliberately a re-export hub and nothing more: no logic, no defaults.
  */
 
+export { jobFor } from "./features/machines";
+
 export {
   AgentSelect,
   dropsEmployeeGroup,
