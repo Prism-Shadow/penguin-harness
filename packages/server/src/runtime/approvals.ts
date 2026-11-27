@@ -32,6 +32,7 @@ import type {
   ApprovalDecision,
   ApproveFn,
   AmspRecord,
+  PolicyDenial,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
 
@@ -145,7 +146,8 @@ export class ApprovalRegistry implements Approvals {
  * in which case that one route answers deny immediately. A call core hands over with a
  * policy reason (a command-policy `ask` rule matched it) takes the manual route under every
  * mode — allow-all and read-only included — except deny-all, which still denies; the reason
- * rides on the request.
+ * rides on the request. The unattended deny answers with the rule named (see PolicyDenial),
+ * so the model reads which rule refused the call rather than a person who never saw it.
  */
 export function makeApprove(args: {
   getMode: () => ApprovalMode;
@@ -161,7 +163,7 @@ export function makeApprove(args: {
    * is pushed. The automatic answers (allow-all, deny-all, read-only's read tools) and the
    * command policy's veto are untouched — they never asked anyone in the first place. A
    * command-policy `ask` hit takes the manual route too, so an unattended Session denies it
-   * at once: nobody is there to give the go-ahead.
+   * at once, naming the rule (see PolicyDenial): nobody is there to give the go-ahead.
    * Absent (development mode) keeps the suspending behaviour.
    */
   unattended?: () => boolean;
@@ -170,21 +172,38 @@ export function makeApprove(args: {
   const manual = (
     toolCall: AmspRecord<ToolCallPayload>,
     reason?: ApprovalReason,
-  ): Promise<ApprovalDecision> => {
-    if (unattended?.() === true) return Promise.resolve<ApprovalDecision>("deny");
+  ): Promise<ApprovalDecision | PolicyDenial> => {
+    if (unattended?.() === true) {
+      return Promise.resolve<ApprovalDecision | PolicyDenial>(
+        reason !== undefined ? { decision: "deny", rule: reason.rule } : "deny",
+      );
+    }
     const promise = registry.wait(toolCall, reason);
     publishRequest({
       toolCall,
       ...(toolCall.origin !== undefined ? { origin: toolCall.origin } : {}),
       ...(reason !== undefined ? { reason } : {}),
     });
-    return promise;
+    return (async () => {
+      const answer = await promise;
+      // A person's refusal of a policy-asked call keeps the rule with it, marked as the
+      // person's: the rendered line names who answered and under which rule (see
+      // PolicyDenial.by). Without the mark a named deny reads as the rule's own answer.
+      return reason !== undefined && answer === "deny"
+        ? { decision: "deny", rule: reason.rule, by: "user" }
+        : answer;
+    })();
   };
   return async (toolCall, context) => {
     const mode = getMode();
     // The Project's security policy wants a person: the mode's automatic yes does not apply.
+    // deny-all never parks a request either, but its denial still names the rule the same
+    // way an unattended denial does — a refusal the policy caused is the rule's answer, not
+    // a person's.
     if (context?.reason !== undefined) {
-      return mode === "deny-all" ? "deny" : manual(toolCall, context.reason);
+      return mode === "deny-all"
+        ? { decision: "deny", rule: context.reason.rule }
+        : manual(toolCall, context.reason);
     }
     switch (mode) {
       case "allow-all":

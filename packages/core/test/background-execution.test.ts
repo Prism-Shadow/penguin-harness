@@ -38,6 +38,8 @@ import {
 import { Session } from "../src/index.js";
 import type {
   AmspRecord,
+  ApprovalDecision,
+  PolicyDenial,
   SessionMetaPayload,
   TextPayload,
   ToolCallPayload,
@@ -773,7 +775,7 @@ describe("run_subagent run_in_background", () => {
   it("a background child's approvals resolve through the launching call's standing sink", async () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());
-    const decisions: string[] = [];
+    const decisions: (ApprovalDecision | PolicyDenial)[] = [];
     const runner = runnerOf(async function* ({ approve }) {
       const tc = withHop(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "c1" }));
       const d = await approve!(tc as AmspRecord<ToolCallPayload>);
@@ -805,7 +807,7 @@ describe("run_subagent run_in_background", () => {
   it("a detached child keeps running, inherits the call's approval sink and message tap, and reports on settle", async () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());
-    const decisions: string[] = [];
+    const decisions: (ApprovalDecision | PolicyDenial)[] = [];
     const gates = new Map<string, () => void>();
     const runner = runnerOf(async function* ({ prompt, approve }) {
       // Parked until the test releases it, so the detach lands mid-round.
@@ -855,7 +857,7 @@ describe("run_subagent run_in_background", () => {
   it("a detached child with a queued approval is not reported as something to poll for", async () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());
-    const decisions: string[] = [];
+    const decisions: (ApprovalDecision | PolicyDenial)[] = [];
     const runner = runnerOf(async function* ({ approve }) {
       const tc = withHop(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "c1" }));
       decisions.push(await approve!(tc as AmspRecord<ToolCallPayload>));

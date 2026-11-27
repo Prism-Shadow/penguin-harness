@@ -166,6 +166,9 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
     // replaces said their reasons the same way): its mark says the line is a reason, which the
     // words say.
     "UseWaits",
+    // The model picker's no-key empty state (2026-11-25): its glyph says what the empty-state
+    // words say.
+    "ModelPickerBody",
   ],
   "ui-tree": ["FileTree", "ActivityGroup"],
   "ui-field": ["Field", "PrefRow", "SettingRow"],

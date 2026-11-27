@@ -98,15 +98,17 @@ test("the focused Session shortcut follows the available space", async ({ page }
   await page.keyboard.press("End");
   const last = chat.getByTestId("dock-launcher-hide");
   await expect(last).toBeFocused();
-  await expect(last).toBeInViewport({ ratio: 0.99 });
+  // 0.98, not "fully visible": CI rendering rounds the row's edge to a fractional device
+  // pixel (0.9891 observed), and the tap below only needs the row onscreen.
+  await expect(last).toBeInViewport({ ratio: 0.98 });
   await page.setViewportSize({ width: 390, height: 620 });
   await expect(last).toHaveText("Hide launcher");
   await expect(last).toBeFocused();
-  await expect(last).toBeInViewport({ ratio: 0.99 });
+  await expect(last).toBeInViewport({ ratio: 0.98 });
   await page.setViewportSize({ width: 844, height: 900 });
   await expect(last).toHaveText("");
   await expect(last).toBeFocused();
-  await expect(last).toBeInViewport({ ratio: 0.99 });
+  await expect(last).toBeInViewport({ ratio: 0.98 });
   await page.keyboard.press("Escape");
   await expect(shortcuts).toBeFocused();
   await expect(last).toBeHidden();
@@ -152,7 +154,7 @@ test.describe("Shortcuts in a short Session", () => {
       await page.setViewportSize({ width: 390, height: 360 });
       await expect(last).toHaveText("Hide launcher");
       await expect(last).toBeFocused();
-      await expect(last).toBeInViewport({ ratio: 0.99 });
+      await expect(last).toBeInViewport({ ratio: 0.98 });
       const box = await last.boundingBox();
       await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
       await expect(shortcuts).toBeHidden();
@@ -168,6 +170,9 @@ for (const lang of ["en", "zh"]) {
   }) => {
     const session = await seed(page, "dock_actions_" + lang, lang);
     await page.setViewportSize({ width: 1280, height: 800 });
+    // The dock's width transition (theme layout motion) would still be running when the
+    // bounds below are read; reduced motion snaps the resize so the read sees the settled box.
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/chat/" + session.sessionId);
     const chat = page.locator('[data-workspace-page="chat:' + session.sessionId + '"]');
     const composer = chat.locator('[data-slot="composer"] textarea').first();

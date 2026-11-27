@@ -192,29 +192,33 @@ interface GenerativeModelConfig {
 `RunOptions` 和 `ToolExecutionRequest` 都携带这个回调类型：
 
 ```ts
-type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
+type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = 命令策略的否决
+interface PolicyDenial {
+  decision: "deny" | "forbidden"; // `ask` 规则的拒绝，或 `deny` 规则的否决
+  rule: string; // 作答的命令策略规则
+}
 type ApproveFn = (
   toolCall: AmspRecord<ToolCallPayload>,
-  context?: ApprovalContext, // why the call needs a person, when the command policy says so
-) => Promise<ApprovalDecision>;
+  context?: ApprovalContext, // 命令策略要求有人决定时，说明原因
+) => Promise<ApprovalDecision | PolicyDenial>;
 interface ApprovalContext {
   reason?: ApprovalReason;
 }
-type ApprovalReason = { kind: "policy"; rule: string }; // a command-policy `ask` rule matched
+type ApprovalReason = { kind: "policy"; rule: string }; // 命中了一条命令策略的 `ask` 规则
 ```
 
 | 规则 | 行为 |
 | --- | --- |
 | 调用频率 | 每个完整的 `tool_call` 恰好调用一次 |
 | 回调抛出异常 | 按 `deny` 处理 |
-| 未注入回调 | 引擎拒绝一切（保守默认） |
+| 未注入回调 | 引擎拒绝一切（保守默认）；配置了命令策略时，命中仍会署名规则 |
 | 子 Agent | 子 Agent 继承父级的审批回调，调用时会带上 `origin` 标记，审批策略因此覆盖整棵委托树 |
 
 `"forbidden"` 永远不是宿主给出的答案。`Session.run` 会用 [Project 命令策略](/configuration#命令策略)包装注入的回调，命中 `deny` 规则的命令不会问到宿主，直接得到 `"forbidden"`。命中 `ask` 规则的命令会带着 `{ reason: { kind: "policy", rule } }` 交给回调：宿主不能只按审批模式作答，而要交给人决定（服务端在 `deny-all` 以外的所有模式下都这样做）。其余调用照旧不带第二个参数。引擎本身始终只传调用本身，从不读取这个原因。
 
 第二个参数是可选的，按单参数签名写的回调照样能通过编译，只是会像对待其他调用一样决定 `ask` 命中。子 Session 无需额外转发：它继承的回调就是父 Session 的策略包装，子 Session 给出的原因随调用一起经过它。
 
-两种拒绝都只产生一行固定的 `aborted` 输出：`"deny"` 对应「Tool call denied by user.」，`"forbidden"` 对应「Tool call denied by policy.」。决定值本身随 `approval_decision` 事件传递，Trace 不用额外字段就能记录决策者。已有回调如果只返回 `"allow"` 或 `"deny"`，无需任何改动。
+带规则名的拒批会把规则写进模型的输出。`"forbidden"`（`deny` 规则的否决）渲染为 ``Tool call denied by policy under rule `<rule>`.``——保留策略自己的行。`"deny"` 在无人作答时（无人值守会话）渲染为 ``Tool call denied by rule `<rule>`.``，在人拒掉了策略要求确认的调用时渲染为 ``Tool call denied by the user under rule `<rule>`.``。裸的 `"deny"` 仍是「Tool call denied by user.」，裸的 `"forbidden"` 仍是「Tool call denied by policy.」。决定值本身随 `approval_decision` 事件传递，Trace 不用额外字段就能记录决策者。已有回调如果只返回 `"allow"` 或 `"deny"`，无需任何改动。
 
 ## EnvironmentInterface
 

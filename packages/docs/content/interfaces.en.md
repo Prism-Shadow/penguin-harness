@@ -193,10 +193,14 @@ interface GenerativeModelConfig {
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
+interface PolicyDenial {
+  decision: "deny" | "forbidden"; // an `ask` rule's denial, or a `deny` rule's veto
+  rule: string; // the command-policy rule that answered
+}
 type ApproveFn = (
   toolCall: AmspRecord<ToolCallPayload>,
   context?: ApprovalContext, // why the call needs a person, when the command policy says so
-) => Promise<ApprovalDecision>;
+) => Promise<ApprovalDecision | PolicyDenial>;
 interface ApprovalContext {
   reason?: ApprovalReason;
 }
@@ -207,14 +211,14 @@ type ApprovalReason = { kind: "policy"; rule: string }; // a command-policy `ask
 | --- | --- |
 | Call frequency | Called exactly once per complete `tool_call` |
 | Callback throws | Counts as `deny` |
-| No callback injected | The engine denies everything (the conservative default) |
+| No callback injected | The engine denies everything (the conservative default); a configured command policy still names its rule on a hit |
 | Subagents | A subagent inherits its parent's approval callback, invoked with an `origin` tag, so the approval policy spans the whole delegation tree |
 
 `"forbidden"` is never a host's answer. `Session.run` wraps the injected callback with the [Project command policy](/configuration#command-policy), so a command a `deny` rule matches gets `"forbidden"` before the host is asked at all. A command an `ask` rule matches reaches the callback with `{ reason: { kind: "policy", rule } }`: the host must not answer it by approval mode alone, and puts it to a person (the server does so under every mode but `deny-all`). Every other call arrives with no second argument, as before. The engine itself always calls with the call alone and never reads the reason.
 
 The second argument is optional, so a callback written for the one-argument signature still compiles; it then decides an `ask` hit like any other call. A child Session forwards nothing extra: the callback it inherits is the parent's policy wrapper, and the child's reason travels with the call through it.
 
-Either denial produces one fixed `aborted` output line: "Tool call denied by user." for `"deny"`, and "Tool call denied by policy." for `"forbidden"`. The decision value itself rides the `approval_decision` event, so the Trace names the decider without an extra field. An existing callback that returns only `"allow"` or `"deny"` needs no change.
+A denial that names the rule that caused it renders the rule in the model's output. A `"forbidden"` (a `deny` rule's veto) reads ``Tool call denied by policy under rule `<rule>`.`` — the policy keeps its own line. A `"deny"` reads ``Tool call denied by rule `<rule>`.`` when nobody answered it (an unattended session), and ``Tool call denied by the user under rule `<rule>`.`` when a person refused the call the policy asked about. A bare `"deny"` still reads "Tool call denied by user.", and a bare `"forbidden"` reads "Tool call denied by policy.". The decision value itself rides the `approval_decision` event, so the Trace names the decider without an extra field. An existing callback that returns only `"allow"` or `"deny"` needs no change.
 
 ## EnvironmentInterface
 

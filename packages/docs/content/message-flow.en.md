@@ -76,7 +76,8 @@ When a `tool_call` is refused, line 8 carries the refusal and a synthetic `abort
 | Refused by | `approval_decision` | Synthetic output |
 | --- | --- | --- |
 | The approval callback | `deny` | "Tool call denied by user." |
-| The command policy | `forbidden` | "Tool call denied by policy." |
+| The command policy | `forbidden` | ``Tool call denied by policy under rule `<rule>`.`` |
+| The approval callback, refusing a call the policy asked about | `deny` | ``Tool call denied by the user under rule `<rule>`.`` |
 | A `pre_tool_use` hook | `deny` | "Tool call denied by the <name> hook: <reason>." |
 
 A hook that answers is recorded as a `hook` event right before the `approval_decision`.

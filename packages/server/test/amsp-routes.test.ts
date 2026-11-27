@@ -80,6 +80,7 @@ import {
   taskEnd,
   toolCall,
 } from "@prismshadow/penguin-core";
+import type { ApprovalDecision, PolicyDenial } from "@prismshadow/penguin-core";
 import { RunCollector, readAmsp } from "@prismshadow/amsp";
 import type { AmspFrame, AmspRecord, RunResult } from "@prismshadow/amsp";
 import type {
@@ -779,7 +780,7 @@ describe("Agent API: runs", () => {
 
   it("the Web App's approval route answers the same request, and the caller's answer then finds nothing", async () => {
     const sessionId = uniqueSessionId();
-    const decisions: string[] = [];
+    const decisions: (ApprovalDecision | PolicyDenial)[] = [];
     adoptSession(
       t.deps,
       fakeSession(sessionId, {

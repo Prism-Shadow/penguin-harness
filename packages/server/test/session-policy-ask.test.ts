@@ -19,6 +19,7 @@ import type {
   ApprovalDecision,
   ApprovalReason,
   ApproveFn,
+  PolicyDenial,
 } from "@prismshadow/penguin-core";
 import type {
   ProjectCreateResponse,
@@ -45,7 +46,10 @@ const mergeCall = (id: string) =>
   });
 
 /** A runtime whose Task makes one call an `ask` rule matched, and records the answer it got. */
-function askingSession(sessionId: string, answers: ApprovalDecision[]): RuntimeSession {
+function askingSession(
+  sessionId: string,
+  answers: (ApprovalDecision | PolicyDenial)[],
+): RuntimeSession {
   return fakeSession(sessionId, {
     async *run(_input: AmspRecord[], opts: RunOpts) {
       const tc = mergeCall("tc-ask");
@@ -76,9 +80,9 @@ describe("a command-policy ask hit in a real conversation", { timeout: 30_000 },
   let projectId: string;
 
   beforeAll(async () => {
-    // The model asks to merge once, then answers in text.
+    // The model asks to merge once per task (one task per test here), then answers in text.
     mock = await startMockLLM((n) =>
-      n === 1
+      n % 2 === 1
         ? {
             toolUse: {
               id: "toolu_merge",
@@ -146,6 +150,50 @@ describe("a command-policy ask hit in a real conversation", { timeout: 30_000 },
       (m) => (m.payload as { type?: string }).type === "approval_decision",
     );
     expect((decision?.payload as { decision?: string } | undefined)?.decision).toBe("deny");
+    // The person's no keeps the rule with it: the model reads who answered and under
+    // which rule (see PolicyDenial.by), not a bare cancellation.
+    const denied = records.find(
+      (m) => (m.payload as { type?: string }).type === "tool_call_output",
+    );
+    expect((denied?.payload as { output?: string } | undefined)?.output).toBe(
+      "Tool call denied by the user under rule `gh-pr-merge-close`.",
+    );
+  });
+
+  it("an organization's Session reads the denial as a rule refusal, not a person's", async () => {
+    const res = await api.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {
+      approvalMode: "allow-all",
+    });
+    expect(res.status).toBe(201);
+    const { session } = (await res.json()) as SessionCreateResponse;
+    const sessionId = session.sessionId;
+    // The durable unattended marker (a desk or ticket session carries it from creation;
+    // the reconcile pass stamps rows it finds later — here it stands in for both).
+    t.deps.sessionsRepo.markOrgClient([sessionId]);
+    const records: AmspRecord[] = [];
+    const seen = requests(t, sessionId);
+    t.deps.channels.get(sessionId).subscribe((e) => {
+      if (e.event === undefined) records.push(JSON.parse(e.data) as AmspRecord);
+    });
+
+    const task = await api.post(`/api/sessions/${sessionId}/tasks`, {
+      input: [{ type: "text", text: "merge PR 7" }],
+    });
+    expect(task.status).toBe(202);
+    await waitFor(() => t.deps.manager.statusOf(sessionId) === "idle", 20_000);
+    // Nobody is asked, and the model reads which rule refused the call.
+    expect(seen).toEqual([]);
+    const denied = records.find(
+      (m) => (m.payload as { type?: string }).type === "tool_call_output",
+    );
+    expect((denied?.payload as { status?: string } | undefined)?.status).toBe("aborted");
+    expect((denied?.payload as { output?: string } | undefined)?.output).toBe(
+      "Tool call denied by rule `gh-pr-merge-close`.",
+    );
+    const decision = records.find(
+      (m) => (m.payload as { type?: string }).type === "approval_decision",
+    );
+    expect((decision?.payload as { decision?: string } | undefined)?.decision).toBe("deny");
   });
 });
 
@@ -182,8 +230,8 @@ describe("a command-policy ask hit on the server", () => {
     expect(answers).toEqual(["allow"]);
   });
 
-  it("is denied under deny-all, and nobody is asked", async () => {
-    const answers: ApprovalDecision[] = [];
+  it("is denied under deny-all, naming the rule, and nobody is asked", async () => {
+    const answers: (ApprovalDecision | PolicyDenial)[] = [];
     const seen = requests(t, SID);
     adoptSession(t.deps, askingSession(SID, answers), {
       projectId: PROJECT,
@@ -191,12 +239,14 @@ describe("a command-policy ask hit on the server", () => {
     });
     await t.deps.manager.startTask(SID, [userText("ship it")]);
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
-    expect(answers).toEqual(["deny"]);
+    // deny-all answers itself without parking a request, but the answer still carries the
+    // rule — a refusal the policy caused is the rule's, not a person's.
+    expect(answers).toEqual([{ decision: "deny", rule: RULE }]);
     expect(seen).toEqual([]);
   });
 
-  it("is denied at once in an organization's Session, which nobody is watching", async () => {
-    const answers: ApprovalDecision[] = [];
+  it("is denied at once in an organization's Session, which nobody is watching, and names the rule", async () => {
+    const answers: (ApprovalDecision | PolicyDenial)[] = [];
     const seen = requests(t, SID);
     adoptSession(t.deps, askingSession(SID, answers), {
       projectId: PROJECT,
@@ -205,7 +255,8 @@ describe("a command-policy ask hit on the server", () => {
     });
     await t.deps.manager.startTask(SID, [userText("ship it")]);
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
-    expect(answers).toEqual(["deny"]);
+    // The deny carries the rule, so the model reads a rule refusal — not a person's.
+    expect(answers).toEqual([{ decision: "deny", rule: RULE }]);
     expect(seen).toEqual([]);
   });
 

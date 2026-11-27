@@ -13,6 +13,7 @@ import type {
   ApprovalDecision,
   ErrorCode,
   AmspRecord,
+  PolicyDenial,
   ToolCallPayload,
 } from "@prismshadow/amsp/records";
 
@@ -64,22 +65,32 @@ export interface ApprovalContext {
 }
 
 /**
+ * A denial that names the rule that caused it (see {@link PolicyDenial} — defined with the
+ * records): the command policy's own answers, rendered by the engine as
+ * ``Tool call denied by policy under rule `<rule>`.`` (a `"forbidden"`) or
+ * ``Tool call denied by rule `<rule>`.`` (a `"deny"`), so the model reads which rule
+ * refused the call rather than a person who never saw it.
+ */
+export type { PolicyDenial };
+
+/**
  * Per-tool approval callback: the Human boundary gives allow/deny for each complete `tool_call`.
  * `context_engine` calls it once per tool call within a turn, with the call alone. Subagents
  * forward the parent's approval callback, so the child Agent **inherits the parent Agent's
- * approval mode**. The third decision, `"forbidden"`, is never a host's answer: `Session.run`
- * wraps the injected callback with the project sandbox command policy (see
- * {@link CommandPolicyConfig}). A call a `deny` rule matches answers `"forbidden"` without the
- * wrapped callback being consulted; a call an `ask` rule matches reaches it with
- * `context.reason`, which the host answers by asking a person whatever its approval mode. The
- * context is optional, so a one-argument callback still fits — it then decides an `ask` hit
- * like any other call.
+ * approval mode**. The third decision, `"forbidden"`, is never a host's answer of its own:
+ * `Session.run` wraps the injected callback with the project sandbox command policy (see
+ * {@link CommandPolicyConfig}). A call a `deny` rule matches answers `"forbidden"` (naming the
+ * rule, see {@link PolicyDenial}) without the wrapped callback being consulted; a call an `ask`
+ * rule matches reaches it with `context.reason`, which the host answers by asking a person
+ * whatever its approval mode — or by denying with the rule named when it cannot (an unattended
+ * Session). The context is optional, so a one-argument callback still fits — it then decides an
+ * `ask` hit like any other call.
  * Docs: /docs/interfaces § "ApproveFn".
  */
 export type ApproveFn = (
   toolCall: AmspRecord<ToolCallPayload>,
   context?: ApprovalContext,
-) => Promise<ApprovalDecision>;
+) => Promise<ApprovalDecision | PolicyDenial>;
 
 /**
  * What one pass over the pre-tool-use hooks produced, handed to `context_engine` by the

@@ -16,7 +16,12 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { compactionBegin, compactionEnd, toolCall } from "@prismshadow/penguin-core";
-import type { AmspRecord, ApprovalDecision, ApproveFn } from "@prismshadow/penguin-core";
+import type {
+  AmspRecord,
+  ApprovalDecision,
+  ApproveFn,
+  PolicyDenial,
+} from "@prismshadow/penguin-core";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -82,7 +87,7 @@ describe("abort during compaction", () => {
 
   it("an abort while a round's write waits on its approval denies it, and the compaction ends", async () => {
     const roundSid = uniqueSessionId();
-    let decision: ApprovalDecision | null = null;
+    let decision: ApprovalDecision | PolicyDenial | null = null;
     // A compaction whose round asks the Session's approval callback about a hand-off write,
     // the way core's round does, and closes `aborted` once interrupted.
     const session = fakeSession(roundSid, {

@@ -491,8 +491,8 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
 
     // The host is never asked: that is what makes the policy outrank every approval mode.
     expect(asked).toBe(0);
-    // "forbidden" is the whole answer; the engine renders the fixed denial line from it.
-    expect(outcome).toBe("forbidden");
+    // The answer names the rule; the engine renders the denial line from it.
+    expect(outcome).toEqual({ decision: "forbidden", rule: "no-rm-rf" });
   });
 
   it("passes everything else straight through, decision included", async () => {
@@ -521,7 +521,10 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
         toolCallId: "c2",
       });
 
-    expect(await guarded(typed("rm -rf /\n") as never)).toBe("forbidden");
+    expect(await guarded(typed("rm -rf /\n") as never)).toEqual({
+      decision: "forbidden",
+      rule: "no-rm-rf",
+    });
     expect(asked).toBe(0);
     expect(await guarded(typed("make build\n") as never)).toBe("allow");
     expect(asked).toBe(1);
@@ -545,7 +548,10 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
     );
     expect(await guarded(call("rm -rf /") as never)).toBe("allow");
     policy = DENY_RM;
-    expect(await guarded(call("rm -rf /") as never)).toBe("forbidden");
+    expect(await guarded(call("rm -rf /") as never)).toEqual({
+      decision: "forbidden",
+      rule: "no-rm-rf",
+    });
   });
 
   it("with no project policy, a destructive command goes to a person instead of being refused", async () => {
@@ -687,17 +693,104 @@ describe("Session applies the policy at the approval boundary", () => {
     )!;
     // The decision value itself separates a policy veto from a human denial in the Trace.
     expect((decision.payload as { decision?: string }).decision).toBe("forbidden");
-    // The denial is the fixed line: "by policy" (not "by user") is what tells the model to
-    // change course instead of treating it as a person's cancellation; both read `aborted`.
+    // The denial keeps the policy line and names the rule under it (not "by user": no
+    // person saw this), so the model changes course instead of treating it as a cancellation.
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
     expect((output.payload as { status?: string }).status).toBe("aborted");
-    expect((output.payload as { output: string }).output).toBe("Tool call denied by policy.");
+    expect((output.payload as { output: string }).output).toBe(
+      "Tool call denied by policy under rule `no-rm-rf`.",
+    );
     // The denial is fed back to the model, so the next turn can route around it.
     expect(
       (secondInput as AmspRecord[] | null)?.some(
         (m) => (m.payload as { type?: string }).type === "tool_call_output",
       ),
     ).toBe(true);
+  });
+
+  it("a configured policy still names its rule when the host injects no approval callback", async () => {
+    let executed = 0;
+    let turn = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate(): AsyncGenerator<AmspRecord, LLMOutcome> {
+        if (turn++ === 0) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "rm -rf /tmp/definitely-not-run" }),
+            toolCallId: "call_veto",
+          });
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "gh pr merge 7 --squash" }),
+            toolCallId: "call_ask",
+          });
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "ls /tmp" }),
+            toolCallId: "call_plain",
+          });
+          return { status: "completed" };
+        }
+        yield assistantText("Understood, choosing another approach.");
+        return { status: "completed" };
+      },
+    };
+    const environment: EnvironmentInterface = {
+      listTools: async () => [],
+      // eslint-disable-next-line require-yield
+      executeTool: async function* () {
+        executed += 1;
+        throw new Error("a vetoed command must never be executed");
+      },
+      toolPermission: () => undefined,
+    };
+    const session = new Session({
+      meta: meta(),
+      bootstrap: async () => ({ llm }),
+      environment,
+      imagesDir: path.join(tmp, "images"),
+      modelHasVision: true,
+      commandPolicy: () => ({
+        rules: [
+          { name: "no-rm-rf", pattern: "rm -rf" },
+          { name: "gh-pr-merge", pattern: "gh pr merge", action: "ask" },
+        ],
+      }),
+    });
+
+    const all: AmspRecord[] = [];
+    // No `approve` injected: the conservative fallback denies everything, but a policy hit
+    // still answers in its own name instead of masquerading as a person's refusal.
+    for await (const msg of session.run([userText("clean up")])) {
+      all.push(msg);
+    }
+
+    expect(executed).toBe(0);
+    const outputOf = (id: string) =>
+      (
+        all.find(
+          (m) =>
+            (m.payload as { type?: string }).type === "tool_call_output" &&
+            (m.payload as { tool_call_id?: string }).tool_call_id === id,
+        )!.payload as { output: string }
+      ).output;
+    const decisionOf = (id: string) =>
+      (
+        all.find(
+          (m) =>
+            (m.payload as { type?: string }).type === "approval_decision" &&
+            (m.payload as { tool_call_id?: string }).tool_call_id === id,
+        )!.payload as { decision?: string }
+      ).decision;
+    // A `deny` rule refuses in its own name, under the policy's line.
+    expect(decisionOf("call_veto")).toBe("forbidden");
+    expect(outputOf("call_veto")).toBe("Tool call denied by policy under rule `no-rm-rf`.");
+    // An `ask` hit is denied naming its rule too: nobody is there to put it to a person.
+    expect(decisionOf("call_ask")).toBe("deny");
+    expect(outputOf("call_ask")).toBe("Tool call denied by rule `gh-pr-merge`.");
+    // A call matching neither rule stays the bare conservative denial.
+    expect(decisionOf("call_plain")).toBe("deny");
+    expect(outputOf("call_plain")).toBe("Tool call denied by user.");
   });
 
   it("a project policy switched off lets the same command through to execution", async () => {
@@ -855,7 +948,10 @@ describe("Session applies the policy at the approval boundary", () => {
       }) as AmspRecord;
 
     expect(await fallback!(childCall("npm publish") as never)).toBe("allow");
-    expect(await fallback!(childCall("rm -rf /") as never)).toBe("forbidden");
+    expect(await fallback!(childCall("rm -rf /") as never)).toEqual({
+      decision: "forbidden",
+      rule: "no-rm-rf",
+    });
     expect(await fallback!(childCall("ls") as never)).toBe("allow");
     // The host heard of the ask hit with its reason and of the plain call without one; the
     // deny hit never reached it.

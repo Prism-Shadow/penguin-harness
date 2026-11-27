@@ -545,6 +545,88 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(fedBack).toBeDefined();
   });
 
+  it('a policy denial naming its rule reads "denied by policy under rule" and rides the event as its decision', async () => {
+    // A denial that names the rule that caused it (PolicyDenial) — a `deny` rule's
+    // "forbidden", or the deny a host that cannot ask a person answers a policy reason
+    // with — renders so the model reads which rule refused the call rather than a person
+    // who never saw it. A "forbidden" keeps its policy line with the rule under it.
+    const llm = new FakeLLM();
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment });
+    const refuse: ApproveFn = async () => ({ decision: "forbidden", rule: "no-rm-rf" });
+
+    const all = await collectRun(engine, [userText("clean up")], refuse);
+
+    const decision = all.find(
+      (m) => (m.payload as { type?: string }).type === "approval_decision",
+    )!;
+    expect((decision.payload as { decision?: string }).decision).toBe("forbidden");
+    const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
+    expect((output.payload as { status?: string }).status).toBe("aborted");
+    expect((output.payload as { output: string }).output).toBe(
+      "Tool call denied by policy under rule `no-rm-rf`.",
+    );
+    // Fed back to the model like any other tool result.
+    const fedBack = llm.receivedSecondInput?.find(
+      (m) => (m.payload as { type?: string }).type === "tool_call_output",
+    );
+    expect(fedBack).toBeDefined();
+  });
+
+  it("an unattended host's plain deny with the policy's rule reads the rule line too", async () => {
+    // The server's unattended route answers a policy-reasoned call with the decision on a
+    // plain "deny" — but with the rule named — so the line matches the deny-rule case.
+    const llm = new FakeLLM();
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment });
+    const deny: ApproveFn = async () => ({ decision: "deny", rule: "gh-pr-merge-close" });
+
+    const all = await collectRun(engine, [userText("merge it")], deny);
+
+    const decision = all.find(
+      (m) => (m.payload as { type?: string }).type === "approval_decision",
+    )!;
+    expect((decision.payload as { decision?: string }).decision).toBe("deny");
+    const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
+    expect((output.payload as { output: string }).output).toBe(
+      "Tool call denied by rule `gh-pr-merge-close`.",
+    );
+  });
+
+  it("an attended refusal of a policy ask reads the user's line with the rule", async () => {
+    // The person saw the rule's question and gave the no themselves (PolicyDenial.by):
+    // the line names who answered — the user — and under which rule, not the rule acting
+    // alone and not a bare cancellation either.
+    const llm = new FakeLLM();
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment });
+    const deny: ApproveFn = async () => ({
+      decision: "deny",
+      rule: "gh-pr-merge-close",
+      by: "user",
+    });
+
+    const all = await collectRun(engine, [userText("merge it")], deny);
+
+    const decision = all.find(
+      (m) => (m.payload as { type?: string }).type === "approval_decision",
+    )!;
+    expect((decision.payload as { decision?: string }).decision).toBe("deny");
+    const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
+    expect((output.payload as { output: string }).output).toBe(
+      "Tool call denied by the user under rule `gh-pr-merge-close`.",
+    );
+  });
+
   it("stamps the Session token series onto token_usage before it is yielded or written", async () => {
     // The LLM reports per-request counts only (12 then 20 here; its session slot is a
     // stand-in) and the engine authors the cumulative series. Consumers serialize at yield

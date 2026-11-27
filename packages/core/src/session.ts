@@ -635,9 +635,25 @@ export class Session {
     // mode. Wrapped once for every Task of this call. A child Session wraps its own forwarded
     // callback again: that callback is this wrapper, so the child's `ask` hit arrives here
     // with its reason and is matched once more (see internal/command-policy.ts). With no
-    // callback at all the engine denies everything anyway, so there is nothing to guard.
+    // callback at all the engine denies everything anyway, but a configured policy still
+    // gets to name itself — see the wrapped fallback below.
     if (opts?.approve) {
       opts = { ...opts, approve: withCommandPolicy(opts.approve, this.commandPolicy) };
+    } else if (this.commandPolicy) {
+      // A host that injects no callback gets the engine's conservative fallback — deny
+      // everything. A policy hit must still be refused in the rule's name rather than
+      // masquerade as a person's refusal, so the fallback is wrapped the same way: a `deny`
+      // rule answers "forbidden" naming the rule, an `ask` hit is denied naming its rule
+      // (nobody is there to put it to a person), and only calls matching neither rule are
+      // left to the bare denial.
+      opts = {
+        ...opts,
+        approve: withCommandPolicy(async (_toolCall, context) => {
+          return context?.reason !== undefined
+            ? { decision: "deny", rule: context.reason.rule }
+            : ("deny" as const);
+        }, this.commandPolicy),
+      };
     }
     // Pre-tool-use hooks ride the engine's consult seam (RunOptions.preToolUse): the
     // engine records their events in stream order and applies the first decision before
