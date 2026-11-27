@@ -1794,7 +1794,7 @@ importers:
     devDependencies:
       '@penguinharness/agent-state-git':
         specifier: workspace:*
-        version: file:plugins/agent-state-git(dugite@3.3.3)
+        version: link:../agent-state-git
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
