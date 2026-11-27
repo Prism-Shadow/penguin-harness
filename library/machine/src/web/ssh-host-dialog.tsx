@@ -38,13 +38,7 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import { api } from "@prismshadow/penguin-web/internal";
-import {
-  ApiError,
-  S,
-  apiErrorText,
-  failureNode,
-} from "@prismshadow/penguin-web/internal";
+import { api, ApiError, S, apiErrorText, failureNode } from "@prismshadow/penguin-web/internal";
 
 export type HostField = "alias" | "hostName" | "user" | "port" | "identityFile" | "password";
 /** How the machine signs in: a key, or a password the server stores for it. */

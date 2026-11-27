@@ -65,8 +65,8 @@ import {
   RuledSection,
   Spinner,
 } from "@prismshadow/penguin-ui";
-import { api } from "@prismshadow/penguin-web/internal";
 import {
+  api,
   dismissNotice,
   envOnlyNoticeId,
   skippedNoticeId,

@@ -50,8 +50,8 @@ import {
   TodoNotice,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import { api } from "@prismshadow/penguin-web/internal";
 import {
+  api,
   useProject,
   useLocale,
   useMachines,

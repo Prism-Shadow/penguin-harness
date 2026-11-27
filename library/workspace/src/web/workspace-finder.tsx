@@ -75,8 +75,8 @@ import {
   toastSuccess,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
-import { api } from "@prismshadow/penguin-web/internal";
 import {
+  api,
   ApiError,
   writeClipboard,
   S,
@@ -92,9 +92,7 @@ import {
   toastApiError,
   failureNode,
 } from "@prismshadow/penguin-web/internal";
-import type {
-  WorkspaceMachine,
-} from "@prismshadow/penguin-web/internal";
+import type { WorkspaceMachine } from "@prismshadow/penguin-web/internal";
 import {
   EMPTY_HISTORY,
   TYPE_SELECT_RESET_MS,
