@@ -254,22 +254,45 @@ test("the market writes a machine's server modules into this server's Project ta
 
   await page.goto("/plugins");
 
-  // Remove: the machine's card offers it, and the removal is this server's.
+  // The machine says who holds the package (no Agent there) and takes the uninstall.
+  const holders =
+    "/api/admin/plugins/holders?package=" + encodeURIComponent("@example/office-only");
+  frame.answer(
+    "GET",
+    remote(holders),
+    ok({
+      package: "@example/office-only",
+      plugin: null,
+      onServer: true,
+      shipped: false,
+      shared: [],
+      agents: [],
+    }),
+  );
+  frame.answer(
+    "DELETE",
+    remote("/api/admin/plugins?package=" + encodeURIComponent("@example/office-only")),
+    ok({ agents: [] }),
+  );
+
+  // Remove: the machine's card leads to its page, and the removal there lists it off this
+  // server's table for the machine.
   const only = page.locator('[data-plugin="office-only"]');
   await expect(only).toContainText("Office");
-  await only.locator(".showcase-card-open").click();
-  const remove = page.getByRole("button", { name: "Remove office-only" }).first();
+  await only.locator("a").first().click();
+  await page.getByRole("button", { name: /^More actions for / }).click();
+  const remove = page.getByRole("menuitem", { name: /Uninstall from server/ });
   await expect(remove).toBeEnabled();
   await remove.click();
-  await page.getByRole("dialog").getByRole("button", { name: "Remove", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Uninstall from server" }).click();
   await expect.poll(() => listedFor("@example/office-only")).toBe(null);
   expect(writes()).toEqual(["DELETE " + tables]);
-  await page.keyboard.press("Escape");
+  await page.goto("/plugins");
 
   // Install: a package only the machine's index offers is listed for it, here.
   const tool = page.locator('[data-plugin="office-tool"]');
   await expect(tool).toContainText("Office");
-  await tool.locator(".showcase-card-bar button").first().click();
+  await tool.locator("[data-install-button]").click();
   await page.getByRole("dialog").getByRole("button", { name: "Install", exact: true }).click();
   await expect.poll(() => listedFor("@example/office-tool")).toEqual([office]);
   expect(writes()).toEqual(["DELETE " + tables, "POST " + tables]);

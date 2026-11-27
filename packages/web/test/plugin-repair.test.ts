@@ -5,7 +5,7 @@
  *   the repair prompt: the plugin, what became of it, and the platform's reason verbatim.
  * - The draft the bridge writes from it is a composed one — in the composer, never sent.
  * - No Agent to hand it to means no chat.
- * - The row offers the button only where the build cannot fully run the plugin and someone
+ * - The page offers the button, beside its note, only where the build cannot fully run the plugin and someone
  *   wired it; it says "disabled on this build" and shows the reason.
  */
 import { createElement, type FunctionComponent } from "react";
@@ -75,7 +75,7 @@ describe("the chat a plugin repair opens", () => {
   });
 });
 
-describe("the row of a plugin the build cannot fully run", () => {
+describe("the page of a plugin the build cannot fully run", () => {
   beforeEach(() => {
     stubLocalStorage().setItem("penguin.lang", "en");
   });
@@ -112,27 +112,29 @@ describe("the row of a plugin the build cannot fully run", () => {
       onModuleApply: () => undefined,
       onMcpChanged: () => undefined,
       onRepair,
+      surface: "page",
     });
   };
-  const repairButton = `aria-label="${en.plugins.repair} @acme/unmet"`;
+  /** The repair beside the page's note: a button whose words are Fix with AI. */
+  const repairButton = new RegExp(`<button[^>]*>(<[^>]+>)*${en.plugins.repair}<`);
 
   it("says it is disabled on this build, why, and offers the repair", () => {
     const html = row({});
     expect(html).toContain(en.plugins.status.incompatible);
     expect(html).toContain("names interface");
-    expect(html).toContain(repairButton);
+    expect(html).toMatch(repairButton);
   });
 
   it("a running row that lost a contribution says so and offers the same repair", () => {
     const html = row({ state: "active", unsatisfied: "contributes to 'nowhere.slot'" });
     expect(html).toContain(en.plugins.status.installed);
     expect(html).toContain("Part of it is not in use on this build");
-    expect(html).toContain(repairButton);
+    expect(html).toMatch(repairButton);
   });
 
   it("offers no repair to someone who may not change plugins, nor on a row that runs whole", () => {
-    expect(row({ onRepair: null })).not.toContain(repairButton);
+    expect(row({ onRepair: null })).not.toMatch(repairButton);
     const healthy = row({ state: "active", unsatisfied: undefined });
-    expect(healthy).not.toContain(repairButton);
+    expect(healthy).not.toMatch(repairButton);
   });
 });

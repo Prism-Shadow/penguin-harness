@@ -677,6 +677,16 @@ export const en: GalleryStrings = {
       glyphFromPlugin: "Installed by the Data analysis plugin",
       keys: "Keyboard hints",
       shortcuts: [["Ctrl", "K"], ["Ctrl", "`"], ["Esc"]],
+      install: "Install button",
+      installHint:
+        "One button for a thing to install: the next action at rest, the step and a staged bar while the install runs, as wide as its widest label in every state.",
+      installIdle: "Install",
+      installChecking: "Looking up…",
+      installDownloading: "Downloading 42%",
+      installStarting: "Starting…",
+      installRetry: "Retry",
+      installOpen: "Open",
+      installProgress: "Install progress",
       ball: "Floating ball",
       ballHint:
         "Drag it to the left or right edge and let go to dock it there; push it past the edge or press × to tuck it away, and the handle on the edge brings it back. The caller stores where it rests.",
@@ -1012,6 +1022,12 @@ export const en: GalleryStrings = {
       subPageItems: ["Plugins", "Skills", "Hooks", "Workbenches"],
       subPageBody: (page) => `The “${page}” sub-page's content.`,
       subPageImport: "Import skill",
+      steps: "Step indicator",
+      stepsHint:
+        "Where a short run of pages stands: finished steps checked, the one on show in the body's ink. Only the steps the run takes are drawn.",
+      stepsLabel: "Install steps",
+      stepNames: ["On this server", "Choose agents", "Ready"],
+      stepDone: "done",
       subPageSearch: "Search plugins",
       subPageMarket: "Open the Plugins page",
       withButton: "With a button",
@@ -2610,7 +2626,11 @@ export const en: GalleryStrings = {
       cardsHint:
         "Short words, overlong words with the machine it came from, a card with tags, facts and two controls, one with none of them, the Web App market's card with its version chip and a bar of two one-line text actions (the second one disabled, its reason on hover), and the placeholder while a list is read. The icons at the top end switch every grid on this board between cards and the list.",
       marketCaption:
-        "The Web App market's cards: in the list each is one row — its icon tile, the title over the description, then the install action (Install, or how many Agents have it) and Quick start on the same row — two rows abreast wherever two fit.",
+        "Cover cards with a bar of two one-line text actions: in the list each is one row — its icon tile, the title over the description, then the actions on the same row — two rows abreast wherever two fit.",
+      store: "Store cards",
+      storeHint:
+        "How the Web App's plugin market lists plugins: icon-led, no cover (the cover is the plugin's page), the name over two lines of description, a short line of facts and the one install button at the foot. In the list each is one ruled row, two abreast wherever two fit. The icons at the top end of the cover cards switch these too.",
+      storeFacts: "used by 2 agents",
       shortTitle: "Goal Mode",
       shortDescription: "Loop the session on an objective until it is done.",
       longTitle:

@@ -13,6 +13,7 @@ import { act, type ReactElement } from "react";
 
 import { createRoot, type Root } from "react-dom/client";
 import { resetReadStores } from "../../src/lib/read-store";
+import { resetServerRuns } from "../../src/features/plugins/server-installs";
 
 // React only flushes effects inside `act` when told it is running under a test.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -97,6 +98,7 @@ export async function unmountAll(): Promise<void> {
   roots.clear();
   document.body.innerHTML = "";
   resetReadStores();
+  resetServerRuns();
 }
 
 /** Lets pending promises (a request's answer, an awaited prompt) settle and React commit. */

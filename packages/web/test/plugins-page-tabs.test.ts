@@ -6,24 +6,25 @@
  *
  * - Given the market, its groups are tabs: All lists every plugin's card, and choosing Hooks
  *   lists only the hook plugin's and names the tab in the address.
- * - Given an address naming a tab and a plugin that tab hides, the plugin's detail is open over
- *   the market all the same.
- * - Given a card opened from the grid, the address names its plugin; Back closes the detail and
- *   leaves the market where it was.
+ * - Given the old address of a plugin's detail (`?plugin=`), the plugin's own page opens in its
+ *   place.
+ * - Given a card opened from the grid, its plugin's page opens at its own address; Back returns
+ *   to the market on the tab it was opened from.
  * - Given a search that matches nothing in the tab on show but matches elsewhere, the empty line
  *   says how many match across every plugin, and "Show all results" lists them on All.
  * - Given a selected plugin with install figures, opening the catalogue still goes straight to
- *   the results. Switching to rows keeps the current tab and details, and a revisit uses rows.
+ *   the results. Switching to rows keeps the current tab, a card opens its page, and a revisit uses rows.
  * - Given live install figures, Popular is available as a sort. Sample figures are excluded.
  */
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { PluginPage } from "../src/features/plugins/plugin-page";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { agentServer, mountAgentApp, whereIs } from "./helpers/agent-app";
-import { button, click, dialogs, field, run, type, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, field, type, unmountAll, waitFor } from "./helpers/dom";
 
 const CHARTS = {
   name: "charts",
@@ -67,7 +68,11 @@ afterEach(async () => {
 
 const open = (at: string, market?: unknown) => {
   serve(market);
-  return mountAgentApp(h(PluginsPage), { route: "/plugins", at });
+  return mountAgentApp(h(PluginsPage), {
+    route: "/plugins",
+    at,
+    extra: [{ path: "/plugins/:pluginName", element: h(PluginPage) }],
+  });
 };
 /** The plugins whose cards the grid shows, in order. */
 const cards = () =>
@@ -78,8 +83,10 @@ const tab = (label: string) =>
   [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find(
     (el) => el.textContent === label,
   )!;
-/** The open detail layers, by the plugin each is named for. */
-const details = () => dialogs().map((d) => d.getAttribute("aria-label"));
+/** The plugin page on show, by its title; null on the market. */
+const pageTitle = () => document.querySelector("h1")?.textContent ?? null;
+/** A card's opener: a link to the plugin's page. */
+const opener = (name: string) => document.querySelector<HTMLElement>(`[data-plugin="${name}"] a`)!;
 
 const sortOptions = async () => {
   await click(button(en.plugins.sortLabel));
@@ -100,16 +107,16 @@ describe("the catalogue layout", () => {
       items: { [CHARTS.package!]: { installs: 120, weekly: 3 } },
     },
   });
-  it("keeps the current category and detail when rows are chosen, and remembers the layout", async () => {
+  it("keeps the current category when rows are chosen, opens a card's page, and remembers the layout", async () => {
     const router = await open("/plugins?tab=skills", curated("placeholder"));
     await waitFor(() => cards().length === 1, 40);
     expect(document.querySelector(".showcase-carousel, .showcase-ranking")).toBeNull();
     await click(button(en.plugins.listLayout));
     expect(button(en.plugins.listLayout).getAttribute("aria-pressed")).toBe("true");
     expect(cards()).toEqual(["charts"]);
-    await click(document.querySelector('[data-plugin="charts"] button')!);
-    expect(details()).toEqual(["Charts"]);
-    expect(whereIs(router)).toBe("/plugins?tab=skills&plugin=charts");
+    await click(opener("charts"));
+    await waitFor(() => pageTitle() === "Charts", 20);
+    expect(whereIs(router)).toBe("/plugins/charts");
     await unmountAll();
     await open("/plugins", curated("placeholder"));
     await waitFor(() => cards().length === 2, 40);
@@ -137,22 +144,22 @@ describe("the market's tabs", () => {
     expect(whereIs(router)).toBe("/plugins?tab=hooks");
   });
 
-  it("open the detail an address names even when its tab hides the card", async () => {
-    await open("/plugins?tab=hooks&plugin=charts");
-    await waitFor(() => details().length === 1, 40);
-    expect(cards()).toEqual(["tidy"]);
-    expect(details()).toEqual(["Charts"]);
+  it("open a plugin's page at the old address of its detail", async () => {
+    const router = await open("/plugins?tab=hooks&plugin=charts");
+    await waitFor(() => pageTitle() === "Charts", 40);
+    expect(whereIs(router)).toBe("/plugins/charts");
   });
 
-  it("put a card's detail in the address, and Back closes it", async () => {
+  it("open a card's plugin on a page of its own, and Back returns to the tab it was opened from", async () => {
     const router = await open("/plugins?tab=skills");
     await waitFor(() => cards().length === 1, 40);
-    await click(document.querySelector('[data-plugin="charts"] button')!);
-    expect(details()).toEqual(["Charts"]);
-    expect(whereIs(router)).toBe("/plugins?tab=skills&plugin=charts");
+    await click(opener("charts"));
+    await waitFor(() => pageTitle() === "Charts", 20);
+    expect(whereIs(router)).toBe("/plugins/charts");
+    expect(cards()).toEqual([]);
 
-    await run(() => router.navigate(-1));
-    await waitFor(() => details().length === 0, 20);
+    await click(button(en.plugins.backToMarket));
+    await waitFor(() => cards().length === 1, 20);
     expect(whereIs(router)).toBe("/plugins?tab=skills");
     expect(cards()).toEqual(["charts"]);
   });

@@ -152,7 +152,9 @@ describe("the Plugins page's response lifecycle", () => {
     it(`rejects an old A write after A → B → A, with the new A read ${readFirst ? "already complete" : "still pending"}`, async () => {
       const write = deferred<InstalledPluginsResponse>();
       const read = deferred<InstalledPluginsResponse>();
+      // Any read past the three the visits make answers what the server holds by then.
       vi.mocked(api.getInstalledPlugins)
+        .mockResolvedValue(snapshot("fresh"))
         .mockResolvedValueOnce({ ...snapshot("initial"), plugins: [], shipped: ["initial"] })
         .mockResolvedValueOnce(snapshot("B"))
         .mockReturnValueOnce(read.promise);
@@ -177,7 +179,8 @@ describe("the Plugins page's response lifecycle", () => {
       if (!readFirst) await run(() => read.resolve(snapshot("fresh")));
       expect(row("fresh")).not.toBeNull();
       expect(row("fresh")!.querySelector("button")!.disabled).toBe(false);
-      expect(api.getInstalledPlugins).toHaveBeenCalledTimes(3);
+      // The late answer is never taken over a newer read: the list is read again instead.
+      expect(vi.mocked(api.getInstalledPlugins).mock.calls.length).toBeGreaterThanOrEqual(3);
       expect(api.uninstallPlugin).not.toHaveBeenCalled();
     });
   }

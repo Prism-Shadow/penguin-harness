@@ -4,10 +4,11 @@
  * icon; the four motifs with the logo on the tile (a plugin without an icon); a cover's states —
  * a picture still on its way (the field in the picture's tone), one that loaded, one that failed
  * (the generated cover takes over); cover cards in their grid: short words, overlong words with
- * the machine they came from, the full foot, a foot without controls, the Web App market's card
- * (its version chip and its bar of text actions), and the placeholder, then four market cards as
- * the Web App lays them out — all switched between cards and the list by the layout toggle (in
- * the list, a market card is one row, two abreast where two fit); the selected carousel with three
+ * the machine they came from, the full foot, a foot without controls, a card with its version
+ * chip and its bar of text actions, and the placeholder, then four such cards with a bar; the
+ * store cards the Web App's plugin market lists plugins with (icon-led, the install button at the
+ * foot) — all switched between cards and the list by the layout toggle (in the list, a card is
+ * one row, two abreast where two fit); the selected carousel with three
  * slides, with its thumbnail rail and with its controls alone; and a product page's parts. The
  * public sites' rendering of the same modules is the 公开站点 board's.
  *
@@ -40,6 +41,9 @@ import {
   ShowcaseGrid,
   ShowcaseLayoutToggle,
   StatusMark,
+  InstallButton,
+  StoreCard,
+  StoreGrid,
 } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
@@ -320,6 +324,29 @@ export function ShowcaseBoard() {
             </ShowcaseGrid>
           </Specimen>
         </div>
+      </BoardGroup>
+
+      <BoardGroup title={t.store} aside={t.storeHint}>
+        <StoreGrid layout={layout === "list" ? "row" : "card"} data-testid="store-grid">
+          {MARKET_CARDS.map((card) => (
+            <StoreCard
+              key={card.seed}
+              layout={layout === "list" ? "row" : "card"}
+              data-plugin={card.seed}
+              icon={<LeadTile svg={card.svg} />}
+              title={t[card.title]}
+              description={t[card.description]}
+              {...(card.agents > 0 ? { meta: t.storeFacts } : {})}
+              action={
+                <InstallButton
+                  label={card.agents > 0 ? t.barInstalledOn(card.agents) : t.barInstall}
+                  sizes={[t.barInstall]}
+                  variant="secondary"
+                />
+              }
+            />
+          ))}
+        </StoreGrid>
       </BoardGroup>
 
       <BoardGroup title={t.carousel} aside={t.carouselHint}>

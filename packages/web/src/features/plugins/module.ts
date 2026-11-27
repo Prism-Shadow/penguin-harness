@@ -1,9 +1,10 @@
 /**
- * The plugins page, a system app (an App Center tile, lib/system-apps.ts); package details open
- * in its modal.
+ * The plugin market, a system app (an App Center tile, lib/system-apps.ts), and each plugin's own
+ * page under it (`/plugins/<name>`), which keeps the App Center lit as the market does.
  */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import { PluginsPage } from "./plugins-page";
+import { PluginPage } from "./plugin-page";
 
 @Module({
   contributes: {
@@ -22,9 +23,20 @@ import { PluginsPage } from "./plugins-page";
         icon: "puzzle",
         app: { order: 20 },
       },
+      {
+        id: "plugins.detail",
+        key: "plugins-detail",
+        path: "/plugins/:pluginName",
+        frame: "shell",
+        nav: "none",
+        admin: false,
+        released: true,
+        order: 41,
+      },
     ],
   },
 })
 export class PluginsModule {
   @Bind("plugins.list") list = PluginsPage;
+  @Bind("plugins.detail") detail = PluginPage;
 }

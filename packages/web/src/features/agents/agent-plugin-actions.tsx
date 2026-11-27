@@ -42,6 +42,8 @@ import {
   type AgentTarget,
   PackageUpdateDialog,
   type PackageUpdate,
+  installStepWords,
+  useRunningChange,
 } from "../plugins";
 import { toastFailure } from "../../lib/toast-api-error";
 import { toldFailure } from "../../lib/failure";
@@ -64,6 +66,11 @@ const partLines = (entry: AgentPluginGroup) => [
 export interface AgentPluginActions {
   /** The plugin a write is running on; null when idle. */
   running: string | null;
+  /**
+   * The package update of a plugin's release running on the server, wherever it was started (the
+   * market or this tab): the step its button says while it runs; null for any other plugin.
+   */
+  updateStep: (entry: AgentPluginGroup) => string | null;
   releaseFor: (entry: AgentPluginGroup) => PackageUpdate | null;
   install: (entry: AgentPluginGroup) => void;
   update: (entry: AgentPluginGroup) => void;
@@ -272,5 +279,13 @@ export function useAgentPluginActions({
     </>
   );
 
-  return { releaseFor, running, install, update, uninstall, askModule, modals };
+  const change = useRunningChange(target.projectId);
+  const updateStep = (entry: AgentPluginGroup) => {
+    const release = releaseFor(entry);
+    return change !== null && release !== null && change.specifier === release.specifier
+      ? installStepWords(change.progress, change.stage, true)
+      : null;
+  };
+
+  return { releaseFor, running, updateStep, install, update, uninstall, askModule, modals };
 }

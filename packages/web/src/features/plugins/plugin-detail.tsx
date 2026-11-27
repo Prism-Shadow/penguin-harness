@@ -1,8 +1,9 @@
 /**
- * A plugin's detail — every plugin's, opened from its card (the model library's card-detail
- * pattern): a product page in a large layer over the market, not a page of its own. One
- * scroller holds all of it, the close cross stays at the layer's top-right corner, and the
- * caller's secondary actions stay in a footer bar under the scroller.
+ * A plugin's detail, in two frames over one body (`PluginDetailBody`): the market's plugin page
+ * (`PluginPageView`, a store page with the plugin's button at its head — see its comment) and the
+ * layer an Agent's settings open over their plugin list (`PluginDetailModal`): a product page in
+ * a large layer, one scroller holding all of it, the close cross at the layer's top-right corner
+ * and the caller's secondary actions in a footer bar under the scroller.
  *
  * - **The hero** (the UI package's `ProductHero`): the cover at its full rendition (the
  *   curation's picture, else the generated one — plugin-cover.tsx), the icon tile, "Selected"
@@ -30,10 +31,11 @@
  * a machine reads its plugin from that machine's library. The status mark is the caller's (the
  * Plugins page's status, or an Agent's own): the detail only places it.
  */
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Badge,
   Button,
+  Cover,
   CloseButton,
   CopyButton,
   FailureText,
@@ -76,7 +78,7 @@ import { useLocale } from "../../state/locale";
 import { getLibraryPluginReadme, getPluginFiles, getPluginReadme } from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { SkillTile } from "../skills";
-import { PluginCover } from "./plugin-cover";
+import { PluginCover, coverSource } from "./plugin-cover";
 import { PluginMcpSection } from "./plugin-mcp";
 import type { ModulePart, PluginRow } from "./plugin-groups";
 import {
@@ -90,7 +92,8 @@ import {
   rowTitle,
   rowVersion,
 } from "./plugin-marks";
-import { marketIcon, rowPackage } from "./plugin-market";
+import { marketIcon, rowPackage, rowUpdated } from "./plugin-market";
+import { formatYearMonthDay } from "../../lib/format";
 import { failureOf } from "../../lib/failure";
 
 /** One collapsible group of installable files. */
@@ -319,20 +322,7 @@ export function PluginDetailSections({
 } & PluginDetailExtras) {
   const version = rowVersion(row);
   const title = rowTitle(row, locale);
-  // The README's reader: its outline and find buttons sit in the section's title row.
-  const readmeReader = useMarkdownReader(useReaderFind());
-  const [shotOpen, setShotOpen] = useState<number | null>(null);
   const packageName = rowPackage(row);
-  const shots: ProductShot[] = (art?.screenshots ?? []).map((shot) => {
-    const caption = localizedText(locale, shot.caption ?? "", shot.captionZh);
-    return {
-      src: shot.url,
-      ...(shot.thumbUrl !== undefined ? { thumb: shot.thumbUrl } : {}),
-      alt: caption || title,
-      ...(caption !== "" ? { caption } : {}),
-    };
-  });
-  const open = shotOpen === null ? undefined : shots[shotOpen];
   const tags = [
     ...pluginTags(row, { categoryTitle: head.categoryTitle }),
     // The hook points the package answers at: bare point names (`stop`, `user_prompt`) — identifiers, not copy.
@@ -342,9 +332,6 @@ export function PluginDetailSections({
       </Badge>
     )),
   ];
-  const parts = includedParts(row, locale, openWorkbench);
-  const demo = quickStart ?? null;
-  const note = rowNote(row);
   return (
     <>
       <ProductHero
@@ -375,20 +362,109 @@ export function PluginDetailSections({
           </MetaLine>
         }
       />
+      <PluginDetailBody
+        row={row}
+        head={head}
+        readme={readme}
+        files={files}
+        locale={locale}
+        afterAbout={afterAbout}
+        art={art ?? null}
+        quickStart={quickStart ?? null}
+        {...(openWorkbench !== undefined ? { openWorkbench } : {})}
+      />
+    </>
+  );
+}
 
-      {/* What this build cannot run of a server module: the row card's note, said once here. */}
+/**
+ * Everything under a plugin's head, wherever it is drawn: the note on what this build cannot run
+ * of it, the pictures (the cover first when `lead` is set, then the screenshots, each opening
+ * large), the columns of sections beside the facts, and Files.
+ */
+function PluginDetailBody({
+  row,
+  head,
+  readme,
+  files,
+  locale,
+  afterAbout,
+  art,
+  quickStart,
+  openWorkbench,
+  lead = false,
+  repair,
+}: {
+  row: PluginRow;
+  head: PluginDetailHead;
+  readme: ReadmeState;
+  files: ReactNode;
+  locale: "zh" | "en";
+  afterAbout?: ReactNode;
+  art: PluginArt | null;
+  quickStart: PluginDetailQuickStart | null;
+  openWorkbench?: ReadonlyMap<string, () => void>;
+  /** Lead the pictures with the curation's cover (the plugin's page; the dialog's hero has it). */
+  lead?: boolean;
+  /** Fix with AI, beside what this build cannot run of the plugin; absent, none. */
+  repair?: (() => void) | undefined;
+}) {
+  const title = rowTitle(row, locale);
+  // The README's reader: its outline and find buttons sit in the section's title row.
+  const readmeReader = useMarkdownReader(useReaderFind());
+  const [shotOpen, setShotOpen] = useState<number | null>(null);
+  const cover = lead ? coverSource(art) : null;
+  const pictures: ProductShot[] = [
+    ...(cover !== null ? [{ src: cover.src, alt: title }] : []),
+    ...(art?.screenshots ?? []).map((shot) => {
+      const caption = localizedText(locale, shot.caption ?? "", shot.captionZh);
+      return {
+        src: shot.url,
+        ...(shot.thumbUrl !== undefined ? { thumb: shot.thumbUrl } : {}),
+        alt: caption || title,
+        ...(caption !== "" ? { caption } : {}),
+      };
+    }),
+  ];
+  const shots = cover !== null ? pictures.slice(1) : pictures;
+  const open = shotOpen === null ? undefined : pictures[shotOpen];
+  const parts = includedParts(row, locale, openWorkbench);
+  const demo = quickStart;
+  const note = rowNote(row);
+  return (
+    <>
+      {/* What this build cannot run of a server module, said once here, with its repair. */}
       {note !== undefined && (
-        <Notice tone="attention" className="mt-6">
+        <Notice
+          tone="attention"
+          className="mt-6"
+          {...(repair !== undefined
+            ? { action: { label: S.plugins.repair, onClick: repair } }
+            : {})}
+        >
           {note}
         </Notice>
       )}
 
-      {shots.length > 0 && (
+      {pictures.length > 0 && (
         <ProductSection title={S.plugins.detailScreenshots}>
           <ProductGallery
             shots={shots}
             label={S.plugins.detailScreenshots}
-            onOpen={(index) => setShotOpen(index)}
+            onOpen={(index) => setShotOpen(cover !== null ? index + 1 : index)}
+            {...(cover !== null
+              ? {
+                  lead: (
+                    <button
+                      type="button"
+                      aria-label={S.plugins.openCover(title)}
+                      onClick={() => setShotOpen(0)}
+                    >
+                      <Cover image={cover} rendition="full" seed={row.name} eager />
+                    </button>
+                  ),
+                }
+              : {})}
           />
         </ProductSection>
       )}
@@ -542,7 +618,9 @@ function includedParts(
  * in a new tab that keeps no handle on this one.
  */
 function PackageFacts({ row, head }: { row: PluginRow; head: PluginDetailHead }) {
+  const { locale } = useLocale();
   const version = rowVersion(row);
+  const updated = rowUpdated(row);
   const { author, license, homepage, repository } = rowDetails(row);
   const packageName = rowPackage(row);
   const linked = rowLinked(row);
@@ -551,6 +629,12 @@ function PackageFacts({ row, head }: { row: PluginRow; head: PluginDetailHead })
     facts.push({
       label: S.plugins.fact.version,
       value: <span className="font-mono">{version}</span>,
+    });
+  }
+  if (updated !== null) {
+    facts.push({
+      label: S.plugins.fact.updated,
+      value: formatYearMonthDay(new Date(updated).toISOString(), locale),
     });
   }
   facts.push({ label: S.plugins.fact.category, value: head.categoryTitle });
@@ -703,6 +787,151 @@ function usePluginReadme(row: PluginRow, machineId: string | null): ReadmeState 
     };
   }, [here, specifier, name, machineId]);
   return state;
+}
+
+/**
+ * A plugin's own page, the way an app store lays out one app: the head — the icon (wearing the
+ * install ring while a server install of it runs), the name, the one line, who made it with its
+ * version, its tags — with the plugin's one button (`action`) and its secondary actions at the
+ * head's end, where a reader looks for them; the reason a server install failed, under the head;
+ * then the pictures (the cover first, then the screenshots), the sections beside the package's
+ * facts, and Files.
+ *
+ * Once the head has scrolled away, a compact bar holds the icon, the name and the same button at
+ * the top of the page, so the button is always in reach, and an install under way stays in view.
+ * The bar takes no room in the page's flow, so nothing moves when it comes and goes.
+ */
+export function PluginPageView({
+  row,
+  head,
+  machineId,
+  icon,
+  compactIcon,
+  action,
+  compactAction,
+  secondary,
+  note,
+  art,
+  selected = false,
+  quickStart,
+  openWorkbench,
+  repair,
+}: {
+  row: PluginRow;
+  head: PluginDetailHead;
+  /** Fix with AI, beside what this build cannot run of the plugin; absent, none. */
+  repair?: (() => void) | undefined;
+  /** The server whose library the README and the files are read from; null for this server. */
+  machineId: string | null;
+  /** The icon at the head's size, its install marks on it. */
+  icon: ReactNode;
+  /** The icon at the compact bar's size. */
+  compactIcon: ReactNode;
+  /** The plugin's one button, at the head's size and at the bar's. */
+  action: ReactNode;
+  compactAction: ReactNode;
+  /** Beside the button: quick start, the Agents that carry it, the More menu. */
+  secondary: readonly ReactNode[];
+  /** Under the head: why the last server install failed, with what to do next. */
+  note?: ReactNode;
+} & Omit<PluginDetailExtras, "actions">) {
+  const { locale } = useLocale();
+  const readme = usePluginReadme(row, machineId);
+  const title = rowTitle(row, locale);
+  const version = rowVersion(row);
+  const { author } = rowDetails(row);
+  const packageName = rowPackage(row);
+  const headRef = useRef<HTMLElement>(null);
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const el = headRef.current;
+    if (el === null || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry !== undefined)
+        setCompact(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const tags = [
+    ...(selected
+      ? [
+          <Badge key="selected" variant="soft">
+            {S.plugins.selected}
+          </Badge>,
+        ]
+      : []),
+    ...pluginTags(row, { categoryTitle: head.categoryTitle }),
+    // The hook points the package answers at: bare point names (`stop`, `user_prompt`) — identifiers, not copy.
+    ...(row.library?.hooks ?? []).map((event) => (
+      <Badge key={`hook:${event}`} variant="outline">
+        {event}
+      </Badge>
+    )),
+  ];
+  return (
+    <>
+      {/* No height of its own: the bar overhangs it, so its coming and going moves nothing. It
+          sticks at the scroller's edge, past the page frame's padding (p-4, md:p-6). */}
+      <div className="sticky -top-4 z-sticky-head h-0 md:-top-6">
+        {compact && (
+          <div
+            data-presence="enter"
+            data-side="top"
+            data-testid="plugin-page-bar"
+            data-wallpaper-surface="panel"
+            className="absolute inset-x-0 top-0 flex items-center gap-3 rounded-b-md border border-t-0 border-line bg-surface px-3 py-2 shadow-sm"
+          >
+            {compactIcon}
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-fg">{title}</span>
+            <span className="flex shrink-0">{compactAction}</span>
+          </div>
+        )}
+      </div>
+      <header ref={headRef} className="flex flex-wrap items-start gap-x-6 gap-y-4">
+        {icon}
+        <div className="min-w-0 flex-1 basis-60">
+          <h1 className="break-words text-2xl font-semibold text-fg">{title}</h1>
+          {packageName !== undefined && title !== row.name && (
+            <p className="mt-0.5 truncate font-mono text-xs text-fg-muted">{packageName}</p>
+          )}
+          <p className="mt-2 text-sm text-fg">{rowShortDescription(row, locale)}</p>
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
+            {author !== undefined && <span>{author}</span>}
+            {version !== undefined && <span className="font-mono">v{version}</span>}
+            {head.status}
+            {head.usedBy !== null && head.usedBy > 0 && (
+              <span>{S.plugins.usedByAgents(head.usedBy)}</span>
+            )}
+          </p>
+          {tags.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">{tags}</div>
+          )}
+        </div>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          {action}
+          {secondary}
+        </div>
+      </header>
+      {note !== undefined && <div className="mt-4 text-sm">{note}</div>}
+      <PluginDetailBody
+        row={row}
+        head={head}
+        readme={readme}
+        files={
+          row.library !== undefined && rowHasFiles(row) ? (
+            <PluginFiles plugin={row.library} machineId={machineId} />
+          ) : null
+        }
+        locale={locale}
+        art={art ?? null}
+        quickStart={quickStart ?? null}
+        {...(openWorkbench !== undefined ? { openWorkbench } : {})}
+        lead
+        repair={repair}
+      />
+    </>
+  );
 }
 
 export function PluginDetailModal({

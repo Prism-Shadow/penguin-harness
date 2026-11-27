@@ -3559,6 +3559,15 @@ export const zh = {
       /** The administrator's request row for a package not on the server yet. */
       requestNotOnServer: "尚未安装到服务端：先在插件页把它安装到服务端，再启用。",
       openPlugins: "打开插件页",
+      /** The install steps: their list's name, each step's name, and the moves between pages. */
+      stepsLabel: "安装步骤",
+      stepServer: "装到服务器",
+      stepAsk: "请管理员安装",
+      stepAgents: "选择智能体",
+      stepReady: "完成",
+      stepDone: "已完成",
+      back: "上一步",
+      next: "下一步",
     },
     moduleInstall: {
       enabled: (said: string) => `${said}。它的服务端模块已启用。`,
@@ -3607,6 +3616,23 @@ export const zh = {
     applyConfirmWarning: (install: boolean) =>
       `${install ? "安装" : "移除"}会重新装载服务器插件；正在运行的 Agent 不受影响。`,
     pageTitle: "插件",
+    /** A plugin's page: the way back to the market, and a name the market does not list. */
+    backToMarket: "插件市场",
+    notListed: (name: string) => `插件市场里没有名为 ${name} 的插件，回到插件市场再找找。`,
+    /** The page's More menu: its button's name and hover words. */
+    moreActions: (name: string) => `${name} 的更多操作`,
+    moreActionsHint: "更多操作",
+    /** The cover at the head of a plugin's pictures: what pressing it does. */
+    openCover: (name: string) => `查看 ${name} 的封面大图`,
+    /** A section of All: the press that opens its tab. */
+    seeAll: "查看全部",
+    /** The Installed view: its button, the way back, its two sections and what an empty one says. */
+    installedView: "已安装",
+    allPlugins: "全部插件",
+    updatesSection: "可更新",
+    updateAll: "全部更新",
+    installedSection: "已安装",
+    installedEmpty: "还没有在用的插件。到「全部插件」里装一个。",
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "机器",
     thisServer: "本机",
@@ -3717,6 +3743,7 @@ export const zh = {
       license: "许可证",
       package: "包名",
       links: "链接",
+      updated: "更新时间",
     },
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "随本次构建自带；市场里还没有它的条目。",

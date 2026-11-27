@@ -29,7 +29,7 @@ import { en } from "../src/lib/strings-en";
 import { AgentsPage } from "../src/features/agents/agents-page";
 import { AGENTS_GROUP_BY_KEY } from "../src/features/agents/agent-groups";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
-import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { PluginPage } from "../src/features/plugins/plugin-page";
 import {
   AGENT_ID,
   PROJECT_ID,
@@ -288,9 +288,9 @@ describe("the plugin market's manage-installs list", () => {
       moreAgents: [SYSTEM],
       machines: [{ ...GPU, library: [CHARTS] }],
     });
-    await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins?plugin=charts" });
-    await waitFor(() => hasButton(`${en.plugins.installModel.installAgent} charts`));
-    await click(button(`${en.plugins.installModel.installAgent} charts`));
+    await mountAgentApp(h(PluginPage), { route: "/plugins/:pluginName", at: "/plugins/charts" });
+    await waitFor(() => hasButton(`${en.skills.install} · Charts`));
+    await click(button(`${en.skills.install} · Charts`));
     const rows = () =>
       [...topDialog().querySelectorAll<HTMLInputElement>('input[type="radio"]')].map(
         (input) => input.value,

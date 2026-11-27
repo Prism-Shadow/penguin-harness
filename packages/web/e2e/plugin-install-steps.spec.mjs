@@ -1,6 +1,7 @@
 /**
  * Market setup against a running server:
- * - The card and detail manage the server copy and individual Agent copies independently.
+ * - The card's button and the plugin's page open the same install steps, which manage the server
+ *   copy and individual Agent copies independently, a page at a time.
  * - A bundled Agent skill can coexist with a service awaiting project activation.
  * - In either language, Tab reaches the service impact before activation; Enter and Space toggle it.
  * - Namesakes expose their IDs. At phone width the selected action fits, and only its Agent receives the copy.
@@ -18,7 +19,7 @@ const pkg = "@test/" + name;
 const title = "Step Notes";
 const api = BASE + "/api/projects/default_project";
 
-test("a server install and two Agent installs can be managed independently from the card and detail", async ({
+test("a server install and two Agent installs can be managed independently from the card and the page", async ({
   page,
   browser,
 }) => {
@@ -56,10 +57,12 @@ test("a server install and two Agent installs can be managed independently from 
     body: {},
   });
   await page.goto("/plugins");
+  // All shelves the categories; the search lists the plugin in one grid.
+  await page.getByPlaceholder("Search plugins").fill(title);
   const card = page.locator('article[data-plugin="' + name + '"]');
   const flow = page.getByRole("dialog", { name: "Install " + title, exact: true });
-  const back = flow.getByRole("button", { name: "Back to server" });
-  const forward = flow.getByRole("button", { name: "Continue to Agents" });
+  const back = flow.getByRole("button", { name: "Back", exact: true });
+  const forward = flow.getByRole("button", { name: "Next", exact: true });
   await card.getByRole("button", { name: "Install · " + title, exact: true }).click();
   await back.focus();
   await page.keyboard.press("Enter");
@@ -88,16 +91,13 @@ test("a server install and two Agent installs can be managed independently from 
     await setAccountPrefs(visitor.request, { lang: "zh" });
     const tab = await visitor.newPage();
     await tab.addInitScript(() => localStorage.setItem("penguin.lastProjectId", "default_project"));
-    await tab.goto("/plugins");
-    await tab
-      .locator('[data-plugin="' + name + '"] button[aria-label*=" · "]')
-      .first()
-      .click();
+    await tab.goto("/plugins/" + name);
+    await tab.locator("header:has(h1) [data-install-button]").click();
     const steps = tab.getByRole("dialog").last();
     await expect(steps.getByText("Step helper", { exact: true })).toBeVisible();
     await expect(steps.getByRole("button", { name: /卸载/ })).toHaveCount(0);
-    await steps.getByRole("button", { name: /返回.*服务端/ }).click();
-    await expect(steps.getByRole("button", { name: /卸载/ })).toHaveCount(0);
+    // A member has no server page to go back to.
+    await expect(steps.getByRole("button", { name: "上一步", exact: true })).toHaveCount(0);
     expect(
       (await visitor.request.delete(api + "/agents/" + helper + "/plugins/" + name)).status(),
     ).toBe(403);
@@ -115,8 +115,13 @@ test("a server install and two Agent installs can be managed independently from 
   await page.keyboard.press("Escape");
   await page.reload();
   await page.getByRole("button", { name: "List view", exact: true }).click();
-  await card.locator(".showcase-card-open").click();
-  await page.getByRole("button", { name: "Install on Agent " + name, exact: true }).click();
+  await page.getByPlaceholder("Search plugins").fill(title);
+  await card.locator("a").first().click();
+  await expect(page).toHaveURL(new RegExp("/plugins/" + name + "$"));
+  await page
+    .locator("header:has(h1)")
+    .getByRole("button", { name: "Installed on 2 Agents · " + title, exact: true })
+    .click();
   await flow.locator('input[type="radio"][value="' + helper + '"]').check();
   await flow.getByRole("button", { name: "Uninstall " + helper, exact: true }).click();
   const confirmAgent = page.getByRole("dialog", { name: "Uninstall " + title, exact: true });
@@ -177,13 +182,14 @@ test("an administrator activates the bundled Computer Use module from the market
   const parts = await (await page.request.get(prefix + "/agents/default_agent/plugins")).json();
   expect(parts.skills.map((entry) => entry.name)).toContain("computer-use");
   await page.addInitScript((id) => localStorage.setItem("penguin.lastProjectId", id), projectId);
-  await page.goto("/plugins");
-  const card = page.locator('article[data-plugin="computer-use"]');
-  await card.getByRole("button", { name: "Install · Computer Use", exact: true }).click();
+  await page.goto("/plugins/computer-use");
+  const head = page.locator("header:has(h1)");
+  await head.getByRole("button", { name: "Install · Computer Use", exact: true }).click();
   const flow = page.getByRole("dialog", { name: "Install Computer Use", exact: true });
-  await flow.getByRole("button", { name: "Enable server module", exact: true }).click();
+  await flow.getByRole("button", { name: "Enable", exact: true }).click();
   await expect.poll(async () => (await status())?.active, { timeout: 20000 }).toBe(true);
-  await expect(flow.getByRole("button", { name: "Back to server" })).toBeVisible();
+  // Enabled, the steps move on to the Agents, the server's page one step back.
+  await expect(flow.getByRole("button", { name: "Back", exact: true })).toBeVisible();
   const settings = await page.request.put(BASE + "/api/admin/plugin-config", {
     data: { name: "computer-use", values: { enabled: false } },
   });
@@ -193,21 +199,19 @@ test("an administrator activates the bundled Computer Use module from the market
   });
   expect(await retry.json()).toMatchObject({ ok: false, message: "Computer Use is off." });
   await page.reload();
-  await expect(card.getByRole("button", { name: /Installed on 1 Agent/ })).toBeVisible();
+  await expect(head.getByRole("button", { name: /Installed on 1 Agent/ })).toBeVisible();
   expect((await status())?.active).toBe(true);
 
-  await card.locator("button.showcase-card-open").click();
+  await head.getByRole("button", { name: "More actions for Computer Use", exact: true }).click();
+  await page.getByRole("menuitem", { name: /Disable server module/ }).click();
   await page
-    .getByRole("button", { name: "Disable server module computer-use", exact: true })
-    .click();
-  await page
-    .getByRole("dialog", { name: "Disable the server module of computer-use", exact: true })
+    .getByRole("dialog", { name: "Disable the server module of Computer Use", exact: true })
     .getByRole("button", { name: "Disable server module", exact: true })
     .click();
   await expect.poll(status).toBeUndefined();
-  await page.goto("/plugins");
+  await page.reload();
   await expect(
-    card.getByRole("button", { name: "Install · Computer Use", exact: true }),
+    head.getByRole("button", { name: "Install · Computer Use", exact: true }),
   ).toBeVisible();
 });
 
@@ -231,11 +235,8 @@ for (const lang of ["en", "zh"]) {
       ).status(),
     ).toBe(201);
     await page.addInitScript((id) => localStorage.setItem("penguin.lastProjectId", id), id);
-    await page.goto("/plugins");
-    await page
-      .locator('article[data-plugin="computer-use"] .showcase-card-bar button')
-      .first()
-      .click();
+    await page.goto("/plugins/computer-use");
+    await page.locator("header:has(h1) [data-install-button]").click();
     const flow = page.getByRole("dialog").last();
     const impact = flow.getByText(english ? "How this affects the server" : "对服务端的影响", {
       exact: true,
@@ -252,7 +253,7 @@ for (const lang of ["en", "zh"]) {
     await page.keyboard.press("Tab");
     await expect(
       flow.getByRole("button", {
-        name: english ? "Enable server module" : "启用服务端模块",
+        name: english ? "Enable" : "启用",
         exact: true,
       }),
     ).toBeFocused();
@@ -281,11 +282,8 @@ for (const lang of ["en", "zh"]) {
     }
     await page.setViewportSize({ width: 320, height: 720 });
     await page.addInitScript((id) => localStorage.setItem("penguin.lastProjectId", id), projectId);
-    await page.goto("/plugins");
-    await page
-      .locator('article[data-plugin="data-analysis"] .showcase-card-bar button')
-      .first()
-      .click();
+    await page.goto("/plugins/data-analysis");
+    await page.locator("header:has(h1) [data-install-button]").click();
     const flow = page.getByRole("dialog").last();
     const action = flow.getByRole("button", {
       name: (english ? "Add to " : "添加给 ") + longName,
