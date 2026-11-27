@@ -415,11 +415,12 @@ export class AgentStateRepo {
     for (const line of text.split("\n")) {
       if (line === "" || line.startsWith("#") || line.startsWith("^")) continue;
       const space = line.indexOf(" ");
-      const [name, value] = [line.slice(0, space), line.slice(space + 1)];
+      // A line is `<oid> SP <ref>`: the commit first, the name it is under second.
+      const [commit, name] = [line.slice(0, space), line.slice(space + 1)];
       if (name !== ref) continue;
-      if (!/^[0-9a-f]{40}$/.test(value))
+      if (!/^[0-9a-f]{40}$/.test(commit))
         throw new Error(`${ref} in ${this.gitdir} is not a commit id`);
-      return value;
+      return commit;
     }
     return null;
   }
