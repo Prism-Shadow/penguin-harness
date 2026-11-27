@@ -14,4 +14,4 @@
 - `MessagingConnectionClosedError` 从 `qq-api.ts` 移到 `connector.ts`，与 `MessagingChannelError` 并列，`error-kind.ts` 分类一条被关闭的连接时不再引入某个渠道的文件。抛出它的仍是 QQ 网关，行为不变；server 的测试改从 `@prismshadow/penguin-library-messaging/connector` 引入它。
 - `MessagingSlots.connectors` 的数据类型写作 `{ channel: MessagingChannel }`，不再手写第二份字面量联合。
 - `enabled-channel.ts` 导出 `MESSAGING_CHANNELS`（按其表中顺序排列的渠道 id），account-holders 路由对未知渠道返回的 400 由它生成渠道名单，不再写死字符串。
-- server 的 `app.ts` 删去了十九个从未使用的消息接入 import——桥、每个渠道的连接器与 transport，以及两个扫码服务；装配它们的本来就是 `platform.ts` 与 `runtime/messaging/module.ts`。
+- server 的 `app.ts` 删去了二十一个从未使用的消息接入 import——桥、每个渠道的连接器与 transport、两个扫码服务、绑定仓库与会话路由工厂；装配它们的本来就是 `platform.ts` 与 `runtime/messaging/module.ts`。

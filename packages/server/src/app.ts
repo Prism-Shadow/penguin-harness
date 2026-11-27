@@ -58,7 +58,6 @@ import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-sh
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
-import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import { SchedulesRepo } from "@prismshadow/penguin-library-session/repos/schedules";
 import { ServerSettingsRepo } from "@prismshadow/penguin-library-setting/repos/server-settings";
 import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
@@ -148,7 +147,6 @@ import { agentConfigRoutes } from "./http/routes/agent-config.js";
 import { agentTracesRoutes } from "./http/routes/agent-traces.js";
 import { usageRoutes } from "./http/routes/usage.js";
 import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
-import { sessionMessagingRoutes } from "@prismshadow/penguin-library-messaging/routes";
 import { versionRoutes } from "./http/routes/version.js";
 import { machinesRoutes } from "./http/routes/machines.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
