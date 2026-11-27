@@ -17,13 +17,13 @@ export interface Native {
   engineVersion(): string;
   commit(input: {
     gitdir: string;
-    ref_name: string;
+    refName: string;
     parent: string | null;
     rel: string;
     files: Array<{ rel: string; body: Uint8Array }> | null;
     message: string;
-    author: { name: string; email: string; when_seconds: number; when_offset_minutes: number };
-    committer: { name: string; email: string; when_seconds: number; when_offset_minutes: number };
+    author: { name: string; email: string; whenSeconds: number; whenOffsetMinutes: number };
+    committer: { name: string; email: string; whenSeconds: number; whenOffsetMinutes: number };
   }): string;
   readBlobs(gitdir: string, oids: string[]): Uint8Array[];
 }

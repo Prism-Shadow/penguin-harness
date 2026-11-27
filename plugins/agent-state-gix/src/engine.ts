@@ -25,12 +25,12 @@ export function gixEngine(native: Native, version: string): AgentStateEngine {
       const identity = (who: AgentStateCommit["author"]) => ({
         name: who.name,
         email: who.email,
-        when_seconds: c.when.seconds,
-        when_offset_minutes: c.when.offset,
+        whenSeconds: c.when.seconds,
+        whenOffsetMinutes: c.when.offset,
       });
       return native.commit({
         gitdir: c.gitdir,
-        ref_name: c.ref,
+        refName: c.ref,
         parent: c.parent,
         rel: c.rel,
         files: c.files === null ? null : c.files.map((f) => ({ rel: f.rel, body: f.body })),
