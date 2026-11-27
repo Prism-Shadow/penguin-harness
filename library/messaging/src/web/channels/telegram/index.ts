@@ -4,7 +4,7 @@ import type {
   TelegramBindingPutRequest,
   TelegramTestRequest,
 } from "@prismshadow/penguin-server/api";
-import * as api from "../../../../api/endpoints";
+import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import type { MessagingChannelForm } from "../channel-form";
 import { TelegramFields } from "./fields";

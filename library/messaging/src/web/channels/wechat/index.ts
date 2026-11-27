@@ -1,6 +1,6 @@
 /** The WeChat official claw bot channel, as the binding editor shows it. */
 import type { WeChatBindingInfo, WeChatBindingPutRequest } from "@prismshadow/penguin-server/api";
-import * as api from "../../../../api/endpoints";
+import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { plainTestOutcome, type MessagingChannelForm } from "../channel-form";
 import { WeChatFields } from "./fields";
