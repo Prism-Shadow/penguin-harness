@@ -86,18 +86,43 @@
   opacity: 1;
 }
 
+/* The generated cover is drawn as the authored covers are painted (scripts/market-cover-art/ in
+   the repository): the hue's field lit from above and to the left of the tile, deepening toward
+   the lower right with its corners in shade, and a white tile floating on it. Those gradients are
+   the picture's light, the same on every cover, not a wash over the interface. */
 .showcase-art {
+  --_lit: color-mix(in oklab, var(--_hue) 90%, white);
+  --_field: color-mix(in oklab, var(--_hue) 88%, black);
+  --_ink: color-mix(in oklab, var(--_hue) 62%, black);
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
+  background:
+    radial-gradient(60% 75% at 42% 38%, rgb(255 255 255 / 0.2), transparent 70%),
+    radial-gradient(
+      75% 95% at 50% 46%,
+      transparent 55%,
+      color-mix(in oklab, var(--_ink) 45%, transparent)
+    ),
+    linear-gradient(155deg, var(--_lit), var(--_field) 50%, var(--_ink));
+  color: #fff;
+}
+/* A theme's tints are lighter in dark mode and stronger in some packs; the field takes the hue
+   at the authored covers' lightness and chroma instead, so a generated cover sits among them. */
+@supports (color: oklch(from red l c h)) {
+  .showcase-art {
+    --_lit: oklch(from var(--_hue) 0.62 min(c, 0.12) h);
+    --_field: oklch(from var(--_hue) 0.54 min(c, 0.12) h);
+    --_ink: oklch(from var(--_hue) 0.36 min(c, 0.11) h);
+  }
 }
 .showcase-art-motif {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  opacity: 0.3;
+  opacity: 0.16;
   /* On the 160 × 90 field, so the lines thicken with the cover: a hairline on a rail thumbnail,
      a firm line on a hero. */
   stroke-width: 0.7;
@@ -106,16 +131,20 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: 23cqw;
+  width: 28cqw;
   aspect-ratio: 1;
   overflow: hidden;
-  border: var(--showcase-line-w, 1px) solid color-mix(in oklab, var(--_hue) 30%, transparent);
-  border-radius: 24%;
-  background: var(--showcase-surface, Canvas);
+  border-radius: 23.5%;
+  background: linear-gradient(#fff, color-mix(in oklab, var(--_hue) 10%, #fff));
+  box-shadow:
+    inset 0 0.25cqw 0 rgb(255 255 255 / 0.9),
+    0 0.5cqw 1cqw color-mix(in oklab, var(--_ink) 40%, transparent),
+    0 2.6cqw 4.5cqw -0.8cqw color-mix(in oklab, var(--_ink) 55%, transparent);
+  color: var(--_ink);
 }
 .showcase-art-icon {
   display: block;
-  width: 52%;
+  width: 54%;
   aspect-ratio: 1;
 }
 .showcase-art-icon > svg {
@@ -136,6 +165,7 @@
   width: 7.5cqw;
   aspect-ratio: 1;
   border-radius: 24%;
+  box-shadow: 0 0.4cqw 1cqw color-mix(in oklab, var(--_ink) 45%, transparent);
 }
 
 /* ------------------------------------------------------------------- card */
