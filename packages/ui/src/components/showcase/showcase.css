@@ -909,6 +909,20 @@
   border-radius: var(--showcase-radius-sm, 0.5rem);
   background: var(--showcase-surface-muted, color-mix(in srgb, currentColor 7%, transparent));
 }
+/* The lead is 16:9 where a shot is 16:10: a ninth wider than a shot's box keeps the two the same
+   height, so the row's pictures stand on one line. */
+.showcase-gallery-lead {
+  width: calc(min(24rem, 82%) * 10 / 9);
+}
+.showcase-gallery-lead > * {
+  display: block;
+  width: 100%;
+  overflow: clip;
+  padding: 0;
+  border: var(--showcase-line-w, 1px) solid
+    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+  border-radius: var(--showcase-radius-sm, 0.5rem);
+}
 .showcase-gallery-open > img {
   display: block;
   width: 100%;

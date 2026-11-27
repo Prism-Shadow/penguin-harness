@@ -687,6 +687,16 @@ export const zh = {
       glyphFromPlugin: "由插件 Data analysis 安装",
       keys: "键盘提示",
       shortcuts: [["Ctrl", "K"], ["Ctrl", "`"], ["Esc"]] as readonly (readonly string[])[],
+      install: "安装按钮",
+      installHint:
+        "可安装之物的唯一按钮：平时写下一步，安装中写当前步骤并带分段进度条，各状态下宽度都按最长的文字留出。",
+      installIdle: "安装",
+      installChecking: "查找中…",
+      installDownloading: "下载中 42%",
+      installStarting: "启动中…",
+      installRetry: "重试",
+      installOpen: "打开",
+      installProgress: "安装进度",
       ball: "悬浮球",
       ballHint:
         "拖到左缘或右缘，松手即贴边；推出边缘或点「×」收起，点边上的把手恢复。位置由调用方保存。",
@@ -1002,6 +1012,11 @@ export const zh = {
       subPageItems: ["插件", "技能", "钩子", "工作台"] as readonly string[],
       subPageBody: (page: string) => `「${page}」子页面的内容。`,
       subPageImport: "导入技能",
+      steps: "步骤指示",
+      stepsHint: "一小段分页走到了哪一步：已完成的打勾，当前一步用正文色。只画这一次会经过的步骤。",
+      stepsLabel: "安装步骤",
+      stepNames: ["装到服务器", "选择智能体", "完成"] as readonly string[],
+      stepDone: "已完成",
       subPageSearch: "搜索插件",
       subPageMarket: "打开插件市场",
       withButton: "带一个按钮",
@@ -2533,7 +2548,11 @@ export const zh = {
       cardsHint:
         "短文字、带来源机器的超长文字、带标签与信息行和两个操作的卡片、什么都不带的卡片、Web App 市场的卡片（版本标签与两个单行文字操作的操作条，第二个不可用，悬停说明原因），以及列表读取中的占位。右上角的图标把本板的各个网格在卡片与列表之间切换。",
       marketCaption:
-        "Web App 市场的卡片：列表里每张一行——图标块、名称与其下的描述，同一行末是安装操作（「安装」或几个 Agent 已装）与「快速调用」——放得下两行时并排两行。",
+        "带两个单行文字操作的封面卡片：列表里每张一行——图标块、名称与其下的描述，同一行末是操作——放得下两行时并排两行。",
+      store: "商店卡片",
+      storeHint:
+        "Web App 插件市场列出插件的样子：以图标为首、不带封面（封面在插件自己的页面上），名称下是两行描述，底部一行简短信息与唯一的安装按钮。列表里每张一行、以分隔线隔开，放得下时并排两行。封面卡片右上角的图标同样切换它们。",
+      storeFacts: "2 个 Agent 在用",
       shortTitle: "目标模式",
       shortDescription: "让会话循环推进一个目标直到完成。",
       longTitle: "智能体公司：组织、员工协议、CEO、人事、财务、科研与镜像公司的完整操作手册",

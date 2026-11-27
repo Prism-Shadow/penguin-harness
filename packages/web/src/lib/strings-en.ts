@@ -3357,6 +3357,15 @@ export const en: Strings = {
       requestNotOnServer:
         "Not on the server yet: install it on the server from the Plugins page, then enable it.",
       openPlugins: "Open Plugins",
+      /** The install steps: their list's name, each step's name, and the moves between pages. */
+      stepsLabel: "Install steps",
+      stepServer: "On this server",
+      stepAsk: "Ask an admin",
+      stepAgents: "Choose agents",
+      stepReady: "Ready",
+      stepDone: "done",
+      back: "Back",
+      next: "Next",
     },
     moduleInstall: {
       enabled: (said: string) => `${said}. Its server module is enabled.`,
@@ -3413,6 +3422,24 @@ export const en: Strings = {
     applyConfirmWarning: (install: boolean) =>
       `${install ? "Installing" : "Removing"} reloads the server's plugins; running agents are not affected.`,
     pageTitle: "Plugins",
+    /** A plugin's page: the way back to the market, and a name the market does not list. */
+    backToMarket: "Plugins",
+    notListed: (name: string) =>
+      `There is no plugin named ${name} in the market. Go back to the market to look for it.`,
+    /** The page's More menu: its button's name and hover words. */
+    moreActions: (name: string) => `More actions for ${name}`,
+    moreActionsHint: "More actions",
+    /** The cover at the head of a plugin's pictures: what pressing it does. */
+    openCover: (name: string) => `Open the cover of ${name}`,
+    /** A section of All: the press that opens its tab. */
+    seeAll: "See all",
+    /** The Installed view: its button, the way back, its two sections and what an empty one says. */
+    installedView: "Installed",
+    allPlugins: "All plugins",
+    updatesSection: "Updates",
+    updateAll: "Update all",
+    installedSection: "Installed",
+    installedEmpty: "No plugin is in use yet. Install one from All plugins.",
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "Machine",
     thisServer: "This server",
@@ -3533,6 +3560,7 @@ export const en: Strings = {
       license: "License",
       package: "Package",
       links: "Links",
+      updated: "Updated",
     },
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "Ships with this build; the registry has no entry for it yet.",

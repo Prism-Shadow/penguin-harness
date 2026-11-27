@@ -21,7 +21,7 @@ import { createElement as h } from "react";
 import type { AgentSummary, PluginItem } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { PluginPage } from "../src/features/plugins/plugin-page";
 import { rememberMachineAgents } from "../src/lib/machine-cache";
 import {
   AGENT_ID,
@@ -63,13 +63,13 @@ async function openInstalls(machines: FakeMachine[]) {
     },
   );
   const server = agentServer(undefined, { machines, library: [CHARTS] });
-  await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins?plugin=charts" });
+  await mountAgentApp(h(PluginPage), { route: "/plugins/:pluginName", at: "/plugins/charts" });
   await waitFor(() =>
     [...document.querySelectorAll("button")].some(
-      (b) => b.getAttribute("aria-label") === `${en.plugins.installModel.installAgent} charts`,
+      (b) => b.getAttribute("aria-label") === `${en.skills.install} · Charts`,
     ),
   );
-  await click(button(`${en.plugins.installModel.installAgent} charts`));
+  await click(button(`${en.skills.install} · Charts`));
   return server;
 }
 

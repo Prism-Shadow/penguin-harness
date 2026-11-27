@@ -1,10 +1,10 @@
 /**
  * 标签页: the app's Tabs, plain and with an update badge on one tab; and a tab's sub-page switch
  * under the strip, once with a button as its sub-page's control and once with a search box and a
- * button.
+ * button; and the step indicator over a short run of pages, on each of its steps.
  */
 import { useState } from "react";
-import { Button, SearchInput, SubPageBar, Tabs } from "@prismshadow/penguin-ui";
+import { Button, SearchInput, StepIndicator, SubPageBar, Tabs } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
@@ -82,6 +82,19 @@ export function TabsBoard() {
               <p className="text-sm">{t.subPageBody(searchPage)}</p>
             </div>
           </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.steps} aside={t.stepsHint}>
+        <div className="grid gap-4">
+          {t.stepNames.map((_, current) => (
+            <StepIndicator
+              key={current}
+              steps={t.stepNames.map((label, i) => ({ key: String(i), label }))}
+              current={current}
+              label={t.stepsLabel}
+              doneText={t.stepDone}
+            />
+          ))}
         </div>
       </BoardGroup>
     </div>

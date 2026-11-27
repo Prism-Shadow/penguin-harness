@@ -55,6 +55,8 @@ export * from "./components/actions/button/inline-icon-button";
 export * from "./components/actions/link/link";
 export * from "./components/actions/text-action/text-action";
 export * from "./components/actions/copy-button/copy-button";
+// The one action a thing to install wears in a catalogue, carrying its install in place.
+export * from "./components/actions/install-button/install-button";
 export * from "./components/actions/kbd/kbd";
 export * from "./components/actions/hidden-file-input/hidden-file-input";
 
@@ -368,6 +370,8 @@ export * from "./components/data/fact-row/fact-row";
 // What a destructive action reaches, in its confirm: named up to a limit, the rest counted.
 export * from "./components/data/impact-list/impact-list";
 export * from "./components/navigation/sub-page-bar/sub-page-bar";
+// Where a short run of pages stands: the steps, the finished ones checked.
+export * from "./components/navigation/step-indicator/step-indicator";
 
 // A status page — a plugin's page in Settings: the strip at its head, the version element of a
 // program the subject installs beside itself (with its "Details" fold), and the checklist of its
@@ -380,6 +384,8 @@ export * from "./components/data/checklist/checklist";
 // grid, the selected carousel and its turn-taking, and a product page's parts.
 export * from "./components/showcase/cover";
 export * from "./components/showcase/cover-card";
+// The icon-led card a catalogue lists a thing with, its action in a fixed place, and its grid.
+export * from "./components/showcase/store-card";
 export * from "./components/showcase/showcase-layout-toggle";
 export * from "./components/showcase/carousel-rotation";
 export * from "./components/showcase/showcase-carousel";

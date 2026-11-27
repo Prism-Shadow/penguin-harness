@@ -19,7 +19,7 @@ import { createElement as h } from "react";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { PluginPage } from "../src/features/plugins/plugin-page";
 import {
   PROJECT_ID,
   agentServer,
@@ -74,10 +74,7 @@ const MAIL = {
 
 const AGENTS_PATH = `/api/projects/${PROJECT_ID}/agents`;
 
-/**
- * The plugin market with `plugin`'s manage-installs list open, over the plugin's detail: the
- * market card itself carries no Install on Agent, its detail does.
- */
+/** The plugin's page in the market, with its install steps open on choosing Agents. */
 async function openInstalls(plugin: PluginItem, others: PluginItem[] = []) {
   // jsdom has no ResizeObserver, which the card grid's container queries do not need here.
   vi.stubGlobal(
@@ -89,22 +86,22 @@ async function openInstalls(plugin: PluginItem, others: PluginItem[] = []) {
     },
   );
   const server = agentServer(undefined, { library: [plugin, ...others] });
-  const router = await mountAgentApp(h(PluginsPage), {
-    route: "/plugins",
+  const router = await mountAgentApp(h(PluginPage), {
+    route: "/plugins/:pluginName",
     at: detailPath(plugin),
   });
-  const manage = `${en.plugins.installModel.installAgent} ${plugin.name}`;
+  const manage = `${en.skills.install} · ${plugin.title ?? plugin.name}`;
   await waitFor(() => hasButton(manage));
   await click(button(manage));
   await waitFor(() => hasButton(en.plugins.installModel.addToAgent("Helper")));
   return { server, router };
 }
 
-/** The market's address with `plugin`'s detail open. */
-const detailPath = (plugin: PluginItem) => `/plugins?plugin=${plugin.name}`;
+/** The address of `plugin`'s page. */
+const detailPath = (plugin: PluginItem) => `/plugins/${plugin.name}`;
 
-/** The detail, then the list over it: the dialogs open before Create agent. */
-const UNDER = 2;
+/** The install steps: the dialog open before Create agent. */
+const UNDER = 1;
 
 /** Presses the list's first row: Create agent opens over it. */
 async function openBlank() {
@@ -185,9 +182,9 @@ describe("installing a plugin on a new blank Agent", () => {
     expect(dialogs()).toHaveLength(UNDER);
     expect(topDialog().getAttribute("aria-label")).toBe(listTitle(CHARTS));
     await pressEscape();
-    // The list is closed; the detail it was opened from stays.
+    // The steps are closed; the plugin's page they were opened from stays.
     expect(dialogs()).toHaveLength(UNDER - 1);
-    expect(topDialog().getAttribute("aria-label")).not.toBe(listTitle(CHARTS));
+    expect(document.querySelector("h1")?.textContent).toBe("Charts");
   });
 
   it("asks before creating an Agent whose plugin runs a stdio server, and creates nothing until confirmed", async () => {

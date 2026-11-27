@@ -1,20 +1,20 @@
 /**
  * End-to-end test for the plugin library (locale zh-CN):
  * - the App Center shows the "插件市场" ("Plugins") system app, and the page renders the library's
- *   plugins as cover cards under tabs — All first, then one per category (the category name
+ *   plugins as store cards under tabs — All first, then one per category (the category name
  *   follows the UI language — when the server ships a Chinese group name it's "Agent 自进化 /
  *   办公效率 / 软件开发 / AI 应用开发", falling back to English by default); a category tab narrows the grid and
- *   names itself in the address; a card's facts show the plugin's npm version, its install
- *   count of Agents using it through the install action; a plugin's detail opens over
- *   the market, in the address, its tile carrying the plugin's custom icon (its icon.svg, served
- *   by URL and drawn as a mask in the text colour, never inlined; not the book fallback);
- * - the install flow's Agents step ("Install on Agent"): an Agent row + Install / Installed
+ *   names itself in the address; a card's button counts the Agents using it; a plugin's page
+ *   opens at its own address, its icon the plugin's custom icon (its icon.svg, served by URL and
+ *   drawn as a mask in the text colour, never inlined; not the book fallback), and Back returns
+ *   to the market;
+ * - the install steps' Agents page: an Agent row + Install / Installed
  *   and explicit owner-only Uninstall action, with optimistic updates on install/uninstall; its first row,
  *   「新建空白 Agent」, opens Create Agent over it prefilled with the plugin, and the Agent it
  *   creates joins the list installed while the list stays open;
- * - Quick invoke is gated on the currently selected agent having the skill installed (here the
- *   current agent is default_agent; the fixture removes agent-company, so its quick
- *   action is disabled);
+ * - Quick start, at the head of a plugin's page, is gated on the currently selected agent having
+ *   the skill installed (here the current agent is default_agent; the fixture removes
+ *   agent-company, so its quick start is disabled);
  * - "Quick invoke" navigates to /chat/new (default_agent), **prefilling** the invoke text in the
  *   UI language and preselecting its declared skill — the toolbar's skill dropdown
  *   button shows a count badge of 1, and that item shows as selected in the menu;
@@ -128,31 +128,38 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
     await expect(page.getByRole("tab", { name: c })).toBeVisible();
   }
   const card = (name) => page.locator(`article[data-plugin="${name}"]`);
+  // All shelves the categories; a search lists every match in one grid.
+  const search = page.getByPlaceholder("搜索插件");
   for (const s of PLUGINS) {
+    await search.fill(s);
     await expect(card(s)).toBeVisible();
   }
-  // The install action reports how many Agents use the package on the server.
+  await search.fill("");
+  // The card's button reports how many Agents use the package on the server.
+  await page.getByRole("tab", { name: OFFICE_TAB }).click();
   const facts = card("data-analysis");
   const installAction = facts.getByRole("button", { name: /个 Agent 已装 · 数据分析$/ });
-  await expect(facts.getByText(/^v\d+\.\d+\.\d+$/)).toBeVisible();
   await expect(installAction).toBeEnabled();
+  await allTab.click();
   const plugins = (await (await page.request.get(BASE + "/api/plugins")).json()).groups.flatMap(
     (group) => group.plugins,
   );
   const brief = plugins.find((item) => item.name === "data-analysis").quickStart.promptZh;
   expect(brief).toBeTruthy();
 
-  // The current Agent has Data Analysis. Agent Company is in the market but absent from the Agent.
-  await expect(page.getByRole("button", { name: "快速调用 · 数据分析" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "快速调用 · 智能体公司" })).toBeDisabled();
+  // The current Agent has Data Analysis. Agent Company is in the market but absent from the Agent:
+  // its page's quick start waits.
+  await page.goto(`${BASE}/plugins/agent-company`);
+  await expect(page.getByRole("button", { name: "快速开始", exact: true }).first()).toBeDisabled();
+  await page.goto(`${BASE}/plugins`);
 
   // The plugin's icon, on the tile beside its name in the detail: the DTO names the icon by URL,
   // and a monochrome one is drawn as a mask in the text colour (an aria-hidden span over a hidden
   // <img> of the same URL, which reports a failed load); builtin plugins each carry a custom
   // icon, not the book fallback, and none is inlined as an <svg> of its own.
-  await card("default-rsi-toolkit").locator("button.showcase-card-open").click();
-  const detail = page.getByRole("dialog");
-  const tile = detail.locator(".showcase-product-heading > span").first();
+  await card("default-rsi-toolkit").locator("a").first().click();
+  const detail = page.locator("header:has(h1)");
+  const tile = detail.locator("[data-app-icon-shape]").first();
   await expect(
     tile.locator(
       'span[aria-hidden] > img[hidden][src*="/api/plugins/default-rsi-toolkit/icon?rev="]',
@@ -160,10 +167,9 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   ).toHaveCount(1);
   await expect(tile.locator("span[aria-hidden] > svg")).toHaveCount(0);
   await expect(tile.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
-  // The detail is in the address, and Escape closes it.
-  await expect(page).toHaveURL(/\/plugins\?plugin=default-rsi-toolkit$/);
-  await page.keyboard.press("Escape");
-  await expect(detail).toHaveCount(0);
+  // The plugin's page is at its own address, and Back returns to the market.
+  await expect(page).toHaveURL(/\/plugins\/default-rsi-toolkit$/);
+  await page.getByRole("button", { name: "插件市场", exact: true }).click();
   await expect(page).toHaveURL(/\/plugins$/);
 
   // A category tab narrows the grid to its plugins, and the address names it; All brings every
@@ -175,7 +181,8 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   await allTab.click();
   await expect(card("default-rsi-toolkit")).toBeVisible();
 
-  // The shared flow shows each Agent and its available action.
+  // The install steps show each Agent and its available action.
+  await page.getByRole("tab", { name: OFFICE_TAB }).click();
   await installAction.click();
   const dialog = page.getByRole("dialog").filter({ hasText: "选择智能体" });
   // The default Agent already carries the plugin. The helper can install it.
@@ -232,8 +239,9 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
 
-  // —— Quick invoke: navigates to /chat/new (default_agent), prefilling the invoke text + preselecting that skill ——
-  await page.getByRole("button", { name: "快速调用 · 数据分析" }).click();
+  // —— Quick start: navigates to /chat/new (default_agent), prefilling the invoke text + preselecting that skill ——
+  await page.goto(`${BASE}/plugins/data-analysis`);
+  await page.getByRole("button", { name: "快速开始", exact: true }).first().click();
   await page.waitForURL(/\/chat\/new$/);
   const ta = page.getByRole("textbox", { name: /输入消息/ });
   // Quick invoke inserts the Chinese example exactly as the library supplied it.

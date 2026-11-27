@@ -7,11 +7,14 @@
  * - Choosing a grouping in the header regroups the cards that way.
  * - The grouping select shows the chosen grouping as its own phrase, and keeps an accessible name
  *   for what it groups.
- * - A server module's card offers an admin Install, or Remove once listed, each with its words;
- *   a member gets the card read-only — its status, and no way to change the server.
- * - A library plugin's card offers any member quick start and "Install on Agent".
+ * - A plugin's one button (its card's and its page's) reads Install for an admin while the server
+ *   lacks a module, then the module's state; disabling or uninstalling the server copy is never on
+ *   the card. A member's Install on a server-only market package is held, saying why; a member
+ *   sees a shipped module's status on its page and nothing that changes it.
+ * - A library plugin offers Install, and on its page quick start; the button offers a package
+ *   update first, then an update of Agents behind, then the Agents' count.
  * - A card names its category, except inside that category's own section; a package an admin
- *   installed on the server says so where a shipped one says "built in".
+ *   installed on the server says so on its page where a shipped one says "built in".
  * - Export offers a library plugin's package and a server module's on this server, and nothing
  *   for a module whose package is not here.
  * - Installing a server module names it and says it goes on the whole server, and then, after
@@ -228,10 +231,26 @@ const card = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardPro
     ...overrides,
   });
 
+/** The one action button in the markup: its kind, its accessible name, and its tag. */
+function actionOf(html: string): { kind: string; name: string; tag: string } | undefined {
+  const tag = /<button[^>]*data-install-button[^>]*>/.exec(html)?.[0];
+  if (tag === undefined) return undefined;
+  return {
+    kind: /data-action="([^"]*)"/.exec(tag)?.[1] ?? "",
+    name: (/aria-label="([^"]*)"/.exec(tag)?.[1] ?? "").replace(/&#x27;/g, "'"),
+    tag,
+  };
+}
+/** The words the action button says (its accessible name, less the plugin's title). */
+const actionWords = (html: string) => actionOf(html)?.name.split(" · ")[0];
+
+const page = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardProps> = {}) =>
+  card(row, isAdmin, { surface: "page", ...overrides });
+
 describe("a removable workbench plugin", () => {
   it("does not identify bundled or manually installed workbenches as built in", () => {
     for (const source of ["builtin", "installed"] as const) {
-      const html = card(
+      const html = page(
         {
           ...libraryRow,
           library: { ...LIBRARY, source, workbenches: [{ name: "sample", version: "1.0.0" }] },
@@ -240,79 +259,71 @@ describe("a removable workbench plugin", () => {
       );
       expect(html).not.toContain(en.plugins.builtin);
     }
-    expect(card({ ...libraryRow, library: { ...LIBRARY, source: "builtin" } }, true)).toContain(
+    expect(page({ ...libraryRow, library: { ...LIBRARY, source: "builtin" } }, true)).toContain(
       en.plugins.builtin,
     );
   });
 });
 
-describe("a server module's card", () => {
+describe("a server module's button", () => {
   const words = en.plugins.installModel;
-  it("offers an admin Install on server for a market package, and leaves uninstalling to the detail", () => {
-    const available = card(moduleRow("none", false), true);
-    expect(buttonText(available, `${words.installServer} sandbox-bwrap`)).toBe(words.installServer);
-    const listed = card(moduleRow("active", false), true);
-    for (const html of [available, listed]) {
-      expect(buttonText(html, `${words.uninstallServer} sandbox-bwrap`)).toBeUndefined();
-    }
-    expect(buttonText(listed, `${words.installServer} sandbox-bwrap`)).toBeUndefined();
-  });
-
-  it("offers an admin enabling a module the build ships, never uninstalling it, and leaves disabling to the detail", () => {
-    const available = card(moduleRow("none"), true);
-    expect(buttonText(available, `${words.enableModule} sandbox-bwrap`)).toBe(words.enableModule);
-    const listed = card(moduleRow("active"), true);
-    expect(buttonText(listed, `${words.disableModule} sandbox-bwrap`)).toBeUndefined();
-    for (const html of [available, listed]) {
-      expect(buttonText(html, `${words.uninstallServer} sandbox-bwrap`)).toBeUndefined();
-      expect(buttonText(html, `${words.installServer} sandbox-bwrap`)).toBeUndefined();
+  it("reads Install for an admin while the server lacks it, and its state once listed", () => {
+    for (const shipped of [false, true]) {
+      expect(actionWords(card(moduleRow("none", shipped), true))).toBe(en.skills.install);
+      expect(actionOf(card(moduleRow("none", shipped), true))?.kind).toBe("install");
+      expect(actionWords(card(moduleRow("active", shipped), true))).toBe(
+        en.plugins.marketServerInstalled,
+      );
     }
   });
 
-  it("holds a member's server control on a market package, saying only an admin changes the server", () => {
+  it("leaves disabling and uninstalling the server copy to the plugin's page, never the card", () => {
+    for (const html of [card(moduleRow("active"), true), card(moduleRow("active", false), true)]) {
+      expect(text(html)).not.toContain(words.disableModule);
+      expect(text(html)).not.toContain(words.uninstallServer);
+    }
+  });
+
+  it("holds a member's Install on a market package, saying only an admin changes the server", () => {
     const row = moduleRow("none", false);
     row.module!.entry = {
       ...BWRAP,
       offline: { version: BWRAP.version, library: false, modules: true },
     };
-    const html = card(row, false);
-    const tag =
-      new RegExp(`<button[^>]*aria-label="${words.installServer} sandbox-bwrap"[^>]*>`).exec(
-        html,
-      )?.[0] ?? "";
-    expect(tag).toContain('disabled=""');
-    expect(tag).toContain(`data-tooltip="${words.adminOnly}"`);
+    const action = actionOf(card(row, false))!;
+    expect(action.kind).toBe("held");
+    expect(action.tag).toContain('disabled=""');
+    expect(action.tag).toContain(`data-tooltip="${words.adminOnly}"`);
   });
 
-  it("shows a member its status and no way to change a module the build ships", () => {
+  it("shows a member its status on the page, and nothing that changes a module the build ships", () => {
     for (const state of ["none", "active"] as const) {
-      const html = card(moduleRow(state), false);
-      expect(buttonText(html, `${words.enableModule} sandbox-bwrap`)).toBeUndefined();
-      expect(buttonText(html, `${words.disableModule} sandbox-bwrap`)).toBeUndefined();
+      const html = page(moduleRow(state), false);
+      expect(text(html)).not.toContain(words.enableModule);
+      expect(text(html)).not.toContain(words.disableModule);
       expect(text(html)).toContain(
         state === "active" ? en.plugins.status.installed : en.plugins.status.available,
       );
     }
-    // The card reads as every other: the short description and the version it ships at.
-    expect(text(card(moduleRow("none"), false))).toContain("Linux: confine file writes.");
-    expect(text(card(moduleRow("none"), false))).toContain("v0.2.3");
+    // The page reads as every other: the short description and the version it ships at.
+    expect(text(page(moduleRow("none"), false))).toContain("Linux: confine file writes.");
+    expect(text(page(moduleRow("none"), false))).toContain("v0.2.3");
   });
 });
 
-describe("a library plugin's card", () => {
-  it("offers any member quick start and installing it on Agents", () => {
-    const html = card(libraryRow, false, { categoryTitle: "Office Productivity" });
-    expect(buttonText(html, `${en.plugins.installModel.installAgent} data-analysis`)).toBe(
-      en.plugins.installModel.installAgent,
-    );
-    expect(buttonText(html, `${en.skills.quickInvoke} data-analysis`)).toBe(en.skills.quickInvoke);
+describe("a library plugin", () => {
+  it("offers any member Install on its card, and Install and quick start at the head of its page", () => {
+    expect(actionWords(card(libraryRow, false))).toBe(en.skills.install);
+    const html = page(libraryRow, false, { categoryTitle: "Office Productivity" });
+    expect(actionWords(html)).toBe(en.skills.install);
+    expect(buttonWords(html)).toContain(en.skills.quickInvoke);
     expect(text(html)).toContain("v0.2.13");
   });
 });
 
-describe("the market’s versioned actions", () => {
-  const current = { marketCard: true, currentAgentId: "alice", showPackageUpdates: true };
-  it("offers a verified package update before applying the new resources to the Agent", () => {
+describe("the button's versioned actions", () => {
+  const current = { currentAgentId: "alice", showPackageUpdates: true };
+  it("offers an admin the verified package update first", () => {
     const newer = {
       ...BWRAP,
       version: "1.1.0",
@@ -322,25 +333,23 @@ describe("the market’s versioned actions", () => {
       ...libraryRow,
       module: { specifier: newer.name, state: "none" as const, shipped: false, entry: newer },
     };
-    const html = card(row, true, current);
-    expect(buttonWords(html).slice(-2)).toEqual(["Update to v1.1.0", "Quick start"]);
-    expect(html).toContain('class="showcase-card-version">v1.0.0</span>');
-    expect(html).toContain(en.plugins.quickStartAfterInstall);
+    expect(actionWords(card(row, true, current))).toBe("Update to v1.1.0");
+    expect(actionOf(card(row, true, current))?.kind).toBe("package-update");
   });
-  it("offers to update a reachable Agent other than the current one", () => {
-    for (const layout of ["cover", "row"] as const) {
+  it("offers to update a reachable Agent other than the current one, and counts one out of reach", () => {
+    for (const surface of ["card", "row", "page"] as const) {
       const usage = { usedBy: ["bob"], behind: ["bob"] };
-      expect(buttonWords(card(libraryRow, true, { ...current, layout, usage })).at(-2)).toBe(
+      expect(actionWords(card(libraryRow, true, { ...current, surface, usage }))).toBe(
         en.skills.updateAction,
       );
       expect(
-        buttonWords(
-          card(libraryRow, true, { ...current, layout, usage: { ...usage, lastSeen: ["bob"] } }),
-        ).at(-2),
+        actionWords(
+          card(libraryRow, true, { ...current, surface, usage: { ...usage, lastSeen: ["bob"] } }),
+        ),
       ).toBe(en.plugins.marketAgentInstalls(1));
     }
   });
-  it("only enables a demo on the Agent that carries it", () => {
+  it("only enables the page's quick start on the Agent that carries it", () => {
     const installed = new Map([
       [
         "alice",
@@ -348,39 +357,32 @@ describe("the market’s versioned actions", () => {
       ],
     ]);
     const usage = { usedBy: ["alice"], behind: [], lastSeen: [] };
-    const ready = card(libraryRow, false, { ...current, installed, usage });
-    expect(buttonWords(ready).slice(-2)).toEqual(["Installed on 1 Agent", "Quick start"]);
+    const ready = page(libraryRow, false, { ...current, installed, usage });
+    expect(actionWords(ready)).toBe("Installed on 1 Agent");
     expect(ready).toContain(en.plugins.quickStartHint);
-    expect(ready).toContain('class="showcase-card-version">v0.2.13</span>');
     // Another Agent has it: the count alone, never Install beside it; the demo waits.
-    const other = card(libraryRow, false, { ...current, installed, usage, currentAgentId: "bob" });
-    expect(buttonWords(other).slice(-2)).toEqual(["Installed on 1 Agent", "Quick start"]);
+    const other = page(libraryRow, false, { ...current, installed, usage, currentAgentId: "bob" });
+    expect(actionWords(other)).toBe("Installed on 1 Agent");
     expect(other).toContain(en.plugins.quickStartAfterInstall);
   });
   it("distinguishes a running server plugin from a shipped or downloaded package", () => {
-    for (const layout of ["row", "cover"] as const) {
-      const props = { ...current, layout };
-      expect(buttonWords(card(moduleRow("active"), true, props)).at(-2)).toBe(
-        "Installed on server",
-      );
-      expect(buttonWords(card(moduleRow("none"), true, props)).at(-2)).toBe("Install");
-      expect(buttonWords(card(libraryRow, true, props)).at(-2)).toBe("Install");
+    for (const surface of ["card", "row"] as const) {
+      const props = { ...current, surface };
+      expect(actionWords(card(moduleRow("active"), true, props))).toBe("Installed on server");
+      expect(actionWords(card(moduleRow("none"), true, props))).toBe("Install");
+      expect(actionWords(card(libraryRow, true, props))).toBe("Install");
       const usage = { usedBy: ["alice", "bob"], behind: [], lastSeen: [] };
-      expect(buttonWords(card(libraryRow, true, { ...props, usage })).at(-2)).toBe(
+      expect(actionWords(card(libraryRow, true, { ...props, usage }))).toBe(
         "Installed on 2 Agents",
       );
     }
   });
-  it("keeps a workbench with no example readable in both layouts", () => {
+  it("offers no quick start for a workbench with no example", () => {
     const row = {
       ...libraryRow,
       library: { ...LIBRARY, skills: [], workbenches: [{ name: "slides", version: "1" }] },
     };
-    for (const layout of ["cover", "row"] as const) {
-      const html = card(row as PluginRow, true, { ...current, layout });
-      expect(html).toContain(en.plugins.noQuickAction);
-      expect(html).toMatch(/<button[^>]*disabled[^>]*aria-label="Quick start/);
-    }
+    expect(buttonWords(page(row as PluginRow, true, current))).not.toContain(en.skills.quickInvoke);
   });
 });
 
@@ -393,14 +395,12 @@ describe("a card's category", () => {
       showCategory: false,
     });
     expect(text(inSection)).not.toContain("Office Productivity");
-    // The other tags stay.
-    expect(text(inSection)).toContain(en.plugins.builtin);
   });
 });
 
 describe("where a plugin comes from", () => {
   it("tags a package an admin installed on the server, where a shipped one is built in", () => {
-    const installed = card(
+    const installed = page(
       {
         ...libraryRow,
         library: { ...LIBRARY, package: "@acme/data-analysis", source: "installed" },
@@ -409,7 +409,7 @@ describe("where a plugin comes from", () => {
     );
     expect(text(installed)).toContain(en.plugins.installedOnServer);
     expect(text(installed)).not.toContain(en.plugins.builtin);
-    const shipped = card(libraryRow, false);
+    const shipped = page(libraryRow, false);
     expect(text(shipped)).toContain(en.plugins.builtin);
     expect(text(shipped)).not.toContain(en.plugins.installedOnServer);
   });
@@ -789,7 +789,6 @@ describe("a plugin's MCP servers", () => {
         radioGroup: "agents",
         selected: true,
         onSelect: () => undefined,
-        onDone: () => undefined,
         agentId: "default_agent",
         name: "General Agent",
         installed: true,

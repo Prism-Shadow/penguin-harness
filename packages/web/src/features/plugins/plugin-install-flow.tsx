@@ -1,18 +1,28 @@
 /**
- * The market's install sheet: one surface from "what will be installed" to "it is ready", the way
- * a phone installs an app. The plugin's icon and name lead; once the install starts, one staged
- * bar (install-bar.tsx) stands under them with a sentence saying what is happening now, and the
- * sheet's body is whatever the person can do at that moment: start it, wait, try again, choose
- * the Agents that use it, or finish.
+ * A plugin's install steps: the decisions an install needs, one page each, in one dialog — the
+ * way a phone's package installer pages through what it must ask before an app is ready. The
+ * install itself happens on the plugin's button (its card's and its page's): the steps are where
+ * that button goes when there is something to decide, and only then.
  *
- * The bar shows only an install this sheet is running or ran. Before it starts there is none,
- * and a plugin that was already on the server opens straight on its Agents with no bar either.
- * The plan (which stages this install has) is taken when the sheet opens and kept, so the stages
- * the server finished stay on the bar while the person chooses Agents.
+ * The pages a plugin has, in order, are only those its install will take:
  *
- * Closing the sheet never stops a server install: the request runs on, the card keeps the same
- * bar at its own size, and reopening the sheet shows where it stands. A server install cannot be
- * cancelled, which the running step says.
+ * - **On this server** — while the plugin is not on the server, or a server change of it runs or
+ *   failed, or it is a plugin of server modules alone, or an admin's install it is (who may
+ *   uninstall it from the server there): an admin installs it for the whole server
+ *   (or enables a module the build ships), with what that does said before the press; a member
+ *   asks an admin. While the install runs the page shows its staged bar and the step in words,
+ *   and closing the dialog leaves it running on the button; when it fails the page says why,
+ *   with Retry and the next places to look. Once the server has it, the page says so (and an
+ *   admin can uninstall it from the server from here).
+ * - **Choose agents** — for a plugin with something for Agents: who uses it, one Agent at a time,
+ *   nothing added without a press (the owner's ask-first rule).
+ * - **Ready** — once it was added to an Agent, or a server install finished: who has it, and the
+ *   thing to do next (open its app, or its quick start).
+ *
+ * The step indicator over the pages shows where the reader is once there are two pages or more;
+ * Back and Next move between them, and the server step completing moves a dialog left open on to
+ * the next page by itself. A member asking an admin, and a plugin the server already holds whose
+ * steps were opened to manage it, have one page and no indicator.
  */
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -25,6 +35,7 @@ import {
   ICONS,
   InstallRing,
   Modal,
+  StepIndicator,
 } from "@prismshadow/penguin-ui";
 import type { Failure } from "@prismshadow/penguin-ui";
 import type { InstallStage } from "../../api/endpoints";
@@ -62,6 +73,45 @@ export interface InstallFailure {
   progress: DownloadProgress | null;
 }
 
+/** One page of the steps. */
+export type InstallPage = "server" | "agents" | "done";
+
+/**
+ * The pages an install of this plugin takes for this reader, in order (see the module comment):
+ * the server's while it has something to do or say, the Agents' for a plugin with something for
+ * them, and Ready wherever the steps end in something ready.
+ */
+export function installPages(input: {
+  server: ServerStep;
+  /** Two for a plugin with Agent content, one for server modules alone. */
+  steps: 1 | 2;
+  /** A server change of the plugin is running, or its last install failed. */
+  serverRun: boolean;
+  /** The plugin's Agent part can be added before its Project module runs (a shipped hybrid). */
+  agentPackageAvailable?: boolean;
+  /** An admin may uninstall the plugin from the server, on its server page. */
+  removable?: boolean;
+}): InstallPage[] {
+  const { server, steps } = input;
+  // A member asking an admin has nothing past the server's page, unless the plugin's Agent part
+  // can be added before its module runs.
+  const asking = (server === "ask" || server === "held") && input.agentPackageAvailable !== true;
+  const pages: InstallPage[] = [];
+  if (server !== "done" || input.serverRun || steps === 1 || input.removable === true) {
+    pages.push("server");
+  }
+  if (steps === 2 && !asking && (server !== "unavailable" || input.agentPackageAvailable)) {
+    pages.push("agents");
+  }
+  if (
+    pages.includes("agents") ||
+    (steps === 1 && server !== "done" && !asking && server !== "unavailable")
+  ) {
+    pages.push("done");
+  }
+  return pages;
+}
+
 export interface InstallFlowProps {
   /** The plugin's display name. */
   title: string;
@@ -81,7 +131,7 @@ export interface InstallFlowProps {
   /** A shipped hybrid can install its Agent content under the existing module-request policy. */
   agentPackageAvailable?: boolean;
   moduleStatus?: string;
-  /** The server step is running here. */
+  /** The server step is running. */
   busy: boolean;
   /** Another plugin's server change is running: one at a time. */
   blocked: boolean;
@@ -96,14 +146,14 @@ export interface InstallFlowProps {
   onImportFile?: () => void;
   /** Installs (or, for `enable`, enables) it on the server. */
   onServer: () => void;
-  /** Opens the existing administrator confirmation for this server. */
+  /** Opens the administrator's confirmation of an uninstall from the server. */
   onRemoveServer?: () => void;
   machineLabel?: string;
   /** Asks an admin to install it on the server (a member). */
   onAsk: () => Promise<void>;
-  /** Step 2's body: the Agents. Null while the server's copy is not read yet. */
+  /** The Agents page's body. Null while the server's copy is not read yet. */
   agents: ReactNode | null;
-  /** The Agents the plugin was added to while this sheet was open, by name. */
+  /** The Agents the plugin was added to while these steps were open, by name. */
   added?: readonly string[];
   /** What to do with the plugin once it is ready: open its app, or start its example. */
   next?: { label: string; onClick: () => void } | null;
@@ -112,68 +162,285 @@ export interface InstallFlowProps {
 
 export function InstallFlow(props: InstallFlowProps) {
   const words = S.plugins.installModel;
+  const failed = props.failure != null && !props.busy;
   const serverDone = props.server === "done";
-  const canInstallAgents = props.steps === 2 && (serverDone || props.agentPackageAvailable);
-  const [selected, setStep] = useState<1 | 2>(
-    canInstallAgents && (serverDone || props.server === "held") ? 2 : 1,
+  // The pages are taken when the steps open and kept, so the server's page stays in the run
+  // (Back reaches it) after the install it ran is done.
+  const [pages] = useState(() =>
+    installPages({
+      server: props.server,
+      steps: props.steps,
+      serverRun: props.busy || failed,
+      ...(props.agentPackageAvailable ? { agentPackageAvailable: true } : {}),
+      ...(props.onRemoveServer !== undefined ? { removable: true } : {}),
+    }),
   );
-  const step = canInstallAgents ? selected : 1;
+  const [page, setPage] = useState<InstallPage>(() => {
+    if (pages[0] === "server" && (props.busy || failed)) return "server";
+    const toAgents =
+      pages.includes("agents") &&
+      (serverDone || (props.server === "held" && props.agentPackageAvailable));
+    return toAgents ? "agents" : pages[0]!;
+  });
+  /** The server install ran while these steps were open, or was running when they opened. */
+  const [ran, setRan] = useState(props.busy);
+  useEffect(() => {
+    if (props.busy) setRan(true);
+  }, [props.busy]);
+  // The server step completing moves the steps on by themselves.
+  useEffect(() => {
+    if (!ran || !serverDone || props.busy || page !== "server") return;
+    if (pages.includes("agents")) setPage("agents");
+    else if (pages.includes("done")) setPage("done");
+  }, [ran, serverDone, props.busy, page, pages]);
+
   const [asked, setAsked] = useState(false);
   const [asking, setAsking] = useState(false);
-  // The stages as they were when the sheet opened: the server's stay on the bar once finished.
-  const [plan] = useState(props.plan);
-  /** This sheet runs, or ran, the server's part: the bar is its record. */
-  const ranServer = plan.some((stage) => stage !== "agents");
-  // Back on the Agents after a first one was added, to add another.
-  const [addingMore, setAddingMore] = useState(false);
-  // The server step completing moves the flow on by itself.
-  useEffect(() => {
-    if (serverDone && props.steps === 2) setStep(2);
-  }, [serverDone, props.steps]);
-
   const ask = async () => {
     setAsking(true);
     try {
       await props.onAsk();
       setAsked(true);
     } catch {
-      // The caller has said why (a toast); the step stays as it was, to try again.
+      // The caller has said why (a toast); the page stays as it was, to try again.
     } finally {
       setAsking(false);
     }
   };
 
   const added = props.added ?? [];
-  const failed = props.failure != null && !props.busy;
-  /** The install this sheet ran is complete: the server's part, and an Agent where it has one. */
-  const finished =
-    ranServer &&
-    serverDone &&
-    !props.busy &&
-    (props.steps === 1 || (added.length > 0 && !addingMore));
-  const phase: InstallPhase = props.busy
-    ? "running"
-    : failed
-      ? "failed"
-      : finished
-        ? "done"
-        : serverDone && props.steps === 2
-          ? "agents"
-          : "before";
-  const showBar = ranServer && phase !== "before";
+  const index = pages.indexOf(page);
+  const stepNames: Record<InstallPage, string> = {
+    server: props.server === "ask" ? words.stepAsk : words.stepServer,
+    agents: words.stepAgents,
+    done: words.stepReady,
+  };
+  const phase: InstallPhase = props.busy ? "running" : failed ? "failed" : "before";
   const sentence = installStepWords(props.progress, props.stage, false, props.remote === true);
   const amount = installAmount(props.progress);
-  const mark = failed && ranServer ? "failed" : finished ? "done" : props.busy ? "running" : null;
-
-  const close = (
+  const mark = failed ? "failed" : page === "done" ? "done" : props.busy ? "running" : null;
+  const back = (to: InstallPage, label: string = words.back) => (
+    <Button size="sm" variant="ghost" onClick={() => setPage(to)}>
+      <GlyphIcon d={ICONS.arrowLeft} size={ICON_SIZE.rowLead} />
+      {label}
+    </Button>
+  );
+  const done = (
     <Button size="sm" variant="primary" onClick={props.onClose}>
       {words.finish}
     </Button>
   );
 
+  let body: ReactNode;
+  let foot: { start?: ReactNode; end?: ReactNode };
+  if (page === "server") {
+    const installing = props.server === "install" || props.server === "enable";
+    if (props.busy || failed) {
+      body = (
+        <div className="space-y-3 text-sm">
+          <div className="space-y-2" role="status">
+            <InstallProgress
+              plan={props.plan}
+              phase={phase}
+              stage={props.failure?.stage ?? props.stage}
+              progress={props.failure?.progress ?? props.progress}
+              label={words.progressLabel(props.title)}
+              valueText={props.busy ? sentence : undefined}
+            />
+            {props.busy && (
+              <p className="flex items-baseline justify-between gap-3 text-fg">
+                <span className="min-w-0 break-words">{sentence}</span>
+                {amount !== null && (
+                  <span className="shrink-0 tabular-nums text-fg-muted">{amount}</span>
+                )}
+              </p>
+            )}
+          </div>
+          {props.busy ? (
+            <p className="text-xs text-fg-muted">{words.noCancel}</p>
+          ) : (
+            <div className="space-y-1.5" data-testid="install-failure">
+              <h3 className="break-words font-semibold text-fg">
+                {words.failedTitle(props.title)}
+              </h3>
+              <p className="break-words text-fg-muted">
+                <FailureText failure={props.failure!.failure} />
+              </p>
+              <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-fg-muted">
+                <span>{words.failedHelp}</span>
+                {props.onOpenSources !== undefined && (
+                  <Button variant="link" size="sm" onClick={props.onOpenSources}>
+                    {words.sourcesSettings}
+                  </Button>
+                )}
+                {props.onImportFile !== undefined && (
+                  <Button variant="link" size="sm" onClick={props.onImportFile}>
+                    {words.importFromFile}
+                  </Button>
+                )}
+              </p>
+            </div>
+          )}
+        </div>
+      );
+      foot = props.busy
+        ? {
+            end: (
+              <Button size="sm" variant="secondary" onClick={props.onClose}>
+                {words.background}
+              </Button>
+            ),
+          }
+        : {
+            end: (
+              <>
+                {props.onDismissFailure !== undefined && (
+                  <Button size="sm" variant="ghost" onClick={props.onDismissFailure}>
+                    {words.dismiss}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={props.blocked}
+                  onClick={props.onServer}
+                >
+                  {S.common.retry}
+                </Button>
+              </>
+            ),
+          };
+    } else {
+      body = (
+        <div className="space-y-3 text-sm">
+          <div className="space-y-1">
+            {(serverDone || props.server === "ask") && (
+              <h3 className="font-semibold text-fg">
+                {serverDone ? words.ready : asked ? words.askedTitle : words.askTitle}
+              </h3>
+            )}
+            {installing && props.description && (
+              <p className="break-words text-fg">{props.description}</p>
+            )}
+            <p className="break-words text-fg-muted">
+              {props.server === "install" &&
+                (props.steps === 2
+                  ? words.prepareForAgents
+                  : props.contentsKnown
+                    ? words.prepareService
+                    : words.preparePackage)}
+              {props.server === "enable" && words.projectServiceHelp}
+              {props.server === "ask" && (asked ? words.asked : words.askBody)}
+              {props.server === "held" && words.adminOnly}
+              {props.server === "unavailable" && props.moduleStatus}
+              {serverDone &&
+                (props.agentPackageAvailable ? words.projectReady : words.serverDone(props.title))}
+            </p>
+          </div>
+          {installing && (
+            <details className="text-xs text-fg-muted">
+              <summary tabIndex={0} className="cursor-pointer">
+                {words.installDetails}
+              </summary>
+              <p className="mt-1">{S.plugins.applyConfirmWarning(true)}</p>
+            </details>
+          )}
+        </div>
+      );
+      const next = pages.includes("agents") && (serverDone || props.agentPackageAvailable);
+      foot = {
+        start:
+          serverDone && props.onRemoveServer ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={props.blocked}
+              onClick={props.onRemoveServer}
+            >
+              {words.uninstallServer}
+            </Button>
+          ) : undefined,
+        end: installing ? (
+          <Button size="sm" variant="primary" disabled={props.blocked} onClick={props.onServer}>
+            {props.server === "enable" ? words.enableNow : S.skills.install}
+          </Button>
+        ) : props.server === "ask" && !asked ? (
+          <Button size="sm" variant="primary" loading={asking} onClick={() => void ask()}>
+            {words.askAdmin}
+          </Button>
+        ) : next ? (
+          <Button size="sm" variant="primary" onClick={() => setPage("agents")}>
+            {words.next}
+          </Button>
+        ) : (
+          done
+        ),
+      };
+    }
+  } else if (page === "agents") {
+    body = (
+      <div className="space-y-3">
+        <div className="space-y-1 text-sm">
+          <h3 className="font-semibold text-fg">{words.chooseAgent}</h3>
+          <p className="text-fg-muted">
+            {ran && added.length === 0 ? words.chooseAfterInstall : words.chooseAgentHelp}
+          </p>
+        </div>
+        {!serverDone && props.moduleStatus && (
+          <p className="text-xs text-fg-muted">{props.moduleStatus}</p>
+        )}
+        {props.agents ?? <p className="py-1.5 text-xs text-fg-muted">{S.common.loading}</p>}
+      </div>
+    );
+    foot = {
+      start: pages.includes("server") ? back("server") : undefined,
+      end:
+        added.length > 0 ? (
+          <Button size="sm" variant="primary" onClick={() => setPage("done")}>
+            {words.next}
+          </Button>
+        ) : ran ? (
+          <Button size="sm" variant="ghost" onClick={props.onClose}>
+            {words.chooseLater}
+          </Button>
+        ) : undefined,
+    };
+  } else {
+    body = (
+      <section className="space-y-1 text-sm">
+        <h3 className="font-semibold text-fg">{words.doneTitle(props.title)}</h3>
+        <p className="break-words text-fg-muted">
+          {props.steps === 2 && added.length > 0
+            ? words.doneAgents(added.join(S.todo.listSeparator))
+            : props.steps === 2
+              ? words.chooseAgentHelp
+              : props.plan.includes("check")
+                ? words.doneService
+                : words.projectReady}
+        </p>
+      </section>
+    );
+    foot = {
+      start: pages.includes("agents") ? back("agents", words.addAnother) : undefined,
+      end:
+        props.next != null ? (
+          <>
+            <Button size="sm" variant="ghost" onClick={props.onClose}>
+              {words.finish}
+            </Button>
+            <Button size="sm" variant="primary" onClick={props.next.onClick}>
+              {props.next.label}
+            </Button>
+          </>
+        ) : (
+          done
+        ),
+    };
+  }
+
   return (
     <Modal open headerless title={words.flowTitle(props.title)} onClose={props.onClose}>
-      <div className="space-y-4">
+      <div className="space-y-4" data-install-page={page}>
         <div className="flex items-start gap-3">
           <InstallIcon icon={props.icon} size={props.iconSize} mark={mark} />
           <div className="min-w-0 flex-1 self-center">
@@ -187,215 +454,20 @@ export function InstallFlow(props: InstallFlowProps) {
           </div>
           <CloseButton onClose={props.onClose} />
         </div>
-
-        {showBar && (
-          <div className="space-y-2" role="status">
-            <InstallProgress
-              plan={plan}
-              phase={phase}
-              stage={props.failure?.stage ?? props.stage}
-              progress={props.failure?.progress ?? props.progress}
-              label={words.progressLabel(props.title)}
-              valueText={props.busy ? sentence : undefined}
-            />
-            {props.busy && (
-              <p className="flex items-baseline justify-between gap-3 text-sm text-fg">
-                <span className="min-w-0 break-words">{sentence}</span>
-                {amount !== null && (
-                  <span className="shrink-0 tabular-nums text-fg-muted">{amount}</span>
-                )}
-              </p>
-            )}
-          </div>
+        {pages.length > 1 && (
+          <StepIndicator
+            steps={pages.map((key) => ({ key, label: stepNames[key] }))}
+            current={index}
+            label={words.stepsLabel}
+            doneText={words.stepDone}
+          />
         )}
-
-        {finished ? (
-          <section className="space-y-3 text-sm">
-            <div className="space-y-1">
-              <h3 className="font-semibold text-fg">{words.doneTitle(props.title)}</h3>
-              <p className="break-words text-fg-muted">
-                {props.steps === 2
-                  ? words.doneAgents(added.join(S.todo.listSeparator))
-                  : props.server === "done" && plan.includes("check")
-                    ? words.doneService
-                    : words.projectReady}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {props.steps === 2 && (
-                <Button
-                  size="sm"
-                  variant="link"
-                  className="mr-auto"
-                  onClick={() => setAddingMore(true)}
-                >
-                  {words.addAnother}
-                </Button>
-              )}
-              {props.next != null ? (
-                <>
-                  <Button size="sm" variant="ghost" onClick={props.onClose}>
-                    {words.finish}
-                  </Button>
-                  <Button size="sm" variant="primary" onClick={props.next.onClick}>
-                    {props.next.label}
-                  </Button>
-                </>
-              ) : (
-                close
-              )}
-            </div>
-          </section>
-        ) : step === 1 ? (
-          <section className="space-y-3 text-sm">
-            {props.busy ? (
-              <p className="text-xs text-fg-muted">{words.noCancel}</p>
-            ) : failed ? (
-              <div className="space-y-1.5" data-testid="install-failure">
-                <h3 className="break-words font-semibold text-fg">
-                  {words.failedTitle(props.title)}
-                </h3>
-                <p className="break-words text-fg-muted">
-                  <FailureText failure={props.failure!.failure} />
-                </p>
-                <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-fg-muted">
-                  <span>{words.failedHelp}</span>
-                  {props.onOpenSources !== undefined && (
-                    <Button variant="link" size="sm" onClick={props.onOpenSources}>
-                      {words.sourcesSettings}
-                    </Button>
-                  )}
-                  {props.onImportFile !== undefined && (
-                    <Button variant="link" size="sm" onClick={props.onImportFile}>
-                      {words.importFromFile}
-                    </Button>
-                  )}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                {(serverDone || props.server === "ask") && (
-                  <h3 className="font-semibold text-fg">
-                    {serverDone ? words.ready : asked ? words.askedTitle : words.askTitle}
-                  </h3>
-                )}
-                {(props.server === "install" || props.server === "enable") && props.description && (
-                  <p className="break-words text-fg">{props.description}</p>
-                )}
-                <p className="break-words text-fg-muted">
-                  {props.server === "install" &&
-                    (props.steps === 2
-                      ? words.prepareForAgents
-                      : props.contentsKnown
-                        ? words.prepareService
-                        : words.preparePackage)}
-                  {props.server === "enable" && words.projectServiceHelp}
-                  {props.server === "ask" && (asked ? words.asked : words.askBody)}
-                  {props.server === "held" && words.adminOnly}
-                  {props.server === "unavailable" && props.moduleStatus}
-                  {serverDone &&
-                    (props.agentPackageAvailable
-                      ? words.projectReady
-                      : words.serverDone(props.title))}
-                </p>
-              </div>
-            )}
-
-            {(props.server === "install" || props.server === "enable") &&
-              !props.busy &&
-              !failed && (
-                <details className="text-xs text-fg-muted">
-                  <summary tabIndex={0} className="cursor-pointer">
-                    {words.installDetails}
-                  </summary>
-                  <p className="mt-1">{S.plugins.applyConfirmWarning(true)}</p>
-                </details>
-              )}
-
-            <div className="flex flex-wrap justify-end gap-2">
-              {props.busy && (
-                <Button size="sm" variant="secondary" onClick={props.onClose}>
-                  {words.background}
-                </Button>
-              )}
-              {failed && props.onDismissFailure !== undefined && (
-                <Button size="sm" variant="ghost" onClick={props.onDismissFailure}>
-                  {words.dismiss}
-                </Button>
-              )}
-              {serverDone && props.onRemoveServer && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={props.busy || props.blocked}
-                  onClick={props.onRemoveServer}
-                >
-                  {words.uninstallServer}
-                </Button>
-              )}
-              {canInstallAgents && !props.busy && (
-                <Button
-                  size="sm"
-                  variant={serverDone ? "primary" : "ghost"}
-                  onClick={() => setStep(2)}
-                >
-                  {words.toAgents}
-                </Button>
-              )}
-              {(props.server === "install" || props.server === "enable") && !props.busy && (
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={props.blocked}
-                  onClick={props.onServer}
-                >
-                  {failed
-                    ? S.common.retry
-                    : props.server === "enable"
-                      ? words.enableNow
-                      : S.skills.install}
-                </Button>
-              )}
-              {props.server === "ask" && !asked && (
-                <Button size="sm" variant="primary" loading={asking} onClick={() => void ask()}>
-                  {words.askAdmin}
-                </Button>
-              )}
-              {((serverDone && props.steps === 1) ||
-                asked ||
-                (!canInstallAgents &&
-                  (props.server === "held" || props.server === "unavailable"))) &&
-                close}
-            </div>
-          </section>
-        ) : (
-          <section className="space-y-3">
-            <div className="space-y-1 text-sm">
-              <h3 className="font-semibold text-fg">{words.chooseAgent}</h3>
-              <p className="text-fg-muted">
-                {ranServer && added.length === 0 ? words.chooseAfterInstall : words.chooseAgentHelp}
-              </p>
-            </div>
-            {!serverDone && props.moduleStatus && (
-              <p className="text-xs text-fg-muted">{props.moduleStatus}</p>
-            )}
-            {props.agents ?? <p className="py-1.5 text-xs text-fg-muted">{S.common.loading}</p>}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <Button size="sm" variant="link" onClick={() => setStep(1)}>
-                {words.backToServer}
-              </Button>
-              {ranServer &&
-                (added.length === 0 ? (
-                  <Button size="sm" variant="ghost" onClick={props.onClose}>
-                    {words.chooseLater}
-                  </Button>
-                ) : (
-                  <Button size="sm" variant="primary" onClick={() => setAddingMore(false)}>
-                    {words.finish}
-                  </Button>
-                ))}
-            </div>
-          </section>
+        {body}
+        {(foot.start !== undefined || foot.end !== undefined) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <div className="flex items-center gap-2">{foot.start}</div>
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{foot.end}</div>
+          </div>
         )}
       </div>
     </Modal>
@@ -406,11 +478,12 @@ export function InstallFlow(props: InstallFlowProps) {
 const RING_GAP_PX = 6;
 
 /**
- * The plugin's icon as the App Center draws an app being installed: dimmed under a turning ring
+ * A plugin's icon as the App Center draws an app being installed: dimmed under a turning ring
  * while the install runs, the attention mark on its corner when it failed, a check when it is
- * ready. The marks overhang the icon, so the row's layout is the same in every state.
+ * ready. The marks overhang the icon, so the layout around it is the same in every state. The
+ * steps' head, the market's card and the plugin's page draw it alike.
  */
-function InstallIcon({
+export function InstallIcon({
   icon,
   size,
   mark,
@@ -446,8 +519,8 @@ function InstallIcon({
 }
 
 /**
- * Why a server install failed, as a note under the plugin's row card, with what to do next
- * instead of a dead end: another registry or mirror in Plugin Sources, or a zip import (an
+ * Why a server install failed, as a note under the plugin's head on its page, with what to do
+ * next instead of a dead end: another registry or mirror in Plugin Sources, or a zip import (an
  * admin's). Attention ink with its mark, never red text; it stays until dismissed or the next
  * attempt.
  */

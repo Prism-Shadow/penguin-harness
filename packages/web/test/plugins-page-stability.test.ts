@@ -92,8 +92,8 @@ const GPU_HELPER = {
 /** The machine's `helper`, as the dialog's buttons name it. */
 const MACHINE_HELPER = `${AGENT_ID} ${en.chat.machineTag("gpu-box")}`;
 
-// Installed counts now appear on the first text action. Detailed status is in the plugin details.
-const COUNT = '[data-plugin="charts"] .showcase-card-bar button:first-child';
+// Installed counts are the card's button's words (the label on show over its stacked sizes).
+const COUNT = '[data-plugin="charts"] [data-install-button] > span.grid > span:first-child';
 const textOf = (selector: string) => document.querySelector(selector)?.textContent?.trim() ?? null;
 const counts = () => watchText(COUNT, (node) => node.textContent?.trim() ?? "");
 const offlineNotice = () =>

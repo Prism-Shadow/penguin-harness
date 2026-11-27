@@ -282,16 +282,13 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   await page.getByRole("link", { name: "应用中心" }).click();
   await page.locator('li[data-app="system_agent/plugins"] > button').click();
   await expect(page).toHaveURL(/\/plugins$/);
-  // agent-optimization is the Default RSI Toolkit's only skill. The market card opens its
-  // detail, whose "Install on Agent" opens the install flow on its Agents' step (the server has
-  // it); Escape closes the flow, then the detail.
+  // agent-optimization is the Default RSI Toolkit's only skill. The market card's button opens
+  // its install steps on choosing Agents (the server has it); Escape closes them.
   const manageInstalls = async () => {
-    await page.locator('[data-plugin="default-rsi-toolkit"] .showcase-card-open').click();
-    await page.getByRole("button", { name: "安装到 Agent default-rsi-toolkit" }).click();
+    await page.locator('[data-plugin="default-rsi-toolkit"] [data-install-button]').click();
   };
   await manageInstalls();
   await expect(page.getByRole("button", { name: "卸载 default_agent" })).toBeVisible();
-  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
 
   // Staying on the plugin library page while switching to target: the same-named default_agent's state must flip to "Install" (not installed).

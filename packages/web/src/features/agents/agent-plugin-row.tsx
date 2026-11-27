@@ -198,7 +198,9 @@ export function agentPluginActions(
   }
   const release = actions.releaseFor(entry);
   if (release || entry.status === "update" || entry.status === "incomplete") {
-    const label = release ? S.plugins.updatePackageTo(release.to) : S.skills.updateAction;
+    // An update of the package running on the server says its step, wherever it was started.
+    const step = actions.updateStep(entry);
+    const label = step ?? (release ? S.plugins.updatePackageTo(release.to) : S.skills.updateAction);
     out.push(
       <EntityCardAction
         key="update"
@@ -207,7 +209,7 @@ export function agentPluginActions(
         label={label}
         name={`${label} ${title}`}
         words="always"
-        busy={busy}
+        busy={busy || step !== null}
         disabled={disabled}
         onClick={() => actions.update(entry)}
       />,
@@ -242,8 +244,9 @@ function rowActions(
   actions: AgentPluginActions,
   module: AgentModule | undefined,
 ): ReactNode {
-  const busy = actions.running === entry.name;
-  const disabled = actions.running !== null;
+  const step = actions.updateStep(entry);
+  const busy = actions.running === entry.name || step !== null;
+  const disabled = actions.running !== null || step !== null;
   const release = actions.releaseFor(entry);
   const worded = (glyph: string, label: string, run: () => void) => (
     <Button
@@ -264,7 +267,7 @@ function rowActions(
       {(release || entry.status === "update" || entry.status === "incomplete") &&
         worded(
           ICONS.rotateCw,
-          release ? S.plugins.updatePackageTo(release.to) : S.skills.updateAction,
+          step ?? (release ? S.plugins.updatePackageTo(release.to) : S.skills.updateAction),
           () => actions.update(entry),
         )}
       <ModuleActionButton entry={entry} title={title} module={module} actions={actions} />

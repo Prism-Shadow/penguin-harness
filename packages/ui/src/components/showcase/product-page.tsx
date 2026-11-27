@@ -5,7 +5,9 @@
  * - `ProductHero`: the name, the one line, the tags, the actions and a line of facts beside the
  *   cover at its full rendition. On a narrow column the cover leads and the text follows.
  * - `ProductGallery`: the screenshots, one row that scrolls sideways and snaps; each opens large
- *   (the host decides how: a lightbox in the app, the picture itself on the site).
+ *   (the host decides how: a lightbox in the app, the picture itself on the site). A host may lead
+ *   the row with one picture of another shape (`lead`: the thing's 16:9 cover), drawn as tall as
+ *   the screenshots beside it.
  * - `ProductSection`: a titled, ruled section — what it does, what it installs, how to start,
  *   the README.
  * - `ProductParts`: what the thing installs, one ruled row each: a mark, the name, its kind, a
@@ -100,16 +102,20 @@ export function ProductGallery({
   shots,
   label,
   onOpen,
+  lead,
 }: {
   shots: readonly ProductShot[];
   /** The row's accessible name ("Screenshots"). */
   label: string;
   /** Opens a shot large; without it each shot is a link to its picture. */
   onOpen?: (index: number, event: MouseEvent<HTMLElement>) => void;
+  /** A 16:9 picture before the shots (the cover), as tall as they are; the host makes it act. */
+  lead?: ReactNode;
 }) {
-  if (shots.length === 0) return null;
+  if (shots.length === 0 && lead == null) return null;
   return (
     <ul className="showcase showcase-gallery" data-part="gallery" aria-label={label}>
+      {lead != null && <li className="showcase-gallery-item showcase-gallery-lead">{lead}</li>}
       {shots.map((shot, i) => {
         const picture = (
           <img

@@ -1,17 +1,16 @@
 // @vitest-environment jsdom
 /**
- * The market card's install action names one state, on one line
- * (features/plugins/plugin-card.tsx, the `marketCard` branch). It used to key its word off the
- * current Agent and add the Project-wide count on a second line, so a plugin some other Agent
- * had read "Install" over "Installed on 1 Agent".
+ * The market card's button names one state, on one line (features/plugins/plugin-card.tsx,
+ * plugin-action.ts). It used to key its word off the current Agent and add the Project-wide count
+ * on a second line, so a plugin some other Agent had read "Install" over "Installed on 1 Agent".
  *
  * - Given a plugin installed on the machine's Agent and not on the current Agent, once both have
  *   answered the action reads the count alone; until the machine answers it may read Install,
- *   but no frame shows the two together. Pressing the count opens the install flow on its Agents
+ *   but no frame shows the two together. Pressing the count opens the install steps on its Agents
  *   (the server has the plugin), which offers the current Agent Install and shows the machine's
  *   Agent with it.
  * - Given a plugin installed nowhere, the action reads Install; pressing it opens the same flow,
- *   where Install on the current Agent installs it, and from then on the action reads the count.
+ *   where Add on the current Agent installs it, and from then on the action reads the count.
  *   No frame of the card shows both.
  * - Either way the action is one line of words, in the cards and in the list.
  */
@@ -44,18 +43,23 @@ const GPU: FakeMachine = {
   library: [CHARTS],
 };
 
-const ACTION = '[data-plugin="charts"] .showcase-card-bar button:first-child';
+const ACTION = '[data-plugin="charts"] [data-install-button]';
+/** The words on show: the label the button stacks over its other, invisible ones. */
+const LABEL = `${ACTION} > span.grid > span:first-child`;
 const INSTALL = en.skills.install;
 const ON_ONE = en.plugins.marketAgentInstalls(1);
 const action = () => document.querySelector<HTMLButtonElement>(ACTION);
+const label = () => document.querySelector<HTMLElement>(LABEL)?.textContent;
 
 /** Every word the action showed was one state's whole label (or nothing, before the card). */
 const singleStates = (texts: string[]) =>
   texts.every((words) => ["", INSTALL, ON_ONE].includes(words));
 
 /** The action's words are one line: a text node alone, no element under its label. */
-const oneLine = (node: HTMLButtonElement) =>
-  node.children.length === 0 && !node.textContent!.includes("\n");
+const oneLine = () => {
+  const node = document.querySelector<HTMLElement>(LABEL)!;
+  return node.children.length === 0 && !node.textContent!.includes("\n");
+};
 
 async function openMarket(layout: "cards" | "list") {
   localStorage.setItem("penguin.pluginsLayout", layout);
@@ -74,16 +78,21 @@ describe("the market card's install action", () => {
     it(`reads the count alone for a plugin another Agent has, and opens the install flow (${layout})`, async () => {
       agentServer(undefined, { machines: [GPU], library: [CHARTS] });
       await api.installAgentPlugins(PROJECT_ID, AGENT_ID, ["charts"], "gpu1");
-      const seen = watchText(ACTION);
+      const seen = watchText(LABEL);
       await openMarket(layout);
-      await waitFor(() => action()?.textContent === ON_ONE, 40);
-      expect(oneLine(action()!)).toBe(true);
+      await waitFor(() => label() === ON_ONE, 40);
+      expect(oneLine()).toBe(true);
       expect(singleStates(seen.texts())).toBe(true);
 
       await click(action()!);
       expect(topDialog().getAttribute("aria-label")).toBe(
         en.plugins.installModel.flowTitle("Charts"),
       );
+      // The server has it: the steps open on its Agents.
+      expect(
+        topDialog().getAttribute("data-install-page") ??
+          topDialog().querySelector("[data-install-page]")?.getAttribute("data-install-page"),
+      ).toBe("agents");
       expect(button(en.plugins.installModel.addToAgent("Helper")).disabled).toBe(false);
       await click(
         topDialog().querySelector<HTMLInputElement>('input[value="gpu1/' + AGENT_ID + '"]')!,
@@ -97,14 +106,14 @@ describe("the market card's install action", () => {
   it("reads Install for a plugin no Agent has, installs it on the current Agent from the flow, then reads the count", async () => {
     agentServer(undefined, { library: [CHARTS] });
     await openMarket("cards");
-    await waitFor(() => action()?.textContent === INSTALL && !action()!.disabled, 40);
-    expect(oneLine(action()!)).toBe(true);
-    const seen = watchText(ACTION);
+    await waitFor(() => label() === INSTALL && !action()!.disabled, 40);
+    expect(oneLine()).toBe(true);
+    const seen = watchText(LABEL);
 
     await click(action()!);
     await click(button(en.plugins.installModel.addToAgent("Helper")));
-    await waitFor(() => action()?.textContent === ON_ONE, 40);
-    expect(oneLine(action()!)).toBe(true);
+    await waitFor(() => label() === ON_ONE, 40);
+    expect(oneLine()).toBe(true);
     expect(seen.texts()).toEqual([INSTALL, ON_ONE]);
   });
 });

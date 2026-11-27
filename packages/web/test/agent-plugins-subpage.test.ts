@@ -161,10 +161,14 @@ describe("the Plugins sub-page of an Agent's settings", () => {
       en.plugins.packageUpdateBody("Charts", "1.0.0", release),
     );
     await click(buttonIn(topDialog(), en.skills.updateAction));
-    await waitFor(() => topDialog().textContent!.includes("50%"));
+    // Confirmed, the update runs on the row's button, which says how far it is.
+    await waitFor(
+      () => dialogs().length === 0 && hasButton(`${en.plugins.downloading(50)} Charts`),
+    );
     gate.resolve();
-    await waitFor(() => !buttonIn(topDialog(), en.skills.updateAction).disabled);
+    await waitFor(() => hasButton(label));
     expect(toasts("error").join(" ")).toContain("Couldn’t update Charts");
+    await click(button(label));
     await click(buttonIn(topDialog(), en.skills.updateAction));
     await waitFor(() => !hasButton(label) && dialogs().length === 0);
     expect(toasts("success")).toContain(en.plugins.packageUpdated("Charts", release));
@@ -360,7 +364,7 @@ describe("the Plugins sub-page of an Agent's settings", () => {
     const before = asked();
     await click(button(en.agentPlugins.openMarket));
     await waitFor(() => whereIs(router) === "/plugins");
-    const count = '[data-plugin="notes-kit"] .showcase-card-bar button:first-child';
+    const count = '[data-plugin="notes-kit"] [data-install-button] > span.grid > span:first-child';
     await waitFor(
       () =>
         document.querySelector(count)?.textContent?.trim() === en.plugins.marketAgentInstalls(1),

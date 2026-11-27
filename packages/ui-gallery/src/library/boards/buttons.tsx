@@ -3,7 +3,9 @@
  * link in a sentence and on its own, the flat glyph action inline after a name (a link and a
  * button), the inline icon button at the end of a stats line, the composer's dictation button in
  * its three states and the microphone meter beside it, the keyboard hint, and the floating ball on
- * a stage of its own, where it drags, docks to either edge and tucks away.
+ * a stage of its own, where it drags, docks to either edge and tucks away; and the install button
+ * at rest, through an install's steps (a staged bar along its edge, its width held), failed and
+ * done.
  */
 import { useEffect, useState, type MouseEvent } from "react";
 import {
@@ -22,6 +24,8 @@ import {
   PlusIcon,
   RecordButton,
   Spinner,
+  InstallButton,
+  StagedProgress,
   type FloatingBallPlacement,
   type RecordButtonState,
 } from "@prismshadow/penguin-ui";
@@ -97,6 +101,9 @@ export function ButtonsBoard() {
             <PlusIcon />
           </IconButton>
         </div>
+      </BoardGroup>
+      <BoardGroup title={t.install} aside={t.installHint}>
+        <InstallSpecimens />
       </BoardGroup>
       <BoardGroup title={t.links} aside={t.linksHint}>
         <div className="lib-stack">
@@ -304,6 +311,44 @@ function MeterStage() {
         />
         <span className="lib-caption">{t.meterUnavailable}</span>
       </span>
+    </div>
+  );
+}
+
+/** The install button in each state, every one as wide as the widest label it may show. */
+function InstallSpecimens() {
+  const { S } = useGallery();
+  const t = S.library.buttons;
+  const sizes = [
+    t.installIdle,
+    t.installChecking,
+    t.installDownloading,
+    t.installStarting,
+    t.installRetry,
+  ];
+  const stages = [
+    { key: "check", weight: 1 },
+    { key: "fetch", weight: 3 },
+    { key: "start", weight: 1 },
+  ];
+  const bar = (current: number, value?: number) => (
+    <StagedProgress
+      stages={stages}
+      current={current}
+      {...(value !== undefined ? { value } : {})}
+      size="xs"
+      label={t.installProgress}
+    />
+  );
+  return (
+    <div className="lib-row">
+      <InstallButton label={t.installIdle} sizes={sizes} />
+      <InstallButton label={t.installChecking} sizes={sizes} running progress={bar(0)} />
+      <InstallButton label={t.installDownloading} sizes={sizes} running progress={bar(1, 0.42)} />
+      <InstallButton label={t.installStarting} sizes={sizes} running progress={bar(2)} />
+      <InstallButton label={t.installRetry} sizes={sizes} />
+      <InstallButton label={t.installOpen} sizes={sizes} variant="secondary" />
+      <InstallButton label={t.installIdle} sizes={sizes} size="md" />
     </div>
   );
 }

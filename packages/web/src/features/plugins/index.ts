@@ -56,3 +56,6 @@ export { agentPluginGroups, hasParts } from "./agent-plugin-groups";
 export type { AgentPluginGroup, AgentPluginGroups, AgentPluginStatus } from "./agent-plugin-groups";
 
 export { PackageUpdateDialog, packageUpdate, type PackageUpdate } from "./plugin-package-update";
+
+export { useRunningChange } from "./server-installs";
+export { installStepWords } from "./install-progress";
