@@ -17,15 +17,31 @@ use napi::bindgen_prelude::Buffer;
 use napi::{Error, Result, Status};
 use napi_derive::napi;
 
-/// git's zone lives in the commit as `+hhmm`; the harness hands the offset in minutes.
-fn signature_of(identity: &IdentityInput) -> gix_object::Signature {
-    gix_object::Signature {
-        name: identity.name.as_bytes().into(),
-        email: identity.email.as_bytes().into(),
-        time: gix_date::Time {
-            seconds: identity.when_seconds as i64,
-            offset: (identity.when_offset_minutes as i64) * 60,
-        },
+/// git's zone: `+hhmm` east of UTC, from the harness's offset in minutes.
+fn zone_of(offset_minutes: f64) -> String {
+    let offset = offset_minutes as i64;
+    let abs = offset.abs();
+    format!(
+        "{}{:02}{:02}",
+        if offset < 0 { "-" } else { "+" },
+        abs / 60,
+        abs % 60
+    )
+}
+
+/// The signature as git's raw form carries it: `name <email> seconds zone`, the shape
+/// `commit_as` reads. Borrowed, so the strings outlive the call.
+struct RawIdentity {
+    name: Vec<u8>,
+    email: Vec<u8>,
+    time: String,
+}
+
+fn identity_of(identity: &IdentityInput) -> RawIdentity {
+    RawIdentity {
+        name: identity.name.clone().into_bytes(),
+        email: identity.email.clone().into_bytes(),
+        time: format!("{} {}", identity.when_seconds as i64, zone_of(identity.when_offset_minutes)),
     }
 }
 
@@ -91,11 +107,12 @@ pub fn commit(input: CommitInput) -> Result<String> {
         Some(hex) if !hex.is_empty() => Some(oid_of(hex)?),
         _ => None,
     };
-    let foundation = match parent {
+    let foundation: gix::hash::ObjectId = match parent {
         Some(id) => repo
             .find_commit(id)
-            .map_err(|e| refuse(format!("parent {hex} is not in the repository: {e}", hex = input.parent.as_deref().unwrap_or(""))))?
-            .tree_id()?,
+            .map_err(|e| refuse(format!("parent {} is not in the repository: {e}", input.parent.as_deref().unwrap_or(""))))?
+            .tree_id()
+            .map_err(|e| refuse(format!("parent has no tree: {e}")))?,
         None => gix::hash::ObjectId::empty_tree(repo.object_hash()),
     };
 
@@ -106,7 +123,7 @@ pub fn commit(input: CommitInput) -> Result<String> {
         // Null removes the folder: every file gone.
         None => {
             editor
-                .remove(PathBuf::from(&input.rel))
+                .remove(input.rel.as_str())
                 .map_err(|e| refuse(format!("cannot remove {}: {e}", input.rel)))?;
         }
         Some(files) => {
@@ -114,19 +131,16 @@ pub fn commit(input: CommitInput) -> Result<String> {
             // except on the branch's first commit, where there is nothing to remove.
             if parent.is_some() {
                 editor
-                    .remove(PathBuf::from(&input.rel))
+                    .remove(input.rel.as_str())
                     .map_err(|e| refuse(format!("cannot replace {}: {e}", input.rel)))?;
             }
             for file in files {
                 let blob = repo
                     .write_blob(file.body.as_ref())
                     .map_err(|e| refuse(format!("cannot write {}: {e}", file.rel)))?;
+                let path = format!("{}/{}", input.rel, file.rel);
                 editor
-                    .upsert(
-                        PathBuf::from(&input.rel).join(&file.rel),
-                        gix_object::tree::EntryKind::Blob,
-                        blob.detach(),
-                    )
+                    .upsert(path.as_str(), gix_object::tree::EntryKind::Blob, blob.detach())
                     .map_err(|e| refuse(format!("cannot add {}: {e}", file.rel)))?;
             }
         }
@@ -135,11 +149,23 @@ pub fn commit(input: CommitInput) -> Result<String> {
         .write()
         .map_err(|e| refuse(format!("cannot write the tree: {e}")))?;
 
-    let parents: &[gix::hash::ObjectId] = parent.as_ref().map(std::slice::from_ref).unwrap_or(&[]);
+    let committer = identity_of(&input.committer);
+    let author = identity_of(&input.author);
+    let committer_ref = gix::actor::SignatureRef {
+        name: committer.name.as_slice().into(),
+        email: committer.email.as_slice().into(),
+        time: &committer.time,
+    };
+    let author_ref = gix::actor::SignatureRef {
+        name: author.name.as_slice().into(),
+        email: author.email.as_slice().into(),
+        time: &author.time,
+    };
+    let parents = parent.iter().copied();
     let id = repo
         .commit_as(
-            signature_of(&input.committer),
-            signature_of(&input.author),
+            committer_ref,
+            author_ref,
             input.ref_name.as_str(),
             input.message.as_str(),
             tree,
@@ -161,11 +187,8 @@ pub fn read_blobs(gitdir: String, oids: Vec<String>) -> Result<Vec<Buffer>> {
         let object = repo
             .find_object(id)
             .map_err(|_| refuse(format!("object {hex} is not in the repository")))?;
-        if object.kind != gix_object::Kind::Blob {
-            return Err(refuse(format!(
-                "{hex} is a {}, not a blob",
-                object.kind
-            )));
+        if object.kind != gix::object::Kind::Blob {
+            return Err(refuse(format!("{hex} is a {}, not a blob", object.kind)));
         }
         out.push(Buffer::from(object.data.to_vec()));
     }
